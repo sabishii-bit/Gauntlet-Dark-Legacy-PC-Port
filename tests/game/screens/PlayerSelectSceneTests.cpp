@@ -28,7 +28,7 @@ using namespace gdl;
 using namespace gdl::game;
 
 std::filesystem::path unpackedRoot() {
-    return test::unpackedOrSkip("SELECT/textures.json").parent_path().parent_path();
+    return test::assetOrSkip("SELECT/textures.ngc").parent_path().parent_path();
 }
 
 struct Fixture {
@@ -74,7 +74,7 @@ TEST_CASE("the select screen refuses to open without unpacked data", "[game][sel
     REQUIRE_FALSE(scene.isOpen());
 }
 
-TEST_CASE("the starting player joins and others join on Start", "[game][select][unpacked]") {
+TEST_CASE("the starting player joins and others join on Start", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-join");
     PlayerSelectScene scene;
@@ -101,7 +101,7 @@ TEST_CASE("the starting player joins and others join on Start", "[game][select][
 }
 
 TEST_CASE("Manage Character opens its player's save menu with the rest of the party retained",
-          "[game][select][pause][unpacked]") {
+          "[game][select][pause][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-manage");
     PlayerSelectScene scene;
@@ -125,7 +125,7 @@ TEST_CASE("Manage Character opens its player's save menu with the rest of the pa
     scene.close();
 }
 
-TEST_CASE("backing out of the last lane cancels the screen", "[game][select][unpacked]") {
+TEST_CASE("backing out of the last lane cancels the screen", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-cancel");
     PlayerSelectScene scene;
@@ -134,7 +134,7 @@ TEST_CASE("backing out of the last lane cancels the screen", "[game][select][unp
     REQUIRE(scene.step(1, player(0, false, true)) == SelectOutcome::Cancelled);
 }
 
-TEST_CASE("the screen finishes once every player is locked in", "[game][select][unpacked]") {
+TEST_CASE("the screen finishes once every player is locked in", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-done");
     PlayerSelectScene scene;
@@ -160,7 +160,7 @@ TEST_CASE("the screen finishes once every player is locked in", "[game][select][
 }
 
 TEST_CASE("a player joining a game in progress finds the party locked in beside them",
-          "[game][select][unpacked]") {
+          "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-join");
     PlayerSelectScene scene;
@@ -185,7 +185,7 @@ TEST_CASE("a player joining a game in progress finds the party locked in beside 
     CHECK(scene.lane(1).lockedIn());
 }
 
-TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][select][unpacked]") {
+TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-greeting");
     AudioMixer mixer(48000);
@@ -227,7 +227,7 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
 }
 
 TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkpoints",
-          "[game][select][post-shop][unpacked]") {
+          "[game][select][post-shop][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop");
     PlayerSelectScene scene;
@@ -264,7 +264,7 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
 }
 
 TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
-          "[game][select][post-shop][unpacked]") {
+          "[game][select][post-shop][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop-reservations");
     PlayerSelectScene scene;
@@ -301,7 +301,7 @@ TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
 }
 
 TEST_CASE("post-shop keeps Done selected and protects an existing save when overwrite is refused",
-          "[game][select][post-shop][unpacked]") {
+          "[game][select][post-shop][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop-focus");
     SaveSlots slots;
@@ -331,7 +331,7 @@ TEST_CASE("post-shop keeps Done selected and protects an existing save when over
 }
 
 TEST_CASE("post-shop snapshots follow a loaded character rather than the pending journey",
-          "[game][select][post-shop][unpacked]") {
+          "[game][select][post-shop][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop-load");
     SaveSlots slots;

@@ -1,4 +1,4 @@
-#include "engine/assets/WavFile.h"
+#include "fixtures/ReferenceWav.h"
 
 #include <string_view>
 
@@ -7,7 +7,7 @@
 #include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
 
-namespace gdl {
+namespace gdl::test {
 
 namespace {
 
@@ -71,4 +71,4 @@ WavData loadWav(const std::filesystem::path& path) {
     return decodeWav(readFile(path));
 }
 
-} // namespace gdl
+} // namespace gdl::test

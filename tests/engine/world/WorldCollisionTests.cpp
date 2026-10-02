@@ -379,9 +379,8 @@ TEST_CASE("floor contact margins stay bounded and do not change projectile or li
     REQUIRE(moved->y == Approx(2));
 }
 
-TEST_CASE("the unpacked tower has floors under its start points", "[world][collision][unpacked]") {
-    const std::filesystem::path dir =
-        test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();
+TEST_CASE("the native tower has floors under its start points", "[world][collision][assets]") {
+    const std::filesystem::path dir = test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     WorldCollision collision;

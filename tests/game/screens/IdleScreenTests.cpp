@@ -92,8 +92,8 @@ TEST_CASE("weapon flight is staggered and independent of render rate", "[game][i
 }
 
 TEST_CASE("screensaver draws the four authored weapon trees and their fire",
-          "[game][idle][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+          "[game][idle][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     test::FakeRenderDevice device;
     IdleScreen screen;
     REQUIRE(screen.open(device, root));

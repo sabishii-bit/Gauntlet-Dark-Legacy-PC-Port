@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/screens/LevelArrivalPresentation.h"
 
 namespace {
@@ -31,6 +32,7 @@ std::filesystem::path spawnFixture(std::string_view name, bool animated = true,
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2,"flags":0},
         {"index":1,"name":"FRAME0","file":"skin.png","width":2,"height":2,"flags":0},
         {"index":2,"name":"FRAME1","file":"skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(root);
     const std::string sequence = animated ? R"({"name":"START","frames":8,"frameRate":30,
         "repeats":false,"tracks":[{"node":0,"flags":16,"frames":[0,4],"values":[0,4]}]})"
                                           : "";

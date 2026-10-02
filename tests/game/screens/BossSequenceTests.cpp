@@ -11,7 +11,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeModelFixture.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/screens/BossSequence.h"
 
 namespace {
@@ -57,6 +58,7 @@ struct Fixture {
         writeFile(level / "skin.png", test::kTinyPng);
         writeTextFile(level / "textures.json", R"({"bitmaps":[
             {"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(level);
         REQUIRE(levels.load(root));
         const auto ref = levels.byName("G5");
         REQUIRE(ref.has_value());
@@ -163,16 +165,15 @@ TEST_CASE("boss victory queues rune speech and waits for audio before departing"
     const auto bank = root / "audio/COMMON";
     std::filesystem::create_directories(bank);
     const std::array<s16, 4> pcm{8192, 8192, 8192, 8192};
-    writeFile(bank / "voice.wav", formats::encodeWav(pcm, 48000, 1));
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {pcm.begin(), pcm.end()}}}};
     // Keep the first voice playing while simulation advances. This proves the second
     // waits for playback, rather than relying on a predicted clip length or text length.
-    writeTextFile(bank / "sounds.json", R"({"sounds":[
+    test::writeNativeSoundBank(bank, R"({"sounds":[
         {"index":0,"name":"S_DEFEATVOXG","sequence":[
             {"sample":0,"loopStart":true,"loopBack":true}]},
         {"index":1,"name":"S_RUNEVOX0G","sequence":[
-            {"sample":0,"loopStart":true,"loopBack":true}]}],
-        "samples":[{"index":0,"name":"voice","file":"voice.wav",
-                    "sampleRate":48000,"frames":4}]})");
+            {"sample":0,"loopStart":true,"loopBack":true}]}]})",
+                               bankSamples);
     f.audio.open(root, &output, nullptr);
     f.audio.holdNarration(true); // gameplay announcements must not block Sumner himself
     f.sequence.fallen(Vec3{0}, f.bosses, f.players);

@@ -3,17 +3,18 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/assets/WavFile.h"
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "fixtures/ReferenceWav.h"
 #include "formats/WavWriter.h"
 
 namespace {
 
 using namespace gdl;
+using namespace gdl::test;
 
 TEST_CASE("16-bit PCM wave files round-trip", "[assets][wav]") {
     const std::array<s16, 6> kSamples{1, -1, 2000, -2000, 32767, -32768};

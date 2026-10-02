@@ -226,14 +226,14 @@ TEST_CASE("named world emitters repeat while independently started effects expir
 }
 
 TEST_CASE("tower mountain sparks keep erupting after the arrival camera finishes",
-          "[world][particles][visual-parity][unpacked]") {
-    const auto directory = test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path();
+          "[world][particles][visual-parity][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path();
     WorldLayout layout;
     TextureSet textures;
     REQUIRE(layout.load(directory));
     REQUIRE(textures.load(directory));
     TextureSet items;
-    REQUIRE(items.load(test::unpackedOrSkip("ITEMS/LEVELL/textures.json").parent_path()));
+    REQUIRE(items.load(test::assetOrSkip("ITEMS/LEVELL/textures.ngc").parent_path()));
     const std::array<TextureSet*, 1> lenders{&items};
     test::FakeRenderDevice device;
     ParticleField field;

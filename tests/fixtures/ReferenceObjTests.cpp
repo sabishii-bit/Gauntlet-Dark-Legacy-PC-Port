@@ -2,17 +2,19 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/assets/ObjModel.h"
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "fixtures/ReferenceObj.h"
 
 namespace {
 
 using namespace gdl;
 using Catch::Approx;
+using test::loadObj;
+using test::parseObj;
 
 constexpr std::string_view kSample = "# comment\n"
                                      "o thing\n"

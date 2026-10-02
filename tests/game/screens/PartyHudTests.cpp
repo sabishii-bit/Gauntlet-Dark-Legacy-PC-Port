@@ -7,7 +7,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/screens/PartyHud.h"
 namespace {
 using namespace gdl;
@@ -20,11 +20,13 @@ TEST_CASE("level announcement queues gained-level behind the color and character
         const auto path = root / "audio" / folder;
         std::filesystem::create_directories(path);
         const std::array<s16, 4> pcm{value, value, value, value};
-        writeFile(path / "tone.wav", formats::encodeWav(pcm, 48000, 1));
-        writeTextFile(path / "sounds.json", std::format(R"({{"sounds":[{{"index":0,
-            "name":"{}","volume":127,"sequence":[{{"sample":0,"loopStart":true,"loopBack":true}}]}}],
-            "samples":[{{"index":0,"file":"tone.wav","sampleRate":48000,"frames":4}}]}})",
-                                                        name));
+        const std::array<test::NativeSoundSample, 1> bankSamples{
+            {{48000, {pcm.begin(), pcm.end()}}}};
+        test::writeNativeSoundBank(path,
+                                   std::format(R"({{"sounds":[{{"index":0,
+            "name":"{}","volume":127,"sequence":[{{"sample":0,"loopStart":true,"loopBack":true}}]}}]}})",
+                                               name),
+                                   bankSamples);
     };
     const CharacterSave save;
     const std::string name =
@@ -143,10 +145,10 @@ TEST_CASE("crystal-style item announcements use common audio and do not replay w
     const auto path = root / "audio/COMMON";
     std::filesystem::create_directories(path);
     const std::array<s16, 4> pcm{8192, 8192, 8192, 8192};
-    writeFile(path / "tone.wav", formats::encodeWav(pcm, 48000, 1));
-    writeTextFile(path / "sounds.json", R"({"sounds":[{"name":"S_PICKUPCRYST","volume":127,
-        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}],
-        "samples":[{"index":0,"file":"tone.wav","sampleRate":48000,"frames":4}]})");
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {pcm.begin(), pcm.end()}}}};
+    test::writeNativeSoundBank(path, R"({"sounds":[{"name":"S_PICKUPCRYST","volume":127,
+        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}]})",
+                               bankSamples);
     writeTextFile(root / "messages.json", R"({"messages":[{"name":"MIKEY","lines":["MIKEY"]}]})");
     MessageTable messages;
     REQUIRE(messages.load(root / "messages.json"));

@@ -31,12 +31,10 @@ TEST_CASE("encounter movies play on every entry, including characters with legac
 }
 
 TEST_CASE("travel keeps a map before the stage preview and skips both for tower returns",
-          "[level-loading][unpacked]") {
-    const auto root = test::unpackedOrSkip("MAPS/LEVELG1/textures.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("wdata/TOWN.json");
+          "[level-loading][assets]") {
+    const auto root =
+        test::assetOrSkip("MAPS/LEVELG1/textures.ngc").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WDATA/TOWN.WAD");
     test::FakeRenderDevice device;
     GameContext context;
     context.unpackedRoot = root;

@@ -62,10 +62,10 @@ TEST_CASE("without its picture the transition covers the view in black, above th
     REQUIRE(device.draws[0].vertices[0].color.a == 255);
 }
 
-TEST_CASE("the unpacked static archive holds the transition picture",
-          "[game][screens][transition][unpacked]") {
+TEST_CASE("the native static archive holds the transition picture",
+          "[game][screens][transition][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+        test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     test::FakeRenderDevice device;
     TransitionScreen screen;
     REQUIRE(screen.load(device, root));

@@ -770,9 +770,9 @@ TEST_CASE("Sumner shops using Wizard data without a fictitious SUM class record"
     REQUIRE(session.lanes()[0].stats.powerupTime == 1.25f);
     REQUIRE(buyShopItem(save, session.lanes()[0].stats, item(5), 1) == ShopResult::Full);
 }
-TEST_CASE("unpacked shop contains the retail catalog and every item can be bought",
-          "[shop][unpacked]") {
-    const auto file = test::unpackedOrSkip("shop/catalog.json");
+TEST_CASE("native shop contains the retail catalog and every item can be bought",
+          "[shop][assets]") {
+    const auto file = test::assetOrSkip("SHPDATA/SHOP.WAD");
     ShopCatalog data;
     REQUIRE(data.load(file));
     REQUIRE(data.items().size() == 34);

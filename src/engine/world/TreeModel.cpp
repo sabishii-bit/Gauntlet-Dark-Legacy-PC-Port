@@ -19,16 +19,36 @@ constexpr std::array<std::string_view, 2> kMarkerNodes{"DUMMY", "NULL1"};
 
 } // namespace
 
-TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures,
-                                      RenderDevice& device) {
+TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device,
+                                      std::span<TextureSet* const> lenders) {
     Shape shape;
     shape.mesh = &mesh;
     for (const MeshPart& part : mesh.parts) {
         if (part.texture >= textures.size()) {
             throw std::runtime_error("mesh refers to a texture outside the set");
         }
-        shape.textures.push_back(&textures.texture(device, part.texture));
-        shape.translucent.push_back(textures.entry(part.texture).translucent());
+        const auto& entry = textures.entry(part.texture);
+        TextureSet* source = &textures;
+        u32 index = part.texture;
+        if (entry.external() && !entry.noPicture) {
+            source = nullptr;
+            for (TextureSet* lender : lenders) {
+                if (lender == nullptr) {
+                    continue;
+                }
+                if (const auto found = lender->find(entry.name);
+                    found && !lender->entry(*found).external()) {
+                    source = lender;
+                    index = *found;
+                    break;
+                }
+            }
+            if (source == nullptr) {
+                throw std::runtime_error("external texture was not lent: " + entry.name);
+            }
+        }
+        shape.textures.push_back(&source->texture(device, index));
+        shape.translucent.push_back(entry.translucent() || source->entry(index).translucent());
         shape.slots.push_back(part.texture);
     }
     return shape;
@@ -44,7 +64,7 @@ void TreeModel::include(const Shape& shape, const Vec3& offset, bool& first) {
 }
 
 bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& textures,
-                     RenderDevice& device) {
+                     RenderDevice& device, std::span<TextureSet* const> lenders) {
     clear();
     bool first = true;
     for (usize i = 0; i < tree.nodes.size(); ++i) {
@@ -75,7 +95,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                 if (!model.has_value()) {
                     throw std::runtime_error(std::format("object {} is missing", info.object));
                 }
-                node.shape = makeShape(models.mesh(*model), textures, device);
+                node.shape = makeShape(models.mesh(*model), textures, device, lenders);
                 include(node.shape, node.offset, first);
             }
             // An object node's runs follow the set's order from the run's first object.
@@ -96,8 +116,9 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                     const u32 firstModel = *model;
                     for (s32 f = 0;
                          f < run.frames && firstModel + static_cast<u32>(f) < models.size(); ++f) {
-                        frames.shapes.push_back(makeShape(
-                            models.mesh(firstModel + static_cast<u32>(f)), textures, device));
+                        frames.shapes.push_back(
+                            makeShape(models.mesh(firstModel + static_cast<u32>(f)), textures,
+                                      device, lenders));
                         include(frames.shapes.back(), node.offset, first);
                     }
                 }

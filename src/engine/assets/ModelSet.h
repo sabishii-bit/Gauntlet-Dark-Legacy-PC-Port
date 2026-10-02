@@ -16,14 +16,13 @@ namespace gdl {
 
 struct ModelSetEntry {
     std::string name;
-    std::filesystem::path file; ///< empty when the object has no exported mesh
     u32 triangles = 0;
 };
 
-/** Named meshes decoded on first use from a native archive or an inspection export. */
+/** Named meshes decoded on first use from a native archive. */
 class ModelSet {
 public:
-    /** Prefers objects.ngc; accepts objects.json for legacy inspection exports. */
+    /** Loads objects.ngc from the supplied directory. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_entries.empty(); }
@@ -31,7 +30,7 @@ public:
     const ModelSetEntry& entry(u32 index) const;
     std::optional<u32> find(std::string_view name) const;
 
-    /** The object's mesh; throws FileError or FormatError when its file cannot be read. */
+    /** The object's mesh; throws FormatError when its geometry cannot be decoded. */
     const Mesh& mesh(u32 index);
 
 private:

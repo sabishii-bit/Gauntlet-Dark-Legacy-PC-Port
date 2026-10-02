@@ -6,6 +6,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/FallingScenery.h"
 
 namespace {
@@ -47,6 +48,7 @@ struct Fixture {
         writeFile(directory / "skin.png", test::kTinyPng);
         writeTextFile(directory / "textures.json", R"({"bitmaps":[
           {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(directory);
         REQUIRE(layout.load(directory));
         REQUIRE(models.load(directory));
         REQUIRE(textures.load(directory));
@@ -174,9 +176,9 @@ TEST_CASE("started pieces fall by their subtype's rates and retire under the bot
     REQUIRE(f.scenery.size() == 0);
 }
 
-TEST_CASE("the forest's first level binds its ninety-two falling pieces", "[falling][unpacked]") {
-    const auto directory = test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELF1/objects.json");
+TEST_CASE("the forest's first level binds its ninety-two falling pieces", "[falling][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path();
+    test::assetOrSkip("LEVELS/LEVELF1/objects.ngc");
     WorldLayout layout;
     ModelSet models;
     TextureSet textures;

@@ -20,9 +20,9 @@ using Catch::Approx;
 constexpr Vec3 kHome{-30, 57, -112};
 
 TEST_CASE("Spider Queen exposes her attack families within her authored territory",
-          "[spider][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRIDER.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRIDER/animations.json");
+          "[spider][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRIDER.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRIDER/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture f;
     f.open(device, root, nullptr, {}, 'D');
@@ -75,12 +75,12 @@ TEST_CASE("Spider Queen exposes her attack families within her authored territor
 }
 
 TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spiders",
-          "[spider][level-opponents][unpacked]") {
+          "[spider][level-opponents][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELD5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRIDER/animations.json");
-    test::unpackedOrSkip("MONSTERS/SPI/animations.json");
-    test::unpackedOrSkip("ITEMS/LEVELD5/animations.json");
+        test::assetOrSkip("LEVELS/LEVELD5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRIDER/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/SPI/ANIM.PS2");
+    test::assetOrSkip("ITEMS/LEVELD5/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -159,9 +159,9 @@ TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spi
 }
 
 TEST_CASE("Bellows poison and shrink the Spider Queen on release for the encounter",
-          "[spider][legend][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRIDER.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRIDER/animations.json");
+          "[spider][legend][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRIDER.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRIDER/ANIM.PS2");
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'D');

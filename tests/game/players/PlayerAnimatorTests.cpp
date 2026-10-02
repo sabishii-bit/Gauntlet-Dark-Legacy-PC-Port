@@ -796,10 +796,9 @@ TEST_CASE("a single attack press interrupts either half of every walking strafe"
 }
 
 TEST_CASE("retail class animations accept lateral strafe attack taps throughout both steps",
-          "[game][players][animation][strafe-press][unpacked]") {
+          "[game][players][animation][strafe-press][assets]") {
     for (const char* code : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
-        const auto path =
-            test::unpackedOrSkip(std::string("PLAYERS/") + code + "/ANIM/animations.json");
+        const auto path = test::assetOrSkip(std::string("PLAYERS/") + code + "/ANIM/ANIM.PS2");
         AnimationSet actions;
         REQUIRE(actions.load(path.parent_path()));
         const auto found = actions.find(code);
@@ -1495,7 +1494,7 @@ TEST_CASE("a partner held plays the grabber's class sequence once, thrown loops 
 }
 
 TEST_CASE("the real class trees carry the combo sequences the original's table names",
-          "[game][players][animation][combo][unpacked]") {
+          "[game][players][animation][combo][assets]") {
     struct Expected {
         const char* code;
         Action held;
@@ -1510,8 +1509,8 @@ TEST_CASE("the real class trees carry the combo sequences the original's table n
                                            {"SOR", Action::ComboSor, false},
                                            {"JES", Action::ComboJes, false}}};
     for (usize c = 0; c < classes.size(); ++c) {
-        const auto path = test::unpackedOrSkip(std::string("PLAYERS/") + classes[c].code +
-                                               "/ANIM/animations.json");
+        const auto path =
+            test::assetOrSkip(std::string("PLAYERS/") + classes[c].code + "/ANIM/ANIM.PS2");
         AnimationSet actions;
         REQUIRE(actions.load(path.parent_path()));
         const auto found = actions.find(classes[c].code);
@@ -1536,7 +1535,7 @@ TEST_CASE("the real class trees carry the combo sequences the original's table n
         REQUIRE(animator.comboThrown() == classes[c].thrown);
     }
     // The warrior's partner is let fly once COMBOWAR1 has played (its thirty frames).
-    const auto path = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    const auto path = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     AnimationSet actions;
     REQUIRE(actions.load(path.parent_path()));
     const auto warrior = actions.find("WAR");

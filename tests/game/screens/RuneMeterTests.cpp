@@ -80,8 +80,8 @@ TEST_CASE("runestone thermometer uses the retail nonlinear fill and crop", "[run
 }
 
 TEST_CASE("runestone finder draws both retail textures and nothing after collection",
-          "[rune-meter][unpacked]") {
-    const auto directory = test::unpackedOrSkip("STATIC/textures.json").parent_path();
+          "[rune-meter][assets]") {
+    const auto directory = test::assetOrSkip("STATIC/textures.ngc").parent_path();
     test::FakeRenderDevice device;
     TextureSet textures;
     REQUIRE(textures.load(directory));
@@ -109,9 +109,9 @@ TEST_CASE("runestone finder draws both retail textures and nothing after collect
     CHECK(device.draws.empty());
 }
 TEST_CASE("the level scene binds its authored runestone and stops the finder when it goes",
-          "[rune-meter][unpacked]") {
+          "[rune-meter][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName("G1");

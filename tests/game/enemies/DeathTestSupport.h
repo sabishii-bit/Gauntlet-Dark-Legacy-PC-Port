@@ -6,6 +6,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 
 namespace gdl::test {
 inline std::filesystem::path deathArchive() {
@@ -19,6 +20,7 @@ inline std::filesystem::path deathArchive() {
     writeFile(dir / "skin.png", kTinyPng);
     writeTextFile(dir / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(dir);
     std::string trees = R"({"trees":[)";
     for (const auto* name :
          {"DEATH1", "DEATH2", "DEATH_ARC", "DEATH_EXP", "DEATHSTATUE1", "DEATHSTATUE2"}) {

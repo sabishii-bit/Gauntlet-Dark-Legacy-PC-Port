@@ -29,9 +29,9 @@ TEST_CASE("the castle's and mines' turntables sound their turning and their stop
 }
 
 TEST_CASE("a party refused by a crystal gate is told what it wants, once a frame",
-          "[game][screens][trigger-cues][unpacked]") {
+          "[game][screens][trigger-cues][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
@@ -69,12 +69,12 @@ TEST_CASE("a party refused by a crystal gate is told what it wants, once a frame
 }
 
 TEST_CASE("Tower rear crossings keep their authored cue and upper drawbridges stay silent",
-          "[game][screens][trigger-cues][unpacked]") {
+          "[game][screens][trigger-cues][assets]") {
     const std::string_view targetName =
         GENERATE("L1CROSSING_EASY", "L1CROSSING_HARD", "L1DRAWB66", "L1DRAWB67");
     const bool crossing = targetName.starts_with("L1CROSSING");
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));

@@ -30,7 +30,6 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
     if (result.options.unpackedDirectory.empty()) {
         result.options.unpackedDirectory = desc.assetDirectory;
     }
-    bool explicitUnpacked = false;
 
     for (usize i = 0; i < args.size(); ++i) {
         const std::string_view arg = args[i];
@@ -41,20 +40,15 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
                 return fail(std::move(desc), "--assets requires a directory");
             }
             desc.assetDirectory = args[++i];
-            if (!explicitUnpacked) {
-                result.options.unpackedDirectory = desc.assetDirectory;
-            }
+            result.options.unpackedDirectory = desc.assetDirectory;
         } else if (arg == "--movie") {
             if (!hasValue) {
                 return fail(std::move(desc), "--movie requires a movie name");
             }
             result.options.playMovie = args[++i];
         } else if (arg == "--unpacked") {
-            if (!hasValue) {
-                return fail(std::move(desc), "--unpacked requires a directory");
-            }
-            result.options.unpackedDirectory = args[++i];
-            explicitUnpacked = true;
+            return fail(std::move(desc),
+                        "--unpacked is retired; use --assets with the original Gauntlet directory");
         } else if (arg == "--data") {
             if (!hasValue) {
                 return fail(std::move(desc), "--data requires a directory");
@@ -105,7 +99,6 @@ const char* usageText() {
     return "gauntlet [options]\n"
            "  --assets <dir>     retail Gauntlet tree for gameplay, movies and streams\n"
            "  --movie <name>     play one VQ movie (e.g. opening) and quit\n"
-           "  --unpacked <dir>   explicit legacy gdlunpack gameplay override (optional)\n"
            "  --data <dir>       configuration and text directory (default beside executable)\n"
            "  --title            start at the title screen instead of the intro movies\n"
            "  --demo             preview a level flyby without the title wait\n"

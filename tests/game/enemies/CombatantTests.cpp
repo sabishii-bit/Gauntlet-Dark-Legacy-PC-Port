@@ -14,6 +14,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Bosses.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/Critters.h"
@@ -46,6 +47,7 @@ std::filesystem::path familyAssets(s32 readyInterrupt = 60, u32 shield = 0) {
         writeFile(archive / "textures/skin.png", test::kTinyPng);
         writeTextFile(archive / "textures.json", R"({"bitmaps":[
           {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+        test::convertModelFixture(archive);
         writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
           "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
           "sequences":[{"name":"STEP","frames":3}]}]})");
@@ -345,6 +347,7 @@ TEST_CASE("a great one lies its shadow only when its type says so", "[game][comb
     writeTextFile(archive / "objects.json", R"({"objects":[
       {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1},
       {"index":1,"name":"SHADOW1L1","file":"models/flat.obj","meshTriangles":1}]})");
+    test::convertModelFixture(archive);
     for (const u32 typeFlags : {0U, 1U}) {
         CAPTURE(typeFlags);
         writeTextFile(root / "critter/GOLEM.json",
@@ -786,10 +789,10 @@ TEST_CASE("boss replacement retains borrowed archives and undrained death events
     REQUIRE(boss.archive() == djinnArchive);
     REQUIRE(boss.view().health == 100);
 }
-TEST_CASE("bosses load elemental armor from exported retail types", "[game][items][unpacked]") {
-    const auto dragon = test::unpackedOrSkip("critter/DRAGON.json");
-    const auto lich = test::unpackedOrSkip("critter/LICH.json");
-    const auto chimera = test::unpackedOrSkip("critter/CHIMERA.json");
+TEST_CASE("bosses load elemental armor from exported retail types", "[game][items][assets]") {
+    const auto dragon = test::assetOrSkip("CRITTER/DRAGON.WAD");
+    const auto lich = test::assetOrSkip("CRITTER/LICH.WAD");
+    const auto chimera = test::assetOrSkip("CRITTER/CHIMERA.WAD");
     CritterData data;
     REQUIRE(data.load(dragon));
     CHECK(data.shieldFlags() == 1);

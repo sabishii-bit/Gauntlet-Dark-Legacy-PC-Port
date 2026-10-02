@@ -2,9 +2,6 @@
 
 #include <exception>
 
-#include <nlohmann/json.hpp>
-
-#include "engine/assets/ObjModel.h"
 #include "engine/core/Assert.h"
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
@@ -17,12 +14,6 @@
 
 namespace gdl {
 
-namespace {
-
-constexpr std::string_view kManifestName = "objects.json";
-
-} // namespace
-
 bool ModelSet::load(const std::filesystem::path& directory) {
     m_entries.clear();
     m_byName.clear();
@@ -32,32 +23,8 @@ bool ModelSet::load(const std::filesystem::path& directory) {
     if (const auto file = AssetLocator(directory).find("objects.ngc")) {
         return loadNative(*file);
     }
-    const std::filesystem::path manifest = directory / kManifestName;
-    try {
-        const std::vector<u8> bytes = readFile(manifest);
-        const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
-        for (const nlohmann::json& object : root.at("objects")) {
-            ModelSetEntry entry;
-            entry.name = normalizeAssetName(object.value("name", std::string{}));
-            if (object.contains("file")) {
-                entry.file = directory / object.at("file").get<std::string>();
-            }
-            entry.triangles = object.value("meshTriangles", 0U);
-            m_entries.push_back(std::move(entry));
-        }
-    } catch (const std::exception& e) {
-        log::warn("Model set {}: {}", manifest.string(), e.what());
-        m_entries.clear();
-        return false;
-    }
-    for (u32 i = 0; i < m_entries.size(); ++i) {
-        if (!m_entries[i].name.empty()) {
-            m_byName.try_emplace(m_entries[i].name, i);
-        }
-    }
-    m_meshes.resize(m_entries.size());
-    m_loaded.assign(m_entries.size(), false);
-    return !m_entries.empty();
+    log::warn("Model set {}: objects.ngc is missing", directory.string());
+    return false;
 }
 
 const ModelSetEntry& ModelSet::entry(u32 index) const {
@@ -75,21 +42,16 @@ std::optional<u32> ModelSet::find(std::string_view name) const {
 
 const Mesh& ModelSet::mesh(u32 index) {
     GDL_VERIFY(index < m_entries.size(), "model index out of range");
+    if (!m_native) {
+        throw FormatError("model archive is not loaded");
+    }
     if (!m_loaded[index]) {
-        if (m_native) {
-            Mesh decoded;
-            for (const auto& sub : m_native->objects()[index].subObjects) {
-                formats::decodeGeometryStream(sub.geometry, sub.textureIndex, sub.lightmapIndex,
-                                              decoded);
-            }
-            m_meshes[index] = std::move(decoded);
-            m_loaded[index] = true;
-            return m_meshes[index];
+        Mesh decoded;
+        for (const auto& sub : m_native->objects()[index].subObjects) {
+            formats::decodeGeometryStream(sub.geometry, sub.textureIndex, sub.lightmapIndex,
+                                          decoded);
         }
-        if (m_entries[index].file.empty()) {
-            throw FileError("object " + m_entries[index].name + " has no mesh file");
-        }
-        m_meshes[index] = loadObj(m_entries[index].file);
+        m_meshes[index] = std::move(decoded);
         m_loaded[index] = true;
     }
     return m_meshes[index];

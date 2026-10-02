@@ -76,8 +76,8 @@ TEST_CASE("the elements are named by the player colours they belong to", "[game]
 }
 
 TEST_CASE("the great ones' affinities come from their data and meet the element rules",
-          "[game][damage-types][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path();
+          "[game][damage-types][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path();
     // The dragon shrugs off fire and fears lightning; the lich is acid's and fears light; the
     // golems take half of magic; Skorne's temple form is beyond magic altogether.
     struct Case {
@@ -96,7 +96,7 @@ TEST_CASE("the great ones' affinities come from their data and meet the element 
     for (const Case& c : kCases) {
         CAPTURE(c.name, c.hitFlags);
         CritterData data;
-        REQUIRE(data.load(root / (std::string{c.name} + ".json")));
+        REQUIRE(data.load(root / (std::string{c.name} + ".WAD")));
         REQUIRE(data.shieldFlags() == c.shield);
         const f32 plain = std::max(20.0f - data.armor(), 0.0f);
         const Damage modified =
@@ -106,9 +106,8 @@ TEST_CASE("the great ones' affinities come from their data and meet the element 
     }
 }
 
-TEST_CASE("the classes' strike rows carry only the four elements",
-          "[game][damage-types][unpacked]") {
-    const auto root = test::unpackedOrSkip("pdata/WAR.json").parent_path();
+TEST_CASE("the classes' strike rows carry only the four elements", "[game][damage-types][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path();
     ClassDataSet classes;
     REQUIRE(classes.load(root));
     usize elemental = 0;

@@ -124,9 +124,9 @@ TEST_CASE("tower scenarios distinguish displayed collections from new finds",
 }
 
 TEST_CASE("all authored tower pieces retain settled meshes at their own world anchors",
-          "[game][tower-relics][unpacked]") {
+          "[game][tower-relics][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
@@ -224,9 +224,9 @@ TEST_CASE("all authored tower pieces retain settled meshes at their own world an
 }
 
 TEST_CASE("tower return routes relic ceremonies before releasing player controls",
-          "[game][tower-relics][unpacked]") {
+          "[game][tower-relics][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));

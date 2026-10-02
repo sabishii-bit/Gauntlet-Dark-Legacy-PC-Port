@@ -17,6 +17,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/combat/Damage.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/players/PowerupEffects.h"
@@ -41,6 +42,7 @@ void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":")" + prefix + R"(1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":2,"rate":30},
@@ -53,11 +55,11 @@ void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
 }
 
 TEST_CASE("battlefield entrance tower placements keep their stationary archer algorithm",
-          "[level-opponents][battlefield-archer][unpacked]") {
+          "[level-opponents][battlefield-archer][assets]") {
     const auto* name = GENERATE("H1", "H3");
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELH1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip(std::string{"LEVELS/LEVEL"} + name + "/world.json");
+        test::assetOrSkip("LEVELS/LEVELH1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip(std::string{"LEVELS/LEVEL"} + name + "/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -83,11 +85,9 @@ TEST_CASE("battlefield entrance tower placements keep their stationary archer al
 }
 
 TEST_CASE("an archer's world hit detonates explosive scenery once without player credit",
-          "[level-opponents][projectile-impact][world-destruction][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[level-opponents][projectile-impact][world-destruction][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     const auto stage = test::sampleLevel("enemy-world-shot");
     writeTextFile(stage / "world.json", R"({"objects":[
         {"name":"WALL","position":[0,0,0],"next":-1,"child":-1,
@@ -207,6 +207,7 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     writeTextFile(gem / "animations.json", R"({"trees":[{"name":"GETGEMORANGE",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"FLASH","frames":30,"rate":30}]}]})");
+    test::convertModelFixture(gem);
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.powerups().load(gem));
@@ -291,9 +292,8 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
 }
 
 TEST_CASE("enemy melee plays a dedicated impact on each contact including warded blows",
-          "[level-opponents][enemy-melee][unpacked]") {
-    const auto assets =
-        test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path().parent_path().parent_path();
+          "[level-opponents][enemy-melee][assets]") {
+    const auto assets = test::assetOrSkip("audio/COMMON.vbk").parent_path().parent_path();
     const bool warded = GENERATE(false, true);
     const s32 tier = GENERATE(1, 3);
     const auto root = test::scratchDirectory("enemy-impact-sound");
@@ -352,11 +352,11 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
 }
 
 TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual arena",
-          "[level-opponents][garm][unpacked]") {
+          "[level-opponents][garm][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELH4/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
-    test::unpackedOrSkip("MONSTERS/GRM/animations.json");
+        test::assetOrSkip("LEVELS/LEVELH4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GRM/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -410,12 +410,12 @@ TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual
 }
 
 TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",
-          "[game][screens][level-opponents][chimera][unpacked]") {
+          "[game][screens][level-opponents][chimera][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("critter/CHIMERA.json");
-    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
-    test::unpackedOrSkip("ITEMS/LEVELA5/objects.json");
+        test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("CRITTER/CHIMERA.WAD");
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
+    test::assetOrSkip("ITEMS/LEVELA5/objects.ngc");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -451,10 +451,10 @@ TEST_CASE("Chimera arena binds and updates head health meters through the oppone
 }
 
 TEST_CASE("a blast reaches a generator once, unless its blow is slight enough to come again",
-          "[level-opponents][generators][unpacked]") {
+          "[level-opponents][generators][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELE/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -488,11 +488,11 @@ TEST_CASE("a blast reaches a generator once, unless its blow is slight enough to
 }
 
 TEST_CASE("Temple generator damage plays realm particles and each accepted hit sounds",
-          "[level-opponents][generators][enemy-feedback][unpacked]") {
+          "[level-opponents][generators][enemy-feedback][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
-    test::unpackedOrSkip("audio/CATHEDRAL/sounds.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELE/ANIM.PS2");
+    test::assetOrSkip("AUDIO/CATH.VBK");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -565,9 +565,9 @@ TEST_CASE("Temple generator damage plays realm particles and each accepted hit s
 }
 
 TEST_CASE("a damaged gargoyle's authored roar reaches the battlefield sound bank and mixer",
-          "[level-opponents][gargoyle-roar][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GAR_EAGL.json").parent_path().parent_path();
-    test::unpackedOrSkip("audio/BATTLE/sounds.json");
+          "[level-opponents][gargoyle-roar][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    test::assetOrSkip("audio/BATTLE.vbk");
     const auto stage = test::sampleLevel("gargoyle-roar-audio");
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -623,10 +623,10 @@ TEST_CASE("a damaged gargoyle's authored roar reaches the battlefield sound bank
 }
 
 TEST_CASE("boss arenas propagate elemental scaling to summoned swarm enemies",
-          "[level-opponents][damage][unpacked]") {
+          "[level-opponents][damage][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -664,6 +664,7 @@ TEST_CASE("standing generators block player movement and release it when destroy
     writeTextFile(root / "MONSTERS/GRU/objects.json", R"({"objects":[
       {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
       {"index":1,"name":"GEN_GRU1L1","file":"body.obj","meshTriangles":1}]})");
+    test::convertModelFixture(root / "MONSTERS/GRU");
     writeTextFile(root / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
       "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
         "xSize":3,"zSize":1,"hitPoints":10}],
@@ -746,10 +747,10 @@ TEST_CASE("the opponent movement recheck preserves player wall clearance",
 }
 
 TEST_CASE("mountain creatures stop a player in melee range and release collision on death",
-          "[level-opponents][collision][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELB/animations.json");
-    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+          "[level-opponents][collision][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELB/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelOpponents opponents;
     for (const auto kind : {CombatantKind::Golem, CombatantKind::Gargoyle}) {
@@ -786,9 +787,9 @@ TEST_CASE("mountain creatures stop a player in melee range and release collision
 }
 
 TEST_CASE("the town's IT stands for a party of three, with no body of its own",
-          "[level-opponents][it][unpacked]") {
+          "[level-opponents][it][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG3/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG3/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -822,9 +823,9 @@ TEST_CASE("the town's IT stands for a party of three, with no body of its own",
 }
 
 TEST_CASE("Trenches placed archers keep firing after their first arrow",
-          "[level-opponents][battle-archer][unpacked]") {
+          "[level-opponents][battle-archer][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELH1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELH1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -872,10 +873,10 @@ TEST_CASE("Trenches placed archers keep firing after their first arrow",
 }
 
 TEST_CASE("the placed enemies stand only once the camera comes to see them",
-          "[level-opponents][unpacked]") {
+          "[level-opponents][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -899,12 +900,14 @@ TEST_CASE("the placed enemies stand only once the camera comes to see them",
     nowhere.forward = Vec3{0.0f, -1.0f, 0.0f};
     opponents.watch(nowhere, nowhere.position);
     CHECK(opponents.pendingPlacements() == waiting);
-    // Over one placement, looking down at it from close by: it stands, and the rest wait.
+    // Over a one-player grunt, looking down from close by: it stands, and the rest wait.
+    // The first placement is Death, whose native archive makes it a touch-woken statue.
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
     std::optional<Vec3> spot;
     for (const ItemInstance& instance : world.layout().itemInstances()) {
         if (instance.info >= 0 &&
-            infos[static_cast<usize>(instance.info)].type == ItemInfo::kPlacedEnemy) {
+            infos[static_cast<usize>(instance.info)].type == ItemInfo::kPlacedEnemy &&
+            infos[static_cast<usize>(instance.info)].name == "GRU" && instance.minPlayers == 1) {
             spot = instance.position;
             break;
         }
@@ -971,11 +974,11 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
 
 TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, struck or woken "
           "by the pad at the gargoyle's feet, then come alive where they stood",
-          "[level-opponents][critter-statues][unpacked]") {
+          "[level-opponents][critter-statues][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELA/animations.json");
-    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELA/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1078,10 +1081,10 @@ TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, s
 }
 
 TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
-          "[level-opponents][carried][unpacked]") {
+          "[level-opponents][carried][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GENERAL/LEVELG/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GENERAL/LEVELG/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1170,9 +1173,9 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
 }
 
 TEST_CASE("B1 gargoyle reveals its eagle piece only after its sack lands and opens",
-          "[level-opponents][carried][gargoyle-loot][unpacked]") {
+          "[level-opponents][carried][gargoyle-loot][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELB1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELB1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1237,11 +1240,11 @@ TEST_CASE("B1 gargoyle reveals its eagle piece only after its sack lands and ope
 }
 
 TEST_CASE("Forsaken Province entrance generators breed with the placed enemy roster loaded",
-          "[level-opponents][generators][unpacked]") {
+          "[level-opponents][generators][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
-    test::unpackedOrSkip("MONSTERS/MAG/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/MAG/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1311,9 +1314,9 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
 }
 
 TEST_CASE("exit settlement credits a last-frame generator kill once without advancing combat",
-          "[shop][level-opponents][unpacked]") {
+          "[shop][level-opponents][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1367,11 +1370,11 @@ TEST_CASE("exit settlement credits a last-frame generator kill once without adva
 }
 
 TEST_CASE("Wraith entrance stops its persistent portal before the emergence effects",
-          "[game][screens][level-opponents][wraith][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELJ5/world.json");
-    test::unpackedOrSkip("ITEMS/LEVELJ5/objects.json");
+          "[game][screens][level-opponents][wraith][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/WRAITH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELJ5/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELJ5/objects.ngc");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("J5");
@@ -1427,11 +1430,11 @@ TEST_CASE("Wraith entrance stops its persistent portal before the emergence effe
 }
 
 TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstacle",
-          "[game][screens][level-opponents][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELI5/world.json");
-    test::unpackedOrSkip("ITEMS/LEVELI5/objects.json");
+          "[game][screens][level-opponents][yeti][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELI5/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELI5/objects.ngc");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("I5");
@@ -1535,11 +1538,11 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
 }
 
 TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
-          "[game][screens][level-opponents][plague][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/PBOSS.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/PBOSS/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELK5/world.json");
-    test::unpackedOrSkip("ITEMS/LEVELK5/objects.json");
+          "[game][screens][level-opponents][plague][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELK5/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELK5/objects.ngc");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("K5");
@@ -1868,9 +1871,9 @@ TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath
 }
 
 TEST_CASE("the level keeps boss effects on their animated node or full model root",
-          "[game][screens][level-opponents][breath][boss-effects][stop-time][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+          "[game][screens][level-opponents][breath][boss-effects][stop-time][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
     s32 kind = 34;
     f32 distance = 25;
     bool rootEffect = false;
@@ -1881,12 +1884,12 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
         timeStopped = true;
     }
     SECTION("Lich attack wind-up rides its elevated root") {
-        test::unpackedOrSkip("critter/LICH.json");
-        test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+        test::assetOrSkip("CRITTER/LICH.WAD");
+        test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
         kind = 41;
         distance = 6;
         rootEffect = true;
-        REQUIRE(lichData.load(root / "critter/LICH.json"));
+        REQUIRE(lichData.load(root / "CRITTER/LICH.WAD"));
     }
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -1947,11 +1950,11 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     REQUIRE_FALSE(effects.playing(effectId));
 }
 TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
-          "[game][screens][level-opponents][boss-effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELG5/world.json");
-    test::unpackedOrSkip("wdata/TOWN.json");
+          "[game][screens][level-opponents][boss-effects][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::assetOrSkip("WDATA/TOWN.WAD");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("G5");
@@ -2204,13 +2207,11 @@ TEST_CASE("a detonated suicide stops drawing its body but ordinary enemies retai
 }
 
 TEST_CASE("a running suicide cries audibly and scatters animated fragments when its fuse ends",
-          "[level-opponents][suicide][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ICE/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("audio/COMMON/sounds.json");
-    test::unpackedOrSkip("WEAPONS/animations.json");
+          "[level-opponents][suicide][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ICE/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("audio/COMMON.vbk");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelWorld world;
     ItemArchive weapons;
@@ -2294,11 +2295,11 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
 
 TEST_CASE("in the town a suicide leaves a poison cloud that turns through its three trees and "
           "gasses the party while it hangs",
-          "[level-opponents][suicide][unpacked]") {
+          "[level-opponents][suicide][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -2362,12 +2363,10 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
 }
 
 TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at the party",
-          "[level-opponents][death-shot][unpacked]") {
+          "[level-opponents][death-shot][assets]") {
     const Vec3 toward = GENERATE(Vec3{0, 0, 1}, Vec3{1, 0, 0}, Vec3{-0.6f, 0, -0.8f});
-    const auto root = test::unpackedOrSkip("MONSTERS/GRM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRM/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     ItemArchive weapons;

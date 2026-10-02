@@ -5,6 +5,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/SkorneArena.h"
 
 namespace {
@@ -27,6 +28,7 @@ TEST_CASE("Skorne masonry waits for cues, lifts twice, scatters and retires", "[
     ModelSet models;
     TextureSet textures;
     test::FakeRenderDevice device;
+    test::convertModelFixture(directory);
     REQUIRE(layout.load(directory));
     REQUIRE(models.load(directory));
     REQUIRE(textures.load(directory));
@@ -62,9 +64,9 @@ TEST_CASE("Skorne masonry waits for cues, lifts twice, scatters and retires", "[
     REQUIRE(arena.phase() == 0);
 }
 
-TEST_CASE("altar entrance loads all twenty-two loose masonry meshes", "[skorne][unpacked]") {
-    const auto directory = test::unpackedOrSkip("LEVELS/LEVELE2/world.json").parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELE2/objects.json");
+TEST_CASE("altar entrance loads all twenty-two loose masonry meshes", "[skorne][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELE2/WORLDS.PS2").parent_path();
+    test::assetOrSkip("LEVELS/LEVELE2/objects.ngc");
     WorldLayout layout;
     ModelSet models;
     TextureSet textures;

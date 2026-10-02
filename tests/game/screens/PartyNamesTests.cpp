@@ -54,10 +54,10 @@ TEST_CASE("names show for 240 ticks as a level opens, held while play is held",
 }
 
 TEST_CASE("names are written in the initials font over the standing only",
-          "[game][screens][names][unpacked]") {
+          "[game][screens][names][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("fonts/initials.json").parent_path().parent_path();
-    test::unpackedOrSkip("STATIC/textures.json");
+        test::assetOrSkip("FONTS/initials.fnt").parent_path().parent_path();
+    test::assetOrSkip("STATIC/textures.ngc");
     test::FakeRenderDevice device;
     TextureSet statics;
     REQUIRE(statics.load(root / "STATIC"));

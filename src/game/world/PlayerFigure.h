@@ -133,10 +133,15 @@ private:
     void loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                      RenderDevice& device);
     void loadActions(const std::filesystem::path& root, const CharacterSave& save, bool enter);
+    /** Binds an owned archive's model, loading shared texture pixels only when used. */
+    bool bindModel(TreeModel& model, const TreeInfo& tree, ItemArchive& archive,
+                   RenderDevice& device);
     /** Binds `object` of `archive` as the lone node of `tree` into `model` when it changed. */
     static void bindObject(RenderDevice& device, ItemArchive& archive, std::string_view object,
                            TreeInfo& tree, TreeModel& model);
 
+    TextureSet m_sharedTextures; ///< POWERUPS textures outlive every model borrowing them
+    std::filesystem::path m_sharedTextureDirectory;
     ItemArchive m_costumeArchive;
     AnimationSet m_actions;
     TreeModel m_model;

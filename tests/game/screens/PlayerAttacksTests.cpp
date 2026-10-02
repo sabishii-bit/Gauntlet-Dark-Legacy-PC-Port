@@ -17,7 +17,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeModelFixture.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/combat/Damage.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/players/MagicPerks.h"
@@ -67,6 +68,7 @@ std::filesystem::path turboAssets() {
         writeFile(dir / "skin.png", test::kTinyPng);
         writeTextFile(dir / "textures.json", R"({"bitmaps":[
           {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(dir);
     }
     writeTextFile(root / "MONSTERS/GRU/animations.json", R"({"trees":[{"name":"GRU1",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
@@ -111,6 +113,7 @@ void addElementalEffects(const std::filesystem::path& root) {
         writeFile(dir / "skin.png", test::kTinyPng);
         writeTextFile(dir / "textures.json", R"({"bitmaps":[
           {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(dir);
     }
     for (const auto* cls : {"WAR", "WIZ"}) {
         writeTextFile(root / "PLAYERS" / cls / "YEL/animations.json",
@@ -199,15 +202,15 @@ TEST_CASE("gas damage queues pain without overlapping direct choking voices",
     const auto bank = root / "audio/WAR";
     std::filesystem::create_directories(bank);
     const std::vector<s16> tone(96000, 8192);
-    writeFile(bank / "tone.wav", formats::encodeWav(tone, 48000, 1));
-    writeTextFile(bank / "sounds.json", R"({"sounds":[
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {tone.begin(), tone.end()}}}};
+    test::writeNativeSoundBank(bank, R"({"sounds":[
       {"index":0,"name":"S_WARDIE1","id":0,"volume":127,"sequence":[{"sample":0}]},
       {"index":1,"name":"S_WARPOISON","id":1,"volume":127,"sequence":[{"sample":0}]},
       {"index":2,"name":"S_WARPAIN1","id":2,"volume":127,"sequence":[{"sample":0}]},
       {"index":3,"name":"S_WARPAIN2","id":3,"volume":127,"sequence":[{"sample":0}]},
       {"index":4,"name":"S_WARPAIN3","id":4,"volume":127,"sequence":[{"sample":0}]},
-      {"index":5,"name":"S_WARPAIN4","id":5,"volume":127,"sequence":[{"sample":0}]}],
-      "samples":[{"index":0,"file":"tone.wav"}]})");
+      {"index":5,"name":"S_WARPAIN4","id":5,"volume":127,"sequence":[{"sample":0}]}]})",
+                               bankSamples);
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;
@@ -237,15 +240,15 @@ TEST_CASE("weapon throw audio follows the worn amulet or special shot",
     const auto bank = root / "audio/COMMON";
     std::filesystem::create_directories(bank);
     const std::vector<s16> tone(48000, 8192);
-    writeFile(bank / "tone.wav", formats::encodeWav(tone, 48000, 1));
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {tone.begin(), tone.end()}}}};
     const std::array names{"S_AMULETFIRE", "S_AMULETLIGHTNI", "S_AMULETLIGHT", "S_AMULETACID",
                            "S_SUPERSHOT"};
     for (usize i = 0; i < names.size(); ++i) {
         CAPTURE(i);
-        writeTextFile(bank / "sounds.json",
-                      std::string{R"({"sounds":[{"index":0,"name":")"} + names[i] +
-                          R"(","id":0,"volume":127,"sequence":[{"sample":0}]}],
-          "samples":[{"index":0,"file":"tone.wav"}]})");
+        test::writeNativeSoundBank(bank,
+                                   std::string{R"({"sounds":[{"index":0,"name":")"} + names[i] +
+                                       R"(","id":0,"volume":127,"sequence":[{"sample":0}]}]})",
+                                   bankSamples);
         AudioMixer mixer(48000);
         SoundPlayer sounds(mixer);
         Fixture f;
@@ -412,10 +415,10 @@ TEST_CASE("flying turbo strikes reach short enemies without dealing damage every
     }
 }
 
-TEST_CASE("every exported class can damage enemies with both turbo attacks",
-          "[game][screens][player-attacks][turbo-roster][unpacked]") {
-    const auto root = test::unpackedOrSkip("pdata/JES.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+TEST_CASE("every native class can damage enemies with both turbo attacks",
+          "[game][screens][player-attacks][turbo-roster][assets]") {
+    const auto root = test::assetOrSkip("PDATA/JES.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
     for (s32 character = 0; character < kSumnerClass; ++character) {
         CAPTURE(classCode(character));
         for (const auto deed : {PlayerDeed::TurboStrong, PlayerDeed::TurboFull}) {
@@ -462,10 +465,10 @@ TEST_CASE("every exported class can damage enemies with both turbo attacks",
 }
 
 TEST_CASE("Sonic Boom reaches distant enemies during the clap rather than the wind-up",
-          "[game][screens][player-attacks][sonic-timing][unpacked]") {
-    const auto root = test::unpackedOrSkip("pdata/JES.json").parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/SFXYEL/animations.json");
-    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+          "[game][screens][player-attacks][sonic-timing][assets]") {
+    const auto root = test::assetOrSkip("PDATA/JES.WAD").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/SFXYEL/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
     for (const s32 hz : {30, 60, 120}) {
         CAPTURE(hz);
         Fixture f;
@@ -528,11 +531,11 @@ TEST_CASE("Sonic Boom reaches distant enemies during the clap rather than the wi
 }
 
 TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
-          "[game][screens][player-attacks][turbo-roster][unpacked]") {
-    const auto root = test::unpackedOrSkip("pdata/JES.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
-    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
-    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+          "[game][screens][player-attacks][turbo-roster][assets]") {
+    const auto root = test::assetOrSkip("PDATA/JES.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
     Fixture f;
     REQUIRE(f.classes.load(root / "pdata"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
@@ -580,9 +583,9 @@ TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
 }
 
 TEST_CASE("retail item attacks play authored effects and spend one charge on the animation event",
-          "[game][items][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+          "[game][items][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     for (const u32 mask : {powerup::kFireBreath, powerup::kAcidBreath, powerup::kLightningBreath,
                            powerup::kSkorneHorns, powerup::kSkorneMask, powerup::kThunderHammer}) {
         Fixture f;
@@ -632,11 +635,9 @@ TEST_CASE("retail item attacks play authored effects and spend one charge on the
 }
 
 TEST_CASE("potion magic damages survivors once and drives knockdown through get-up",
-          "[game][screens][player-attacks][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][screens][player-attacks][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     EnemyScales scales;
@@ -687,11 +688,11 @@ TEST_CASE("potion magic damages survivors once and drives knockdown through get-
 }
 
 TEST_CASE("scene projectile updates present retail world impacts once and preserve potion bursts",
-          "[game][screens][player-attacks][projectile-impact][unpacked]") {
+          "[game][screens][player-attacks][projectile-impact][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
-    test::unpackedOrSkip("audio/COMMON/sounds.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    test::assetOrSkip("audio/COMMON.vbk");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;
@@ -743,10 +744,10 @@ TEST_CASE("scene projectile updates present retail world impacts once and preser
 }
 
 TEST_CASE("Temple wall projectile hits remove the mesh and collision through the scene dispatch",
-          "[game][screens][player-attacks][walls][unpacked]") {
+          "[game][screens][player-attacks][walls][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("audio/COMMON/sounds.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("audio/COMMON.vbk");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;
@@ -838,11 +839,11 @@ TEST_CASE("arena cover is not an aim target but still intercepts thrown weapons"
 }
 
 TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the safe rocks by",
-          "[game][screens][player-attacks][walls][melee][unpacked]") {
+          "[game][screens][player-attacks][walls][melee][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -898,9 +899,9 @@ TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the sa
 }
 
 TEST_CASE("a thrown weapon stops at a chest and does it no harm",
-          "[game][screens][player-attacks][item-stops][unpacked]") {
+          "[game][screens][player-attacks][item-stops][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -937,9 +938,9 @@ TEST_CASE("a thrown weapon stops at a chest and does it no harm",
 }
 
 TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
-          "[game][screens][player-attacks][triggers][unpacked]") {
+          "[game][screens][player-attacks][triggers][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELC3/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELC3/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1206,12 +1207,10 @@ TEST_CASE("player attacks clear transient state and safely ignore closed or miss
     REQUIRE(f.players[0].actor.save().progress().inventory.potions.size() == 1);
 }
 TEST_CASE("close attacks resolve to melee while distant attacks still throw",
-          "[game][screens][player-attacks][melee][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+          "[game][screens][player-attacks][melee][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     Fixture f;
     f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
     REQUIRE(f.players[0].figure);
@@ -1243,10 +1242,10 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
 }
 
 TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws him off",
-          "[game][screens][player-attacks][death][unpacked]") {
+          "[game][screens][player-attacks][death][assets]") {
     const s32 tier = GENERATE(1, 2);
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     Fixture f;
@@ -1323,14 +1322,12 @@ TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws 
 }
 
 TEST_CASE("fire and lightning shields harm the creature their bearer stands against",
-          "[game][screens][player-attacks][shield][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
-    test::unpackedOrSkip("WEAPONS/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+          "[game][screens][player-attacks][shield][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("G1");
@@ -1384,11 +1381,9 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
 }
 
 TEST_CASE("the melee sees what is near at any bearing, within a swing or a step",
-          "[game][screens][player-attacks][melee][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][screens][player-attacks][melee][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     auto& enemies = f.opponents.enemies();
     enemies.open(f.device, root, nullptr, 4, {}, 7);
@@ -1432,15 +1427,13 @@ TEST_CASE("the melee sees what is near at any bearing, within a swing or a step"
 }
 
 TEST_CASE("a melee contact routes damage sound and impact once through level opponents",
-          "[game][screens][player-attacks][melee][enemy-feedback][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
-    test::unpackedOrSkip("WEAPONS/animations.json");
-    test::unpackedOrSkip("audio/TOWN/sounds.json");
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+          "[game][screens][player-attacks][melee][enemy-feedback][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    test::assetOrSkip("audio/TOWN.vbk");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1517,11 +1510,9 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     f.audio.close();
 }
 TEST_CASE("potion shields harm enemies behind the bearer and stop at expiration",
-          "[game][items][player-attacks][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][items][player-attacks][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& enemies = f.opponents.enemies();
@@ -1550,11 +1541,9 @@ TEST_CASE("potion shields harm enemies behind the bearer and stop at expiration"
     f.opponents.close();
 }
 TEST_CASE("weapon item flags survive the flight and produce elemental enemy feedback",
-          "[game][items][player-attacks][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][items][player-attacks][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& enemies = f.opponents.enemies();
@@ -1585,9 +1574,9 @@ TEST_CASE("weapon item flags survive the flight and produce elemental enemy feed
     f.opponents.close();
 }
 TEST_CASE("player projectiles sever the contacted Chimera head through encounter hit routing",
-          "[game][screens][player-attacks][chimera][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+          "[game][screens][player-attacks][chimera][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/CHIMERA.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
     Fixture f;
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& bosses = f.opponents.bosses();
@@ -1618,11 +1607,11 @@ TEST_CASE("player projectiles sever the contacted Chimera head through encounter
     f.opponents.close();
 }
 TEST_CASE("explosions shatter world potions into ownerless magic without consuming inventory",
-          "[game][screens][player-attacks][shattered-potion][unpacked]") {
+          "[game][screens][player-attacks][shattered-potion][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1698,10 +1687,10 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
 }
 
 TEST_CASE("a thrown weapon breaks a bottle lying about: its magic and the thrower's both go off",
-          "[game][screens][player-attacks][shot-potion][unpacked]") {
+          "[game][screens][player-attacks][shot-potion][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1746,10 +1735,10 @@ TEST_CASE("a thrown weapon breaks a bottle lying about: its magic and the throwe
 
 TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but breaks one that "
           "holds something",
-          "[game][screens][player-attacks][magic-immunity][unpacked]") {
+          "[game][screens][player-attacks][magic-immunity][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1848,13 +1837,13 @@ usize firstShownTrap(const PerkLevel& f) {
 
 std::filesystem::path perkRoot() {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     return root;
 }
 
 TEST_CASE("the warriors' magic turns the junk in a gold chest into silver, and from 50 gold",
-          "[game][screens][player-attacks][magic-perks][unpacked]") {
+          "[game][screens][player-attacks][magic-perks][assets]") {
     const auto root = perkRoot();
     for (const auto& [level, treasure, deed] :
          {std::tuple{30, "TREAS_SILVER", MagicPerkDeed::JunkToSilver},
@@ -1883,7 +1872,7 @@ TEST_CASE("the warriors' magic turns the junk in a gold chest into silver, and f
 }
 
 TEST_CASE("the wizards' magic cleanses spoiled fruit, and from 50 spoiled meat, in barrels",
-          "[game][screens][player-attacks][magic-perks][unpacked]") {
+          "[game][screens][player-attacks][magic-perks][assets]") {
     const auto root = perkRoot();
     for (const s32 level : {30, 50}) {
         CAPTURE(level);
@@ -1920,7 +1909,7 @@ TEST_CASE("the wizards' magic cleanses spoiled fruit, and from 50 spoiled meat, 
 }
 
 TEST_CASE("the valkyries' magic stops traps, and from 50 leaves them disarmed",
-          "[game][screens][player-attacks][magic-perks][unpacked]") {
+          "[game][screens][player-attacks][magic-perks][assets]") {
     const auto root = perkRoot();
     {
         PerkLevel f(root, "G1", "VAL", 30);
@@ -1940,9 +1929,9 @@ TEST_CASE("the valkyries' magic stops traps, and from 50 leaves them disarmed",
 }
 
 TEST_CASE("the archers' magic shows up secret walls, and from 50 brings them down",
-          "[game][screens][player-attacks][magic-perks][walls][unpacked]") {
+          "[game][screens][player-attacks][magic-perks][walls][assets]") {
     const auto root = perkRoot();
-    test::unpackedOrSkip("LEVELS/LEVELE1/world.json");
+    test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
     {
         PerkLevel f(root, "E1", "ARC", 30);
         const auto& walls = f.world.walls();
@@ -1960,7 +1949,7 @@ TEST_CASE("the archers' magic shows up secret walls, and from 50 brings them dow
 }
 
 TEST_CASE("a potion shield carries the perk too, and spares the plain barrels",
-          "[game][screens][player-attacks][magic-perks][unpacked]") {
+          "[game][screens][player-attacks][magic-perks][assets]") {
     const auto root = perkRoot();
     PerkLevel f(root, "G1", "VAL", 30);
     const usize trap = firstShownTrap(f);
@@ -1992,7 +1981,7 @@ TEST_CASE("a potion shield carries the perk too, and spares the plain barrels",
 }
 
 TEST_CASE("magic under level 25 carries no perk",
-          "[game][screens][player-attacks][magic-perks][unpacked]") {
+          "[game][screens][player-attacks][magic-perks][assets]") {
     const auto root = perkRoot();
     PerkLevel f(root, "G1", "VAL", 24);
     const usize trap = firstShownTrap(f);
@@ -2002,10 +1991,10 @@ TEST_CASE("magic under level 25 carries no perk",
 }
 
 TEST_CASE("a wave of potion magic reaches a shut chest and makes an apple of Death in it",
-          "[game][screens][player-attacks][death-chest][unpacked]") {
+          "[game][screens][player-attacks][death-chest][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -2034,9 +2023,9 @@ TEST_CASE("a wave of potion magic reaches a shut chest and makes an apple of Dea
 }
 
 TEST_CASE("ownerless potions retain their element and cycle only unspecified colors",
-          "[game][screens][player-attacks][shattered-potion][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("audio/COMMON/sounds.json");
+          "[game][screens][player-attacks][shattered-potion][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("audio/COMMON.vbk");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;

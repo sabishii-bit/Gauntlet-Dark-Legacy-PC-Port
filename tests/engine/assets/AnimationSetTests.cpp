@@ -178,8 +178,8 @@ TEST_CASE("a missing or malformed animation manifest fails to load", "[assets][a
     REQUIRE_FALSE(set.load(dir));
 }
 
-TEST_CASE("the unpacked powerups define the menu arrow tree", "[assets][animation][unpacked]") {
-    const auto dir = test::unpackedOrSkip("POWERUPS/animations.json").parent_path();
+TEST_CASE("the native powerups define the menu arrow tree", "[assets][animation]") {
+    const auto dir = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path();
     AnimationSet set;
     REQUIRE(set.load(dir));
     const auto index = set.find("ICON_ARROW");
@@ -187,9 +187,9 @@ TEST_CASE("the unpacked powerups define the menu arrow tree", "[assets][animatio
     REQUIRE(set.tree(*index).nodes.size() == 9);
 }
 
-TEST_CASE("the unpacked lich's effects key their texture nodes to their sequences' frames",
-          "[assets][animation][unpacked]") {
-    const auto dir = test::unpackedOrSkip("MONSTERS/LICH/animations.json").parent_path();
+TEST_CASE("the native lich's effects key their texture nodes to their sequences' frames",
+          "[assets][animation]") {
+    const auto dir = test::assetOrSkip("MONSTERS/LICH/ANIM.PS2").parent_path();
     AnimationSet set;
     REQUIRE(set.load(dir));
     // The axe's glow: one texture node scrolling the caustic texture from the sequence's

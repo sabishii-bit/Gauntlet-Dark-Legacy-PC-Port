@@ -21,12 +21,10 @@ using Catch::Approx;
 constexpr f32 kStep = 1.0f / 30.0f;
 
 TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on request",
-          "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("ITEMS/LEVELL/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
+          "[game][world][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("ITEMS/LEVELL/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     test::FakeRenderDevice device;

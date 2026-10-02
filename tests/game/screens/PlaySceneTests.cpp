@@ -65,10 +65,7 @@ bool awaitingEntrance(const PlayScene& scene) {
 }
 
 std::filesystem::path unpackedRoot() {
-    return test::unpackedOrSkip("LEVELS/LEVELL1/collision.json")
-        .parent_path()
-        .parent_path()
-        .parent_path();
+    return test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
 }
 
 TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
@@ -89,9 +86,9 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
 }
 
 TEST_CASE("Temple organist remains audible over three loops in the scenario scene",
-          "[game][screens][organist-loop][unpacked]") {
+          "[game][screens][organist-loop][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELE1/world.json");
+    test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName("E1");
@@ -155,7 +152,7 @@ TEST_CASE("Temple organist remains audible over three loops in the scenario scen
 }
 
 TEST_CASE("normal attack input emits visible Super Shot streaks on successive shots",
-          "[game][screens][super-shot-scene][unpacked]") {
+          "[game][screens][super-shot-scene][assets]") {
     const auto root = unpackedRoot();
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/level-g1-healing-knight.json");
@@ -209,10 +206,10 @@ TEST_CASE("normal attack input emits visible Super Shot streaks on successive sh
 }
 
 TEST_CASE("Temple floor pickups can be switched off through mapped D-pad presses",
-          "[game][screens][temple-selector][unpacked]") {
+          "[game][screens][temple-selector][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/GRE/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/GRE/ANIM.PS2");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName("E1");
@@ -276,9 +273,9 @@ TEST_CASE("Temple floor pickups can be switched off through mapped D-pad presses
 }
 
 TEST_CASE("sparse party ids keep their state together across harm and scene reopening",
-          "[game][screens][game-over][unpacked]") {
+          "[game][screens][game-over][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -426,7 +423,7 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
 }
 
 TEST_CASE("the party enters the tower at its entrance and walks under control",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -584,7 +581,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE((animator->action() == PlayerAnimator::Action::Run1 ||
              animator->action() == PlayerAnimator::Action::Run2));
     // Each half cycle of running sets a foot down on the stone.
-    if (std::filesystem::exists(root / "audio/COMMON/sounds.json")) {
+    if (AssetLocator(root).find("audio/COMMON.vbk")) {
         REQUIRE(mostVoices > (hasStream ? 1U : 0U));
     }
     REQUIRE(scene.animator(1) == nullptr);
@@ -617,7 +614,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
 }
 
 TEST_CASE("a scenario's options place the party and skip the welcome",
-          "[game][screens][tower-lights][unpacked]") {
+          "[game][screens][tower-lights][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -725,7 +722,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
 }
 
 TEST_CASE("the tower tells a short party what a gate wants and congratulates a ready one",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -866,7 +863,7 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
 }
 
 TEST_CASE("a character takes what lies in its way by the original's rules",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -915,10 +912,10 @@ TEST_CASE("a character takes what lies in its way by the original's rules",
 
 TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder's, and a "
           "scroll is read where it lies",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
-    test::unpackedOrSkip("text/scroll_e.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::assetOrSkip("TEXT/scroll_e.rom");
     const GameConfig config;
     StringTable strings;
     strings.load(test::dataDirectory() / "text", config.text.language);
@@ -983,9 +980,9 @@ TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder'
 }
 
 TEST_CASE("tower play does not consume the first level's gameplay lessons",
-          "[game][screens][travel][unpacked]") {
+          "[game][screens][travel][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
@@ -1025,9 +1022,9 @@ TEST_CASE("tower play does not consume the first level's gameplay lessons",
 }
 
 TEST_CASE("the whole party on one of the tower's portals travels to the level it names",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1127,13 +1124,13 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
 }
 
 TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
-          "[game][screens][unpacked][portal-travel]") {
+          "[game][screens][assets][portal-travel]") {
     const std::string stage = GENERATE(std::string{"E1"}, std::string{"F1"});
     const std::string arena = stage == "E1" ? "E2" : "F2";
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVEL" + stage + "/world.json");
-    test::unpackedOrSkip("LEVELS/LEVEL" + arena + "/world.json");
-    test::unpackedOrSkip("audio/COMMON/sounds.json");
+    test::assetOrSkip("LEVELS/LEVEL" + stage + "/WORLDS.PS2");
+    test::assetOrSkip("LEVELS/LEVEL" + arena + "/WORLDS.PS2");
+    test::assetOrSkip("audio/COMMON.vbk");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1181,9 +1178,9 @@ TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
 }
 
 TEST_CASE("in the fields a key opens a chest, which gives up what it held",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1261,10 +1258,10 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
 }
 
 TEST_CASE("in the fields harm is the level's own: help is given, barrels break, the fallen wait",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
-    test::unpackedOrSkip("text/english.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::assetOrSkip("TEXT/english.rom");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1362,9 +1359,9 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
 }
 
 TEST_CASE("a fallen player's keys lie where they fell for the rest of the party",
-          "[game][screens][keys][unpacked]") {
+          "[game][screens][keys][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1409,9 +1406,9 @@ TEST_CASE("a fallen player's keys lie where they fell for the rest of the party"
 }
 
 TEST_CASE("the fallen are asked to wait in the tower or quit, and the last to quit ends the game",
-          "[game][screens][tower-prompt][unpacked]") {
+          "[game][screens][tower-prompt][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1479,9 +1476,9 @@ TEST_CASE("the fallen are asked to wait in the tower or quit, and the last to qu
     alone.close();
 }
 
-TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][screens][unpacked]") {
+TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1533,7 +1530,7 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
 }
 
 TEST_CASE("a party back from a realm descends from that wing's entrance camera",
-          "[game][screens][tower-return-camera][unpacked]") {
+          "[game][screens][tower-return-camera][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -1616,10 +1613,10 @@ TEST_CASE("a party back from a realm descends from that wing's entrance camera",
 }
 
 TEST_CASE("what the level tells the party is in the string table's language",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
-    test::unpackedOrSkip("text/english.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::assetOrSkip("TEXT/english.rom");
     const auto dir = test::scratchDirectory("play-scene-language");
     writeTextFile(dir / "fr.json", R"({"help.usekeyopenchest.1": "IL FAUT UNE CLEF"})");
     StringTable strings;
@@ -1654,7 +1651,7 @@ TEST_CASE("what the level tells the party is in the string table's language",
 }
 
 TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -1765,10 +1762,10 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
 }
 
 TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, a guard blocks",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
-    test::unpackedOrSkip("text/english.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::assetOrSkip("TEXT/english.rom");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -1895,9 +1892,9 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
 }
 
 TEST_CASE("every class has its turbo attacks: they show, strike and are paid for",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("PLAYERS/WAR/SFXBLU/animations.json");
+    test::assetOrSkip("PLAYERS/WAR/SFXBLU/ANIM.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -1951,9 +1948,9 @@ TEST_CASE("every class has its turbo attacks: they show, strike and are paid for
 }
 
 TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("PLAYERS/ARC/SFXBLU/animations.json");
+    test::assetOrSkip("PLAYERS/ARC/SFXBLU/ANIM.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -1996,9 +1993,9 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
 }
 
 TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill feeds the meter",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -2055,10 +2052,10 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
 
 TEST_CASE("a level gained is announced with its number and a hundred health, and a tenth "
           "level defers its costume until the tower",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("text/english.json");
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("TEXT/english.rom");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     StringTable strings;
     strings.load(test::dataDirectory() / "text", config.text.language);
@@ -2122,10 +2119,10 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
 }
 
 TEST_CASE("tower returns award permanent familiars with locked controls and persist the result",
-          "[game][screens][promotion][unpacked]") {
+          "[game][screens][promotion][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/VAL/SFXBLU/animations.json");
+    test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/VAL/SFXBLU/ANIM.PS2");
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
@@ -2192,9 +2189,9 @@ TEST_CASE("tower returns award permanent familiars with locked controls and pers
 }
 
 TEST_CASE("a character strafes with its facing held, rings itself with a potion, and is floored",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -2301,10 +2298,10 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
 
 TEST_CASE("the fields' zombies are bred from their generators, chase the party, strike it and are "
           "shot down",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -2389,10 +2386,10 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
 }
 
 TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied platform",
-          "[game][screens][camera][chimera-approach][unpacked]") {
+          "[game][screens][camera][chimera-approach][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+        test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/level-a5-chimera.json");
     REQUIRE_FALSE(scenario.tower.position.has_value());
@@ -2482,11 +2479,11 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
 }
 
 TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or handoff cut",
-          "[game][screens][camera][garm-arrival][unpacked]") {
+          "[game][screens][camera][garm-arrival][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELH4/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
-    test::unpackedOrSkip("critter/GARM.json");
+        test::assetOrSkip("LEVELS/LEVELH4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
+    test::assetOrSkip("CRITTER/GARM.WAD");
     const s32 rate = GENERATE(30, 60);
     CAPTURE(rate);
     const GameConfig config;
@@ -2537,10 +2534,10 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
 }
 
 TEST_CASE("Lich entrance uses its authored camera and seals the walkway before waking",
-          "[screens][lich-entrance][unpacked]") {
+          "[screens][lich-entrance][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG5/world.json");
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     const auto scenario =
         Scenario::load(test::dataDirectory().parent_path() / "tests/scenarios/level-g5-lich.json");
     const s32 rate = GENERATE(30, 60);
@@ -2598,17 +2595,19 @@ TEST_CASE("Lich entrance uses its authored camera and seals the walkway before w
         before = scene.viewCamera();
         scene.update(1.0 / rate, walk);
     }
+    CAPTURE(scene.actor(0)->position().x, scene.actor(0)->position().y,
+            scene.actor(0)->position().z, scene.actor(0)->radius(), scene.actor(0)->speed());
     CHECK(scene.bosses().view().awake);
     CHECK(glm::distance(before.forward(), scene.viewCamera().forward()) < 0.1f);
 }
 
 TEST_CASE("in the town's crypt the lich rises for the party, its meter over the screen, and "
           "the book of protection brought to it is thrown and takes its quarter",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG5/world.json");
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
-    test::unpackedOrSkip("critter/LICH.json");
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::assetOrSkip("CRITTER/LICH.WAD");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -2904,12 +2903,12 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
 
 TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with the strong "
           "throw, flies at the dragon and freezes it, and its death spews silver",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
-    test::unpackedOrSkip("ITEMS/LEVELB6/animations.json");
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
-    test::unpackedOrSkip("critter/DRAGON.json");
+    test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELB6/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
+    test::assetOrSkip("CRITTER/DRAGON.WAD");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -3063,10 +3062,10 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
 
 TEST_CASE("a character hurt cries out by the original's rules: at once for a burn or a heavy "
           "blow, once lesser blows add up, and is named as its health runs low",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
-    test::unpackedOrSkip("audio/WAR/sounds.json");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::assetOrSkip("audio/WAR.vbk");
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -3152,7 +3151,7 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
 }
 
 TEST_CASE("potions burst about the character or where they land, and powerups show",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -3264,7 +3263,7 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
 }
 
 TEST_CASE("holding the attack throws the character's weapon again and again",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -3330,7 +3329,7 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
 }
 
 TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll of hints",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const s32 player = GENERATE(0, 2);
     const auto slot = static_cast<usize>(player);
     const std::filesystem::path root = unpackedRoot();
@@ -3427,25 +3426,25 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     scene.close();
 }
 
-TEST_CASE("a figure comes from the costume tier of its level when that is unpacked",
+TEST_CASE("a figure comes from the costume tier of its level when that archive is installed",
           "[game][screens]") {
     const auto root = test::scratchDirectory("tower-costume-tiers");
     std::filesystem::create_directories(root / "PLAYERS/WAR/BLU00");
-    writeTextFile(root / "PLAYERS/WAR/BLU00/objects.json", "{}");
+    writeFile(root / "PLAYERS/WAR/BLU00/objects.ngc", {});
     CharacterSave save;
     save.character = 0;
     save.color = 1;
     save.progress().experience = levelExperience(1);
     REQUIRE(PlayScene::costumeDirectory(root, save).filename() == "BLU00");
-    save.progress().experience = levelExperience(25); // no BLU20 unpacked: the untiered one
+    save.progress().experience = levelExperience(25); // no BLU20 archive: the untiered one
     REQUIRE(PlayScene::costumeDirectory(root, save).filename() == "BLU");
     std::filesystem::create_directories(root / "PLAYERS/WAR/BLU20");
-    writeTextFile(root / "PLAYERS/WAR/BLU20/objects.json", "{}");
+    writeFile(root / "PLAYERS/WAR/BLU20/objects.ngc", {});
     REQUIRE(PlayScene::costumeDirectory(root, save).filename() == "BLU20");
 }
 
 TEST_CASE("quitting a level gives up what it gave, keeping lessons and save slots",
-          "[game][screens][unpacked]") {
+          "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -3500,9 +3499,9 @@ TEST_CASE("the tower scene refuses to open without the level", "[game][screens]"
 }
 
 TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth testing",
-          "[game][screens][promotion][tower-relics][unpacked]") {
+          "[game][screens][promotion][tower-relics][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
+    test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
@@ -3593,7 +3592,7 @@ TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth
     scene.close();
 }
 TEST_CASE("tower portal columns draw after horizon sheets while retaining wall occlusion",
-          "[game][screens][visual-parity][unpacked]") {
+          "[game][screens][visual-parity][assets]") {
     const auto root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -3669,9 +3668,9 @@ TEST_CASE("tower portal columns draw after horizon sheets while retaining wall o
 }
 
 TEST_CASE("fully unlocked Knight walks both tower wing gates in both directions",
-          "[game][screens][tower-wings][unpacked]") {
+          "[game][screens][tower-wings][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("PLAYERS/KNI/GRE/animations.json");
+    test::assetOrSkip("PLAYERS/KNI/GRE/ANIM.PS2");
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/tower-fully-unlocked.json");
     const auto gate = GENERATE(usize{1997}, usize{2031});

@@ -11,6 +11,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/CritterPatrol.h"
 #include "game/enemies/Critters.h"
 #include "game/enemies/EnemyMind.h"
@@ -51,6 +52,7 @@ std::filesystem::path generalAssets() {
     writeFile(archive / "textures/skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GENERAL1",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"STEP","frames":3}]}]})");
@@ -204,10 +206,10 @@ TEST_CASE("a general walks its round of the lookouts, turning to each, and gives
 }
 
 TEST_CASE("the castle's generals pace between the two posts each is placed by",
-          "[game][enemies][critter-patrol][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GENERAL.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GENERAL/LEVELA/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELA1/world.json");
+          "[game][enemies][critter-patrol][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GENERAL/LEVELA/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELA1"));
     const LookoutRoute route = LookoutRoute::of(layout.locators());

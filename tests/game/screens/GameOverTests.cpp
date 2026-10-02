@@ -25,9 +25,9 @@ using namespace gdl::game;
 using Catch::Approx;
 
 TEST_CASE("game over uses the shipped caption and playable primary narrator cue",
-          "[game][game-over][unpacked]") {
-    const auto messagesPath = test::unpackedOrSkip("text/english.json");
-    test::unpackedOrSkip("audio/VOICE1/sounds.json");
+          "[game][game-over][assets]") {
+    const auto messagesPath = test::assetOrSkip("TEXT/english.rom");
+    test::assetOrSkip("audio/VOICE1.vbk");
     MessageTable messages;
     REQUIRE(messages.load(messagesPath));
     const auto caption = messages.find(GameOver::kMessage);

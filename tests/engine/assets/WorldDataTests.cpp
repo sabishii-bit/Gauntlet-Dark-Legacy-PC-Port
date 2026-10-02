@@ -121,9 +121,8 @@ TEST_CASE("world data names a realm's levels and the records they point at", "[a
     REQUIRE(data.audio(second->audioIndex) == nullptr);
 }
 
-TEST_CASE("Wraith music metadata names a two-part single-area stream",
-          "[assets][world][unpacked][wraith]") {
-    const auto path = test::unpackedOrSkip("wdata/DREAM.json");
+TEST_CASE("Wraith music metadata names a two-part single-area stream", "[assets][world][wraith]") {
+    const auto path = test::assetOrSkip("WDATA/DREAM.WAD");
     WorldData data;
     REQUIRE(data.load(path));
     const auto* level = data.level("J5");
@@ -144,9 +143,9 @@ TEST_CASE("missing or malformed world data fails to load", "[assets][world]") {
     REQUIRE_FALSE(data.loaded());
 }
 
-TEST_CASE("the unpacked tower realm carries its light and camera", "[assets][world][unpacked]") {
+TEST_CASE("the native tower realm carries its light and camera", "[assets][world]") {
     WorldData data;
-    const auto path = test::unpackedOrSkip("wdata/TOWER.json");
+    const auto path = test::assetOrSkip("WDATA/TOWER.WAD");
     REQUIRE(data.load(path));
     const LevelInfo* level = data.level("L1");
     REQUIRE(level != nullptr);

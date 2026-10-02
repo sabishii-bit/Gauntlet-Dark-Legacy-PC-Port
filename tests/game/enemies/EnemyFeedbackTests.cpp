@@ -39,24 +39,24 @@ TEST_CASE("enemy melee selects bite strike or tiered player impacts without gene
 }
 
 TEST_CASE("retail enemy feedback resolves every gameplay realm's audio roster",
-          "[enemy-feedback][unpacked]") {
-    const auto root = test::unpackedOrSkip("wdata/TEMPLE.json").parent_path().parent_path();
+          "[enemy-feedback][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TEMPLE.WAD").parent_path().parent_path();
     // TEST is developer content with placeholder TOWN audio, not a gameplay realm.
     constexpr std::array kRealms{"TOWN",  "MOUNT",  "CASTLE", "FOREST", "DESERT", "ICE",
                                  "DREAM", "BATTLE", "SKY",    "TEMPLE", "HELL",   "SECRET"};
     usize checked = 0;
     for (const auto* realm : kRealms) {
-        test::unpackedOrSkip(std::string("wdata/") + realm + ".json");
+        test::assetOrSkip(std::string("wdata/") + realm + ".WAD");
         WorldData world;
-        REQUIRE(world.load(root / "wdata" / (std::string(realm) + ".json")));
+        REQUIRE(world.load(root / "wdata" / (std::string(realm) + ".WAD")));
         for (const auto& level : world.levels()) {
             const auto* audio = world.audio(level.audioIndex);
             REQUIRE(audio != nullptr);
-            test::unpackedOrSkip("audio/" + audio->bank + "/sounds.json");
+            test::assetOrSkip("AUDIO/AUDATPS2.ROM");
             SoundSet bank;
             REQUIRE(bank.load(root / "audio" / audio->bank));
             SoundSet common;
-            REQUIRE(common.load(test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path()));
+            REQUIRE(common.load(test::assetOrSkip("audio/COMMON.vbk")));
             for (const auto& enemy : level.enemies) {
                 if (enemy.kind >= 28 || enemy.stream.empty()) {
                     continue;

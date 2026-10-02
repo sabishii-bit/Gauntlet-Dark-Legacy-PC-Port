@@ -18,7 +18,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/MusicAreas.h"
 
@@ -31,9 +31,8 @@ void writeBank(const std::filesystem::path& root, std::string_view bank,
                std::initializer_list<std::string_view> names, s16 sample = 8192,
                bool broken = false) {
     const auto directory = root / "audio" / bank;
-    std::filesystem::create_directories(directory);
-    const std::array<s16, 4> pcm{sample, sample, sample, sample};
-    writeFile(directory / "sample.wav", formats::encodeWav(pcm, 48000, 1));
+    const std::array<test::NativeSoundSample, 1> samples{
+        {{48000, {sample, sample, sample, sample}}}};
     std::string sounds;
     usize index = 0;
     for (const auto name : names) {
@@ -45,10 +44,10 @@ void writeBank(const std::filesystem::path& root, std::string_view bank,
             "sequence":[{{"sample":0,"loopStart":true,"loopBack":true}}]}})",
                               index++, name);
     }
-    writeTextFile(directory / "sounds.json",
-                  std::format(R"({{"sounds":[{}],"samples":[{{"index":0,"name":"tone",
-                  "file":"{}","sampleRate":48000,"frames":4}}]}})",
-                              sounds, broken ? "missing.wav" : "sample.wav"));
+    test::writeNativeSoundBank(directory, std::format(R"({{"sounds":[{}]}})", sounds), samples);
+    if (broken) {
+        writeTextFile(root / "audio" / (std::string(bank) + ".VBK"), "invalid native bank");
+    }
 }
 
 TEST_CASE("tower ceremony cues reach wizard common and tower banks and stop on close",
@@ -81,7 +80,7 @@ TEST_CASE("tower ceremony cues reach wizard common and tower banks and stop on c
     }
 }
 
-TEST_CASE("level sound lookup preserves bank precedence and broken first matches",
+TEST_CASE("level sound lookup preserves bank precedence and rejects corrupt banks",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-lookup");
     writeBank(root, "LEVEL", {"SHARED"});
@@ -108,11 +107,12 @@ TEST_CASE("level sound lookup preserves bank precedence and broken first matches
         REQUIRE(soundscape.playNamed("MISSING") == kNoSound);
         REQUIRE(soundscape.playNamed("") == kNoSound);
     }
-    SECTION("a corrupt first bank does not fall through") {
+    SECTION("a corrupt bank is not loaded and valid common audio remains available") {
         writeBank(root, "LEVEL", {"SHARED"}, 8192, true);
         soundscape.open(root, &player, &info);
-        REQUIRE(soundscape.playNamed("SHARED") == kNoSound);
-        REQUIRE(player.voiceCount() == 0);
+        REQUIRE(soundscape.playNamed("SHARED") != kNoSound);
+        mixer.mix(output);
+        REQUIRE(output.back() < 0.0f);
     }
     soundscape.close();
 }
@@ -121,9 +121,7 @@ TEST_CASE("level sound lookup preserves bank precedence and broken first matches
 void writeSecondBank(const std::filesystem::path& root, std::string_view bank,
                      std::initializer_list<std::string_view> names) {
     const auto directory = root / "audio" / bank;
-    std::filesystem::create_directories(directory);
-    const std::vector<s16> pcm(48000, 4096);
-    writeFile(directory / "second.wav", formats::encodeWav(pcm, 48000, 1));
+    const std::array<test::NativeSoundSample, 1> samples{{{48000, std::vector<s16>(48000, 4096)}}};
     std::string sounds;
     usize index = 0;
     for (const auto name : names) {
@@ -135,10 +133,7 @@ void writeSecondBank(const std::filesystem::path& root, std::string_view bank,
             "sequence":[{{"sample":0,"loopStart":false,"loopBack":false}}]}})",
                               index++, name);
     }
-    writeTextFile(directory / "sounds.json",
-                  std::format(R"({{"sounds":[{}],"samples":[{{"index":0,"name":"line",
-                  "file":"second.wav","sampleRate":48000,"frames":48000}}]}})",
-                              sounds));
+    test::writeNativeSoundBank(directory, std::format(R"({{"sounds":[{}]}})", sounds), samples);
 }
 
 TEST_CASE("a narrator line the tower's ambience keeps is queued from there",
@@ -739,10 +734,10 @@ TEST_CASE("level soundscape is silent without an output and tolerates missing mu
 }
 
 TEST_CASE("Wraith music resolves its numbered ADS parts and produces audio",
-          "[game][world][soundscape][assets][unpacked][wraith]") {
+          "[game][world][soundscape][assets][wraith]") {
     const auto disc = test::assetOrSkip("STREAMS/DREAM5_1.ads").parent_path().parent_path();
     test::assetOrSkip("STREAMS/DREAM5_2.ads");
-    const auto manifest = test::unpackedOrSkip("wdata/DREAM.json");
+    const auto manifest = test::assetOrSkip("WDATA/DREAM.WAD");
     WorldData world;
     REQUIRE(world.load(manifest));
     const auto* level = world.level("J5");
@@ -1136,13 +1131,13 @@ TEST_CASE("a level of one area ignores requests for others",
 }
 
 TEST_CASE("the dream's zones switch its music between eight areas",
-          "[game][world][soundscape][music-areas][assets][unpacked]") {
+          "[game][world][soundscape][music-areas][assets]") {
     const auto disc = test::assetOrSkip("STREAMS/DREAM1A.ads").parent_path().parent_path();
     test::assetOrSkip("STREAMS/dream1e_1.ads");
     test::assetOrSkip("STREAMS/dream1e_2.ads");
-    const auto manifest = test::unpackedOrSkip("wdata/DREAM.json");
+    const auto manifest = test::assetOrSkip("WDATA/DREAM.WAD");
     const auto root = manifest.parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELJ1/world.json");
+    test::assetOrSkip("LEVELS/LEVELJ1/WORLDS.PS2");
     WorldData world;
     REQUIRE(world.load(manifest));
     const auto* level = world.level("J1");

@@ -187,10 +187,10 @@ TEST_CASE("completion reveal timing is tick-based at different update rates",
 }
 
 TEST_CASE("completion captions voices and reveal cameras exist in the shipped tower",
-          "[game][tower-completion][unpacked]") {
-    const auto root = test::unpackedOrSkip("text/scroll_e.json").parent_path().parent_path();
+          "[game][tower-completion][assets]") {
+    const auto root = test::assetOrSkip("TEXT/scroll_e.rom").parent_path().parent_path();
     MessageTable strings;
-    REQUIRE(strings.load(root / "text/scroll_e.json"));
+    REQUIRE(strings.load(root / "TEXT/scroll_e.rom"));
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     SoundSet wizard;
@@ -213,9 +213,9 @@ TEST_CASE("completion captions voices and reveal cameras exist in the shipped to
 }
 
 TEST_CASE("tower completion runs after arrival and promotions and releases control only at the end",
-          "[game][tower-completion][unpacked]") {
+          "[game][tower-completion][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
@@ -327,9 +327,9 @@ TEST_CASE("tower completion runs after arrival and promotions and releases contr
 }
 
 TEST_CASE("saving between final shard placement and speech resumes only the follow-up",
-          "[game][tower-completion][unpacked]") {
+          "[game][tower-completion][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));

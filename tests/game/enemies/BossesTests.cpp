@@ -32,9 +32,9 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
 }
 
 TEST_CASE("Wraith waits in its lowered entrance pose and rises only in START3",
-          "[game][enemies][wraith][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
+          "[game][enemies][wraith][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/WRAITH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2");
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'J');
@@ -72,9 +72,9 @@ TEST_CASE("Wraith waits in its lowered entrance pose and rises only in START3",
 }
 
 TEST_CASE("Wraith health and range windows expose every authored attack family",
-          "[game][enemies][wraith][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
+          "[game][enemies][wraith][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/WRAITH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'J');
@@ -153,10 +153,10 @@ TEST_CASE("arena mesh cues belong only to the Lich and Garm", "[game][enemies][b
 
 TEST_CASE("a boss sleeps until the party comes near, then fights by its table, and its "
           "meter follows its health to the end",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+        test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     Bosses bosses;
     EnemyScales scales;
@@ -273,8 +273,8 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
 }
 
 TEST_CASE("sustained damage cannot lock the Lich in its roar reaction",
-          "[game][enemies][lich][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+          "[game][enemies][lich][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     Bosses bosses;
     EnemyScales scales;
@@ -313,10 +313,10 @@ TEST_CASE("sustained damage cannot lock the Lich in its roar reaction",
 }
 
 TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its toll",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+        test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     Bosses bosses;
     EnemyScales scales;
@@ -383,9 +383,9 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
 }
 
 TEST_CASE("the genie selects projectile attacks and launches them from its animated body",
-          "[game][boss-projectiles][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DJINN.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
+          "[game][boss-projectiles][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DJINN.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DJINN/ANIM.PS2");
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'C');
@@ -413,7 +413,7 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
 }
 
 TEST_CASE("anchored bosses retain local territories and the lich and spider can pursue",
-          "[game][boss-movement][unpacked]") {
+          "[game][boss-movement][assets]") {
     struct Expected {
         const char* name;
         f32 radius;
@@ -424,8 +424,7 @@ TEST_CASE("anchored bosses retain local territories and the lich and spider can 
           Expected{"PBOSS", 6, false}, Expected{"YETI", 5, false}, Expected{"WRAITH", 3, false},
           Expected{"LICH", 25, true}, Expected{"DRIDER", 22, true}}) {
         DYNAMIC_SECTION(expected.name) {
-            const auto path =
-                test::unpackedOrSkip(std::string("critter/") + expected.name + ".json");
+            const auto path = test::assetOrSkip(std::string("critter/") + expected.name + ".WAD");
             CritterData data;
             REQUIRE(data.load(path));
             REQUIRE(data.movement().roamRadius == expected.radius);
@@ -456,13 +455,13 @@ TEST_CASE("anchored bosses retain local territories and the lich and spider can 
 }
 
 TEST_CASE("every retail boss can enter animate draw take damage and die",
-          "[game][boss-roster][unpacked]") {
+          "[game][boss-roster][assets]") {
     for (s32 kind = 34; kind <= 44; ++kind) {
         const std::string name{bossNameOf(kind)};
         DYNAMIC_SECTION(name) {
             const auto root =
-                test::unpackedOrSkip("critter/" + name + ".json").parent_path().parent_path();
-            test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
+                test::assetOrSkip("critter/" + name + ".WAD").parent_path().parent_path();
+            test::assetOrSkip("MONSTERS/" + name + "/ANIM.PS2");
             test::FakeRenderDevice device;
             Bosses bosses;
             bosses.open(device, root, nullptr, {}, 'G');

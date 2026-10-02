@@ -19,10 +19,10 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("Sumner's approach pad and the completed Temple window own different light rays",
-          "[welcome][tower-relics][tower-lights][unpacked]") {
+          "[welcome][tower-relics][tower-lights][assets]") {
     const bool completeWindow = GENERATE(false, true);
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
@@ -125,9 +125,9 @@ TEST_CASE("without its scroll or its camera the welcome passes straight on",
     CHECK(welcome.intro() == TowerWelcome::Intro::None);
 }
 
-TEST_CASE("the welcome crystal cut holds its ticks", "[game][screens][welcome][unpacked]") {
+TEST_CASE("the welcome crystal cut holds its ticks", "[game][screens][welcome][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));

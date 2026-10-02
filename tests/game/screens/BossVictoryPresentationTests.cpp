@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/screens/BossVictoryPresentation.h"
 
 namespace {
@@ -33,6 +34,7 @@ std::filesystem::path wizardFixture(std::string_view name, bool animated = true)
         {"index":0,"name":"BODY","file":"mesh.obj","meshTriangles":1}]})");
     writeTextFile(root / "textures.json", R"({"defs":[],"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(root);
     const std::string sequence = animated ? R"({"name":"READY","frames":8,"frameRate":30,
         "repeats":true,"tracks":[{"node":0,"flags":16,"frames":[0,4],"values":[0,4]}]})"
                                           : "";
@@ -52,7 +54,7 @@ void loadCaptions(MessageTable& table) {
 
 TEST_CASE("retail boss captions keep the rune report behind the full defeat reading time",
           "[game][screens][victory-presentation]") {
-    const auto root = test::unpackedOrSkip("text/english.json");
+    const auto root = test::assetOrSkip("TEXT/english.rom");
     MessageTable strings;
     REQUIRE(strings.load(root));
     // Actual GUNE5D English pages: 105.25 / 117.5 / 108.75 text units.
@@ -189,6 +191,7 @@ TEST_CASE("victory wizard selects and advances its animated lower body meshes",
         {"index":0,"name":"BODY","file":"mesh.obj","meshTriangles":1},
         {"index":1,"name":"LOWER0","file":"lower.obj","meshTriangles":1},
         {"index":2,"name":"LOWER1","file":"mesh.obj","meshTriangles":1}]})");
+    test::convertModelFixture(root);
     writeTextFile(root / "animations.json", R"({"trees":[{"name":"WIZARD","nodes":[
         {"name":"BODY","object":"BODY","position":[0,0,0]},
         {"name":"OANIM","position":[0,0,0],"type":2,"objectFrames":[{"object":"LOWER0","start":0,"frames":2}]}],

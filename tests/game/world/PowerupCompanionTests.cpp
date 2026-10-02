@@ -75,10 +75,10 @@ TEST_CASE("a companion fades over the last second of what brings it", "[game][wo
 }
 
 TEST_CASE("the powerup companions come from their archives and play as asked",
-          "[game][world][companion][unpacked]") {
+          "[game][world][companion][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive powerups;
     ItemArchive weapons;

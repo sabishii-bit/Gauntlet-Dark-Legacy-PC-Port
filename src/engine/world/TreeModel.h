@@ -32,8 +32,10 @@ public:
     /** World-bound shots must test the already-rendered solid scene, including
      * halo nodes whose authored flags otherwise disable the depth test. */
     enum class Occlusion : u8 { Authored, SolidWorld };
-    /** Gathers the tree's meshes and textures; false (with a warning) when any is missing. */
-    bool bind(const TreeInfo& tree, ModelSet& models, TextureSet& textures, RenderDevice& device);
+    /** Gathers meshes and textures, resolving external slots through named lenders.
+     * The mesh and texture owners must outlive this model. Missing resources fail the bind. */
+    bool bind(const TreeInfo& tree, ModelSet& models, TextureSet& textures, RenderDevice& device,
+              std::span<TextureSet* const> lenders = {});
 
     void clear() {
         m_nodes.clear();
@@ -129,7 +131,8 @@ private:
         const Texture* maskedTexture = nullptr;
     };
 
-    static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device);
+    static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device,
+                           std::span<TextureSet* const> lenders);
     static void selectFrame(Node& node, u32 sequence, s32 frame);
     /** Grows the bounds around `shape` at `offset`. */
     void include(const Shape& shape, const Vec3& offset, bool& first);

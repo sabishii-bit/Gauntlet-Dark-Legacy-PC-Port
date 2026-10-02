@@ -122,14 +122,14 @@ TEST_CASE("item voices use retail solo and multiplayer name prefixes", "[game][h
 }
 
 TEST_CASE("pickup help text and recordings resolve in the extracted retail banks",
-          "[game][help][items][assets][unpacked]") {
-    const auto root = test::unpackedOrSkip("text/english.json").parent_path().parent_path();
-    const auto primaryDirectory = test::unpackedOrSkip("audio/VOICE1/sounds.json").parent_path();
-    const auto secondaryDirectory = test::unpackedOrSkip("audio/VOICE2/sounds.json").parent_path();
-    const auto commonDirectory = test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path();
-    const auto secretDirectory = test::unpackedOrSkip("audio/SECRET/sounds.json").parent_path();
+          "[game][help][items][assets]") {
+    const auto root = test::assetOrSkip("TEXT/english.rom").parent_path().parent_path();
+    const auto primaryDirectory = test::assetOrSkip("audio/VOICE1.vbk");
+    const auto secondaryDirectory = test::assetOrSkip("audio/VOICE2.vbk");
+    const auto commonDirectory = test::assetOrSkip("audio/COMMON.vbk");
+    const auto secretDirectory = test::assetOrSkip("audio/SECRET.vbk");
     MessageTable strings;
-    REQUIRE(strings.load(root / "text/english.json"));
+    REQUIRE(strings.load(root / "TEXT/english.rom"));
     SoundSet primary;
     SoundSet secondary;
     SoundSet common;

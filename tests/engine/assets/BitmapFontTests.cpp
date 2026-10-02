@@ -41,8 +41,8 @@ TEST_CASE("font manifests load from disk", "[assets][font]") {
     REQUIRE_FALSE(font.load(dir / "missing.json", 5));
 }
 
-TEST_CASE("the unpacked menu font has 32 pixel glyphs", "[assets][font][unpacked]") {
-    const auto file = test::unpackedOrSkip("fonts/font32.json");
+TEST_CASE("the native menu font has 32 pixel glyphs", "[assets][font]") {
+    const auto file = test::assetOrSkip("FONTS/font32.fnt");
     BitmapFont font;
     REQUIRE(font.load(file, 16));
     REQUIRE(font.height() == 32);

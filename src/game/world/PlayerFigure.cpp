@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <format>
 #include <span>
 #include <string>
@@ -60,7 +61,7 @@ std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path
     const s32 tier = save.progress().appearanceLevel() / kLevelsPerTier;
     const std::filesystem::path tiered = base.parent_path() / std::format("{}{}0", costume, tier);
     const AssetLocator files(tiered);
-    return files.find("objects.ngc") || files.find("objects.json") ? files.root() : base;
+    return files.find("objects.ngc") ? files.root() : base;
 }
 
 std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
@@ -70,6 +71,9 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path directory = costumeDirectory(root, save);
     auto figure = std::make_unique<PlayerFigure>();
+    // Costume HANDGLOW slots are external: JAC/YEL slot 26 names POWERUPS slot 445,
+    // not pixels at the costume's local offset or a class SFX texture.
+    figure->m_sharedTextureDirectory = root / "POWERUPS";
     if (!figure->m_costumeArchive.models.load(directory) ||
         !figure->m_costumeArchive.textures.load(directory) ||
         !figure->m_costumeArchive.trees.load(directory)) {
@@ -77,9 +81,9 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
         return nullptr;
     }
     const auto tree = figure->m_costumeArchive.trees.find(std::format("{}_{}", cls, costume));
-    if (!tree.has_value() || !figure->m_model.bind(figure->m_costumeArchive.trees.tree(*tree),
-                                                   figure->m_costumeArchive.models,
-                                                   figure->m_costumeArchive.textures, device)) {
+    if (!tree.has_value() ||
+        !figure->bindModel(figure->m_model, figure->m_costumeArchive.trees.tree(*tree),
+                           figure->m_costumeArchive, device)) {
         log::warn("Tower: the {} {} figure could not be built", costume, cls);
         return nullptr;
     }
@@ -101,8 +105,8 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
                 figure->m_familiar.bind(device, *archive, save.progress().appearanceLevel(),
                                         stats->familiarOffset);
                 if (const auto shot = archive->trees.find("FAMILIAR_SPIT")) {
-                    figure->m_familiarMissile.bind(archive->trees.tree(*shot), archive->models,
-                                                   archive->textures, device);
+                    figure->bindModel(figure->m_familiarMissile, archive->trees.tree(*shot),
+                                      *archive, device);
                 }
             }
         }
@@ -120,13 +124,12 @@ void PlayerFigure::loadMissile(const std::filesystem::path& root, const Characte
     bool bound = false;
     if (inCostume) {
         if (const auto tree = m_costumeArchive.trees.find(name); tree.has_value()) {
-            bound = m_missile.bind(m_costumeArchive.trees.tree(*tree), m_costumeArchive.models,
-                                   m_costumeArchive.textures, device);
+            bound =
+                bindModel(m_missile, m_costumeArchive.trees.tree(*tree), m_costumeArchive, device);
         }
     } else if (m_effects.load(m_effectDirectory)) {
         if (const auto tree = m_effects.trees.find(name); tree.has_value()) {
-            bound = m_missile.bind(m_effects.trees.tree(*tree), m_effects.models,
-                                   m_effects.textures, device);
+            bound = bindModel(m_missile, m_effects.trees.tree(*tree), m_effects, device);
         }
     }
     if (!bound) {
@@ -172,9 +175,55 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
     held.name = weapon;
     held.object = weapon;
     m_weaponTree.nodes.push_back(held);
-    if (!m_weapon.bind(m_weaponTree, m_costumeArchive.models, m_costumeArchive.textures, device)) {
+    if (!bindModel(m_weapon, m_weaponTree, m_costumeArchive, device)) {
         m_handNode = -1;
     }
+}
+
+bool PlayerFigure::bindModel(TreeModel& model, const TreeInfo& tree, ItemArchive& archive,
+                             RenderDevice& device) {
+    if (!m_sharedTextures.loaded()) {
+        try {
+            const auto needsLender = [&archive](u32 index) {
+                return std::ranges::any_of(
+                    archive.models.mesh(index).parts, [&archive](const auto& part) {
+                        if (part.texture >= archive.textures.size()) {
+                            return false;
+                        }
+                        const auto& texture = archive.textures.entry(part.texture);
+                        return texture.external() && !texture.noPicture;
+                    });
+            };
+            bool external = false;
+            for (const auto& node : tree.nodes) {
+                if (node.name == "DUMMY" || node.name == "NULL1") {
+                    continue;
+                }
+                if (const auto index = archive.models.find(node.object)) {
+                    external = external || needsLender(*index);
+                }
+                for (const auto& run : node.objectFrames) {
+                    if (const auto first = archive.models.find(run.object)) {
+                        for (s32 frame = 0; frame < run.frames && *first + static_cast<u32>(frame) <
+                                                                      archive.models.size();
+                             ++frame) {
+                            external = external || needsLender(*first + static_cast<u32>(frame));
+                        }
+                    }
+                }
+            }
+            if (external && !m_sharedTextures.load(m_sharedTextureDirectory)) {
+                model.clear();
+                return false;
+            }
+        } catch (const std::exception& error) {
+            log::warn("Player figure {}: {}", tree.name, error.what());
+            model.clear();
+            return false;
+        }
+    }
+    const std::array<TextureSet*, 1> lenders{&m_sharedTextures};
+    return model.bind(tree, archive.models, archive.textures, device, lenders);
 }
 
 std::filesystem::path PlayerFigure::classFolder(const std::filesystem::path& root, s32 character,

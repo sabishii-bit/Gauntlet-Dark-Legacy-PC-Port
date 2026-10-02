@@ -205,10 +205,10 @@ TEST_CASE("a party's shards, items, runestones and record fill in what the hints
     REQUIRE((HintKnowledge::ofParty(party).worldsOpen & worlds({5, 6, 8})) == worlds({5, 6, 8}));
 }
 
-TEST_CASE("the unpacked hints name the Lich first and tell of the green gas",
-          "[game][world][hints][unpacked]") {
+TEST_CASE("the native hints name the Lich first and tell of the green gas",
+          "[game][world][hints][assets]") {
     SumnerHints hints;
-    const auto path = test::unpackedOrSkip("text/hints_e.json");
+    const auto path = test::assetOrSkip("TEXT/hints_e.rom");
     REQUIRE(hints.load(path));
     const HintPage general = hints.next(HintTopic::General, {}, "A Hint for You");
     REQUIRE(general.passages.size() == 1);

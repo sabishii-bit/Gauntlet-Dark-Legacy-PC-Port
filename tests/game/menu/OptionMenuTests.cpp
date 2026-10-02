@@ -15,6 +15,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/OptionMenu.h"
 
@@ -325,6 +326,7 @@ TEST_CASE("a bound arrow model replaces the flat arrow glyph", "[game][menu]") {
     ModelSet models;
     TextureSet sheets;
     AnimationSet trees;
+    test::convertModelFixture(dir);
     REQUIRE(models.load(dir));
     REQUIRE(sheets.load(dir));
     REQUIRE(trees.load(dir));

@@ -20,6 +20,12 @@ add_executable(tests
     game/screens/PostShopReturnTests.cpp
     game/screens/InventoryPanelTests.cpp
     TestSupport.h
+    fixtures/ReferenceObj.cpp
+    fixtures/ReferenceObjTests.cpp
+    fixtures/NativeModelFixture.cpp
+    fixtures/ReferenceWav.cpp
+    fixtures/ReferenceWavTests.cpp
+    fixtures/NativeSoundBank.cpp
     FakeRenderDevice.h
     engine/core/TypesTests.cpp
     engine/core/LogTests.cpp
@@ -51,12 +57,10 @@ add_executable(tests
     engine/assets/NativeAssetsTests.cpp
     engine/assets/NativeShopTests.cpp
     engine/assets/BitmapFontTests.cpp
-    engine/assets/WavFileTests.cpp
     engine/assets/SoundSetTests.cpp
     engine/audio/SoundPlayerTests.cpp
     engine/audio/AdsStreamTests.cpp
     engine/audio/StreamPlaylistTests.cpp
-    engine/assets/ObjModelTests.cpp
     engine/assets/ModelSetTests.cpp
     engine/assets/AnimationSetTests.cpp
     engine/ui/ModelSpriteTests.cpp

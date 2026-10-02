@@ -14,17 +14,17 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("the secret coin hunt awards both participants and waits for its scroll",
-          "[secret][unpacked]") {
+          "[secret][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELS4/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("text/scroll_e.json");
+        test::assetOrSkip("LEVELS/LEVELS4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("TEXT/scroll_e.rom");
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));
     const s32 levelIndex = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8);
     const auto ref = levels.byName(std::format("S{}", levelIndex + 1));
     REQUIRE(ref);
-    test::unpackedOrSkip(ref->directory + "/world.json");
+    test::assetOrSkip(ref->directory + "/WORLDS.PS2");
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
     const GameConfig config;
@@ -91,9 +91,9 @@ TEST_CASE("the secret coin hunt awards both participants and waits for its scrol
 }
 
 TEST_CASE("running out of secret-world time returns without unlocking the class",
-          "[secret][unpacked]") {
+          "[secret][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELS4/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELS4/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));
@@ -121,10 +121,10 @@ TEST_CASE("running out of secret-world time returns without unlocking the class"
 }
 
 TEST_CASE("a consumed secret portal stays gone when the party returns to the parent stage",
-          "[secret][unpacked]") {
+          "[secret][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELB2/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELS4/world.json");
+        test::assetOrSkip("LEVELS/LEVELB2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELS4/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));

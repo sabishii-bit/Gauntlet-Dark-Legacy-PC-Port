@@ -71,9 +71,9 @@ TEST_CASE("a missing or malformed message table fails to load", "[assets][text]"
     REQUIRE_FALSE(table.loaded());
 }
 
-TEST_CASE("the unpacked scroll texts hold Sumner's welcome", "[assets][text][unpacked]") {
+TEST_CASE("the native scroll texts hold Sumner's welcome", "[assets][text]") {
     MessageTable table;
-    const auto path = test::unpackedOrSkip("text/scroll_e.json");
+    const auto path = test::assetOrSkip("TEXT/scroll_e.rom");
     REQUIRE(table.load(path));
     const auto index = table.find("WELCOMEMESSAGE");
     REQUIRE(index.has_value());
@@ -112,7 +112,7 @@ TEST_CASE("a message's pages come from the string table when it has them", "[ass
 }
 
 TEST_CASE("the shipped English has every scroll, hint and help message, word for word",
-          "[assets][text][unpacked]") {
+          "[assets][text]") {
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en", "en"));
     struct Rom {
@@ -121,9 +121,9 @@ TEST_CASE("the shipped English has every scroll, hint and help message, word for
         bool whole; ///< every message of it, or only those the strings name
     };
     for (const Rom& rom :
-         {Rom{"text/scroll_e.json", "scroll", true}, Rom{"text/hints_e.json", "hint", true},
-          Rom{"text/english.json", "help", false}}) {
-        const auto path = test::unpackedOrSkip(rom.file);
+         {Rom{"TEXT/scroll_e.rom", "scroll", true}, Rom{"TEXT/hints_e.rom", "hint", true},
+          Rom{"TEXT/english.rom", "help", false}}) {
+        const auto path = test::assetOrSkip(rom.file);
         MessageTable original;
         REQUIRE(original.load(path));
         MessageTable translated;

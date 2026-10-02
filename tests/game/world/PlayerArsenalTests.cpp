@@ -11,7 +11,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeModelFixture.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
@@ -37,8 +38,8 @@ struct Fixture {
 };
 
 TEST_CASE("every Super Shot volley renders the authored weapon streak until expiry",
-          "[game][player-arsenal][super-shot-streak][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+          "[game][player-arsenal][super-shot-streak][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     Fixture f;
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     REQUIRE(f.classes.load(root / "pdata"));
@@ -86,8 +87,8 @@ TEST_CASE("every Super Shot volley renders the authored weapon streak until expi
 }
 
 TEST_CASE("level 75 potion casts wear the authored healing hearts without granting free health",
-          "[game][player-arsenal][magic-hearts][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+          "[game][player-arsenal][magic-hearts][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     ItemArchive powerups;
     REQUIRE(powerups.load(root / "POWERUPS"));
     Fixture f;
@@ -160,8 +161,8 @@ TEST_CASE("level 75 potion casts wear the authored healing hearts without granti
 }
 
 TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapon enchantments",
-          "[game][items][player-arsenal][phoenix][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+          "[game][items][player-arsenal][phoenix][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     Fixture f;
     f.arsenal.clear();
     REQUIRE(f.classes.load(root / "pdata"));
@@ -212,11 +213,11 @@ TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapo
 }
 
 TEST_CASE("equipped gauntlets route the shooter's textures into complete projectile playback",
-          "[game][player-arsenal][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/WAR/YEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+          "[game][player-arsenal][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/YEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     Fixture f;
     f.arsenal.clear();
     REQUIRE(f.weapons.load(root / "WEAPONS"));
@@ -319,8 +320,8 @@ std::filesystem::path impactAssets() {
     const auto bank = root / "audio/COMMON";
     std::filesystem::create_directories(bank);
     const std::array<s16, 4> pcm{8192, 8192, 8192, 8192};
-    writeFile(bank / "sample.wav", formats::encodeWav(pcm, 48000, 1));
-    writeTextFile(bank / "sounds.json", R"({"sounds":[
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {pcm.begin(), pcm.end()}}}};
+    test::writeNativeSoundBank(bank, R"({"sounds":[
       {"index":0,"name":"S_WEAPONHITWOOD","duration":-1,"volume":127,
        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]},
       {"index":1,"name":"S_3WAYAXE","duration":-1,"volume":127,
@@ -328,8 +329,9 @@ std::filesystem::path impactAssets() {
       {"index":2,"name":"S_5WAYAXE","duration":-1,"volume":127,
        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]},
       {"index":3,"name":"S_SPLASH","duration":-1,"volume":127,
-       "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}],
-      "samples":[{"index":0,"name":"tone","file":"sample.wav","sampleRate":48000,"frames":4}]})");
+       "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}]})",
+                               bankSamples);
+    test::convertModelFixture(weapons);
     return root;
 }
 

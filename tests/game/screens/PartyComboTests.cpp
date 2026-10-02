@@ -147,8 +147,8 @@ TEST_CASE("a charger goes where the dwarf's stick sends it at half again the pac
 }
 
 TEST_CASE("with the real warrior a partner ahead is taken hold of and rides its DUMMY node",
-          "[game][screens][combo][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+          "[game][screens][combo][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()

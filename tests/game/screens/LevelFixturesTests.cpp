@@ -14,11 +14,10 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
-#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/screens/HelpMessages.h"
@@ -106,10 +105,10 @@ TEST_CASE("world explosion fallback keeps its retail radius damage and fire flag
 }
 
 TEST_CASE("ice world explosion uses its authored art and poison ring without knockdown",
-          "[level-fixtures][world-destruction][unpacked]") {
+          "[level-fixtures][world-destruction][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELI1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELI/animations.json");
+        test::assetOrSkip("LEVELS/LEVELI1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELI/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -208,10 +207,10 @@ TEST_CASE("a blast's ring reaches the further out later and for less, each of th
 }
 
 TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit retail cues",
-          "[game][screens][level-fixtures][blast-items][unpacked]") {
+          "[game][screens][level-fixtures][blast-items][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -296,14 +295,12 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
 }
 
 TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific items",
-          "[game][screens][level-fixtures][boss-stage][unpacked]") {
-    const auto root = test::unpackedOrSkip("ITEMS/LEVELB/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELB6/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
-    test::unpackedOrSkip("wdata/MOUNT.json");
+          "[game][screens][level-fixtures][boss-stage][assets]") {
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELB/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELB6/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2");
+    test::assetOrSkip("WDATA/MOUNT.WAD");
     Fixture fixture;
     fixture.fixtures.clear();
     LevelCatalog catalog;
@@ -354,13 +351,11 @@ TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific
 }
 
 TEST_CASE("Courtyard fixtures borrow realm artwork without losing the level archive",
-          "[game][screens][level-fixtures][realm-art][unpacked]") {
-    const auto root = test::unpackedOrSkip("ITEMS/LEVELA/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELA1/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELA1/world.json");
+          "[game][screens][level-fixtures][realm-art][assets]") {
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELA/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELA1/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2");
     Fixture fixture;
     fixture.fixtures.clear();
     LevelCatalog catalog;
@@ -396,15 +391,13 @@ TEST_CASE("Courtyard fixtures borrow realm artwork without losing the level arch
 }
 
 TEST_CASE("every authored flame trap emits only outside OFF and retains its dying tails",
-          "[game][screens][level-fixtures][unpacked]") {
-    const auto root = test::unpackedOrSkip("ITEMS/LEVELB/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][screens][level-fixtures][assets]") {
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELB/ANIM.PS2").parent_path().parent_path().parent_path();
     usize checked = 0;
     for (const char realm : std::string_view("BCDGHIJK")) {
         const std::string path = "ITEMS/LEVEL" + std::string(1, realm);
-        test::unpackedOrSkip(path + "/animations.json");
+        test::assetOrSkip(path + "/ANIM.PS2");
         ItemArchive archive;
         REQUIRE(archive.load(root / path));
         test::FakeRenderDevice device;
@@ -465,10 +458,10 @@ TEST_CASE("fixture updates age per-player hazard cooldowns without reordering th
 }
 
 TEST_CASE("barrel smoke belongs to detonations, not ordinary broken containers",
-          "[game][screens][level-fixtures][unpacked]") {
+          "[game][screens][level-fixtures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -512,10 +505,10 @@ TEST_CASE("barrel smoke belongs to detonations, not ordinary broken containers",
 
 TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spent barrels go "
           "leaving their rubble",
-          "[game][screens][level-fixtures][rubble][unpacked]") {
+          "[game][screens][level-fixtures][rubble][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -598,9 +591,9 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
 }
 
 TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pickup",
-          "[game][screens][level-fixtures][unpacked]") {
+          "[game][screens][level-fixtures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -632,10 +625,10 @@ TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pick
 }
 
 TEST_CASE("the swarm's missiles are stopped by rocks, bottles and the triggers that are shot",
-          "[game][screens][level-fixtures][enemy-missile-items][unpacked]") {
+          "[game][screens][level-fixtures][enemy-missile-items][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELC3/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
+        test::assetOrSkip("LEVELS/LEVELC3/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto count = [](const std::vector<MissileStop>& stops, bool rocks) {
@@ -687,9 +680,9 @@ TEST_CASE("the swarm's missiles are stopped by rocks, bottles and the triggers t
 }
 
 TEST_CASE("the great ones walk through chests and into the barrels they break",
-          "[game][screens][level-fixtures][critter-rams][unpacked]") {
+          "[game][screens][level-fixtures][critter-rams][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     Fixture f;
@@ -719,9 +712,9 @@ TEST_CASE("the great ones walk through chests and into the barrels they break",
 }
 
 TEST_CASE("gas from anywhere spoils the food it reaches and tells the party once",
-          "[game][screens][level-fixtures][enemy-gas][unpacked]") {
+          "[game][screens][level-fixtures][enemy-gas][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     Fixture f;
@@ -749,9 +742,9 @@ TEST_CASE("gas from anywhere spoils the food it reaches and tells the party once
 }
 
 TEST_CASE("a tent wall stops the swarm's missiles only while it is raised",
-          "[game][screens][level-fixtures][enemy-missile-items][unpacked]") {
+          "[game][screens][level-fixtures][enemy-missile-items][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELD1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELD1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     Fixture f;
@@ -791,9 +784,9 @@ TEST_CASE("a tent wall stops the swarm's missiles only while it is raised",
 }
 
 TEST_CASE("magic turns Death in a chest into the level's apple and rocks the chest",
-          "[game][screens][level-fixtures][death-chest][unpacked]") {
+          "[game][screens][level-fixtures][death-chest][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -838,10 +831,10 @@ TEST_CASE("magic turns Death in a chest into the level's apple and rocks the che
 }
 
 TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and disperses",
-          "[game][screens][level-fixtures][unpacked]") {
+          "[game][screens][level-fixtures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -884,10 +877,10 @@ TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and di
 }
 
 TEST_CASE("breaking a gas barrel spoils nearby food and announces it only on a change",
-          "[game][screens][level-fixtures][poison-food][unpacked]") {
+          "[game][screens][level-fixtures][poison-food][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -936,9 +929,9 @@ TEST_CASE("breaking a gas barrel spoils nearby food and announces it only on a c
 }
 
 TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected early",
-          "[game][screens][level-fixtures][unpacked]") {
+          "[game][screens][level-fixtures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -987,12 +980,12 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
 }
 
 TEST_CASE("a trapped chest has a short raised fireball and independently animated debris",
-          "[game][level-fixtures][chest-explosion][blast-items][unpacked]") {
+          "[game][level-fixtures][chest-explosion][blast-items][assets]") {
     // StartExplosion(29) starts effect 22 plus a separately oriented effect 29.
     // GC constants at 80348140/803480A0/80348160 are 2.5f/1.0f/3.0 double.
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     Fixture f;
     f.fixtures.clear();
     LevelCatalog catalog;
@@ -1070,17 +1063,17 @@ TEST_CASE("a trapped chest has a short raised fireball and independently animate
 }
 
 TEST_CASE("a trapped chest sounds its fuse once on opening, not on a keyless touch",
-          "[game][screens][level-fixtures][chest-fuse][unpacked]") {
+          "[game][screens][level-fixtures][chest-fuse][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
     const auto soundRoot = test::scratchDirectory("chest-fuse-audio");
     const auto bank = soundRoot / "audio/COMMON";
     std::filesystem::create_directories(bank);
     const std::vector<s16> tone(48000, 8192);
-    writeFile(bank / "tone.wav", formats::encodeWav(tone, 48000, 1));
-    writeTextFile(
-        bank / "sounds.json",
-        R"({"sounds":[{"index":0,"name":"S_TICKY","id":0,"sequence":[{"sample":0}]}],"samples":[{"index":0,"file":"tone.wav"}]})");
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {tone.begin(), tone.end()}}}};
+    test::writeNativeSoundBank(
+        bank, R"({"sounds":[{"index":0,"name":"S_TICKY","id":0,"sequence":[{"sample":0}]}]})",
+        bankSamples);
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;
@@ -1121,8 +1114,8 @@ TEST_CASE("a trapped chest sounds its fuse once on opening, not on a keyless tou
 }
 
 TEST_CASE("X-Ray builds visible chest contents without spawning a collectible",
-          "[game][level-fixtures][xray][unpacked]") {
-    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+          "[game][level-fixtures][xray][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1161,9 +1154,9 @@ TEST_CASE("X-Ray builds visible chest contents without spawning a collectible",
     CHECK_FALSE(chest.revealed);
 }
 TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container figures",
-          "[game][level-fixtures][temple-inventory][xray][unpacked]") {
+          "[game][level-fixtures][temple-inventory][xray][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1233,9 +1226,9 @@ TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container
 }
 
 TEST_CASE("a keyless touch of a silver chest falls back to its own hint",
-          "[game][items][level-fixtures][unpacked]") {
+          "[game][items][level-fixtures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA6/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELA6/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("A6");
@@ -1275,9 +1268,9 @@ TEST_CASE("a keyless touch of a silver chest falls back to its own hint",
     }
 }
 
-TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtures][unpacked]") {
+TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("G1");
@@ -1309,10 +1302,10 @@ TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtur
 }
 
 TEST_CASE("armor items prevent fixture knockdown before the health callback",
-          "[game][items][level-fixtures][unpacked]") {
+          "[game][items][level-fixtures][assets]") {
     Fixture f;
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("G1");

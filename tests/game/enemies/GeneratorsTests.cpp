@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/BossDefinition.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
@@ -49,6 +50,7 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GRU1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":10,"rate":30},
@@ -102,20 +104,20 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
 }
 
 TEST_CASE("Temple and Underworld special generators draw their authored trees and breed",
-          "[game][generators][unpacked]") {
+          "[game][generators][assets]") {
     const s32 realm = GENERATE(5, 6);
     const bool temple = realm == 5;
     const auto* level = temple ? "LEVELS/LEVELE1" : "LEVELS/LEVELF1";
     const auto* archive = temple ? "ITEMS/LEVELE" : "ITEMS/LEVELF";
-    const auto root = test::unpackedOrSkip(std::string(level) + "/world.json")
+    const auto root = test::assetOrSkip(std::string(level) + "/WORLDS.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path();
-    test::unpackedOrSkip(std::string(archive) + "/animations.json");
+    test::assetOrSkip(std::string(archive) + "/ANIM.PS2");
     const std::array templeKinds{"ICE", "IMP", "PLA", "ZOM"};
     const std::array hellKinds{"DEM", "WAR", "GHO", "SKY"};
     for (const auto* kind : temple ? templeKinds : hellKinds) {
-        test::unpackedOrSkip(std::string("MONSTERS/") + kind + "/animations.json");
+        test::assetOrSkip(std::string("MONSTERS/") + kind + "/ANIM.PS2");
     }
     test::FakeRenderDevice device;
     WorldLayout layout;
@@ -191,11 +193,9 @@ std::filesystem::path sampleLevel(std::string_view name) {
 }
 
 TEST_CASE("boss generators use the stage record and breed after the birth delay",
-          "[spider][unpacked][stop-time]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/SPI/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[spider][assets][stop-time]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/SPI/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, root, nullptr, 17, {}, 3);
@@ -255,6 +255,7 @@ TEST_CASE("boss generators can borrow their body from the summoned species archi
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BOSSGEN",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30,"repeats":true}]}]})");
@@ -294,11 +295,11 @@ TEST_CASE("boss generators can borrow their body from the summoned species archi
 }
 
 TEST_CASE("Genie whirlwind attacks leave visible animated generators that breed wind enemies",
-          "[game][generators][genie-generators][unpacked]") {
+          "[game][generators][genie-generators][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELC5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
-    test::unpackedOrSkip("MONSTERS/WIND/animations.json");
+        test::assetOrSkip("LEVELS/LEVELC5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DJINN/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/WIND/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -375,12 +376,10 @@ TEST_CASE("Genie whirlwind attacks leave visible animated generators that breed 
 }
 
 TEST_CASE("Spider Queen generators retain the landed egg pose until destroyed",
-          "[spider][spider-generator][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/DRIDER/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("MONSTERS/SPI/animations.json");
+          "[spider][spider-generator][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/DRIDER/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SPI/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(root / "MONSTERS/DRIDER"));
@@ -445,11 +444,11 @@ TEST_CASE("Spider Queen generators retain the landed egg pose until destroyed",
 }
 
 TEST_CASE("the fields place forty-seven generators for a party of one, of grunts and rats",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path level =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path();
     const std::filesystem::path root = level.parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(level));
@@ -463,7 +462,7 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     REQUIRE(enemies.kindLoaded(kGruntKind));
     REQUIRE(enemies.kindLoaded(kRatKind));
     // With the fields' roster the same records breed zombies and maggots instead.
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
     const std::vector<LevelEnemy> fields{{13, kMediumClass, {}}, {12, kSmallClass, {}}};
     Enemies bred;
     bred.open(device, root, &collision, 13, EnemyScales{}, 3);
@@ -499,11 +498,9 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
 }
 
 TEST_CASE("a generator breeds grunts for a party near it up to its count, and crumbles when struck",
-          "[game][enemies][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][enemies][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(sampleLevel("generators-field")));
@@ -633,11 +630,9 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
 }
 
 TEST_CASE("a generator stands in its strength's state and a crumble doubles its brood",
-          "[game][enemies][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][enemies][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     const auto dir = test::scratchDirectory("generators-crumble");
     writeTextFile(dir / "world.json", R"({
   "objects": [{"name": "GROUND", "position": [0, 0, 0], "next": -1, "child": -1}],
@@ -717,11 +712,9 @@ TEST_CASE("a player's blow on a generator earns five times its kind's row of the
 }
 
 TEST_CASE("worm pits allow walking and birth at their centre without losing their target body",
-          "[game][generators][enemy-collision][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/WRM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][generators][enemy-collision][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/WRM/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(sampleLevel("worm-generator")));
@@ -754,14 +747,12 @@ TEST_CASE("worm pits allow walking and birth at their centre without losing thei
 }
 
 TEST_CASE("Desert C1 births retain the roster and a clear path from each authored generator",
-          "[game][generators][desert-births][unpacked]") {
-    const auto root = test::unpackedOrSkip("LEVELS/LEVELC1/collision.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][generators][desert-births][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELC1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog catalog;
-    test::unpackedOrSkip("wdata/DESERT.json");
+    test::assetOrSkip("WDATA/DESERT.WAD");
     REQUIRE(catalog.load(root));
     LevelWorld world;
     const auto level = catalog.byName("C1");

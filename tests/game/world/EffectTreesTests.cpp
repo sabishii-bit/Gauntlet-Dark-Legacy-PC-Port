@@ -6,10 +6,12 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "formats/AnimationTree.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LegendItems.h"
@@ -21,8 +23,8 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("Garm eye ribbons inherit camera-facing parent transforms before drawing their mesh",
-          "[effects][garm][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/GARM/animations.json").parent_path();
+          "[effects][garm][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/GARM/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -53,8 +55,13 @@ TEST_CASE("Garm eye ribbons inherit camera-facing parent transforms before drawi
             if (!node.object.empty()) {
                 const auto mesh = archive.models.find(node.object);
                 REQUIRE(mesh);
-                corners.emplace_back(expected[n] *
-                                     Vec4{archive.models.mesh(*mesh).vertices[0].position, 1});
+                const auto& geometry = archive.models.mesh(*mesh);
+                REQUIRE(geometry.parts.size() == 1);
+                REQUIRE_FALSE(geometry.parts[0].indices.empty());
+                // Native strips retain their indexed corner order; vertex storage order is not
+                // necessarily draw order as it was in the flattened OBJ reference.
+                const auto first = geometry.parts[0].indices[0];
+                corners.emplace_back(expected[n] * Vec4{geometry.vertices[first].position, 1});
             }
         }
         device.draws.clear();
@@ -68,8 +75,8 @@ TEST_CASE("Garm eye ribbons inherit camera-facing parent transforms before drawi
 }
 
 TEST_CASE("retail potion fades keep the startup visible and remove each mesh at its authored end",
-          "[effects][vfx-timing][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+          "[effects][vfx-timing][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
     ItemArchive weapons;
     REQUIRE(weapons.load(root));
     test::FakeRenderDevice device;
@@ -145,8 +152,8 @@ TEST_CASE("retail potion fades keep the startup visible and remove each mesh at 
 }
 
 TEST_CASE("the melee ward gem flash emits both authored orange particle trails",
-          "[effects][enemy-melee][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path();
+          "[effects][enemy-melee][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path();
     ItemArchive powerups;
     REQUIRE(powerups.load(root));
     test::FakeRenderDevice device;
@@ -169,9 +176,9 @@ TEST_CASE("the melee ward gem flash emits both authored orange particle trails",
 }
 
 TEST_CASE("lion gargoyle breath resolves FBALLX from the loaded weapons archive",
-          "[effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GAR_LION/animations.json");
+          "[effects][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GAR_LION/ANIM.PS2");
     ItemArchive weapons;
     ItemArchive lion;
     REQUIRE(weapons.load(root / "WEAPONS"));
@@ -198,8 +205,8 @@ TEST_CASE("lion gargoyle breath resolves FBALLX from the loaded weapons archive"
     effects.clear();
 }
 
-TEST_CASE("GETGARG pickup burst survives a four-frame batch", "[effects][unpacked]") {
-    const auto directory = test::unpackedOrSkip("POWERUPS/animations.json").parent_path();
+TEST_CASE("GETGARG pickup burst survives a four-frame batch", "[effects][assets]") {
+    const auto directory = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(directory));
     test::FakeRenderDevice device;
@@ -220,15 +227,13 @@ TEST_CASE("GETGARG pickup burst survives a four-frame batch", "[effects][unpacke
 }
 
 TEST_CASE("all authored monster generator effects bind their particle textures and emit",
-          "[generators][effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[generators][effects][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
     usize checked = 0;
     for (s32 kind = 0; kind < kSwarmKindCount; ++kind) {
         const std::string directory = "MONSTERS/" + std::string(enemyKind(kind).name);
-        test::unpackedOrSkip(directory + "/animations.json");
+        test::assetOrSkip(directory + "/ANIM.PS2");
         ItemArchive archive;
         REQUIRE(archive.load(root / directory));
         for (const auto* name : {"GENHIT", "GENDIE"}) {
@@ -281,6 +286,7 @@ TEST_CASE("zero-frame effects retain the thirty-frame fallback at their authored
       {"name":"STILL","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":0,"frameRate":60}]}]})");
     ItemArchive archive;
+    test::convertModelFixture(root);
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     EffectTrees effects;
@@ -328,6 +334,7 @@ TEST_CASE("an effect can tell how long it has left and fade out over its last mo
       {"name":"SMOKE","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30}]}]})");
     ItemArchive archive;
+    test::convertModelFixture(root);
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     EffectTrees effects;
@@ -366,6 +373,7 @@ TEST_CASE("persistent effects hold their last pose until explicitly released",
       {"name":"PIECE","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30}]}]})");
     ItemArchive archive;
+    test::convertModelFixture(root);
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     EffectTrees effects;
@@ -406,6 +414,7 @@ TEST_CASE("an effect gives off its light a unit over it while it plays, swelling
       {"name":"GLOW","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30}]}]})");
     ItemArchive archive;
+    test::convertModelFixture(root);
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     EffectTrees effects;
@@ -441,8 +450,8 @@ TEST_CASE("an effect gives off its light a unit over it while it plays, swelling
 }
 
 TEST_CASE("Wraith's waiting portal retains its authored static scale throughout its hold",
-          "[game][world][effects][wraith][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path();
+          "[game][world][effects][wraith][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -467,8 +476,8 @@ TEST_CASE("Wraith's waiting portal retains its authored static scale throughout 
 }
 
 TEST_CASE("Wraith emergence smoke preserves its growing geometry when facing the camera",
-          "[game][world][effects][wraith][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path();
+          "[game][world][effects][wraith][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -495,8 +504,8 @@ TEST_CASE("Wraith emergence smoke preserves its growing geometry when facing the
 }
 
 TEST_CASE("Yeti stomp geometry draws through the floor using its authored depth policy",
-          "[game][world][effects][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();
+          "[game][world][effects][yeti][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/YETI/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -512,8 +521,8 @@ TEST_CASE("Yeti stomp geometry draws through the floor using its authored depth 
 }
 
 TEST_CASE("Yeti grab trail scrolls its subtree rather than the record's unrelated texture slot",
-          "[game][world][effects][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();
+          "[game][world][effects][yeti][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/YETI/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -537,8 +546,8 @@ TEST_CASE("Yeti grab trail scrolls its subtree rather than the record's unrelate
 }
 
 TEST_CASE("Yeti frost breath preserves the staggered frame of each mist branch",
-          "[game][world][effects][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();
+          "[game][world][effects][yeti][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/YETI/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -555,8 +564,8 @@ TEST_CASE("Yeti frost breath preserves the staggered frame of each mist branch",
 }
 
 TEST_CASE("a node-attached effect draws with the moving parent's full basis",
-          "[game][world][effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+          "[game][world][effects][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -588,8 +597,8 @@ TEST_CASE("a node-attached effect draws with the moving parent's full basis",
 }
 
 TEST_CASE("legend effects carry a world-space trail and draw its sprites facing the camera",
-          "[game][world][effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("ITEMS/LEVELB6/animations.json").parent_path();
+          "[game][world][effects][assets]") {
+    const auto root = test::assetOrSkip("ITEMS/LEVELB6/ANIM.PS2").parent_path();
     ItemArchive items;
     REQUIRE(items.load(root));
     test::FakeRenderDevice device;
@@ -628,8 +637,8 @@ TEST_CASE("legend effects carry a world-space trail and draw its sprites facing 
 }
 
 TEST_CASE("dragon FIRE plays both authored particle nodes without requiring a mesh",
-          "[game][world][effects][breath][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/DRAGON/animations.json").parent_path();
+          "[game][world][effects][breath][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2").parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
@@ -682,9 +691,9 @@ TEST_CASE("dragon FIRE plays both authored particle nodes without requiring a me
 }
 
 TEST_CASE("an effect tree plays its sequence once where it was started, then goes",
-          "[game][world][effects][unpacked]") {
+          "[game][world][effects][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+        test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     ItemArchive weapons;
     REQUIRE(weapons.load(root / "WEAPONS"));
     test::FakeRenderDevice device;
@@ -714,8 +723,8 @@ TEST_CASE("an effect tree plays its sequence once where it was started, then goe
 }
 
 TEST_CASE("a fast legend charge holds its final pose for the unscaled effect lifetime",
-          "[game][world][effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+          "[game][world][effects][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
     ItemArchive weapons;
     REQUIRE(weapons.load(root));
     test::FakeRenderDevice device;
@@ -741,9 +750,9 @@ TEST_CASE("a fast legend charge holds its final pose for the unscaled effect lif
 }
 
 TEST_CASE("an effect can be turned, carried along and kept repeating until it is stopped",
-          "[game][world][effects][unpacked]") {
+          "[game][world][effects][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+        test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     ItemArchive weapons;
     REQUIRE(weapons.load(root / "WEAPONS"));
     test::FakeRenderDevice device;
@@ -773,9 +782,9 @@ TEST_CASE("an effect can be turned, carried along and kept repeating until it is
 }
 
 TEST_CASE("an effect played through gives way to the tree named to take over, by name",
-          "[game][world][effects][unpacked]") {
+          "[game][world][effects][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+        test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     ItemArchive weapons;
     REQUIRE(weapons.load(root / "WEAPONS"));
     test::FakeRenderDevice device;
@@ -798,7 +807,7 @@ TEST_CASE("an effect played through gives way to the tree named to take over, by
     // The crypt's book of protection burns on the lich as a tree with a sequence of no
     // frames, which stays its whole time.
     const std::filesystem::path crypt = root / "ITEMS" / "LEVELG5";
-    if (std::filesystem::exists(crypt / "animations.json")) {
+    if (AssetLocator(crypt).find("ANIM.PS2")) {
         ItemArchive items;
         REQUIRE(items.load(crypt));
         setting.then = "LEGENDFX";
@@ -820,8 +829,8 @@ TEST_CASE("an effect played through gives way to the tree named to take over, by
 }
 
 TEST_CASE("the classes' turbo effects play through, flip-books that start late and all",
-          "[game][world][effects][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("PLAYERS/WIZ/SFXBLU/animations.json")
+          "[game][world][effects][assets]") {
+    const std::filesystem::path root = test::assetOrSkip("PLAYERS/WIZ/SFXBLU/ANIM.PS2")
                                            .parent_path()
                                            .parent_path()
                                            .parent_path()
@@ -883,8 +892,8 @@ TEST_CASE("every player effect export retains retail node and sequence texture c
 }
 
 TEST_CASE("Jester strong and turbo trails use their delayed texture windows",
-          "[game][effects][unpacked][player-effects]") {
-    const auto directory = test::unpackedOrSkip("PLAYERS/JES/SFXYEL/animations.json").parent_path();
+          "[game][effects][assets][player-effects]") {
+    const auto directory = test::assetOrSkip("PLAYERS/JES/SFXYEL/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(directory));

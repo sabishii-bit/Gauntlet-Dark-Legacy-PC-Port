@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <span>
 #include <vector>
@@ -15,6 +16,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 
 namespace {
 
@@ -48,6 +50,7 @@ std::filesystem::path sampleFigure(std::string_view name) {
      "position": [0.0, 0.0, 0.0]},
     {"name": "BANNER", "object": "BANNER", "type": 0, "flags": 0, "objectFlags": 0, "parent": 1,
      "position": [0.0, 2.0, 0.0]}]}]})");
+    test::convertModelFixture(dir);
     return dir;
 }
 
@@ -77,6 +80,46 @@ TEST_CASE("world occlusion is a per-draw policy and preserves authored halo blen
         CHECK_FALSE(device.draws[1].state.depthWrite);
         CHECK(device.draws[1].state.blend == BlendMode::Additive);
     }
+}
+
+TEST_CASE("tree models resolve native external slots only through local named lenders",
+          "[world][model][texture-lender]") {
+    const auto dir = sampleFigure("tree-model-external");
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"name":"SKIN","file":"textures/000_SKIN.png","width":2,"height":2},
+        {"name":"CLOTH","file":"unused.png","width":2,"height":2,"flags":32}]})");
+    test::convertModelFixture(dir);
+    const auto lenderDir = test::scratchDirectory("tree-model-lender");
+    writeFile(lenderDir / "cloth.png", test::kTinyPng);
+    writeTextFile(lenderDir / "textures.json", R"({"bitmaps":[
+        {"name":"CLOTH","file":"cloth.png","width":2,"height":2,"flags":128}]})");
+    test::convertModelFixture(lenderDir);
+    ModelSet models;
+    TextureSet textures;
+    TextureSet lender;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(lender.load(lenderDir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel model;
+    REQUIRE_FALSE(model.bind(trees.tree(0), models, textures, device));
+    REQUIRE_FALSE(model.bound());
+    const std::array<TextureSet*, 3> lenders{nullptr, &textures, &lender};
+    REQUIRE(model.bind(trees.tree(0), models, textures, device, lenders));
+    model.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[1].texture == &lender.texture(device, 0));
+    CHECK(device.draws[1].state.blend == BlendMode::Alpha);
+    // Overrides still address the costume slot, not the lender's unrelated index.
+    model.setTextureFrame(1, &device.whiteTexture());
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[1].texture == &device.whiteTexture());
+    REQUIRE_FALSE(model.bind(trees.tree(0), models, textures, device));
+    CHECK_FALSE(model.bound());
 }
 
 TEST_CASE("tree effects can composite after scenery without redrawing depth-writing parts",
@@ -497,8 +540,8 @@ TEST_CASE("an object node shows the mesh of its run that the frame calls for", "
 }
 
 TEST_CASE("the spawn effect's flame column comes and goes with its frames",
-          "[world][model][unpacked]") {
-    const std::filesystem::path dir = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+          "[world][model][assets]") {
+    const std::filesystem::path dir = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
     ModelSet models;
     TextureSet textures;
     AnimationSet trees;

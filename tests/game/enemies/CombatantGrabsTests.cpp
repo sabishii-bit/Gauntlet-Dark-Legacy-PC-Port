@@ -9,6 +9,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/CombatantFixture.h"
 
 namespace {
@@ -31,6 +32,7 @@ struct Fixture {
         writeFile(archive / "skin.png", test::kTinyPng);
         writeTextFile(archive / "textures.json",
                       R"({"bitmaps":[{"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(archive);
         writeTextFile(archive / "animations.json", R"({"trees":[{"name":"YETI",
           "nodes":[{"name":"HAND","object":"BODY","parent":-1,"position":[0,10,0]}],
           "sequences":[{"name":"IDLE","frames":2},{"name":"GRAB","frames":120}]}]})");
@@ -150,9 +152,9 @@ TEST_CASE("destination steps follow the ready target within the authored home ra
     REQUIRE(glm::length(f.fighter.actor.position()) == Approx(5));
 }
 TEST_CASE("retail Yeti grab uses the animated hand and its frame 100 release",
-          "[game][yeti][combatant-grab][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+          "[game][yeti][combatant-grab][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture f;
     f.open(device, root, nullptr, {}, 'I');

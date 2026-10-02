@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
 #include "game/enemies/BossDefinition.h"
 #include "game/enemies/CombatantFixture.h"
@@ -69,6 +70,7 @@ struct Fixture {
             "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},
                       {"name":"HIT","flags":16,"levelFormat":"S_%cHIT"},{"name":"LOOP","life":100},
                       {"name":"SHOT","flags":131072},{"name":"SHOT","flags":4194304}]})");
+        test::convertModelFixture(root);
         REQUIRE(archive.load(root));
         REQUIRE(data.load(root / "critter.json"));
     }
@@ -181,16 +183,16 @@ TEST_CASE("combatant item sweeps choose the nearest cover and account for earlie
 }
 
 TEST_CASE("retail Yeti ice attacks damage I5 cover and only pierce a destroyed rock",
-          "[game][boss-projectiles][safe-rocks][yeti][unpacked]") {
+          "[game][boss-projectiles][safe-rocks][yeti][assets]") {
     const s32 attack = GENERATE(2, 3, 9, 10, 13, 14);
     const s32 fps = GENERATE(30, 60);
     CAPTURE(attack, fps);
     Fixture f;
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELI5/world.json");
-    test::unpackedOrSkip("ITEMS/LEVELI5/objects.json");
-    REQUIRE(f.data.load(root / "critter/YETI.json"));
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELI5/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELI5/objects.ngc");
+    REQUIRE(f.data.load(root / "CRITTER/YETI.WAD"));
     REQUIRE(f.archive.load(root / "MONSTERS/YETI"));
     WorldLayout layout;
     ItemArchive items;
@@ -306,15 +308,15 @@ TEST_CASE("projectile end visuals are opt-in and never add damage or completion 
 }
 
 TEST_CASE("Yeti iceball expiry plays the authored break once without splash damage",
-          "[game][boss-projectiles][yeti][projectile-end][unpacked]") {
+          "[game][boss-projectiles][yeti][projectile-end][assets]") {
     const s32 attack = GENERATE(2, 3, 9, 10, 13, 14);
     const s32 fps = GENERATE(30, 120);
     const bool curbed = GENERATE(false, true);
     CAPTURE(attack, fps, curbed);
     Fixture f;
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
-    REQUIRE(f.data.load(root / "critter/YETI.json"));
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
+    REQUIRE(f.data.load(root / "CRITTER/YETI.WAD"));
     REQUIRE(f.archive.load(root / "MONSTERS/YETI"));
     REQUIRE(bossDefinition("YETI").projectileEndVisual);
     for (s32 kind = 34; kind <= 44; ++kind) {
@@ -492,12 +494,12 @@ TEST_CASE("timed-out explosive shots enter their impact phase without a collisio
 }
 
 TEST_CASE("shipped projectile cues are trees and their only custom links are particle trails",
-          "[boss-projectiles][projectile-trail][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path();
+          "[boss-projectiles][projectile-trail][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path();
     usize shots = 0;
     usize trails = 0;
     for (const auto& entry : std::filesystem::directory_iterator(root)) {
-        if (entry.path().extension() != ".json") {
+        if (entry.path().extension() != ".WAD" && entry.path().extension() != ".wad") {
             continue;
         }
         CritterData data;
@@ -566,12 +568,12 @@ TEST_CASE("linked projectile fire emits behind its moving parent and stops at th
 }
 
 TEST_CASE("Dragon fireball records attach their actual linked particle texture",
-          "[boss-projectiles][projectile-trail][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+          "[boss-projectiles][projectile-trail][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
     CritterData data;
     ItemArchive archive;
-    REQUIRE(data.load(root / "critter/DRAGON.json"));
+    REQUIRE(data.load(root / "CRITTER/DRAGON.WAD"));
     REQUIRE(archive.load(root / "MONSTERS/DRAGON"));
     test::FakeRenderDevice device;
     EffectTrees effects;
@@ -696,11 +698,11 @@ TEST_CASE("generator shots leave one stage placement on expiry, but never on cle
 }
 
 TEST_CASE("Lich's shipped hand trap aligns to the floor and morphs for five seconds",
-          "[boss-projectiles][lich][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+          "[boss-projectiles][lich][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     Fixture f;
-    REQUIRE(f.data.load(root / "critter/LICH.json"));
+    REQUIRE(f.data.load(root / "CRITTER/LICH.WAD"));
     REQUIRE(f.archive.load(root / "MONSTERS/LICH"));
     WorldCollision floor;
     CollisionTriangle triangle;
@@ -768,14 +770,14 @@ TEST_CASE("summoning shots invoke one callback on contact or expiration, never o
 }
 
 TEST_CASE("Lich and Spider Queen egg records request stage generators",
-          "[boss-projectiles][spider][lich][unpacked]") {
+          "[boss-projectiles][spider][lich][assets]") {
     const bool hitPlayer = GENERATE(false, true);
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
     for (const std::string name : {"LICH", "DRIDER"}) {
         DYNAMIC_SECTION(name) {
-            test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
+            test::assetOrSkip("MONSTERS/" + name + "/ANIM.PS2");
             CritterData data;
-            REQUIRE(data.load(root / "critter" / (name + ".json")));
+            REQUIRE(data.load(root / "critter" / (name + ".WAD")));
             ItemArchive archive;
             REQUIRE(archive.load(root / "MONSTERS" / name));
             test::FakeRenderDevice device;
@@ -832,10 +834,10 @@ TEST_CASE("Lich and Spider Queen egg records request stage generators",
 }
 
 TEST_CASE("Garm eye ribbons follow their descending trajectory rather than horizontal yaw",
-          "[boss-projectiles][garm][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
+          "[boss-projectiles][garm][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GARM.WAD").parent_path().parent_path();
     CritterData data;
-    REQUIRE(data.load(root / "critter/GARM.json"));
+    REQUIRE(data.load(root / "CRITTER/GARM.WAD"));
     ItemArchive archive;
     REQUIRE(archive.load(root / "MONSTERS/GARM"));
     test::FakeRenderDevice device;
@@ -881,11 +883,11 @@ TEST_CASE("Garm eye ribbons follow their descending trajectory rather than horiz
 }
 
 TEST_CASE("Garm's two body-break projectiles request summons without player damage",
-          "[boss-projectiles][garm][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+          "[boss-projectiles][garm][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GARM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
     CritterData data;
-    REQUIRE(data.load(root / "critter/GARM.json"));
+    REQUIRE(data.load(root / "CRITTER/GARM.WAD"));
     ItemArchive archive;
     REQUIRE(archive.load(root / "MONSTERS/GARM"));
     test::FakeRenderDevice device;
@@ -943,7 +945,7 @@ void checkWebEscape(s32 fps, bool animated) {
     player.actor.spawn(0, {}, nullptr, Vec3{0}, 0);
     player.actor.save().progress().health = 1000;
     if (animated) {
-        const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")
+        const auto root = test::assetOrSkip("PLAYERS/WAR/RED/objects.ngc")
                               .parent_path()
                               .parent_path()
                               .parent_path()
@@ -1015,7 +1017,7 @@ TEST_CASE("players can escape a landed sticky projectile and stop taking contact
 }
 
 TEST_CASE("animated players can walk out of a live web while holding attack",
-          "[boss-projectiles][player-impact][party-motion][spider][unpacked]") {
+          "[boss-projectiles][player-impact][party-motion][spider][assets]") {
     checkWebEscape(GENERATE(30, 60, 120), true);
 }
 
@@ -1185,11 +1187,11 @@ TEST_CASE("reflecting projectiles rebound from walls without impact bursts and s
 }
 
 TEST_CASE("Yeti iceballs bounce off floors and remain harmful afterward",
-          "[game][boss-projectiles][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+          "[game][boss-projectiles][yeti][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
     Fixture f;
-    REQUIRE(f.data.load(root / "critter/YETI.json"));
+    REQUIRE(f.data.load(root / "CRITTER/YETI.WAD"));
     REQUIRE(f.archive.load(root / "MONSTERS/YETI"));
     WorldCollision world;
     CollisionTriangle floor;
@@ -1237,13 +1239,13 @@ TEST_CASE("Yeti iceballs bounce off floors and remain harmful afterward",
 }
 
 TEST_CASE("Yeti mouth-conjured throw survives its launch in the I5 arena",
-          "[game][boss-projectiles][yeti][unpacked]") {
+          "[game][boss-projectiles][yeti][assets]") {
     const s32 framesPerSecond = GENERATE(30, 60, 120);
     const f32 dt = 1.0f / static_cast<f32>(framesPerSecond);
     CAPTURE(framesPerSecond);
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELI5/world.json");
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELI5/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -1294,11 +1296,11 @@ TEST_CASE("Yeti mouth-conjured throw survives its launch in the I5 arena",
 }
 
 TEST_CASE("Wraith snakes morph and the lantern shortens only their birth effect",
-          "[game][boss-projectiles][wraith][unpacked]") {
+          "[game][boss-projectiles][wraith][assets]") {
     Fixture f;
-    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
-    REQUIRE(f.data.load(root / "critter/WRAITH.json"));
+    const auto root = test::assetOrSkip("CRITTER/WRAITH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2");
+    REQUIRE(f.data.load(root / "CRITTER/WRAITH.WAD"));
     REQUIRE(f.archive.load(root / "MONSTERS/WRAITH"));
     CombatShot shot;
     shot.data = &f.data;
@@ -1341,16 +1343,16 @@ TEST_CASE("Wraith snakes morph and the lantern shortens only their birth effect"
 }
 
 TEST_CASE("retail boss projectile records retain physics and effect transitions",
-          "[game][boss-projectiles][assets][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRIDER.json").parent_path().parent_path();
+          "[game][boss-projectiles][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRIDER.WAD").parent_path().parent_path();
     for (s32 kind = 34; kind <= 44; ++kind) {
         const std::string name{bossNameOf(kind)};
         DYNAMIC_SECTION(name) {
             const auto wad = test::assetOrSkip("CRITTER/" + name + ".WAD");
-            test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
+            test::assetOrSkip("MONSTERS/" + name + "/ANIM.PS2");
             const auto raw = formats::parseCritterWad(readFile(wad));
             CritterData data;
-            REQUIRE(data.load(root / "critter" / (name + ".json")));
+            REQUIRE(data.load(root / "CRITTER" / (name + ".WAD")));
             REQUIRE(data.damages().size() == raw.damages.size());
             ItemArchive archive;
             REQUIRE(archive.load(root / "MONSTERS" / name));

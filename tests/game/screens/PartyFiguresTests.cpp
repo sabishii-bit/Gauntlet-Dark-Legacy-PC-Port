@@ -64,9 +64,9 @@ TEST_CASE("a party without figures draws nothing", "[game][screens][figures]") {
 }
 
 TEST_CASE("the portal's skin, then the damage flash, then the chrome is worn",
-          "[game][screens][figures][unpacked]") {
-    const auto weaponsDirectory = test::unpackedOrSkip("WEAPONS/textures.json").parent_path();
-    const auto powerupsDirectory = test::unpackedOrSkip("POWERUPS/textures.json").parent_path();
+          "[game][screens][figures][assets]") {
+    const auto weaponsDirectory = test::assetOrSkip("WEAPONS/textures.ngc").parent_path();
+    const auto powerupsDirectory = test::assetOrSkip("POWERUPS/textures.ngc").parent_path();
     test::FakeRenderDevice device;
     ItemArchive weapons;
     ItemArchive powerups;
@@ -95,9 +95,8 @@ TEST_CASE("the portal's skin, then the damage flash, then the chrome is worn",
     powerups.release();
 }
 
-TEST_CASE("a head gem appearing bursts once about its wearer",
-          "[game][screens][figures][unpacked]") {
-    const auto powerupsDirectory = test::unpackedOrSkip("POWERUPS/textures.json").parent_path();
+TEST_CASE("a head gem appearing bursts once about its wearer", "[game][screens][figures][assets]") {
+    const auto powerupsDirectory = test::assetOrSkip("POWERUPS/textures.ngc").parent_path();
     test::FakeRenderDevice device;
     ItemArchive powerups;
     REQUIRE(powerups.load(powerupsDirectory));

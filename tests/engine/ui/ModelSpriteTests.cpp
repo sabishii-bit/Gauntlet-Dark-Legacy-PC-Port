@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 
 namespace {
 
@@ -37,6 +38,7 @@ std::filesystem::path sampleScene(std::string_view name) {
      "position": [1.0, 0.0, 0.0]},
     {"name": "FR", "object": "ICON_ARROWFR", "type": 1, "flags": 0, "objectFlags": 0,
      "parent": 0, "position": [0.0, 0.0, 0.0]}]}]})");
+    test::convertModelFixture(dir);
     return dir;
 }
 

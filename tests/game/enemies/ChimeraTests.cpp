@@ -23,8 +23,8 @@ struct ChimeraFixture {
     test::CombatantFixture fight;
     std::array<EnemyView, 1> players;
     ChimeraFixture() {
-        const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
-        test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+        const auto root = test::assetOrSkip("CRITTER/CHIMERA.WAD").parent_path().parent_path();
+        test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
         fight.open(renderer, root, nullptr, {}, 'A');
         REQUIRE(fight.spawn("CHIMERA", Vec3{0}, 0));
         players[0].player = 0;
@@ -119,7 +119,7 @@ TEST_CASE("the body falls with its last head, after each head's own fall",
                 losses, [](const auto& loss) { return loss.killed && loss.critter == 0; }) == 1);
 }
 
-TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][unpacked]") {
+TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][assets]") {
     ChimeraFixture fixture;
     auto& body = fixture.fight.actor;
     REQUIRE(body.childCount() == 3);
@@ -159,7 +159,7 @@ TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][
 }
 
 TEST_CASE("Chimera routes head damage and shares body damage without applying armor twice",
-          "[game][chimera][unpacked]") {
+          "[game][chimera][assets]") {
     ChimeraFixture fixture;
     auto& body = fixture.fight.actor;
     EnemyHit hit;
@@ -208,8 +208,8 @@ TEST_CASE("Chimera routes head damage and shares body damage without applying ar
 }
 
 TEST_CASE("Chimera scimitar removes the lion only on impact, without subtracting body health",
-          "[game][chimera][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
+          "[game][chimera][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/CHIMERA.WAD").parent_path().parent_path();
     test::FakeRenderDevice renderer;
     Bosses bosses;
     bosses.open(renderer, root, nullptr, {}, 'A');
@@ -249,12 +249,9 @@ TEST_CASE("Chimera scimitar removes the lion only on impact, without subtracting
     REQUIRE(stump);
 }
 
-TEST_CASE("Chimera's heads turn to the party from their necks", "[game][chimera][unpacked]") {
+TEST_CASE("Chimera's heads turn to the party from their necks", "[game][chimera][assets]") {
     ChimeraFixture fixture;
     auto& body = fixture.fight.actor;
-    if (body.child(1)->data()->looks()[0].node.empty()) {
-        SKIP("critter manifest predates the look-at nodes; re-run gdlunpack --only CRITTER");
-    }
     REQUIRE(body.child(1)->data()->looks()[0].node == "BODY1_ESTEVE");
     REQUIRE(body.child(2)->data()->looks()[0].node == "BODY1_LSTEVE");
     REQUIRE(body.child(3)->data()->looks()[0].node == "BODY1_SHEAD");
@@ -282,7 +279,7 @@ TEST_CASE("Chimera's heads turn to the party from their necks", "[game][chimera]
 }
 
 TEST_CASE("Chimera shared death stops surviving heads and emits only body reward",
-          "[game][chimera][unpacked]") {
+          "[game][chimera][assets]") {
     ChimeraFixture fixture;
     auto& body = fixture.fight.actor;
     for (s32 frame = 0; frame < 300; ++frame) {

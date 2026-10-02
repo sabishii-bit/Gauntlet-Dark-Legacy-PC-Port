@@ -11,6 +11,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
+#include "game/players/ClassData.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/world/PlayerArsenal.h"
@@ -24,9 +26,9 @@ static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
 
 TEST_CASE("equipped hand powerups replace the class weapon and restore it when switched off",
-          "[game][figure][held-powerup][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/objects.json").parent_path().parent_path();
-    test::unpackedOrSkip("POWERUPS/objects.json");
+          "[game][figure][held-powerup][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::assetOrSkip("POWERUPS/objects.ngc");
     test::FakeRenderDevice device;
     ItemArchive weapons;
     ItemArchive powerups;
@@ -142,8 +144,8 @@ TEST_CASE("Phoenix activation follows enabled inventory and expires without requ
 }
 
 TEST_CASE("the warrior's slow swing leaves ghosts of the axe that fade after it",
-          "[game][figure][weapon-trail][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+          "[game][figure][weapon-trail][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()
@@ -174,10 +176,10 @@ TEST_CASE("the warrior's slow swing leaves ghosts of the axe that fade after it"
 }
 
 TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
-          "[game][figure][xray][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+          "[game][figure][xray][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/YEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/JES/ANIM/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive powerups;
     REQUIRE(powerups.load(root / "POWERUPS"));
@@ -208,10 +210,10 @@ TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
 }
 
 TEST_CASE("a shield is borne on the second hand, and the jester's hand goes meanwhile",
-          "[game][figure][shield][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/objects.json").parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+          "[game][figure][shield][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/YEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/JES/ANIM/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive weapons;
     REQUIRE(weapons.load(root / "WEAPONS"));
@@ -245,11 +247,11 @@ TEST_CASE("a shield is borne on the second hand, and the jester's hand goes mean
 }
 
 TEST_CASE("the sign of who is it hangs on the body's root from the realm's items",
-          "[game][figure][it][unpacked]") {
+          "[game][figure][it][assets]") {
     const auto root =
-        test::unpackedOrSkip("ITEMS/LEVELG/objects.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+        test::assetOrSkip("ITEMS/LEVELG/objects.ngc").parent_path().parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/YEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/JES/ANIM/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive items;
     REQUIRE(items.load(root / "ITEMS/LEVELG"));
@@ -273,10 +275,10 @@ TEST_CASE("the sign of who is it hangs on the body's root from the realm's items
 }
 
 TEST_CASE("Every headwear powerup names an object of the powerups archive",
-          "[game][figure][headwear][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
-    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+          "[game][figure][headwear][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/YEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/JES/ANIM/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive powerups;
     REQUIRE(powerups.load(root / "POWERUPS"));
@@ -302,14 +304,14 @@ TEST_CASE("Every headwear powerup names an object of the powerups archive",
 }
 
 TEST_CASE("Jester throws face the camera and his permanent familiar fires once per release",
-          "[game][world][figure][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/JES/SFXGRE/animations.json")
+          "[game][world][figure][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/JES/SFXGRE/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()
                           .parent_path();
-    test::unpackedOrSkip("PLAYERS/JES/GRE/animations.json");
-    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+    test::assetOrSkip("PLAYERS/JES/GRE/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/JES/ANIM/ANIM.PS2");
     test::FakeRenderDevice device;
     CharacterSave save;
     save.character = 7;
@@ -392,8 +394,8 @@ TEST_CASE("player figure scale prioritizes ogre and growth over mastery", "[game
 
 TEST_CASE(
     "Phoenix enables companion release below level thirty and restores the familiar on toggle",
-    "[game][figure][phoenix][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    "[game][figure][phoenix][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     test::FakeRenderDevice device;
     ItemArchive powerups;
     REQUIRE(powerups.load(root / "POWERUPS"));
@@ -463,6 +465,7 @@ std::filesystem::path costumeFixture(std::string_view name, bool animated) {
                 {"name":"HAND","position":[7,8,9]}],
              "sequences":[{"name":"READY","frames":60,"frameRate":30,"repeats":true}]}]})");
     }
+    test::convertModelFixture(costume);
     return root;
 }
 
@@ -480,6 +483,62 @@ TEST_CASE("an unloaded player figure is safe to animate and draw", "[game][world
     REQUIRE(device.draws.empty());
     REQUIRE(PlayerFigure::load(device, test::scratchDirectory("figure-missing"), CharacterSave{}) ==
             nullptr);
+}
+
+TEST_CASE("a figure owns shared native texture pixels for its complete draw lifetime",
+          "[game][figure][texture-lender]") {
+    const auto root = costumeFixture("figure-external", false);
+    const auto costume = root / "PLAYERS/WAR/BLU";
+    writeTextFile(costume / "textures.json", R"({"bitmaps":[
+        {"name":"SKIN","file":"unused.png","width":2,"height":2,"flags":32}]})");
+    test::convertModelFixture(costume);
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.color = 1;
+    REQUIRE_FALSE(PlayerFigure::load(device, root, save, false));
+    const auto shared = root / "POWERUPS";
+    std::filesystem::create_directories(shared);
+    writeFile(shared / "skin.png", test::kTinyPng);
+    writeTextFile(shared / "textures.json", R"({"bitmaps":[
+        {"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(shared);
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->heldWeaponBound());
+    for (s32 frame = 0; frame < 3; ++frame) {
+        device.draws.clear();
+        figure->animate(0, 2, 1.0f / 30);
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false);
+        REQUIRE(device.draws.size() == 3);
+        for (const auto& draw : device.draws) {
+            REQUIRE(draw.texture != &device.whiteTexture());
+            const auto* pixels = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            REQUIRE(pixels);
+            REQUIRE(pixels->pixels.size() == 16);
+            CHECK(pixels->pixels[0] == 255);
+        }
+    }
+    device.draws.clear();
+    figure.reset();
+}
+
+TEST_CASE("native player costumes bind and draw every colour of the sixteen costume classes",
+          "[game][figure][texture-lender][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/objects.ngc").parent_path().parent_path();
+    // Sumner's separate WIZ/SUM artwork is not a class-colour costume archive.
+    for (s32 character = 0; character < kStartingClassCount * 2; ++character) {
+        for (s32 color = 0; color < kColorCount; ++color) {
+            CAPTURE(character, classCode(character), color);
+            test::FakeRenderDevice device;
+            CharacterSave save;
+            save.character = character;
+            save.color = color;
+            auto figure = PlayerFigure::load(device, root, save, false);
+            REQUIRE(figure);
+            figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false);
+            CHECK_FALSE(device.draws.empty());
+        }
+    }
 }
 
 TEST_CASE("hand replacement priority and restoration render without retail assets",
@@ -504,6 +563,7 @@ TEST_CASE("hand replacement priority and restoration render without retail asset
         gear / "animations.json",
         R"({"trees":[{"name":"HAMMER","nodes":[{"name":"HAMMER_HD","object":"HAMMER_HD","position":[0,0,0]}]}]})");
     ItemArchive archive;
+    test::convertModelFixture(gear);
     REQUIRE(archive.load(gear));
     test::FakeRenderDevice device;
     CharacterSave save;
@@ -550,7 +610,7 @@ TEST_CASE("player figures select costume tiers without requiring a scene",
     save.progress().experience = levelExperience(25);
     REQUIRE(PlayerFigure::costumeDirectory(root, save).filename() == "BLU");
     std::filesystem::create_directories(root / "PLAYERS/WAR/BLU20");
-    writeTextFile(root / "PLAYERS/WAR/BLU20/objects.json", "{}");
+    writeTextFile(root / "PLAYERS/WAR/BLU20/objects.ngc", "");
     REQUIRE(PlayerFigure::costumeDirectory(root, save).filename() == "BLU20");
 }
 
@@ -587,6 +647,7 @@ TEST_CASE("a costume's shadow lies on the ground it is given, apart from the bod
     test::FakeRenderDevice device;
     CharacterSave save;
     save.color = 1;
+    test::convertModelFixture(costume);
     const auto figure = PlayerFigure::load(device, root, save);
     REQUIRE(figure != nullptr);
     REQUIRE(figure->hasShadow());

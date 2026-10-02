@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterArea.h"
@@ -143,8 +144,8 @@ TEST_CASE("a moving expanding sector reaches distant players after launch, not i
 }
 
 TEST_CASE("Garm's shipped stomp launches a persistent expanding sector instead of an instant hit",
-          "[game][boss-areas][garm][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
+          "[game][boss-areas][garm][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GARM.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'H');
@@ -190,6 +191,7 @@ std::filesystem::path areaArchive(bool expanding = false, bool arena = false, bo
     writeFile(archive / "textures/skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"STEP","frames":3}]}]})");
@@ -380,10 +382,10 @@ TEST_CASE("detached slam damage keeps its captured world placement as the boss g
 }
 
 TEST_CASE("Spider Queen and Wraith authored areas use supported root policies",
-          "[game][boss-areas][unpacked]") {
+          "[game][boss-areas][assets]") {
     usize total = 0;
     for (const std::string name : {"DRIDER", "WRAITH"}) {
-        const auto path = test::unpackedOrSkip("critter/" + name + ".json");
+        const auto path = test::assetOrSkip("critter/" + name + ".WAD");
         CritterData data;
         REQUIRE(data.load(path));
         usize count = 0;
@@ -410,12 +412,12 @@ TEST_CASE("Spider Queen and Wraith authored areas use supported root policies",
 }
 
 TEST_CASE("Spider Queen and Wraith encounters emit damaging areas from their authored moves",
-          "[game][boss-areas][unpacked]") {
+          "[game][boss-areas][assets]") {
     for (const std::string name : {"DRIDER", "WRAITH"}) {
         DYNAMIC_SECTION(name) {
             const auto root =
-                test::unpackedOrSkip("critter/" + name + ".json").parent_path().parent_path();
-            test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
+                test::assetOrSkip("critter/" + name + ".WAD").parent_path().parent_path();
+            test::assetOrSkip("MONSTERS/" + name + "/ANIM.PS2");
             test::FakeRenderDevice device;
             test::CombatantFixture fixture;
             Combatant& critters = fixture.actor;
@@ -444,9 +446,9 @@ TEST_CASE("Spider Queen and Wraith encounters emit damaging areas from their aut
 }
 
 TEST_CASE("Chimera SUPER expands towards the player and attaches fire to the body",
-          "[game][boss-areas][chimera][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+          "[game][boss-areas][chimera][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/CHIMERA.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     Combatant& actor = fixture.actor;
@@ -528,9 +530,9 @@ TEST_CASE("arena eruptions use all supplied placements and never substitute the 
 }
 
 TEST_CASE("Plague Fiend SPOUT emits its visual and damage at authored stage anchors",
-          "[game][boss-areas][plague][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/PBOSS.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/PBOSS/animations.json");
+          "[game][boss-areas][plague][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'K');
@@ -653,9 +655,9 @@ TEST_CASE("an eruption losing its player preserves the retail rotated-index fall
 }
 
 TEST_CASE("Yeti stomp reaches the front of the arena from its root effect offset",
-          "[game][boss-areas][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+          "[game][boss-areas][yeti][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'I');
@@ -688,9 +690,9 @@ TEST_CASE("Yeti stomp reaches the front of the arena from its root effect offset
 }
 
 TEST_CASE("Yeti POUND emits its authored eruption and schedules the solid rock",
-          "[game][boss-areas][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+          "[game][boss-areas][yeti][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'I');

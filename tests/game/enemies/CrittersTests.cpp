@@ -17,6 +17,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
 #include "game/enemies/BossCoins.h"
 #include "game/enemies/CombatantBreath.h"
@@ -37,7 +38,7 @@ constexpr f32 kStep = 1.0f / 30.0f;
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 std::filesystem::path unpackedRoot() {
-    return test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
+    return test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
 }
 
 EnemyView playerAt(const Vec3& position, s32 player = 0) {
@@ -106,10 +107,10 @@ TEST_CASE("a critter wad holds the creature's type, moves, damages, parts and so
 }
 
 TEST_CASE("critter data reads a creature's table, clearing the packing tool's leftovers",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root = unpackedRoot();
     CritterData golem;
-    REQUIRE(golem.load(root / "critter/GOLEM.json"));
+    REQUIRE(golem.load(root / "CRITTER/GOLEM.WAD"));
     REQUIRE(golem.loaded());
     REQUIRE(golem.kind() == CombatantKind::Golem);
     REQUIRE(golem.folder() == "golem");
@@ -167,19 +168,19 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(golem.sound(golem.hitSoundFar())->soundFor('G') == "S_GOLGHITFAR");
     REQUIRE(golem.sound(99) == nullptr);
     CritterData general;
-    REQUIRE(general.load(root / "critter/GENERAL.json"));
+    REQUIRE(general.load(root / "CRITTER/GENERAL.WAD"));
     REQUIRE(general.kind() == CombatantKind::General);
     REQUIRE(general.tree() == "GENERAL1");
     REQUIRE(general.sight().maxDistance == 30.0f);
     CritterData missing;
-    REQUIRE_FALSE(missing.load(root / "critter/NOBODY.json"));
+    REQUIRE_FALSE(missing.load(root / "CRITTER/NOBODY.WAD"));
     REQUIRE_FALSE(missing.loaded());
 }
 
 TEST_CASE("the dragon's animated root sits above its floor anchor, including hit effects",
-          "[game][enemies][unpacked][assets]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+          "[game][enemies][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
     const auto wad = test::assetOrSkip("CRITTER/DRAGON.WAD");
     const auto original = formats::parseCritterWad(readFile(wad));
     REQUIRE_FALSE(original.types.empty());
@@ -239,10 +240,10 @@ TEST_CASE("the dragon's animated root sits above its floor anchor, including hit
 }
 
 TEST_CASE("Dragon death coins leave the animated node and survive their flight over the arena",
-          "[game][enemies][unpacked][dragon-coins]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELB6/collision.json");
-    test::unpackedOrSkip("ITEMS/LEVELB6/animations.json");
+          "[game][enemies][assets][dragon-coins]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELB6/ANIM.PS2");
     WorldLayout layout;
     WorldCollision collision;
     REQUIRE(layout.load(root / "LEVELS/LEVELB6"));
@@ -292,9 +293,9 @@ TEST_CASE("Dragon death coins leave the animated node and survive their flight o
 }
 
 TEST_CASE("the dragon wears its ice texture while frozen and restores its skin when thawing",
-          "[game][enemies][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+          "[game][enemies][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     Combatant& critters = fixture.actor;
@@ -342,9 +343,9 @@ TEST_CASE("the dragon wears its ice texture while frozen and restores its skin w
 }
 
 TEST_CASE("dragon breath starts its node effect before harm and keeps contacting during the move",
-          "[game][enemies][breath][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+          "[game][enemies][breath][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     Combatant& critters = fixture.actor;
@@ -427,7 +428,7 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
 }
 
 TEST_CASE("a boss's death record throws its coins all round it, up at seventy degrees",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const std::filesystem::path wad = test::assetOrSkip("CRITTER/LICH.WAD");
     const formats::CritterFile file = formats::parseCritterWad(readFile(wad));
@@ -436,16 +437,13 @@ TEST_CASE("a boss's death record throws its coins all round it, up at seventy de
     REQUIRE(file.damages[1].minSpeed == 30.0f);
     REQUIRE(file.damages[1].maxSpeed == 30.0f);
     CritterData lich;
-    REQUIRE(lich.load(root / "critter/LICH.json"));
+    REQUIRE(lich.load(root / "CRITTER/LICH.WAD"));
     const auto death = lich.moveOfType(MoveDefinition::kDeath);
     REQUIRE(death.has_value());
     REQUIRE(lich.moves()[*death].frameStart == 95);
     const AttackDefinition* spew = lich.damage(lich.moves()[*death].damage0);
     REQUIRE(spew != nullptr);
     REQUIRE(spew->type == AttackDefinition::kSpew);
-    if (spew->speed == 0.0f) {
-        SKIP("the critter data was unpacked before the spew's speed was read");
-    }
     REQUIRE(spew->speed == 30.0f);
     REQUIRE(spew->spewHalfAngle() == Approx(kPi)); // all round
     const Vec3 way = spew->spewVelocity(0.0f);
@@ -459,9 +457,9 @@ TEST_CASE("a boss's death record throws its coins all round it, up at seventy de
 
 TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is worth its "
           "value in experience as it is worn down and killed",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(floor());
@@ -650,9 +648,9 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
 }
 
 TEST_CASE("a general comes with the realm's costume and is found by missiles and sweeps",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("MONSTERS/GENERAL/LEVELG/animations.json");
+    test::assetOrSkip("MONSTERS/GENERAL/LEVELG/ANIM.PS2");
     test::FakeRenderDevice device;
     Critters critters;
     critters.open(device, root, nullptr, EnemyScales{}, 'G');
@@ -681,7 +679,7 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(
         critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{-1.0f, 0.0f, 0.0f}).empty());
     // A gargoyle comes by its form, and falling is worth the key named by it.
-    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+    test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2");
     const auto gargoyle =
         critters.spawn(CombatantKind::Gargoyle, Vec3{-20.0f, 0.0f, 0.0f}, 0.0f, "GAR_EAGL");
     REQUIRE(gargoyle.has_value());
@@ -706,9 +704,9 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
 
 TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, loses its "
           "targets blinded, and is curbed of its flagged attacks",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(floor());
@@ -804,6 +802,7 @@ std::filesystem::path targetedCritter() {
     writeFile(archive / "textures/skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"READY","frames":1},{"name":"ROARATK","frames":25}]},
@@ -865,9 +864,9 @@ TEST_CASE("move effects without an animated node use the root rather than the bo
 }
 
 TEST_CASE("the Lich's emergence gravel attaches at his ground root",
-          "[game][enemies][boss-effects][unpacked][assets]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+          "[game][enemies][boss-effects][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     Combatant& critters = fixture.actor;
@@ -1152,9 +1151,9 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
 }
 
 TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
-          "[game][enemies][genie][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/DJINN.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
+          "[game][enemies][genie][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DJINN.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DJINN/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     Combatant& critters = fixture.actor;
@@ -1216,9 +1215,9 @@ TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
 }
 
 TEST_CASE("a golem's health hangs over it on its GMETER bar, turned to the camera",
-          "[game][enemies][meter][unpacked]") {
+          "[game][enemies][meter][assets]") {
     const std::filesystem::path root = unpackedRoot();
-    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
     test::FakeRenderDevice device;
     CombatantAssets assets;
     REQUIRE(assets.load(device, root, Golem::definition(), 'G'));

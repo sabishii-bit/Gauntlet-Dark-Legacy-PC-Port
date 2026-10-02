@@ -72,9 +72,8 @@ TEST_CASE("class stats load from their files", "[game][players]") {
     REQUIRE_FALSE(empty.loaded());
 }
 
-TEST_CASE("the unpacked class data covers the sixteen playable classes",
-          "[game][players][unpacked]") {
-    const std::filesystem::path dir = test::unpackedOrSkip("pdata/WAR.json").parent_path();
+TEST_CASE("the native class data covers the sixteen playable classes", "[game][players][assets]") {
+    const std::filesystem::path dir = test::assetOrSkip("PDATA/WAR.WAD").parent_path();
     ClassDataSet classes;
     REQUIRE(classes.load(dir));
     REQUIRE(classes.loadedCount() == 16);

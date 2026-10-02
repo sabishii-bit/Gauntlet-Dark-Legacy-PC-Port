@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/screens/LegendPresentation.h"
 
 namespace {
@@ -32,6 +33,7 @@ std::filesystem::path legendArchive(std::string_view name) {
     writeTextFile(dir / "textures.json", R"({"defs":[],"bitmaps":[
         {"index":0,"name":"SEETHROUGH","file":"skin.png","width":2,"height":2,"flags":0},
         {"index":1,"name":"PARTICLE1_A","file":"skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(dir);
     std::string trees;
     for (const std::string_view tree :
          {"LEGENDHLD", "LEGENDPRJ", "LEGENDFX", "LEGENDFX2", "COMBO_SPH", "COMBO_BLU"}) {
@@ -351,8 +353,8 @@ TEST_CASE("legend audio tries alternate spellings only when the first name is un
 
 TEST_CASE(
     "retail blue relic lightning fans into the bearer instead of facing lengthwise at the camera",
-    "[game][screens][legend][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    "[game][screens][legend][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
     LegendFixture fixture;
     REQUIRE(fixture.weapons.load(root));
     fixture.bearer.position = Vec3{4, 7, 9};
@@ -420,10 +422,10 @@ TEST_CASE(
 }
 
 TEST_CASE("every costume uses its authored relic charge once at brandishing",
-          "[game][screens][legend][unpacked]") {
+          "[game][screens][legend][assets]") {
     const s32 color = GENERATE(0, 1, 2, 3);
     const s32 boss = GENERATE(34, 41, 42);
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
     LegendFixture fixture;
     REQUIRE(fixture.weapons.load(root));
     fixture.bearer.color = color;

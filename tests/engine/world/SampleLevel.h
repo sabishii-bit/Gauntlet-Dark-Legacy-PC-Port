@@ -6,6 +6,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 
 namespace gdl::test {
 
@@ -113,6 +114,7 @@ inline std::filesystem::path sampleLevel(std::string_view name) {
   ],
   "locators": []
 })");
+    convertModelFixture(dir);
     return dir;
 }
 
@@ -139,6 +141,7 @@ inline std::filesystem::path sampleLender(std::string_view name) {
      "format": 50, "flags": 128, "halfResolution": false, "frames": 0}
   ]
 })");
+    convertModelFixture(dir);
     return dir;
 }
 
