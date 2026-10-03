@@ -225,6 +225,58 @@ TEST_CASE("player health respects tower immunity and scales only substantial dam
     REQUIRE(f.sounds == std::vector<std::string>{"S_PLYRDMG"});
 }
 
+TEST_CASE("fractional damage survives between hits and rounds health rather than each blow",
+          "[player-health][fractional-health]") {
+    Fixture f;
+    f.hit(0.25f);
+    CHECK(f.player.actor.save().health() == 1000);
+    f.hit(0.25f);
+    CHECK(f.player.actor.save().health() == 1000); // 999.5, rounded for the HUD
+    f.hit(0.25f);
+    CHECK(f.player.actor.save().health() == 999);
+    f.hit(0.25f);
+    CHECK(f.player.actor.save().health() == 999);
+    // An integer pickup must not erase a pending fraction either.
+    f.hit(0.25f);
+    f.player.actor.save().progress().health += 100;
+    f.hit(0.5f);
+    CHECK(f.player.actor.save().health() == 1098);
+}
+
+TEST_CASE("armor absorption does not consume fractional damage already owed",
+          "[player-health][fractional-health]") {
+    Fixture f;
+    f.hit(0.25f);
+    ClassStats stats;
+    stats.armorMin = 400;
+    stats.armorMax = 800;
+    f.health.hurt(f.player, 2, HurtKind::Blow, false, false, 1, f.events, {}, false, &stats);
+    f.hit(0.5f);
+    CHECK(f.player.actor.save().health() == 999);
+}
+
+TEST_CASE("fractional health below one is lethal even when its HUD value rounds to one",
+          "[player-health][fractional-health]") {
+    Fixture f;
+    f.player.actor.save().progress().health = 2;
+    f.hit(1.0f);
+    CHECK(f.player.life == PlayerLife::Standing);
+    f.hit(0.25f);
+    CHECK(f.player.life == PlayerLife::Dying);
+    CHECK(f.player.healthFraction == 0);
+}
+
+TEST_CASE("gold invulnerability retains fractional healing between absorbed hits",
+          "[player-health][fractional-health]") {
+    Fixture f;
+    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor,
+                                                          Damage::kGoldInvulnerable, 0, 60);
+    for (s32 i = 0; i < 4; ++i) {
+        f.hit(2.5f);
+    }
+    CHECK(f.player.actor.save().health() == 1001);
+}
+
 TEST_CASE("a heavy blow taken unguarded teaches the guard to one who never blocked",
           "[game][screens][player-health]") {
     Fixture f;

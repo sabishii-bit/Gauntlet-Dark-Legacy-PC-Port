@@ -92,6 +92,8 @@ public:
     Obstacle obstacle(const ItemInfo& info) const;
 
 private:
+    void refreshTextures();
+
     const TreeInfo* m_tree = nullptr;
     TreeModel m_model;
     TreePose m_pose;
@@ -99,6 +101,8 @@ private:
     TreeParticles m_particles;
     TextureAnimator m_textures;
     f32 m_textureFrames = 0;
+    u32 m_textureSequence = 0;
+    s32 m_textureFrame = 0;
     bool m_gateParticles = false;
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     f32 m_yaw = 0.0f;
