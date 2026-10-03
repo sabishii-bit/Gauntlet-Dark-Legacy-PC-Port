@@ -1,6 +1,7 @@
 #include "game/world/Traps.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 
@@ -37,6 +38,7 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
         trap->damage = static_cast<f32>(ownDamage != 0 ? ownDamage : info.value) * damageScale;
         trap->subtype = info.subtype;
         trap->properties = info.properties;
+        trap->rectangularContact = info.collisionType == 3;
         trap->offTime = ownRest != 0 ? -ownRest * 3 : info.activeOff;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         ItemArchive& source =
@@ -48,7 +50,12 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
             log::warn("Traps: no figure {} in the item archive", name);
         }
         trap->box = trap->figure.obstacle(info);
-        trap->box.centre = Vec3{trap->figure.transform() * Vec4{info.collisionOffset, 1}};
+        // SetItem adds one to coloffset.y. OBJGRP flag 2 leaves vertical-only
+        // offsets in world space; offsets with an X/Z component rotate with it.
+        const Vec3 offset = info.collisionOffset + Vec3{0, 1, 0};
+        const bool rotates = std::abs(offset.x) + std::abs(offset.z) >= 0.01f;
+        trap->box.centre = rotates ? Vec3{trap->figure.transform() * Vec4{offset, 1}}
+                                   : trap->figure.position() + offset;
         trap->figure.gateParticlesOnSequence(true);
         trap->box.solid = false;
         trap->support.bind(instance, info, authored ? &*authored : nullptr, trap->figure,
@@ -165,18 +172,20 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
                 m_wakes.push_back(index);
             }
             // On to the next sequence, and from the last back to the rest.
-            const auto count = static_cast<s32>(std::max<usize>(trap.figure.sequenceCount(), 2));
+            const auto count = static_cast<s32>(std::max<usize>(trap.figure.sequenceCount(), 3));
             trap.action = trap.action + 1 >= count ? kResting : trap.action + 1;
             trap.figure.play(trap.action, trap.action == kResting);
             trap.ticksLeft = trap.action == kResting
                                  ? restTicks(trap)
                                  : std::max(trap.figure.ticksOf(trap.action), 1);
         }
-        if (trap.action == kResting) {
+        // PlayerCollideItem admits traps only in action 2 or 4. ONA is a
+        // wind-up: charging fxhittime there can mask the short actual strike.
+        if (trap.action != 2 && trap.action != 4) {
             continue;
         }
         for (usize v = 0; v < party.size(); ++v) {
-            if (m_gaps[v] <= 0.0f && trap.box.touchedBy(party[v].position, party[v].radius, 0.0f)) {
+            if (m_gaps[v] <= 0.0f && touches(trap, party[v])) {
                 m_gaps[v] = static_cast<f32>(trap.ticksLeft + 1) * kSecondsPerTickLeft;
                 const bool pierces =
                     trap.subtype == kSpikes || trap.subtype == kBlade || trap.subtype == kBlades;
@@ -191,6 +200,25 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
         }
     }
     return hits;
+}
+
+bool Traps::touches(const Trap& trap, const TrapVictim& victim) {
+    // fn_8005F0F4 compares body centres with the sum of the two half-heights.
+    // The Courtyard platform can lower a player below the tentacle's origin:
+    // testing feet against the trap's height alone loses that overlap.
+    if (std::abs(victim.position.y - trap.box.centre.y) > trap.box.height + victim.halfHeight) {
+        return false;
+    }
+    const Vec3 horizontal{victim.position.x, trap.box.centre.y, victim.position.z};
+    if (!trap.rectangularContact) {
+        return trap.box.touchedBy(horizontal, victim.radius, 0.0f);
+    }
+    // fn_8005F0F4 coltype 3 compares each projected axis to extent + radius.
+    // A circle-versus-box distance test wrongly rounds off the accepted corners.
+    Obstacle expanded = trap.box;
+    expanded.halfAcross += victim.radius;
+    expanded.halfAlong += victim.radius;
+    return expanded.touchedBy(horizontal, 0.0f, 0.0f);
 }
 
 void Traps::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,

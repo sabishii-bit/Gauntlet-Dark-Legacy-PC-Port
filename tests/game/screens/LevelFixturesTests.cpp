@@ -20,8 +20,11 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/EnemyMissiles.h"
+#include "game/players/ClassData.h"
+#include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/world/Chests.h"
 #include "game/world/SafeRocks.h"
 #include "game/world/Traps.h"
@@ -390,6 +393,77 @@ TEST_CASE("Courtyard fixtures borrow realm artwork without losing the level arch
     }
     fixture.fixtures.clear();
     fixture.world.clear();
+}
+
+TEST_CASE("Courtyard tentacles damage a knight at the edge of their sweep only during ON",
+          "[level-fixtures][courtyard-tentacles][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("A1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(5);
+    REQUIRE(stats);
+    CharacterSave save;
+    save.character = 5;
+    save.color = 2;
+    save.progress().experience = levelExperience(99);
+    save.progress().health = 9999;
+    PlayerHealth health;
+    PlayerHealth::Events events{};
+    events.block = [](f32, f32) {};
+    events.sound = [](std::string_view) {};
+    events.cry = [](std::string_view) {};
+    events.named = [](std::string_view, f32) {};
+    usize contacts = 0;
+    bool corner = false;
+    SECTION("side of the sweep uses the class's full contact width") {}
+    SECTION("corner of the sweep expands both box axes") {
+        corner = true;
+    }
+    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool directed,
+                        const PlayerImpact& impact) {
+        ++contacts;
+        health.hurt(f.players[player], damage, kind, directed, false,
+                    f.world.level()->tuning.damage, events, impact, false, stats);
+    };
+    f.events.help = [](s32, usize) { return false; };
+    for (usize i = 0; i < f.fixtures.traps().size(); ++i) {
+        const auto& trap = f.fixtures.traps().trap(i);
+        if (trap.subtype != Traps::kBlades || !trap.shown) {
+            continue;
+        }
+        // Native A1's one-player tentacle has a -4 X offset and 4/1 half extents.
+        // These points are in its retail contact lane, but outside the former
+        // half-width circle test. Resolve their height from the native crossing floor.
+        const f32 edge = stats->width * 0.75f;
+        const Vec3 local{corner ? -8.0f - edge : -4.0f, 0, -1.0f - edge};
+        Vec3 at = Vec3{trap.figure.transform() * Vec4{local, 1}};
+        const auto floor = f.world.collision().floorAt(at, 5, 5);
+        REQUIRE(floor);
+        at.y = floor->y;
+        CAPTURE(at.x, at.y, at.z, stats->width);
+        f.players[0].actor.spawn(0, save, stats, at, 0);
+        REQUIRE_FALSE(trap.box.touchedBy(at, f.players[0].actor.radius(), 0));
+        for (s32 frame = 0; frame < 600; ++frame) {
+            const usize before = contacts;
+            f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.events);
+            if (contacts > before) {
+                CHECK(trap.action == 2);
+            }
+            if (trap.action == 1 && contacts == 0) {
+                CHECK(f.players[0].actor.save().health() == 9999);
+            }
+        }
+        CHECK(f.players[0].actor.save().health() < 9999);
+    }
+    CHECK(contacts > 0);
 }
 
 TEST_CASE("every authored flame trap emits only outside OFF and retains its dying tails",
