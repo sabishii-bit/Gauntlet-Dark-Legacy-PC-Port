@@ -10,7 +10,6 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
 
-#include "game/menu/CompassHud.h"
 #include "game/players/ClassData.h"
 #include "game/players/NameCheats.h"
 #include "game/players/PowerupEffects.h"
@@ -64,6 +63,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_names.load(device, m_context.unpackedRoot, m_staticTextures);
     m_weapons.load(context.unpackedRoot / kWeaponsArchive);
     m_figures.loadSkins(device, world.powerups(), m_weapons);
+    m_compass.bind(device, world.powerups());
     const std::array<TextureSet*, 5> effectTextures{&m_weapons.textures, &world.items().textures,
                                                     &world.realmItems().textures,
                                                     &world.powerups().textures, &m_staticTextures};
@@ -160,7 +160,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
         runtime.figure = PlayerFigure::load(device, m_context.unpackedRoot, runtime.actor.save());
-        subjects.push_back(CameraSubject{runtime.actor.position(), runtime.actor.followPoint()});
+        subjects.push_back(CameraSubject{runtime.actor.position(), runtime.actor.followPoint(),
+                                         runtime.actor.height() * 0.5f});
     }
     m_camera.reset(subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
     if (const LevelInfo* level = world.level();
@@ -227,6 +228,7 @@ void PlayScene::close() {
     m_transition.release();
     m_departure.clear();
     m_figures.clear(); // before the archives whose skins it borrows
+    m_compass.clear();
     m_leaving = false;
     m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
@@ -775,7 +777,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 if (!isDown(i)) {
                     const auto& actor = m_players[i].actor;
                     subjects.push_back({actor.position() + m_departure.displacement(),
-                                        actor.followPoint() + m_departure.displacement()});
+                                        actor.followPoint() + m_departure.displacement(),
+                                        actor.height() * 0.5f});
                 }
             }
             m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(),
@@ -827,7 +830,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 std::vector<CameraSubject> subjects;
                 for (const auto& player : m_players) {
                     if (player.life == PlayerLife::Standing) {
-                        subjects.push_back({player.actor.position(), player.actor.followPoint()});
+                        subjects.push_back({player.actor.position(), player.actor.followPoint(),
+                                            player.actor.height() * 0.5f});
                     }
                 }
                 for (s32 i = 0; i < StartCamera::kWarmSteps; ++i) {
@@ -870,6 +874,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     praiseStreaks(seconds);
     if (m_device != nullptr) {
         PartyFigures::greetGems(*m_device, m_players, m_world->powerups(), m_effects);
+        PartyFigures::updateDecoys(*m_device, m_players, m_world->powerups(), seconds, m_effects);
     }
     m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
     m_world->revealCrystals(seconds);
@@ -1103,7 +1108,7 @@ void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& 
 }
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
-                       f32 frameHeight) {
+                       f32 frameHeight, bool optionsOpen) {
     if (!m_open || m_world == nullptr || m_context.config == nullptr) {
         return;
     }
@@ -1151,6 +1156,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     m_arrival.drawEffects(device, clip, m_world->lighting());
+    if (config.camera.compass && !optionsOpen && !m_gameOver.active()) {
+        m_compass.draw(device, clip, camera, config.horizontalFovRadians(),
+                       frameWidth / frameHeight, m_world->lighting());
+    }
     const auto width = static_cast<f32>(config.display.virtualWidth);
     const auto height = static_cast<f32>(config.display.virtualHeight);
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
@@ -1164,7 +1173,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // bars top and bottom, the status boxes hidden beneath the lower one.
     const bool cut = m_welcome.cutting() || (m_promotion.active() && !spawning()) ||
                      relicCeremonyOn() || m_switchCutscene.showing();
-    m_transition.draw(m_canvas, width); // over the view, under the boxes
+    m_transition.draw(m_canvas, width, height); // over the view, under the boxes
     m_names.draw(m_canvas, m_players, clip, width, height);
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
@@ -1174,9 +1183,6 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         if (m_challenge.state() != SecretChallenge::State::Inactive) {
             m_challengeHud.draw(m_canvas, m_challenge.remaining(), m_challenge.duration(),
                                 !spawning() && !m_messages.active());
-        }
-        if (config.camera.compass) {
-            CompassHud::draw(m_canvas, m_messages.text(), m_context.strings, width, camera.yaw);
         }
         m_opponents.meter().draw(m_canvas, device);
         m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,

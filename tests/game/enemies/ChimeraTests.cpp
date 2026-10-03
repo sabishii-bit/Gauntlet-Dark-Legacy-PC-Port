@@ -124,6 +124,75 @@ TEST_CASE("the body falls with its last head, after each head's own fall",
                 losses, [](const auto& loss) { return loss.killed && loss.critter == 0; }) == 1);
 }
 
+TEST_CASE("head hit flashes expire independently of body-controlled animation",
+          "[game][chimera][combatant][hit-feedback]") {
+    HeadedFixture fixture;
+    auto& body = fixture.fight.actor;
+    SECTION("during the shared entrance") {
+        REQUIRE(body.moveType() == MoveDefinition::kStart);
+    }
+    SECTION("while the body holds the heads") {
+        body.hold(true);
+    }
+    SECTION("while the body is frozen") {
+        body.freeze(120);
+    }
+    SECTION("during independent head attacks") {
+        for (s32 frame = 0; frame < 120 && body.moveType() != 1; ++frame) {
+            fixture.step();
+        }
+        REQUIRE(body.moveType() == 1);
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = 0x100000;
+    body.hurt(hit, 1);
+    REQUIRE(body.child(1)->flashing());
+    test::FakeTexture flash{1, 1};
+    const auto drawsFlash = [&] {
+        fixture.renderer.draws.clear();
+        body.draw(fixture.renderer, Mat4{1}, {}, nullptr, nullptr, &flash);
+        REQUIRE_FALSE(fixture.renderer.draws.empty());
+        return std::ranges::any_of(fixture.renderer.draws, [&](const auto& draw) {
+            return draw.state.maskedTexture == &flash;
+        });
+    };
+    REQUIRE(drawsFlash());
+    fixture.step();
+    CHECK(body.child(1)->flashing());
+    CHECK(drawsFlash());
+    fixture.step();
+    CHECK_FALSE(body.child(1)->flashing());
+    CHECK_FALSE(drawsFlash());
+}
+
+TEST_CASE("native Chimera head skin clears after a hit during its shared entrance",
+          "[game][chimera][assets][hit-feedback]") {
+    ChimeraFixture fixture;
+    auto& body = fixture.fight.actor;
+    REQUIRE(body.moveType() == MoveDefinition::kStart);
+    EnemyHit hit;
+    hit.damage = 3;
+    hit.flags = 0x100000;
+    body.hurt(hit, 2);
+    REQUIRE(body.child(2)->flashing());
+    test::FakeTexture flash{1, 1};
+    body.draw(fixture.renderer, Mat4{1}, {}, nullptr, nullptr, &flash);
+    REQUIRE(std::ranges::any_of(fixture.renderer.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &flash;
+    }));
+    fixture.step();
+    CHECK(body.child(2)->flashing());
+    fixture.step();
+    CHECK_FALSE(body.child(2)->flashing());
+    fixture.renderer.draws.clear();
+    body.draw(fixture.renderer, Mat4{1}, {}, nullptr, nullptr, &flash);
+    REQUIRE_FALSE(fixture.renderer.draws.empty());
+    CHECK(std::ranges::none_of(fixture.renderer.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &flash;
+    }));
+}
+
 TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][assets]") {
     ChimeraFixture fixture;
     auto& body = fixture.fight.actor;

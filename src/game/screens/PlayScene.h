@@ -17,6 +17,7 @@
 #include "engine/world/AmbientDimmer.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/menu/CompassHud.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/players/LevelResults.h"
@@ -137,7 +138,8 @@ public:
     bool isOpen() const { return m_open; }
 
     PlayOutcome update(f64 deltaSeconds, const Inputs& inputs);
-    void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
+    void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight,
+                bool optionsOpen = false);
 
     usize actorCount() const { return m_players.size(); }
     /** The character driven by `player`, or null when that player is not in the party. */
@@ -344,6 +346,7 @@ private:
     RenderDevice* m_device = nullptr;
     GameContext m_context;
     LevelWorld* m_world = nullptr;
+    CompassHud m_compass;
     ClassDataSet m_classes;
     PartyHud m_hud;
     Canvas m_canvas;

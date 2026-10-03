@@ -192,6 +192,34 @@ TEST_CASE("round arena cover pushes radially rather than using a square bounding
     REQUIRE(rock.pushOut(inside, 1) == inside);
 }
 
+TEST_CASE("Chimera's foreground blocks are destructible cover with one authored tier",
+          "[game][world][safe-rocks][chimera][assets]") {
+    const auto root = test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path();
+    const auto itemRoot = test::assetOrSkip("ITEMS/LEVELA5/objects.ngc").parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    ItemArchive items;
+    REQUIRE(items.load(itemRoot));
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(device, layout, items));
+    rocks.setPlayerCount(1);
+    REQUIRE(rocks.size() == 3);
+    REQUIRE(rocks.obstacles().size() == 3);
+    for (usize i = 0; i < rocks.size(); ++i) {
+        const auto& rock = rocks.rock(i);
+        CHECK(rock.tier == 1);
+        CHECK(rock.health == 100);
+        CHECK(rock.armor == 10);
+        CHECK(rock.models[1].bound());
+        CHECK_FALSE(rocks.strike(i, 60));
+        CHECK(rocks.rock(i).health == 50);
+        CHECK(rocks.strike(i, 60));
+        CHECK_FALSE(rocks.standing(i));
+    }
+    CHECK(rocks.obstacles().empty());
+}
+
 TEST_CASE("the dragon's lair renders all six safe rocks and every retail damage model",
           "[game][world][safe-rocks][assets]") {
     const auto root = test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2").parent_path();

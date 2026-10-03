@@ -93,6 +93,7 @@ add_executable(tests
     game/world/BlobShadowTests.cpp
     game/world/PlayerFigureTests.cpp
     game/world/PlayerFamiliarTests.cpp
+    game/world/MikeyFigureTests.cpp
     game/world/WeaponGlowTests.cpp
     game/world/CameraMovementLimitTests.cpp
     game/world/SkorneArenaTests.cpp
@@ -146,6 +147,7 @@ add_executable(tests
     game/players/TurboMeterTests.cpp
     game/players/TurboMoveTests.cpp
     game/players/InventoryTests.cpp
+    game/players/MikeyDecoyTests.cpp
     game/players/RelicsTests.cpp
     game/players/ItemPickupTests.cpp
     game/players/PowerupEffectsTests.cpp

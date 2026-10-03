@@ -38,6 +38,7 @@ inline constexpr u32 kGrowth = 0x00000100;       ///< special
 inline constexpr u32 kEnemyShrink = 0x00000200;  ///< special: the swarm at two thirds a wearer
 inline constexpr u32 kLevitation = 1;            ///< special
 inline constexpr u32 kTurbo = 0x00080000;        ///< special, immediate meter refill
+inline constexpr u32 kMikey = 0x00100000;        ///< special: drop or dismiss the swarm decoy
 inline constexpr u32 kHandOfDeath = 0x00200000;  ///< special: return enemy melee damage
 inline constexpr u32 kHealthVamp = 0x00400000;   ///< special: return melee as magic and heal
 inline constexpr u32 kPojo = 0x00000400;         ///< special: Pojo speaks for the character

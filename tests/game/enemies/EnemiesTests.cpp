@@ -1254,6 +1254,36 @@ TEST_CASE("Dream World hands vanish promptly while imps and warlocks play their 
         }
     }
 }
+TEST_CASE("Mikey attracts the swarm to the dropped point without becoming a damageable body",
+          "[mikey][enemies][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.algorithm = 0;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    // The real body is beyond sight, but its dropped Mikey is within sight to the right.
+    std::array party{playerAt({0, 0, 100})};
+    party[0].decoy = Vec3{10, 3, 0};
+    for (s32 frame = 0; frame < 90; ++frame) {
+        enemies.update(kTicks, kStep, party);
+    }
+    REQUIRE(enemies.targetOf(*id) == 0);
+    CHECK(enemies.positionOf(*id).x > 1);
+    CHECK(std::abs(enemies.positionOf(*id).z) < 1);
+    CHECK(enemies.takeBlows().empty());
+    CHECK(enemies.animatorOf(*id)->action() != EnemyAction::Attack);
+    party[0].decoy.reset();
+    for (s32 frame = 0; frame < 10; ++frame) {
+        enemies.update(kTicks, kStep, party);
+    }
+    CHECK(enemies.targetOf(*id) == -1);
+}
+
 TEST_CASE("invisibility breaks swarm targeting without removing the physical player",
           "[game][items][enemies][assets]") {
     test::FakeRenderDevice device;

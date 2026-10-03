@@ -13,11 +13,13 @@
 #include "game/players/HeadGem.h"
 #include "game/players/Knockback.h"
 #include "game/players/MeleeStreak.h"
+#include "game/players/MikeyDecoy.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerCapture.h"
 #include "game/players/PlayerTransport.h"
 #include "game/players/TurboMeter.h"
 #include "game/players/TurboMove.h"
+#include "game/world/MikeyFigure.h"
 #include "game/world/PlayerFigure.h"
 #include "game/world/WeaponGlow.h"
 
@@ -31,6 +33,8 @@ struct PlayerRuntime {
     PlayerCapture capture;
     ComboState combo; ///< its side of a two-player combo, none outside one
     PlayerTransport transport;
+    MikeyDecoy mikey;
+    std::unique_ptr<MikeyFigure> mikeyFigure;
     std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
     std::optional<usize> slot;            ///< persistent save slot, not the input player id
     CharacterSave entrySave;              ///< restored when a fallen character leaves the level

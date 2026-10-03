@@ -48,10 +48,14 @@ TEST_CASE("travel keeps a map before the stage preview and skips both for tower 
     CHECK(screen.movie() == "movieG1");
     CHECK(screen.previewAlpha() == 0);
     Canvas canvas;
-    canvas.begin(device, Mat4{1});
+    canvas.begin(device, makeLetterboxProjection(512, 384, 1920, 1080));
     screen.draw(canvas, device);
     canvas.end();
     REQUIRE(device.draws.size() >= 5);
+    CHECK(device.draws.front().transform == Mat4{1});
+    CHECK(test::minCorner(device.draws.front()) == Vec2{-1, -1});
+    CHECK(test::maxCorner(device.draws.front()) == Vec2{1, 1});
+    CHECK(device.draws.front().vertices.front().color == Color::black());
     std::array<bool, 4> panels{};
     for (const auto& draw : device.draws) {
         if (test::minCorner(draw).y == StatusBoxPainter::kY &&
