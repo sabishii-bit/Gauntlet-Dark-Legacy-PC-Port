@@ -58,6 +58,59 @@ struct Fixture {
     Fixture() { painter.setFont(&font, &sheet); }
 };
 
+TEST_CASE("menu pointer targets follow rendered text and do not steal keyboard focus",
+          "[game][menu][mouse]") {
+    Fixture f;
+    auto definition = threeItems();
+    definition.items[1].enabled = false;
+    f.menu.open(definition, f.painter, {});
+    const auto area = f.menu.itemArea(2);
+    CHECK(area.x == 252);
+    CHECK(area.width == 8);
+    MenuInput input;
+    input.pointer = Vec2{area.x + 1, area.y + 1};
+    CHECK(f.menu.update(input, 1).action == MenuAction::Moved);
+    CHECK(f.menu.selection() == 2);
+    input.up = true;
+    f.menu.update(input, 1);
+    CHECK(f.menu.selection() == 0);
+    input.up = false;
+    f.menu.update(input, 1);
+    CHECK(f.menu.selection() == 0);
+    input.pointerPressed = true;
+    CHECK(f.menu.update(input, 1).code == 3);
+    const auto disabled = f.menu.itemArea(1);
+    input.pointer = Vec2{disabled.x + 1, disabled.y + 1};
+    CHECK(f.menu.update(input, 1).action == MenuAction::None);
+    input.pointer = Vec2{0, 0};
+    CHECK(f.menu.update(input, 1).action == MenuAction::None);
+    input.pointer = Vec2{area.x + 1, area.y + 1};
+    f.menu.close();
+    CHECK(f.menu.update(input, 1).action == MenuAction::None);
+}
+
+TEST_CASE("menu pointer respects explicit action rows and value arrow direction",
+          "[game][menu][mouse]") {
+    Fixture f;
+    MenuDefinition definition;
+    definition.items = {{"AA", 1}, {"BB", 2}, {"CC", 3}};
+    definition.items[0].value = "ON";
+    definition.valueX = 150;
+    definition.valueWidth = 24;
+    definition.itemPositions = {{40, 40}, {40, 100}, {120, 100}};
+    f.menu.open(definition, f.painter, {});
+    MenuInput input;
+    input.pointerPressed = true;
+    input.pointer = Vec2{145, 45};
+    CHECK(f.menu.update(input, 1).direction == -1);
+    input.pointer = Vec2{182, 45};
+    CHECK(f.menu.update(input, 1).direction == 1);
+    input.pointer = Vec2{121, 101};
+    CHECK(f.menu.update(input, 1).code == 3);
+    input.pointer = Vec2{90, 101};
+    CHECK(f.menu.update(input, 1).action == MenuAction::None);
+}
+
 TEST_CASE("a menu lays its column out around the screen centre", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});

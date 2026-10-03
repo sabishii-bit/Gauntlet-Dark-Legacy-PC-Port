@@ -82,6 +82,13 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
         return anyKeyDown(input, keys, source) || anyButtonDown(input, buttons, source.pad);
     };
     MenuInput out;
+    if (input.pointer().inside) {
+        out.pointer = Vec2{input.pointer().x, input.pointer().y};
+        out.pointerNormalized = true;
+        out.pointerPressed = input.wasPointerPressed();
+        out.pointerHeld = input.pointer().down;
+        out.pointerBack = input.wasPointerBackPressed();
+    }
     out.up = pressed(bindings.up, bindings.padUp);
     out.down = pressed(bindings.down, bindings.padDown);
     out.left = pressed(bindings.left, bindings.padLeft);
@@ -103,6 +110,17 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
         out.erase = input.wasKeyPressed(Key::Backspace);
     }
     return out;
+}
+
+MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform) {
+    if (input.pointer && input.pointerNormalized) {
+        const auto clip = Vec4{input.pointer->x * 2 - 1, input.pointer->y * 2 - 1, 0.5f, 1};
+        const auto point = glm::inverse(canvasTransform) * clip;
+        input.pointer = Vec2{point} / point.w;
+        input.pointerNormalized = false;
+    }
+    input.back |= input.pointerBack;
+    return input;
 }
 
 } // namespace gdl::game

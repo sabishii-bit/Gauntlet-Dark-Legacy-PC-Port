@@ -82,6 +82,14 @@ void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const Ambi
     }
 }
 
+void LevelSoundscape::pauseAmbience() {
+    if (m_output != nullptr) {
+        m_ambience.stop(*m_output);
+    }
+    stopLoop(m_exitFlame);
+    stopLoop(m_hourglass);
+}
+
 void LevelSoundscape::updateMusicAreas(std::span<const Vec3> listeners) {
     if (const std::optional<MusicCue> cue = m_areas.update(listeners, m_musicArea);
         cue.has_value()) {

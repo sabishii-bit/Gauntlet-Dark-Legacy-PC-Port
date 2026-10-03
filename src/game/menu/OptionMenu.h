@@ -89,6 +89,8 @@ enum class MenuAction : u8 { None, Moved, Choice, Back, Closed };
 struct MenuEvent {
     MenuAction action = MenuAction::None;
     s32 code = 0;
+    s32 part = 0;      ///< clicked alternate choice, 1 or 2; zero for keyboard
+    s32 direction = 0; ///< clicked value arrow, -1 or 1
 };
 
 /** Pulsing opacity shared by glowing text: a triangle wave with a short hold between pulses. */
@@ -152,6 +154,7 @@ public:
 
     const MenuDefinition& definition() const { return m_definition; }
     s32 selection() const { return m_selection; }
+    void focus(usize item);
     void markItem(usize item, s32 part) { m_definition.items.at(item).markedPart = part; }
     s32 time() const { return m_time; }
     s32 finishTimer() const { return m_finishTimer; }
@@ -166,6 +169,7 @@ public:
     s32 bodyTop() const { return m_bodyTop; }
     f32 iconScale() const { return m_iconScale; }
     Rect backdropArea() const { return m_backdrop; }
+    Rect itemArea(usize index) const { return m_itemAreas.at(index); }
 
     /** Turn of the selection arrow about the horizontal axis: it flips over on every move. */
     f32 iconAngle() const;
@@ -196,6 +200,10 @@ private:
     s32 m_iconTimer = kIconGlideTicks;
     s32 m_iconDrawY = 0;
     s32 m_bodyTop = 0;
+    std::vector<Rect> m_itemAreas;
+    std::vector<s32> m_alternateX;
+    std::optional<Vec2> m_lastPointer;
+    s32 m_hoverPart = 0;
 };
 
 } // namespace gdl::game

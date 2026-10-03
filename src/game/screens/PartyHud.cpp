@@ -48,7 +48,7 @@ void PartyHud::clear() {
 }
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
     for (s32 player = 0; player < kPlayerCount; ++player) {
-        StatusBoxView view = status(player, players);
+        StatusBoxView view = status(player, players, &selector(player));
         view.keysShown = relicsShown();
         m_boxes.draw(canvas, player, view, true);
     }
@@ -66,8 +66,8 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
                                          &player.helpHeard});
         }
     }
-    const CharacterSave& named = players[index].actor.save();
-    const HelpSpeaker speaker{named.character, PickupVoices::carriesPojo(named)};
+    const CharacterSave& namedSave = players[index].actor.save();
+    const HelpSpeaker speaker{namedSave.character, PickupVoices::carriesPojo(namedSave)};
     const HelpMessageSpec* spec =
         m_help.post(id, position ? -1 : players[index].actor.player(), readers, number, speaker);
     if (spec == nullptr) {
@@ -116,7 +116,16 @@ void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, s32 
     }
 }
 
-StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> players) {
+void PartyHud::focusPickup(const PlayerActor& actor, s32 kind, u32 flags) {
+    if (actor.player() < 0 || actor.player() >= kPlayerCount) {
+        return;
+    }
+    m_selectors[static_cast<usize>(actor.player())].focus(actor.save().progress().inventory, kind,
+                                                          flags);
+}
+
+StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> players,
+                               const PowerupSelector* selector) {
     StatusBoxView view;
     const auto found = std::ranges::find_if(players, [player](const PlayerRuntime& runtime) {
         return runtime.actor.player() == player;
@@ -146,6 +155,12 @@ StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> player
     view.potionKind = save.progress().inventory.nextPotion();
     view.runes = save.progress().relics.runes;
     view.bossKeys = save.progress().relics.shards;
+    const Inventory& inventory = save.progress().inventory;
+    const s32 usage = selector != nullptr ? selector->usageSlot(inventory)
+                                          : PowerupSelector{}.usageSlot(inventory);
+    if (usage >= 0) {
+        view.powerup = inventory.powerups[static_cast<usize>(usage)];
+    }
     return view;
 }
 

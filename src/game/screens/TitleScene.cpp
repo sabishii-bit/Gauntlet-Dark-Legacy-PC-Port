@@ -289,7 +289,7 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
     // While the scroll burns the original blanks the controls, so nothing reacts to input.
     const bool burning = m_fire.active();
     m_fire.step(ticks);
-    const MenuInput input = burning ? MenuInput{} : rawInput;
+    const MenuInput input = burning ? MenuInput{} : mapMenuPointer(rawInput, m_pointerTransform);
 
     if (m_loadingTimer > 0) {
         m_loadingTimer = std::max(0, m_loadingTimer - ticks);
@@ -334,7 +334,7 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
         return TitleOutcome::Running;
     }
 
-    if (input.start || input.select) {
+    if (input.start || input.select || input.pointerPressed) {
         playMenuSound(kSoundSelect);
         openTitleMenu();
         m_idle = kIdleTicks;
@@ -401,9 +401,10 @@ void TitleScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
         return;
     }
     m_fire.prepare(device);
-    m_canvas.begin(device, makeVirtualScreenTransform(
-                               frameProjection, static_cast<f32>(m_screen.width),
-                               static_cast<f32>(m_screen.height), frameWidth, frameHeight));
+    m_pointerTransform =
+        makeVirtualScreenTransform(frameProjection, static_cast<f32>(m_screen.width),
+                                   static_cast<f32>(m_screen.height), frameWidth, frameHeight);
+    m_canvas.begin(device, m_pointerTransform);
     m_canvas.fillScreen(Color::black());
     for (usize i = 0; i < m_backdrops.size(); ++i) {
         const TextureSetEntry& entry = m_titleTextures.entry(m_backdrops[i]);

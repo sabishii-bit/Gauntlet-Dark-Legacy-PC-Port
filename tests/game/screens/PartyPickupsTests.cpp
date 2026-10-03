@@ -102,6 +102,29 @@ TEST_CASE("the party's pickups are shared, taught, gestured and handed to the sc
         CHECK(lessons[1] == std::pair<s32, usize>{94, 0});
         CHECK(lessons[2] == std::pair<s32, usize>{95, 0});
     }
+    SECTION("a powerup pickup focuses only the taker's selector even when renewing an old slot") {
+        players[0].actor.spawn(3, {}, nullptr, spot, 0);
+        const auto& records = world.layout().itemInfos();
+        const auto record = std::ranges::find_if(records, [](const ItemInfo& info) {
+            return info.type == ItemInfo::kPowerup &&
+                   info.subtype == static_cast<s32>(ItemKind::SpeedPowerup);
+        });
+        REQUIRE(record != records.end());
+        const auto recordIndex = static_cast<s32>(std::distance(records.begin(), record));
+        REQUIRE(world.placeItemRecord(device, recordIndex, spot, 20));
+        pickups.collect(device, players, services);
+        REQUIRE(hud.selector(3).selection() == 0);
+        REQUIRE(hud.selector(3).state() == PowerupSelector::State::Closed);
+        REQUIRE(hud.selector(1).selection() == -1);
+        Inventory& inventory = players[0].actor.save().progress().inventory;
+        inventory.addPowerup(static_cast<s32>(ItemKind::SpecialPowerup), 4, 0, 60);
+        hud.focusPickup(players[0].actor, static_cast<s32>(ItemKind::SpecialPowerup), 4);
+        REQUIRE(hud.selector(3).selection() == 1);
+        REQUIRE(world.placeItemRecord(device, recordIndex, spot, 20));
+        pickups.collect(device, players, services);
+        REQUIRE(hud.selector(3).selection() == 0);
+        REQUIRE(hud.selector(1).selection() == -1);
+    }
     SECTION("the fallen reach nothing") {
         players[0].life = PlayerLife::InTower;
         REQUIRE(world.placeItem(device, "TREAS_GOLD", spot));

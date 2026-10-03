@@ -40,7 +40,6 @@ private:
     std::string text(std::string_view id) const;
     OptionMenu m_menu;
     MenuDefinition m_backdrop;
-    MenuScreen m_screen;
     const TextPainter* m_painter = nullptr;
     const StringTable* m_strings = nullptr;
     Persist m_persist;
@@ -48,15 +47,18 @@ private:
     DisplayOptions m_display;
     std::function<DisplayOptions()> m_queryDisplay;
     std::vector<Extent2D> resolutions() const;
-    bool m_audioDirty = false;
-    Scope m_scope = Scope::Title;
+    std::optional<usize> m_audioDrag;
     GameConfig m_config;
-    Page m_page = Page::Root;
     std::string m_notice;
     VideoSettings m_video;
-    bool m_confirmVideo = false;
     Persist m_previewVideo;
     VideoSettings::Clock m_clock;
     s32 m_countdown = 0;
+    MenuScreen m_screen;
+    std::optional<Vec2> m_audioPointer;
+    bool m_audioDirty = false;
+    Scope m_scope = Scope::Title;
+    Page m_page = Page::Root;
+    bool m_confirmVideo = false;
 };
 } // namespace gdl::game

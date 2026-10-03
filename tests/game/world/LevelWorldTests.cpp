@@ -215,6 +215,43 @@ TEST_CASE("Underworld lowered pillars can be crossed from their switches",
     }
 }
 
+TEST_CASE("province pickups stay inside breakable scenery instead of standing on its lid",
+          "[game][world][pickup-box][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    WorldCollision ground = world.collision();
+    for (usize wall = 0; wall < world.walls().size(); ++wall) {
+        ground.setSolid(world.walls().wall(wall).object, false);
+    }
+    usize covered = 0;
+    for (usize i = 0; i < world.placedItems().size(); ++i) {
+        const auto& item = world.placedItems().item(i);
+        if (item.instance < 0 || item.floor) {
+            continue;
+        }
+        const auto& instance = world.layout().itemInstances()[static_cast<usize>(item.instance)];
+        const auto support = ground.floorAt(instance.position, PlacedItems::kFloorReachAbove,
+                                            PlacedItems::kFloorReachBelow);
+        const auto lid = world.collision().floorAt(instance.position, PlacedItems::kFloorReachAbove,
+                                                   PlacedItems::kFloorReachBelow);
+        if (!support || !lid || lid->object < static_cast<s32>(world.layout().objects().size()) ||
+            lid->y <= support->y) {
+            continue;
+        }
+        CAPTURE(item.name, item.instance, instance.position.y, lid->y, support->y);
+        ++covered;
+        CHECK(item.position.y == Approx(support->y + PlacedItems::kFloorLift));
+    }
+    REQUIRE(covered > 0);
+}
+
 TEST_CASE("level pickups follow triggered floors from their initial poses",
           "[game][world][pickup-platform][assets]") {
     const auto root =

@@ -61,6 +61,76 @@ struct Fixture {
     void release() { menu.update({}, 1); }
 };
 
+TEST_CASE("mouse operates settings pages sliders and graphics without keyboard confirmation",
+          "[settings][mouse]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = ' '; c <= '~'; ++c) {
+        glyphs.push_back({c, 8, 0, 0});
+    }
+    f.font = BitmapFont::fromGlyphs(32, 8, std::move(glyphs));
+    f.menu.open(
+        f.config, &f.strings,
+        [&](const GameConfig& next) {
+            f.config = next;
+            ++f.writes;
+            return true;
+        },
+        f.painter, {}, MenuDefinition::parchment(), SettingsMenu::Scope::Title, {}, {}, {},
+        [](const GameConfig&) { return true; });
+    const auto click = [&](usize index) {
+        const auto area = f.menu.menu().itemArea(index);
+        MenuInput input;
+        input.pointer = Vec2{area.x + area.width / 2, area.y + area.height / 2};
+        input.pointerPressed = true;
+        f.menu.update(input, 1);
+    };
+    click(0);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Audio);
+    CHECK(f.writes == 0);
+    const auto track = AudioSlider::track(
+        128, static_cast<f32>(f.menu.menu().itemY(0) + f.menu.menu().lineHeight()));
+    MenuInput drag;
+    drag.pointer = Vec2{track.x + track.width * 0.25f, track.y + 1};
+    drag.pointerPressed = true;
+    drag.pointerHeld = true;
+    f.menu.update(drag, 1);
+    CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 64);
+    CHECK(f.writes == 0);
+    drag.pointerPressed = false;
+    drag.pointer->x = track.x + track.width;
+    f.menu.update(drag, 1);
+    CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 255);
+    drag.pointerHeld = false;
+    f.menu.update(drag, 1);
+    CHECK(f.writes == 1);
+    const auto stereo = f.menu.menu().itemArea(2);
+    MenuInput mono;
+    mono.pointer = Vec2{stereo.x + 1, stereo.y + 1};
+    mono.pointerPressed = true;
+    f.menu.update(mono, 1);
+    CHECK_FALSE(f.config.audio.stereo);
+    f.menu.update(mono, 1);
+    CHECK_FALSE(f.config.audio.stereo);
+    f.back();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
+    click(3);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
+    const bool wasVsync = f.menu.config().display.vsync;
+    click(0);
+    CHECK(f.menu.config().display.vsync != wasVsync);
+    const s32 writesBeforeVideo = f.writes;
+    click(8);
+    REQUIRE(f.menu.menu().definition().items.size() == 2);
+    CHECK(f.writes == writesBeforeVideo);
+    click(0);
+    REQUIRE(f.menu.menu().definition().items.size() == 11);
+    CHECK(f.writes == writesBeforeVideo + 1);
+    CHECK(f.config.display.vsync != wasVsync);
+    click(10);
+    CHECK(f.menu.page() == SettingsMenu::Page::Root);
+}
+
 TEST_CASE("settings audio changes persist transactionally and stay bounded", "[settings]") {
     Fixture f;
     f.select();

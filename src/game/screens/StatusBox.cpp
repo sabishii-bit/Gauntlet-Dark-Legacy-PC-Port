@@ -7,6 +7,8 @@
 #include "engine/core/Types.h"
 
 #include "game/players/ClassData.h"
+#include "game/players/PowerupEffects.h"
+#include "game/screens/PowerupSelector.h"
 
 namespace gdl::game {
 
@@ -203,6 +205,63 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     nameStyle.scale = kNameScale;
     nameStyle.color = tint;
     m_initials.draw(canvas, centerX, kNameY, view.name, nameStyle);
+    if (view.mode == StatusBoxView::Mode::Status && view.powerup) {
+        drawUsage(canvas, left, *view.powerup, tint);
+    }
+}
+
+std::string StatusBoxPainter::usageAmount(const PowerupSlot& slot) {
+    const auto remaining = PowerupSelector::remaining(slot);
+    if (!remaining) {
+        return {};
+    }
+    return PowerupSelector::charged(slot) ? std::format("{:.0f}", *remaining)
+                                          : std::format("{:.1f}", *remaining);
+}
+
+void StatusBoxPainter::drawUsage(Canvas& canvas, s32 left, const PowerupSlot& powerup, Color tint) {
+    const std::string amount = usageAmount(powerup);
+    if (amount.empty() || !m_score.ready() || !m_smallCaps.ready()) {
+        return;
+    }
+    constexpr s32 kDecimalWidth = 2;
+    constexpr s32 kLabelGap = 3;
+    constexpr s32 kGlyphEdgePadding = 1; // Scaled glyphs can extend past their integer advance.
+    constexpr std::string_view kSeconds = "s";
+    const bool seconds = !PowerupSelector::charged(powerup);
+    const s32 suffixWidth = seconds ? m_smallCaps.measure(kSeconds, kUsageNameScale) : 0;
+    const s32 amountWidth =
+        m_score.measure(amount, kUsageScale) + (seconds ? kDecimalWidth : 0) + suffixWidth;
+    const s32 amountX = left + kUsageRight - amountWidth - kGlyphEdgePadding;
+    const std::string_view label = text(powerupTextId(powerup.kind, powerup.flags));
+    const s32 labelRoom = amountX - left - kUsageLeft - kLabelGap;
+    const s32 labelWidth = m_smallCaps.measure(label, kUsageNameScale);
+    TextStyle caption;
+    caption.color = tint;
+    caption.scale = kUsageNameScale;
+    if (labelWidth > labelRoom) {
+        caption.scale *= static_cast<f32>(std::max(labelRoom, 0)) / static_cast<f32>(labelWidth);
+    }
+    m_smallCaps.draw(canvas, left + kUsageLeft, kUsageY, label, caption);
+    TextStyle digits;
+    digits.color = tint;
+    digits.scale = kUsageScale;
+    s32 x = amountX;
+    for (const char character : amount) {
+        if (character == '.') {
+            // SCORE has only digits. Keep their native artwork and supply the decimal point.
+            canvas.fill(Rect{static_cast<f32>(x),
+                             static_cast<f32>(kUsageY + m_score.lineHeight(kUsageScale) - 1), 1, 1},
+                        tint);
+            x += kDecimalWidth;
+        } else {
+            x = m_score.draw(canvas, x, kUsageY, std::string_view{&character, 1}, digits);
+        }
+    }
+    if (seconds) {
+        caption.scale = kUsageNameScale;
+        m_smallCaps.draw(canvas, x, kUsageY, kSeconds, caption);
+    }
 }
 
 void StatusBoxPainter::drawRelics(Canvas& canvas, s32 slot, u16 runes, std::optional<u16> keys) {

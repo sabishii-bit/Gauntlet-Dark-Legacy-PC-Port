@@ -46,6 +46,7 @@ constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 } // namespace
 
 void PlayScene::pauseGameplaySounds() {
+    m_audio.pauseAmbience();
     m_attacks.stopDeathSounds(m_players);
     m_opponents.stopDeathSound();
 }

@@ -12,6 +12,35 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+TEST_CASE("pause mouse targets work after letterboxing for controller-owned pauses",
+          "[pause][mouse][assets]") {
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    std::array party{PartyMember{}};
+    party[0].player = 2;
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 2));
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    menu.render(device, projection, 640, 448);
+    const auto area = menu.menu().itemArea(2); // Shop, a real tower action.
+    const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
+    const auto clip = transform * Vec4{area.x + 1, area.y + 1, 0.5f, 1};
+    MenuInput click;
+    click.pointer = (Vec2{clip} + Vec2{1}) / 2.0f;
+    click.pointerNormalized = true;
+    click.pointerPressed = true;
+    CHECK(menu.update(1.0 / 60, click) == PauseOutcome::Shop);
+    MenuInput back;
+    back.pointerBack = true;
+    CHECK(menu.update(1.0 / 60, back) == PauseOutcome::Resume);
+}
+
 TEST_CASE("pause menu refuses absent artwork or a player outside the party", "[pause]") {
     test::FakeRenderDevice device;
     PauseMenu menu;

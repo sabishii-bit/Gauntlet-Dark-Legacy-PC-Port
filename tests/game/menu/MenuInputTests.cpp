@@ -1,5 +1,6 @@
 
 #include <array>
+#include <cmath>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,6 +16,37 @@ using gdl::game::MenuBindings;
 using gdl::game::MenuInput;
 using gdl::game::MenuInputSource;
 using gdl::game::readMenuInput;
+
+TEST_CASE("mouse taps survive render polls and map through letterboxed canvas coordinates",
+          "[game][menu][mouse]") {
+    Input polled;
+    Input simulation;
+    polled.beginPoll();
+    polled.setPointer({0.5f, 0.5f, true, false});
+    polled.latchPointer();
+    polled.latchPointerBack();
+    simulation.accumulate(polled);
+    polled.beginPoll();
+    simulation.accumulate(polled);
+    const auto menu = readMenuInput(simulation, MenuBindings{}, MenuInputSource::forPlayer(2));
+    REQUIRE(menu.pointer);
+    CHECK(menu.pointerPressed);
+    CHECK_FALSE(menu.pointerHeld);
+    const auto transform = makeLetterboxProjection(512, 384, 1920, 1080);
+    const auto mapped = gdl::game::mapMenuPointer(menu, transform);
+    REQUIRE(mapped.pointer);
+    CHECK(std::abs(mapped.pointer->x - 256) < 0.001f);
+    CHECK(std::abs(mapped.pointer->y - 192) < 0.001f);
+    CHECK(mapped.back);
+    simulation.beginPoll();
+    CHECK_FALSE(readMenuInput(simulation, MenuBindings{}).pointerPressed);
+    polled.setPointer({0, 0.5f, true, false});
+    const auto margin = gdl::game::mapMenuPointer(readMenuInput(polled, MenuBindings{}), transform);
+    REQUIRE(margin.pointer);
+    CHECK(margin.pointer->x < 0);
+    polled.setPointer({0, 0, false, false});
+    CHECK_FALSE(readMenuInput(polled, MenuBindings{}).pointer);
+}
 
 TEST_CASE("keyboard presses map to menu commands", "[game][menu]") {
     Input input;

@@ -148,6 +148,9 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
     // Gold, keys, potions, good food and powerups are picked up with a gesture, out of the
     // tower; bad food is gagged on anywhere.
     const auto kind = static_cast<ItemKind>(pickup.subtype);
+    if (kind >= ItemKind::WeaponPowerup && kind <= ItemKind::SpecialPowerup) {
+        services.hud.focusPickup(actor, pickup.subtype, pickup.flags);
+    }
     if (taking.hurt) {
         runtime.gesture = PlayerDeed::Gag;
     } else if (!world.isTower() && picksUp(kind)) {

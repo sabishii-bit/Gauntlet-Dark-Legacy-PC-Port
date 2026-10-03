@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/Progression.h"
+#include "game/players/TurboMeter.h"
 
 namespace gdl::game {
 namespace {
@@ -51,6 +52,8 @@ void LevelLoadingScreen::open(RenderDevice& device, const GameContext& context,
         status.keys = save.progress().inventory.keys;
         status.potions = static_cast<s32>(save.progress().inventory.potions.size());
         status.potionKind = save.progress().inventory.nextPotion();
+        // A new level starts with an empty meter, but keeps its frame above the panel.
+        status.turbo = TurboMeter{}.look();
     }
     m_name = level.name;
     m_sounds = context.sounds;
@@ -172,10 +175,10 @@ void LevelLoadingScreen::draw(Canvas& canvas, RenderDevice& device) {
         tile(canvas, device, std::format("LDMAP_{}_{:02}", m_name, i),
              kTilePositions[static_cast<usize>(i)], previewAlpha());
     }
-    // The bottom 64 pixels of the map tiles are padding under the status panels,
-    // not part of the map image. Retail keeps those panels during both pictures.
+    // Keep the complete status panels, including their upper strips and meter artwork,
+    // above both the map and the crossfading preview.
     for (usize i = 0; i < m_status.size(); ++i) {
-        m_boxes.draw(canvas, static_cast<s32>(i), m_status[i], false);
+        m_boxes.draw(canvas, static_cast<s32>(i), m_status[i], true);
     }
 }
 

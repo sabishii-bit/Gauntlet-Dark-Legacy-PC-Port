@@ -51,6 +51,34 @@ struct Fixture {
     }
 };
 
+TEST_CASE("title mouse click opens options and right click leaves them",
+          "[game][title][mouse][assets]") {
+    test::FakeRenderDevice device;
+    const Fixture f;
+    TitleScene scene;
+    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    scene.render(device, projection, 640, 448);
+    MenuInput click;
+    click.pointer = Vec2{0.5f, 0.5f};
+    click.pointerNormalized = true;
+    click.pointerPressed = true;
+    scene.step(1, click);
+    REQUIRE(scene.menuOpen());
+    CHECK_FALSE(scene.optionsOpen());
+    // The title's Options line is centered at x=256 below Start's y=304 line.
+    const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
+    const auto clip = transform * Vec4{256, 344, 0.5f, 1};
+    click.pointer = (Vec2{clip} + Vec2{1}) / 2.0f;
+    scene.step(1, click);
+    REQUIRE(scene.optionsOpen());
+    CHECK(scene.settings().page() == SettingsMenu::Page::Root);
+    MenuInput back;
+    back.pointerBack = true;
+    scene.step(1, back);
+    CHECK(scene.settings().menu().closing());
+}
+
 TEST_CASE("the title screen refuses to open without unpacked data", "[game][title]") {
     test::FakeRenderDevice device;
     const Fixture f;

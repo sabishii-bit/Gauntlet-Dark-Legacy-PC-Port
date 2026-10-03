@@ -179,10 +179,6 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_collision.setMovingObjects(m_movingObjects);
     syncCollision();
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
-    // AddItemSub's FloorPos probes world geometry, not other items. Binding
-    // destructible item walls first lets their roofs steal nearby lift pads
-    // (G1's poison-field lift sits beside one such wall).
-    m_walls.bind(device, m_layout, m_models, m_textures, m_collision);
     std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
     m_hazards.bind(m_layout);
     if (m_ref.name == "F1") {
@@ -203,6 +199,10 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
                             archives)) {
         log::warn("Level: none of the level's pickups could be placed");
     }
+    // Initial pickup placement probes world floors, not breakable-item roofs. Append
+    // those solid walls afterward so enclosed food stays inside its box, while live
+    // collision still blocks actors and attacks. Existing moving-floor bindings survive.
+    m_walls.bind(device, m_layout, m_models, m_textures, m_collision);
     // The follow camera takes its angles from the game camera markers alone; the trigger
     // cameras are for the cuts.
     for (const WorldLocator& locator : m_layout.locators()) {

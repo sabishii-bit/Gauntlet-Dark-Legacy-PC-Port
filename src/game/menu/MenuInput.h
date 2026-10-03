@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 #include "engine/platform/Input.h"
 
 #include "game/config/GameConfig.h"
@@ -12,6 +14,11 @@ namespace gdl::game {
 /** One frame of menu commands from the keyboard and/or pads: presses, which directions are
  * still held for auto-repeat, and what a text field with the keyboard received. */
 struct MenuInput {
+    std::optional<Vec2> pointer; ///< canvas coordinates after mapMenuPointer
+    bool pointerNormalized = false;
+    bool pointerPressed = false;
+    bool pointerHeld = false;
+    bool pointerBack = false;
     bool up = false;
     bool down = false;
     bool left = false;
@@ -27,7 +34,9 @@ struct MenuInput {
     bool erase = false;  ///< Backspace, for a text field
     bool escape = false; ///< the escape binding: leaves a text field, quits elsewhere
 
-    bool any() const { return up || down || left || right || select || back || start; }
+    bool any() const {
+        return up || down || left || right || select || back || start || pointerPressed;
+    }
 };
 
 /** Which devices one read merges: the keyboard and one pad, or every pad. */
@@ -56,5 +65,8 @@ struct MenuInputSource {
 
 MenuInput readMenuInput(const Input& input, const MenuBindings& bindings,
                         MenuInputSource source = {});
+
+/** Maps a window-normalized cursor through the same virtual transform used for drawing. */
+MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform);
 
 } // namespace gdl::game

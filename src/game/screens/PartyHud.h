@@ -33,9 +33,11 @@ public:
     void setCountTextures(TextureSet* textures) { m_boxes.setCountTextures(textures); }
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks,
                       LevelSoundscape& audio);
+    void focusPickup(const PlayerActor& actor, s32 kind, u32 flags);
     bool postHelp(s32 id, usize index, std::span<PlayerRuntime> players, LevelSoundscape& audio,
                   s32 number = -1, std::optional<Vec3> position = std::nullopt);
-    static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players);
+    static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players,
+                                const PowerupSelector* selector = nullptr);
     void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players);
     /** Shows the bosses' keys in the boxes a while (a level opening, a runestone found). */
     void showRelics() { m_relicTicks = kRelicTicks; }
