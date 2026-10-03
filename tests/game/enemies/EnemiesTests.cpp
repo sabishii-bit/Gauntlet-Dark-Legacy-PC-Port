@@ -21,6 +21,8 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
+#include "game/screens/LevelOpponents.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/world/HazardSurfaces.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
@@ -750,6 +752,89 @@ TEST_CASE("first-tier spear grunts land repeated blows at point-blank contact",
     }
     CAPTURE(kind, distance, ticks, enemies.animatorOf(*id)->action());
     CHECK(blows >= 8);
+}
+
+TEST_CASE("Treasury first-tier grunts damage a level 99 Knight at actual body separation",
+          "[enemies][spear-contact][treasury-contact][assets]") {
+    const s32 ticks = GENERATE(1, 2);
+    const f32 gap = GENERATE(-1.0f, 0.0f, 0.4f);
+    const f32 armorBonus = GENERATE(0.0f, 150.0f);
+    const auto root = unpackedRoot();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(5);
+    REQUIRE(stats);
+    CharacterSave save;
+    save.character = 5;
+    save.color = 2;
+    save.progress().experience = levelExperience(99);
+    save.progress().armorAdd = armorBonus;
+    save.progress().health = 9999;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, save, stats, {}, 0);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A4");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level());
+    const s32 kind = levelKindOf(world.level()->enemies, kGruntKind, 1);
+    const f32 separation = players[0].actor.radius() + enemyKind(kind).radius + gap;
+    players[0].actor.spawn(0, save, stats, {0, 0, separation}, 0);
+    const auto party = LevelOpponents::enemyViews(players);
+    REQUIRE(party[0].level == 99);
+    EnemyScales scales;
+    scales.damage = world.level()->tuning.enemyDamage;
+    enemies.open(device, root, nullptr, 1, scales, 7);
+    REQUIRE(enemies.loadKind(kind));
+    EnemySpawn spawn;
+    spawn.kind = kind;
+    spawn.tier = 1;
+    spawn.placed = true;
+    REQUIRE(enemies.spawn(spawn, {}).has_value());
+    PlayerHealth health;
+    PlayerHealth::Events events;
+    events.sound = [](std::string_view) {};
+    events.cry = [](std::string_view) {};
+    events.named = [](std::string_view, f32) {};
+    s32 blows = 0;
+    f32 ordinaryDamage = 0;
+    s32 ordinaryHealthLoss = 0;
+    for (s32 tick = 0; tick < 600; tick += ticks) {
+        enemies.update(ticks, static_cast<f32>(ticks) / 60, party);
+        for (const auto& blow : enemies.takeBlows()) {
+            ++blows;
+            const s32 before = players[0].actor.save().health();
+            if (!blow.power) {
+                ordinaryDamage = blow.damage;
+            }
+            health.hurt(players[0], blow.damage, HurtKind::Blow, true, false,
+                        world.level()->tuning.damage, events, {blow.flags, blow.direction}, false,
+                        stats);
+            if (!blow.power) {
+                ordinaryHealthLoss += before - players[0].actor.save().health();
+            }
+        }
+    }
+    CAPTURE(kind, ticks, gap, separation, party[0].height, party[0].collisionHeight, blows,
+            armorBonus, ordinaryDamage, world.level()->tuning.damage,
+            armorDefense(*stats, save.progress()));
+    CHECK(blows >= 8);
+    CHECK(players[0].actor.save().health() < save.health());
+    CHECK(ordinaryDamage == Approx(4.74525f));
+    if (armorBonus > 0) {
+        // Max-stat armor absorbs this tier's normal stab in retail, not its eighth
+        // stronger swing. Contact is still registered; enlarging the spear is wrong.
+        CHECK(ordinaryDamage < armorDefense(*stats, save.progress()));
+        CHECK(ordinaryHealthLoss == 0);
+    } else {
+        // 4.74525 damage - 4.25 armor must add up across normal stabs, even though
+        // every individual hit would incorrectly round to zero on its own.
+        CHECK(ordinaryHealthLoss > 0);
+    }
 }
 
 TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its experience",

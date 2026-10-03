@@ -29,6 +29,16 @@ constexpr f32 kAboutToDieWait = 0.5f;
 constexpr u32 kDrainFlag = 0x1000;             ///< Death's touch
 constexpr f32 kGasGagSeconds = 1.0f;           ///< retching after gas
 constexpr f32 kDrainGagSeconds = 1.0f / 15.0f; ///< and after Death's touch
+
+f32 liveHealth(const PlayerRuntime& runtime) {
+    return static_cast<f32>(runtime.actor.save().health()) + runtime.healthFraction;
+}
+
+void storeHealth(PlayerRuntime& runtime, f32 health) {
+    const auto rounded = static_cast<s32>(std::lround(health));
+    runtime.actor.save().progress().health = rounded;
+    runtime.healthFraction = health - static_cast<f32>(rounded);
+}
 } // namespace
 f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directed) {
     const PlayerFigure* figure = runtime.figure.get();
@@ -70,7 +80,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         return;
     }
     if (damage < 0) {
-        runtime.actor.save().progress().health += static_cast<s32>(std::lround(-damage));
+        storeHealth(runtime, liveHealth(runtime) - damage);
         return;
     }
     const f32 unguarded = damage;
@@ -106,11 +116,12 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         runtime.gagSeconds = kDrainGagSeconds;
     }
     CharacterSave& save = runtime.actor.save();
-    const s32 left = save.health() - static_cast<s32>(std::lround(damage));
-    if (left < 1) {
+    const f32 remaining = liveHealth(runtime) - damage;
+    if (remaining < 1.0f) {
         // Health of nought would read as a class never played: the fallen keep a point that
         // the status box does not show.
         save.progress().health = 1;
+        runtime.healthFraction = 0;
         runtime.life = PlayerLife::Dying;
         runtime.turbo.reset();
         events.sound(kDeathSound);
@@ -119,7 +130,8 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         return;
     }
     const s32 before = save.health();
-    save.progress().health = left;
+    storeHealth(runtime, remaining);
+    const s32 left = save.health();
     if (kind == HurtKind::QuietBlow) {
         runtime.painOwed += damage;
     }

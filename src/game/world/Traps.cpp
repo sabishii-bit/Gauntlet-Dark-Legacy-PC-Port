@@ -39,10 +39,14 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         ItemArchive& source =
             !items.trees.find(name).has_value() && realmItems != nullptr ? *realmItems : items;
-        if (!trap->figure.place(device, source, name, instance, collision)) {
+        // SetItem preserves placements with collision flag 1 (the Courtyard tentacles
+        // emerge from below the floor); their collision offset rotates with the item.
+        const auto* floor = (info.collisionFlags & 1U) != 0 ? nullptr : collision;
+        if (!trap->figure.place(device, source, name, instance, floor)) {
             log::warn("Traps: no figure {} in the item archive", name);
         }
         trap->box = trap->figure.obstacle(info);
+        trap->box.centre = Vec3{trap->figure.transform() * Vec4{info.collisionOffset, 1}};
         trap->figure.gateParticlesOnSequence(true);
         trap->box.solid = false;
         trap->ticksLeft = restTicks(*trap);

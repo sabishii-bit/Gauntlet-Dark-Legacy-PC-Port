@@ -156,6 +156,8 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_particles = {};
     m_textures.clear();
     m_textureFrames = 0;
+    m_textureSequence = 0;
+    m_textureFrame = 0;
     m_gateParticles = false;
     const auto tree = items.loaded() ? items.trees.find(name) : std::nullopt;
     if (!tree.has_value()) {
@@ -215,8 +217,7 @@ void ItemFigure::play(s32 index, bool loop) {
     }
     m_model.setFrame(static_cast<u32>(index), 0);
     m_particles.setLocalScales(m_pose.poses());
-    m_textures.apply(m_model, *m_tree, static_cast<u32>(index), 0);
-    m_textures.apply(m_particles, *m_tree, static_cast<u32>(index), 0);
+    refreshTextures();
 }
 
 void ItemFigure::update(f32 seconds) {
@@ -232,10 +233,25 @@ void ItemFigure::update(f32 seconds) {
     const auto frames = static_cast<u32>(m_textureFrames);
     m_textureFrames -= static_cast<f32>(frames);
     m_textures.step(frames);
-    m_textures.apply(m_model, *m_tree, m_player.sequence(), static_cast<s32>(m_player.frame()));
-    m_textures.apply(m_particles, *m_tree, m_player.sequence(), static_cast<s32>(m_player.frame()));
+    refreshTextures();
     m_particles.setLocalScales(m_pose.poses());
     m_particles.step(seconds, m_transform, m_pose.matrices());
+}
+
+void ItemFigure::refreshTextures() {
+    if (m_player.sequence() >= m_tree->sequences.size()) {
+        return;
+    }
+    // DoSeqTexMods changes alternate textures only when the sequence has texmods.
+    // An empty OFF state retains ONB's final transparent frame, rather than restoring
+    // the archive's luminous FFGEN14 default. Free-running textures still advance.
+    const auto& sequence = m_tree->sequences[m_player.sequence()];
+    if (!m_holdPose || sequence.textureAnimationCount > 0) {
+        m_textureSequence = m_player.sequence();
+        m_textureFrame = static_cast<s32>(m_player.frame());
+    }
+    m_textures.apply(m_model, *m_tree, m_textureSequence, m_textureFrame);
+    m_textures.apply(m_particles, *m_tree, m_textureSequence, m_textureFrame);
 }
 
 bool ItemFigure::finished() const {

@@ -53,8 +53,8 @@ CritterStatues::Placement golemAt(const Vec3& position, f32 sight = 10.0f) {
     return placement;
 }
 
-TEST_CASE("a golem's statue stops and wakes a player walking into it, takes a blow, and rises "
-          "as its ACTIVE sequence runs its ticks in view",
+TEST_CASE("a golem statue wakes on approach before body contact, blocks walking, takes a blow, "
+          "and rises as its ACTIVE sequence runs its ticks in view",
           "[game][enemies][critter-statues]") {
     test::FakeRenderDevice device;
     ItemArchive archive;
@@ -85,8 +85,8 @@ TEST_CASE("a golem's statue stops and wakes a player walking into it, takes a bl
     REQUIRE(targets.size() == 2);
     REQUIRE(targets[1].id == 1);
     REQUIRE(targets[1].radius == 4.0f);
-    // A body clear of them goes untouched; one against a statue is pushed out and wakes it,
-    // unless the placement's sight is under nought, which only pushes it out.
+    // Sight wakes the statue while the player is still clear of its solid cylinder.
+    // Contact separately pushes the player out; negative sight disables approach waking.
     REQUIRE(statues.touch(Vec3{0, 0, 12}, 1.0f) == Vec3{0, 0, 12});
     REQUIRE_FALSE(statues.woken(0));
     REQUIRE(statues.touch(Vec3{0, 0, 10}, 1.0f) == Vec3{0, 0, 10});

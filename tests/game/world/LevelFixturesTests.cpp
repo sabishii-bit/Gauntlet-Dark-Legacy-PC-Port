@@ -3,10 +3,12 @@
 #include <cmath>
 #include <filesystem>
 #include <numbers>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
@@ -769,14 +771,18 @@ TEST_CASE("chests pass the camera to their authored bomb sprites", "[fixtures][v
     }
 }
 
-TEST_CASE("desert light walls play startup steady and reversed shutdown textures",
+TEST_CASE("light walls retain transparent shutdown textures through the safe rest",
           "[fixtures][visual-parity][assets]") {
-    const auto directory = test::assetOrSkip("ITEMS/LEVELC/ANIM.PS2").parent_path();
+    const auto* realm = GENERATE("LEVELA", "LEVELC");
+    const auto directory =
+        test::assetOrSkip(std::string{"ITEMS/"} + realm + "/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive items;
     REQUIRE(items.load(directory));
+    const auto* tree = GENERATE("FORCEF", "FORCEF_S");
+    CAPTURE(realm, tree);
     ItemFigure figure;
-    REQUIRE(figure.place(device, items, "FORCEF", ItemInstance{}, nullptr));
+    REQUIRE(figure.place(device, items, tree, ItemInstance{}, nullptr));
     const auto texture = [&](std::string_view name) {
         const auto slot = items.textures.find(name);
         REQUIRE(slot.has_value());
@@ -803,14 +809,20 @@ TEST_CASE("desert light walls play startup steady and reversed shutdown textures
     figure.update(14.0f / 30);
     CHECK(shown(startup));
     figure.play(0, true);
-    CHECK_FALSE(shown(startup));
-    // OFF returns to the archive's one-frame global FFIELD/FFGEN defaults.
+    CHECK(shown(startup));
+    // Both FFGEN00 and FFIELD00 have zero alpha in the native archive. Replacing
+    // ONB's final FFGEN00 with the global FFGEN14 default visibly relights a safe trap.
     CHECK(shown(steady));
-    CHECK(shown(end));
+    CHECK_FALSE(shown(end));
+    figure.update(1.0f);
+    CHECK(shown(startup));
+    CHECK_FALSE(shown(end));
 
     const auto dir = test::scratchDirectory("desert-forcefield-cycle");
-    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
-      "itemInfos":[{"type":8,"subtype":2,"name":"FORCEF","activeOff":1}],
+    writeTextFile(dir / "world.json",
+                  std::string{R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":8,"subtype":2,"name":")"} +
+                      tree + R"(","activeOff":1}],
       "itemInstances":[{"info":0,"position":[0,0,0],"rotation":[0,0,0]}]})");
     WorldLayout layout;
     REQUIRE(layout.load(dir));
@@ -826,11 +838,88 @@ TEST_CASE("desert light walls play startup steady and reversed shutdown textures
                 REQUIRE(traps.trap(0).ticksLeft == duration);
                 for (s32 elapsed = 0; elapsed < duration; elapsed += ticks) {
                     CHECK(traps.trap(0).action == state);
+                    if (cycle > 0 && state == 0) {
+                        device.draws.clear();
+                        traps.draw(device, Mat4{1}, {});
+                        CHECK(std::ranges::none_of(
+                            device.draws, [&](const auto& draw) { return draw.texture == end; }));
+                    }
                     traps.update(ticks, static_cast<f32>(ticks) / 60, {});
                 }
             }
         }
     }
+}
+
+TEST_CASE("Courtyard tentacles retain authored height and hit the rotated offset lane",
+          "[fixtures][courtyard-tentacles][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A1");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    Traps traps;
+    REQUIRE(traps.bind(device, world.layout(), world.items(), &world.collision(), 1, 1, 1,
+                       &world.realmItems()));
+    std::vector<usize> ids;
+    std::vector<TrapVictim> victims;
+    for (usize i = 0; i < traps.size(); ++i) {
+        const auto& trap = traps.trap(i);
+        if (trap.subtype != Traps::kBlades) {
+            continue;
+        }
+        const auto& instance = world.layout().itemInstances()[static_cast<usize>(trap.instance)];
+        const auto& info = world.layout().itemInfos()[static_cast<usize>(instance.info)];
+        REQUIRE(info.name == "TENTACLE");
+        REQUIRE(info.collisionOffset == Vec3{-4, 0, 0});
+        REQUIRE((info.collisionFlags & 1U) != 0);
+        CHECK(trap.figure.position() == instance.position);
+        CHECK(trap.figure.position().y == -1);
+        // These placements include pitch and roll, not just yaw. Apply the retail
+        // WPitchMat3/WYawMat3/WRollMat3 equations independently of itemPlacement.
+        const auto rotate = [&](const Vec3& basis) {
+            const auto& angles = instance.rotation;
+            const Vec3 pitched{basis.x, std::cos(angles.x) * basis.y - std::sin(angles.x) * basis.z,
+                               std::cos(angles.x) * basis.z + std::sin(angles.x) * basis.y};
+            const Vec3 yawed{std::cos(angles.y) * pitched.x - std::sin(angles.y) * pitched.z,
+                             pitched.y,
+                             std::cos(angles.y) * pitched.z + std::sin(angles.y) * pitched.x};
+            return Vec3{std::cos(angles.z) * yawed.x - std::sin(angles.z) * yawed.y,
+                        std::cos(angles.z) * yawed.y + std::sin(angles.z) * yawed.x, yawed.z};
+        };
+        const Vec3 across = rotate({1, 0, 0});
+        const Vec3 forward = rotate({0, 0, 1});
+        CHECK(glm::distance(Vec3{trap.figure.transform()[2]}, forward) < 0.0001f);
+        CHECK(glm::distance(trap.box.centre, instance.position - 4.0f * across) < 0.0001f);
+        // Seven units along the sweep lies inside the authored -4 +/-4 box, but outside
+        // the former origin-centred box. Test from the walking floor, not the box centre.
+        Vec3 contact = instance.position - 7.0f * across;
+        const auto floor = world.collision().floorAt(contact, 5, 5);
+        REQUIRE(floor);
+        contact.y = floor->y;
+        CHECK(trap.box.touchedBy(contact, 0.75f, 0));
+        ids.push_back(i);
+        victims.push_back({contact, 0.75f});
+    }
+    REQUIRE(ids.size() == 2);
+    std::array<bool, 2> hit{};
+    for (s32 frame = 0; frame < 1200; ++frame) {
+        for (const auto& blow : traps.update(1, 1.0f / 60, victims)) {
+            if (blow.victim < ids.size() && blow.trap == ids[blow.victim]) {
+                CHECK(blow.damage > 0);
+                CHECK((blow.impact.flags & PlayerImpact::kKnockDown) != 0);
+                CHECK(glm::distance(blow.impact.direction,
+                                    -Vec3{traps.trap(blow.trap).figure.transform()[2]}) < 0.0001f);
+                hit[blow.victim] = true;
+            }
+        }
+    }
+    CHECK(hit[0]);
+    CHECK(hit[1]);
 }
 
 TEST_CASE("C1 trapped chest bomb faces the camera throughout its fuse",

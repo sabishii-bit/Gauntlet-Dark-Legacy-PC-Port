@@ -40,15 +40,19 @@ struct PlayerRuntime {
     CharacterSave entrySave;              ///< restored when a fallen character leaves the level
     s32 levelKills = 0;                   ///< creatures and generators credited during this level
     PlayerLife life = PlayerLife::Standing;
-    bool towerPrompt = false;        ///< fallen outside the tower, asked to wait there or quit
-    bool departed = false;           ///< quit the game from that prompt: out of the party
-    f32 painOwed = 0.0f;             ///< accumulated damage not yet answered by a cry
-    s32 hitSoundGap = 0;             ///< ticks before another impact sound
-    s32 heartbeatTicks = 0;          ///< ticks before the low-health heart beats again
-    std::optional<Vec3> fixtureSpot; ///< where the fixtures last saw it, for its step
-    f32 surfaceGap = 0.0f;           ///< seconds before a harmful surface can hurt it again
-    s32 hitFlashTicks = 0;           ///< two 30 Hz frames of the white damage skin
-    s32 itTicks = 0;                 ///< since IT tagged this player; none when not it
+    bool towerPrompt = false; ///< fallen outside the tower, asked to wait there or quit
+    bool departed = false;    ///< quit the game from that prompt: out of the party
+    /** Live health minus the rounded save/HUD value. Retail damage_player (800785CC)
+     * retains floating-point health; rounding each blow loses small post-armor hits.
+     * Whole-point pickups preserve this fraction; new level runtimes start from the save. */
+    f32 healthFraction = 0.0f;
+    f32 painOwed = 0.0f;                   ///< accumulated damage not yet answered by a cry
+    s32 hitSoundGap = 0;                   ///< ticks before another impact sound
+    s32 heartbeatTicks = 0;                ///< ticks before the low-health heart beats again
+    std::optional<Vec3> fixtureSpot;       ///< where the fixtures last saw it, for its step
+    f32 surfaceGap = 0.0f;                 ///< seconds before a harmful surface can hurt it again
+    s32 hitFlashTicks = 0;                 ///< two 30 Hz frames of the white damage skin
+    s32 itTicks = 0;                       ///< since IT tagged this player; none when not it
     PlayerDeed gesture = PlayerDeed::None; ///< a pickup's or bad food's, played when free
     f32 gagSeconds = 0.0f; ///< retching at the stick let go for this long (field_898)
     /** A creature the lightning shield shocked, and how long before it may again. */
