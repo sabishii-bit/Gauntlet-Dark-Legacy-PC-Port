@@ -8,12 +8,12 @@
     "windowHeight": 896,
     "windowMode": "windowed",
     "vsync": true,
-    "maxFrameRate": 60,
+    "maxFrameRate": 30,
     "sampleCount": 1
   },
   "timing": {
     "tickRate": 60,
-    "gameplayFrameRate": 60
+    "gameplayFrameRate": 30
   },
   "camera": {
     "horizontalFovDegrees": 60.0,

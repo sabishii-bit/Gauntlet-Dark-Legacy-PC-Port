@@ -24,12 +24,14 @@ struct DisplayConfig {
     WindowMode windowMode = WindowMode::Windowed;
     bool vsync = true;
     u32 sampleCount = 1;   ///< MSAA samples: 1 (off), 2 or 4; limited by the graphics device
-    u32 maxFrameRate = 60; ///< menu presentation cap; 0 follows the monitor, even without V-Sync
+    u32 maxFrameRate = 30; ///< menu presentation cap; 0 follows the monitor, even without V-Sync
+    /** Compare against the live client size, which can differ after a manual resize. */
+    bool matchesWindow(WindowMode mode, Extent2D size) const;
 };
 
 struct TimingConfig {
     u32 tickRate = 60;          ///< logic ticks per second; the original counts 60 Hz retraces
-    u32 gameplayFrameRate = 60; ///< presentation cap; simulation uses tickRate independently
+    u32 gameplayFrameRate = 30; ///< presentation cap; simulation uses tickRate independently
 };
 
 struct CameraConfig {

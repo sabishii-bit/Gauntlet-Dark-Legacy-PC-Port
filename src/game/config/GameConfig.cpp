@@ -17,6 +17,11 @@
 
 namespace gdl::game {
 
+bool DisplayConfig::matchesWindow(WindowMode mode, Extent2D size) const {
+    return windowMode == mode && (mode == WindowMode::BorderlessFullscreen ||
+                                  size == Extent2D{windowWidth, windowHeight});
+}
+
 namespace {
 
 constexpr std::string_view kSettingsFolder = "GauntletDarkLegacy";

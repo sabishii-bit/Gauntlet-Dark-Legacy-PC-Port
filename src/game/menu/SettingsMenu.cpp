@@ -169,6 +169,26 @@ void SettingsMenu::rebuild(s32 selection) {
                 labelWidth = std::max(labelWidth, m_painter->measure(item.text, 1));
                 valueWidth = std::max(valueWidth, m_painter->measure(item.value, 1));
             }
+            // Budget all choices, not just the current value, so cycling never resizes the font.
+            for (const auto* id :
+                 {"settings.borderless", "settings.fullscreen", "settings.windowed", "settings.on",
+                  "settings.off", "settings.unlimited", "settings.msaa2", "settings.msaa4"}) {
+                valueWidth = std::max(valueWidth, m_painter->measure(text(id), 1));
+            }
+            const auto measureSize = [&](Extent2D extent) {
+                valueWidth =
+                    std::max(valueWidth, m_painter->measure(std::to_string(extent.width) + " x " +
+                                                                std::to_string(extent.height),
+                                                            1));
+            };
+            for (const auto extent : m_display.resolutions) {
+                measureSize(extent);
+            }
+            measureSize(m_display.desktop);
+            const DisplayConfig defaults;
+            measureSize({defaults.windowWidth, defaults.windowHeight});
+            measureSize(
+                {m_video.saved().display.windowWidth, m_video.saved().display.windowHeight});
             constexpr s32 kArrowMargin = 12;
             definition.scale =
                 std::min(0.7f, static_cast<f32>(kRight - kLeft - kColumnGap - kArrowMargin) /
