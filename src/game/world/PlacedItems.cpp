@@ -202,7 +202,6 @@ void PlacedItems::clear() {
     m_archives.clear();
     m_motions.clear();
     m_collision = nullptr;
-    m_frameRemainder = 0.0f;
     m_revealTime = 0.0f;
     m_revealing = false;
     m_capturePending = false;
@@ -758,6 +757,9 @@ void PlacedItems::fly(Item& item, f32 seconds) {
 }
 
 void PlacedItems::capturePresentation() {
+    for (auto& motion : m_motions) {
+        motion.animator.advance(0);
+    }
     m_capturePending = true;
     m_burstsAdvanced = false;
     for (Item& item : m_items) {
@@ -783,13 +785,8 @@ void PlacedItems::update(f32 seconds) {
     m_burstsAdvanced = seconds > 0;
     syncFloors();
     // The archives' texture animations step once a game frame: the sheen on the crystals.
-    m_frameRemainder += seconds * kFrameRate;
-    const f32 whole = std::floor(m_frameRemainder);
-    m_frameRemainder -= whole;
-    if (whole > 0.0f) {
-        for (ArchiveMotion& motion : m_motions) {
-            motion.animator.step(static_cast<u32>(whole));
-        }
+    for (ArchiveMotion& motion : m_motions) {
+        motion.animator.advance(seconds);
     }
     // The figures on show play their sequence over and over.
     for (Item& item : m_items) {
@@ -853,20 +850,31 @@ void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
             const TreePose* pose = &item.pose;
             Mat4 transform = item.transform;
             f32 alpha = item.alpha;
+            f32 visualFrame = item.player.frame();
             if (frameBlend >= 0 && item.presentationCaptured &&
                 glm::distance(Vec3{item.previousTransform[3]}, item.position) <=
                     kPresentationCutDistance) {
                 transform = blendPlacement(item.previousTransform, item.transform, blend);
                 alpha = glm::mix(item.previousAlpha, item.alpha, blend);
                 if (item.figure != nullptr && item.player.playing()) {
-                    const f32 frame =
+                    visualFrame =
                         item.previousGeneration == item.player.generation()
                             ? glm::mix(item.previousFrame, item.player.presentationFrame(), blend)
                             : item.player.presentationFrame();
-                    item.presentationPose.evaluate(*item.figure, item.player.sequence(), frame,
-                                                   false, true);
+                    item.presentationPose.evaluate(*item.figure, item.player.sequence(),
+                                                   visualFrame, false, true);
                     pose = &item.presentationPose;
                 }
+            }
+            if (item.figure != nullptr) {
+                for (const auto& motion : m_motions) {
+                    if (motion.archive == item.archive) {
+                        motion.animator.apply(item.model, *item.figure, item.player.sequence(),
+                                              visualFrame,
+                                              motion.animator.presentationOffset(frameBlend));
+                    }
+                }
+                item.model.setPresentationFrame(item.player.sequence(), visualFrame);
             }
             item.model.draw(device, clip, transform, lighting, pose->matrices(), camera, alpha,
                             pass);

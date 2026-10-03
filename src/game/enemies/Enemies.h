@@ -13,6 +13,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
@@ -329,6 +330,7 @@ private:
     struct Stock {
         s32 kind = -1;
         ItemArchive archive;
+        TextureAnimator textures;
         std::array<const TreeInfo*, 3> trees{};
         std::array<TreeModel, 3> bodies;               ///< set to the frame before each is drawn
         std::array<const TreeInfo*, 3> variantTrees{}; ///< the archer's, bomber's, suicide's
@@ -337,6 +339,7 @@ private:
         TreeModel bomb;
         TreeModel fireball; ///< the third slot's shot
         std::array<TreeModel, 2> deathStatues;
+        std::array<const TreeInfo*, 2> deathStatueTrees{};
         std::array<BlobShadow, 3> shadows; ///< SHADOW1L1..3L1, by tier
         TreeInfo unseen; ///< the stance alone, for a kind with no body on the disc (IT)
     };
@@ -435,7 +438,12 @@ private:
                std::span<const Obstacle> obstacles);
     void shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players, EnemyMissiles& missiles,
                f32 speedScale, std::span<const Obstacle> items);
-    const TreeModel* bodyOf(const Enemy& enemy);
+    struct Figure {
+        TreeModel* model = nullptr;
+        const TreeInfo* tree = nullptr;
+        TextureAnimator* textures = nullptr;
+    };
+    Figure bodyOf(const Enemy& enemy);
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
               std::span<const EnemyView> players, std::span<const Obstacle> obstacles);
     Vec3 travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const;

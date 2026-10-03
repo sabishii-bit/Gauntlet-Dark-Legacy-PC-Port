@@ -161,7 +161,6 @@ private:
     std::vector<CombatShot> m_shots;
     std::vector<CombatantRam> m_rams;
     std::vector<CombatPush> m_pushes;
-    f32 m_textureFrames = 0;
     const Texture* m_hitFlash = nullptr; ///< borrowed from the level
 };
 } // namespace gdl::game

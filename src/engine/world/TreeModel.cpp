@@ -308,14 +308,24 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 state.uvScale = node.uvScale;
             }
             const Texture* texture = shape.textures[p];
-            for (const auto& [slot, frame] : m_frames) {
-                if (slot == shape.slots[p]) {
-                    texture = frame;
+            const TextureFrame* selected = nullptr;
+            for (const auto& frame : m_frames) {
+                if (frame.slot == shape.slots[p]) {
+                    selected = &frame;
                 }
             }
-            for (const auto& [slot, frame] : node.frames) {
-                if (slot == shape.slots[p]) {
-                    texture = frame;
+            for (const auto& frame : node.frames) {
+                if (frame.slot == shape.slots[p]) {
+                    selected = &frame;
+                }
+            }
+            if (selected != nullptr) {
+                texture = selected->frame;
+                // Dissolve and white-flash skins keep their coverage. Solid cutouts
+                // remain discrete: blending their silhouettes would change occlusion.
+                if (mask == nullptr && (additive || !node.depthWrite)) {
+                    state.nextTexture = selected->next;
+                    state.textureBlend = selected->blend;
                 }
             }
             device.draw(m_batch, *texture, clip, state);
@@ -323,10 +333,10 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
     }
 }
 
-void TreeModel::setTextureFrame(u32 slot, const Texture* frame) {
-    std::erase_if(m_frames, [slot](const auto& shown) { return shown.first == slot; });
+void TreeModel::setTextureFrame(u32 slot, const Texture* frame, const Texture* next, f32 blend) {
+    std::erase_if(m_frames, [slot](const auto& shown) { return shown.slot == slot; });
     if (frame != nullptr) {
-        m_frames.emplace_back(slot, frame);
+        m_frames.push_back({slot, frame, next, blend});
     }
 }
 
@@ -386,14 +396,15 @@ void TreeModel::setNodeMaskedTexture(usize root, const Texture* texture) {
     }
 }
 
-void TreeModel::setNodeTextureFrame(usize root, u32 slot, const Texture* frame) {
+void TreeModel::setNodeTextureFrame(usize root, u32 slot, const Texture* frame, const Texture* next,
+                                    f32 blend) {
     for (Node& node : m_nodes) {
         if (std::ranges::find(node.ancestors, root) == node.ancestors.end()) {
             continue;
         }
-        std::erase_if(node.frames, [slot](const auto& shown) { return shown.first == slot; });
+        std::erase_if(node.frames, [slot](const auto& shown) { return shown.slot == slot; });
         if (frame != nullptr) {
-            node.frames.emplace_back(slot, frame);
+            node.frames.push_back({slot, frame, next, blend});
         }
     }
 }

@@ -1,6 +1,7 @@
 #include "engine/world/TextureAnimator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <optional>
@@ -127,6 +128,8 @@ void TextureAnimator::clear() {
     m_entries.clear();
     m_entryOfInfo.clear();
     m_frame = 0;
+    m_remainder = 0.0f;
+    m_advance = 0.0f;
 }
 
 f32 TextureAnimator::scrollAt(s32 sinceStart, s32 rate, s32 frames) {
@@ -135,8 +138,8 @@ f32 TextureAnimator::scrollAt(s32 sinceStart, s32 rate, s32 frames) {
 
 /** The original's CalcTexScroll: the slide, and the stretch that is what it reaches less
  * the slide. */
-ScrollState TextureAnimator::scrollStateAt(s32 sinceStart, s32 rate, s32 frames) {
-    const auto t = static_cast<f32>(sinceStart);
+ScrollState TextureAnimator::scrollStateAt(f32 sinceStart, s32 rate, s32 frames) {
+    const f32 t = sinceStart;
     const auto lo = static_cast<f32>(std::min(rate, frames));
     const auto hi = static_cast<f32>(frames);
     ScrollState state;
@@ -144,7 +147,7 @@ ScrollState TextureAnimator::scrollStateAt(s32 sinceStart, s32 rate, s32 frames)
         return state;
     }
     if (lo <= 0.0f) {
-        state.along = static_cast<f32>(sinceStart % frames) / hi;
+        state.along = std::fmod(sinceStart, hi) / hi;
         state.scale = 0.0f;
         return state;
     }
@@ -174,7 +177,7 @@ ScrollState TextureAnimator::scrollStateAt(s32 sinceStart, s32 rate, s32 frames)
     return state;
 }
 
-std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) const {
+std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, f32 frame) const {
     if (info < 0 || static_cast<usize>(info) >= m_entryOfInfo.size() ||
         m_entryOfInfo[static_cast<usize>(info)] < 0) {
         return std::nullopt;
@@ -182,9 +185,9 @@ std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) cons
     const Entry& entry = m_entries[static_cast<usize>(m_entryOfInfo[static_cast<usize>(info)])];
     TextureMotion motion;
     motion.slot = entry.slot;
-    const s32 since = frame - entry.offset;
+    const f32 since = frame - static_cast<f32>(entry.offset);
     if (entry.fade != 0) {
-        motion.alpha = fadeAlpha(since, entry.period, entry.fade < 0);
+        motion.alpha = fadeAlpha(static_cast<s32>(since), entry.period, entry.fade < 0);
         return motion;
     }
     if (entry.frames.empty()) {
@@ -195,21 +198,36 @@ std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) cons
                             entry.direction.y != 0.0f ? scroll.scale : 1.0f};
         return motion;
     }
-    s32 f = std::max(since, 0);
-    if (entry.rate > 0) {
-        f /= entry.rate;
-    }
-    f = std::min(f, entry.period - 1);
-    motion.frame = entry.frames[static_cast<usize>(f)];
+    const f32 sample = std::min(std::max(since, 0.0f) / static_cast<f32>(std::max(entry.rate, 1)),
+                                static_cast<f32>(entry.period - 1));
+    const auto index = static_cast<usize>(sample);
+    motion.frame = entry.frames[index];
+    motion.nextFrame = entry.frames[std::min(index + 1, entry.frames.size() - 1)];
+    motion.frameBlend = sample - std::floor(sample);
     return motion;
 }
 
-TextureMotion TextureAnimator::motion(usize index) const {
+TextureMotion TextureAnimator::motion(usize index, std::optional<f32> frameOffset) const {
     const Entry& entry = m_entries[index];
     TextureMotion motion;
     motion.slot = entry.slot;
     if (entry.fade != 0) {
         motion.alpha = fadeAlpha(entry.counter - entry.offset, entry.period, entry.fade < 0);
+    } else if (frameOffset.has_value()) {
+        const auto rate = static_cast<u32>(std::max(entry.rate, 1));
+        const f32 sample =
+            static_cast<f32>(entry.counter) +
+            (static_cast<f32>(m_frame % rate) + *frameOffset) / static_cast<f32>(rate);
+        const f32 period = static_cast<f32>(entry.period);
+        const f32 wrapped = sample - std::floor(sample / period) * period;
+        if (entry.frames.empty()) {
+            motion.offset = entry.direction * (wrapped / period);
+        } else {
+            const auto current = static_cast<usize>(wrapped);
+            motion.frame = entry.frames[current];
+            motion.nextFrame = entry.frames[(current + 1) % entry.frames.size()];
+            motion.frameBlend = wrapped - std::floor(wrapped);
+        }
     } else if (entry.frames.empty()) {
         const f32 along =
             static_cast<f32>(entry.counter % entry.period) / static_cast<f32>(entry.period);
@@ -218,6 +236,22 @@ TextureMotion TextureAnimator::motion(usize index) const {
         motion.frame = entry.frames[static_cast<usize>(entry.counter)];
     }
     return motion;
+}
+
+void TextureAnimator::advance(f32 seconds) {
+    constexpr f32 kFrameRate = 30.0f;
+    m_advance = std::max(seconds, 0.0f) * kFrameRate;
+    m_remainder += m_advance;
+    const auto whole = static_cast<u32>(m_remainder);
+    m_remainder -= static_cast<f32>(whole);
+    step(whole);
+}
+
+std::optional<f32> TextureAnimator::presentationOffset(f32 alpha) const {
+    if (alpha < 0) {
+        return std::nullopt;
+    }
+    return m_remainder - m_advance * (1.0f - std::clamp(alpha, 0.0f, 1.0f));
 }
 
 void TextureAnimator::show(const Entry& entry, WorldScene& scene) {
@@ -272,6 +306,14 @@ void TextureAnimator::apply(WorldScene& scene) const {
                 }
             } else {
                 show(entry, scene);
+                if (!entry.frames.empty()) {
+                    const auto rate = static_cast<u32>(std::max(entry.rate, 1));
+                    scene.setTextureCycle(entry.slot, entry.frames,
+                                          static_cast<f32>(entry.counter) +
+                                              static_cast<f32>(m_frame % rate) /
+                                                  static_cast<f32>(rate),
+                                          1.0f / static_cast<f32>(rate));
+                }
             }
         }
     }
@@ -280,27 +322,45 @@ void TextureAnimator::apply(WorldScene& scene) const {
     }
 }
 
-void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence, s32 frame) const {
+void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence, f32 frame,
+                            std::optional<f32> frameOffset) const {
     model.resetTextures();
     const auto show = [&](const TextureMotion& moved) {
         if (moved.alpha.has_value()) {
             model.setNodeAlpha(0, *moved.alpha);
         } else if (moved.frame != nullptr) {
-            model.setTextureFrame(moved.slot, moved.frame);
+            model.setTextureFrame(moved.slot, moved.frame,
+                                  frameOffset.has_value() ? moved.nextFrame : nullptr,
+                                  frameOffset.has_value() ? moved.frameBlend : 0.0f);
         } else {
             model.setTextureOffset(moved.slot, moved.offset, moved.scale);
         }
     };
     for (usize i = 0; i < size(); ++i) {
         if (!keyed(i)) {
-            show(motion(i));
+            const auto moved = motion(i, frameOffset);
+            if (moved.frame == nullptr && !moved.alpha) {
+                Vec2 offset = model.textureOffset(moved.slot);
+                const auto& direction = m_entries[i].direction;
+                if (direction.x != 0) {
+                    offset.x = moved.offset.x;
+                }
+                if (direction.y != 0) {
+                    offset.y = moved.offset.y;
+                }
+                model.setTextureOffset(moved.slot, offset, moved.scale);
+            } else {
+                show(moved);
+            }
         }
     }
     if (sequence >= tree.sequences.size()) {
         return;
     }
     const TreeSequenceInfo& selected = tree.sequences[sequence];
-    frame = selected.effectFrame(frame);
+    frame = (selected.flags & 1U) != 0 && selected.frames > 0
+                ? static_cast<f32>(selected.frames - 1) - frame
+                : frame;
     for (s32 i = 0; i < selected.textureAnimationCount; ++i) {
         if (const auto moved = motionAt(selected.textureAnimationStart + i, frame)) {
             show(*moved);
@@ -311,7 +371,9 @@ void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence
             if (moved->alpha.has_value()) {
                 model.setNodeAlpha(i, *moved->alpha);
             } else if (moved->frame != nullptr) {
-                model.setNodeTextureFrame(i, moved->slot, moved->frame);
+                model.setNodeTextureFrame(i, moved->slot, moved->frame,
+                                          frameOffset.has_value() ? moved->nextFrame : nullptr,
+                                          frameOffset.has_value() ? moved->frameBlend : 0.0f);
             } else {
                 model.setNodeTextureOffset(i, moved->offset, moved->scale);
             }
@@ -324,23 +386,31 @@ void TextureAnimator::step(WorldScene& scene, u32 ticks) {
     apply(scene);
 }
 
-void TextureAnimator::apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence,
-                            s32 frame) const {
+void TextureAnimator::apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence, f32 frame,
+                            std::optional<f32> frameOffset) const {
+    particles.clearTextureBlends();
     const auto show = [&](const TextureMotion& moved) {
         if (moved.frame != nullptr) {
-            particles.setTextureFrame(moved.slot, *moved.frame);
+            if (frameOffset) {
+                particles.setTextureBlend(moved.slot, *moved.frame, moved.nextFrame,
+                                          moved.frameBlend);
+            } else {
+                particles.setTextureFrame(moved.slot, *moved.frame);
+            }
         }
     };
     for (usize i = 0; i < size(); ++i) {
         if (!keyed(i)) {
-            show(motion(i));
+            show(motion(i, frameOffset));
         }
     }
     if (sequence >= tree.sequences.size()) {
         return;
     }
     const auto& selected = tree.sequences[sequence];
-    frame = selected.effectFrame(frame);
+    frame = (selected.flags & 1U) != 0 && selected.frames > 0
+                ? static_cast<f32>(selected.frames - 1) - frame
+                : frame;
     for (s32 i = 0; i < selected.textureAnimationCount; ++i) {
         if (const auto moved = motionAt(selected.textureAnimationStart + i, frame)) {
             show(*moved);

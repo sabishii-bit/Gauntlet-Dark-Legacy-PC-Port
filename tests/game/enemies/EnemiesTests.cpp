@@ -1448,6 +1448,41 @@ std::filesystem::path routingAssets() {
     return root;
 }
 
+TEST_CASE("enemy texture clocks interpolate once per stock and stop with the simulation",
+          "[game][enemies][cadence][texture-animation]") {
+    const auto root = routingAssets();
+    writeTextFile(root / "MONSTERS/GRU/animations.json", R"({"trees":[{"name":"GRU1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":10,"rate":30}]}],
+        "textureAnimations":[{"name":"SKIN","texture":0,"source":-3,
+                              "frames":60,"rate":2,"flag":-1}]})");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kLurkWay;
+    spawn.placed = true;
+    REQUIRE(enemies.spawn(spawn, {}).has_value());
+    spawn.position.x = 10;
+    REQUIRE(enemies.spawn(spawn, {}).has_value());
+    enemies.update(1, 1.0f / 60, {});
+    const auto offsetAt = [&](f32 alpha) {
+        device.draws.clear();
+        enemies.draw(device, Mat4{1}, {}, nullptr, nullptr, nullptr, alpha);
+        REQUIRE(device.draws.size() == 2);
+        CHECK(device.draws[0].state.uvOffset == device.draws[1].state.uvOffset);
+        return device.draws[0].state.uvOffset.y;
+    };
+    CHECK(offsetAt(0) == Approx(0));
+    CHECK(offsetAt(0.5f) == Approx(1.0f / 480));
+    CHECK(offsetAt(1) == Approx(1.0f / 240));
+    CHECK(offsetAt(0.5f) == Approx(1.0f / 480));
+    enemies.update(1, 1.0f / 60, {}, {}, nullptr, 1, true);
+    CHECK(offsetAt(0) == Approx(1.0f / 240));
+    CHECK(offsetAt(1) == Approx(1.0f / 240));
+}
+
 /** An acid blob of a stance and the two hit reactions. */
 std::filesystem::path blobAssets() {
     const auto root = test::scratchDirectory("enemy-blob");

@@ -94,6 +94,19 @@ void TreeParticles::setTextureFrame(u32 slot, const Texture& texture) {
     }
 }
 
+void TreeParticles::setTextureBlend(u32 slot, const Texture& current, const Texture* next,
+                                    f32 blend) {
+    for (usize i = 0; i < m_nodes.size(); ++i) {
+        if (m_nodes[i].texture == slot) {
+            m_field.setTextureBlend(i, current, next, blend);
+        }
+    }
+}
+
+void TreeParticles::clearTextureBlends() {
+    m_field.clearTextureBlends();
+}
+
 void TreeParticles::draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
                          f32 presentationAlpha) const {
     m_field.draw(device, clip, right, up, presentationAlpha);

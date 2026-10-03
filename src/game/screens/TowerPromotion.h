@@ -39,12 +39,17 @@ public:
     void clear();
     Cue update(s32 ticks, bool voicePlaying);
     void animate(f32 seconds);
+    void capturePresentation() {
+        m_presentationAdvanced = false;
+        m_textures.advance(0);
+    }
     bool active() const { return m_current < m_entries.size(); }
     const Entry* current() const { return active() ? &m_entries[m_current] : nullptr; }
     const std::optional<WorldCamera>& camera() const { return m_camera; }
     const Mat4& wizardTransform() const { return m_transform; }
     usize shown() const;
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 renderAlpha = -1.0f) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, f32 width, f32 height) const;
     static std::string caption(const CharacterSave& save, const MessageTable& strings);
 
@@ -58,10 +63,12 @@ private:
     std::optional<WorldCamera> m_camera;
     Mat4 m_transform{1};
     const TreeInfo* m_tree = nullptr;
-    TreeModel m_model;
+    mutable TreeModel m_model;
     TreePose m_pose;
     AnimationPlayer m_player;
     TextureAnimator m_textures;
-    f32 m_frames = 0;
+    f32 m_previousFrame = 0;
+    u64 m_previousGeneration = 0;
+    bool m_presentationAdvanced = false;
 };
 } // namespace gdl::game

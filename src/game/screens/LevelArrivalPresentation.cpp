@@ -21,7 +21,6 @@ void LevelArrivalPresentation::clear() {
     m_spawns.clear();
     m_textures.clear();
     m_ticks = 0;
-    m_frames = 0.0f;
     m_camera.stop();
     m_titleSlide = 0.0f;
     m_titleLanded = false;
@@ -70,6 +69,7 @@ void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
 }
 
 void LevelArrivalPresentation::capturePresentation() {
+    m_textures.advance(0);
     for (Spawn& spawn : m_spawns) {
         spawn.presentationAdvanced = false;
     }
@@ -79,29 +79,17 @@ void LevelArrivalPresentation::animate(f32 seconds) {
     if (!active()) {
         return;
     }
-    m_frames += seconds * AnimationPlayer::kDefaultRate;
-    const f32 whole = std::floor(m_frames);
-    m_frames -= whole;
-    if (whole > 0.0f) {
-        m_textures.step(static_cast<u32>(whole));
-    }
+    m_textures.advance(seconds);
     for (Spawn& spawn : m_spawns) {
         spawn.previousFrame = spawn.player.presentationFrame();
         spawn.previousGeneration = spawn.player.generation();
-        spawn.presentationAdvanced = seconds > 0 && spawn.player.playing();
+        spawn.presentationAdvanced = seconds > 0;
         if (spawn.player.playing() && !spawn.player.finished()) {
             spawn.player.advance(seconds, false);
             spawn.pose.evaluate(*spawn.tree, spawn.player.sequence(), spawn.player.frame());
             spawn.model.setFrame(spawn.player.sequence(), static_cast<s32>(spawn.player.frame()));
         }
-        for (usize i = 0; i < m_textures.size(); ++i) {
-            const TextureMotion motion = m_textures.motion(i);
-            if (motion.frame != nullptr) {
-                spawn.model.setTextureFrame(motion.slot, motion.frame);
-            } else {
-                spawn.model.setTextureOffset(motion.slot, motion.offset);
-            }
-        }
+        m_textures.apply(spawn.model, *spawn.tree, spawn.player.sequence(), spawn.player.frame());
     }
 }
 
@@ -128,14 +116,19 @@ void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& cli
     for (const Spawn& spawn : m_spawns) {
         TreePose visualPose;
         const TreePose* pose = &spawn.pose;
-        if (frameBlend >= 0 && spawn.presentationAdvanced) {
-            const f32 frame = spawn.previousGeneration == spawn.player.generation()
-                                  ? std::lerp(spawn.previousFrame, spawn.player.presentationFrame(),
-                                              std::clamp(frameBlend, 0.0f, 1.0f))
-                                  : spawn.player.presentationFrame();
+        const f32 blend = frameBlend < 0 || spawn.presentationAdvanced ? frameBlend : 1.0f;
+        f32 frame = spawn.player.frame();
+        if (blend >= 0 && spawn.player.playing()) {
+            frame = spawn.previousGeneration == spawn.player.generation()
+                        ? std::lerp(spawn.previousFrame, spawn.player.presentationFrame(),
+                                    std::clamp(blend, 0.0f, 1.0f))
+                        : spawn.player.presentationFrame();
             visualPose.evaluate(*spawn.tree, spawn.player.sequence(), frame, false, true);
             pose = &visualPose;
         }
+        spawn.model.setPresentationFrame(spawn.player.sequence(), frame);
+        m_textures.apply(spawn.model, *spawn.tree, spawn.player.sequence(), frame,
+                         m_textures.presentationOffset(blend));
         spawn.model.draw(device, clip, glm::translate(Mat4{1.0f}, spawn.position), lighting,
                          pose->matrices());
     }

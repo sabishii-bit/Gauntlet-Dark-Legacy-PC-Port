@@ -65,8 +65,12 @@ public:
     /** Plays on by `seconds`: Pojo as the body asks (`swung`: a swing landed), the others
      * idling, the phoenix's attack as `spat`. */
     void update(f32 seconds, PlayerAnimator::Action action, bool swung, bool spat);
+    void capturePresentation() {
+        m_presentationAdvanced = false;
+        m_textures.advance(0);
+    }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& at, const WorldLighting& lighting,
-              f32 alpha, const CameraFrame* camera) const;
+              f32 alpha, const CameraFrame* camera, f32 renderAlpha = -1.0f) const;
     void clear();
 
     Kind kind() const { return m_kind; }
@@ -82,11 +86,13 @@ private:
 
     Kind m_kind = Kind::None;
     const TreeInfo* m_tree = nullptr;
-    TreeModel m_model;
+    mutable TreeModel m_model;
     TreePose m_pose;
     AnimationPlayer m_player;
     TextureAnimator m_textures;
-    f32 m_frames = 0.0f;
+    f32 m_previousFrame = 0;
+    u64 m_previousGeneration = 0;
+    bool m_presentationAdvanced = false;
 };
 
 } // namespace gdl::game

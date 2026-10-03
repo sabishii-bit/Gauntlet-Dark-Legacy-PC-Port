@@ -1,8 +1,13 @@
 #include <cstddef>
+#include <limits>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+#include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
+
+#include "FakeRenderDevice.h"
 
 namespace {
 
@@ -43,6 +48,34 @@ TEST_CASE("presentation samples fall back to the next supported count without ro
     STATIC_REQUIRE(presentationSamples(0, 7) == 1);
     STATIC_REQUIRE(presentationSamples(3, 7) == 1);
     STATIC_REQUIRE(presentationSamples(8, 15) == 1);
+}
+
+TEST_CASE("flipbook blending preserves the second texture stage's existing owners",
+          "[render][texture-blend]") {
+    test::FakeTexture frame(1, 1);
+    DrawState state;
+    CHECK(state.effectiveTextureBlend() == 0.0f);
+    state.textureBlend = 0.5f;
+    CHECK(state.effectiveTextureBlend() == 0.0f);
+    state.nextTexture = &frame;
+    CHECK(state.effectiveTextureBlend() == 0.5f);
+    state.maskedTexture = &frame;
+    CHECK(state.effectiveTextureBlend() == 0.0f);
+    state.maskedTexture = nullptr;
+    state.lightmap = &frame;
+    CHECK(state.effectiveTextureBlend() == 0.0f);
+    state.lightmap = nullptr;
+    CHECK(state.effectiveTextureBlend() == 0.5f);
+    state.textureBlend = -1.0f;
+    CHECK(state.effectiveTextureBlend() == 0.0f);
+    state.textureBlend = 0.0f;
+    CHECK(state.effectiveTextureBlend() == 0.0f);
+    state.textureBlend = 1.0f;
+    CHECK(state.effectiveTextureBlend() == 1.0f);
+    state.textureBlend = 2.0f;
+    CHECK(state.effectiveTextureBlend() == 1.0f);
+    state.textureBlend = std::numeric_limits<f32>::quiet_NaN();
+    CHECK(state.effectiveTextureBlend() == 0.0f);
 }
 
 } // namespace

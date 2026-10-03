@@ -708,6 +708,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_fixtures.capturePresentation();
     m_towerRelics.capturePresentation();
     m_arrival.capturePresentation();
+    m_transporters.capturePresentation();
+    m_promotion.capturePresentation();
     m_bossSequence.capturePresentation();
     m_opponentsAdvanced = false;
     m_projectilesAdvanced = false;
@@ -1159,7 +1161,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_figures.draw(device, m_players, figureScene(frameBlend), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting(), &companionCamera,
                    TreeModel::Pass::DepthWriting);
-    m_transporters.draw(device, clip, m_world->lighting());
+    m_transporters.draw(device, clip, m_world->lighting(), effectBlend);
     const CameraFrame effectCamera = companionCamera;
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
@@ -1180,7 +1182,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {
-        m_promotion.draw(device, clip, m_world->lighting());
+        m_promotion.draw(device, clip, m_world->lighting(), effectBlend);
     }
     if (relicCeremonyOn()) {
         m_towerRelics.drawWizard(device, clip, m_world->lighting(), camera, effectBlend);

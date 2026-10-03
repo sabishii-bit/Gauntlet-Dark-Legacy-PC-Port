@@ -361,6 +361,41 @@ TEST_CASE("texture slots can show another frame or slide their coordinates", "[w
     REQUIRE(f.scene.textureOffset(99) == Vec2{0.0f, 0.0f});
 }
 
+TEST_CASE("world flipbooks blend soft sheets but preserve solid and lightmapped coverage",
+          "[world][scene][texture-blend]") {
+    Fixture f("world-scene-flipbooks");
+    REQUIRE(f.build());
+    const std::array<const Texture*, 2> frames{&f.textures.texture(f.device, 0),
+                                               &f.textures.texture(f.device, 1)};
+    f.scene.setTextureCycle(0, frames, 0, 1);
+    f.scene.setTextureCycle(3, frames, 0, 1);
+    f.scene.draw(f.device, Mat4{1}, CameraFrame{}, 0.5f, 0.5f);
+    REQUIRE(f.device.draws.size() == 8);
+    for (const auto& draw : f.device.draws) {
+        if (draw.state.blend == BlendMode::Additive) {
+            CHECK(draw.texture == frames[0]);
+            CHECK(draw.state.nextTexture == frames[1]);
+            CHECK(draw.state.textureBlend == Approx(0.5f));
+        } else {
+            CHECK(draw.state.nextTexture == nullptr);
+        }
+    }
+    // A temporary alpha fade is not evidence that an opaque mesh is a soft sprite.
+    f.scene.setObjectAlpha(10, 0.5f);
+    f.device.draws.clear();
+    f.scene.draw(f.device, Mat4{1}, CameraFrame{}, 0.5f, 0.5f);
+    for (const auto& draw : f.device.draws) {
+        if (draw.state.blend != BlendMode::Additive) {
+            CHECK(draw.state.nextTexture == nullptr);
+        }
+    }
+    f.device.draws.clear();
+    f.scene.draw(f.device, Mat4{1});
+    for (const auto& draw : f.device.draws) {
+        CHECK(draw.state.nextTexture == nullptr);
+    }
+}
+
 TEST_CASE("objects flagged to face the camera are units turned its way", "[world][scene]") {
     Fixture f("world-scene-facing");
     // The near pane asks to face the camera about the vertical.

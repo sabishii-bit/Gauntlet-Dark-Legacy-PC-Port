@@ -30,9 +30,11 @@ public:
         f32 radius = 0.0f;
         f32 height = 0.0f;
         Mat4 transform{1.0f};
-        TreeModel model;
+        mutable TreeModel model;
         TreePose pose;
         AnimationPlayer animation;
+        f32 previousFrame = 0;
+        u64 previousGeneration = 0;
     };
 
     /** Both archives must outlive the pads; level-specific art takes precedence. */
@@ -40,7 +42,12 @@ public:
               ItemArchive* realmItems = nullptr);
     void clear();
     void animate(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void capturePresentation() {
+        m_presentationAdvanced = false;
+        m_textures.advance(0);
+    }
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 renderAlpha = -1.0f) const;
     usize size() const { return m_pads.size(); }
     const Pad& pad(usize index) const { return m_pads[index]; }
     std::optional<usize> contact(const Vec3& feet, f32 radius, f32 height) const;
@@ -55,7 +62,7 @@ private:
     std::vector<Pad> m_pads;
     const TreeInfo* m_tree = nullptr;
     TextureAnimator m_textures;
-    f32 m_frames = 0.0f;
+    bool m_presentationAdvanced = false;
 };
 
 } // namespace gdl::game

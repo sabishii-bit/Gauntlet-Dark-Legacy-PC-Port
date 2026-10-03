@@ -54,6 +54,10 @@ void Combatant::capturePresentation() {
                               actor.yaw,
                               actor.player.presentationFrame(),
                               actor.smoothValid ? actor.smooth : smoothPose(actor)};
+        for (auto& attachment : actor.attachments) {
+            attachment.previousFrame = attachment.player.presentationFrame();
+            attachment.previousGeneration = attachment.player.generation();
+        }
     };
     capture(m_actor);
     for (auto& child : m_children) {
@@ -258,16 +262,18 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
     // The model is shared by this species, but object-frame selection belongs to the
     // individual. Set it for every draw, including the first and frozen frames.
     const Mat4 shownModel = presentationModel(critter, presentationAlpha);
+    const f32 visualFrame = presentationAlpha >= 0 && critter.presentation.valid
+                                ? presentationFrame(critter, presentationAlpha)
+                                : critter.player.frame();
     if (presentationAlpha >= 0 && critter.presentation.valid) {
-        critter.stock->body.setPresentationFrame(critter.player.sequence(),
-                                                 presentationFrame(critter, presentationAlpha));
+        critter.stock->body.setPresentationFrame(critter.player.sequence(), visualFrame);
     } else {
         critter.stock->body.setFrame(critter.player.sequence(),
                                      static_cast<s32>(critter.player.frame()));
     }
     critter.stock->textures.apply(critter.stock->body, *critter.stock->tree,
-                                  critter.player.sequence(),
-                                  static_cast<s32>(critter.player.frame()));
+                                  critter.player.sequence(), visualFrame,
+                                  critter.stock->textures.presentationOffset(presentationAlpha));
     critter.stock->body.setAppearance(false, critter.tint);
     if (critter.skin != nullptr) {
         const auto& skin = *critter.skin;
@@ -320,19 +326,29 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
         }
         const Mat4 model =
             definition.follows ? glm::translate(parent, definition.offset) : instance.world;
-        auxiliary.model.resetTextures();
-        critter.stock->textures.apply(auxiliary.model, *auxiliary.tree, instance.player.sequence(),
-                                      static_cast<s32>(instance.player.frame()));
-        auxiliary.model.setFrame(instance.player.sequence(),
-                                 static_cast<s32>(instance.player.frame()));
+        f32 frame = instance.player.frame();
+        TreePose visualPose;
+        const TreePose* attachmentPose = &instance.pose;
+        if (presentationAlpha >= 0 && critter.presentation.valid) {
+            frame = instance.previousGeneration == instance.player.generation()
+                        ? std::lerp(instance.previousFrame, instance.player.presentationFrame(),
+                                    presentationBlend(critter, presentationAlpha))
+                        : instance.player.presentationFrame();
+            visualPose.evaluate(*auxiliary.tree, instance.player.sequence(), frame, false, true);
+            attachmentPose = &visualPose;
+        }
+        critter.stock->textures.apply(
+            auxiliary.model, *auxiliary.tree, instance.player.sequence(), frame,
+            critter.stock->textures.presentationOffset(presentationAlpha));
+        auxiliary.model.setPresentationFrame(instance.player.sequence(), frame);
         // MBTreeSetAlpha propagates the body's fade through attached ADDA
         // children. World-rooted trees (the Plague pool) are outside that tree.
         const f32 alpha = definition.follows ? critter.alpha : 1.0f;
         if (camera != nullptr) {
-            const auto transforms = instance.pose.drawMatrices(model, *camera);
+            const auto transforms = attachmentPose->drawMatrices(model, *camera);
             auxiliary.model.draw(device, clip, Mat4{1}, lighting, transforms, nullptr, alpha);
         } else {
-            auxiliary.model.draw(device, clip, model, lighting, instance.pose.matrices(), nullptr,
+            auxiliary.model.draw(device, clip, model, lighting, attachmentPose->matrices(), nullptr,
                                  alpha);
         }
     }

@@ -27,7 +27,8 @@ public:
     VkPipelineLayout layout() const { return m_layout; }
 
     /** What every draw pushes: its transform, then the coordinate offset, alpha test and
-     * darkening, then the coordinate scale, masked-texture mode and RGB combiner scale. */
+     * darkening, then the coordinate scale, second-stage mode and RGB combiner scale.
+     * The stage mode is 1 for a masked skin, 0 for a lightmap, or a negative frame blend. */
     struct PushConstants {
         Mat4 transform;
         Vec4 params;

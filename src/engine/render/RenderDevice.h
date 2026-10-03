@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -43,6 +44,10 @@ struct DrawState {
     /** Alternate colour sampled at the base UV, masked by base alpha above 2/255.
      * Mutually exclusive with a lightmap; retains the surface's original blend mode. */
     const Texture* maskedTexture = nullptr;
+    /** Next authored flipbook frame, sampled at the base UV. A mask or lightmap takes
+     * precedence because all three uses share the second texture stage. */
+    const Texture* nextTexture = nullptr;
+    f32 textureBlend = 0.0f;   ///< fraction toward the next frame; presentation only
     Vec2 uvScale{1.0f, 1.0f};  ///< every texture coordinate is scaled by this...
     Vec2 uvOffset{0.0f, 0.0f}; ///< ...then has this added
     f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all
@@ -52,6 +57,15 @@ struct DrawState {
     f32 darken = 0.0f;     ///< how much of its colour is taken away: 0 none, 1 all
     f32 colorScale =
         1.0f; ///< RGB combiner scale, clamped before alpha blending; leaves alpha alone
+
+    /** Available flipbook blend after preserving skin/lightmap ownership of stage two. */
+    f32 effectiveTextureBlend() const {
+        if (nextTexture == nullptr || maskedTexture != nullptr || lightmap != nullptr ||
+            !(textureBlend > 0.0f)) {
+            return 0.0f;
+        }
+        return std::min(textureBlend, 1.0f);
+    }
 
     bool operator==(const DrawState&) const = default;
 };

@@ -45,6 +45,9 @@ Mat4 departurePlacement(const PlayerRuntime& runtime, const PortalDeparture& dep
 
 void PartyFigures::snapshot(std::span<PlayerRuntime> players) {
     for (auto& runtime : players) {
+        if (runtime.figure) {
+            runtime.figure->capturePresentation();
+        }
         runtime.previous = {runtime.actor.position(), runtime.actor.yaw(),
                             !runtime.capture.body().has_value() && !runtime.transport.active(),
                             runtime.figure ? runtime.figure->animationRevision() : 0};

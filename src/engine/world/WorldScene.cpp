@@ -372,7 +372,32 @@ bool WorldScene::objectVisible(usize object) const {
 void WorldScene::setTextureFrame(u32 slot, const Texture* texture) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.frame = texture;
+        found->second.cycle.clear();
     }
+}
+
+void WorldScene::setTextureCycle(u32 slot, std::span<const Texture* const> frames, f32 position,
+                                 f32 speed) {
+    if (const auto found = m_slots.find(slot); found != m_slots.end()) {
+        found->second.cycle.assign(frames.begin(), frames.end());
+        found->second.cyclePosition = position;
+        found->second.cycleSpeed = speed;
+    }
+}
+
+const Texture* WorldScene::Slot::presentedTexture(DrawState& state,
+                                                  std::optional<f32> frameOffset) const {
+    if (!frameOffset || cycle.empty() || state.lightmap != nullptr ||
+        (state.depthWrite && state.blend != BlendMode::Additive)) {
+        return current();
+    }
+    const f32 sample = cyclePosition + *frameOffset * cycleSpeed;
+    const auto count = static_cast<f32>(cycle.size());
+    const f32 wrapped = sample - std::floor(sample / count) * count;
+    const auto index = static_cast<usize>(wrapped);
+    state.nextTexture = cycle[(index + 1) % cycle.size()];
+    state.textureBlend = wrapped - std::floor(wrapped);
+    return cycle[index];
 }
 
 void WorldScene::setTextureOffset(u32 slot, const Vec2& offset) {
@@ -478,10 +503,12 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
             m_lit.vertex(v);
         }
         m_lit.end();
-        device.draw(m_lit, *slot.current(), clip, state);
+        const Texture* texture = slot.presentedTexture(state, textureFrameOffset);
+        device.draw(m_lit, *texture, clip, state);
         return;
     }
-    device.draw(batch.geometry, *slot.current(), clip, state);
+    const Texture* texture = slot.presentedTexture(state, textureFrameOffset);
+    device.draw(batch.geometry, *texture, clip, state);
 }
 
 void WorldScene::setPointLights(std::span<const PointLight> points) {
@@ -545,7 +572,11 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         state.depthWrite = unit.depthWrite && unit.alpha >= 1.0f;
         state.depthTest = unit.depthTest;
         state.darken = part.additive ? 0.0f : m_darken;
-        device.draw(m_scratch, *slot.current(), clip, state);
+        // Fading a solid cutout must not opt it into soft flipbook blending.
+        const auto cycleOffset =
+            part.additive || !unit.depthWrite ? textureFrameOffset : std::nullopt;
+        const Texture* texture = slot.presentedTexture(state, cycleOffset);
+        device.draw(m_scratch, *texture, clip, state);
     }
 }
 

@@ -17,6 +17,94 @@ namespace {
 
 using namespace gdl;
 
+TEST_CASE("particle flipbook pairs are render-only and preserve hard depth cutouts",
+          "[world][particles][presentation][texture-blend]") {
+    test::FakeRenderDevice device;
+    const test::FakeTexture current{1, 1};
+    const test::FakeTexture next{1, 1};
+    ParticleField field;
+    for (usize i = 0; i < 3; ++i) {
+        ParticleDescriptor descriptor;
+        descriptor.oneShot = true;
+        descriptor.maxParticles = 1;
+        descriptor.particleLife = 30;
+        descriptor.width = {1, 1, 1, 1};
+        descriptor.additive = i == 0;
+        descriptor.depthWrite = i != 1;
+        field.start(descriptor, Mat4{1}, &device.whiteTexture());
+    }
+    field.step(1.0f / 30);
+    REQUIRE(field.particleCount() == 3);
+    field.step(1.0f / 60);
+    for (usize i = 0; i < field.size(); ++i) {
+        field.setTextureBlend(i, current, &next, 0.25f);
+        CHECK(field.textureOf(i) == &device.whiteTexture());
+    }
+    const auto draw = [&](f32 alpha) {
+        device.draws.clear();
+        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha);
+        REQUIRE(device.draws.size() == 3);
+    };
+    draw(0.5f);
+    for (usize i = 0; i < 2; ++i) {
+        CHECK(device.draws[i].texture == &current);
+        CHECK(device.draws[i].state.nextTexture == &next);
+        CHECK(device.draws[i].state.effectiveTextureBlend() == 0.25f);
+    }
+    CHECK(device.draws[2].texture == &device.whiteTexture());
+    CHECK(device.draws[2].state.nextTexture == nullptr);
+    draw(-1.0f); // paused/native drawing ignores even a retained render override
+    for (const auto& call : device.draws) {
+        CHECK(call.texture == &device.whiteTexture());
+        CHECK(call.state.nextTexture == nullptr);
+    }
+    for (usize i = 0; i < field.size(); ++i) {
+        CHECK(field.emitter(i).particles()[0].age == 0);
+    }
+    field.clearTextureBlends();
+    draw(0.5f);
+    CHECK(device.draws[0].texture == &device.whiteTexture());
+    field.setTextureBlend(0, current, &next, 0.75f);
+    field.setTexture(0, next); // a new native binding invalidates the old pair
+    draw(0.5f);
+    CHECK(device.draws[0].texture == &next);
+    CHECK(device.draws[0].state.nextTexture == nullptr);
+    field.setTextureBlend(0, current, &next, 0.75f);
+    field.step(1.0f / 60); // even a fractional simulation step expires old draw overrides
+    draw(0.5f);
+    CHECK(device.draws[0].texture == &next);
+    CHECK(device.draws[0].state.nextTexture == nullptr);
+    CHECK(field.particleCount() == 3);
+    field.setTextureBlend(999, current, &next, 1.0f); // invalid emitter is harmless
+}
+
+TEST_CASE("particles batch only matching flipbook pairs and blend fractions",
+          "[world][particles][presentation][texture-blend]") {
+    test::FakeRenderDevice device;
+    const test::FakeTexture current{1, 1};
+    const test::FakeTexture next{1, 1};
+    ParticleField field;
+    ParticleDescriptor descriptor;
+    descriptor.oneShot = true;
+    descriptor.maxParticles = 1;
+    descriptor.particleLife = 30;
+    descriptor.additive = true;
+    for (usize i = 0; i < 4; ++i) {
+        field.start(descriptor, Mat4{1}, &device.whiteTexture());
+    }
+    field.step(1.0f / 30);
+    field.step(1.0f / 60);
+    for (usize i = 0; i < field.size(); ++i) {
+        field.setTextureBlend(i, current, &next, i < 2 ? 0.25f : 0.75f);
+    }
+    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f);
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].vertices.size() == 12);
+    CHECK(device.draws[1].vertices.size() == 12);
+    CHECK(device.draws[0].state.textureBlend == 0.25f);
+    CHECK(device.draws[1].state.textureBlend == 0.75f);
+}
+
 TEST_CASE("particle presentation fills fractional ticks without advancing emission",
           "[world][particles][presentation]") {
     test::FakeRenderDevice device;

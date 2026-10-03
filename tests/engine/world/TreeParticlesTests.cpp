@@ -23,6 +23,52 @@ std::filesystem::path particleTextureSet(std::string_view name) {
     return root;
 }
 
+TEST_CASE("tree particle render blends address local slots without changing native frames",
+          "[engine][world][tree-particles][texture-blend]") {
+    const auto root = particleTextureSet("tree-particle-frame-blend");
+    writeTextFile(root / "animations.json", R"({
+        "particles":[{"enables":16928,"texture":"GLOW","particleLife":[1,0],
+                      "rate":[30,30,30,30],"flags":128,"flagMask":128}],
+        "trees":[{"name":"TEST","nodes":[
+            {"name":"EMITTER","parent":-1,"position":[0,0,0],"particle":0}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.trees.load(root));
+    REQUIRE(archive.textures.load(root));
+    test::FakeRenderDevice device;
+    const test::FakeTexture first{1, 1};
+    const test::FakeTexture next{1, 1};
+    const std::array pose{Mat4{1}};
+    TreeParticles particles;
+    const auto prepare = [&]() {
+        particles.step(1.0f / 30, Mat4{1}, pose);
+        particles.step(1.0f / 60, Mat4{1}, pose);
+        REQUIRE(particles.field().particleCount() == 1);
+        particles.setTextureBlend(0, first, &next, 0.5f);
+        device.draws.clear();
+        particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f);
+        REQUIRE(device.draws.size() == 1);
+    };
+    particles.bind(archive.trees.tree(0), archive, device, Mat4{1}, pose);
+    prepare();
+    CHECK(device.draws[0].texture == &first);
+    CHECK(device.draws[0].state.nextTexture == &next);
+    CHECK(particles.field().textureOf(0) == &archive.textures.texture(device, 0));
+    particles.clearTextureBlends();
+    device.draws.clear();
+    particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f);
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].texture == &archive.textures.texture(device, 0));
+
+    ItemArchive borrowingArchive;
+    REQUIRE(borrowingArchive.trees.load(root));
+    const std::array<TextureSet*, 1> lenders{&archive.textures};
+    particles.bind(borrowingArchive.trees.tree(0), borrowingArchive, device, Mat4{1}, pose,
+                   lenders);
+    prepare();
+    CHECK(device.draws[0].texture == &archive.textures.texture(device, 0));
+    CHECK(device.draws[0].state.nextTexture == nullptr);
+}
+
 TEST_CASE("particle texture lookup preserves local slots and borrowed ownership",
           "[engine][world][tree-particles]") {
     const auto root = particleTextureSet("tree-particle-local-textures");

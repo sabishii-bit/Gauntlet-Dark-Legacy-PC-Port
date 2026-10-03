@@ -113,6 +113,22 @@ protected:
         glow.blend = BlendMode::Additive;
         glow.depthWrite = false;
         device.draw(m_batch, *m_texture, projection, glow);
+        // Flipbook interpolation shares the second stage with keep-alpha/lightmaps,
+        // and a subsequent ordinary draw must not retain its frame or blend weight.
+        glow.nextTexture = m_streamed.get();
+        for (const f32 fraction : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+            glow.textureBlend = fraction;
+            device.draw(m_batch, *m_texture, projection, glow);
+            glow.blend = BlendMode::Alpha;
+            device.draw(m_batch, *m_texture, projection, glow);
+            glow.blend = BlendMode::Additive;
+        }
+        glow.lightmap = m_texture.get();
+        device.draw(m_batch, *m_texture, projection, glow);
+        glow.lightmap = nullptr;
+        glow.maskedTexture = m_texture.get();
+        device.draw(m_batch, *m_texture, projection, glow);
+        device.draw(m_batch, *m_texture, projection);
         if (depthOfField) {
             DepthOfField blur;
             blur.clipToView = glm::inverse(projection);

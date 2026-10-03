@@ -321,6 +321,9 @@ void EffectTrees::lights(std::vector<PointLight>& out) const {
 
 void EffectTrees::capturePresentation() {
     m_presentationAdvanced = false;
+    for (const auto& motion : m_motions) {
+        motion->animator.advance(0);
+    }
     for (const auto& effect : m_effects) {
         effect->previousTransform = effect->transform();
         effect->previousDirection = effect->flightDirection;
@@ -342,13 +345,8 @@ void EffectTrees::snapPresentation(u32 id) {
 
 void EffectTrees::update(f32 seconds) {
     m_presentationAdvanced = seconds > 0;
-    m_frames += seconds * AnimationPlayer::kDefaultRate;
-    const f32 whole = std::floor(m_frames);
-    m_frames -= whole;
     for (const std::unique_ptr<Motion>& motion : m_motions) {
-        if (whole > 0.0f) {
-            motion->animator.step(static_cast<u32>(whole));
-        }
+        motion->animator.advance(seconds);
     }
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         effect->lived += seconds;
@@ -464,6 +462,7 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                                 glm::distance(Vec3{effect->previousTransform[3]},
                                               Vec3{placement[3]}) <= kPresentationCutDistance;
         const TreePose* pose = &effect->pose;
+        f32 visualFrame = effect->player.frame();
         if (continuous) {
             placement = blendPlacement(effect->previousTransform, placement, blend);
             if (direction && effect->previousDirection &&
@@ -471,7 +470,7 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                 direction = glm::mix(*effect->previousDirection, *direction, blend);
             }
             if (effect->tree != nullptr && effect->player.playing()) {
-                const f32 visualFrame =
+                visualFrame =
                     effect->previousGeneration == effect->player.generation()
                         ? glm::mix(effect->previousFrame, effect->player.presentationFrame(), blend)
                         : effect->player.presentationFrame();
@@ -482,6 +481,14 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
         }
         const Mat4 placed = direction.has_value() ? frame.along(placement, *direction) : placement;
         if (!effect->retiring && effect->tree != nullptr) {
+            effect->model.setPresentationFrame(effect->player.sequence(), visualFrame);
+            for (const auto& motion : m_motions) {
+                if (motion->archive == effect->archive && motion->lenders == effect->lenders) {
+                    motion->animator.apply(effect->model, *effect->tree, effect->player.sequence(),
+                                           visualFrame,
+                                           motion->animator.presentationOffset(frameBlend));
+                }
+            }
             // Its last moments fade it out (ProcessEffects' fxfade).
             const f32 alpha =
                 effect->fadeSeconds > 0.0f
@@ -499,6 +506,29 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
             }
         }
         const f32 particleBlend = m_presentationAdvanced ? frameBlend : -1.0f;
+        for (const auto& motion : m_motions) {
+            if (motion->archive != effect->archive || motion->lenders != effect->lenders) {
+                continue;
+            }
+            const auto offset = motion->animator.presentationOffset(particleBlend);
+            if (offset && effect->tree != nullptr) {
+                motion->animator.apply(effect->particles, *effect->tree, effect->player.sequence(),
+                                       visualFrame, offset);
+            }
+            effect->trails.clearTextureBlends();
+            if (offset && effect->particleTextureSlot) {
+                for (usize i = 0; i < motion->animator.size(); ++i) {
+                    if (!motion->animator.keyed(i) &&
+                        motion->animator.slot(i) == *effect->particleTextureSlot) {
+                        const auto sample = motion->animator.motion(i, offset);
+                        if (sample.frame != nullptr) {
+                            effect->trails.setTextureBlend(0, *sample.frame, sample.nextFrame,
+                                                           sample.frameBlend);
+                        }
+                    }
+                }
+            }
+        }
         effect->particles.draw(device, clip, frame.right, frame.up, particleBlend);
         effect->trails.draw(device, clip, frame.right, frame.up, particleBlend);
     }
@@ -508,7 +538,6 @@ void EffectTrees::clear() {
     m_effects.clear();
     m_motions.clear();
     m_lenders.clear();
-    m_frames = 0.0f;
     m_presentationAdvanced = false;
     m_nextId = 1;
 }

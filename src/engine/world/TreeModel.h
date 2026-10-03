@@ -52,11 +52,13 @@ public:
 
     /** Shows `frame` wherever the parts use texture `slot` of the set (null: the set's own),
      * or slides their coordinates by `offset`, the way texture animations move. */
-    void setTextureFrame(u32 slot, const Texture* frame);
+    void setTextureFrame(u32 slot, const Texture* frame, const Texture* next = nullptr,
+                         f32 blend = 0.0f);
     void setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale = Vec2{1.0f, 1.0f});
     /** Texture-node changes apply only to that node's subtree. UV transforms affect
      * every material there, while frame substitutions still name a texture slot. */
-    void setNodeTextureFrame(usize root, u32 slot, const Texture* frame);
+    void setNodeTextureFrame(usize root, u32 slot, const Texture* frame,
+                             const Texture* next = nullptr, f32 blend = 0.0f);
     void setNodeTextureOffset(usize root, const Vec2& offset, const Vec2& scale);
     /** Sets opacity throughout one subtree; resetTextures restores opaque nodes. */
     void setNodeAlpha(usize root, f32 alpha);
@@ -87,7 +89,7 @@ public:
      * frame, the only mesh of a one-frame run, else none. */
     void setFrame(u32 sequence, s32 frame);
     /** Opt-in visual mesh morphing for authored vertex-animation runs. Incompatible
-     * adjacent topology/material/UV frames remain discrete; effects use setFrame(). */
+     * adjacent topology/material/UV frames remain discrete. */
     void setPresentationFrame(u32 sequence, f32 frame);
     static bool compatibleMorph(const Mesh& from, const Mesh& to);
     /** Overrides object-animation frames for just one independently animated branch. */
@@ -118,6 +120,12 @@ private:
         std::vector<Shape> shapes;
         std::vector<bool> morphs; ///< compatible geometry/materials between adjacent frames
     };
+    struct TextureFrame {
+        u32 slot = 0;
+        const Texture* frame = nullptr;
+        const Texture* next = nullptr;
+        f32 blend = 0.0f;
+    };
     struct Node {
         Shape shape; ///< what the node draws now; without a mesh, nothing
         const Mesh* nextMesh = nullptr;
@@ -131,7 +139,7 @@ private:
         u32 facing = 0;               ///< turned to the camera this way, when given one
         std::vector<FrameRun> runs;   ///< an object node's, one per sequence
         std::vector<usize> ancestors; ///< includes this node, then its parents
-        std::vector<std::pair<u32, const Texture*>> frames;
+        std::vector<TextureFrame> frames;
         std::optional<Vec2> uvOffset;
         Vec2 uvScale{1.0f};
         f32 alpha = 1.0f;
@@ -156,7 +164,7 @@ private:
     bool m_depthWrite = true;
     bool m_cullBack = true;
     Color m_tint = Color::white();
-    std::vector<std::pair<u32, const Texture*>> m_frames; ///< slot, frame shown
+    std::vector<TextureFrame> m_frames;
     /** A slot's coordinates slid and stretched. */
     struct Slide {
         u32 slot = 0;

@@ -1,7 +1,6 @@
 #include "game/enemies/Bosses.h"
 
 #include <cctype>
-#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -25,7 +24,6 @@ void Bosses::close() {
     m_hitFlash = nullptr;
     m_device = nullptr;
     m_collision = nullptr;
-    m_textureFrames = 0;
     m_id.reset();
     m_cameraBase.reset();
     m_defeat.reset();
@@ -189,6 +187,9 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
 }
 
 void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) {
+    for (const auto& assets : m_assets) {
+        assets->textures.advance(0);
+    }
     if (!m_id.has_value()) {
         return;
     }
@@ -207,11 +208,8 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
     }
     m_fighter.takeFullHarm(m_rite.running());
     if (ticks > 0) {
-        m_textureFrames += seconds * AnimationPlayer::kDefaultRate;
-        const auto frames = static_cast<u32>(std::floor(m_textureFrames));
-        m_textureFrames -= static_cast<f32>(frames);
         for (const auto& assets : m_assets) {
-            assets->textures.step(frames);
+            assets->textures.advance(seconds);
         }
     }
     const Vec3 before = m_fighter.position();

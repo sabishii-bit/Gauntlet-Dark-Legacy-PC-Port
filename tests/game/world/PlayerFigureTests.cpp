@@ -505,6 +505,83 @@ std::filesystem::path costumeFixture(std::string_view name, bool animated) {
     return root;
 }
 
+TEST_CASE("costume and held weapon texture scrolling interpolates without clearing the hit skin",
+          "[game][figure][cadence][texture-animation]") {
+    const auto root = costumeFixture("figure-texture-clock", false);
+    writeTextFile(root / "PLAYERS/WAR/BLU/animations.json", R"({"trees":[
+        {"name":"WAR_BLU","nodes":[
+            {"name":"HAND","object":"R_WRIST","position":[1,2,3]},
+            {"name":"ORNAMENT","object":"ORNAMENT","position":[4,0,0]}],"sequences":[]}],
+        "textureAnimations":[{"name":"SKIN_U","texture":0,"source":-2,
+                              "frames":4,"rate":1,"flag":-1},
+                             {"name":"SKIN_V","texture":0,"source":-3,
+                              "frames":60,"rate":2,"flag":-1}]})");
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.color = 1;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    figure->setSkinTexture(&device.whiteTexture());
+    figure->animate(0, 1, 1.0f / 60);
+    const auto offsetAt = [&](f32 alpha) {
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, nullptr, alpha);
+        REQUIRE(device.draws.size() == 3);
+        CHECK(device.draws[0].state.maskedTexture == &device.whiteTexture());
+        for (const auto& draw : device.draws) {
+            CHECK(draw.state.uvOffset == device.draws[0].state.uvOffset);
+        }
+        return device.draws[0].state.uvOffset;
+    };
+    CHECK(offsetAt(0) == Vec2(0));
+    CHECK(offsetAt(0.5f).x == Catch::Approx(1.0f / 16));
+    CHECK(offsetAt(0.5f).y == Catch::Approx(1.0f / 480));
+    CHECK(offsetAt(1).x == Catch::Approx(1.0f / 8));
+    CHECK(offsetAt(1).y == Catch::Approx(1.0f / 240));
+    CHECK(offsetAt(0.5f).x == Catch::Approx(1.0f / 16));
+    CHECK(offsetAt(0.5f).y == Catch::Approx(1.0f / 480));
+    figure->capturePresentation();
+    CHECK(offsetAt(0) == offsetAt(1));
+    CHECK(offsetAt(1).x == Catch::Approx(1.0f / 8));
+    CHECK(offsetAt(1).y == Catch::Approx(1.0f / 240));
+    for (s32 tick = 1; tick < 8; ++tick) {
+        figure->animate(0, 1, 1.0f / 60);
+    }
+    // An authored axis still writes its zero sample on wrapping; it must neither keep
+    // the previous nonzero offset nor erase the other axis's progress.
+    CHECK(offsetAt(1).x == Catch::Approx(0).margin(1.0e-6f));
+    CHECK(offsetAt(1).y == Catch::Approx(1.0f / 30));
+    for (s32 tick = 8; tick < 240; ++tick) {
+        figure->animate(0, 1, 1.0f / 60);
+    }
+    CHECK(offsetAt(1).x == Catch::Approx(0).margin(1.0e-6f));
+    CHECK(offsetAt(1).y == Catch::Approx(0).margin(1.0e-6f));
+    figure->animate(0, 1, 1.0f / 60);
+    CHECK(offsetAt(1).x == Catch::Approx(1.0f / 8));
+    CHECK(offsetAt(1).y == Catch::Approx(1.0f / 240));
+}
+
+TEST_CASE("native wizard hand glow cycles borrow POWERUPS frames and blend between them",
+          "[game][figure][texture-animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WIZ/YEL/ANIM.PS2");
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.character = 2;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    figure->animate(0, 1, 1.0f / 60);
+    figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, nullptr, 0.5f);
+    const auto glow = std::ranges::find_if(device.draws, [](const auto& draw) {
+        return draw.state.nextTexture != nullptr && draw.state.textureBlend > 0;
+    });
+    REQUIRE(glow != device.draws.end());
+    CHECK(glow->texture != &device.whiteTexture());
+    CHECK(glow->state.nextTexture != &device.whiteTexture());
+    CHECK(glow->state.textureBlend == Catch::Approx(0.125f));
+    CHECK(glow->state.effectiveTextureBlend() == Catch::Approx(0.125f));
+}
+
 TEST_CASE("an unloaded player figure is safe to animate and draw", "[game][world][figure]") {
     test::FakeRenderDevice device;
     PlayerFigure figure;

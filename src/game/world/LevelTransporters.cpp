@@ -1,5 +1,6 @@
 #include "game/world/LevelTransporters.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -75,16 +76,16 @@ void LevelTransporters::clear() {
     m_pads.clear();
     m_tree = nullptr;
     m_textures.clear();
-    m_frames = 0.0f;
+    m_presentationAdvanced = false;
 }
 
 void LevelTransporters::animate(f32 seconds) {
-    m_frames += seconds * AnimationPlayer::kDefaultRate;
-    const auto elapsed = static_cast<u32>(std::floor(m_frames));
-    m_frames -= static_cast<f32>(elapsed);
-    m_textures.step(elapsed);
+    m_textures.advance(seconds);
+    m_presentationAdvanced = seconds > 0;
     for (auto& pad : m_pads) {
         if (m_tree != nullptr && pad.animation.playing()) {
+            pad.previousFrame = pad.animation.presentationFrame();
+            pad.previousGeneration = pad.animation.generation();
             pad.animation.advance(seconds, true);
             const auto sequence = pad.animation.sequence();
             const auto frame = static_cast<s32>(pad.animation.frame());
@@ -95,11 +96,26 @@ void LevelTransporters::animate(f32 seconds) {
     }
 }
 
-void LevelTransporters::draw(RenderDevice& device, const Mat4& clip,
-                             const WorldLighting& lighting) const {
+void LevelTransporters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                             f32 renderAlpha) const {
     for (const auto& pad : m_pads) {
-        if (pad.model.bound()) {
-            pad.model.draw(device, clip, pad.transform, lighting, pad.pose.matrices());
+        if (pad.model.bound() && m_tree != nullptr) {
+            const f32 blend = renderAlpha < 0 || m_presentationAdvanced ? renderAlpha : 1.0f;
+            f32 frame = pad.animation.frame();
+            TreePose visualPose;
+            const TreePose* pose = &pad.pose;
+            if (blend >= 0 && pad.animation.playing()) {
+                frame = pad.previousGeneration == pad.animation.generation()
+                            ? std::lerp(pad.previousFrame, pad.animation.presentationFrame(),
+                                        std::clamp(blend, 0.0f, 1.0f))
+                            : pad.animation.presentationFrame();
+                visualPose.evaluate(*m_tree, pad.animation.sequence(), frame, false, true);
+                pose = &visualPose;
+            }
+            pad.model.setPresentationFrame(pad.animation.sequence(), frame);
+            m_textures.apply(pad.model, *m_tree, pad.animation.sequence(), frame,
+                             m_textures.presentationOffset(blend));
+            pad.model.draw(device, clip, pad.transform, lighting, pose->matrices());
         }
     }
 }
