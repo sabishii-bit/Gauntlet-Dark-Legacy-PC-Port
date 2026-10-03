@@ -85,6 +85,98 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     REQUIRE(scene.actorCount() == 0);
 }
 
+TEST_CASE("Temple switch cutscene carries its chest and enemy continuously",
+          "[game][screens][chest-platform][enemy-platform][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("E1")));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayOptions options;
+    options.welcome = false;
+    CharacterSave save;
+    save.name = "TEST";
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save, 3}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 frame = 0; frame < 600 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / 60, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    // Native E1 instance 147 is the gold chest on the descending switch platform.
+    usize index = 0;
+    while (index < scene.chests().size() && scene.chests().chest(index).instance != 147) {
+        ++index;
+    }
+    REQUIRE(index < scene.chests().size());
+    const auto& chest = scene.chests().chest(index);
+    REQUIRE(chest.floor);
+    const Vec3 initial = chest.figure.position();
+    auto& enemies = scene.enemies();
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = initial - Vec3{0, ItemFigure::kFloorLift, 0};
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    const auto placement = world.collision().objectTransform(chest.floor->object);
+    REQUIRE(placement);
+    const Vec3 local{glm::inverse(*placement) * Vec4{enemies.positionOf(*enemy), 1}};
+    bool activated = false;
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        const auto& trigger = world.triggers().trigger(i);
+        if (trigger.target == chest.floor->object) {
+            usize rootTrigger = i;
+            for (usize guard = 0; guard < world.triggers().size(); ++guard) {
+                bool foundParent = false;
+                for (usize parent = 0; parent < world.triggers().size(); ++parent) {
+                    if (world.triggers().trigger(parent).next == static_cast<s32>(rootTrigger)) {
+                        rootTrigger = parent;
+                        foundParent = true;
+                        break;
+                    }
+                }
+                if (!foundParent) {
+                    break;
+                }
+            }
+            const auto& start = world.triggers().trigger(rootTrigger);
+            const std::array visitors{TriggerVisitor{.position = start.spot}};
+            world.updateTriggers(1.0f / 60, visitors);
+            activated = true;
+        }
+    }
+    REQUIRE(activated);
+    // Consume the camera cue; subsequent updates take the paused gameplay path.
+    scene.update(1.0 / 60, {});
+    REQUIRE(scene.switchCutscene().active());
+    const auto stun = enemies.stunTicksOf(*enemy);
+    const auto action = enemies.animatorOf(*enemy)->action();
+    usize descendingFrames = 0;
+    for (s32 frame = 0; frame < 600 && scene.switchCutscene().active(); ++frame) {
+        scene.update(1.0 / 60, {});
+        const auto support = world.collision().objectTransform(chest.floor->object);
+        REQUIRE(support);
+        const Vec3 expected{(*support * chest.floor->local)[3]};
+        CHECK(glm::distance(chest.figure.position(), expected) < 0.001f);
+        CHECK(glm::distance(chest.box.centre, expected) < 0.001f);
+        CHECK(glm::distance(enemies.positionOf(*enemy), Vec3{*support * Vec4{local, 1}}) < 0.001f);
+        CHECK(enemies.stunTicksOf(*enemy) == stun);
+        CHECK(enemies.animatorOf(*enemy)->action() == action);
+        descendingFrames += expected.y < initial.y - 1 ? 1 : 0;
+    }
+    CHECK_FALSE(scene.switchCutscene().active());
+    CHECK(descendingFrames > 30);
+}
+
 TEST_CASE("Temple organist remains audible over three loops in the scenario scene",
           "[game][screens][organist-loop][assets]") {
     const auto root = unpackedRoot();
@@ -1121,6 +1213,72 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
     scene.close();
     REQUIRE(world.load(device, root)); // and the tower loads again after it
     REQUIRE(world.isTower());
+}
+
+TEST_CASE("portal departure finishes a teammate's death and accepts that player's tower choice",
+          "[game][screens][assets][portal-travel][multiplayer]") {
+    // do_players keeps case 8's death running and loaded false until it ends,
+    // then case 0xB handles that player's Wait/Quit even while survivors exit.
+    const bool quit = GENERATE(false, true);
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "HERE";
+    save.progress().health = 500;
+    const std::vector<PartyMember> party{PartyMember{1, save, 0}, PartyMember{3, save, 1}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{118.3f, 86.3f, -472.5f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.animator(3) != nullptr);
+    bool ready = false;
+    for (s32 frame = 0; frame < 900 && !ready; ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+        const auto& portal = scene.portals().portal(0);
+        ready = portal.action == ExitPortals::kWaiting && portal.ticksLeft <= 1;
+    }
+    REQUIRE(ready);
+    scene.hurtPlayer(3, 5000.0f, HurtKind::Burn);
+    REQUIRE_FALSE(scene.status(3).inTower);
+    for (s32 frame = 0; frame < 10 && !scene.leaving(); ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    }
+    REQUIRE(scene.leaving());
+    REQUIRE_FALSE(scene.animator(3)->dead());
+    const Vec3 survivor = scene.actor(1)->position();
+    PlayScene::Inputs inputs{};
+    inputs[1].menu.back = true; // the survivor cannot answer for the fallen lane
+    inputs[1].attack = true;
+    // Repeated own-button presses through the death must take effect once it ends.
+    inputs[3].menu.back = quit;
+    inputs[3].menu.select = !quit;
+    PlayOutcome outcome = PlayOutcome::Running;
+    for (s32 frame = 0; frame < 900 && outcome == PlayOutcome::Running; ++frame) {
+        outcome = scene.update(1.0 / 60.0, inputs);
+        CHECK(scene.actor(1)->position() == survivor);
+        if (!scene.animator(3)->dead()) {
+            CHECK(outcome == PlayOutcome::Running);
+        }
+    }
+    REQUIRE(outcome == PlayOutcome::Travel);
+    CHECK(scene.animator(3)->dead());
+    CHECK_FALSE(scene.status(3).towerPrompt);
+    CHECK(scene.status(3).active == !quit);
+    CHECK(scene.party().size() == (quit ? 1 : 2));
+    CHECK(scene.party()[0].player == 1);
+    CHECK(scene.party()[0].slot == 0);
 }
 
 TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",

@@ -16,7 +16,7 @@ u32 PlayerImpact::effective(f32 damage, bool braced) const {
 }
 
 PlayerDeed PlayerImpact::reaction(f32 damage, f32 facing, bool braced) const {
-    if (damage <= 0.0f) {
+    if (damage < 0.0f) {
         return PlayerDeed::None;
     }
     const u32 effective = this->effective(damage, braced);

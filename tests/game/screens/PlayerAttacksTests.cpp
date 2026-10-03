@@ -20,8 +20,10 @@
 #include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/players/MagicPerks.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerAttacks.h"
@@ -46,12 +48,24 @@ struct Fixture {
     LevelOpponents opponents;
     LevelFixtures fixtures;
     PlayerAttacks attacks;
+    MultiplayerMode mode = MultiplayerMode::Normal;
     std::array<PlayerRuntime, 1> players;
     PlayerAttacks::Targets targets{opponents, fixtures, {}};
     Fixture() {
-        arsenal.bind({device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
-        attacks.bind(
-            {device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer, &shake});
+        arsenal.bind({device,
+                      classes,
+                      weapons,
+                      world.collision(),
+                      effects,
+                      audio,
+                      nullptr,
+                      {},
+                      false,
+                      false,
+                      nullptr,
+                      &mode});
+        attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer,
+                      &shake, &mode});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
     }
 };
@@ -94,6 +108,259 @@ std::filesystem::path turboAssets() {
        "speedMin":30,"speedMax":30,"maxTime":6,"amount":70,"flags":64,
        "damageType":1048576}]})");
     return root;
+}
+
+TEST_CASE("weapon modes route player hits through health with shared contact immunity",
+          "[game][screens][player-attacks][multiplayer-combat]") {
+    const auto mode =
+        GENERATE(MultiplayerMode::Normal, MultiplayerMode::Stun, MultiplayerMode::Hurt);
+    Fixture f;
+    f.mode = mode;
+    std::array<PlayerRuntime, 2> party;
+    party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+    party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 4}, 0);
+    for (auto& player : party) {
+        player.actor.save().progress().health = 1000;
+    }
+    PlayerHealth health;
+    PlayerHealth::Events events{.block = [](f32, f32) {},
+                                .sound = [](std::string_view) {},
+                                .cry = [](std::string_view) {},
+                                .named = [](std::string_view, f32) {},
+                                .learnBlock = [] {}};
+    s32 hits = 0;
+    f.targets.multiplayer = mode;
+    f.targets.players = party;
+    f.targets.hurt = [&](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
+        REQUIRE(index == 1);
+        ++hits;
+        health.hurt(party[index], damage, kind, true, false, 1, events, impact);
+    };
+    static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true, {}};
+    MissileLaunch launch;
+    launch.spec = &kSpec;
+    launch.owner = 3;
+    launch.position = {0, 3, 0};
+    launch.velocity = Vec3{0, 0, 20};
+    launch.damage = 12;
+    launch.multiplayer = mode;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.3f, party, f.targets);
+    CHECK(hits == (mode == MultiplayerMode::Normal ? 0 : 1));
+    CHECK(party[0].actor.save().health() == 1000);
+    CHECK(party[1].actor.save().health() == (mode == MultiplayerMode::Hurt ? 988 : 1000));
+    CHECK(party[1].reaction ==
+          (mode == MultiplayerMode::Stun ? PlayerDeed::Reel : PlayerDeed::None));
+    // A cooling victim still reflects a later shot before the damage-time gate.
+    party[1].actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kReflectShield,
+                                                          0, 1);
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.2f, party, f.targets);
+    if (mode != MultiplayerMode::Normal) {
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        CHECK(f.arsenal.missiles().missile(0).velocity.z < 0);
+        CHECK(hits == 1);
+    }
+}
+
+TEST_CASE("hurt mode adds forward player melee and aiming only as a world-target fallback",
+          "[game][screens][player-attacks][multiplayer-combat]") {
+    Fixture f;
+    std::array<PlayerRuntime, 2> party;
+    party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+    party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 3}, 0);
+    f.targets.players = party;
+    for (const auto mode :
+         {MultiplayerMode::Normal, MultiplayerMode::Stun, MultiplayerMode::Hurt}) {
+        f.targets.multiplayer = mode;
+        CHECK(f.attacks.aim(party[0].actor, Vec3{0, 0, 1}, f.targets).has_value() ==
+              (mode == MultiplayerMode::Hurt));
+        CHECK((f.attacks.meleeSense(party[0].actor, true, f.targets).range != MeleeRange::Beyond) ==
+              (mode == MultiplayerMode::Hurt));
+    }
+    party[1].actor.place(Vec3{0, 0, -3});
+    CHECK(f.attacks.meleeSense(party[0].actor, true, f.targets).range == MeleeRange::Beyond);
+    party[1].actor.place(Vec3{0, 0, 3});
+    party[1].departed = true;
+    CHECK_FALSE(f.attacks.aim(party[0].actor, Vec3{0, 0, 1}, f.targets));
+    party[1].departed = false;
+    const auto root = turboAssets();
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 20};
+    REQUIRE(enemies.spawn(spawn, {}));
+    const auto aim = f.attacks.aim(party[0].actor, Vec3{0, 0, 1}, f.targets);
+    REQUIRE(aim);
+    CHECK(aim->z > 10);
+}
+
+TEST_CASE("class turbo areas harm other players only in hurt mode with shared effect cooldown",
+          "[game][screens][player-attacks][multiplayer-combat]") {
+    const auto root = turboAssets();
+    for (const auto mode :
+         {MultiplayerMode::Normal, MultiplayerMode::Stun, MultiplayerMode::Hurt}) {
+        Fixture f;
+        f.mode = mode;
+        REQUIRE(f.classes.load(root / "pdata"));
+        std::array<PlayerRuntime, 2> party;
+        party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+        party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 3}, 0);
+        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+        REQUIRE(party[0].figure);
+        party[0].turbo.add(100);
+        s32 hits = 0;
+        f.targets.multiplayer = mode;
+        f.targets.players = party;
+        f.targets.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact&) {
+            CHECK(index == 1);
+            CHECK(damage > 0);
+            ++hits;
+        };
+        for (s32 frame = 0; frame < 60; ++frame) {
+            party[0].figure->animate(0, 2, 1.0f / 30,
+                                     frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 2, 1.0f / 30, party, [](s32, usize) {});
+            if (frame == 3) {
+                f.mode = MultiplayerMode::Normal; // A launched effect keeps its original mask.
+            }
+            f.attacks.updateStrikes(1.0f / 30, party, f.targets);
+            party[1].effectGap = std::max(0.0f, party[1].effectGap - 1.0f / 30);
+        }
+        CHECK(hits == (mode == MultiplayerMode::Hurt ? 1 : 0));
+        f.attacks.clear();
+    }
+}
+
+TEST_CASE("turbo point hits show their impact and reflective armor turns their visual flight",
+          "[game][screens][player-attacks][multiplayer-combat]") {
+    const auto root = turboAssets();
+    const bool passThrough = GENERATE(false, true);
+    writeTextFile(root / "pdata/WAR.json", std::string{R"({"height":6,"width":2,
+      "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
+      "moves":{"turboC1":0},"moveEffects":[{"tree":"BURST"}],"moveStrikes":[
+      {"type":2,"startFrame":1,"hitRadius":1,"arc":-1,"offset":[0,2,2],
+       "speedMin":30,"speedMax":30,"maxTime":6,"amount":70,"flags":64,
+       "effect":0,"hitEffect":0,"damageType":)"} +
+                                               (passThrough ? "3145728" : "0") + "}]}");
+    for (const bool reflective : {false, true}) {
+        Fixture f;
+        f.mode = MultiplayerMode::Hurt;
+        REQUIRE(f.classes.load(root / "pdata"));
+        std::array<PlayerRuntime, 2> party;
+        party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+        party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 10}, 0);
+        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+        REQUIRE(party[0].figure);
+        party[0].turbo.add(100);
+        if (reflective) {
+            party[1].effectGap = 1;
+            party[1].actor.save().progress().inventory.addPowerup(powerup::kArmor,
+                                                                  powerup::kReflectShield, 0, 1);
+        }
+        s32 hits = 0;
+        bool reflected = false;
+        f.targets.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact&) {
+            CHECK(index == 1);
+            CHECK(damage == 70);
+            ++hits;
+        };
+        for (s32 frame = 0; frame < 30 && hits == 0 && !reflected; ++frame) {
+            party[0].figure->animate(0, 2, 1.0f / 30,
+                                     frame == 0 ? PlayerDeed::TurboFull : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 2, 1.0f / 30, party, [](s32, usize) {});
+            f.attacks.updateStrikes(1.0f / 30, party, f.targets);
+            reflected =
+                f.attacks.strikes().count() != 0 && f.attacks.strikes().strike(0).facing.z < 0;
+            f.effects.update(1.0f / 30);
+        }
+        if (reflective) {
+            REQUIRE(reflected);
+            CHECK(hits == 0);
+            REQUIRE(f.effects.count() == 1);
+            CHECK(f.effects.effect(0).velocity.z == -30);
+            CHECK(f.attacks.strikes().strike(0).damage == 15);
+            CHECK(f.attacks.strikes().strike(0).owner == 3);
+        } else {
+            CHECK(hits == 1);
+            if (passThrough) {
+                REQUIRE(f.attacks.strikes().count() == 1);
+                CHECK(party[1].effectGap == 1);
+                // The reflected Super was spent despite the next contact's shared cooldown.
+                f.attacks.updateStrikes(1.0f / 30, party, f.targets);
+                CHECK(hits == 1);
+            }
+            CHECK(f.attacks.strikes().count() == 0);
+            REQUIRE(f.effects.count() == (passThrough ? 2 : 1));
+            CHECK(f.effects.effect(0).name == "BURST");
+            CHECK(f.effects.effect(0).velocity == Vec3{0});
+            CHECK(party[1].effectGap == Approx(passThrough ? 1 : 2));
+        }
+        f.attacks.clear();
+    }
+}
+
+TEST_CASE("player turbo areas respect distant item cover but cross it within ten units",
+          "[game][screens][player-attacks][multiplayer-combat][assets]") {
+    const auto assets =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    const auto root = turboAssets();
+    writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
+      "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
+      "moves":{"turboB":0},"moveEffects":[{"tree":"BURST"}],"moveStrikes":[
+      {"type":4,"startFrame":1,"radius":35,"arc":-1,"offset":[0,2,0],
+       "amount":4,"effect":0,"damageType":368}]})");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(assets));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    for (const s32 scenario : {0, 1, 2}) {
+        CAPTURE(scenario);
+        const bool near = scenario == 2;
+        const bool removed = scenario == 1;
+        Fixture f;
+        f.mode = MultiplayerMode::Hurt;
+        REQUIRE(f.classes.load(root / "pdata"));
+        REQUIRE(f.world.load(f.device, assets, *level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+        REQUIRE(f.world.walls().size() == 5);
+        REQUIRE(f.world.walls().standing(0));
+        if (removed) {
+            f.fixtures.strikeWall(0, 1000);
+            REQUIRE_FALSE(f.world.walls().standing(0));
+        }
+        std::array<PlayerRuntime, 2> party;
+        party[0].actor.spawn(3, {}, nullptr, Vec3{55, 0, near ? -5 : 0}, 0);
+        party[1].actor.spawn(1, {}, nullptr, Vec3{55, 0, near ? -12 : -20}, 0);
+        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+        REQUIRE(party[0].figure);
+        party[0].turbo.add(100);
+        s32 hits = 0;
+        f.targets.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact& impact) {
+            CHECK(index == 1);
+            CHECK(damage > 0);
+            CHECK(damage < 5);
+            CHECK((impact.flags & 0x170) == 0);
+            CHECK((impact.flags & 0x1000000) != 0); // weak areas suppress the hit effect
+            ++hits;
+        };
+        for (s32 frame = 0; frame < 60; ++frame) {
+            party[0].figure->animate(0, 2, 1.0f / 30,
+                                     frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 2, 1.0f / 30, party, [](s32, usize) {});
+            f.attacks.updateStrikes(1.0f / 30, party, f.targets);
+            party[1].effectGap = std::max(0.0f, party[1].effectGap - 1.0f / 30);
+        }
+        CHECK(hits == (removed || near ? 1 : 0));
+        if (!removed) {
+            CHECK(f.world.walls().standing(0));
+        }
+        f.attacks.clear();
+    }
 }
 
 /** The warrior's costume colour's effects with the fire weapon's glow and throw trees, and a
@@ -338,6 +605,113 @@ TEST_CASE("authored player effects shake the camera without requiring an effect 
     CHECK(f.shake.active());
     CHECK(glm::length(f.shake.offset()) == Approx(0.1f));
     CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("player particle records start on their strike frame and follow their attachment",
+          "[game][player-attacks][player-particles]") {
+    const auto root = turboAssets();
+    writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
+      "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
+      "moves":{"turboB":0},"moveStrikes":[
+      {"type":0,"startFrame":3,"effect":0}],"moveEffects":[
+      {"flags":33554432,"tree":"SKIN","sound":"BODY","offset":[1,2,3],
+       "lifetime":0.5,"radius":3,"alphaMod":150,"scale":2,"next":1},
+      {"flags":16777216,"tree":"SKIN","sound":"MISSING_NODE","offset":[0,4,0],
+       "lifetime":0.1,"radius":2,"alphaMod":300}]})");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    player.turbo.add(100);
+    for (s32 frame = 0; frame < 2; ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+        CHECK(f.effects.count() == 0);
+    }
+    for (s32 frame = 0; frame < 4 && f.effects.count() == 0; ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+    }
+    REQUIRE(f.effects.count() == 2);
+    const auto first = f.effects.effect(0).id;
+    const auto& descriptor = f.effects.effect(0).trails.emitter(0).descriptor();
+    CHECK(descriptor.emitFrames == 15);
+    CHECK(descriptor.fadeFrames == 1);
+    CHECK(descriptor.particleLife == 6);
+    CHECK(descriptor.particleFade == 0);
+    CHECK(descriptor.rate[0] == 3);
+    CHECK(descriptor.speed == Approx(0.05f));
+    CHECK(descriptor.width.lifeStart == 1);
+    CHECK(f.effects.effect(1).trails.emitter(0).descriptor().particleLife == 15);
+    CHECK(f.effects.effect(1).trails.emitter(0).descriptor().particleFade == 15);
+    player.actor.spawn(3, player.actor.save(), nullptr, {12, 3, 7}, 0.8f);
+    f.attacks.updateStrikes(0, f.players, f.targets);
+    const Mat4 body =
+        PlayerFigure::bodyPlacement(player.actor.transform(), player.actor.save(),
+                                    PowerupEffects::of(player.actor.save().progress().inventory));
+    const Vec3 expected = Vec3{player.figure->attachment(body, "BODY").value() * Vec4{1, 2, 3, 1}};
+    CHECK(glm::distance(f.effects.effect(0).position, expected) < 0.001f);
+    CHECK(glm::distance(f.effects.effect(1).position, Vec3{body * Vec4{0, 4, 0, 1}}) < 0.001f);
+    f.effects.update(1.0f / 30);
+    CHECK(f.effects.effect(0).trails.particleCount() == 3);
+    f.device.draws.clear();
+    f.effects.draw(f.device, Mat4{1}, {});
+    CHECK_FALSE(f.device.draws.empty());
+    for (s32 frame = 0; frame < 22; ++frame) {
+        f.effects.update(1.0f / 30);
+    }
+    CHECK_FALSE(f.effects.playing(first));
+    REQUIRE(f.effects.count() == 1); // the other kind's half-second fade survives
+    f.attacks.clear();
+    CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("native wizard particle chains emit visible particles from both hands",
+          "[game][player-attacks][player-particles][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WIZ.WAD").parent_path().parent_path();
+    for (const s32 character : {2, 10}) {
+        CAPTURE(character);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "PDATA"));
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        auto& player = f.players[0];
+        player.actor.save().character = character;
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        player.turbo.add(100);
+        bool particles = false;
+        bool pairedHands = false;
+        for (s32 frame = 0; frame < 90; ++frame) {
+            player.figure->animate(0, 2, 1.0f / 30,
+                                   frame == 0 ? PlayerDeed::TurboFull : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+            f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+            f.effects.update(1.0f / 30);
+            std::optional<Vec3> hand;
+            for (usize i = 0; i < f.effects.count(); ++i) {
+                const auto& effect = f.effects.effect(i);
+                if (effect.tree == nullptr) {
+                    CHECK(effect.name == "WIZ_HEAD_Y");
+                    CHECK(effect.trails.textureOf(0) != nullptr);
+                    particles |= effect.trails.particleCount() > 0;
+                    if (effect.trails.emitter(0).descriptor().particleLife == 6) {
+                        if (hand) {
+                            pairedHands |= glm::distance(*hand, effect.position) > 0.1f;
+                        }
+                        hand = effect.position;
+                    }
+                }
+            }
+        }
+        CHECK(particles);
+        CHECK(pairedHands);
+        f.attacks.clear();
+        for (usize i = 0; i < f.effects.count(); ++i) {
+            CHECK(f.effects.effect(i).tree != nullptr);
+        }
+    }
 }
 
 TEST_CASE("a charge throws down the enemy it runs into, once a charge",
@@ -985,6 +1359,64 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
     f.fixtures.clear();
 }
 
+TEST_CASE("swarm healing credit is capped incoming damage before level and armor adjustments",
+          "[player-attacks][healing-magic]") {
+    Fixture f;
+    EnemyScales scales;
+    scales.health = 100;
+    scales.playerLevel = 70;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, turboAssets(), nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .placed = true}, {});
+    REQUIRE(id);
+    EnemyHit hit;
+    hit.player = 3;
+    hit.level = 80;
+    hit.damage = 20;
+    const f32 before = enemies.healthOf(*id);
+    CHECK(enemies.hurt(*id, hit) == 20);
+    CHECK(enemies.healthOf(*id) == Approx(before - 40));
+    hit.level = 60;
+    CHECK(enemies.hurt(*id, hit) == 20);
+    CHECK(enemies.healthOf(*id) == Approx(before - 58));
+    hit.damage = 100000;
+    CHECK(enemies.hurt(*id, hit) == Approx(before - 58));
+    CHECK_FALSE(enemies.alive(*id));
+    CHECK(enemies.hurt(*id, hit) == 0);
+    CHECK(enemies.hurt(-1, hit) == 0);
+}
+
+TEST_CASE("a healing missile earns its raw credit before elemental amplification",
+          "[player-attacks][healing-magic]") {
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& save = f.players[0].actor.save();
+    save.progress().experience = levelExperience(80);
+    save.progress().health = 100;
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, EnemyScales{.health = 100}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .position = {0, 0, 2}, .placed = true}, {});
+    REQUIRE(id);
+    const f32 before = enemies.healthOf(*id);
+    MissileLaunch launch;
+    launch.owner = 3;
+    launch.position = {0, 1, 0};
+    launch.velocity = Vec3{0, 0, 30};
+    launch.spec = &MissileSpec::of(0);
+    launch.damage = 10;
+    launch.flags = damage::kHeal | 1;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.1f, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) == Approx(before - 15));
+    CHECK(save.health() == 102); // round(10 * .18), not round(15 * .18)
+    f.attacks.clear();
+    f.opponents.close();
+}
+
 TEST_CASE("from level 75 magic heals its caster by a share of the harm it does",
           "[game][screens][player-attacks][healing-magic]") {
     const auto root = turboAssets();
@@ -1022,14 +1454,71 @@ TEST_CASE("from level 75 magic heals its caster by a share of the harm it does",
         const f32 harm = before - enemies.healthOf(*id);
         REQUIRE(harm > 0.0f);
         const bool heals = level >= 75;
-        // A tenth of the harm, and 0.016 more a level past 75.
-        const auto expected = static_cast<s32>(std::lround(harm * (0.1f + 0.016f * 5.0f)));
+        // Swarm healing uses incoming damage before the unshielded element's 1.5 multiplier.
+        const auto expected = static_cast<s32>(std::lround(harm / 1.5f * (0.1f + 0.016f * 5.0f)));
         CHECK(save.health() == (heals ? 100 + expected : 100));
         CHECK((std::ranges::find(helps, HelpMessages::kHealingMagic) != helps.end()) == heals);
         CHECK(std::ranges::find(helps, HelpMessages::kWastedMagic) == helps.end());
         f.attacks.clear();
         f.opponents.close();
     }
+}
+
+TEST_CASE("healing magic shares half with nearby living partners but never departed records",
+          "[player-attacks][healing-magic][multiplayer]") {
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    std::array<PlayerRuntime, 2> party;
+    CharacterSave save;
+    save.progress().experience = levelExperience(80);
+    save.progress().health = 100;
+    party[0].actor.spawn(3, save, nullptr, Vec3{0}, 0);
+    party[1].actor.spawn(1, save, nullptr, Vec3{1, 0, 0}, 0);
+    bool shared = true;
+    SECTION("nearby standing partner") {}
+    SECTION("dying partner") {
+        party[1].life = PlayerLife::Dying;
+        shared = false;
+    }
+    SECTION("partner waiting in the tower") {
+        party[1].life = PlayerLife::InTower;
+        shared = false;
+    }
+    SECTION("departed partner") {
+        party[1].departed = true;
+        shared = false;
+    }
+    SECTION("distant partner") {
+        party[1].actor.place(Vec3{1000, 0, 0});
+        shared = false;
+    }
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, party);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 2};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const f32 before = enemies.healthOf(*id);
+    party[0].actor.save().progress().inventory.addPotions(1, 1);
+    f.attacks.usePotion(0, party);
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, party, f.targets);
+    }
+    const f32 harm = before - enemies.healthOf(*id);
+    REQUIRE(harm > 0);
+    const f32 given = harm / 1.5f * (0.1f + 0.016f * 5.0f);
+    CHECK(party[0].actor.save().health() == 100 + static_cast<s32>(std::lround(given)));
+    CHECK(party[1].actor.save().health() ==
+          100 + (shared ? static_cast<s32>(std::lround(given * 0.5f)) : 0));
+    f.attacks.clear();
+    f.opponents.close();
 }
 
 TEST_CASE("only a hit carrying DMG_HEAL feeds the healing: the shield does, a turbo strike not",
@@ -1079,7 +1568,7 @@ TEST_CASE("only a hit carrying DMG_HEAL feeds the healing: the shield does, a tu
     f.attacks.updateShields(0.1f, f.players, f.targets);
     const f32 harm = before - enemies.healthOf(*id);
     REQUIRE(harm > 0.0f);
-    const auto expected = static_cast<s32>(std::lround(harm * (0.1f + 0.016f * 5.0f)));
+    const auto expected = static_cast<s32>(std::lround(25.0f * (0.1f + 0.016f * 5.0f)));
     CHECK(save.health() == 100 + expected);
     CHECK(std::ranges::find(helps, HelpMessages::kHealingMagic) != helps.end());
     f.attacks.clear();
@@ -2043,6 +2532,36 @@ TEST_CASE("ownerless potions retain their element and cycle only unspecified col
     CHECK(sounds.voiceCount() == 0);
     f.arsenal.burstPotion(1, Vec3{0}, 16); // A player's ordinary cast still sounds.
     CHECK(sounds.voiceCount() == 1);
+    f.attacks.clear();
+}
+
+TEST_CASE("carried shields and shattered bottles share the party's unspecified potion cycle",
+          "[game][screens][player-attacks][cheats][multiplayer][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    auto& actor = f.players[0].actor;
+    auto& inventory = actor.save().progress().inventory;
+    f.attacks.shieldPotion(0, f.players);
+    CHECK(f.attacks.shieldCount() == 0);
+    inventory.addPotions(0, 1);
+    f.attacks.shieldPotion(0, f.players);
+    CHECK(f.attacks.shieldCount() == 1);
+    CHECK(inventory.potions.empty());
+    const usize before = f.effects.count();
+    f.attacks.shatterPotion(0, Vec3{0});
+    REQUIRE(f.effects.count() == before + 1);
+    CHECK(f.effects.effect(before).name == "MP_ELEC");
+    inventory.addPotions(0, 1);
+    const auto cast = f.arsenal.usePotion(actor);
+    REQUIRE(cast);
+    CHECK(cast->potion == 3);
+    inventory.addPotions(0, 1);
+    f.arsenal.throwPotion(actor);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    CHECK(f.arsenal.missiles().missile(0).potion == 4);
+    f.attacks.shatterPotion(0, Vec3{0});
+    CHECK(f.effects.effect(f.effects.count() - 1).name == "MP_FIRE");
     f.attacks.clear();
 }
 

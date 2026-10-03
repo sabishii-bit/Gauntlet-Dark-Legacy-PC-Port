@@ -15,6 +15,7 @@
 #include "TestSupport.h"
 #include "game/menu/MenuInput.h"
 #include "game/players/CharacterSave.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/SelectLane.h"
 
@@ -103,6 +104,40 @@ struct Fixture {
         REQUIRE(lane.state() == SelectLane::State::ClassPick);
     }
 };
+
+TEST_CASE("name cheats enter through the ordinary character selection flow",
+          "[game][select][cheats]") {
+    Fixture f;
+    f.lane.activate();
+    f.step(press(true));
+    REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
+    MenuInput name;
+    SECTION("powerup names apply only when the class is committed") {
+        name.typed = "invuln";
+        f.step(name);
+        f.step({}, NameEntry::kFlashTicks + 1);
+        REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
+        CHECK(f.lane.save().progress().inventory.powerupCount() == 0);
+        f.step(press(true));
+        REQUIRE(f.lane.lockedIn());
+        CHECK(f.lane.save().name == "INVULN");
+        CHECK((PowerupEffects::of(f.lane.save().progress().inventory).armor &
+               powerup::kInvulnerable) != 0);
+    }
+    SECTION("costume names force the authored class and colour before greeting") {
+        name.typed = "ICE600";
+        f.step(name);
+        f.step({}, NameEntry::kFlashTicks + 1);
+        f.step(press(true));
+        REQUIRE(f.lane.lockedIn());
+        CHECK(f.lane.save().character == 4);
+        CHECK(f.lane.save().color == 2);
+        CHECK(f.lane.pickedClass() == 4);
+        CHECK(f.lane.pickedColor() == 2);
+        CHECK(f.greetedClass == 4);
+        CHECK(f.greetedColor == 2);
+    }
+}
 
 TEST_CASE("a lane joins on activation and leaves from the first menu", "[game][select]") {
     Fixture f;
@@ -276,7 +311,7 @@ TEST_CASE("characters save to a slot and load back into the class picker", "[gam
     other.update(press(true), 1, {}); // Load is preselected once a save exists
     REQUIRE(other.state() == SelectLane::State::LoadPick);
     SelectLane::Frame frame;
-    frame.slotsInUse = 1U << 1;
+    frame.slotsInUse = {1};
     other.update(press(false, false, false, false, true), 1, frame);
     other.update(press(true), 1, frame); // in use by the first lane
     REQUIRE(other.state() == SelectLane::State::LoadPick);
@@ -394,7 +429,7 @@ TEST_CASE("a save refused at execution keeps the character and its previous slot
     REQUIRE(f.lane.reservedSlot() == 0);
     SelectLane::Frame conflict;
     SECTION("another lane claimed the slot") {
-        conflict.slotsInUse = 1U;
+        conflict.slotsInUse = {0};
     }
     SECTION("the filesystem rejects replacement") {
         REQUIRE(std::filesystem::create_directory(f.slots.path(0)));
@@ -406,6 +441,48 @@ TEST_CASE("a save refused at execution keeps the character and its previous slot
     f.step({}, SelectLane::kNoticeTicks, conflict);
     CHECK(f.lane.state() == SelectLane::State::SaveMenu);
     CHECK_FALSE(f.lane.reservedSlot().has_value());
+}
+
+TEST_CASE("save slot ownership keeps large slot ids distinct from low slots", "[game][select]") {
+    Fixture f("select-high-slots");
+    REQUIRE(f.slots.open(f.slots.directory(), 40));
+    CharacterSave original;
+    original.name = "ORIGIN";
+    f.lane.resume(original, std::nullopt);
+    f.lane.manage();
+    for (s32 i = 0; i < 3; ++i) {
+        f.step(press(false, false, false, true)); // Done -> Save, with no files to load.
+    }
+    f.step(press(true));
+    REQUIRE(f.lane.state() == SelectLane::State::SavePick);
+    SelectLane::Frame other;
+    other.slotsInUse = {32};
+    SECTION("an occupied high slot does not reserve slot zero") {
+        f.step(press(true), 1, other);
+        REQUIRE(f.lane.state() == SelectLane::State::Saving);
+        f.step({}, SelectLane::kOperationStepTicks * 3, other);
+        CHECK(f.lane.slotInUse() == 0);
+        CHECK(f.slots.slot(0).name == original.name);
+    }
+    SECTION("a high slot cannot be selected while another lane holds it") {
+        for (s32 i = 0; i < 32; ++i) {
+            f.step(press(false, false, false, false, true), 1, other);
+        }
+        f.step(press(true), 1, other);
+        CHECK(f.lane.state() == SelectLane::State::SavePick);
+        CHECK_FALSE(f.lane.reservedSlot());
+        CHECK(f.sounds.back() == SelectSound::Buzzer);
+    }
+    SECTION("a high slot claimed during an operation stays protected") {
+        for (s32 i = 0; i < 32; ++i) {
+            f.step(press(false, false, false, false, true));
+        }
+        f.step(press(true));
+        REQUIRE(f.lane.reservedSlot() == 32);
+        f.step({}, SelectLane::kOperationStepTicks * 3, other);
+        CHECK_FALSE(f.lane.slotInUse());
+        CHECK_FALSE(f.slots.slot(32).exists);
+    }
 }
 
 } // namespace

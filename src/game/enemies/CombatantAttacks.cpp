@@ -110,7 +110,7 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     shot.origin = Vec3{attachmentTransform(critter, move.colnode)[3]} +
                   Vec3{body * Vec4{damage->offset, 0.0f}};
     shot.forward = Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)};
-    if (const EnemyView* target = viewOf(players, critter.target); target != nullptr) {
+    if (const EnemyView* target = viewOf(players, critter.moveTarget); target != nullptr) {
         shot.target = target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
     }
     shot.rate = attackRate(critter);

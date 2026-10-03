@@ -89,7 +89,8 @@ public:
     /** What its death threw out: the coins it spews. */
     std::vector<CombatSpew> takeSpews() { return m_fighter.takeSpews(); }
     std::vector<LegendEvent> takeLegendEvents();
-    void hurt(const EnemyHit& hit, s32 partId = kTargetId);
+    f32 hurt(const EnemyHit& hit, s32 partId = kTargetId);
+    void damagedPlayer(s32 player, f32 amount, s32 partId = kTargetId);
     /** Wakes it as the party coming within its threshold would. */
     void wake() { m_awake = m_id.has_value(); }
     bool frozen() const;

@@ -36,9 +36,27 @@ constexpr std::array<std::string_view, static_cast<usize>(Key::Count)> kKeyNames
     "F6",    "F7",        "F8",          "F9",      "F10", "F11",       "F12"};
 
 constexpr std::array<std::string_view, static_cast<usize>(PadButton::Count)> kPadButtonNames{
-    "A",         "B",        "X",        "Y",           "LeftBumper",  "RightBumper",
-    "Back",      "Start",    "Guide",    "LeftThumb",   "RightThumb",  "DpadUp",
-    "DpadRight", "DpadDown", "DpadLeft", "LeftTrigger", "RightTrigger"};
+    "A",
+    "B",
+    "X",
+    "Y",
+    "LeftBumper",
+    "RightBumper",
+    "Back",
+    "Start",
+    "Guide",
+    "LeftThumb",
+    "RightThumb",
+    "DpadUp",
+    "DpadRight",
+    "DpadDown",
+    "DpadLeft",
+    "LeftTrigger",
+    "RightTrigger",
+    "LeftStickUp",
+    "LeftStickRight",
+    "LeftStickDown",
+    "LeftStickLeft"};
 
 bool sameIgnoringCase(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
@@ -106,7 +124,7 @@ bool Input::wasPadButtonPressed(s32 pad, PadButton button) const {
 }
 
 f32 Input::padAxis(s32 pad, PadAxis axis) const {
-    return validPad(pad) ? m_pads[pad].axes[index(axis)] : 0.0f;
+    return isPadConnected(pad) && axis < PadAxis::Count ? m_pads[pad].axes[index(axis)] : 0.0f;
 }
 
 void Input::beginPoll() {
@@ -141,6 +159,21 @@ void Input::setPad(s32 pad, const PadSnapshot& snapshot) {
                 previous.connected && previous.buttons[index(button)] ? 0.4f : 0.5f;
             m_pads[pad].buttons[index(button)] =
                 snapshot.connected && snapshot.axes[index(axis)] >= threshold;
+        }
+        // Virtual buttons preserve per-device edges and let menus bind the stick
+        // without hijacking the gameplay inventory's directional buttons.
+        for (const auto button : {PadButton::LeftStickUp, PadButton::LeftStickRight,
+                                  PadButton::LeftStickDown, PadButton::LeftStickLeft}) {
+            const bool vertical =
+                button == PadButton::LeftStickUp || button == PadButton::LeftStickDown;
+            const bool negative =
+                button == PadButton::LeftStickUp || button == PadButton::LeftStickLeft;
+            const f32 direction = negative ? -1.0f : 1.0f;
+            const auto axis = vertical ? PadAxis::LeftY : PadAxis::LeftX;
+            const f32 threshold =
+                previous.connected && previous.buttons[index(button)] ? 0.4f : 0.5f;
+            m_pads[pad].buttons[index(button)] =
+                snapshot.connected && direction * snapshot.axes[index(axis)] >= threshold;
         }
     }
 }

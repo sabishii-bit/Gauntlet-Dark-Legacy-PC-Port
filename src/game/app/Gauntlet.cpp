@@ -290,6 +290,12 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
     }
     m_title.close();
     if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart())) {
+        PlayerSelectScene::Inputs joining{};
+        for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+            joining[static_cast<usize>(player)] =
+                readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+        }
+        m_select.join(joining);
         return;
     }
     startNextAttractScreen();
@@ -391,17 +397,22 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
     return false;
 }
 
-bool Gauntlet::joinTower(s32 player) {
+bool Gauntlet::joinTower(const PlayerSelectScene::Inputs& joining) {
     std::vector<PartyMember> party = m_play->scene.party();
     keepParty();
-    if (!startPlayerSelect(player, party)) {
+    if (!startPlayerSelect(-1, party)) {
         return false;
     }
+    m_select.join(joining);
     m_play->scene.close();
     for (auto& controls : m_controls) {
         controls.reset();
     }
-    log::info("Player {} comes to join the party", player + 1);
+    for (usize player = 0; player < joining.size(); ++player) {
+        if (joining[player].start) {
+            log::info("Player {} comes to join the party", player + 1);
+        }
+    }
     return true;
 }
 
@@ -409,14 +420,18 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     // Start on a controller the party does not hold, in the tower, brings everyone to the
     // select screen with that player, and the tower back with the party grown
     // (check_active_players, init_player_select(1)).
+    PlayerSelectScene::Inputs joining{};
+    bool anyJoining = false;
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         if (!m_play->scene.canJoin(player)) {
             continue;
         }
         const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
-        if (menu.start && joinTower(player)) {
-            return;
-        }
+        joining[static_cast<usize>(player)].start = menu.start;
+        anyJoining |= menu.start;
+    }
+    if (anyJoining && joinTower(joining)) {
+        return;
     }
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         if (!m_play->scene.canPause(player)) {

@@ -33,14 +33,16 @@ f32 fadeAlpha(s32 since, s32 duration, bool fadeOut) {
 
 std::optional<Found> findFrame(std::string_view name, TextureSet& textures,
                                std::span<TextureSet* const> lenders) {
-    if (const auto index = textures.find(name); index.has_value()) {
+    if (const auto index = textures.find(name);
+        index && !textures.entry(*index).external() && !textures.entry(*index).noPicture) {
         return Found{&textures, *index};
     }
     for (TextureSet* lender : lenders) {
         if (lender == nullptr) {
             continue;
         }
-        if (const auto index = lender->find(name); index.has_value()) {
+        if (const auto index = lender->find(name);
+            index && !lender->entry(*index).external() && !lender->entry(*index).noPicture) {
             return Found{lender, *index};
         }
     }

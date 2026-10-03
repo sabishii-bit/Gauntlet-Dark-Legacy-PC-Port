@@ -30,11 +30,17 @@ public:
         PlayerArsenal& arsenal;
         AmbientDimmer& dimmer;
         CameraShake* shake = nullptr;
+        const MultiplayerMode* multiplayer = nullptr;
     };
     struct Targets {
         LevelOpponents& opponents;
         LevelFixtures& fixtures;
         LevelFixtures::Events fixtureEvents;
+        MultiplayerMode multiplayer = MultiplayerMode::Normal;
+        // Preserve world-only aggregate callers on compilers warning about omitted fields.
+        std::span<const PlayerRuntime> players{}; // NOLINT(readability-redundant-member-init)
+        std::function<void(usize, f32, HurtKind, const PlayerImpact&)>
+            hurt{}; // NOLINT(readability-redundant-member-init)
     };
     void bind(const Resources& resources);
     void clear();
@@ -135,19 +141,18 @@ private:
     static constexpr std::string_view kHealingEffect = "LEVELUP_GRE"; ///< FX_HEALENEMY
     static void bless(PotionBurst& burst, f32 radius, std::span<const PlayerRuntime> players,
                       const Targets& targets);
-    /** What target `id` has left, for measuring what a hit took off it; none for what keeps
-     * no health a hit could feed the healing. */
-    static f32 healthOf(s32 id, const Targets& targets);
-    /** A hit that carries DMG_HEAL feeds its dealer's healing with what it took off `id`. */
-    void healHit(s32 owner, u32 flags, s32 id, f32 before, const Vec3& at,
-                 std::span<PlayerRuntime> players, const Targets& targets);
-    s32 m_nextPotionKind = 1;
+    /** A DMG_HEAL hit feeds its dealer the target family's credited damage, not health loss. */
+    void healHit(s32 owner, u32 flags, f32 credit, const Vec3& at, std::span<PlayerRuntime> players,
+                 const Targets& targets);
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     /** What a thrown weapon or a burst can strike: the targets and the shootable switches,
      * which aiming and hand blows leave alone. */
     std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
     /** What a swing can reach: what is struck, but not the safe rocks. */
     std::vector<MissileTarget> meleeTargets(const Targets& targets) const;
+    /** Player melee is a forward-cone fallback, never displacing an enemy or item. */
+    static std::optional<MissileTarget> meleePlayer(const PlayerActor& actor,
+                                                    const Targets& targets, f32 reach);
     /** Sets off the switch a strike hit, unless it was only gas; true when it was one. */
     bool strikeSwitch(s32 id, u32 flags);
     /** What magic leaves alone: every barrel but one that holds something, the walls, the
@@ -160,6 +165,19 @@ private:
     /** One strike of `index`'s class, set going where the character stands, or at `at`. */
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players,
                     std::optional<Vec3> at = std::nullopt);
+    void startParticles(usize index, const MoveEffect& effect, u32 parent,
+                        std::span<PlayerRuntime> players);
+    void updateParticles(std::span<PlayerRuntime> players);
+    struct ParticleEffect {
+        usize actor = 0;
+        u32 effect = 0;
+        u32 parent = 0;
+        std::string node;
+        Vec3 offset{0.0f};
+    };
+    std::vector<ParticleEffect> m_particleEffects;
+    void presentStrikeHit(usize index, const MoveStrike& row, const Vec3& at,
+                          std::span<PlayerRuntime> players, bool sound = true);
     static bool isCreature(s32 id);
     static constexpr s32 kEnemyTargetBase = 1000;
     static constexpr s32 kGeneratorTargetBase = 2000;
@@ -172,8 +190,9 @@ private:
     static constexpr s32 kChestTargetBase = 9000;  ///< chests, which only magic reaches
     static constexpr s32 kPotionTargetBase = 8000; ///< the bottles lying about
     static constexpr s32 kStatueTargetBase = 9500; ///< the statues a blow wakes
-    static constexpr f32 kShotMagicShare = 0.8f;   ///< of a shot bottle's magic (lbl_80346310)
-    static constexpr f32 kPotionDamage = 40.0f;    ///< start_magic's
+    static constexpr s32 kPlayerTargetBase = 10000;
+    static constexpr f32 kShotMagicShare = 0.8f; ///< of a shot bottle's magic (lbl_80346310)
+    static constexpr f32 kPotionDamage = 40.0f;  ///< start_magic's
 
     std::optional<Resources> m_resources;
     MoveStrikes m_strikes;
@@ -193,6 +212,8 @@ private:
             f32 remaining = 0;
         };
         std::vector<Contact> contacts;
+        MultiplayerMode multiplayer = MultiplayerMode::Normal;
+        u32 damageType = 0; ///< reflection can spend a launched strike's pass-through
     };
     std::vector<StrikeSource> m_strikeSources;
     /** A potion's magic ringing a character: it goes about with them and harms what it

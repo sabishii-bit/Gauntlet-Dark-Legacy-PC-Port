@@ -118,6 +118,22 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     REQUIRE(f.animator.frame() == 0);
 }
 
+TEST_CASE("an external animation frame name resolves to its owning lender",
+          "[world][animation][texture-lending]") {
+    Fixture f("texture-animator-external-name");
+    // The level has a TORCHB reference, but only the lender owns its pixels.
+    REQUIRE(f.textures.entry(*f.textures.find("TORCHB")).external());
+    const auto owned = f.lender.find("TORCHB");
+    REQUIRE(owned.has_value());
+    REQUIRE_FALSE(f.lender.entry(*owned).external());
+    const std::array animations{
+        cycle("TORCHB", 3, TextureAnimationInfo::kByName, 1, 0, 1, "TORCHB")};
+    const std::array<TextureSet*, 3> lenders{nullptr, &f.textures, &f.lender};
+    f.animator.bind(animations, f.textures, f.device, lenders);
+    REQUIRE(f.animator.size() == 1);
+    REQUIRE(f.animator.motion(0).frame == &f.lender.texture(f.device, *owned));
+}
+
 TEST_CASE("rain composes both scrolling coordinates without accumulating old offsets",
           "[world][animation]") {
     Fixture f("texture-animator-two-axis");

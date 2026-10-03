@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <numbers>
 
 #include "engine/core/Types.h"
 
+#include "game/combat/BodyContact.h"
 #include "game/combat/Damage.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/players/EnemyShrink.h"
@@ -19,6 +21,8 @@ constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr f32 kStepUp = 1.5f;
 constexpr f32 kDrop = 3.0f;
 constexpr f32 kFootClearance = 0.1f;
+// do_enemy_collide probes walls two units above coll_pos, independently of body height.
+constexpr f32 kWallHeight = 2.0f;
 constexpr f32 kSpawnDrop = 6.0f;       ///< a spawn finds its floor within this
 constexpr s32 kFarRecycleCost = 10000; ///< an unseen enemy is that much cheaper to reuse
 constexpr f32 kPushFloor = 0.01f;
@@ -35,13 +39,6 @@ constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of 
 constexpr s32 kRetargetEvery = 8; ///< frames between a mind looking round again
 constexpr f32 kRunFrom = 1.25f;   ///< a pace this much over a walk's runs
 constexpr f32 kStopped = 0.01f;   ///< a step that gets less than this is a dead stop
-
-/** An existing overlap must allow an outward step, but never a step through the centre. */
-bool separating(const Vec3& from, const Vec3& to, const Vec3& centre) {
-    const Vec2 away{from.x - centre.x, from.z - centre.z};
-    const Vec2 step{to.x - from.x, to.z - from.z};
-    return glm::dot(away, step) >= 0.0f && glm::dot(step, step) > 0.0f;
-}
 
 // The octants about a generator, as its facing is turned into each.
 Vec3 octant(const Vec3& v, s32 direction, f32& yawOffset) {
@@ -338,6 +335,15 @@ Vec3 Enemies::bodyCentre(const Enemy& enemy) {
     return enemy.position + Vec3{0.0f, enemy.reach, 0.0f};
 }
 
+f32 Enemies::playerDistance(const Enemy& enemy, const EnemyView& player) {
+    // calc_enemy_to_player_distance measures all three axes between collision centres,
+    // not the horizontal separation of the feet. Players on another floor count as farther.
+    const Vec3 from = enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0};
+    const Vec3 to =
+        player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
+    return glm::distance(from, to);
+}
+
 const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, s32 player) {
     for (const EnemyView& view : players) {
         if (view.player == player) {
@@ -393,14 +399,16 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
 bool Enemies::clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
                       std::span<const Obstacle> obstacles, s32 self) const {
     for (const EnemyView& view : players) {
-        if (flatDistance(view.position, position) < view.radius + enemy.radius &&
+        // check_enemy_pos's player sweep only considers active players. A fallen
+        // party member's last position must not obstruct the generator's exits.
+        if (!view.hidden && flatDistance(view.position, position) < view.radius + enemy.radius &&
             std::abs(view.position.y - position.y) < view.height) {
             return false;
         }
     }
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& other = m_enemies[static_cast<usize>(i)];
-        if (i == self || other.state == State::Inactive) {
+        if (i == self || other.state == State::Inactive || other.state == State::Dying) {
             continue;
         }
         if (flatDistance(other.position, position) < 0.5f * enemy.radius + other.radius &&
@@ -548,10 +556,47 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
         return std::nullopt;
     }
     enemy.position = where;
+    rememberFloor(enemy);
     enemy.yaw = yaw;
     enemy.mind.heading = yaw;
     enemy.mind.headingBefore = yaw;
     return slot;
+}
+
+void Enemies::rememberFloor(Enemy& enemy) const {
+    enemy.floor.reset();
+    if (m_collision == nullptr) {
+        return;
+    }
+    // Retain only a surface actually supporting the feet, not a floor below a jump.
+    const auto floor = m_collision->floorAt(enemy.position, 0.1f, 0.1f);
+    if (floor) {
+        if (const auto placement = m_collision->objectTransform(floor->object)) {
+            enemy.floor = Enemy::Floor{floor->object,
+                                       Vec3{glm::inverse(*placement) * Vec4{enemy.position, 1}}};
+        }
+    }
+}
+
+void Enemies::syncFloors() {
+    if (m_collision == nullptr) {
+        return;
+    }
+    for (Enemy& enemy : m_enemies) {
+        if (!enemy.floor || enemy.state == State::Inactive) {
+            continue;
+        }
+        if (enemy.kind == kDeathKind && enemy.state == State::Dying) {
+            enemy.floor.reset();
+            continue;
+        }
+        const auto placement = m_collision->objectTransform(enemy.floor->object);
+        if (!placement || !m_collision->solid(enemy.floor->object)) {
+            enemy.floor.reset();
+            continue;
+        }
+        enemy.position = Vec3{*placement * Vec4{enemy.floor->local, 1}};
+    }
 }
 
 void Enemies::wake(s32 id) {
@@ -573,6 +618,7 @@ void Enemies::generatorGone(s32 generator) {
 void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
                      f32 missileSpeedScale, bool timeStopped) {
+    syncFloors();
     if (ticks <= 0) {
         return;
     }
@@ -789,7 +835,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
     if (tagged != players.end()) {
         enemy.targetBefore = enemy.target;
         enemy.target = tagged->player;
-        enemy.targetDistance = flatDistance(tagged->position, enemy.position);
+        enemy.targetDistance = playerDistance(enemy, *tagged);
         enemy.weightedDistance = enemy.targetDistance;
         if (tagged->player >= 0 && static_cast<usize>(tagged->player) < crowding.size()) {
             enemy.weightedDistance += crowding[static_cast<usize>(tagged->player)];
@@ -803,7 +849,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
             if (view.hidden || view.invisible || (enemy.kind == kDeathKind && view.antiDeath)) {
                 continue;
             }
-            const f32 distance = flatDistance(view.position, enemy.position);
+            const f32 distance = playerDistance(enemy, view);
             if (distance > enemy.sight) {
                 continue;
             }
@@ -812,14 +858,17 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
                 static_cast<usize>(view.player) < crowding.size()) {
                 weighted += crowding[static_cast<usize>(view.player)];
             }
-            if (weighted < enemy.weightedDistance) {
+            // The retail slot scan breaks ties by controller ID, not party storage order.
+            if (weighted < enemy.weightedDistance ||
+                (weighted == enemy.weightedDistance && enemy.target >= 0 &&
+                 view.player < enemy.target)) {
                 enemy.weightedDistance = weighted;
                 enemy.targetDistance = distance;
                 enemy.target = view.player;
             }
         }
     } else if (const EnemyView* current = viewOf(players, enemy.target); current != nullptr) {
-        enemy.targetDistance = flatDistance(current->position, enemy.position);
+        enemy.targetDistance = playerDistance(enemy, *current);
     }
     if (enemy.target >= 0) {
         if (enemy.targetDistance <= enemy.sight) {
@@ -970,19 +1019,21 @@ f32 Enemies::turnToward(const Enemy& enemy, f32 wanted, s32 ticks) {
     return wrapAngle(enemy.yaw + (d > 0.0f ? step : -step));
 }
 
-/** Whether a step to `at` leads somewhere clear: the original sweeps the step for a wall
- * crossed, another enemy or an item in the way; here the point stepped to must not be in a
- * wall (a body already against one may still slide along it), off the floor, in a box or
- * in another. */
+/** Whether the proposed step reaches clear floor without crossing a wall or another body. */
 bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obstacle> obstacles,
                          s32 self) const {
     if (m_collision != nullptr) {
-        const Vec3 pushed = m_collision->resolveWalls(at, kFootClearance, at.y + kFootClearance,
-                                                      at.y + enemy.height - kFootClearance);
-        if (flatDistance(pushed, at) > 0.01f) {
+        // FloorCollide uses half the enemy radius, not just the centre point. Resolve
+        // reachable tread support before testing walls, so the next riser does not
+        // block a body whose feet have already reached the preceding tread.
+        const auto floor = stepFloor(enemy, enemy.position, at);
+        if (!floor) {
             return false;
         }
-        if (!m_collision->floorAt(at, kStepUp, kDrop).has_value()) {
+        const f32 wallY = std::max(at.y, floor->y) + kWallHeight;
+        const Vec3 pushed = m_collision->sweepWalls(enemy.position, at,
+                                                    enemy.radius * kWallRadiusScale, wallY, wallY);
+        if (flatDistance(pushed, at) > 0.01f) {
             return false;
         }
     }
@@ -993,12 +1044,13 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
     }
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& other = m_enemies[static_cast<usize>(i)];
-        if (i == self || other.state == State::Inactive || other.state == State::Asleep) {
+        if (i == self || other.state == State::Inactive || other.state == State::Dying) {
             continue;
         }
-        if (flatDistance(other.position, at) < enemy.radius + other.radius &&
-            std::abs(other.position.y - at.y) < std::max(other.height, enemy.height) &&
-            !separating(enemy.position, at, other.position)) {
+        const Vec3 offset{0, enemyKind(enemy.kind).collisionHeight, 0};
+        const Vec3 centre = other.position + Vec3{0, enemyKind(other.kind).collisionHeight, 0};
+        if (movementTouchesBody(enemy.position + offset, at + offset, centre,
+                                enemy.radius + other.radius, enemy.reach + other.reach)) {
             return false;
         }
     }
@@ -1049,18 +1101,8 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
         Vec3 probe = enemy.position;
         probe.x += reach * std::sin(heading);
         probe.z += reach * std::cos(heading);
-        // Route selection must see the same item and body obstructions as movement.
-        if (!probeClear(enemy, probe, obstacles, slot)) {
-            return false;
-        }
-        if (m_collision == nullptr) {
-            return true;
-        }
-        const Vec3 pushed = m_collision->resolveWalls(probe, enemy.radius * kWallRadiusScale,
-                                                      probe.y + kFootClearance,
-                                                      probe.y + enemy.height - kFootClearance);
-        return flatDistance(pushed, probe) <= 0.01f &&
-               m_collision->floorAt(probe, kStepUp, kDrop).has_value();
+        // Route selection must see the same floor, item and body obstructions as movement.
+        return probeClear(enemy, probe, obstacles, slot);
     };
     return sense;
 }
@@ -1090,11 +1132,16 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
         algorithm = enemy.target >= 0 ? kSeekWay : kWanderWay;
         if (enemy.target < 0) {
             const EnemyView* threat = nullptr;
+            f32 nearest = enemy.sight;
             for (const EnemyView& view : players) {
-                if (!view.hidden && !view.invisible && view.antiDeath &&
-                    (threat == nullptr || flatDistance(view.position, enemy.position) <
-                                              flatDistance(threat->position, enemy.position))) {
+                if (view.hidden || view.invisible || !view.antiDeath) {
+                    continue;
+                }
+                const f32 distance = playerDistance(enemy, view);
+                if (distance < nearest ||
+                    (distance == nearest && (threat == nullptr || view.player < threat->player))) {
                     threat = &view;
+                    nearest = distance;
                 }
             }
             if (threat != nullptr) {
@@ -1166,6 +1213,16 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
 
 // ---- bodies ------------------------------------------------------------------------------
 
+std::optional<FloorHit> Enemies::stepFloor(const Enemy& enemy, const Vec3& from,
+                                           const Vec3& to) const {
+    // Footprint support may reach the next tread, but a ledge behind the body must
+    // never support a step away into empty space.
+    if (flatDistance(from, to) > 0.0001f) {
+        return m_collision->floorAhead(to, to - from, kStepUp, kDrop, 0.5f * enemy.radius);
+    }
+    return m_collision->floorAt(to, kStepUp, kDrop);
+}
+
 Vec3 Enemies::travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const {
     if (m_collision == nullptr) {
         return to;
@@ -1177,10 +1234,14 @@ Vec3 Enemies::travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const
     Vec3 position = from;
     for (s32 i = 0; i < steps; ++i) {
         const Vec3 wanted = position + stride;
+        const auto support = stepFloor(enemy, position, wanted);
+        if (!support) {
+            break;
+        }
+        const f32 wallY = std::max(position.y, support->y) + kWallHeight;
         Vec3 next = m_collision->sweepWalls(position, wanted, enemy.radius * kWallRadiusScale,
-                                            wanted.y + kFootClearance,
-                                            wanted.y + enemy.height - kFootClearance);
-        const auto floor = m_collision->floorAt(next, kStepUp, kDrop);
+                                            wallY, wallY);
+        const auto floor = stepFloor(enemy, position, next);
         if (!floor) {
             break;
         }
@@ -1217,16 +1278,42 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
     enemy.contact = -1;
     const Vec3 from = enemy.position;
     Vec3 to = from + translation;
-    // Against a player it stops dead and strikes; off screen it never touches one.
-    for (const EnemyView& view : players) {
-        if (view.hidden || !enemy.onScreen) {
-            continue;
+    const Vec3 collisionOffset{0, enemyKind(enemy.kind).collisionHeight, 0};
+    // do_enemy_move first lets do_enemy_collide correct the translation. A player
+    // behind a wall must not intercept the unclipped part of a long movement.
+    bool stoppedByWorld = false;
+    if (m_collision != nullptr && glm::length(translation) > 0.0f) {
+        const Vec3 target = travel(enemy, from, to);
+        stoppedByWorld = flatDistance(target, to) > 0.001f && flatDistance(target, from) < kStopped;
+        to = target;
+    }
+    // fn_80046680's movement path tests the actual nearest live player, not the
+    // crowd-weighted sight target or the first overlapping member of the roster.
+    // Invisible players still have a body; an enemy without a sight target does not
+    // test player contact at all. Controller order breaks equal-distance ties.
+    const EnemyView* nearest = nullptr;
+    f32 nearestDistance = std::numeric_limits<f32>::max();
+    if (enemy.onScreen && enemy.target >= 0) {
+        for (const EnemyView& view : players) {
+            if (view.hidden) {
+                continue;
+            }
+            const f32 distance = playerDistance(enemy, view);
+            if (distance < nearestDistance || (distance == nearestDistance && nearest != nullptr &&
+                                               view.player < nearest->player)) {
+                nearest = &view;
+                nearestDistance = distance;
+            }
         }
-        if ((enemy.kind != kDeathKind || !view.antiDeath || !separating(from, to, view.position)) &&
-            flatDistance(view.position, to) < view.radius + enemy.radius + 0.5f &&
-            std::abs(view.position.y - to.y) < std::max(view.height, enemy.height)) {
+    }
+    if (nearest != nullptr) {
+        const EnemyView& view = *nearest;
+        const Vec3 centre =
+            view.position + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
+        if (movementTouchesBody(from + collisionOffset, to + collisionOffset, centre,
+                                view.radius + enemy.radius + 0.5f,
+                                enemy.reach + 0.5f * view.height)) {
             enemy.contact = view.player;
-            break;
         }
     }
     if (enemy.contact >= 0) {
@@ -1252,19 +1339,11 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         }
         return;
     }
-    if (m_collision != nullptr && glm::length(translation) > 0.0f) {
-        const Vec3 target = travel(enemy, from, to);
-        const bool wall = flatDistance(target, to) > 0.001f;
-        if (wall) {
-            // A slide along the wall that still gets somewhere is no bump; a dead stop is.
-            const f32 kept = flatDistance(target, from);
-            if (kept < kStopped) {
-                enemy.bumpedWall = true;
-                enemy.blocked = true;
-                return;
-            }
-        }
-        to = target;
+    if (stoppedByWorld) {
+        // A slide that still gets somewhere is no bump; a dead stop is.
+        enemy.bumpedWall = true;
+        enemy.blocked = true;
+        return;
     }
     for (const Obstacle& box : obstacles) {
         if (box.solid) {
@@ -1295,16 +1374,18 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
     // Against another it stops, unless it is being thrown, when half the push carries over.
     for (s32 i = 0; i < m_most; ++i) {
         Enemy& other = m_enemies[static_cast<usize>(i)];
-        if (i == slot || other.state == State::Inactive || other.state == State::Asleep) {
+        // fn_8004646C drops DYING bodies immediately, but sleeping placements remain solid.
+        if (i == slot || other.state == State::Inactive || other.state == State::Dying) {
             continue;
         }
-        if (flatDistance(other.position, to) < enemy.radius + other.radius &&
-            std::abs(other.position.y - to.y) < std::max(other.height, enemy.height) &&
-            !separating(from, to, other.position)) {
+        const Vec3 centre = other.position + Vec3{0, enemyKind(other.kind).collisionHeight, 0};
+        if (movementTouchesBody(from + collisionOffset, to + collisionOffset, centre,
+                                enemy.radius + other.radius, enemy.reach + other.reach)) {
             enemy.bumpedOther = true;
             if (enemy.pushMagnitude > 1.0f && enemy.animator.reacting()) {
                 other.push += 0.5f * enemy.push;
                 other.position = travel(other, other.position, other.position + 0.5f * translation);
+                rememberFloor(other);
             } else {
                 enemy.blocked = true;
                 enemy.otherSide = turnDirection(from, other.position);
@@ -1313,28 +1394,31 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         }
     }
     enemy.position = to;
+    rememberFloor(enemy);
     (void)ticks;
 }
 
 // ---- being hit ---------------------------------------------------------------------------
 
-void Enemies::hurt(s32 id, const EnemyHit& hit) {
+f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
     if (id < 0 || id >= m_most) {
-        return;
+        return 0;
     }
     Enemy& enemy = m_enemies[static_cast<usize>(id)];
     if ((enemy.state != State::Active && enemy.state != State::Asleep) || enemy.killed) {
-        return;
+        return 0;
     }
     if (enemy.kind == kDeathKind) {
         hurtDeath(enemy, id, hit);
-        return;
+        return 0;
     }
     if (enemy.kind == kItKind) {
-        return; // nothing harms IT (damage_enemy)
+        return 0; // nothing harms IT (damage_enemy)
     }
     const EnemyKind& kind = enemyKind(enemy.kind);
     f32 amount = hit.damage;
+    // damage_enemy credits healing before level scaling, armor and shrink effects.
+    const f32 credited = std::clamp(amount, 0.0f, enemy.health);
     // A character under the level the place is meant for hits a hundredth softer a level;
     // one over it a tenth harder. Armour comes off, but a character always gets a point in.
     if (hit.player >= 0 && m_scales.playerLevel > 0.0f) {
@@ -1346,7 +1430,7 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     amount =
         std::max(EnemyShrink::harmTaken(m_shrink, modified.amount), hit.player >= 0 ? 1.0f : 0.0f);
     if (amount <= 0.0f) {
-        return;
+        return credited;
     }
     enemy.state = State::Active;
     enemy.health -= amount;
@@ -1411,6 +1495,7 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
         loss.position = bodyCentre(enemy);
         m_losses.push_back(loss);
     }
+    return credited;
 }
 
 std::vector<s32> Enemies::takeTagged() {

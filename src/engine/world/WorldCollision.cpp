@@ -590,8 +590,17 @@ Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f3
                     std::abs(triangle.normal.y) >= kFloorNormalY) {
                     return;
                 }
+                const Vec3 step{remaining.x, 0, remaining.y};
+                if (glm::dot(step, triangle.normal) > 0) {
+                    return; // separating from the solid face
+                }
                 for (const f32 fraction : kProbeFractions) {
-                    const Slice slice = sliceAt(triangle, bottom + (top - bottom) * fraction);
+                    const f32 height = bottom + (top - bottom) * fraction;
+                    const Vec3 origin{position.x, height, position.y};
+                    if (glm::dot(origin - triangle.vertices[0], triangle.normal) < 0) {
+                        continue; // entering through the back face is allowed
+                    }
+                    const Slice slice = sliceAt(triangle, height);
                     if (slice.valid) {
                         sweepSegment(position, remaining, slice, radius, nearest);
                     }

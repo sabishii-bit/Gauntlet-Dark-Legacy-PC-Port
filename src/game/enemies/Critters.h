@@ -67,7 +67,8 @@ public:
     /** Their blows on what they walked into, since the last call. */
     std::vector<CombatantRam> takeRams() { return std::exchange(m_rams, {}); }
 
-    void hurt(s32 id, const EnemyHit& hit);
+    f32 hurt(s32 id, const EnemyHit& hit);
+    void damagedPlayer(s32 id, s32 player, f32 amount);
     /** Stops it where it stands, its animation with it, for `ticks`. */
     void freeze(s32 id, s32 ticks);
     /** Takes its targets from it for `ticks`, over which it turns at a tenth of its rate. */

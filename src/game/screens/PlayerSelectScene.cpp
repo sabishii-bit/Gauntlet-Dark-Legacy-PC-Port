@@ -370,6 +370,18 @@ SelectOutcome PlayerSelectScene::update(f64 deltaSeconds, const Inputs& inputs) 
     return step(ticks, inputs);
 }
 
+void PlayerSelectScene::join(const Inputs& inputs) {
+    if (!m_open) {
+        return;
+    }
+    for (s32 i = 0; i < kLaneCount; ++i) {
+        SelectLane& lane = m_lanes[static_cast<usize>(i)];
+        if (!lane.active() && inputs[static_cast<usize>(i)].start) {
+            lane.activate();
+        }
+    }
+}
+
 SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
     if (!m_open) {
         return SelectOutcome::Running;
@@ -378,13 +390,7 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
     if (m_tower != nullptr && m_tower->built()) {
         m_tower->update(static_cast<f32>(ticks) / static_cast<f32>(m_tickRate));
     }
-
-    for (s32 i = 0; i < kLaneCount; ++i) {
-        SelectLane& lane = m_lanes[static_cast<usize>(i)];
-        if (!lane.active() && inputs[static_cast<usize>(i)].start) {
-            lane.activate();
-        }
-    }
+    join(inputs);
 
     bool leave = false;
     for (s32 i = 0; i < kLaneCount; ++i) {
@@ -397,14 +403,20 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
             frame.othersActive = frame.othersActive || other.active();
             frame.othersSelecting = frame.othersSelecting || other.selecting();
             if (other.slotInUse().has_value()) {
-                frame.slotsInUse |= 1U << *other.slotInUse();
+                frame.slotsInUse.push_back(*other.slotInUse());
             }
             if (other.reservedSlot().has_value()) {
-                frame.slotsInUse |= 1U << *other.reservedSlot();
+                frame.slotsInUse.push_back(*other.reservedSlot());
             }
         }
+        SelectLane& lane = m_lanes[static_cast<usize>(i)];
+        const auto entry = std::ranges::find(m_entryParty, i, &PartyMember::player);
+        // Post-shop state 0xB waits for the tower; only state 3 can reopen its
+        // character menu with Start (do_player_select). Keep its checkpoint inert.
+        const bool fallen =
+            lane.retainsEntryCharacter() && entry != m_entryParty.end() && entry->fallen;
         const SelectLane::Result result =
-            m_lanes[static_cast<usize>(i)].update(inputs[static_cast<usize>(i)], ticks, frame);
+            lane.update(fallen ? MenuInput{} : inputs[static_cast<usize>(i)], ticks, frame);
         if (result == SelectLane::Result::Leave) {
             leave = true;
         }

@@ -49,7 +49,8 @@ bool PlayerHealth::canBeDamaged(const PlayerRuntime& runtime) {
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
                         bool inTower, f32 damageScale, const Events& events,
                         const PlayerImpact& impact, bool bossEncounter, const ClassStats* stats) {
-    if (!canBeDamaged(runtime) || inTower || damage <= 0.0f) {
+    if (!canBeDamaged(runtime) || inTower || damage < 0.0f ||
+        (impact.flags & Damage::kMagic) != 0) {
         return;
     }
     if (damage > 1.0f && kind != HurtKind::DeathDrain) {
@@ -84,12 +85,12 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         events.learnBlock();
     }
     if (damage <= 0.0f) {
-        // damage_player retains DMG_STICKY after armor absorbs the hit.
+        // Stun shots and sticky hits retain their reaction with no health loss.
         // PlayerKnockback tests it before hit_damage, but invulnerability's
         // 0x10000 shield clears all reactions first (pmotion.c).
-        if ((received.flags & PlayerImpact::kSticky) != 0 &&
-            (worn.armor & Damage::kInvulnerable) == 0) {
-            runtime.reaction = PlayerImpact::combine(runtime.reaction, PlayerDeed::Webbed);
+        if ((worn.armor & Damage::kInvulnerable) == 0) {
+            runtime.reaction = PlayerImpact::combine(
+                runtime.reaction, received.reaction(0, runtime.actor.yaw(), false));
         }
         return;
     }

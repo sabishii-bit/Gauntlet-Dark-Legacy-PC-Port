@@ -23,6 +23,135 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("multiplayer weapon collisions preserve owner immunity and distinct stun policy",
+          "[game][missiles][multiplayer-combat]") {
+    static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true};
+    const std::array<MissilePlayer, 2> players{
+        {{3, {0, Vec3{0}, 1, 6}, false}, {1, {0, Vec3{0, 0, 4}, 1, 6}, false}}};
+    for (const auto mode :
+         {MultiplayerMode::Normal, MultiplayerMode::Stun, MultiplayerMode::Hurt}) {
+        CAPTURE(static_cast<s32>(mode));
+        PlayerMissiles missiles;
+        MissileLaunch launch;
+        launch.spec = &kSpec;
+        launch.owner = 3;
+        launch.position = {0, 3, 0};
+        launch.velocity = Vec3{0, 0, 20};
+        launch.damage = 12;
+        launch.multiplayer = mode;
+        launch.playerHitGap = 0.6f;
+        REQUIRE(missiles.launch(launch));
+        missiles.update(0.3f, nullptr, {}, players);
+        const auto hits = missiles.takeImpacts();
+        if (mode == MultiplayerMode::Normal) {
+            CHECK(hits.empty());
+            CHECK(missiles.count() == 1);
+        } else {
+            REQUIRE(hits.size() == 1);
+            CHECK(hits[0].owner == 3);
+            CHECK(hits[0].player == 1);
+            CHECK(hits[0].target == -1);
+            CHECK(hits[0].damage == 12);
+            CHECK(hits[0].stun == (mode == MultiplayerMode::Stun));
+            CHECK(hits[0].playerHitGap == Approx(0.6f));
+            CHECK(hits[0].direction == Vec3{0, 0, 1});
+            CHECK(missiles.count() == 0);
+        }
+    }
+}
+
+TEST_CASE("reflective player armor reverses a weapon without changing its owner",
+          "[game][missiles][multiplayer-combat]") {
+    static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true};
+    const std::array<MissilePlayer, 1> players{{{1, {0, Vec3{0, 0, 4}, 1, 6}, true}}};
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.spec = &kSpec;
+    launch.owner = 3;
+    launch.position = {0, 3, 0};
+    launch.velocity = Vec3{0, 0, 20};
+    launch.damage = 40;
+    launch.multiplayer = MultiplayerMode::Stun;
+    REQUIRE(missiles.launch(launch));
+    missiles.update(0.25f, nullptr, {}, players);
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).owner == 3);
+    CHECK(missiles.missile(0).velocity.z == -20);
+    CHECK(missiles.missile(0).damage == 15);
+    CHECK(missiles.missile(0).age == Approx(1.25f));
+    const auto hits = missiles.takeImpacts();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == -1);
+    CHECK(hits[0].wallSound == MissileWallSound::Ricochet);
+}
+
+TEST_CASE("super shots cross multiple player lanes while thrown potions ignore them",
+          "[game][missiles][multiplayer-combat]") {
+    static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true};
+    const std::array<MissilePlayer, 2> players{
+        {{1, {0, Vec3{0, 0, 4}, 1, 6}, false}, {2, {0, Vec3{0, 0, 8}, 1, 6}, false}}};
+    for (const bool potion : {false, true}) {
+        PlayerMissiles missiles;
+        MissileLaunch launch;
+        launch.spec = &kSpec;
+        launch.owner = 3;
+        launch.position = {0, 3, 0};
+        launch.velocity = Vec3{0, 0, 20};
+        launch.damage = 40;
+        launch.flags = 0x100000;
+        launch.potion = potion ? 1 : 0;
+        launch.multiplayer = MultiplayerMode::Hurt;
+        REQUIRE(missiles.launch(launch));
+        missiles.update(0.5f, nullptr, {}, players);
+        const auto hits = missiles.takeImpacts();
+        REQUIRE(hits.size() == (potion ? 0 : 2));
+        for (const auto& hit : hits) {
+            CHECK(hit.playerHitGap == 1);
+        }
+        CHECK(missiles.count() == 1);
+    }
+}
+
+TEST_CASE("reflective super shots spend pass-through on a player impact after this update",
+          "[game][missiles][multiplayer-combat]") {
+    constexpr u32 kSuper = 0x100000;
+    constexpr u32 kReflect = 0x200000;
+    for (const bool armor : {false, true}) {
+        for (const bool effect : {false, true}) {
+            for (const f32 damage : {2.0f, 12.0f}) {
+                CAPTURE(armor, effect, damage);
+                const MissileSpec spec{"TEST", {}, 0.5f, 0, 0, true, effect ? "HIT" : ""};
+                const std::array<MissilePlayer, 1> players{{{1, {0, Vec3{0, 0, 4}, 1, 6}, armor}}};
+                PlayerMissiles missiles;
+                MissileLaunch launch;
+                launch.spec = &spec;
+                launch.owner = 3;
+                launch.position = {0, 3, 0};
+                launch.velocity = Vec3{0, 0, 20};
+                launch.damage = damage;
+                launch.flags = kSuper | kReflect;
+                launch.multiplayer = MultiplayerMode::Hurt;
+                REQUIRE(missiles.launch(launch));
+                missiles.update(0.15f, nullptr, {}, players);
+                REQUIRE(missiles.count() == 1);
+                const bool spent = !armor && effect && damage > 2;
+                CHECK(((missiles.missile(0).flags & kSuper) == 0) == spent);
+                const auto hits = missiles.takeImpacts();
+                REQUIRE(hits.size() == 1);
+                CHECK(hits[0].effect.empty() == !spent);
+                if (spent) {
+                    CHECK(hits[0].position == players[0].body.base);
+                    // Still within this victim: next update stops even during its local gap.
+                    missiles.update(0.01f, nullptr, {}, players);
+                    CHECK(missiles.count() == 0);
+                } else if (armor) {
+                    CHECK(missiles.missile(0).velocity.z == -20);
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("missile streak follows velocity and camera with retail head and tail dimensions",
           "[game][missiles][missile-streak]") {
     test::FakeRenderDevice device;

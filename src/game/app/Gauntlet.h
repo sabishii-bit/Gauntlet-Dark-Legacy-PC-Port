@@ -74,7 +74,7 @@ private:
     bool startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party = {},
                            bool manage = false);
     /** `player` joins the party in the tower by way of the select screen. */
-    bool joinTower(s32 player);
+    bool joinTower(const PlayerSelectScene::Inputs& joining);
     s32 playerPressingStart() const;
     GameContext context();
     void applyWindowIcon();

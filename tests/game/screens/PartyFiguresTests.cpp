@@ -119,4 +119,59 @@ TEST_CASE("a head gem appearing bursts once about its wearer", "[game][screens][
     powerups.release();
 }
 
+TEST_CASE("portal departure sinks and hides survivors without changing a dying teammate",
+          "[game][screens][figures][assets][multiplayer]") {
+    const auto root = test::assetOrSkip("WEAPONS/textures.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    LevelWorld world;
+    PortalDeparture departure;
+    const PartyFigures::Scene scene{.world = world, .weapons = weapons, .departure = departure};
+    const PartyFigures figures;
+    std::array<PlayerRuntime, 1> players;
+    auto& runtime = players[0];
+    const CharacterSave save;
+    runtime.actor.spawn(3, save, nullptr, Vec3{20, 8, -5}, 0);
+    runtime.figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(runtime.figure);
+    runtime.life = PlayerLife::Dying;
+    figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+    const auto original = device.draws;
+    REQUIRE_FALSE(original.empty());
+    departure.begin(device, weapons.textures);
+    REQUIRE(departure.skin() != nullptr);
+    CHECK(figures.skinOf(runtime, PowerupEffects{}, departure) == nullptr);
+    for (s32 phase = 0; phase < 2; ++phase) {
+        departure.update(25);
+        device.draws.clear();
+        figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+        REQUIRE(device.draws.size() == original.size());
+        for (usize i = 0; i < original.size(); ++i) {
+            CHECK(device.draws[i].texture == original[i].texture);
+            CHECK(device.draws[i].transform == original[i].transform);
+            REQUIRE(device.draws[i].vertices.size() == original[i].vertices.size());
+            for (usize v = 0; v < original[i].vertices.size(); ++v) {
+                CHECK(device.draws[i].vertices[v].position == original[i].vertices[v].position);
+            }
+        }
+    }
+    REQUIRE(departure.finished());
+    runtime.life = PlayerLife::Standing;
+    device.draws.clear();
+    figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+    CHECK(device.draws.empty());
+    departure.begin(device, weapons.textures);
+    departure.update(25);
+    CHECK(figures.skinOf(runtime, PowerupEffects{}, departure) == departure.skin());
+    figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.front().vertices.front().position !=
+          original.front().vertices.front().position);
+    runtime.life = PlayerLife::InTower;
+    device.draws.clear();
+    figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+    CHECK(device.draws.empty());
+}
+
 } // namespace

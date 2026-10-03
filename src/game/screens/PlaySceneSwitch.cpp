@@ -9,6 +9,8 @@ void PlayScene::updateSwitchCutscene(s32 ticks, f32 seconds) {
     // generators, damage, inventory timers and player input do not advance.
     m_world->update(seconds);
     m_world->updateTriggers(seconds, visitors());
+    m_fixtures.syncFloors();
+    m_opponents.enemies().syncFloors();
     m_portals.animate(seconds);
     m_transporters.animate(seconds);
     handleTriggerEvents();

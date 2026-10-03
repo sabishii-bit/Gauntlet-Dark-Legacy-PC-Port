@@ -928,6 +928,79 @@ TEST_CASE("breaking a gas barrel spoils nearby food and announces it only on a c
     f.fixtures.clear();
 }
 
+TEST_CASE("Temple platform chest contents can be collected after descending",
+          "[level-fixtures][chest-platform][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("E1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.events.help = [](s32, usize) { return true; };
+    f.events.card = [](s32, std::string_view) {};
+    f.events.hurt = [](usize, f32, HurtKind, bool) {};
+    std::vector<Vec3> initial;
+    for (usize i = 0; i < f.fixtures.chests().size(); ++i) {
+        initial.push_back(f.fixtures.chests().chest(i).figure.position());
+    }
+    for (usize i = 0; i < f.world.triggers().size(); ++i) {
+        f.world.activateTrigger(f.world.triggers().trigger(i).id, false);
+    }
+    for (s32 frame = 0; frame < 600; ++frame) {
+        f.world.update(1.0f / 60);
+        f.world.updateTriggers(1.0f / 60, {});
+        f.fixtures.syncFloors();
+    }
+    usize tested = 0;
+    for (usize i = 0; i < initial.size(); ++i) {
+        const auto& chest = f.fixtures.chests().chest(i);
+        if (!chest.shown || chest.figure.position().y >= initial[i].y - 1) {
+            continue;
+        }
+        CAPTURE(i, chest.instance, chest.figure.position().y, chest.subtype, chest.contents);
+        auto& actor = f.players[0].actor;
+        actor.place(chest.figure.position() - Vec3{0, ItemFigure::kFloorLift, 0});
+        actor.save().progress().inventory.keys = 9;
+        const auto party = std::span{f.players}.first(1);
+        const s32 gold = actor.save().gold;
+        for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
+            f.fixtures.update(2, 1.0f / 30, party, f.events);
+        }
+        REQUIRE(chest.state == Chests::kOpen);
+        if (chest.subtype == Chests::kGoldChest) {
+            REQUIRE(actor.save().gold == gold);
+            REQUIRE_FALSE(chest.gone);
+            f.fixtures.update(2, 1.0f / 30, party, f.events);
+            const s32 amount =
+                f.world.layout().itemInfos()[static_cast<usize>(chest.contents)].value;
+            REQUIRE(actor.save().gold == gold + amount);
+            REQUIRE_FALSE(chest.gone);
+            f.fixtures.update(8, Chests::kCollectedSeconds, party, f.events);
+            REQUIRE(chest.gone);
+            CHECK(actor.save().gold == gold + amount);
+            ++tested;
+            continue;
+        }
+        REQUIRE(chest.held >= 0);
+        const auto held = static_cast<usize>(chest.held);
+        const auto& item = f.world.placedItems().item(held);
+        CAPTURE(item.name, item.position.x, item.position.y, item.position.z, actor.position().x,
+                actor.position().y, actor.position().z);
+        REQUIRE(item.takeable());
+        REQUIRE(f.fixtures.chests().holdingTouchedBy({actor.position(), actor.radius()}) ==
+                static_cast<s32>(i));
+        const std::array collectors{Collector{item.position, actor.reach(), actor.height() * 0.5f}};
+        const auto pickups = f.world.collect(f.device, collectors);
+        CHECK(std::ranges::any_of(pickups,
+                                  [held](const Pickup& pickup) { return pickup.item == held; }));
+        ++tested;
+    }
+    REQUIRE(tested > 0);
+}
+
 TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected early",
           "[game][screens][level-fixtures][assets]") {
     const auto root =

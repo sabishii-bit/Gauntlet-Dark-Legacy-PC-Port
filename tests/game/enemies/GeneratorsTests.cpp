@@ -129,31 +129,38 @@ TEST_CASE("Temple and Underworld special generators draw their authored trees an
     Generators generators;
     REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, realm, &items));
     usize expected = 0;
+    usize shown = 0;
     for (const auto& instance : layout.itemInstances()) {
-        if (layout.itemInfos()[static_cast<usize>(instance.info)].type == ItemInfo::kGenerator &&
-            shownToParty(instance.minPlayers, 1)) {
+        if (layout.itemInfos()[static_cast<usize>(instance.info)].type == ItemInfo::kGenerator) {
             ++expected;
+            shown += shownToParty(instance.minPlayers, 1) ? 1 : 0;
         }
     }
     REQUIRE(expected > 0);
     REQUIRE(generators.count() == expected);
+    CHECK(generators.obstacles().size() == shown);
     for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
         CHECK(generators.kindOf(i) == (temple ? -2 : -3));
         CHECK(generators.tierOf(i) == (temple ? 2 : 3));
         CHECK(generators.stateOf(i) == (temple ? 2 : 3));
-        CHECK(generators.bodyShown(i));
+        CHECK(generators.bodyShown(i) == generators.standing(i));
     }
-    const std::array views{EnemyView{.position = generators.positionOf(0)}};
+    s32 chosen = 0;
+    while (static_cast<usize>(chosen) < generators.count() && !generators.standing(chosen)) {
+        ++chosen;
+    }
+    REQUIRE(static_cast<usize>(chosen) < generators.count());
+    const std::array views{EnemyView{.position = generators.positionOf(chosen)}};
     generators.update(2, enemies, views);
     REQUIRE(enemies.count() > 0);
     generators.draw(device, Mat4{1}, {});
     REQUIRE_FALSE(device.draws.empty());
     const s32 initialState = temple ? 2 : 3;
-    const f32 stateHealth = generators.healthOf(0) / static_cast<f32>(initialState);
+    const f32 stateHealth = generators.healthOf(chosen) / static_cast<f32>(initialState);
     for (s32 state = initialState - 1; state >= 0; --state) {
-        REQUIRE(generators.strike(0, stateHealth, 0).has_value());
-        CHECK(generators.stateOf(0) == state);
-        CHECK(generators.bodyShown(0));
+        REQUIRE(generators.strike(chosen, stateHealth, 0).has_value());
+        CHECK(generators.stateOf(chosen) == state);
+        CHECK(generators.bodyShown(chosen));
         device.draws.clear();
         generators.draw(device, Mat4{1}, {});
         REQUIRE_FALSE(device.draws.empty());
@@ -161,8 +168,8 @@ TEST_CASE("Temple and Underworld special generators draw their authored trees an
             CHECK(draw.texture != &device.whiteTexture());
         }
     }
-    CHECK(generators.stateOf(0) == 0);
-    CHECK(generators.bodyShown(0)); // broken ruin remains
+    CHECK(generators.stateOf(chosen) == 0);
+    CHECK(generators.bodyShown(chosen)); // broken ruin remains
 }
 
 /** A field with one grunt generator of strength two at the origin facing +z, one of strength
@@ -190,6 +197,96 @@ std::filesystem::path sampleLevel(std::string_view name) {
   ]
 })");
     return dir;
+}
+
+TEST_CASE("generator population changes wait for offscreen without losing brood or damage",
+          "[generators][multiplayer][generator-presence][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(sampleLevel("generator-population-change")));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 13, {}, 3);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 2));
+    const s32 id = 1;
+    const Vec3 at = generators.positionOf(id);
+    const std::array party{EnemyView{.position = at + Vec3{0, 0, 30}}};
+    generators.setView(lookingAt(at));
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(id) == 1);
+    REQUIRE(enemies.generatorOf(0) == id);
+    REQUIRE(generators.strike(id, 2, 0));
+    const f32 health = generators.healthOf(id);
+    generators.setPlayerCount(1);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.standing(id));
+    CHECK(generators.bodyShown(id));
+    const s32 wait = generators.countdownOf(id);
+    generators.setView(lookingAt({10000, 0, 0}));
+    generators.update(kTicks, enemies, party);
+    CHECK_FALSE(generators.standing(id));
+    CHECK_FALSE(generators.bodyShown(id));
+    CHECK_FALSE(generators.boxOf(id).solid);
+    CHECK(generators.healthOf(id) == health);
+    CHECK(generators.countdownOf(id) == wait);
+    CHECK(enemies.alive(0));
+    CHECK(enemies.generatorOf(0) == id);
+    CHECK_FALSE(generators.strike(id, 1000, 0));
+    CHECK(generators.within(at, 5).empty());
+    CHECK_FALSE(generators.struckBy(at + Vec3{-8, 2, 0}, at + Vec3{8, 2, 0}, 0.5f));
+    CHECK(generators.obstacles().size() == 2);
+    // Returning to the camera does not resurrect a now-ineligible generator.
+    generators.setView(lookingAt(at));
+    generators.update(kTicks, enemies, party);
+    CHECK_FALSE(generators.standing(id));
+    CHECK(enemies.alive(0));
+}
+
+TEST_CASE("exact-party generators can appear offscreen but never pop into an observed area",
+          "[generators][multiplayer][generator-presence][assets]") {
+    const bool encountered = GENERATE(false, true);
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
+    const auto dir = test::scratchDirectory("generator-exact-party");
+    writeTextFile(dir / "world.json", R"({
+        "objects": [{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+        "animations": [], "particles": [], "locators": [],
+        "itemInfos": [{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10}],
+        "itemInstances": [{"info":0,"minPlayers":12,"position":[0,0,0],
+                           "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]
+    })");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 13, {}, 3);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 3));
+    REQUIRE(generators.count() == 1);
+    REQUIRE_FALSE(generators.standing(0));
+    generators.draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty());
+    if (encountered) {
+        generators.setView(lookingAt({}));
+        generators.update(kTicks, enemies, {});
+    }
+    generators.setView(lookingAt({10000, 0, 0}));
+    generators.setPlayerCount(2);
+    generators.update(kTicks, enemies, {});
+    CHECK(generators.standing(0) == !encountered);
+    CHECK(generators.bodyShown(0) == !encountered);
+    CHECK(generators.boxOf(0).solid == !encountered);
+    CHECK(generators.obstacles().size() == (encountered ? 0 : 1));
+    CHECK(generators.enemyObstacles().size() == (encountered ? 0 : 1));
+    generators.setView(lookingAt({}));
+    const std::array party{EnemyView{.position = Vec3{0, 0, 30}}};
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.bredOf(0) == (encountered ? 0 : 1));
+    device.draws.clear();
+    generators.draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty() == encountered);
 }
 
 TEST_CASE("boss generators use the stage record and breed after the birth delay",
@@ -458,7 +555,8 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     enemies.open(device, root, &collision, 13, EnemyScales{}, 3);
     Generators generators;
     REQUIRE(generators.bind(device, layout, enemies, &collision, GeneratorScales{}, 1));
-    REQUIRE(generators.count() == 47);
+    REQUIRE(generators.count() == 117);
+    REQUIRE(generators.obstacles().size() == 47);
     REQUIRE(enemies.kindLoaded(kGruntKind));
     REQUIRE(enemies.kindLoaded(kRatKind));
     // With the fields' roster the same records breed zombies and maggots instead.
@@ -468,7 +566,8 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     bred.open(device, root, &collision, 13, EnemyScales{}, 3);
     Generators graves;
     REQUIRE(graves.bind(device, layout, bred, &collision, GeneratorScales{}, 1, fields));
-    REQUIRE(graves.count() == 47);
+    REQUIRE(graves.count() == 117);
+    REQUIRE(graves.obstacles().size() == 47);
     REQUIRE(bred.kindLoaded(13));
     REQUIRE(bred.kindLoaded(12));
     REQUIRE_FALSE(bred.kindLoaded(kGruntKind));
@@ -477,10 +576,10 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     Generators wider;
     REQUIRE(wider.bind(device, layout, enemies, &collision, GeneratorScales{}, 4));
     REQUIRE(wider.count() == 117);
-    // Each stands whole, boxed as its record says, and is found by a sweep.
+    REQUIRE(wider.obstacles().size() == 117);
+    // All records retain their state, including those hidden by the party-size gate.
     for (usize g = 0; g < generators.count(); ++g) {
         const auto id = static_cast<s32>(g);
-        REQUIRE(generators.standing(id));
         REQUIRE(generators.stateOf(id) == generators.tierOf(id));
         REQUIRE(generators.tierOf(id) >= 1);
         REQUIRE(generators.tierOf(id) <= 3);
@@ -515,7 +614,8 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     generatorScales.rate = 1.5f;
     // The strength-three one is for a party of two; the boss generator is no kind.
     REQUIRE(generators.bind(device, layout, enemies, nullptr, generatorScales, 1));
-    REQUIRE(generators.count() == 2);
+    REQUIRE(generators.count() == 3);
+    REQUIRE_FALSE(generators.standing(1));
     REQUIRE(enemies.kindLoaded(kGruntKind));
     REQUIRE(enemies.kindLoaded(kRatKind));
     // Strength two: two tiers of health at the level's three quarters, three out at once
@@ -530,9 +630,9 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(generators.standing(chosen));
     REQUIRE(generators.bodyShown(chosen));
     // The rats' one takes its defaults: ten at once, five between, at the record's scales.
-    REQUIRE(generators.kindOf(1) == kRatKind);
-    REQUIRE(generators.mostOf(1) == 7);
-    REQUIRE(generators.intervalOf(1) == 7);
+    REQUIRE(generators.kindOf(2) == kRatKind);
+    REQUIRE(generators.mostOf(2) == 7);
+    REQUIRE(generators.intervalOf(2) == 7);
     // Nobody near: nothing is bred. A player near it: one at once, and the countdown set
     // going, stretched a little more each birth. Only the one on screen breeds.
     generators.setView(lookingAt(generators.positionOf(chosen)));
@@ -574,16 +674,26 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     }
     REQUIRE(generators.bredOf(chosen) == 3);
     REQUIRE(enemies.count() == 3);
+    // do_items leaves the timer untouched while numenemies >= maxenemies.
+    REQUIRE(generators.countdownOf(chosen) == 240);
     // One killed makes room for another.
     EnemyHit slay;
     slay.damage = 100.0f;
     slay.player = 0;
     enemies.hurt(mine[0], slay);
-    for (s32 i = 0; i < 400 && generators.bredOf(chosen) < 4; ++i) {
-        generators.update(kTicks, enemies, party);
-        enemies.update(kTicks, kStep, party);
-    }
+    REQUIRE(enemies.dying(mine[0]));
+    // enemy_dies uncouples immediately: the corpse does not hold a brood slot, so the
+    // frozen 240-tick countdown can resume while its death animation is still present.
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(chosen) == 3);
+    REQUIRE(generators.countdownOf(chosen) == 240 - kTicks);
+    REQUIRE(enemies.dying(mine[0]));
+    generators.update(240 - kTicks, enemies, party);
+    REQUIRE(generators.countdownOf(chosen) == 0);
+    REQUIRE(generators.bredOf(chosen) == 3); // Reaching zero still returns from generate_now.
+    generators.update(kTicks, enemies, party);
     REQUIRE(generators.bredOf(chosen) == 4);
+    REQUIRE(enemies.dying(mine[0]));
     // Struck: three of armour come off each blow, a point always getting through. It stands
     // in the state of its strength, two, until it is down to one of its record's health; it
     // then crumbles to one, breeding at strength one and twice as many (fn_8005C1DC), and
@@ -744,6 +854,55 @@ TEST_CASE("worm pits allow walking and birth at their centre without losing thei
         walkers.update(kTicks, kStep, destination, bodies);
     }
     CHECK(walkers.positionOf(*walker).z > 0);
+}
+
+TEST_CASE("Temple generators can breed at every native collision placement",
+          "[game][generators][temple-births][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level());
+    GeneratorScales scales;
+    scales.health = world.level()->tuning.generatorHealth;
+    scales.rate = world.level()->tuning.generatorRateScale(1);
+    scales.most = world.level()->tuning.generatorMostScale(1);
+    usize checked = 0;
+    for (s32 chosen = 0;; ++chosen) {
+        // Independent broods keep earlier births from occupying a later test's exit.
+        Enemies enemies;
+        enemies.open(device, root, &world.collision(), world.level()->maxEnemies, {}, 7);
+        Generators generators;
+        REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), scales, 1,
+                                world.level()->enemies, 5, &world.items()));
+        if (static_cast<usize>(chosen) >= generators.count()) {
+            break;
+        }
+        if (!generators.standing(chosen)) {
+            continue; // Authored multiplayer-only records remain dormant for this solo run.
+        }
+        const Vec3 at = generators.positionOf(chosen);
+        CAPTURE(chosen, at.x, at.y, at.z);
+        // Look down on this placement; a horizontal view would admit distant rooms
+        // and legitimately fill the level-wide cap before visiting later records.
+        ViewVolume view;
+        view.position = at + Vec3{0, 20, 0};
+        view.forward = Vec3{0, -1, 0};
+        view.up = Vec3{0, 0, 1};
+        generators.setView(view);
+        const std::array party{EnemyView{.position = at + Vec3{0, 0, 20}}};
+        generators.update(kTicks, enemies, party);
+        CAPTURE(enemies.count(), world.level()->maxEnemies, generators.kindOf(chosen),
+                generators.tierOf(chosen), generators.mostOf(chosen));
+        CHECK(generators.bredOf(chosen) == 1);
+        ++checked;
+    }
+    CHECK(checked > 0);
 }
 
 TEST_CASE("Desert C1 births retain the roster and a clear path from each authored generator",

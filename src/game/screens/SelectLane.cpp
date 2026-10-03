@@ -6,6 +6,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/NameCheats.h"
 #include "game/players/Progression.h"
 
 namespace gdl::game {
@@ -348,6 +349,9 @@ void SelectLane::changeClass(s32 step, s32 colorStep) {
 void SelectLane::lockIn(bool fromLoad) {
     m_save.character = m_pickClass;
     m_save.color = m_pickColor;
+    applyNameCheats(m_save);
+    m_pickClass = m_save.character;
+    m_pickColor = m_save.color;
     m_hasCharacter = true;
     if (!fromLoad) {
         m_saved = false;
@@ -538,7 +542,7 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
             returnBack();
         } else if (event.action == MenuAction::Choice && event.code >= kMenuSlotBase) {
             const auto slot = static_cast<usize>(event.code - kMenuSlotBase);
-            const bool inUse = (frame.slotsInUse & (1U << slot)) != 0;
+            const bool inUse = std::ranges::contains(frame.slotsInUse, slot);
             if (inUse) {
                 play(SelectSound::Buzzer);
                 break;
@@ -583,7 +587,8 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
                 m_timer = 0;
                 bool ok = false;
                 if (m_services != nullptr && m_services->slots != nullptr &&
-                    m_slotTarget.has_value() && (frame.slotsInUse & (1U << *m_slotTarget)) == 0) {
+                    m_slotTarget.has_value() &&
+                    !std::ranges::contains(frame.slotsInUse, *m_slotTarget)) {
                     ok = m_state == State::Loading
                              ? m_services->slots->load(*m_slotTarget, m_save)
                              : m_services->slots->write(*m_slotTarget, m_save);

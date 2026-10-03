@@ -256,15 +256,23 @@ std::optional<Vec3> Bosses::takeDefeat() {
     return std::exchange(m_defeat, std::nullopt);
 }
 
-void Bosses::hurt(const EnemyHit& hit, s32 partId) {
+f32 Bosses::hurt(const EnemyHit& hit, s32 partId) {
     // Asleep it takes nothing and is not woken by it (CritterDamage: state under two).
     if (m_id.has_value() && m_awake) {
-        m_fighter.hurt(hit, partId);
+        const f32 credited = m_fighter.hurt(hit, partId);
         if (!m_fighter.alive()) {
             m_rite.clear();
             m_fighter.hold(false);
             m_legendEvents.clear();
         }
+        return credited;
+    }
+    return 0;
+}
+
+void Bosses::damagedPlayer(s32 player, f32 amount, s32 partId) {
+    if (m_id.has_value() && m_awake) {
+        m_fighter.damagedPlayer(player, amount, partId);
     }
 }
 

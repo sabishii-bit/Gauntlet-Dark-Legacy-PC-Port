@@ -11,7 +11,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/screens/FloorRiding.h"
 #include "game/screens/PartyCombo.h"
+#include "game/screens/PlayerHealth.h"
 
 namespace {
 
@@ -57,6 +59,9 @@ struct Fixture {
     Fixture() {
         players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 0}, 0);
         players[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 3}, 0);
+        for (PlayerRuntime& player : players) {
+            player.floor.object = 0;
+        }
     }
 };
 
@@ -79,6 +84,67 @@ TEST_CASE("nobody without a figure takes hold or is taken hold of", "[game][scre
     // A seat without a figure is the carrier itself.
     const Mat4 seat = PartyCombo::seatOf(f.players[0]);
     REQUIRE(Vec3{seat[3]} == f.players[0].actor.position());
+}
+
+TEST_CASE("every class pairing uses the initiator family and retains party-index ownership",
+          "[game][screens][combo][multiplayer]") {
+    for (s32 initiator = 0; initiator < kClassCount; ++initiator) {
+        for (s32 partner = 0; partner < kClassCount; ++partner) {
+            CAPTURE(initiator, partner);
+            Fixture f;
+            CharacterSave first;
+            first.character = initiator;
+            CharacterSave second;
+            second.character = partner;
+            f.players[0].actor.spawn(3, first, nullptr, Vec3{0, 0, 0}, 0);
+            f.players[1].actor.spawn(1, second, nullptr, Vec3{0, 0, 3}, 0);
+            PartyCombo::begin(f.players, 0, 1);
+            const s32 family =
+                initiator == kSumnerClass ? ComboMove::kWizard : initiator % kStartingClassCount;
+            REQUIRE(f.players[0].combo.grabberClass == family);
+            REQUIRE(f.players[1].combo.grabberClass == family);
+            CHECK(f.players[0].combo.partner == 1);
+            CHECK(f.players[1].combo.partner == 0);
+            CHECK_FALSE(PlayerHealth::canBeDamaged(f.players[0]));
+            CHECK_FALSE(PlayerHealth::canBeDamaged(f.players[1]));
+            const ComboOrders attached = ComboMove::advance(f.players[0].combo, f.players[1].combo,
+                                                            {true, false, 0}, kTicks);
+            const bool initiatorRides = family == ComboMove::kValkyrie ||
+                                        family == ComboMove::kArcher || family == ComboMove::kDwarf;
+            CHECK(attached.attach == (initiatorRides ? ComboOrders::Attach::GrabberOnPartner
+                                                     : ComboOrders::Attach::PartnerOnGrabber));
+            // The link is not a distance leash; even a separated pinball completes its clock.
+            f.players[1].actor.place(Vec3{100, 0, 100});
+            PartyCombo::advance(f.players, 0, kTicks);
+            if (family == ComboMove::kWarrior || family == ComboMove::kDwarf) {
+                CHECK(f.players[1].combo.role == ComboRole::Thrown);
+                CHECK_FALSE(PlayerHealth::canBeDamaged(f.players[0]));
+                CHECK_FALSE(PlayerHealth::canBeDamaged(f.players[1]));
+                PartyCombo::advance(f.players, 0, ComboMove::kFlightTicks);
+            }
+            CHECK_FALSE(f.players[0].combo.active());
+            CHECK_FALSE(f.players[1].combo.active());
+            CHECK_FALSE(f.players[0].combo.riding);
+            CHECK_FALSE(f.players[1].combo.riding);
+            CHECK(PlayerHealth::canBeDamaged(f.players[0]));
+            CHECK(PlayerHealth::canBeDamaged(f.players[1]));
+        }
+    }
+}
+
+TEST_CASE("a held partner spends thrower grace during the windup",
+          "[game][screens][combo][multiplayer]") {
+    Fixture f;
+    PartyCombo::begin(f.players, 0, 1);
+    ComboMove::advance(f.players[0].combo, f.players[1].combo, {true, false, 0}, kTicks);
+    PartyCombo::animate(f.players, 1, 60, 1.0f, f.events);
+    REQUIRE(f.players[1].combo.graceSeconds == Approx(0.5f));
+    PartyCombo::advance(f.players, 0, kTicks);
+    REQUIRE(ComboMove::flies(f.players[1].combo));
+    f.players[1].actor.place(Vec3{0, 0, 0});
+    f.players[0].actor.place(Vec3{0, 0, 2});
+    PartyCombo::fly(f.players, 1, 30, 0.5f, f.collision, f.events);
+    CHECK(f.players[1].combo.graceSeconds == 0.0f);
 }
 
 TEST_CASE("a pinball flies thirty a second along its facing and reflects off a wall",
@@ -119,10 +185,15 @@ TEST_CASE("a pinball passes through its thrower for a while and then bounces off
     f.players[1].actor.turnTo(0.0f);
     PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
     REQUIRE(f.players[1].actor.yaw() == Approx(0.0f)); // through the thrower, unturned
+    CHECK(f.players[1].actor.position().z == Approx(ComboMove::kFlightSpeed * kStep));
+    f.players[0].knockback.endFrame();
+    CHECK_FALSE(f.players[0].knockback.pushed());
     f.players[1].combo.graceSeconds = 0.0f;
     f.players[1].actor.place(Vec3{0, 0, 0});
     PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
     REQUIRE(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn));
+    f.players[0].knockback.endFrame();
+    CHECK(f.players[0].knockback.pushed());
 }
 
 TEST_CASE("a charger goes where the dwarf's stick sends it at half again the pace",
@@ -168,6 +239,16 @@ TEST_CASE("with the real warrior a partner ahead is taken hold of and rides its 
     REQUIRE(PartyCombo::partnerFor(f.players, 0) == std::nullopt);
     f.players[0].actor.turnTo(0.0f);
     REQUIRE(PartyCombo::partnerFor(f.players, 0) == 1);
+    // fn_80088EF4 requires both players to stand on a nonmoving floor.
+    for (PlayerRuntime& player : f.players) {
+        player.floor.object = -1;
+        CHECK_FALSE(PartyCombo::partnerFor(f.players, 0).has_value());
+        player.floor.object = 0;
+        player.floor.flags = FloorRiding::kMoving;
+        CHECK_FALSE(PartyCombo::partnerFor(f.players, 0).has_value());
+        player.floor.flags = 0;
+        CHECK(PartyCombo::partnerFor(f.players, 0) == 1);
+    }
     PartyCombo::begin(f.players, 0, 1);
     REQUIRE(f.players[1].combo.grabberClass == ComboMove::kWarrior);
     // The grabber's move begins; a tick on, the partner is in its hands and plays COMBOWAR1.
@@ -176,8 +257,13 @@ TEST_CASE("with the real warrior a partner ahead is taken hold of and rides its 
     PartyCombo::advance(f.players, 0, kTicks);
     REQUIRE(f.players[1].combo.riding);
     REQUIRE(f.players[1].combo.saved == Vec3{0, 0, 3});
+    // The restriction is on taking hold, not on continuing the carried move.
+    f.players[1].floor = {};
     PartyCombo::animate(f.players, 1, kTicks, kStep, f.events);
     REQUIRE(f.players[1].figure->animator().action() == PlayerAnimator::Action::ComboWar1);
+    CHECK(f.players[1].combo.graceSeconds == Approx(ComboMove::kThrowerGrace - kStep));
+    PartyCombo::advance(f.players, 0, kTicks);
+    CHECK(f.players[1].combo.graceSeconds == Approx(ComboMove::kThrowerGrace - kStep));
     REQUIRE(f.calls == std::vector<std::string>{"turbo1"});
     f.players[0].actor.place(Vec3{5, 0, 5});
     PartyCombo::carry(f.players);

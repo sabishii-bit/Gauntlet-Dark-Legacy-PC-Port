@@ -8,6 +8,7 @@ add_executable(tests
     game/world/DestructibleWallsTests.cpp
     game/world/MissileTargetTests.cpp
     game/combat/DamageTests.cpp
+    game/combat/BodyContactTests.cpp
     game/combat/DamageTypesTests.cpp
     game/screens/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
@@ -60,6 +61,7 @@ add_executable(tests
     engine/assets/SoundSetTests.cpp
     engine/audio/SoundPlayerTests.cpp
     engine/audio/AdsStreamTests.cpp
+    engine/audio/MusicDeclickerTests.cpp
     engine/audio/StreamPlaylistTests.cpp
     engine/assets/ModelSetTests.cpp
     engine/assets/AnimationSetTests.cpp
@@ -139,6 +141,7 @@ add_executable(tests
     game/players/MagicPerksTests.cpp
     game/players/ProgressionTests.cpp
     game/players/CharacterSaveTests.cpp
+    game/players/NameCheatsTests.cpp
     game/players/PartyTests.cpp
     game/players/TurboMeterTests.cpp
     game/players/TurboMoveTests.cpp
@@ -232,6 +235,7 @@ add_executable(tests
     game/screens/TowerCompletionTests.cpp
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
+    game/screens/MultiplayerJourneyTests.cpp
     game/screens/PartyMotionTests.cpp
     game/screens/PartyCollisionTests.cpp
     game/players/HeadGemTests.cpp

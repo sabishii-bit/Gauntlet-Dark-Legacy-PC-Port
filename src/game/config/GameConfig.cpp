@@ -138,6 +138,19 @@ void GameConfig::mergeJson(std::string_view json) {
     }
     if (root.contains("game")) {
         read(root.at("game"), "difficulty", difficulty.level);
+        const auto& game = root.at("game");
+        if (game.contains("multiplayer")) {
+            if (!game.at("multiplayer").is_string()) {
+                throw FormatError("multiplayer mode must be normal, stun or hurt");
+            }
+            const auto name = game.at("multiplayer").get<std::string>();
+            const auto found = std::ranges::find(MultiplayerConfig::kNames, name);
+            if (found == MultiplayerConfig::kNames.end()) {
+                throw FormatError("multiplayer mode must be normal, stun or hurt");
+            }
+            multiplayer.mode =
+                static_cast<MultiplayerMode>(found - MultiplayerConfig::kNames.begin());
+        }
     }
     if (root.contains("controls")) {
         const Json& c = root.at("controls");
@@ -243,7 +256,9 @@ std::string GameConfig::toJson() const {
                      {"stereo", audio.stereo}};
     root["text"] = {{"language", text.language}};
     root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
-    root["game"] = {{"difficulty", difficulty.level}};
+    root["game"] = {
+        {"difficulty", difficulty.level},
+        {"multiplayer", MultiplayerConfig::kNames[static_cast<usize>(multiplayer.mode)]}};
     root["controls"] = {{"keyboard",
                          {{"up", keyNames(menu.up)},
                           {"down", keyNames(menu.down)},

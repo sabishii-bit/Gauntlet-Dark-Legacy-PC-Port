@@ -58,9 +58,12 @@ struct EnemyView {
     bool invisible = false; ///< not a sight target, but still vulnerable to contact and hazards
     EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
     bool antiDeath = false;
-    bool reflects = false;  ///< its armour turns the swarm's missiles back
-    bool it = false;        ///< tagged by IT: every enemy that can see it goes for it
-    bool damageable = true; ///< action/partner immunity; still visible to enemy targeting
+    bool reflects = false;    ///< its armour turns the swarm's missiles back
+    bool it = false;          ///< tagged by IT: every enemy that can see it goes for it
+    bool damageable = true;   ///< action/partner immunity; still visible to enemy targeting
+    bool recentlyHit = false; ///< shared effect-hit grace makes ordinary critters prefer others
+    std::optional<f32> collisionHeight = std::nullopt; ///< native centre, else half the height
+    bool blockableAttack = false; ///< slow/power attack groups that provoke a critter's BLOCK
 };
 
 /** A blow an enemy has landed on a player. */
@@ -246,8 +249,9 @@ public:
     /** Death departs after taking its victim's last health. */
     void finishDeath(s32 id, s32 player = -1);
 
-    /** Deals a hit to an enemy; what it is worth comes back as a loss. */
-    void hurt(s32 id, const EnemyHit& hit);
+    /** Deals a hit, queues its reward as a loss, and returns healing credit before level/armor
+     * scaling; zero for rejected hits or Death, whose magic healing is a separate event. */
+    f32 hurt(s32 id, const EnemyHit& hit);
     /** The enemies a missile can strike. */
     std::vector<MissileTarget> targets() const;
     /** The nearest live enemy whose body a blow sweeping from `from` to `to` with `radius`
@@ -279,6 +283,8 @@ public:
     f32 radiusOf(s32 id) const;
     f32 heightOf(s32 id) const;
     s32 targetOf(s32 id) const;
+    /** Carry grounded bodies with moving scenery, without advancing AI or animation. */
+    void syncFloors();
     s32 algorithmOf(s32 id) const;
     s32 pushCountOf(s32 id) const;
     s32 variantOf(s32 id) const;   ///< the strength it was placed at, four and over for a variant
@@ -328,6 +334,11 @@ private:
         f32 height = 6.0f;
         f32 reach = 3.0f; ///< half the height: how high its body is struck
         Vec3 position{0.0f, 0.0f, 0.0f};
+        struct Floor {
+            s32 object = -1;
+            Vec3 local{0};
+        };
+        std::optional<Floor> floor;
         f32 yaw = 0.0f; ///< the way the body faces
         MindMemory mind;
         Vec3 push{0.0f, 0.0f, 0.0f};
@@ -372,6 +383,7 @@ private:
     bool clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
                  std::span<const Obstacle> obstacles, s32 self) const;
     void initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind);
+    void rememberFloor(Enemy& enemy) const;
     void touchHazards(Enemy& enemy, s32 slot);
     static void decayPush(Enemy& enemy, f32 seconds);
     /** The warlock's coming and going: while it stands, walks or runs it stays seen a while,
@@ -398,12 +410,14 @@ private:
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
               std::span<const EnemyView> players, std::span<const Obstacle> obstacles);
     Vec3 travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const;
+    std::optional<FloorHit> stepFloor(const Enemy& enemy, const Vec3& from, const Vec3& to) const;
     bool probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obstacle> obstacles,
                     s32 self) const;
     static f32 turnToward(const Enemy& enemy, f32 wanted, s32 ticks);
     f32 fightOf(const Enemy& enemy) const;
     static void die(Enemy& enemy);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
+    static f32 playerDistance(const Enemy& enemy, const EnemyView& player);
     static f32 wrap(f32 angle);
     static Vec3 bodyCentre(const Enemy& enemy);
 

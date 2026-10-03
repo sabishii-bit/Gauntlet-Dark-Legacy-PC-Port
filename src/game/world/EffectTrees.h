@@ -96,6 +96,7 @@ public:
         TreeParticles particles;             ///< particle nodes authored in the archive
         std::optional<Mat4> attachment;      ///< full posed parent, rather than world yaw alone
         std::optional<Vec3> flightDirection; ///< arrow effects follow 3D travel, not yaw alone
+        std::optional<u32> particleTextureSlot; ///< standalone emitter's animated sprite slot
         Mat4 transform() const;
     };
 
@@ -117,12 +118,19 @@ public:
     void shortenLifetime(u32 id, f32 secondsLost, f32 maximum);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
     void moveTo(u32 id, const Vec3& position);
+    /** Redirect a reflected projectile without restarting its animation or particles. */
+    void redirect(u32 id, const Vec3& position, const Vec3& velocity);
     /** Places an effect on a fully posed attachment. Its own scale still applies. */
     void placeAt(u32 id, const Mat4& attachment,
                  std::optional<Vec3> flightDirection = std::nullopt);
     /** Attaches an emitter to the effect root; existing particles remain in world space
      * unless its descriptor explicitly requests dynamic particles. */
     void attachTrail(u32 id, const ParticleDescriptor& descriptor, const Texture& texture);
+    /** Starts a standalone emitter; its phase and live particles own its lifetime.
+     * The texture must outlive this effect. */
+    u32 startParticles(RenderDevice& device, ItemArchive& archive,
+                       const ParticleDescriptor& descriptor, u32 textureSlot,
+                       const Mat4& attachment);
     bool playing(u32 id) const;
     /** Seconds before effect number `id` is over; nullopt when it is not playing. */
     std::optional<f32> remaining(u32 id) const;

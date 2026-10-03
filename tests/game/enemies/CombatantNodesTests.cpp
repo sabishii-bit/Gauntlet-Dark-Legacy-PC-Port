@@ -121,6 +121,20 @@ TEST_CASE("node health preserves exact-boundary and heavy-hit bypass rules",
     }
 }
 
+TEST_CASE("healing credit precedes a hit node's damage scale and remaining budget",
+          "[combatant-nodes][healing-magic]") {
+    Fixture f;
+    EnemyHit hit;
+    hit.damage = 10;
+    hit.node = 1;
+    CHECK(f.fighter.actor.hurt(hit) == 10);
+    CHECK(f.fighter.actor.health() == Approx(95));
+    hit.damage = 30;
+    hit.node = 0;
+    CHECK(f.fighter.actor.hurt(hit) == 30);
+    CHECK(f.fighter.actor.health() == Approx(75));
+}
+
 TEST_CASE("a broken part holds its local pose while its parent continues animating",
           "[combatant-nodes][garm]") {
     Fixture intact{true};

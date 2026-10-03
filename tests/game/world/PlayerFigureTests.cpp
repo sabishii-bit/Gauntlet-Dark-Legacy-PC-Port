@@ -13,6 +13,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/players/ClassData.h"
+#include "game/players/NameCheats.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/world/PlayerArsenal.h"
@@ -539,6 +540,56 @@ TEST_CASE("native player costumes bind and draw every colour of the sixteen cost
             CHECK_FALSE(device.draws.empty());
         }
     }
+}
+
+TEST_CASE("native name-code costumes bind and animate with their ordinary class",
+          "[game][figure][cheats][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/objects.ngc").parent_path().parent_path();
+    const s32 level = GENERATE(1, 30, 60, 80);
+    for (const auto& costume : hiddenCostumes()) {
+        CAPTURE(costume.name, costume.directory, costume.character, level);
+        CharacterSave save;
+        save.name = costume.name;
+        REQUIRE(applyNameCheats(save));
+        save.progress().experience = levelExperience(level);
+        test::FakeRenderDevice device;
+        const auto figure = PlayerFigure::load(device, root, save, false);
+        REQUIRE(figure);
+        CHECK(figure->directory().filename() == costume.directory);
+        CHECK(figure->animator().bound());
+        figure->animate(1, 2, 1.0f / 30.0f);
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false);
+        CHECK_FALSE(device.draws.empty());
+        CHECK(figure->heldWeaponBound());
+        CHECK(figure->missile().bound());
+        if (level >= 30) {
+            CHECK(figure->familiarTier() == (level >= 80 ? 2 : 1));
+            CHECK(figure->familiarMissile().bound());
+        }
+    }
+}
+
+TEST_CASE("missing class throw trees fall back to the costume's first throw tree",
+          "[game][figure][cheats]") {
+    const auto root = costumeFixture("figure-throw-fallback", false);
+    const auto costume = root / "PLAYERS/WAR/BLU";
+    writeTextFile(costume / "animations.json", R"({"trees":[
+        {"name":"WAR_BLU","nodes":[
+            {"name":"HAND","object":"R_WRIST","position":[0,0,0]}],"sequences":[]},
+        {"name":"AXE_THROW1","nodes":[
+            {"name":"AXE","object":"WEAP_HOLD","position":[0,0,0]}],"sequences":[]}]})");
+    test::convertModelFixture(costume);
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.color = 1;
+    const auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->missile().bound());
+    CHECK(figure->missileTree() == "AXE_THROW1");
+    REQUIRE(figure->missileArchive());
+    CHECK(figure->missileArchive()->trees.find("AXE_THROW1").has_value());
+    figure->missile().draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, 1);
+    CHECK_FALSE(device.draws.empty());
 }
 
 TEST_CASE("hand replacement priority and restoration render without retail assets",

@@ -1,3 +1,4 @@
+#include <array>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -297,6 +298,59 @@ TEST_CASE("pad magic distinguishes a tap, hold and double tap without spending t
     SECTION("gestures can be disabled for immediate custom bindings") {
         f.bindings.padMagicGestures = false;
         REQUIRE(f.step(true).usePotion);
+    }
+}
+
+TEST_CASE("four players retain independent magic gestures when one controller disconnects",
+          "[game][players][controls][multiplayer]") {
+    Input input;
+    PlayBindings bindings;
+    bindings.magicHoldSeconds = 0.4f;
+    bindings.magicDoubleTapSeconds = 0.3f;
+    std::array<PlayerControlReader, Input::kMaxPads> readers;
+    std::array<PadSnapshot, Input::kMaxPads> pads;
+    for (auto& pad : pads) {
+        pad.connected = true;
+    }
+    const auto step = [&](const std::array<bool, Input::kMaxPads>& magic, f32 seconds) {
+        input.beginPoll();
+        for (s32 i = 0; i < Input::kMaxPads; ++i) {
+            auto& pad = pads[static_cast<usize>(i)];
+            pad.buttons[static_cast<usize>(bindings.padUsePotion.front())] =
+                magic[static_cast<usize>(i)];
+            input.setPad(i, pad);
+        }
+        std::array<PlayButtons, Input::kMaxPads> result;
+        for (s32 i = 0; i < Input::kMaxPads; ++i) {
+            result[static_cast<usize>(i)] =
+                readers[static_cast<usize>(i)].read(input, bindings, false, i, seconds);
+        }
+        return result;
+    };
+
+    step({true, true, true, true}, 0.05f);
+    step({false, true, false, false}, 0.05f);
+    // Slot 0 taps, 1 holds, 2 double-taps, and 3 disconnects with a tap pending.
+    pads[3].connected = false;
+    auto buttons = step({false, true, true, false}, 0.05f);
+    CHECK(buttons[2].shieldPotion);
+    CHECK_FALSE(buttons[0].shieldPotion);
+    CHECK_FALSE(buttons[1].shieldPotion);
+    CHECK_FALSE(buttons[3].usePotion);
+    buttons = step({false, true, true, false}, 0.35f);
+    CHECK(buttons[0].usePotion);
+    CHECK_FALSE(buttons[0].throwPotion);
+    CHECK(buttons[1].throwPotion);
+    CHECK_FALSE(buttons[1].usePotion);
+    CHECK(buttons[2].shieldPotion);
+    CHECK_FALSE(buttons[2].throwPotion);
+    CHECK_FALSE(buttons[3].usePotion);
+    pads[3].connected = true;
+    buttons = step({false, false, false, false}, 1.0f);
+    for (const auto& player : buttons) {
+        CHECK_FALSE(player.usePotion);
+        CHECK_FALSE(player.throwPotion);
+        CHECK_FALSE(player.shieldPotion);
     }
 }
 

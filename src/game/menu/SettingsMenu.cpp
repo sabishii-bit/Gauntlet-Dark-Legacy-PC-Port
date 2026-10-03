@@ -62,9 +62,7 @@ void SettingsMenu::rebuild(s32 selection) {
     case Page::Game:
         definition.title = text("menu.gameOptions");
         add(text("settings.difficulty"), 0);
-        // Multiplayer rules need their own gameplay implementation; never present an
-        // enabled preference which does not change the game.
-        definition.items.push_back({text("settings.multiplayer"), 1, 0, false});
+        add(text("settings.multiplayer"), 1);
         break;
     case Page::Difficulty:
         definition.title = text("settings.difficulty");
@@ -72,6 +70,15 @@ void SettingsMenu::rebuild(s32 selection) {
             add(text("settings." + std::string(DifficultyConfig::kNames[i])), static_cast<s32>(i));
             definition.items.back().markedPart =
                 m_config.difficulty.level == DifficultyConfig::kNames[i] ? 1 : 0;
+        }
+        break;
+    case Page::Multiplayer:
+        definition.title = text("settings.multiplayer");
+        for (usize i = 0; i < MultiplayerConfig::kNames.size(); ++i) {
+            add(text("settings.multiplayer." + std::string(MultiplayerConfig::kNames[i])),
+                static_cast<s32>(i));
+            definition.items.back().markedPart =
+                static_cast<usize>(m_config.multiplayer.mode) == i ? 1 : 0;
         }
         break;
     case Page::Compass:
@@ -126,6 +133,8 @@ void SettingsMenu::change(s32 direction) {
     }
     if (m_page == Page::Difficulty) {
         next.difficulty.level = DifficultyConfig::kNames[static_cast<usize>(code)];
+    } else if (m_page == Page::Multiplayer) {
+        next.multiplayer.mode = static_cast<MultiplayerMode>(code);
     } else if (m_page == Page::Compass) {
         next.camera.compass = code == 1;
     } else {
@@ -155,9 +164,11 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (m_page == Page::Root) {
             return {MenuAction::Back, 0};
         }
-        if (m_page == Page::Difficulty) {
+        if (m_page == Page::Difficulty || m_page == Page::Multiplayer) {
+            const s32 selection = m_page == Page::Multiplayer ? 1 : 0;
             m_page = Page::Game;
-            rebuild();
+            m_notice.clear();
+            rebuild(selection);
             return {};
         }
         const s32 previousCode = static_cast<s32>(m_page) - 1;
@@ -183,6 +194,9 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             rebuild(selected == DifficultyConfig::kNames.end()
                         ? 1
                         : static_cast<s32>(selected - DifficultyConfig::kNames.begin()));
+        } else if (m_page == Page::Game && event.code == 1) {
+            m_page = Page::Multiplayer;
+            rebuild(static_cast<s32>(m_config.multiplayer.mode));
         } else if (m_page == Page::Audio) {
             // Confirm selects the row but does not alter its setting.
         } else {

@@ -22,6 +22,9 @@ constexpr std::string_view kFirstTiers = "1111111111";
 constexpr usize kFamilyCount = 8;
 constexpr s32 kSumner = 16;
 constexpr s32 kWizard = 2;
+constexpr f32 kReflectedDamage = 15.0f;
+constexpr f32 kReflectionTime = 1.0f;
+constexpr f32 kPlayerPassThroughGap = 1.0f;
 
 /** The sixteen classes' throws: the eight to start with, then the eight that shadow them. */
 constexpr std::array<MissileSpec, 16> kSpecs{{
@@ -114,6 +117,8 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.wallSound = launch.wallSound;
     missile.flags = launch.flags;
     missile.streak = launch.streak;
+    missile.multiplayer = launch.multiplayer;
+    missile.playerHitGap = launch.playerHitGap;
     if (m_device != nullptr && launch.archive != nullptr && !launch.tree.empty()) {
         EffectTrees::Setting setting;
         setting.persistent = true;
@@ -150,10 +155,28 @@ f32 PlayerMissiles::damageFor(s32 stat) {
                       kLeastDamage, kMostDamage);
 }
 
+f32 PlayerMissiles::hitGap(const ItemArchive* archive, std::string_view tree) {
+    constexpr f32 kDefaultGap = 0.25f;
+    constexpr f32 kEffectRate = 30.0f;
+    if (archive != nullptr) {
+        if (const auto index = archive->trees.find(tree)) {
+            const auto& sequences = archive->trees.tree(*index).sequences;
+            if (!sequences.empty() && sequences.front().frames > 0) {
+                return static_cast<f32>(sequences.front().frames) / kEffectRate;
+            }
+        }
+    }
+    return kDefaultGap;
+}
+
 void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
-                            std::span<const MissileTarget> targets) {
+                            std::span<const MissileTarget> targets,
+                            std::span<const MissilePlayer> players) {
     m_ricochetIn = std::max(0.0f, m_ricochetIn - seconds);
     for (Missile& missile : m_missiles) {
+        for (auto& contact : missile.playerContacts) {
+            contact.remaining -= seconds;
+        }
         const bool penetrates = missile.potion == 0 && (missile.flags & powerup::kSuperShot) != 0;
         // Steps no longer than half its size, so no wall is flown clean through.
         const f32 radius = missile.spec->radius;
@@ -165,6 +188,77 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             missile.position += missile.velocity * step;
             missile.tumble += missile.spec->spin * step;
             missile.age += step;
+            bool reflected = false;
+            if (missile.potion == 0 && missile.multiplayer != MultiplayerMode::Normal) {
+                for (const auto& player : players) {
+                    if (player.player == missile.owner ||
+                        !player.body.touches(missile.position, radius)) {
+                        continue;
+                    }
+                    auto contact = std::ranges::find(missile.playerContacts, player.player,
+                                                     &Missile::PlayerContact::player);
+                    if (player.reflective) {
+                        missile.velocity = -missile.velocity;
+                        missile.position += missile.velocity * step;
+                        missile.age += kReflectionTime;
+                        missile.damage = std::min(missile.damage, kReflectedDamage);
+                        MissileImpact impact;
+                        impact.position = missile.position;
+                        impact.owner = missile.owner;
+                        impact.effect = {};
+                        impact.wallSound = m_ricochetIn <= 0 ? MissileWallSound::Ricochet
+                                                             : MissileWallSound::Silent;
+                        m_impacts.push_back(impact);
+                        if (m_ricochetIn <= 0) {
+                            m_ricochetIn = kReflectionTime;
+                        }
+                        reflected = true;
+                        break;
+                    }
+                    if (penetrates && contact != missile.playerContacts.end() &&
+                        contact->remaining > 0) {
+                        continue;
+                    }
+                    MissileImpact impact;
+                    impact.position = missile.position;
+                    impact.owner = missile.owner;
+                    impact.damage = missile.damage;
+                    impact.flags = missile.flags;
+                    impact.effect = missile.spec->impactTree;
+                    if (penetrates) {
+                        if ((missile.flags & powerup::kReflect) != 0 &&
+                            !missile.spec->impactTree.empty() && missile.damage > 2) {
+                            // This update still passes through; the next contact update does not.
+                            missile.flags &= ~powerup::kSuperShot;
+                            impact.position = player.body.base;
+                        } else {
+                            impact.effect = {};
+                        }
+                    }
+                    impact.wallSound = MissileWallSound::Silent;
+                    impact.player = player.player;
+                    const f32 speed = glm::length(missile.velocity);
+                    impact.direction = speed > 0 ? missile.velocity / speed : Vec3{0};
+                    impact.stun = missile.multiplayer == MultiplayerMode::Stun;
+                    impact.playerHitGap = penetrates ? kPlayerPassThroughGap : missile.playerHitGap;
+                    m_impacts.push_back(impact);
+                    if (contact == missile.playerContacts.end()) {
+                        missile.playerContacts.push_back({player.player, impact.playerHitGap});
+                    } else {
+                        contact->remaining = impact.playerHitGap;
+                    }
+                    if (!penetrates) {
+                        missile.age = kLifeSeconds;
+                    }
+                    break;
+                }
+            }
+            if (reflected) {
+                continue;
+            }
+            if (missile.age >= kLifeSeconds) {
+                break;
+            }
             // What stands in its way stops it before any wall behind does.
             for (const auto& target : targets) {
                 if (std::ranges::find(missile.pierced, target.id) != missile.pierced.end()) {

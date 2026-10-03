@@ -1124,6 +1124,9 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
         json.key("sound").value(effect.sound);
         json.key("offset").numbers(effect.offset);
         json.key("scale").value(static_cast<f64>(effect.scale));
+        json.key("lifetime").value(static_cast<f64>(effect.lifetime));
+        json.key("radius").value(static_cast<f64>(effect.radius));
+        json.key("alphaMod").value(static_cast<s32>(effect.alphaMod));
         json.endObject();
     }
     json.endArray();

@@ -1,6 +1,7 @@
 #include "game/enemies/Combatant.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <initializer_list>
 #include <limits>
@@ -140,6 +141,22 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     if (!present()) {
         return;
     }
+    if (critter.parent == nullptr) {
+        // CritterInitPlayerData recounts state-1 slots before processing the list.
+        // This affects damage, experience and roar thresholds, not spawn population.
+        // Until the first update, direct callers retain their supplied spawn count.
+        std::array<bool, kPlayerSlots> standing{};
+        for (const EnemyView& player : players) {
+            if (!player.hidden && player.player >= 0 &&
+                static_cast<usize>(player.player) < standing.size()) {
+                standing[static_cast<usize>(player.player)] = true;
+            }
+        }
+        m_scales.players = static_cast<s32>(std::ranges::count(standing, true));
+        for (auto& child : m_children) {
+            child->m_scales.players = m_scales.players;
+        }
+    }
     const s32 i = m_id;
     const CritterData& data = *critter.definition;
     critter.age += seconds;
@@ -175,7 +192,9 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     if (critter.state == State::Active) {
         // The lookout it makes for, gone on from any reached (CritterGetTarget).
         critter.patrolAim = critter.patrol.aim(critter.position);
-        chooseTarget(critter, players);
+        if (critter.parent == nullptr) {
+            chooseFamilyTargets(players);
+        }
         if (critter.blindTicks > 0) {
             critter.blindTicks = std::max(critter.blindTicks - ticks, 0);
             critter.target = -1;
@@ -205,6 +224,12 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
     const MoveDefinition* move =
         critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
+    // CritterMoveSetup retains +0x124 until the move changes or has no target.
+    // A fresh roster (including hidden/departed-player filtering) must not redirect
+    // an ongoing volley or wind-up. The next move selects from that fresh roster.
+    if (move != nullptr && (critter.moveTarget < 0 || critter.moveDone)) {
+        critter.moveTarget = attackTarget(critter, move->target, players, true);
+    }
     // The move plays; over its harmful frames its part strikes.
     critter.skinAge += seconds;
     if (move != nullptr && critter.player.playing()) {
@@ -246,7 +271,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
             // Both the falling rock and its later impact use that same world point.
             if (move->type == MoveDefinition::kTargetArea && !critter.attackTarget.has_value() &&
                 move->frameStart >= 0 && frame >= move->frameStart) {
-                if (const EnemyView* target = viewOf(players, critter.target)) {
+                if (const EnemyView* target = viewOf(players, critter.moveTarget)) {
                     critter.attackTarget =
                         target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
                 }
@@ -414,14 +439,14 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
 }
 
-void Combatant::hurt(const EnemyHit& hit, s32 partId) {
+f32 Combatant::hurt(const EnemyHit& hit, s32 partId) {
     if (!alive()) {
-        return;
+        return 0;
     }
     for (auto& part : m_children) {
         if (part->id() == partId) {
             const f32 before = part->health();
-            part->hurtActor(hit);
+            const f32 credited = part->hurtActor(hit);
             // A lethal branch hit removes that branch, without forwarding its final hit.
             if (part->alive()) {
                 loseHealth(before - part->health());
@@ -429,17 +454,17 @@ void Combatant::hurt(const EnemyHit& hit, s32 partId) {
             m_actor.childrenIntact =
                 std::ranges::all_of(m_children, [](const auto& p) { return p->alive(); });
             collectChildEvents(*part);
-            return;
+            return credited;
         }
     }
-    hurtActor(hit);
+    return hurtActor(hit);
 }
 
-void Combatant::hurtActor(const EnemyHit& hit) {
+f32 Combatant::hurtActor(const EnemyHit& hit) {
     Actor& critter = m_actor;
     const s32 id = m_id;
     if (critter.state != State::Active) {
-        return;
+        return 0;
     }
     const CritterData& data = *critter.definition;
     f32 amount = hit.damage;
@@ -469,7 +494,7 @@ void Combatant::hurtActor(const EnemyHit& hit) {
         amount = EnemyShrink::harmTaken(critter.shrink, amount);
     }
     if (amount <= 0.0f) {
-        return;
+        return 0;
     }
     // A boss takes less the more there are to fight it, outside a legend item's rite
     // (CritterDamage's damage_mul).
@@ -485,8 +510,12 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     // Every hit is worth its share of the creature's value to the one who dealt it (a boss's
     // times the players); then a character under the level the place is meant for does a
     // fiftieth less a level to anything but a boss (CritterDamage).
+    const f32 credited = std::clamp(amount, 0.0f, critter.health);
     if (hit.player >= 0) {
-        const f32 credited = std::clamp(amount, 0.0f, critter.health);
+        if (static_cast<usize>(hit.player) < kPlayerSlots) {
+            PlayerDamage& memory = critter.playerDamage[static_cast<usize>(hit.player)];
+            rememberDamage(memory.dealt, memory.dealtTime, targetClock(critter), credited);
+        }
         f32 share = std::min(credited / (1.0f + critter.maxHealth), 1.0f) * data.experience();
         if (boss) {
             share *= static_cast<f32>(players);
@@ -506,7 +535,7 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     }
     amount = damageNode(hit.node, amount, flags);
     if (amount <= 0) {
-        return;
+        return credited;
     }
     critter.patrol.end();
     critter.patrolAim.reset();
@@ -551,6 +580,26 @@ void Combatant::hurtActor(const EnemyHit& hit) {
         m_actor.childrenIntact =
             std::ranges::all_of(m_children, [](const auto& part) { return part->alive(); });
     }
+    return credited;
+}
+
+void Combatant::damagedPlayer(s32 player, f32 amount, s32 partId) {
+    Actor* actor = &m_actor;
+    if (partId >= 0 && partId != m_id) {
+        actor = nullptr;
+        for (auto& child : m_children) {
+            if (child->id() == partId) {
+                actor = &child->m_actor;
+                break;
+            }
+        }
+    }
+    if (actor == nullptr || actor->state != State::Active || player < 0 ||
+        static_cast<usize>(player) >= kPlayerSlots || amount <= 0) {
+        return;
+    }
+    PlayerDamage& memory = actor->playerDamage[static_cast<usize>(player)];
+    rememberDamage(memory.received, memory.receivedTime, targetClock(*actor), amount);
 }
 
 void Combatant::loseHealth(f32 amount) {

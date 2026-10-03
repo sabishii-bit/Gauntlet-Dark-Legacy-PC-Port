@@ -51,6 +51,8 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
                       {PlayerImpact::kKnockDown, Vec3{1, 0, 0}});
         f.health.hurt(f.player, 30, HurtKind::Pierce, true, false, 1, f.events,
                       {PlayerImpact::kSticky});
+        f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
+                      {PlayerImpact::kStun});
         f.hit(30, HurtKind::Gas);
         CHECK(f.player.actor.save().health() == 1000);
         CHECK(f.player.life == PlayerLife::Standing);
@@ -78,6 +80,28 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
     }
 }
 
+TEST_CASE("stun shots react without health loss and magic never harms a player",
+          "[player-health][multiplayer-combat]") {
+    Fixture f;
+    f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
+                  {PlayerImpact::kStun | PlayerImpact::kKnockDown, Vec3{0, 0, 1}});
+    CHECK(f.player.actor.save().health() == 1000);
+    CHECK(f.player.reaction == PlayerDeed::Reel);
+    CHECK_FALSE(f.player.knockback.pending());
+    CHECK(f.sounds.empty());
+    CHECK(f.cries.empty());
+    f.player.reaction = PlayerDeed::None;
+    f.health.hurt(f.player, 100, HurtKind::Blow, true, false, 1, f.events,
+                  {Damage::kMagic | PlayerImpact::kStun});
+    CHECK(f.player.actor.save().health() == 1000);
+    CHECK(f.player.reaction == PlayerDeed::None);
+    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
+                                                          0, 1);
+    f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
+                  {PlayerImpact::kStun});
+    CHECK(f.player.reaction == PlayerDeed::None);
+}
+
 TEST_CASE("turbo animation blocks boss knockdown throughout the move but not afterward",
           "[player-health][attack-invulnerability][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
@@ -97,6 +121,8 @@ TEST_CASE("turbo animation blocks boss knockdown throughout the move but not aft
         f.player.turbo.reset();
         s32 frames = 0;
         while (figure.animator().damageProtected() && frames < 300) {
+            f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
+                          {PlayerImpact::kStun});
             f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
                           {PlayerImpact::kKnockDown, Vec3{1, 0, 0}}, true);
             f.hit(5, HurtKind::Gas);

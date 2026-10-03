@@ -107,6 +107,8 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     }
     const Vec3 side{facing.z, 0.0f, -facing.x};
     MissileLaunch launch;
+    launch.multiplayer =
+        m_resources->multiplayer != nullptr ? *m_resources->multiplayer : MultiplayerMode::Normal;
     launch.owner = actor.player();
     launch.scale = scale;
     launch.direction = facing;
@@ -117,6 +119,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     launch.flags = PowerupEffects::of(save.progress().inventory).weapon & ~powerup::kSuperShot;
     launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
+    launch.playerHitGap = PlayerMissiles::hitGap(&m_resources->weapons, launch.spec->impactTree);
     launch.model = &figure.missile();
     launch.archive = figure.missileArchive();
     launch.tree = figure.missileTree();
@@ -203,6 +206,8 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
         stat = MissileSpec::byMagic(actor.save().character) ? block.magic() : block.strength();
     }
     MissileLaunch launch;
+    launch.multiplayer =
+        m_resources->multiplayer != nullptr ? *m_resources->multiplayer : MultiplayerMode::Normal;
     launch.owner = actor.player();
     launch.position = actor.followPoint() + actor.facing() * PlayerMissiles::kMuzzle;
     launch.direction = actor.facing();
@@ -213,6 +218,7 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     launch.damage = PlayerMissiles::damageFor(stat) * (m_resources->bossEncounter ? 1.5f : 2.0f);
     launch.flags = worn.weapon | powerup::kSuperShot | 0x20U;
     launch.spec = &MissileSpec::superShot();
+    launch.playerHitGap = PlayerMissiles::hitGap(&m_resources->weapons, launch.spec->impactTree);
     launch.model = &m_superShot;
     launch.archive = &m_resources->weapons;
     launch.tree = "SUPERARROW";
@@ -252,6 +258,7 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     static constexpr MissileSpec kLevelShot{"FAMILIAR_SPIT", {}, 1, 0, 10, true, {}};
     static constexpr MissileSpec kBossShot{"FAMILIAR_SPIT", {}, 1, 0, 0, true, {}};
     MissileLaunch launch;
+    // Familiar spit's fixed collision mask excludes players in every game mode.
     launch.owner = actor.player();
     const f32 scale = PlayerFigure::bodyScale(actor.save(), worn);
     launch.position = Vec3{actor.transform() * Vec4{stats->familiarShotOffset * scale, 1}};
@@ -298,12 +305,15 @@ void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body,
         {{"BOSSG_ACID", {}, 2, 0, 0, true}, {"BOSSG_ELEC", {}, 2, 0, 0, true}}};
     const usize which = left ? 1 : 0;
     MissileLaunch launch;
+    launch.multiplayer =
+        m_resources->multiplayer != nullptr ? *m_resources->multiplayer : MultiplayerMode::Normal;
     launch.owner = actor.player();
     launch.position = actor.followPoint() + actor.facing() * PlayerMissiles::kMuzzle;
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat);
     launch.flags = worn.weapon | (left ? 2U : 4U);
     launch.spec = &kSpecs[which];
+    launch.playerHitGap = PlayerMissiles::hitGap(&m_resources->weapons, launch.spec->impactTree);
     launch.model = &m_gauntlets[which];
     launch.archive = &m_resources->weapons;
     launch.tree = kSpecs[which].model;
@@ -405,33 +415,43 @@ f32 PlayerArsenal::potionPowerOf(const PlayerActor& actor, s32 kind) const {
 }
 
 std::optional<MissileImpact> PlayerArsenal::usePotion(PlayerActor& actor) {
-    if (!m_resources.has_value()) {
+    auto& inventory = actor.save().progress().inventory;
+    if (!m_resources.has_value() || inventory.potions.empty()) {
         return std::nullopt;
     }
-    if (const s32 kind = actor.save().progress().inventory.takePotion(); kind != 0) {
-        const f32 bonus = damage::colourBonus(actor.save().color, static_cast<u32>(kind));
-        burstPotion(kind, actor.position(), potionPowerOf(actor, kind));
-        MissileImpact burst;
-        burst.position = actor.position();
-        burst.owner = actor.player();
-        burst.potion = kind;
-        burst.potency = potionPowerOf(actor, kind);
-        burst.damage = kPotionDamage * bonus; // start_magic: the magic stat sets the radius.
-        burst.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
-        healingCast(actor, burst.potency);
-        return burst;
+    const s32 stored = inventory.takePotion();
+    const f32 bonus = damage::colourBonus(actor.save().color, static_cast<u32>(stored));
+    const f32 power = potionPowerOf(actor, stored);
+    const s32 kind = resolvePotionKind(stored);
+    burstPotion(kind, actor.position(), power);
+    MissileImpact burst;
+    burst.position = actor.position();
+    burst.owner = actor.player();
+    burst.potion = kind;
+    burst.potency = power;
+    burst.damage = kPotionDamage * bonus; // start_magic: the magic stat sets the radius.
+    burst.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
+    healingCast(actor, burst.potency);
+    return burst;
+}
+
+s32 PlayerArsenal::resolvePotionKind(s32 kind) {
+    if (kind != 0) {
+        return kind;
     }
-    return std::nullopt;
+    const s32 resolved = m_nextPotionKind;
+    m_nextPotionKind = m_nextPotionKind % 4 + 1;
+    return resolved;
 }
 
 void PlayerArsenal::throwPotion(PlayerActor& actor, s32 heldTicks) {
-    if (!m_resources.has_value()) {
+    auto& inventory = actor.save().progress().inventory;
+    if (!m_resources.has_value() || inventory.potions.empty()) {
         return;
     }
-    const s32 kind = actor.save().progress().inventory.takePotion();
-    if (kind == 0) {
-        return;
-    }
+    const s32 stored = inventory.takePotion();
+    const s32 kind = resolvePotionKind(stored);
+    const f32 power = potionPowerOf(actor, stored);
     const Vec3 facing = actor.facing();
     MissileLaunch launch;
     launch.owner = actor.player();
@@ -441,8 +461,9 @@ void PlayerArsenal::throwPotion(PlayerActor& actor, s32 heldTicks) {
     launch.velocity = Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} *
                       (kPotionToss + kPotionCharge * static_cast<f32>(std::max(0, heldTicks)));
     launch.potion = kind;
-    launch.potency = kThrownShare * potionPowerOf(actor, kind);
-    launch.damage = kPotionDamage * damage::colourBonus(actor.save().color, static_cast<u32>(kind));
+    launch.potency = kThrownShare * power;
+    launch.damage =
+        kPotionDamage * damage::colourBonus(actor.save().color, static_cast<u32>(stored));
     launch.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
     launch.spec = &MissileSpec::potion();
     launch.model = &m_potionModels[static_cast<usize>(
@@ -450,7 +471,7 @@ void PlayerArsenal::throwPotion(PlayerActor& actor, s32 heldTicks) {
     launch.archive = &m_resources->weapons;
     launch.tree = potionLook(kind).bottle;
     m_missiles.launch(launch);
-    healingCast(actor, potionPowerOf(actor, kind));
+    healingCast(actor, power);
 }
 
 void PlayerArsenal::healingCast(const PlayerActor& actor, f32 power) {

@@ -119,7 +119,7 @@ TEST_CASE("Skorne records victory without an ordinary boss key effect", "[skorne
     }
 }
 
-TEST_CASE("boss victory rewards the entire party once and signals completion once",
+TEST_CASE("boss victory rewards survivors once and counts the fallen party's runes",
           "[game][screens][boss-sequence]") {
     Fixture f;
     f.loadLevel();
@@ -130,9 +130,8 @@ TEST_CASE("boss victory rewards the entire party once and signals completion onc
     f.sequence.fallen(Vec3{0}, f.bosses, f.players);
     REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Waiting);
     REQUIRE(f.sequence.victory().state().runeQuality() == 3);
-    for (const auto& player : f.players) {
-        REQUIRE(player.actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
-    }
+    REQUIRE(f.players[0].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+    REQUIRE_FALSE(f.players[1].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
     // A duplicate fall notification must not reset the visit or grant another reward.
     f.sequence.advanceVictory(BossVictory::kWaitTicks, 0, f.players, f.strings);
     REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Appearing);
@@ -153,6 +152,55 @@ TEST_CASE("boss victory rewards the entire party once and signals completion onc
     REQUIRE_FALSE(f.sequence.victory().state().finished());
     f.sequence.fallen(Vec3{0}, f.bosses, f.players);
     REQUIRE(f.players[0].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+}
+
+TEST_CASE("departed players neither receive boss rewards nor inflate the rune announcement",
+          "[game][screens][boss-sequence]") {
+    Fixture f;
+    f.loadLevel();
+    f.players[0].actor.save().progress().relics.addRune(0);
+    f.players[1].actor.save().progress().relics.addRune(1);
+    f.players[1].departed = true;
+    f.sequence.fallen(Vec3{0}, f.bosses, f.players);
+    CHECK(f.sequence.victory().state().runeQuality() == 1);
+    CHECK(f.players[0].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+    CHECK_FALSE(f.players[1].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+}
+
+TEST_CASE("boss coins count waiting party members but not departed controller slots",
+          "[game][screens][boss-sequence][multiplayer][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    Fixture f;
+    REQUIRE(f.levels.load(root));
+    REQUIRE(f.world.load(f.device, root, *f.levels.byName("G5")));
+    f.bind();
+    std::array<PlayerRuntime, 4> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].actor.spawn(static_cast<s32>(i), {}, nullptr, Vec3{0}, 0);
+    }
+    players[0].life = PlayerLife::InTower;
+    players[1].life = PlayerLife::InTower;
+    players[1].departed = true;
+    LevelOpponents opponents;
+    CombatSpew spew;
+    spew.origin = Vec3{0, 10, 0};
+    spew.velocity = Vec3{0, 10, 10};
+    spew.halfAngle = 0.5f;
+    const usize before = f.world.placedItems().size();
+    f.sequence.spewCoins(spew, opponents, players);
+    // SetPlayerVars counts nonzero states, including the waiting dead but not quit slots.
+    // G5's per-participant table is four bronze and one silver coin.
+    REQUIRE(f.world.placedItems().size() == before + 15);
+    usize bronze = 0;
+    usize silver = 0;
+    for (usize i = before; i < f.world.placedItems().size(); ++i) {
+        const auto& item = f.world.placedItems().item(i);
+        bronze += static_cast<usize>(item.name == "COIN_BRONZE");
+        silver += static_cast<usize>(item.name == "COIN_SILVER");
+    }
+    CHECK(bronze == 12);
+    CHECK(silver == 3);
 }
 
 TEST_CASE("boss victory queues rune speech and waits for audio before departing",

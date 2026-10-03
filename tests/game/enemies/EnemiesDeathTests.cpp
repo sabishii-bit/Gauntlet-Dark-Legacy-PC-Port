@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 
@@ -9,10 +10,66 @@
 #include "TestSupport.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/enemies/Enemies.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Enemies traverse the Temple's altar stairs without oscillating between treads",
+          "[death][enemies][assets][death-stairs]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        world.activateTrigger(world.triggers().trigger(i).id, true);
+    }
+    Enemies enemies;
+    enemies.open(device, root, &world.collision(), 1, {}, 1);
+    const auto kind = GENERATE(kDeathKind, kGruntKind);
+    const bool down = GENERATE(false, true);
+    CAPTURE(kind, down);
+    REQUIRE(enemies.loadKind(kind));
+    const auto slot = enemies.spawn({.kind = kind,
+                                     .tier = 1,
+                                     .position = down ? Vec3{0, 5.0234375f, -94} : Vec3{0, 0, -80},
+                                     .placed = true},
+                                    {});
+    REQUIRE(slot);
+    std::array<EnemyView, 1> players{
+        EnemyView{.player = 0, .position = down ? Vec3{0, 0, -70} : Vec3{0, 5.0234375f, -105}}};
+    f32 ascent = 0;
+    f32 descent = 0;
+    f32 retreat = 0;
+    for (s32 tick = 0; tick < 900; ++tick) {
+        const Vec3 before = enemies.positionOf(*slot);
+        enemies.update(2, 1.0f / 30, players);
+        const Vec3 delta = enemies.positionOf(*slot) - before;
+        ascent += std::max(delta.y, 0.0f);
+        descent += std::max(-delta.y, 0.0f);
+        retreat += std::max(down ? -delta.z : delta.z, 0.0f);
+        if (down ? enemies.positionOf(*slot).z > -80 : enemies.positionOf(*slot).z < -92.5f) {
+            break;
+        }
+    }
+    const Vec3 at = enemies.positionOf(*slot);
+    INFO("Enemy position " << at.x << ", " << at.y << ", " << at.z);
+    // A final position alone misses the alternating uphill/downhill snaps that
+    // occurred when the mind's wall probe disagreed with body movement.
+    CHECK((down ? ascent : descent) < 0.01f);
+    if (down) {
+        CHECK(retreat < 0.01f);
+    }
+    CHECK((down ? at.z > -80 : at.z < -92.5f));
+    CHECK(at.y == Catch::Approx(down ? 0 : 5).margin(0.1));
+}
 
 TEST_CASE("Death contact drains on its clock, stops on separation, and expires without melee",
           "[death][enemies]") {
@@ -107,7 +164,7 @@ TEST_CASE("Anti Death repels Death and returns its resource, while magic kills o
     CHECK(cues[0].kind == DeathEvent::Kind::Return);
     CHECK(cues[0].amount == (tier == 2 ? 46 : 1));
     hit.flags = EnemyHit::kMagic;
-    enemies.hurt(*slot, hit);
+    CHECK(enemies.hurt(*slot, hit) == 0); // Death's separate MagicHeal event is not shared healing
     CHECK_FALSE(enemies.alive(*slot));
     cues = enemies.takeDeathEvents();
     REQUIRE(cues.size() == 2);
@@ -118,6 +175,24 @@ TEST_CASE("Anti Death repels Death and returns its resource, while magic kills o
     REQUIRE(losses.size() == 1);
     CHECK(losses[0].experience == 0);
     CHECK(losses[0].killed);
+}
+
+TEST_CASE("Death flees the nearest protected player in three dimensions",
+          "[death][enemies][multiplayer]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, test::deathArchive(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto slot = enemies.spawn({.kind = kDeathKind, .tier = 1, .placed = true}, {});
+    REQUIRE(slot);
+    const std::array players{EnemyView{.player = 3, .position = {0, 40, 1}, .antiDeath = true},
+                             EnemyView{.player = 1, .position = {20, 0, 0}, .antiDeath = true}};
+    for (s32 frame = 0; frame < 45; ++frame) {
+        enemies.update(2, 1.0f / 30, players);
+    }
+    CHECK(enemies.targetOf(*slot) == -1);
+    CHECK(enemies.positionOf(*slot).x < -1);
+    CHECK(enemies.positionOf(*slot).z == Catch::Approx(0).margin(0.001));
 }
 
 TEST_CASE("retail Death bodies and drain effects are present", "[death][assets]") {

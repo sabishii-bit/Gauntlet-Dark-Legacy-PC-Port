@@ -12,6 +12,7 @@
 
 #include "game/menu/CompassHud.h"
 #include "game/players/ClassData.h"
+#include "game/players/NameCheats.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/PartyRecords.h"
@@ -179,10 +180,12 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                            : world.entranceCamera(arrival != nullptr ? arrival->next : 0));
     m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
                     context.sounds, world.wallHitSound(), world.isTower(),
-                    world.level() != nullptr && world.level()->bossType >= 0, &world.powerups()},
+                    world.level() != nullptr && world.level()->bossType >= 0, &world.powerups(),
+                    context.config != nullptr ? &context.config->multiplayer.mode : nullptr},
                    effectTextures);
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
-                    m_arsenal, m_dimmer, &m_shake});
+                    m_arsenal, m_dimmer, &m_shake,
+                    context.config != nullptr ? &context.config->multiplayer.mode : nullptr});
     m_bossSequence.bind(
         {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
     m_open = true;
@@ -270,10 +273,11 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
     m_players.reserve(party.size());
     for (usize i = 0; i < party.size(); ++i) {
         const PartyMember& member = party[i];
+        CharacterSave save = member.save;
+        applyNameCheats(save);
         PlayerRuntime runtime;
         const Vec3 position = origin + sideways * (first + static_cast<f32>(i) * kSpawnSpacing);
-        runtime.actor.spawn(member.player, member.save, m_classes.stats(member.save.character),
-                            position, yaw);
+        runtime.actor.spawn(member.player, save, m_classes.stats(save.character), position, yaw);
         auto& progress = runtime.actor.save().progress();
         progress.promotedLevel = progress.appearanceLevel();
         runtime.actor.settle(m_world->collision());
@@ -281,7 +285,7 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         // Someone who fell stands again in the tower; elsewhere they wait there still.
         runtime.life =
             member.fallen && !m_world->isTower() ? PlayerLife::InTower : PlayerLife::Standing;
-        runtime.entrySave = member.save;
+        runtime.entrySave = save;
         runtime.turbo.add(member.turbo);
         runtime.helpHeard = member.helpHeard;
         std::ranges::sort(runtime.helpHeard);
@@ -394,7 +398,15 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
 }
 
 PlayerAttacks::Targets PlayScene::attackTargets() {
-    return {m_opponents, m_fixtures, fixtureEvents()};
+    return {m_opponents,
+            m_fixtures,
+            fixtureEvents(),
+            m_context.config != nullptr ? m_context.config->multiplayer.mode
+                                        : MultiplayerMode::Normal,
+            m_players,
+            [this](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
+                hurt(index, damage, kind, true, impact);
+            }};
 }
 
 LevelFixtures::Events PlayScene::fixtureEvents() {
@@ -736,6 +748,25 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_transition.update(seconds);
     m_towerRelics.animate(seconds);
     if (m_leaving) {
+        // Departing survivors are held, but another player's death and tower choice
+        // still run until the party can leave together.
+        bool dying = false;
+        for (usize i = 0; i < m_players.size(); ++i) {
+            PlayerRuntime& runtime = m_players[i];
+            if (runtime.life != PlayerLife::Dying) {
+                continue;
+            }
+            if (runtime.figure != nullptr) {
+                runtime.figure->animate(0.0f, ticks, seconds, PlayerDeed::Die);
+            }
+            if (runtime.figure == nullptr || runtime.figure->animator().dead()) {
+                runtime.life = PlayerLife::InTower;
+                perform(i, PartyMotion::Action::Fallen);
+            } else {
+                dying = true;
+            }
+        }
+        answerTowerPrompts(inputs);
         m_departure.update(ticks);
         m_portals.animate(seconds);
         if (m_departure.started()) {
@@ -756,7 +787,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_world->update(seconds);
         m_effects.update(seconds);
         updateAmbience();
-        return m_transition.covering() ? PlayOutcome::Travel : PlayOutcome::Running;
+        return m_transition.covering() && !dying ? PlayOutcome::Travel : PlayOutcome::Running;
     }
     // Sumner's scroll of hints holds play the same way, while he goes on moving behind it.
     if (m_sumnerVisit.active()) {
@@ -890,6 +921,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_pickups.collect(*m_device, m_players, pickupServices());
     }
     m_world->updateTriggers(seconds, visitors());
+    m_fixtures.syncFloors();
+    m_opponents.enemies().syncFloors();
     handleTriggerEvents();
     if (m_switchCutscene.active()) {
         updateAmbience();

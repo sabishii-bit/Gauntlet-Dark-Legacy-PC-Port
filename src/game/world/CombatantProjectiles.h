@@ -11,6 +11,7 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
+#include "game/enemies/CombatantKind.h"
 #include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/CritterArea.h"
 #include "game/enemies/Enemies.h"
@@ -24,6 +25,8 @@ struct CombatantProjectileHit {
     u32 flags = 0;
     Vec3 direction{0.0f}; ///< direction of travel at contact
     f32 repeatGap = 0.0f; ///< shared player effect immunity after damage above two
+    s32 critter = -1;
+    CombatantKind ownerKind = CombatantKind::Unknown;
 };
 
 /** A world impact, including a rebound that does not end the projectile. */

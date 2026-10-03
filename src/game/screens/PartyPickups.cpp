@@ -53,7 +53,8 @@ void PartyPickups::collect(RenderDevice& device, std::span<PlayerRuntime> player
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         // Against an open chest, a character reaches what lies in it; the fallen reach nothing.
-        const Vec3 here = runtime.life == PlayerLife::Standing ? actor.position() : kNowhere;
+        const Vec3 here =
+            runtime.life == PlayerLife::Standing && !runtime.departed ? actor.position() : kNowhere;
         const s32 chest = chests.holdingTouchedBy(ChestVisitor{here, actor.radius()});
         Vec3 from = here;
         if (chest >= 0) {
@@ -76,22 +77,34 @@ void PartyPickups::collect(RenderDevice& device, std::span<PlayerRuntime> player
         }
         if (static_cast<usize>(pickup.realm) < kRealmCount) {
             const s32 wanted = LevelTriggers::crystalsNeeded(pickup.realm);
-            bool enough = wanted > 0;
+            bool alreadyEnough = false;
+            bool enough = false;
             for (PlayerRuntime& runtime : players) {
+                if (runtime.departed) {
+                    continue;
+                }
                 PlayerActor& actor = runtime.actor;
                 s32& count = actor.save().progress().crystals[static_cast<usize>(pickup.realm)];
-                if (wanted <= 0 || count < wanted) {
-                    ++count;
+                // Retail retains negative completed records and opens a gate when any
+                // participant meets its requirement (towerAdvanceLevelRecord and
+                // towerAllPlayersMetLevelReq, likewise the boss-record variants).
+                alreadyEnough = alreadyEnough || (wanted > 0 && (count < 0 || count >= wanted));
+                if (runtime.life == PlayerLife::Standing) {
+                    // towerAdvanceLevelRecord awards only states 1/4, while the
+                    // requirement query still considers records of the fallen.
+                    if (count >= 0 && (wanted <= 0 || count < wanted)) {
+                        ++count;
+                    }
+                    services.hud.pickups().showCount(
+                        actor.player(), PickupHud::crystalIcon(pickup.realm), count, wanted);
                 }
-                enough = enough && count >= wanted;
-                services.hud.pickups().showCount(
-                    actor.player(), PickupHud::crystalIcon(pickup.realm), count, wanted);
+                enough = enough || (wanted > 0 && (count < 0 || count >= wanted));
             }
             if (pickup.collector < players.size()) {
                 services.hud.pickups().addCard(players[pickup.collector].actor.player(),
                                                PickupHud::kCrystalCard);
             }
-            if (enough) {
+            if (enough && !alreadyEnough) {
                 announceUnlock(pickup.realm, players, services);
             }
         }
@@ -132,7 +145,6 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
     if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
         runtime.turbo.add(TurboMeter::kFull);
     }
-    complainOfTheft(pickup.opener, actor.player(), players, services);
     // Gold, keys, potions, good food and powerups are picked up with a gesture, out of the
     // tower; bad food is gagged on anywhere.
     const auto kind = static_cast<ItemKind>(pickup.subtype);
@@ -148,12 +160,17 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
         }
         if (!world.ref().isSecret() && pickup.amount >= kGoldLessonAmount) {
             help(kGoldLesson);
+            complainOfTheft(pickup.opener, actor.player(), players, services);
         }
         break;
     case ItemKind::Keys:
         help(services.fixtures.gates().size() > 0 ? kKeyLessonGates : HelpMessages::kChestNeedsKey);
+        if (taking.left == 0) {
+            complainOfTheft(pickup.opener, actor.player(), players, services);
+        }
         break;
     case ItemKind::Potion:
+        complainOfTheft(pickup.opener, actor.player(), players, services);
         // Retail tries the next lesson only when the previous one could not be posted.
         for (const s32 lesson : kPotionLessons) {
             if (help(lesson)) {
@@ -161,6 +178,7 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
             }
         }
         break;
+    case ItemKind::Food: complainOfTheft(pickup.opener, actor.player(), players, services); break;
     case ItemKind::Runestone: shareRune(pickup.amount, players, services); break;
     case ItemKind::Legend: help(HelpMessages::kFirstLegendName + taking.count); break;
     case ItemKind::Scroll:
@@ -220,13 +238,18 @@ void PartyPickups::complainOfTheft(s32 opener, s32 taker, std::span<const Player
     }
 }
 
-/** A runestone found is everyone's: each character in play gets it, and the narrator counts
- * what the party holds. */
+/** Living characters share a runestone (PlayerGiveShard's states 1/4). The narrator also
+ * counts existing runes held by fallen characters still waiting in the party. */
 void PartyPickups::shareRune(s32 rune, std::span<PlayerRuntime> players, const Services& services) {
     u16 held = 0;
     for (PlayerRuntime& runtime : players) {
+        if (runtime.departed) {
+            continue;
+        }
         Relics& relics = runtime.actor.save().progress().relics;
-        relics.addRune(rune);
+        if (runtime.life == PlayerLife::Standing) {
+            relics.addRune(rune);
+        }
         held |= relics.runes;
     }
     services.hud.showRelics(); // welcome_timer again (items.c 3402)
@@ -258,6 +281,9 @@ void PartyPickups::announceUnlock(s32 realm, std::span<PlayerRuntime> players,
     const u32 bit = 1U << static_cast<u32>(realm);
     bool fresh = false;
     for (PlayerRuntime& runtime : players) {
+        if (runtime.departed) {
+            continue;
+        }
         ClassProgress& progress = runtime.actor.save().progress();
         fresh = fresh || (progress.unlocked & bit) == 0;
         progress.unlocked |= bit;

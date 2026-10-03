@@ -12,6 +12,7 @@
 #include "engine/io/AssetLocator.h"
 
 #include "game/players/ClassData.h"
+#include "game/players/NameCheats.h"
 #include "game/players/Progression.h"
 #include "game/world/PlayerMissiles.h"
 
@@ -55,6 +56,10 @@ Mat4 PlayerFigure::bodyPlacement(const Mat4& base, const CharacterSave& save,
 std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                      const CharacterSave& save) {
     const std::string_view cls = classCode(save.character);
+    if (const auto* hidden = hiddenCostume(save.name);
+        hidden != nullptr && hidden->character == save.character) {
+        return unpackedRoot / kPlayersDirectory / cls / hidden->directory;
+    }
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path base =
         unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(costume);
@@ -80,7 +85,10 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
         log::warn("Tower: no model for the {} {} under {}", costume, cls, directory.string());
         return nullptr;
     }
-    const auto tree = figure->m_costumeArchive.trees.find(std::format("{}_{}", cls, costume));
+    const auto* hidden = hiddenCostume(save.name);
+    const std::string_view suffix =
+        hidden != nullptr && hidden->character == save.character ? hidden->directory : costume;
+    const auto tree = figure->m_costumeArchive.trees.find(std::format("{}_{}", cls, suffix));
     if (!tree.has_value() ||
         !figure->bindModel(figure->m_model, figure->m_costumeArchive.trees.tree(*tree),
                            figure->m_costumeArchive, device)) {
@@ -102,8 +110,12 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
         classes.load(root / "pdata");
         if (const auto* stats = classes.stats(save.character); stats != nullptr) {
             if (auto* archive = figure->effects(); archive != nullptr) {
+                // SFX archives carry named animation slots, not the shared frame pixels.
+                // Keep their WEAPONS lender alive as long as the familiar's bound textures.
+                figure->m_familiarTextures.load(root / "WEAPONS");
+                const std::array<TextureSet*, 1> lenders{&figure->m_familiarTextures};
                 figure->m_familiar.bind(device, *archive, save.progress().appearanceLevel(),
-                                        stats->familiarOffset);
+                                        stats->familiarOffset, lenders);
                 if (const auto shot = archive->trees.find("FAMILIAR_SPIT")) {
                     figure->bindModel(figure->m_familiarMissile, archive->trees.tree(*shot),
                                       *archive, device);
@@ -130,6 +142,20 @@ void PlayerFigure::loadMissile(const std::filesystem::path& root, const Characte
     } else if (m_effects.load(m_effectDirectory)) {
         if (const auto tree = m_effects.trees.find(name); tree.has_value()) {
             bound = bindModel(m_missile, m_effects.trees.tree(*tree), m_effects, device);
+        }
+    }
+    // InitPlayerMissiles falls back to THROW1 in the costume archive. Several
+    // name-selected skins supply that tree instead of their class's THROW0.
+    if (!bound) {
+        const std::string fallback =
+            std::format("{}_THROW1", MissileSpec::of(save.character).model);
+        if (const auto tree = m_costumeArchive.trees.find(fallback)) {
+            bound =
+                bindModel(m_missile, m_costumeArchive.trees.tree(*tree), m_costumeArchive, device);
+            if (bound) {
+                m_missileName = fallback;
+                m_missileArchive = &m_costumeArchive;
+            }
         }
     }
     if (!bound) {

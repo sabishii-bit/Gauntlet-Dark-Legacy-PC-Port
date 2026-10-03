@@ -140,7 +140,8 @@ private:
     static void bindObject(RenderDevice& device, ItemArchive& archive, std::string_view object,
                            TreeInfo& tree, TreeModel& model);
 
-    TextureSet m_sharedTextures; ///< POWERUPS textures outlive every model borrowing them
+    TextureSet m_sharedTextures;   ///< POWERUPS textures outlive every model borrowing them
+    TextureSet m_familiarTextures; ///< WEAPONS owns the class SFX archives' animated frames
     std::filesystem::path m_sharedTextureDirectory;
     ItemArchive m_costumeArchive;
     AnimationSet m_actions;

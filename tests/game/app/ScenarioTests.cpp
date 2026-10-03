@@ -102,6 +102,28 @@ TEST_CASE("scenario bonuses and gargoyle collections are optional and bounded", 
     }
 }
 
+TEST_CASE("scenario participants cannot share input identities or persistent save slots",
+          "[scenario][multiplayer]") {
+    for (const auto* invalid :
+         {R"({"party":[{"player":2},{"player":2}]})", R"({"party":[{"player":1},{}]})",
+          R"({"party":[{"player":1,"slot":0},{"player":3,"slot":0}]})",
+          R"({"screen":"shop","party":[{"slot":32},{"slot":32}]})"}) {
+        CAPTURE(invalid);
+        CHECK_THROWS_AS(Scenario::fromJson(invalid), FormatError);
+    }
+    const auto party = Scenario::fromJson(R"({"party":[
+        {"player":3,"slot":0},{"player":1,"slot":32},
+        {"player":0},{"player":2,"slot":-1}]})")
+                           .partyMembers();
+    REQUIRE(party.size() == 4);
+    CHECK(party[0].player == 3);
+    CHECK(party[0].slot == 0);
+    CHECK(party[1].player == 1);
+    CHECK(party[1].slot == 32);
+    CHECK_FALSE(party[2].slot);
+    CHECK_FALSE(party[3].slot);
+}
+
 TEST_CASE("shop visual scenarios open directly without changing saved characters",
           "[scenario][shop]") {
     const auto directory = test::dataDirectory().parent_path() / "tests/scenarios";

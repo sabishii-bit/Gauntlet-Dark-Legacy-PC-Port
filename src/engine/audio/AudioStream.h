@@ -52,7 +52,10 @@ public:
     void mixInto(std::span<f32> stereoOut);
 
 private:
-    usize queuedFramesLocked() const { return m_queue.size() / m_desc.channels - m_readFrame; }
+    usize queuedFramesLocked() const {
+        const usize frames = m_queue.size() / m_desc.channels;
+        return m_readFrame < frames ? frames - m_readFrame : 0;
+    }
     f32 at(usize frame, usize channel) const { return m_queue[frame * m_desc.channels + channel]; }
     void compactLocked();
 

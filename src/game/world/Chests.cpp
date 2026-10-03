@@ -44,6 +44,15 @@ s32 Chests::resolveContents(std::span<const ItemInfo> infos, s32 record, usize i
 bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
                   const WorldCollision* collision, ItemArchive* realmItems) {
     clear();
+    m_collision = collision;
+    std::optional<WorldCollision> restCollision;
+    if (collision != nullptr && collision->movingObjectCount() != 0) {
+        restCollision = *collision;
+        for (usize i = 0; i < layout.objects().size(); ++i) {
+            restCollision->setObjectTransform(static_cast<s32>(i),
+                                              glm::translate(Mat4{1.0f}, layout.worldPosition(i)));
+        }
+    }
     m_infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
@@ -68,16 +77,53 @@ bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& 
         if (!chest->figure.place(device, art, name, instance, collision)) {
             log::warn("Chests: no figure {} in the item archive", name);
         }
+        // Items are authored against the unanimated world, not the lift's initial keyframe.
+        if (restCollision) {
+            constexpr f32 kAbove = 4.0f;
+            constexpr f32 kBelow = 10.0f;
+            if (const auto floor = restCollision->floorAt(instance.position, kAbove, kBelow)) {
+                if (const auto placement = restCollision->objectTransform(floor->object)) {
+                    Vec3 position = instance.position;
+                    position.y = floor->y + ItemFigure::kFloorLift;
+                    chest->floor =
+                        Chest::Floor{floor->object, glm::inverse(*placement) *
+                                                        itemPlacement(position, instance.rotation)};
+                }
+            }
+        }
         chest->box = chest->figure.obstacle(info);
         m_chests.push_back(std::move(chest));
     }
+    syncFloors();
     return !m_chests.empty();
+}
+
+void Chests::syncFloors() {
+    if (m_collision == nullptr) {
+        return;
+    }
+    for (const auto& entry : m_chests) {
+        Chest& chest = *entry;
+        if (!chest.floor || chest.gone) {
+            continue;
+        }
+        const auto placement = m_collision->objectTransform(chest.floor->object);
+        if (!placement || !m_collision->solid(chest.floor->object)) {
+            chest.floor.reset();
+            continue;
+        }
+        const Mat4 transform = *placement * chest.floor->local;
+        chest.figure.placeAt(transform);
+        chest.preview.placeAt(transform);
+        chest.box = chest.figure.obstacle(m_infos[static_cast<usize>(chest.info)]);
+    }
 }
 
 void Chests::clear() {
     m_chests.clear();
     m_infos.clear();
     m_seed = 0;
+    m_collision = nullptr;
 }
 
 void Chests::setPlayerCount(s32 players) {
@@ -87,10 +133,18 @@ void Chests::setPlayerCount(s32 players) {
 }
 
 std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor> party) {
+    syncFloors();
     std::vector<ChestEvent> events;
     for (usize index = 0; index < m_chests.size(); ++index) {
         Chest& chest = *m_chests[index];
         if (!chest.shown || chest.gone) {
+            continue;
+        }
+        if (chest.collectedSeconds) {
+            *chest.collectedSeconds -= seconds;
+            if (*chest.collectedSeconds <= 0) {
+                chest.gone = true;
+            }
             continue;
         }
         chest.figure.update(seconds);
@@ -137,15 +191,26 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
             event.position = chest.figure.position();
             event.explodes = chest.subtype == kTrappedChest;
             const s32 inside = chest.contents;
-            if (!event.explodes && inside >= 0) {
-                const ItemInfo& record = m_infos[static_cast<usize>(inside)];
-                if (chest.subtype == kGoldChest) {
-                    event.gold = record.value;
-                } else {
-                    event.contents = inside;
-                }
+            if (!event.explodes && inside >= 0 && chest.subtype != kGoldChest) {
+                event.contents = inside;
             }
             events.push_back(event);
+        } else if (chest.state == kOpen && chest.subtype == kGoldChest && chest.contents >= 0) {
+            // ItemTouch (8005D730) grants the touching player gold, not necessarily
+            // the opener, then retires the container eight ticks later.
+            for (usize visitor = 0; visitor < party.size(); ++visitor) {
+                if (chest.box.touchedBy(party[visitor].position, party[visitor].radius)) {
+                    ChestEvent event;
+                    event.kind = ChestEvent::Kind::Collected;
+                    event.chest = index;
+                    event.visitor = visitor;
+                    event.position = chest.figure.position();
+                    event.gold = m_infos[static_cast<usize>(chest.contents)].value;
+                    chest.collectedSeconds = kCollectedSeconds;
+                    events.push_back(event);
+                    break;
+                }
+            }
         }
     }
     return events;
@@ -197,8 +262,10 @@ bool Chests::changeContents(usize index, s32 record, RenderDevice& device,
     }
     chest.contents = record;
     if (!figure.empty() && items.trees.find(figure).has_value()) {
+        const Mat4 placement = chest.figure.transform();
         const ItemInstance& instance = layout.itemInstances()[static_cast<usize>(chest.instance)];
         chest.figure.place(device, items, figure, instance, collision);
+        chest.figure.placeAt(placement);
         chest.figure.play(kShut, true);
     }
     return true;

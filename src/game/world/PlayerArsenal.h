@@ -29,7 +29,8 @@ public:
         std::string_view wallHitSound; ///< resolved from the level's audio record
         bool tower = false;
         bool bossEncounter = false;
-        ItemArchive* powerups = nullptr; ///< borrowed potion-cast feedback archive
+        ItemArchive* powerups = nullptr;              ///< borrowed potion-cast feedback archive
+        const MultiplayerMode* multiplayer = nullptr; ///< sampled when a weapon is launched
     };
     PlayerArsenal() = default;
     ~PlayerArsenal() = default;
@@ -47,6 +48,8 @@ public:
     void launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
                         std::optional<Vec3> target = std::nullopt);
     std::optional<MissileImpact> usePotion(PlayerActor& actor);
+    /** Unspecified magic advances one shared colour cycle for every caster and floor bottle. */
+    s32 resolvePotionKind(s32 kind);
     void throwPotion(PlayerActor& actor, s32 heldTicks = 0);
     /** Keep short-lived cast effects attached without retaining a player address. */
     void followCaster(const PlayerActor& actor);
@@ -75,5 +78,6 @@ private:
     TreeModel m_phoenixShot;
     std::array<TreeModel, 2> m_gauntlets;
     PlayerMissiles m_missiles;
+    s32 m_nextPotionKind = 1;
 };
 } // namespace gdl::game

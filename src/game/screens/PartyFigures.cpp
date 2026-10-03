@@ -32,6 +32,12 @@ const Texture* skinTexture(RenderDevice& device, ItemArchive& archive, std::stri
     }
 }
 
+/** Only the exiting player sinks (do_players case 4); a teammate can still be dying. */
+Mat4 departurePlacement(const PlayerRuntime& runtime, const PortalDeparture& departure) {
+    const Mat4 body = runtime.capture.body().value_or(runtime.actor.transform());
+    return runtime.life == PlayerLife::Standing ? departure.transform(body) : body;
+}
+
 } // namespace
 
 void PartyFigures::loadSkins(RenderDevice& device, ItemArchive& powerups, ItemArchive& weapons) {
@@ -48,7 +54,7 @@ void PartyFigures::clear() {
 
 const Texture* PartyFigures::skinOf(const PlayerRuntime& runtime, const PowerupEffects& worn,
                                     const PortalDeparture& departure) const {
-    if (departure.started()) {
+    if (runtime.life == PlayerLife::Standing && departure.started()) {
         return departure.skin();
     }
     if (runtime.hitFlashTicks > 0) {
@@ -59,7 +65,7 @@ const Texture* PartyFigures::skinOf(const PlayerRuntime& runtime, const PowerupE
     case PowerupEffects::Chrome::Silver: return m_silverSkin;
     case PowerupEffects::Chrome::None: break;
     }
-    return departure.skin();
+    return nullptr;
 }
 
 std::string_view PartyFigures::shieldObjectOf(u32 armor) {
@@ -77,7 +83,7 @@ std::string_view PartyFigures::shieldObjectOf(u32 armor) {
 
 bool PartyFigures::shown(const PlayerRuntime& runtime, const Scene& scene) {
     return runtime.figure != nullptr && runtime.life != PlayerLife::InTower &&
-           !scene.departure.finished();
+           (runtime.life != PlayerLife::Standing || !scene.departure.finished());
 }
 
 f32 PartyFigures::alphaOf(const PlayerRuntime& runtime, const PowerupEffects& worn) {
@@ -93,9 +99,8 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         }
         PlayerFigure& figure = *runtime.figure;
         const PowerupEffects worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
-        const Mat4 body = PlayerFigure::bodyPlacement(
-            scene.departure.transform(runtime.capture.body().value_or(runtime.actor.transform())),
-            runtime.actor.save(), worn);
+        const Mat4 body = PlayerFigure::bodyPlacement(departurePlacement(runtime, scene.departure),
+                                                      runtime.actor.save(), worn);
         figure.setSkinTexture(skinOf(runtime, worn, scene.departure));
         figure.setWeaponPowerups(device, world.powerups(), scene.weapons, worn);
         // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
@@ -138,8 +143,7 @@ void PartyFigures::drawShadows(RenderDevice& device, std::span<const PlayerRunti
         }
         // It lies on the floor under the body, even while the body is thrown or sinks
         // (PlayerMotion keeps its height at the floor, not the feet).
-        const Vec3 feet{scene.departure.transform(
-            runtime.capture.body().value_or(runtime.actor.transform()))[3]};
+        const Vec3 feet{departurePlacement(runtime, scene.departure)[3]};
         if (const auto floor = scene.world.collision().floorAt(feet, kShadowReach, kShadowDrop)) {
             const PowerupEffects worn =
                 PowerupEffects::of(runtime.actor.save().progress().inventory);

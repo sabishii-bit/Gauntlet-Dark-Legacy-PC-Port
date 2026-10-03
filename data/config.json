@@ -31,7 +31,8 @@
     "slots": 8
   },
   "game": {
-    "difficulty": "normal"
+    "difficulty": "normal",
+    "multiplayer": "normal"
   },
   "controls": {
     "keyboard": {
@@ -45,10 +46,10 @@
       "escape": ["Escape"]
     },
     "pad": {
-      "up": ["DpadUp"],
-      "down": ["DpadDown"],
-      "left": ["DpadLeft"],
-      "right": ["DpadRight"],
+      "up": ["DpadUp", "LeftStickUp"],
+      "down": ["DpadDown", "LeftStickDown"],
+      "left": ["DpadLeft", "LeftStickLeft"],
+      "right": ["DpadRight", "LeftStickRight"],
       "select": ["A"],
       "back": ["Y"],
       "start": ["Start"]

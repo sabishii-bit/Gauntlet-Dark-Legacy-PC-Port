@@ -20,6 +20,8 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/combat/Damage.h"
 #include "game/enemies/EnemyMind.h"
+#include "game/enemies/LegendItems.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
@@ -30,6 +32,15 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+s32 firstStandingGenerator(const Generators& generators) {
+    for (s32 id = 0; static_cast<usize>(id) < generators.count(); ++id) {
+        if (generators.standing(id)) {
+            return id;
+        }
+    }
+    return -1;
+}
 
 void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
     const std::string prefix{enemyKind(kind).prefix};
@@ -52,6 +63,38 @@ void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
                      {"name":"ATTACK3R","frames":2,"rate":30},
                      {"name":"HIT1","frames":10,"rate":30},
                      {"name":"HIT2","frames":10,"rate":30}]}]})");
+}
+
+TEST_CASE("opponent snapshots take block-provoking attacks from each player's active figure",
+          "[level-opponents][critter-block][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(3, {}, nullptr, {}, 0);
+    players[1].actor.spawn(1, {}, nullptr, {}, 0);
+    players[1].figure = PlayerFigure::load(device, root, players[1].actor.save(), false);
+    REQUIRE(players[1].figure);
+    auto views = LevelOpponents::enemyViews(players);
+    REQUIRE(views.size() == 2);
+    CHECK_FALSE(views[0].blockableAttack); // no figure means no active attack
+    CHECK_FALSE(views[1].blockableAttack); // READY is not a provoking action
+    players[1].figure->animate(0, 2, 1.0f / 30, PlayerDeed::StrongAttack);
+    REQUIRE(players[1].figure->animator().action() == PlayerAnimator::Action::StrongThrow);
+    views = LevelOpponents::enemyViews(players);
+    CHECK(views[0].player == 3);
+    CHECK_FALSE(views[0].blockableAttack);
+    CHECK(views[1].player == 1);
+    CHECK(views[1].blockableAttack);
+    players[1].life = PlayerLife::Dying;
+    players[1].figure->animate(0, 2, 1.0f / 30, PlayerDeed::Die);
+    REQUIRE(players[1].figure->animator().dying());
+    views = LevelOpponents::enemyViews(players);
+    CHECK(views[1].hidden);
+    CHECK_FALSE(views[1].blockableAttack);
 }
 
 TEST_CASE("battlefield entrance tower placements keep their stationary archer algorithm",
@@ -82,6 +125,22 @@ TEST_CASE("battlefield entrance tower placements keep their stationary archer al
     CHECK(enemies.algorithmOf(nearby.front()) == kThrowWay);
     CHECK_FALSE(enemies.bred(nearby.front()));
     opponents.close();
+}
+
+TEST_CASE("enemy views preserve the player's native collision centre independently of height",
+          "[level-opponents][multiplayer][enemy-sight]") {
+    ClassStats stats;
+    stats.height = 10;
+    stats.collisionY = 2;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(3, {}, &stats, {1, 40, 3}, 0);
+    const auto views = LevelOpponents::enemyViews(players);
+    REQUIRE(views.size() == 1);
+    CHECK(views[0].player == 3);
+    CHECK(views[0].position == Vec3{1, 40, 3});
+    CHECK(views[0].height == 10);
+    REQUIRE(views[0].collisionHeight);
+    CHECK(*views[0].collisionHeight == 2);
 }
 
 TEST_CASE("an archer's world hit detonates explosive scenery once without player credit",
@@ -468,22 +527,24 @@ TEST_CASE("a blast reaches a generator once, unless its blow is slight enough to
     players[0].actor.spawn(0, {}, nullptr, {}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.generators().count() > 0);
-    const Vec3 at = opponents.generators().positionOf(0);
-    const f32 full = opponents.generators().healthOf(0);
+    const s32 generator = firstStandingGenerator(opponents.generators());
+    REQUIRE(generator >= 0);
+    const Vec3 at = opponents.generators().positionOf(generator);
+    const f32 full = opponents.generators().healthOf(generator);
     std::vector<s32> reached;
     opponents.blast(at, 1.0f, 2.0f, reached, players);
-    const f32 once = opponents.generators().healthOf(0);
+    const f32 once = opponents.generators().healthOf(generator);
     CHECK(once < full);
     CHECK(reached.empty()); // two or less may come again
     opponents.blast(at, 1.0f, 2.0f, reached, players);
-    CHECK(opponents.generators().healthOf(0) < once);
-    const f32 twice = opponents.generators().healthOf(0);
+    CHECK(opponents.generators().healthOf(generator) < once);
+    const f32 twice = opponents.generators().healthOf(generator);
     opponents.blast(at, 1.0f, 3.0f, reached, players);
-    CHECK(reached == std::vector<s32>{1000});
-    const f32 thrice = opponents.generators().healthOf(0);
+    CHECK(reached == std::vector<s32>{1000 + generator});
+    const f32 thrice = opponents.generators().healthOf(generator);
     CHECK(thrice < twice);
     opponents.blast(at, 1.0f, 3.0f, reached, players);
-    CHECK(opponents.generators().healthOf(0) == thrice);
+    CHECK(opponents.generators().healthOf(generator) == thrice);
     opponents.close();
 }
 
@@ -509,13 +570,15 @@ TEST_CASE("Temple generator damage plays realm particles and each accepted hit s
     players[0].actor.spawn(0, {}, nullptr, {}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.generators().count() > 0);
-    REQUIRE(opponents.generators().kindOf(0) == -2);
-    const f32 health = opponents.generators().healthOf(0);
-    opponents.strikeGenerator(0, 1, 0);
-    CHECK(opponents.generators().healthOf(0) < health);
+    const s32 generator = firstStandingGenerator(opponents.generators());
+    REQUIRE(generator >= 0);
+    REQUIRE(opponents.generators().kindOf(generator) == -2);
+    const f32 health = opponents.generators().healthOf(generator);
+    opponents.strikeGenerator(generator, 1, 0);
+    CHECK(opponents.generators().healthOf(generator) < health);
     CHECK(effects.count() == 0); // audio on damage, debris only when the state crumbles
     CHECK(sound.voiceCount() == 1);
-    opponents.strikeGenerator(0, health * 0.5f, 0);
+    opponents.strikeGenerator(generator, health * 0.5f, 0);
     REQUIRE(effects.count() == 1);
     CHECK(effects.effect(0).name == "GENHIT");
     CHECK(effects.effect(0).archive == &world.items());
@@ -529,12 +592,12 @@ TEST_CASE("Temple generator damage plays realm particles and each accepted hit s
         CHECK(effect.particles.field().emitter(i).node() ==
               effect.transform() * effect.pose.matrices()[i + 2]);
     }
-    opponents.strikeGenerator(0, health, 0);
+    opponents.strikeGenerator(generator, health, 0);
     REQUIRE(effects.count() == 2);
     CHECK(effects.effect(1).name == "GENDIE");
     CHECK(effects.effect(1).particles.field().size() == 4);
     CHECK(sound.voiceCount() == 3);
-    opponents.strikeGenerator(0, health, 0);
+    opponents.strikeGenerator(generator, health, 0);
     CHECK(sound.voiceCount() == 3);
 
     // Follow the real hit -> feedback -> bank -> mixer path, not just the name builder.
@@ -1615,6 +1678,11 @@ TEST_CASE("opponent views preserve player identity and hide fallen participants"
     REQUIRE(views[1].player == 1);
     REQUIRE(views[1].hidden);
     REQUIRE_FALSE(views[1].damageable);
+    players[0].effectGap = 0.25f;
+    players[1].breathGap = 0.25f;
+    const auto recentViews = LevelOpponents::enemyViews(players);
+    CHECK(recentViews[0].recentlyHit);
+    CHECK(recentViews[1].recentlyHit);
     players[1].life = PlayerLife::Standing;
     ComboMove::link(players[0].combo, 0, players[1].combo, 1, 0);
     const auto protectedViews = LevelOpponents::enemyViews(players);
@@ -1760,10 +1828,10 @@ TEST_CASE("a great one's blows land every quarter second through the shared hit 
     blow.player = 3;
     blow.damage = 10;
     blow.gated = true;
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    CHECK(LevelOpponents::applyCritterBlow(blow, players, events));
     REQUIRE(contacts == 1);
     REQUIRE(players[0].breathGap == 0.25f); // fxhittime, as breath has it
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    CHECK_FALSE(LevelOpponents::applyCritterBlow(blow, players, events));
     REQUIRE(contacts == 1);
     players[0].breathGap = 0;
     LevelOpponents::applyCritterBlow(blow, players, events);
@@ -1949,6 +2017,64 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     opponents.close();
     REQUIRE_FALSE(effects.playing(effectId));
 }
+TEST_CASE("boss relics choose the first eligible controller rather than party storage order",
+          "[level-opponents][boss-relics][multiplayer][assets]") {
+    // gauntworld.c's level initialization scans controller slots 0..3 and accepts
+    // playing/arriving players (states 1/5/3), never dying or waiting-in-tower slots.
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 2> players;
+    CharacterSave save;
+    const s32 realm = legendRealmOf(41);
+    REQUIRE(save.progress().relics.addLegend(realm));
+    players[0].actor.spawn(3, save, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(1, save, nullptr, Vec3{0}, 0);
+    s32 bearer = 3;
+    SECTION("both living holders use controller order") {
+        bearer = 1;
+    }
+    SECTION("a dying holder cannot brandish the relic") {
+        players[1].life = PlayerLife::Dying;
+    }
+    SECTION("a holder waiting in the tower cannot brandish the relic") {
+        players[1].life = PlayerLife::InTower;
+    }
+    SECTION("a fallen first stored holder cannot mask a later living holder") {
+        players[0].life = PlayerLife::InTower;
+        bearer = 1;
+    }
+    SECTION("a departed holder is not a participant") {
+        players[1].departed = true;
+    }
+    SECTION("an earlier living controller without the relic is skipped") {
+        REQUIRE(players[1].actor.save().progress().relics.spendLegend(realm));
+    }
+    SECTION("no eligible holder leaves the boss rite inactive") {
+        players[0].life = PlayerLife::InTower;
+        players[1].life = PlayerLife::Dying;
+        bearer = -1;
+    }
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().view().kind == 41);
+    CHECK(opponents.bosses().legend().player() == bearer);
+    CHECK(opponents.bosses().legend().stage() ==
+          (bearer < 0 ? LegendRite::Stage::None : LegendRite::Stage::Carried));
+    // Selecting a bearer does not consume anyone's inventory before the rite starts.
+    CHECK(players[0].actor.save().progress().relics.hasLegend(realm));
+    opponents.close();
+}
+
 TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
           "[game][screens][level-opponents][boss-effects][assets]") {
     const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
@@ -2530,6 +2656,51 @@ TEST_CASE("a shrinker worn shrinks the swarm: their blows land low for half with
     REQUIRE(through > 1.0f);
     CHECK(before - opponents.enemies().healthOf(*id) ==
           Catch::Approx(shrinking ? 2.0f * through : through));
+    opponents.close();
+}
+TEST_CASE("generator population includes tower-waiting players but excludes quit participants",
+          "[level-opponents][multiplayer][generator-presence][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(3, {}, nullptr, {10000, 0, 0}, 0);
+    players[1].actor.spawn(1, {}, nullptr, {10000, 0, 0}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    const auto expected = [&](s32 count) {
+        return static_cast<usize>(
+            std::ranges::count_if(world.layout().itemInstances(), [&](const ItemInstance& item) {
+                return world.layout().itemInfos()[static_cast<usize>(item.info)].type ==
+                           ItemInfo::kGenerator &&
+                       shownToParty(item.minPlayers, count);
+            }));
+    };
+    const usize pair = expected(2);
+    const usize solo = expected(1);
+    REQUIRE(pair > solo);
+    REQUIRE(opponents.generators().obstacles().size() == pair);
+    ViewVolume away;
+    away.position = {10000, 0, 0};
+    opponents.generators().setView(away);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    players[1].life = PlayerLife::InTower;
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(opponents.generators().obstacles().size() == pair);
+    players[1].departed = true;
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(opponents.generators().obstacles().size() == solo);
     opponents.close();
 }
 } // namespace

@@ -21,6 +21,7 @@
 #include "game/enemies/Gargoyle.h"
 #include "game/enemies/General.h"
 #include "game/enemies/Golem.h"
+#include "game/enemies/HeadedBodyFixture.h"
 #include "game/world/HazardSurfaces.h"
 
 namespace {
@@ -67,6 +68,530 @@ std::filesystem::path familyAssets(s32 readyInterrupt = 60, u32 shield = 0) {
                    {"name":"DEATH","anim":"STEP","type":17,"priority":999}]})");
     }
     return root;
+}
+
+TEST_CASE("ordinary combatants rank four player slots by facing and recent hit grace",
+          "[combatant][multiplayer-targeting]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"target":{"maxDistance":100}}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    std::array<EnemyView, 4> players;
+    players[0].player = 3;
+    players[0].position = {0, 0, 6};
+    players[1].player = 1;
+    players[1].position = {0, 0, -4};
+    players[2].player = 0;
+    players[2].position = {0, 0, 1};
+    players[2].hidden = true;
+    players[3].player = 2;
+    players[3].position = {0, 0, 2};
+    players[3].invisible = true;
+    const auto step = [&] { actor.update(2, 1.0f / 30, players); };
+    step();
+    CHECK(actor.target() == 3); // six ahead scores better than four behind (score eight)
+    players[0].recentlyHit = true;
+    step();
+    CHECK(actor.target() == 1);
+    players[1].invisible = true;
+    step();
+    CHECK(actor.target() == 3); // grace is a penalty, not immunity from being targeted
+    players[3].invisible = false;
+    players[3].damageable = false;
+    step();
+    CHECK(actor.target() == 2); // combo/turbo immunity does not hide a target
+    players[3].hidden = true;
+    players[0].hidden = true;
+    step();
+    CHECK(actor.target() == -1);
+}
+
+TEST_CASE("combatant sight uses the actual bearing and keeps sparse identity ties stable",
+          "[combatant][multiplayer-targeting]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,
+                "target":{"maxDistance":20,"minDot":0.5,"maxVertical":5}}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    std::array<EnemyView, 2> players;
+    players[0].player = 3;
+    players[0].position = {0, 0, -2};
+    players[1].player = 1;
+    players[1].position = {0, 0, 10};
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.target() == 1);
+    players[0].position = players[1].position;
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.target() == 1); // retail scans input slots, not the party's vector order
+    players[1].position.y = 6;
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.target() == 3);
+    players[0].position.z = 21;
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.target() == -1);
+}
+
+TEST_CASE("boss anger remembers each player's damage exchange for fifteen seconds",
+          "[combatant][multiplayer-targeting]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":1000}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    std::array<EnemyView, 2> players;
+    players[0].player = 3;
+    players[0].position = {0, 0, 4};
+    players[1].player = 1;
+    players[1].position = {0, 0, 10};
+    players[1].invisible = true; // bosses see invisibility; ordinary critters do not
+    const auto step = [&](f32 seconds = 0.25f) { actor.update(1, seconds, players); };
+    step();
+    REQUIRE(actor.target() == 3);
+    EnemyHit hit;
+    hit.player = 1;
+    hit.damage = 10;
+    actor.hurt(hit);
+    step();
+    CHECK(actor.target() == 1);
+    actor.damagedPlayer(1, 100);
+    step();
+    CHECK(actor.target() == 3); // inverse anger caps at ten after the boss strikes back
+    step(14.25f);
+    CHECK(actor.target() == 3);
+    actor.hurt(hit); // dealt refreshed independently; received still remembered
+    step();
+    CHECK(actor.target() == 3);
+    step(); // received is exactly fifteen seconds old: still present
+    CHECK(actor.target() == 3);
+    step();
+    CHECK(actor.target() == 1); // received expires, but the newer dealt ledger remains
+    step(15.0f);
+    CHECK(actor.target() == 3); // both ledgers have now expired
+    actor.hurt(hit);
+    step();
+    REQUIRE(actor.target() == 1);
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    step();
+    CHECK(actor.target() == 3); // no ledger leaks across slot reuse
+    players[0].hidden = true;
+    players[1].hidden = true;
+    step();
+    CHECK(actor.target() == -1);
+}
+
+TEST_CASE("boss move selection uses the anger-ranked eligible roster",
+          "[combatant][multiplayer-targeting]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":2,"maxHealth":1000}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+        {"name":"ATTACK","anim":"STEP","type":128,"priority":20,
+         "target":{"minDistance":10}}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    std::array<EnemyView, 4> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].player = static_cast<s32>(players.size() - i - 1);
+        players[i].position = {0, 0, 5.0f + 5.0f * static_cast<f32>(i)};
+    }
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 5;
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, players);
+    REQUIRE(actor.moveName() == "ATTACK");
+    CHECK(actor.target() == 0); // farthest, but the only one who has hurt the boss
+    players[3].hidden = true;
+    actor.update(60, 1.0f, players);
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.target() != 0);
+}
+
+TEST_CASE("combatant volleys keep their move target while the next attack selects afresh",
+          "[combatant][multiplayer-targeting][combatant-target-lock]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/LICH/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":2},{"name":"VOLLEY","frames":12}]}]})");
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":2,"maxHealth":1000}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+        {"name":"VOLLEY","anim":"VOLLEY","type":133,"priority":20,
+         "frameStart":1,"frameEnd":9,"framePeriod":4,"damage0":0}],
+      "damages":[{"type":1,"damage":10,"minSpeed":20}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+    std::array<EnemyView, 4> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].player = static_cast<s32>(players.size() - i - 1);
+        players[i].position = {0, 0, 20.0f + 10.0f * static_cast<f32>(i)};
+    }
+    actor.update(2, 1.0f / 30, players);
+    REQUIRE(actor.moveName() == "VOLLEY");
+    auto shots = actor.takeShots();
+    REQUIRE(shots.size() == 1);
+    const auto centre = [](const EnemyView& view) {
+        return view.position + Vec3{0, view.height * 0.5f, 0};
+    };
+    CHECK(shots.front().target == centre(players[0]));
+    // Candidate 1 becomes closer and angrier, but the active move still owns slot 3.
+    players[2].position = {1, 0, 2};
+    EnemyHit hit;
+    hit.player = 1;
+    hit.damage = 5;
+    actor.hurt(hit);
+    players[0].position = {5, 0, 25};
+    actor.update(2, 4.0f / 30, players);
+    CHECK(actor.target() == 1);
+    shots = actor.takeShots();
+    REQUIRE(shots.size() == 1);
+    CHECK(shots.front().target == centre(players[0])); // tracks the same player's current point
+    SECTION("hidden former target retains the retail in-flight identity") {
+        players[0].hidden = true;
+        actor.update(2, 4.0f / 30, players);
+        shots = actor.takeShots();
+        REQUIRE(shots.size() == 1);
+        CHECK(shots.front().target == centre(players[0]));
+    }
+    SECTION("missing former slot never aliases the remaining view index") {
+        actor.update(2, 4.0f / 30, std::span<const EnemyView>{players}.subspan(1));
+        shots = actor.takeShots();
+        REQUIRE(shots.size() == 1);
+        CHECK_FALSE(shots.front().target.has_value());
+    }
+    actor.update(2, 3.0f / 30, players); // finish the volley
+    actor.takeShots();
+    actor.update(2, 2.0f / 30, players); // finish READY
+    actor.update(2, 1.0f / 30, players); // the next volley takes the new candidate
+    REQUIRE(actor.moveName() == "VOLLEY");
+    shots = actor.takeShots();
+    REQUIRE(shots.size() == 1);
+    CHECK(shots.front().target == centre(players[2]));
+}
+
+TEST_CASE("ordinary combatants schedule attacks before steps and alternate eligible moves",
+          "[combatant][multiplayer-targeting][ordinary-attack-selection]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition :
+         {Golem::definition(), General::definition(), Gargoyle::definition()}) {
+        CAPTURE(definition.name);
+        auto archive = root / "MONSTERS" / definition.name;
+        if (definition.realmCostume) {
+            archive /= "LEVELG";
+        }
+        writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+          "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+          "sequences":[{"name":"STEP","frames":3},{"name":"ATTACK","frames":12}]}]})");
+        writeTextFile(root / "critter" / (definition.name + ".json"),
+                      R"({"descriptors":[{"prefix":"BODY","name":")" + definition.name +
+                          R"(","type":)" + std::to_string(static_cast<s32>(definition.kind)) +
+                          R"(}],"types":[{"moveCount":4,"maxHealth":1000}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+            {"name":"HIGH","anim":"ATTACK","type":132,"priority":100,"cooldown":1,
+             "target":{"maxDistance":10},"frameStart":1,"damage0":0},
+            {"name":"LOW","anim":"ATTACK","type":132,"priority":10,
+             "target":{"maxDistance":10},"frameStart":1,"damage0":0},
+            {"name":"WALK","anim":"STEP","type":52,"priority":1000,"interrupt":60}],
+          "damages":[{"type":1,"damage":10,"minSpeed":20}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        for (const usize count : {2U, 4U}) {
+            CAPTURE(count);
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+            std::array<EnemyView, 4> players;
+            for (usize i = 0; i < players.size(); ++i) {
+                players[i].player = static_cast<s32>(players.size() - i - 1);
+                players[i].position = {0, 0, 6.0f + 2.0f * static_cast<f32>(i)};
+            }
+            // Two players use sparse identities 3 and 1, not vector indices.
+            std::swap(players[1].player, players[2].player);
+            const auto party = std::span<const EnemyView>{players}.first(count);
+            actor.update(2, 1.0f / 30, party);
+            REQUIRE(actor.moveName() == "HIGH"); // a valid attack precedes even priority-1000 WALK
+            auto shots = actor.takeShots();
+            REQUIRE(shots.size() == 1);
+            CHECK(shots.front().target == players[0].position + Vec3{0, players[0].height / 2, 0});
+            players[1].position = {0, 0, 2};
+            actor.update(2, 4.0f / 30, party);
+            CHECK(actor.moveName() == "HIGH"); // LOW cannot interrupt HIGH's locked animation
+            actor.update(2, 8.0f / 30, party);
+            REQUIRE(actor.moveDone());
+            actor.update(2, 1.0f / 30, party);
+            REQUIRE(actor.moveName() == "LOW");
+            CHECK(actor.target() == 1);
+            shots = actor.takeShots();
+            REQUIRE(shots.size() == 1);
+            CHECK(shots.front().target == players[1].position + Vec3{0, players[1].height / 2, 0});
+            actor.update(2, 12.0f / 30, party);
+            REQUIRE(actor.moveDone());
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.moveName() == "WALK"); // HIGH cooling; current LOW cannot select itself
+            for (s32 frame = 0; frame < 45 && actor.moveName() != "HIGH"; ++frame) {
+                actor.update(2, 1.0f / 30, party);
+            }
+            CHECK(actor.moveName() == "HIGH"); // HIGH is now the oldest eligible move
+            for (EnemyView& player : players) {
+                player.hidden = true;
+            }
+            actor.update(2, 12.0f / 30, party);
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.moveName() == "READY");
+        }
+    }
+}
+
+TEST_CASE("ordinary critters block only their selected player's heavy attack",
+          "[combatant][multiplayer-targeting][critter-block]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition :
+         {Golem::definition(), General::definition(), Gargoyle::definition()}) {
+        CAPTURE(definition.name);
+        writeTextFile(root / "critter" / (definition.name + ".json"),
+                      R"({"descriptors":[{"prefix":"BODY","name":")" + definition.name +
+                          R"(","type":)" + std::to_string(static_cast<s32>(definition.kind)) +
+                          R"(}],"types":[{"moveCount":4,"maxHealth":1000}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+            {"name":"ATTACK","anim":"STEP","type":128,"interrupt":60},
+            {"name":"BLOCK_FIRST","anim":"STEP","type":35,"priority":100,"cooldown":1,
+             "target":{"maxDistance":10}},
+            {"name":"BLOCK_LAST","anim":"STEP","type":35,"priority":10,"cooldown":1,
+             "target":{"maxDistance":10}}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        for (const usize count : {2U, 4U}) {
+            CAPTURE(count);
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+            std::array<EnemyView, 4> players;
+            for (usize i = 0; i < players.size(); ++i) {
+                players[i].player = static_cast<s32>(players.size() - i - 1);
+                players[i].position = {0, 0, 4.0f + 4.0f * static_cast<f32>(i)};
+            }
+            std::swap(players[1].player, players[2].player);
+            const auto party = std::span<const EnemyView>{players}.first(count);
+            players[1].blockableAttack = true;
+            actor.update(2, 1.0f / 30, party);
+            REQUIRE(actor.moveName() == "ATTACK"); // not provoked by another player's move
+            players[0].blockableAttack = true;
+            actor.update(2, 1.0f / 30, party);
+            REQUIRE(actor.moveName() == "BLOCK_LAST"); // table order, not highest priority
+            EnemyHit hit;
+            hit.damage = 12;
+            hit.player = 3;
+            hit.flags = 0x120;
+            actor.hurt(hit);
+            CHECK(actor.health() == Approx(997)); // block quarter and no heavy reaction
+            players[0].blockableAttack = false;
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.moveName() == "BLOCK_LAST"); // locked animation is not interrupted
+            actor.update(2, 3.0f / 30, party);
+            actor.update(2, 1.0f / 30, party);
+            REQUIRE(actor.moveName() == "ATTACK");
+            players[0].blockableAttack = true;
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.moveName() == "BLOCK_FIRST"); // the later block is cooling down
+            for (EnemyView& player : players) {
+                player.hidden = true;
+            }
+            actor.update(2, 3.0f / 30, party);
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.moveName() == "READY");
+            actor.update(60, 2.0f, party);
+            players[1].hidden = false; // sparse slot 1 is now the only candidate
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.target() == 1);
+            CHECK(actor.moveName() == "BLOCK_LAST");
+        }
+    }
+}
+
+TEST_CASE("native generals and golems select their authored block against a heavy attack",
+          "[combatant][critter-block][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {General::definition(), Golem::definition()}) {
+        CAPTURE(definition.name);
+        test::assetOrSkip("MONSTERS/" + definition.name + "/LEVELG/ANIM.PS2");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        const auto index = assets.data.moveOfType(MoveDefinition::kBlock);
+        REQUIRE(index.has_value());
+        const MoveDefinition& block = assets.data.moves()[*index];
+        REQUIRE(block.target.minDistance == 0);
+        REQUIRE(block.target.maxDistance == 15);
+        REQUIRE(block.target.minRateScale == 0);
+        REQUIRE(block.target.maxRateScale == 0);
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+        std::array<EnemyView, 2> players;
+        players[0].player = 3;
+        players[0].position = {8.0f * std::sin(block.target.yaw), 0,
+                               8.0f * std::cos(block.target.yaw)};
+        players[0].blockableAttack = true;
+        players[1].player = 1;
+        players[1].hidden = true;
+        for (s32 frame = 0; frame < 600 && actor.moveType() != MoveDefinition::kBlock; ++frame) {
+            actor.update(2, 1.0f / 30, players);
+        }
+        CHECK(actor.target() == 3);
+        CHECK(actor.moveType() == MoveDefinition::kBlock);
+        CHECK(actor.moveName() == block.name);
+    }
+}
+
+TEST_CASE("ordinary defensive moves respect authored eligibility and locked animations",
+          "[combatant][critter-block]") {
+    struct Case {
+        u32 flags;
+        std::string node;
+        s32 link;
+        s32 interrupt;
+        f32 distance;
+        bool hidden;
+        bool invisible;
+        bool blocks;
+        std::string animation = "STEP";
+    };
+    const std::array cases{Case{0, "", -1, 60, 4, false, false, true},
+                           Case{4, "", -1, 60, 4, false, false, false},
+                           Case{16, "MISSING", -1, 60, 4, false, false, false},
+                           Case{16, "BODY", 2, 60, 4, false, false, false},
+                           Case{0, "", -1, 0, 4, false, false, false},
+                           Case{0, "", -1, 60, 20, false, false, false},
+                           Case{0, "", -1, 60, 4, true, false, false},
+                           Case{0, "", -1, 60, 4, false, true, false},
+                           Case{0, "", -1, 60, 4, false, false, false, "MISSING"}};
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const Case& entry : cases) {
+        CAPTURE(entry.flags, entry.node, entry.link, entry.interrupt, entry.distance, entry.hidden,
+                entry.invisible);
+        writeTextFile(root / "critter/GENERAL.json",
+                      R"({
+          "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+          "types":[{"moveCount":3,"maxHealth":1000}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":)" +
+                          std::to_string(entry.interrupt) + R"(},
+            {"name":"BLOCK","anim":")" +
+                          entry.animation + R"(","type":35,"priority":3840,"flags":)" +
+                          std::to_string(entry.flags) + R"(,"colnode":")" + entry.node +
+                          R"(","link":)" + std::to_string(entry.link) + R"(,
+             "target":{"maxDistance":10}},
+            {"name":"LINK","anim":"STEP","type":35,"flags":4,"colnode":"MISSING"}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, General::definition(), 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+        EnemyView player;
+        player.player = 3;
+        player.position = {0, 0, entry.distance};
+        player.blockableAttack = true;
+        player.hidden = entry.hidden;
+        player.invisible = entry.invisible;
+        const std::array party{player};
+        actor.update(2, 1.0f / 30, party);
+        CHECK((actor.moveName() == "BLOCK") == entry.blocks);
+        if (entry.animation == "MISSING") {
+            actor.update(2, 3.0f / 30, party);
+            CHECK(actor.moveDone()); // invalid defensive art must not freeze the fallback
+        }
+        if (entry.interrupt == 0) {
+            actor.update(2, 3.0f / 30, party);
+            actor.update(2, 1.0f / 30, party);
+            CHECK(actor.moveName() == "BLOCK"); // completion permits the previously refused block
+        }
+    }
+}
+
+TEST_CASE("boss child candidate distribution removes the weakest claim and resets each frame",
+          "[combatant][multiplayer-targeting]") {
+    const auto root = test::headedBodyAssets();
+    // Keep only READY moves so the target policy is observed without an authored pattern.
+    writeTextFile(root / "critter/CHIMERA.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":1000,"childIndex":1},
+        {"rootNode":"HEAD_L","moveCount":1,"maxHealth":100,"parentIndex":0,"childIndex":2},
+        {"rootNode":"HEAD_R","moveCount":1,"maxHealth":100,"parentIndex":0,"childIndex":-1}],
+      "moves":[{"name":"READY","anim":"READY","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("CHIMERA"), 'A'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'A'));
+    std::array<EnemyView, 2> players;
+    players[0].player = 3;
+    players[0].position = {0, 0, 10};
+    players[1].player = 1;
+    players[1].position = {0, 0, 20};
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.target() == 3);
+    REQUIRE(actor.child(41));
+    REQUIRE(actor.child(42));
+    CHECK(actor.child(41)->target() == -1); // equal weakest scores remove the earlier child
+    CHECK(actor.child(42)->target() == 3);
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 5;
+    actor.hurt(hit, 41);
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.child(41)->target() == 3);
+    CHECK(actor.child(42)->target() == 1); // losing player 3 leaves its other eligible candidate
+    actor.hurt(hit); // the root's anger raises that player's allowed memberships to four
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.child(41)->target() == 3);
+    CHECK(actor.child(42)->target() == 3);
+    actor.update(1, 15.25f, players);
+    CHECK(actor.child(41)->target() == -1);
+    CHECK(actor.child(42)->target() == 3);
+}
+
+TEST_CASE("a newly forced head pattern inherits the parent's target after roster pruning",
+          "[combatant][multiplayer-targeting]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, test::headedBodyAssets(), bossDefinition("CHIMERA"), 'A'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'A'));
+    EnemyView player;
+    player.player = 3;
+    player.position = {0, 0, 40};
+    const std::array players{player};
+    for (s32 frame = 0; frame < 30 && actor.moveName() != "READYP"; ++frame) {
+        actor.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(actor.moveName() == "READYP");
+    REQUIRE(actor.child(41));
+    CHECK(actor.child(41)->moveName() == "SPIT");
+    CHECK(actor.child(41)->target() == 3);
+    CHECK(actor.child(42)->target() == 3);
 }
 
 TEST_CASE("boss targets preserve raised hit nodes independently of their floor anchor",
@@ -303,6 +828,51 @@ TEST_CASE("combatant elemental multipliers follow the encounter not the creature
             CHECK(actor.health() == Approx(bossEncounter ? 75 : 70));
         }
     }
+}
+
+TEST_CASE("great-one healing credit precedes underlevel loss but follows armor",
+          "[combatant][healing-magic]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"armor":5}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.playerLevel = 100;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    EnemyHit hit;
+    hit.player = 3;
+    hit.level = 80;
+    hit.damage = 25;
+    CHECK(actor.hurt(hit) == Approx(20)); // armor first, healing second
+    CHECK(actor.health() == Approx(88));  // the 40% underlevel loss comes afterwards
+    hit.damage = 2;
+    CHECK(actor.hurt(hit) == 0); // armor absorbs the whole hit
+    CHECK(actor.health() == Approx(88));
+    hit.damage = 1000;
+    CHECK(actor.hurt(hit) == Approx(88)); // no healing beyond the health left
+    CHECK_FALSE(actor.alive());
+    CHECK(actor.hurt(hit) == 0);
+}
+
+TEST_CASE("boss healing credit includes the party's damage reduction",
+          "[combatant][boss][healing-magic]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, familyAssets(), bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.players = 2;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 20;
+    CHECK(actor.hurt(hit) == Approx(10));
+    CHECK(actor.health() == Approx(90));
 }
 
 TEST_CASE("creature families supply distinct policies without duplicating move execution",
@@ -543,6 +1113,56 @@ TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in t
         CHECK(losses[0].experience ==
               Approx(20.0f * share / (1.0f + whole) * 50.0f * static_cast<f32>(players)));
     }
+}
+
+TEST_CASE("boss damage and experience follow standing slots after players leave combat",
+          "[combatant][multiplayer-targeting][combatant-active-count]") {
+    const auto root = test::headedBodyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("CHIMERA"), 'A'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.players = 4;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, scales, 'A'));
+    std::array<EnemyView, 4> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].player = static_cast<s32>(players.size() - i - 1);
+        players[i].position = {0, 0, 40};
+    }
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 10;
+    const auto checkHarm = [&](s32 id, f32 expectedDamage, s32 active) {
+        const Combatant* victim = id == actor.id() ? &actor : actor.child(id);
+        REQUIRE(victim != nullptr);
+        const f32 before = victim->health();
+        actor.hurt(hit, id);
+        CHECK(victim->health() == Approx(before - expectedDamage));
+        const auto losses = actor.takeLosses();
+        REQUIRE(losses.size() == 1);
+        CHECK(losses.front().experience ==
+              Approx(expectedDamage / (1.0f + victim->maxHealth()) * victim->data()->experience() *
+                     static_cast<f32>(active)));
+    };
+    actor.update(2, 1.0f / 30, players);
+    checkHarm(40, 2, 4);
+    checkHarm(41, 2, 4);
+    // Invisible, invulnerable and captured still means standing; only life hides a slot.
+    players[0].invisible = true;
+    players[0].damageable = false;
+    players[0].captured = true;
+    for (usize i = 1; i < players.size(); ++i) {
+        players[i].hidden = true;
+    }
+    actor.update(2, 1.0f / 30, players);
+    checkHarm(40, 10, 1);
+    checkHarm(41, 10, 1);
+    // A sparse roster has the same meaning as retained hidden runtimes.
+    actor.update(2, 1.0f / 30, std::span<const EnemyView>{players}.first(1));
+    checkHarm(42, 10, 1);
+    actor.update(2, 1.0f / 30, {});
+    checkHarm(40, 10, 0); // zero's damage multiplier is one, its experience multiplier zero
 }
 
 TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
@@ -1060,14 +1680,20 @@ TEST_CASE("roar damage scales with party size and expires after a quiet interval
         EnemyScales scales;
         scales.players = players;
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+        std::array<EnemyView, 4> views;
+        for (usize i = 0; i < views.size(); ++i) {
+            views[i].player = static_cast<s32>(i);
+            views[i].position = {0, 0, 100};
+        }
+        const auto active = std::span<const EnemyView>{views}.first(static_cast<usize>(players));
         EnemyHit hit;
         hit.damage = threshold - 1;
         actor.hurt(hit);
-        actor.update(2, 1.0f / 30, {});
+        actor.update(2, 1.0f / 30, active);
         CHECK(actor.moveName() == "READY");
         hit.damage = 1;
         actor.hurt(hit);
-        actor.update(2, 1.0f / 30, {});
+        actor.update(2, 1.0f / 30, active);
         CHECK(actor.moveName() == "ROAR");
     }
     SECTION("old harm is not banked forever") {
@@ -1096,6 +1722,40 @@ TEST_CASE("roar damage scales with party size and expires after a quiet interval
         actor.update(2, 1.0f / 30, {});
         CHECK(actor.moveName() == "ROAR");
     }
+}
+
+TEST_CASE("combatant roar thresholds recount standing slots without requiring another hit",
+          "[combatant][multiplayer-targeting][combatant-active-count]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, reactionAssets(), General::definition(), 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.players = 4;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    std::array<EnemyView, 4> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].player = static_cast<s32>(players.size() - i - 1);
+        players[i].position = {0, 0, 100};
+    }
+    actor.update(2, 1.0f / 30, players);
+    EnemyHit hit;
+    hit.damage = 60;
+    hit.player = 3;
+    actor.hurt(hit);
+    const auto losses = actor.takeLosses();
+    REQUIRE(losses.size() == 1);
+    CHECK(losses.front().experience ==
+          Approx(60.0f / (1.0f + actor.maxHealth()) * actor.data()->experience()));
+    actor.update(2, 1.0f / 30, players);
+    REQUIRE(actor.moveName() == "READY"); // four standing requires 100 raw damage
+    SECTION("only sparse player three remains standing") {
+        actor.update(2, 1.0f / 30, std::span<const EnemyView>{players}.first(1));
+    }
+    SECTION("none standing uses the table's zero slot") {
+        actor.update(2, 1.0f / 30, {});
+    }
+    CHECK(actor.moveName() == "ROAR"); // both zero and one use 50, not the initial 100
 }
 
 TEST_CASE("a current reaction consumes incoming reaction flags instead of chaining flinches",

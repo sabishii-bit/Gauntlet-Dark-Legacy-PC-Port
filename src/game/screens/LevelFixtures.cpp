@@ -371,10 +371,37 @@ void LevelFixtures::shootScenery(const Vec3& position, f32 radius) {
         playFallingCues(m_resources->world.fallingScenery().shoot(position, radius));
     }
 }
+void LevelFixtures::syncFloors() {
+    if (!m_resources) {
+        return;
+    }
+    m_chests.syncFloors();
+    syncChestContents();
+}
+
+void LevelFixtures::syncChestContents() {
+    if (!m_resources) {
+        return;
+    }
+    for (usize i = 0; i < m_chests.size(); ++i) {
+        const auto& chest = m_chests.chest(i);
+        if (chest.gone || chest.held < 0) {
+            continue;
+        }
+        const Mat4 socket = chest.figure.nodeTransform("NULL1").value_or(
+            glm::translate(Mat4{1}, chest.figure.position()));
+        // DoItems grows the child from 20% to full size during OPEN.
+        const f32 scale =
+            chest.state == Chests::kOpening ? 0.2f + 0.8f * chest.figure.progress() : 1;
+        m_resources->world.attachItem(static_cast<usize>(chest.held),
+                                      glm::scale(socket, Vec3{scale}),
+                                      chest.state != Chests::kOpen);
+    }
+}
 /** The level's chests, gates and traps under the party: nobody walks through a chest or a
  * gate that is shut; against one, a key carried is spent and it opens (a chest's sound is
- * the common one, a gate's its realm's); an opened chest drops what it held, pays its gold
- * to its opener or blows up; a trap that is out hurts whoever is in it. */
+ * the common one, a gate's its realm's); an opened chest offers its contents to whoever
+ * touches it or blows up; a trap that is out hurts whoever is in it. */
 void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                            const Events& events) {
     if (!m_resources.has_value()) {
@@ -383,6 +410,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     for (const Vec3& position : m_resources->world.takeWorldExplosions()) {
         worldExplosion(position, players, events);
     }
+    m_chests.syncFloors();
     std::vector<Obstacle> boxes = m_chests.obstacles();
     const std::vector<Obstacle> barred = m_gates.obstacles();
     boxes.insert(boxes.end(), barred.begin(), barred.end());
@@ -465,14 +493,18 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         case ChestEvent::Kind::Opened:
             if (event.explodes) {
                 detonateChest(event.chest, event.visitor, players, events);
-            } else if (event.gold > 0) {
-                takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
-                events.card(actor.player(), "GOLD");
-                m_resources->audio.playNamed(kPickupSound);
             } else if (event.contents >= 0) {
                 // Already visible on the opening lid's attachment; now collectible.
-            } else {
+            } else if (m_chests.chest(event.chest).subtype != Chests::kGoldChest) {
                 m_chests.remove(event.chest);
+            }
+            break;
+        case ChestEvent::Kind::Collected:
+            takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
+            events.card(actor.player(), "GOLD");
+            m_resources->audio.playNamed(kPickupSound);
+            if (event.gold >= 25 && events.help) {
+                events.help(17, event.visitor); // ItemTouch's COLLECTGOLD lesson
             }
             break;
         case ChestEvent::Kind::Refused:
@@ -490,20 +522,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     for (usize i = 0; i < reveals; ++i) {
         m_resources->audio.playNamed("S_XRAY");
     }
-    for (usize i = 0; i < m_chests.size(); ++i) {
-        const auto& chest = m_chests.chest(i);
-        if (chest.gone || chest.held < 0) {
-            continue;
-        }
-        const Mat4 socket = chest.figure.nodeTransform("NULL1").value_or(
-            glm::translate(Mat4{1}, chest.figure.position()));
-        // DoItems grows the child from 20% to full size during OPEN.
-        const f32 scale =
-            chest.state == Chests::kOpening ? 0.2f + 0.8f * chest.figure.progress() : 1;
-        m_resources->world.attachItem(static_cast<usize>(chest.held),
-                                      glm::scale(socket, Vec3{scale}),
-                                      chest.state != Chests::kOpen);
-    }
+    syncChestContents();
     for (const GateEvent& event : m_gates.update(ticks, seconds, visitors)) {
         if (event.visitor >= players.size()) {
             continue;

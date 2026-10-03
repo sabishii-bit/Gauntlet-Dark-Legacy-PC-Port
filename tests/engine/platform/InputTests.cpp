@@ -163,6 +163,37 @@ TEST_CASE("out-of-range pad indices are harmless", "[platform][input]") {
     REQUIRE_FALSE(input.isPadConnected(Input::kMaxPads));
     REQUIRE_FALSE(input.isPadButtonDown(99, PadButton::Start));
     REQUIRE(input.padAxis(99, PadAxis::RightY) == 0.0f);
+    REQUIRE(input.padAxis(0, PadAxis::Count) == 0.0f);
+}
+
+TEST_CASE("virtual stick directions latch per axis without inventing D-pad input",
+          "[platform][input][multiplayer]") {
+    Input input;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.49f;
+    input.setPad(3, pad);
+    CHECK_FALSE(input.isPadButtonDown(3, PadButton::LeftStickRight));
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.5f;
+    input.setPad(3, pad);
+    CHECK(input.wasPadButtonPressed(3, PadButton::LeftStickRight));
+    CHECK_FALSE(input.isPadButtonDown(3, PadButton::DpadRight));
+    input.beginPoll();
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.45f;
+    input.setPad(3, pad);
+    CHECK(input.isPadButtonDown(3, PadButton::LeftStickRight));
+    CHECK_FALSE(input.wasPadButtonPressed(3, PadButton::LeftStickRight));
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.39f;
+    input.setPad(3, pad);
+    CHECK_FALSE(input.isPadButtonDown(3, PadButton::LeftStickRight));
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = -0.8f;
+    input.setPad(3, pad);
+    CHECK(input.wasPadButtonPressed(3, PadButton::LeftStickLeft));
+    CHECK_FALSE(input.isPadButtonDown(3, PadButton::LeftStickRight));
+    pad.connected = false;
+    input.setPad(3, pad);
+    CHECK_FALSE(input.isPadButtonDown(3, PadButton::LeftStickLeft));
+    CHECK(input.padAxis(3, PadAxis::LeftX) == 0.0f);
 }
 
 } // namespace

@@ -134,6 +134,22 @@ TEST_CASE("a flier turns three eighths round at what it hits, once in ten ticks,
     REQUIRE(flier.graceSeconds == 0.0f);
 }
 
+TEST_CASE("thrower grace starts at attachment and is not renewed while held",
+          "[game][players][combo][multiplayer]") {
+    for (const s32 family : {ComboMove::kWarrior, ComboMove::kDwarf}) {
+        CAPTURE(family);
+        Pair pair(family);
+        pair.act1(0);
+        REQUIRE(pair.partner.graceSeconds == Approx(ComboMove::kThrowerGrace));
+        ComboMove::tick(pair.partner, 60, 1.0f);
+        pair.act1(29);
+        CHECK(pair.partner.graceSeconds == Approx(0.5f));
+        pair.act2(0);
+        CHECK(pair.partner.role == ComboRole::Thrown);
+        CHECK(pair.partner.graceSeconds == Approx(0.5f));
+    }
+}
+
 TEST_CASE("the dwarf climbs on its partner's back, steers it for four seconds and gets off",
           "[game][players][combo]") {
     Pair pair(ComboMove::kDwarf);

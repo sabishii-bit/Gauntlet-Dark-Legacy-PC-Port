@@ -97,7 +97,8 @@ StrafeWay PartyMotion::strafeWayOf(f32 heading, f32 facing) {
     return off < -kEighth ? StrafeWay::Left : StrafeWay::Forward;
 }
 
-void PartyMotion::passIt(std::span<PlayerRuntime> players, s32 ticks, const Events& events) {
+void PartyMotion::passIt(std::span<PlayerRuntime> players, s32 ticks, const Events& events,
+                         std::span<const std::optional<usize>> contacts) {
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& it = players[i];
         if (it.itTicks <= 0) {
@@ -107,21 +108,15 @@ void PartyMotion::passIt(std::span<PlayerRuntime> players, s32 ticks, const Even
             it.itTicks = 0;
             continue;
         }
-        if (it.itTicks > kItHold) {
-            for (usize j = 0; j < players.size(); ++j) {
-                const PlayerActor& other = players[j].actor;
-                const Vec3 gap = other.position() - it.actor.position();
-                if (j == i || players[j].life != PlayerLife::Standing || players[j].departed ||
-                    std::hypot(gap.x, gap.z) >= other.radius() + it.actor.radius() ||
-                    std::abs(gap.y) >= std::max(other.height(), it.actor.height())) {
-                    continue;
-                }
+        if (it.itTicks > kItHold && i < contacts.size() && contacts[i].has_value()) {
+            const usize j = *contacts[i];
+            if (j < players.size() && j != i && players[j].life == PlayerLife::Standing &&
+                !players[j].departed) {
                 players[j].itTicks = 1;
                 it.itTicks = 0;
                 if (events.perform) {
                     events.perform(j, Action::Tagged);
                 }
-                break;
             }
         }
         if (it.itTicks > 0) {
@@ -138,6 +133,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
     // Snapshot after movement, before fixture collision, preserving the camera's frame phase.
     std::vector<CameraSubject> subjects;
     subjects.reserve(players.size());
+    std::vector<std::optional<usize>> contacts(players.size());
     for (usize i = 0; i < players.size(); ++i) {
         players[i].hitFlashTicks = std::max(0, players[i].hitFlashTicks - ticks);
         PlayerActor& actor = players[i].actor;
@@ -357,7 +353,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                         &collision);
         }
         if (!down) {
-            PartyCollision::step(players, i, before, seconds, &collision);
+            contacts[i] = PartyCollision::step(players, i, before, seconds, &collision);
             FloorRiding::land(players, i, before, collision);
         }
         if (!down && events.limitMovement) {
@@ -500,7 +496,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
     for (PlayerRuntime& runtime : players) {
         runtime.knockback.endFrame();
     }
-    passIt(players, ticks, events);
+    passIt(players, ticks, events, contacts);
     return subjects;
 }
 } // namespace gdl::game

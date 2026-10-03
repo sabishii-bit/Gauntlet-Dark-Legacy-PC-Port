@@ -1,0 +1,11 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "party": [
+    {"player": 0, "class": "WAR", "color": "RED", "name": "ONE", "level": 20, "health": 2000, "turbo": 100, "potions": [0, 1], "keys": 2},
+    {"player": 1, "class": "WIZ", "color": "BLU", "name": "TWO", "level": 20, "health": 2000, "turbo": 100, "potions": [0, 1], "keys": 2},
+    {"player": 2, "class": "DWF", "color": "GRE", "name": "THREE", "level": 20, "health": 2000, "turbo": 100, "potions": [0, 1], "keys": 2},
+    {"player": 3, "class": "ARC", "color": "YEL", "name": "FOUR", "level": 20, "health": 2000, "turbo": 100, "potions": [0, 1], "keys": 2}
+  ],
+  "welcome": false
+}

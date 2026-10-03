@@ -117,8 +117,8 @@ ComboOrders ComboMove::advance(ComboState& grabber, ComboState& partner, const C
             if (!partner.riding) {
                 orders.attach = ComboOrders::Attach::PartnerOnGrabber;
                 partner.riding = true;
+                partner.graceSeconds = kThrowerGrace;
             }
-            partner.graceSeconds = kThrowerGrace;
             break;
         }
         if (partner.role == ComboRole::Held) {
@@ -139,8 +139,8 @@ ComboOrders ComboMove::advance(ComboState& grabber, ComboState& partner, const C
                 orders.attach = ComboOrders::Attach::GrabberOnPartner;
                 grabber.riding = true;
                 grabber.rideAsked = true;
+                partner.graceSeconds = kThrowerGrace;
             }
-            partner.graceSeconds = kThrowerGrace;
             grabber.ticksLeft = kFlightTicks;
             break;
         }

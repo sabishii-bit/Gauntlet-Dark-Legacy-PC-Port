@@ -567,6 +567,34 @@ TEST_CASE("linked projectile fire emits behind its moving parent and stops at th
     CHECK(f.effects.count() == 0);
 }
 
+TEST_CASE("combatant projectile contacts retain their owner and sparse victim identity",
+          "[boss-projectiles][multiplayer-targeting]") {
+    Fixture f;
+    const auto root = test::scratchDirectory("target-ledger-shot");
+    writeTextFile(root / "critter.json", R"({
+      "descriptors":[{"type":4}],"types":[{"moveCount":1}],"moves":[{}],
+      "damages":[{"type":1,"behaviorFlags":9,"radius":0.5,"damage":12,
+                   "minSpeed":30,"maxSpeed":30,"sfxIndex":0}],
+      "sounds":[{"name":"LOOP","life":1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.critter = 17;
+    shot.damageIndex = 0;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    std::array<EnemyView, 1> players;
+    players[0].player = 3;
+    players[0].position = {0, 0, 5};
+    f.step(0.2f, players);
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == 3);
+    CHECK(hits[0].critter == 17);
+    CHECK(hits[0].ownerKind == CombatantKind::Boss);
+}
+
 TEST_CASE("Dragon fireball records attach their actual linked particle texture",
           "[boss-projectiles][projectile-trail][assets]") {
     const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();

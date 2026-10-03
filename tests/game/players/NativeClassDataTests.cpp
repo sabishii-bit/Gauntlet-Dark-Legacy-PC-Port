@@ -47,11 +47,14 @@ std::vector<u8> nativeClassWad() {
     writer.putText("HAND_GLOW");
     padTo(writer, kEffectOffset + 0x20);
     writer.putText("R_WRIST");
+    padTo(writer, kEffectOffset + 0x32);
+    writer.putU16(150);
     padTo(writer, kEffectOffset + 0x34);
     for (const f32 value : {1.0f, 2.0f, 3.0f}) {
         putFloat(writer, value);
     }
-    padTo(writer, kEffectOffset + 0x48);
+    putFloat(writer, 0.5f);
+    putFloat(writer, 3.0f);
     putFloat(writer, 1.25f);
     padTo(writer, kStrikeOffset);
     writer.putU16(2).putU16(0x2010).putU32(0x100021);
@@ -143,6 +146,9 @@ void sameClass(const ClassStats& actual, const ClassStats& expected) {
         CHECK(a.flags == b.flags);
         sameVector(a.offset, b.offset);
         sameFloat(a.scale, b.scale);
+        sameFloat(a.lifetime, b.lifetime);
+        sameFloat(a.radius, b.radius);
+        CHECK(a.alphaMod == b.alphaMod);
     }
     REQUIRE(actual.moveStrikes.size() == expected.moveStrikes.size());
     for (usize index = 0; index < actual.moveStrikes.size(); ++index) {
@@ -198,6 +204,9 @@ TEST_CASE("native class tuning preserves combat and presentation tables",
     CHECK(effect.next == -1);
     CHECK(effect.offset == Vec3{1.0f, 2.0f, 3.0f});
     CHECK(effect.scale == 1.25f);
+    CHECK(effect.lifetime == 0.5f);
+    CHECK(effect.radius == 3.0f);
+    CHECK(effect.alphaMod == 150);
     REQUIRE(stats.moveStrikes.size() == 1);
     const auto& strike = stats.moveStrikes.front();
     CHECK(strike.type == MoveStrike::kFlies);

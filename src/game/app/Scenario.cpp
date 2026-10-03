@@ -151,6 +151,17 @@ Scenario Scenario::fromJson(std::string_view text) {
             })) {
             throw FormatError("scenario: a party member is out of range");
         }
+        if (std::ranges::any_of(scenario.party, [&](const ScenarioMember& other) {
+                return other.player == member.player;
+            })) {
+            throw FormatError("scenario: duplicate player id");
+        }
+        if (member.slot >= 0 &&
+            std::ranges::any_of(scenario.party, [&](const ScenarioMember& other) {
+                return other.slot == member.slot;
+            })) {
+            throw FormatError("scenario: duplicate save slot");
+        }
         scenario.party.push_back(std::move(member));
     }
     if (root.contains("position")) {

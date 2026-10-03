@@ -87,15 +87,17 @@ public:
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
     Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
-    static void applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
+    static bool applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                  const Events& events);
     static void applyGrab(const CombatGrab& grab, bool boss, std::span<PlayerRuntime> players);
-    void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                     std::span<const PlayerRuntime> players, bool close = false,
-                     std::optional<Vec3> where = std::nullopt);
-    void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                       std::optional<Vec3> where, bool close,
-                       std::span<const PlayerRuntime> players, s32 node = -1);
+    /** Returns the swarm's healing credit, before level/armor adjustments. */
+    f32 strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                    std::span<const PlayerRuntime> players, bool close = false,
+                    std::optional<Vec3> where = std::nullopt);
+    /** Returns healing credit after armor, but before level/hit-node adjustments. */
+    f32 strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                      std::optional<Vec3> where, bool close, std::span<const PlayerRuntime> players,
+                      s32 node = -1);
     void strikeGenerator(s32 id, f32 power, s32 byPlayer,
                          std::span<const PlayerRuntime> players = {});
     /** A blast of `damage` over `radius` reaching what it has not yet (`reached`, its ids:

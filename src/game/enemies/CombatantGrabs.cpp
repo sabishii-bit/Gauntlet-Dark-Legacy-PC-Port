@@ -32,11 +32,17 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
         partPosition(actor, move.colnode) + Vec3{modelTransform(actor) * Vec4{damage.offset, 0}};
     f32 nearest = std::numeric_limits<f32>::max();
     for (const EnemyView& player : players) {
+        if (player.player < 0 || static_cast<usize>(player.player) >= kPlayerSlots) {
+            continue;
+        }
         const Vec3 delta = player.position + Vec3{0, player.height * 0.5f, 0} - centre;
         const f32 distance = glm::length(Vec2{delta.x, delta.z});
         const Vec3 toBody = player.position - actor.position;
         const f32 bodyDistance = glm::length(Vec2{toBody.x, toBody.z});
-        if (!player.hidden && player.damageable && !player.captured && bodyDistance < nearest &&
+        const bool closer =
+            bodyDistance < nearest || (bodyDistance == nearest && player.player < actor.grabbed);
+        // CritterNodePlayerCollide scans slots 0..3, regardless of the view's order.
+        if (!player.hidden && player.damageable && !player.captured && closer &&
             distance <= player.radius + damage.maxDistance &&
             std::abs(delta.y) <= player.height * 0.5f + damage.maxDistance) {
             nearest = bodyDistance;

@@ -143,15 +143,19 @@ void AudioStream::mixInto(std::span<f32> stereoOut) {
 
 void AudioStream::compactLocked() {
     // Everything before the read position goes but the frame the curve still needs.
-    if (m_readFrame < 2) {
+    const usize frames = m_queue.size() / m_desc.channels;
+    if (m_readFrame < 2 || frames == 0) {
         return;
     }
-    const usize consumed = (m_readFrame - 1) * m_desc.channels;
+    // Downsampling can step past the end of a short queue. Keep the last real
+    // frame and the outstanding skip, so the next push retains the sampling phase.
+    const usize consumedFrames = std::min(m_readFrame - 1, frames - 1);
+    const usize consumed = consumedFrames * m_desc.channels;
     if (consumed < m_queue.size() / 2) {
         return;
     }
     m_queue.erase(m_queue.begin(), m_queue.begin() + static_cast<std::ptrdiff_t>(consumed));
-    m_readFrame = 1;
+    m_readFrame -= consumedFrames;
 }
 
 } // namespace gdl
