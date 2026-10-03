@@ -163,13 +163,19 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     REQUIRE_FALSE(device.draws.empty());
     const Mat4 startClip = device.draws.front().transform;
     CHECK(device.bloomDrawOffsets.empty());
+    CHECK(device.ambientOcclusionDrawOffsets.empty());
     config.display.bloom = true;
+    config.display.ambientOcclusion = true;
     device.draws.clear();
     scene.render(device, Mat4{1.0f}, 640, 480, 1.0f);
     REQUIRE(device.bloomDrawOffsets.size() == 1);
+    REQUIRE(device.ambientOcclusionDrawOffsets.size() == 1);
+    CHECK(device.ambientOcclusionDrawOffsets.front() > 0);
+    CHECK(device.ambientOcclusionDrawOffsets.front() < device.bloomDrawOffsets.front());
     CHECK(device.bloomDrawOffsets.front() > 0);
     CHECK(device.bloomDrawOffsets.front() < device.draws.size()); // Press Start stays unprocessed.
     config.display.bloom = false;
+    config.display.ambientOcclusion = false;
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws.front().transform != startClip);
     const auto current = scene.rail().camera().position;

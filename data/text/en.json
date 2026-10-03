@@ -265,6 +265,7 @@
   "settings.antialiasing": "Anti-Aliasing",
   "settings.depthOfField": "Depth of Field",
   "settings.bloom": "Bloom",
+  "settings.ambientOcclusion": "Ambient Occlusion",
   "settings.on": "On",
   "settings.off": "Off",
   "settings.unlimited": "Unlimited",

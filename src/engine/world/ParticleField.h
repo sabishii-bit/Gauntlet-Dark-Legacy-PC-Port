@@ -73,6 +73,7 @@ private:
     std::vector<Entry> m_entries;
     f32 m_frameRemainder = 0.0f;
     f32 m_lastAdvance = 0.0f;
+    f64 m_heatFrames = 0.0;
     mutable ImmediateBatch m_batch;
 };
 

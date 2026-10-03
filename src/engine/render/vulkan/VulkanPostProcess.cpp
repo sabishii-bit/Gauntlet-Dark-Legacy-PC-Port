@@ -68,11 +68,15 @@ VulkanPostProcess::VulkanPostProcess(VulkanContext& context, const VulkanSwapcha
     m_bloomPipeline = std::make_unique<VulkanPipeline>(
         context, shaders, swapchain.colorFormat(), VK_FORMAT_UNDEFINED, textureLayout,
         BlendMode::Opaque, swapchain.samples(), VulkanPipeline::Effect::Bloom);
+    m_aoPipeline = std::make_unique<VulkanPipeline>(
+        context, shaders, swapchain.colorFormat(), VK_FORMAT_UNDEFINED, textureLayout,
+        BlendMode::Opaque, swapchain.samples(), VulkanPipeline::Effect::AmbientOcclusion);
 }
 
 VulkanPostProcess::~VulkanPostProcess() {
     m_pipeline.reset();
     m_bloomPipeline.reset();
+    m_aoPipeline.reset();
     vkDestroyDescriptorPool(m_context.device(), m_pool, nullptr);
     vkDestroyImageView(m_context.device(), m_view, nullptr);
     vmaDestroyImage(m_context.allocator(), m_color, m_allocation);
@@ -92,15 +96,34 @@ void VulkanPostProcess::record(VkCommandBuffer cmd, const VulkanSwapchain& swapc
 }
 
 void VulkanPostProcess::recordBloom(VkCommandBuffer cmd, const VulkanSwapchain& swapchain,
-                                    u32 imageIndex) {
+                                    u32 imageIndex, const HeatDistortion& heat) {
     const f32 width = static_cast<f32>(swapchain.extent().width);
     const f32 height = static_cast<f32>(swapchain.extent().height);
     // Deliberately restrained LDR bloom: bright scene pixels, not an emissive material mask.
     // The five-by-five kernel has a six-pixel radius at 1080p, independent of frame rate.
-    const VulkanPipeline::PushConstants constants{Mat4{1.0f},
-                                                  Vec4{0.6f, 0.9f, 0.4f, 3.0f * height / 1080.0f},
-                                                  Vec4{1.0f / width, 1.0f / height, 0.0f, 0.0f}};
+    VulkanPipeline::PushConstants constants{
+        Mat4{0.0f}, Vec4{0.6f, 0.9f, 0.4f, 3.0f * height / 1080.0f},
+        Vec4{1.0f / width, 1.0f / height, static_cast<f32>(swapchain.samples()), 0.0f}};
+    for (usize i = 0; i < HeatDistortion::kCapacity; ++i) {
+        const auto lane = static_cast<s32>(i);
+        const auto& source = heat.sources()[i];
+        constants.transform[lane] = Vec4{source.center, source.radius};
+        constants.heatDepths[lane] = source.depth;
+        constants.heatTimes[lane] = source.seconds;
+    }
     recordPass(cmd, swapchain, imageIndex, *m_bloomPipeline, constants);
+}
+
+void VulkanPostProcess::recordAmbientOcclusion(VkCommandBuffer cmd,
+                                               const VulkanSwapchain& swapchain, u32 imageIndex,
+                                               const AmbientOcclusion& settings) {
+    const VulkanPipeline::PushConstants constants{
+        settings.clipToView,
+        Vec4{std::clamp(settings.radius, 0.01f, 5.0f), std::max(settings.bias, 0.001f),
+             std::clamp(settings.strength, 0.0f, 0.35f), static_cast<f32>(swapchain.samples())},
+        Vec4{1.0f / static_cast<f32>(swapchain.extent().width),
+             1.0f / static_cast<f32>(swapchain.extent().height), 0.0f, 0.0f}};
+    recordPass(cmd, swapchain, imageIndex, *m_aoPipeline, constants);
 }
 
 void VulkanPostProcess::recordPass(VkCommandBuffer cmd, const VulkanSwapchain& swapchain,

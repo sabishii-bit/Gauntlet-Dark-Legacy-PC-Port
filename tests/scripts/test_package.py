@@ -31,6 +31,10 @@ class PackageTests(unittest.TestCase):
             "build/bin/shaders/postprocess.vert.spv": b"postprocess vertex shader",
             "build/bin/shaders/depth_of_field.frag.spv": b"depth of field shader",
             "build/bin/shaders/depth_of_field_ms.frag.spv": b"multisampled depth shader",
+            "build/bin/shaders/bloom.frag.spv": b"bloom and heat shader",
+            "build/bin/shaders/bloom_ms.frag.spv": b"multisampled bloom and heat shader",
+            "build/bin/shaders/ambient_occlusion.frag.spv": b"contact shading shader",
+            "build/bin/shaders/ambient_occlusion_ms.frag.spv": b"multisampled contact shader",
             "original/gAuNtLeT/PDATA/WAR.WAD": b"original player table\x00\xff",
             "original/gAuNtLeT/unknown/file.bin": b"preserve unrecognized files",
             "original/CARDDEMO/icon.tpl": b"original icon",
@@ -45,6 +49,18 @@ class PackageTests(unittest.TestCase):
     def plan(self, output=None, runtime_dirs=()):
         return package.make_plan(self.executable, self.assets, self.data,
                                   output or self.output, runtime_dirs)
+
+    def test_every_optional_effect_shader_is_required_before_packaging(self):
+        for name in ("bloom.frag.spv", "bloom_ms.frag.spv",
+                     "ambient_occlusion.frag.spv", "ambient_occlusion_ms.frag.spv"):
+            with self.subTest(shader=name):
+                path = self.executable.parent / "shaders" / name
+                contents = path.read_bytes()
+                path.unlink()
+                with self.assertRaisesRegex(ValueError, name):
+                    self.plan()
+                self.assertFalse(self.output.exists())
+                path.write_bytes(contents)
 
     def test_stages_original_tree_bytes_casing_empty_directories_and_runtime(self):
         plan = self.plan()

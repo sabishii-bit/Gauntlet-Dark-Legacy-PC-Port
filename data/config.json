@@ -10,6 +10,7 @@
     "vsync": true,
     "depthOfField": false,
     "bloom": false,
+    "ambientOcclusion": false,
     "maxFrameRate": 30,
     "sampleCount": 1
   },

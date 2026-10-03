@@ -6,6 +6,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/AmbientOcclusion.h"
 
 #include "game/menu/OptionMenu.h"
 
@@ -194,8 +195,14 @@ void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 widt
     const f32 fov = glm::radians(
         m_context.config != nullptr ? m_context.config->camera.horizontalFovDegrees : 60.0f);
     const WorldCamera camera = m_rail.presentedCamera(presentationAlpha);
-    m_world.draw(device, camera.clipTransform(fov, width, height, projection), camera,
-                 presentationAlpha);
+    const Mat4 clip = camera.clipTransform(fov, width, height, projection);
+    m_world.drawOpaque(device, clip, camera, presentationAlpha);
+    if (m_context.config != nullptr && m_context.config->display.ambientOcclusion) {
+        AmbientOcclusion occlusion;
+        occlusion.clipToView = camera.view() * glm::inverse(clip);
+        device.applyAmbientOcclusion(occlusion);
+    }
+    m_world.drawDeferred(device, clip, camera, presentationAlpha);
     if (m_context.config != nullptr && m_context.config->display.bloom) {
         device.applyBloom();
     }

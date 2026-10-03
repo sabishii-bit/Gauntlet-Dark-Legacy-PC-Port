@@ -8,11 +8,46 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/render/HeatDistortion.h"
 #include "engine/world/WorldScene.h"
 
 namespace gdl {
 
 namespace {
+
+// Explicit native thermal textures: tower/forest torches, mountain embers, dragon breath.
+// This is an opt-in port effect, not an inference that every additive sprite is hot.
+bool thermalTexture(std::string_view name) {
+    return name == "P_TORCH" || name == "EMBER_SPARK2" || name == "DRAGONBREATH" ||
+           name == "FBALLX";
+}
+
+void submitHeat(RenderDevice& device, const ParticleEmitter& emitter, const Mat4& clip,
+                const Vec3& right, const Vec3& up, f32 frameOffset, f32 seconds) {
+    if (!thermalTexture(emitter.descriptor().texture) || !emitter.descriptor().depthTest) {
+        return;
+    }
+    Vec3 center{0.0f};
+    f32 weight = 0.0f;
+    f32 width = 0.0f;
+    for (Particle particle : emitter.particles()) {
+        particle.age += frameOffset;
+        if (particle.age < 0.0f) {
+            continue;
+        }
+        const f32 alpha = static_cast<f32>(emitter.colorOf(particle).a) / 255.0f;
+        center += emitter.positionOf(particle) * alpha;
+        width += emitter.widthOf(particle) * std::abs(emitter.spriteScale()) * alpha;
+        weight += alpha;
+    }
+    if (weight <= 0.01f) {
+        return;
+    }
+    const f32 radius = width / weight;
+    // Warm air rises a little above the live flame, not above the emitter's stale marker.
+    center = center / weight + Vec3{0.0f, radius * 0.5f, 0.0f};
+    device.addHeatSource(HeatSource::project(clip, center, right, up, radius, seconds));
+}
 
 /** The texture named, from the level's set or a lender's; null when nobody has it. */
 const Texture* findTexture(std::string_view name, TextureSet& textures, RenderDevice& device,
@@ -94,6 +129,7 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
 }
 
 void ParticleField::clear() {
+    m_heatFrames = 0.0;
     m_entries.clear();
     m_frameRemainder = 0.0f;
     m_lastAdvance = 0.0f;
@@ -180,6 +216,7 @@ void ParticleField::step(f32 seconds) {
     const f32 whole = std::floor(m_frameRemainder);
     m_frameRemainder -= whole;
     const auto frames = static_cast<u32>(whole);
+    m_heatFrames += static_cast<f64>(frames);
     if (frames == 0) {
         return;
     }
@@ -212,6 +249,8 @@ void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& rig
         if (entry.emitter.particles().empty()) {
             continue;
         }
+        submitHeat(device, entry.emitter, clip, right, up, frameOffset,
+                   static_cast<f32>((m_heatFrames + frameOffset) / kFrameRate));
         const Texture* presentedTexture = entry.texture;
         DrawState presentedState = entry.state;
         if (presentationAlpha >= 0.0f && entry.presentedTexture != nullptr &&

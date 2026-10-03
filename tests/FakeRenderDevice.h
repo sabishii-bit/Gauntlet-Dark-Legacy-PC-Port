@@ -6,7 +6,9 @@
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/AmbientOcclusion.h"
 #include "engine/render/DepthOfField.h"
+#include "engine/render/HeatDistortion.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
@@ -42,6 +44,7 @@ class FakeRenderDevice final : public RenderDevice {
 public:
     bool beginFrame() override {
         ++frames;
+        heat = {};
         return true;
     }
     void endFrame() override {}
@@ -84,6 +87,12 @@ public:
         bloomDrawOffsets.push_back(draws.size());
         return true;
     }
+    void addHeatSource(const HeatSource& source) override { heat.add(source); }
+    bool applyAmbientOcclusion(const AmbientOcclusion& settings) override {
+        ambientOcclusionDrawOffsets.push_back(draws.size());
+        ambientOcclusionSettings.push_back(settings);
+        return true;
+    }
     bool applyDepthOfField(const DepthOfField& settings) override {
         depthOfFieldDrawOffsets.push_back(draws.size());
         depthOfFieldSettings.push_back(settings);
@@ -92,6 +101,9 @@ public:
 
     std::vector<RecordedDraw> draws;
     std::vector<usize> bloomDrawOffsets;
+    HeatDistortion heat;
+    std::vector<usize> ambientOcclusionDrawOffsets;
+    std::vector<AmbientOcclusion> ambientOcclusionSettings;
     std::vector<usize> depthOfFieldDrawOffsets;
     std::vector<DepthOfField> depthOfFieldSettings;
     u32 frames = 0;

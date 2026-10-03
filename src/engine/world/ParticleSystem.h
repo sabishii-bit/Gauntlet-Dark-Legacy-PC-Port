@@ -108,6 +108,7 @@ public:
     void setEmitting(bool emitting) { m_emitting = emitting; }
     /** Retail billboard width uses the particle node's local Y scale, not its world basis. */
     void setSpriteScale(f32 scale) { m_spriteScale = scale; }
+    f32 spriteScale() const { return m_spriteScale; }
     /** Ages the particles `frames` on, dropping the dead, then emits the frame's share. */
     void step(u32 frames);
 

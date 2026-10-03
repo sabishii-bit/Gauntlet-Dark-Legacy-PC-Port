@@ -285,6 +285,7 @@ Extent2D VulkanRenderDevice::framebufferExtent() const {
 }
 
 bool VulkanRenderDevice::beginFrame() {
+    m_heat = {};
     GDL_ASSERT(!m_frameOpen, "beginFrame called twice without endFrame");
 
     const Extent2D windowSize = m_window.framebufferSize();
@@ -420,7 +421,17 @@ bool VulkanRenderDevice::applyBloom() {
     if (!preparePostProcess()) {
         return false;
     }
-    m_postProcess->recordBloom(m_frames[m_frameIndex].commandBuffer, *m_swapchain, m_imageIndex);
+    m_postProcess->recordBloom(m_frames[m_frameIndex].commandBuffer, *m_swapchain, m_imageIndex,
+                               m_heat);
+    return true;
+}
+
+bool VulkanRenderDevice::applyAmbientOcclusion(const AmbientOcclusion& settings) {
+    if (!preparePostProcess()) {
+        return false;
+    }
+    m_postProcess->recordAmbientOcclusion(m_frames[m_frameIndex].commandBuffer, *m_swapchain,
+                                          m_imageIndex, settings);
     return true;
 }
 

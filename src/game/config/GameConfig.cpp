@@ -142,6 +142,7 @@ void GameConfig::mergeJson(std::string_view json) {
         read(d, "vsync", display.vsync);
         read(d, "depthOfField", display.depthOfField);
         read(d, "bloom", display.bloom);
+        read(d, "ambientOcclusion", display.ambientOcclusion);
         if (d.contains("sampleCount")) {
             const auto& samples = d.at("sampleCount");
             display.sampleCount = 1;
@@ -288,13 +289,19 @@ std::string GameConfig::toJson() const {
     } else if (display.windowMode == WindowMode::BorderlessFullscreen) {
         windowModeName = "borderless";
     }
-    root["display"] = {
-        {"virtualWidth", display.virtualWidth}, {"virtualHeight", display.virtualHeight},
-        {"frameWidth", display.frameWidth},     {"frameHeight", display.frameHeight},
-        {"windowWidth", display.windowWidth},   {"windowHeight", display.windowHeight},
-        {"windowMode", windowModeName},         {"vsync", display.vsync},
-        {"sampleCount", display.sampleCount},   {"maxFrameRate", display.maxFrameRate},
-        {"depthOfField", display.depthOfField}, {"bloom", display.bloom}};
+    root["display"] = {{"virtualWidth", display.virtualWidth},
+                       {"virtualHeight", display.virtualHeight},
+                       {"frameWidth", display.frameWidth},
+                       {"frameHeight", display.frameHeight},
+                       {"windowWidth", display.windowWidth},
+                       {"windowHeight", display.windowHeight},
+                       {"windowMode", windowModeName},
+                       {"vsync", display.vsync},
+                       {"sampleCount", display.sampleCount},
+                       {"maxFrameRate", display.maxFrameRate},
+                       {"depthOfField", display.depthOfField},
+                       {"bloom", display.bloom},
+                       {"ambientOcclusion", display.ambientOcclusion}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};
     root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},

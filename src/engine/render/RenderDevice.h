@@ -16,6 +16,8 @@ class Window;
 class ImmediateBatch;
 class Texture;
 struct DepthOfField;
+struct AmbientOcclusion;
+struct HeatSource;
 
 struct RenderDeviceDesc {
     bool vsync = true;
@@ -115,6 +117,10 @@ public:
     /** Adds restrained bloom to the scene drawn so far, never to subsequent HUD/menu draws.
      * Returns false when the device cannot run scene post-processing. */
     virtual bool applyBloom() = 0;
+    /** Register a live thermal emitter for this frame's Bloom pass only. */
+    virtual void addHeatSource(const HeatSource& source) = 0;
+    /** Contact shading before translucent effects and UI. */
+    virtual bool applyAmbientOcclusion(const AmbientOcclusion& settings) = 0;
 };
 
 std::unique_ptr<RenderDevice> createVulkanRenderDevice(Window& window,
