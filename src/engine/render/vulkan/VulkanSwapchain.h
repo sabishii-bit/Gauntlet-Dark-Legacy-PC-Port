@@ -36,6 +36,7 @@ public:
     VkSampleCountFlagBits samples() const { return m_samples; }
     VkImage multisampleImage() const { return m_multisampleImage; }
     VkImageView multisampleImageView() const { return m_multisampleImageView; }
+    bool supportsPostProcess() const { return m_supportsPostProcess; }
 
 private:
     void create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain);
@@ -45,6 +46,7 @@ private:
     bool m_vsync = true;
     u32 m_requestedSamples = 1;
     VkSampleCountFlagBits m_samples = VK_SAMPLE_COUNT_1_BIT;
+    bool m_supportsPostProcess = false;
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     VkFormat m_colorFormat = VK_FORMAT_UNDEFINED;

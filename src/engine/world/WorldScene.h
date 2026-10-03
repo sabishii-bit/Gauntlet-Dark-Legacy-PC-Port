@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -71,6 +72,9 @@ public:
     void setTextureFrame(u32 slot, const Texture* texture);
     /** Slides the coordinates of everything drawn with `slot`. */
     void setTextureOffset(u32 slot, const Vec2& offset);
+    /** Continuous scroll sampled relative to the current whole texture frame. Native
+     * offset queries remain unchanged; phase includes each axis's rate-divider remainder. */
+    void setTextureScroll(u32 slot, const Vec2& offset, const Vec2& phase, const Vec2& velocity);
     /** The texture drawn for a slot, or null when the scene never draws it. */
     const Texture* textureOf(u32 slot) const;
     Vec2 textureOffset(u32 slot) const;
@@ -86,15 +90,18 @@ public:
 
     /** Draws the still opaque geometry, the moving objects, the still translucent geometry,
      * then the sorted objects farthest from the camera first (those flagged to face it
-     * turned its way), and the glows last; `clip` maps world to clip space. */
+     * turned its way), and the glows last; `clip` maps world to clip space.
+     * A texture-frame offset samples continuous scrolls without advancing flipbooks. */
     void draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-              f32 presentationAlpha = -1.0f) const;
+              f32 presentationAlpha = -1.0f, std::optional<f32> textureFrameOffset = {}) const;
     /** Insert dynamic solid objects between these passes so glass and light rays
      * blend over them while still respecting the completed depth buffer. */
     void drawOpaque(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                    f32 presentationAlpha = -1.0f) const;
+                    f32 presentationAlpha = -1.0f,
+                    std::optional<f32> textureFrameOffset = {}) const;
     void drawDeferred(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                      f32 presentationAlpha = -1.0f) const;
+                      f32 presentationAlpha = -1.0f,
+                      std::optional<f32> textureFrameOffset = {}) const;
     /** Takes this much of the colour out of everything but what glows (the level's light is
      * baked into its vertices, so a change of ambient light is made this way). */
     void setDarken(f32 darken) { m_darken = darken; }
@@ -111,10 +118,13 @@ private:
         const Texture* texture = nullptr; ///< what the set (or a lender) holds for it
         const Texture* frame = nullptr;   ///< what an animation shows instead, when set
         Vec2 offset{0.0f, 0.0f};
+        Vec2 scrollPhase{0.0f};
+        Vec2 scrollVelocity{0.0f};
         bool translucent = false;
         bool usable = false;
 
         const Texture* current() const { return frame != nullptr ? frame : texture; }
+        Vec2 presentedOffset(std::optional<f32> frameOffset) const;
     };
     struct Batch {
         u32 slot = 0;
@@ -166,9 +176,11 @@ private:
     const Mat4& presentedWorldOf(usize object, f32 alpha) const;
     Unit* unitOf(usize object);
     const Unit* unitOf(usize object) const;
-    void drawBatch(RenderDevice& device, const Batch& batch, const Mat4& clip) const;
+    void drawBatch(RenderDevice& device, const Batch& batch, const Mat4& clip,
+                   std::optional<f32> textureFrameOffset) const;
     void drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
-                  const CameraFrame& camera, bool opaque, bool translucent, f32 alpha) const;
+                  const CameraFrame& camera, bool opaque, bool translucent, f32 alpha,
+                  std::optional<f32> textureFrameOffset) const;
 
     std::unordered_map<u32, Slot> m_slots;
     std::vector<Batch> m_batches;

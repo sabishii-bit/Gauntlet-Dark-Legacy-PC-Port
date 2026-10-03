@@ -7,6 +7,7 @@
 #include "engine/app/Application.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/DepthOfField.h"
 #include "engine/render/Image.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
@@ -22,6 +23,7 @@ public:
     using Application::Application;
     bool changePresentation = false;
     bool changeWindow = false;
+    bool depthOfField = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
@@ -111,6 +113,16 @@ protected:
         glow.blend = BlendMode::Additive;
         glow.depthWrite = false;
         device.draw(m_batch, *m_texture, projection, glow);
+        if (depthOfField) {
+            DepthOfField blur;
+            blur.clipToView = glm::inverse(projection);
+            blur.focusEnd = 0.1f;
+            blur.transition = 0.1f;
+            CHECK(device.applyDepthOfField(blur));
+            // Switching back must LOAD the postprocessed scene, retain depth, and restore
+            // the normal pipeline/vertex stream rather than clearing it for the HUD.
+            device.draw(m_batch, *m_texture, projection);
+        }
         ++m_renderedFrames;
     }
 
@@ -198,6 +210,27 @@ TEST_CASE("presentation changes rebuild multisampled attachments without losing 
     app.changePresentation = true;
     REQUIRE(app.run() == 0);
     CHECK(app.renderedFrames() >= 8);
+}
+
+TEST_CASE("depth of field survives MSAA and window changes before drawing the HUD",
+          "[gpu][app][dof]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl depth-of-field test";
+    desc.enableValidation = true;
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 18;
+    desc.maxFrameRate = 60;
+    ProbeApplication app(std::move(desc));
+    app.depthOfField = true;
+    SECTION("single sample and resizing") {
+        app.changeWindow = true;
+    }
+    SECTION("changing multisample count") {
+        app.changePresentation = true;
+    }
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 18);
 }
 
 } // namespace

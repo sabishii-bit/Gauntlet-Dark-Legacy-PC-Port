@@ -159,11 +159,18 @@ std::vector<Obstacle> LockedGates::obstacles() const {
     return boxes;
 }
 
-void LockedGates::draw(RenderDevice& device, const Mat4& clip,
-                       const WorldLighting& lighting) const {
+void LockedGates::capturePresentation() {
+    for (const auto& gate : m_gates) {
+        gate->figure.capturePresentation();
+    }
+}
+
+void LockedGates::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                       f32 presentationAlpha) const {
     for (const std::unique_ptr<Gate>& gate : m_gates) {
         if (gate->shown) {
-            gate->figure.draw(device, clip, lighting);
+            gate->figure.draw(device, clip, lighting, 1, 1, nullptr, TreeModel::Pass::All,
+                              presentationAlpha);
         }
     }
 }

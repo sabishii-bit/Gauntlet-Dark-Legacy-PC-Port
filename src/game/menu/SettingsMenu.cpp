@@ -9,6 +9,7 @@
 namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
+constexpr s32 kVideoRows = 6;
 constexpr std::array<u32, 3> kFrameRates{30, 60, 0};
 constexpr std::array<u32, 3> kSampleCounts{1, 2, 4};
 
@@ -112,8 +113,8 @@ void SettingsMenu::rebuild(s32 selection) {
         constexpr s32 kLeft = 64;
         constexpr s32 kRight = 448;
         constexpr s32 kColumnGap = 28;
-        constexpr s32 kRowTop = 132;
-        constexpr s32 kRowStep = 28;
+        constexpr s32 kRowTop = 122;
+        constexpr s32 kRowStep = 26;
         constexpr s32 kActionY = 300;
         constexpr s32 kActionGap = 24;
         if (m_confirmVideo) {
@@ -163,6 +164,8 @@ void SettingsMenu::rebuild(s32 selection) {
             }
             choice(text("settings.windowMode"), text(modeLabel), 4);
             definition.items.back().enabled = !m_display.desktop.isZero();
+            choice(text("settings.depthOfField"),
+                   text(m_config.display.depthOfField ? "settings.on" : "settings.off"), 8);
             s32 labelWidth = 0;
             s32 valueWidth = 0;
             for (const auto& item : definition.items) {
@@ -350,6 +353,8 @@ void SettingsMenu::change(s32 direction) {
             const auto size = choices[static_cast<usize>((index + direction + count) % count)];
             next.display.windowWidth = size.width;
             next.display.windowHeight = size.height;
+        } else if (code == 8) {
+            next.display.depthOfField = !next.display.depthOfField;
         } else if (code == 4) {
             if (m_display.desktop.isZero()) {
                 return;
@@ -388,7 +393,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (m_video.update()) {
             m_confirmVideo = false;
             m_config = m_video.saved();
-            rebuild(5);
+            rebuild(kVideoRows);
             return {};
         }
         if (m_video.remaining() != m_countdown) {
@@ -407,15 +412,15 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             if (!m_confirmVideo) {
                 m_config = m_video.saved();
             }
-            rebuild(m_confirmVideo ? 1 : 5);
+            rebuild(m_confirmVideo ? 1 : kVideoRows);
         }
         return {};
     }
     const bool horizontal = input.left || input.right || input.leftHeld || input.rightHeld;
     if (m_page == Page::Graphics && !m_menu.closing() && (input.left || input.right)) {
         const auto selected = m_menu.selection();
-        if (selected >= 5) {
-            rebuild(5 + (selected - 5 + (input.left ? -1 : 1) + 3) % 3);
+        if (selected >= kVideoRows) {
+            rebuild(kVideoRows + (selected - kVideoRows + (input.left ? -1 : 1) + 3) % 3);
         } else {
             change(input.left ? -1 : 1);
         }
@@ -433,8 +438,8 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     }
     auto mapped = input;
     mapped.back |= input.escape;
-    if (m_page == Page::Graphics && m_menu.selection() >= 5 && (input.up || input.down)) {
-        s32 row = 4;
+    if (m_page == Page::Graphics && m_menu.selection() >= kVideoRows && (input.up || input.down)) {
+        s32 row = kVideoRows - 1;
         while (row > 0 && !m_menu.definition().items[static_cast<usize>(row)].enabled) {
             --row;
         }
@@ -446,17 +451,18 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (code == 5) {
             m_confirmVideo = m_video.apply(m_config);
             m_notice = m_confirmVideo ? "" : text("settings.failed");
-            rebuild(m_confirmVideo ? 1 : 5);
+            rebuild(m_confirmVideo ? 1 : kVideoRows);
         } else if (code == 6) {
             const GameConfig defaults;
             m_config.display.vsync = defaults.display.vsync;
+            m_config.display.depthOfField = defaults.display.depthOfField;
             m_config.display.sampleCount = defaults.display.sampleCount;
             m_config.display.windowWidth = defaults.display.windowWidth;
             m_config.display.windowHeight = defaults.display.windowHeight;
             m_config.display.windowMode = defaults.display.windowMode;
             m_config.display.maxFrameRate = defaults.display.maxFrameRate;
             m_config.timing.gameplayFrameRate = defaults.timing.gameplayFrameRate;
-            rebuild(6);
+            rebuild(kVideoRows + 1);
         } else if (code == 7) {
             mapped.select = false;
             mapped.back = true;

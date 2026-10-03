@@ -68,7 +68,9 @@ public:
     std::vector<GateEvent> update(s32 ticks, f32 seconds, std::span<const ChestVisitor> party);
     /** The boxes of the gates that still bar the way. */
     std::vector<Obstacle> obstacles() const;
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 presentationAlpha = -1.0f) const;
+    void capturePresentation();
 
 private:
     std::vector<std::unique_ptr<Gate>> m_gates;

@@ -65,10 +65,11 @@ public:
      * standing safe rocks, which stop them. */
     std::vector<CombatantObstacle> critterObstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr, f32 presentationAlpha = -1.0f) const;
     /** Trap flames composite after deferred scenery, with solid-world depth testing. */
     void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                     const CameraFrame* camera = nullptr) const;
+                     const CameraFrame* camera = nullptr, f32 presentationAlpha = -1.0f) const;
+    void capturePresentation();
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     /** Carry fixtures and container children without advancing gameplay during a camera cut. */
     void syncFloors();

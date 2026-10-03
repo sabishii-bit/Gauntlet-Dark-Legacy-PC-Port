@@ -234,7 +234,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     REQUIRE(f.menu.menu().definition().items[3].text == "Video");
     f.select();
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
-    REQUIRE(f.menu.menu().definition().items.size() == 8);
+    REQUIRE(f.menu.menu().definition().items.size() == 9);
     CHECK(f.menu.menu().definition().items[0].value == "On");
     CHECK(f.menu.menu().definition().items[1].value == "30");
     CHECK(f.menu.menu().definition().items[2].value == "Off");
@@ -473,12 +473,18 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     CHECK(active.display.vsync);
     f.down();
     f.down();
-    f.down(); // skips unavailable resolution/window mode, reaches Apply
-    REQUIRE(f.menu.menu().selection() == 5);
+    f.down(); // skips unavailable resolution/window mode, reaches Depth of Field
+    CHECK(f.menu.menu().definition().items[5].text == "Depth of Field");
+    f.right();
+    CHECK(f.menu.config().display.depthOfField);
+    CHECK_FALSE(active.display.depthOfField);
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 6);
     f.select();
     REQUIRE(f.menu.menu().definition().items.size() == 2);
     CHECK(f.menu.menu().selection() == 1); // default to Revert, not Save
     CHECK_FALSE(active.display.vsync);
+    CHECK(active.display.depthOfField);
     CHECK(f.config.display.vsync);
     CHECK(f.writes == 0);
     CHECK(previews == 1);
@@ -489,6 +495,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         f.menu.update(left, 1);
         f.select();
         CHECK_FALSE(f.config.display.vsync);
+        CHECK(f.config.display.depthOfField);
         CHECK(f.writes == 1);
         now += 20;
         f.release();
@@ -504,7 +511,8 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(active.display.vsync);
         CHECK(previews == 2);
         CHECK(f.writes == 0);
-        CHECK(f.menu.menu().definition().items.size() == 8);
+        CHECK(f.menu.menu().definition().items.size() == 9);
+        CHECK_FALSE(active.display.depthOfField);
     }
     SECTION("Back cancels the trial") {
         f.back();
@@ -522,6 +530,7 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
           "[settings][graphics]") {
     Fixture f;
     f.config.display.vsync = false;
+    f.config.display.depthOfField = true;
     f.config.audio.effectsVolume = 0.25f;
     f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.down();
@@ -529,21 +538,23 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.down();
     f.down();
     f.down();
-    REQUIRE(f.menu.menu().selection() == 5);
-    f.right();
+    f.down();
     REQUIRE(f.menu.menu().selection() == 6);
+    f.right();
+    REQUIRE(f.menu.menu().selection() == 7);
     f.select();
     CHECK(f.menu.config().display.vsync);
+    CHECK_FALSE(f.menu.config().display.depthOfField);
     CHECK(f.menu.config().audio.effectsVolume == 0.25f);
     CHECK_FALSE(f.config.display.vsync);
     MenuInput up;
     up.up = true;
     f.menu.update(up, 1);
-    CHECK(f.menu.menu().selection() == 2); // last enabled setting
+    CHECK(f.menu.menu().selection() == 5); // last enabled setting: Depth of Field
     f.down();
     f.right();
     f.right();
-    REQUIRE(f.menu.menu().selection() == 7);
+    REQUIRE(f.menu.menu().selection() == 8);
     f.select();
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK_FALSE(f.menu.config().display.vsync);
@@ -567,6 +578,7 @@ TEST_CASE("Video rollback preserves a manually resized window", "[settings][grap
     REQUIRE(f.menu.menu().selection() == 4);
     f.right();
     f.down();
+    f.down(); // past Depth of Field to Apply
     f.select();
     REQUIRE(active.display.windowMode == WindowMode::Fullscreen);
     f.back();
@@ -611,6 +623,7 @@ TEST_CASE("Video font and columns reserve the widest choices before selecting th
         unchanged();
     }
     f.down();
+    f.down(); // past Depth of Field to Apply
     f.right();
     f.select(); // Restore Defaults
     unchanged();
@@ -641,10 +654,10 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
         });
     f.down();
     f.select();
-    for (s32 i = 0; i < 4; ++i) {
+    for (s32 i = 0; i < 5; ++i) {
         f.down();
     }
-    REQUIRE(f.menu.menu().selection() == 5);
+    REQUIRE(f.menu.menu().selection() == 6);
     f.right();
     f.select();
     CHECK(f.menu.config().display.windowMode == WindowMode::Windowed);

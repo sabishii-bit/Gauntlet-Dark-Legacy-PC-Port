@@ -12,6 +12,7 @@
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/vulkan/VulkanContext.h"
 #include "engine/render/vulkan/VulkanPipeline.h"
+#include "engine/render/vulkan/VulkanPostProcess.h"
 #include "engine/render/vulkan/VulkanSwapchain.h"
 #include "engine/render/vulkan/VulkanTexture.h"
 
@@ -75,6 +76,7 @@ VulkanRenderDevice::~VulkanRenderDevice() {
     const VkDevice device = m_context->device();
 
     m_whiteTexture.reset();
+    m_postProcess.reset();
     destroyPresentSemaphores();
     for (FrameResources& frame : m_frames) {
         destroyUploadBuffer(frame);
@@ -252,6 +254,8 @@ void VulkanRenderDevice::recreateSwapchain() {
     const auto oldSamples = m_swapchain->samples();
     const auto oldColor = m_swapchain->colorFormat();
     const auto oldDepth = m_swapchain->depthFormat();
+    m_context->waitIdle();
+    m_postProcess.reset();
     m_swapchain->recreate(size, m_desc.vsync, m_desc.sampleCount);
     if (oldSamples != m_swapchain->samples() || oldColor != m_swapchain->colorFormat() ||
         oldDepth != m_swapchain->depthFormat()) {
@@ -339,6 +343,7 @@ bool VulkanRenderDevice::beginFrame() {
     frame.uploadCursor = 0;
     m_frameOpen = true;
     m_renderingStarted = false;
+    m_frameHasContent = false;
     return true;
 }
 
@@ -351,13 +356,13 @@ void VulkanRenderDevice::beginRendering() {
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachment.imageView = m_swapchain->imageView(m_imageIndex);
     colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.loadOp =
+        m_frameHasContent ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.clearValue.color = {
         {m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a}};
     if (m_swapchain->samples() != VK_SAMPLE_COUNT_1_BIT) {
         colorAttachment.imageView = m_swapchain->multisampleImageView();
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
         colorAttachment.resolveImageView = m_swapchain->imageView(m_imageIndex);
         colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -367,8 +372,8 @@ void VulkanRenderDevice::beginRendering() {
     depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttachment.imageView = m_swapchain->depthImageView();
     depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.loadOp = colorAttachment.loadOp;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};
 
     VkRenderingInfo renderingInfo{};
@@ -399,10 +404,39 @@ void VulkanRenderDevice::beginRendering() {
     const VkDeviceSize zeroOffset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, &zeroOffset);
     m_renderingStarted = true;
+    m_frameHasContent = true;
+}
+
+bool VulkanRenderDevice::applyDepthOfField(const DepthOfField& settings) {
+    GDL_ASSERT(m_frameOpen, "Post-processing called outside beginFrame/endFrame");
+    if (!m_swapchain->supportsPostProcess()) {
+        if (!m_postProcessUnsupportedReported) {
+            log::warn(
+                "Depth of field unavailable: color/depth sampling unsupported at this AA setting");
+            m_postProcessUnsupportedReported = true;
+        }
+        return false;
+    }
+    if (!m_renderingStarted) {
+        beginRendering();
+    }
+    if (!m_postProcess) {
+        m_postProcess = std::make_unique<VulkanPostProcess>(
+            *m_context, *m_swapchain, m_desc.shaderDirectory, m_textureSetLayout,
+            m_samplers[samplerIndex(TextureFilter::Linear, TextureWrap::ClampToEdge,
+                                    TextureWrap::ClampToEdge)],
+            m_samplers[samplerIndex(TextureFilter::Nearest, TextureWrap::ClampToEdge,
+                                    TextureWrap::ClampToEdge)]);
+    }
+    const VkCommandBuffer cmd = m_frames[m_frameIndex].commandBuffer;
+    vkCmdEndRendering(cmd);
+    m_postProcess->record(cmd, *m_swapchain, m_imageIndex, settings);
+    m_renderingStarted = false;
+    return true;
 }
 
 void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) {
-    GDL_VERIFY(m_frameOpen && !m_renderingStarted,
+    GDL_VERIFY(m_frameOpen && !m_frameHasContent,
                "updateTexture must be called after beginFrame and before the frame's first draw");
     auto& vulkanTexture = dynamic_cast<VulkanTexture&>(texture);
     const VkDeviceSize bytes = VkDeviceSize{vulkanTexture.width()} * vulkanTexture.height() * 4;

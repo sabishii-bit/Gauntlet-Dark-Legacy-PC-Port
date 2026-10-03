@@ -13,6 +13,36 @@ constexpr f32 kFloorReachAbove = 0.5f;
 constexpr f32 kFloorReachBelow = 3.0f;
 constexpr f32 kTicksPerSecond = 60.0f;
 constexpr s32 kExactPlayersMark = 10;
+constexpr f32 kPresentationCutDistance = 32.0f;
+
+Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 blend) {
+    Mat3 from{previous};
+    Mat3 to{current};
+    Vec3 fromScale{0};
+    Vec3 toScale{0};
+    for (s32 axis = 0; axis < 3; ++axis) {
+        fromScale[axis] = glm::length(from[axis]);
+        toScale[axis] = glm::length(to[axis]);
+        if (fromScale[axis] < 1e-6f || toScale[axis] < 1e-6f) {
+            return current;
+        }
+        from[axis] /= fromScale[axis];
+        to[axis] /= toScale[axis];
+    }
+    const auto orthogonal = [](const Mat3& basis) {
+        return std::abs(glm::determinant(basis) - 1.0f) < 1e-3f &&
+               std::abs(glm::dot(basis[0], basis[1])) < 1e-3f &&
+               std::abs(glm::dot(basis[0], basis[2])) < 1e-3f &&
+               std::abs(glm::dot(basis[1], basis[2])) < 1e-3f;
+    };
+    Mat4 result = current;
+    if (orthogonal(from) && orthogonal(to)) {
+        result = glm::mat4_cast(glm::slerp(glm::quat_cast(from), glm::quat_cast(to), blend));
+        result = glm::scale(result, glm::mix(fromScale, toScale, blend));
+    }
+    result[3] = glm::mix(previous[3], current[3], blend);
+    return result;
+}
 
 /** `position` in the box's own space, about its centre. */
 Vec2 localOf(const Obstacle& box, const Vec3& position) {
@@ -159,6 +189,8 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_textureSequence = 0;
     m_textureFrame = 0;
     m_gateParticles = false;
+    m_presentationCaptured = false;
+    m_presentationAdvanced = false;
     const auto tree = items.loaded() ? items.trees.find(name) : std::nullopt;
     if (!tree.has_value()) {
         return false;
@@ -220,6 +252,14 @@ void ItemFigure::play(s32 index, bool loop) {
     refreshTextures();
 }
 
+void ItemFigure::capturePresentation() {
+    m_previousTransform = m_transform;
+    m_previousFrame = m_player.presentationFrame();
+    m_previousGeneration = m_player.generation();
+    m_presentationCaptured = true;
+    m_presentationAdvanced = false;
+}
+
 void ItemFigure::update(f32 seconds) {
     if (m_tree == nullptr) {
         return;
@@ -236,6 +276,7 @@ void ItemFigure::update(f32 seconds) {
     refreshTextures();
     m_particles.setLocalScales(m_pose.poses());
     m_particles.step(seconds, m_transform, m_pose.matrices());
+    m_presentationAdvanced = seconds > 0;
 }
 
 void ItemFigure::refreshTextures() {
@@ -295,13 +336,32 @@ s32 ItemFigure::ticksOf(s32 index) const {
 }
 
 void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                      f32 alpha, f32 scale, const CameraFrame* camera, TreeModel::Pass pass) const {
+                      f32 alpha, f32 scale, const CameraFrame* camera, TreeModel::Pass pass,
+                      f32 presentationAlpha) const {
     if (m_tree != nullptr) {
-        m_model.draw(device, clip, glm::scale(m_transform, Vec3{scale}), lighting,
-                     m_pose.matrices(), camera, alpha, pass);
+        Mat4 placement = m_transform;
+        const TreePose* pose = &m_pose;
+        if (presentationAlpha >= 0 && m_presentationCaptured) {
+            const f32 blend = std::clamp(presentationAlpha, 0.0f, 1.0f);
+            if (glm::distance(Vec3{m_previousTransform[3]}, Vec3{m_transform[3]}) <=
+                kPresentationCutDistance) {
+                placement = blendPlacement(m_previousTransform, m_transform, blend);
+            }
+            if (!m_holdPose && m_player.playing()) {
+                const f32 frame =
+                    m_previousGeneration == m_player.generation()
+                        ? glm::mix(m_previousFrame, m_player.presentationFrame(), blend)
+                        : m_player.presentationFrame();
+                m_presentationPose.evaluate(*m_tree, m_player.sequence(), frame, false, true);
+                pose = &m_presentationPose;
+            }
+        }
+        m_model.draw(device, clip, glm::scale(placement, Vec3{scale}), lighting, pose->matrices(),
+                     camera, alpha, pass);
         if (pass != TreeModel::Pass::DepthWriting) {
             const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
-            m_particles.draw(device, clip, frame.right, frame.up);
+            m_particles.draw(device, clip, frame.right, frame.up,
+                             m_presentationAdvanced ? presentationAlpha : -1.0f);
         }
     }
 }

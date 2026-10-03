@@ -28,7 +28,7 @@ endif()
 message(STATUS "GLSL compiler: ${GDL_GLSL_COMPILER} (${GDL_GLSL_COMPILER_KIND})")
 
 function(gdl_add_shaders target)
-    cmake_parse_arguments(ARG "" "OUTPUT_DIR" "SOURCES" ${ARGN})
+    cmake_parse_arguments(ARG "" "OUTPUT_DIR" "SOURCES;INCLUDES" ${ARGN})
     if(NOT ARG_OUTPUT_DIR)
         message(FATAL_ERROR "gdl_add_shaders: OUTPUT_DIR is required")
     endif()
@@ -46,7 +46,7 @@ function(gdl_add_shaders target)
             OUTPUT "${_out}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${ARG_OUTPUT_DIR}"
             COMMAND ${_cmd}
-            DEPENDS "${_src}"
+            DEPENDS "${_src}" ${ARG_INCLUDES}
             COMMENT "Compiling shader ${_name}"
             VERBATIM)
         list(APPEND _outputs "${_out}")

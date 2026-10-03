@@ -17,7 +17,7 @@ namespace gdl {
 VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                                VkFormat colorFormat, VkFormat depthFormat,
                                VkDescriptorSetLayout textureSetLayout, BlendMode blend,
-                               VkSampleCountFlagBits samples)
+                               VkSampleCountFlagBits samples, bool depthOfField)
     : m_context(context) {
     const bool additive = blend == BlendMode::Additive;
     const VkDevice device = m_context.device();
@@ -37,8 +37,14 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     layoutInfo.pPushConstantRanges = &pushRange;
     GDL_VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_layout));
 
-    const VkShaderModule vertexModule = loadShaderModule(shaderDirectory / "immediate.vert.spv");
-    const VkShaderModule fragmentModule = loadShaderModule(shaderDirectory / "immediate.frag.spv");
+    const VkShaderModule vertexModule = loadShaderModule(
+        shaderDirectory / (depthOfField ? "postprocess.vert.spv" : "immediate.vert.spv"));
+    const char* fragment = "immediate.frag.spv";
+    if (depthOfField) {
+        fragment = samples == VK_SAMPLE_COUNT_1_BIT ? "depth_of_field.frag.spv"
+                                                    : "depth_of_field_ms.frag.spv";
+    }
+    const VkShaderModule fragmentModule = loadShaderModule(shaderDirectory / fragment);
 
     std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -79,6 +85,10 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     vertexInput.pVertexBindingDescriptions = &binding;
     vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
     vertexInput.pVertexAttributeDescriptions = attributes.data();
+    if (depthOfField) {
+        vertexInput.vertexBindingDescriptionCount = 0;
+        vertexInput.vertexAttributeDescriptionCount = 0;
+    }
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -104,7 +114,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthTestEnable = depthOfField ? VK_FALSE : VK_TRUE;
     depthStencil.depthWriteEnable = additive ? VK_FALSE : VK_TRUE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 

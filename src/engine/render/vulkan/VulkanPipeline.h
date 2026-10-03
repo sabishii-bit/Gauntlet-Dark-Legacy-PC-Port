@@ -18,7 +18,7 @@ public:
     VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                    VkFormat colorFormat, VkFormat depthFormat,
                    VkDescriptorSetLayout textureSetLayout, BlendMode blend,
-                   VkSampleCountFlagBits samples);
+                   VkSampleCountFlagBits samples, bool depthOfField = false);
     ~VulkanPipeline();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanPipeline);

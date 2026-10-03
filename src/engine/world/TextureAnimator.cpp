@@ -245,26 +245,38 @@ void TextureAnimator::step(u32 ticks) {
 void TextureAnimator::apply(WorldScene& scene) const {
     // Separate U and V records may address the same texture (Temple rain).
     // Compose this frame's records, not the previous frame's offset.
-    std::unordered_map<u32, Vec2> offsets;
+    struct Scroll {
+        Vec2 offset{0};
+        Vec2 phase{0};
+        Vec2 velocity{0};
+    };
+    std::unordered_map<u32, Scroll> offsets;
     for (const Entry& entry : m_entries) {
         if (!entry.keyed) {
             if (entry.frames.empty() && entry.fade == 0) {
-                auto [at, inserted] = offsets.try_emplace(entry.slot, 0.0f, 0.0f);
+                auto& scroll = offsets[entry.slot];
                 const f32 along =
                     static_cast<f32>(entry.counter % entry.period) / static_cast<f32>(entry.period);
+                const auto rate = static_cast<u32>(std::max(entry.rate, 1));
+                const f32 speed = 1.0f / (static_cast<f32>(entry.period) * static_cast<f32>(rate));
+                const f32 phase = static_cast<f32>(m_frame % rate) * speed;
                 if (entry.direction.x != 0) {
-                    at->second.x = entry.direction.x * along;
+                    scroll.offset.x = entry.direction.x * along;
+                    scroll.phase.x = entry.direction.x * phase;
+                    scroll.velocity.x = entry.direction.x * speed;
                 }
                 if (entry.direction.y != 0) {
-                    at->second.y = entry.direction.y * along;
+                    scroll.offset.y = entry.direction.y * along;
+                    scroll.phase.y = entry.direction.y * phase;
+                    scroll.velocity.y = entry.direction.y * speed;
                 }
             } else {
                 show(entry, scene);
             }
         }
     }
-    for (const auto& [slot, offset] : offsets) {
-        scene.setTextureOffset(slot, offset);
+    for (const auto& [slot, scroll] : offsets) {
+        scene.setTextureScroll(slot, scroll.offset, scroll.phase, scroll.velocity);
     }
 }
 
