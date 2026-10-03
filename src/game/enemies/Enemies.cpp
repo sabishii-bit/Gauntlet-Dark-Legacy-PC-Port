@@ -563,6 +563,14 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     enemy.yaw = yaw;
     enemy.mind.heading = yaw;
     enemy.mind.headingBefore = yaw;
+    if (enemy.algorithm == kZigZagWay && spawn.zigZagSide != 0) {
+        // do_items' algorithm-14 birth setup follows generate_enemy: keep the body facing
+        // out of its generator, but offset its intended path by +/-45 degrees. A zero
+        // side cannot alternate when move_logic14 negates it and makes it circle instead.
+        enemy.mind.zigZag.side = spawn.zigZagSide;
+        enemy.mind.heading = wrapAngle(yaw + static_cast<f32>(spawn.zigZagSide) * kPi / 4);
+        enemy.mind.headingBefore = enemy.mind.heading;
+    }
     if (enemy.generator >= 0) {
         m_generatorEvents.push_back({enemy.generator, EnemyGeneratorEvent::Kind::Born});
     }

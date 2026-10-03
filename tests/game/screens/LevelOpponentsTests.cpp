@@ -127,6 +127,63 @@ TEST_CASE("battlefield entrance tower placements keep their stationary archer al
     opponents.close();
 }
 
+TEST_CASE("courtyard grunts approach the entrance player", "[courtyard-grunt][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("A1")));
+    REQUIRE(world.startPoint(0));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, world.startPoint(0)->position, 0);
+    LevelFixtures fixtures;
+    fixtures.bind({device, world, weapons, effects, audio, 1});
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& enemies = opponents.enemies();
+    auto views = LevelOpponents::enemyViews(players);
+    views[0].level = 99; // the courtyard scenario's knight
+    std::vector<s32> entranceGrunts;
+    ViewVolume overhead;
+    overhead.position = views[0].position + Vec3{0, 80, 0};
+    overhead.forward = {0, -1, 0};
+    overhead.up = {0, 0, 1};
+    // Exercise the real generator, native animation and level collision path. Previously
+    // these two algorithm-14 births circled 15/22 units away, despite targeting the player.
+    for (s32 frame = 0; frame < 180; ++frame) {
+        opponents.watch(overhead, views[0].position);
+        opponents.generators().update(2, enemies, views, fixtures.obstacles());
+        for (s32 id = 0; id < Enemies::kMost; ++id) {
+            if (enemies.alive(id) && enemies.kindOf(id) == kGruntKind && enemies.bred(id) &&
+                enemies.algorithmOf(id) == kZigZagWay &&
+                glm::distance(enemies.positionOf(id), views[0].position) < 30 &&
+                std::ranges::find(entranceGrunts, id) == entranceGrunts.end()) {
+                entranceGrunts.push_back(id);
+                CHECK(enemies.memoryOf(id).zigZag.side != 0);
+            }
+        }
+        auto obstacles = opponents.generators().enemyObstacles();
+        const auto fixturesObstacles = fixtures.obstacles();
+        obstacles.insert(obstacles.end(), fixturesObstacles.begin(), fixturesObstacles.end());
+        enemies.update(2, 1.0f / 30, views, obstacles);
+    }
+    REQUIRE(entranceGrunts.size() == 2);
+    for (const s32 id : entranceGrunts) {
+        INFO("grunt " << id);
+        CHECK(enemies.targetOf(id) == 0);
+        CHECK(glm::distance(enemies.positionOf(id), views[0].position) < 3.5f);
+    }
+    const auto blows = enemies.takeBlows();
+    CHECK(std::ranges::count_if(blows, [](const EnemyBlow& blow) {
+              return blow.player == 0 && blow.kind == kGruntKind && blow.damage > 0;
+          }) >= 2);
+}
+
 TEST_CASE("enemy views preserve the player's native collision centre independently of height",
           "[level-opponents][multiplayer][enemy-sight]") {
     ClassStats stats;

@@ -126,6 +126,8 @@ struct EnemyHit {
 
 /** Where an enemy is asked to appear: about `position`, facing `direction`. */
 struct EnemySpawn {
+    /** do_items alternates the handedness of algorithm-14 births; zero for other births. */
+    s32 zigZagSide = 0;
     enum class Priority : s8 { FreeSlotOnly = -1, Offscreen = 0, Visible = 1 };
     s32 kind = kGruntKind;
     s32 tier = 1;
