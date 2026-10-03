@@ -12,6 +12,7 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/world/ItemFigure.h"
+#include "game/world/ItemSupport.h"
 
 namespace gdl::game {
 
@@ -68,11 +69,13 @@ public:
         f32 height = 3.0f;
         ItemFigure figure;
         Obstacle box;
+        ItemSupport support;
     };
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const WorldCollision* collision, ItemArchive* realmItems = nullptr);
     void clear();
+    void syncFloors();
     usize size() const { return m_barrels.size(); }
     /** Potion magic's perk on what a standing barrel holds (fn_8005BA1C). */
     void changeContents(usize index, s32 record) {
@@ -108,6 +111,7 @@ private:
     std::vector<std::unique_ptr<Barrel>> m_barrels;
     std::vector<ItemInfo> m_infos;
     u32 m_seed = kSeedStart;
+    const WorldCollision* m_collision = nullptr;
 };
 
 } // namespace gdl::game

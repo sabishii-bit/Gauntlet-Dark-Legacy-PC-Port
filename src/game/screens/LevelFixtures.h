@@ -70,7 +70,7 @@ public:
     void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
-    /** Carry containers and their children without advancing gameplay during a camera cut. */
+    /** Carry fixtures and container children without advancing gameplay during a camera cut. */
     void syncFloors();
     void strikeSafeRock(usize index, f32 power);
     /** Magic on a shut chest holding Death (fn_8005C1DC): he becomes the level's apple, with

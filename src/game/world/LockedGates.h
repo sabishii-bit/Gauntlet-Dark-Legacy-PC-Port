@@ -14,6 +14,7 @@
 
 #include "game/world/Chests.h"
 #include "game/world/ItemFigure.h"
+#include "game/world/ItemSupport.h"
 
 namespace gdl::game {
 
@@ -51,11 +52,13 @@ public:
         bool blocksPassage = true; ///< floor-only triangle lists are not key-operated barriers
         ItemFigure figure;
         Obstacle box;
+        ItemSupport support;
     };
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const WorldCollision* collision, ItemArchive* realmItems = nullptr);
     void clear();
+    void syncFloors();
     usize size() const { return m_gates.size(); }
     const Gate& gate(usize index) const { return *m_gates[index]; }
     /** The authored opening cue for this realm and gate material/style. */
@@ -69,6 +72,7 @@ public:
 
 private:
     std::vector<std::unique_ptr<Gate>> m_gates;
+    const WorldCollision* m_collision = nullptr;
 };
 
 } // namespace gdl::game

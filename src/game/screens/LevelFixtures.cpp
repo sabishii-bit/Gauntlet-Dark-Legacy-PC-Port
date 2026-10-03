@@ -376,6 +376,9 @@ void LevelFixtures::syncFloors() {
         return;
     }
     m_chests.syncFloors();
+    m_traps.syncFloors();
+    m_barrels.syncFloors();
+    m_gates.syncFloors();
     syncChestContents();
 }
 
@@ -410,7 +413,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     for (const Vec3& position : m_resources->world.takeWorldExplosions()) {
         worldExplosion(position, players, events);
     }
-    m_chests.syncFloors();
+    syncFloors();
     std::vector<Obstacle> boxes = m_chests.obstacles();
     const std::vector<Obstacle> barred = m_gates.obstacles();
     boxes.insert(boxes.end(), barred.begin(), barred.end());

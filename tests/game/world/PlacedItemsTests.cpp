@@ -141,13 +141,13 @@ TEST_CASE("pickups bind to authored floors and ride the current platform pose",
         items.syncFloors();
         CHECK(glm::distance(items.item(2).position, Vec3{moved * Vec4{0, 0.1f, 0, 1}}) < 0.0001f);
     }
-    SECTION("disabling the supporting object stops its attachment") {
+    SECTION("disabling floor collision during an animation preserves its child attachment") {
         collision.setSolid(1, false);
         items.syncFloors();
-        CHECK_FALSE(items.item(0).floor);
+        REQUIRE(items.item(0).floor);
         collision.setObjectTransform(1, moved);
         items.syncFloors();
-        CHECK(glm::distance(items.item(0).position, Vec3{121, -9.9f, 50}) < 0.0001f);
+        CHECK(glm::distance(items.item(0).position, Vec3{(moved * local)[3]}) < 0.0001f);
     }
 }
 

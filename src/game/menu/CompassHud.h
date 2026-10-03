@@ -15,13 +15,18 @@ public:
     static constexpr Vec2 kFramePosition{64.0f, 128.0f};
     static constexpr Vec2 kReferenceFrame{640.0f, 448.0f};
     static constexpr f32 kStatusHeight = 64.0f;
-    /** Bottom-up MB window coordinates projected into the top-down frame. */
+    /** Upper-right UI placement requested for the port, retaining the retail insets.
+     * The MBWindowTo3D arguments are not literal top-down screen coordinates. */
     static constexpr Vec2 frameAnchor() {
         constexpr f32 kWindowAspect = 0.75f;
         const f32 centre = (kReferenceFrame.y + kStatusHeight) / 2.0f;
         const f32 viewCentre = (kReferenceFrame.y - kStatusHeight) / 2.0f;
         const f32 verticalScale = kWindowAspect * kReferenceFrame.x / kReferenceFrame.y;
-        return {kFramePosition.x, viewCentre - (kFramePosition.y - centre) * verticalScale};
+        // Reflect the old lower-left anchor across the gameplay viewport. Size,
+        // model and transparency are verified against retail; this corner still
+        // needs a retail gameplay capture to establish pixel-exact placement.
+        return {kReferenceFrame.x - kFramePosition.x,
+                viewCentre + (kFramePosition.y - centre) * verticalScale};
     }
     static constexpr f32 kDepth = 10.0f;
     static constexpr f32 kScale = 1.5f;
