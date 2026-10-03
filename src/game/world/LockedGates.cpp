@@ -35,6 +35,8 @@ std::string_view LockedGates::openingSound(s32 realm, s32 subtype) {
 bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
                        const WorldCollision* collision, ItemArchive* realmItems) {
     clear();
+    m_collision = collision;
+    const auto authored = itemSupportWorld(layout, collision);
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
@@ -54,6 +56,9 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             log::warn("Gates: no figure {} in the item archive", name);
         }
         gate->box = gate->figure.obstacle(info);
+        gate->support.bind(instance, info, authored ? &*authored : nullptr, gate->figure,
+                           gate->box);
+        gate->support.sync(collision, gate->figure, gate->box);
         if (info.collisionType == 4) {
             // Type 7 also includes floor decorations (E1DOORCARPET23). Retail
             // fn_8005FDA8 tests the authored triangle list, not the broad-phase
@@ -76,7 +81,14 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
 }
 
 void LockedGates::clear() {
+    m_collision = nullptr;
     m_gates.clear();
+}
+
+void LockedGates::syncFloors() {
+    for (const auto& gate : m_gates) {
+        gate->support.sync(m_collision, gate->figure, gate->box);
+    }
 }
 
 void LockedGates::setPlayerCount(s32 players) {
@@ -88,6 +100,7 @@ void LockedGates::setPlayerCount(s32 players) {
 std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
                                            std::span<const ChestVisitor> party) {
     std::vector<GateEvent> events;
+    syncFloors();
     for (usize index = 0; index < m_gates.size(); ++index) {
         Gate& gate = *m_gates[index];
         if (!gate.shown) {

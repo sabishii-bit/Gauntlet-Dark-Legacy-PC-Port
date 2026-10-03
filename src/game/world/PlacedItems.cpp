@@ -145,7 +145,9 @@ void PlacedItems::syncFloors() {
             continue;
         }
         const auto placement = m_collision->objectTransform(item.floor->object);
-        if (!placement || !m_collision->solid(item.floor->object)) {
+        // AddItemSub's scene-graph parent survives temporary collision disabling
+        // during platform animations (notably Maze of Illusion).
+        if (!placement) {
             item.floor.reset();
             continue;
         }

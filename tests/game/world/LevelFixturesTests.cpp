@@ -33,6 +33,189 @@ using Catch::Approx;
 
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 
+TEST_CASE("Maze traps and fixtures ride their authored floors from the initial animation pose",
+          "[fixtures][item-support][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELJ4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("J4")));
+    Traps traps;
+    Breakables barrels;
+    LockedGates gates;
+    traps.bind(device, world.layout(), world.items(), &world.collision(), 1, 1, 1,
+               &world.realmItems());
+    barrels.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
+    gates.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
+    struct Rider {
+        const ItemFigure* figure;
+        const Obstacle* box;
+        s32 object;
+        Mat4 local;
+        Vec3 boxLocal;
+        Vec3 initial;
+    };
+    std::vector<Rider> riders;
+    const auto authored = itemSupportWorld(world.layout(), &world.collision());
+    REQUIRE(authored);
+    const auto add = [&](const auto& fixture) {
+        const s32 object = fixture.support.object();
+        if (object < 0) {
+            return;
+        }
+        const auto& instance = world.layout().itemInstances()[static_cast<usize>(fixture.instance)];
+        CAPTURE(fixture.instance, object);
+        const auto current = world.collision().objectTransform(object);
+        REQUIRE(current);
+        const Mat4 rest =
+            glm::translate(Mat4{1}, world.layout().worldPosition(static_cast<usize>(object)));
+        const auto floor = authored->floorAt(instance.position, 4, 10);
+        REQUIRE(floor);
+        const Vec3 position{instance.position.x, floor->y + ItemFigure::kFloorLift,
+                            instance.position.z};
+        const Vec3 expected = Vec3{*current * glm::inverse(rest) * Vec4{position, 1}};
+        CHECK(glm::distance(fixture.figure.position(), expected) < 0.001f);
+        riders.push_back({&fixture.figure, &fixture.box, object,
+                          glm::inverse(*current) * fixture.figure.transform(),
+                          Vec3{glm::inverse(*current) * Vec4{fixture.box.centre, 1}},
+                          fixture.figure.position()});
+    };
+    for (usize i = 0; i < traps.size(); ++i) {
+        add(traps.trap(i));
+    }
+    const usize ridingTraps = riders.size();
+    for (usize i = 0; i < barrels.size(); ++i) {
+        add(barrels.barrel(i));
+    }
+    const usize ridingBarrels = riders.size() - ridingTraps;
+    for (usize i = 0; i < gates.size(); ++i) {
+        add(gates.gate(i));
+    }
+    CAPTURE(ridingTraps, ridingBarrels, riders.size());
+    REQUIRE(ridingTraps == 12);
+    CHECK(ridingBarrels == 0); // J4's barrels are not on its animated floors.
+    struct PickupRider {
+        usize index;
+        s32 object;
+        Mat4 local;
+    };
+    std::vector<PickupRider> pickups;
+    for (usize i = 0; i < world.placedItems().size(); ++i) {
+        const auto& item = world.placedItems().item(i);
+        if (item.floor) {
+            pickups.push_back({i, item.floor->object, item.floor->local});
+        }
+    }
+    REQUIRE_FALSE(pickups.empty());
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        world.activateTrigger(world.triggers().trigger(i).id, false);
+    }
+    usize moved = 0;
+    for (s32 frame = 0; frame < 180; ++frame) {
+        world.update(1.0f / 60);
+        world.updateTriggers(1.0f / 60, {});
+        // Camera-only updates must move the fixtures without advancing their animation.
+        traps.syncFloors();
+        barrels.syncFloors();
+        gates.syncFloors();
+        for (const auto& pickup : pickups) {
+            const auto transform = world.collision().objectTransform(pickup.object);
+            REQUIRE(transform);
+            CHECK(glm::distance(world.placedItems().item(pickup.index).position,
+                                Vec3{(*transform * pickup.local)[3]}) < 0.001f);
+        }
+        for (const auto& rider : riders) {
+            CAPTURE(frame, rider.object, world.collision().solid(rider.object));
+            const auto transform = world.collision().objectTransform(rider.object);
+            REQUIRE(transform);
+            CHECK(glm::distance(rider.figure->position(), Vec3{(*transform * rider.local)[3]}) <
+                  0.001f);
+            CHECK(glm::distance(rider.box->centre, Vec3{*transform * Vec4{rider.boxLocal, 1}}) <
+                  0.001f);
+            if (frame == 179 && glm::distance(rider.initial, rider.figure->position()) > 1) {
+                ++moved;
+            }
+        }
+    }
+    CHECK(moved > 0);
+}
+
+TEST_CASE("floor attachments move trap damage and fixture collision without reviving opened gates",
+          "[fixtures][item-support]") {
+    const auto dir = test::scratchDirectory("fixture-platform");
+    writeTextFile(dir / "world.json", R"({"objects":[
+        {"name":"ROOT","position":[100,10,50],"child":1},
+        {"name":"LIFT","position":[0,0,0],"flags":4100}],
+        "itemInfos":[
+          {"type":8,"subtype":0,"name":"SPIKES","radius":1,"height":2,"value":20,"activeOff":1},
+          {"type":10,"subtype":43,"name":"BAROBJ","radius":1,"height":2,"hitPoints":5},
+          {"type":7,"subtype":0,"name":"GATE","radius":1,"height":2},
+          {"type":8,"subtype":0,"name":"FIXED","radius":1,"height":2,"collisionFlags":1}],
+        "itemInstances":[
+          {"info":0,"position":[101,10,50]}, {"info":1,"position":[101,10,50]},
+          {"info":2,"position":[101,10,50]}, {"info":3,"position":[101,10,50]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    WorldCollision collision;
+    collision.build({{{0, 1, 0}, {Vec3{-4, 0, -4}, Vec3{4, 0, -4}, Vec3{0, 0, 4}}, 1, 4100}});
+    collision.setMovingObjects(std::array<s32, 1>{1});
+    const Mat4 initial = glm::translate(Mat4{1}, Vec3{100, 20, 50});
+    collision.setObjectTransform(1, initial);
+    test::FakeRenderDevice device;
+    ItemArchive art;
+    Traps traps;
+    Breakables barrels;
+    LockedGates gates;
+    REQUIRE(traps.bind(device, layout, art, &collision));
+    REQUIRE(barrels.bind(device, layout, art, &collision));
+    REQUIRE(gates.bind(device, layout, art, &collision));
+    CHECK(traps.trap(0).figure.position().y == Approx(20.1f));
+    CHECK(barrels.barrel(0).figure.position().y == Approx(20.1f));
+    CHECK(gates.gate(0).figure.position().y == Approx(20.1f));
+    CHECK(traps.trap(1).figure.position().y == Approx(10));
+    CHECK(traps.trap(1).support.object() == -1);
+    CHECK(collision.objectTransform(1) == initial);
+    const Mat4 moved =
+        glm::translate(Mat4{1}, Vec3{100, -10, 50}) * glm::rotate(Mat4{1}, 0.5f, Vec3{0, 1, 0});
+    collision.setObjectTransform(1, moved);
+    traps.syncFloors();
+    barrels.syncFloors();
+    gates.syncFloors();
+    const Vec3 expected = Vec3{moved * Vec4{1, 0.1f, 0, 1}};
+    CHECK(glm::distance(traps.trap(0).figure.position(), expected) < 0.001f);
+    CHECK(glm::distance(traps.trap(0).box.centre, expected) < 0.001f);
+    CHECK(glm::distance(barrels.barrel(0).box.centre, expected) < 0.001f);
+    CHECK(glm::distance(gates.gate(0).box.centre, expected) < 0.001f);
+    CHECK(gates.gate(0).box.yaw == Approx(0.5f));
+    const std::array victims{TrapVictim{Vec3{101, 20, 50}}, TrapVictim{expected}};
+    const auto hits = traps.update(2, 0, victims);
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].victim == 1);
+    CHECK(hits[0].damage == 20);
+    CHECK(barrels.within(Vec3{101, 20, 50}, 0.5f).empty());
+    REQUIRE(barrels.struckBy(expected, expected, 1));
+    const std::array visitors{ChestVisitor{expected, 1, 1}};
+    REQUIRE(gates.update(1, 0, visitors).size() == 1);
+    gates.update(LockedGates::kPassableTicks, 1, {});
+    CHECK(gates.obstacles().empty());
+    collision.setObjectTransform(1, initial);
+    gates.syncFloors();
+    CHECK(gates.obstacles().empty());
+    CHECK(gates.gate(0).figure.position().y == Approx(20.1f));
+    traps.syncFloors();
+    collision.setSolid(1, false);
+    collision.setObjectTransform(1, moved);
+    traps.syncFloors();
+    CHECK(traps.trap(0).support.object() == 1);
+    CHECK(glm::distance(traps.trap(0).figure.position(), expected) < 0.001f);
+    traps.clear();
+    REQUIRE(traps.bind(device, layout, art, nullptr));
+    CHECK(traps.trap(0).support.object() == -1);
+    CHECK(traps.trap(0).figure.position().y == Approx(10));
+}
+
 TEST_CASE("Temple chests ride their native switch-driven platforms",
           "[game][world][fixtures][chest-platform][assets]") {
     const auto root =
@@ -186,6 +369,12 @@ TEST_CASE("chests follow descending and rotating platforms with their obstacle a
     chests.update(0, {});
     CHECK(chests.chest(0).figure.transform() == initial * local);
     CHECK(chests.chest(0).held == 42);
+    collision.setSolid(1, false);
+    collision.setObjectTransform(1, moved);
+    chests.syncFloors();
+    REQUIRE(chests.chest(0).floor);
+    CHECK(chests.chest(0).figure.transform() == moved * local);
+    collision.setObjectTransform(1, initial);
     for (s32 i = 0; i < 100; ++i) {
         chests.syncFloors();
     }

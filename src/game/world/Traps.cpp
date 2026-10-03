@@ -13,6 +13,8 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
                  const WorldCollision* collision, u32 seed, f32 timeScale, f32 damageScale,
                  ItemArchive* realmItems) {
     clear();
+    m_collision = collision;
+    const auto authored = itemSupportWorld(layout, collision);
     m_random.seed(seed);
     m_timeScale = timeScale;
     const std::vector<ItemInfo>& infos = layout.itemInfos();
@@ -49,6 +51,9 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
         trap->box.centre = Vec3{trap->figure.transform() * Vec4{info.collisionOffset, 1}};
         trap->figure.gateParticlesOnSequence(true);
         trap->box.solid = false;
+        trap->support.bind(instance, info, authored ? &*authored : nullptr, trap->figure,
+                           trap->box);
+        trap->support.sync(collision, trap->figure, trap->box);
         trap->ticksLeft = restTicks(*trap);
         m_traps.push_back(std::move(trap));
     }
@@ -56,9 +61,18 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
 }
 
 void Traps::clear() {
+    m_collision = nullptr;
     m_traps.clear();
     m_wakes.clear();
     m_gaps.clear();
+}
+
+void Traps::syncFloors() {
+    for (const auto& trap : m_traps) {
+        if (!trap->gone) {
+            trap->support.sync(m_collision, trap->figure, trap->box);
+        }
+    }
 }
 
 void Traps::setPlayerCount(s32 players) {
@@ -93,10 +107,12 @@ bool Traps::disarm(usize index, RenderDevice& device, const WorldLayout& layout,
     ItemArchive& source =
         !items.trees.find(name).has_value() && realmItems != nullptr ? *realmItems : items;
     trap.disarmed = true;
+    const Mat4 placement = trap.figure.transform();
     trap.action = kResting;
     if (source.trees.find(name).has_value() &&
         trap.figure.place(device, source, name, instance, collision)) {
         trap.figure.play(kResting, true);
+        trap.figure.placeAt(placement);
     } else {
         trap.gone = true;
         trap.shown = false;
@@ -118,6 +134,7 @@ s32 Traps::restTicks(const Trap& trap) {
 std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
                                    bool timeStopped) {
     std::vector<TrapHit> hits;
+    syncFloors();
     m_wakes.clear();
     m_gaps.resize(party.size(), 0.0f);
     for (f32& gap : m_gaps) {

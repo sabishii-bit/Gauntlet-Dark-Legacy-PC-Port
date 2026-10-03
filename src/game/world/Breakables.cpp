@@ -35,6 +35,8 @@ f32 nearestOnGround(const Vec3& from, const Vec3& to, const Vec3& point, f32& al
 bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
                       const WorldCollision* collision, ItemArchive* realmItems) {
     clear();
+    m_collision = collision;
+    const auto authored = itemSupportWorld(layout, collision);
     m_infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
@@ -71,15 +73,27 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchi
             log::warn("Barrels: no figure {} in the item archive", name);
         }
         barrel->box = barrel->figure.obstacle(info);
+        barrel->support.bind(instance, info, authored ? &*authored : nullptr, barrel->figure,
+                             barrel->box);
+        barrel->support.sync(collision, barrel->figure, barrel->box);
         m_barrels.push_back(std::move(barrel));
     }
     return !m_barrels.empty();
 }
 
 void Breakables::clear() {
+    m_collision = nullptr;
     m_barrels.clear();
     m_infos.clear();
     m_seed = kSeedStart;
+}
+
+void Breakables::syncFloors() {
+    for (const auto& barrel : m_barrels) {
+        if (!barrel->gone) {
+            barrel->support.sync(m_collision, barrel->figure, barrel->box);
+        }
+    }
 }
 
 void Breakables::setPlayerCount(s32 players) {
@@ -170,6 +184,7 @@ std::optional<BreakableStrike> Breakables::strike(usize index, f32 power) {
 }
 
 std::vector<usize> Breakables::update(f32 seconds) {
+    syncFloors();
     std::vector<usize> retired;
     for (usize index = 0; index < m_barrels.size(); ++index) {
         Barrel& barrel = *m_barrels[index];

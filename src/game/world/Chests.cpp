@@ -108,7 +108,8 @@ void Chests::syncFloors() {
             continue;
         }
         const auto placement = m_collision->objectTransform(chest.floor->object);
-        if (!placement || !m_collision->solid(chest.floor->object)) {
+        // A moving floor can turn collision off without deleting its scene node.
+        if (!placement) {
             chest.floor.reset();
             continue;
         }

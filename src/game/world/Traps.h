@@ -16,6 +16,7 @@
 
 #include "game/players/PlayerImpact.h"
 #include "game/world/ItemFigure.h"
+#include "game/world/ItemSupport.h"
 
 namespace gdl::game {
 
@@ -74,6 +75,7 @@ public:
         bool gone = false;
         ItemFigure figure;
         Obstacle box;
+        ItemSupport support;
     };
 
     /** `timeScale` stretches every rest and `damageScale` every hurt, as the level says.
@@ -82,6 +84,7 @@ public:
               const WorldCollision* collision, u32 seed = 1, f32 timeScale = 1.0f,
               f32 damageScale = 1.0f, ItemArchive* realmItems = nullptr);
     void clear();
+    void syncFloors();
     usize size() const { return m_traps.size(); }
     const Trap& trap(usize index) const { return *m_traps[index]; }
     /** Traps that left their resting sequence during the latest update. */
@@ -113,6 +116,7 @@ private:
     std::vector<f32> m_gaps; ///< per victim, seconds before they can be hurt again
     std::minstd_rand m_random{1};
     f32 m_timeScale = 1.0f;
+    const WorldCollision* m_collision = nullptr;
 };
 
 } // namespace gdl::game
