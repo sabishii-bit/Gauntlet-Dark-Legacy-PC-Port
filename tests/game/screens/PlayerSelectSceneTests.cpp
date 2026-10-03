@@ -93,9 +93,15 @@ TEST_CASE("the starting player joins and others join on Start", "[game][select][
     REQUIRE(scene.inputSource(0).text);
     REQUIRE_FALSE(scene.inputSource(2).text);
 
-    const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
+    const Mat4 projection = makeLetterboxProjection(640, 448, 1920, 1080);
     scene.render(device, projection, 640.0f, 448.0f);
     REQUIRE(device.draws.size() >= 8);
+    const auto& margins = device.draws.back();
+    CHECK(margins.transform == Mat4{1});
+    CHECK(test::minCorner(margins) == Vec2{-1, -1});
+    CHECK(test::maxCorner(margins) == Vec2{1, 1});
+    CHECK(margins.vertices.front().color == Color::black());
+    CHECK_FALSE(margins.state.depthTest);
     scene.close();
     REQUIRE_FALSE(scene.isOpen());
 }

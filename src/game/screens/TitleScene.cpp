@@ -402,6 +402,7 @@ void TitleScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
     m_canvas.begin(device, makeVirtualScreenTransform(
                                frameProjection, static_cast<f32>(m_screen.width),
                                static_cast<f32>(m_screen.height), frameWidth, frameHeight));
+    m_canvas.fillScreen(Color::black());
     for (usize i = 0; i < m_backdrops.size(); ++i) {
         const TextureSetEntry& entry = m_titleTextures.entry(m_backdrops[i]);
         const Rect area{static_cast<f32>(kBackdropPositions[i].first),

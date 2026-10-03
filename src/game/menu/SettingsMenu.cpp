@@ -72,15 +72,25 @@ void SettingsMenu::rebuild(s32 selection) {
                 m_config.difficulty.level == DifficultyConfig::kNames[i] ? 1 : 0;
         }
         break;
-    case Page::Multiplayer:
+    case Page::Multiplayer: {
         definition.title = text("settings.multiplayer");
+        s32 longest = 0;
         for (usize i = 0; i < MultiplayerConfig::kNames.size(); ++i) {
             add(text("settings.multiplayer." + std::string(MultiplayerConfig::kNames[i])),
                 static_cast<s32>(i));
             definition.items.back().markedPart =
                 static_cast<usize>(m_config.multiplayer.mode) == i ? 1 : 0;
+            longest = std::max(longest, m_painter->measure(definition.items.back().text + " ~", 1));
         }
+        constexpr f32 kMultiplayerScale = 0.65f;
+        constexpr s32 kTextMargin = 64;
+        const s32 left = definition.x < 0 ? kTextMargin : definition.x;
+        const auto available = static_cast<f32>(std::max(1, m_screen.width - left - kTextMargin));
+        definition.scale =
+            std::min(kMultiplayerScale, available / static_cast<f32>(std::max(1, longest)));
+        definition.cursorScale = definition.scale;
         break;
+    }
     case Page::Compass:
         definition.title = text("menu.compass");
         add(text("settings.hide"), 0);
@@ -222,10 +232,9 @@ void SettingsMenu::draw(Canvas& canvas, const TextPainter& painter,
     TextStyle style;
     style.scale = 0.5f;
     style.color = m_menu.definition().colors.off;
-    const auto notice =
-        m_notice.empty() && m_page == Page::Difficulty ? text("settings.nextLevel") : m_notice;
-    if (!notice.empty()) {
-        painter.draw(canvas, -m_screen.width / 2, m_page == Page::Audio ? 348 : 276, notice, style);
+    if (!m_notice.empty()) {
+        painter.draw(canvas, -m_screen.width / 2, m_page == Page::Audio ? 348 : 276, m_notice,
+                     style);
     }
 }
 } // namespace gdl::game

@@ -20,6 +20,10 @@ public:
     void draw(const Texture& texture, const Rect& area, const Rect& uv, Color color);
     void draw(const Texture& texture, const Rect& area, Color color = Color::white());
     void fill(const Rect& area, Color color);
+    /** Covers the entire viewport, including margins outside the virtual canvas. */
+    void fillScreen(Color color);
+    /** Masks the viewport outside an axis-aligned virtual-space rectangle. */
+    void maskOutside(const Rect& area, Color color = Color::black());
 
     /** Draws a prepared batch with `local` applied before the canvas transform, after any
      * pending sprites. */

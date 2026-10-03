@@ -49,6 +49,7 @@ struct MenuDefinition {
     s32 x = -256; ///< item x; negative centres the column on -x
     s32 y = -1;   ///< first item y; -1 centres the column vertically
     f32 scale = 1.0f;
+    f32 cursorScale = 1.0f; ///< relative size of either the model or fallback arrow
     std::vector<MenuItem> items;
     MenuColors colors;
     bool startSelects = false; ///< Start confirms like Select

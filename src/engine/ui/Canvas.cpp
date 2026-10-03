@@ -1,5 +1,7 @@
 #include "engine/ui/Canvas.h"
 
+#include <algorithm>
+
 #include "engine/core/Assert.h"
 #include "engine/core/Types.h"
 
@@ -42,6 +44,41 @@ void Canvas::draw(const Texture& texture, const Rect& area, Color color) {
 void Canvas::fill(const Rect& area, Color color) {
     GDL_VERIFY(m_device != nullptr, "Canvas::fill outside begin/end");
     draw(m_device->whiteTexture(), area, color);
+}
+
+void Canvas::fillScreen(Color color) {
+    GDL_VERIFY(m_device != nullptr, "Canvas::fillScreen outside begin/end");
+    flush();
+    ImmediateBatch batch;
+    batch.rect({-1, -1, 2, 2}, kSpriteDepth, color);
+    m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
+                   {.depthWrite = false, .depthTest = false});
+}
+
+void Canvas::maskOutside(const Rect& area, Color color) {
+    GDL_VERIFY(m_device != nullptr, "Canvas::maskOutside outside begin/end");
+    flush();
+    const Vec4 a = m_transform * Vec4{area.x, area.y, kSpriteDepth, 1};
+    const Vec4 b = m_transform * Vec4{area.x + area.width, area.y + area.height, kSpriteDepth, 1};
+    const f32 left = std::clamp(std::min(a.x / a.w, b.x / b.w), -1.0f, 1.0f);
+    const f32 right = std::clamp(std::max(a.x / a.w, b.x / b.w), -1.0f, 1.0f);
+    const f32 top = std::clamp(std::min(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
+    const f32 bottom = std::clamp(std::max(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
+    ImmediateBatch batch;
+    const auto fillMargin = [&](const Rect& margin) {
+        constexpr f32 kClipEpsilon = 1e-6f;
+        if (margin.width > kClipEpsilon && margin.height > kClipEpsilon) {
+            batch.rect(margin, kSpriteDepth, color);
+        }
+    };
+    fillMargin({-1, -1, left + 1, 2});
+    fillMargin({right, -1, 1 - right, 2});
+    fillMargin({left, -1, right - left, top + 1});
+    fillMargin({left, bottom, right - left, 1 - bottom});
+    if (!batch.empty()) {
+        m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
+                       {.depthWrite = false, .depthTest = false});
+    }
 }
 
 void Canvas::submit(const ImmediateBatch& batch, const Texture& texture, const Mat4& local,
