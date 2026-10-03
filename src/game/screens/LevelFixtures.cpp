@@ -59,6 +59,8 @@ constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the re
 constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
 constexpr std::string_view kBarrelGasSound = "S_BARREL_GAS";
 constexpr std::string_view kFireTrapSound = "S_FIREHOLE";
+constexpr std::string_view kCastleLightTrapSound = "S_FFIELDZAPA";
+constexpr f32 kTrapHitVolume = 127.0f / 255.0f;
 constexpr std::string_view kBarrelBlast = "EXPLOSION";
 constexpr std::string_view kBarrelGas = "POISONEXP1";
 constexpr std::string_view kBarrelSmoke = "DESTSMOKE";
@@ -70,6 +72,8 @@ constexpr f32 kGasRadius = 6.5f;
 constexpr f32 kGasSeconds = 4.0f;
 constexpr f32 kGasGapSeconds = 0.5f;
 constexpr s32 kFireTrap = 1;
+constexpr s32 kLightTrap = 2;
+constexpr s32 kCastleRealm = 1;
 constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
@@ -555,6 +559,12 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             (hit.impact.flags & (PlayerImpact::kKnockBack | PlayerImpact::kKnockDown)) != 0;
         events.hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn,
                     directed, hit.impact);
+        // The forcefield zap belongs to accepted contact, not its light's activation.
+        // Armor can absorb the damage without suppressing the contact sound.
+        if (hit.subtype == kLightTrap && m_resources->world.ref().realmId == kCastleRealm) {
+            m_resources->audio.playAt(kCastleLightTrapSound, players[hit.victim].actor.position(),
+                                      0, kTrapHitVolume);
+        }
         events.help(HelpMessages::kTrapsHurt, hit.victim);
     }
     updateClouds(seconds, players, events);
