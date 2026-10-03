@@ -730,11 +730,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_audio.holdNarration(victory != BossVictory::Stage::None &&
                           victory != BossVictory::Stage::Waiting);
     m_hud.stepRelics(ticks);
-    // The names over the heads run down unless a message, a cut or Sumner holds play.
+    // Entry presentation also holds the names, preserving their full time after the camera ride.
     m_names.step(m_players, ticks,
-                 m_gameOver.active() || m_switchCutscene.active() || m_messages.active() ||
-                     m_welcome.cutting() || m_sumnerVisit.active() || m_promotion.active() ||
-                     relicCeremonyOn());
+                 spawning() || m_gameOver.active() || m_switchCutscene.active() ||
+                     m_messages.active() || m_welcome.cutting() || m_sumnerVisit.active() ||
+                     m_promotion.active() || relicCeremonyOn());
     if (m_gameOver.active()) {
         // The world remains behind the caption, but no player input, portal,
         // reward or victory ceremony can restart the finished session.
@@ -1233,7 +1233,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const bool cut = m_welcome.cutting() || (m_promotion.active() && !spawning()) ||
                      relicCeremonyOn() || m_switchCutscene.showing();
     m_transition.draw(m_canvas, width, height); // over the view, under the boxes
-    m_names.draw(m_canvas, m_players, clip, width, height);
+    // Rendering can precede the first simulation tick, before PartyNames has observed the hold.
+    if (!spawning()) {
+        m_names.draw(m_canvas, m_players, clip, width, height);
+    }
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
         if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
