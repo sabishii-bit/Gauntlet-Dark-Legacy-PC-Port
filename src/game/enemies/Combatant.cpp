@@ -115,7 +115,6 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
     if (const auto& home = definition.movement().home; home.has_value()) {
         critter.homePosition = *home - Vec3{0.0f, definition.floorOffset(), 0.0f};
     }
-    critter.cooldowns.assign(definition.moves().size(), 0.0f);
     // Unused attacks are ready on arrival, independent of this instance's clock.
     // Subsequent cooldowns count from their recorded use, not the spawn time.
     const f32 unused = -std::numeric_limits<f32>::infinity();
@@ -170,9 +169,6 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         area.displacement += area.velocity * seconds;
     }
     std::erase_if(critter.areas, [](const CritterArea& area) { return area.secondsLeft <= 0; });
-    for (f32& cooldown : critter.cooldowns) {
-        cooldown = std::max(cooldown - seconds, 0.0f);
-    }
     // Frozen, it stands as it is: no move, no step, no one in its sights.
     if (critter.frozenTicks > 0) {
         critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
