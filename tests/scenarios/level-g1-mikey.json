@@ -1,0 +1,18 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 60,
+      "health": 3000,
+      "powerups": [{"kind": 9, "flags": 1048576, "strength": 120, "active": false}]
+    }
+  ],
+  "position": [100.0, 10.2, -72.5],
+  "yaw": 1.57,
+  "welcome": false
+}

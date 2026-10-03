@@ -340,8 +340,8 @@ f32 Enemies::playerDistance(const Enemy& enemy, const EnemyView& player) {
     // calc_enemy_to_player_distance measures all three axes between collision centres,
     // not the horizontal separation of the feet. Players on another floor count as farther.
     const Vec3 from = enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0};
-    const Vec3 to =
-        player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
+    const Vec3 to = player.decoy.value_or(
+        player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0});
     return glm::distance(from, to);
 }
 
@@ -1079,7 +1079,7 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.closeDistance = enemy.weightedDistance;
     sense.recognized = enemy.recognized;
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
-        sense.targetPosition = view->position;
+        sense.targetPosition = view->decoy.value_or(view->position);
     }
     sense.contact = enemy.contact;
     if (const EnemyView* view = viewOf(players, enemy.contact); view != nullptr) {
@@ -1160,7 +1160,7 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
                     offset =
                         static_cast<f32>(pair) * (kPi / 36) * (attempt % 2 == 0 ? 1.0f : -1.0f);
                 }
-                const Vec3 toward = threat->position - enemy.position;
+                const Vec3 toward = threat->decoy.value_or(threat->position) - enemy.position;
                 retreat = wrapAngle(std::atan2(toward.x, toward.z) + kPi + offset);
             }
         }

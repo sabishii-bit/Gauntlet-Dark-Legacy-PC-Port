@@ -37,15 +37,27 @@ f32 PlayerPowerups::enemyShrink(std::span<const PlayerRuntime> players, bool bos
 std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds,
                                                   Clock clock) {
     std::vector<PowerupEnding> endings;
+    f32 timerRate = 1.0f;
+    if (clock == Clock::Paused) {
+        timerRate = 0;
+    } else if (clock == Clock::BossFight) {
+        timerRate = 3;
+    }
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
+        auto& inventory = player.actor.save().progress().inventory;
         if (player.life != PlayerLife::Standing) {
+            if (player.life == PlayerLife::Dying) {
+                player.mikey.update(seconds, inventory, player.actor.followPoint(), timerRate);
+            } else {
+                player.mikey.clear();
+            }
             continue;
         }
-        auto& inventory = player.actor.save().progress().inventory;
         if (clock != Clock::Paused) {
             inventory.advance(seconds * (clock == Clock::BossFight ? 3.0f : 1.0f));
         }
+        player.mikey.update(seconds, inventory, player.actor.followPoint(), timerRate);
         for (auto& slot : inventory.powerups) {
             if (slot.working() && slot.kind == powerup::kSpecial &&
                 (slot.flags & powerup::kTurbo) != 0) {

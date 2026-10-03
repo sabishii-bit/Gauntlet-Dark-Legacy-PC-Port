@@ -20,6 +20,21 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Mikey scenario carries an inactive decoy without altering a real save",
+          "[scenario][mikey]") {
+    const auto scenario =
+        Scenario::load(test::dataDirectory().parent_path() / "tests/scenarios/level-g1-mikey.json");
+    const auto party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    REQUIRE_FALSE(party.front().slot);
+    CHECK(scenario.level == "G1");
+    const auto& slot = party.front().save.progress().inventory.powerups.front();
+    CHECK(slot.kind == 9);
+    CHECK(slot.flags == 0x100000);
+    CHECK(slot.strength == 120);
+    CHECK_FALSE(slot.on);
+}
+
 TEST_CASE("platform and Death statue scenarios load the affected level locations without saves",
           "[scenario][platform-contact][death]") {
     const auto root = test::dataDirectory().parent_path() / "tests/scenarios";

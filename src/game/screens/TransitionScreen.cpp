@@ -71,7 +71,7 @@ void TransitionScreen::update(f32 seconds) {
     }
 }
 
-void TransitionScreen::draw(Canvas& canvas, f32 width) const {
+void TransitionScreen::draw(Canvas& canvas, f32 width, f32 height) const {
     if (!showing() || m_opacity <= 0.0f) {
         return;
     }
@@ -82,6 +82,9 @@ void TransitionScreen::draw(Canvas& canvas, f32 width) const {
     } else {
         canvas.fill(view, Color::black().withAlpha(alpha));
     }
+    // Keep the authored picture and status boxes at their original size, but
+    // cover the additional world view with the very same fade on wide displays.
+    canvas.maskOutside({0, 0, width, height}, Color::black().withAlpha(alpha));
 }
 
 } // namespace gdl::game

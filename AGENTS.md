@@ -2075,8 +2075,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   PlayerProcessPowerups' old_flags): `S_UNPOJO`, `S_UNGROW` (only as the
   body goes back to its plain size: never an ogre's nor a level 99's) and
   `S_LEVITATEDOWN`. Specials with no retail effect found: `health` (0x20000)
-  and `dummy` (0x40000), which nothing reads; `mikey` (0x100000) is
-  PlayerProcessMikeyPUP's own companion (`MIKEYPUP_ON`), not reconstructed;
+  and `dummy` (0x40000), which nothing reads. Mikey (0x100000) is a
+  selector-activated stationary decoy (`players/MikeyDecoy`, `world/MikeyFigure`,
+  PlayerProcessMikeyPUP): its `MIKEYPUP_ON` tree stays at its drop point through
+  the 300-state, 30Hz lifetime, with five early gem-sparkle bursts. A second
+  activation dismisses it; item time freezes while deployed. Only ordinary
+  enemies' pursuit and distance scoring use its location, not player body
+  contact or boss targeting. `level-g1-mikey` exercises the carried item;
   the armour `armorProtect` (0x800000) is read by nothing either.
   An elemental weapon (the amulets: fire 1, lightning 2, light 3, acid 4 in
   the weapon flags) glows in the weapon hand (`world/WeaponGlow`, one in
@@ -2647,7 +2652,12 @@ PlayerRestoreState). Retail's tally and shop before the tower are not run on tha
 Title Options and Pause share `MenuDefinition::parchment()`: precolored red parchment
 labels, purple focus glow, and no nonselectable Back/Select footer. Keep menu styling
 in this shared factory rather than constructing inconsistent screen-local defaults.
-`CompassHud` draws a world-axis compass.
+`CompassHud` borrows POWERUPS' standalone `COMPASS` mesh and textures, retaining
+its world-axis orientation through camera yaw, pitch and roll. Its anchor is
+(64,128) in the 640x448 frame, unprojected at depth 10 and scaled 1.5; retail's
+transparency 128 becomes opacity 127/255 (`StartCompass`, `MBWindowTo3D`,
+`MBTreeSetAlpha`). Draw before the 2D overlays, hide while options are open or
+the compass setting is off, and clear before releasing the POWERUPS archive.
 `replaceTextFile` uses exclusive sibling temporary creation and rename; failed
 writes/replacements preserve the previous file, without promising crash durability.
 Focused tests: `[settings],[save-menu],[pause],[compass],[save],[file],[mixer]`.

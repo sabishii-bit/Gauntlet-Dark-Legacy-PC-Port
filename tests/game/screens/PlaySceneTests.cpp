@@ -85,6 +85,34 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     REQUIRE(scene.actorCount() == 0);
 }
 
+TEST_CASE("the native compass follows its preference and is hidden behind options",
+          "[game][screens][compass][assets]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = unpackedRoot();
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, CharacterSave{}}};
+    PlayOptions options;
+    options.welcome = false;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    const auto drawCount = [&](bool optionsOpen) {
+        device.draws.clear();
+        scene.render(device, projection, 640, 448, optionsOpen);
+        return device.draws.size();
+    };
+    drawCount(false); // prepare any lazily loaded scene artwork
+    const auto disabled = drawCount(false);
+    config.camera.compass = true;
+    CHECK(drawCount(false) > disabled);
+    CHECK(drawCount(true) == disabled);
+    config.camera.compass = false;
+    CHECK(drawCount(false) == disabled);
+}
+
 TEST_CASE("Temple switch cutscene carries its chest and enemy continuously",
           "[game][screens][chest-platform][enemy-platform][assets]") {
     const auto root = unpackedRoot();

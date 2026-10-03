@@ -146,6 +146,11 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         return;
     }
     if (critter.parent == nullptr) {
+        // Linked heads keep their hit-feedback clock even when the body drives their pose.
+        updateHitFlashes(critter, ticks);
+        for (auto& child : m_children) {
+            updateHitFlashes(child->m_actor, ticks);
+        }
         // CritterInitPlayerData recounts state-1 slots before processing the list.
         // This affects damage, experience and roar thresholds, not spawn population.
         // Until the first update, direct callers retain their supplied spawn count.
@@ -164,10 +169,6 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     const s32 i = m_id;
     const CritterData& data = *critter.definition;
     critter.age += seconds;
-    critter.flashTicks = std::max(critter.flashTicks - ticks, 0);
-    for (auto& node : critter.hitNodes) {
-        node.flashTicks = std::max(node.flashTicks - ticks, 0);
-    }
     critter.sinceHurt += seconds;
     for (CritterArea& area : critter.areas) {
         area.secondsLeft -= seconds;

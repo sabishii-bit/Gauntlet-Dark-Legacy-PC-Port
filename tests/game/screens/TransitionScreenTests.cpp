@@ -48,12 +48,12 @@ TEST_CASE("without its picture the transition covers the view in black, above th
     TransitionScreen screen;
     REQUIRE_FALSE(screen.load(device, test::scratchDirectory("transition-none")));
     Canvas canvas;
-    canvas.begin(device, Mat4{1.0f});
+    canvas.begin(device, makeScreenProjection(512, 384));
     screen.draw(canvas, 512.0f);
     canvas.end();
     REQUIRE(device.draws.empty()); // off, nothing is drawn
     screen.cover();
-    canvas.begin(device, Mat4{1.0f});
+    canvas.begin(device, makeScreenProjection(512, 384));
     screen.draw(canvas, 512.0f);
     canvas.end();
     REQUIRE(device.draws.size() == 1);
@@ -70,6 +70,51 @@ TEST_CASE("the native static archive holds the transition picture",
     TransitionScreen screen;
     REQUIRE(screen.load(device, root));
     screen.release();
+}
+
+TEST_CASE("transition margins follow the picture fade without covering the status boxes",
+          "[game][screens][transition]") {
+    test::FakeRenderDevice device;
+    TransitionScreen screen;
+    Canvas canvas;
+    const Mat4 transform = makeLetterboxProjection(512, 384, 1920, 1080);
+    const auto check = [&](u8 alpha) {
+        device.draws.clear();
+        canvas.begin(device, transform);
+        screen.draw(canvas, 512);
+        canvas.end();
+        REQUIRE(device.draws.size() == 2);
+        CHECK(test::maxCorner(device.draws.front()) == Vec2{512, 320});
+        CHECK(device.draws.front().vertices.front().color.a == alpha);
+        const auto& margins = device.draws.back();
+        CHECK(margins.transform == Mat4{1});
+        CHECK_FALSE(margins.state.depthTest);
+        CHECK_FALSE(margins.state.depthWrite);
+        for (const auto& vertex : margins.vertices) {
+            CHECK(vertex.color == Color::black().withAlpha(alpha));
+        }
+        // Neither margin reaches into the original canvas, including its HUD.
+        for (usize i = 0; i < margins.vertices.size(); i += 3) {
+            const f32 x = (margins.vertices[i].position.x + margins.vertices[i + 1].position.x +
+                           margins.vertices[i + 2].position.x) /
+                          3;
+            CHECK((x < -0.75f || x > 0.75f));
+        }
+    };
+    screen.comeUp();
+    screen.update(TransitionScreen::kFadeInSeconds / 2);
+    check(127);
+    screen.cover();
+    check(255);
+    screen.clearAway();
+    screen.update(TransitionScreen::kFadeOutSeconds / 2);
+    check(127);
+    screen.update(TransitionScreen::kFadeOutSeconds);
+    device.draws.clear();
+    canvas.begin(device, transform);
+    screen.draw(canvas, 512);
+    canvas.end();
+    CHECK(device.draws.empty());
 }
 
 } // namespace

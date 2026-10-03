@@ -65,6 +65,7 @@ add_library(game STATIC
     players/Party.cpp
     players/Inventory.h
     players/Inventory.cpp
+    players/MikeyDecoy.cpp
     players/Relics.h
     players/Relics.cpp
     players/LevelRecord.h
@@ -190,6 +191,7 @@ add_library(game STATIC
     world/BlobShadow.cpp
     world/PlayerFigure.cpp
     world/PlayerFamiliar.cpp
+    world/MikeyFigure.cpp
     world/WeaponGlow.cpp
     world/CameraMovementLimit.cpp
     world/SkorneArena.cpp

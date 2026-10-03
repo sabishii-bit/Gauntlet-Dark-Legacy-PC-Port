@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -9,6 +10,7 @@
 
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
 #include "game/world/BossCamera.h"
 
 namespace {
@@ -89,6 +91,61 @@ TEST_CASE("boss approach follows horizontal camera markers until the boss wakes"
         camera.update(boss, party, record, {}, 1.0f / 60, markers);
     }
     CHECK(camera.pitch() < markers[1].rotation.x - 0.05f);
+}
+
+TEST_CASE("boss framing keeps the player's collision envelope inside the view",
+          "[game][world][camera][chimera]") {
+    const auto record = cryptRecord();
+    const CameraView view;
+    BossCameraSubject boss;
+    boss.awake = true;
+    std::vector<CameraSubject> party{standing({0, 0, 70})};
+    party[0].viewRadius = 3;
+    BossCamera body;
+    body.reset(boss, party, record, view);
+    for (s32 i = 0; i < 600; ++i) {
+        body.update(boss, party, record, view, 1.0f / 60);
+    }
+    CHECK(body.margin() >= 0);
+    const Vec3 relative = party[0].follow - body.camera().position;
+    const f32 depth = glm::dot(relative, body.camera().forward());
+    const f32 up = glm::dot(relative, body.camera().up());
+    const f32 tanY = std::tan(view.horizontalFov * 0.5f) / view.aspect;
+    const f32 bottomGap = (depth * tanY + up) / std::sqrt(1 + tanY * tanY);
+    CHECK(bottomGap >= party[0].viewRadius);
+}
+
+TEST_CASE("native Chimera camera frames the player body at the front of the arena",
+          "[game][world][camera][chimera][assets]") {
+    WorldData data;
+    REQUIRE(data.load(test::assetOrSkip("WDATA/CASTLE.WAD")));
+    const auto level =
+        std::ranges::find_if(data.levels(), [](const auto& value) { return value.name == "A5"; });
+    REQUIRE(level != data.levels().end());
+    REQUIRE(level->bossCamera.has_value());
+    const auto& record = *level->bossCamera;
+    CHECK(record.minDistance == 56);
+    CHECK(record.maxDistance == 135);
+    CHECK(record.minPitch == Approx(25.0f * kPi / 180.0f));
+    BossCameraSubject boss;
+    boss.awake = true;
+    boss.height = 20;
+    boss.attentionOffset = Vec3{0, 20, 0};
+    std::vector<CameraSubject> party{standing({0, 0, 70})};
+    BossCamera pointCamera;
+    pointCamera.reset(boss, party, record, {});
+    for (s32 i = 0; i < 600; ++i) {
+        pointCamera.update(boss, party, record, {}, 1.0f / 60);
+    }
+    party[0].viewRadius = 3;
+    BossCamera bodyCamera;
+    bodyCamera.reset(boss, party, record, {});
+    for (s32 i = 0; i < 600; ++i) {
+        bodyCamera.update(boss, party, record, {}, 1.0f / 60);
+    }
+    CHECK(bodyCamera.distance() > pointCamera.distance());
+    CHECK(bodyCamera.margin() >= 0);
+    CHECK(bodyCamera.pitch() == Approx(record.minPitch).margin(0.001f));
 }
 
 TEST_CASE("victory camera uses wizard and shard offsets instead of combat attention",

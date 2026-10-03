@@ -13,8 +13,6 @@
 
 namespace gdl::game {
 namespace {
-constexpr f32 kCanvasWidth = 512;
-constexpr f32 kCanvasHeight = 384;
 constexpr f32 kTileSize = 256;
 constexpr std::array<Vec2, 4> kTilePositions{
     {{0, 0}, {kTileSize, 0}, {0, kTileSize}, {kTileSize, kTileSize}}};
@@ -154,7 +152,7 @@ void LevelLoadingScreen::tile(Canvas& canvas, RenderDevice& device, std::string_
 }
 
 void LevelLoadingScreen::draw(Canvas& canvas, RenderDevice& device) {
-    canvas.fill({0, 0, kCanvasWidth, kCanvasHeight}, Color::black());
+    canvas.fillScreen(Color::black());
     for (s32 i = 0; i < 4; ++i) {
         tile(canvas, device, std::format("MAP_{}_{:02}", m_name, i),
              kTilePositions[static_cast<usize>(i)], 1);

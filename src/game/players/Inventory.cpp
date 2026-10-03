@@ -4,6 +4,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/PowerupEffects.h"
+
 namespace gdl::game {
 
 s32 Inventory::addKeys(s32 count) {
@@ -72,7 +74,8 @@ void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
             break;
         }
     }
-    powerups[pick] = PowerupSlot{strength, kind, charge, flags, true};
+    const bool immediate = kind != powerup::kSpecial || flags != powerup::kMikey;
+    powerups[pick] = PowerupSlot{strength, kind, charge, flags, immediate};
 }
 
 const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {
@@ -86,6 +89,9 @@ const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {
 
 void Inventory::advance(f32 seconds) {
     for (auto& slot : powerups) {
+        if (slot.kind == powerup::kSpecial && slot.flags == powerup::kMikey) {
+            continue; // The decoy consumes its activation frame, then turns the slot off.
+        }
         if (slot.working() && slot.strength > 0) {
             slot.strength = std::max(0.0f, slot.strength - std::max(0.0f, seconds));
         }

@@ -484,14 +484,16 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 events.perform(i, Action::Fallen);
             }
         }
-        subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
+        subjects.push_back(
+            CameraSubject{actor.position(), actor.followPoint(), actor.height() * 0.5f});
     }
     // Every rider hangs on its carrier's node as posed this frame; the camera sees it there.
     PartyCombo::carry(players);
     for (usize i = 0; i < players.size() && i < subjects.size(); ++i) {
         if (players[i].combo.riding) {
+            const auto& actor = players[i].actor;
             subjects[i] =
-                CameraSubject{players[i].actor.position(), players[i].actor.followPoint()};
+                CameraSubject{actor.position(), actor.followPoint(), actor.height() * 0.5f};
         }
     }
     for (PlayerRuntime& runtime : players) {

@@ -94,6 +94,9 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
                         const Scene& scene, const Mat4& clip, const CameraFrame& camera) const {
     LevelWorld& world = scene.world;
     for (const PlayerRuntime& runtime : players) {
+        if (runtime.mikeyFigure != nullptr) {
+            runtime.mikeyFigure->draw(device, clip, world.lighting(), &camera);
+        }
         if (!shown(runtime, scene)) {
             continue;
         }
@@ -119,6 +122,18 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
             figure.drawMarker(device, world.realmItems(), kItSign, clip, body, lighting, alpha);
         }
         figure.setSkinTexture(nullptr);
+    }
+}
+
+void PartyFigures::updateDecoys(RenderDevice& device, std::span<PlayerRuntime> players,
+                                ItemArchive& powerups, f32 seconds, EffectTrees& effects) {
+    for (PlayerRuntime& runtime : players) {
+        if (runtime.mikey.shown() && runtime.mikeyFigure == nullptr) {
+            runtime.mikeyFigure = std::make_unique<MikeyFigure>();
+        }
+        if (runtime.mikeyFigure != nullptr) {
+            runtime.mikeyFigure->update(device, powerups, runtime.mikey, seconds, effects);
+        }
     }
 }
 

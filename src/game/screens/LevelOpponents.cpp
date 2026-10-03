@@ -788,6 +788,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         EnemyView view;
         view.player = actor.player();
         view.position = actor.position();
+        view.decoy = player.mikey.target();
         view.radius = actor.radius();
         view.height = actor.height();
         view.collisionHeight = actor.followPoint().y - actor.position().y;

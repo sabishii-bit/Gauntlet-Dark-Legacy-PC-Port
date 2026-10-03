@@ -791,7 +791,7 @@ void Gauntlet::onRender(RenderDevice& device) {
         return;
     }
     if (m_play->scene.isOpen()) {
-        m_play->scene.render(device, projection, frameWidth, frameHeight);
+        m_play->scene.render(device, projection, frameWidth, frameHeight, m_pause.isOpen());
         if (m_pause.isOpen()) {
             m_pause.render(device, projection, frameWidth, frameHeight);
         }

@@ -117,7 +117,9 @@ f32 BossCamera::viewMargin(const BossCameraSubject& boss, std::span<const Camera
     }
     for (const CameraSubject& subject : party) {
         consider(subject.feet, 0.0f);
-        consider(subject.follow, 0.0f);
+        // Fit the collision sphere, not just its centre: hands and the upper body
+        // must remain inside the frame while approaching the camera.
+        consider(subject.follow, subject.viewRadius);
     }
     return least;
 }

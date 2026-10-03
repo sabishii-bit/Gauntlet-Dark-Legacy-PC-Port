@@ -64,6 +64,7 @@ struct EnemyView {
     bool recentlyHit = false; ///< shared effect-hit grace makes ordinary critters prefer others
     std::optional<f32> collisionHeight = std::nullopt; ///< native centre, else half the height
     bool blockableAttack = false; ///< slow/power attack groups that provoke a critter's BLOCK
+    std::optional<Vec3> decoy = std::nullopt; ///< swarm range/bearing, never a collision body
 };
 
 /** A blow an enemy has landed on a player. */

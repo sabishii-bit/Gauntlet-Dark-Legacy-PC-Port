@@ -63,6 +63,37 @@ TEST_CASE("a party without figures draws nothing", "[game][screens][figures]") {
     CHECK(device.draws.empty());
 }
 
+TEST_CASE("Mikey is drawn independently of its owner's figure and disappears on dismissal",
+          "[game][screens][figures][mikey][assets]") {
+    const auto directory = test::assetOrSkip("POWERUPS/objects.ngc").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(directory));
+    LevelWorld world;
+    ItemArchive weapons;
+    const PortalDeparture departure;
+    std::array<PlayerRuntime, 1> players;
+    auto& runtime = players.front();
+    auto& inventory = runtime.actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kMikey, 0, 120);
+    inventory.powerups.front().on = true;
+    runtime.mikey.update(1.0f / 30, inventory, Vec3{1, 2, 3});
+    EffectTrees effects;
+    PartyFigures::updateDecoys(device, players, powerups, 1.0f / 30, effects);
+    REQUIRE(runtime.mikeyFigure != nullptr);
+    REQUIRE(runtime.mikeyFigure->shown());
+    REQUIRE(runtime.figure == nullptr);
+    const PartyFigures figures;
+    const PartyFigures::Scene scene{.world = world, .weapons = weapons, .departure = departure};
+    figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+    CHECK_FALSE(device.draws.empty());
+    runtime.mikey.clear();
+    PartyFigures::updateDecoys(device, players, powerups, 1.0f / 30, effects);
+    device.draws.clear();
+    figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+    CHECK(device.draws.empty());
+}
+
 TEST_CASE("the portal's skin, then the damage flash, then the chrome is worn",
           "[game][screens][figures][assets]") {
     const auto weaponsDirectory = test::assetOrSkip("WEAPONS/textures.ngc").parent_path();

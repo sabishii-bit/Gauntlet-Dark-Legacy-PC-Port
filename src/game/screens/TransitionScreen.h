@@ -45,7 +45,7 @@ public:
     f32 opacity() const { return m_opacity; }
 
     /** Draws the picture over a view `width` across, on the canvas's virtual screen. */
-    void draw(Canvas& canvas, f32 width) const;
+    void draw(Canvas& canvas, f32 width, f32 height = 384.0f) const;
 
 private:
     TextureSet m_textures;

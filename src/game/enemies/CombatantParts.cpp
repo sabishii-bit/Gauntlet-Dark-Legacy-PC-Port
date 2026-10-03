@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iterator>
 #include <utility>
 
@@ -77,6 +78,13 @@ void Combatant::collectChildEvents(Combatant& part) {
     append(m_spews, part.m_spews);
     append(m_shots, part.m_shots);
     append(m_arenaActivations, part.m_arenaActivations);
+}
+
+void Combatant::updateHitFlashes(Actor& actor, s32 ticks) {
+    actor.flashTicks = std::max(actor.flashTicks - ticks, 0);
+    for (auto& node : actor.hitNodes) {
+        node.flashTicks = std::max(node.flashTicks - ticks, 0);
+    }
 }
 
 void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView> players) {

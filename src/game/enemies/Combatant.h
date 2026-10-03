@@ -262,6 +262,7 @@ private:
                     const Vec3& position, f32 yaw, const WorldCollision* collision,
                     const EnemyScales& scales, char realm);
     void updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView> players);
+    static void updateHitFlashes(Actor& actor, s32 ticks);
     /** Turns its head and eyes to its target on top of the pose (CritterLookAtPlayer): not
      * at all through its entrance, and back to the animation while it dies, holds its head
      * to a move, is frozen or blinded. A head with no target of its own takes the body's. */

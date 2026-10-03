@@ -58,6 +58,9 @@ public:
      * (StartGemFX, player.c 5633). */
     static void greetGems(RenderDevice& device, std::span<PlayerRuntime> players,
                           ItemArchive& powerups, EffectTrees& effects);
+    /** Advance independently placed Mikey figures, including their arrival sparkles. */
+    static void updateDecoys(RenderDevice& device, std::span<PlayerRuntime> players,
+                             ItemArchive& powerups, f32 seconds, EffectTrees& effects);
     static void drawShadows(RenderDevice& device, std::span<const PlayerRuntime> players,
                             const Scene& scene, const Mat4& clip, const Vec3& eye);
     /** Adds the lanterns the standing carry when `level` is dark (player.c 2499). */

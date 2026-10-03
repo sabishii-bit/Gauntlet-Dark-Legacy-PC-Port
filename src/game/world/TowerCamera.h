@@ -14,6 +14,7 @@ namespace gdl::game {
 struct CameraSubject {
     Vec3 feet{0.0f, 0.0f, 0.0f};
     Vec3 follow{0.0f, 0.0f, 0.0f}; ///< the body's centre, part way up
+    f32 viewRadius = 0.0f;         ///< half the authored character height, for boss-camera fitting
 };
 
 /** The level's camera data: how far the camera stays and how flat it may look. */
