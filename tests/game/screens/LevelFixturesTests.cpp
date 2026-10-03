@@ -1450,6 +1450,90 @@ TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtur
     }
 }
 
+TEST_CASE("Castle light traps zap on contact, not activation or cooldown frames",
+          "[game][level-fixtures][trap-hit-audio][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    const auto soundRoot = test::scratchDirectory("castle-light-trap-audio");
+    const auto bank = soundRoot / "audio/COMMON";
+    std::filesystem::create_directories(bank);
+    const std::array<test::NativeSoundSample, 1> samples{{{48000, std::vector<s16>(48000, 8192)}}};
+    test::writeNativeSoundBank(
+        bank, R"({"sounds":[{"index":0,"name":"S_FFIELDZAPA","id":0,"sequence":[{"sample":0}]}]})",
+        samples);
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A1");
+    REQUIRE(level);
+    for (const bool protectedBody : {false, true}) {
+        CAPTURE(protectedBody);
+        AudioMixer mixer(48000);
+        SoundPlayer sounds(mixer);
+        Fixture f;
+        f.fixtures.clear();
+        f.audio.open(soundRoot, &sounds, nullptr);
+        REQUIRE(f.world.load(f.device, root, *level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+        f.fixtures.setPlayerCount(1);
+        const Traps& traps = f.fixtures.traps();
+        usize index = 0;
+        while (index < traps.size() &&
+               (!traps.trap(index).shown || traps.trap(index).subtype != 2)) {
+            ++index;
+        }
+        REQUIRE(index < traps.size());
+        const auto& trap = traps.trap(index);
+        auto& player = f.players[0];
+        player.actor.spawn(0, {}, nullptr, Vec3{0, -1.0e6f, 0}, 0);
+        player.actor.save().progress().health = 1000;
+        if (protectedBody) {
+            player.actor.save().progress().inventory.addPowerup(6, 0x200, 0, 600);
+        }
+        const auto party = std::span{f.players}.first(1);
+        PlayerHealth health;
+        const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
+                                                .sound = [](std::string_view) {},
+                                                .cry = [](std::string_view) {},
+                                                .named = [](std::string_view, f32) {},
+                                                .learnBlock = [] {}};
+        usize hits = 0;
+        f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
+                            const PlayerImpact& impact) {
+            CHECK(victim == 0);
+            health.hurt(player, damage, kind, directed, false, 1, healthEvents, impact);
+            ++hits;
+        };
+        f.events.help = [](s32, usize) { return true; };
+        for (s32 frame = 0; frame < 1200 && trap.action != 2; ++frame) {
+            f.fixtures.update(1, 1.0f / 60, party, f.events);
+        }
+        REQUIRE(trap.action == 2);
+        CHECK(hits == 0);
+        CHECK(sounds.voiceCount() == 0);
+        player.actor.place(trap.box.centre);
+        f.fixtures.update(0, 0, party, f.events);
+        REQUIRE(hits == 1);
+        CHECK((player.actor.save().health() < 1000) == !protectedBody);
+        REQUIRE(sounds.voiceCount() == 1);
+        std::array<f32, 1024> output{};
+        mixer.mix(output);
+        CHECK(std::ranges::any_of(output, [](f32 sample) { return sample != 0; }));
+        sounds.stopAll();
+        mixer.mix(output);
+        sounds.update();
+        f.fixtures.update(0, 0, party, f.events);
+        CHECK(hits == 1);
+        CHECK(sounds.voiceCount() == 0);
+        for (s32 frame = 0; frame < 1200 && hits == 1; ++frame) {
+            f.fixtures.update(1, 1.0f / 60, party, f.events);
+        }
+        CHECK(hits == 2);
+        CHECK(sounds.voiceCount() == 1);
+        f.fixtures.clear();
+        f.audio.close();
+    }
+}
+
 TEST_CASE("native trap properties reach player damage and reactions",
           "[game][items][level-fixtures][trap-impact][assets]") {
     const auto root =
