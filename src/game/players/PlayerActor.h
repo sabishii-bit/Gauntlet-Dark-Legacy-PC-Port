@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
+#include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
@@ -82,6 +84,9 @@ public:
      * counts it, twice the footprint that walls stop. */
     f32 reach() const { return m_radius * 2.0f; }
     bool moving() const { return m_moving; }
+    /** Actual wall hits accumulated over this movement tick, including slide corrections. */
+    std::span<const WallContact> wallContacts() const { return m_wallContacts; }
+    void clearWallContacts() { m_wallContacts.clear(); }
 
     /** The way the character faces, along the ground. */
     Vec3 facing() const { return Vec3{std::sin(m_yaw), 0.0f, std::cos(m_yaw)}; }
@@ -106,6 +111,7 @@ private:
     f32 m_height = kDefaultHeight;
     f32 m_followHeight = kDefaultFollowHeight;
     bool m_moving = false;
+    std::vector<WallContact> m_wallContacts;
 };
 
 } // namespace gdl::game

@@ -9,9 +9,14 @@
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/PlayerActor.h"
 #include "game/players/PlayerImpact.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/world/HazardSurfaces.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
@@ -102,6 +107,21 @@ TEST_CASE("a body is hurt by a harmful wall it is against or a harmful floor it 
     CHECK(wall->object == 2);
     CHECK(wall->harm.damage == 10.0f);
     CHECK(wall->away.z == Approx(-1.0f));
+    // A slide can finish beyond the wall it hit. FloorFX still receives that hit,
+    // rather than relying on finding the same wall at the corrected position.
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {-10, 0, 9}, 0);
+    actor.slide({8, 0, 2}, &collision);
+    REQUIRE_FALSE(actor.wallContacts().empty());
+    CHECK_FALSE(hazards.touching(collision, actor.position(), actor.radius(), actor.height()));
+    const auto retained = hazards.touching(collision, actor.position(), actor.radius(),
+                                           actor.height(), actor.wallContacts());
+    REQUIRE(retained);
+    CHECK(retained->object == 2);
+    CHECK(retained->harm.damage == 10.0f);
+    actor.clearWallContacts();
+    CHECK_FALSE(hazards.touching(collision, actor.position(), actor.radius(), actor.height(),
+                                 actor.wallContacts()));
     // On the embers: burned, with nowhere in particular to be thrown.
     const auto floor = hazards.touching(collision, Vec3{10, 0, 0}, 0.75f, 5.0f);
     REQUIRE(floor);
@@ -117,6 +137,70 @@ TEST_CASE("the fields keep their harmful floors and rollers", "[game][world][haz
     HazardSurfaces hazards;
     hazards.bind(layout);
     CHECK(hazards.harmful() == 16); // eight that burn, eight that fell
+}
+
+TEST_CASE("Nightmare turbines retain harmful contacts", "[turbine-hazards][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELJ6/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("J6")));
+    world.startTriggers({});
+    for (usize object = 0; object < world.layout().objects().size(); ++object) {
+        if (!world.layout().objects()[object].name.starts_with("J6SPINNY")) {
+            continue;
+        }
+        CAPTURE(object, world.layout().objects()[object].name,
+                world.hazards().flagsOf(static_cast<s32>(object)));
+        REQUIRE(world.hazards().harmOfObject(static_cast<s32>(object)));
+        const Vec3 centre{world.scene().worldTransform(object)[3]};
+        usize blocked = 0;
+        usize missed = 0;
+        for (s32 x = -20; x <= 20; ++x) {
+            for (s32 z = -20; z <= 20; ++z) {
+                const Vec3 at =
+                    centre + Vec3{static_cast<f32>(x) * 0.5f, -2, static_cast<f32>(z) * 0.5f};
+                for (const Vec3 direction :
+                     {Vec3{1, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 0, 1}, Vec3{0, 0, -1}}) {
+                    std::vector<WallContact> contacts;
+                    const Vec3 to = world.collision().sweepWalls(
+                        at, at + direction, 0.6f, at.y + PlayerActor::kFootClearance,
+                        at.y + 5 - PlayerActor::kFootClearance, &contacts);
+                    for (const auto& contact : contacts) {
+                        if (contact.object != static_cast<s32>(object)) {
+                            continue;
+                        }
+                        ++blocked;
+                        if (!world.hazards().touching(world.collision(), to, 0.6f, 5)) {
+                            ++missed;
+                        }
+                        const auto harm =
+                            world.hazards().touching(world.collision(), to, 0.6f, 5, contacts);
+                        REQUIRE(harm);
+                        CHECK(harm->harm.damage == 5.0f);
+                        if (blocked == 1) {
+                            PlayerRuntime player;
+                            player.actor.spawn(0, {}, nullptr, to, 0);
+                            player.actor.save().progress().health = 1000;
+                            PlayerHealth health;
+                            const PlayerHealth::Events events{.block = [](f32, f32) {},
+                                                              .sound = [](std::string_view) {},
+                                                              .cry = [](std::string_view) {},
+                                                              .named = [](std::string_view, f32) {},
+                                                              .learnBlock = [] {}};
+                            health.hurt(player, harm->harm.damage, HurtKind::Blow, true, false,
+                                        1.0f, events, PlayerImpact{harm->harm.impact, harm->away});
+                            CHECK(player.actor.save().health() == 995);
+                        }
+                    }
+                }
+            }
+        }
+        INFO("wall hits=" << blocked << "; final-position reprobe misses=" << missed);
+        CHECK(blocked > 0);
+    }
 }
 
 } // namespace

@@ -229,7 +229,7 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
     opponents.open({device, world, weapons, effects, audio, root}, players);
     const Vec3 expected = black ? Vec3{82, -6.84375f, 61.96875f} : Vec3{60.75f, 0.15625f, 0};
     // These even-valued placements are statues, not already-active Deaths.
-    // Being on screen or waiting near them must not bypass the item wake gate.
+    // Being on screen beyond their sight must not bypass the item wake gate.
     usize statue = 0;
     while (statue < opponents.statues().count() &&
            glm::distance(Vec2{opponents.statues().positionOf(statue).x,
@@ -241,8 +241,9 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
     REQUIRE(opponents.statues().placement(statue).enemy);
     CHECK(opponents.statues().placement(statue).enemy->tier == (black ? 2 : 1));
     const Vec3 statuePosition = opponents.statues().positionOf(statue);
+    const f32 outsideSight = opponents.statues().placement(statue).sight + 10.0f;
     for (auto& player : players) {
-        player.actor.place(statuePosition + Vec3{0, 0, 6});
+        player.actor.place(statuePosition + Vec3{0, 0, outsideSight});
     }
     LevelOpponents::Events events;
     events.settleBlasts = [] {};

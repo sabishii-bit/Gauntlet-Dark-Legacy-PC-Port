@@ -23,6 +23,12 @@ struct CombatantAssets {
     std::map<std::string, f32, std::less<>> effectLifetimes; ///< own and shared effect sequences
     const TreeInfo* tree = nullptr;
     TreeModel body;
+    struct Attachment {
+        CombatantAttachment definition;
+        const TreeInfo* tree = nullptr;
+        TreeModel model;
+    };
+    std::vector<Attachment> attachments;
     std::map<std::string, TreeModel> brokenModels; ///< PREFIX + D + node name replacements
     TextureAnimator textures;
     std::map<std::string, std::vector<const Texture*>, std::less<>> skins;

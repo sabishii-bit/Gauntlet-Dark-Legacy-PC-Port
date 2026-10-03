@@ -22,6 +22,8 @@ public:
     void fill(const Rect& area, Color color);
     /** Covers the entire viewport, including margins outside the virtual canvas. */
     void fillScreen(Color color);
+    /** Fills a virtual-height band across the entire viewport width. */
+    void fillHorizontalBand(f32 y, f32 height, Color color);
     /** Masks the viewport outside an axis-aligned virtual-space rectangle. */
     void maskOutside(const Rect& area, Color color = Color::black());
 

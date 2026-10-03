@@ -73,6 +73,18 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
     critter.attackTarget.reset();
     critter.stepTarget.reset();
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
+    // CritterAnimate uses the body's sequence index, falling back to zero for
+    // shorter auxiliary trees (the Lich's FLIES has just one repeating sequence).
+    for (usize j = 0; j < critter.attachments.size(); ++j) {
+        auto& attachment = critter.attachments[j];
+        const auto& tree = *critter.stock->attachments[j].tree;
+        const u32 selected = *sequence < tree.sequences.size() ? *sequence : 0;
+        if (!attachment.player.playing() || attachment.player.sequence() != selected ||
+            !tree.sequences[selected].repeats) {
+            attachment.player.start(tree.sequences[selected], selected);
+        }
+        attachment.pose.evaluate(tree, selected, attachment.player.frame());
+    }
     if (recordUse) {
         critter.moveTimes[index] =
             critter.age + static_cast<f32>(std::max(critter.player.frameCount() - 2, 0)) / 30.0f;

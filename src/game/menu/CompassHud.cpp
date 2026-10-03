@@ -29,7 +29,7 @@ void CompassHud::clear() {
 Mat4 CompassHud::placement(const WorldCamera& camera, f32 horizontalFov, f32 aspect) {
     const f32 halfWidth = kDepth * std::tan(horizontalFov / 2.0f);
     const f32 halfHeight = halfWidth / aspect;
-    const Vec2 anchor = kFramePosition / kReferenceFrame;
+    const Vec2 anchor = frameAnchor() / kReferenceFrame;
     const Vec3 position = camera.position + camera.forward() * kDepth +
                           camera.right() * ((2.0f * anchor.x - 1.0f) * halfWidth) +
                           camera.up() * ((1.0f - 2.0f * anchor.y) * halfHeight);

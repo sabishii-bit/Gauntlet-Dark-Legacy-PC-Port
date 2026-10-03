@@ -81,7 +81,7 @@ TEST_CASE("music restoration preserves silence short tails and reset state", "[a
 
 TEST_CASE("music restoration leaves clean tones and broad percussion substantially intact",
           "[audio][declick]") {
-    const u32 rate = GENERATE(24000U, 44100U, 48000U);
+    const u32 rate = GENERATE(8000U, 12000U, 24000U, 44100U, 48000U);
     const u32 channels = GENERATE(1U, 2U);
     const auto pass = GENERATE(MusicDeclicker::Pass::Impulses, MusicDeclicker::Pass::ShortBursts);
     CAPTURE(rate, channels, pass);

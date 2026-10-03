@@ -73,18 +73,23 @@ Obstacle CritterStatues::obstacleOf(const Statue& statue) {
     return cylinder;
 }
 
-Vec3 CritterStatues::touch(const Vec3& position, f32 radius) {
+Vec3 CritterStatues::touch(const Vec3& position, f32 radius, f32 height) {
     Vec3 stood = position;
     for (auto& statue : m_statues) {
         const Obstacle cylinder = obstacleOf(*statue);
-        if (!cylinder.touchedBy(stood, radius, 0.0f)) {
-            continue;
-        }
-        // A touch wakes it unless its placement's sight is under nought (fn_8005D730).
+        // The wake probe uses placement sight, independently of the solid body's radius.
         if (statue->placement.sight >= 0.0f) {
+            const Vec3 away = stood - cylinder.centre;
+            const f32 reach = statue->placement.sight + radius;
+            if (away.x * away.x + away.z * away.z > reach * reach ||
+                std::abs(away.y) > statue->placement.height + 0.5f * height) {
+                continue;
+            }
             statue->woken = true;
         }
-        stood = cylinder.pushOut(stood, radius);
+        if (cylinder.touchedBy(stood, radius, 0.0f)) {
+            stood = cylinder.pushOut(stood, radius);
+        }
     }
     return stood;
 }

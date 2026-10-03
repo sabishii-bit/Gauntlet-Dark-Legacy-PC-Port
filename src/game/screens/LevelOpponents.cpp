@@ -691,11 +691,11 @@ void LevelOpponents::updateStatues(s32 ticks, f32 seconds, std::span<PlayerRunti
     if (m_statues.count() == 0) {
         return;
     }
-    // A player walking into one is stopped by it, and wakes it (fn_8005D730).
+    // The placement's sight wakes it on approach; only its solid body stops a player.
     for (PlayerRuntime& player : players) {
         if (player.life == PlayerLife::Standing) {
             PlayerActor& actor = player.actor;
-            const Vec3 pushed = m_statues.touch(actor.position(), actor.radius());
+            const Vec3 pushed = m_statues.touch(actor.position(), actor.radius(), actor.height());
             actor.slide(pushed - actor.position(), &m_resources->world.collision());
         }
     }
@@ -936,6 +936,11 @@ LevelOpponents::critterObstacles(std::span<const CombatantObstacle> fixtures) co
         items.push_back(item);
     }
     return items;
+}
+
+void LevelOpponents::syncFloors() {
+    m_enemies.syncFloors();
+    m_critters.syncFloors();
 }
 
 void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,

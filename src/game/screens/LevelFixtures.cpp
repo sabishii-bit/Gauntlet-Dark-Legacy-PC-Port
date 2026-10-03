@@ -529,7 +529,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         }
         if (event.kind == GateEvent::Kind::Unlocked) {
             players[event.visitor].actor.save().progress().inventory.spendKey();
-            playGateSound(0);
+            playGateSound(m_gates.gate(event.gate).subtype);
         } else if (event.kind == GateEvent::Kind::Refused) {
             events.help(HelpMessages::kDoorNeedsKey, event.visitor);
         }
@@ -542,15 +542,12 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         if (hit.subtype == kFireTrap) {
             playRealmSound(kFireTrapSound);
         }
-        // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
-        if (PlayerHealth::guarded(players[hit.victim], hit.damage, false) > 1.0f &&
-            !PowerupEffects::of(players[hit.victim].actor.save().progress().inventory)
-                 .preventsKnockback() &&
-            players[hit.victim].life == PlayerLife::Standing) {
-            players[hit.victim].reaction = PlayerImpact::combine(
-                players[hit.victim].reaction, hit.pierces ? PlayerDeed::Spike : PlayerDeed::Reel);
-        }
-        events.hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn, false);
+        // ItemTouch passes the authored elements and impact flags through damage_player;
+        // tentacles knock down along their facing, whereas spikes carry their own flinch.
+        const bool directed =
+            (hit.impact.flags & (PlayerImpact::kKnockBack | PlayerImpact::kKnockDown)) != 0;
+        events.hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn,
+                    directed, hit.impact);
         events.help(HelpMessages::kTrapsHurt, hit.victim);
     }
     updateClouds(seconds, players, events);
@@ -1053,7 +1050,7 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
                         PlayerHealth::guarded(players[i], felt.damage, true));
                 }
             }
-            events.hurt(i, felt.damage, poison ? HurtKind::Gas : HurtKind::Blow, true);
+            events.hurt(i, felt.damage, poison ? HurtKind::Gas : HurtKind::Blow, true, {});
         }
     }
     // ProcessEffects shortens the item query by 1.5 for DMG_EXPLODE: barrels, walls and rocks
@@ -1186,7 +1183,7 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
             if (std::hypot(offset.x, offset.z) <= kGasRadius + players[i].actor.radius() &&
                 std::abs(offset.y) <= players[i].actor.height() * 0.5f + kGasRadius) {
                 players[i].cloudGap = kGasGapSeconds;
-                events.hurt(i, cloud.damage, HurtKind::Gas, true);
+                events.hurt(i, cloud.damage, HurtKind::Gas, true, {});
             }
         }
     }
@@ -1194,19 +1191,13 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
 }
 
 /** A gate's opening sounds from the realm's own bank, named after the level's letter. */
-void LevelFixtures::playGateSound(s32 /*subtype*/) {
+void LevelFixtures::playGateSound(s32 subtype) {
     if (!m_resources.has_value()) {
         return;
     }
-    const std::string& level = m_resources->world.ref().name;
-    const char letter = level.empty() ? 'G' : level.front();
-    for (const std::string_view stem : {"S_GATEMET", "S_GATEWOOD", "S_GATE"}) {
-        for (const std::string_view tail : {"", "1"}) {
-            if (m_resources->audio.playNamed(std::format("{}{}{}", stem, letter, tail)) !=
-                kNoSound) {
-                return;
-            }
-        }
+    const auto sound = LockedGates::openingSound(m_resources->world.ref().realmId, subtype);
+    if (!sound.empty()) {
+        m_resources->audio.playNamed(sound, 127.0f / 255.0f);
     }
 }
 

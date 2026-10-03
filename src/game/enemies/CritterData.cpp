@@ -64,6 +64,13 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
             return false;
         }
         const Json& type = types[typeIndex];
+        for (const auto& attachment : root.value("attachments", Json::array())) {
+            if (attachment.value("typeIndex", -1) == static_cast<s32>(typeIndex)) {
+                m_attachments.push_back({attachment.value("tree", ""), attachment.value("node", ""),
+                                         vecOf(attachment, "offset"),
+                                         (attachment.value("flags", 0U) & 1U) != 0});
+            }
+        }
         m_childIndex = type.value("childIndex", -1);
         m_parentIndex = type.value("parentIndex", -1);
         m_rootNode = type.value("rootNode", "");

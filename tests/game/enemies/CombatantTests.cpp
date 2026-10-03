@@ -70,6 +70,134 @@ std::filesystem::path familyAssets(s32 readyInterrupt = 60, u32 shield = 0) {
     return root;
 }
 
+TEST_CASE("generals follow descending floors independently of combat and camera holds",
+          "[combatant][critter-platform]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/GENERAL/LEVELG/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":600}]}]})");
+    test::FakeRenderDevice device;
+    CollisionTriangle floor;
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+    floor.object = 0;
+    WorldCollision collision;
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, Mat4{1});
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    const Vec3 spawn{2, 0, 0};
+    REQUIRE(actor.spawn(assets, 0, spawn, 0, &collision, {}, 'G'));
+    std::array players{EnemyView{.player = 0, .position = Vec3{2, 0, 3}}};
+    bool timeStopped = false;
+    bool cutscene = false;
+    SECTION("idle") {
+        actor.hold(true);
+    }
+    SECTION("attacking") {
+        actor.update(2, 1.0f / 30, players);
+        REQUIRE(actor.moveType() == 128);
+    }
+    SECTION("frozen") {
+        actor.freeze(600);
+    }
+    SECTION("time stopped") {
+        timeStopped = true;
+    }
+    SECTION("cutscene without combat updates") {
+        cutscene = true;
+    }
+    const f32 health = actor.health();
+    const std::string move{actor.moveName()};
+    for (s32 frame = 1; frame <= 60; ++frame) {
+        const auto elapsed = static_cast<f32>(frame);
+        const Mat4 platform = glm::translate(Mat4{1}, Vec3{0, -0.5f * elapsed, 0}) *
+                              glm::rotate(Mat4{1}, elapsed * 0.01f, Vec3{0, 1, 0});
+        collision.setObjectTransform(0, platform);
+        players[0].position = Vec3{platform * Vec4{Vec3{2, 0, 3}, 1}};
+        if (cutscene) {
+            actor.syncFloor();
+            CHECK(actor.moveName() == move);
+            CHECK(actor.takeBlows().empty());
+            CHECK(actor.takeCues().empty());
+        } else {
+            actor.update(2, 1.0f / 30, players, {}, timeStopped);
+        }
+        const Vec3 expected{platform * Vec4{spawn, 1}};
+        CHECK(glm::distance(actor.position(), expected) < 0.001f);
+        actor.syncFloor();
+        CHECK(glm::distance(actor.position(), expected) < 0.001f);
+        CHECK(actor.health() == health);
+    }
+    // Removed support must not drag a body to a now-nonsolid platform's next position.
+    const Vec3 before = actor.position();
+    collision.setSolid(0, false);
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -60, 0}));
+    actor.syncFloor();
+    CHECK(actor.position() == before);
+}
+
+TEST_CASE("the ordinary creature roster synchronizes floors without a gameplay tick",
+          "[combatant][critter-platform]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CollisionTriangle floor;
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+    floor.object = 0;
+    WorldCollision collision;
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, Mat4{1});
+    Critters critters;
+    critters.open(device, root, &collision, {}, 'G');
+    const std::array ids{critters.spawnGeneral(Vec3{0}, 0), critters.spawnGolem(Vec3{10, 0, 0}, 0),
+                         critters.spawnGargoyle(Vec3{-10, 0, 0}, 0, "GAR_EAGL")};
+    for (const auto id : ids) {
+        REQUIRE(id);
+    }
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -20, 0}));
+    critters.update(0, 0, {});
+    for (const auto id : ids) {
+        CHECK(critters.positionOf(*id).y == Approx(-20));
+        CHECK(critters.moveOf(*id) == "READY");
+    }
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -30, 0}));
+    critters.syncFloors();
+    for (const auto id : ids) {
+        CHECK(critters.positionOf(*id).y == Approx(-30));
+        CHECK(critters.moveOf(*id) == "READY");
+    }
+}
+
+TEST_CASE("a walking general retains its new position on a moving floor",
+          "[combatant][critter-platform]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CollisionTriangle floor;
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+    floor.object = 0;
+    WorldCollision collision;
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, Mat4{1});
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, &collision, {}, 'G'));
+    const std::array players{EnemyView{.player = 0, .position = Vec3{0, 0, 20}}};
+    for (s32 frame = 0; frame < 30; ++frame) {
+        actor.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(actor.position().z > 1);
+    const Vec3 walked = actor.position();
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -10, 0}));
+    actor.syncFloor();
+    CHECK(actor.position().x == Approx(walked.x));
+    CHECK(actor.position().z == Approx(walked.z));
+    CHECK(actor.position().y == Approx(-10));
+}
+
 TEST_CASE("ordinary combatants rank four player slots by facing and recent hit grace",
           "[combatant][multiplayer-targeting]") {
     const auto root = familyAssets();

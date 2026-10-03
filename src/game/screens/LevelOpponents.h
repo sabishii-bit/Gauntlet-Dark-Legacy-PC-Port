@@ -69,6 +69,8 @@ public:
     usize pendingPlacements() const { return m_pending.size(); }
     /** `stops` are what else stands in the way of the swarm's missiles, `walkedInto` what
      * of the fixtures stands where the great ones walk. */
+    /** Follows moving scenery without advancing AI, attacks or animation. */
+    void syncFloors();
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events,
                 std::span<const MissileStop> stops = {},
@@ -84,6 +86,8 @@ public:
     void settleRewards(std::span<const PlayerRuntime> players, const Events& events);
     /** Releases a chest's Death record; count distinguishes red from black. */
     bool releaseDeath(s32 record, const Vec3& position, s32 count);
+    /** Stops the contact-drain loop while simulation is paused. */
+    void stopDeathSound();
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
     Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */

@@ -43,6 +43,11 @@ constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 
 } // namespace
 
+void PlayScene::pauseGameplaySounds() {
+    m_attacks.stopDeathSounds(m_players);
+    m_opponents.stopDeathSound();
+}
+
 bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorld& world,
                      std::span<const PartyMember> party, const PlayOptions& options) {
     close();
@@ -413,8 +418,8 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
 
 LevelFixtures::Events PlayScene::fixtureEvents() {
     return {
-        .hurt = [this](usize i, f32 damage, HurtKind kind,
-                       bool directed) { hurt(i, damage, kind, directed); },
+        .hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
+                       const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
         .help = [this](s32 id, usize i) { return postHelp(id, i); },
         .card = [this](s32 player,
                        std::string_view name) { m_hud.pickups().addCard(player, name); },
@@ -927,7 +932,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     m_world->updateTriggers(seconds, visitors());
     m_fixtures.syncFloors();
-    m_opponents.enemies().syncFloors();
+    m_opponents.syncFloors();
     handleTriggerEvents();
     if (m_switchCutscene.active()) {
         updateAmbience();
@@ -1192,9 +1197,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);
     }
     if (cut) {
-        m_canvas.fill(Rect{0.0f, 0.0f, width, height * kCutBarTop}, Color::black());
-        m_canvas.fill(Rect{0.0f, height * (1.0f - kCutBarBottom), width, height * kCutBarBottom},
-                      Color::black());
+        m_canvas.fillHorizontalBand(0.0f, height * kCutBarTop, Color::black());
+        m_canvas.fillHorizontalBand(height * (1.0f - kCutBarBottom), height * kCutBarBottom,
+                                    Color::black());
     }
     if (!cut) {
         m_hud.drawSelectors(m_canvas, m_messages.text(), m_context.strings, m_players);

@@ -774,6 +774,87 @@ TEST_CASE("lift pads activate from the lowered deck rather than their authored m
     CHECK(world.triggers().opened(trigger.target));
 }
 
+TEST_CASE("Maze invisible platforms respond to floor contact", "[maze-triggers][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELJ4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName("J4");
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    world.startTriggers({});
+    usize tested = 0;
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        const auto trigger = world.triggers().trigger(i);
+        if (trigger.instance < 329 || trigger.instance > 332) {
+            continue;
+        }
+        const auto floor = world.collision().floorAt(trigger.spot, 4, 10);
+        CAPTURE(trigger.instance, trigger.spot.x, trigger.spot.y, trigger.spot.z, trigger.floor,
+                trigger.target, trigger.chained);
+        REQUIRE(floor);
+        CAPTURE(floor->y, floor->object);
+        CHECK(trigger.floor == floor->object);
+        const std::array visitors{
+            TriggerVisitor{.position = Vec3{trigger.spot.x, floor->y, trigger.spot.z},
+                           .floorObject = floor->object}};
+        world.updateTriggers(kStep, visitors);
+        CHECK(world.triggers().trigger(i).fired);
+        ++tested;
+    }
+    CHECK(tested == 4);
+}
+
+TEST_CASE("leaving the Maze fountain raises the approach trigger with its first platform",
+          "[maze-triggers][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELJ4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("J4")));
+    world.startTriggers({});
+    const auto indexOf = [&](s32 instance) {
+        for (usize i = 0; i < world.triggers().size(); ++i) {
+            if (world.triggers().trigger(i).instance == instance) {
+                return i;
+            }
+        }
+        return world.triggers().size();
+    };
+    const usize fountain = indexOf(417);
+    const usize approach = indexOf(328);
+    REQUIRE(fountain < world.triggers().size());
+    REQUIRE(approach < world.triggers().size());
+    REQUIRE(world.triggers().trigger(approach).floor == 7); // J4A1 starts 43 units down.
+    const f32 initial = world.triggers().trigger(approach).spot.y;
+    const std::array visitors{TriggerVisitor{.position = world.triggers().trigger(fountain).spot}};
+    world.updateTriggers(kStep, visitors);
+    REQUIRE(world.triggers().opened(7));
+    for (s32 frame = 0; frame < 180; ++frame) {
+        world.update(kStep);
+        world.updateTriggers(kStep, {});
+    }
+    const auto trigger = world.triggers().trigger(approach);
+    CHECK(trigger.spot.y == Approx(initial + 43).margin(0.02f));
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, trigger.spot + Vec3{0, 0, -4}, 0);
+    actor.settle(world.collision());
+    for (s32 frame = 0; frame < 30; ++frame) {
+        actor.update(MoveInput{.direction = Vec2{0, 1}, .magnitude = 1}, 0, kStep,
+                     &world.collision());
+        const std::array walking{
+            TriggerVisitor{.position = actor.position(), .radius = actor.radius()}};
+        world.update(kStep);
+        world.updateTriggers(kStep, walking);
+    }
+    CHECK(world.triggers().trigger(approach).fired);
+    CHECK(world.triggers().opened(298)); // J4A2 is the next section that falls into place.
+}
+
 TEST_CASE("catalogued platform pads respond at their actual supporting surface",
           "[platform-census][assets]") {
     const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();

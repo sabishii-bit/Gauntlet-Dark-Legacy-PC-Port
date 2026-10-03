@@ -94,14 +94,16 @@ struct WallSweep {
     f32 time = 1.0f;
     Vec2 normal{0};
     bool hit = false;
+    WallContact contact;
 };
 
 /** The first contact of a moving circle with a segment and its round ends. */
-void sweepSegment(const Vec2& from, const Vec2& step, const Slice& slice, f32 radius,
-                  WallSweep& nearest) {
+void sweepSegment(const Vec2& from, const Vec2& step, const Slice& slice, f32 radius, s32 object,
+                  f32 height, WallSweep& nearest) {
     const auto accept = [&](f32 time, const Vec2& normal) {
         if (time >= 0 && time <= nearest.time && glm::dot(step, normal) < -kSweepEpsilon) {
-            nearest = WallSweep{time, normal, true};
+            const Vec2 point = from + time * step - normal * radius;
+            nearest = WallSweep{time, normal, true, {object, {point.x, height, point.y}}};
         }
     };
     const Vec2 away = from - closestOnSegment(slice.a, slice.b, from);
@@ -573,8 +575,8 @@ std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 abov
     return best;
 }
 
-Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom,
-                                f32 top) const {
+Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top,
+                                std::vector<WallContact>* contacts) const {
     Vec2 position{from.x, from.z};
     Vec2 remaining{to.x - from.x, to.z - from.z};
     for (s32 pass = 0; pass < kPasses && glm::length(remaining) > kSweepEpsilon; ++pass) {
@@ -602,13 +604,19 @@ Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f3
                     }
                     const Slice slice = sliceAt(triangle, height);
                     if (slice.valid) {
-                        sweepSegment(position, remaining, slice, radius, nearest);
+                        sweepSegment(position, remaining, slice, radius, triangle.object, height,
+                                     nearest);
                     }
                 }
             });
         if (!nearest.hit) {
             position += remaining;
             break;
+        }
+        if (contacts != nullptr && std::ranges::none_of(*contacts, [&](const WallContact& seen) {
+                return seen.object == nearest.contact.object;
+            })) {
+            contacts->push_back(nearest.contact);
         }
         position += nearest.time * remaining;
         remaining *= 1.0f - nearest.time;

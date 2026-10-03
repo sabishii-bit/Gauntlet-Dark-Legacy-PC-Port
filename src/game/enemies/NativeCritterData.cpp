@@ -125,6 +125,16 @@ bool CritterData::loadNative(const std::filesystem::path& file, usize typeIndex)
         throw FormatError("critter wad: missing requested type");
     }
     const auto& type = source.types[typeIndex];
+    for (const auto& attachment : source.attachments) {
+        if (attachment.typeIndex < 0 ||
+            static_cast<usize>(attachment.typeIndex) >= source.types.size()) {
+            throw FormatError("critter wad: invalid attachment owner");
+        }
+        if (static_cast<usize>(attachment.typeIndex) == typeIndex) {
+            m_attachments.push_back({attachment.tree, attachment.node, vectorOf(attachment.offset),
+                                     (attachment.flags & 1U) != 0});
+        }
+    }
     if (type.descriptorIndex < 0 ||
         static_cast<usize>(type.descriptorIndex) >= source.descriptors.size()) {
         throw FormatError("critter wad: invalid descriptor index");

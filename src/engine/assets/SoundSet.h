@@ -31,8 +31,10 @@ struct SoundSetEntry {
 /** Named sound calls and lazily decoded samples from a native bank. */
 class SoundSet {
 public:
+    enum class Restoration : u8 { Enabled, Disabled };
     /** Accepts AUDIO/<bank name> or a .vbk path, with optional AUDATPS2.ROM names. */
-    bool load(const std::filesystem::path& directory);
+    bool load(const std::filesystem::path& directory,
+              Restoration restoration = Restoration::Enabled);
 
     bool loaded() const { return !m_entries.empty(); }
     usize size() const { return m_entries.size(); }
@@ -55,6 +57,7 @@ private:
     std::vector<SoundSetEntry> m_entries;
     std::unordered_map<std::string, u32> m_byName;
     std::vector<SampleInfo> m_samples;
+    Restoration m_restoration = Restoration::Enabled;
 };
 
 } // namespace gdl

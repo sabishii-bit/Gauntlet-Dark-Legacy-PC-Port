@@ -14,6 +14,15 @@ class CompassHud {
 public:
     static constexpr Vec2 kFramePosition{64.0f, 128.0f};
     static constexpr Vec2 kReferenceFrame{640.0f, 448.0f};
+    static constexpr f32 kStatusHeight = 64.0f;
+    /** Bottom-up MB window coordinates projected into the top-down frame. */
+    static constexpr Vec2 frameAnchor() {
+        constexpr f32 kWindowAspect = 0.75f;
+        const f32 centre = (kReferenceFrame.y + kStatusHeight) / 2.0f;
+        const f32 viewCentre = (kReferenceFrame.y - kStatusHeight) / 2.0f;
+        const f32 verticalScale = kWindowAspect * kReferenceFrame.x / kReferenceFrame.y;
+        return {kFramePosition.x, viewCentre - (kFramePosition.y - centre) * verticalScale};
+    }
     static constexpr f32 kDepth = 10.0f;
     static constexpr f32 kScale = 1.5f;
     static constexpr f32 kOpacity = 127.0f / 255.0f;

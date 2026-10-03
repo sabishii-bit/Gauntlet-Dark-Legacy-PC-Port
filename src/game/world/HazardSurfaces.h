@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "engine/assets/WorldLayout.h"
@@ -50,7 +51,7 @@ public:
     /** The harmful surface a body of `radius` and `height` standing at `position` is against
      * (a wall first, as the original tests it) or on. */
     std::optional<Touch> touching(const WorldCollision& collision, const Vec3& position, f32 radius,
-                                  f32 height) const;
+                                  f32 height, std::span<const WallContact> movement = {}) const;
     usize harmful() const;
 
 private:

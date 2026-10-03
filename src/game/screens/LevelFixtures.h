@@ -39,7 +39,7 @@ public:
         f32 difficultyGain = 1;
     };
     struct Events {
-        std::function<void(usize, f32, HurtKind, bool)> hurt;
+        std::function<void(usize, f32, HurtKind, bool, const PlayerImpact&)> hurt;
         std::function<bool(s32, usize)> help; ///< whether the message went up
         std::function<void(s32, std::string_view)> card;
         /** A blast's ring reaching `radius` about a point with `damage`: the swarm, the

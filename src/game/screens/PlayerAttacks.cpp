@@ -729,12 +729,21 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
     m_shields.push_back(shield);
 }
 
-/** The halo's hold on Death (PlayerMotion, pmotion.c 1621): with Death the nearest thing
- * ahead within thirty (PlayerGetTarget; one already held while he is anywhere in the half
- * ahead), the wearer stands facing him and, each 30 Hz frame, draws a point off him as a hit
- * would (damage_enemy's halo branch: health back, or experience from the black form).
- * S_HALO sounds as the hold begins, S_DEATHDIE while he is held, and his drain effect and
- * S_DEATHSUCK follow the one holding him (player.c 5869). */
+void PlayerAttacks::stopDeathSounds(std::span<PlayerRuntime> players) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (auto& player : players) {
+        m_resources->audio.stop(player.deathHeldSuck);
+        m_resources->audio.stop(player.deathHeldCry);
+        player.deathHeldSuck = kNoSound;
+        player.deathHeldCry = kNoSound;
+    }
+}
+
+/** The halo holds Death only while the bodies touch and he remains the target ahead.
+ * Each 30 Hz frame draws one point: health back, or experience from his black form.
+ * Ranged target acquisition alone never grants a remote drain. */
 std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowed,
                                              std::span<PlayerRuntime> players,
                                              const Targets& targets) {
@@ -794,6 +803,14 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
     }
     const s32 slot = nearest->id - kEnemyTargetBase;
     if (enemies.kindOf(slot) != kDeathKind || !enemies.alive(slot) || enemies.dying(slot)) {
+        return release();
+    }
+    const Vec3 separation = nearest->base - actor.position();
+    constexpr f32 kContactTolerance = 0.001f;
+    if (std::hypot(separation.x, separation.z) >
+            actor.radius() + nearest->radius + kContactTolerance ||
+        nearest->base.y > actor.position().y + actor.height() ||
+        nearest->base.y + nearest->height < actor.position().y) {
         return release();
     }
     if (runtime.deathHeld != slot) {

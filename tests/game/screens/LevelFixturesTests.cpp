@@ -44,7 +44,7 @@ struct Fixture {
     std::vector<std::string> calls;
     LevelFixtures::Events events{
         .hurt =
-            [this](usize i, f32 damage, HurtKind kind, bool directed) {
+            [this](usize i, f32 damage, HurtKind kind, bool directed, const PlayerImpact&) {
                 REQUIRE(damage == Catch::Approx(kFirstStep * 5));
                 REQUIRE(kind == HurtKind::Blow);
                 REQUIRE(directed);
@@ -89,7 +89,7 @@ TEST_CASE("world explosion fallback keeps its retail radius damage and fire flag
           "[level-fixtures][world-destruction]") {
     Fixture f;
     usize hits = 0;
-    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool) {
+    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool, const PlayerImpact&) {
         CHECK(player == 0);
         CHECK(damage == Catch::Approx(50 * kFirstStep));
         CHECK(kind == HurtKind::Blow);
@@ -121,7 +121,7 @@ TEST_CASE("ice world explosion uses its authored art and poison ring without kno
     f.players[0].actor.place(position);
     usize hits = 0;
     usize opponentHits = 0;
-    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool) {
+    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool, const PlayerImpact&) {
         CHECK(player == 0);
         CHECK(damage > 0);
         CHECK(kind == HurtKind::Gas);
@@ -184,7 +184,9 @@ TEST_CASE("a blast's ring reaches the further out later and for less, each of th
     std::vector<std::pair<usize, f32>> hurts;
     std::vector<f32> reaches;
     LevelFixtures::Events events = f.events;
-    events.hurt = [&](usize i, f32 damage, HurtKind, bool) { hurts.emplace_back(i, damage); };
+    events.hurt = [&](usize i, f32 damage, HurtKind, bool, const PlayerImpact&) {
+        hurts.emplace_back(i, damage);
+    };
     events.opponents = [&](const Vec3&, f32 radius, f32, std::vector<s32>&, u32) {
         reaches.push_back(radius);
     };
@@ -523,7 +525,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
         helps.push_back(id);
         return true;
     };
-    f.events.hurt = [](usize, f32, HurtKind, bool) {};
+    f.events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     f.events.releaseEnemy = [&](s32 record, const Vec3&, s32) {
         released.push_back(record);
@@ -941,7 +943,7 @@ TEST_CASE("Temple platform chest contents can be collected after descending",
     f.fixtures.setPlayerCount(1);
     f.events.help = [](s32, usize) { return true; };
     f.events.card = [](s32, std::string_view) {};
-    f.events.hurt = [](usize, f32, HurtKind, bool) {};
+    f.events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     std::vector<Vec3> initial;
     for (usize i = 0; i < f.fixtures.chests().size(); ++i) {
         initial.push_back(f.fixtures.chests().chest(i).figure.position());
@@ -1068,7 +1070,7 @@ TEST_CASE("a trapped chest has a short raised fireball and independently animate
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
     f.events.help = [](s32, usize) { return true; };
-    f.events.hurt = [](usize, f32, HurtKind, bool) {};
+    f.events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     usize index = 0;
     while (index < f.fixtures.chests().size()) {
@@ -1364,13 +1366,101 @@ TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtur
         }
         s32 hurts = 0;
         LevelFixtures::Events events = f.events;
-        events.hurt = [&hurts](usize, f32, HurtKind, bool) { ++hurts; };
+        events.hurt = [&hurts](usize, f32, HurtKind, bool, const PlayerImpact&) { ++hurts; };
         events.help = [](s32, usize) { return true; };
         for (s32 i = 0; i < 600; ++i) {
             f.fixtures.update(2, 1.0f / 30, f.players, events);
         }
         CHECK((hurts > 0) != levitating);
         f.fixtures.clear();
+    }
+}
+
+TEST_CASE("native trap properties reach player damage and reactions",
+          "[game][items][level-fixtures][trap-impact][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    struct Case {
+        std::string_view level;
+        s32 subtype;
+        u32 properties;
+        u32 protection;
+    };
+    for (const auto& trial :
+         {Case{"A1", 4, 0x20, 0x40000}, Case{"A6", 5, 0x20, 0x40000}, Case{"B1", 1, 1, 0x100},
+          Case{"A1", 2, 2, 0x200}, Case{"A1", 0, 0x2000, 0x10000}}) {
+        for (const bool protectedBody : {false, true}) {
+            CAPTURE(trial.level, trial.subtype, protectedBody);
+            Fixture f;
+            f.fixtures.clear();
+            const auto level = catalog.byName(trial.level);
+            REQUIRE(level);
+            REQUIRE(f.world.load(f.device, root, *level));
+            f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+            f.fixtures.setPlayerCount(1);
+            const Traps& traps = f.fixtures.traps();
+            usize chosen = traps.size();
+            for (usize i = 0; i < traps.size(); ++i) {
+                if (traps.trap(i).shown && traps.trap(i).subtype == trial.subtype) {
+                    chosen = i;
+                    break;
+                }
+            }
+            REQUIRE(chosen < traps.size());
+            const auto& trap = traps.trap(chosen);
+            REQUIRE(trap.properties == trial.properties);
+            auto& player = f.players[0];
+            player.actor.spawn(0, {}, nullptr, trap.box.centre, 0);
+            player.actor.save().progress().health = 1000;
+            f.players[1].life = PlayerLife::InTower;
+            if (protectedBody) {
+                player.actor.save().progress().inventory.addPowerup(6, trial.protection, 0, 600);
+            }
+            PlayerHealth health;
+            const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
+                                                    .sound = [](std::string_view) {},
+                                                    .cry = [](std::string_view) {},
+                                                    .named = [](std::string_view, f32) {},
+                                                    .learnBlock = [] {}};
+            usize hits = 0;
+            f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
+                                const PlayerImpact& impact) {
+                CHECK(victim == 0);
+                CHECK(impact.flags == (trial.properties | PlayerImpact::kStun));
+                CHECK(directed == (trial.properties == PlayerImpact::kKnockDown));
+                if (directed) {
+                    CHECK(glm::distance(impact.direction, -Vec3{trap.figure.transform()[2]}) <
+                          0.0001f);
+                }
+                health.hurt(player, damage, kind, directed, false, 1, healthEvents, impact);
+                ++hits;
+            };
+            f.events.help = [](s32, usize) { return true; };
+            for (s32 frame = 0; frame < 1200 && hits == 0; ++frame) {
+                f.fixtures.update(2, 1.0f / 30, f.players, f.events);
+            }
+            REQUIRE(hits == 1);
+            const bool heavy = trial.properties == PlayerImpact::kKnockDown;
+            CHECK((player.actor.save().health() < 1000) == (!protectedBody || heavy));
+            if (heavy && !protectedBody) {
+                CHECK((player.reaction == PlayerDeed::FallForward ||
+                       player.reaction == PlayerDeed::FallBack));
+                CHECK(player.knockback.pending());
+                player.knockback.kick(0, false);
+                CHECK(glm::length(player.knockback.velocity()) > 0);
+            } else {
+                // Stun/spike flags can remain queued without imparting any velocity.
+                player.knockback.kick(0, false);
+                CHECK(player.knockback.velocity() == Vec3{0});
+                CHECK(player.reaction != PlayerDeed::FallForward);
+                CHECK(player.reaction != PlayerDeed::FallBack);
+                if (!protectedBody && trial.properties == PlayerImpact::kSpike) {
+                    CHECK(player.reaction == PlayerDeed::Spike);
+                }
+            }
+        }
     }
 }
 

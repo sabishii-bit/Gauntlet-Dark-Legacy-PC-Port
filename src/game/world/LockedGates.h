@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -41,6 +42,7 @@ public:
     /** One gate. */
     struct Gate {
         s32 instance = -1;
+        s32 subtype = 0;
         s32 state = kShut;
         s32 openingTicks = 0;
         f32 refusalLeft = 0.0f;
@@ -56,6 +58,8 @@ public:
     void clear();
     usize size() const { return m_gates.size(); }
     const Gate& gate(usize index) const { return *m_gates[index]; }
+    /** The authored opening cue for this realm and gate material/style. */
+    static std::string_view openingSound(s32 realm, s32 subtype);
     void setPlayerCount(s32 players);
 
     std::vector<GateEvent> update(s32 ticks, f32 seconds, std::span<const ChestVisitor> party);

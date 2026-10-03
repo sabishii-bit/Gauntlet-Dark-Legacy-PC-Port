@@ -211,7 +211,9 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.position = instance.position;
         if (collision != nullptr) {
             if (const auto floor = collision->floorAt(instance.position, 3.0f, 6.0f)) {
-                generator.position.y = floor->y;
+                // AddItemSub uses the same floor lift as other placed items.
+                // Ground portals otherwise share the floor's depth exactly.
+                generator.position.y = floor->y + ItemFigure::kFloorLift;
             }
         }
         generator.yaw = std::atan2(placement[2][0], placement[2][2]);

@@ -1,9 +1,12 @@
 #include <array>
+#include <cmath>
 #include <filesystem>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/SoundSet.h"
+#include "engine/audio/MusicDeclicker.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -120,6 +123,75 @@ TEST_CASE("the native common bank names the menu sounds", "[assets][sound]") {
     const SoundSequence move = set.sequence(13);
     REQUIRE(move.steps.size() == 1);
     REQUIRE(move.steps[0].clip->frames() > 100);
+}
+
+TEST_CASE("native bank restoration repairs clicks once without moving sequence boundaries",
+          "[sound][declick]") {
+    const auto path = test::scratchDirectory("sound-set-restoration") / "TEST";
+    test::NativeSoundSample sample;
+    sample.sampleRate = 24000;
+    sample.samples.assign(12000, 4096);
+    sample.samples[4000] = -24576;
+    const std::array samples{sample};
+    test::writeNativeSoundBank(path, R"({"sounds":[
+        {"name":"LOOP","duration":-1,"sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}
+    ]})",
+                               samples);
+    SoundSet raw;
+    SoundSet restored;
+    REQUIRE(raw.load(path, SoundSet::Restoration::Disabled));
+    REQUIRE(restored.load(path));
+    const auto original = raw.sequence(0);
+    const auto clean = restored.sequence(0);
+    REQUIRE(clean.steps.size() == 1);
+    CHECK(clean.loops());
+    CHECK(clean.steps[0].loopStart);
+    CHECK(clean.steps[0].loopBack);
+    CHECK(clean.steps[0].clip->frames() == original.steps[0].clip->frames());
+    CHECK(clean.steps[0].clip->sampleRate == original.steps[0].clip->sampleRate);
+    CHECK(std::abs(clean.steps[0].clip->samples[4000] - 0.125f) < 0.01f);
+    const auto cached = clean.steps[0].clip->samples;
+    CHECK(restored.sample(0).samples == cached);
+    CHECK(&restored.sample(0) == clean.steps[0].clip);
+    REQUIRE(restored.load(path, SoundSet::Restoration::Disabled));
+    CHECK(restored.sample(0).samples == original.steps[0].clip->samples);
+}
+
+TEST_CASE("native voice and effect clips use the same restoration as streamed music",
+          "[assets][sound][declick]") {
+    const auto audio = test::assetOrSkip("AUDIO/AUDATPS2.ROM").parent_path();
+    for (const auto* bank : {"VOICE1", "MAP_J", "DREAM", "COMMON"}) {
+        CAPTURE(bank);
+        SoundSet raw;
+        SoundSet restored;
+        REQUIRE(raw.load(audio / bank, SoundSet::Restoration::Disabled));
+        REQUIRE(restored.load(audio / bank));
+        REQUIRE(raw.size() == restored.size());
+        u32 call = 0;
+        if (std::string_view(bank) == "MAP_J") {
+            REQUIRE(raw.find("S_J1NAME"));
+            call = *raw.find("S_J1NAME");
+        } else if (std::string_view(bank) == "DREAM") {
+            REQUIRE(raw.find("S_JGRUN1DIECLOS"));
+            call = *raw.find("S_JGRUN1DIECLOS");
+        }
+        CAPTURE(raw.entry(call).name);
+        REQUIRE_FALSE(raw.entry(call).sequence.empty());
+        const u32 index = raw.entry(call).sequence[0].sample;
+        const auto& original = raw.sample(index);
+        MusicDeclicker filter;
+        std::vector<f32> impulses;
+        filter.reset(original.sampleRate, original.channels);
+        filter.feed(original.samples, impulses);
+        filter.finish(impulses);
+        std::vector<f32> expected;
+        filter.reset(original.sampleRate, original.channels, MusicDeclicker::Pass::ShortBursts);
+        filter.feed(impulses, expected);
+        filter.finish(expected);
+        const auto& actual = restored.sample(index);
+        CHECK(actual.samples == expected);
+        CHECK(actual.frames() == original.frames());
+    }
 }
 
 } // namespace

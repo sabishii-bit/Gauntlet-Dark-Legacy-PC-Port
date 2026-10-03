@@ -34,6 +34,7 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
         std::memcpy(&ownRest, &instance.params[2], sizeof(ownRest));
         trap->damage = static_cast<f32>(ownDamage != 0 ? ownDamage : info.value) * damageScale;
         trap->subtype = info.subtype;
+        trap->properties = info.properties;
         trap->offTime = ownRest != 0 ? -ownRest * 3 : info.activeOff;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         ItemArchive& source =
@@ -158,8 +159,13 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
                 m_gaps[v] = static_cast<f32>(trap.ticksLeft + 1) * kSecondsPerTickLeft;
                 const bool pierces =
                     trap.subtype == kSpikes || trap.subtype == kBlade || trap.subtype == kBlades;
-                hits.push_back(
-                    TrapHit{index, v, trap.damage, trap.subtype, pierces, trap.figure.position()});
+                const u32 flags = trap.properties | PlayerImpact::kStun;
+                const Vec3 direction =
+                    (flags & (PlayerImpact::kKnockBack | PlayerImpact::kKnockDown)) != 0
+                        ? -Vec3{trap.figure.transform()[2]}
+                        : Vec3{0};
+                hits.push_back(TrapHit{index, v, trap.damage, trap.subtype, pierces,
+                                       trap.figure.position(), PlayerImpact{flags, direction}});
             }
         }
     }

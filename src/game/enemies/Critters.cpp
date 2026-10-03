@@ -144,8 +144,15 @@ void Critters::collect(Combatant& actor) {
         m_rams.push_back(ram);
     }
 }
+void Critters::syncFloors() {
+    for (auto& actor : m_critters) {
+        actor.syncFloor();
+    }
+}
+
 void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players, bool timeStopped,
                       std::span<const CombatantObstacle> items, Enemies* swarm) {
+    syncFloors();
     if (ticks <= 0) {
         return;
     }

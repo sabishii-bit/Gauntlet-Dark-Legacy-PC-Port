@@ -19,6 +19,7 @@
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
 #include "game/enemies/CombatantAssets.h"
+#include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterData.h"
 
 namespace {
@@ -347,6 +348,90 @@ TEST_CASE("native boss archives bind fighters and child heads without exported a
         REQUIRE_FALSE(assets.body.bound());
         REQUIRE(assets.children.empty());
         REQUIRE(assets.effectLifetimes.empty());
+    }
+}
+
+TEST_CASE("native auxiliary trees fill the Plague vat and follow the Lich head",
+          "[game][combatant][critter-adda][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    for (const auto* const name : {"PBOSS", "LICH"}) {
+        test::FakeRenderDevice device;
+        test::CombatantFixture fixture;
+        fixture.open(device, root, nullptr, {}, 'K');
+        REQUIRE(fixture.spawn(name, Vec3{11, 7, 19}, 0));
+        REQUIRE(fixture.assets.attachments.size() == 1);
+        auto& auxiliary = fixture.assets.attachments.front();
+        const bool pool = std::string_view(name) == "PBOSS";
+        CHECK(auxiliary.definition.tree == (pool ? "POOL" : "FLIES"));
+        CHECK(auxiliary.definition.follows == !pool);
+        CHECK(auxiliary.definition.node == (pool ? "" : "HEAD"));
+        CHECK(auxiliary.definition.offset == (pool ? Vec3{0, -0.5f, 0} : Vec3{0}));
+        const auto compareDraw = [&]() {
+            device.draws.clear();
+            fixture.actor.draw(device, Mat4{1}, {});
+            const auto actual = device.draws;
+            REQUIRE_FALSE(actual.empty());
+            const auto bodySequence = fixture.assets.tree->findSequence(fixture.actor.moveName());
+            REQUIRE(bodySequence.has_value());
+            const u32 sequence =
+                *bodySequence < auxiliary.tree->sequences.size() ? *bodySequence : 0;
+            // Object meshes use the same sequence index as their owner; the one-
+            // sequence fly tree falls back to ACTIVE and keeps its own looping clock.
+            auxiliary.model.setFrame(sequence, 0);
+            TreePose pose;
+            pose.evaluate(*auxiliary.tree, sequence, 0);
+            const auto head = fixture.actor.nodeTransform("HEAD");
+            const Mat4 model = pool ? glm::translate(Mat4{1}, Vec3{0, -0.5f, 0}) : *head;
+            device.draws.clear();
+            auxiliary.model.draw(device, Mat4{1}, model, {}, pose.matrices());
+            REQUIRE_FALSE(device.draws.empty());
+            REQUIRE(actual.size() >= device.draws.size());
+            const usize first = actual.size() - device.draws.size();
+            for (usize i = 0; i < device.draws.size(); ++i) {
+                CHECK(actual[first + i].texture == device.draws[i].texture);
+                CHECK(actual[first + i].vertices == device.draws[i].vertices);
+            }
+        };
+        compareDraw();
+        device.draws.clear();
+        fixture.actor.draw(device, Mat4{1}, {});
+        const auto initial = device.draws.back().vertices;
+        for (s32 tick = 0; tick < 15; ++tick) {
+            fixture.update(2, 1.0f / 30, {});
+        }
+        device.draws.clear();
+        fixture.actor.draw(device, Mat4{1}, {});
+        REQUIRE_FALSE(device.draws.empty());
+        CHECK(device.draws.back().vertices != initial);
+        const u8 bodyAlpha = device.draws.front().vertices.front().color.a;
+        const u8 auxiliaryAlpha = device.draws.back().vertices.front().color.a;
+        EnemyHit lethal{};
+        lethal.damage = 1000000;
+        REQUIRE(fixture.actor.hurt(lethal) > 0);
+        bool sawFade = false;
+        for (s32 tick = 0; tick < 600 && fixture.actor.present() && !sawFade; ++tick) {
+            fixture.update(2, 1.0f / 30, {});
+            device.draws.clear();
+            fixture.actor.draw(device, Mat4{1}, {});
+            if (device.draws.empty()) {
+                continue;
+            }
+            const u8 faded = device.draws.front().vertices.front().color.a;
+            if (faded > 0 && faded < bodyAlpha) {
+                sawFade = true;
+                const u8 attached = device.draws.back().vertices.front().color.a;
+                if (pool) {
+                    CHECK(attached == auxiliaryAlpha); // world-rooted, not under the dying body
+                } else {
+                    REQUIRE(auxiliaryAlpha == bodyAlpha);
+                    CHECK(attached == faded); // HEAD's flies inherit the recursive body fade
+                }
+            }
+        }
+        CHECK(sawFade);
+        fixture.actor.clear();
+        fixture.assets.clear();
+        CHECK(fixture.assets.attachments.empty());
     }
 }
 

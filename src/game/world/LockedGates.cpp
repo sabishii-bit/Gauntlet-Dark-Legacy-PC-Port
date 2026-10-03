@@ -1,12 +1,36 @@
 #include "game/world/LockedGates.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
 namespace gdl::game {
+
+std::string_view LockedGates::openingSound(s32 realm, s32 subtype) {
+    static constexpr std::array<std::array<std::string_view, 4>, 14> kSounds{{
+        {},
+        {"S_GATEA4", "S_GATEA2", "S_GATEA3", "S_GATEA1"},
+        {"S_GATEB1", "S_GATEB1", "S_GATEB1", "S_GATEB1"},
+        {"S_GATEC1", "S_GATEC2", "S_GATEC3", "S_GATEC1"},
+        {"S_GATED1", "S_GATED1", "S_GATED1", "S_GATED1"},
+        {},
+        {},
+        {"S_GATEWOODG", "S_GATEWOODG", "S_GATEWOODG", "S_GATEMETG"},
+        {"S_GATEWOODH", "S_GATEWOODH", "S_GATEWOODH", "S_GATEWOODH"},
+        {"S_GATEWOODI", "S_GATEWOODI", "S_GATEWOODI", "S_GATEWOODI"},
+        {"S_GATEWOODJ", "S_GATEWOODJ", "S_GATEWOODJ", "S_GATEMETJ"},
+        {"S_GATEWOODK", "S_GATEWOODK", "S_GATEWOODK", "S_GATEWOODK"},
+        {},
+        {},
+    }};
+    if (realm < 0 || static_cast<usize>(realm) >= kSounds.size() || subtype < 0 || subtype >= 4) {
+        return {};
+    }
+    return kSounds[static_cast<usize>(realm)][static_cast<usize>(subtype)];
+}
 
 bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
                        const WorldCollision* collision, ItemArchive* realmItems) {
@@ -22,6 +46,7 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         const ItemInfo& info = infos[static_cast<usize>(instance.info)];
         auto gate = std::make_unique<Gate>();
         gate->instance = static_cast<s32>(index);
+        gate->subtype = info.subtype;
         gate->minPlayers = instance.minPlayers;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         ItemArchive& art = itemArchiveForTree(items, name, realmItems);

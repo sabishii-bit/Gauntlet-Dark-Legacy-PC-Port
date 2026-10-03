@@ -14,6 +14,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/players/PlayerImpact.h"
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
@@ -32,6 +33,7 @@ struct TrapHit {
     s32 subtype = 0;      ///< which picks the trap's sound
     bool pierces = false; ///< spikes and blades, which a victim groans at
     Vec3 position{0.0f, 0.0f, 0.0f};
+    PlayerImpact impact;
 };
 
 /**
@@ -63,6 +65,7 @@ public:
         f32 damage = 0.0f;
         s32 offTime = 0; ///< the record's, in its own units
         s32 subtype = 0;
+        u32 properties = 0;
         s32 action = kResting;
         s32 ticksLeft = 0;
         s32 minPlayers = 0;

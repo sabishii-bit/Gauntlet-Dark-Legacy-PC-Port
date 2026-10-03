@@ -55,6 +55,22 @@ void Canvas::fillScreen(Color color) {
                    {.depthWrite = false, .depthTest = false});
 }
 
+void Canvas::fillHorizontalBand(f32 y, f32 height, Color color) {
+    GDL_VERIFY(m_device != nullptr, "Canvas::fillHorizontalBand outside begin/end");
+    flush();
+    const Vec4 a = m_transform * Vec4{0, y, kSpriteDepth, 1};
+    const Vec4 b = m_transform * Vec4{0, y + height, kSpriteDepth, 1};
+    const f32 top = std::clamp(std::min(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
+    const f32 bottom = std::clamp(std::max(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
+    if (bottom <= top) {
+        return;
+    }
+    ImmediateBatch batch;
+    batch.rect({-1, top, 2, bottom - top}, kSpriteDepth, color);
+    m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
+                   {.depthWrite = false, .depthTest = false});
+}
+
 void Canvas::maskOutside(const Rect& area, Color color) {
     GDL_VERIFY(m_device != nullptr, "Canvas::maskOutside outside begin/end");
     flush();

@@ -30,6 +30,7 @@ void CombatantAssets::clear() {
     textures.clear();
     skins.clear();
     body.clear();
+    attachments.clear();
     brokenModels.clear();
     tree = nullptr;
     archive.clear();
@@ -100,6 +101,23 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     if (!body.bind(*tree, archive.models, archive.textures, device)) {
         clear();
         return false;
+    }
+    for (const auto& definition : data.attachments()) {
+        const auto index = archive.trees.find(definition.tree);
+        if (!index.has_value()) {
+            log::warn("combatant {}: missing auxiliary tree {}", data.name(), definition.tree);
+            clear();
+            return false;
+        }
+        Attachment attachment;
+        attachment.definition = definition;
+        attachment.tree = &archive.trees.tree(*index);
+        if (attachment.tree->sequences.empty() ||
+            !attachment.model.bind(*attachment.tree, archive.models, archive.textures, device)) {
+            clear();
+            return false;
+        }
+        attachments.push_back(std::move(attachment));
     }
     textures.bind(archive.trees.textureAnimations(), archive.textures, device);
     for (const auto& animation : archive.trees.textureAnimations()) {

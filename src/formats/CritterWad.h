@@ -166,11 +166,21 @@ struct CritterDescriptorRecord {
     s16 type = 0;       ///< 3 a golem, 7 a gargoyle, 8 a general, 4 a boss
 };
 
+/** ADDA attaches an additional animated tree to a type, or to the world. */
+struct CritterAttachmentRecord {
+    s16 typeIndex = 0;
+    u16 flags = 0;
+    std::string tree;
+    std::string node;
+    std::array<f32, 3> offset{};
+};
+
 /** A `CRITTER/<NAME>.WAD`: everything the original knows of one great creature. */
 struct CritterFile {
     std::vector<CritterSoundRecord> sounds;
     std::vector<CritterDamageRecord> damages;
     std::vector<CritterDescriptorRecord> descriptors;
+    std::vector<CritterAttachmentRecord> attachments;
     std::vector<CritterNodeRecord> nodes;
     std::vector<CritterMoveRecord> moves;
     std::vector<CritterPatternRecord> patterns;

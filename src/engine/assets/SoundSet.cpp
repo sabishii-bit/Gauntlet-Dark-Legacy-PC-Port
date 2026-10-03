@@ -1,5 +1,6 @@
 #include "engine/assets/SoundSet.h"
 
+#include "engine/audio/MusicDeclicker.h"
 #include "engine/core/Assert.h"
 #include "engine/core/Types.h"
 
@@ -11,10 +12,11 @@ constexpr f32 kSampleScale = 1.0f / 32768.0f;
 
 } // namespace
 
-bool SoundSet::load(const std::filesystem::path& directory) {
+bool SoundSet::load(const std::filesystem::path& directory, Restoration restoration) {
     m_entries.clear();
     m_byName.clear();
     m_samples.clear();
+    m_restoration = restoration;
     return loadNative(directory);
 }
 
@@ -41,6 +43,21 @@ const SoundClip& SoundSet::sample(u32 index) {
         info.clip.samples.resize(samples.size());
         for (usize i = 0; i < samples.size(); ++i) {
             info.clip.samples[i] = static_cast<f32>(samples[i]) * kSampleScale;
+        }
+        if (m_restoration == Restoration::Enabled && info.clip.sampleRate >= 8000 &&
+            info.clip.sampleRate <= 192000) {
+            // Repair in sample space once, before playback resampling. Clip length,
+            // sequence boundaries and the bank's loop points stay unchanged.
+            MusicDeclicker filter;
+            std::vector<f32> restored;
+            filter.reset(info.clip.sampleRate, info.clip.channels);
+            filter.feed(info.clip.samples, restored);
+            filter.finish(restored);
+            info.clip.samples.clear();
+            filter.reset(info.clip.sampleRate, info.clip.channels,
+                         MusicDeclicker::Pass::ShortBursts);
+            filter.feed(restored, info.clip.samples);
+            filter.finish(info.clip.samples);
         }
     }
     return info.clip;

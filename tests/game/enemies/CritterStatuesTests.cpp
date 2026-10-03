@@ -87,8 +87,10 @@ TEST_CASE("a golem's statue stops and wakes a player walking into it, takes a bl
     REQUIRE(targets[1].radius == 4.0f);
     // A body clear of them goes untouched; one against a statue is pushed out and wakes it,
     // unless the placement's sight is under nought, which only pushes it out.
-    REQUIRE(statues.touch(Vec3{0, 0, 10}, 1.0f) == Vec3{0, 0, 10});
+    REQUIRE(statues.touch(Vec3{0, 0, 12}, 1.0f) == Vec3{0, 0, 12});
     REQUIRE_FALSE(statues.woken(0));
+    REQUIRE(statues.touch(Vec3{0, 0, 10}, 1.0f) == Vec3{0, 0, 10});
+    REQUIRE(statues.woken(0));
     REQUIRE(statues.touch(Vec3{0, 0, 4.5f}, 1.0f) == Vec3{0, 0, 5});
     REQUIRE(statues.woken(0));
     REQUIRE(statues.touch(Vec3{30, 0, 4.5f}, 1.0f) == Vec3{30, 0, 5});
@@ -147,7 +149,22 @@ TEST_CASE("a golem's statue stops and wakes a player walking into it, takes a bl
     REQUIRE(statues.count() == 0);
 }
 
-TEST_CASE("a gargoyle's statue comes alive over the eighty-five frames of its ACTIVE sequence",
+TEST_CASE("a statue with sight smaller than its body can be approached into wake range",
+          "[game][enemies][critter-statues]") {
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(statueArchive()));
+    CritterStatues statues;
+    REQUIRE(statues.add(device, archive, golemAt(Vec3{0}, 2), nullptr));
+    CHECK(statues.touch(Vec3{0, 0, 4}, 1) == Vec3{0, 0, 4});
+    CHECK_FALSE(statues.woken(0));
+    CHECK(statues.touch(Vec3{0, 8, 2}, 1, 4) == Vec3{0, 8, 2});
+    CHECK_FALSE(statues.woken(0));
+    CHECK(statues.touch(Vec3{0, 0, 2.5f}, 1) == Vec3{0, 0, 5});
+    CHECK(statues.woken(0));
+}
+
+TEST_CASE("a gargoyle wakes on approach and plays its eighty-five-frame ACTIVE sequence",
           "[game][enemies][critter-statues][assets]") {
     const auto root = test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
@@ -162,9 +179,11 @@ TEST_CASE("a gargoyle's statue comes alive over the eighty-five frames of its AC
     placement.radius = 8.0f;
     placement.height = 5.0f;
     placement.viewRadius = 16.0f;
-    placement.sight = 5.0f;
+    placement.sight = 30.0f;
     REQUIRE(statues.add(device, archive, placement, nullptr));
-    statues.wake(0);
+    const Vec3 approached = placement.instance.position + Vec3{0, 0, 20};
+    REQUIRE(statues.touch(approached, 1) == approached);
+    REQUIRE(statues.woken(0));
     statues.update(kTicks, kStep, nullptr);
     REQUIRE(statues.rising(0));
     // Eighty-five frames at thirty a second: 170 ticks, the frame's two at a time.

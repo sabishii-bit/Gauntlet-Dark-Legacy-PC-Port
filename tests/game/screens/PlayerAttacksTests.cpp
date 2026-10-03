@@ -1730,7 +1730,7 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
     enemies.close();
 }
 
-TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws him off",
+TEST_CASE("a halo wearer drains Death only while touching the nearest target ahead",
           "[game][screens][player-attacks][death][assets]") {
     const s32 tier = GENERATE(1, 2);
     const auto root =
@@ -1746,7 +1746,7 @@ TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws 
     enemies.open(f.device, test::deathArchive(), nullptr, 2, scales, 1);
     REQUIRE(enemies.loadKind(kDeathKind));
     const auto death = enemies.spawn(
-        {.kind = kDeathKind, .tier = tier, .position = {0, 0, 10}, .placed = true}, {});
+        {.kind = kDeathKind, .tier = tier, .position = {0, 0, 2}, .placed = true}, {});
     REQUIRE(death);
     PlayerActor& actor = f.players[0].actor;
     actor.turnTo(0.0f); // facing him
@@ -1798,9 +1798,12 @@ TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws 
         enemies.update(2, 1.0f / 30, views);
     }
     REQUIRE(enemies.positionOf(*death).z > beforeRetreat.z);
-    // Retreat alone does not end a legal target: it must escape the range/cone.
+    // A valid ranged target is not a valid drain contact, including after retreat.
     actor.place(enemies.positionOf(*death) - Vec3{0, 0, 10});
     const f32 beforeRetreatDrain = enemies.healthOf(*death);
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK(enemies.healthOf(*death) == beforeRetreatDrain);
+    actor.place(enemies.positionOf(*death) - Vec3{0, 0, 2});
     REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
     CHECK(enemies.healthOf(*death) == beforeRetreatDrain - 1);
     actor.place({0, 0, -100});
@@ -1808,6 +1811,38 @@ TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws 
     CHECK(enemies.healthOf(*death) == beforeRetreatDrain - 1);
     CHECK(f.players[0].deathHeld == -1);
     f.opponents.close();
+}
+
+TEST_CASE("pausing a halo hold silences its loops without advancing the drain",
+          "[game][screens][player-attacks][death][pause]") {
+    const auto root = test::scratchDirectory("halo-pause-audio");
+    const std::array<test::NativeSoundSample, 1> samples{{{24000, std::vector<s16>(240, 4096)}}};
+    test::writeNativeSoundBank(root / "audio/COMMON", R"({"sounds":[
+        {"name":"S_DEATHDIE","duration":-1,"sequence":[{"sample":0,"loopStart":true,"loopBack":true}]},
+        {"name":"S_DEATHSUCK","duration":-1,"sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}
+    ]})",
+                               samples);
+    AudioMixer mixer(24000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    f.audio.open(root, &sounds, nullptr);
+    auto& player = f.players[0];
+    player.deathHeld = 1;
+    player.deathHeldTicks = 1;
+    player.deathHeldCry = f.audio.playNamed("S_DEATHDIE");
+    player.deathHeldSuck = f.audio.playNamed("S_DEATHSUCK");
+    const auto cry = player.deathHeldCry;
+    const auto suck = player.deathHeldSuck;
+    REQUIRE(sounds.isPlaying(cry));
+    REQUIRE(sounds.isPlaying(suck));
+    f.attacks.stopDeathSounds(f.players);
+    CHECK_FALSE(sounds.isPlaying(cry));
+    CHECK_FALSE(sounds.isPlaying(suck));
+    CHECK(player.deathHeldCry == kNoSound);
+    CHECK(player.deathHeldSuck == kNoSound);
+    CHECK(player.deathHeld == 1);
+    CHECK(player.deathHeldTicks == 1);
+    f.audio.close();
 }
 
 TEST_CASE("fire and lightning shields harm the creature their bearer stands against",
@@ -2236,7 +2271,7 @@ TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but br
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
     f.targets.fixtureEvents.help = [](s32, usize) { return true; };
-    f.targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool) {};
+    f.targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     const Breakables& barrels = f.fixtures.barrels();
     for (const auto kind : {BreakableStrike::Kind::Plain, BreakableStrike::Kind::Exploding,
@@ -2282,7 +2317,7 @@ struct PerkLevel : Fixture {
             helps.push_back(id);
             return true;
         };
-        targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool) {};
+        targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
         targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     }
     PerkLevel(const PerkLevel&) = delete;
