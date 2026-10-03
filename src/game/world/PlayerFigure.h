@@ -51,6 +51,7 @@ public:
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None);
+    u64 animationRevision() const { return m_animationRevision; }
     /** Synchronize the temporary companion before animation (the fire shield's blaze comes
      * from `weapons`). The archives must outlive this figure; switching off does not
      * invalidate missiles already in flight. */
@@ -64,7 +65,7 @@ public:
     }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, f32 alpha, bool hideWeapon,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr, f32 frameBlend = 1.0f) const;
     /** Retail head equipment, attached to the posed HEAD object. The level's
      * powerup archive must outlive this figure, like its other borrowed draw resources. */
     void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,
@@ -125,6 +126,10 @@ public:
     }
 
 private:
+    /** Drawing-only matrices; never replace the gameplay hand/attachment transforms. */
+    void preparePresentation(f32 frameBlend) const;
+    std::optional<Mat4> visualAttachment(const Mat4& body, s32 node) const;
+    std::optional<Mat4> visualAttachment(const Mat4& body, std::string_view suffix) const;
     /** An unlockable class without its own archive borrows the class it shadows. */
     static std::filesystem::path classFolder(const std::filesystem::path& root, s32 character,
                                              std::string_view sub);
@@ -147,6 +152,7 @@ private:
     AnimationSet m_actions;
     TreeModel m_model;
     PlayerAnimator m_animator;
+    u64 m_animationRevision = 0;
     const TreeInfo* m_costume = nullptr;
     std::filesystem::path m_directory;
     TreeInfo m_weaponTree;
@@ -169,6 +175,8 @@ private:
     s32 m_handNode = -1;
     std::vector<s32> m_classNodeOfNode;
     std::vector<Mat4> m_transforms;
+    mutable TreePose m_visualPose;
+    mutable std::vector<Mat4> m_visualTransforms;
     ItemArchive m_effects;
     PlayerFamiliar m_familiar;
     PowerupCompanion m_companion;

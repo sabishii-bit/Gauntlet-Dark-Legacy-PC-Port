@@ -1,5 +1,6 @@
 #include "game/players/PlayerAnimator.h"
 
+#include <algorithm>
 #include <numbers>
 
 #include "engine/core/Types.h"
@@ -87,6 +88,8 @@ bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
     m_player.start(tree.sequences[stance], stance);
     m_pose.evaluate(tree, stance, 0.0f);
     m_previous = m_pose;
+    m_presentationPrevious = m_pose;
+    m_presentationGeneration = m_player.generation();
     return true;
 }
 
@@ -127,6 +130,22 @@ void PlayerAnimator::unbind() {
     m_comboRide = false;
     m_attackSeconds = 0.0f;
     m_player.stop();
+    m_presentationPrevious = TreePose{};
+}
+
+void PlayerAnimator::evaluatePresentation(TreePose& out, f32 alpha) const {
+    if (!bound()) {
+        out = TreePose{};
+        return;
+    }
+    out.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(), false, true);
+    if (m_player.transitioning()) {
+        out.blend(m_previous, m_player.transition());
+    }
+    if (alpha < 1.0f && m_presentationPrevious.posed() &&
+        m_presentationGeneration == m_player.generation()) {
+        out.blend(m_presentationPrevious, std::clamp(alpha, 0.0f, 1.0f), true);
+    }
 }
 
 PlayerAnimator::Action PlayerAnimator::comboHeldActionOf(s32 grabberClass) {
@@ -224,6 +243,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     if (!bound()) {
         return;
     }
+    evaluatePresentation(m_presentationPrevious);
+    m_presentationGeneration = m_player.generation();
     // A press is a button going down; it stays fresh until the next strike begins.
     const bool quickHeld =
         deed == PlayerDeed::Attack || deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow;

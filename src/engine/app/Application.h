@@ -16,9 +16,11 @@ struct ApplicationDesc {
     WindowDesc window;
     std::filesystem::path assetDirectory;
     bool vsync = true;
+    u32 sampleCount = 1; ///< requested raster samples; the renderer checks GPU support
     bool enableValidation = false;
     u64 maxFrames = 0;    ///< quit after this many frames; 0 runs until closed
-    u32 maxFrameRate = 0; ///< sleep to hold this many frames per second; 0 leaves it to vsync
+    u32 maxFrameRate = 0; ///< frames per second, capped by the monitor; 0 uses monitor refresh
+    u32 updateRate = 0;   ///< whole simulation ticks per second; 0 updates on every render
 };
 
 /** Owns the window, the render device and the frame loop. Subclass and override the hooks. */
@@ -40,12 +42,17 @@ protected:
 
     Window& window() { return *m_window; }
     RenderDevice& renderDevice() { return *m_device; }
-    const Input& input() const { return m_window->input(); }
+    const Input& input() const {
+        return m_desc.updateRate == 0 ? m_window->input() : m_updateInput;
+    }
     const FrameClock& clock() const { return m_clock; }
+    f32 presentationAlpha() const {
+        return m_desc.updateRate == 0 ? 1.0f : m_updateClock.fraction(m_desc.updateRate);
+    }
     const std::filesystem::path& assetDirectory() const { return m_desc.assetDirectory; }
 
     void requestQuit() { m_quitRequested = true; }
-    /** Holds this many frames a second from the next frame on; 0 leaves it to vsync. */
+    /** Caps frames from the next frame on, never above the monitor; 0 uses monitor refresh. */
     void setMaxFrameRate(u32 rate) { m_desc.maxFrameRate = rate; }
     u32 maxFrameRate() const { return m_desc.maxFrameRate; }
 
@@ -56,6 +63,8 @@ private:
     std::unique_ptr<Window> m_window;
     std::unique_ptr<RenderDevice> m_device;
     FrameClock m_clock;
+    UpdateClock m_updateClock;
+    Input m_updateInput;
     bool m_quitRequested = false;
 };
 

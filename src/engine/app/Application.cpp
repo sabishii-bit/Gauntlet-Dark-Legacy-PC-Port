@@ -8,6 +8,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/platform/DisplayTiming.h"
 #include "engine/platform/Paths.h"
 
 namespace gdl {
@@ -23,18 +24,30 @@ s32 Application::run() {
 
         RenderDeviceDesc deviceDesc;
         deviceDesc.vsync = m_desc.vsync;
+        deviceDesc.sampleCount = m_desc.sampleCount;
         deviceDesc.enableValidation = m_desc.enableValidation;
         deviceDesc.shaderDirectory = paths::executableDirectory() / "shaders";
         m_device = createVulkanRenderDevice(*m_window, deviceDesc);
 
         checkAssetDirectory();
         onInit();
+        u32 lastFrameRate = 0;
+        FramePacer framePacer;
 
         while (!m_window->shouldClose() && !m_quitRequested) {
             const auto frameStart = std::chrono::steady_clock::now();
             m_window->pollEvents();
             m_clock.tick();
-            onUpdate(m_clock.deltaSeconds());
+            if (m_desc.updateRate == 0) {
+                onUpdate(m_clock.deltaSeconds());
+            } else {
+                m_updateInput.accumulate(m_window->input());
+                const u32 ticks = m_updateClock.advance(m_clock.deltaSeconds(), m_desc.updateRate);
+                for (u32 tick = 0; tick < ticks && !m_quitRequested; ++tick) {
+                    onUpdate(1.0 / m_desc.updateRate);
+                    m_updateInput.beginPoll();
+                }
+            }
 
             if (m_device->beginFrame()) {
                 onRender(*m_device);
@@ -43,12 +56,14 @@ s32 Application::run() {
                 m_window->waitWhileMinimized();
             }
 
-            if (m_desc.maxFrameRate != 0) {
-                const auto frameTime = std::chrono::duration<f64>(1.0 / m_desc.maxFrameRate);
-                std::this_thread::sleep_until(
-                    frameStart +
-                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameTime));
+            const u32 refreshRate = m_window->refreshRate();
+            const u32 frameRate = displayFrameRate(m_desc.maxFrameRate, refreshRate);
+            if (frameRate != lastFrameRate) {
+                log::info("Presentation cap: {} fps on a {} Hz display", frameRate, refreshRate);
+                lastFrameRate = frameRate;
             }
+            std::this_thread::sleep_until(
+                framePacer.deadline(frameStart, std::chrono::steady_clock::now(), frameRate));
 
             if (m_desc.maxFrames != 0 && m_clock.frameIndex() >= m_desc.maxFrames) {
                 log::info("Reached the requested frame limit ({} frames)", m_desc.maxFrames);

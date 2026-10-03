@@ -207,6 +207,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
+    m_previousCamera.reset();
     m_runeMeter.clear();
     m_runeItem.reset();
     m_runeFrame = nullptr;
@@ -697,8 +698,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (!m_open) {
         return PlayOutcome::Running;
     }
-    // The clock advances in whole ticks, two per frame at the 30 frames per second the game
-    // runs at, so a late frame moves everything further rather than smoother.
+    PartyFigures::snapshot(m_players);
+    m_previousCamera = scriptedCamera() ? std::nullopt : std::optional{viewCamera()};
+    m_previousBossCamera = bossCameraOn();
+    // Application supplies fixed simulation ticks independently of rendered frames.
     const f32 tickRate =
         m_context.config != nullptr ? static_cast<f32>(m_context.config->timing.tickRate) : 60.0f;
     const auto ticks =
@@ -1101,19 +1104,23 @@ void PlayScene::gatherLights() {
     m_world->setPointLights(m_lights);
 }
 
-PartyFigures::Scene PlayScene::figureScene() {
-    return {.world = *m_world, .weapons = m_weapons, .departure = m_departure};
+PartyFigures::Scene PlayScene::figureScene(f32 frameBlend) {
+    return {.world = *m_world,
+            .weapons = m_weapons,
+            .departure = m_departure,
+            .frameBlend = frameBlend};
 }
 
-void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) {
-    PartyFigures::drawShadows(device, m_players, figureScene(), clip, eye);
+void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                            f32 frameBlend) {
+    PartyFigures::drawShadows(device, m_players, figureScene(frameBlend), clip, eye);
     m_opponents.enemies().drawShadows(device, clip, eye, m_world->lighting());
     m_opponents.critters().drawShadows(device, clip, eye, m_world->lighting());
     m_opponents.bosses().drawShadow(device, clip, eye, m_world->lighting());
 }
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
-                       f32 frameHeight, bool optionsOpen) {
+                       f32 frameHeight, bool optionsOpen, f32 frameBlend) {
     if (!m_open || m_world == nullptr || m_context.config == nullptr) {
         return;
     }
@@ -1121,14 +1128,21 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_messages.prepare(device);
     m_sumnerVisit.prepare(device);
     gatherLights();
-    const WorldCamera camera = viewCamera();
+    if (optionsOpen) {
+        frameBlend = 1.0f;
+    }
+    const WorldCamera currentCamera = viewCamera();
+    const WorldCamera camera =
+        m_previousCamera && !scriptedCamera() && m_previousBossCamera == bossCameraOn()
+            ? currentCamera.interpolate(*m_previousCamera, frameBlend)
+            : currentCamera;
     const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
                                            frameProjection);
     const CameraFrame companionCamera = CameraFrame::of(camera);
     m_world->drawOpaque(device, clip, camera);
     m_towerRelics.draw(device, clip, m_world->lighting(), camera);
     m_sumner.draw(device, clip, m_world->lighting());
-    m_figures.draw(device, m_players, figureScene(), clip, companionCamera);
+    m_figures.draw(device, m_players, figureScene(frameBlend), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting(), &companionCamera,
                    TreeModel::Pass::DepthWriting);
     m_transporters.draw(device, clip, m_world->lighting());
@@ -1147,7 +1161,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_world->drawDeferred(device, clip, camera);
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera);
-    drawShadows(device, clip, camera.position);
+    drawShadows(device, clip, camera.position, frameBlend);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {

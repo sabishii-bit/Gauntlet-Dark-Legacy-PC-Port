@@ -26,6 +26,41 @@ using namespace gdl::game;
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
 
+TEST_CASE("green knight drawing interpolates without changing gameplay hand or attack state",
+          "[game][figure][cadence][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.character = 5;
+    save.color = 3;
+    save.progress().experience = levelExperience(99);
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->familiarTier() == 2);
+    bool different = false;
+    for (s32 tick = 0; tick < 24; ++tick) {
+        figure->animate(1, 1, 1.0f / 60.0f);
+        const auto hand = figure->handAttachment(Mat4{1});
+        const auto frame = figure->animator().player().frame();
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, nullptr, 0);
+        const auto previous = device.draws;
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, nullptr, 0.5f);
+        REQUIRE(device.draws.size() == previous.size());
+        for (usize draw = 0; draw < previous.size(); ++draw) {
+            REQUIRE(device.draws[draw].vertices.size() == previous[draw].vertices.size());
+            for (usize vertex = 0; vertex < previous[draw].vertices.size(); ++vertex) {
+                different = different || previous[draw].vertices[vertex].position !=
+                                             device.draws[draw].vertices[vertex].position;
+            }
+        }
+        CHECK(figure->handAttachment(Mat4{1}) == hand);
+        CHECK(figure->animator().player().frame() == frame);
+    }
+    CHECK(different);
+}
+
 TEST_CASE("equipped hand powerups replace the class weapon and restore it when switched off",
           "[game][figure][held-powerup][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();

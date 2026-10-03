@@ -219,9 +219,119 @@ TEST_CASE("retail menu scopes exclude title-only and tower-only settings", "[set
         }
         return codes;
     };
-    CHECK(open(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 3});
-    CHECK(open(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 2, 3});
-    CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 3});
+    CHECK(open(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
+    CHECK(open(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 2, 4, 3});
+    CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 4, 3});
+}
+
+TEST_CASE("port graphics settings precede Controls and save discrete choices transactionally",
+          "[settings][graphics]") {
+    // These labels and settings are the user-requested PC feature, not retail menu entries.
+    Fixture f;
+    f.down();
+    f.down();
+    f.down();
+    REQUIRE(f.menu.menu().definition().items[3].text == "Graphics Settings");
+    f.select();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
+    REQUIRE(f.menu.menu().definition().items.size() == 3);
+    CHECK(f.menu.menu().definition().items[0].text == "V-Sync: On");
+    CHECK(f.menu.menu().definition().items[1].text == "FPS: 60");
+    CHECK(f.menu.menu().definition().items[2].text == "Anti-Aliasing: Off");
+    f.fail = true;
+    f.select();
+    CHECK(f.config.display.vsync);
+    CHECK(f.menu.config().display.vsync);
+    CHECK(f.writes == 0);
+    f.fail = false;
+    f.right();
+    CHECK_FALSE(f.config.display.vsync);
+    CHECK(f.writes == 1);
+    f.down();
+    for (const u32 rate : {0U, 30U, 60U, 0U, 30U}) {
+        f.select();
+        CHECK(f.config.display.maxFrameRate == rate);
+        CHECK(f.config.timing.gameplayFrameRate == rate);
+        CHECK(f.menu.menu().definition().items[1].text ==
+              (rate == 0 ? "FPS: Unlimited" : "FPS: " + std::to_string(rate)));
+    }
+    f.fail = true;
+    f.right();
+    CHECK(f.config.display.maxFrameRate == 30);
+    CHECK(f.menu.config().timing.gameplayFrameRate == 30);
+    f.fail = false;
+    MenuInput left;
+    left.left = true;
+    f.menu.update(left, 1);
+    CHECK(f.config.display.maxFrameRate == 0);
+    f.down();
+    for (const u32 samples : {2U, 4U, 1U}) {
+        f.right();
+        CHECK(f.config.display.sampleCount == samples);
+    }
+    f.fail = true;
+    f.right();
+    CHECK(f.config.display.sampleCount == 1);
+    CHECK(f.menu.config().display.sampleCount == 1);
+    f.back();
+    CHECK(f.menu.page() == SettingsMenu::Page::Root);
+    CHECK(f.menu.menu().selection() == 3);
+}
+
+TEST_CASE("graphics page fits parchment and returns to its entry in every menu scope",
+          "[settings][graphics]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = 32; c <= 126; ++c) {
+        glyphs.push_back({c, 24, 0, 0});
+    }
+    const auto font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
+    f.painter.setFont(&font, &f.texture);
+    for (const auto scope :
+         {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
+        f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment(), scope);
+        const auto& rows = f.menu.menu().definition().items;
+        const auto graphics = std::ranges::find(rows, 4, &MenuItem::code);
+        REQUIRE(graphics != rows.end());
+        REQUIRE(graphics + 1 != rows.end());
+        CHECK((graphics + 1)->code == 3);
+        const auto selected = static_cast<s32>(graphics - rows.begin());
+        for (s32 i = 0; i < selected; ++i) {
+            f.down();
+        }
+        f.select();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
+        const auto& definition = f.menu.menu().definition();
+        CHECK(definition.cursorScale == definition.scale);
+        CHECK(definition.colors.off == MenuDefinition::parchment().colors.off);
+        CHECK(definition.colors.on == MenuDefinition::parchment().colors.on);
+        for (const auto& item : definition.items) {
+            CHECK(definition.x + f.painter.measure(item.text, definition.scale) <= 512 - 64);
+        }
+        f.back();
+        CHECK(f.menu.page() == SettingsMenu::Page::Root);
+        CHECK(f.menu.menu().selection() == selected);
+    }
+}
+
+TEST_CASE("custom file frame rates are shown honestly until a supported choice is selected",
+          "[settings][graphics]") {
+    Fixture f;
+    f.config.timing.gameplayFrameRate = 24;
+    f.menu.open(
+        f.config, &f.strings,
+        [&](const auto& next) {
+            f.config = next;
+            return true;
+        },
+        f.painter, {}, {}, SettingsMenu::Scope::Level);
+    f.down();
+    f.select();
+    CHECK(f.menu.menu().definition().items[1].text == "FPS: 24");
+    f.down();
+    f.right();
+    CHECK(f.config.timing.gameplayFrameRate == 30);
+    CHECK(f.config.display.maxFrameRate == 30);
 }
 
 TEST_CASE("audio previews held ticks and persists once on release", "[settings]") {

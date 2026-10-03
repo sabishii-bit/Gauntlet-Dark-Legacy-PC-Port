@@ -172,4 +172,37 @@ TEST_CASE("a held direction keeps cycling letters, faster and faster", "[game][m
     REQUIRE(entry.update(both, 100) == NameEntry::Event::None);
 }
 
+TEST_CASE("held name entry consumes every repeat tick at thirty and sixty FPS",
+          "[game][menu][name][graphics]") {
+    for (const bool upwards : {false, true}) {
+        MenuInput press;
+        press.up = upwards;
+        press.down = !upwards;
+        press.upHeld = upwards;
+        press.downHeld = !upwards;
+        MenuInput held = press;
+        held.up = false;
+        held.down = false;
+        NameEntry everyTick;
+        NameEntry everyTwoTicks;
+        NameEntry unevenFrames;
+        for (auto* entry : {&everyTick, &everyTwoTicks, &unevenFrames}) {
+            entry->begin("");
+            entry->update(press, 0);
+        }
+        for (s32 elapsed = 0; elapsed < 300; elapsed += 6) {
+            for (s32 i = 0; i < 6; ++i) {
+                everyTick.update(held, 1);
+            }
+            for (s32 i = 0; i < 3; ++i) {
+                everyTwoTicks.update(held, 2);
+            }
+            unevenFrames.update(held, 0);
+            unevenFrames.update(held, 6);
+            CHECK(everyTwoTicks.pendingLetter() == everyTick.pendingLetter());
+            CHECK(unevenFrames.pendingLetter() == everyTick.pendingLetter());
+        }
+    }
+}
+
 } // namespace

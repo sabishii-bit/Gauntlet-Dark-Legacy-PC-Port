@@ -215,11 +215,11 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     m_sounds->update();
 
     m_fpsAccumulator += deltaSeconds;
-    ++m_fpsFrames;
     if (m_fpsAccumulator >= kFpsReportInterval) {
-        log::trace("{:.1f} fps", static_cast<f64>(m_fpsFrames) / m_fpsAccumulator);
+        log::trace("{:.1f} fps",
+                   static_cast<f64>(clock().frameIndex() - m_fpsLastFrame) / m_fpsAccumulator);
         m_fpsAccumulator = 0.0;
-        m_fpsFrames = 0;
+        m_fpsLastFrame = clock().frameIndex();
     }
 }
 
@@ -557,12 +557,25 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
 
 bool Gauntlet::saveSettings(const GameConfig& config) {
     try {
+        const bool presentationChanged = config.display.vsync != m_config.display.vsync ||
+                                         config.display.sampleCount != m_config.display.sampleCount;
+        const bool rateChanged =
+            config.display.maxFrameRate != m_config.display.maxFrameRate ||
+            config.timing.gameplayFrameRate != m_config.timing.gameplayFrameRate;
         config.saveFile(GameConfig::userSettingsPath());
         m_config = config;
         m_sounds->setMasterVolume(config.audio.masterVolume);
         m_sounds->setCategoryVolume(SoundCategory::Music, config.audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, config.audio.effectsVolume);
         m_audio->mixer().setStereo(config.audio.stereo);
+        if (presentationChanged) {
+            renderDevice().setPresentation(config.display.vsync, config.display.sampleCount);
+        }
+        if (rateChanged) {
+            setMaxFrameRate(m_play->scene.isOpen() || m_demo.isOpen()
+                                ? config.timing.gameplayFrameRate
+                                : config.display.maxFrameRate);
+        }
         for (auto& controls : m_controls) {
             controls.reset();
         }
@@ -792,7 +805,8 @@ void Gauntlet::onRender(RenderDevice& device) {
         return;
     }
     if (m_play->scene.isOpen()) {
-        m_play->scene.render(device, projection, frameWidth, frameHeight, m_pause.isOpen());
+        m_play->scene.render(device, projection, frameWidth, frameHeight, m_pause.isOpen(),
+                             presentationAlpha());
         if (m_pause.isOpen()) {
             m_pause.render(device, projection, frameWidth, frameHeight);
         }

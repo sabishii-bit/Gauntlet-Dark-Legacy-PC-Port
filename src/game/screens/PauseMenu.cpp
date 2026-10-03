@@ -71,6 +71,7 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
 }
 void PauseMenu::close() {
     m_open = false;
+    m_tickRemainder = 0.0;
     m_menu = OptionMenu{};
     m_settings = SettingsMenu{};
     m_art = MenuTextures{};
@@ -124,7 +125,10 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
     }
     const auto rate =
         m_context.config != nullptr ? m_context.config->timing.tickRate : TimingConfig{}.tickRate;
-    const auto ticks = std::max(static_cast<s32>(std::lround(seconds * rate)), 0);
+    m_tickRemainder += std::max(seconds, 0.0) * rate;
+    constexpr f64 kRoundingTolerance = 1.0e-9;
+    const auto ticks = static_cast<s32>(std::floor(m_tickRemainder + kRoundingTolerance));
+    m_tickRemainder = std::max(0.0, m_tickRemainder - ticks);
     if (m_page == Page::Options) {
         if (m_settings.update(input, ticks).action == MenuAction::Back) {
             showMain();

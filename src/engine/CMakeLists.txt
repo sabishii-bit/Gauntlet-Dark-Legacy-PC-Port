@@ -35,6 +35,8 @@ add_library(engine STATIC
     io/File.h
     io/AssetLocator.h
     platform/Window.h
+    platform/DisplayTiming.h
+    platform/DisplayTiming.cpp
     platform/Input.h
     platform/Input.cpp
     platform/Paths.h

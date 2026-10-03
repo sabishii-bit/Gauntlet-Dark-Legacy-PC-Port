@@ -8,8 +8,8 @@ namespace gdl {
 /**
  * Plays one sequence of a tree on the game clock the way the original engine steps its
  * animations: a sequence's rate is 900 divided by the frames it shows per second, the frame
- * snaps to whole numbers, a repeating sequence wraps to frame 0 the step it passes its last
- * frame and a one-shot holds that frame. A transition holds the first frame while the caller
+ * snaps to whole numbers, a repeating sequence retains its elapsed remainder when it wraps
+ * and a one-shot holds its last frame. A transition holds the first frame while the caller
  * blends the pose across from whatever showed before.
  */
 class AnimationPlayer {
@@ -31,6 +31,10 @@ public:
     bool playing() const { return m_sequence != nullptr; }
     u32 sequence() const { return m_index; }
     f32 frame() const { return m_frame; }
+    /** Fractional visual sample only; never use for gameplay events or collision poses. */
+    f32 presentationFrame() const;
+    /** Changes on a start, stop or loop wrap, where render interpolation must not cross. */
+    u64 generation() const { return m_generation; }
     s32 frameCount() const { return m_sequence != nullptr ? m_sequence->frames : 0; }
     /** True from the step the sequence wrapped or ended until the next step moves on. */
     bool finished() const { return m_finished; }
@@ -47,6 +51,7 @@ public:
 private:
     const TreeSequenceInfo* m_sequence = nullptr;
     u32 m_index = 0;
+    u64 m_generation = 0;
     f32 m_secondsPerFrame = kDefaultRate * kRateUnit;
     f32 m_time = 0.0f; ///< seconds into the sequence
     f32 m_frame = 0.0f;

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <exception>
+#include <limits>
 #include <numbers>
 
 #include <nlohmann/json.hpp>
@@ -27,6 +28,18 @@ using Json = nlohmann::json;
 template <typename T> void read(const Json& object, const char* key, T& value) {
     if (object.contains(key)) {
         value = object.at(key).get<T>();
+    }
+}
+
+void readFrameRate(const Json& object, const char* key, u32& value) {
+    if (!object.contains(key)) {
+        return;
+    }
+    const auto& rate = object.at(key);
+    if (rate.is_number_integer() && rate >= 0 && rate <= std::numeric_limits<u32>::max()) {
+        value = rate.get<u32>();
+    } else {
+        log::warn("Config: invalid frame rate '{}' left unchanged", key);
     }
 }
 
@@ -110,12 +123,21 @@ void GameConfig::mergeJson(std::string_view json) {
         read(d, "windowWidth", display.windowWidth);
         read(d, "windowHeight", display.windowHeight);
         read(d, "vsync", display.vsync);
-        read(d, "maxFrameRate", display.maxFrameRate);
+        if (d.contains("sampleCount")) {
+            const auto& samples = d.at("sampleCount");
+            display.sampleCount = 1;
+            for (const u32 supported : {2U, 4U}) {
+                if (samples == supported) {
+                    display.sampleCount = supported;
+                }
+            }
+        }
+        readFrameRate(d, "maxFrameRate", display.maxFrameRate);
     }
     if (root.contains("timing")) {
         const Json& t = root.at("timing");
         read(t, "tickRate", timing.tickRate);
-        read(t, "gameplayFrameRate", timing.gameplayFrameRate);
+        readFrameRate(t, "gameplayFrameRate", timing.gameplayFrameRate);
     }
     if (root.contains("camera")) {
         read(root.at("camera"), "horizontalFovDegrees", camera.horizontalFovDegrees);
@@ -245,6 +267,7 @@ std::string GameConfig::toJson() const {
                        {"windowWidth", display.windowWidth},
                        {"windowHeight", display.windowHeight},
                        {"vsync", display.vsync},
+                       {"sampleCount", display.sampleCount},
                        {"maxFrameRate", display.maxFrameRate}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};

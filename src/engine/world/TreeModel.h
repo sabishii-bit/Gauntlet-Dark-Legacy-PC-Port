@@ -86,6 +86,10 @@ public:
     /** Shows the object nodes' meshes for `frame` of `sequence`: the run's mesh for the
      * frame, the only mesh of a one-frame run, else none. */
     void setFrame(u32 sequence, s32 frame);
+    /** Opt-in visual mesh morphing for authored vertex-animation runs. Incompatible
+     * adjacent topology/material/UV frames remain discrete; effects use setFrame(). */
+    void setPresentationFrame(u32 sequence, f32 frame);
+    static bool compatibleMorph(const Mesh& from, const Mesh& to);
     /** Overrides object-animation frames for just one independently animated branch. */
     void setSubtreeFrame(usize root, u32 sequence, s32 frame);
 
@@ -112,9 +116,12 @@ private:
         s32 start = 0;
         s32 reverseLength = 0; ///< sequence extent when object frames play backward
         std::vector<Shape> shapes;
+        std::vector<bool> morphs; ///< compatible geometry/materials between adjacent frames
     };
     struct Node {
-        Shape shape;     ///< what the node draws now; without a mesh, nothing
+        Shape shape; ///< what the node draws now; without a mesh, nothing
+        const Mesh* nextMesh = nullptr;
+        f32 meshBlend = 0.0f;
         usize index = 0; ///< the tree node this mesh hangs from
         Vec3 offset{0.0f, 0.0f, 0.0f};
         bool chrome = false;

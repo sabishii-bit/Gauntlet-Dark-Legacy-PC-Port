@@ -7,6 +7,21 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
+namespace {
+constexpr s32 kGraphicsCode = 4;
+constexpr std::array<u32, 3> kFrameRates{30, 60, 0};
+constexpr std::array<u32, 3> kSampleCounts{1, 2, 4};
+
+u32 cycleChoice(const std::array<u32, 3>& choices, u32 value, s32 direction) {
+    for (usize i = 0; i < choices.size(); ++i) {
+        if (choices[i] == value) {
+            const auto count = static_cast<s32>(choices.size());
+            return choices[static_cast<usize>((static_cast<s32>(i) + direction + count) % count)];
+        }
+    }
+    return choices.front();
+}
+} // namespace
 std::string SettingsMenu::text(std::string_view id) const {
     return std::string(m_strings != nullptr ? m_strings->get(id) : id);
 }
@@ -37,7 +52,7 @@ void SettingsMenu::rebuild(s32 selection) {
         definition.items.push_back({std::move(label), code});
     };
     switch (m_page) {
-    case Page::Root:
+    case Page::Root: {
         add(text("menu.audio"), 0);
         if (m_scope == Scope::Title) {
             add(text("menu.gameOptions"), 1);
@@ -45,8 +60,53 @@ void SettingsMenu::rebuild(s32 selection) {
         if (m_scope != Scope::Level) {
             add(text("menu.compass"), 2);
         }
+        add(text("menu.graphics"), kGraphicsCode);
         definition.items.push_back({text("menu.controls"), 3, 0, false});
+        constexpr s32 kMargin = 64;
+        const s32 left = definition.x < 0 ? kMargin : definition.x;
+        s32 longest = 1;
+        for (const auto& item : definition.items) {
+            longest = std::max(longest, m_painter->measure(item.text, 1));
+        }
+        definition.scale =
+            std::min(1.0f, static_cast<f32>(std::max(1, m_screen.width - left - kMargin)) /
+                               static_cast<f32>(longest));
+        definition.cursorScale = definition.scale;
         break;
+    }
+    case Page::Graphics: {
+        definition.title = text("menu.graphics");
+        add(text("settings.vsync") + ": " +
+                text(m_config.display.vsync ? "settings.on" : "settings.off"),
+            0);
+        const auto rate = m_config.timing.gameplayFrameRate;
+        add(text("settings.fps") + ": " +
+                (rate == 0 ? text("settings.unlimited") : std::to_string(rate)),
+            1);
+        const auto samples = m_config.display.sampleCount;
+        std::string_view sampleLabel = "settings.off";
+        if (samples == 2) {
+            sampleLabel = "settings.msaa2";
+        } else if (samples == 4) {
+            sampleLabel = "settings.msaa4";
+        }
+        add(text("settings.antialiasing") + ": " + text(sampleLabel), 2);
+        constexpr s32 kMargin = 64;
+        s32 longest = m_painter->measure(definition.title, 1);
+        for (const auto& item : definition.items) {
+            longest = std::max(longest, m_painter->measure(item.text, 1));
+        }
+        const s32 left = definition.x < 0 ? kMargin : definition.x;
+        definition.scale =
+            std::min(0.8f, static_cast<f32>(std::max(1, m_screen.width - left - kMargin)) /
+                               static_cast<f32>(std::max(1, longest)));
+        definition.cursorScale = definition.scale;
+        definition.titleScale =
+            std::min(definition.titleScale,
+                     static_cast<f32>(std::max(1, m_screen.width - 2 * kMargin)) /
+                         static_cast<f32>(std::max(1, m_painter->measure(definition.title, 1))));
+        break;
+    }
     case Page::Audio: {
         definition.title = text("menu.audio");
         definition.x = 128;
@@ -141,7 +201,18 @@ void SettingsMenu::change(s32 direction) {
         }
         return;
     }
-    if (m_page == Page::Difficulty) {
+    if (m_page == Page::Graphics) {
+        if (code == 0) {
+            next.display.vsync = !next.display.vsync;
+        } else if (code == 1) {
+            const auto rate = cycleChoice(kFrameRates, next.timing.gameplayFrameRate, direction);
+            next.display.maxFrameRate = rate;
+            next.timing.gameplayFrameRate = rate;
+        } else {
+            next.display.sampleCount =
+                cycleChoice(kSampleCounts, next.display.sampleCount, direction);
+        }
+    } else if (m_page == Page::Difficulty) {
         next.difficulty.level = DifficultyConfig::kNames[static_cast<usize>(code)];
     } else if (m_page == Page::Multiplayer) {
         next.multiplayer.mode = static_cast<MultiplayerMode>(code);
@@ -157,6 +228,10 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         return {};
     }
     const bool horizontal = input.left || input.right || input.leftHeld || input.rightHeld;
+    if (m_page == Page::Graphics && !m_menu.closing() && (input.left || input.right)) {
+        change(input.left ? -1 : 1);
+        return {MenuAction::Moved, 0};
+    }
     if (m_page == Page::Audio && !m_menu.closing()) {
         const bool stereo = m_menu.selection() == 2;
         if ((!stereo && horizontal && ticks > 0) || (stereo && (input.left || input.right))) {
@@ -181,7 +256,8 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             rebuild(selection);
             return {};
         }
-        const s32 previousCode = static_cast<s32>(m_page) - 1;
+        const s32 previousCode =
+            m_page == Page::Graphics ? kGraphicsCode : static_cast<s32>(m_page) - 1;
         m_page = Page::Root;
         m_notice.clear();
         rebuild();
@@ -192,7 +268,8 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     }
     if (event.action == MenuAction::Choice) {
         if (m_page == Page::Root) {
-            m_page = static_cast<Page>(event.code + 1);
+            m_page =
+                event.code == kGraphicsCode ? Page::Graphics : static_cast<Page>(event.code + 1);
             m_notice.clear();
             rebuild(m_page == Page::Compass && m_config.camera.compass ? 1 : 0);
         } else if (m_page == Page::Game && event.code == 0) {

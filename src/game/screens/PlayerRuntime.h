@@ -30,6 +30,13 @@ enum class PlayerLife : u8 { Standing, Dying, InTower };
  * differ from this record's position in the party; figures may be unavailable. */
 struct PlayerRuntime {
     PlayerActor actor;
+    struct Presentation {
+        Vec3 position{0};
+        f32 yaw = 0;
+        bool continuous = false;
+        u64 animationRevision = 0;
+    };
+    Presentation previous; ///< preceding simulation placement, never used for collision
     PlayerCapture capture;
     ComboState combo; ///< its side of a two-player combo, none outside one
     PlayerTransport transport;

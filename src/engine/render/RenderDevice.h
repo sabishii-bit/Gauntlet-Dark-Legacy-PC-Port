@@ -19,6 +19,7 @@ struct RenderDeviceDesc {
     bool vsync = true;
     bool enableValidation = false;
     std::filesystem::path shaderDirectory;
+    u32 sampleCount = 1; ///< 1 (off), 2 or 4 samples; unsupported counts fall back safely
 };
 
 /** How a draw combines with what is already in the frame. */
@@ -70,6 +71,11 @@ public:
 
     virtual void setClearColor(const Vec4& rgba) = 0;
     virtual Extent2D framebufferExtent() const = 0;
+
+    /** Applies presentation changes at the next drawable beginFrame, including after
+     * restoration from a minimized window. Safe to request while a frame is open. */
+    virtual void setPresentation(bool vsync, u32 sampleCount) = 0;
+    virtual u32 presentationSampleCount() const = 0;
 
     /** Uploads RGBA8 pixels, rows top to bottom. */
     virtual std::unique_ptr<Texture> createTexture(const TextureDesc& desc,

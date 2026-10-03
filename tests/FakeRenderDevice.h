@@ -46,6 +46,12 @@ public:
     void endFrame() override {}
     void setClearColor(const Vec4& /*rgba*/) override {}
     Extent2D framebufferExtent() const override { return Extent2D{640, 448}; }
+    void setPresentation(bool vsync, u32 sampleCount) override {
+        presentationVsync = vsync;
+        presentationSamples = sampleCount;
+        ++presentationChanges;
+    }
+    u32 presentationSampleCount() const override { return presentationSamples; }
 
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
                                            std::span<const u8> rgba8Pixels) override {
@@ -79,6 +85,9 @@ public:
     u32 texturesCreated = 0;
     u32 textureUpdates = 0;
     TextureDesc lastTextureDesc;
+    bool presentationVsync = true;
+    u32 presentationSamples = 1;
+    u32 presentationChanges = 0;
 
 private:
     FakeTexture m_white{1, 1};

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <utility>
 
@@ -19,9 +20,13 @@ using namespace gdl;
 class ProbeApplication final : public Application {
 public:
     using Application::Application;
+    bool changePresentation = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
+    s32 updates() const { return m_updates; }
+    f64 elapsed() const { return m_elapsed; }
+    f64 longestUpdate() const { return m_longestUpdate; }
 
 protected:
     void onInit() override {
@@ -36,11 +41,23 @@ protected:
     void onUpdate(f64 deltaSeconds) override {
         REQUIRE(deltaSeconds >= 0.0);
         m_sawInput = !input().isKeyDown(Key::Unknown);
+        ++m_updates;
+        m_elapsed += deltaSeconds;
+        m_longestUpdate = std::max(m_longestUpdate, deltaSeconds);
+        if (changePresentation) {
+            constexpr std::array<u32, 4> kSamples{1, 2, 4, 1};
+            m_requestedSamples = kSamples[static_cast<usize>(m_renderedFrames) % kSamples.size()];
+            renderDevice().setPresentation(m_renderedFrames % 2 == 0, m_requestedSamples);
+        }
     }
 
     void onRender(RenderDevice& device) override {
         const Extent2D extent = device.framebufferExtent();
         REQUIRE_FALSE(extent.isZero());
+        if (changePresentation) {
+            CHECK(device.presentationSampleCount() >= 1);
+            CHECK(device.presentationSampleCount() <= m_requestedSamples);
+        }
         const Mat4 projection =
             makeScreenProjection(static_cast<f32>(extent.width), static_cast<f32>(extent.height));
 
@@ -69,6 +86,10 @@ protected:
         ice.depthWrite = false;
         device.draw(m_batch, *m_texture, projection, ice);
         device.draw(m_batch, *m_texture, projection); // restore default depth state
+        DrawState glow;
+        glow.blend = BlendMode::Additive;
+        glow.depthWrite = false;
+        device.draw(m_batch, *m_texture, projection, glow);
         ++m_renderedFrames;
     }
 
@@ -84,6 +105,10 @@ private:
     ImmediateBatch m_batch;
     s32 m_renderedFrames = 0;
     bool m_sawInput = false;
+    s32 m_updates = 0;
+    f64 m_elapsed = 0;
+    f64 m_longestUpdate = 0;
+    u32 m_requestedSamples = 1;
 };
 
 TEST_CASE("the application brings up a window and GPU and renders frames", "[gpu][app]") {
@@ -98,6 +123,38 @@ TEST_CASE("the application brings up a window and GPU and renders frames", "[gpu
     REQUIRE(app.run() == 0);
     REQUIRE(app.renderedFrames() >= 3);
     REQUIRE(app.sawInput());
+}
+
+TEST_CASE("the application renders between fixed-rate simulation updates", "[gpu][app][graphics]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl fixed-update test";
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 12;
+    desc.maxFrameRate = 60;
+    desc.updateRate = 30;
+    ProbeApplication app(std::move(desc));
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 12);
+    CHECK(app.updates() > 0);
+    CHECK(app.elapsed() >= 1.0 / 30);
+    CHECK(app.longestUpdate() <= 1.0 / 30);
+    CHECK(app.sawInput());
+}
+
+TEST_CASE("presentation changes rebuild multisampled attachments without losing textures",
+          "[gpu][app][graphics]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl graphics settings test";
+    desc.enableValidation = true;
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 8;
+    desc.maxFrameRate = 60;
+    ProbeApplication app(std::move(desc));
+    app.changePresentation = true;
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 8);
 }
 
 } // namespace

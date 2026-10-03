@@ -13,7 +13,7 @@ namespace gdl::game {
 /** Shared title/pause settings with transactional edits; Controls is not implemented. */
 class SettingsMenu {
 public:
-    enum class Page : u8 { Root, Audio, Game, Compass, Difficulty, Multiplayer };
+    enum class Page : u8 { Root, Audio, Game, Compass, Difficulty, Multiplayer, Graphics };
     enum class Scope : u8 { Title, Tower, Level };
     using Persist = std::function<bool(const GameConfig&)>;
     using PreviewAudio = std::function<void(const AudioConfig&)>;

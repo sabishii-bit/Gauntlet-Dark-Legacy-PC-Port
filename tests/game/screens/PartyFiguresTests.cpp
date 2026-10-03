@@ -1,6 +1,7 @@
 #include <array>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/WorldData.h"
@@ -15,6 +16,40 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("held figures do not oscillate their final animated pose during a scene cut",
+          "[game][screens][figures][presentation]") {
+    std::array<PlayerRuntime, 1> players;
+    auto& runtime = players.front();
+    runtime.figure = std::make_unique<PlayerFigure>();
+    PartyFigures::snapshot(players);
+    runtime.figure->animate(0, 1, 1.0f / 60);
+    CHECK(PartyFigures::presentationBlend(runtime, 0.25f) == 0.25f);
+    PartyFigures::snapshot(players);
+    CHECK(PartyFigures::presentationBlend(runtime, 0.25f) == 1);
+    CHECK(PartyFigures::presentationBlend(runtime, 0.75f) == 1);
+}
+
+TEST_CASE("drawing a moving player samples completed states without changing collision",
+          "[game][screens][figures][cadence]") {
+    std::array<PlayerRuntime, 1> players;
+    auto& runtime = players.front();
+    runtime.actor.spawn(0, CharacterSave{}, nullptr, Vec3{0}, 0);
+    PartyFigures::snapshot(players);
+    runtime.actor.place(Vec3{0.25f, 0, 0});
+    const Mat4 halfway = PartyFigures::presentationBody(runtime, 0.5f);
+    CHECK(halfway[3].x == Catch::Approx(0.125f));
+    CHECK(runtime.actor.position().x == 0.25f);
+    CHECK(PartyFigures::presentationBody(runtime, 0)[3].x == 0);
+    CHECK(PartyFigures::presentationBody(runtime, 1)[3].x == 0.25f);
+    // Relocation never draws a trail through the intervening walls.
+    runtime.actor.place(Vec3{100, 0, 0});
+    CHECK(PartyFigures::presentationBody(runtime, 0.5f)[3].x == 100);
+    PartyFigures::snapshot(players);
+    REQUIRE(runtime.transport.begin(Vec3{50, 0, 0}));
+    runtime.actor.place(Vec3{100.25f, 0, 0});
+    CHECK(PartyFigures::presentationBody(runtime, 0.5f)[3].x == 100.25f);
+}
 
 TEST_CASE("a shield armour is borne on the arm, reflecting before fire before lightning",
           "[game][screens][figures]") {

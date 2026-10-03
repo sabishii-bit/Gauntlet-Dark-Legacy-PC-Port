@@ -40,21 +40,13 @@ VkSampler createSampler(VkDevice device, VkFilter filter, VkSamplerAddressMode a
 } // namespace
 
 VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& desc)
-    : m_window(window) {
+    : m_window(window), m_desc(desc) {
     m_context = std::make_unique<VulkanContext>(window, desc.enableValidation);
-    m_swapchain =
-        std::make_unique<VulkanSwapchain>(*m_context, window.framebufferSize(), desc.vsync);
+    m_swapchain = std::make_unique<VulkanSwapchain>(*m_context, window.framebufferSize(),
+                                                    desc.vsync, desc.sampleCount);
 
     createDescriptorResources();
-    m_pipeline = std::make_unique<VulkanPipeline>(
-        *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
-        m_textureSetLayout, BlendMode::Alpha);
-    m_additivePipeline = std::make_unique<VulkanPipeline>(
-        *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
-        m_textureSetLayout, BlendMode::Additive);
-    m_opaquePipeline = std::make_unique<VulkanPipeline>(
-        *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
-        m_textureSetLayout, BlendMode::Opaque);
+    createPipelines();
     createFrameResources();
     createPresentSemaphores();
 
@@ -64,6 +56,18 @@ VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& d
         samplerFor(TextureDesc{1, 1, TextureFilter::Nearest}), TextureDesc{1, 1}, kWhitePixel);
 
     log::info("Vulkan render device ready ({} frames in flight)", kFramesInFlight);
+}
+
+void VulkanRenderDevice::createPipelines() {
+    m_pipeline = std::make_unique<VulkanPipeline>(
+        *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
+        m_textureSetLayout, BlendMode::Alpha, m_swapchain->samples());
+    m_additivePipeline = std::make_unique<VulkanPipeline>(
+        *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
+        m_textureSetLayout, BlendMode::Additive, m_swapchain->samples());
+    m_opaquePipeline = std::make_unique<VulkanPipeline>(
+        *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
+        m_textureSetLayout, BlendMode::Opaque, m_swapchain->samples());
 }
 
 VulkanRenderDevice::~VulkanRenderDevice() {
@@ -245,9 +249,30 @@ void VulkanRenderDevice::recreateSwapchain() {
     if (size.isZero()) {
         return;
     }
-    m_swapchain->recreate(size);
+    const auto oldSamples = m_swapchain->samples();
+    const auto oldColor = m_swapchain->colorFormat();
+    const auto oldDepth = m_swapchain->depthFormat();
+    m_swapchain->recreate(size, m_desc.vsync, m_desc.sampleCount);
+    if (oldSamples != m_swapchain->samples() || oldColor != m_swapchain->colorFormat() ||
+        oldDepth != m_swapchain->depthFormat()) {
+        createPipelines();
+    }
     destroyPresentSemaphores();
     createPresentSemaphores();
+    m_presentationPending = false;
+}
+
+void VulkanRenderDevice::setPresentation(bool vsync, u32 sampleCount) {
+    const u32 requested = presentationSamples(sampleCount, 1U | 2U | 4U);
+    if (m_desc.vsync != vsync || m_desc.sampleCount != requested) {
+        m_desc.vsync = vsync;
+        m_desc.sampleCount = requested;
+        m_presentationPending = true;
+    }
+}
+
+u32 VulkanRenderDevice::presentationSampleCount() const {
+    return static_cast<u32>(m_swapchain->samples());
 }
 
 Extent2D VulkanRenderDevice::framebufferExtent() const {
@@ -262,7 +287,7 @@ bool VulkanRenderDevice::beginFrame() {
     if (windowSize.isZero()) {
         return false;
     }
-    if (windowSize != framebufferExtent()) {
+    if (m_presentationPending || windowSize != framebufferExtent()) {
         recreateSwapchain();
     }
 
@@ -297,9 +322,18 @@ bool VulkanRenderDevice::beginFrame() {
         cmd, m_swapchain->depthImage(), VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        0,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+    if (m_swapchain->samples() != VK_SAMPLE_COUNT_1_BIT) {
+        vk::imageBarrier(
+            cmd, m_swapchain->multisampleImage(), VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    }
 
     frame.vertexCursor = 0;
     frame.uploadCursor = 0;
@@ -321,6 +355,13 @@ void VulkanRenderDevice::beginRendering() {
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.clearValue.color = {
         {m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a}};
+    if (m_swapchain->samples() != VK_SAMPLE_COUNT_1_BIT) {
+        colorAttachment.imageView = m_swapchain->multisampleImageView();
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+        colorAttachment.resolveImageView = m_swapchain->imageView(m_imageIndex);
+        colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
 
     VkRenderingAttachmentInfo depthAttachment{};
     depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

@@ -16,6 +16,20 @@ struct Extent2D {
     bool operator==(const Extent2D&) const = default;
 };
 
+/** Chooses a supported MSAA count no greater than requested. The mask's bits are
+ * the sample counts themselves (1, 2, 4); unsupported requests disable MSAA. */
+constexpr u32 presentationSamples(u32 requested, u32 supported) {
+    if (requested != 2 && requested != 4) {
+        return 1;
+    }
+    for (u32 count = requested; count > 1; count /= 2) {
+        if ((supported & count) != 0) {
+            return count;
+        }
+    }
+    return 1;
+}
+
 enum class PrimitiveTopology : u8 {
     TriangleList,
     TriangleStrip,

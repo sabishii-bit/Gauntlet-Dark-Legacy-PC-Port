@@ -250,7 +250,9 @@ public:
     std::vector<EnemyGeneratorEvent> takeGeneratorEvents();
 
     /** Steps every mind and body `ticks` (`seconds` long) with the players where they are;
-     * what the throwers let go flies in `missiles`, when given. */
+     * what the throwers let go flies in `missiles`, when given. Accumulates native
+     * two-tick steps so render cadence cannot change AI, collision or floor damage.
+     * Moving-floor attachment is refreshed even when no full step is due. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {}, class EnemyMissiles* missiles = nullptr,
                 f32 missileSpeedScale = 1.0f, bool timeStopped = false);
@@ -411,6 +413,8 @@ private:
     void veil(Enemy& enemy, s32 ticks);
     void chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                       std::span<f32> crowding);
+    void step(f32 seconds, std::span<const EnemyView> players, std::span<const Obstacle> obstacles,
+              EnemyMissiles* missiles, f32 missileSpeedScale, bool timeStopped);
     /** Whether the swing it has just landed casts its missile rather than striking. */
     static bool castsNow(const Enemy& enemy);
     void resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players);
@@ -465,6 +469,8 @@ private:
     std::optional<ViewVolume> m_view;
     s32 m_inView = 0;
     u32 m_frame = 0;
+    s32 m_pendingTicks = 0;
+    f32 m_pendingSeconds = 0;
     f32 m_shrink = 1.0f;
 };
 

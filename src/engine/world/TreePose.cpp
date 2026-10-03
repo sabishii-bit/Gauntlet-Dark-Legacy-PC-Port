@@ -54,7 +54,7 @@ f32 TreePose::wrapAngle(f32 angle) {
     return angle;
 }
 
-NodePose TreePose::sample(const TrackInfo& track, f32 frame) {
+NodePose TreePose::sample(const TrackInfo& track, f32 frame, bool smooth) {
     GDL_VERIFY(!track.frames.empty(), "a track needs at least one key");
     // The key at or after the frame, and the one before it; past the end the last key holds.
     const auto upper = std::ranges::lower_bound(
@@ -68,7 +68,8 @@ NodePose TreePose::sample(const TrackInfo& track, f32 frame) {
     const auto currentFrame = static_cast<f32>(track.frames[current]);
     const auto nextFrame = static_cast<f32>(track.frames[next]);
     NodePose to = keyPose(track, next);
-    if (currentFrame < nextFrame && nextFrame - frame > kKeyWindow) {
+    // Presentation can sample continuously; native gameplay retains its key snap window.
+    if (currentFrame < nextFrame && nextFrame - frame > (smooth ? 0.0f : kKeyWindow)) {
         const NodePose from = keyPose(track, current);
         const f32 t = (frame - currentFrame) / (nextFrame - currentFrame);
         for (s32 i = 0; i < 3; ++i) {
@@ -137,7 +138,7 @@ void TreePose::rest(const TreeInfo& tree) {
     compose();
 }
 
-void TreePose::evaluate(const TreeInfo& tree, u32 sequence, f32 frame, bool mirror) {
+void TreePose::evaluate(const TreeInfo& tree, u32 sequence, f32 frame, bool mirror, bool smooth) {
     GDL_VERIFY(sequence < tree.sequences.size(), "animation sequence index out of range");
     m_tree = &tree;
     m_poses.assign(tree.nodes.size(), NodePose{});
@@ -147,7 +148,7 @@ void TreePose::evaluate(const TreeInfo& tree, u32 sequence, f32 frame, bool mirr
         if (track == nullptr) {
             continue;
         }
-        NodePose pose = sample(*track, frame);
+        NodePose pose = sample(*track, frame, smooth);
         if (mirror) {
             pose.rotation.y = -pose.rotation.y;
             pose.rotation.z = -pose.rotation.z;
@@ -159,14 +160,17 @@ void TreePose::evaluate(const TreeInfo& tree, u32 sequence, f32 frame, bool mirr
     compose();
 }
 
-void TreePose::blend(const TreePose& from, f32 t) {
+void TreePose::blend(const TreePose& from, f32 t, bool preserveCuts) {
     GDL_VERIFY(m_tree != nullptr && from.m_tree == m_tree, "poses to blend must share a tree");
     for (usize n = 0; n < m_poses.size(); ++n) {
         const NodePose& a = from.m_poses[n];
         NodePose& b = m_poses[n];
         for (s32 i = 0; i < 3; ++i) {
             if (a.rotation[i] != b.rotation[i]) {
-                b.rotation[i] = a.rotation[i] + wrapAngle(b.rotation[i] - a.rotation[i]) * t;
+                const f32 step = wrapAngle(b.rotation[i] - a.rotation[i]);
+                if (!preserveCuts || std::abs(step) < kHoldAngle) {
+                    b.rotation[i] = a.rotation[i] + step * t;
+                }
             }
         }
         b.position = a.position + (b.position - a.position) * t;

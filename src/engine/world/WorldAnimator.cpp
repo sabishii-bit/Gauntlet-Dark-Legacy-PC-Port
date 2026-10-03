@@ -1,11 +1,15 @@
 #include "engine/world/WorldAnimator.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "engine/core/Types.h"
 #include "engine/world/TreePose.h"
 
 namespace gdl {
+namespace {
+constexpr f32 kFrameSlack = 0.00001f;
+}
 
 void WorldAnimator::bind(const WorldLayout& layout) {
     clear();
@@ -137,8 +141,10 @@ void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
             } else if (!restarted && std::floor(track.frame) <= 1) {
                 m_cycleEvents.push_back({track.object, false});
             }
-        } else if (std::floor(track.frame) >= last) {
-            track.frame = 0.0f;
+        } else if (track.frame + kFrameSlack >= last) {
+            // A looping world track's final key closes the cycle; retain time past
+            // that key rather than lengthening every loop by a caller-dependent amount.
+            track.frame = last > 0.0f && track.frame >= last ? std::fmod(track.frame, last) : 0.0f;
             m_cycleEvents.push_back({track.object, true});
         } else if (!restarted && std::floor(track.frame) <= 1) {
             m_cycleEvents.push_back({track.object, false});

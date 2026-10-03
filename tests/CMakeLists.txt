@@ -37,6 +37,7 @@ add_executable(tests
     engine/io/FileTests.cpp
     engine/io/AssetLocatorTests.cpp
     engine/platform/InputTests.cpp
+    engine/platform/DisplayTimingTests.cpp
     engine/platform/PathsTests.cpp
     engine/render/RenderTypesTests.cpp
     engine/render/ImageTests.cpp

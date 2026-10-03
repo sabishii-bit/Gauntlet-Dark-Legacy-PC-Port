@@ -64,6 +64,29 @@ TEST_CASE("a held node pose keeps following its animated parent", "[world][pose]
     REQUIRE(pose.size() == 2);
 }
 
+TEST_CASE("visual sampling removes near-key snapping without blending authored angle cuts",
+          "[world][pose][presentation]") {
+    const auto slide = track(0, 3, {0, 1}, {0, 10});
+    CHECK(TreePose::sample(slide, 0.95f).position.x == 10.0f);
+    CHECK(TreePose::sample(slide, 0.95f, true).position.x == Approx(9.5f));
+    const auto cut = track(0, 1, {0, 1}, {0, kPi});
+    CHECK(TreePose::sample(cut, 0.95f, true).rotation.y == 0.0f);
+    CHECK(TreePose::sample(cut, 1.0f, true).rotation.y == Approx(kPi));
+    auto tree = sampleTree();
+    tree.sequences[0].tracks[0] = slide;
+    TreePose native;
+    TreePose visual;
+    native.evaluate(tree, 0, 0.95f);
+    visual.evaluate(tree, 0, 0.95f, false, true);
+    CHECK(native.matrices()[0][3].x == 11.0f);
+    CHECK(visual.matrices()[0][3].x == Approx(10.5f));
+    tree.sequences[0].tracks[0] = cut;
+    native.evaluate(tree, 0, 0);
+    visual.evaluate(tree, 0, 1, false, true);
+    visual.blend(native, 0.5f, true);
+    CHECK(visual.poses()[0].rotation.y == Approx(kPi));
+}
+
 bool near(const Mat4& a, const Mat4& b) {
     for (s32 c = 0; c < 4; ++c) {
         if (!glm::all(glm::epsilonEqual(a[c], b[c], 1e-5f))) {

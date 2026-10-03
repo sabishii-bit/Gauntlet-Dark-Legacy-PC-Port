@@ -33,6 +33,8 @@ public:
     void endFrame() override;
     void setClearColor(const Vec4& rgba) override { m_clearColor = rgba; }
     Extent2D framebufferExtent() const override;
+    void setPresentation(bool vsync, u32 sampleCount) override;
+    u32 presentationSampleCount() const override;
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
                                            std::span<const u8> rgba8Pixels) override;
     void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override;
@@ -72,6 +74,7 @@ private:
     }
 
     void createDescriptorResources();
+    void createPipelines();
     void createFrameResources();
     void createPresentSemaphores();
     void destroyPresentSemaphores();
@@ -81,6 +84,8 @@ private:
     void beginRendering();
 
     Window& m_window;
+    RenderDeviceDesc m_desc;
+    bool m_presentationPending = false;
     std::unique_ptr<VulkanContext> m_context;
     std::unique_ptr<VulkanSwapchain> m_swapchain;
     std::unique_ptr<VulkanPipeline> m_pipeline;         ///< alpha blended

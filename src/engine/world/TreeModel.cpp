@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <exception>
 #include <format>
 #include <stdexcept>
@@ -18,6 +19,28 @@ namespace {
 constexpr std::array<std::string_view, 2> kMarkerNodes{"DUMMY", "NULL1"};
 
 } // namespace
+
+bool TreeModel::compatibleMorph(const Mesh& from, const Mesh& to) {
+    if (from.vertices.size() != to.vertices.size() || from.parts.size() != to.parts.size() ||
+        from.prelit != to.prelit) {
+        return false;
+    }
+    for (usize p = 0; p < from.parts.size(); ++p) {
+        if (from.parts[p].indices != to.parts[p].indices ||
+            from.parts[p].texture != to.parts[p].texture ||
+            from.parts[p].lightmap != to.parts[p].lightmap) {
+            return false;
+        }
+    }
+    for (usize v = 0; v < from.vertices.size(); ++v) {
+        if (from.vertices[v].uv != to.vertices[v].uv ||
+            from.vertices[v].lightmapUv != to.vertices[v].lightmapUv ||
+            from.vertices[v].color != to.vertices[v].color) {
+            return false;
+        }
+    }
+    return true;
+}
 
 TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device,
                                       std::span<TextureSet* const> lenders) {
@@ -121,6 +144,13 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                                       device, lenders));
                         include(frames.shapes.back(), node.offset, first);
                     }
+                    for (usize f = 1; f < frames.shapes.size(); ++f) {
+                        const auto& from = frames.shapes[f - 1];
+                        const auto& to = frames.shapes[f];
+                        frames.morphs.push_back(
+                            from.textures == to.textures && from.translucent == to.translucent &&
+                            from.slots == to.slots && compatibleMorph(*from.mesh, *to.mesh));
+                    }
                 }
                 node.runs.push_back(std::move(frames));
             }
@@ -148,7 +178,30 @@ void TreeModel::setSubtreeFrame(usize root, u32 sequence, s32 frame) {
     }
 }
 
+void TreeModel::setPresentationFrame(u32 sequence, f32 frame) {
+    const auto whole = static_cast<s32>(std::floor(std::max(frame, 0.0f)));
+    const f32 fraction = std::clamp(frame - static_cast<f32>(whole), 0.0f, 1.0f);
+    setFrame(sequence, whole);
+    for (Node& node : m_nodes) {
+        if (sequence >= node.runs.size() || fraction <= 0.0f) {
+            continue;
+        }
+        const auto& run = node.runs[sequence];
+        const s32 at = (run.reverseLength > 0 ? run.reverseLength - whole - 1 : whole) - run.start;
+        const s32 next = at + (run.reverseLength > 0 ? -1 : 1);
+        if (at < 0 || next < 0 || at >= static_cast<s32>(run.shapes.size()) ||
+            next >= static_cast<s32>(run.shapes.size()) ||
+            !run.morphs[static_cast<usize>(std::min(at, next))]) {
+            continue;
+        }
+        node.nextMesh = run.shapes[static_cast<usize>(next)].mesh;
+        node.meshBlend = fraction;
+    }
+}
+
 void TreeModel::selectFrame(Node& node, u32 sequence, s32 frame) {
+    node.nextMesh = nullptr;
+    node.meshBlend = 0.0f;
     if (node.runs.empty()) {
         return;
     }
@@ -210,10 +263,20 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             m_batch.begin(PrimitiveTopology::TriangleList);
             for (const u32 index : part.indices) {
                 const MeshVertex& v = shape.mesh->vertices[index];
-                const Vec3 normal = glm::normalize(normalMatrix * v.normal);
+                Vec3 position = v.position;
+                Vec3 vertexNormal = v.normal;
+                if (node.nextMesh != nullptr) {
+                    const MeshVertex& next = node.nextMesh->vertices[index];
+                    position = glm::mix(position, next.position, node.meshBlend);
+                    const Vec3 blendedNormal = glm::mix(vertexNormal, next.normal, node.meshBlend);
+                    if (glm::dot(blendedNormal, blendedNormal) > 0.000001f) {
+                        vertexNormal = blendedNormal;
+                    }
+                }
+                const Vec3 normal = glm::normalize(normalMatrix * vertexNormal);
                 const Vec2 uv =
                     node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : v.uv;
-                const Vec4 placed = placement * Vec4{v.position, 1.0f};
+                const Vec4 placed = placement * Vec4{position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
                 const bool flash = node.maskedTexture != nullptr && m_maskedTexture == nullptr;
                 Color color = additive || m_unlit || flash ? Color::white()

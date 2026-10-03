@@ -50,6 +50,7 @@ private:
     std::vector<PartyMember> m_party;
     Page m_page = Page::Main;
     s32 m_player = 0;
+    f64 m_tickRemainder = 0.0;
     bool m_open = false;
     bool m_inTower = true;
     bool m_inSecretWorld = false;

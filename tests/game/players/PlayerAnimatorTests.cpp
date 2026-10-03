@@ -74,6 +74,43 @@ f32 playingIndex(const PlayerAnimator& animator) {
     return animator.pose().matrices()[0][3].x;
 }
 
+TEST_CASE("player visual poses interpolate subframes without moving gameplay joints",
+          "[player-animation][presentation]") {
+    auto tree = classTree();
+    auto& track = tree.sequences[0].tracks[0];
+    track.frames = {0, 59};
+    track.values = {0, 59};
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f);
+    REQUIRE(animator.player().frame() == 1.0f);
+    REQUIRE(playingIndex(animator) == Approx(1.0f));
+    TreePose visual;
+    for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+        CAPTURE(alpha);
+        animator.evaluatePresentation(visual, alpha);
+        CHECK(visual.matrices()[0][3].x == Approx(alpha * 0.5f));
+        CHECK(playingIndex(animator) == Approx(1.0f));
+        CHECK(animator.player().frame() == 1.0f);
+        CHECK(animator.action() == Action::Ready);
+    }
+    animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f);
+    animator.evaluatePresentation(visual, 0.5f);
+    CHECK(visual.matrices()[0][3].x == Approx(0.75f));
+
+    // A reaction takes an early return in update. It must start a new visual interval,
+    // not blend the old stance through the incoming sequence as render alpha changes.
+    animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f, PlayerDeed::Die);
+    REQUIRE(animator.action() == Action::Death);
+    animator.evaluatePresentation(visual, 0.0f);
+    const f32 beginning = visual.matrices()[0][3].x;
+    animator.evaluatePresentation(visual, 1.0f);
+    CHECK(visual.matrices()[0][3].x == beginning);
+    animator.unbind();
+    animator.evaluatePresentation(visual);
+    CHECK_FALSE(visual.posed());
+}
+
 TEST_CASE("critter block requests classify heavy attacks and their recoveries only",
           "[player-animation][critter-block]") {
     // PlayerAttackType followed by PlayerAttacking(level 1), grouped independently
@@ -92,6 +129,34 @@ TEST_CASE("critter block requests classify heavy attacks and their recoveries on
         CAPTURE(name);
         const bool expected = std::ranges::find(provoking, name) != provoking.end();
         CHECK(PlayerAnimator::isBlockableAttack(action) == expected);
+    }
+}
+
+TEST_CASE("extra presentation samples never change projectile release or potion timing",
+          "[player-animation][presentation]") {
+    const auto tree = classTree();
+    for (const auto deed : {PlayerDeed::Attack, PlayerDeed::UsePotion}) {
+        CAPTURE(deed);
+        PlayerAnimator native;
+        PlayerAnimator rendered;
+        REQUIRE(native.bind(tree, false));
+        REQUIRE(rendered.bind(tree, false));
+        TreePose visual;
+        s32 events = 0;
+        for (s32 tick = 0; tick < 180; ++tick) {
+            native.update(PlayerMotion::Stand, 1, 1.0f / 60.0f, deed);
+            rendered.update(PlayerMotion::Stand, 1, 1.0f / 60.0f, deed);
+            for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+                rendered.evaluatePresentation(visual, alpha);
+            }
+            CHECK(rendered.action() == native.action());
+            CHECK(rendered.player().frame() == native.player().frame());
+            CHECK(rendered.released() == native.released());
+            CHECK(rendered.potionUsed() == native.potionUsed());
+            CHECK(playingIndex(rendered) == playingIndex(native));
+            events += native.released() || native.potionUsed() ? 1 : 0;
+        }
+        CHECK(events > 0);
     }
 }
 

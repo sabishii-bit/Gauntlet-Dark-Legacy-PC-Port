@@ -82,6 +82,39 @@ TEST_CASE("world occlusion is a per-draw policy and preserves authored halo blen
     }
 }
 
+TEST_CASE("object mesh morphing requires matching topology UVs and materials",
+          "[world][model][presentation]") {
+    Mesh from;
+    from.vertices.resize(3);
+    from.parts.push_back(MeshPart{0, 0, {0, 1, 2}});
+    Mesh to = from;
+    to.vertices[1].position.x = 2;
+    to.vertices[1].normal = Vec3{1, 0, 0};
+    REQUIRE(TreeModel::compatibleMorph(from, to));
+    SECTION("vertex count") {
+        to.vertices.emplace_back();
+    }
+    SECTION("index topology") {
+        to.parts[0].indices = {0, 2, 1};
+    }
+    SECTION("part texture") {
+        to.parts[0].texture = 1;
+    }
+    SECTION("part lightmap") {
+        to.parts[0].lightmap = 1;
+    }
+    SECTION("UV correspondence") {
+        to.vertices[1].uv.x = 1;
+    }
+    SECTION("lightmap correspondence") {
+        to.vertices[1].lightmapUv.x = 1;
+    }
+    SECTION("vertex color") {
+        to.vertices[1].color.r = 0;
+    }
+    CHECK_FALSE(TreeModel::compatibleMorph(from, to));
+}
+
 TEST_CASE("tree models resolve native external slots only through local named lenders",
           "[world][model][texture-lender]") {
     const auto dir = sampleFigure("tree-model-external");
@@ -495,6 +528,18 @@ TEST_CASE("an object node shows the mesh of its run that the frame calls for", "
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws[0].state.blend == BlendMode::Alpha);
     REQUIRE(device.draws[0].state.alphaTest == 0.0f); // the body's texture is solid
+    // The banner has different UVs/materials. Opt-in sampling must leave this
+    // incompatible pair at its discrete lower frame, not morph unrelated vertices.
+    const auto discrete = device.draws[0];
+    device.draws.clear();
+    flame.setPresentationFrame(0, 1.5f);
+    flame.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].texture == discrete.texture);
+    REQUIRE(device.draws[0].vertices.size() == discrete.vertices.size());
+    for (usize vertex = 0; vertex < discrete.vertices.size(); ++vertex) {
+        CHECK(device.draws[0].vertices[vertex].position == discrete.vertices[vertex].position);
+    }
     flame.setFrame(0, 2);
     flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws.size() == 2);

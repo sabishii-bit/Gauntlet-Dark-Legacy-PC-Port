@@ -10,8 +10,10 @@
 
 namespace gdl {
 
-VulkanSwapchain::VulkanSwapchain(VulkanContext& context, Extent2D windowExtent, bool vsync)
-    : m_context(context), m_vsync(vsync), m_depthFormat(context.depthFormat()) {
+VulkanSwapchain::VulkanSwapchain(VulkanContext& context, Extent2D windowExtent, bool vsync,
+                                 u32 sampleCount)
+    : m_context(context), m_vsync(vsync), m_requestedSamples(sampleCount),
+      m_depthFormat(context.depthFormat()) {
     create(windowExtent, VK_NULL_HANDLE);
 }
 
@@ -22,8 +24,10 @@ VulkanSwapchain::~VulkanSwapchain() {
     }
 }
 
-void VulkanSwapchain::recreate(Extent2D windowExtent) {
+void VulkanSwapchain::recreate(Extent2D windowExtent, bool vsync, u32 sampleCount) {
     m_context.waitIdle();
+    m_vsync = vsync;
+    m_requestedSamples = sampleCount;
     const VkSwapchainKHR old = m_swapchain;
     destroyImageResources();
     create(windowExtent, old);
@@ -56,6 +60,23 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
         preferred != formats.end() ? *preferred : formats.front();
     m_colorFormat = chosenFormat.format;
     m_colorSpace = chosenFormat.colorSpace;
+
+    // Format capabilities can be narrower than the device-wide framebuffer limits.
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    VkImageFormatProperties colorProperties{};
+    VkImageFormatProperties depthProperties{};
+    GDL_VK_CHECK(vkGetPhysicalDeviceImageFormatProperties(
+        physicalDevice, m_colorFormat, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 0, &colorProperties));
+    GDL_VK_CHECK(vkGetPhysicalDeviceImageFormatProperties(
+        physicalDevice, m_depthFormat, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 0, &depthProperties));
+    const auto supported = properties.limits.framebufferColorSampleCounts &
+                           properties.limits.framebufferDepthSampleCounts &
+                           colorProperties.sampleCounts & depthProperties.sampleCounts;
+    m_samples =
+        static_cast<VkSampleCountFlagBits>(presentationSamples(m_requestedSamples, supported));
 
     u32 modeCount = 0;
     GDL_VK_CHECK(
@@ -131,7 +152,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     depthInfo.extent = {m_extent.width, m_extent.height, 1};
     depthInfo.mipLevels = 1;
     depthInfo.arrayLayers = 1;
-    depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthInfo.samples = m_samples;
     depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -153,13 +174,36 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     depthView.subresourceRange.layerCount = 1;
     GDL_VK_CHECK(vkCreateImageView(device, &depthView, nullptr, &m_depthImageView));
 
-    log::info("Swapchain: {}x{}, {} images, format {}, {}", m_extent.width, m_extent.height,
-              actualCount, static_cast<s32>(m_colorFormat),
-              presentMode == VK_PRESENT_MODE_FIFO_KHR ? "vsync" : "no vsync");
+    if (m_samples != VK_SAMPLE_COUNT_1_BIT) {
+        VkImageCreateInfo colorInfo = depthInfo;
+        colorInfo.format = m_colorFormat;
+        colorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        GDL_VK_CHECK(vmaCreateImage(m_context.allocator(), &colorInfo, &depthAlloc,
+                                    &m_multisampleImage, &m_multisampleAllocation, nullptr));
+        VkImageViewCreateInfo colorView = depthView;
+        colorView.image = m_multisampleImage;
+        colorView.format = m_colorFormat;
+        colorView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        GDL_VK_CHECK(vkCreateImageView(device, &colorView, nullptr, &m_multisampleImageView));
+    }
+
+    log::info("Swapchain: {}x{}, {} images, format {}, {}, {} samples", m_extent.width,
+              m_extent.height, actualCount, static_cast<s32>(m_colorFormat),
+              presentMode == VK_PRESENT_MODE_FIFO_KHR ? "vsync" : "no vsync",
+              static_cast<u32>(m_samples));
 }
 
 void VulkanSwapchain::destroyImageResources() {
     const VkDevice device = m_context.device();
+    if (m_multisampleImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_multisampleImageView, nullptr);
+        m_multisampleImageView = VK_NULL_HANDLE;
+    }
+    if (m_multisampleImage != VK_NULL_HANDLE) {
+        vmaDestroyImage(m_context.allocator(), m_multisampleImage, m_multisampleAllocation);
+        m_multisampleImage = VK_NULL_HANDLE;
+        m_multisampleAllocation = VK_NULL_HANDLE;
+    }
     if (m_depthImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, m_depthImageView, nullptr);
         m_depthImageView = VK_NULL_HANDLE;

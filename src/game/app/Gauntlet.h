@@ -132,7 +132,7 @@ private:
     bool m_movieActive = false;
     bool m_titleWarned = false;
     f64 m_fpsAccumulator = 0.0;
-    u32 m_fpsFrames = 0;
+    u64 m_fpsLastFrame = 0;
 };
 
 } // namespace gdl::game

@@ -16,7 +16,8 @@ namespace gdl {
 
 VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                                VkFormat colorFormat, VkFormat depthFormat,
-                               VkDescriptorSetLayout textureSetLayout, BlendMode blend)
+                               VkDescriptorSetLayout textureSetLayout, BlendMode blend,
+                               VkSampleCountFlagBits samples)
     : m_context(context) {
     const bool additive = blend == BlendMode::Additive;
     const VkDevice device = m_context.device();
@@ -99,7 +100,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample.rasterizationSamples = samples;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
