@@ -81,6 +81,49 @@ TEST_CASE("a menu lays its column out around the screen centre", "[game][menu]")
     REQUIRE(f.menu.backdropArea() == Rect{256.0f - 80.0f, 192.0f - 82.0f, 160.0f, 164.0f});
 }
 
+TEST_CASE("two-column choices draw arrows and gray disabled values without a cursor",
+          "[game][menu][graphics]") {
+    Fixture f;
+    MenuDefinition definition;
+    definition.items = {{"AA", 0}, {"BB", 1, 0, false}};
+    definition.items[0].value = "ON";
+    definition.items[1].value = "OFF";
+    definition.itemPositions = {{64, 132}, {64, 160}};
+    definition.valueX = 200;
+    definition.valueWidth = 32;
+    definition.showCursor = false;
+    f.menu.open(definition, f.painter, {});
+    test::FakeRenderDevice device;
+    test::FakeTexture cursor{32, 32};
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    textures.arrows = &cursor;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    s32 arrows = 0;
+    bool grayLabel = false;
+    bool grayValue = false;
+    for (const auto& draw : device.draws) {
+        CHECK(draw.texture != &cursor);
+        if (draw.vertices.size() == 3 && draw.texture == &device.whiteTexture()) {
+            ++arrows;
+            CHECK(test::maxCorner(draw).y < 160);
+        }
+        for (const auto& vertex : draw.vertices) {
+            if (vertex.color == Color::rgba(128, 128, 128) &&
+                vertex.position.y == 160 + TextPainter::kCellInset) {
+                grayLabel |= vertex.position.x == 64 + TextPainter::kCellInset;
+                grayValue |= vertex.position.x == 200 + TextPainter::kCellInset;
+            }
+        }
+    }
+    CHECK(arrows == 2);
+    CHECK(grayLabel);
+    CHECK(grayValue);
+}
+
 TEST_CASE("navigation wraps and reports choices and backing out", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});

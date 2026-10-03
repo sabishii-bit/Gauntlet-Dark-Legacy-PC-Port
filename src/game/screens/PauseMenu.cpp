@@ -70,6 +70,7 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
     }
 }
 void PauseMenu::close() {
+    m_settings.close();
     m_open = false;
     m_tickRemainder = 0.0;
     m_menu = OptionMenu{};
@@ -158,7 +159,8 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
         m_settings.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
                         m_context.strings, m_context.saveSettings, m_text, m_screen, backdrop(),
                         m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level,
-                        m_context.previewAudio, {}, m_context.displayOptions);
+                        m_context.previewAudio, {}, m_context.displayOptions,
+                        m_context.previewVideo);
     } else if (event.code == 5) {
         return PauseOutcome::Manage;
     } else if (event.code == 6) {

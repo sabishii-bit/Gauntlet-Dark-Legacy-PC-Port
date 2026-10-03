@@ -55,6 +55,19 @@ void Canvas::fillScreen(Color color) {
                    {.depthWrite = false, .depthTest = false});
 }
 
+void Canvas::fillTriangle(const Vec2& a, const Vec2& b, const Vec2& c, Color color) {
+    GDL_VERIFY(m_device != nullptr, "Canvas::fillTriangle outside begin/end");
+    flush();
+    ImmediateBatch batch;
+    batch.begin(PrimitiveTopology::TriangleList);
+    batch.vertex(Vec3{a, kSpriteDepth}, color, Vec2{0});
+    batch.vertex(Vec3{b, kSpriteDepth}, color, Vec2{0});
+    batch.vertex(Vec3{c, kSpriteDepth}, color, Vec2{0});
+    batch.end();
+    m_device->draw(batch, m_device->whiteTexture(), m_transform,
+                   {.depthWrite = false, .depthTest = false});
+}
+
 void Canvas::fillHorizontalBand(f32 y, f32 height, Color color) {
     GDL_VERIFY(m_device != nullptr, "Canvas::fillHorizontalBand outside begin/end");
     flush();

@@ -176,6 +176,9 @@ GameContext Gauntlet::context() {
     context.unpackedRoot = m_options.unpackedDirectory;
     context.saveSettings = [this](const GameConfig& config) { return saveSettings(config); };
     context.displayOptions = [this] { return window().displayOptions(); };
+    context.previewVideo = [this](const GameConfig& config) {
+        return applySettings(config, false);
+    };
     context.previewAudio = [this](const AudioConfig& audio) {
         m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
@@ -559,6 +562,9 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
 }
 
 bool Gauntlet::saveSettings(const GameConfig& config) {
+    return applySettings(config, true);
+}
+bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
     const bool windowChanged = config.display.windowMode != m_config.display.windowMode ||
                                config.display.windowWidth != m_config.display.windowWidth ||
                                config.display.windowHeight != m_config.display.windowHeight;
@@ -577,7 +583,9 @@ bool Gauntlet::saveSettings(const GameConfig& config) {
             }
         }
         try {
-            config.saveFile(GameConfig::userSettingsPath());
+            if (persist) {
+                config.saveFile(GameConfig::userSettingsPath());
+            }
         } catch (...) {
             if (windowChanged) {
                 window().setDisplayMode(

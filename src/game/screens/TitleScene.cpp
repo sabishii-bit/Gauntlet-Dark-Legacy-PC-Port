@@ -103,6 +103,7 @@ void TitleScene::close() {
     }
     m_music = kNoSound;
     m_titleMenu.close();
+    m_optionsMenu.close();
     m_optionsMenu = SettingsMenu{};
     m_fire.reset();
     m_fireMasks.clear();
@@ -370,7 +371,7 @@ void TitleScene::openOptionsMenu() {
     m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
                        m_context.strings, m_context.saveSettings, m_text, m_screen, menu,
                        SettingsMenu::Scope::Title, m_context.previewAudio, {},
-                       m_context.displayOptions);
+                       m_context.displayOptions, m_context.previewVideo);
 }
 
 /** Backing out hands the scroll to the burn effect while the text fades out. */

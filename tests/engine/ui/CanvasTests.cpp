@@ -63,6 +63,27 @@ TEST_CASE("nothing is submitted for an empty canvas", "[ui][canvas]") {
     REQUIRE(device.draws.empty());
 }
 
+TEST_CASE("filled arrows preserve canvas draw order and ignore scene depth", "[ui][canvas]") {
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    const Mat4 projection = makeScreenProjection(512, 384);
+    canvas.begin(device, projection);
+    canvas.fill({0, 0, 1, 1}, Color::black());
+    canvas.fillTriangle({5, 10}, {10, 5}, {10, 15}, Color::white());
+    canvas.fill({20, 0, 1, 1}, Color::black());
+    canvas.end();
+    REQUIRE(device.draws.size() == 3);
+    const auto& arrow = device.draws[1];
+    REQUIRE(arrow.vertices.size() == 3);
+    CHECK(Vec2(arrow.vertices[0].position) == Vec2{5, 10});
+    CHECK(Vec2(arrow.vertices[1].position) == Vec2{10, 5});
+    CHECK(Vec2(arrow.vertices[2].position) == Vec2{10, 15});
+    CHECK(arrow.texture == &device.whiteTexture());
+    CHECK(arrow.transform == projection);
+    CHECK_FALSE(arrow.state.depthTest);
+    CHECK_FALSE(arrow.state.depthWrite);
+}
+
 TEST_CASE("screen fills cover widescreen margins without changing the canvas transform",
           "[ui][canvas]") {
     test::FakeRenderDevice device;

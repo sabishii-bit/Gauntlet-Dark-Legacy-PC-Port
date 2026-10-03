@@ -7,6 +7,7 @@
 
 #include "game/config/GameConfig.h"
 #include "game/menu/OptionMenu.h"
+#include "game/menu/VideoSettings.h"
 
 namespace gdl::game {
 
@@ -20,9 +21,10 @@ public:
     void open(const GameConfig& config, const StringTable* strings, Persist persist,
               const TextPainter& painter, const MenuScreen& screen, MenuDefinition backdrop,
               Scope scope = Scope::Title, PreviewAudio preview = {}, DisplayOptions display = {},
-              std::function<DisplayOptions()> queryDisplay = {});
+              std::function<DisplayOptions()> queryDisplay = {}, Persist previewVideo = {},
+              VideoSettings::Clock clock = {});
     MenuEvent update(const MenuInput& input, s32 ticks);
-    void close() { m_menu.close(); }
+    void close();
     bool isOpen() const { return m_menu.isOpen(); }
     Page page() const { return m_page; }
     const GameConfig& config() const { return m_config; }
@@ -51,5 +53,10 @@ private:
     GameConfig m_config;
     Page m_page = Page::Root;
     std::string m_notice;
+    VideoSettings m_video;
+    bool m_confirmVideo = false;
+    Persist m_previewVideo;
+    VideoSettings::Clock m_clock;
+    s32 m_countdown = 0;
 };
 } // namespace gdl::game

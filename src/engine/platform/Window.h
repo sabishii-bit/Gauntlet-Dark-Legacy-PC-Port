@@ -43,6 +43,7 @@ public:
 
     virtual DisplayOptions displayOptions() const = 0;
     virtual WindowMode windowMode() const = 0;
+    virtual bool cursorCaptured() const = 0;
     /** Apply a supported display mode without recreating the rendering surface. */
     virtual bool setDisplayMode(WindowMode mode, Extent2D resolution) = 0;
 

@@ -157,6 +157,10 @@ GlfwWindow::~GlfwWindow() {
 void GlfwWindow::pollEvents() {
     m_input.beginPoll();
     glfwPollEvents();
+    // Monitor removal can return GLFW to windowed mode independently of our menu.
+    if (windowMode() != WindowMode::Fullscreen && cursorCaptured()) {
+        glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
     pollKeyboard();
     pollGamepads();
 }
@@ -279,6 +283,10 @@ GLFWmonitor* GlfwWindow::activeMonitor() const {
 
 DisplayOptions GlfwWindow::displayOptions() const {
     DisplayOptions result;
+    s32 width = 0;
+    s32 height = 0;
+    glfwGetWindowSize(m_window, &width, &height);
+    result.window = {static_cast<u32>(std::max(0, width)), static_cast<u32>(std::max(0, height))};
     auto* monitor = activeMonitor();
     if (monitor == nullptr) {
         return result;
@@ -318,6 +326,10 @@ WindowMode GlfwWindow::windowMode() const {
     return glfwGetWindowAttrib(m_window, GLFW_AUTO_ICONIFY) == GLFW_TRUE
                ? WindowMode::Fullscreen
                : WindowMode::BorderlessFullscreen;
+}
+
+bool GlfwWindow::cursorCaptured() const {
+    return glfwGetInputMode(m_window, GLFW_CURSOR) == GLFW_CURSOR_CAPTURED;
 }
 
 bool GlfwWindow::setDisplayMode(WindowMode mode, Extent2D resolution) {
@@ -375,6 +387,7 @@ bool GlfwWindow::setDisplayMode(WindowMode mode, Extent2D resolution) {
     const s32 previousRefresh =
         previousMode != nullptr ? previousMode->refreshRate : GLFW_DONT_CARE;
     const s32 previousIconify = glfwGetWindowAttrib(m_window, GLFW_AUTO_ICONIFY);
+    const s32 previousCursor = glfwGetInputMode(m_window, GLFW_CURSOR);
     glfwGetError(nullptr); // Discard earlier unrelated input/monitor errors.
     glfwSetWindowAttrib(m_window, GLFW_AUTO_ICONIFY,
                         mode == WindowMode::Fullscreen ? GLFW_TRUE : GLFW_FALSE);
@@ -383,11 +396,15 @@ bool GlfwWindow::setDisplayMode(WindowMode mode, Extent2D resolution) {
     glfwSetWindowMonitor(m_window, mode == WindowMode::Windowed ? nullptr : monitor, m_windowX,
                          m_windowY, static_cast<s32>(resolution.width),
                          static_cast<s32>(resolution.height), refresh);
+    // Captured remains visible; GLFW releases the OS confinement on focus loss.
+    glfwSetInputMode(m_window, GLFW_CURSOR,
+                     mode == WindowMode::Fullscreen ? GLFW_CURSOR_CAPTURED : GLFW_CURSOR_NORMAL);
     if (glfwGetError(nullptr) == GLFW_NO_ERROR) {
         return true;
     }
     // Restore the actual previous window (including a manually resized client area).
     glfwSetWindowAttrib(m_window, GLFW_AUTO_ICONIFY, previousIconify);
+    glfwSetInputMode(m_window, GLFW_CURSOR, previousCursor);
     glfwSetWindowMonitor(m_window, previousMonitor, m_windowX, m_windowY, previousWidth,
                          previousHeight, previousRefresh);
     return false;

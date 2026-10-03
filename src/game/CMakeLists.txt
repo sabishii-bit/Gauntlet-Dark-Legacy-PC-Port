@@ -15,6 +15,7 @@ add_library(game STATIC
     world/DestructibleWalls.cpp
     world/MissileTarget.cpp
     menu/SettingsMenu.cpp
+    menu/VideoSettings.cpp
     menu/CompassHud.cpp
     screens/SaveMenu.cpp
     screens/PauseMenu.cpp

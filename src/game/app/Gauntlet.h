@@ -60,6 +60,7 @@ private:
     void updateTower(f64 deltaSeconds);
     void updatePause(f64 deltaSeconds);
     bool saveSettings(const GameConfig& config);
+    bool applySettings(const GameConfig& config, bool persist);
     void updateAfterLevel(f64 deltaSeconds);
     void finishJourney();
     void updateJourney(f64 deltaSeconds);
