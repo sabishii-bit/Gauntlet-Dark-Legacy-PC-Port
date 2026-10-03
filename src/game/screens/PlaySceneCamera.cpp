@@ -4,6 +4,11 @@
 
 namespace gdl::game {
 
+bool PlayScene::scriptedCamera() const {
+    return m_switchCutscene.showing() || m_arrival.camera().active() ||
+           m_welcome.camera().has_value() || m_promotion.active() || relicCeremonyOn();
+}
+
 WorldCamera PlayScene::viewCamera() const {
     if (const auto& camera = m_switchCutscene.camera();
         m_switchCutscene.showing() && camera.has_value()) {

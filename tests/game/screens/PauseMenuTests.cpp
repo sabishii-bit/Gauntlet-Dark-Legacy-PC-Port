@@ -22,6 +22,28 @@ TEST_CASE("pause menu refuses absent artwork or a player outside the party", "[p
     CHECK_FALSE(menu.open(device, context, party, 0));
     CHECK_FALSE(menu.isOpen());
 }
+
+TEST_CASE("pause menu time retains fractions across thirty sixty and uncapped update rates",
+          "[pause][graphics][assets]") {
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    for (const s32 rate : {30, 60, 144, 240}) {
+        CAPTURE(rate);
+        REQUIRE(menu.open(device, context, party, 0));
+        for (s32 frame = 0; frame < rate; ++frame) {
+            menu.update(1.0 / rate, {});
+        }
+        CHECK(menu.menu().time() == 60);
+        menu.update(0.0, {});
+        CHECK(menu.menu().time() == 60);
+    }
+    menu.close();
+}
 TEST_CASE("pause menus route character management and preserve the live party", "[pause][assets]") {
     test::FakeRenderDevice device;
     GameConfig config;

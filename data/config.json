@@ -7,11 +7,12 @@
     "windowWidth": 1280,
     "windowHeight": 896,
     "vsync": true,
-    "maxFrameRate": 60
+    "maxFrameRate": 60,
+    "sampleCount": 1
   },
   "timing": {
     "tickRate": 60,
-    "gameplayFrameRate": 30
+    "gameplayFrameRate": 60
   },
   "camera": {
     "horizontalFovDegrees": 60.0,

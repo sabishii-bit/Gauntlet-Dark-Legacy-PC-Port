@@ -128,4 +128,63 @@ TEST_CASE("an empty sequence is finished at once and a stopped player plays noth
     REQUIRE_FALSE(player.advance(kStep, true));
 }
 
+TEST_CASE("looping animation owns a full interval for its last frame and keeps overshoot",
+          "[world][animation][cadence]") {
+    const TreeSequenceInfo cycle = sequence(12, 30);
+    AnimationPlayer player;
+    player.start(cycle, 0);
+    REQUIRE_FALSE(player.advance(11.5f / 30.0f, true));
+    REQUIRE(player.frame() == 11.0f);
+    REQUIRE(player.advance(2.5f / 30.0f, true));
+    REQUIRE(player.frame() == 2.0f);
+    REQUIRE(player.advance(26.0f / 30.0f, true));
+    REQUIRE(player.frame() == 4.0f);
+}
+
+TEST_CASE("loop and transition clocks agree across update cadences",
+          "[world][animation][cadence]") {
+    const TreeSequenceInfo cycle = sequence(12, 30);
+    for (const s32 rate : {30, 60, 144, 240}) {
+        CAPTURE(rate);
+        AnimationPlayer player;
+        // Deliberately not a multiple of any update interval.
+        player.start(cycle, 0, 0.073f);
+        s32 wraps = 0;
+        for (s32 frame = 0; frame < rate * 2; ++frame) {
+            wraps += player.advance(1.0f / static_cast<f32>(rate), true) ? 1 : 0;
+        }
+        REQUIRE(wraps == 4);
+        REQUIRE(player.transition() == 1.0f);
+        REQUIRE(player.frame() == 10.0f);
+    }
+}
+
+TEST_CASE("fractional presentation samples never advance rounded gameplay frames",
+          "[world][animation][presentation]") {
+    const TreeSequenceInfo cycle = sequence(12, 30);
+    AnimationPlayer player;
+    player.start(cycle, 0);
+    const u64 generation = player.generation();
+    player.advance(1.0f / 60.0f, true);
+    REQUIRE(player.frame() == 1.0f);
+    for (s32 draw = 0; draw < 8; ++draw) {
+        REQUIRE(player.presentationFrame() == Approx(0.5f));
+        REQUIRE(player.frame() == 1.0f);
+        REQUIRE(player.generation() == generation);
+        REQUIRE_FALSE(player.finished());
+    }
+    player.advance(11.5f / 30.0f, true);
+    REQUIRE(player.generation() != generation);
+    REQUIRE(player.presentationFrame() == Approx(0.0f).margin(0.00001f));
+    const u64 wrapped = player.generation();
+    player.start(cycle, 0, 0.1f);
+    REQUIRE(player.generation() != wrapped);
+    player.advance(0.05f, false);
+    REQUIRE(player.presentationFrame() == 0.0f);
+    player.advance(1.0f, false);
+    REQUIRE(player.presentationFrame() == 11.0f);
+    player.stop();
+    REQUIRE(player.presentationFrame() == 0.0f);
+}
+
 } // namespace

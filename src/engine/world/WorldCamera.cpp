@@ -38,6 +38,15 @@ Axes axesOf(f32 pitch, f32 yaw, f32 roll) {
 
 } // namespace
 
+WorldCamera WorldCamera::interpolate(const WorldCamera& previous, f32 fraction) const {
+    const f32 t = std::clamp(fraction, 0.0f, 1.0f);
+    const auto angle = [t](f32 from, f32 to) {
+        return from + std::remainder(to - from, kTwoPi) * t;
+    };
+    return {glm::mix(previous.position, position, t), angle(previous.pitch, pitch),
+            angle(previous.yaw, yaw), angle(previous.roll, roll)};
+}
+
 Vec3 WorldCamera::right() const {
     return axesOf(pitch, yaw, roll).right;
 }

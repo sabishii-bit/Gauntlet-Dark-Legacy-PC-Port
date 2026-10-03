@@ -17,7 +17,8 @@ class VulkanPipeline {
 public:
     VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                    VkFormat colorFormat, VkFormat depthFormat,
-                   VkDescriptorSetLayout textureSetLayout, BlendMode blend);
+                   VkDescriptorSetLayout textureSetLayout, BlendMode blend,
+                   VkSampleCountFlagBits samples);
     ~VulkanPipeline();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanPipeline);

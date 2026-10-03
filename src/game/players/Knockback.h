@@ -69,8 +69,9 @@ private:
     u32 m_flags = 0;
     f32 m_damage = 0.0f;
     Vec3 m_velocity{0.0f};
-    bool m_fast = false; ///< the frame after a fall's kick travels freely
-    Vec3 m_shove{0.0f};  ///< units a second
+    f32 m_fastSeconds = 0;  ///< the native frame after a fall's kick travels freely
+    f32 m_frameSeconds = 0; ///< time within the current 30 Hz decay frame
+    Vec3 m_shove{0.0f};     ///< units a second
     bool m_shoved = false;
     bool m_pushed = false;
 };

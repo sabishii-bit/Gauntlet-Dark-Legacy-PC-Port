@@ -316,6 +316,8 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
 }
 
 void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
+    ++m_animationRevision;
+    m_visualTransforms.clear();
     // PlayerMotion consumes the familiar-shot bit on the following simulation step,
     // not on every frame the attack button is held.
     m_familiarReleased = m_familiarPending && deed != PlayerDeed::Die;
@@ -400,20 +402,56 @@ std::optional<Mat4> PlayerFigure::attachment(const Mat4& body,
     return std::nullopt;
 }
 
+void PlayerFigure::preparePresentation(f32 frameBlend) const {
+    if (!m_animator.bound() || m_costume == nullptr) {
+        m_visualTransforms = m_transforms;
+        return;
+    }
+    m_animator.evaluatePresentation(m_visualPose, frameBlend);
+    const auto matrices = m_visualPose.matrices();
+    m_visualTransforms.resize(m_costume->nodes.size());
+    for (usize n = 0; n < m_visualTransforms.size(); ++n) {
+        const s32 source = m_classNodeOfNode[n];
+        m_visualTransforms[n] = source >= 0 && static_cast<usize>(source) < matrices.size()
+                                    ? matrices[static_cast<usize>(source)]
+                                    : glm::translate(Mat4{1.0f}, m_costume->worldPosition(n));
+    }
+}
+
+std::optional<Mat4> PlayerFigure::visualAttachment(const Mat4& body, s32 node) const {
+    const auto& matrices = m_visualTransforms.empty() ? m_transforms : m_visualTransforms;
+    if (node < 0 || m_costume == nullptr || static_cast<usize>(node) >= m_costume->nodes.size()) {
+        return std::nullopt;
+    }
+    const auto index = static_cast<usize>(node);
+    return body * (index < matrices.size()
+                       ? matrices[index]
+                       : glm::translate(Mat4{1.0f}, m_costume->worldPosition(index)));
+}
+
+std::optional<Mat4> PlayerFigure::visualAttachment(const Mat4& body,
+                                                   std::string_view suffix) const {
+    if (m_costume != nullptr) {
+        for (usize n = 0; n < m_costume->nodes.size(); ++n) {
+            if (m_costume->nodes[n].object.ends_with(suffix)) {
+                return visualAttachment(body, static_cast<s32>(n));
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon,
-                        const CameraFrame* camera) const {
-    m_model.draw(device, clip, body, lighting, m_transforms, nullptr, alpha);
+                        const CameraFrame* camera, f32 frameBlend) const {
+    preparePresentation(frameBlend);
+    m_model.draw(device, clip, body, lighting, m_visualTransforms, nullptr, alpha);
     // The earned familiar is its own skin tree (PlayerProcessSkinFX), beside any companion.
-    m_familiar.draw(device, clip, body, lighting, alpha, camera);
+    m_familiar.draw(device, clip, body, lighting, alpha, camera, frameBlend);
     std::optional<Mat4> mount = body;
     switch (PowerupCompanion::mountOf(m_companion.kind())) {
-    case PowerupCompanion::Mount::Head: mount = attachment(body, "HEAD"); break;
-    case PowerupCompanion::Mount::Back:
-        mount = m_backNode >= 0 && static_cast<usize>(m_backNode) < m_transforms.size()
-                    ? std::optional<Mat4>{body * m_transforms[static_cast<usize>(m_backNode)]}
-                    : std::nullopt;
-        break;
+    case PowerupCompanion::Mount::Head: mount = visualAttachment(body, "HEAD"); break;
+    case PowerupCompanion::Mount::Back: mount = visualAttachment(body, m_backNode); break;
     case PowerupCompanion::Mount::Body: break;
     }
     if (mount.has_value()) {
@@ -422,18 +460,18 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
     if (m_armHeld) {
-        if (const auto arm = armAttachment(body)) {
+        if (const auto arm = visualAttachment(body, m_armNode)) {
             m_arm.draw(device, clip, *arm, lighting, {}, nullptr, alpha);
         }
     }
     if (m_handItemHeld) {
-        if (const auto hand = handAttachment(body)) {
+        if (const auto hand = visualAttachment(body, m_handNode)) {
             m_handItem.draw(device, clip, *hand, lighting, {}, nullptr, alpha);
         }
     } else if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {
         const auto hand = static_cast<usize>(m_handNode);
-        const Mat4 wrist = hand < m_transforms.size()
-                               ? m_transforms[hand]
+        const Mat4 wrist = hand < m_visualTransforms.size()
+                               ? m_visualTransforms[hand]
                                : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand));
         m_weapon.draw(device, clip, body * wrist, lighting, {}, nullptr, alpha);
     }
@@ -463,7 +501,7 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
     } else if (worn.xray()) {
         object = "HEAD_XRAY";
     }
-    const auto head = attachment(body, "HEAD");
+    const auto head = visualAttachment(body, "HEAD");
     if (object.empty() || !head || !powerups.loaded()) {
         return;
     }
@@ -474,7 +512,7 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
 void PlayerFigure::drawGem(RenderDevice& device, ItemArchive& powerups, std::string_view object,
                            const Mat4& clip, const Mat4& body, const WorldLighting& lighting,
                            f32 alpha) {
-    const auto head = attachment(body, "HEAD");
+    const auto head = visualAttachment(body, "HEAD");
     if (object.empty() || !head || !powerups.loaded()) {
         return;
     }

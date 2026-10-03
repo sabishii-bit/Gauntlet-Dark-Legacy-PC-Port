@@ -104,7 +104,8 @@ bool Input::isKeyDown(Key key) const {
 }
 
 bool Input::wasKeyPressed(Key key) const {
-    return validKey(key) && keyDown(index(key)) && !m_previousKeys[index(key)];
+    return validKey(key) && (m_pendingKeyPresses[index(key)] ||
+                             (keyDown(index(key)) && !m_previousKeys[index(key)]));
 }
 
 bool Input::wasKeyReleased(Key key) const {
@@ -116,11 +117,13 @@ bool Input::isPadConnected(s32 pad) const {
 }
 
 bool Input::isPadButtonDown(s32 pad, PadButton button) const {
-    return isPadConnected(pad) && button < PadButton::Count && m_pads[pad].buttons[index(button)];
+    return isPadConnected(pad) && button < PadButton::Count &&
+           (m_pads[pad].buttons[index(button)] || m_latchedPads[pad][index(button)]);
 }
 
 bool Input::wasPadButtonPressed(s32 pad, PadButton button) const {
-    return isPadButtonDown(pad, button) && !m_previousPads[pad].buttons[index(button)];
+    return isPadButtonDown(pad, button) &&
+           (m_pendingPadPresses[pad][index(button)] || !m_previousPads[pad].buttons[index(button)]);
 }
 
 f32 Input::padAxis(s32 pad, PadAxis axis) const {
@@ -132,8 +135,39 @@ void Input::beginPoll() {
         m_previousKeys[key] = keyDown(key);
     }
     m_latchedKeys.fill(false);
+    m_pendingKeyPresses.fill(false);
     m_previousPads = m_pads;
+    for (s32 pad = 0; pad < kMaxPads; ++pad) {
+        for (usize button = 0; button < m_latchedPads[pad].size(); ++button) {
+            m_previousPads[pad].buttons[button] |= m_latchedPads[pad][button];
+        }
+        m_latchedPads[pad].fill(false);
+        m_pendingPadPresses[pad].fill(false);
+    }
     m_typed.clear();
+}
+
+void Input::accumulate(const Input& polled) {
+    m_keys = polled.m_keys;
+    for (usize key = 1; key < kKeyCount; ++key) {
+        m_latchedKeys[key] |= polled.wasKeyPressed(static_cast<Key>(key));
+        m_pendingKeyPresses[key] |= polled.wasKeyPressed(static_cast<Key>(key));
+    }
+    m_pads = polled.m_pads;
+    for (s32 pad = 0; pad < kMaxPads; ++pad) {
+        if (!m_pads[pad].connected) {
+            m_latchedPads[pad].fill(false);
+            m_pendingPadPresses[pad].fill(false);
+            continue;
+        }
+        for (usize button = 0; button < m_latchedPads[pad].size(); ++button) {
+            m_latchedPads[pad][button] |=
+                polled.wasPadButtonPressed(pad, static_cast<PadButton>(button));
+            m_pendingPadPresses[pad][button] |=
+                polled.wasPadButtonPressed(pad, static_cast<PadButton>(button));
+        }
+    }
+    m_typed.insert(m_typed.end(), polled.m_typed.begin(), polled.m_typed.end());
 }
 
 void Input::setKey(Key key, bool down) {

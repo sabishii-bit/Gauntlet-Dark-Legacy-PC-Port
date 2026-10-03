@@ -18,6 +18,20 @@ bool near(const Vec3& a, const Vec3& b, f32 tolerance = 1e-4f) {
     return near(a.x, b.x, tolerance) && near(a.y, b.y, tolerance) && near(a.z, b.z, tolerance);
 }
 
+TEST_CASE("presentation cameras blend positions and take the short angle across wrapping",
+          "[world][camera][cadence]") {
+    const WorldCamera previous{{0, 2, 0}, 0, degreesToRadians(179), 0};
+    const WorldCamera current{{2, 4, 6}, 0.2f, degreesToRadians(-179), 0.4f};
+    const auto half = current.interpolate(previous, 0.5f);
+    CHECK(near(half.position, Vec3{1, 3, 3}));
+    CHECK(near(half.pitch, 0.1f));
+    CHECK(near(half.yaw, kPi));
+    CHECK(near(half.roll, 0.2f));
+    CHECK(near(current.interpolate(previous, -1).position, previous.position));
+    CHECK(near(current.interpolate(previous, 2).position, current.position));
+    CHECK(near(current.position, Vec3{2, 4, 6}));
+}
+
 TEST_CASE("arrow effects align with sloping travel and use the view direction for roll",
           "[world][camera][garm]") {
     WorldCamera view;

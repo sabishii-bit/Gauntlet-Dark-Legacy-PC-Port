@@ -127,7 +127,7 @@ TEST_CASE("a slide decays by a third a frame, held to the character's pace, and 
     }
     const f32 once = whole.step(kFrame, 100.0f).z;
     const f32 twice = halves.step(kFrame * 0.5f, 100.0f).z + halves.step(kFrame * 0.5f, 100.0f).z;
-    CHECK(twice == Approx(once).epsilon(0.1f));
+    CHECK(twice == Approx(once));
     CHECK(whole.velocity().z == Approx(halves.velocity().z));
     whole.clear();
     CHECK(whole.velocity() == Vec3{0.0f});
@@ -165,6 +165,49 @@ TEST_CASE("a shove carries the body at most half its pace and fades by a third a
         knock.step(kFrame, 10.0f);
     }
     CHECK(knock.step(kFrame, 10.0f) == Vec3{0.0f});
+}
+
+TEST_CASE("knockback travel retains native frames across split update cadences",
+          "[game][players][knockback][cadence]") {
+    for (const u32 flags : {Knockback::kKnockBack, Knockback::kKnockDown, Knockback::kBlownAway,
+                            Knockback::kWhirlwind}) {
+        for (const f32 pace : {2.0f, 10.0f, 100.0f}) {
+            CAPTURE(flags, pace);
+            const auto travelAt = [&](s32 frequency) {
+                Knockback knock;
+                knock.queue(Vec3{1, 0, 1}, flags, 10);
+                knock.kick(0, false);
+                knock.shove(Vec3{1, 0, 0}, kFrame);
+                Vec3 distance{0};
+                for (s32 frame = 0; frame < frequency / 2; ++frame) {
+                    distance += knock.step(1.0f / static_cast<f32>(frequency), pace);
+                    // PartyMotion polls for a new kick after every motion update.
+                    CHECK_FALSE(knock.kick(0, false).has_value());
+                }
+                return distance;
+            };
+            const Vec3 native = travelAt(30);
+            for (const s32 frequency : {60, 120}) {
+                CAPTURE(frequency);
+                const Vec3 split = travelAt(frequency);
+                CHECK(split.x == Approx(native.x));
+                CHECK(split.z == Approx(native.z));
+            }
+        }
+    }
+}
+
+TEST_CASE("fall kick keeps its free travel for the entire first native frame",
+          "[game][players][knockback][cadence]") {
+    Knockback knock;
+    knock.queue(Vec3{0, 0, 1}, Knockback::kKnockDown, 10);
+    knock.kick(0, false);
+    const f32 first = knock.step(kFrame / 2, kPace).z;
+    CHECK_FALSE(knock.kick(0, false).has_value());
+    const f32 second = knock.step(kFrame / 2, kPace).z;
+    CHECK(first == Approx(32 * kFrame / 2));
+    CHECK(second == Approx(first));
+    CHECK(knock.step(kFrame / 2, kPace).z == Approx(1.5f * kPace * kFrame / 2));
 }
 
 } // namespace

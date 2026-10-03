@@ -499,6 +499,9 @@ public:
     /** The footfall this tick, if a half cycle of walking or running just ended. */
     Foot footfall() const { return m_footfall; }
     const TreePose& pose() const { return m_pose; }
+    /** Visual-only fractional pose, interpolated between simulation updates. Gameplay
+     * attachments and attack windows must continue to use pose() and frame(). */
+    void evaluatePresentation(TreePose& out, f32 alpha = 1.0f) const;
     const AnimationPlayer& player() const { return m_player; }
     s32 stillTicks() const { return m_stillTicks; }
     s32 fidgetTicks() const { return m_fidgetTicks; }
@@ -576,6 +579,8 @@ private:
     AnimationPlayer m_player;
     TreePose m_pose;
     TreePose m_previous; ///< what showed when the current sequence started, for blending
+    TreePose m_presentationPrevious;
+    u64 m_presentationGeneration = 0;
 };
 
 } // namespace gdl::game

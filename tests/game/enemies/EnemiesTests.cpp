@@ -1893,7 +1893,7 @@ TEST_CASE("an item that cancels a walking step reports a blocked body to its min
     CHECK(enemies.blockedOf(*id));
 }
 
-TEST_CASE("an enemy on a burning floor is burned every update it stands there",
+TEST_CASE("an enemy on a burning floor is burned every native frame it stands there",
           "[game][enemies][hazards][assets]") {
     const auto dir = test::scratchDirectory("enemy-hazard-floor");
     writeTextFile(dir / "world.json", R"({
@@ -1912,24 +1912,94 @@ TEST_CASE("an enemy on a burning floor is burned every update it stands there",
     WorldCollision collision;
     collision.build(floor);
     test::FakeRenderDevice device;
-    Enemies enemies;
-    enemies.open(device, unpackedRoot(), &collision, 13, EnemyScales{}, 1);
-    enemies.setHazards(&hazards);
-    REQUIRE(enemies.loadKind(kGruntKind));
-    EnemySpawn spawn;
-    spawn.kind = kGruntKind;
-    spawn.tier = 3;
-    spawn.placed = true;
-    const auto id = enemies.spawn(spawn, {});
-    REQUIRE(id.has_value());
-    const f32 whole = enemies.healthOf(*id);
-    enemies.update(kTicks, kStep, {});
-    const f32 once = enemies.healthOf(*id);
-    REQUIRE(once < whole);
-    enemies.update(kTicks, kStep, {});
-    CHECK(enemies.healthOf(*id) == Approx(once - (whole - once)));
-    CHECK(enemies.takeLosses().empty()); // the world's harm is worth nothing to anyone
-    enemies.close();
+    std::optional<f32> nativeHealth;
+    for (const s32 frequency : {30, 60, 144}) {
+        CAPTURE(frequency);
+        Enemies enemies;
+        enemies.open(device, unpackedRoot(), &collision, 13, EnemyScales{}, 1);
+        enemies.setHazards(&hazards);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.tier = 3;
+        spawn.placed = true;
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id.has_value());
+        const f32 whole = enemies.healthOf(*id);
+        s32 elapsed = 0;
+        for (s32 call = 1; elapsed < 4; ++call) {
+            const s32 next = std::min(4, call * 60 / frequency);
+            enemies.update(next - elapsed, static_cast<f32>(next - elapsed) / 60, {});
+            elapsed = next;
+        }
+        REQUIRE(enemies.healthOf(*id) < whole);
+        if (!nativeHealth) {
+            nativeHealth = enemies.healthOf(*id);
+        }
+        CHECK(enemies.healthOf(*id) == Approx(*nativeHealth));
+        CHECK(enemies.takeLosses().empty()); // the world's harm is worth nothing to anyone
+        enemies.close();
+    }
+}
+
+TEST_CASE("swarm decisions movement and random holds are independent of update batching",
+          "[game][enemies][enemy-cadence][assets]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(yard());
+    struct Snapshot {
+        Vec3 position;
+        f32 yaw;
+        MindMemory memory;
+        s32 target;
+        EnemyAction action;
+    };
+    std::vector<Snapshot> native;
+    for (const s32 frequency : {30, 60, 144}) {
+        CAPTURE(frequency);
+        Enemies enemies;
+        enemies.open(device, unpackedRoot(), &collision, 71, {}, 3);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        const std::array party{playerAt(Vec3{0, 0, 28}, 0), playerAt(Vec3{16, 0, 30}, 2)};
+        std::vector<s32> ids;
+        for (const s32 algorithm : {kChaseWay, kCastWay, kSkirmishWay}) {
+            EnemySpawn spawn;
+            spawn.kind = kGruntKind;
+            spawn.placed = true;
+            spawn.algorithm = algorithm;
+            spawn.position = Vec3{static_cast<f32>(ids.size()) * 5 - 5, 0, 10};
+            const auto id = enemies.spawn(spawn, party);
+            REQUIRE(id);
+            ids.push_back(*id);
+        }
+        s32 elapsed = 0;
+        for (s32 call = 1; call <= 4 * frequency; ++call) {
+            const s32 next = call * 60 / frequency;
+            // The application supplies completed simulation time, not render
+            // time (a 144 Hz render can complete no simulation ticks at all).
+            enemies.update(next - elapsed, static_cast<f32>(next - elapsed) / 60, party);
+            elapsed = next;
+        }
+        for (usize i = 0; i < ids.size(); ++i) {
+            const s32 id = ids[i];
+            const Snapshot actual{enemies.positionOf(id), enemies.yawOf(id), enemies.memoryOf(id),
+                                  enemies.targetOf(id), enemies.animatorOf(id)->action()};
+            if (frequency == 30) {
+                native.push_back(actual);
+                continue;
+            }
+            const auto& expected = native[i];
+            CHECK(glm::distance(actual.position, expected.position) == Approx(0).margin(0.00001f));
+            CHECK(actual.yaw == Approx(expected.yaw));
+            CHECK(actual.memory.heading == Approx(expected.memory.heading));
+            CHECK(actual.memory.stuck == expected.memory.stuck);
+            CHECK(actual.memory.counter == expected.memory.counter);
+            CHECK(actual.memory.fuse == expected.memory.fuse);
+            CHECK(actual.memory.deadEnd == expected.memory.deadEnd);
+            CHECK(actual.target == expected.target);
+            CHECK(actual.action == expected.action);
+        }
+    }
 }
 
 TEST_CASE("the swarm runs from a lit suicide bomber near it", "[game][enemies][assets]") {

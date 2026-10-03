@@ -21,7 +21,7 @@ TEST_CASE("the defaults describe the original's screen and clock", "[game][confi
     REQUIRE(config.display.frameWidth == 640);
     REQUIRE(config.display.frameHeight == 448);
     REQUIRE(config.timing.tickRate == 60);
-    REQUIRE(config.timing.gameplayFrameRate == 30);
+    REQUIRE(config.timing.gameplayFrameRate == 60);
     REQUIRE(config.text.language == "en");
     REQUIRE(std::abs(config.horizontalFovRadians() - 1.0471976f) < 1e-5f);
     REQUIRE(config.menu.select.size() == 2);
@@ -42,7 +42,7 @@ TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][con
     REQUIRE_FALSE(config.display.vsync);
     REQUIRE(config.display.maxFrameRate == 24);
     REQUIRE(config.timing.tickRate == 120);
-    REQUIRE(config.timing.gameplayFrameRate == 30);
+    REQUIRE(config.timing.gameplayFrameRate == 60);
     REQUIRE(config.audio.musicVolume == 0.25f);
     REQUIRE(config.audio.masterVolume == 1.0f);
     REQUIRE(config.text.language == "fr");
@@ -59,6 +59,48 @@ TEST_CASE("bad configuration is rejected", "[game][config]") {
     REQUIRE_THROWS_AS(config.mergeJson(R"({"controls":{"play":{"magicHoldSeconds":0}}})"),
                       FormatError);
     REQUIRE_FALSE(config.loadFile(test::scratchDirectory("config-missing") / "none.json"));
+}
+
+TEST_CASE("graphics settings round-trip with independent sixty hertz presentation defaults",
+          "[game][config][graphics]") {
+    GameConfig config;
+    CHECK(config.display.vsync);
+    CHECK(config.display.sampleCount == 1);
+    CHECK(config.display.maxFrameRate == 60);
+    CHECK(config.timing.gameplayFrameRate == 60);
+    for (const u32 samples : {1U, 2U, 4U}) {
+        for (const u32 rate : {30U, 60U, 0U}) {
+            config.display.vsync = false;
+            config.display.sampleCount = samples;
+            config.display.maxFrameRate = rate;
+            config.timing.gameplayFrameRate = rate;
+            GameConfig restored;
+            restored.mergeJson(config.toJson());
+            CHECK(restored.toJson() == config.toJson());
+        }
+    }
+    const auto file = test::scratchDirectory("config-graphics") / "settings.json";
+    config.saveFile(file);
+    GameConfig restored;
+    REQUIRE(restored.loadFile(file));
+    CHECK(restored.toJson() == config.toJson());
+}
+
+TEST_CASE("invalid graphics sample counts fall back to off and invalid rates retain safe values",
+          "[game][config][graphics]") {
+    for (const auto* value : {"-1", "0", "3", "8", "null", R"("4")", "true", "1.5"}) {
+        GameConfig config;
+        config.display.sampleCount = 4;
+        config.mergeJson(R"({"display":{"sampleCount":)" + std::string(value) + "}}");
+        CHECK(config.display.sampleCount == 1);
+    }
+    for (const auto* value : {"-1", "4294967296", "null", R"("60")", "true", "30.5"}) {
+        GameConfig config;
+        config.mergeJson(R"({"display":{"maxFrameRate":)" + std::string(value) +
+                         R"(},"timing":{"gameplayFrameRate":)" + std::string(value) + "}}");
+        CHECK(config.display.maxFrameRate == 60);
+        CHECK(config.timing.gameplayFrameRate == 60);
+    }
 }
 
 TEST_CASE("GameCube controls and rebindable triggers and gestures round-trip", "[game][config]") {

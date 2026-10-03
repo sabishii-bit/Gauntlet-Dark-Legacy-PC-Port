@@ -20,7 +20,6 @@ std::optional<f32> Knockback::kick(f32 facing, bool pojo) {
     m_force = Vec3{0.0f};
     m_flags = 0;
     m_damage = 0.0f;
-    m_fast = (flags & kFastSlide) != 0;
     if (damage <= kKickFrom) {
         return std::nullopt;
     }
@@ -36,6 +35,7 @@ std::optional<f32> Knockback::kick(f32 facing, bool pojo) {
     } else {
         return std::nullopt;
     }
+    m_fastSeconds = (flags & kFastSlide) != 0 ? 1.0f / kFrameRate : 0;
     m_velocity += force * strength;
     if (glm::length(force) <= 0.0f) {
         return std::nullopt;
@@ -53,19 +53,32 @@ Vec3 Knockback::step(f32 seconds, f32 pace) {
     if (seconds <= 0.0f) {
         return Vec3{0.0f};
     }
-    const f32 limit = (m_fast ? kFastLimit : kPaceLimit * pace) * seconds;
-    Vec3 travel{std::clamp(m_velocity.x * seconds, -limit, limit), 0.0f,
-                std::clamp(m_velocity.z * seconds, -limit, limit)};
-    // A shove carries the body at most half its pace, then fades (do_players' light_vel).
-    if (const f32 shove = glm::length(m_shove); shove > 0.0f) {
-        travel += m_shove / shove * std::min(shove, kShoveLimit * pace) * seconds;
-        const f32 left = shove * std::pow(kDecay, seconds * kFrameRate);
-        m_shove = left < kStill ? Vec3{0.0f} : m_shove / shove * left;
-    }
-    m_fast = false;
-    m_velocity *= std::pow(kDecay, seconds * kFrameRate);
-    if (!sliding()) {
-        m_velocity = Vec3{0.0f};
+    Vec3 travel{0};
+    // Velocity is held for each native frame, then damped once. Interpolating
+    // the damping per call shortens travel when one frame is split into two.
+    while (seconds > 0) {
+        const f32 frameLeft = 1.0f / kFrameRate - m_frameSeconds;
+        const f32 dt = std::min({seconds, frameLeft, m_fastSeconds > 0 ? m_fastSeconds : seconds});
+        const f32 limit = (m_fastSeconds > 0 ? kFastLimit : kPaceLimit * pace) * dt;
+        travel += Vec3{std::clamp(m_velocity.x * dt, -limit, limit), 0,
+                       std::clamp(m_velocity.z * dt, -limit, limit)};
+        if (const f32 shove = glm::length(m_shove); shove > 0) {
+            travel += m_shove / shove * std::min(shove, kShoveLimit * pace) * dt;
+        }
+        seconds -= dt;
+        m_fastSeconds = std::max(0.0f, m_fastSeconds - dt);
+        m_frameSeconds += dt;
+        if (dt == frameLeft) {
+            m_frameSeconds = 0;
+            m_velocity *= kDecay;
+            m_shove *= kDecay;
+            if (!sliding()) {
+                m_velocity = Vec3{0};
+            }
+            if (glm::length(m_shove) < kStill) {
+                m_shove = Vec3{0};
+            }
+        }
     }
     return travel;
 }

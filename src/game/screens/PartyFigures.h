@@ -37,11 +37,16 @@ public:
         LevelWorld& world;
         ItemArchive& weapons;             ///< the shields borne on the arm
         const PortalDeparture& departure; ///< the sinking and its skin
+        f32 frameBlend = 1.0f;
     };
 
     /** Finds the damage flash in `powerups` and the chrome skins in `weapons` (InitEffects). */
     void loadSkins(RenderDevice& device, ItemArchive& powerups, ItemArchive& weapons);
     void clear();
+    /** Snapshot before a fixed simulation step; render interpolation never moves actors. */
+    static void snapshot(std::span<PlayerRuntime> players);
+    static Mat4 presentationBody(const PlayerRuntime& runtime, f32 frameBlend);
+    static f32 presentationBlend(const PlayerRuntime& runtime, f32 frameBlend);
     const Texture* hitFlash() const { return m_hitFlash; }
     /** The skin a figure wears this frame, none for its own: the portal's while it sinks,
      * else the damage flash, else the chrome its invulnerability shows. */

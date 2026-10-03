@@ -25,15 +25,20 @@ public:
     bool bound() const { return m_tree != nullptr; }
     void update(f32 seconds, bool attack);
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
-              const WorldLighting& lighting, f32 alpha, const CameraFrame* camera = nullptr) const;
+              const WorldLighting& lighting, f32 alpha, const CameraFrame* camera = nullptr,
+              f32 renderAlpha = 1.0f) const;
     s32 tier() const { return m_tree != nullptr ? m_tier : 0; }
 
 private:
     bool bindTree(RenderDevice& device, ItemArchive& archive, std::string_view name,
                   const Vec3& offset, std::span<TextureSet* const> lenders);
     const TreeInfo* m_tree = nullptr;
-    TreeModel m_model;
+    mutable TreeModel m_model; ///< render-only mesh sampling never advances animation clocks
     TreePose m_pose;
+    TreePose m_previousPose;
+    mutable TreePose m_drawPose;
+    u64 m_previousGeneration = 0;
+    f32 m_previousFrame = 0;
     AnimationPlayer m_player;
     TextureAnimator m_textures;
     Vec3 m_offset{0};

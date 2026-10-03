@@ -18,6 +18,7 @@ public:
     bool shouldClose() const override;
     void requestClose() override;
     Extent2D framebufferSize() const override;
+    u32 refreshRate() const override;
     void waitWhileMinimized() override;
     const Input& input() const override { return m_input; }
     void setIcon(std::span<const Image> images) override;

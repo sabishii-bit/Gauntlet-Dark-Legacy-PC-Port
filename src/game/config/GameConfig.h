@@ -21,12 +21,13 @@ struct DisplayConfig {
     u32 windowWidth = 1280;
     u32 windowHeight = 896;
     bool vsync = true;
-    u32 maxFrameRate = 60; ///< frames per second outside play (the menus); 0 leaves it to vsync
+    u32 sampleCount = 1;   ///< MSAA samples: 1 (off), 2 or 4; limited by the graphics device
+    u32 maxFrameRate = 60; ///< menu presentation cap; 0 follows the monitor, even without V-Sync
 };
 
 struct TimingConfig {
     u32 tickRate = 60;          ///< logic ticks per second; the original counts 60 Hz retraces
-    u32 gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
+    u32 gameplayFrameRate = 60; ///< presentation cap; simulation uses tickRate independently
 };
 
 struct CameraConfig {

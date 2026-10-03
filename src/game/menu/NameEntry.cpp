@@ -85,15 +85,16 @@ bool NameEntry::repeat(const MenuInput& input, s32 ticks) {
         return false;
     }
     m_repeatCounter += ticks;
-    if (m_repeatCounter < kRepeatLadder[m_repeatStep]) {
-        return false;
+    bool changed = false;
+    while (m_repeatCounter >= kRepeatLadder[m_repeatStep]) {
+        m_repeatCounter -= kRepeatLadder[m_repeatStep];
+        if (m_repeatStep + 1 < kRepeatLadder.size()) {
+            ++m_repeatStep;
+        }
+        cycle(held);
+        changed = true;
     }
-    m_repeatCounter -= kRepeatLadder[m_repeatStep];
-    if (m_repeatStep + 1 < kRepeatLadder.size()) {
-        ++m_repeatStep;
-    }
-    cycle(held);
-    return true;
+    return changed;
 }
 
 NameEntry::Event NameEntry::removeLast() {

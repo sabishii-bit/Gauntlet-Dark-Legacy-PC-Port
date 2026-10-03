@@ -6,6 +6,17 @@
 
 namespace gdl {
 
+/** Accumulates render time into whole simulation ticks, retaining fractional time. */
+class UpdateClock {
+public:
+    u32 advance(f64 seconds, u32 rate);
+    /** Fraction of the next simulation tick, for rendering between completed states. */
+    f32 fraction(u32 rate) const;
+
+private:
+    f64 m_remainder = 0.0;
+};
+
 /** Wall-clock frame timer. Call tick() once per frame. */
 class FrameClock {
 public:

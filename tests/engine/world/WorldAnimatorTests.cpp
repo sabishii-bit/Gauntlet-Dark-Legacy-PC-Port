@@ -155,4 +155,22 @@ TEST_CASE("pausing looping world tracks does not hold one-shot trigger movement"
     CHECK(animator.finished(0));
     CHECK(animator.frame(0) == Approx(0));
 }
+
+TEST_CASE("world track loops retain time at their final-key endpoint across cadences",
+          "[world][animation][cadence]") {
+    const WorldLayout layout = layoutWithFlags("world-cadence", 0);
+    for (const s32 rate : {30, 60, 144, 240}) {
+        CAPTURE(rate);
+        WorldScene scene;
+        WorldAnimator animator;
+        animator.bind(layout);
+        for (s32 update = 0; update < rate; ++update) {
+            animator.step(1.0f / static_cast<f32>(rate), scene);
+        }
+        REQUIRE(animator.frame(0) == Approx(0.0f).margin(0.0001f));
+        // This track has keys 0..3, so its authored period is three 30 Hz intervals.
+        animator.step(8.0f / 30.0f, scene);
+        REQUIRE(animator.frame(0) == Approx(2.0f).margin(0.0001f));
+    }
+}
 } // namespace

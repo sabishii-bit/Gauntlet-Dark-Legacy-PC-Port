@@ -145,6 +145,10 @@ public:
     void setPad(s32 pad, const PadSnapshot& snapshot);
     void addTypedChar(u32 codepoint);
 
+    /** Collects a render-frame poll until the next simulation update. Call beginPoll()
+     * only after consuming this buffer; short keyboard/pad taps and text survive. */
+    void accumulate(const Input& polled);
+
 private:
     static constexpr usize kKeyCount = static_cast<usize>(Key::Count);
 
@@ -153,8 +157,12 @@ private:
     std::array<bool, kKeyCount> m_keys{};
     std::array<bool, kKeyCount> m_latchedKeys{};
     std::array<bool, kKeyCount> m_previousKeys{};
+    std::array<bool, kKeyCount> m_pendingKeyPresses{};
     std::array<PadSnapshot, kMaxPads> m_pads{};
     std::array<PadSnapshot, kMaxPads> m_previousPads{};
+    std::array<std::array<bool, static_cast<usize>(PadButton::Count)>, kMaxPads> m_latchedPads{};
+    std::array<std::array<bool, static_cast<usize>(PadButton::Count)>, kMaxPads>
+        m_pendingPadPresses{};
     std::vector<u32> m_typed;
 };
 

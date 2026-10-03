@@ -1,5 +1,6 @@
 #include "game/screens/PartyFigures.h"
 
+#include <cmath>
 #include <exception>
 
 #include "engine/core/Log.h"
@@ -33,12 +34,48 @@ const Texture* skinTexture(RenderDevice& device, ItemArchive& archive, std::stri
 }
 
 /** Only the exiting player sinks (do_players case 4); a teammate can still be dying. */
-Mat4 departurePlacement(const PlayerRuntime& runtime, const PortalDeparture& departure) {
-    const Mat4 body = runtime.capture.body().value_or(runtime.actor.transform());
+Mat4 departurePlacement(const PlayerRuntime& runtime, const PortalDeparture& departure,
+                        f32 frameBlend) {
+    const Mat4 body = runtime.capture.body().value_or(
+        PartyFigures::presentationBody(runtime, departure.started() ? 1.0f : frameBlend));
     return runtime.life == PlayerLife::Standing ? departure.transform(body) : body;
 }
 
 } // namespace
+
+void PartyFigures::snapshot(std::span<PlayerRuntime> players) {
+    for (auto& runtime : players) {
+        runtime.previous = {runtime.actor.position(), runtime.actor.yaw(),
+                            !runtime.capture.body().has_value() && !runtime.transport.active(),
+                            runtime.figure ? runtime.figure->animationRevision() : 0};
+    }
+}
+
+f32 PartyFigures::presentationBlend(const PlayerRuntime& runtime, f32 frameBlend) {
+    // Scrolls and cuts can update the scene while deliberately holding its figures.
+    // Do not cycle their last two animated poses as the render clock keeps running.
+    return runtime.figure &&
+                   runtime.figure->animationRevision() != runtime.previous.animationRevision
+               ? frameBlend
+               : 1.0f;
+}
+
+Mat4 PartyFigures::presentationBody(const PlayerRuntime& runtime, f32 frameBlend) {
+    const PlayerActor& actor = runtime.actor;
+    // A relocation is not movement to draw through. Ordinary motion per fixed tick is
+    // much smaller than the body's collision diameter, including on moving platforms.
+    const Vec3 displacement = actor.position() - runtime.previous.position;
+    const f32 diameter = actor.radius() * 2;
+    if (!runtime.previous.continuous || runtime.transport.active() ||
+        glm::dot(displacement, displacement) > diameter * diameter) {
+        return actor.transform();
+    }
+    const f32 t = std::clamp(frameBlend, 0.0f, 1.0f);
+    const Vec3 position = glm::mix(runtime.previous.position, actor.position(), t);
+    const f32 yaw =
+        runtime.previous.yaw + std::remainder(actor.yaw() - runtime.previous.yaw, kTwoPi) * t;
+    return glm::rotate(glm::translate(Mat4{1}, position), yaw, Vec3{0, 1, 0});
+}
 
 void PartyFigures::loadSkins(RenderDevice& device, ItemArchive& powerups, ItemArchive& weapons) {
     m_hitFlash = skinTexture(device, powerups, kHitFlashSkin);
@@ -102,8 +139,9 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         }
         PlayerFigure& figure = *runtime.figure;
         const PowerupEffects worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
-        const Mat4 body = PlayerFigure::bodyPlacement(departurePlacement(runtime, scene.departure),
-                                                      runtime.actor.save(), worn);
+        const Mat4 body = PlayerFigure::bodyPlacement(
+            departurePlacement(runtime, scene.departure, scene.frameBlend), runtime.actor.save(),
+            worn);
         figure.setSkinTexture(skinOf(runtime, worn, scene.departure));
         figure.setWeaponPowerups(device, world.powerups(), scene.weapons, worn);
         // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
@@ -114,7 +152,8 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         }
         const f32 alpha = alphaOf(runtime, worn);
         const WorldLighting lighting = runtime.glow.apply(world.lighting());
-        figure.draw(device, clip, body, lighting, alpha, runtime.move.weaponHidden(), &camera);
+        figure.draw(device, clip, body, lighting, alpha, runtime.move.weaponHidden(), &camera,
+                    presentationBlend(runtime, scene.frameBlend));
         figure.drawHeadwear(device, world.powerups(), worn, clip, body, lighting, alpha);
         figure.drawGem(device, world.powerups(), runtime.gem.shown(), clip, body, lighting, alpha);
         // Who is it wears the realm's sign on their back (player.c 5885).
@@ -158,7 +197,7 @@ void PartyFigures::drawShadows(RenderDevice& device, std::span<const PlayerRunti
         }
         // It lies on the floor under the body, even while the body is thrown or sinks
         // (PlayerMotion keeps its height at the floor, not the feet).
-        const Vec3 feet{departurePlacement(runtime, scene.departure)[3]};
+        const Vec3 feet{departurePlacement(runtime, scene.departure, scene.frameBlend)[3]};
         if (const auto floor = scene.world.collision().floorAt(feet, kShadowReach, kShadowDrop)) {
             const PowerupEffects worn =
                 PowerupEffects::of(runtime.actor.save().progress().inventory);

@@ -36,6 +36,9 @@ public:
     /** Drawable size in pixels. */
     virtual Extent2D framebufferSize() const = 0;
 
+    /** Current display refresh rate, following the window across monitors; 60 if unavailable. */
+    virtual u32 refreshRate() const = 0;
+
     /** Blocks while the framebuffer is zero-sized. */
     virtual void waitWhileMinimized() = 0;
 

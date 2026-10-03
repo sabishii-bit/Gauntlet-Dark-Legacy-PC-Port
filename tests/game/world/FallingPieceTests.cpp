@@ -71,4 +71,31 @@ TEST_CASE("a piece drops by its profile's pull, spins by its instance and retire
     sinking.advance(FallingProfile::of(FallingProfile::kRockSink), -99);
     REQUIRE(sinking.position == rest);
 }
+
+TEST_CASE("falling pieces retain authored physics at every caller cadence", "[falling][cadence]") {
+    FallingPiece expected;
+    expected.place(Vec3{3, 100, -2}, Vec3{0, 1, 0}, 5);
+    for (s32 frame = 0; frame < 60; ++frame) {
+        expected.advance(FallingProfile{}, -1000);
+    }
+    for (const s32 rate : {30, 60, 144, 240}) {
+        CAPTURE(rate);
+        FallingPiece piece;
+        piece.place(Vec3{3, 100, -2}, Vec3{0, 1, 0}, 5);
+        f32 remainder = 0;
+        s32 ticks = 0;
+        for (s32 update = 0; update < rate * 2; ++update) {
+            const s32 due = FallingPiece::framesDue(remainder, 1.0f / static_cast<f32>(rate));
+            ticks += due;
+            for (s32 tick = 0; tick < due; ++tick) {
+                piece.advance(FallingProfile{}, -1000);
+            }
+        }
+        REQUIRE(ticks == 60);
+        REQUIRE(piece.position == expected.position);
+        REQUIRE(piece.rotation == expected.rotation);
+        REQUIRE(piece.velocity == expected.velocity);
+        REQUIRE(piece.visible == expected.visible);
+    }
+}
 } // namespace

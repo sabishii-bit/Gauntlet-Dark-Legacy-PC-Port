@@ -9,11 +9,13 @@
 #include <GLFW/glfw3.h>
 // clang-format on
 
+#include <algorithm>
 #include <array>
 #include <span>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/platform/DisplayTiming.h"
 
 namespace gdl {
 
@@ -230,6 +232,47 @@ Extent2D GlfwWindow::framebufferSize() const {
     s32 height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
     return Extent2D{static_cast<u32>(std::max(width, 0)), static_cast<u32>(std::max(height, 0))};
+}
+
+u32 GlfwWindow::refreshRate() const {
+    auto* activeMonitor = glfwGetWindowMonitor(m_window);
+    // Wayland does not expose window desktop coordinates. Use its primary display
+    // rather than issuing an unsupported position query on every rendered frame.
+    if (activeMonitor == nullptr && glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) {
+        activeMonitor = glfwGetPrimaryMonitor();
+        if (activeMonitor == nullptr) {
+            return DisplayRefresh::kFallbackRate;
+        }
+    }
+    if (activeMonitor != nullptr) {
+        const auto* mode = glfwGetVideoMode(activeMonitor);
+        return mode != nullptr && mode->refreshRate > 0 ? static_cast<u32>(mode->refreshRate)
+                                                        : DisplayRefresh::kFallbackRate;
+    }
+    s32 x = 0;
+    s32 y = 0;
+    s32 width = 0;
+    s32 height = 0;
+    glfwGetWindowPos(m_window, &x, &y);
+    glfwGetWindowSize(m_window, &width, &height);
+    DisplayRefresh selected(
+        {x, y, static_cast<u32>(std::max(width, 0)), static_cast<u32>(std::max(height, 0))});
+    s32 count = 0;
+    auto** monitors = glfwGetMonitors(&count);
+    if (monitors == nullptr || count <= 0) {
+        return selected.rate();
+    }
+    for (auto* monitor : std::span(monitors, static_cast<usize>(count))) {
+        const auto* mode = glfwGetVideoMode(monitor);
+        if (mode == nullptr) {
+            continue;
+        }
+        glfwGetMonitorPos(monitor, &x, &y);
+        selected.consider({x, y, static_cast<u32>(std::max(mode->width, 0)),
+                           static_cast<u32>(std::max(mode->height, 0))},
+                          static_cast<u32>(std::max(mode->refreshRate, 0)));
+    }
+    return selected.rate();
 }
 
 void GlfwWindow::waitWhileMinimized() {

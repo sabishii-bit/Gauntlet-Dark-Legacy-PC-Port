@@ -27,6 +27,8 @@ struct WorldCamera {
 
     /** World to eye space; eye z is the distance ahead. */
     Mat4 view() const;
+    /** Drawing-only sample between two completed states; caller bypasses this for cuts. */
+    WorldCamera interpolate(const WorldCamera& previous, f32 fraction) const;
 
     /** Perspective with reversed depth: nearer is larger, within [0, kDepthRange]. */
     static Mat4 projection(f32 horizontalFov, f32 aspect);

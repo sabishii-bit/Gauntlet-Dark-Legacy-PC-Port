@@ -8,6 +8,99 @@ namespace {
 
 using namespace gdl;
 
+TEST_CASE("render polls preserve taps and text until a simulation update consumes them",
+          "[platform][input][graphics]") {
+    Input raw;
+    Input buffered;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::A)] = true;
+    raw.beginPoll();
+    raw.setKey(Key::Space, true);
+    raw.addTypedChar('a');
+    raw.setPad(0, pad);
+    buffered.accumulate(raw);
+    // Both taps end on another render before the simulation has advanced.
+    raw.beginPoll();
+    raw.setKey(Key::Space, false);
+    pad.buttons[static_cast<usize>(PadButton::A)] = false;
+    raw.setPad(0, pad);
+    raw.addTypedChar('b');
+    buffered.accumulate(raw);
+    CHECK(buffered.wasKeyPressed(Key::Space));
+    CHECK(buffered.wasPadButtonPressed(0, PadButton::A));
+    REQUIRE(buffered.typedText().size() == 2);
+    CHECK(buffered.typedText()[0] == 'a');
+    CHECK(buffered.typedText()[1] == 'b');
+    buffered.beginPoll();
+    CHECK_FALSE(buffered.isKeyDown(Key::Space));
+    CHECK(buffered.wasKeyReleased(Key::Space));
+    CHECK_FALSE(buffered.isPadButtonDown(0, PadButton::A));
+    CHECK(buffered.typedText().empty());
+    raw.beginPoll();
+    buffered.accumulate(raw);
+    CHECK_FALSE(buffered.wasKeyPressed(Key::Space));
+    CHECK_FALSE(buffered.wasPadButtonPressed(0, PadButton::A));
+}
+
+TEST_CASE("buffered held controls have one edge and disconnected pads lose queued taps",
+          "[platform][input][graphics]") {
+    Input raw;
+    Input buffered;
+    raw.setKey(Key::W, true);
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::Start)] = true;
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.75f;
+    raw.setPad(0, pad);
+    buffered.accumulate(raw);
+    CHECK(buffered.wasKeyPressed(Key::W));
+    CHECK(buffered.wasPadButtonPressed(0, PadButton::Start));
+    CHECK(buffered.padAxis(0, PadAxis::LeftX) == 0.75f);
+    buffered.beginPoll();
+    raw.beginPoll();
+    buffered.accumulate(raw);
+    CHECK(buffered.isKeyDown(Key::W));
+    CHECK_FALSE(buffered.wasKeyPressed(Key::W));
+    CHECK(buffered.isPadButtonDown(0, PadButton::Start));
+    CHECK_FALSE(buffered.wasPadButtonPressed(0, PadButton::Start));
+    raw.beginPoll();
+    raw.setPad(0, {});
+    buffered.accumulate(raw);
+    CHECK_FALSE(buffered.isPadConnected(0));
+    CHECK_FALSE(buffered.isPadButtonDown(0, PadButton::Start));
+}
+
+TEST_CASE("release and repress between simulation steps retains the second attack edge",
+          "[platform][input][graphics]") {
+    Input raw;
+    Input buffered;
+    PadSnapshot pad;
+    pad.connected = true;
+    raw.setKey(Key::Space, true);
+    pad.buttons[static_cast<usize>(PadButton::A)] = true;
+    raw.setPad(0, pad);
+    buffered.accumulate(raw);
+    REQUIRE(buffered.wasKeyPressed(Key::Space));
+    REQUIRE(buffered.wasPadButtonPressed(0, PadButton::A));
+    buffered.beginPoll();
+    raw.beginPoll();
+    raw.setKey(Key::Space, false);
+    pad.buttons[static_cast<usize>(PadButton::A)] = false;
+    raw.setPad(0, pad);
+    buffered.accumulate(raw);
+    raw.beginPoll();
+    raw.setKey(Key::Space, true);
+    pad.buttons[static_cast<usize>(PadButton::A)] = true;
+    raw.setPad(0, pad);
+    buffered.accumulate(raw);
+    CHECK(buffered.wasKeyPressed(Key::Space));
+    CHECK(buffered.wasPadButtonPressed(0, PadButton::A));
+    buffered.beginPoll();
+    CHECK_FALSE(buffered.wasKeyPressed(Key::Space));
+    CHECK_FALSE(buffered.wasPadButtonPressed(0, PadButton::A));
+}
+
 TEST_CASE("keys report down, pressed and released edges across polls", "[platform][input]") {
     Input input;
     REQUIRE_FALSE(input.isKeyDown(Key::Space));

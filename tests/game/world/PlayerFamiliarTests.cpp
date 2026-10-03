@@ -130,4 +130,51 @@ TEST_CASE("every class and color familiar resolves shared animated frame pixels"
     REQUIRE(visited == 64);
     REQUIRE(sharedCycles > 0);
 }
+
+TEST_CASE("the green knight familiar renders fractional poses without advancing its assets",
+          "[game][familiar][assets][presentation]") {
+    const auto path = test::assetOrSkip("PLAYERS/KNI/SFXGRE/ANIM.PS2").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(path));
+    test::FakeRenderDevice device;
+    PlayerFamiliar familiar;
+    const auto draw = [&](f32 alpha) {
+        device.draws.clear();
+        familiar.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, alpha);
+        return device.draws;
+    };
+    const auto differs = [](const auto& a, const auto& b) {
+        REQUIRE(a.size() == b.size());
+        bool moved = false;
+        for (usize part = 0; part < a.size(); ++part) {
+            REQUIRE(a[part].texture == b[part].texture);
+            REQUIRE(a[part].vertices.size() == b[part].vertices.size());
+            for (usize vertex = 0; vertex < a[part].vertices.size(); ++vertex) {
+                moved |= glm::length(a[part].vertices[vertex].position -
+                                     b[part].vertices[vertex].position) > 0.00001f;
+            }
+        }
+        return moved;
+    };
+    for (const s32 level : {30, 99}) {
+        CAPTURE(level);
+        REQUIRE(familiar.bind(device, archive, level, Vec3{0}));
+        const auto treeIndex = archive.trees.find(level == 30 ? "FAMILIAR1" : "FAMILIAR2");
+        REQUIRE(treeIndex.has_value());
+        // Knight familiars use vertex-animation meshes, not transform tracks.
+        REQUIRE(archive.trees.tree(*treeIndex).sequences[0].tracks.empty());
+        bool interpolated = false;
+        for (s32 step = 0; step < 60; ++step) {
+            familiar.update(1.0f / 60.0f, false);
+            const auto previous = draw(0);
+            const auto middle = draw(0.5f);
+            const auto current = draw(1);
+            REQUIRE_FALSE(current.empty());
+            interpolated |= differs(previous, middle) && differs(middle, current);
+            // Additional monitor refreshes only sample geometry, not texture clocks.
+            CHECK_FALSE(differs(middle, draw(0.5f)));
+        }
+        CHECK(interpolated);
+    }
+}
 } // namespace

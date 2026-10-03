@@ -1,5 +1,6 @@
 #include "game/world/PlayerFamiliar.h"
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -16,6 +17,8 @@ bool PlayerFamiliar::bindTree(RenderDevice& device, ItemArchive& archive, std::s
     m_model.clear();
     m_textures.clear();
     m_player.stop();
+    m_pose = TreePose{};
+    m_previousPose = TreePose{};
     m_offset = offset;
     m_frames = 0;
     const auto index = archive.trees.find(name);
@@ -37,6 +40,9 @@ void PlayerFamiliar::update(f32 seconds, bool attack) {
     if (m_tree == nullptr) {
         return;
     }
+    m_previousPose = m_pose;
+    m_previousGeneration = m_player.generation();
+    m_previousFrame = m_player.presentationFrame();
     if (attack && m_tree->sequences.size() > 1 && m_player.sequence() == 0) {
         m_player.start(m_tree->sequences[1], 1);
     }
@@ -45,7 +51,7 @@ void PlayerFamiliar::update(f32 seconds, bool attack) {
         m_player.start(m_tree->sequences[0], 0);
     }
     const auto frame = static_cast<s32>(m_player.frame());
-    m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+    m_pose.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(), false, true);
     m_model.setFrame(m_player.sequence(), frame);
     m_frames += seconds * AnimationPlayer::kDefaultRate;
     const auto elapsed = static_cast<u32>(std::floor(m_frames));
@@ -54,10 +60,19 @@ void PlayerFamiliar::update(f32 seconds, bool attack) {
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
 }
 void PlayerFamiliar::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
-                          const WorldLighting& lighting, f32 alpha,
-                          const CameraFrame* camera) const {
+                          const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
+                          f32 renderAlpha) const {
     if (m_tree != nullptr) {
-        m_model.draw(device, clip, glm::translate(body, m_offset), lighting, m_pose.matrices(),
+        f32 frame = m_player.presentationFrame();
+        m_drawPose = m_pose;
+        if (renderAlpha < 1.0f && m_previousPose.posed() &&
+            m_previousGeneration == m_player.generation()) {
+            const f32 amount = std::clamp(renderAlpha, 0.0f, 1.0f);
+            m_drawPose.blend(m_previousPose, amount, true);
+            frame = std::lerp(m_previousFrame, frame, amount);
+        }
+        m_model.setPresentationFrame(m_player.sequence(), frame);
+        m_model.draw(device, clip, glm::translate(body, m_offset), lighting, m_drawPose.matrices(),
                      camera, alpha);
     }
 }

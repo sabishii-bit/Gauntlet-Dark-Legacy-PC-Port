@@ -141,7 +141,7 @@ public:
     /** Silence drain loops before the options menu stops gameplay updates. */
     void pauseGameplaySounds();
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight,
-                bool optionsOpen = false);
+                bool optionsOpen = false, f32 frameBlend = 1.0f);
 
     usize actorCount() const { return m_players.size(); }
     /** The character driven by `player`, or null when that player is not in the party. */
@@ -284,8 +284,9 @@ public:
 
 private:
     /** The bodies' shadows, after all of the level's floors (some of which are translucent). */
-    PartyFigures::Scene figureScene();
-    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye);
+    PartyFigures::Scene figureScene(f32 frameBlend = 1.0f);
+    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye, f32 frameBlend);
+    bool scriptedCamera() const;
     void watchOpponents();
     void gatherLights();
     void beginChallenge();
@@ -353,6 +354,8 @@ private:
     PartyHud m_hud;
     Canvas m_canvas;
     TowerCamera m_camera;
+    std::optional<WorldCamera> m_previousCamera;
+    bool m_previousBossCamera = false;
     BossCamera m_bossCamera;
     std::vector<PlayerRuntime> m_players;
     GameOver m_gameOver;

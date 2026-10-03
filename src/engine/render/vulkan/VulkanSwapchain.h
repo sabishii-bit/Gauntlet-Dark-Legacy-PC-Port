@@ -14,13 +14,13 @@ class VulkanContext;
 /** Presentable images plus a matching depth buffer; rebuilt on resize. */
 class VulkanSwapchain {
 public:
-    VulkanSwapchain(VulkanContext& context, Extent2D windowExtent, bool vsync);
+    VulkanSwapchain(VulkanContext& context, Extent2D windowExtent, bool vsync, u32 sampleCount);
     ~VulkanSwapchain();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanSwapchain);
 
     /** Waits for the device to idle and rebuilds at the new size. */
-    void recreate(Extent2D windowExtent);
+    void recreate(Extent2D windowExtent, bool vsync, u32 sampleCount);
 
     VkResult acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex);
     VkResult present(VkSemaphore waitSemaphore, u32 imageIndex);
@@ -33,6 +33,9 @@ public:
     VkImageView imageView(u32 index) const { return m_imageViews[index]; }
     VkImage depthImage() const { return m_depthImage; }
     VkImageView depthImageView() const { return m_depthImageView; }
+    VkSampleCountFlagBits samples() const { return m_samples; }
+    VkImage multisampleImage() const { return m_multisampleImage; }
+    VkImageView multisampleImageView() const { return m_multisampleImageView; }
 
 private:
     void create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain);
@@ -40,6 +43,8 @@ private:
 
     VulkanContext& m_context;
     bool m_vsync = true;
+    u32 m_requestedSamples = 1;
+    VkSampleCountFlagBits m_samples = VK_SAMPLE_COUNT_1_BIT;
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     VkFormat m_colorFormat = VK_FORMAT_UNDEFINED;
@@ -52,6 +57,9 @@ private:
     VkImage m_depthImage = VK_NULL_HANDLE;
     VmaAllocation m_depthAllocation = VK_NULL_HANDLE;
     VkImageView m_depthImageView = VK_NULL_HANDLE;
+    VkImage m_multisampleImage = VK_NULL_HANDLE;
+    VmaAllocation m_multisampleAllocation = VK_NULL_HANDLE;
+    VkImageView m_multisampleImageView = VK_NULL_HANDLE;
 };
 
 } // namespace gdl

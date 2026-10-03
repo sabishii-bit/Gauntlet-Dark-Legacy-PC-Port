@@ -190,6 +190,8 @@ void Enemies::close() {
     m_collision = nullptr;
     m_hazards = nullptr;
     m_frame = 0;
+    m_pendingTicks = 0;
+    m_pendingSeconds = 0;
 }
 
 Enemies::Stock* Enemies::stockOf(s32 kind) {
@@ -633,9 +635,40 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
                      f32 missileSpeedScale, bool timeStopped) {
     syncFloors();
-    if (ticks <= 0) {
-        return;
+    if (ticks > 0) {
+        // A body with no death skin has no animation left to simulate. Retire it
+        // on the first death update, not after waiting for the next AI frame.
+        // Death itself instead rises and fades on its separate timed path.
+        for (s32 i = 0; i < m_most; ++i) {
+            Enemy& enemy = m_enemies[static_cast<usize>(i)];
+            if (enemy.state == State::Dying && enemy.kind != kDeathKind &&
+                (enemy.deathSkinFrames <= 0 || enemy.algorithm == kSuicideWay)) {
+                if (enemy.kind == kGarmBroodKind && enemy.algorithm != kSuicideWay) {
+                    aimDeathShot(enemy, i, players);
+                }
+                die(enemy);
+            }
+        }
     }
+    // Keep the native two-tick mind AND collision step together. Splitting just
+    // movement changes the footprint support selected on narrow stair treads.
+    const f32 secondsPerTick = ticks > 0 ? seconds / static_cast<f32>(ticks) : 0;
+    for (s32 tick = 0; tick < ticks; ++tick) {
+        ++m_pendingTicks;
+        m_pendingSeconds += secondsPerTick;
+        if (m_pendingTicks == 2) {
+            step(m_pendingSeconds, players, obstacles, missiles, missileSpeedScale, timeStopped);
+            m_pendingTicks = 0;
+            m_pendingSeconds = 0;
+        }
+    }
+}
+
+void Enemies::step(f32 seconds, std::span<const EnemyView> players,
+                   std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
+                   f32 missileSpeedScale, bool timeStopped) {
+    constexpr s32 kMotionTicks = 2;
+    const f32 kMotionSeconds = seconds;
     ++m_frame;
     // What is on screen, by twice its radius and fifteen more (do_enemies' visactive), and how
     // many are in view by twice their radius alone (its visible count).
@@ -670,11 +703,11 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             die(enemy);
             continue;
         }
-        enemy.flashSeconds = std::max(0.0f, enemy.flashSeconds - seconds);
+        enemy.flashSeconds = std::max(0.0f, enemy.flashSeconds - kMotionSeconds);
         if (enemy.state == State::Dying) {
-            enemy.deathSeconds += seconds;
+            enemy.deathSeconds += kMotionSeconds;
             if (enemy.kind == kDeathKind) {
-                enemy.position.y += DeathRules::kRiseSpeed * seconds;
+                enemy.position.y += DeathRules::kRiseSpeed * kMotionSeconds;
                 if (enemy.deathSeconds >= DeathRules::kFadeSeconds) {
                     die(enemy);
                 }
@@ -682,9 +715,10 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             }
             react(enemy);
             enemy.animator.request(EnemyAction::Dying);
-            enemy.yaw = turnToward(enemy, enemy.mind.heading, ticks);
-            move(enemy, i, ticks, seconds, Vec3{0.0f, 0.0f, 0.0f}, players, obstacles);
-            enemy.animator.update(ticks, seconds, false);
+            enemy.yaw = turnToward(enemy, enemy.mind.heading, kMotionTicks);
+            move(enemy, i, kMotionTicks, kMotionSeconds, Vec3{0.0f, 0.0f, 0.0f}, players,
+                 obstacles);
+            enemy.animator.update(kMotionTicks, kMotionSeconds, false);
             // No skin sequence (the small swarm), or a completed one, retires the body
             // even if the fallback animation is still playing: do_enemies, DYING.
             const bool dissolved =
@@ -725,15 +759,15 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         // Out of view with its player out of its sight, it waits where it stands, neither
         // thinking nor moving nor animating, and only its knock-back dies away (fn_8004D958).
         if (!enemy.onScreen && enemy.targetDistance > enemy.sight) {
-            decayPush(enemy, seconds);
+            decayPush(enemy, kMotionSeconds);
             continue;
         }
         // The tick's default action (do_enemies' daction): the stance, or for the scorpion
         // the walk, which then also refuses the stance and, as loud, a run.
         enemy.animator.request(enemyKind(enemy.kind).idle);
-        think(enemy, i, ticks, players, obstacles);
+        think(enemy, i, kMotionTicks, players, obstacles);
         if (enemy.kind == kDeathKind) {
-            drain(enemy, i, ticks, players);
+            drain(enemy, i, 2, players);
         }
         if (enemy.expired) {
             die(enemy);
@@ -743,14 +777,14 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         if (enemy.animator.entering()) {
             enemy.animator.request(EnemyAction::Walk);
         }
-        enemy.animator.update(ticks, seconds, enemy.contact >= 0);
+        enemy.animator.update(kMotionTicks, kMotionSeconds, enemy.contact >= 0);
         if (enemy.kind == kVeilingKind) {
-            veil(enemy, ticks);
+            veil(enemy, kMotionTicks);
         }
         if (enemy.animator.threw() && missiles != nullptr) {
             shoot(enemy, i, players, *missiles, missileSpeedScale, obstacles);
         }
-        decayPush(enemy, seconds);
+        decayPush(enemy, kMotionSeconds);
         touchHazards(enemy, i);
     }
 }
