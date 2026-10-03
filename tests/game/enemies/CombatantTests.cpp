@@ -433,6 +433,123 @@ TEST_CASE("ordinary critters block only their selected player's heavy attack",
     }
 }
 
+TEST_CASE("ready steps precede idle moves and rank by their target direction",
+          "[combatant][critter-ready]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition :
+         {Golem::definition(), General::definition(), Gargoyle::definition()}) {
+        CAPTURE(definition.name);
+        writeTextFile(root / "critter" / (definition.name + ".json"),
+                      R"({"descriptors":[{"prefix":"BODY","name":")" + definition.name +
+                          R"(","type":)" + std::to_string(static_cast<s32>(definition.kind)) +
+                          R"(}],"types":[{"moveCount":4,"maxHealth":1000}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"priority":1000,"interrupt":90},
+            {"name":"OBLIQUE","anim":"STEP","type":52,"priority":900,
+             "target":{"yaw":1,"minDot":0.1}},
+            {"name":"FORWARD","anim":"STEP","type":52,"priority":10,
+             "target":{"yaw":0,"minDot":0.1}},
+            {"name":"TAUNT","anim":"STEP","type":33,"priority":2000}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        for (const f32 bearing : {0.0f, 1.0f}) {
+            CAPTURE(bearing);
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+            EnemyView player;
+            player.player = 3;
+            player.position = {20 * std::sin(bearing), 0, 20 * std::cos(bearing)};
+            actor.update(2, 1.0f / 30, std::array{player});
+            CHECK(actor.moveName() == (bearing == 0 ? "FORWARD" : "OBLIQUE"));
+        }
+    }
+}
+
+TEST_CASE("ordinary taunts obey the same health and cooldown gates as bosses",
+          "[combatant][critter-ready]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":1000}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":90},
+               {"name":"TAUNT","anim":"STEP","type":33,"priority":1000,"cooldown":10}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+    SECTION("healthy taunts then waits out its authored cooldown") {
+        actor.update(2, 1.0f / 30, {});
+        REQUIRE(actor.moveName() == "TAUNT");
+        actor.update(2, 3.0f / 30, {});
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.moveName() == "READY");
+    }
+    SECTION("a wounded creature no longer taunts while idle") {
+        EnemyHit hit;
+        hit.damage = 100;
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.moveName() == "READY");
+    }
+}
+
+TEST_CASE("ready step cooldown includes its animation before the rest interval",
+          "[combatant][critter-ready]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/GENERAL/LEVELG/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3},{"name":"WALK","frames":30}]}]})");
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":2,"maxHealth":1000}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"priority":10},
+               {"name":"WALK","anim":"WALK","type":52,"priority":20,"cooldown":1}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 3;
+    player.position = {0, 0, 20};
+    const std::array players{player};
+    actor.update(2, 3.0f / 30, players);
+    actor.update(2, 1.0f / 30, players);
+    REQUIRE(actor.moveName() == "WALK");
+    actor.update(2, 1.0f, players);
+    REQUIRE(actor.moveDone());
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.moveName() == "READY");
+    for (s32 frame = 0; frame < 35 && actor.moveName() != "WALK"; ++frame) {
+        actor.update(2, 1.0f / 30, players);
+    }
+    CHECK(actor.moveName() == "WALK");
+}
+
+TEST_CASE("native eagle gargoyle approaches a player beyond its attack ranges",
+          "[combatant][critter-ready][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    const auto walk = assets.data.moveNamed("WALK");
+    const auto ready = assets.data.moveOfType(MoveDefinition::kReady);
+    REQUIRE(walk.has_value());
+    REQUIRE(ready.has_value());
+    REQUIRE(assets.data.moves()[*walk].priority < assets.data.moves()[*ready].priority);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 3;
+    player.position = {0, 0, 60};
+    for (s32 frame = 0; frame < 300 && actor.position().z < 2; ++frame) {
+        actor.update(2, 1.0f / 30, std::array{player});
+    }
+    CHECK(actor.target() == 3);
+    CHECK(actor.position().z >= 2);
+}
+
 TEST_CASE("native generals and golems select their authored block against a heavy attack",
           "[combatant][critter-block][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();

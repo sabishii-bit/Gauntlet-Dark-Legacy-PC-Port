@@ -211,7 +211,6 @@ private:
         std::vector<f32> moveTimes;
         std::vector<f32> patternTimes;
         usize patternStep = 0;
-        std::vector<f32> cooldowns;      ///< seconds left before each move may be chosen again
         std::vector<s32> struckThisMove; ///< players already hurt by the move playing
         std::vector<CritterArea> areas;
         std::vector<Mat4> arenaAnchors;

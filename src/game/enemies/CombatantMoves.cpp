@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 #include "engine/core/Types.h"
@@ -251,23 +252,20 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
         }
     }
     std::optional<usize> best;
-    s32 bestPriority = -1;
-    const bool patterns =
-        critter.stock->definition.selection == CombatantDefinition::Selection::Patterns;
+    f32 bestScore = std::numeric_limits<f32>::max();
     for (usize i = 0; i < data.moves().size(); ++i) {
         const MoveDefinition& move = data.moves()[i];
-        // Attacks have already been searched by last-use time. This fallback
-        // must not reselect the current attack that search deliberately excludes.
+        // CritterLookForReady searches movement before the idle fallback. Move
+        // priority controls interruptions, not which eligible step it chooses.
         const bool step =
-            move.type >= MoveDefinition::kStepFrom && move.type < MoveDefinition::kStepTo;
-        const bool considered = step || (!patterns && (move.type == MoveDefinition::kReady ||
-                                                       move.type == MoveDefinition::kTaunt));
+            move.type >= MoveDefinition::kStepFrom && move.type <= MoveDefinition::kStepLast;
         constexpr u32 kLinkedOnly = 4;
-        if (!considered || critter.cooldowns[i] > 0.0f || (move.flags & kLinkedOnly) != 0) {
+        if (!step || (move.flags & kLinkedOnly) != 0 ||
+            (move.cooldown > 0 && critter.age < critter.moveTimes[i] + move.cooldown)) {
             continue;
         }
-        // Walks want a player; the stance and the taunt want none in particular.
-        if (step && view == nullptr) {
+        if (view == nullptr ||
+            (move.type == MoveDefinition::kStepToPoint && critter.moveTarget < 0)) {
             continue;
         }
         if (!move.target.allows(distance, bearing, vertical) ||
@@ -276,18 +274,20 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
             curbedMove(critter, move)) {
             continue;
         }
-        if (move.priority > bestPriority) {
-            bestPriority = move.priority;
+        constexpr f32 kSquarelyAhead = 0.5f;
+        const f32 dot = std::cos(bearing - move.target.yaw);
+        const f32 score = dot > kSquarelyAhead ? distance / dot : 2.0f * distance;
+        if (score < bestScore) {
+            bestScore = score;
             best = i;
         }
     }
-    if (best.has_value() || !patterns) {
+    if (best.has_value()) {
         return best;
     }
-    // CritterBossAI falls back to TAUNT below rateScale 0.8, then READY. These
-    // are not competing priorities: Skorne gives both 512, so ranking them together
-    // always picked the earlier, silent READY. CritterFindMoveType chooses the most
-    // overdue eligible move, measuring cooldown from the previous animation's end.
+    // Boss and ordinary AI both fall back to TAUNT below rateScale 0.8, then READY.
+    // CritterFindMoveType chooses the most overdue eligible move, measuring
+    // cooldown from the previous animation's end.
     for (const s32 type : {MoveDefinition::kTaunt, MoveDefinition::kReady}) {
         if (type == MoveDefinition::kTaunt && attackRate(critter) >= 0.8f) {
             continue;
@@ -349,7 +349,6 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         }
         if (startMove(critter, *index)) {
             critter.pattern = -1;
-            critter.cooldowns[*index] = data.moves()[*index].cooldown;
             return true;
         }
         return false;
@@ -503,7 +502,6 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
                 critter.stepTarget = destination->position;
             }
         }
-        critter.cooldowns[*next] = data.moves()[*next].cooldown;
         return;
     }
     if (const auto ready = data.moveOfType(MoveDefinition::kReady); ready.has_value()) {
