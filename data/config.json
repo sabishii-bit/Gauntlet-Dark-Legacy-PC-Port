@@ -9,6 +9,7 @@
     "windowMode": "windowed",
     "vsync": true,
     "depthOfField": false,
+    "bloom": false,
     "maxFrameRate": 30,
     "sampleCount": 1
   },

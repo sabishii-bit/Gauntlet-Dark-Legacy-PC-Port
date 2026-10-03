@@ -15,10 +15,11 @@ class VulkanContext;
  * texture. Additive pipelines leave the depth buffer alone. */
 class VulkanPipeline {
 public:
+    enum class Effect : u8 { None, DepthOfField, Bloom };
     VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                    VkFormat colorFormat, VkFormat depthFormat,
                    VkDescriptorSetLayout textureSetLayout, BlendMode blend,
-                   VkSampleCountFlagBits samples, bool depthOfField = false);
+                   VkSampleCountFlagBits samples, Effect effect = Effect::None);
     ~VulkanPipeline();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanPipeline);

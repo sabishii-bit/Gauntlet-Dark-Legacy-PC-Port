@@ -234,7 +234,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     REQUIRE(f.menu.menu().definition().items[3].text == "Video");
     f.select();
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
-    REQUIRE(f.menu.menu().definition().items.size() == 9);
+    REQUIRE(f.menu.menu().definition().items.size() == 10);
     CHECK(f.menu.menu().definition().items[0].value == "On");
     CHECK(f.menu.menu().definition().items[1].value == "30");
     CHECK(f.menu.menu().definition().items[2].value == "Off");
@@ -378,6 +378,9 @@ TEST_CASE("graphics page fits parchment and returns to its entry in every menu s
                       f.painter.measure(item.text, definition.scale) <=
                   512 - 64);
             if (!item.value.empty()) {
+                CHECK(f.menu.menu().itemY(static_cast<s32>(i)) +
+                          static_cast<s32>(32 * definition.scale) + 12 <
+                      300);
                 CHECK(definition.valueX > f.menu.menu().itemX(static_cast<s32>(i)) +
                                               f.painter.measure(item.text, definition.scale));
                 CHECK(definition.valueX + f.painter.measure(item.value, definition.scale) + 11 <=
@@ -480,11 +483,18 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     CHECK_FALSE(active.display.depthOfField);
     f.down();
     REQUIRE(f.menu.menu().selection() == 6);
+    CHECK(f.menu.menu().definition().items[6].text == "Bloom");
+    f.right();
+    CHECK(f.menu.config().display.bloom);
+    CHECK_FALSE(active.display.bloom);
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 7);
     f.select();
     REQUIRE(f.menu.menu().definition().items.size() == 2);
     CHECK(f.menu.menu().selection() == 1); // default to Revert, not Save
     CHECK_FALSE(active.display.vsync);
     CHECK(active.display.depthOfField);
+    CHECK(active.display.bloom);
     CHECK(f.config.display.vsync);
     CHECK(f.writes == 0);
     CHECK(previews == 1);
@@ -496,6 +506,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         f.select();
         CHECK_FALSE(f.config.display.vsync);
         CHECK(f.config.display.depthOfField);
+        CHECK(f.config.display.bloom);
         CHECK(f.writes == 1);
         now += 20;
         f.release();
@@ -511,17 +522,20 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(active.display.vsync);
         CHECK(previews == 2);
         CHECK(f.writes == 0);
-        CHECK(f.menu.menu().definition().items.size() == 9);
+        CHECK(f.menu.menu().definition().items.size() == 10);
         CHECK_FALSE(active.display.depthOfField);
+        CHECK_FALSE(active.display.bloom);
     }
     SECTION("Back cancels the trial") {
         f.back();
         CHECK(active.display.vsync);
+        CHECK_FALSE(active.display.bloom);
         CHECK(f.writes == 0);
     }
     SECTION("Closing the owner restores the saved configuration") {
         f.menu.close();
         CHECK(active.display.vsync);
+        CHECK_FALSE(active.display.bloom);
         CHECK(f.writes == 0);
     }
 }
@@ -531,6 +545,7 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     Fixture f;
     f.config.display.vsync = false;
     f.config.display.depthOfField = true;
+    f.config.display.bloom = true;
     f.config.audio.effectsVolume = 0.25f;
     f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.down();
@@ -539,22 +554,24 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.down();
     f.down();
     f.down();
-    REQUIRE(f.menu.menu().selection() == 6);
-    f.right();
+    f.down();
     REQUIRE(f.menu.menu().selection() == 7);
+    f.right();
+    REQUIRE(f.menu.menu().selection() == 8);
     f.select();
     CHECK(f.menu.config().display.vsync);
     CHECK_FALSE(f.menu.config().display.depthOfField);
+    CHECK_FALSE(f.menu.config().display.bloom);
     CHECK(f.menu.config().audio.effectsVolume == 0.25f);
     CHECK_FALSE(f.config.display.vsync);
     MenuInput up;
     up.up = true;
     f.menu.update(up, 1);
-    CHECK(f.menu.menu().selection() == 5); // last enabled setting: Depth of Field
+    CHECK(f.menu.menu().selection() == 6); // last enabled setting: Bloom
     f.down();
     f.right();
     f.right();
-    REQUIRE(f.menu.menu().selection() == 8);
+    REQUIRE(f.menu.menu().selection() == 9);
     f.select();
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK_FALSE(f.menu.config().display.vsync);
@@ -578,7 +595,8 @@ TEST_CASE("Video rollback preserves a manually resized window", "[settings][grap
     REQUIRE(f.menu.menu().selection() == 4);
     f.right();
     f.down();
-    f.down(); // past Depth of Field to Apply
+    f.down();
+    f.down(); // past Depth of Field and Bloom to Apply
     f.select();
     REQUIRE(active.display.windowMode == WindowMode::Fullscreen);
     f.back();
@@ -623,7 +641,8 @@ TEST_CASE("Video font and columns reserve the widest choices before selecting th
         unchanged();
     }
     f.down();
-    f.down(); // past Depth of Field to Apply
+    f.down();
+    f.down(); // past Depth of Field and Bloom to Apply
     f.right();
     f.select(); // Restore Defaults
     unchanged();
@@ -654,10 +673,10 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
         });
     f.down();
     f.select();
-    for (s32 i = 0; i < 5; ++i) {
+    for (s32 i = 0; i < 6; ++i) {
         f.down();
     }
-    REQUIRE(f.menu.menu().selection() == 6);
+    REQUIRE(f.menu.menu().selection() == 7);
     f.right();
     f.select();
     CHECK(f.menu.config().display.windowMode == WindowMode::Windowed);

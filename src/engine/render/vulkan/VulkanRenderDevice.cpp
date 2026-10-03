@@ -408,11 +408,28 @@ void VulkanRenderDevice::beginRendering() {
 }
 
 bool VulkanRenderDevice::applyDepthOfField(const DepthOfField& settings) {
+    if (!preparePostProcess()) {
+        return false;
+    }
+    m_postProcess->record(m_frames[m_frameIndex].commandBuffer, *m_swapchain, m_imageIndex,
+                          settings);
+    return true;
+}
+
+bool VulkanRenderDevice::applyBloom() {
+    if (!preparePostProcess()) {
+        return false;
+    }
+    m_postProcess->recordBloom(m_frames[m_frameIndex].commandBuffer, *m_swapchain, m_imageIndex);
+    return true;
+}
+
+bool VulkanRenderDevice::preparePostProcess() {
     GDL_ASSERT(m_frameOpen, "Post-processing called outside beginFrame/endFrame");
     if (!m_swapchain->supportsPostProcess()) {
         if (!m_postProcessUnsupportedReported) {
-            log::warn(
-                "Depth of field unavailable: color/depth sampling unsupported at this AA setting");
+            log::warn("Scene post-processing unavailable: color/depth sampling unsupported at this "
+                      "AA setting");
             m_postProcessUnsupportedReported = true;
         }
         return false;
@@ -430,7 +447,6 @@ bool VulkanRenderDevice::applyDepthOfField(const DepthOfField& settings) {
     }
     const VkCommandBuffer cmd = m_frames[m_frameIndex].commandBuffer;
     vkCmdEndRendering(cmd);
-    m_postProcess->record(cmd, *m_swapchain, m_imageIndex, settings);
     m_renderingStarted = false;
     return true;
 }

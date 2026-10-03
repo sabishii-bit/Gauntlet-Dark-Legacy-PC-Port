@@ -9,7 +9,7 @@
 namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
-constexpr s32 kVideoRows = 6;
+constexpr s32 kVideoRows = 7;
 constexpr std::array<u32, 3> kFrameRates{30, 60, 0};
 constexpr std::array<u32, 3> kSampleCounts{1, 2, 4};
 
@@ -114,7 +114,7 @@ void SettingsMenu::rebuild(s32 selection) {
         constexpr s32 kRight = 448;
         constexpr s32 kColumnGap = 28;
         constexpr s32 kRowTop = 122;
-        constexpr s32 kRowStep = 26;
+        constexpr s32 kRowStep = 23;
         constexpr s32 kActionY = 300;
         constexpr s32 kActionGap = 24;
         if (m_confirmVideo) {
@@ -166,6 +166,8 @@ void SettingsMenu::rebuild(s32 selection) {
             definition.items.back().enabled = !m_display.desktop.isZero();
             choice(text("settings.depthOfField"),
                    text(m_config.display.depthOfField ? "settings.on" : "settings.off"), 8);
+            choice(text("settings.bloom"),
+                   text(m_config.display.bloom ? "settings.on" : "settings.off"), 9);
             s32 labelWidth = 0;
             s32 valueWidth = 0;
             for (const auto& item : definition.items) {
@@ -355,6 +357,8 @@ void SettingsMenu::change(s32 direction) {
             next.display.windowHeight = size.height;
         } else if (code == 8) {
             next.display.depthOfField = !next.display.depthOfField;
+        } else if (code == 9) {
+            next.display.bloom = !next.display.bloom;
         } else if (code == 4) {
             if (m_display.desktop.isZero()) {
                 return;
@@ -456,6 +460,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             const GameConfig defaults;
             m_config.display.vsync = defaults.display.vsync;
             m_config.display.depthOfField = defaults.display.depthOfField;
+            m_config.display.bloom = defaults.display.bloom;
             m_config.display.sampleCount = defaults.display.sampleCount;
             m_config.display.windowWidth = defaults.display.windowWidth;
             m_config.display.windowHeight = defaults.display.windowHeight;

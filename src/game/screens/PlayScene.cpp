@@ -1193,6 +1193,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera, projectileBlend);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera, effectBlend);
     m_arrival.drawEffects(device, clip, m_world->lighting(), effectBlend);
+    if (config.display.bloom) {
+        device.applyBloom();
+    }
     if (config.display.depthOfField) {
         DepthOfField blur;
         const Mat4 view = camera.view();

@@ -62,13 +62,17 @@ VulkanPostProcess::VulkanPostProcess(VulkanContext& context, const VulkanSwapcha
     }
     vkUpdateDescriptorSets(context.device(), static_cast<u32>(writes.size()), writes.data(), 0,
                            nullptr);
-    m_pipeline = std::make_unique<VulkanPipeline>(context, shaders, swapchain.colorFormat(),
-                                                  VK_FORMAT_UNDEFINED, textureLayout,
-                                                  BlendMode::Opaque, swapchain.samples(), true);
+    m_pipeline = std::make_unique<VulkanPipeline>(
+        context, shaders, swapchain.colorFormat(), VK_FORMAT_UNDEFINED, textureLayout,
+        BlendMode::Opaque, swapchain.samples(), VulkanPipeline::Effect::DepthOfField);
+    m_bloomPipeline = std::make_unique<VulkanPipeline>(
+        context, shaders, swapchain.colorFormat(), VK_FORMAT_UNDEFINED, textureLayout,
+        BlendMode::Opaque, swapchain.samples(), VulkanPipeline::Effect::Bloom);
 }
 
 VulkanPostProcess::~VulkanPostProcess() {
     m_pipeline.reset();
+    m_bloomPipeline.reset();
     vkDestroyDescriptorPool(m_context.device(), m_pool, nullptr);
     vkDestroyImageView(m_context.device(), m_view, nullptr);
     vmaDestroyImage(m_context.allocator(), m_color, m_allocation);
@@ -76,6 +80,32 @@ VulkanPostProcess::~VulkanPostProcess() {
 
 void VulkanPostProcess::record(VkCommandBuffer cmd, const VulkanSwapchain& swapchain,
                                u32 imageIndex, const DepthOfField& settings) {
+    const f32 width = static_cast<f32>(swapchain.extent().width);
+    const f32 height = static_cast<f32>(swapchain.extent().height);
+    const VulkanPipeline::PushConstants constants{
+        settings.clipToView,
+        Vec4{settings.focusEnd, std::max(settings.transition, 0.001f),
+             std::clamp(settings.radiusAt1080, 0.0f, 8.0f) * height / 1080.0f,
+             static_cast<f32>(swapchain.samples())},
+        Vec4{1.0f / width, 1.0f / height, 0.0f, 0.0f}};
+    recordPass(cmd, swapchain, imageIndex, *m_pipeline, constants);
+}
+
+void VulkanPostProcess::recordBloom(VkCommandBuffer cmd, const VulkanSwapchain& swapchain,
+                                    u32 imageIndex) {
+    const f32 width = static_cast<f32>(swapchain.extent().width);
+    const f32 height = static_cast<f32>(swapchain.extent().height);
+    // Deliberately restrained LDR bloom: bright scene pixels, not an emissive material mask.
+    // The five-by-five kernel has a six-pixel radius at 1080p, independent of frame rate.
+    const VulkanPipeline::PushConstants constants{Mat4{1.0f},
+                                                  Vec4{0.6f, 0.9f, 0.4f, 3.0f * height / 1080.0f},
+                                                  Vec4{1.0f / width, 1.0f / height, 0.0f, 0.0f}};
+    recordPass(cmd, swapchain, imageIndex, *m_bloomPipeline, constants);
+}
+
+void VulkanPostProcess::recordPass(VkCommandBuffer cmd, const VulkanSwapchain& swapchain,
+                                   u32 imageIndex, const VulkanPipeline& pipeline,
+                                   const VulkanPipeline::PushConstants& constants) {
     const auto extent = swapchain.extent();
     const VkImage scene = swapchain.image(imageIndex);
     vk::imageBarrier(cmd, scene, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -138,18 +168,10 @@ void VulkanPostProcess::record(VkCommandBuffer cmd, const VulkanSwapchain& swapc
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachments = &color;
     vkCmdBeginRendering(cmd, &rendering);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->handle());
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0,
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
                             static_cast<u32>(m_sets.size()), m_sets.data(), 0, nullptr);
-    const f32 width = static_cast<f32>(extent.width);
-    const f32 height = static_cast<f32>(extent.height);
-    const VulkanPipeline::PushConstants constants{
-        settings.clipToView,
-        Vec4{settings.focusEnd, std::max(settings.transition, 0.001f),
-             std::clamp(settings.radiusAt1080, 0.0f, 8.0f) * height / 1080.0f,
-             static_cast<f32>(swapchain.samples())},
-        Vec4{1.0f / width, 1.0f / height, 0.0f, 0.0f}};
-    vkCmdPushConstants(cmd, m_pipeline->layout(),
+    vkCmdPushConstants(cmd, pipeline.layout(),
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        VulkanPipeline::kPushConstantSize, &constants);
     vkCmdSetCullMode(cmd, VK_CULL_MODE_NONE);

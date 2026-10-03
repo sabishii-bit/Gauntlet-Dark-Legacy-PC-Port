@@ -80,6 +80,10 @@ public:
     }
 
     void waitIdle() override {}
+    bool applyBloom() override {
+        bloomDrawOffsets.push_back(draws.size());
+        return true;
+    }
     bool applyDepthOfField(const DepthOfField& settings) override {
         depthOfFieldDrawOffsets.push_back(draws.size());
         depthOfFieldSettings.push_back(settings);
@@ -87,6 +91,7 @@ public:
     }
 
     std::vector<RecordedDraw> draws;
+    std::vector<usize> bloomDrawOffsets;
     std::vector<usize> depthOfFieldDrawOffsets;
     std::vector<DepthOfField> depthOfFieldSettings;
     u32 frames = 0;
