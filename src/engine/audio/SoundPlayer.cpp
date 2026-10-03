@@ -217,7 +217,10 @@ void SoundPlayer::update() {
 
 void SoundPlayer::feedSource(Voice& voice) {
     const AudioStreamDesc desc = voice.source->desc();
-    const auto pieceFrames = static_cast<usize>(desc.sampleRate / 2);
+    // Native ADS restoration is synchronous. Replenish roughly one simulation tick
+    // at a time instead of doing half a second of both filter passes in one frame.
+    // The unchanged lookahead still primes startup and catches up after a stall.
+    const auto pieceFrames = static_cast<usize>(std::max(desc.sampleRate / 60, 1U));
     while (!voice.finished && voice.stream->queuedSeconds() < kLookaheadSeconds) {
         m_scratch.clear();
         bool more = voice.source->read(m_scratch, pieceFrames);

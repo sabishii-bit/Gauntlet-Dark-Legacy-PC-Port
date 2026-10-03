@@ -176,6 +176,38 @@ TEST_CASE("the tower's music stream decodes piece by piece and rewinds",
     REQUIRE(out.size() > usize{2} * 1000);
 }
 
+TEST_CASE("small native music refills retain the approved restoration samples exactly",
+          "[audio][stream][assets][audio-refill]") {
+    const auto* name = GENERATE("tower", "CATH1", "CATH2A_1", "CATH2A_2");
+    CAPTURE(name);
+    const auto file = test::assetOrSkip(std::string("STREAMS/") + name + ".ads");
+    AdsStream source;
+    REQUIRE(source.open(file));
+    const usize samples = static_cast<usize>(source.info().sampleRate) * source.info().channels * 8;
+    std::vector<f32> reference;
+    while (reference.size() < samples && source.read(reference, source.info().sampleRate / 2)) {
+    }
+    REQUIRE_FALSE(reference.empty());
+    // CATH2A_2 is a short ending segment. Include its complete flush, not eight
+    // seconds of invented silence; longer tracks cover the eight-second prefix.
+    const bool complete = reference.size() < samples;
+    reference.resize(std::min(reference.size(), samples));
+    for (u32 repeat = 0; repeat < 2; ++repeat) {
+        source.rewind();
+        std::vector<f32> chunked;
+        while (chunked.size() < reference.size()) {
+            REQUIRE(source.read(chunked, source.info().sampleRate / 60));
+        }
+        if (complete) {
+            CHECK_FALSE(source.read(chunked, source.info().sampleRate / 60));
+            CHECK(chunked.size() == reference.size());
+        } else {
+            chunked.resize(reference.size());
+        }
+        CHECK(chunked == reference);
+    }
+}
+
 TEST_CASE("a missing or foreign file is not a stream", "[audio][stream]") {
     AdsStream stream;
     REQUIRE_FALSE(stream.open(test::scratchDirectory("ads-stream-none") / "none.ads"));
