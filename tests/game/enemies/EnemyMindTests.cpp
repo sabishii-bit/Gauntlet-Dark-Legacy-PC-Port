@@ -412,6 +412,26 @@ TEST_CASE("the zig-zagger swings a quarter turn at a time and aims afresh once i
     CHECK(zig.think(lost, alone).heading == 0.6f);
 }
 
+TEST_CASE("generator zig-zag births alternate their swings instead of circling",
+          "[game][enemies][mind][courtyard-grunt]") {
+    const auto& zig = enemyMindOf(kZigZagWay);
+    for (const s32 side : {-1, 1}) {
+        MindMemory memory;
+        memory.zigZag.side = side;
+        memory.heading = static_cast<f32>(side) * kPi / 4;
+        MindSense sense = senseAhead(20);
+        sense.ticks = 1;
+        for (s32 tick = 0; tick < 180; ++tick) {
+            const auto intent = zig.think(memory, sense);
+            // The first swing reverses the birth offset, then alternates either side
+            // of the generator's forward direction, never turning away from its player.
+            const s32 swing = tick == 0 ? 0 : (tick + 1) / 45;
+            const f32 expected = static_cast<f32>((swing % 2 == 0 ? -1 : 1) * side) * kPi / 4;
+            CHECK(intent.heading == Approx(expected));
+        }
+    }
+}
+
 TEST_CASE("the ranged casters wait, then attack from where they stand or keep their distance",
           "[game][enemies][mind]") {
     const EnemyMind& stand = enemyMindOf(kStandCastWay);

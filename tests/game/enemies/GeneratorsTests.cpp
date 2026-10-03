@@ -103,6 +103,53 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
     REQUIRE(found);
 }
 
+TEST_CASE("generators alternate successful zig-zag births without turning their bodies",
+          "[game][generators][courtyard-grunt][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
+    const auto fixture = test::scratchDirectory("zig-zag-generator");
+    writeTextFile(fixture / "world.json", R"({
+        "objects":[{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+        "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
+                      "xSize":3,"zSize":1,"hitPoints":10}],
+        "itemInstances":[{"info":0,"minPlayers":1,"position":[0,0,0],
+            "params":[1,0,14,0,1,0,1,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(fixture));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    REQUIRE(generators.count() == 1);
+    const std::array party{EnemyView{.player = 0, .position = Vec3{0, 0, 20}}};
+    for (const s32 side : {1, -1, 1}) {
+        for (s32 tick = 0; tick < 120 && !enemies.alive(0); ++tick) {
+            generators.update(1, enemies, party);
+        }
+        REQUIRE(enemies.alive(0));
+        const auto& memory = enemies.memoryOf(0);
+        CHECK(memory.zigZag.side == side);
+        CHECK(wrapAngle(memory.heading - enemies.yawOf(0)) ==
+              Approx(static_cast<f32>(side) * 0.7853981635f));
+        CHECK(memory.headingBefore == memory.heading);
+        // A full brood must not advance the alternation on its failed/not-attempted births.
+        const s32 born = generators.bredOf(0);
+        for (s32 tick = 0; tick < 60; ++tick) {
+            generators.update(1, enemies, party);
+        }
+        CHECK(generators.bredOf(0) == born);
+        EnemyHit hit;
+        hit.damage = 100000;
+        enemies.hurt(0, hit);
+        for (s32 frame = 0; frame < 180; ++frame) {
+            enemies.update(2, kStep, party);
+        }
+        REQUIRE_FALSE(enemies.alive(0));
+    }
+    CHECK(generators.bredOf(0) == 3);
+}
+
 TEST_CASE("Dream generators retain the floor clearance of their portal artwork",
           "[game][generators][assets]") {
     const auto root =

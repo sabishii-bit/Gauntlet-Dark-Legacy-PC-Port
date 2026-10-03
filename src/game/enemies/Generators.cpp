@@ -400,6 +400,9 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.direction = generator.direction;
         spawn.clearance = generator.clearance;
         spawn.generator = static_cast<s32>(g);
+        if (generator.algorithm == kZigZagWay) {
+            spawn.zigZagSide = (generator.bred & 1) == 0 ? 1 : -1;
+        }
         std::vector<Obstacle> birthObstacles{obstacles.begin(), obstacles.end()};
         for (usize other = 0; other < m_generators.size(); ++other) {
             if (other != g && standing(static_cast<s32>(other))) {
