@@ -160,7 +160,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   abandoned party and the level results. `screens/PartyNames` writes each player's
   name over the head as a level opens (name_timer 240, WriteName: six letters,
   `_` as a space, the `initials` font at half size), its ticks held by messages,
-  cuts and Sumner's ceremonies (player.c 2521); the start camera does not hold it. `LevelOpponents::blast` routes a blast's
+  cuts and Sumner's ceremonies (player.c 2521). Entry materialisation and the start
+  camera hold both drawing and the countdown: do_players' outer 0x803447B8 branch
+  bypasses the name logic until that camera hands off. `LevelOpponents::blast` routes a blast's
   ring to the swarm, generators, great ones and boss. The scene's own routing is
   split by concern into `PlaySceneMotion` (movement events and actions),
   `PlaySceneHarm` (hurts, hazards, tower prompts, named announcements) and
