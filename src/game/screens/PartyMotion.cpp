@@ -131,6 +131,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                              const WorldCollision& collision,
                                              const Events& events) {
     // Snapshot after movement, before fixture collision, preserving the camera's frame phase.
+    PartyCombo::cancelInvalid(players);
     std::vector<CameraSubject> subjects;
     subjects.reserve(players.size());
     std::vector<std::optional<usize>> contacts(players.size());

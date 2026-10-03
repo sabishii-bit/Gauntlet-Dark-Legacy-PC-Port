@@ -185,6 +185,7 @@ void Enemies::close() {
     m_deathEvents.clear();
     m_deathShots.clear();
     m_tagged.clear();
+    m_generatorEvents.clear();
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
@@ -392,6 +393,7 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
         return std::nullopt;
     }
     Enemy& taken = m_enemies[static_cast<usize>(best)];
+    detachGenerator(taken);
     taken = Enemy{};
     return best;
 }
@@ -477,6 +479,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
         return std::nullopt;
     }
     Enemy& enemy = m_enemies[static_cast<usize>(*slot)];
+    detachGenerator(enemy);
     const EnemyKind& kind = enemyKind(spawn.kind);
     initialise(enemy, spawn, kind);
     const TreeInfo* tree = treeOf(spawn.kind, enemy.tier);
@@ -560,6 +563,9 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     enemy.yaw = yaw;
     enemy.mind.heading = yaw;
     enemy.mind.headingBefore = yaw;
+    if (enemy.generator >= 0) {
+        m_generatorEvents.push_back({enemy.generator, EnemyGeneratorEvent::Kind::Born});
+    }
     return slot;
 }
 
@@ -1434,6 +1440,9 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
     }
     enemy.state = State::Active;
     enemy.health -= amount;
+    if (enemy.algorithm == kPatrolWay && enemy.generator >= 0) {
+        m_generatorEvents.push_back({enemy.generator, EnemyGeneratorEvent::Kind::PatrolHit});
+    }
     enemy.hurtPending += amount;
     if ((modified.flags & Damage::kElement) != 0) {
         enemy.hurtFlags &= ~Damage::kElement;
@@ -1464,6 +1473,7 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
     }
     enemy.flashSeconds = killed ? 0.0f : 2.0f / 30.0f;
     if (killed) {
+        detachGenerator(enemy);
         enemy.killed = true;
         enemy.state = State::Dying;
         if (!hit.selfInflicted) {
@@ -1536,7 +1546,22 @@ void Enemies::aimDeathShot(const Enemy& enemy, s32 slot, std::span<const EnemyVi
 }
 
 void Enemies::die(Enemy& enemy) {
+    detachGenerator(enemy);
     enemy = Enemy{};
+}
+
+void Enemies::detachGenerator(Enemy& enemy) {
+    if (enemy.generator >= 0) {
+        m_generatorEvents.push_back(
+            {enemy.generator, enemy.algorithm == kPatrolWay
+                                  ? EnemyGeneratorEvent::Kind::PatrolDetached
+                                  : EnemyGeneratorEvent::Kind::Detached});
+        enemy.generator = -1;
+    }
+}
+
+std::vector<EnemyGeneratorEvent> Enemies::takeGeneratorEvents() {
+    return std::exchange(m_generatorEvents, {});
 }
 
 std::vector<EnemyFeedback> Enemies::takeFeedback() {
@@ -1649,6 +1674,17 @@ std::vector<MissileTarget> Enemies::targets() const {
         out.push_back(MissileTarget{i, enemy.position, enemy.radius, enemy.height});
     }
     return out;
+}
+
+std::vector<EnemyBody> Enemies::movementBodies() const {
+    std::vector<EnemyBody> bodies;
+    for (s32 i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+        if (alive(i) && enemy.kind != kItKind) {
+            bodies.push_back({i, bodyCentre(enemy), enemy.radius, 0.5f * enemy.height});
+        }
+    }
+    return bodies;
 }
 
 std::optional<s32> Enemies::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {

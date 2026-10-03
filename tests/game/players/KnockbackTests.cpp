@@ -16,6 +16,22 @@ using Catch::Approx;
 constexpr f32 kFrame = 1.0f / 30.0f;
 constexpr f32 kPace = 10.0f;
 
+TEST_CASE("contact adds direct velocity without requiring damage or a reaction",
+          "[game][players][knockback][multiplayer]") {
+    Knockback knock;
+    knock.addVelocity({2, 0, 0});
+    knock.addVelocity({0, 0, 4});
+    CHECK_FALSE(knock.pending());
+    CHECK_FALSE(knock.kick(0, false).has_value());
+    const Vec3 step = knock.step(kFrame, kPace);
+    CHECK(step.x == Approx(2 * kFrame));
+    CHECK(step.z == Approx(4 * kFrame));
+    CHECK(knock.velocity().x == Approx(2 * Knockback::kDecay));
+    CHECK_FALSE(knock.pushed()); // distinct from the party shove/HUD state
+    knock.clear();
+    CHECK_FALSE(knock.sliding());
+}
+
 TEST_CASE("a knock back kicks sixteen times its push, a fall thirty-two, a blow away a hundred",
           "[game][players][knockback]") {
     const auto kicked = [](u32 flags, bool pojo = false) {

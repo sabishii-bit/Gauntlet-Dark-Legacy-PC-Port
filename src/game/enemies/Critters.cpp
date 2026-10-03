@@ -32,6 +32,7 @@ void Critters::close() {
     m_spews.clear();
     m_shots.clear();
     m_rams.clear();
+    m_pushes.clear();
     m_hitFlash = nullptr;
     m_device = nullptr;
     m_collision = nullptr;
@@ -118,6 +119,9 @@ s32 Critters::lookoutOf(s32 id) const {
     return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].lookout() : -1;
 }
 void Critters::collect(Combatant& actor) {
+    for (const auto& event : actor.takePushes()) {
+        m_pushes.push_back(event);
+    }
     for (auto& event : actor.takeGrabs()) {
         m_grabs.push_back(event);
     }
@@ -141,7 +145,7 @@ void Critters::collect(Combatant& actor) {
     }
 }
 void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players, bool timeStopped,
-                      std::span<const CombatantObstacle> items) {
+                      std::span<const CombatantObstacle> items, Enemies* swarm) {
     if (ticks <= 0) {
         return;
     }
@@ -152,9 +156,24 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         stock->textures.step(frames);
     }
     for (auto& actor : m_critters) {
+        if (!actor.present()) {
+            continue;
+        }
+        const auto bodies = swarm != nullptr ? swarm->movementBodies() : std::vector<EnemyBody>{};
         actor.setObstacles(items);
+        actor.setSwarm(bodies);
         actor.update(ticks, seconds, players, m_critters, timeStopped);
         actor.setObstacles({});
+        actor.setSwarm({});
+        for (const CombatTrample& trample : actor.takeTramples()) {
+            if (swarm != nullptr) {
+                EnemyHit hit;
+                hit.damage = trample.damage;
+                hit.where = trample.position;
+                hit.close = true;
+                swarm->hurt(trample.enemy, hit);
+            }
+        }
         collect(actor);
     }
 }

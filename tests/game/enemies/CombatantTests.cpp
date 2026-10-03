@@ -1367,6 +1367,14 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
     actor.hurt(hit);
     actor.update(2, seconds, std::span{&player, 1});
     CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f * seconds));
+    const auto pushes = actor.takePushes();
+    CHECK(pushes.size() == (blocked ? 1 : 0));
+    if (blocked) {
+        CHECK(pushes.front().player == 3);
+        CHECK(glm::length(pushes.front().velocity) >= 2.0f);
+        CHECK(glm::length(pushes.front().velocity) <= 6.0f);
+    }
+    CHECK(actor.takePushes().empty());
 }
 
 TEST_CASE("node-based critters use solid animated parts for player movement contact",
@@ -1406,6 +1414,135 @@ TEST_CASE("node-based critters use solid animated parts for player movement cont
     actor.hurt(hit);
     actor.update(2, 1.0f / 30, std::span{&player, 1});
     CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f / 30));
+    const auto pushes = actor.takePushes();
+    REQUIRE(pushes.size() == (blocked ? 1 : 0));
+    if (blocked) {
+        CHECK(pushes.front().velocity == Vec3{2, 0, 0});
+    }
+}
+
+TEST_CASE("critter crowd contact respects height sweep and directional overlap escape",
+          "[combatant][critter-body-contact]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    std::array<Combatant, 2> actors;
+    Vec3 obstacle{1, 0, 0};
+    f32 seconds = 1.0f / 30;
+    bool blocked = true;
+    SECTION("inward overlap blocks") {}
+    SECTION("another floor does not block") {
+        obstacle.y = 20;
+        blocked = false;
+    }
+    SECTION("outward overlap escapes") {
+        obstacle.x = -1;
+        blocked = false;
+    }
+    SECTION("fast motion sweeps the peer") {
+        obstacle.x = 5;
+        seconds = 1;
+    }
+    REQUIRE(actors[0].spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    REQUIRE(actors[1].spawn(assets, 1, obstacle, 0, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actors[0].hurt(hit);
+    actors[0].update(2, seconds, {}, actors);
+    CHECK(actors[0].position().x == Approx(blocked ? 0.0f : 10.0f * seconds));
+}
+
+TEST_CASE("great ones stop at swarm bodies but golems trample small enemies",
+          "[combatant][critter-body-contact][critter-trample]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {General::definition(), Golem::definition()}) {
+        const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
+                                   definition.name + R"(","type":)" +
+                                   std::to_string(static_cast<s32>(definition.kind)) + "}],";
+        writeTextFile(root / "critter" / (definition.name + ".json"), header + R"(
+          "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        Combatant actor;
+        EnemyScales scales;
+        scales.damage = 2;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+        std::array swarm{EnemyBody{5, {1, 0, 0}, 1, 2}, EnemyBody{9, {100, 0, 0}, 1, 1}};
+        bool touches = true;
+        SECTION("small body at the inclusive crush threshold") {}
+        SECTION("tall bodies stop even golems") {
+            swarm[0].halfHeight = 2.1f;
+        }
+        SECTION("another floor is clear") {
+            swarm[0].centre.y = 20;
+            touches = false;
+        }
+        SECTION("overlapping bodies may separate") {
+            swarm[0].centre.x = -1;
+            touches = false;
+        }
+        actor.setSwarm(swarm);
+        EnemyHit hit;
+        hit.damage = 1;
+        hit.flags = kKnockOver;
+        hit.direction = {1, 0, 0};
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        const bool crush =
+            touches && definition.kind == CombatantKind::Golem && swarm[0].halfHeight <= 2;
+        const bool blocked = touches && !crush;
+        CHECK(actor.position().x ==
+              Approx(blocked ? 0 : (10 - definition.knockbackReduction) / 30));
+        const auto tramples = actor.takeTramples();
+        REQUIRE(tramples.size() == (crush ? 1 : 0));
+        if (crush) {
+            CHECK(tramples[0].enemy == 5);
+            CHECK(tramples[0].damage == 14);
+        }
+        CHECK(actor.takeTramples().empty());
+    }
+}
+
+TEST_CASE(
+    "golem population delivers trample damage without player credit or a lingering corpse body",
+    "[combatant][critter-trample][assets]") {
+    const auto native =
+        test::assetOrSkip("MONSTERS/RAT/ANIM.PS2").parent_path().parent_path().parent_path();
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":1000}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, native, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kRatKind));
+    const auto rat = enemies.spawn({.kind = kRatKind, .position = {1, 0, 0}, .placed = true}, {});
+    REQUIRE(rat);
+    REQUIRE(enemies.movementBodies().size() == 1);
+    REQUIRE(enemies.movementBodies()[0].halfHeight <= 2);
+    Critters population;
+    population.open(device, root, nullptr, {}, 'G');
+    const auto golem = population.spawn(CombatantKind::Golem, {}, 0);
+    REQUIRE(golem);
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    population.hurt(*golem, hit);
+    population.update(2, 1.0f / 30, {}, false, {}, &enemies);
+    CHECK(population.positionOf(*golem).x > 0);
+    CHECK_FALSE(enemies.alive(*rat));
+    CHECK(enemies.dying(*rat));
+    CHECK(enemies.movementBodies().empty());
+    for (const auto& loss : enemies.takeLosses()) {
+        CHECK(loss.player == -1);
+    }
 }
 
 TEST_CASE("golem knockback resistance remains a family rule not a shared actor special case",

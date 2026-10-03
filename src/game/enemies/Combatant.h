@@ -89,7 +89,10 @@ public:
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     /** What of the level's stands where it walks this update. */
     void setObstacles(std::span<const CombatantObstacle> items) { m_obstacles = items; }
+    void setSwarm(std::span<const EnemyBody> bodies) { m_swarm = bodies; }
+    std::vector<CombatTrample> takeTramples() { return std::exchange(m_tramples, {}); }
     std::vector<CombatantRam> takeRams() { return std::exchange(m_rams, {}); }
+    std::vector<CombatPush> takePushes() { return std::exchange(m_pushes, {}); }
     /** Sets it walking the level's lookouts from the chained one nearest it, within ten
      * (CritterNewInst's round for a general); with `sight` over nought it takes only a player
      * whose target score is within it meanwhile (the placement's radius at the level's sight
@@ -329,6 +332,7 @@ private:
     static f32 targetClock(const Actor& critter);
     static void rememberDamage(f32& total, f32& lastTime, f32 now, f32 amount);
     bool blockedByItems(Actor& critter, const Vec3& to);
+    bool blockedBySwarm(Actor& critter, const Vec3& to);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
 
     Actor m_actor;
@@ -338,7 +342,10 @@ private:
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;
     std::span<const CombatantObstacle> m_obstacles;
+    std::span<const EnemyBody> m_swarm;
+    std::vector<CombatTrample> m_tramples;
     std::vector<CombatantRam> m_rams;
+    std::vector<CombatPush> m_pushes;
     char m_realm = 'G';
     std::vector<CombatBlow> m_blows;
     bool m_fullHarm = false;

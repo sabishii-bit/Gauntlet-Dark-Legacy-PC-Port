@@ -27,6 +27,11 @@ void Combatant::clear() {
     m_collision = nullptr;
     m_blows.clear();
     m_grabs.clear();
+    m_pushes.clear();
+    m_rams.clear();
+    m_tramples.clear();
+    m_swarm = {};
+    m_obstacles = {};
     m_losses.clear();
     m_cues.clear();
     m_spews.clear();

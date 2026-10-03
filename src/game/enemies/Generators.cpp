@@ -316,6 +316,26 @@ void Generators::updatePresence(Generator& generator, bool seen) const {
     generator.box.solid = generator.presence == Generator::Presence::Shown && generator.state > 0;
 }
 
+void Generators::applyBroodEvents(Enemies& enemies) {
+    for (const auto& event : enemies.takeGeneratorEvents()) {
+        if (event.generator < 0 || static_cast<usize>(event.generator) >= m_generators.size()) {
+            continue;
+        }
+        auto& generator = m_generators[static_cast<usize>(event.generator)];
+        switch (event.kind) {
+        case EnemyGeneratorEvent::Kind::Born: ++generator.living; break;
+        case EnemyGeneratorEvent::Kind::Detached:
+            generator.living = std::max(generator.living - 1, 0);
+            break;
+        case EnemyGeneratorEvent::Kind::PatrolHit: generator.algorithm = 0; break;
+        case EnemyGeneratorEvent::Kind::PatrolDetached:
+            generator.algorithm = 0;
+            generator.living = 0;
+            break;
+        }
+    }
+}
+
 void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                         std::span<const Obstacle> obstacles, bool timeStopped) {
     if (ticks <= 0) {
@@ -327,18 +347,9 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
                           m_view->sees(generator.position, generator.viewRadius);
         updatePresence(generator, seen);
     }
-    // enemy_dies calls uncouple_enemy before the death animation. Only living
-    // offspring occupy the generator's quota, not their lingering corpses.
-    std::vector<s32> out(m_generators.size(), 0);
-    for (s32 id = 0; id < Enemies::kMost; ++id) {
-        if (!enemies.alive(id)) {
-            continue;
-        }
-        const s32 generator = enemies.generatorOf(id);
-        if (generator >= 0 && static_cast<usize>(generator) < out.size()) {
-            ++out[static_cast<usize>(generator)];
-        }
-    }
+    // uncouple_enemy releases quota before the death animation. A patrol's
+    // departure resets the counter, which cannot be reconstructed by a census.
+    applyBroodEvents(enemies);
     for (usize g = 0; g < m_generators.size(); ++g) {
         Generator& generator = m_generators[g];
         const bool seen = generator.boss || !m_view.has_value() ||
@@ -354,7 +365,7 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         }
         // do_items checks the living brood quota before generate_now ticks its timer.
         // A full brood freezes the remaining wait; a death frees a slot, not a free birth.
-        if (out[g] >= generator.most) {
+        if (generator.living >= generator.most) {
             continue;
         }
         if (generator.countdown > 0) {
@@ -393,11 +404,13 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
                 birthObstacles.push_back(m_generators[other].box);
             }
         }
-        if (!enemies.spawn(spawn, players, birthObstacles).has_value()) {
+        const auto child = enemies.spawn(spawn, players, birthObstacles);
+        // Recycled slots release their previous generator even when birth fails.
+        applyBroodEvents(enemies);
+        if (!child.has_value()) {
             continue;
         }
         ++generator.bred;
-        ++out[g];
         // The next takes longer, the countdown stretched by a share that grows a birth at a
         // time and wraps.
         generator.countdown = static_cast<s32>(
