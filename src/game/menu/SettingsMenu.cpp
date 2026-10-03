@@ -27,11 +27,14 @@ std::string SettingsMenu::text(std::string_view id) const {
 }
 void SettingsMenu::open(const GameConfig& config, const StringTable* strings, Persist persist,
                         const TextPainter& painter, const MenuScreen& screen,
-                        MenuDefinition backdrop, Scope scope, PreviewAudio preview) {
+                        MenuDefinition backdrop, Scope scope, PreviewAudio preview,
+                        DisplayOptions display, std::function<DisplayOptions()> queryDisplay) {
     m_config = config;
     m_strings = strings;
     m_persist = std::move(persist);
     m_previewAudio = std::move(preview);
+    m_display = std::move(display);
+    m_queryDisplay = std::move(queryDisplay);
     m_audioDirty = false;
     m_scope = scope;
     m_painter = &painter;
@@ -41,7 +44,22 @@ void SettingsMenu::open(const GameConfig& config, const StringTable* strings, Pe
     m_notice.clear();
     rebuild();
 }
+std::vector<Extent2D> SettingsMenu::resolutions() const {
+    auto result = m_display.resolutions;
+    const Extent2D current{m_config.display.windowWidth, m_config.display.windowHeight};
+    if (m_config.display.windowMode == WindowMode::Windowed &&
+        std::ranges::find(result, current) == result.end()) {
+        result.push_back(current);
+    }
+    std::ranges::sort(result, [](Extent2D a, Extent2D b) {
+        return a.width == b.width ? a.height < b.height : a.width < b.width;
+    });
+    return result;
+}
 void SettingsMenu::rebuild(s32 selection) {
+    if (m_queryDisplay) {
+        m_display = m_queryDisplay();
+    }
     auto definition = m_backdrop;
     definition.items.clear();
     definition.body.clear();
@@ -91,6 +109,23 @@ void SettingsMenu::rebuild(s32 selection) {
             sampleLabel = "settings.msaa4";
         }
         add(text("settings.antialiasing") + ": " + text(sampleLabel), 2);
+        const bool borderless = m_config.display.windowMode == WindowMode::BorderlessFullscreen;
+        const auto size =
+            borderless && !m_display.desktop.isZero()
+                ? m_display.desktop
+                : Extent2D{m_config.display.windowWidth, m_config.display.windowHeight};
+        add(text("settings.resolution") + ": " + std::to_string(size.width) + " x " +
+                std::to_string(size.height),
+            3);
+        definition.items.back().enabled = !borderless && resolutions().size() > 1;
+        std::string_view modeLabel = "settings.windowed";
+        if (m_config.display.windowMode == WindowMode::Fullscreen) {
+            modeLabel = "settings.fullscreen";
+        } else if (borderless) {
+            modeLabel = "settings.borderless";
+        }
+        add(text("settings.windowMode") + ": " + text(modeLabel), 4);
+        definition.items.back().enabled = !m_display.desktop.isZero();
         constexpr s32 kMargin = 64;
         s32 longest = m_painter->measure(definition.title, 1);
         for (const auto& item : definition.items) {
@@ -182,6 +217,9 @@ void SettingsMenu::commit(GameConfig next) {
     rebuild(m_menu.selection());
 }
 void SettingsMenu::change(s32 direction) {
+    if (m_queryDisplay) {
+        m_display = m_queryDisplay();
+    }
     const s32 code = m_menu.definition().items[static_cast<usize>(m_menu.selection())].code;
     auto next = m_config;
     if (m_page == Page::Audio && code < 3) {
@@ -208,9 +246,37 @@ void SettingsMenu::change(s32 direction) {
             const auto rate = cycleChoice(kFrameRates, next.timing.gameplayFrameRate, direction);
             next.display.maxFrameRate = rate;
             next.timing.gameplayFrameRate = rate;
-        } else {
+        } else if (code == 2) {
             next.display.sampleCount =
                 cycleChoice(kSampleCounts, next.display.sampleCount, direction);
+        } else if (code == 3) {
+            if (next.display.windowMode == WindowMode::BorderlessFullscreen) {
+                return;
+            }
+            const auto choices = resolutions();
+            if (choices.empty()) {
+                return;
+            }
+            const auto it = std::ranges::find(
+                choices, Extent2D{next.display.windowWidth, next.display.windowHeight});
+            const auto count = static_cast<s32>(choices.size());
+            const auto index = it == choices.end() ? 0 : static_cast<s32>(it - choices.begin());
+            const auto size = choices[static_cast<usize>((index + direction + count) % count)];
+            next.display.windowWidth = size.width;
+            next.display.windowHeight = size.height;
+        } else if (code == 4) {
+            if (m_display.desktop.isZero()) {
+                return;
+            }
+            next.display.windowMode = static_cast<WindowMode>(
+                (static_cast<s32>(next.display.windowMode) + direction + 3) % 3);
+            if (next.display.windowMode == WindowMode::Fullscreen &&
+                std::ranges::find(m_display.resolutions,
+                                  Extent2D{next.display.windowWidth, next.display.windowHeight}) ==
+                    m_display.resolutions.end()) {
+                next.display.windowWidth = m_display.desktop.width;
+                next.display.windowHeight = m_display.desktop.height;
+            }
         }
     } else if (m_page == Page::Difficulty) {
         next.difficulty.level = DifficultyConfig::kNames[static_cast<usize>(code)];

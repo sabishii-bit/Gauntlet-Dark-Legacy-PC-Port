@@ -231,10 +231,10 @@ TEST_CASE("port graphics settings precede Controls and save discrete choices tra
     f.down();
     f.down();
     f.down();
-    REQUIRE(f.menu.menu().definition().items[3].text == "Graphics Settings");
+    REQUIRE(f.menu.menu().definition().items[3].text == "Video");
     f.select();
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
-    REQUIRE(f.menu.menu().definition().items.size() == 3);
+    REQUIRE(f.menu.menu().definition().items.size() == 5);
     CHECK(f.menu.menu().definition().items[0].text == "V-Sync: On");
     CHECK(f.menu.menu().definition().items[1].text == "FPS: 60");
     CHECK(f.menu.menu().definition().items[2].text == "Anti-Aliasing: Off");
@@ -276,6 +276,73 @@ TEST_CASE("port graphics settings precede Controls and save discrete choices tra
     f.back();
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK(f.menu.menu().selection() == 3);
+}
+
+TEST_CASE("Video chooses supported resolutions and borderless uses the desktop without losing the "
+          "preference",
+          "[settings][graphics]") {
+    Fixture f;
+    f.menu.open(f.config, &f.strings,
+                [&](const auto& next) {
+                    if (f.fail) {
+                        return false;
+                    }
+                    f.config = next;
+                    return true;
+                },
+                f.painter, {}, {}, SettingsMenu::Scope::Level, {},
+                {{1920, 1080}, {{1280, 720}, {1920, 1080}}});
+    f.down();
+    f.select();
+    REQUIRE(f.menu.menu().definition().title == "Video");
+    f.down();
+    f.down();
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 3);
+    f.right();
+    CHECK(f.config.display.windowWidth == 1920);
+    CHECK(f.config.display.windowHeight == 1080);
+    f.fail = true;
+    f.right();
+    CHECK(f.config.display.windowWidth == 1920);
+    f.fail = false;
+    f.right();
+    CHECK(f.config.display.windowWidth == 1280);
+    CHECK(f.config.display.windowHeight == 720);
+    f.down();
+    f.right();
+    CHECK(f.config.display.windowMode == WindowMode::Fullscreen);
+    f.right();
+    CHECK(f.config.display.windowMode == WindowMode::BorderlessFullscreen);
+    CHECK(f.menu.menu().definition().items[3].text == "Resolution: 1920 x 1080");
+    CHECK_FALSE(f.menu.menu().definition().items[3].enabled);
+    CHECK(f.config.display.windowWidth == 1280);
+    f.right();
+    CHECK(f.config.display.windowMode == WindowMode::Windowed);
+    CHECK(f.menu.menu().definition().items[3].text == "Resolution: 1280 x 720");
+    CHECK(f.menu.menu().definition().items[3].enabled);
+}
+
+TEST_CASE("fullscreen replaces a custom window size with an advertised desktop mode",
+          "[settings][graphics]") {
+    Fixture f;
+    f.menu.open(f.config, &f.strings,
+                [&](const auto& next) {
+                    f.config = next;
+                    return true;
+                },
+                f.painter, {}, {}, SettingsMenu::Scope::Level, {}, {{1920, 1080}, {{1920, 1080}}});
+    f.down();
+    f.select();
+    f.down();
+    f.down();
+    f.down();
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 4);
+    f.right();
+    CHECK(f.config.display.windowMode == WindowMode::Fullscreen);
+    CHECK(f.config.display.windowWidth == 1920);
+    CHECK(f.config.display.windowHeight == 1080);
 }
 
 TEST_CASE("graphics page fits parchment and returns to its entry in every menu scope",

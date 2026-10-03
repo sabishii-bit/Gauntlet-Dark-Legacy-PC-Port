@@ -10,9 +10,47 @@
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
+namespace {
+// External relocations larger than a normal pickup/platform tick are visual cuts.
+constexpr f32 kPresentationCutDistance = 32.0f;
+
+Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 blend) {
+    Mat3 from{previous};
+    Mat3 to{current};
+    Vec3 fromScale{0};
+    Vec3 toScale{0};
+    for (s32 axis = 0; axis < 3; ++axis) {
+        fromScale[axis] = glm::length(from[axis]);
+        toScale[axis] = glm::length(to[axis]);
+        if (fromScale[axis] < 1e-6f || toScale[axis] < 1e-6f) {
+            return current;
+        }
+        from[axis] /= fromScale[axis];
+        to[axis] /= toScale[axis];
+    }
+    const auto orthogonal = [](const Mat3& basis) {
+        return std::abs(glm::determinant(basis) - 1.0f) < 1e-3f &&
+               std::abs(glm::dot(basis[0], basis[1])) < 1e-3f &&
+               std::abs(glm::dot(basis[0], basis[2])) < 1e-3f &&
+               std::abs(glm::dot(basis[1], basis[2])) < 1e-3f;
+    };
+    // A sheared or reflected socket keeps its authored basis, not an unrelated rotation.
+    Mat4 result = current;
+    if (orthogonal(from) && orthogonal(to)) {
+        result = glm::mat4_cast(glm::slerp(glm::quat_cast(from), glm::quat_cast(to), blend));
+        result = glm::scale(result, glm::mix(fromScale, toScale, blend));
+    }
+    result[3] = glm::mix(previous[3], current[3], blend);
+    return result;
+}
+} // namespace
+
 void PlacedItems::attach(usize index, const Mat4& transform, bool contained) {
     if (index < m_items.size()) {
         Item& item = m_items[index];
+        if (item.contained != contained) {
+            item.presentationCaptured = false;
+        }
         item.floor.reset();
         item.transform = transform;
         item.position = Vec3{transform[3]};
@@ -167,6 +205,8 @@ void PlacedItems::clear() {
     m_frameRemainder = 0.0f;
     m_revealTime = 0.0f;
     m_revealing = false;
+    m_capturePending = false;
+    m_burstsAdvanced = false;
 }
 
 usize PlacedItems::visibleCount() const {
@@ -180,7 +220,11 @@ usize PlacedItems::visibleCount() const {
 void PlacedItems::setPlayerCount(s32 players) {
     m_players = players;
     for (Item& item : m_items) {
+        const bool wasVisible = item.visible;
         item.visible = !item.taken && !item.carried && item.shownTo(players);
+        if (item.visible != wasVisible) {
+            item.presentationCaptured = false;
+        }
     }
 }
 
@@ -290,6 +334,7 @@ bool PlacedItems::replaceFigure(RenderDevice& device, Item& item, std::string_vi
     item.figure = replacement.figure;
     item.archive = replacement.archive;
     item.player = replacement.player;
+    item.presentationCaptured = false;
     return true;
 }
 
@@ -512,6 +557,7 @@ bool PlacedItems::release(usize index, const Vec3& position, const Vec3& velocit
     }
     Item& item = m_items[index];
     item.carried = false;
+    item.presentationCaptured = false;
     item.floor.reset();
     item.visible = !item.taken && item.shownTo(m_players);
     item.position = position;
@@ -711,7 +757,30 @@ void PlacedItems::fly(Item& item, f32 seconds) {
     }
 }
 
+void PlacedItems::capturePresentation() {
+    m_capturePending = true;
+    m_burstsAdvanced = false;
+    for (Item& item : m_items) {
+        item.previousTransform = item.transform;
+        item.previousFrame = item.player.presentationFrame();
+        item.previousGeneration = item.player.generation();
+        item.previousAlpha = item.alpha;
+        item.presentationCaptured = item.visible;
+    }
+}
+
+void PlacedItems::snapPresentation() {
+    for (Item& item : m_items) {
+        item.presentationCaptured = false;
+    }
+}
+
 void PlacedItems::update(f32 seconds) {
+    if (!m_capturePending) {
+        capturePresentation();
+    }
+    m_capturePending = false;
+    m_burstsAdvanced = seconds > 0;
     syncFloors();
     // The archives' texture animations step once a game frame: the sheen on the crystals.
     m_frameRemainder += seconds * kFrameRate;
@@ -777,16 +846,35 @@ void PlacedItems::update(f32 seconds) {
 }
 
 void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                       const CameraFrame* camera, TreeModel::Pass pass) const {
+                       const CameraFrame* camera, TreeModel::Pass pass, f32 frameBlend) const {
+    const f32 blend = std::clamp(frameBlend, 0.0f, 1.0f);
     for (const Item& item : m_items) {
         if (item.visible) {
-            item.model.draw(device, clip, item.transform, lighting, item.pose.matrices(), camera,
-                            item.alpha, pass);
+            const TreePose* pose = &item.pose;
+            Mat4 transform = item.transform;
+            f32 alpha = item.alpha;
+            if (frameBlend >= 0 && item.presentationCaptured &&
+                glm::distance(Vec3{item.previousTransform[3]}, item.position) <=
+                    kPresentationCutDistance) {
+                transform = blendPlacement(item.previousTransform, item.transform, blend);
+                alpha = glm::mix(item.previousAlpha, item.alpha, blend);
+                if (item.figure != nullptr && item.player.playing()) {
+                    const f32 frame =
+                        item.previousGeneration == item.player.generation()
+                            ? glm::mix(item.previousFrame, item.player.presentationFrame(), blend)
+                            : item.player.presentationFrame();
+                    item.presentationPose.evaluate(*item.figure, item.player.sequence(), frame,
+                                                   false, true);
+                    pose = &item.presentationPose;
+                }
+            }
+            item.model.draw(device, clip, transform, lighting, pose->matrices(), camera, alpha,
+                            pass);
         }
     }
     if (pass != TreeModel::Pass::DepthWriting) {
         const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
-        m_bursts.draw(device, clip, frame.right, frame.up);
+        m_bursts.draw(device, clip, frame.right, frame.up, m_burstsAdvanced ? frameBlend : -1.0f);
     }
 }
 
@@ -796,6 +884,7 @@ void PlacedItems::hideCrystals() {
     for (Item& item : m_items) {
         if (item.subtype == ItemInfo::kCrystal) {
             item.alpha = 0.0f;
+            item.presentationCaptured = false;
             m_revealing = true;
         }
     }

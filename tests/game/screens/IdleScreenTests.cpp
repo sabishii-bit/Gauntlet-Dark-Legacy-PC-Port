@@ -1,4 +1,5 @@
 #include <cmath>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -117,6 +118,29 @@ TEST_CASE("screensaver draws the four authored weapon trees and their fire",
     }
     screen.render(device, Mat4{1.0f}, 640, 480, glm::radians(60.0f));
     REQUIRE_FALSE(device.draws.empty());
+    const auto& first = screen.effects().effect(0);
+    const auto lived = first.lived;
+    const auto frame = first.player.frame();
+    const auto position = first.position;
+    const auto drawPositions = [&](f32 blend) {
+        device.draws.clear();
+        screen.render(device, Mat4{1}, 640, 480, glm::radians(60.0f), blend);
+        std::vector<Vec3> positions;
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                positions.push_back(vertex.position);
+            }
+        }
+        return positions;
+    };
+    const auto quarter = drawPositions(0.25f);
+    const auto threeQuarters = drawPositions(0.75f);
+    REQUIRE(quarter.size() == threeQuarters.size());
+    CHECK(quarter != threeQuarters);
+    CHECK(drawPositions(0.25f) == quarter);
+    CHECK(first.lived == lived);
+    CHECK(first.player.frame() == frame);
+    CHECK(first.position == position);
     screen.close();
     REQUIRE_FALSE(screen.isOpen());
     REQUIRE(screen.effects().count() == 0);

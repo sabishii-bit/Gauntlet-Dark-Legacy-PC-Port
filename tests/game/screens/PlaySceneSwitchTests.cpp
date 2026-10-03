@@ -187,12 +187,15 @@ TEST_CASE("Temple switch shots letterbox the target while combat and controls wa
                     std::ranges::all_of(draw.vertices,
                                         [](const auto& v) { return v.color == Color::black(); })) {
                     for (const auto& vertex : draw.vertices) {
-                        corners.emplace_back(vertex.position.x, vertex.position.y);
+                        const Vec4 clip = draw.transform * Vec4{vertex.position, 1};
+                        corners.emplace_back(clip.x / clip.w, clip.y / clip.w);
                     }
                 }
             }
-            // Both quads can share one canvas batch; inspect their own vertices.
-            for (const Vec2 expected : {Vec2{0, 0}, Vec2{512, 48}, Vec2{0, 304}, Vec2{512, 384}}) {
+            // Widescreen bands are submitted in clip space, not virtual UI pixels.
+            // Check actual projected coverage regardless of the canvas batching path.
+            for (const Vec2 expected :
+                 {Vec2{-1, -1}, Vec2{1, -0.75f}, Vec2{-1, 304.0f / 192.0f - 1.0f}, Vec2{1, 1}}) {
                 CHECK(std::ranges::any_of(corners, [expected](const Vec2& corner) {
                     return corner.x == Approx(expected.x) && corner.y == Approx(expected.y);
                 }));

@@ -61,7 +61,8 @@ public:
      * bringing down the pieces only those start, the same way. */
     std::vector<FallingCue> shoot(const Vec3& position, f32 radius);
     void update(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 presentationAlpha = -1.0f) const;
     usize size() const { return m_pieces.size(); }
     const Piece& piece(usize index) const { return m_pieces.at(index); }
 
@@ -79,6 +80,7 @@ private:
     std::string_view m_breakSound;
     std::string_view m_leafSound;
     f32 m_remainder = 0.0f;
+    f32 m_updateSeconds = 0.0f;
     f32 m_bottom = 0.0f;
 };
 } // namespace gdl::game

@@ -69,6 +69,12 @@ void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
     m_textures.bind(weapons.trees.textureAnimations(), weapons.textures, device);
 }
 
+void LevelArrivalPresentation::capturePresentation() {
+    for (Spawn& spawn : m_spawns) {
+        spawn.presentationAdvanced = false;
+    }
+}
+
 void LevelArrivalPresentation::animate(f32 seconds) {
     if (!active()) {
         return;
@@ -80,6 +86,9 @@ void LevelArrivalPresentation::animate(f32 seconds) {
         m_textures.step(static_cast<u32>(whole));
     }
     for (Spawn& spawn : m_spawns) {
+        spawn.previousFrame = spawn.player.presentationFrame();
+        spawn.previousGeneration = spawn.player.generation();
+        spawn.presentationAdvanced = seconds > 0 && spawn.player.playing();
         if (spawn.player.playing() && !spawn.player.finished()) {
             spawn.player.advance(seconds, false);
             spawn.pose.evaluate(*spawn.tree, spawn.player.sequence(), spawn.player.frame());
@@ -112,13 +121,23 @@ void LevelArrivalPresentation::advance(s32 ticks, bool skip, const Vec3& followP
 }
 
 void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& clip,
-                                           const WorldLighting& lighting) const {
+                                           const WorldLighting& lighting, f32 frameBlend) const {
     if (m_ticks <= 0) {
         return;
     }
     for (const Spawn& spawn : m_spawns) {
+        TreePose visualPose;
+        const TreePose* pose = &spawn.pose;
+        if (frameBlend >= 0 && spawn.presentationAdvanced) {
+            const f32 frame = spawn.previousGeneration == spawn.player.generation()
+                                  ? std::lerp(spawn.previousFrame, spawn.player.presentationFrame(),
+                                              std::clamp(frameBlend, 0.0f, 1.0f))
+                                  : spawn.player.presentationFrame();
+            visualPose.evaluate(*spawn.tree, spawn.player.sequence(), frame, false, true);
+            pose = &visualPose;
+        }
         spawn.model.draw(device, clip, glm::translate(Mat4{1.0f}, spawn.position), lighting,
-                         spawn.pose.matrices());
+                         pose->matrices());
     }
 }
 

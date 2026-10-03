@@ -61,6 +61,7 @@ void FallingScenery::clear() {
     m_breakSound = {};
     m_leafSound = {};
     m_remainder = 0.0f;
+    m_updateSeconds = 0.0f;
     m_bottom = 0.0f;
 }
 
@@ -148,6 +149,7 @@ std::vector<FallingCue> FallingScenery::shoot(const Vec3& position, f32 radius) 
 }
 
 void FallingScenery::update(f32 seconds) {
+    m_updateSeconds = seconds;
     for (s32 frame = FallingPiece::framesDue(m_remainder, seconds); frame > 0; --frame) {
         for (Piece& piece : m_pieces) {
             if (piece.started) {
@@ -157,12 +159,16 @@ void FallingScenery::update(f32 seconds) {
     }
 }
 
-void FallingScenery::draw(RenderDevice& device, const Mat4& clip,
-                          const WorldLighting& lighting) const {
+void FallingScenery::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                          f32 presentationAlpha) const {
+    const f32 alpha =
+        FallingPiece::presentationFraction(m_remainder, m_updateSeconds, presentationAlpha);
     for (const Piece& piece : m_pieces) {
         if (piece.shown && piece.motion.visible) {
             piece.model.draw(device, clip,
-                             itemPlacement(piece.motion.position, piece.motion.rotation), lighting);
+                             itemPlacement(piece.motion.presentedPosition(alpha),
+                                           piece.motion.presentedRotation(alpha)),
+                             lighting);
         }
     }
 }

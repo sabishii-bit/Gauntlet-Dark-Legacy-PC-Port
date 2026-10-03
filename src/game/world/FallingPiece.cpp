@@ -1,5 +1,6 @@
 #include "game/world/FallingPiece.h"
 
+#include <algorithm>
 #include <array>
 
 #include "engine/core/Types.h"
@@ -37,9 +38,27 @@ s32 FallingPiece::framesDue(f32& remainder, f32 seconds) {
     return frames;
 }
 
+f32 FallingPiece::presentationFraction(f32 remainder, f32 updateSeconds, f32 renderAlpha) {
+    if (renderAlpha < 0.0f) {
+        return 1.0f;
+    }
+    return std::clamp((remainder + std::clamp(renderAlpha, 0.0f, 1.0f) * updateSeconds) / kStep,
+                      0.0f, 1.0f);
+}
+
+Vec3 FallingPiece::presentedPosition(f32 alpha) const {
+    return glm::mix(m_previousPosition, position, std::clamp(alpha, 0.0f, 1.0f));
+}
+
+Vec3 FallingPiece::presentedRotation(f32 alpha) const {
+    return glm::mix(m_previousRotation, rotation, std::clamp(alpha, 0.0f, 1.0f));
+}
+
 void FallingPiece::place(const Vec3& where, const Vec3& angles, usize index) {
     position = where;
     rotation = angles;
+    m_previousPosition = position;
+    m_previousRotation = rotation;
     velocity = Vec3{0.0f};
     instance = index;
     visible = true;
@@ -49,6 +68,8 @@ void FallingPiece::advance(const FallingProfile& profile, f32 bottom) {
     if (!visible) {
         return;
     }
+    m_previousPosition = position;
+    m_previousRotation = rotation;
     velocity.y -= profile.gravityStep;
     rotation.x += profile.spin * kSpinDirections[instance & 7U] * kStep;
     rotation.z += profile.spin * kSpinDirections[(~instance) & 7U] * kStep;

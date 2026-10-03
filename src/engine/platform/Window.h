@@ -7,6 +7,7 @@
 
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
+#include "engine/platform/DisplayMode.h"
 #include "engine/platform/Input.h"
 #include "engine/render/Image.h"
 #include "engine/render/RenderTypes.h"
@@ -19,6 +20,7 @@ struct WindowDesc {
     u32 width = 1280;
     u32 height = 896;
     bool resizable = true;
+    WindowMode mode = WindowMode::Windowed;
 };
 
 /** Operating-system window, its input state, and the Vulkan surface glue. */
@@ -38,6 +40,11 @@ public:
 
     /** Current display refresh rate, following the window across monitors; 60 if unavailable. */
     virtual u32 refreshRate() const = 0;
+
+    virtual DisplayOptions displayOptions() const = 0;
+    virtual WindowMode windowMode() const = 0;
+    /** Apply a supported display mode without recreating the rendering surface. */
+    virtual bool setDisplayMode(WindowMode mode, Extent2D resolution) = 0;
 
     /** Blocks while the framebuffer is zero-sized. */
     virtual void waitWhileMinimized() = 0;

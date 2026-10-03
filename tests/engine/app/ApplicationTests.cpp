@@ -21,6 +21,7 @@ class ProbeApplication final : public Application {
 public:
     using Application::Application;
     bool changePresentation = false;
+    bool changeWindow = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
@@ -36,6 +37,7 @@ protected:
         REQUIRE(m_texture->width() == 2);
         REQUIRE(m_texture->height() == 2);
         m_streamed = renderDevice().createTexture(TextureDesc{8, 8}, m_image.pixels);
+        m_desktop = window().displayOptions().desktop;
     }
 
     void onUpdate(f64 deltaSeconds) override {
@@ -44,6 +46,24 @@ protected:
         ++m_updates;
         m_elapsed += deltaSeconds;
         m_longestUpdate = std::max(m_longestUpdate, deltaSeconds);
+        if (changeWindow && m_windowStep < 4 && m_renderedFrames >= (m_windowStep + 1) * 3) {
+            renderDevice().waitIdle();
+            if (m_windowStep == 0) {
+                REQUIRE(window().setDisplayMode(WindowMode::Windowed, {480, 320}));
+                CHECK(window().windowMode() == WindowMode::Windowed);
+            } else if (m_windowStep == 1) {
+                REQUIRE(window().setDisplayMode(WindowMode::BorderlessFullscreen, {480, 320}));
+                CHECK(window().windowMode() == WindowMode::BorderlessFullscreen);
+            } else if (m_windowStep == 2) {
+                REQUIRE(window().setDisplayMode(WindowMode::Fullscreen, m_desktop));
+                CHECK(window().windowMode() == WindowMode::Fullscreen);
+            } else {
+                REQUIRE(window().setDisplayMode(WindowMode::Windowed, {320, 240}));
+                CHECK(window().windowMode() == WindowMode::Windowed);
+            }
+            CHECK(window().displayOptions().desktop == m_desktop);
+            ++m_windowStep;
+        }
         if (changePresentation) {
             constexpr std::array<u32, 4> kSamples{1, 2, 4, 1};
             m_requestedSamples = kSamples[static_cast<usize>(m_renderedFrames) % kSamples.size()];
@@ -94,6 +114,11 @@ protected:
     }
 
     void onShutdown() override {
+        if (changeWindow) {
+            CHECK(m_windowStep == 4);
+            CHECK_FALSE(window().setDisplayMode(WindowMode::Fullscreen, {1, 1}));
+            CHECK_FALSE(window().setDisplayMode(WindowMode::Windowed, {0, 0}));
+        }
         m_texture.reset();
         m_streamed.reset();
     }
@@ -109,6 +134,8 @@ private:
     f64 m_elapsed = 0;
     f64 m_longestUpdate = 0;
     u32 m_requestedSamples = 1;
+    Extent2D m_desktop;
+    s32 m_windowStep = 0;
 };
 
 TEST_CASE("the application brings up a window and GPU and renders frames", "[gpu][app]") {
@@ -140,6 +167,21 @@ TEST_CASE("the application renders between fixed-rate simulation updates", "[gpu
     CHECK(app.elapsed() >= 1.0 / 30);
     CHECK(app.longestUpdate() <= 1.0 / 30);
     CHECK(app.sawInput());
+}
+
+TEST_CASE("Video mode changes preserve the Vulkan surface and desktop mode",
+          "[gpu][app][graphics]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl Video mode test";
+    desc.enableValidation = true;
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 18;
+    desc.maxFrameRate = 60;
+    ProbeApplication app(std::move(desc));
+    app.changeWindow = true;
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 18);
 }
 
 TEST_CASE("presentation changes rebuild multisampled attachments without losing textures",

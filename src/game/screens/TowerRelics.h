@@ -41,13 +41,15 @@ public:
     void begin(std::span<const Relics> party, const MessageTable& strings);
     void bind(RenderDevice& device, LevelWorld& world, const Vec3& partyCentre);
     void clear();
+    /** Start a scene tick even when a cutscene will hold this presentation. */
+    void capturePresentation();
     Cue update(s32 ticks, f32 seconds, bool voicePlaying);
     void animate(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const WorldCamera& camera) const;
+              const WorldCamera& camera, f32 frameBlend = -1.0f) const;
     /** Additive apparition: submit after the world's translucent scenery, with depth testing. */
     void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                    const WorldCamera& camera) const;
+                    const WorldCamera& camera, f32 frameBlend = -1.0f) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, f32 width, f32 height) const;
     bool active() const { return m_current < m_entries.size(); }
     const Entry* current() const { return active() ? &m_entries[m_current] : nullptr; }

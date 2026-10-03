@@ -704,6 +704,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     PartyFigures::snapshot(m_players);
     m_effects.capturePresentation();
     m_world->capturePresentation();
+    m_towerRelics.capturePresentation();
+    m_arrival.capturePresentation();
+    m_bossSequence.capturePresentation();
     m_opponentsAdvanced = false;
     m_projectilesAdvanced = false;
     m_previousCamera = scriptedCamera() ? std::nullopt : std::optional{viewCamera()};
@@ -1148,8 +1151,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
                                            frameProjection);
     const CameraFrame companionCamera = CameraFrame::of(camera);
-    m_world->drawOpaque(device, clip, camera);
-    m_towerRelics.draw(device, clip, m_world->lighting(), camera);
+    m_world->drawOpaque(device, clip, camera, effectBlend);
+    m_towerRelics.draw(device, clip, m_world->lighting(), camera, effectBlend);
     m_sumner.draw(device, clip, m_world->lighting());
     m_figures.draw(device, m_players, figureScene(frameBlend), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting(), &companionCamera,
@@ -1178,13 +1181,14 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_promotion.draw(device, clip, m_world->lighting());
     }
     if (relicCeremonyOn()) {
-        m_towerRelics.drawWizard(device, clip, m_world->lighting(), camera);
+        m_towerRelics.drawWizard(device, clip, m_world->lighting(), camera, effectBlend);
     }
-    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
+    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera,
+                                        effectBlend);
     m_opponents.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera, projectileBlend);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera, effectBlend);
-    m_arrival.drawEffects(device, clip, m_world->lighting());
+    m_arrival.drawEffects(device, clip, m_world->lighting(), effectBlend);
     if (config.camera.compass && !optionsOpen && !m_gameOver.active()) {
         m_compass.draw(device, clip, camera, config.horizontalFovRadians(),
                        frameWidth / frameHeight, m_world->lighting());

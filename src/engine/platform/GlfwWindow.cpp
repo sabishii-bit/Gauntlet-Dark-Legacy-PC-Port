@@ -137,6 +137,11 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
     glfwSetKeyCallback(m_window, &GlfwWindow::keyCallback);
 
+    if (desc.mode != WindowMode::Windowed &&
+        !setDisplayMode(desc.mode, {desc.width, desc.height})) {
+        log::warn("Saved display mode unavailable; retaining a window");
+    }
+
     log::info("Window created: {}x{} \"{}\"", desc.width, desc.height, desc.title);
 }
 
@@ -232,6 +237,160 @@ Extent2D GlfwWindow::framebufferSize() const {
     s32 height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
     return Extent2D{static_cast<u32>(std::max(width, 0)), static_cast<u32>(std::max(height, 0))};
+}
+
+GLFWmonitor* GlfwWindow::activeMonitor() const {
+    if (auto* monitor = glfwGetWindowMonitor(m_window)) {
+        return monitor;
+    }
+    auto* selected = glfwGetPrimaryMonitor();
+    if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) {
+        return selected;
+    }
+    s32 x = 0;
+    s32 y = 0;
+    s32 width = 0;
+    s32 height = 0;
+    glfwGetWindowPos(m_window, &x, &y);
+    glfwGetWindowSize(m_window, &width, &height);
+    s32 count = 0;
+    auto** monitors = glfwGetMonitors(&count);
+    s64 bestArea = 0;
+    for (auto* monitor : std::span(monitors, static_cast<usize>(count))) {
+        const auto* mode = glfwGetVideoMode(monitor);
+        if (mode == nullptr) {
+            continue;
+        }
+        s32 mx = 0;
+        s32 my = 0;
+        glfwGetMonitorPos(monitor, &mx, &my);
+        const auto overlapWidth =
+            std::max(0, std::min(x + width, mx + mode->width) - std::max(x, mx));
+        const auto overlapHeight =
+            std::max(0, std::min(y + height, my + mode->height) - std::max(y, my));
+        const auto area = static_cast<s64>(overlapWidth) * overlapHeight;
+        if (area > bestArea) {
+            bestArea = area;
+            selected = monitor;
+        }
+    }
+    return selected;
+}
+
+DisplayOptions GlfwWindow::displayOptions() const {
+    DisplayOptions result;
+    auto* monitor = activeMonitor();
+    if (monitor == nullptr) {
+        return result;
+    }
+    if (const auto* mode = glfwGetVideoMode(monitor)) {
+        result.desktop = {static_cast<u32>(mode->width), static_cast<u32>(mode->height)};
+    }
+    if (glfwGetWindowMonitor(m_window) == m_desktopMonitor && monitor == m_desktopMonitor) {
+        result.desktop = m_desktopSize;
+    }
+    s32 count = 0;
+    const auto* modes = glfwGetVideoModes(monitor, &count);
+    const auto* current = glfwGetVideoMode(monitor);
+    auto refresh = current != nullptr ? current->refreshRate : 60;
+    if (glfwGetWindowMonitor(m_window) == m_desktopMonitor && monitor == m_desktopMonitor) {
+        refresh = m_desktopRefresh;
+    }
+    for (const auto& mode : std::span(modes, static_cast<usize>(count))) {
+        if (mode.refreshRate > refresh) {
+            continue;
+        }
+        const Extent2D size{static_cast<u32>(mode.width), static_cast<u32>(mode.height)};
+        if (std::ranges::find(result.resolutions, size) == result.resolutions.end()) {
+            result.resolutions.push_back(size);
+        }
+    }
+    std::ranges::sort(result.resolutions, [](Extent2D a, Extent2D b) {
+        return a.width == b.width ? a.height < b.height : a.width < b.width;
+    });
+    return result;
+}
+
+WindowMode GlfwWindow::windowMode() const {
+    if (glfwGetWindowMonitor(m_window) == nullptr) {
+        return WindowMode::Windowed;
+    }
+    return glfwGetWindowAttrib(m_window, GLFW_AUTO_ICONIFY) == GLFW_TRUE
+               ? WindowMode::Fullscreen
+               : WindowMode::BorderlessFullscreen;
+}
+
+bool GlfwWindow::setDisplayMode(WindowMode mode, Extent2D resolution) {
+    // GLFW takes signed dimensions; reject invalid persisted values before conversion.
+    if (resolution.isZero() || resolution.width > 32768 || resolution.height > 32768) {
+        return false;
+    }
+    auto* monitor = activeMonitor();
+    const auto options = displayOptions();
+    if (mode != WindowMode::Windowed && (monitor == nullptr || options.desktop.isZero())) {
+        return false;
+    }
+    if (mode == WindowMode::Fullscreen &&
+        std::ranges::find(options.resolutions, resolution) == options.resolutions.end()) {
+        return false;
+    }
+    const bool attached = glfwGetWindowMonitor(m_window) != nullptr;
+    if (!attached) {
+        if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) {
+            glfwGetWindowPos(m_window, &m_windowX, &m_windowY);
+        }
+        if (monitor != nullptr) {
+            m_desktopMonitor = monitor;
+            m_desktopSize = options.desktop;
+            if (const auto* desktop = glfwGetVideoMode(monitor)) {
+                m_desktopRefresh = desktop->refreshRate;
+            }
+        }
+    }
+    if (mode == WindowMode::BorderlessFullscreen) {
+        resolution = options.desktop;
+    }
+    s32 refresh = m_desktopRefresh;
+    if (mode == WindowMode::Fullscreen) {
+        s32 count = 0;
+        const auto* modes = glfwGetVideoModes(monitor, &count);
+        refresh = 0;
+        for (const auto& candidate : std::span(modes, static_cast<usize>(count))) {
+            if (candidate.width == static_cast<s32>(resolution.width) &&
+                candidate.height == static_cast<s32>(resolution.height) &&
+                candidate.refreshRate <= m_desktopRefresh) {
+                refresh = std::max(refresh, candidate.refreshRate);
+            }
+        }
+        if (refresh == 0) {
+            return false;
+        }
+    }
+    auto* previousMonitor = glfwGetWindowMonitor(m_window);
+    s32 previousWidth = 0;
+    s32 previousHeight = 0;
+    glfwGetWindowSize(m_window, &previousWidth, &previousHeight);
+    const auto* previousMode =
+        previousMonitor != nullptr ? glfwGetVideoMode(previousMonitor) : nullptr;
+    const s32 previousRefresh =
+        previousMode != nullptr ? previousMode->refreshRate : GLFW_DONT_CARE;
+    const s32 previousIconify = glfwGetWindowAttrib(m_window, GLFW_AUTO_ICONIFY);
+    glfwGetError(nullptr); // Discard earlier unrelated input/monitor errors.
+    glfwSetWindowAttrib(m_window, GLFW_AUTO_ICONIFY,
+                        mode == WindowMode::Fullscreen ? GLFW_TRUE : GLFW_FALSE);
+    // A monitor-attached window at the desktop mode is GLFW's borderless fullscreen.
+    // Never select a higher refresh rate just because a resolution offers one.
+    glfwSetWindowMonitor(m_window, mode == WindowMode::Windowed ? nullptr : monitor, m_windowX,
+                         m_windowY, static_cast<s32>(resolution.width),
+                         static_cast<s32>(resolution.height), refresh);
+    if (glfwGetError(nullptr) == GLFW_NO_ERROR) {
+        return true;
+    }
+    // Restore the actual previous window (including a manually resized client area).
+    glfwSetWindowAttrib(m_window, GLFW_AUTO_ICONIFY, previousIconify);
+    glfwSetWindowMonitor(m_window, previousMonitor, m_windowX, m_windowY, previousWidth,
+                         previousHeight, previousRefresh);
+    return false;
 }
 
 u32 GlfwWindow::refreshRate() const {

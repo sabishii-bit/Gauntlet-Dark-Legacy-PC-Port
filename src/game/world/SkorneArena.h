@@ -20,7 +20,8 @@ public:
     void clear();
     void cue(const Vec3& boss);
     void update(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 presentationAlpha = -1.0f) const;
     usize size() const { return m_rocks.size(); }
     s32 phase() const { return m_phase; }
     Vec3 position(usize index) const { return m_rocks.at(index).motion.position; }
@@ -35,6 +36,7 @@ private:
     std::mt19937 m_random{0x534b4f52U};
     s32 m_phase = 0;
     f32 m_remainder = 0;
+    f32 m_updateSeconds = 0;
     f32 m_bottom = 0;
 };
 } // namespace gdl::game

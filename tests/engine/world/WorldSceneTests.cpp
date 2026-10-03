@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -439,6 +440,42 @@ TEST_CASE("point lights brighten the baked geometry they reach, prelit or not",
     CHECK(reddest() > plain);
     f.scene.setPointLights({});
     CHECK(reddest() == plain);
+}
+
+TEST_CASE("moving world geometry interpolates its local hierarchy without moving collision",
+          "[world][scene][presentation]") {
+    Fixture f("world-scene-presentation");
+    REQUIRE(f.build());
+    f.scene.capturePresentation();
+    const Mat4 current = glm::rotate(glm::translate(Mat4{1}, Vec3{6, 2, 50}), 1.0f, Vec3{0, 1, 0});
+    f.scene.setObjectTransform(8, current);
+    const Mat4 native = f.scene.worldTransform(10);
+    for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.5f}) {
+        f.device.draws.clear();
+        f.scene.draw(f.device, Mat4{1}, CameraFrame::at(Vec3{0}), alpha);
+        REQUIRE(f.device.draws.size() == 8);
+        const Vec3 vertex = f.device.draws[2].vertices[0].position;
+        CHECK(vertex.x == Approx(10 + 6 * alpha + std::cos(alpha)).margin(1e-5f));
+        CHECK(vertex.y == Approx(2 * alpha));
+        CHECK(vertex.z == Approx(50 - std::sin(alpha)).margin(1e-5f));
+        CHECK(f.scene.worldTransform(10) == native);
+    }
+    f.device.draws.clear();
+    f.scene.draw(f.device, Mat4{1}, CameraFrame::at(Vec3{0}));
+    CHECK(f.device.draws[2].vertices[0].position == Vec3{native * Vec4{1, 0, 0, 1}});
+
+    // An explicit teleport starts at its destination even before the next snapshot.
+    const Mat4 teleported = glm::translate(Mat4{1}, Vec3{80, 5, 50});
+    f.scene.setObjectTransform(8, teleported, true);
+    f.device.draws.clear();
+    f.scene.draw(f.device, Mat4{1}, CameraFrame::at(Vec3{0}), 0.0f);
+    CHECK(f.device.draws[2].vertices[0].position == Vec3{91, 5, 50});
+    f.scene.capturePresentation();
+    for (const f32 alpha : {0.0f, 0.5f, 1.0f}) {
+        f.device.draws.clear();
+        f.scene.draw(f.device, Mat4{1}, CameraFrame::at(Vec3{0}), alpha);
+        CHECK(f.device.draws[2].vertices[0].position == Vec3{91, 5, 50});
+    }
 }
 
 TEST_CASE("an external texture nobody lends is drawn white", "[world][scene]") {

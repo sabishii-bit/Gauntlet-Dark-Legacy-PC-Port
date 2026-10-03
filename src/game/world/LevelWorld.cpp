@@ -268,12 +268,16 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors,
     }
     m_worldAnimator.apply(m_scene);
     syncCollision();
+    m_placedItems.snapPresentation();
 }
 
 void LevelWorld::activateTrigger(s32 id, bool atOnce) {
     m_triggers.activate(id, atOnce, m_worldAnimator, m_scene, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
+    if (atOnce) {
+        m_placedItems.snapPresentation();
+    }
 }
 
 void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {

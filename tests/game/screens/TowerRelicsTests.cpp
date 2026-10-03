@@ -258,4 +258,55 @@ TEST_CASE("tower return routes relic ceremonies before releasing player controls
     REQUIRE(scene.towerRelics().figures().count() == 2);
     scene.close();
 }
+TEST_CASE("tower relic ceremony draws fractional motion without consuming its events",
+          "[game][tower-relics][assets][presentation]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    std::array<Relics, 1> party;
+    party[0].addRune(0);
+    MessageTable strings;
+    messages(strings);
+    TowerRelics display;
+    display.begin(party, strings);
+    display.bind(device, world, {});
+    REQUIRE(display.update(120, 0, false).voice == "S_FNDRUNEYOU");
+    REQUIRE(display.update(2000, 0, false).placement);
+    REQUIRE(display.figures().count() == 1);
+    display.animate(0.5f);
+    display.animate(1.0f / 30);
+    const auto& effect = display.figures().effect(0);
+    REQUIRE(effect.presentationCaptured);
+    const auto lived = effect.lived;
+    const auto frame = effect.player.frame();
+    const auto generation = effect.player.generation();
+    for (const f32 blend : {0.0f, 0.25f, 0.75f, 1.0f, -1.0f}) {
+        device.draws.clear();
+        display.draw(device, Mat4{1}, world.lighting(), {}, blend);
+        CHECK_FALSE(device.draws.empty());
+        CHECK(effect.lived == lived);
+        CHECK(effect.player.frame() == frame);
+        CHECK(effect.player.generation() == generation);
+        CHECK(display.phase() == TowerRelics::Phase::Placement);
+        CHECK(display.displayedRunes() == 0);
+    }
+    display.capturePresentation();
+    CHECK(effect.previousFrame == effect.player.presentationFrame());
+    device.draws.clear();
+    display.draw(device, Mat4{1}, world.lighting(), {}, 0);
+    REQUIRE_FALSE(device.draws.empty());
+    const auto held = device.draws.front().vertices.front().position;
+    device.draws.clear();
+    display.draw(device, Mat4{1}, world.lighting(), {}, 0.75f);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.front().vertices.front().position == held);
+    CHECK_FALSE(display.update(0, 0, false).completed);
+    display.clear();
+    device.draws.clear();
+    display.draw(device, Mat4{1}, world.lighting(), {}, 0.5f);
+    display.drawWizard(device, Mat4{1}, world.lighting(), {}, 0.5f);
+    CHECK(device.draws.empty());
+}
 } // namespace

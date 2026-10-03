@@ -28,6 +28,7 @@ struct GameContext {
     std::function<bool(const GameConfig&)> saveSettings;
     /** Live audio preview while dragging a slider; persistence happens on release. */
     std::function<void(const AudioConfig&)> previewAudio;
+    std::function<DisplayOptions()> displayOptions;
 };
 
 } // namespace gdl::game

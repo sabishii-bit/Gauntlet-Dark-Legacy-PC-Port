@@ -88,6 +88,45 @@ TEST_CASE("world animations turn their objects thirty frames a second and loop",
     REQUIRE(f.animator.size() == 0);
 }
 
+TEST_CASE("world animation jumps and loop resets cut the presentation without extra clock steps",
+          "[world][animation][presentation]") {
+    Fixture f("world-animator-presentation-cuts");
+    f.animator.bind(f.layout);
+    f.animator.apply(f.scene);
+    const auto at = [&](f32 alpha) {
+        f.device.draws.clear();
+        f.scene.draw(f.device, Mat4{1}, CameraFrame::at(Vec3{0}), alpha);
+        REQUIRE(f.device.draws.size() >= 3);
+        return f.device.draws[2].vertices[0].position;
+    };
+    f.scene.capturePresentation();
+    f.animator.fire(8, true, true);
+    f.animator.apply(f.scene);
+    const Vec3 endpoint = f.bladeAt();
+    CHECK(at(0.0f) == endpoint);
+    CHECK(at(0.5f) == endpoint);
+    CHECK(f.animator.frame(0) == 3);
+    CHECK(f.animator.finished(0));
+
+    f.scene.capturePresentation();
+    f.animator.hold(8);
+    f.animator.apply(f.scene);
+    const Vec3 start = f.bladeAt();
+    CHECK(at(0.0f) == start);
+    CHECK(at(0.5f) == start);
+    f.animator.cycle(8, true);
+    for (s32 i = 0; i < 3; ++i) {
+        f.scene.capturePresentation();
+        f.animator.step(kStep, f.scene);
+    }
+    CHECK(f.animator.frame(0) == 0);
+    f.scene.capturePresentation();
+    f.animator.step(kStep, f.scene);
+    CHECK(at(0.0f) == start);
+    CHECK(at(0.75f) == start);
+    CHECK(f.animator.frame(0) == 1);
+}
+
 TEST_CASE("a held switch cycles its track and releases at the forward endpoint",
           "[world][animation]") {
     WorldScene scene;

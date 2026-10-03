@@ -369,7 +369,8 @@ void TitleScene::openOptionsMenu() {
     menu.burnArea = kOptionsBurnArea;
     m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
                        m_context.strings, m_context.saveSettings, m_text, m_screen, menu,
-                       SettingsMenu::Scope::Title, m_context.previewAudio);
+                       SettingsMenu::Scope::Title, m_context.previewAudio, {},
+                       m_context.displayOptions);
 }
 
 /** Backing out hands the scroll to the burn effect while the text fades out. */

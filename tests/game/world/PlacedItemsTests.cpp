@@ -26,6 +26,146 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+std::filesystem::path pickupPresentationFixture() {
+    const auto root = test::scratchDirectory("pickup-presentation");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"COIN","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"IDLE","frames":4,"frameRate":30,
+       "tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[0,3]}]}]},
+      {"name":"TREAS_JUNK","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]}]})");
+    writeTextFile(root / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
+      "itemInfos":[{"type":1,"subtype":1,"name":"COIN","value":500,"radius":1,"height":2,"armor":0,"collisionType":1}],
+      "itemInstances":[]})");
+    test::convertModelFixture(root);
+    return root;
+}
+
+TEST_CASE("pickup presentation samples flight and fractional poses without changing collection",
+          "[placed-items][presentation]") {
+    const auto root = pickupPresentationFixture();
+    WorldLayout layout;
+    ItemArchive archive;
+    REQUIRE(layout.load(root));
+    REQUIRE(archive.load(root));
+    WorldCollision collision;
+    const std::array<Vec3, 3> floor{Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+    collision.build({{{0, 1, 0}, floor, 0, 4}});
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    items.bind(device, layout, &collision, archives);
+    items.setPlayerCount(1);
+    REQUIRE(items.throwItem(device, "COIN", {7, 5, 0}, {60, 0, 0}, &collision, 2));
+    const auto corner = [&](f32 blend) {
+        device.draws.clear();
+        items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, blend);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws[0].vertices[0].position;
+    };
+    CHECK(corner(0) == Vec3{7, 5, 0}); // new drops have no prior occupant to interpolate
+    items.update(1.0f / 60);
+    const Mat4 nativePose = items.item(0).pose.matrices()[0];
+    const Mat4 nativePlacement = items.item(0).transform;
+    const Vec3 velocity = items.item(0).velocity;
+    const f32 noGrab = items.item(0).noGrabSeconds;
+    for (const f32 blend : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.5f}) {
+        CAPTURE(blend);
+        const Vec3 vertex = corner(blend);
+        CHECK(vertex.x == Approx(7 + blend));
+        CHECK(vertex.y == Approx(5 + 0.5f * blend));
+        CHECK(items.item(0).pose.matrices()[0] == nativePose);
+        CHECK(items.item(0).transform == nativePlacement);
+        CHECK(items.item(0).velocity == velocity);
+        CHECK(items.item(0).noGrabSeconds == noGrab);
+        CHECK_FALSE(items.item(0).takeable());
+    }
+    const Vec3 native = corner(-1);
+    CHECK(native.x == Approx(8));
+    CHECK(native.y == Approx(5 + items.item(0).player.frame()));
+    items.capturePresentation(); // a held scene does not update this owner
+    const Vec3 held = corner(0);
+    CHECK(corner(0.25f) == held);
+    CHECK(corner(0.75f) == held);
+    CHECK(corner(1) == held);
+    items.discard(0);
+    device.draws.clear();
+    items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, 0);
+    CHECK(device.draws.empty());
+}
+
+TEST_CASE("pickup presentation cuts changed containers figures releases teleports and loops",
+          "[placed-items][presentation]") {
+    const auto root = pickupPresentationFixture();
+    WorldLayout layout;
+    ItemArchive archive;
+    REQUIRE(layout.load(root));
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    items.bind(device, layout, nullptr, archives);
+    items.setPlayerCount(1);
+    REQUIRE(items.place(device, "COIN", {7, 0, 0}, nullptr));
+    const auto corner = [&](f32 blend) {
+        device.draws.clear();
+        items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, blend);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws[0].vertices[0].position;
+    };
+    SECTION("attaching to a new container snaps but following the same socket interpolates") {
+        items.capturePresentation();
+        items.attach(0, glm::translate(Mat4{1}, Vec3{10, 0, 0}), true);
+        CHECK(corner(0).x == Approx(10));
+        items.capturePresentation();
+        items.attach(0, glm::translate(Mat4{1}, Vec3{12, 0, 0}), true);
+        CHECK(corner(0.5f).x == Approx(11));
+        CHECK(items.item(0).position.x == Approx(12));
+    }
+    SECTION("a large external relocation never streaks across the level") {
+        items.capturePresentation();
+        items.attach(0, glm::translate(Mat4{1}, Vec3{100, 0, 0}), false);
+        CHECK(corner(0).x == Approx(100));
+    }
+    SECTION("an explicit short platform cut snaps riders without changing their clocks") {
+        items.update(1.0f / 60);
+        items.capturePresentation();
+        items.attach(0, glm::translate(Mat4{1}, Vec3{9, 0, 0}), false);
+        const f32 nativeFrame = items.item(0).player.frame();
+        const Mat4 nativePose = items.item(0).pose.matrices()[0];
+        items.snapPresentation();
+        for (const f32 blend : {0.0f, 0.25f, 0.75f, 1.0f}) {
+            CHECK(corner(blend) == Vec3{9, nativeFrame, 0});
+            CHECK(items.item(0).player.frame() == nativeFrame);
+            CHECK(items.item(0).pose.matrices()[0] == nativePose);
+        }
+    }
+    SECTION("a carried pickup reappears at its release rather than its old placement") {
+        REQUIRE(items.claim({7, 0, 0}, 2, 2) == 0);
+        items.capturePresentation();
+        REQUIRE(items.release(0, {10, 0, 0}, {}, nullptr, 0));
+        CHECK(corner(0).x == Approx(10));
+    }
+    SECTION("a replacement figure has no link to the previous animation") {
+        items.update(2.0f / 30);
+        items.capturePresentation();
+        const auto changes = items.blast(device, {7, 0, 0}, 5, 100);
+        REQUIRE(changes.size() == 1);
+        CHECK(items.item(0).name == "TREAS_JUNK");
+        CHECK(corner(0.5f).y == Approx(0));
+    }
+    SECTION("a wrapping animation does not sweep back through its final pose") {
+        items.update(3.0f / 30);
+        items.update(1.0f / 30);
+        CHECK(items.item(0).player.frame() == 0);
+        CHECK(corner(0.5f).y == Approx(0));
+    }
+}
+
 TEST_CASE("pickups bind to authored floors and ride the current platform pose",
           "[game][world][placed-items][pickup-platform]") {
     const auto dir = test::scratchDirectory("pickup-platform");
@@ -83,6 +223,23 @@ TEST_CASE("pickups bind to authored floors and ride the current platform pose",
 
     const Mat4 moved =
         glm::translate(Mat4{1}, Vec3{110, 5, 40}) * glm::rotate(Mat4{1}, 1.0f, Vec3{0, 1, 0});
+    SECTION("rendered platform riders interpolate while pickup and floor queries stay current") {
+        const Vec3 previous = items.item(0).position;
+        items.capturePresentation();
+        collision.setObjectTransform(1, moved);
+        items.syncFloors();
+        items.update(1.0f / 60);
+        const Mat4 expected = moved * local;
+        for (const f32 blend : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+            device.draws.clear();
+            items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, blend);
+            REQUIRE(device.draws.size() == 2);
+            const Vec3 drawn = device.draws[0].vertices[0].position;
+            CHECK(glm::distance(drawn, glm::mix(previous, Vec3{expected[3]}, blend)) < 0.0001f);
+            CHECK(items.item(0).transform == expected);
+            CHECK(collision.objectTransform(1) == moved);
+        }
+    }
     SECTION("resting and hidden items follow translation and rotation without accumulating drift") {
         items.setPlayerCount(0);
         collision.setObjectTransform(1, moved);

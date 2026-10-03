@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "engine/core/Types.h"
+#include "engine/platform/DisplayMode.h"
 #include "engine/platform/Input.h"
 
 #include "game/config/MultiplayerMode.h"
@@ -20,6 +21,7 @@ struct DisplayConfig {
     u32 frameHeight = 448;
     u32 windowWidth = 1280;
     u32 windowHeight = 896;
+    WindowMode windowMode = WindowMode::Windowed;
     bool vsync = true;
     u32 sampleCount = 1;   ///< MSAA samples: 1 (off), 2 or 4; limited by the graphics device
     u32 maxFrameRate = 60; ///< menu presentation cap; 0 follows the monitor, even without V-Sync

@@ -184,6 +184,8 @@ void IdleScreen::update(f64 seconds, f32 horizontalFov, f32 aspect) {
     if (!m_open) {
         return;
     }
+    m_effects.capturePresentation();
+    const auto previous = m_motion.weapons();
     m_motion.update(seconds, horizontalFov, aspect);
     for (usize i = 0; i < SaverMotion::kCount; ++i) {
         const auto& weapon = m_motion.weapons()[i];
@@ -209,18 +211,22 @@ void IdleScreen::update(f64 seconds, f32 horizontalFov, f32 aspect) {
         placement[3] = Vec4{weapon.position, 1};
         placement = glm::rotate(placement, weapon.angle, Vec3{1, 0, 0});
         m_effects.placeAt(m_handles[i], placement);
+        // A wall bounce redirects the flight; do not round its sharp contact turn.
+        if (weapon.velocity != previous[i].velocity || !previous[i].visible) {
+            m_effects.snapPresentation(m_handles[i]);
+        }
     }
     m_effects.update(static_cast<f32>(seconds));
 }
 
 void IdleScreen::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height,
-                        f32 horizontalFov) const {
+                        f32 horizontalFov, f32 frameBlend) const {
     if (!m_open) {
         return;
     }
     const WorldCamera camera;
     const auto frame = CameraFrame::of(camera);
     m_effects.draw(device, camera.clipTransform(horizontalFov, width, height, projection), {},
-                   &frame);
+                   &frame, frameBlend);
 }
 } // namespace gdl::game

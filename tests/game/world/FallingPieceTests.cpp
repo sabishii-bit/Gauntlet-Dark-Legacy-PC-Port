@@ -72,6 +72,36 @@ TEST_CASE("a piece drops by its profile's pull, spins by its instance and retire
     REQUIRE(sinking.position == rest);
 }
 
+TEST_CASE("falling presentation samples native poses without advancing gravity or spin",
+          "[falling][presentation]") {
+    FallingPiece piece;
+    piece.place(Vec3{3, 20, -2}, Vec3{0, 1, 0}, 5);
+    const Vec3 start = piece.position;
+    const Vec3 angles = piece.rotation;
+    CHECK(piece.presentedPosition(0.25f) == start);
+    piece.velocity = Vec3{30, 12, 0};
+    piece.advance(FallingProfile{}, -100);
+    const Vec3 current = piece.position;
+    const Vec3 rotation = piece.rotation;
+    const Vec3 velocity = piece.velocity;
+    for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.25f}) {
+        CHECK(piece.presentedPosition(alpha) == glm::mix(start, current, alpha));
+        CHECK(piece.presentedRotation(alpha) == glm::mix(angles, rotation, alpha));
+        CHECK(piece.position == current);
+        CHECK(piece.rotation == rotation);
+        CHECK(piece.velocity == velocity);
+    }
+    CHECK(FallingPiece::presentationFraction(0, 1.0f / 60, 0) == 0);
+    CHECK(FallingPiece::presentationFraction(0, 1.0f / 60, 1) == Approx(0.5f));
+    CHECK(FallingPiece::presentationFraction(1.0f / 60, 1.0f / 60, 0) == Approx(0.5f));
+    CHECK(FallingPiece::presentationFraction(1.0f / 60, 1.0f / 60, 1) == Approx(1));
+    CHECK(FallingPiece::presentationFraction(0, 1.0f / 30, 0.5f) == Approx(0.5f));
+    CHECK(FallingPiece::presentationFraction(0, 1.0f / 60, -1) == 1);
+    piece.place(Vec3{-30, 8, 4}, Vec3{0}, 2);
+    CHECK(piece.presentedPosition(0) == piece.position);
+    CHECK(piece.presentedRotation(0) == piece.rotation);
+}
+
 TEST_CASE("falling pieces retain authored physics at every caller cadence", "[falling][cadence]") {
     FallingPiece expected;
     expected.place(Vec3{3, 100, -2}, Vec3{0, 1, 0}, 5);

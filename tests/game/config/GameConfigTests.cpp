@@ -28,6 +28,29 @@ TEST_CASE("the defaults describe the original's screen and clock", "[game][confi
     REQUIRE(config.menu.padStart.front() == PadButton::Start);
 }
 
+TEST_CASE("video window modes and resolution survive settings round trips",
+          "[game][config][graphics]") {
+    for (const auto mode :
+         {WindowMode::Windowed, WindowMode::Fullscreen, WindowMode::BorderlessFullscreen}) {
+        GameConfig config;
+        config.display.windowMode = mode;
+        config.display.windowWidth = 1920;
+        config.display.windowHeight = 1080;
+        GameConfig restored;
+        restored.mergeJson(config.toJson());
+        CHECK(restored.display.windowMode == mode);
+        CHECK(restored.display.windowWidth == 1920);
+        CHECK(restored.display.windowHeight == 1080);
+        restored.mergeJson(R"({"display":{"vsync":false}})");
+        CHECK(restored.display.windowMode == mode);
+    }
+    GameConfig config;
+    config.mergeJson(R"({"display":{"windowWidth":1280}})");
+    CHECK(config.display.windowMode == WindowMode::Windowed);
+    CHECK_THROWS_AS(config.mergeJson(R"({"display":{"windowMode":"invalid"}})"), FormatError);
+    CHECK_THROWS_AS(config.mergeJson(R"({"display":{"windowWidth":4294967295}})"), FormatError);
+}
+
 TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][config]") {
     GameConfig config;
     config.mergeJson(R"({
