@@ -21,7 +21,7 @@ TEST_CASE("the defaults describe the original's screen and clock", "[game][confi
     REQUIRE(config.display.frameWidth == 640);
     REQUIRE(config.display.frameHeight == 448);
     REQUIRE(config.timing.tickRate == 60);
-    REQUIRE(config.timing.gameplayFrameRate == 60);
+    REQUIRE(config.timing.gameplayFrameRate == 30);
     REQUIRE(config.text.language == "en");
     REQUIRE(std::abs(config.horizontalFovRadians() - 1.0471976f) < 1e-5f);
     REQUIRE(config.menu.select.size() == 2);
@@ -51,6 +51,29 @@ TEST_CASE("video window modes and resolution survive settings round trips",
     CHECK_THROWS_AS(config.mergeJson(R"({"display":{"windowWidth":4294967295}})"), FormatError);
 }
 
+TEST_CASE("video application compares actual window dimensions rather than a stale saved size",
+          "[game][config][graphics]") {
+    DisplayConfig defaults;
+    CHECK(defaults.matchesWindow(WindowMode::Windowed, {1280, 896}));
+    CHECK_FALSE(defaults.matchesWindow(WindowMode::Windowed, {1600, 1000}));
+    CHECK_FALSE(defaults.matchesWindow(WindowMode::Fullscreen, {1280, 896}));
+    defaults.windowMode = WindowMode::BorderlessFullscreen;
+    CHECK(defaults.matchesWindow(WindowMode::BorderlessFullscreen, {1920, 1080}));
+    CHECK_FALSE(defaults.matchesWindow(WindowMode::Windowed, {1920, 1080}));
+}
+
+TEST_CASE("shipped defaults use thirty fps without changing the simulation clock",
+          "[game][config][graphics]") {
+    GameConfig config;
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    CHECK(config.display.maxFrameRate == 30);
+    CHECK(config.timing.gameplayFrameRate == 30);
+    CHECK(config.timing.tickRate == 60);
+    config.mergeJson(R"({"display":{"maxFrameRate":60},"timing":{"gameplayFrameRate":60}})");
+    CHECK(config.display.maxFrameRate == 60);
+    CHECK(config.timing.gameplayFrameRate == 60);
+}
+
 TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][config]") {
     GameConfig config;
     config.mergeJson(R"({
@@ -65,7 +88,7 @@ TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][con
     REQUIRE_FALSE(config.display.vsync);
     REQUIRE(config.display.maxFrameRate == 24);
     REQUIRE(config.timing.tickRate == 120);
-    REQUIRE(config.timing.gameplayFrameRate == 60);
+    REQUIRE(config.timing.gameplayFrameRate == 30);
     REQUIRE(config.audio.musicVolume == 0.25f);
     REQUIRE(config.audio.masterVolume == 1.0f);
     REQUIRE(config.text.language == "fr");
@@ -84,13 +107,13 @@ TEST_CASE("bad configuration is rejected", "[game][config]") {
     REQUIRE_FALSE(config.loadFile(test::scratchDirectory("config-missing") / "none.json"));
 }
 
-TEST_CASE("graphics settings round-trip with independent sixty hertz presentation defaults",
+TEST_CASE("graphics settings round-trip with thirty fps presentation defaults",
           "[game][config][graphics]") {
     GameConfig config;
     CHECK(config.display.vsync);
     CHECK(config.display.sampleCount == 1);
-    CHECK(config.display.maxFrameRate == 60);
-    CHECK(config.timing.gameplayFrameRate == 60);
+    CHECK(config.display.maxFrameRate == 30);
+    CHECK(config.timing.gameplayFrameRate == 30);
     for (const u32 samples : {1U, 2U, 4U}) {
         for (const u32 rate : {30U, 60U, 0U}) {
             config.display.vsync = false;
@@ -121,8 +144,8 @@ TEST_CASE("invalid graphics sample counts fall back to off and invalid rates ret
         GameConfig config;
         config.mergeJson(R"({"display":{"maxFrameRate":)" + std::string(value) +
                          R"(},"timing":{"gameplayFrameRate":)" + std::string(value) + "}}");
-        CHECK(config.display.maxFrameRate == 60);
-        CHECK(config.timing.gameplayFrameRate == 60);
+        CHECK(config.display.maxFrameRate == 30);
+        CHECK(config.timing.gameplayFrameRate == 30);
     }
 }
 

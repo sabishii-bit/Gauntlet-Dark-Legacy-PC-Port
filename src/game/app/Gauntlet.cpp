@@ -565,9 +565,12 @@ bool Gauntlet::saveSettings(const GameConfig& config) {
     return applySettings(config, true);
 }
 bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
-    const bool windowChanged = config.display.windowMode != m_config.display.windowMode ||
-                               config.display.windowWidth != m_config.display.windowWidth ||
-                               config.display.windowHeight != m_config.display.windowHeight;
+    const bool windowChanged =
+        config.display.windowMode != m_config.display.windowMode ||
+        config.display.windowWidth != m_config.display.windowWidth ||
+        config.display.windowHeight != m_config.display.windowHeight ||
+        (!persist &&
+         !config.display.matchesWindow(window().windowMode(), window().displayOptions().window));
     try {
         const bool presentationChanged = config.display.vsync != m_config.display.vsync ||
                                          config.display.sampleCount != m_config.display.sampleCount;

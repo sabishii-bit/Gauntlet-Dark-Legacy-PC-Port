@@ -2334,7 +2334,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   bounds a smoke run. Additional game arguments follow `--`.
   Keep visible smoke tests and scenario previews at 60 FPS or below, with
   vsync enabled. Do not pass `--no-vsync` to speed up tests on the user's display;
-  check saved settings as well as the shipped 60-FPS menu / 30-FPS play defaults.
+  check saved settings as well as the shipped 30-FPS menu / 30-FPS play defaults.
+  Simulation remains at 60 ticks per second independently of those rendering caps.
 * Lighting: `engine/world/WorldLighting` is the original's vertex shade, a grey
   ambient plus one directional light where a surface faces it, clamped per
   channel; `WorldLighting::forLevel` takes a level's record (the light

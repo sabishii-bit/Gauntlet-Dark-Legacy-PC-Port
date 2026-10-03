@@ -236,7 +236,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
     REQUIRE(f.menu.menu().definition().items.size() == 8);
     CHECK(f.menu.menu().definition().items[0].value == "On");
-    CHECK(f.menu.menu().definition().items[1].value == "60");
+    CHECK(f.menu.menu().definition().items[1].value == "30");
     CHECK(f.menu.menu().definition().items[2].value == "Off");
     f.fail = true;
     f.select();
@@ -249,7 +249,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     CHECK(f.config.display.vsync);
     CHECK(f.writes == 0);
     f.down();
-    for (const u32 rate : {0U, 30U, 60U, 0U, 30U}) {
+    for (const u32 rate : {60U, 0U, 30U, 60U, 0U, 30U}) {
         f.right();
         CHECK(f.menu.config().display.maxFrameRate == rate);
         CHECK(f.menu.config().timing.gameplayFrameRate == rate);
@@ -258,7 +258,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     }
     f.fail = true;
     f.select();
-    CHECK(f.config.display.maxFrameRate == 60);
+    CHECK(f.config.display.maxFrameRate == 30);
     CHECK(f.menu.config().timing.gameplayFrameRate == 30);
     f.fail = false;
     MenuInput left;
@@ -573,6 +573,109 @@ TEST_CASE("Video rollback preserves a manually resized window", "[settings][grap
     CHECK(active.display.windowMode == WindowMode::Windowed);
     CHECK(active.display.windowWidth == 1152);
     CHECK(active.display.windowHeight == 700);
+}
+
+TEST_CASE("Video font and columns reserve the widest choices before selecting them",
+          "[settings][graphics]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = 32; c <= 126; ++c) {
+        glyphs.push_back({c, 24, 0, 0});
+    }
+    const auto font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
+    f.painter.setFont(&font, &f.texture);
+    f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment(),
+                SettingsMenu::Scope::Level, {}, {{1920, 1080}, {{1280, 896}, {1920, 1080}}});
+    f.down();
+    f.select();
+    const auto initial = f.menu.menu().definition();
+    CHECK(initial.scale < 0.7f);
+    const auto unchanged = [&] {
+        const auto& current = f.menu.menu().definition();
+        CHECK(current.scale == initial.scale);
+        CHECK(current.valueX == initial.valueX);
+        CHECK(current.valueWidth == initial.valueWidth);
+    };
+    f.right();
+    unchanged();
+    f.down();
+    for (s32 i = 0; i < 3; ++i) {
+        f.right();
+        unchanged();
+    }
+    f.down();
+    f.down(); // skips resolution while windowed
+    REQUIRE(f.menu.menu().selection() == 4);
+    for (s32 i = 0; i < 3; ++i) {
+        f.right();
+        unchanged();
+    }
+    f.down();
+    f.right();
+    f.select(); // Restore Defaults
+    unchanged();
+}
+
+TEST_CASE("Restore Defaults previews the default window size and thirty fps before saving",
+          "[settings][graphics]") {
+    Fixture f;
+    f.config.display.maxFrameRate = 60;
+    f.config.timing.gameplayFrameRate = 60;
+    Extent2D actualSize{1600, 1000}; // saved dimensions still say 1280x896
+    s32 resizes = 0;
+    f.menu.open(
+        f.config, &f.strings,
+        [&](const auto& next) {
+            f.config = next;
+            ++f.writes;
+            return true;
+        },
+        f.painter, {}, {}, SettingsMenu::Scope::Level, {},
+        {{1920, 1080}, {{1920, 1080}}, actualSize}, {},
+        [&](const auto& next) {
+            if (!next.display.matchesWindow(WindowMode::Windowed, actualSize)) {
+                actualSize = {next.display.windowWidth, next.display.windowHeight};
+                ++resizes;
+            }
+            return true;
+        });
+    f.down();
+    f.select();
+    for (s32 i = 0; i < 4; ++i) {
+        f.down();
+    }
+    REQUIRE(f.menu.menu().selection() == 5);
+    f.right();
+    f.select();
+    CHECK(f.menu.config().display.windowMode == WindowMode::Windowed);
+    CHECK(f.menu.config().display.windowWidth == 1280);
+    CHECK(f.menu.config().display.windowHeight == 896);
+    CHECK(f.menu.config().display.maxFrameRate == 30);
+    CHECK(f.menu.config().timing.gameplayFrameRate == 30);
+    CHECK(actualSize == Extent2D{1600, 1000});
+    CHECK(f.writes == 0);
+    MenuInput left;
+    left.left = true;
+    f.menu.update(left, 1);
+    f.select(); // Apply
+    CHECK(actualSize == Extent2D{1280, 896});
+    CHECK(resizes == 1);
+    CHECK(f.writes == 0);
+    SECTION("Save keeps defaults") {
+        f.menu.update(left, 1);
+        f.select();
+        CHECK(f.writes == 1);
+        CHECK(f.config.display.maxFrameRate == 30);
+        CHECK(f.config.timing.gameplayFrameRate == 30);
+        CHECK(actualSize == Extent2D{1280, 896});
+    }
+    SECTION("Revert restores the manually resized window") {
+        f.back();
+        CHECK(actualSize == Extent2D{1600, 1000});
+        CHECK(f.menu.config().timing.gameplayFrameRate == 60);
+        CHECK(resizes == 2);
+        CHECK(f.writes == 0);
+    }
 }
 
 TEST_CASE("volume sliders use the five original sprite extents and inactive opacities",
