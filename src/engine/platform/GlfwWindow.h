@@ -22,6 +22,7 @@ public:
     u32 refreshRate() const override;
     DisplayOptions displayOptions() const override;
     WindowMode windowMode() const override;
+    bool cursorCaptured() const override;
     bool setDisplayMode(WindowMode mode, Extent2D resolution) override;
     void waitWhileMinimized() override;
     const Input& input() const override { return m_input; }

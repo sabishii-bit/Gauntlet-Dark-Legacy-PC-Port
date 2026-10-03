@@ -20,6 +20,7 @@ public:
     void draw(const Texture& texture, const Rect& area, const Rect& uv, Color color);
     void draw(const Texture& texture, const Rect& area, Color color = Color::white());
     void fill(const Rect& area, Color color);
+    void fillTriangle(const Vec2& a, const Vec2& b, const Vec2& c, Color color);
     /** Covers the entire viewport, including margins outside the virtual canvas. */
     void fillScreen(Color color);
     /** Fills a virtual-height band across the entire viewport width. */

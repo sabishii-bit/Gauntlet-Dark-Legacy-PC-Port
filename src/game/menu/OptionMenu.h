@@ -32,6 +32,8 @@ struct MenuItem {
     // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
     std::string alternate{};
     s32 markedPart = 0; ///< 0: no mark, 1: first choice, 2: alternate choice
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string value{}; ///< optional separate choice column
 };
 
 struct MenuColors {
@@ -51,6 +53,10 @@ struct MenuDefinition {
     f32 scale = 1.0f;
     f32 cursorScale = 1.0f; ///< relative size of either the model or fallback arrow
     std::vector<MenuItem> items;
+    std::vector<Vec2> itemPositions; ///< optional explicit layout, e.g. a horizontal action row
+    s32 valueX = 0;
+    s32 valueWidth = 0;
+    bool showCursor = true;
     MenuColors colors;
     bool startSelects = false; ///< Start confirms like Select
     bool prompts = false;      ///< draw the back / select prompt row
@@ -153,6 +159,7 @@ public:
     s32 columnWidth() const { return m_columnWidth; }
     s32 columnHeight() const { return m_columnHeight; }
     s32 itemY(usize index) const;
+    s32 itemX(usize index) const;
     s32 lineHeight() const { return m_lineHeight; }
     s32 iconY() const { return m_iconDrawY; }
     /** Where the body's first line is drawn. */

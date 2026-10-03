@@ -62,6 +62,7 @@ protected:
                 CHECK(window().windowMode() == WindowMode::Windowed);
             }
             CHECK(window().displayOptions().desktop == m_desktop);
+            CHECK(window().cursorCaptured() == (window().windowMode() == WindowMode::Fullscreen));
             ++m_windowStep;
         }
         if (changePresentation) {

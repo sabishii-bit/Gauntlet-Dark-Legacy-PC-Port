@@ -224,7 +224,7 @@ TEST_CASE("retail menu scopes exclude title-only and tower-only settings", "[set
     CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 4, 3});
 }
 
-TEST_CASE("port graphics settings precede Controls and save discrete choices transactionally",
+TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on setting rows",
           "[settings][graphics]") {
     // These labels and settings are the user-requested PC feature, not retail menu entries.
     Fixture f;
@@ -234,10 +234,10 @@ TEST_CASE("port graphics settings precede Controls and save discrete choices tra
     REQUIRE(f.menu.menu().definition().items[3].text == "Video");
     f.select();
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
-    REQUIRE(f.menu.menu().definition().items.size() == 5);
-    CHECK(f.menu.menu().definition().items[0].text == "V-Sync: On");
-    CHECK(f.menu.menu().definition().items[1].text == "FPS: 60");
-    CHECK(f.menu.menu().definition().items[2].text == "Anti-Aliasing: Off");
+    REQUIRE(f.menu.menu().definition().items.size() == 8);
+    CHECK(f.menu.menu().definition().items[0].value == "On");
+    CHECK(f.menu.menu().definition().items[1].value == "60");
+    CHECK(f.menu.menu().definition().items[2].value == "Off");
     f.fail = true;
     f.select();
     CHECK(f.config.display.vsync);
@@ -245,37 +245,40 @@ TEST_CASE("port graphics settings precede Controls and save discrete choices tra
     CHECK(f.writes == 0);
     f.fail = false;
     f.right();
-    CHECK_FALSE(f.config.display.vsync);
-    CHECK(f.writes == 1);
+    CHECK_FALSE(f.menu.config().display.vsync);
+    CHECK(f.config.display.vsync);
+    CHECK(f.writes == 0);
     f.down();
     for (const u32 rate : {0U, 30U, 60U, 0U, 30U}) {
-        f.select();
-        CHECK(f.config.display.maxFrameRate == rate);
-        CHECK(f.config.timing.gameplayFrameRate == rate);
-        CHECK(f.menu.menu().definition().items[1].text ==
-              (rate == 0 ? "FPS: Unlimited" : "FPS: " + std::to_string(rate)));
+        f.right();
+        CHECK(f.menu.config().display.maxFrameRate == rate);
+        CHECK(f.menu.config().timing.gameplayFrameRate == rate);
+        CHECK(f.menu.menu().definition().items[1].value ==
+              (rate == 0 ? "Unlimited" : std::to_string(rate)));
     }
     f.fail = true;
-    f.right();
-    CHECK(f.config.display.maxFrameRate == 30);
+    f.select();
+    CHECK(f.config.display.maxFrameRate == 60);
     CHECK(f.menu.config().timing.gameplayFrameRate == 30);
     f.fail = false;
     MenuInput left;
     left.left = true;
     f.menu.update(left, 1);
-    CHECK(f.config.display.maxFrameRate == 0);
+    CHECK(f.menu.config().display.maxFrameRate == 0);
     f.down();
     for (const u32 samples : {2U, 4U, 1U}) {
         f.right();
-        CHECK(f.config.display.sampleCount == samples);
+        CHECK(f.menu.config().display.sampleCount == samples);
     }
     f.fail = true;
-    f.right();
+    f.select();
     CHECK(f.config.display.sampleCount == 1);
     CHECK(f.menu.config().display.sampleCount == 1);
     f.back();
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK(f.menu.menu().selection() == 3);
+    CHECK(f.menu.config().display.vsync);
+    CHECK(f.writes == 0);
 }
 
 TEST_CASE("Video chooses supported resolutions and borderless uses the desktop without losing the "
@@ -298,29 +301,27 @@ TEST_CASE("Video chooses supported resolutions and borderless uses the desktop w
     f.down();
     f.down();
     f.down();
+    REQUIRE(f.menu.menu().selection() == 4); // Windowed resolution is skipped.
+    CHECK_FALSE(f.menu.menu().definition().items[3].enabled);
+    f.right();
+    CHECK(f.menu.config().display.windowMode == WindowMode::Fullscreen);
+    MenuInput up;
+    up.up = true;
+    f.menu.update(up, 1);
     REQUIRE(f.menu.menu().selection() == 3);
     f.right();
-    CHECK(f.config.display.windowWidth == 1920);
-    CHECK(f.config.display.windowHeight == 1080);
-    f.fail = true;
-    f.right();
-    CHECK(f.config.display.windowWidth == 1920);
-    f.fail = false;
-    f.right();
-    CHECK(f.config.display.windowWidth == 1280);
-    CHECK(f.config.display.windowHeight == 720);
+    CHECK(f.menu.config().display.windowWidth == 1280);
+    CHECK(f.menu.config().display.windowHeight == 720);
     f.down();
     f.right();
-    CHECK(f.config.display.windowMode == WindowMode::Fullscreen);
-    f.right();
-    CHECK(f.config.display.windowMode == WindowMode::BorderlessFullscreen);
-    CHECK(f.menu.menu().definition().items[3].text == "Resolution: 1920 x 1080");
+    CHECK(f.menu.config().display.windowMode == WindowMode::BorderlessFullscreen);
+    CHECK(f.menu.menu().definition().items[3].value == "1920 x 1080");
     CHECK_FALSE(f.menu.menu().definition().items[3].enabled);
-    CHECK(f.config.display.windowWidth == 1280);
+    CHECK(f.menu.config().display.windowWidth == 1280);
     f.right();
-    CHECK(f.config.display.windowMode == WindowMode::Windowed);
-    CHECK(f.menu.menu().definition().items[3].text == "Resolution: 1280 x 720");
-    CHECK(f.menu.menu().definition().items[3].enabled);
+    CHECK(f.menu.config().display.windowMode == WindowMode::Windowed);
+    CHECK(f.menu.menu().definition().items[3].value == "1280 x 720");
+    CHECK_FALSE(f.menu.menu().definition().items[3].enabled);
 }
 
 TEST_CASE("fullscreen replaces a custom window size with an advertised desktop mode",
@@ -337,12 +338,11 @@ TEST_CASE("fullscreen replaces a custom window size with an advertised desktop m
     f.down();
     f.down();
     f.down();
-    f.down();
     REQUIRE(f.menu.menu().selection() == 4);
     f.right();
-    CHECK(f.config.display.windowMode == WindowMode::Fullscreen);
-    CHECK(f.config.display.windowWidth == 1920);
-    CHECK(f.config.display.windowHeight == 1080);
+    CHECK(f.menu.config().display.windowMode == WindowMode::Fullscreen);
+    CHECK(f.menu.config().display.windowWidth == 1920);
+    CHECK(f.menu.config().display.windowHeight == 1080);
 }
 
 TEST_CASE("graphics page fits parchment and returns to its entry in every menu scope",
@@ -372,8 +372,19 @@ TEST_CASE("graphics page fits parchment and returns to its entry in every menu s
         CHECK(definition.cursorScale == definition.scale);
         CHECK(definition.colors.off == MenuDefinition::parchment().colors.off);
         CHECK(definition.colors.on == MenuDefinition::parchment().colors.on);
-        for (const auto& item : definition.items) {
-            CHECK(definition.x + f.painter.measure(item.text, definition.scale) <= 512 - 64);
+        for (usize i = 0; i < definition.items.size(); ++i) {
+            const auto& item = definition.items[i];
+            CHECK(f.menu.menu().itemX(static_cast<s32>(i)) +
+                      f.painter.measure(item.text, definition.scale) <=
+                  512 - 64);
+            if (!item.value.empty()) {
+                CHECK(definition.valueX > f.menu.menu().itemX(static_cast<s32>(i)) +
+                                              f.painter.measure(item.text, definition.scale));
+                CHECK(definition.valueX + f.painter.measure(item.value, definition.scale) + 11 <=
+                      448);
+            } else {
+                CHECK(f.menu.menu().itemY(static_cast<s32>(i)) == 300);
+            }
         }
         f.back();
         CHECK(f.menu.page() == SettingsMenu::Page::Root);
@@ -394,11 +405,12 @@ TEST_CASE("custom file frame rates are shown honestly until a supported choice i
         f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.down();
     f.select();
-    CHECK(f.menu.menu().definition().items[1].text == "FPS: 24");
+    CHECK(f.menu.menu().definition().items[1].value == "24");
     f.down();
     f.right();
-    CHECK(f.config.timing.gameplayFrameRate == 30);
-    CHECK(f.config.display.maxFrameRate == 30);
+    CHECK(f.menu.config().timing.gameplayFrameRate == 30);
+    CHECK(f.menu.config().display.maxFrameRate == 30);
+    CHECK(f.config.timing.gameplayFrameRate == 24);
 }
 
 TEST_CASE("audio previews held ticks and persists once on release", "[settings]") {
@@ -433,6 +445,134 @@ TEST_CASE("audio previews held ticks and persists once on release", "[settings]"
     f.back();
     CHECK(f.writes == 1);
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
+}
+
+TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback deadline",
+          "[settings][graphics]") {
+    Fixture f;
+    GameConfig active = f.config;
+    f64 now = 100;
+    s32 previews = 0;
+    f.menu.open(
+        f.config, &f.strings,
+        [&](const auto& next) {
+            ++f.writes;
+            f.config = next;
+            return true;
+        },
+        f.painter, {}, {}, SettingsMenu::Scope::Level, {}, {}, {},
+        [&](const auto& next) {
+            ++previews;
+            active = next;
+            return true;
+        },
+        [&] { return now; });
+    f.down();
+    f.select();
+    f.right();
+    CHECK(active.display.vsync);
+    f.down();
+    f.down();
+    f.down(); // skips unavailable resolution/window mode, reaches Apply
+    REQUIRE(f.menu.menu().selection() == 5);
+    f.select();
+    REQUIRE(f.menu.menu().definition().items.size() == 2);
+    CHECK(f.menu.menu().selection() == 1); // default to Revert, not Save
+    CHECK_FALSE(active.display.vsync);
+    CHECK(f.config.display.vsync);
+    CHECK(f.writes == 0);
+    CHECK(previews == 1);
+    CHECK(f.menu.menu().definition().body[1] == "Reverting in 15 seconds");
+    SECTION("Save confirms the preview") {
+        MenuInput left;
+        left.left = true;
+        f.menu.update(left, 1);
+        f.select();
+        CHECK_FALSE(f.config.display.vsync);
+        CHECK(f.writes == 1);
+        now += 20;
+        f.release();
+        CHECK_FALSE(active.display.vsync);
+    }
+    SECTION("Timeout does not depend on game ticks") {
+        now += 14.2;
+        f.menu.update({}, 0);
+        CHECK(f.menu.menu().definition().body[1] == "Reverting in 1 second");
+        CHECK_FALSE(active.display.vsync);
+        now += 0.8;
+        f.menu.update({}, 0);
+        CHECK(active.display.vsync);
+        CHECK(previews == 2);
+        CHECK(f.writes == 0);
+        CHECK(f.menu.menu().definition().items.size() == 8);
+    }
+    SECTION("Back cancels the trial") {
+        f.back();
+        CHECK(active.display.vsync);
+        CHECK(f.writes == 0);
+    }
+    SECTION("Closing the owner restores the saved configuration") {
+        f.menu.close();
+        CHECK(active.display.vsync);
+        CHECK(f.writes == 0);
+    }
+}
+
+TEST_CASE("Video defaults stay staged and the action row navigates horizontally",
+          "[settings][graphics]") {
+    Fixture f;
+    f.config.display.vsync = false;
+    f.config.audio.effectsVolume = 0.25f;
+    f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level);
+    f.down();
+    f.select();
+    f.down();
+    f.down();
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 5);
+    f.right();
+    REQUIRE(f.menu.menu().selection() == 6);
+    f.select();
+    CHECK(f.menu.config().display.vsync);
+    CHECK(f.menu.config().audio.effectsVolume == 0.25f);
+    CHECK_FALSE(f.config.display.vsync);
+    MenuInput up;
+    up.up = true;
+    f.menu.update(up, 1);
+    CHECK(f.menu.menu().selection() == 2); // last enabled setting
+    f.down();
+    f.right();
+    f.right();
+    REQUIRE(f.menu.menu().selection() == 7);
+    f.select();
+    CHECK(f.menu.page() == SettingsMenu::Page::Root);
+    CHECK_FALSE(f.menu.config().display.vsync);
+    CHECK(f.writes == 0);
+}
+
+TEST_CASE("Video rollback preserves a manually resized window", "[settings][graphics]") {
+    Fixture f;
+    GameConfig active = f.config;
+    f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level, {},
+                {{1920, 1080}, {{1920, 1080}}, {1152, 700}}, {}, [&](const auto& next) {
+                    active = next;
+                    return true;
+                });
+    f.down();
+    f.select();
+    CHECK(f.menu.menu().definition().items[3].value == "1152 x 700");
+    f.down();
+    f.down();
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 4);
+    f.right();
+    f.down();
+    f.select();
+    REQUIRE(active.display.windowMode == WindowMode::Fullscreen);
+    f.back();
+    CHECK(active.display.windowMode == WindowMode::Windowed);
+    CHECK(active.display.windowWidth == 1152);
+    CHECK(active.display.windowHeight == 700);
 }
 
 TEST_CASE("volume sliders use the five original sprite extents and inactive opacities",

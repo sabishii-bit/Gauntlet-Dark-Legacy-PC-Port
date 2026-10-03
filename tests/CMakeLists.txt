@@ -12,6 +12,7 @@ add_executable(tests
     game/combat/DamageTypesTests.cpp
     game/screens/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
+    game/menu/VideoSettingsTests.cpp
     game/menu/CompassHudTests.cpp
     game/screens/SaveMenuTests.cpp
     game/screens/PauseMenuTests.cpp

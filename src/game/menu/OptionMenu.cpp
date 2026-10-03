@@ -213,11 +213,19 @@ s32 OptionMenu::nextEnabled(s32 from, s32 step) const {
 }
 
 s32 OptionMenu::itemY(usize index) const {
+    if (index < m_definition.itemPositions.size()) {
+        return static_cast<s32>(m_definition.itemPositions[index].y);
+    }
     s32 y = m_columnY;
     for (usize i = 0; i < index && i < m_definition.items.size(); ++i) {
         y += m_lineHeight + m_definition.items[i].extraSpacing;
     }
     return y;
+}
+s32 OptionMenu::itemX(usize index) const {
+    return index < m_definition.itemPositions.size()
+               ? static_cast<s32>(m_definition.itemPositions[index].x)
+               : m_definition.x;
 }
 
 u8 OptionMenu::fadeOpacity() const {
@@ -350,31 +358,54 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         }
         const auto label = item.text + (item.markedPart == 1 ? " ~" : "");
         const bool selected = static_cast<s32>(i) == m_selection;
-        if (selected) {
-            const u8 pulse = pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks);
-            const auto glowAlpha = static_cast<u8>(std::min<s32>(fade, pulse));
-            TextStyle glow;
-            glow.scale = m_definition.scale;
-            glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
-            glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
-            glow.expand = kGlowExpand;
-            painter.draw(canvas, m_definition.x, y, label, glow);
-            drawLabel(canvas, painter, m_definition.x, y, label, m_definition.scale,
-                      m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
-        } else {
-            Color color =
-                m_definition.parchmentFont && textures.parchment != nullptr && !garamondActive
-                    ? white
-                    : m_definition.colors.off.withAlpha(fade);
-            if (!item.enabled) {
-                color = color.withAlpha(static_cast<u8>(fade / 2));
+        const auto drawPart = [&](s32 x, const std::string& part) {
+            if (selected) {
+                const u8 pulse = pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks);
+                const auto glowAlpha = static_cast<u8>(std::min<s32>(fade, pulse));
+                TextStyle glow;
+                glow.scale = m_definition.scale;
+                glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
+                glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
+                glow.expand = kGlowExpand;
+                painter.draw(canvas, x, y, part, glow);
+                drawLabel(canvas, painter, x, y, part, m_definition.scale,
+                          m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
+            } else {
+                Color color =
+                    m_definition.parchmentFont && textures.parchment != nullptr && !garamondActive
+                        ? white
+                        : m_definition.colors.off.withAlpha(fade);
+                if (!item.enabled && !item.value.empty()) {
+                    color = Color::rgba(128, 128, 128, fade);
+                } else if (!item.enabled) {
+                    color = color.withAlpha(fade / 2);
+                }
+                drawLabel(canvas, painter, x, y, part, m_definition.scale, color,
+                          !item.enabled && !item.value.empty() ? textures.font
+                                                               : itemSheet(textures, false));
             }
-            drawLabel(canvas, painter, m_definition.x, y, label, m_definition.scale, color,
-                      itemSheet(textures, false));
+        };
+        drawPart(itemX(i), label);
+        if (!item.value.empty()) {
+            drawPart(m_definition.valueX, item.value);
+            if (item.enabled) {
+                constexpr f32 kArrowSize = 5;
+                constexpr f32 kArrowGap = 6;
+                const auto center = static_cast<f32>(y) + static_cast<f32>(m_lineHeight) / 2;
+                const auto left = static_cast<f32>(m_definition.valueX) - kArrowGap;
+                const auto right =
+                    static_cast<f32>(m_definition.valueX + m_definition.valueWidth) + kArrowGap;
+                const auto color =
+                    (selected ? m_definition.colors.on : m_definition.colors.off).withAlpha(fade);
+                canvas.fillTriangle({left - kArrowSize, center}, {left, center - kArrowSize},
+                                    {left, center + kArrowSize}, color);
+                canvas.fillTriangle({right + kArrowSize, center}, {right, center + kArrowSize},
+                                    {right, center - kArrowSize}, color);
+            }
         }
     }
 
-    if (!m_backdropReleased && !m_definition.items.empty()) {
+    if (!m_backdropReleased && !m_definition.items.empty() && m_definition.showCursor) {
         if (textures.icon != nullptr && textures.icon->bound()) {
             textures.icon->draw(
                 canvas,
