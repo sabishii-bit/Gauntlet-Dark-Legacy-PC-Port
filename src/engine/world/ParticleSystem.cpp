@@ -416,8 +416,19 @@ f32 ParticleEmitter::widthOf(const Particle& particle) const {
                       static_cast<f32>(d.particleFade));
 }
 
-void ParticleEmitter::draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up) const {
-    for (const Particle& particle : m_particles) {
+void ParticleEmitter::draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up,
+                           f32 frameOffset) const {
+    for (Particle particle : m_particles) {
+        // Sample the authored trajectory and envelopes without advancing births,
+        // random state or the emitter's native 30 Hz phase clock.
+        if (frameOffset != 0.0f) {
+            particle.age += std::clamp(frameOffset, -1.0f, 1.0f);
+            if (particle.age < 0.0f ||
+                particle.age >=
+                    static_cast<f32>(m_descriptor.particleLife + m_descriptor.particleFade)) {
+                continue;
+            }
+        }
         const Vec3 centre = positionOf(particle);
         const Color color = colorOf(particle);
         const f32 half = 0.5f * widthOf(particle) * m_spriteScale;

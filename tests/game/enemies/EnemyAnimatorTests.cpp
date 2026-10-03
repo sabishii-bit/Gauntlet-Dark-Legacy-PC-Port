@@ -64,6 +64,59 @@ s32 stepsUntil(EnemyAnimator& animator, Action ask, Action wanted, s32 limit) {
     return steps;
 }
 
+TEST_CASE("enemy presentation interpolates without changing attack events and holds across cuts",
+          "[enemies][animation][presentation]") {
+    TreeInfo tree = gruntTree();
+    for (auto& sequence : tree.sequences) {
+        TrackInfo track;
+        track.node = 0;
+        track.flags = TrackInfo::channelBit(3);
+        track.frames = {0, 60};
+        track.values = {0, 60};
+        sequence.tracks = {track};
+        sequence.trackOfNode = {0};
+    }
+    EnemyAnimator native;
+    EnemyAnimator shown;
+    REQUIRE(native.bind(tree));
+    REQUIRE(shown.bind(tree));
+    TreePose pose;
+    native.update(kTicks, kStep);
+    shown.update(kTicks, kStep);
+    for (const f32 fraction : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+        shown.evaluatePresentation(pose, fraction);
+        CHECK(pose.matrices()[0][3].x == Catch::Approx(fraction));
+        CHECK(shown.presentationFrame(fraction) == Catch::Approx(fraction));
+    }
+    s32 blows = 0;
+    for (s32 step = 0; step < 150; ++step) {
+        native.request(Action::Attack);
+        shown.request(Action::Attack);
+        native.update(kTicks, kStep);
+        shown.update(kTicks, kStep);
+        for (const f32 fraction : {0.0f, 0.5f, 1.0f}) {
+            shown.evaluatePresentation(pose, fraction);
+        }
+        CHECK(shown.player().frame() == native.player().frame());
+        CHECK(shown.pose().matrices()[0] == native.pose().matrices()[0]);
+        CHECK(shown.struck() == native.struck());
+        CHECK(shown.threw() == native.threw());
+        blows += shown.struck() ? 1 : 0;
+    }
+    CHECK(blows > 0);
+    shown.holdPresentation();
+    shown.evaluatePresentation(pose, 0);
+    const Mat4 held = pose.matrices()[0];
+    shown.evaluatePresentation(pose, 1);
+    CHECK(pose.matrices()[0] == held);
+    shown.request(Action::Dying);
+    shown.update(kTicks, kStep);
+    shown.evaluatePresentation(pose, 0);
+    const Mat4 cut = pose.matrices()[0];
+    shown.evaluatePresentation(pose, 1);
+    CHECK(pose.matrices()[0] == cut);
+}
+
 TEST_CASE("an enemy walks in, is asked by priority, and lands its blow as the swing ends",
           "[game][enemies][animation]") {
     const TreeInfo tree = gruntTree();

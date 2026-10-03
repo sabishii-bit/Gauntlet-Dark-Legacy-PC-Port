@@ -102,11 +102,11 @@ public:
     bool within(const Vec3& centre, f32 radius) const;
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
     void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                    const WorldLighting& lighting) const {
-        m_fighter.drawShadow(device, clip, eye, lighting);
+                    const WorldLighting& lighting, f32 presentationAlpha = -1) const {
+        m_fighter.drawShadow(device, clip, eye, lighting, presentationAlpha);
     }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const Texture* frozenTexture = nullptr) const;
+              const Texture* frozenTexture = nullptr, f32 presentationAlpha = -1) const;
     /** The white skin a hard hit flashes over the body (`Combatant::flashing`); borrowed
      * until close(), none for no flash. */
     void setHitFlash(const Texture* texture) { m_hitFlash = texture; }

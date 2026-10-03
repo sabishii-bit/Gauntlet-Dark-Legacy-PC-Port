@@ -97,9 +97,10 @@ public:
     void setHitFlash(const Texture* texture) { m_hitFlash = texture; }
     /** Optional frozen skin is borrowed for this draw only. */
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                     const WorldLighting& lighting) const;
+                     const WorldLighting& lighting, f32 presentationAlpha = -1) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr) const;
+              const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr,
+              f32 presentationAlpha = -1) const;
 
     usize count() const;
     bool alive(s32 id) const;

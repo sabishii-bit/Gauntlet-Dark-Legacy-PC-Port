@@ -62,6 +62,8 @@ public:
     /** Moves the level's animated objects (and the collision that rides on them) and steps
      * its texture animations by `seconds`. */
     void update(f32 seconds, bool timeStopped = false);
+    /** Begin a scene tick; particles retain their current picture if this tick is held. */
+    void capturePresentation() { m_particlesAdvanced = false; }
     /** Opens at once the gates a party already qualifies for, as the level starts; in the
      * tower, with `access`, the lifts down to the battlefield's portals too once its first
      * level is beaten (items.c 6956). */
@@ -229,9 +231,10 @@ public:
 
     /** Draws the level as `camera` sees it: the geometry with its sorted objects farthest
      * first, then the particles facing the camera. */
-    void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
+    void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,
+              f32 presentationAlpha = -1.0f) const {
         drawOpaque(device, clip, camera);
-        drawDeferred(device, clip, camera);
+        drawDeferred(device, clip, camera, presentationAlpha);
     }
     void drawOpaque(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
         const CameraFrame frame = CameraFrame::of(camera);
@@ -243,11 +246,13 @@ public:
         m_rotators.draw(device, clip, m_litNow);
         m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::DepthWriting);
     }
-    void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
+    void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,
+                      f32 presentationAlpha = -1.0f) const {
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.drawDeferred(device, clip, frame);
         m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::Effects);
-        m_particles.draw(device, clip, frame.right, frame.up);
+        m_particles.draw(device, clip, frame.right, frame.up,
+                         m_particlesAdvanced ? presentationAlpha : -1.0f);
     }
 
 private:
@@ -271,6 +276,7 @@ private:
     WorldDestruction m_destruction;
     TextureAnimator m_textureAnimator;
     ParticleField m_particles;
+    bool m_particlesAdvanced = false;
     LevelTriggers m_triggers;
     HazardSurfaces m_hazards;
     Rotators m_rotators;

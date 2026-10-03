@@ -31,6 +31,7 @@ void Combatant::inheritBodyPose() {
 }
 
 void Combatant::synchronizeChild() {
+    m_actor.smoothValid = false;
     const Actor& parent = m_actor.parent->m_actor;
     if (m_actor.moveEffect) {
         CombatCue stop;

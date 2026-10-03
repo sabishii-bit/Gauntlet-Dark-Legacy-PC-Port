@@ -22,7 +22,8 @@ public:
     void setTextureFrame(u32 slot, const Texture& texture);
     /** Ends emission without discarding particles already in flight. */
     void stop();
-    void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up) const;
+    void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
+              f32 presentationAlpha = -1.0f) const;
     const ParticleField& field() const { return m_field; }
 
 private:

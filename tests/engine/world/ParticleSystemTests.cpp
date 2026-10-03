@@ -317,4 +317,40 @@ TEST_CASE("particle sprite width uses explicit local scale rather than inherited
     }
 }
 
+TEST_CASE("fractional particle rendering cannot emit or change native particle state",
+          "[world][particles][presentation]") {
+    ParticleDescriptor descriptor;
+    descriptor.oneShot = true;
+    descriptor.maxParticles = 1;
+    descriptor.particleLife = 3;
+    descriptor.direction = Vec3{1, 0, 0};
+    descriptor.speed = 2;
+    descriptor.width = {1, 1, 1, 1};
+    ParticleEmitter emitter;
+    emitter.start(descriptor, Mat4{1}, 7);
+    emitter.step(1);
+    const auto draw = [&](f32 offset) {
+        ImmediateBatch batch;
+        batch.begin(PrimitiveTopology::TriangleList);
+        emitter.draw(batch, Vec3{1, 0, 0}, Vec3{0, 1, 0}, offset);
+        batch.end();
+        return batch;
+    };
+    CHECK(draw(-0.5f).empty()); // not yet born in the presentation interval
+    CHECK_FALSE(draw(0).empty());
+    emitter.step(1);
+    for (const f32 fraction : {-0.5f, 0.0f, 0.25f, 0.5f, 1.0f}) {
+        const auto batch = draw(fraction);
+        REQUIRE(batch.triangles().size() == 6);
+        const auto vertices = batch.triangles();
+        CHECK((vertices[0].position.x + vertices[1].position.x) * 0.5f ==
+              Approx(2 * (1 + fraction)));
+        CHECK(emitter.particles()[0].age == 1);
+        CHECK(emitter.particles().size() == 1);
+    }
+    emitter.step(1);
+    CHECK(draw(1).empty()); // no drawing beyond the native lifetime
+    CHECK_FALSE(draw(0).empty());
+}
+
 } // namespace

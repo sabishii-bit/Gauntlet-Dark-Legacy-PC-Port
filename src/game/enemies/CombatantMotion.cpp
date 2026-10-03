@@ -47,7 +47,9 @@ void Combatant::syncFloor() {
         actor.floor.reset();
         return;
     }
-    actor.position = Vec3{*placement * Vec4{actor.floor->local, 1}};
+    const Vec3 carried = Vec3{*placement * Vec4{actor.floor->local, 1}};
+    actor.presentation.position += carried - actor.position;
+    actor.position = carried;
 }
 
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,

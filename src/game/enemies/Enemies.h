@@ -285,10 +285,10 @@ public:
 
     /** The shadows under the bodies (SHADOW1L1..3L1 by tier), for after the level's floors. */
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                     const WorldLighting& lighting) const;
+                     const WorldLighting& lighting, f32 presentationAlpha = -1) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* hitFlash = nullptr, ItemArchive* weapons = nullptr,
-              const CameraFrame* camera = nullptr);
+              const CameraFrame* camera = nullptr, f32 presentationAlpha = -1);
 
     bool alive(s32 id) const;
     bool dying(s32 id) const;
@@ -356,6 +356,9 @@ private:
         f32 height = 6.0f;
         f32 reach = 3.0f; ///< half the height: how high its body is struck
         Vec3 position{0.0f, 0.0f, 0.0f};
+        Vec3 presentationPosition{0};
+        f32 presentationYaw = 0;
+        State presentationState = State::Inactive;
         struct Floor {
             s32 object = -1;
             Vec3 local{0};
@@ -408,6 +411,8 @@ private:
     void rememberFloor(Enemy& enemy) const;
     void touchHazards(Enemy& enemy, s32 slot);
     static void decayPush(Enemy& enemy, f32 seconds);
+    f32 presentationBlend(const Enemy& enemy, f32 alpha) const;
+    static void capturePresentation(Enemy& enemy);
     /** The warlock's coming and going: while it stands, walks or runs it stays seen a while,
      * fades out, stays unseen a while and fades back; doing anything else it shows. */
     void veil(Enemy& enemy, s32 ticks);

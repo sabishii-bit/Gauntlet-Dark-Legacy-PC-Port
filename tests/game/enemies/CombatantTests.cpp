@@ -138,6 +138,61 @@ TEST_CASE("generals follow descending floors independently of combat and camera 
     CHECK(actor.position() == before);
 }
 
+TEST_CASE("combatant visual frames interpolate without moving hit nodes or advancing moves",
+          "[combatant][presentation]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    TreeInfo tree = *assets.tree;
+    auto& sequence = tree.sequences[0];
+    sequence.frames = 600;
+    TrackInfo track;
+    track.node = 0;
+    track.flags = TrackInfo::channelBit(3);
+    track.frames = {0, 599};
+    track.values = {0, 599};
+    sequence.tracks = {track};
+    sequence.trackOfNode = {0};
+    assets.tree = &tree;
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
+    actor.update(1, 1.0f / 60, {});
+    const auto hitNode = actor.nodeTransform("BODY");
+    REQUIRE(hitNode);
+    CHECK((*hitNode)[3].x == Approx(1));
+    const auto vertex = [&](f32 alpha) {
+        device.draws.clear();
+        actor.draw(device, Mat4{1}, {}, nullptr, nullptr, nullptr, alpha);
+        REQUIRE_FALSE(device.draws.empty());
+        return device.draws[0].vertices[0].position;
+    };
+    const Vec3 beginning = vertex(0);
+    for (const f32 alpha : {0.25f, 0.5f, 0.75f, 1.0f}) {
+        CHECK(vertex(alpha).x - beginning.x == Approx(0.5f * alpha));
+        CHECK(actor.nodeTransform("BODY") == hitNode);
+        CHECK(actor.moveName() == "READY");
+        CHECK(actor.takeBlows().empty());
+        CHECK(actor.takeShots().empty());
+    }
+    // Freeze and stopped-time early returns cannot keep replaying the last interval.
+    SECTION("legend freeze") {
+        actor.freeze(60);
+        actor.update(1, 1.0f / 60, {});
+        CHECK(vertex(0) == vertex(1));
+    }
+    SECTION("stopped time") {
+        actor.update(1, 1.0f / 60, {}, {}, true);
+        CHECK(vertex(0) == vertex(1));
+    }
+    SECTION("new slot occupant") {
+        REQUIRE(actor.spawn(assets, 0, Vec3{100, 0, 0}, 0, nullptr, {}, 'G'));
+        CHECK(vertex(0) == vertex(1));
+        CHECK(vertex(0).x == Approx(100));
+    }
+    assets.tree = nullptr; // The synthetic override dies before the owning archive.
+}
+
 TEST_CASE("the ordinary creature roster synchronizes floors without a gameplay tick",
           "[combatant][critter-platform]") {
     const auto root = familyAssets();

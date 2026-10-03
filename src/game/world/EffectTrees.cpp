@@ -10,6 +10,42 @@
 #include "game/world/DynamicLights.h"
 
 namespace gdl::game {
+namespace {
+// Larger than a normal single-tick projectile/attachment step. A discontinuous
+// caller relocation should appear at its destination, not streak across the level.
+constexpr f32 kPresentationCutDistance = 32.0f;
+
+Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 blend) {
+    Mat3 from{previous};
+    Mat3 to{current};
+    Vec3 fromScale{0};
+    Vec3 toScale{0};
+    for (s32 axis = 0; axis < 3; ++axis) {
+        fromScale[axis] = glm::length(from[axis]);
+        toScale[axis] = glm::length(to[axis]);
+        if (fromScale[axis] < 1e-6f || toScale[axis] < 1e-6f) {
+            return current;
+        }
+        from[axis] /= fromScale[axis];
+        to[axis] /= toScale[axis];
+    }
+    // Attachments can contain shear or reflection. Do not turn those into an
+    // unrelated quaternion rotation; preserve their authored basis instead.
+    const auto orthogonal = [](const Mat3& basis) {
+        return std::abs(glm::determinant(basis) - 1.0f) < 1e-3f &&
+               std::abs(glm::dot(basis[0], basis[1])) < 1e-3f &&
+               std::abs(glm::dot(basis[0], basis[2])) < 1e-3f &&
+               std::abs(glm::dot(basis[1], basis[2])) < 1e-3f;
+    };
+    Mat4 out = current;
+    if (orthogonal(from) && orthogonal(to)) {
+        out = glm::mat4_cast(glm::slerp(glm::quat_cast(from), glm::quat_cast(to), blend));
+        out = glm::scale(out, glm::mix(fromScale, toScale, blend));
+    }
+    out[3] = glm::mix(previous[3], current[3], blend);
+    return out;
+}
+} // namespace
 
 Mat4 EffectTrees::Effect::transform() const {
     Mat4 basis = attachment.value_or(glm::rotate(Mat4{1.0f}, yaw, Vec3{0, 1, 0}));
@@ -34,6 +70,7 @@ void EffectTrees::redirect(u32 id, const Vec3& position, const Vec3& velocity) {
             effect->position = position;
             effect->velocity = velocity;
             effect->yaw = std::atan2(velocity.x, velocity.z);
+            effect->presentationCaptured = false; // contact redirects are cuts, not curves
             if (effect->flightDirection) {
                 effect->flightDirection = velocity;
             }
@@ -282,7 +319,29 @@ void EffectTrees::lights(std::vector<PointLight>& out) const {
     }
 }
 
+void EffectTrees::capturePresentation() {
+    m_presentationAdvanced = false;
+    for (const auto& effect : m_effects) {
+        effect->previousTransform = effect->transform();
+        effect->previousDirection = effect->flightDirection;
+        effect->previousTree = effect->tree;
+        effect->previousGeneration = effect->player.generation();
+        effect->previousFrame = effect->player.presentationFrame();
+        effect->presentationCaptured = !effect->retiring;
+    }
+}
+
+void EffectTrees::snapPresentation(u32 id) {
+    for (const auto& effect : m_effects) {
+        if (effect->id == id) {
+            effect->presentationCaptured = false;
+            return;
+        }
+    }
+}
+
 void EffectTrees::update(f32 seconds) {
+    m_presentationAdvanced = seconds > 0;
     m_frames += seconds * AnimationPlayer::kDefaultRate;
     const f32 whole = std::floor(m_frames);
     m_frames -= whole;
@@ -394,12 +453,34 @@ void EffectTrees::update(f32 seconds) {
 }
 
 void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                       const CameraFrame* camera) const {
+                       const CameraFrame* camera, f32 frameBlend) const {
     const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
+    const f32 blend = std::clamp(frameBlend, 0.0f, 1.0f);
     for (const std::unique_ptr<Effect>& effect : m_effects) {
-        const auto direction = effect->flightDirection;
-        const Mat4 placed = direction.has_value() ? frame.along(effect->transform(), *direction)
-                                                  : effect->transform();
+        auto direction = effect->flightDirection;
+        Mat4 placement = effect->transform();
+        const bool continuous = frameBlend >= 0 && effect->presentationCaptured &&
+                                effect->previousTree == effect->tree &&
+                                glm::distance(Vec3{effect->previousTransform[3]},
+                                              Vec3{placement[3]}) <= kPresentationCutDistance;
+        const TreePose* pose = &effect->pose;
+        if (continuous) {
+            placement = blendPlacement(effect->previousTransform, placement, blend);
+            if (direction && effect->previousDirection &&
+                glm::dot(*direction, *effect->previousDirection) > 0) {
+                direction = glm::mix(*effect->previousDirection, *direction, blend);
+            }
+            if (effect->tree != nullptr && effect->player.playing()) {
+                const f32 visualFrame =
+                    effect->previousGeneration == effect->player.generation()
+                        ? glm::mix(effect->previousFrame, effect->player.presentationFrame(), blend)
+                        : effect->player.presentationFrame();
+                effect->presentationPose.evaluate(*effect->tree, effect->player.sequence(),
+                                                  visualFrame, false, true);
+                pose = &effect->presentationPose;
+            }
+        }
+        const Mat4 placed = direction.has_value() ? frame.along(placement, *direction) : placement;
         if (!effect->retiring && effect->tree != nullptr) {
             // Its last moments fade it out (ProcessEffects' fxfade).
             const f32 alpha =
@@ -410,15 +491,16 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                 // Traverse facing parents before their children, as for any
                 // other local transform. Facing only the final mesh loses
                 // offsets/rotations under Garm's laser-ribbon effect nodes.
-                const auto matrices = effect->pose.drawMatrices(placed, *camera);
+                const auto matrices = pose->drawMatrices(placed, *camera);
                 effect->model.draw(device, clip, Mat4{1}, lighting, matrices, nullptr, alpha);
             } else {
-                effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), nullptr,
+                effect->model.draw(device, clip, placed, lighting, pose->matrices(), nullptr,
                                    alpha);
             }
         }
-        effect->particles.draw(device, clip, frame.right, frame.up);
-        effect->trails.draw(device, clip, frame.right, frame.up);
+        const f32 particleBlend = m_presentationAdvanced ? frameBlend : -1.0f;
+        effect->particles.draw(device, clip, frame.right, frame.up, particleBlend);
+        effect->trails.draw(device, clip, frame.right, frame.up, particleBlend);
     }
 }
 
@@ -427,6 +509,7 @@ void EffectTrees::clear() {
     m_motions.clear();
     m_lenders.clear();
     m_frames = 0.0f;
+    m_presentationAdvanced = false;
     m_nextId = 1;
 }
 

@@ -111,6 +111,27 @@ TEST_CASE("the native compass follows its preference and is hidden behind option
     CHECK(drawCount(true) == disabled);
     config.camera.compass = false;
     CHECK(drawCount(false) == disabled);
+
+    // Pausing freezes every presentation owner, not only the player and camera. A render
+    // frame must not replay the last simulation interval at a different interpolation alpha.
+    scene.update(1.0 / 60.0, {});
+    device.draws.clear();
+    scene.render(device, projection, 640, 448, true, 0.0f);
+    const auto paused = device.draws;
+    REQUIRE_FALSE(paused.empty());
+    for (const f32 alpha : {0.25f, 0.75f, 1.0f, 0.0f}) {
+        device.draws.clear();
+        scene.render(device, projection, 640, 448, true, alpha);
+        REQUIRE(device.draws.size() == paused.size());
+        for (usize draw = 0; draw < paused.size(); ++draw) {
+            CHECK(device.draws[draw].transform == paused[draw].transform);
+            REQUIRE(device.draws[draw].vertices.size() == paused[draw].vertices.size());
+            for (usize vertex = 0; vertex < paused[draw].vertices.size(); ++vertex) {
+                CHECK(device.draws[draw].vertices[vertex].position ==
+                      paused[draw].vertices[vertex].position);
+            }
+        }
+    }
 }
 
 TEST_CASE("Temple switch cutscene carries its chest and enemy continuously",

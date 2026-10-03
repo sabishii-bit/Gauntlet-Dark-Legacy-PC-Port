@@ -1,5 +1,8 @@
 #include "game/enemies/EnemyAnimator.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "engine/core/Types.h"
 
 namespace gdl::game {
@@ -32,6 +35,7 @@ bool EnemyAnimator::bind(const TreeInfo& tree, bool walksIn) {
     m_player.start(tree.sequences[first], first);
     m_pose.evaluate(tree, first, 0.0f);
     m_previous = m_pose;
+    holdPresentation();
     return true;
 }
 
@@ -70,6 +74,7 @@ u32 EnemyAnimator::sequenceOf(Action action) const {
 }
 
 void EnemyAnimator::update(s32 ticks, f32 seconds, bool contact) {
+    holdPresentation();
     m_struck = false;
     m_powerStruck = false;
     m_threw = false;
@@ -84,6 +89,38 @@ void EnemyAnimator::update(s32 ticks, f32 seconds, bool contact) {
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     if (m_player.transitioning()) {
         m_pose.blend(m_previous, m_player.transition());
+    }
+}
+
+void EnemyAnimator::holdPresentation() {
+    m_generationBefore = m_player.generation();
+    m_frameBefore = m_player.presentationFrame();
+    if (bound()) {
+        m_presentationBefore.evaluate(*m_tree, m_player.sequence(), m_frameBefore, false, true);
+        if (m_player.transitioning()) {
+            m_presentationBefore.blend(m_previous, m_player.transition());
+        }
+    }
+}
+
+f32 EnemyAnimator::presentationFrame(f32 blend) const {
+    const f32 frame = m_player.presentationFrame();
+    return m_generationBefore == m_player.generation()
+               ? std::lerp(m_frameBefore, frame, std::clamp(blend, 0.0f, 1.0f))
+               : frame;
+}
+
+void EnemyAnimator::evaluatePresentation(TreePose& pose, f32 blend) const {
+    if (!bound()) {
+        pose = {};
+        return;
+    }
+    pose.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(), false, true);
+    if (m_player.transitioning()) {
+        pose.blend(m_previous, m_player.transition());
+    }
+    if (m_generationBefore == m_player.generation()) {
+        pose.blend(m_presentationBefore, std::clamp(blend, 0.0f, 1.0f), true);
     }
 }
 

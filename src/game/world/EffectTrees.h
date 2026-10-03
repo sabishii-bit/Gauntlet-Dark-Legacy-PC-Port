@@ -97,6 +97,13 @@ public:
         std::optional<Mat4> attachment;      ///< full posed parent, rather than world yaw alone
         std::optional<Vec3> flightDirection; ///< arrow effects follow 3D travel, not yaw alone
         std::optional<u32> particleTextureSlot; ///< standalone emitter's animated sprite slot
+        Mat4 previousTransform{1};
+        std::optional<Vec3> previousDirection;
+        const TreeInfo* previousTree = nullptr;
+        u64 previousGeneration = 0;
+        f32 previousFrame = 0;
+        bool presentationCaptured = false;
+        mutable TreePose presentationPose; ///< visual-only sample, never emitter or contact input
         Mat4 transform() const;
     };
 
@@ -136,9 +143,13 @@ public:
     std::optional<f32> remaining(u32 id) const;
     /** The lights the playing effects give off, a unit over each, the newest first. */
     void lights(std::vector<PointLight>& out) const;
+    /** Snapshot before a simulation step, including before callers move attached effects. */
+    void capturePresentation();
+    /** A discontinuous placement or bounce must not blend across its contact point. */
+    void snapPresentation(u32 id);
     void update(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr, f32 frameBlend = -1.0f) const;
     void clear();
 
     usize count() const { return m_effects.size(); }
@@ -158,6 +169,7 @@ private:
     std::vector<std::unique_ptr<Motion>> m_motions;
     std::vector<TextureSet*> m_lenders;
     f32 m_frames = 0.0f;
+    bool m_presentationAdvanced = false;
     u32 m_nextId = 1;
 };
 

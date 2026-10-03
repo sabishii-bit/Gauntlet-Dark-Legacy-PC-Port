@@ -296,8 +296,8 @@ bool Bosses::reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& faci
 }
 
 void Bosses::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                  const Texture* frozenTexture) const {
-    m_fighter.draw(device, clip, lighting, frozenTexture, nullptr, m_hitFlash);
+                  const Texture* frozenTexture, f32 presentationAlpha) const {
+    m_fighter.draw(device, clip, lighting, frozenTexture, nullptr, m_hitFlash, presentationAlpha);
 }
 
 BossView Bosses::view() const {

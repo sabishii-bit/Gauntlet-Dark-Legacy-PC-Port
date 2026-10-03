@@ -72,6 +72,7 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
     critter.shotFrame = -1;
     critter.attackTarget.reset();
     critter.stepTarget.reset();
+    critter.smoothValid = false;
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
     // CritterAnimate uses the body's sequence index, falling back to zero for
     // shorter auxiliary trees (the Lich's FLIES has just one repeating sequence).

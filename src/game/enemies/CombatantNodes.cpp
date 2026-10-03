@@ -125,7 +125,8 @@ void Combatant::drawNodeState(const Actor& actor, const Texture* flash) {
 
 void Combatant::drawBrokenModels(const Actor& actor, RenderDevice& device, const Mat4& clip,
                                  const WorldLighting& lighting, const Texture* frozen,
-                                 const Texture* flash) {
+                                 const Texture* flash, const Mat4& placement,
+                                 const TreePose& pose) {
     if (actor.hidden) {
         return;
     }
@@ -144,7 +145,7 @@ void Combatant::drawBrokenModels(const Actor& actor, RenderDevice& device, const
             replacement.setAppearance(flashing && flash != nullptr, actor.tint);
             const Texture* mask = flashing ? flash : nullptr;
             replacement.setMaskedTexture(frozen != nullptr ? frozen : mask);
-            replacement.draw(device, clip, attachmentTransform(actor, part.node), lighting, {},
+            replacement.draw(device, clip, placement * pose.matrices()[*node], lighting, {},
                              nullptr, actor.alpha);
         }
     }

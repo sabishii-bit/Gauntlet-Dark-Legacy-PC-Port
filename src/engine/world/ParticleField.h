@@ -52,8 +52,10 @@ public:
 
     /** Moves `seconds` on, in whole game frames. */
     void step(f32 seconds);
-    /** Draws every particle as a square facing the camera, whose axes `right` and `up` are. */
-    void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up) const;
+    /** Camera-facing particles. Negative alpha draws native ticks; [0,1] samples the
+     * last simulation interval without advancing emission. Held owners pass -1. */
+    void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
+              f32 presentationAlpha = -1.0f) const;
 
 private:
     struct Entry {
@@ -64,6 +66,7 @@ private:
 
     std::vector<Entry> m_entries;
     f32 m_frameRemainder = 0.0f;
+    f32 m_lastAdvance = 0.0f;
     mutable ImmediateBatch m_batch;
 };
 
