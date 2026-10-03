@@ -255,4 +255,38 @@ TEST_CASE("arrival title slides during the hold and disappears when the arrival 
     draw("A");
     REQUIRE(device.draws.empty());
 }
+TEST_CASE("arrival fractional draws leave spawn holds and native poses unchanged",
+          "[game][screens][arrival][presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(spawnFixture("arrival-presentation-fractions")));
+    test::FakeRenderDevice device;
+    LevelArrivalPresentation arrival;
+    const std::array<Vec3, 1> positions{Vec3{0}};
+    arrival.begin(device, archive, positions);
+    arrival.animate(1.0f / 30);
+    const auto x = [&](f32 blend) {
+        device.draws.clear();
+        arrival.drawEffects(device, Mat4{1}, {}, blend);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws.front().vertices.front().position.x;
+    };
+    CHECK(x(0) == Approx(0));
+    CHECK(x(0.5f) == Approx(0.5f));
+    CHECK(x(1) == Approx(1));
+    CHECK(x(-1) == Approx(1));
+    CHECK(x(0.5f) == Approx(0.5f));
+    REQUIRE(arrival.active());
+    CHECK_FALSE(arrival.takeTitleLanded());
+    arrival.capturePresentation();
+    CHECK(x(0) == Approx(1));
+    CHECK(x(0.75f) == Approx(1));
+    REQUIRE(arrival.active());
+    CHECK_FALSE(arrival.takeTitleLanded());
+    arrival.animate(0);
+    CHECK(x(0) == x(1));
+    arrival.advance(LevelArrivalPresentation::kSpawnTicks, false, {}, {});
+    device.draws.clear();
+    arrival.drawEffects(device, Mat4{1}, {}, 0.5f);
+    CHECK(device.draws.empty());
+}
 } // namespace

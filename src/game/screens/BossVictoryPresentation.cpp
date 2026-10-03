@@ -31,6 +31,7 @@ void BossVictoryPresentation::clear() {
     m_player.stop();
     m_tree = nullptr;
     m_pose = TreePose{};
+    m_presentationAdvanced = false;
     m_textures = TextureAnimator{};
     m_textureFrames = 0.0f;
     m_position = Vec3{0.0f};
@@ -44,6 +45,7 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
     m_model.clear();
     m_player.stop();
     m_pose = TreePose{};
+    m_presentationAdvanced = false;
     const auto tree = items.trees.find(kWizardTree);
     if (!tree.has_value()) {
         log::warn("Tower: no {} in the level's items; the wizard is not seen", kWizardTree);
@@ -92,6 +94,9 @@ BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 s
                                                                 const MessageTable& strings,
                                                                 bool voicePlaying) {
     Update result;
+    m_previousFrame = m_player.presentationFrame();
+    m_previousGeneration = m_player.generation();
+    m_presentationAdvanced = seconds > 0 && m_visit.wizardShown() && m_player.playing();
     if (!m_visit.running()) {
         return result;
     }
@@ -133,14 +138,24 @@ BossCameraSubject BossVictoryPresentation::wizardSubject() const {
 }
 
 void BossVictoryPresentation::drawWizard(RenderDevice& device, const Mat4& clip,
-                                         const WorldLighting& lighting,
-                                         const CameraFrame* camera) const {
+                                         const WorldLighting& lighting, const CameraFrame* camera,
+                                         f32 frameBlend) const {
     if (m_tree == nullptr || !m_visit.wizardShown() || m_visit.wizardAlpha() <= 0.0f) {
         return;
     }
     const Mat4 model =
         glm::rotate(glm::translate(Mat4{1.0f}, m_position), m_yaw, Vec3{0.0f, 1.0f, 0.0f});
-    m_model.draw(device, clip, model, lighting, m_pose.matrices(), camera, m_visit.wizardAlpha());
+    TreePose visualPose;
+    const TreePose* pose = &m_pose;
+    if (frameBlend >= 0 && m_presentationAdvanced) {
+        const f32 frame = m_previousGeneration == m_player.generation()
+                              ? std::lerp(m_previousFrame, m_player.presentationFrame(),
+                                          std::clamp(frameBlend, 0.0f, 1.0f))
+                              : m_player.presentationFrame();
+        visualPose.evaluate(*m_tree, m_player.sequence(), frame, false, true);
+        pose = &visualPose;
+    }
+    m_model.draw(device, clip, model, lighting, pose->matrices(), camera, m_visit.wizardAlpha());
 }
 
 void BossVictoryPresentation::drawCaption(Canvas& canvas, const TextPainter& text,

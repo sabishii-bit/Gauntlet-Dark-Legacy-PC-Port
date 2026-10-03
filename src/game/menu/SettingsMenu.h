@@ -19,7 +19,8 @@ public:
     using PreviewAudio = std::function<void(const AudioConfig&)>;
     void open(const GameConfig& config, const StringTable* strings, Persist persist,
               const TextPainter& painter, const MenuScreen& screen, MenuDefinition backdrop,
-              Scope scope = Scope::Title, PreviewAudio preview = {});
+              Scope scope = Scope::Title, PreviewAudio preview = {}, DisplayOptions display = {},
+              std::function<DisplayOptions()> queryDisplay = {});
     MenuEvent update(const MenuInput& input, s32 ticks);
     void close() { m_menu.close(); }
     bool isOpen() const { return m_menu.isOpen(); }
@@ -42,6 +43,9 @@ private:
     const StringTable* m_strings = nullptr;
     Persist m_persist;
     PreviewAudio m_previewAudio;
+    DisplayOptions m_display;
+    std::function<DisplayOptions()> m_queryDisplay;
+    std::vector<Extent2D> resolutions() const;
     bool m_audioDirty = false;
     Scope m_scope = Scope::Title;
     GameConfig m_config;

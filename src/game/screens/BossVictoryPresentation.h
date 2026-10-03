@@ -39,10 +39,12 @@ public:
     void bindWizard(RenderDevice& device, ItemArchive& items, const Vec3& boss,
                     std::span<const Vec3> party);
     void clear();
+    /** Start a scene tick even when another presentation holds the victory visit. */
+    void capturePresentation() { m_presentationAdvanced = false; }
     Update update(s32 ticks, f32 seconds, bool goldLeft, const MessageTable& strings,
                   bool voicePlaying = false);
     void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                    const CameraFrame* camera = nullptr) const;
+                    const CameraFrame* camera = nullptr, f32 frameBlend = -1.0f) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, const MessageTable& strings,
                      f32 width, f32 height) const;
 
@@ -55,6 +57,9 @@ private:
     TreeModel m_model;
     AnimationPlayer m_player;
     TreePose m_pose;
+    f32 m_previousFrame = 0;
+    u64 m_previousGeneration = 0;
+    bool m_presentationAdvanced = false;
     TextureAnimator m_textures;
     f32 m_textureFrames = 0.0f;
     Vec3 m_position{0.0f};

@@ -64,6 +64,7 @@ void WorldAnimator::hold(s32 object) {
     track.once = true;
     track.reverse = true;
     track.finished = true;
+    track.presentationCut = true;
 }
 
 void WorldAnimator::fire(s32 object, bool open, bool atOnce) {
@@ -80,6 +81,7 @@ void WorldAnimator::fire(s32 object, bool open, bool atOnce) {
     if (atOnce) {
         track.frame = open ? last : 0.0f;
         track.finished = true;
+        track.presentationCut = true;
     }
 }
 
@@ -98,7 +100,7 @@ void WorldAnimator::cycle(s32 object, bool active) {
 void WorldAnimator::pose(const Track& track, WorldScene& scene) {
     const NodePose pose = TreePose::sample(track.track, track.frame);
     scene.setObjectTransform(static_cast<usize>(track.object),
-                             TreePose::localMatrix(pose, track.origin));
+                             TreePose::localMatrix(pose, track.origin), track.presentationCut);
 }
 
 void WorldAnimator::apply(WorldScene& scene) const {
@@ -112,6 +114,7 @@ void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
     const f32 advance = seconds * kFramesPerSecond;
     for (Track& track : m_tracks) {
         pose(track, scene);
+        track.presentationCut = false;
         if (seconds <= 0 || track.finished || (pauseLoops && !track.once && !track.reverse)) {
             continue;
         }
@@ -145,6 +148,7 @@ void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
             // A looping world track's final key closes the cycle; retain time past
             // that key rather than lengthening every loop by a caller-dependent amount.
             track.frame = last > 0.0f && track.frame >= last ? std::fmod(track.frame, last) : 0.0f;
+            track.presentationCut = true;
             m_cycleEvents.push_back({track.object, true});
         } else if (!restarted && std::floor(track.frame) <= 1) {
             m_cycleEvents.push_back({track.object, false});

@@ -1,6 +1,7 @@
 #include "engine/world/WorldScene.h"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <ranges>
 
@@ -15,6 +16,47 @@ constexpr u32 kLightmapShift = 20U;
 constexpr u64 kAdditiveKey = u64{1} << 40U;
 constexpr u64 kNoDepthKey = u64{1} << 41U;
 constexpr u64 kNoDepthTestKey = u64{1} << 42U;
+
+/** Local TRS interpolation preserves a child's arc about its moving parent. */
+Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 alpha) {
+    if (alpha >= 1.0f || previous == current) {
+        return current;
+    }
+    Mat3 from{previous};
+    Mat3 to{current};
+    Vec3 fromScale{0};
+    Vec3 toScale{0};
+    constexpr f32 kMinimumScale = 1e-6f;
+    constexpr f32 kBasisTolerance = 1e-3f;
+    for (s32 axis = 0; axis < 3; ++axis) {
+        fromScale[axis] = glm::length(from[axis]);
+        toScale[axis] = glm::length(to[axis]);
+        if (fromScale[axis] < kMinimumScale || toScale[axis] < kMinimumScale) {
+            return current;
+        }
+        from[axis] /= fromScale[axis];
+        to[axis] /= toScale[axis];
+    }
+    const auto orthogonal = [](const Mat3& basis) {
+        return std::abs(glm::determinant(basis) - 1.0f) < kBasisTolerance &&
+               std::abs(glm::dot(basis[0], basis[1])) < kBasisTolerance &&
+               std::abs(glm::dot(basis[0], basis[2])) < kBasisTolerance &&
+               std::abs(glm::dot(basis[1], basis[2])) < kBasisTolerance;
+    };
+    // Shear/reflection and large authored orientation cuts must not become an
+    // unrelated rotation. Position may still move continuously beneath that basis.
+    Mat4 result = current;
+    if (orthogonal(from) && orthogonal(to)) {
+        const Quat first = glm::quat_cast(from);
+        const Quat second = glm::quat_cast(to);
+        if (std::abs(glm::dot(first, second)) > std::cos(kHalfPi * 0.5f)) {
+            result = glm::mat4_cast(glm::slerp(first, second, alpha));
+            result = glm::scale(result, glm::mix(fromScale, toScale, alpha));
+        }
+    }
+    result[3] = glm::mix(previous[3], current[3], alpha);
+    return result;
+}
 
 /** The coordinates a chromed surface samples: its normal's x and y folded into the map. */
 Vec2 chromeUv(const Vec3& normal) {
@@ -83,6 +125,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
     for (usize i = 0; i < objects.size(); ++i) {
         Placement& placement = m_placements[i];
         placement.local = glm::translate(Mat4{1.0f}, objects[i].position);
+        placement.previous = placement.local;
         placement.parent = objects[i].parent;
         for (auto at = static_cast<s32>(i); at >= 0; at = objects[static_cast<usize>(at)].parent) {
             if (animated[static_cast<usize>(at)] != 0 ||
@@ -233,6 +276,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                      [&](const Batch& a, const Batch& b) { return pass(a) < pass(b); });
     m_world.assign(objects.size(), Mat4{1.0f});
     m_worldValid.assign(objects.size(), 0);
+    m_presentedWorld.assign(objects.size(), Mat4{1.0f});
+    m_presentedValid.assign(objects.size(), 0);
     if (!built()) {
         log::warn("World scene: no placed object has a mesh");
         return false;
@@ -247,6 +292,8 @@ void WorldScene::clear() {
     m_placements.clear();
     m_world.clear();
     m_worldValid.clear();
+    m_presentedWorld.clear();
+    m_presentedValid.clear();
     m_order.clear();
     m_placed = 0;
     m_triangles = 0;
@@ -256,9 +303,18 @@ bool WorldScene::moving(usize object) const {
     return object < m_placements.size() && m_placements[object].moving;
 }
 
-void WorldScene::setObjectTransform(usize object, const Mat4& local) {
+void WorldScene::capturePresentation() {
+    for (Placement& placement : m_placements) {
+        placement.previous = placement.local;
+    }
+}
+
+void WorldScene::setObjectTransform(usize object, const Mat4& local, bool presentationCut) {
     if (moving(object)) {
         m_placements[object].local = local;
+        if (presentationCut) {
+            m_placements[object].previous = local;
+        }
         std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
     }
 }
@@ -353,6 +409,29 @@ const Mat4& WorldScene::worldOf(usize object) const {
     return m_world[object];
 }
 
+const Mat4& WorldScene::presentedWorldOf(usize object, f32 alpha) const {
+    if (alpha < 0.0f) {
+        return worldOf(object);
+    }
+    m_chain.clear();
+    for (auto at = static_cast<s32>(object);
+         at >= 0 && m_presentedValid[static_cast<usize>(at)] == 0;
+         at = m_placements[static_cast<usize>(at)].parent) {
+        m_chain.push_back(static_cast<usize>(at));
+    }
+    for (const usize index : m_chain | std::views::reverse) {
+        const Placement& placement = m_placements[index];
+        const Mat4 local = placement.moving ? blendPlacement(placement.previous, placement.local,
+                                                             std::clamp(alpha, 0.0f, 1.0f))
+                                            : placement.local;
+        m_presentedWorld[index] =
+            placement.parent >= 0 ? m_presentedWorld[static_cast<usize>(placement.parent)] * local
+                                  : local;
+        m_presentedValid[index] = 1;
+    }
+    return m_presentedWorld[object];
+}
+
 void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4& clip) const {
     const Slot& slot = m_slots.at(batch.slot);
     DrawState state;
@@ -409,11 +488,12 @@ Color WorldScene::shadeAt(bool additive, bool prelit, const MeshVertex& vertex,
 /** Places, lights and draws a unit's parts: its opaque ones when `opaque`, its translucent
  * and glowing ones when `translucent`. */
 void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
-                          const CameraFrame& camera, bool opaque, bool translucent) const {
+                          const CameraFrame& camera, bool opaque, bool translucent,
+                          f32 alpha) const {
     if (!unit.visible || unit.alpha <= 0.0f) {
         return;
     }
-    const Mat4 world = camera.face(worldOf(unit.object), unit.facing);
+    const Mat4 world = camera.face(presentedWorldOf(unit.object, alpha), unit.facing);
     const Mat3 normalMatrix{world};
     for (const UnitPart& part : unit.parts) {
         // A fading unit's solid parts blend too, so the whole of it thins together.
@@ -449,20 +529,22 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
     }
 }
 
-void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const {
-    drawOpaque(device, clip, camera);
-    drawDeferred(device, clip, camera);
+void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
+                      f32 presentationAlpha) const {
+    drawOpaque(device, clip, camera, presentationAlpha);
+    drawDeferred(device, clip, camera, presentationAlpha);
 }
 
-void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip,
-                            const CameraFrame& camera) const {
+void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
+                            f32 presentationAlpha) const {
     std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
+    std::fill(m_presentedValid.begin(), m_presentedValid.end(), u8{0});
     // Background sheets can intersect the arena in geometry space (A5's lightning
     // does). A bias within the deferred queue alone still composites them over
     // actors and pillars. Draw the authored depthless far layer before the solids.
     for (const Unit& unit : m_units) {
         if (unit.background) {
-            drawUnit(device, unit, clip, camera, true, true);
+            drawUnit(device, unit, clip, camera, true, true, presentationAlpha);
         }
     }
     usize next = 0;
@@ -472,15 +554,16 @@ void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip,
     // Moving objects' solid parts join the opaque; everything blended sorts by depth.
     for (const Unit& unit : m_units) {
         if (!unit.sorted && !unit.background) {
-            drawUnit(device, unit, clip, camera, true, false);
+            drawUnit(device, unit, clip, camera, true, false, presentationAlpha);
         }
     }
 }
 
-void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip,
-                              const CameraFrame& camera) const {
+void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
+                              f32 presentationAlpha) const {
     const Vec3& eye = camera.position;
     std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
+    std::fill(m_presentedValid.begin(), m_presentedValid.end(), u8{0});
     usize next = 0;
     while (next < m_batches.size() && !m_batches[next].translucent && !m_batches[next].additive) {
         ++next;
@@ -494,7 +577,7 @@ void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip,
     std::vector<f32> keys(m_units.size());
     for (usize i = 0; i < m_units.size(); ++i) {
         m_order[i] = i;
-        const Vec3 origin{worldOf(m_units[i].object)[3]};
+        const Vec3 origin{presentedWorldOf(m_units[i].object, presentationAlpha)[3]};
         keys[i] = glm::dot(origin - eye, camera.forward) + m_units[i].sortBias;
     }
     std::stable_sort(m_order.begin(), m_order.end(),
@@ -502,7 +585,7 @@ void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip,
     for (const usize i : m_order) {
         const Unit& unit = m_units[i];
         if (!unit.background) {
-            drawUnit(device, unit, clip, camera, unit.sorted, true);
+            drawUnit(device, unit, clip, camera, unit.sorted, true, presentationAlpha);
         }
     }
     while (next < m_batches.size()) {

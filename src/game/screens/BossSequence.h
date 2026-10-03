@@ -52,6 +52,7 @@ public:
     bool advanceVictory(s32 ticks, f32 seconds, std::span<const PlayerRuntime> players,
                         const MessageTable& strings);
     const BossVictoryPresentation& victory() const { return m_victory; }
+    void capturePresentation() { m_victory.capturePresentation(); }
     BossCameraSubject victorySubject() const;
     const Texture* frozenTexture() const {
         return m_legend != nullptr ? m_legend->frozenTexture() : nullptr;

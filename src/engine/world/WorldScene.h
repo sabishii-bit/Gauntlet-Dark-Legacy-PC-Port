@@ -63,7 +63,10 @@ public:
 
     /** Moves an animated object: `local` replaces its offset from its parent, and everything
      * under it follows. Objects that are not animated stay where the layout put them. */
-    void setObjectTransform(usize object, const Mat4& local);
+    void setObjectTransform(usize object, const Mat4& local, bool presentationCut = false);
+    /** Captures the current local transforms before one fixed simulation update.
+     * Drawing may interpolate these; collision always reads the current transforms. */
+    void capturePresentation();
     /** Shows `texture` wherever the level's texture `slot` is drawn; null restores it. */
     void setTextureFrame(u32 slot, const Texture* texture);
     /** Slides the coordinates of everything drawn with `slot`. */
@@ -84,11 +87,14 @@ public:
     /** Draws the still opaque geometry, the moving objects, the still translucent geometry,
      * then the sorted objects farthest from the camera first (those flagged to face it
      * turned its way), and the glows last; `clip` maps world to clip space. */
-    void draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
+    void draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
+              f32 presentationAlpha = -1.0f) const;
     /** Insert dynamic solid objects between these passes so glass and light rays
      * blend over them while still respecting the completed depth buffer. */
-    void drawOpaque(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
-    void drawDeferred(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
+    void drawOpaque(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
+                    f32 presentationAlpha = -1.0f) const;
+    void drawDeferred(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
+                      f32 presentationAlpha = -1.0f) const;
     /** Takes this much of the colour out of everything but what glows (the level's light is
      * baked into its vertices, so a change of ambient light is made this way). */
     void setDarken(f32 darken) { m_darken = darken; }
@@ -148,7 +154,8 @@ private:
         bool depthTest = true;
     };
     struct Placement {
-        Mat4 local{1.0f}; ///< relative to the parent
+        Mat4 local{1.0f};    ///< relative to the parent
+        Mat4 previous{1.0f}; ///< last fixed-update snapshot, presentation only
         s32 parent = -1;
         bool moving = false;
     };
@@ -156,11 +163,12 @@ private:
     Slot& slotFor(u32 index, TextureSet& textures, RenderDevice& device,
                   std::span<TextureSet* const> lenders);
     const Mat4& worldOf(usize object) const;
+    const Mat4& presentedWorldOf(usize object, f32 alpha) const;
     Unit* unitOf(usize object);
     const Unit* unitOf(usize object) const;
     void drawBatch(RenderDevice& device, const Batch& batch, const Mat4& clip) const;
     void drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
-                  const CameraFrame& camera, bool opaque, bool translucent) const;
+                  const CameraFrame& camera, bool opaque, bool translucent, f32 alpha) const;
 
     std::unordered_map<u32, Slot> m_slots;
     std::vector<Batch> m_batches;
@@ -172,6 +180,8 @@ private:
     usize m_triangles = 0;
     mutable std::vector<Mat4> m_world; ///< per object, composed for the frame being drawn
     mutable std::vector<u8> m_worldValid;
+    mutable std::vector<Mat4> m_presentedWorld;
+    mutable std::vector<u8> m_presentedValid;
     mutable std::vector<usize> m_order; ///< the sorted units, farthest first
     mutable std::vector<usize> m_chain; ///< ancestors awaiting composition
     mutable ImmediateBatch m_scratch;

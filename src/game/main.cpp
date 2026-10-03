@@ -63,6 +63,7 @@ int runGauntlet(std::span<char*> rawArgs) {
     const bool vsyncFromCommandLine = !parsed.desc.vsync;
     parsed.desc.window.width = config.display.windowWidth;
     parsed.desc.window.height = config.display.windowHeight;
+    parsed.desc.window.mode = config.display.windowMode;
     parsed.desc.vsync = config.display.vsync && !vsyncFromCommandLine;
     parsed.desc.sampleCount = config.display.sampleCount;
     parsed.desc.maxFrameRate = config.display.maxFrameRate;

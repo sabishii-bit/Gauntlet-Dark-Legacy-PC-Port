@@ -60,7 +60,8 @@ private:
         bool reverse = false; ///< plays backwards once
         bool once = false;    ///< plays forwards once
         bool finished = false;
-        bool held = false; ///< waiting at its first frame for a trigger
+        bool held = false;           ///< waiting at its first frame for a trigger
+        bool presentationCut = true; ///< first placement, reset or loop discontinuity
     };
 
     static void pose(const Track& track, WorldScene& scene);

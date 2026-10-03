@@ -318,4 +318,42 @@ TEST_CASE("victory presentation reports voices and one sparkle then resets for a
         REQUIRE_FALSE(presentation.update(60, 1.0f, false, strings).sparkle);
     }
 }
+TEST_CASE("victory fractional poses preserve speech state and snap loop boundaries",
+          "[game][screens][victory-presentation][presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(wizardFixture("victory-presentation-fractions")));
+    test::FakeRenderDevice device;
+    BossVictoryPresentation presentation;
+    const MessageTable strings;
+    const std::array<Vec3, 1> party{Vec3{0, 0, 10}};
+    presentation.begin(41, 'G', 0, 0, false);
+    presentation.bindWizard(device, archive, {}, party);
+    presentation.update(BossVictory::kWaitTicks, 0, false, strings);
+    presentation.update(32, 0, false, strings);
+    presentation.update(32, 1.0f / 30, false, strings);
+    const auto stage = presentation.state().stage();
+    const auto x = [&](f32 blend) {
+        device.draws.clear();
+        presentation.drawWizard(device, Mat4{1}, {}, nullptr, blend);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws.front().vertices.front().position.x;
+    };
+    CHECK(x(0) == Approx(0));
+    CHECK(x(0.5f) == Approx(0.5f));
+    CHECK(x(1) == Approx(1));
+    CHECK(x(-1) == Approx(1));
+    CHECK(presentation.state().stage() == stage);
+    presentation.capturePresentation();
+    CHECK(x(0) == Approx(1));
+    CHECK(x(0.75f) == Approx(1));
+    CHECK(presentation.state().stage() == stage);
+    presentation.update(0, 8.0f / 30, false, strings);
+    CHECK(x(0) == Approx(x(1))); // never interpolate backward through a wrapped sequence
+    presentation.update(0, 0, false, strings);
+    CHECK(x(0) == x(1));
+    presentation.clear();
+    device.draws.clear();
+    presentation.drawWizard(device, Mat4{1}, {}, nullptr, 0.5f);
+    CHECK(device.draws.empty());
+}
 } // namespace

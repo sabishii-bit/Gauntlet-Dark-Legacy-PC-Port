@@ -17,6 +17,7 @@ void SkorneArena::clear() {
     m_rocks.clear();
     m_phase = 0;
     m_remainder = 0;
+    m_updateSeconds = 0;
     m_bottom = 0;
 }
 void SkorneArena::bind(RenderDevice& device, const WorldLayout& layout, ModelSet& models,
@@ -74,6 +75,7 @@ void SkorneArena::cue(const Vec3& boss) {
     }
 }
 void SkorneArena::update(f32 seconds) {
+    m_updateSeconds = seconds;
     if (m_phase == 0) {
         return;
     }
@@ -83,11 +85,15 @@ void SkorneArena::update(f32 seconds) {
         }
     }
 }
-void SkorneArena::draw(RenderDevice& device, const Mat4& clip,
-                       const WorldLighting& lighting) const {
+void SkorneArena::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                       f32 presentationAlpha) const {
+    const f32 alpha =
+        FallingPiece::presentationFraction(m_remainder, m_updateSeconds, presentationAlpha);
     for (const auto& rock : m_rocks) {
         if (rock.motion.visible) {
-            rock.model.draw(device, clip, itemPlacement(rock.motion.position, rock.motion.rotation),
+            rock.model.draw(device, clip,
+                            itemPlacement(rock.motion.presentedPosition(alpha),
+                                          rock.motion.presentedRotation(alpha)),
                             lighting);
         }
     }

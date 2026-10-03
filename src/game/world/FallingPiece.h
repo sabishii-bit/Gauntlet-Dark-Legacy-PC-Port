@@ -32,16 +32,26 @@ public:
     static f32 bottomOf(const WorldLayout& layout);
     /** How many whole 30 Hz frames `seconds` brings due, carrying the rest in `remainder`. */
     static s32 framesDue(f32& remainder, f32 seconds);
+    /** Fraction between the last two native poses, including time carried between
+     * physics steps. Negative render alpha selects the current native pose. */
+    static f32 presentationFraction(f32 remainder, f32 updateSeconds, f32 renderAlpha);
 
     /** Stands the piece at rest at `where`, turned by `angles`, as instance `index`. */
     void place(const Vec3& where, const Vec3& angles, usize index);
     /** One 30 Hz frame of falling; the piece is no longer visible under `bottom`. */
     void advance(const FallingProfile& profile, f32 bottom);
+    /** Read-only placement between the last two native poses; never predicts physics. */
+    Vec3 presentedPosition(f32 alpha) const;
+    Vec3 presentedRotation(f32 alpha) const;
 
     Vec3 position{0.0f};
     Vec3 rotation{0.0f}; ///< pitch, yaw, roll
     Vec3 velocity{0.0f};
     usize instance = 0;
     bool visible = true;
+
+private:
+    Vec3 m_previousPosition{0.0f};
+    Vec3 m_previousRotation{0.0f};
 };
 } // namespace gdl::game

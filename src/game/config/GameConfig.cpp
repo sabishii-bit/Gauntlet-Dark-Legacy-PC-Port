@@ -122,6 +122,18 @@ void GameConfig::mergeJson(std::string_view json) {
         read(d, "frameHeight", display.frameHeight);
         read(d, "windowWidth", display.windowWidth);
         read(d, "windowHeight", display.windowHeight);
+        if (d.contains("windowMode")) {
+            const auto& mode = d.at("windowMode");
+            if (mode == "windowed") {
+                display.windowMode = WindowMode::Windowed;
+            } else if (mode == "fullscreen") {
+                display.windowMode = WindowMode::Fullscreen;
+            } else if (mode == "borderless") {
+                display.windowMode = WindowMode::BorderlessFullscreen;
+            } else {
+                throw FormatError("unknown window mode");
+            }
+        }
         read(d, "vsync", display.vsync);
         if (d.contains("sampleCount")) {
             const auto& samples = d.at("sampleCount");
@@ -256,19 +268,25 @@ void GameConfig::mergeJson(std::string_view json) {
         display.windowWidth == 0 || display.windowHeight == 0) {
         throw FormatError("config sizes and the tick rate must be positive");
     }
+    if (display.windowWidth > 32768 || display.windowHeight > 32768) {
+        throw FormatError("window dimensions exceed platform limits");
+    }
 }
 
 std::string GameConfig::toJson() const {
     Json root;
-    root["display"] = {{"virtualWidth", display.virtualWidth},
-                       {"virtualHeight", display.virtualHeight},
-                       {"frameWidth", display.frameWidth},
-                       {"frameHeight", display.frameHeight},
-                       {"windowWidth", display.windowWidth},
-                       {"windowHeight", display.windowHeight},
-                       {"vsync", display.vsync},
-                       {"sampleCount", display.sampleCount},
-                       {"maxFrameRate", display.maxFrameRate}};
+    std::string_view windowModeName = "windowed";
+    if (display.windowMode == WindowMode::Fullscreen) {
+        windowModeName = "fullscreen";
+    } else if (display.windowMode == WindowMode::BorderlessFullscreen) {
+        windowModeName = "borderless";
+    }
+    root["display"] = {
+        {"virtualWidth", display.virtualWidth}, {"virtualHeight", display.virtualHeight},
+        {"frameWidth", display.frameWidth},     {"frameHeight", display.frameHeight},
+        {"windowWidth", display.windowWidth},   {"windowHeight", display.windowHeight},
+        {"windowMode", windowModeName},         {"vsync", display.vsync},
+        {"sampleCount", display.sampleCount},   {"maxFrameRate", display.maxFrameRate}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};
     root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},

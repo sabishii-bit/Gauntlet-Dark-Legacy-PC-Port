@@ -119,6 +119,12 @@ public:
         bool carried = false;            ///< held by one of the great ones, unseen
         s32 opener = -1;                 ///< the player who let it out of a chest or barrel
         f32 noGrabSeconds = 0.0f;        ///< over nought, no one can take it yet
+        Mat4 previousTransform{1.0f};
+        f32 previousFrame = 0.0f;
+        f32 previousAlpha = 1.0f;
+        u64 previousGeneration = 0;
+        bool presentationCaptured = false;
+        mutable TreePose presentationPose;
 
         /** Whether a party of `players` sees it. */
         bool shownTo(s32 players) const;
@@ -226,6 +232,10 @@ public:
                  const WorldCollision* collision, f32 noGrabSeconds);
     /** Whether any gold lies untaken. */
     bool goldLeft() const;
+    /** Capture before the supporting floors or container sockets move this simulation step. */
+    void capturePresentation();
+    /** Instant platform relocations must also cut their riders, even over short distances. */
+    void snapPresentation();
     /** Turns the figures, flies what was thrown and plays the bursts on by `seconds`. */
     void update(f32 seconds);
     /** Carries resting pickups with their supporting world objects, without advancing time. */
@@ -250,8 +260,8 @@ public:
     /** Particles alive over every burst. */
     usize burstParticleCount() const { return m_bursts.particleCount(); }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr,
-              TreeModel::Pass pass = TreeModel::Pass::All) const;
+              const CameraFrame* camera = nullptr, TreeModel::Pass pass = TreeModel::Pass::All,
+              f32 frameBlend = -1.0f) const;
 
 private:
     void startEffect(RenderDevice& device, std::string_view tree, const Vec3& position);
@@ -283,6 +293,8 @@ private:
     f32 m_frameRemainder = 0.0f;
     f32 m_revealTime = 0.0f;
     bool m_revealing = false;
+    bool m_capturePending = false;
+    bool m_burstsAdvanced = false;
 };
 
 } // namespace gdl::game

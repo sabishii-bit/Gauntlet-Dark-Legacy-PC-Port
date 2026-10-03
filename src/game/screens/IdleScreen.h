@@ -69,7 +69,7 @@ public:
     bool isOpen() const { return m_open; }
     void update(f64 seconds, f32 horizontalFov, f32 aspect);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height,
-                f32 horizontalFov) const;
+                f32 horizontalFov, f32 frameBlend = -1.0f) const;
     const EffectTrees& effects() const { return m_effects; }
 
 private:

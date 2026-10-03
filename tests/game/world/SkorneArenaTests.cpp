@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -42,6 +43,11 @@ TEST_CASE("Skorne masonry waits for cues, lifts twice, scatters and retires", "[
     const f32 first = arena.position(0).y;
     REQUIRE(first >= 18.0f / 30);
     REQUIRE(first < 28.0f / 30);
+    device.draws.clear();
+    arena.draw(device, Mat4{1}, {}, 0.5f);
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].vertices[0].position.y == Catch::Approx(first * 0.5f));
+    CHECK(arena.position(0).y == first);
     arena.cue(Vec3{0});
     arena.update(1.0f / 30);
     REQUIRE(arena.position(0).y >= first + 28.0f / 30);

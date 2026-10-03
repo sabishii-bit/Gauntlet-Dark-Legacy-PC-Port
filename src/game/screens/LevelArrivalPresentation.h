@@ -35,11 +35,15 @@ public:
                std::optional<Vec3> cameraFocus = std::nullopt);
     void clear();
 
+    /** Start a scene tick even when another presentation holds materialisation. */
+    void capturePresentation();
+
     /** Advance visuals before the world and its listener update. */
     void animate(f32 seconds);
     /** Advance the hold and camera after the listener update, preserving its frame phase. */
     void advance(s32 ticks, bool skip, const Vec3& followPosition, const Vec3& followAttention);
-    void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                     f32 frameBlend = -1.0f) const;
     void drawTitle(Canvas& canvas, const TextPainter& text, std::string_view title,
                    f32 width) const;
 
@@ -56,6 +60,9 @@ private:
         TreeModel model;
         TreePose pose;
         AnimationPlayer player;
+        f32 previousFrame = 0;
+        u64 previousGeneration = 0;
+        bool presentationAdvanced = false;
     };
     std::vector<Spawn> m_spawns;
     TextureAnimator m_textures;

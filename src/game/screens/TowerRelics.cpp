@@ -256,7 +256,12 @@ const std::optional<WorldCamera>& TowerRelics::camera() const {
     return m_phase == Phase::Placement || m_phase == Phase::Reveal ? m_placementCamera
                                                                    : m_speechCamera;
 }
+void TowerRelics::capturePresentation() {
+    m_figures.capturePresentation();
+    m_wizard.capturePresentation();
+}
 void TowerRelics::animate(f32 seconds) {
+    capturePresentation();
     m_figures.update(seconds);
     m_wizard.update(seconds);
 }
@@ -359,15 +364,15 @@ void TowerRelics::updateLights() {
     }
 }
 void TowerRelics::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                       const WorldCamera& camera) const {
+                       const WorldCamera& camera, f32 frameBlend) const {
     const auto frame = CameraFrame::of(camera);
-    m_figures.draw(device, clip, lighting, &frame);
+    m_figures.draw(device, clip, lighting, &frame, frameBlend);
 }
 void TowerRelics::drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                             const WorldCamera& camera) const {
+                             const WorldCamera& camera, f32 frameBlend) const {
     const auto frame = CameraFrame::of(camera);
     if (active() && m_phase == Phase::Speech) {
-        m_wizard.draw(device, clip, lighting, &frame);
+        m_wizard.draw(device, clip, lighting, &frame, frameBlend);
     }
 }
 void TowerRelics::drawCaption(Canvas& canvas, const TextPainter& text, f32 width,

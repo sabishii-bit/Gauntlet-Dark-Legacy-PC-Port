@@ -176,6 +176,32 @@ TEST_CASE("started pieces fall by their subtype's rates and retire under the bot
     REQUIRE(f.scenery.size() == 0);
 }
 
+TEST_CASE("falling scenery draws continuous half frames without changing its native position",
+          "[falling][presentation]") {
+    Fixture f("falling-scenery-presentation");
+    f.scenery.bind(f.device, f.layout, f.models, f.textures, "F1");
+    REQUIRE(f.scenery.touch(Vec3{0}, 1).size() == 1);
+    f.scenery.update(1.0f / 60);
+    f.scenery.update(1.0f / 60);
+    const Vec3 native = f.scenery.piece(0).motion.position;
+    REQUIRE(native.y < 0);
+    const auto at = [&](f32 alpha) {
+        f.device.draws.clear();
+        f.scenery.draw(f.device, Mat4{1}, {}, alpha);
+        REQUIRE_FALSE(f.device.draws.empty());
+        return f.device.draws[0].vertices[0].position;
+    };
+    CHECK(at(0).y == 0);
+    CHECK(at(0.5f).y == Approx(native.y * 0.25f));
+    CHECK(at(1).y == Approx(native.y * 0.5f));
+    const Vec3 boundary = at(1);
+    f.scenery.update(1.0f / 60);
+    CHECK(at(0) == boundary);
+    CHECK(at(1).y == Approx(native.y));
+    CHECK(f.scenery.piece(0).motion.position == native);
+    CHECK(at(-1).y == Approx(native.y));
+}
+
 TEST_CASE("the forest's first level binds its ninety-two falling pieces", "[falling][assets]") {
     const auto directory = test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path();
     test::assetOrSkip("LEVELS/LEVELF1/objects.ngc");

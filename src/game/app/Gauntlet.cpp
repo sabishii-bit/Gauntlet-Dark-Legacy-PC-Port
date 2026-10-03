@@ -61,6 +61,8 @@ void Gauntlet::applyWindowIcon() {
 }
 
 void Gauntlet::onInit() {
+    // A saved exclusive resolution may no longer exist after moving displays.
+    m_config.display.windowMode = window().windowMode();
     applyWindowIcon();
     if (!m_strings.load(m_options.dataDirectory / kTextDirectory, m_config.text.language)) {
         log::warn("No text tables under {}; identifiers will show instead of text",
@@ -173,6 +175,7 @@ GameContext Gauntlet::context() {
     context.levels = &m_levels;
     context.unpackedRoot = m_options.unpackedDirectory;
     context.saveSettings = [this](const GameConfig& config) { return saveSettings(config); };
+    context.displayOptions = [this] { return window().displayOptions(); };
     context.previewAudio = [this](const AudioConfig& audio) {
         m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
@@ -556,13 +559,33 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
 }
 
 bool Gauntlet::saveSettings(const GameConfig& config) {
+    const bool windowChanged = config.display.windowMode != m_config.display.windowMode ||
+                               config.display.windowWidth != m_config.display.windowWidth ||
+                               config.display.windowHeight != m_config.display.windowHeight;
     try {
         const bool presentationChanged = config.display.vsync != m_config.display.vsync ||
                                          config.display.sampleCount != m_config.display.sampleCount;
         const bool rateChanged =
             config.display.maxFrameRate != m_config.display.maxFrameRate ||
             config.timing.gameplayFrameRate != m_config.timing.gameplayFrameRate;
-        config.saveFile(GameConfig::userSettingsPath());
+        if (windowChanged) {
+            renderDevice().waitIdle();
+            if (!window().setDisplayMode(
+                    config.display.windowMode,
+                    {config.display.windowWidth, config.display.windowHeight})) {
+                return false;
+            }
+        }
+        try {
+            config.saveFile(GameConfig::userSettingsPath());
+        } catch (...) {
+            if (windowChanged) {
+                window().setDisplayMode(
+                    m_config.display.windowMode,
+                    {m_config.display.windowWidth, m_config.display.windowHeight});
+            }
+            throw;
+        }
         m_config = config;
         m_sounds->setMasterVolume(config.audio.masterVolume);
         m_sounds->setCategoryVolume(SoundCategory::Music, config.audio.musicVolume);
@@ -761,7 +784,8 @@ void Gauntlet::onRender(RenderDevice& device) {
                                 static_cast<f32>(framebuffer.height));
     if (m_idleScreen.isOpen()) {
         m_idleScreen.render(device, projection, frameWidth, frameHeight,
-                            glm::radians(m_config.camera.horizontalFovDegrees));
+                            glm::radians(m_config.camera.horizontalFovDegrees),
+                            presentationAlpha());
         return;
     }
     if (m_demo.isOpen()) {
