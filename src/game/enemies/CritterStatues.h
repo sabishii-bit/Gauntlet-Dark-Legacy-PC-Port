@@ -22,7 +22,7 @@
 namespace gdl::game {
 /** The golems, gargoyles and Deaths a level places stand as item statues, the `GOL_STATUE` or
  * `GAR_STATUE` tree of the great one's own archive where the placement is (SetItem, items.c
- * 6798), until woken: by a player walking into one (fn_8005D730), by a blow (fn_8005C1DC) or
+ * 6798), until woken: by a player within its sight (fn_8005D730), by a blow (fn_8005C1DC) or
  * by a trigger flagged to wake the nearest (fn_800606FC). Woken and in view, a statue plays
  * its ACTIVE sequence and, once that has run its ticks, the great one stands in its place
  * (fn_80060114). The archives are borrowed and must outlive the statues. */
@@ -36,10 +36,10 @@ public:
         std::optional<EnemySpawn> enemy;
         std::string form;      ///< a gargoyle's ("GAR_EAGL"); empty for the default
         ItemInstance instance; ///< where the level puts it
-        f32 radius = 0.0f;     ///< the record's: what stops a player, and where a touch counts
+        f32 radius = 0.0f;     ///< the record's solid body, independent of the wake range
         f32 height = 0.0f;
         f32 viewRadius = 0.0f; ///< twice the record's larger size, for coming into view
-        f32 sight = 0.0f;      ///< the placement's sight parameter: under nought, no touch wakes it
+        f32 sight = 0.0f;      ///< approach wake radius; negative disables proximity waking
         s32 activeOn = 0; ///< the record's, in half ticks; nought for the sequence's own length
         std::optional<usize> carried; ///< the pickup the great one holds
     };
@@ -72,9 +72,8 @@ public:
     void wake(usize index);
     /** The statue not yet woken nearest `spot`, and how far off it is. */
     std::optional<std::pair<usize, f32>> nearestAsleep(const Vec3& spot) const;
-    /** A body of `radius` at `position` walking into one: pushed out by the record's
-     * radius, and the statue woken when its placement allows. Where the body stands. */
-    Vec3 touch(const Vec3& position, f32 radius);
+    /** Wakes statues within their placement's sight and resolves solid body contact. */
+    Vec3 touch(const Vec3& position, f32 radius, f32 height = 0.0f);
     /** What the statues put in the way: an upright cylinder each. */
     std::vector<Obstacle> obstacles() const;
     /** What a blow can strike, by the statue's place in the list. */

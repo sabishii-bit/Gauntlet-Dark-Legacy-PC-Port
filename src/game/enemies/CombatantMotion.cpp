@@ -19,7 +19,37 @@ constexpr f32 kDrop = 6.0f;
 constexpr f32 kFootClearance = 0.1f;
 constexpr f32 kWallProbeHeight = 8.0f; ///< how high over its feet walls stop it
 constexpr f32 kBlindTurnShare = 0.1f;
+constexpr f32 kSupportReach = 0.1f;
 } // namespace
+void Combatant::rememberFloor() {
+    Actor& actor = m_actor;
+    actor.floor.reset();
+    if (m_collision == nullptr || !present() || actor.parent != nullptr ||
+        actor.stock->definition.boundsToHome) {
+        return;
+    }
+    const auto floor = m_collision->floorAt(actor.position, kSupportReach, kSupportReach);
+    if (floor) {
+        if (const auto placement = m_collision->objectTransform(floor->object)) {
+            actor.floor = Actor::Floor{floor->object,
+                                       Vec3{glm::inverse(*placement) * Vec4{actor.position, 1}}};
+        }
+    }
+}
+
+void Combatant::syncFloor() {
+    Actor& actor = m_actor;
+    if (!present() || m_collision == nullptr || !actor.floor) {
+        return;
+    }
+    const auto placement = m_collision->objectTransform(actor.floor->object);
+    if (!placement || !m_collision->solid(actor.floor->object)) {
+        actor.floor.reset();
+        return;
+    }
+    actor.position = Vec3{*placement * Vec4{actor.floor->local, 1}};
+}
+
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                       std::span<const EnemyView> players, std::span<const Combatant> peers) {
     const CritterMovement& movement = critter.definition->movement();

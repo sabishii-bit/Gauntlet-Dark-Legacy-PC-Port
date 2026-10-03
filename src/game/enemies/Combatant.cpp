@@ -113,6 +113,7 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
         }
     }
     critter.yaw = yaw;
+    rememberFloor();
     critter.initialYaw = yaw;
     critter.initialRoot = critter.position + Vec3{0.0f, definition.floorOffset(), 0.0f};
     // The table's explicit home is in model-root space; public positions are floors.
@@ -125,6 +126,17 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
     const f32 unused = -std::numeric_limits<f32>::infinity();
     critter.moveTimes.assign(definition.moves().size(), unused);
     critter.patternTimes.assign(definition.patterns().size(), unused);
+    // CritterAddAnimInsts copies the initial orientation, then replaces the
+    // translation with ADDA's offset. Unattached trees remain in the world;
+    // attached ones inherit their named body node at draw time.
+    if (&definition == &stock.data) {
+        critter.attachments.resize(stock.attachments.size());
+        for (usize j = 0; j < stock.attachments.size(); ++j) {
+            critter.attachments[j].world =
+                glm::rotate(glm::translate(Mat4{1}, stock.attachments[j].definition.offset), yaw,
+                            Vec3{0, 1, 0});
+        }
+    }
     // It comes in by its entrance, or its stance when it has none.
     const auto start = definition.moveOfType(MoveDefinition::kStart);
     const auto ready = definition.moveOfType(MoveDefinition::kReady);
@@ -138,6 +150,7 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
 }
 void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                        std::span<const Combatant> peers, bool timeStopped) {
+    syncFloor();
     if (ticks <= 0) {
         return;
     }
@@ -237,6 +250,13 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     if (move != nullptr && critter.player.playing()) {
         const bool wasFinished = critter.player.finished();
         critter.player.advance(seconds, false);
+        for (usize j = 0; j < critter.attachments.size(); ++j) {
+            auto& attachment = critter.attachments[j];
+            const auto& tree = *critter.stock->attachments[j].tree;
+            attachment.player.advance(seconds,
+                                      tree.sequences[attachment.player.sequence()].repeats);
+            attachment.pose.evaluate(tree, attachment.player.sequence(), attachment.player.frame());
+        }
         if (wasFinished) {
             critter.finishedSeconds += seconds;
         }
@@ -390,6 +410,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
     if (critter.parent == nullptr && !stopped) {
         carry(critter, seconds, move, players, peers);
+        rememberFloor();
     }
     carryGrab(critter, players);
     updateAreas(critter, i, players);

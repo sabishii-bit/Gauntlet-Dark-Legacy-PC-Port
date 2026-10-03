@@ -10,7 +10,7 @@ void PlayScene::updateSwitchCutscene(s32 ticks, f32 seconds) {
     m_world->update(seconds);
     m_world->updateTriggers(seconds, visitors());
     m_fixtures.syncFloors();
-    m_opponents.enemies().syncFloors();
+    m_opponents.syncFloors();
     m_portals.animate(seconds);
     m_transporters.animate(seconds);
     handleTriggerEvents();

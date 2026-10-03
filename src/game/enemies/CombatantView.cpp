@@ -223,6 +223,30 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
     }
     critter.stock->body.draw(device, clip, modelTransform(critter), lighting, pose.matrices(),
                              nullptr, critter.alpha);
+    for (usize j = 0; j < critter.attachments.size(); ++j) {
+        const auto& instance = critter.attachments[j];
+        auto& auxiliary = critter.stock->attachments[j];
+        const auto& definition = auxiliary.definition;
+        const Mat4 model =
+            definition.follows
+                ? glm::translate(attachmentTransform(critter, definition.node), definition.offset)
+                : instance.world;
+        auxiliary.model.resetTextures();
+        critter.stock->textures.apply(auxiliary.model, *auxiliary.tree, instance.player.sequence(),
+                                      static_cast<s32>(instance.player.frame()));
+        auxiliary.model.setFrame(instance.player.sequence(),
+                                 static_cast<s32>(instance.player.frame()));
+        // MBTreeSetAlpha propagates the body's fade through attached ADDA
+        // children. World-rooted trees (the Plague pool) are outside that tree.
+        const f32 alpha = definition.follows ? critter.alpha : 1.0f;
+        if (camera != nullptr) {
+            const auto transforms = instance.pose.drawMatrices(model, *camera);
+            auxiliary.model.draw(device, clip, Mat4{1}, lighting, transforms, nullptr, alpha);
+        } else {
+            auxiliary.model.draw(device, clip, model, lighting, instance.pose.matrices(), nullptr,
+                                 alpha);
+        }
+    }
     const Texture* brokenFrozen =
         critter.frozenTicks > 0 && (critter.frozenTicks >= kThawBlinkTicks ||
                                     (critter.frozenTicks & kThawBlinkBit) == 0)

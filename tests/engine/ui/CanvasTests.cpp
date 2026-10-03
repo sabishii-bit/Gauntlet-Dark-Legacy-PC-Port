@@ -124,6 +124,29 @@ TEST_CASE("canvas masks only unused margins at standard wide ultrawide and portr
     CHECK(area == Approx(4 - (high.x - low.x) * (high.y - low.y)));
 }
 
+TEST_CASE("cutscene bands extend across widescreen without masking the side view",
+          "[ui][canvas][cutscene]") {
+    const auto extent = GENERATE(Extent2D{640, 480}, Extent2D{1920, 1080}, Extent2D{3440, 1440});
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, makeLetterboxProjection(512, 384, static_cast<f32>(extent.width),
+                                                 static_cast<f32>(extent.height)));
+    canvas.fillHorizontalBand(0, 48, Color::black());
+    canvas.fillHorizontalBand(304, 80, Color::black());
+    canvas.end();
+    REQUIRE(device.draws.size() == 2);
+    CHECK(test::minCorner(device.draws[0]) == Vec2{-1, -1});
+    CHECK(test::maxCorner(device.draws[0]) == Vec2{1, -0.75f});
+    CHECK(test::minCorner(device.draws[1]).x == -1);
+    CHECK(test::minCorner(device.draws[1]).y == Approx(304.0f / 192.0f - 1.0f));
+    CHECK(test::maxCorner(device.draws[1]).x == Approx(1));
+    CHECK(test::maxCorner(device.draws[1]).y == Approx(1));
+    for (const auto& draw : device.draws) {
+        CHECK_FALSE(draw.state.depthTest);
+        CHECK_FALSE(draw.state.depthWrite);
+    }
+}
+
 TEST_CASE("the virtual screen transform stretches onto the frame", "[ui][canvas]") {
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     const Mat4 transform = makeVirtualScreenTransform(projection, 512.0f, 384.0f, 640.0f, 448.0f);

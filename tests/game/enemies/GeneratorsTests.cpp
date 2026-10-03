@@ -103,6 +103,33 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
     REQUIRE(found);
 }
 
+TEST_CASE("Dream generators retain the floor clearance of their portal artwork",
+          "[game][generators][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELJ4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("J4");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    Enemies enemies;
+    enemies.open(device, root, &world.collision(), Enemies::kMost, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), {}, 1,
+                            world.level()->enemies, 10, &world.items()));
+    usize grounded = 0;
+    for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
+        const Vec3 position = generators.positionOf(i);
+        if (const auto floor = world.collision().floorAt(position, 0.5f, 1.0f)) {
+            CHECK(position.y - floor->y == Approx(0.1f).margin(0.0001f));
+            ++grounded;
+        }
+    }
+    REQUIRE(grounded > 0);
+}
+
 TEST_CASE("Temple and Underworld special generators draw their authored trees and breed",
           "[game][generators][assets]") {
     const s32 realm = GENERATE(5, 6);

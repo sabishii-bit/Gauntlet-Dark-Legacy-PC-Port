@@ -454,6 +454,31 @@ TEST_CASE("a gate bars the way until a key is spent on it", "[game][world][fixtu
     REQUIRE(gates.obstacles().empty());
 }
 
+TEST_CASE("gate opening cues follow realm and subtype rather than metal-first fallback",
+          "[game][world][fixtures][gate-sounds]") {
+    // fn_8009D0A8 selects lbl_80123C6C[realm][ItemData.subtype].
+    CHECK(LockedGates::openingSound(1, 0) == "S_GATEA4");
+    CHECK(LockedGates::openingSound(1, 1) == "S_GATEA2");
+    CHECK(LockedGates::openingSound(1, 2) == "S_GATEA3");
+    CHECK(LockedGates::openingSound(1, 3) == "S_GATEA1");
+    CHECK(LockedGates::openingSound(3, 1) == "S_GATEC2");
+    CHECK(LockedGates::openingSound(3, 2) == "S_GATEC3");
+    CHECK(LockedGates::openingSound(7, 0) == "S_GATEWOODG");
+    CHECK(LockedGates::openingSound(7, 3) == "S_GATEMETG");
+    CHECK(LockedGates::openingSound(10, 0) == "S_GATEWOODJ");
+    CHECK(LockedGates::openingSound(10, 3) == "S_GATEMETJ");
+    CHECK(LockedGates::openingSound(5, 0).empty());
+    CHECK(LockedGates::openingSound(6, 0).empty());
+    CHECK(LockedGates::openingSound(-1, 0).empty());
+    CHECK(LockedGates::openingSound(1, 4).empty());
+    Fixture f("fixtures-gate-subtype");
+    LockedGates gates;
+    REQUIRE(gates.bind(f.device, f.layout, f.items, nullptr));
+    const auto& gate = gates.gate(0);
+    const auto& instance = f.layout.itemInstances()[static_cast<usize>(gate.instance)];
+    CHECK(gate.subtype == f.layout.itemInfos()[static_cast<usize>(instance.info)].subtype);
+}
+
 TEST_CASE("a trap rests, comes out to hurt whoever is in it, and rests again",
           "[game][world][fixtures]") {
     Fixture f("fixtures-traps");
@@ -533,6 +558,50 @@ TEST_CASE("traps prefer level-specific figures and fall back to the realm archiv
     REQUIRE(traps.trap(0).figure.hasFigure());
     REQUIRE(traps.trap(0).figure.sequenceCount() > 1);
     REQUIRE(traps.trap(0).figure.ticksOf(1) > 1);
+}
+
+TEST_CASE("trap hits preserve authored impact properties and rotated direction",
+          "[game][world][fixtures][trap-impact]") {
+    const auto dir = test::scratchDirectory("trap-impact");
+    writeTextFile(dir / "world.json", R"({
+      "objects": [{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+      "animations": [], "particles": [], "locators": [],
+      "itemInfos": [
+        {"type":8,"subtype":4,"name":"TENTACLE","properties":32,"value":20,
+         "height":5,"radius":4,"activeOff":1},
+        {"type":8,"subtype":0,"name":"SPIKES","properties":8192,"value":20,
+         "height":5,"radius":4,"activeOff":1},
+        {"type":8,"subtype":1,"name":"FLAMEV","properties":1,"value":20,
+         "height":5,"radius":4,"activeOff":1},
+        {"type":8,"subtype":2,"name":"FORCEF","properties":2,"value":20,
+         "height":5,"radius":4,"activeOff":1}],
+      "itemInstances": [
+        {"info":0,"position":[0,0,0],"rotation":[0,1.5707964,0]},
+        {"info":1,"position":[20,0,0]},
+        {"info":2,"position":[40,0,0]},
+        {"info":3,"position":[60,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    Traps traps;
+    REQUIRE(traps.bind(device, layout, items, nullptr));
+    const std::array<TrapVictim, 4> victims{TrapVictim{{0, 0, 0}}, TrapVictim{{20, 0, 0}},
+                                            TrapVictim{{40, 0, 0}}, TrapVictim{{60, 0, 0}}};
+    const auto hits = traps.update(2, 1.0f / 30, victims);
+    REQUIRE(hits.size() == 4);
+    const std::array<u32, 4> properties{32, 8192, 1, 2};
+    for (usize i = 0; i < hits.size(); ++i) {
+        CHECK(hits[i].impact.flags == (properties[i] | PlayerImpact::kStun));
+        CHECK(hits[i].victim == i);
+        CHECK(hits[i].pierces == (i < 2));
+        if (i == 0) {
+            CHECK(hits[i].impact.direction.x == Approx(1));
+            CHECK(hits[i].impact.direction.z == Approx(0).margin(0.0001f));
+        } else {
+            CHECK(hits[i].impact.direction == Vec3{0});
+        }
+    }
 }
 
 TEST_CASE("a level scales how fast its traps cycle and how much they hurt",

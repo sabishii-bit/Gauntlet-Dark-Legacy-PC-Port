@@ -78,13 +78,15 @@ std::optional<HazardSurfaces::Harm> HazardSurfaces::harmOfObject(s32 object) con
     return harmOf(flagsOf(object));
 }
 
-std::optional<HazardSurfaces::Touch> HazardSurfaces::touching(const WorldCollision& collision,
-                                                              const Vec3& position, f32 radius,
-                                                              f32 height) const {
+std::optional<HazardSurfaces::Touch>
+HazardSurfaces::touching(const WorldCollision& collision, const Vec3& position, f32 radius,
+                         f32 height, std::span<const WallContact> movement) const {
     if (m_flags.empty()) {
         return std::nullopt;
     }
-    std::vector<WallContact> contacts;
+    // PlayerMotion_FloorFX receives the wall from PlayerWallCollide before the
+    // slide/floor correction. A final-position probe alone loses that contact.
+    std::vector<WallContact> contacts(movement.begin(), movement.end());
     collision.resolveWalls(position, radius + kReach, position.y + kFloorProbe,
                            position.y + std::max(height - kFloorProbe, kFloorProbe), &contacts);
     for (const WallContact& contact : contacts) {

@@ -328,7 +328,7 @@ TEST_CASE("native bank calls and decoded samples agree with exported audio",
         SoundSet native;
         const auto exported = nlohmann::json::parse(readTextFile(exportedPath / "sounds.json"));
         const auto& sounds = exported.at("sounds");
-        REQUIRE(native.load(audio / name));
+        REQUIRE(native.load(audio / name, SoundSet::Restoration::Disabled));
         REQUIRE(native.size() == sounds.size());
         for (u32 i = 0; i < native.size(); ++i) {
             const auto& a = native.entry(i);

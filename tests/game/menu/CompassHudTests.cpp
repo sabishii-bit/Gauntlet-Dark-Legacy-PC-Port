@@ -25,7 +25,10 @@ constexpr f32 kAspect = 640.0f / 448.0f;
 TEST_CASE("compass keeps its retail screen anchor and world axes through camera motion",
           "[compass]") {
     // StartCompass and its updater use COMPASS, (64,128), depth 10, scale 1.5;
-    // MBWindowTo3D translates the object but does not turn its identity basis.
+    // ChangeWindow reserves the bottom 64 rows. MBWindowTo3D uses bottom-up
+    // (64,128), with ycenter256; MBWindowZoom uses .75*384/448 for tanHalfY.
+    // pbProjCalc maps that through the 640x384 view to top-down y329.142857.
+    // Translating the object does not turn its identity basis.
     for (const f32 yaw : {0.0f, kPi / 2.0f, kPi}) {
         WorldCamera camera;
         camera.position = Vec3{12, 30, -20};
@@ -41,11 +44,11 @@ TEST_CASE("compass keeps its retail screen anchor and world axes through camera 
         const Vec4 projected =
             WorldCamera::frameMapping(640, 448) * WorldCamera::projection(kFov, kAspect) * eye;
         CHECK(projected.x / projected.w == Approx(64).margin(0.001f));
-        CHECK(projected.y / projected.w == Approx(128).margin(0.001f));
+        CHECK(projected.y / projected.w == Approx(329.142857f).margin(0.001f));
 
         const Mat4 letterbox = makeLetterboxProjection(640, 448, 2560, 896);
         const Vec4 clip = camera.clipTransform(kFov, 640, 448, letterbox) * placement[3];
-        const Vec4 expected = letterbox * Vec4{64, 128, 0, 1};
+        const Vec4 expected = letterbox * Vec4{64, 329.142857f, 0, 1};
         CHECK(clip.x / clip.w == Approx(expected.x).margin(0.0001f));
         CHECK(clip.y / clip.w == Approx(expected.y).margin(0.0001f));
     }

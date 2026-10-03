@@ -57,6 +57,8 @@ public:
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 bool timeStopped = false, std::span<const CombatantObstacle> items = {},
                 Enemies* swarm = nullptr);
+    /** Carries the roster with moving floors even while gameplay is held. */
+    void syncFloors();
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();

@@ -16,6 +16,7 @@ constexpr usize kNameWidth = 16;
 constexpr usize kSoundSize = 0x50;
 constexpr usize kDamageSize = 0x50;
 constexpr usize kDescriptorSize = 0x30;
+constexpr usize kAttachmentSize = 0x30;
 constexpr usize kNodeSize = 0x50;
 constexpr usize kMoveSize = 0x90;
 constexpr usize kPatternSize = 0x50;
@@ -120,6 +121,16 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
             descriptor.prefix = readWadText(bytes, at + 0x10, kNameWidth, kWhat);
             descriptor.type = readS16(bytes, at + 0x20);
             return descriptor;
+        });
+    file.attachments = readRecords<CritterAttachmentRecord>(
+        bytes, sections, "ADDA", kAttachmentSize, [&](usize at) {
+            CritterAttachmentRecord attachment;
+            attachment.typeIndex = readS16(bytes, at);
+            attachment.flags = readWadU16(bytes, at + 2, kWhat);
+            attachment.tree = readWadText(bytes, at + 0x10, 8, kWhat);
+            attachment.node = readWadText(bytes, at + 0x18, 8, kWhat);
+            attachment.offset = readVec(bytes, at + 0x20);
+            return attachment;
         });
     file.nodes = readRecords<CritterNodeRecord>(bytes, sections, "NODE", kNodeSize, [&](usize at) {
         CritterNodeRecord node;

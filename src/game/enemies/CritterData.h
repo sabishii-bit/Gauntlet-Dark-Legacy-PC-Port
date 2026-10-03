@@ -17,6 +17,13 @@
 
 namespace gdl::game {
 
+struct CombatantAttachment {
+    std::string tree;
+    std::string node;
+    Vec3 offset{0};
+    bool follows = false; ///< ADDA bit 0, otherwise rooted in the world
+};
+
 /** What the original keeps of a great creature in its `CRITTER/<NAME>.WAD`. */
 class CritterData {
 public:
@@ -58,6 +65,7 @@ public:
     /** The nodes turned to its target: the head, then the eyes; either may name none. */
     std::span<const LookDefinition> looks() const { return m_looks; }
     std::span<const CombatEffectDefinition> sounds() const { return m_sounds; }
+    std::span<const CombatantAttachment> attachments() const { return m_attachments; }
     const AttackDefinition* damage(s32 index) const;
     const CombatEffectDefinition* sound(s32 index) const;
     /** The sound records started where it is struck: by a missile, by a blow. */
@@ -100,6 +108,7 @@ private:
     std::vector<CritterPart> m_parts;
     std::array<LookDefinition, 2> m_looks;
     std::vector<CombatEffectDefinition> m_sounds;
+    std::vector<CombatantAttachment> m_attachments;
     s32 m_hitSoundFar = -1;
     s32 m_hitSoundClose = -1;
 };

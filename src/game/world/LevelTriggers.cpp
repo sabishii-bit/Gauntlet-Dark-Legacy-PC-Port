@@ -39,8 +39,9 @@ s32 LevelTriggers::crystalsNeeded(s32 realm) {
 void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                          WorldCollision* collision) {
     clear();
-    // AddItemSub attaches an item to its animated floor in the authored rest pose,
-    // before that floor's initial animation frame moves it elsewhere.
+    // Markers can be authored against an animation's initial pose (J4's lowered
+    // platforms), or its rest pose (G1's lift pad). Prefer the displayed floor;
+    // use rest geometry for unsupported markers or their explicitly named lift.
     std::optional<WorldCollision> restCollision;
     if (collision != nullptr && collision->movingObjectCount() != 0) {
         restCollision = *collision;
@@ -49,7 +50,6 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                                               glm::translate(Mat4{1.0f}, layout.worldPosition(i)));
         }
     }
-    const WorldCollision* authoredCollision = restCollision ? &*restCollision : collision;
     for (const auto& object : layout.objects()) {
         m_parents.push_back(object.parent);
     }
@@ -66,10 +66,30 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.instance = static_cast<s32>(i);
         trigger.spot = instance.position;
         trigger.placement = itemPlacement(instance.position, instance.rotation);
+        const s16 object = paramS16(instance, 0);
+        trigger.target =
+            object >= 0 && static_cast<usize>(object) < layout.objects().size() ? object : -1;
+        const u32 params = static_cast<u16>(paramS16(instance, 2));
+        const auto onTarget = [&](const FloorHit& floor) {
+            return floor.object == trigger.target ||
+                   (floor.object >= 0 && static_cast<usize>(floor.object) < m_parents.size() &&
+                    m_parents[static_cast<usize>(floor.object)] == trigger.target);
+        };
         std::optional<FloorHit> support;
-        if (authoredCollision != nullptr && (info.collisionFlags & 1U) == 0) {
-            support =
-                authoredCollision->floorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
+        const WorldCollision* supportCollision = collision;
+        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
+            support = collision->floorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
+            if (restCollision &&
+                (!support || ((params & LevelTrigger::kOnTarget) != 0 && !onTarget(*support)))) {
+                const auto rest =
+                    restCollision->floorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
+                // An explicitly floor-bound pad must not attach to a nearby still
+                // deck just because its own lift is currently at the other endpoint.
+                if (rest && (!support || onTarget(*rest))) {
+                    supportCollision = &*restCollision;
+                    support = rest;
+                }
+            }
             if (support) {
                 // AddItemSub first rests the item on its floor, then parents it.
                 // Several lift markers are authored well above the deck itself.
@@ -77,7 +97,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                 trigger.placement[3] = Vec4{trigger.spot, 1};
             }
             if (support && (support->objectFlags & WorldObject::kAnimated) != 0) {
-                if (const auto placement = authoredCollision->objectTransform(support->object)) {
+                if (const auto placement = supportCollision->objectTransform(support->object)) {
                     trigger.floor = support->object;
                     trigger.localPlacement = glm::inverse(*placement) * trigger.placement;
                     if (const auto current = collision->objectTransform(trigger.floor)) {
@@ -87,11 +107,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                 }
             }
         }
-        const s16 object = paramS16(instance, 0);
-        trigger.target =
-            object >= 0 && static_cast<usize>(object) < layout.objects().size() ? object : -1;
         // The trigger's flags: the kind's own, then whatever the instance adds.
-        const u32 params = static_cast<u16>(paramS16(instance, 2));
         u32 flags = params | kDefaultFlags;
         switch (info.subtype) {
         case 20: flags = 0x10; break;

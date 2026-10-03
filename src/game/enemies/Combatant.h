@@ -80,6 +80,8 @@ public:
     bool raisesArenaRocks() const;
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {}, bool timeStopped = false);
+    /** Follows the supporting moving floor without advancing combat or animation. */
+    void syncFloor();
     /** Healing credit after armor/party scaling, before level and hit-node adjustments. */
     f32 hurt(const EnemyHit& hit, s32 partId = -1);
     /** Records a routed hit's nominal damage to a player, after contact/cooldown gates. */
@@ -197,6 +199,11 @@ private:
         f32 health = 0.0f;
         f32 maxHealth = 1.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
+        struct Floor {
+            s32 object = -1;
+            Vec3 local{0};
+        };
+        std::optional<Floor> floor;
         f32 yaw = 0.0f;
         f32 initialYaw = 0.0f;
         Vec3 homePosition{0.0f}; ///< floor-space home anchor, independent of current position
@@ -252,10 +259,17 @@ private:
         Vec3 grabOffset{0};
         AnimationPlayer player;
         TreePose pose;
+        struct Attachment {
+            AnimationPlayer player;
+            TreePose pose;
+            Mat4 world{1}; ///< fixed world parent when ADDA does not follow a node
+        };
+        std::vector<Attachment> attachments;
         CombatantGaze gaze; ///< the turn of its head and eyes to its target
     };
 
     bool startMove(Actor& critter, usize index, bool recordUse = true);
+    void rememberFloor();
     /** What it deals of `amount`: half while shrunk, unless it is a boss. */
     f32 dealt(f32 amount) const;
     bool spawnActor(CombatantAssets& stock, const CritterData& definition, s32 id,

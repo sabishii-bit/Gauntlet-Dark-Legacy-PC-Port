@@ -440,6 +440,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
         if (!m_play->scene.leaving() && ((menu.start && !menu.select) || menu.escape) &&
             m_pause.open(renderDevice(), context(), m_play->scene.party(), player)) {
+            m_play->scene.pauseGameplaySounds();
             for (auto& controls : m_controls) {
                 controls.reset();
             }

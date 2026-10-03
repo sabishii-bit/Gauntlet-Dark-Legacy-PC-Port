@@ -656,6 +656,42 @@ TEST_CASE("the tower reports a missing level without building", "[game][world]")
     REQUIRE_FALSE(tower.entranceCamera().has_value());
 }
 
+TEST_CASE("Plague arena background renders its animated slime surface",
+          "[game][world][boss-arena][plague][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELK5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("K5");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    TextureSet levelTextures;
+    REQUIRE(levelTextures.load(root / "LEVELS/LEVELK5"));
+    const auto slot = levelTextures.find("SLIME");
+    REQUIRE(slot.has_value());
+    const Texture* first = world.scene().textureOf(*slot);
+    REQUIRE(first != nullptr);
+    REQUIRE(first != &device.whiteTexture());
+    CHECK_FALSE(levelTextures.entry(*slot).external());
+    WorldCamera camera;
+    camera.position = {0, 20, -20};
+    camera.pitch = 0.3f;
+    world.draw(device, Mat4{1}, camera);
+    const auto draw = std::ranges::find_if(
+        device.draws, [first](const auto& row) { return row.texture == first; });
+    REQUIRE(draw != device.draws.end());
+    REQUIRE(draw->vertices.size() == 6);
+    for (const auto& v : draw->vertices) {
+        CHECK(v.color.a > 0);
+        CHECK(v.position.y == Approx(-6.4375f));
+    }
+    world.update(0.2f);
+    CHECK(world.scene().textureOf(*slot) != first);
+    world.clear();
+}
+
 TEST_CASE("boss arenas can borrow torch particles from the realm beside their own items",
           "[game][world][boss-arena][assets]") {
     const auto root =

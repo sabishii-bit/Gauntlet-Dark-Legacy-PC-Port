@@ -1121,7 +1121,9 @@ TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, s
     players[0].actor.place(gargoyle + Vec3{40.0f, 0.0f, 0.0f});
     step();
     CHECK_FALSE(opponents.statues().woken(*statueNear(gargoyle)));
-    const std::array pad{TriggerVisitor{.position = Vec3{-83.75f, 0.2578125f, 3.796875f},
+    players[0].actor.place(Vec3{-83.75f, 0.2578125f, 3.796875f});
+    REQUIRE(glm::distance(players[0].actor.position(), gargoyle) > 20.0f);
+    const std::array pad{TriggerVisitor{.position = players[0].actor.position(),
                                         .radius = players[0].actor.radius()}};
     world.updateTriggers(1.0f / 30, pad);
     step();
@@ -1233,6 +1235,51 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     CHECK(items.item(*held).position.x == Catch::Approx(dropSpot.x));
     CHECK(items.item(*held).position.z == Catch::Approx(dropSpot.z));
     opponents.close();
+}
+
+TEST_CASE("B1 gargoyle wakes on actual player approach before physical contact",
+          "[level-opponents][critter-statues][gargoyle-approach][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELB1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("B1")));
+    world.setPlayerCount(1);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{1000}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    std::optional<usize> gargoyle;
+    for (usize i = 0; i < opponents.statues().count(); ++i) {
+        if (opponents.statues().placement(i).kind == CombatantKind::Gargoyle) {
+            gargoyle = i;
+            break;
+        }
+    }
+    REQUIRE(gargoyle);
+    const auto& placement = opponents.statues().placement(*gargoyle);
+    REQUIRE(placement.sight == 20);
+    REQUIRE(placement.radius == 8);
+    const Vec3 approached = opponents.statues().positionOf(*gargoyle) + Vec3{0, 0, 15};
+    REQUIRE_FALSE(opponents.statues().woken(*gargoyle));
+    players[0].actor.place(approached);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(opponents.statues().woken(*gargoyle));
+    CHECK(opponents.statues().rising(*gargoyle));
+    CHECK(players[0].actor.position() == approached);
 }
 
 TEST_CASE("B1 gargoyle reveals its eagle piece only after its sack lands and opens",

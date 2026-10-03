@@ -13,6 +13,37 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 
+TEST_CASE("critter ADDA preserves world and body attachment records", "[formats][critter-adda]") {
+    constexpr usize kRecord = 16;
+    constexpr usize kDirectory = kRecord + 0x30;
+    std::vector<u8> bytes(kDirectory + 16);
+    const auto put = [&](usize at, u32 value) {
+        for (usize byte = 0; byte < 4; ++byte) {
+            bytes[at + byte] = static_cast<u8>(value >> (byte * 8));
+        }
+    };
+    put(0, kDirectory);
+    put(4, 1);
+    put(kDirectory, 0x41444441); // ADDA
+    put(kDirectory + 4, kRecord);
+    put(kDirectory + 8, 1);
+    put(kDirectory + 12, 1);
+    put(kRecord, 0x00010002);        // type 2, attached to the named body node
+    put(kRecord + 0x10, 0x4C4F4F50); // POOL
+    put(kRecord + 0x18, 0x44414548); // HEAD
+    put(kRecord + 0x24, std::bit_cast<u32>(-0.5f));
+    const auto file = parseCritterWad(bytes);
+    REQUIRE(file.attachments.size() == 1);
+    const auto& attachment = file.attachments.front();
+    CHECK(attachment.typeIndex == 2);
+    CHECK(attachment.flags == 1);
+    CHECK(attachment.tree == "POOL");
+    CHECK(attachment.node == "HEAD");
+    CHECK(attachment.offset == std::array<f32, 3>{0, -0.5f, 0});
+    put(kDirectory + 4, kDirectory);
+    CHECK_THROWS_AS(parseCritterWad(bytes), FormatError);
+}
+
 TEST_CASE("critter damage parser preserves launch policy and the complete effect tail",
           "[formats][boss-projectiles]") {
     constexpr usize kRecord = 16;

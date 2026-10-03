@@ -115,7 +115,8 @@ public:
      * `bottom` and `top` are world-space probe heights; the destination's y is unchanged.
      * Faces block approaches from their normal side only. Opposing faces make a wall
      * solid on both sides; crossing a thin wall cannot select its far side. */
-    Vec3 sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top) const;
+    Vec3 sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top,
+                    std::vector<WallContact>* contacts = nullptr) const;
 
 private:
     std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,

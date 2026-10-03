@@ -78,6 +78,8 @@ public:
      * lets any hold go. */
     std::optional<Vec3> grabDeath(usize index, s32 ticks, bool allowed,
                                   std::span<PlayerRuntime> players, const Targets& targets);
+    /** Stops held-drain loops when simulation pauses; a live hold restarts them on resume. */
+    void stopDeathSounds(std::span<PlayerRuntime> players);
     static constexpr f32 kGrabReach = 30.0f; ///< PlayerGetTarget's reach
     static constexpr f32 kGrabCone = 0.707f; ///< how far ahead a new target must lie
     static constexpr f32 kHeldCone = 0.5f;   ///< and one already held

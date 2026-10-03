@@ -34,6 +34,14 @@ bool LevelOpponents::releaseDeath(s32 record, const Vec3& position, s32 count) {
     return m_enemies.spawn(spawn, {}).has_value();
 }
 
+void LevelOpponents::stopDeathSound() {
+    if (m_resources.has_value()) {
+        m_resources->audio.stop(m_deathSound);
+    }
+    m_deathSound = kNoSound;
+    m_deathContact = false;
+}
+
 void LevelOpponents::clearDeaths() {
     if (m_resources.has_value()) {
         for (const u32 id : m_deathEffects) {

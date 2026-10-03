@@ -99,8 +99,9 @@ void PlayScene::updateHazardSurfaces(f32 seconds) {
             continue;
         }
         const PlayerActor& actor = runtime.actor;
-        const auto touch = m_world->hazards().touching(m_world->collision(), actor.position(),
-                                                       actor.radius(), actor.height());
+        const auto touch =
+            m_world->hazards().touching(m_world->collision(), actor.position(), actor.radius(),
+                                        actor.height(), actor.wallContacts());
         if (!touch) {
             continue;
         }
