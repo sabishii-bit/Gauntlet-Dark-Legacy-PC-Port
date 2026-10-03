@@ -94,8 +94,8 @@ void TreeParticles::setTextureFrame(u32 slot, const Texture& texture) {
     }
 }
 
-void TreeParticles::draw(RenderDevice& device, const Mat4& clip, const Vec3& right,
-                         const Vec3& up) const {
-    m_field.draw(device, clip, right, up);
+void TreeParticles::draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
+                         f32 presentationAlpha) const {
+    m_field.draw(device, clip, right, up, presentationAlpha);
 }
 } // namespace gdl

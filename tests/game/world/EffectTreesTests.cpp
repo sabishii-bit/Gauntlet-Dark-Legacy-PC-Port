@@ -23,6 +23,125 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+std::filesystem::path presentationFixture() {
+    const auto root = test::scratchDirectory("effect-presentation");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"MOVING","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":4,"frameRate":30,
+       "tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[0,3]}]}]}]})");
+    test::convertModelFixture(root);
+    return root;
+}
+
+TEST_CASE("effect presentation samples attachments and fractional poses without advancing clocks",
+          "[effects][presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(presentationFixture()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.persistent = true;
+    setting.emitParticles = false;
+    const u32 id = effects.startSet(device, archive, "MOVING", {7, 0, 0}, setting);
+    REQUIRE(id != 0);
+    effects.capturePresentation();
+    effects.moveTo(id, {11, 0, 0});
+    effects.update(1.0f / 60);
+    const f32 nativeFrame = effects.effect(0).player.frame();
+    const auto remaining = effects.remaining(id);
+    const f32 age = effects.effect(0).lived;
+    const Mat4 nativePose = effects.effect(0).pose.matrices()[0];
+    for (const f32 fraction : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.5f}) {
+        CAPTURE(fraction);
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {}, nullptr, fraction);
+        REQUIRE(device.draws.size() == 1);
+        CHECK(device.draws[0].vertices[0].position.x == Catch::Approx(7 + 4 * fraction));
+        CHECK(device.draws[0].vertices[0].position.y == Catch::Approx(0.5f * fraction));
+        CHECK(effects.effect(0).player.frame() == nativeFrame);
+        CHECK(effects.effect(0).lived == age);
+        CHECK(effects.effect(0).pose.matrices()[0] == nativePose);
+        CHECK(effects.effect(0).position == Vec3{11, 0, 0});
+        CHECK(effects.remaining(id) == remaining);
+    }
+    effects.finish(id);
+    device.draws.clear();
+    effects.draw(device, Mat4{1}, {}, nullptr, 0.0f);
+    CHECK(device.draws.empty());
+}
+
+TEST_CASE("effect presentation snaps new spawns teleports redirects and loop cuts",
+          "[effects][presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(presentationFixture()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.persistent = true;
+    setting.emitParticles = false;
+    effects.capturePresentation();
+    const u32 id = effects.startSet(device, archive, "MOVING", {7, 0, 0}, setting);
+    const auto corner = [&](f32 fraction) {
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {}, nullptr, fraction);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws[0].vertices[0].position;
+    };
+    CHECK(corner(0).x == 7);
+    effects.capturePresentation();
+    effects.moveTo(id, {100, 0, 0});
+    CHECK(corner(0).x == 100);
+    effects.capturePresentation();
+    effects.redirect(id, {102, 0, 0}, {0, 0, -10});
+    CHECK(corner(0).x == 102);
+    effects.update(3.0f / 30);
+    effects.capturePresentation();
+    effects.update(1.0f / 30);
+    CHECK(effects.effect(0).player.frame() == 0);
+    CHECK(corner(0.5f).y == Catch::Approx(0));
+    effects.stop(id);
+    device.draws.clear();
+    effects.draw(device, Mat4{1}, {}, nullptr, 0);
+    CHECK(device.draws.empty());
+}
+
+TEST_CASE("held effects do not replay the last particle movement on successive render frames",
+          "[effects][presentation][particles]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(presentationFixture()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    ParticleDescriptor descriptor;
+    descriptor.emitFrames = 30;
+    descriptor.particleLife = 30;
+    descriptor.rate.fill(1);
+    descriptor.speed = 2;
+    descriptor.width = {1, 1, 1, 1};
+    descriptor.red = descriptor.green = descriptor.blue = descriptor.alpha = {255, 255, 255, 255};
+    effects.startParticles(device, archive, descriptor, 0, Mat4{1});
+    effects.capturePresentation();
+    effects.update(1.0f / 30);
+    REQUIRE(effects.count() == 1);
+    REQUIRE(effects.effect(0).trails.particleCount() > 0);
+    effects.capturePresentation(); // the scene then holds instead of stepping effects
+    const auto point = [&](f32 fraction) {
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {}, nullptr, fraction);
+        REQUIRE_FALSE(device.draws.empty());
+        return device.draws[0].vertices[0].position;
+    };
+    const Vec3 held = point(-1);
+    for (const f32 fraction : {0.0f, 0.25f, 0.75f, 1.0f}) {
+        CHECK(point(fraction) == held);
+        CHECK(effects.effect(0).trails.particleCount() == 1);
+    }
+}
+
 TEST_CASE("standalone player emitters animate native sprites and retain their particle tails",
           "[effects][player-particles][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();

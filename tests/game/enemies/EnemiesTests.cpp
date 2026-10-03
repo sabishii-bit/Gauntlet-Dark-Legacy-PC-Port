@@ -105,6 +105,44 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
     return view;
 }
 
+TEST_CASE("swarm rendering uses its native pending phase without changing the live body",
+          "[enemies][presentation][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.algorithm = 0;
+    const std::array players{playerAt(Vec3{0, 0, 20})};
+    const auto id = enemies.spawn(spawn, players);
+    REQUIRE(id);
+    for (s32 step = 0; step < 40; ++step) {
+        enemies.update(2, 1.0f / 30, players);
+    }
+    const Vec3 live = enemies.positionOf(*id);
+    const f32 frame = enemies.animatorOf(*id)->player().frame();
+    const auto vertex = [&](f32 alpha) {
+        device.draws.clear();
+        enemies.draw(device, Mat4{1}, {}, nullptr, nullptr, nullptr, alpha);
+        REQUIRE_FALSE(device.draws.empty());
+        return device.draws[0].vertices[0].position;
+    };
+    const Vec3 first = vertex(0);
+    const Vec3 half = vertex(1);
+    CHECK(glm::distance(first, half) > 0.0001f);
+    CHECK(enemies.positionOf(*id) == live);
+    CHECK(enemies.animatorOf(*id)->player().frame() == frame);
+    enemies.update(1, 1.0f / 60, players);
+    CHECK(vertex(0) == half); // Same native interval, now in its second tick.
+    CHECK(enemies.positionOf(*id) == live);
+    const Vec3 end = vertex(1);
+    CHECK(glm::distance(half, end) > 0.0001f);
+    enemies.update(1, 1.0f / 60, players, {}, nullptr, 1, true);
+    CHECK(vertex(0) == vertex(1)); // Stop time holds the pose, not the last moving interval.
+    enemies.close();
+}
+
 CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal) {
     CollisionTriangle out;
     out.vertices = {a, b, c};

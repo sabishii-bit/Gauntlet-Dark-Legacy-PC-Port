@@ -172,8 +172,14 @@ f32 PlayerMissiles::hitGap(const ItemArchive* archive, std::string_view tree) {
 void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                             std::span<const MissileTarget> targets,
                             std::span<const MissilePlayer> players) {
+    m_visuals.capturePresentation();
     m_ricochetIn = std::max(0.0f, m_ricochetIn - seconds);
     for (Missile& missile : m_missiles) {
+        missile.previousPosition = missile.position;
+        missile.previousVelocity = missile.velocity;
+        missile.previousTumble = missile.tumble;
+        missile.previousAge = missile.age;
+        missile.presentationCaptured = true;
         for (auto& contact : missile.playerContacts) {
             contact.remaining -= seconds;
         }
@@ -198,6 +204,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                     auto contact = std::ranges::find(missile.playerContacts, player.player,
                                                      &Missile::PlayerContact::player);
                     if (player.reflective) {
+                        missile.presentationCaptured = false;
                         missile.velocity = -missile.velocity;
                         missile.position += missile.velocity * step;
                         missile.age += kReflectionTime;
@@ -297,6 +304,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                     object = contacts.front().object;
                 }
                 if (missile.potion == 0 && (missile.flags & powerup::kReflect) != 0) {
+                    missile.presentationCaptured = false;
                     const Vec3 normal =
                         wall ? glm::normalize(pushed - missile.position) : floor->normal;
                     missile.position = pushed;
@@ -341,6 +349,10 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                           missile.spec->spin == 0 ? std::optional{missile.velocity} : std::nullopt);
         m_visuals.placeAt(missile.rider, transformOf(missile),
                           missile.spec->spin == 0 ? std::optional{missile.velocity} : std::nullopt);
+        if (!missile.presentationCaptured) {
+            m_visuals.snapPresentation(missile.effect);
+            m_visuals.snapPresentation(missile.rider);
+        }
         if (missile.age >= kLifeSeconds) {
             m_visuals.finish(missile.effect);
             m_visuals.finish(missile.rider);
@@ -350,38 +362,51 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
     std::erase_if(m_missiles, [](const Missile& m) { return m.age >= kLifeSeconds; });
 }
 
-Mat4 PlayerMissiles::transformOf(const Missile& missile) {
-    const f32 yaw = std::atan2(missile.velocity.x, missile.velocity.z);
-    const f32 level = std::hypot(missile.velocity.x, missile.velocity.z);
+Mat4 PlayerMissiles::transformOf(const Missile& missile, f32 frameBlend) {
+    const f32 blend =
+        missile.presentationCaptured && frameBlend >= 0 ? std::clamp(frameBlend, 0.0f, 1.0f) : 1.0f;
+    const Vec3 velocity = glm::mix(missile.previousVelocity, missile.velocity, blend);
+    const Vec3 position = glm::mix(missile.previousPosition, missile.position, blend);
+    const f32 tumble = glm::mix(missile.previousTumble, missile.tumble, blend);
+    const f32 yaw = std::atan2(velocity.x, velocity.z);
+    const f32 level = std::hypot(velocity.x, velocity.z);
     // About x, a positive turn tips the nose down: a climbing missile noses up by its climb,
     // and a tumbling one goes on over forwards.
-    const f32 pitch = -std::atan2(missile.velocity.y, level);
-    Mat4 out = glm::translate(Mat4{1.0f}, missile.position);
+    const f32 pitch = -std::atan2(velocity.y, level);
+    Mat4 out = glm::translate(Mat4{1.0f}, position);
     out = glm::rotate(out, yaw, Vec3{0.0f, 1.0f, 0.0f});
-    out = glm::rotate(out, missile.spec->spin != 0.0f ? missile.tumble : pitch,
-                      Vec3{1.0f, 0.0f, 0.0f});
+    out = glm::rotate(out, missile.spec->spin != 0.0f ? tumble : pitch, Vec3{1.0f, 0.0f, 0.0f});
     return glm::scale(out, Vec3{missile.scale, missile.scale, missile.scale});
 }
 
 void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                          const CameraFrame* camera) const {
+                          const CameraFrame* camera, f32 frameBlend) const {
     for (const Missile& missile : m_missiles) {
         if (missile.effect == 0 && missile.model != nullptr && missile.model->bound()) {
-            Mat4 placement = transformOf(missile);
+            Mat4 placement = transformOf(missile, frameBlend);
             if (camera != nullptr && missile.spec->spin == 0) {
-                placement = camera->along(placement, missile.velocity);
+                const f32 blend = missile.presentationCaptured && frameBlend >= 0
+                                      ? std::clamp(frameBlend, 0.0f, 1.0f)
+                                      : 1.0f;
+                placement = camera->along(
+                    placement, glm::mix(missile.previousVelocity, missile.velocity, blend));
             }
             missile.model->draw(device, clip, placement, lighting, {}, camera);
         }
     }
-    m_visuals.draw(device, clip, lighting, camera);
+    m_visuals.draw(device, clip, lighting, camera, frameBlend);
     if (camera != nullptr) {
         for (const Missile& missile : m_missiles) {
             if (missile.streak.texture == nullptr) {
                 continue;
             }
-            const auto batch = missile.streak.geometry(missile.position, missile.velocity,
-                                                       missile.age, missile.spec->radius, *camera);
+            const f32 blend = missile.presentationCaptured && frameBlend >= 0
+                                  ? std::clamp(frameBlend, 0.0f, 1.0f)
+                                  : 1.0f;
+            const auto batch = missile.streak.geometry(
+                glm::mix(missile.previousPosition, missile.position, blend),
+                glm::mix(missile.previousVelocity, missile.velocity, blend),
+                glm::mix(missile.previousAge, missile.age, blend), missile.spec->radius, *camera);
             // MBPolyInst: alpha blend, alpha compare > 2, depth test and depth write.
             DrawState state;
             state.alphaTest = DrawState::kTranslucentAlphaTest;

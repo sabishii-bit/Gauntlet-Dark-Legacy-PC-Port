@@ -150,13 +150,14 @@ public:
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
     /** Its shadow on the floor under it, when its type lies one. */
     void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                    const WorldLighting& lighting) const;
+                    const WorldLighting& lighting, f32 presentationAlpha = -1) const;
     /** Its body, and the bar over it when its type hangs one, turned to `camera`. */
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr,
-              const Texture* hitFlash = nullptr) const;
+              const Texture* hitFlash = nullptr, f32 presentationAlpha = -1) const;
     /** The GMETER bar's placement and its nodes' matrices, while it hangs over the body. */
-    std::optional<std::pair<Mat4, std::vector<Mat4>>> meterPose(const CameraFrame* camera) const;
+    std::optional<std::pair<Mat4, std::vector<Mat4>>> meterPose(const CameraFrame* camera,
+                                                                f32 presentationAlpha = -1) const;
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();
@@ -192,6 +193,7 @@ private:
         bool hidden = false;
         bool forcedPattern = false;
         bool childrenIntact = true;
+        bool smoothValid = false;
         CombatantAssets* stock = nullptr;
         const CritterData* definition = nullptr;
         const Combatant* parent = nullptr;
@@ -259,6 +261,17 @@ private:
         Vec3 grabOffset{0};
         AnimationPlayer player;
         TreePose pose;
+        TreePose smooth;
+        struct Presentation {
+            bool valid = false;
+            State state = State::Inactive;
+            u64 generation = 0;
+            u32 sequence = 0;
+            Vec3 position{0};
+            f32 yaw = 0;
+            f32 frame = 0;
+            TreePose pose;
+        } presentation;
         struct Attachment {
             AnimationPlayer player;
             TreePose pose;
@@ -269,6 +282,8 @@ private:
     };
 
     bool startMove(Actor& critter, usize index, bool recordUse = true);
+    void updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+                     std::span<const Combatant> peers, bool timeStopped);
     void rememberFloor();
     /** What it deals of `amount`: half while shrunk, unless it is a boss. */
     f32 dealt(f32 amount) const;
@@ -292,7 +307,13 @@ private:
     static void drawNodeState(const Actor& actor, const Texture* flash);
     static void drawBrokenModels(const Actor& actor, RenderDevice& device, const Mat4& clip,
                                  const WorldLighting& lighting, const Texture* frozen,
-                                 const Texture* flash);
+                                 const Texture* flash, const Mat4& placement, const TreePose& pose);
+    void capturePresentation();
+    static TreePose smoothPose(const Actor& actor);
+    static f32 presentationBlend(const Actor& actor, f32 alpha);
+    static TreePose presentationPose(const Actor& actor, f32 alpha);
+    static f32 presentationFrame(const Actor& actor, f32 alpha);
+    static Mat4 presentationModel(const Actor& actor, f32 alpha);
     std::vector<MissileTarget> ownTargets(bool solidOnly) const;
     void loseHealth(f32 amount);
     void chooseMove(Actor& critter, std::span<const EnemyView> players);

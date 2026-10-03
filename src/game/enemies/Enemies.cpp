@@ -611,7 +611,11 @@ void Enemies::syncFloors() {
             enemy.floor.reset();
             continue;
         }
-        enemy.position = Vec3{*placement * Vec4{enemy.floor->local, 1}};
+        const Vec3 carried = Vec3{*placement * Vec4{enemy.floor->local, 1}};
+        // Floor synchronization can occur while gameplay is held. Carry both
+        // endpoints so an old walk snapshot cannot pull a rider off its platform.
+        enemy.presentationPosition += carried - enemy.position;
+        enemy.position = carried;
     }
 }
 
@@ -635,6 +639,13 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
                      f32 missileSpeedScale, bool timeStopped) {
     syncFloors();
+    if (timeStopped) {
+        for (Enemy& enemy : m_enemies) {
+            if (enemy.state == State::Active) {
+                capturePresentation(enemy);
+            }
+        }
+    }
     if (ticks > 0) {
         // A body with no death skin has no animation left to simulate. Retire it
         // on the first death update, not after waiting for the next AI frame.
@@ -669,6 +680,9 @@ void Enemies::step(f32 seconds, std::span<const EnemyView> players,
                    f32 missileSpeedScale, bool timeStopped) {
     constexpr s32 kMotionTicks = 2;
     const f32 kMotionSeconds = seconds;
+    for (Enemy& enemy : m_enemies) {
+        capturePresentation(enemy);
+    }
     ++m_frame;
     // What is on screen, by twice its radius and fifteen more (do_enemies' visactive), and how
     // many are in view by twice their radius alone (its visible count).
@@ -1800,8 +1814,26 @@ std::vector<s32> Enemies::reachedBy(const Vec3& centre, f32 radius, f32 arc,
 
 // ---- looking -----------------------------------------------------------------------------
 
+void Enemies::capturePresentation(Enemy& enemy) {
+    enemy.presentationPosition = enemy.position;
+    enemy.presentationYaw = enemy.yaw;
+    enemy.presentationState = enemy.state;
+    enemy.animator.holdPresentation();
+}
+
+f32 Enemies::presentationBlend(const Enemy& enemy, f32 alpha) const {
+    if (alpha < 0 || enemy.presentationState != enemy.state ||
+        glm::distance(enemy.presentationPosition, enemy.position) > 2 * enemy.radius) {
+        return 1;
+    }
+    // The swarm advances once per two simulation ticks. Keep its presentation
+    // one native step behind rather than predicting future collisions/actions.
+    return std::clamp((static_cast<f32>(m_pendingTicks) + alpha) * 0.5f, 0.0f, 1.0f);
+}
+
 void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                   const Texture* hitFlash, ItemArchive* weapons, const CameraFrame* camera) {
+                   const Texture* hitFlash, ItemArchive* weapons, const CameraFrame* camera,
+                   f32 presentationAlpha) {
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
         if (enemy.state == State::Inactive || !enemy.animator.bound() ||
@@ -1844,10 +1876,22 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         }
         // The flip-book kinds change their whole mesh with the frame; the rest are posed.
         const AnimationPlayer& player = enemy.animator.player();
-        body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
-        const Mat4 model = glm::scale(glm::rotate(glm::translate(Mat4{1.0f}, enemy.position),
-                                                  enemy.yaw, Vec3{0.0f, 1.0f, 0.0f}),
-                                      Vec3{m_shrink});
+        const f32 blend = presentationBlend(enemy, presentationAlpha);
+        const Vec3 position = blend == 1
+                                  ? enemy.position
+                                  : glm::mix(enemy.presentationPosition, enemy.position, blend);
+        const f32 yaw = blend == 1
+                            ? enemy.yaw
+                            : enemy.presentationYaw +
+                                  TreePose::wrapAngle(enemy.yaw - enemy.presentationYaw) * blend;
+        if (presentationAlpha >= 0) {
+            body.setPresentationFrame(player.sequence(), enemy.animator.presentationFrame(blend));
+        } else {
+            body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
+        }
+        const Mat4 model = glm::scale(
+            glm::rotate(glm::translate(Mat4{1.0f}, position), yaw, Vec3{0.0f, 1.0f, 0.0f}),
+            Vec3{m_shrink});
         f32 alpha = enemy.kind == kDeathKind && enemy.killed
                         ? std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds)
                         : 1.0f;
@@ -1858,14 +1902,19 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
             body.draw(device, clip, model, lighting, {}, camera);
         } else {
-            body.draw(device, clip, model, lighting, enemy.animator.pose().matrices(), camera,
-                      alpha);
+            TreePose pose;
+            if (presentationAlpha >= 0) {
+                enemy.animator.evaluatePresentation(pose, blend);
+            }
+            body.draw(device, clip, model, lighting,
+                      presentationAlpha >= 0 ? pose.matrices() : enemy.animator.pose().matrices(),
+                      camera, alpha);
         }
     }
 }
 
 void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                          const WorldLighting& lighting) const {
+                          const WorldLighting& lighting, f32 presentationAlpha) const {
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
         const Stock* stock = stockOf(enemy.kind);
@@ -1876,7 +1925,8 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
             continue;
         }
         const auto tier = static_cast<usize>(std::clamp(enemy.tier, 1, 3) - 1);
-        Vec3 ground = enemy.position;
+        Vec3 ground = glm::mix(enemy.presentationPosition, enemy.position,
+                               presentationBlend(enemy, presentationAlpha));
         Vec3 normal{0.0f, 1.0f, 0.0f};
         if (m_collision != nullptr) {
             if (const auto floor = m_collision->floorAt(ground, kShadowReach, kShadowReach)) {

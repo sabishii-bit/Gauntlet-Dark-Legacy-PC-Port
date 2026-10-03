@@ -23,6 +23,39 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("weapon presentation interpolates flight without changing contacts or lifetime",
+          "[game][missiles][presentation]") {
+    static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 6, 0, false};
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.spec = &kSpec;
+    launch.position = {3, 4, 5};
+    launch.velocity = Vec3{0, 0, 30};
+    REQUIRE(missiles.launch(launch));
+    CHECK(Vec3{PlayerMissiles::transformOf(missiles.missile(0), 0)[3]} == launch.position);
+    missiles.update(kStep, nullptr);
+    const auto& missile = missiles.missile(0);
+    REQUIRE(missile.position.z == Approx(5.5f));
+    const f32 age = missile.age;
+    const f32 tumble = missile.tumble;
+    for (const f32 fraction : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.25f}) {
+        const Mat4 visual = PlayerMissiles::transformOf(missile, fraction);
+        CHECK(visual[3].z == Approx(5 + 0.5f * fraction));
+        CHECK(visual[1].y == Approx(std::cos(tumble * fraction)));
+        CHECK(missile.position.z == Approx(5.5f));
+        CHECK(missile.age == age);
+        CHECK(missile.tumble == tumble);
+    }
+    CHECK(missiles.takeImpacts().empty());
+    const std::array<MissileTarget, 1> targets{{{1, {3, 3, 6.5f}, 0.5f, 3}}};
+    missiles.update(kStep, nullptr, targets);
+    REQUIRE(missiles.count() == 0);
+    CHECK(missiles.takeImpacts().size() == 1);
+    test::FakeRenderDevice device;
+    missiles.draw(device, Mat4{1}, {}, nullptr, 0);
+    CHECK(device.draws.empty());
+}
+
 TEST_CASE("multiplayer weapon collisions preserve owner immunity and distinct stun policy",
           "[game][missiles][multiplayer-combat]") {
     static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true};

@@ -121,7 +121,8 @@ public:
     f32 widthOf(const Particle& particle) const;
 
     /** Appends a camera-facing square per particle, `right` and `up` being the camera's. */
-    void draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up) const;
+    void draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up,
+              f32 frameOffset = 0.0f) const;
 
 private:
     void stepFrame();

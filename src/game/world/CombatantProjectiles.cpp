@@ -368,6 +368,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     break;
                 }
                 if (wall && !item && (damage.flags & kReflect) != 0) {
+                    effects.snapPresentation(flying.effect);
                     if (glm::dot(flying.velocity, normal) < 0) {
                         flying.velocity = glm::reflect(flying.velocity, normal);
                         if (flying.velocity.y > 0) {

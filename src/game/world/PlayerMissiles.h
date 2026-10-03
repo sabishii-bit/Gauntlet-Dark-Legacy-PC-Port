@@ -145,6 +145,11 @@ public:
         Vec3 velocity{0.0f, 0.0f, 0.0f};
         f32 tumble = 0.0f; ///< how far it has turned over
         f32 age = 0.0f;
+        Vec3 previousPosition{0};
+        Vec3 previousVelocity{0};
+        f32 previousTumble = 0;
+        f32 previousAge = 0;
+        bool presentationCaptured = false;
         s32 potion = 0;
         f32 potency = 0.0f;
         f32 damage = 0.0f;
@@ -187,7 +192,7 @@ public:
                 std::span<const MissileTarget> targets = {},
                 std::span<const MissilePlayer> players = {});
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr, f32 frameBlend = -1.0f) const;
     void clear();
 
     usize count() const { return m_missiles.size(); }
@@ -198,7 +203,7 @@ public:
     static std::vector<Vec3> spread(const Vec3& direction, s32 shots);
     static constexpr f32 kSpreadStep = 0.2617994f; ///< fifteen degrees
     /** Model space (flying along +z) to the world, for a missile. */
-    static Mat4 transformOf(const Missile& missile);
+    static Mat4 transformOf(const Missile& missile, f32 frameBlend = 1.0f);
 
 private:
     std::vector<Missile> m_missiles;

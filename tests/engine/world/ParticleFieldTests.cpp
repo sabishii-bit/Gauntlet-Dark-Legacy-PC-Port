@@ -1,5 +1,6 @@
 #include <array>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/TextureSet.h"
@@ -15,6 +16,39 @@
 namespace {
 
 using namespace gdl;
+
+TEST_CASE("particle presentation fills fractional ticks without advancing emission",
+          "[world][particles][presentation]") {
+    test::FakeRenderDevice device;
+    ParticleField field;
+    ParticleDescriptor descriptor;
+    descriptor.oneShot = true;
+    descriptor.maxParticles = 1;
+    descriptor.particleLife = 10;
+    descriptor.direction = Vec3{1, 0, 0};
+    descriptor.speed = 1;
+    descriptor.width = {1, 1, 1, 1};
+    field.start(descriptor, Mat4{1}, &device.whiteTexture());
+    field.step(1.0f / 30);
+    field.step(1.0f / 60);
+    const auto center = [&](f32 alpha) {
+        device.draws.clear();
+        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha);
+        REQUIRE(device.draws.size() == 1);
+        const auto& vertices = device.draws.front().vertices;
+        return (vertices[0].position.x + vertices[1].position.x) * 0.5f;
+    };
+    CHECK(center(-1) == Catch::Approx(0));
+    for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+        CHECK(center(alpha) == Catch::Approx(alpha * 0.5f));
+        REQUIRE(field.particleCount() == 1);
+        CHECK(field.emitter(0).particles()[0].age == 0);
+    }
+    field.step(1.0f / 60);
+    CHECK(center(0) == Catch::Approx(0.5f));
+    CHECK(center(1) == Catch::Approx(1));
+    CHECK(field.emitter(0).particles()[0].age == 1);
+}
 
 TEST_CASE("particle depth comparison remains independent of writes and batching",
           "[world][particles][vfx-depth]") {

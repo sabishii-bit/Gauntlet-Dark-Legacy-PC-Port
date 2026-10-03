@@ -114,6 +114,11 @@ public:
     u32 sequenceOf(Action action) const;
     const TreePose& pose() const { return m_pose; }
     const AnimationPlayer& player() const { return m_player; }
+    /** Read-only fractional drawing pose. Cuts and wraps never blend unrelated actions. */
+    void evaluatePresentation(TreePose& pose, f32 blend) const;
+    f32 presentationFrame(f32 blend) const;
+    /** Holds the current pose when its owner skips animation (off screen or stopped). */
+    void holdPresentation();
 
 private:
     /** When a decided action may start: the original's cut-in rules. */
@@ -143,6 +148,9 @@ private:
     AnimationPlayer m_player;
     TreePose m_pose;
     TreePose m_previous;
+    TreePose m_presentationBefore;
+    f32 m_frameBefore = 0;
+    u64 m_generationBefore = 0;
 };
 
 } // namespace gdl::game

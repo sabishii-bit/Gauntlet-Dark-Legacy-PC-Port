@@ -21,6 +21,84 @@ constexpr s32 kThawBlinkBit = 8;
 constexpr f32 kShadowReach = 1.0f; ///< its shadow finds the floor within this of the anchor
 constexpr u32 kMeterFacing = 2;    ///< MBTreeSetFlags 0x02000000: turned about the upright
 } // namespace
+TreePose Combatant::smoothPose(const Actor& actor) {
+    if (actor.stock == nullptr || !actor.player.playing()) {
+        return actor.pose;
+    }
+    TreePose pose;
+    pose.evaluate(*actor.stock->tree, actor.player.sequence(), actor.player.presentationFrame(),
+                  false, true);
+    TreePose sampled;
+    sampled.evaluate(*actor.stock->tree, actor.player.sequence(), actor.player.frame());
+    // Look nodes, held broken parts and linked-parent poses are gameplay-owned
+    // overrides. Preserve those rather than resampling over their decisions.
+    const auto native = sampled.poses();
+    const auto actual = actor.pose.poses();
+    for (usize i = 0; i < std::min(native.size(), actual.size()); ++i) {
+        if (native[i].rotation != actual[i].rotation || native[i].position != actual[i].position ||
+            native[i].scale != actual[i].scale ||
+            native[i].pitchYawRoll != actual[i].pitchYawRoll) {
+            pose.setNodePose(i, actual[i]);
+        }
+    }
+    return pose;
+}
+
+void Combatant::capturePresentation() {
+    const auto capture = [](Actor& actor) {
+        actor.presentation = {actor.state != State::Inactive,
+                              actor.state,
+                              actor.player.generation(),
+                              actor.player.sequence(),
+                              actor.position,
+                              actor.yaw,
+                              actor.player.presentationFrame(),
+                              actor.smoothValid ? actor.smooth : smoothPose(actor)};
+    };
+    capture(m_actor);
+    for (auto& child : m_children) {
+        capture(child->m_actor);
+    }
+}
+
+f32 Combatant::presentationBlend(const Actor& actor, f32 alpha) {
+    const auto& before = actor.presentation;
+    if (alpha < 0 || !before.valid || before.state != actor.state ||
+        before.generation != actor.player.generation() ||
+        before.sequence != actor.player.sequence() || actor.definition == nullptr ||
+        glm::distance(before.position, actor.position) > 2 * actor.definition->radius()) {
+        return 1;
+    }
+    return std::clamp(alpha, 0.0f, 1.0f);
+}
+
+TreePose Combatant::presentationPose(const Actor& actor, f32 alpha) {
+    if (alpha < 0 || !actor.presentation.valid) {
+        return actor.pose;
+    }
+    TreePose pose = actor.smoothValid ? actor.smooth : smoothPose(actor);
+    pose.blend(actor.presentation.pose, presentationBlend(actor, alpha), true);
+    return pose;
+}
+
+f32 Combatant::presentationFrame(const Actor& actor, f32 alpha) {
+    return std::lerp(actor.presentation.frame, actor.player.presentationFrame(),
+                     presentationBlend(actor, alpha));
+}
+
+Mat4 Combatant::presentationModel(const Actor& actor, f32 alpha) {
+    const f32 blend = presentationBlend(actor, alpha);
+    if (blend == 1) {
+        return modelTransform(actor);
+    }
+    const Vec3 position = glm::mix(actor.presentation.position, actor.position, blend);
+    const f32 yaw =
+        actor.presentation.yaw + TreePose::wrapAngle(actor.yaw - actor.presentation.yaw) * blend;
+    const Vec3 root = position + Vec3{0, actor.definition->floorOffset(), 0};
+    return glm::scale(glm::rotate(glm::translate(Mat4{1}, root), yaw, Vec3{0, 1, 0}),
+                      Vec3{actor.scale * actor.shrink});
+}
+
 Mat4 Combatant::modelTransform(const Actor& critter) {
     // The original places the root at floor Y + floorOffset, then transforms originOffset
     // and the animated nodes from that root. Keep our floor probes at the ground anchor:
@@ -118,14 +196,15 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
     return out;
 }
 void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                           const WorldLighting& lighting) const {
+                           const WorldLighting& lighting, f32 presentationAlpha) const {
     const Actor& critter = m_actor;
     if (critter.state == State::Inactive || critter.stock == nullptr ||
         !critter.stock->shadow.bound()) {
         return;
     }
     // On the floor under the anchor, tilted to it and scaled with the body (CritterTranslate).
-    Vec3 ground = critter.position;
+    Vec3 ground = glm::mix(critter.presentation.position, critter.position,
+                           presentationBlend(critter, presentationAlpha));
     Vec3 normal{0.0f, 1.0f, 0.0f};
     if (m_collision != nullptr) {
         if (const auto floor = m_collision->floorAt(ground, kShadowReach, kShadowReach)) {
@@ -141,14 +220,15 @@ void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& e
  * upright; RED_FILLE is stretched across by the health left of the full (CritterAddHealthMeter,
  * ProcessCritter). It goes with the last of the health. */
 std::optional<std::pair<Mat4, std::vector<Mat4>>>
-Combatant::meterPose(const CameraFrame* camera) const {
+Combatant::meterPose(const CameraFrame* camera, f32 presentationAlpha) const {
     const Actor& critter = m_actor;
     if (critter.state != State::Active || critter.stock == nullptr ||
         critter.stock->meterTree == nullptr || critter.health <= 0.0f ||
         critter.definition == nullptr) {
         return std::nullopt;
     }
-    Mat4 placement = glm::translate(modelTransform(critter), critter.definition->meter().barOffset);
+    Mat4 placement = glm::translate(presentationModel(critter, presentationAlpha),
+                                    critter.definition->meter().barOffset);
     if (camera != nullptr) {
         placement = camera->face(placement, kMeterFacing);
     }
@@ -170,15 +250,21 @@ Combatant::meterPose(const CameraFrame* camera) const {
 
 void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const Texture* frozenTexture, const CameraFrame* camera,
-                     const Texture* hitFlash) const {
+                     const Texture* hitFlash, f32 presentationAlpha) const {
     const Actor& critter = m_actor;
     if (critter.state == State::Inactive || critter.stock == nullptr) {
         return;
     }
     // The model is shared by this species, but object-frame selection belongs to the
     // individual. Set it for every draw, including the first and frozen frames.
-    critter.stock->body.setFrame(critter.player.sequence(),
-                                 static_cast<s32>(critter.player.frame()));
+    const Mat4 shownModel = presentationModel(critter, presentationAlpha);
+    if (presentationAlpha >= 0 && critter.presentation.valid) {
+        critter.stock->body.setPresentationFrame(critter.player.sequence(),
+                                                 presentationFrame(critter, presentationAlpha));
+    } else {
+        critter.stock->body.setFrame(critter.player.sequence(),
+                                     static_cast<s32>(critter.player.frame()));
+    }
     critter.stock->textures.apply(critter.stock->body, *critter.stock->tree,
                                   critter.player.sequence(),
                                   static_cast<s32>(critter.player.frame()));
@@ -204,12 +290,12 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
         (critter.frozenTicks >= kThawBlinkTicks || (critter.frozenTicks & kThawBlinkBit) == 0)) {
         critter.stock->body.setMaskedTexture(frozenTexture);
     }
-    TreePose pose = critter.pose;
+    TreePose pose = presentationPose(critter, presentationAlpha);
     drawNodeState(critter, hitFlash);
     for (const auto& part : m_children) {
         const Actor& branch = part->m_actor;
         if (branch.branch.has_value()) {
-            pose.overlaySubtree(branch.pose, *branch.branch);
+            pose.overlaySubtree(presentationPose(branch, presentationAlpha), *branch.branch);
             critter.stock->body.setSubtreeFrame(*branch.branch, branch.player.sequence(),
                                                 static_cast<s32>(branch.player.frame()));
             if (branch.hidden) {
@@ -221,16 +307,19 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
             drawNodeState(branch, hitFlash);
         }
     }
-    critter.stock->body.draw(device, clip, modelTransform(critter), lighting, pose.matrices(),
-                             nullptr, critter.alpha);
+    critter.stock->body.draw(device, clip, shownModel, lighting, pose.matrices(), nullptr,
+                             critter.alpha);
     for (usize j = 0; j < critter.attachments.size(); ++j) {
         const auto& instance = critter.attachments[j];
         auto& auxiliary = critter.stock->attachments[j];
         const auto& definition = auxiliary.definition;
+        Mat4 parent = shownModel;
+        if (const auto node = critter.stock->tree->findNode(definition.node);
+            node && *node < pose.size()) {
+            parent *= pose.matrices()[*node];
+        }
         const Mat4 model =
-            definition.follows
-                ? glm::translate(attachmentTransform(critter, definition.node), definition.offset)
-                : instance.world;
+            definition.follows ? glm::translate(parent, definition.offset) : instance.world;
         auxiliary.model.resetTextures();
         critter.stock->textures.apply(auxiliary.model, *auxiliary.tree, instance.player.sequence(),
                                       static_cast<s32>(instance.player.frame()));
@@ -252,11 +341,12 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
                                     (critter.frozenTicks & kThawBlinkBit) == 0)
             ? frozenTexture
             : nullptr;
-    drawBrokenModels(critter, device, clip, lighting, brokenFrozen, hitFlash);
+    drawBrokenModels(critter, device, clip, lighting, brokenFrozen, hitFlash, shownModel, pose);
     for (const auto& part : m_children) {
-        drawBrokenModels(part->m_actor, device, clip, lighting, brokenFrozen, hitFlash);
+        drawBrokenModels(part->m_actor, device, clip, lighting, brokenFrozen, hitFlash, shownModel,
+                         pose);
     }
-    if (const auto meter = meterPose(camera)) {
+    if (const auto meter = meterPose(camera, presentationAlpha)) {
         critter.stock->meter.draw(device, clip, meter->first, lighting, meter->second, nullptr,
                                   critter.alpha);
     }

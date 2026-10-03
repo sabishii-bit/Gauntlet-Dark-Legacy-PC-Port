@@ -141,7 +141,7 @@ public:
     /** Silence drain loops before the options menu stops gameplay updates. */
     void pauseGameplaySounds();
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight,
-                bool optionsOpen = false, f32 frameBlend = 1.0f);
+                bool optionsOpen = false, f32 frameBlend = -1.0f);
 
     usize actorCount() const { return m_players.size(); }
     /** The character driven by `player`, or null when that player is not in the party. */
@@ -285,7 +285,8 @@ public:
 private:
     /** The bodies' shadows, after all of the level's floors (some of which are translucent). */
     PartyFigures::Scene figureScene(f32 frameBlend = 1.0f);
-    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye, f32 frameBlend);
+    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye, f32 frameBlend,
+                     f32 opponentBlend);
     bool scriptedCamera() const;
     void watchOpponents();
     void gatherLights();
@@ -405,6 +406,8 @@ private:
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive
     bool m_open = false;
     bool m_leaving = false;
+    bool m_opponentsAdvanced = false;
+    bool m_projectilesAdvanced = false;
     PortalDeparture m_departure;
     PartyFigures m_figures;
     PartyNames m_names;

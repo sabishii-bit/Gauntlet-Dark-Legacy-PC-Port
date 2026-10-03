@@ -241,6 +241,8 @@ void PlayScene::close() {
     m_bossSequence.clear();
     m_effects.clear(); // and before the archive whose trees they play
     m_opponents.close();
+    m_opponentsAdvanced = false;
+    m_projectilesAdvanced = false;
     m_playSeconds = 0.0f;
     m_hud.clear();   // before the static texture borrowed for selector glow
     m_names.clear(); // before the static sheet its font borrows
@@ -497,6 +499,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     watchOpponents();
     m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents(),
                        m_fixtures.missileStops(), m_fixtures.critterObstacles());
+    m_opponentsAdvanced = seconds > 0;
     for (const Vec3& position : m_world->takeWorldExplosions()) {
         m_fixtures.worldExplosion(position, m_players, fixtureEvents());
     }
@@ -699,6 +702,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         return PlayOutcome::Running;
     }
     PartyFigures::snapshot(m_players);
+    m_effects.capturePresentation();
+    m_world->capturePresentation();
+    m_opponentsAdvanced = false;
+    m_projectilesAdvanced = false;
     m_previousCamera = scriptedCamera() ? std::nullopt : std::optional{viewCamera()};
     m_previousBossCamera = bossCameraOn();
     // Application supplies fixed simulation ticks independently of rendered frames.
@@ -914,6 +921,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     updateEnemies(ticks, seconds);
     m_attacks.updateProjectiles(seconds, m_players, attackTargets());
+    m_projectilesAdvanced = seconds > 0;
     m_attacks.updateStrikes(seconds, m_players, attackTargets());
     m_attacks.updateShields(seconds, m_players, attackTargets());
     m_attacks.updateArmour(seconds, m_players, attackTargets());
@@ -1111,12 +1119,12 @@ PartyFigures::Scene PlayScene::figureScene(f32 frameBlend) {
             .frameBlend = frameBlend};
 }
 
-void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
-                            f32 frameBlend) {
+void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye, f32 frameBlend,
+                            f32 opponentBlend) {
     PartyFigures::drawShadows(device, m_players, figureScene(frameBlend), clip, eye);
-    m_opponents.enemies().drawShadows(device, clip, eye, m_world->lighting());
-    m_opponents.critters().drawShadows(device, clip, eye, m_world->lighting());
-    m_opponents.bosses().drawShadow(device, clip, eye, m_world->lighting());
+    m_opponents.enemies().drawShadows(device, clip, eye, m_world->lighting(), opponentBlend);
+    m_opponents.critters().drawShadows(device, clip, eye, m_world->lighting(), opponentBlend);
+    m_opponents.bosses().drawShadow(device, clip, eye, m_world->lighting(), opponentBlend);
 }
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
@@ -1128,9 +1136,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_messages.prepare(device);
     m_sumnerVisit.prepare(device);
     gatherLights();
-    if (optionsOpen) {
-        frameBlend = 1.0f;
-    }
+    const f32 effectBlend = optionsOpen ? -1.0f : frameBlend;
+    const f32 opponentBlend = m_opponentsAdvanced ? effectBlend : -1.0f;
+    const f32 projectileBlend = m_projectilesAdvanced ? effectBlend : -1.0f;
+    frameBlend = optionsOpen || frameBlend < 0 ? 1.0f : std::clamp(frameBlend, 0.0f, 1.0f);
     const WorldCamera currentCamera = viewCamera();
     const WorldCamera camera =
         m_previousCamera && !scriptedCamera() && m_previousBossCamera == bossCameraOn()
@@ -1151,17 +1160,18 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
-                               &effectCamera);
-    m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera);
+                               &effectCamera, opponentBlend);
+    m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera,
+                                opponentBlend);
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
                                                                       : m_world->lighting(),
-                              m_bossSequence.frozenTexture());
-    m_world->drawDeferred(device, clip, camera);
+                              m_bossSequence.frozenTexture(), opponentBlend);
+    m_world->drawDeferred(device, clip, camera, effectBlend);
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera);
-    drawShadows(device, clip, camera.position, frameBlend);
+    drawShadows(device, clip, camera.position, frameBlend, opponentBlend);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {
@@ -1172,8 +1182,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
-    m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
-    m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
+    m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera, projectileBlend);
+    m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera, effectBlend);
     m_arrival.drawEffects(device, clip, m_world->lighting());
     if (config.camera.compass && !optionsOpen && !m_gameOver.active()) {
         m_compass.draw(device, clip, camera, config.horizontalFovRadians(),

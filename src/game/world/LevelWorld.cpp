@@ -294,6 +294,7 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
     m_walls.update(seconds);
     syncCollision();
     m_particles.step(seconds);
+    m_particlesAdvanced = seconds > 0;
     m_placedItems.update(seconds);
     // Texture animations count whole game frames.
     m_frameRemainder += seconds * WorldAnimator::kFramesPerSecond;
@@ -340,6 +341,7 @@ void LevelWorld::clear() {
     m_destruction.clear();
     m_textureAnimator.clear();
     m_particles.clear();
+    m_particlesAdvanced = false;
     m_triggers.clear();
     m_hazards.clear();
     m_rotators.clear();

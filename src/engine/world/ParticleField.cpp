@@ -96,6 +96,7 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
 void ParticleField::clear() {
     m_entries.clear();
     m_frameRemainder = 0.0f;
+    m_lastAdvance = 0.0f;
 }
 
 usize ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& node,
@@ -154,7 +155,8 @@ usize ParticleField::particleCount() const {
 }
 
 void ParticleField::step(f32 seconds) {
-    m_frameRemainder += seconds * kFrameRate;
+    m_lastAdvance = std::max(seconds, 0.0f) * kFrameRate;
+    m_frameRemainder += m_lastAdvance;
     const f32 whole = std::floor(m_frameRemainder);
     m_frameRemainder -= whole;
     const auto frames = static_cast<u32>(whole);
@@ -166,8 +168,14 @@ void ParticleField::step(f32 seconds) {
     }
 }
 
-void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& right,
-                         const Vec3& up) const {
+void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
+                         f32 presentationAlpha) const {
+    const f32 frameOffset =
+        presentationAlpha < 0.0f
+            ? 0.0f
+            : std::clamp(m_frameRemainder -
+                             m_lastAdvance * (1.0f - std::clamp(presentationAlpha, 0.0f, 1.0f)),
+                         -1.0f, 1.0f);
     const Texture* texture = nullptr;
     DrawState state;
     bool open = false;
@@ -192,7 +200,7 @@ void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& rig
             m_batch.begin(PrimitiveTopology::TriangleList);
             open = true;
         }
-        entry.emitter.draw(m_batch, right, up);
+        entry.emitter.draw(m_batch, right, up, frameOffset);
     }
     flush();
 }

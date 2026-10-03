@@ -150,6 +150,24 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
 }
 void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                        std::span<const Combatant> peers, bool timeStopped) {
+    if (m_actor.parent == nullptr) {
+        capturePresentation();
+    }
+    updateActor(ticks, seconds, players, peers, timeStopped);
+    if (m_actor.parent == nullptr) {
+        // Sample fractional animation once per simulation update, not once per
+        // draw, shadow, attachment or monitor refresh.
+        m_actor.smooth = smoothPose(m_actor);
+        m_actor.smoothValid = true;
+        for (auto& child : m_children) {
+            child->m_actor.smooth = smoothPose(child->m_actor);
+            child->m_actor.smoothValid = true;
+        }
+    }
+}
+
+void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+                            std::span<const Combatant> peers, bool timeStopped) {
     syncFloor();
     if (ticks <= 0) {
         return;
@@ -190,6 +208,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     std::erase_if(critter.areas, [](const CritterArea& area) { return area.secondsLeft <= 0; });
     // Frozen, it stands as it is: no move, no step, no one in its sights.
     if (critter.frozenTicks > 0) {
+        critter.presentation.valid = false;
         critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
         aimGaze(critter, seconds, players);
         holdBrokenPoses(critter);
@@ -200,6 +219,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     const bool stopped = timeStopped && critter.state == State::Active;
     if (stopped && critter.move >= 0 &&
         data.moves()[static_cast<usize>(critter.move)].type != MoveDefinition::kStart) {
+        critter.presentation.valid = false;
         updateAreas(critter, i, players); // Already-created effects keep their own clock.
         carryGrab(critter, players);
         return;
