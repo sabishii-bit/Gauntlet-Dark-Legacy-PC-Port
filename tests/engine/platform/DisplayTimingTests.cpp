@@ -102,4 +102,37 @@ TEST_CASE("pacing bounds correction and resets after stalls or changes of monito
     CHECK(pacer.deadline(changedStart, changedStart + 1ms, 30) == changedStart + newPeriod);
     CHECK(pacer.deadline(changedStart, changedStart + 1ms, 0) == changedStart + period);
 }
+
+TEST_CASE("frame diagnostics separate wall time update count and worst phase durations",
+          "[platform][display][graphics]") {
+    using namespace std::chrono_literals;
+    FrameTimingTotals totals;
+    CHECK(totals.framesPerSecond() == 0);
+    CHECK(totals.average(FrameTimingPhase::Render) == 0);
+    const FramePacer::Time start{};
+    FrameTimingSample first;
+    first.measure(FrameTimingPhase::Render, start, start + 6ms);
+    first.measure(FrameTimingPhase::Wait, start, start + 10ms);
+    first.measure(FrameTimingPhase::Oversleep, start + 10ms, start + 9ms);
+    first.elapsedMilliseconds = 20;
+    first.updates = 1;
+    totals.add(first);
+    FrameTimingSample second;
+    second.measure(FrameTimingPhase::Render, start, start + 10ms);
+    second.measure(FrameTimingPhase::Wait, start, start + 20ms);
+    second.measure(FrameTimingPhase::Oversleep, start, start + 3ms);
+    second.elapsedMilliseconds = 30;
+    second.updates = 2;
+    second.overran = true;
+    totals.add(second);
+    CHECK(totals.frames == 2);
+    CHECK(totals.updates == 3);
+    CHECK(totals.overruns == 1);
+    CHECK(totals.framesPerSecond() == 40);
+    CHECK(totals.average(FrameTimingPhase::Render) == 8);
+    CHECK(totals.maximum(FrameTimingPhase::Render) == 10);
+    CHECK(totals.average(FrameTimingPhase::Wait) == 15);
+    CHECK(totals.average(FrameTimingPhase::Oversleep) == 1.5);
+    CHECK(totals.maximum(FrameTimingPhase::Oversleep) == 3);
+}
 } // namespace

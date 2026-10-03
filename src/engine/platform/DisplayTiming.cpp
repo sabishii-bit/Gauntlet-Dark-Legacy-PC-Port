@@ -52,4 +52,34 @@ FramePacer::Time FramePacer::deadline(Time frameStart, Time frameFinished, u32 r
     m_deadline = std::max(m_deadline, frameFinished);
     return m_deadline;
 }
+
+void FrameTimingSample::measure(FrameTimingPhase phase, FramePacer::Time begin,
+                                FramePacer::Time end) {
+    milliseconds[static_cast<usize>(phase)] =
+        std::max(0.0, std::chrono::duration<f64, std::milli>(end - begin).count());
+}
+
+void FrameTimingTotals::add(const FrameTimingSample& sample) {
+    for (usize phase = 0; phase < milliseconds.size(); ++phase) {
+        milliseconds[phase] += sample.milliseconds[phase];
+        maximumMilliseconds[phase] =
+            std::max(maximumMilliseconds[phase], sample.milliseconds[phase]);
+    }
+    elapsedMilliseconds += sample.elapsedMilliseconds;
+    ++frames;
+    updates += sample.updates;
+    overruns += sample.overran ? 1 : 0;
+}
+
+f64 FrameTimingTotals::framesPerSecond() const {
+    return elapsedMilliseconds > 0 ? 1000.0 * frames / elapsedMilliseconds : 0;
+}
+
+f64 FrameTimingTotals::average(FrameTimingPhase phase) const {
+    return frames > 0 ? milliseconds[static_cast<usize>(phase)] / frames : 0;
+}
+
+f64 FrameTimingTotals::maximum(FrameTimingPhase phase) const {
+    return maximumMilliseconds[static_cast<usize>(phase)];
+}
 } // namespace gdl

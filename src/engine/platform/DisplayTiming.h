@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 
 #include "engine/core/Types.h"
@@ -45,6 +46,42 @@ public:
 private:
     Time m_deadline;
     u32 m_rate = 0;
+};
+
+enum class FrameTimingPhase : u8 {
+    Poll,
+    Update,
+    Acquire,
+    Render,
+    Present,
+    Refresh,
+    Wait,
+    Oversleep,
+    Count
+};
+
+/** Opt-in diagnostic measurements, never used to advance simulation or tune pacing. */
+struct FrameTimingSample {
+    std::array<f64, static_cast<usize>(FrameTimingPhase::Count)> milliseconds{};
+    f64 elapsedMilliseconds = 0;
+    u32 updates = 0;
+    bool overran = false;
+
+    void measure(FrameTimingPhase phase, FramePacer::Time begin, FramePacer::Time end);
+};
+
+struct FrameTimingTotals {
+    std::array<f64, static_cast<usize>(FrameTimingPhase::Count)> milliseconds{};
+    std::array<f64, static_cast<usize>(FrameTimingPhase::Count)> maximumMilliseconds{};
+    f64 elapsedMilliseconds = 0;
+    u32 frames = 0;
+    u32 updates = 0;
+    u32 overruns = 0;
+
+    void add(const FrameTimingSample& sample);
+    f64 framesPerSecond() const;
+    f64 average(FrameTimingPhase phase) const;
+    f64 maximum(FrameTimingPhase phase) const;
 };
 
 } // namespace gdl

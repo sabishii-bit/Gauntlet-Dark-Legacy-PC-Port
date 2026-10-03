@@ -247,6 +247,8 @@ public:
     ToneSource(usize total, f32 value) : m_total(total), m_value(value) {}
     AudioStreamDesc desc() const override { return AudioStreamDesc{48000, 1}; }
     bool read(std::vector<f32>& out, usize frames) override {
+        largestRequest = std::max(largestRequest, frames);
+        ++requests;
         if (m_read >= m_total) {
             return false;
         }
@@ -260,12 +262,34 @@ public:
         ++rewinds;
     }
     s32 rewinds = 0;
+    usize largestRequest = 0;
+    usize requests = 0;
 
 private:
     usize m_total;
     f32 m_value;
     usize m_read = 0;
 };
+
+TEST_CASE("stream refills distribute decode work while retaining lookahead and continuous audio",
+          "[audio][player][stream-refill]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    auto source = std::make_shared<ToneSource>(48000 * 4, 0.25f);
+    const SoundHandle handle = player.playStream(source, false);
+    REQUIRE(handle != kNoSound);
+    CHECK(source->largestRequest == 800);
+    CHECK(source->requests == 90); // unchanged 1.5-second startup lookahead
+    for (u32 tick = 0; tick < 120; ++tick) {
+        const auto out = pull(mixer, 800);
+        CHECK(std::ranges::all_of(out, [](f32 value) { return value == 0.25f; }));
+        const usize before = source->requests;
+        player.update();
+        CHECK(source->requests - before <= 2);
+    }
+    CHECK(source->largestRequest == 800);
+    CHECK(player.isPlaying(handle));
+}
 
 TEST_CASE("stream sources play ahead of the mixer, looping or ending", "[audio][player]") {
     AudioMixer mixer(48000);
