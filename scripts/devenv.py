@@ -16,12 +16,15 @@ Other scripts import this module and call environment().
 import argparse
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
+from typing import Optional
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WINDOWS = sys.platform == "win32"
+MIN_CMAKE = (3, 30)  # CMakeLists.txt and CMakePresets.json require it
 
 
 def default_preset() -> str:
@@ -52,6 +55,37 @@ def _visual_studio_path(vswhere: pathlib.Path) -> pathlib.Path:
     if not path:
         sys.exit("No Visual Studio 2022 installation with the MSVC x64 toolset was found.")
     return pathlib.Path(path)
+
+
+def cmake_version(cmake: pathlib.Path) -> Optional[tuple]:
+    """The (major, minor) that `cmake --version` reports, or None."""
+    try:
+        text = subprocess.run([str(cmake), "--version"], capture_output=True, text=True,
+                              check=False).stdout
+    except OSError:
+        return None
+    match = re.search(r"(\d+)\.(\d+)", text)
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def windows_cmake(vs_path: Optional[pathlib.Path]) -> Optional[pathlib.Path]:
+    """The first cmake.exe at least MIN_CMAKE: Visual Studio's own, then Kitware's install
+    directory (found even before a fresh install reaches PATH), then the one on PATH. An older
+    Visual Studio bundles a CMake too old for the presets, so its copy only wins when new enough."""
+    candidates = []
+    if vs_path:
+        candidates.append(vs_path / "Common7" / "IDE" / "CommonExtensions" / "Microsoft" / "CMake"
+                          / "CMake" / "bin" / "cmake.exe")
+    program_files = pathlib.Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+    candidates.append(program_files / "CMake" / "bin" / "cmake.exe")
+    on_path = shutil.which("cmake")
+    if on_path:
+        candidates.append(pathlib.Path(on_path))
+    for candidate in candidates:
+        version = cmake_version(candidate) if candidate.exists() else None
+        if version and version >= MIN_CMAKE:
+            return candidate
+    return None
 
 
 def _developer_environment(vs_path: pathlib.Path, vswhere: pathlib.Path) -> dict[str, str]:
@@ -93,7 +127,11 @@ def _windows_environment() -> dict[str, str]:
     # Prefer the CMake and Ninja that ship with Visual Studio over an MSYS2/Cygwin cmake that
     # cannot drive MSVC, or a ninja.bat shim that CMake cannot launch as a make program.
     cmake_tools = vs_path / "Common7" / "IDE" / "CommonExtensions" / "Microsoft" / "CMake"
-    _prepend_path(env, cmake_tools / "CMake" / "bin")
+    cmake = windows_cmake(vs_path)
+    if cmake is None:
+        sys.exit(f"No CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]} or newer found. Install it from "
+                 "cmake.org or with 'winget install Kitware.CMake'.")
+    _prepend_path(env, cmake.parent)
     _prepend_path(env, cmake_tools / "Ninja")
     ninja = shutil.which("ninja", path=env.get("PATH"))
     if ninja is None or not ninja.lower().endswith(".exe"):

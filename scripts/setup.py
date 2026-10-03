@@ -31,7 +31,7 @@ import devenv
 ROOT = devenv.ROOT
 WINDOWS = devenv.WINDOWS
 VCPKG_URL = "https://github.com/microsoft/vcpkg"
-MIN_CMAKE = (3, 30)
+MIN_CMAKE = devenv.MIN_CMAKE
 MIN_GCC = 14
 MIN_CLANG = 17
 
@@ -197,10 +197,8 @@ def check_windows(report: Report, tooling: bool) -> None:
     report.add(Requirement("MSVC (VS 2022, C++ workload)", vs_path or None, install_build_tools))
     bundled = pathlib.Path(vs_path) / "Common7" / "IDE" / "CommonExtensions" / "Microsoft" / "CMake" \
         if vs_path else pathlib.Path("nowhere")
-    cmake = program("cmake", bundled / "CMake" / "bin")
-    cmake_version = version_of([cmake, "--version"]) if cmake else None
-    report.add(Requirement(f"CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]}+",
-                           cmake if cmake_version and cmake_version >= MIN_CMAKE else None,
+    cmake = devenv.windows_cmake(pathlib.Path(vs_path) if vs_path else None)
+    report.add(Requirement(f"CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]}+", str(cmake) if cmake else None,
                            winget_install("Kitware.CMake")))
     ninja = program("ninja", bundled / "Ninja",
                     pathlib.Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Ninja")
