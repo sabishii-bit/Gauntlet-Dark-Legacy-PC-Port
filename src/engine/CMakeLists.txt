@@ -52,6 +52,9 @@ add_library(engine STATIC
     render/RenderDevice.h
     render/DepthOfField.h
     render/DepthOfField.cpp
+    render/AmbientOcclusion.h
+    render/HeatDistortion.h
+    render/HeatDistortion.cpp
     render/DebugTextures.h
     render/DebugTextures.cpp
     render/vulkan/VulkanCommon.h

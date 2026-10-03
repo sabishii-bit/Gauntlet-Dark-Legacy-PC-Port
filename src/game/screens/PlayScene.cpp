@@ -8,6 +8,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/render/AmbientOcclusion.h"
 #include "engine/render/DepthOfField.h"
 #include "engine/world/WorldCamera.h"
 
@@ -1175,6 +1176,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture(), opponentBlend);
+    if (config.display.ambientOcclusion) {
+        AmbientOcclusion occlusion;
+        occlusion.clipToView = camera.view() * glm::inverse(clip);
+        device.applyAmbientOcclusion(occlusion);
+    }
     m_world->drawDeferred(device, clip, camera, effectBlend);
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera, effectBlend);

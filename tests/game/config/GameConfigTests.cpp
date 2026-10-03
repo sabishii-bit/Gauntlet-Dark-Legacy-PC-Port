@@ -114,6 +114,7 @@ TEST_CASE("graphics settings round-trip with thirty fps presentation defaults",
     CHECK(config.display.sampleCount == 1);
     CHECK_FALSE(config.display.depthOfField);
     CHECK_FALSE(config.display.bloom);
+    CHECK_FALSE(config.display.ambientOcclusion);
     CHECK(config.display.maxFrameRate == 30);
     CHECK(config.timing.gameplayFrameRate == 30);
     for (const u32 samples : {1U, 2U, 4U}) {
@@ -122,6 +123,7 @@ TEST_CASE("graphics settings round-trip with thirty fps presentation defaults",
             config.display.sampleCount = samples;
             config.display.depthOfField = rate == 60;
             config.display.bloom = samples == 4;
+            config.display.ambientOcclusion = rate == 30;
             config.display.maxFrameRate = rate;
             config.timing.gameplayFrameRate = rate;
             GameConfig restored;

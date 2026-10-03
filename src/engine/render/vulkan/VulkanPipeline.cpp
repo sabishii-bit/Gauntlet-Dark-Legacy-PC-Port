@@ -45,7 +45,10 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
         fragment = samples == VK_SAMPLE_COUNT_1_BIT ? "depth_of_field.frag.spv"
                                                     : "depth_of_field_ms.frag.spv";
     } else if (effect == Effect::Bloom) {
-        fragment = "bloom.frag.spv";
+        fragment = samples == VK_SAMPLE_COUNT_1_BIT ? "bloom.frag.spv" : "bloom_ms.frag.spv";
+    } else if (effect == Effect::AmbientOcclusion) {
+        fragment = samples == VK_SAMPLE_COUNT_1_BIT ? "ambient_occlusion.frag.spv"
+                                                    : "ambient_occlusion_ms.frag.spv";
     }
     const VkShaderModule fragmentModule = loadShaderModule(shaderDirectory / fragment);
 

@@ -7,7 +7,9 @@
 #include "engine/app/Application.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/AmbientOcclusion.h"
 #include "engine/render/DepthOfField.h"
+#include "engine/render/HeatDistortion.h"
 #include "engine/render/Image.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
@@ -25,6 +27,7 @@ public:
     bool changeWindow = false;
     bool depthOfField = false;
     bool bloom = false;
+    bool ambientOcclusion = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
@@ -131,7 +134,13 @@ protected:
         device.draw(m_batch, *m_texture, projection, glow);
         device.draw(m_batch, *m_texture, projection);
         if (bloom) {
+            device.addHeatSource({Vec2{0.5f}, Vec2{0.1f}, 0.9f, static_cast<f32>(m_elapsed)});
             CHECK(device.applyBloom());
+        }
+        if (ambientOcclusion) {
+            AmbientOcclusion occlusion;
+            occlusion.clipToView = glm::inverse(projection);
+            CHECK(device.applyAmbientOcclusion(occlusion));
         }
         if (depthOfField) {
             DepthOfField blur;
@@ -140,7 +149,7 @@ protected:
             blur.transition = 0.1f;
             CHECK(device.applyDepthOfField(blur));
         }
-        if (depthOfField || bloom) {
+        if (depthOfField || bloom || ambientOcclusion) {
             // Switching back must LOAD the postprocessed scene, retain depth, and restore
             // the normal pipeline/vertex stream rather than clearing it for the HUD.
             device.draw(m_batch, *m_texture, projection);
@@ -275,6 +284,16 @@ TEST_CASE("bloom survives resize and MSAA alone and combined with depth of field
     SECTION("bloom followed by DOF with changing AA") {
         app.depthOfField = true;
         app.changePresentation = true;
+    }
+    SECTION("all scene effects with changing AA") {
+        app.depthOfField = true;
+        app.ambientOcclusion = true;
+        app.changePresentation = true;
+    }
+    SECTION("ambient occlusion alone with resizing") {
+        app.bloom = false;
+        app.ambientOcclusion = true;
+        app.changeWindow = true;
     }
     REQUIRE(app.run() == 0);
     CHECK(app.renderedFrames() >= 18);

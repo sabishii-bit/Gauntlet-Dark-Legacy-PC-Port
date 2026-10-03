@@ -135,7 +135,7 @@ TEST_CASE("the native compass follows its preference and is hidden behind option
 }
 
 TEST_CASE("optional bloom and depth of field run after the world and before the HUD",
-          "[bloom][dof][assets]") {
+          "[bloom][dof][ambient-occlusion][assets]") {
     test::FakeRenderDevice device;
     LevelWorld world;
     GameConfig config;
@@ -152,6 +152,7 @@ TEST_CASE("optional bloom and depth of field run after the world and before the 
     scene.render(device, projection, 640, 448);
     CHECK(device.depthOfFieldDrawOffsets.empty());
     CHECK(device.bloomDrawOffsets.empty());
+    CHECK(device.ambientOcclusionDrawOffsets.empty());
     config.display.bloom = true;
     scene.render(device, projection, 640, 448);
     REQUIRE(device.bloomDrawOffsets.size() == 1);
@@ -159,11 +160,15 @@ TEST_CASE("optional bloom and depth of field run after the world and before the 
     CHECK(device.depthOfFieldDrawOffsets.empty());
     device.bloomDrawOffsets.clear();
     config.display.depthOfField = true;
+    config.display.ambientOcclusion = true;
     config.camera.compass = true;
     device.draws.clear();
     scene.render(device, projection, 640, 448);
     REQUIRE(device.depthOfFieldDrawOffsets.size() == 1);
     const auto split = device.depthOfFieldDrawOffsets.front();
+    REQUIRE(device.ambientOcclusionDrawOffsets.size() == 1);
+    CHECK(device.ambientOcclusionDrawOffsets.front() > 0);
+    CHECK(device.ambientOcclusionDrawOffsets.front() < split);
     REQUIRE(device.bloomDrawOffsets.size() == 1);
     CHECK(device.bloomDrawOffsets.front() == split);
     CHECK(split > 0);
@@ -171,6 +176,7 @@ TEST_CASE("optional bloom and depth of field run after the world and before the 
     const auto& blur = device.depthOfFieldSettings.front();
     const auto camera = scene.viewCamera();
     const auto clip = camera.clipTransform(config.horizontalFovRadians(), 640, 448, projection);
+    CHECK(device.ambientOcclusionSettings.front().clipToView == camera.view() * glm::inverse(clip));
     for (s32 player = 0; player < 2; ++player) {
         const auto* actor = scene.actor(player);
         REQUIRE(actor != nullptr);
@@ -180,9 +186,11 @@ TEST_CASE("optional bloom and depth of field run after the world and before the 
     }
     config.display.depthOfField = false;
     config.display.bloom = false;
+    config.display.ambientOcclusion = false;
     scene.render(device, projection, 640, 448);
     CHECK(device.depthOfFieldDrawOffsets.size() == 1);
     CHECK(device.bloomDrawOffsets.size() == 1);
+    CHECK(device.ambientOcclusionDrawOffsets.size() == 1);
 }
 
 TEST_CASE("Temple switch cutscene carries its chest and enemy continuously",

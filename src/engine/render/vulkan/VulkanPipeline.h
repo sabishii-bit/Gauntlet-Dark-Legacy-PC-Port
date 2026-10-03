@@ -15,7 +15,7 @@ class VulkanContext;
  * texture. Additive pipelines leave the depth buffer alone. */
 class VulkanPipeline {
 public:
-    enum class Effect : u8 { None, DepthOfField, Bloom };
+    enum class Effect : u8 { None, DepthOfField, Bloom, AmbientOcclusion };
     VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                    VkFormat colorFormat, VkFormat depthFormat,
                    VkDescriptorSetLayout textureSetLayout, BlendMode blend,
@@ -34,8 +34,11 @@ public:
         Mat4 transform;
         Vec4 params;
         Vec4 scale;
+        Vec4 heatDepths{0.0f};
+        Vec4 heatTimes{0.0f};
     };
     static constexpr u32 kPushConstantSize = sizeof(PushConstants);
+    static_assert(kPushConstantSize <= 128, "Stay within Vulkan's minimum push-constant capacity");
 
 private:
     VkShaderModule loadShaderModule(const std::filesystem::path& path) const;

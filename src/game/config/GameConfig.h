@@ -23,9 +23,10 @@ struct DisplayConfig {
     u32 windowHeight = 896;
     WindowMode windowMode = WindowMode::Windowed;
     bool vsync = true;
-    bool depthOfField = false; ///< experimental scene-only far-field blur; never blurs the HUD
-    bool bloom = false;        ///< experimental scene-only highlight glow; leaves UI untouched
-    u32 sampleCount = 1;       ///< MSAA samples: 1 (off), 2 or 4; limited by the graphics device
+    bool depthOfField = false;     ///< experimental scene-only far-field blur; never blurs the HUD
+    bool bloom = false;            ///< experimental scene-only highlight glow; leaves UI untouched
+    bool ambientOcclusion = false; ///< subtle depth-based contact shading, before effects/UI
+    u32 sampleCount = 1;   ///< MSAA samples: 1 (off), 2 or 4; limited by the graphics device
     u32 maxFrameRate = 30; ///< menu presentation cap; 0 follows the monitor, even without V-Sync
     /** Compare against the live client size, which can differ after a manual resize. */
     bool matchesWindow(WindowMode mode, Extent2D size) const;

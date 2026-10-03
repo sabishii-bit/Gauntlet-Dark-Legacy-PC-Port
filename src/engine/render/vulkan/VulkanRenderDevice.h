@@ -8,6 +8,7 @@
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/HeatDistortion.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/render/vulkan/VulkanCommon.h"
@@ -45,8 +46,11 @@ public:
     void waitIdle() override;
     bool applyDepthOfField(const DepthOfField& settings) override;
     bool applyBloom() override;
+    void addHeatSource(const HeatSource& source) override { m_heat.add(source); }
+    bool applyAmbientOcclusion(const AmbientOcclusion& settings) override;
 
 private:
+    HeatDistortion m_heat;
     static constexpr u32 kFramesInFlight = 2;
     static constexpr u32 kMaxVerticesPerFrame = 1U << 18U;
 

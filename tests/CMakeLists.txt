@@ -42,6 +42,7 @@ add_executable(tests
     engine/platform/PathsTests.cpp
     engine/render/RenderTypesTests.cpp
     engine/render/DepthOfFieldTests.cpp
+    engine/render/HeatDistortionTests.cpp
     engine/render/ImageTests.cpp
     engine/render/ImmediateBatchTests.cpp
     engine/render/DebugTexturesTests.cpp

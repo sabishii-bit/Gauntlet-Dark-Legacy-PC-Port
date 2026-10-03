@@ -5,7 +5,9 @@
 #include <memory>
 
 #include "engine/core/SpecialMembers.h"
+#include "engine/render/AmbientOcclusion.h"
 #include "engine/render/DepthOfField.h"
+#include "engine/render/HeatDistortion.h"
 #include "engine/render/vulkan/VulkanCommon.h"
 #include "engine/render/vulkan/VulkanPipeline.h"
 
@@ -25,7 +27,10 @@ public:
 
     void record(VkCommandBuffer cmd, const VulkanSwapchain& swapchain, u32 imageIndex,
                 const DepthOfField& settings);
-    void recordBloom(VkCommandBuffer cmd, const VulkanSwapchain& swapchain, u32 imageIndex);
+    void recordBloom(VkCommandBuffer cmd, const VulkanSwapchain& swapchain, u32 imageIndex,
+                     const HeatDistortion& heat);
+    void recordAmbientOcclusion(VkCommandBuffer cmd, const VulkanSwapchain& swapchain,
+                                u32 imageIndex, const AmbientOcclusion& settings);
 
 private:
     void recordPass(VkCommandBuffer cmd, const VulkanSwapchain& swapchain, u32 imageIndex,
@@ -33,6 +38,7 @@ private:
     VulkanContext& m_context;
     std::unique_ptr<VulkanPipeline> m_pipeline;
     std::unique_ptr<VulkanPipeline> m_bloomPipeline;
+    std::unique_ptr<VulkanPipeline> m_aoPipeline;
     VkImage m_color = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
     VkImageView m_view = VK_NULL_HANDLE;
