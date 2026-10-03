@@ -472,6 +472,50 @@ TEST_CASE(
     }
 }
 
+TEST_CASE("Phoenix does not suppress the earned familiar's attack animation",
+          "[game][figure][phoenix][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    CharacterSave save;
+    save.progress().experience = levelExperience(GENERATE(30, 80));
+    auto ordinary = PlayerFigure::load(device, root, save, false);
+    auto withPhoenix = PlayerFigure::load(device, root, save, false);
+    REQUIRE(ordinary);
+    REQUIRE(withPhoenix);
+    REQUIRE(ordinary->familiarTier() > 0);
+    save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 60);
+    withPhoenix->setCompanionPowerups(device, powerups, save.progress().inventory);
+    REQUIRE(withPhoenix->phoenixActive());
+    bool samePose = true;
+    s32 releases = 0;
+    for (s32 frame = 0; frame < 60; ++frame) {
+        ordinary->animate(0, 2, 1.0f / 30, PlayerDeed::Attack);
+        withPhoenix->animate(0, 2, 1.0f / 30, PlayerDeed::Attack);
+        CHECK(withPhoenix->familiarReleased() == ordinary->familiarReleased());
+        releases += ordinary->familiarReleased() ? 1 : 0;
+        device.draws.clear();
+        ordinary->draw(device, Mat4{1}, Mat4{1}, {}, 1, true);
+        const auto reference = device.draws;
+        REQUIRE_FALSE(reference.empty());
+        device.draws.clear();
+        withPhoenix->draw(device, Mat4{1}, Mat4{1}, {}, 1, true);
+        // Body and earned familiar precede the extra companion; hide the held weapon.
+        REQUIRE(device.draws.size() > reference.size());
+        for (usize draw = 0; draw < reference.size(); ++draw) {
+            REQUIRE(device.draws[draw].vertices.size() == reference[draw].vertices.size());
+            samePose = samePose && device.draws[draw].transform == reference[draw].transform;
+            for (usize vertex = 0; vertex < reference[draw].vertices.size(); ++vertex) {
+                samePose = samePose && device.draws[draw].vertices[vertex].position ==
+                                           reference[draw].vertices[vertex].position;
+            }
+        }
+    }
+    CHECK(releases > 1);
+    CHECK(samePose);
+}
+
 /** A costume with a wrist and an unmapped ornament, sharing a tiny synthetic mesh. */
 std::filesystem::path costumeFixture(std::string_view name, bool animated) {
     const auto root = test::scratchDirectory(name);
