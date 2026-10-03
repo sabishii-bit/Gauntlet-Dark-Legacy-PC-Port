@@ -346,11 +346,10 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
         (m_animator.released() || m_animator.strongReleased() || m_animator.superReleased() ||
          m_animator.itemReleased() == PlayerDeed::FireLeft ||
          m_animator.itemReleased() == PlayerDeed::FireRight);
-    // A swing's or throw's moment sets Pojo attacking (pmotion.c 2715); the phoenix spits as
-    // its bearer's shot leaves, as the earned familiar does without it.
+    // Swings and throws animate Pojo; ranged releases animate both firing familiars.
     const bool swung = m_animator.meleeStruck() || m_animator.released();
     m_companion.update(seconds, m_animator.action(), swung, phoenix && m_familiarPending);
-    m_familiar.update(seconds, !phoenix && m_familiarPending);
+    m_familiar.update(seconds, m_familiarPending);
     const std::span<const Mat4> matrices = m_animator.pose().matrices();
     m_transforms.resize(m_costume->nodes.size());
     for (usize n = 0; n < m_transforms.size(); ++n) {

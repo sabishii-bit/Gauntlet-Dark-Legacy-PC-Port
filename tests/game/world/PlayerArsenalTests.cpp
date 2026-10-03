@@ -212,6 +212,57 @@ TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapo
     f.arsenal.clear();
 }
 
+TEST_CASE("a ranged volley fires the player's weapon and both earned and Phoenix familiars",
+          "[game][player-arsenal][phoenix][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/YEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    for (const s32 level : {30, 80}) {
+        CAPTURE(level);
+        Fixture f;
+        f.arsenal.clear();
+        REQUIRE(f.classes.load(root / "pdata"));
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        f.actor.save().progress().experience = levelExperience(level);
+        auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+        REQUIRE(figure);
+        REQUIRE(figure->familiarTier() == (level < 80 ? 1 : 2));
+        REQUIRE(figure->familiarMissile().bound());
+        f.arsenal.bind(
+            {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+        auto& inventory = f.actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 60);
+        const Vec3 aim{10, 5, 40};
+        f.arsenal.launchWeapon(f.actor, figure.get(), f.actor.facing(), 1, true, aim);
+        f.arsenal.launchFamiliar(f.actor, figure.get(), aim);
+        REQUIRE(f.arsenal.missiles().count() == 3);
+        const auto& familiar = f.arsenal.missiles().missile(1);
+        const auto& phoenix = f.arsenal.missiles().missile(2);
+        CHECK(familiar.damage == Catch::Approx(0.1f * static_cast<f32>(level)));
+        CHECK(familiar.flags == 0);
+        CHECK(phoenix.damage == 10);
+        CHECK(phoenix.flags == 0x11);
+        CHECK(familiar.owner == f.actor.player());
+        CHECK(phoenix.owner == f.actor.player());
+        CHECK(familiar.velocity == phoenix.velocity);
+        REQUIRE(familiar.effect != 0);
+        REQUIRE(phoenix.effect != 0);
+        CHECK(familiar.effect != phoenix.effect);
+
+        // Disabling the timed item must leave the earned familiar's next volley intact.
+        f.arsenal.missiles().clear();
+        inventory.powerups[0].on = false;
+        f.arsenal.launchWeapon(f.actor, figure.get(), f.actor.facing(), 1, true, aim);
+        f.arsenal.launchFamiliar(f.actor, figure.get(), aim);
+        REQUIRE(f.arsenal.missiles().count() == 2);
+        CHECK(f.arsenal.missiles().missile(1).flags == 0);
+        CHECK(f.arsenal.missiles().missile(1).damage ==
+              Catch::Approx(0.1f * static_cast<f32>(level)));
+        f.arsenal.clear();
+    }
+}
+
 TEST_CASE("equipped gauntlets route the shooter's textures into complete projectile playback",
           "[game][player-arsenal][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();

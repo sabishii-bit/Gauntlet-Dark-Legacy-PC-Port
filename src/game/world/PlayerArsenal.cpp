@@ -246,7 +246,8 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     }
     const auto worn = PowerupEffects::of(actor.save().progress().inventory);
     const bool phoenix = (worn.special & powerup::kPhoenix) != 0;
-    if (!phoenix && (body->familiarTier() == 0 || !body->familiarMissile().bound())) {
+    const bool familiar = body->familiarTier() > 0 && body->familiarMissile().bound();
+    if (!phoenix && !familiar) {
         return;
     }
     const auto* stats = m_resources->classes.stats(actor.save().character);
@@ -264,13 +265,7 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     launch.position = Vec3{actor.transform() * Vec4{stats->familiarShotOffset * scale, 1}};
     launch.direction = actor.facing();
     launch.speed = 35;
-    launch.damage = phoenix ? kPhoenixDamage
-                            : 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
-    launch.flags = phoenix ? kPhoenixDamageFlags : 0;
     launch.spec = m_resources->bossEncounter ? &kBossShot : &kLevelShot;
-    launch.model = phoenix ? &m_phoenixShot : &body->familiarMissile();
-    launch.archive = phoenix ? &m_resources->weapons : body->effects();
-    launch.tree = phoenix ? "PHOENIX_FBALL" : "FAMILIAR_SPIT";
     launch.wallSound = MissileWallSound::Silent;
     // CalcTargetDir normalizes horizontal displacement, uses a 50-unit/second
     // flight estimate, then StartFX scales the direction by 35.
@@ -284,7 +279,22 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
                                     (delta.y + drop) * 50.0f * inverse),
                            delta.z * inverse} *
                       launch.speed;
-    m_missiles.launch(launch);
+    // Both companions share the release and aim, but retain independent damage and visuals.
+    if (familiar) {
+        launch.damage = 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
+        launch.model = &body->familiarMissile();
+        launch.archive = body->effects();
+        launch.tree = "FAMILIAR_SPIT";
+        m_missiles.launch(launch);
+    }
+    if (phoenix) {
+        launch.damage = kPhoenixDamage;
+        launch.flags = kPhoenixDamageFlags;
+        launch.model = &m_phoenixShot;
+        launch.archive = &m_resources->weapons;
+        launch.tree = "PHOENIX_FBALL";
+        m_missiles.launch(launch);
+    }
 }
 
 void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body, bool left) {
