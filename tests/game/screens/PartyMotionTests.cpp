@@ -56,9 +56,11 @@ struct Fixture {
         CollisionTriangle first;
         first.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{100, 0, 100}};
         first.normal = Vec3{0, 1, 0};
+        first.object = 0;
         CollisionTriangle second;
         second.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, 100}, Vec3{-100, 0, 100}};
         second.normal = first.normal;
+        second.object = 0;
         collision.build({first, second});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0, 0, 0}, 0);
         players[1].actor.spawn(1, {}, nullptr, Vec3{10, 0, 0}, 0);
@@ -615,24 +617,50 @@ TEST_CASE("it passes to a player touched once it has been held a second, and not
     };
     f.players[0].itTicks = 1;
     f.players[1].actor.place(Vec3{0.5f, 0.0f, 0.0f});
-    PartyMotion::passIt(f.players, 2, f.events);
+    std::array<std::optional<usize>, 2> contacts{1, std::nullopt};
+    PartyMotion::passIt(f.players, 2, f.events, contacts);
     CHECK(tagged.empty()); // held too short a while to pass on
     CHECK(f.players[0].itTicks == 3);
     f.players[0].itTicks = PartyMotion::kItHold + 1;
-    PartyMotion::passIt(f.players, 2, f.events);
+    PartyMotion::passIt(f.players, 2, f.events, contacts);
     CHECK(tagged == std::vector<usize>{1});
     CHECK(f.players[0].itTicks == 0);
     CHECK(f.players[1].itTicks == 3);
     // Apart, it stays where it is.
     f.players[1].actor.place(Vec3{10.0f, 0.0f, 0.0f});
     f.players[1].itTicks = 100;
-    PartyMotion::passIt(f.players, 2, f.events);
+    contacts = {};
+    PartyMotion::passIt(f.players, 2, f.events, contacts);
     CHECK(tagged.size() == 1);
     CHECK(f.players[1].itTicks == 102);
     // The fallen are it no more.
     f.players[1].life = PlayerLife::InTower;
-    PartyMotion::passIt(f.players, 2, f.events);
+    PartyMotion::passIt(f.players, 2, f.events, contacts);
     CHECK(f.players[1].itTicks == 0);
+}
+
+TEST_CASE("it transfers on the resolved body contact even when the recipient is pushed away",
+          "[game][screens][party-motion][it]") {
+    // PlayerMotion passes IT in its PlayerCollidePlayers branch (0x80081504),
+    // before the recipient takes its own step; a post-step overlap is not required.
+    Fixture f;
+    std::vector<usize> tagged;
+    f.events.perform = [&](usize i, PartyMotion::Action action) {
+        if (action == PartyMotion::Action::Tagged) {
+            tagged.push_back(i);
+        }
+    };
+    const f32 reach = f.players[0].actor.radius() + f.players[1].actor.radius();
+    f.players[1].actor.place(Vec3{0, 0, reach + 0.1f});
+    f.players[0].itTicks = PartyMotion::kItHold + 1;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.step();
+    CHECK(tagged == std::vector<usize>{1});
+    CHECK(f.players[0].itTicks == 0);
+    CHECK(f.players[1].itTicks > 0);
+    CHECK(glm::distance(f.players[0].actor.position(), f.players[1].actor.position()) >= reach);
+    f.step();
+    CHECK(tagged.size() == 1);
 }
 
 TEST_CASE("a body retches while gas lasts with the stick let go, heeding no button; a pickup's "

@@ -40,6 +40,38 @@ constexpr bool isLegend(PlayerDeed deed) {
 
 } // namespace
 
+bool PlayerAnimator::isBlockableAttack(Action action) {
+    // PlayerAttacking(level 1): categories 2, 5, 10, and 11 or higher.
+    // Recoveries retain their attack category; quick, step and low swings do not qualify.
+    switch (action) {
+    case Action::SlowStart:
+    case Action::SlowSwing:
+    case Action::SlowRecover:
+    case Action::PowerClose:
+    case Action::PowerCloseRecover:
+    case Action::PowerMed:
+    case Action::PowerMedRecover:
+    case Action::Spin:
+    case Action::SpinRecover:
+    case Action::StrongThrow:
+    case Action::StrongThrowRecover:
+    case Action::FireLeft:
+    case Action::FireLeftRecover:
+    case Action::FireRight:
+    case Action::FireRightRecover:
+    case Action::TurboStrong:
+    case Action::TurboFull:
+    case Action::SpecialShot:
+    case Action::SpecialShotRecover:
+    case Action::SpecialShotRepeat:
+    case Action::Hammer:
+    case Action::HammerRecover:
+    case Action::Breathe:
+    case Action::BreatheRecover: return true;
+    default: return action >= Action::ComboAct1 && action <= Action::ComboJes;
+    }
+}
+
 bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
     unbind();
     for (usize a = 0; a < kActionCount; ++a) {

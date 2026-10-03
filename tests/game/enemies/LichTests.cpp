@@ -341,6 +341,7 @@ TEST_CASE("Lich stomp and spin keep authored damage reach and independent visual
     const f32 radius = stomp ? 12.0f : 15.0f;
     const auto* damage = fixture.actor.data()->damage(stomp ? 5 : 6);
     REQUIRE(damage != nullptr);
+    REQUIRE(fixture.actor.data()->rootNode().empty()); // root-parent effects use the model frame
     CHECK(damage->maxDistance == radius);
     CHECK(damage->minDot == -1);
     std::array<EnemyView, 4> players;
@@ -363,6 +364,10 @@ TEST_CASE("Lich stomp and spin keep authored damage reach and independent visual
             players[i].position = origin + Vec3{distances[i - 1], -3, 0};
             players[i].hidden = !began;
         }
+        // CritterBossAI activates effects before translating/rotating. Revealing the
+        // other players can turn the body later in this same frame, after cue emission.
+        const auto rootAtEmission = fixture.actor.rootTransform();
+        REQUIRE(rootAtEmission);
         fixture.update(ticks, seconds, players);
         if (fixture.actor.moveName() == wanted) {
             began = true;
@@ -377,11 +382,9 @@ TEST_CASE("Lich stomp and spin keep authored damage reach and independent visual
             CHECK(cue.scale == 1);
             CHECK(cue.follows);
             REQUIRE(cue.placement);
-            const auto rootTransform = fixture.actor.rootTransform();
-            REQUIRE(rootTransform);
             for (s32 column = 0; column < 4; ++column) {
                 for (s32 row = 0; row < 4; ++row) {
-                    CHECK((*cue.placement)[column][row] == Approx((*rootTransform)[column][row]));
+                    CHECK((*cue.placement)[column][row] == Approx((*rootAtEmission)[column][row]));
                 }
             }
         }

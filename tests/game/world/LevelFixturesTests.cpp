@@ -19,6 +19,7 @@
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/ItemFigure.h"
+#include "game/world/LevelWorld.h"
 #include "game/world/LockedGates.h"
 #include "game/world/Traps.h"
 
@@ -29,6 +30,50 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kPi = std::numbers::pi_v<f32>;
+
+TEST_CASE("Temple chests ride their native switch-driven platforms",
+          "[game][world][fixtures][chest-platform][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    Chests chests;
+    REQUIRE(chests.bind(device, world.layout(), world.items(), &world.collision(),
+                        &world.realmItems()));
+    std::vector<Vec3> before;
+    for (usize i = 0; i < chests.size(); ++i) {
+        before.push_back(chests.chest(i).figure.position());
+    }
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        world.activateTrigger(world.triggers().trigger(i).id, false);
+    }
+    usize descending = 0;
+    for (s32 frame = 0; frame < 600; ++frame) {
+        world.update(1.0f / 60);
+        world.updateTriggers(1.0f / 60, {});
+        chests.update(1.0f / 60, {});
+        for (usize i = 0; i < chests.size(); ++i) {
+            const auto& chest = chests.chest(i);
+            if (!chest.floor) {
+                continue;
+            }
+            const auto support = world.collision().objectTransform(chest.floor->object);
+            REQUIRE(support);
+            const Vec3 expected = Vec3{(*support * chest.floor->local)[3]};
+            CHECK(glm::distance(chest.figure.position(), expected) < 0.001f);
+            CHECK(glm::distance(chest.box.centre, expected) < 0.001f);
+            if (frame == 599 && expected.y < before[i].y - 1.0f) {
+                ++descending;
+            }
+        }
+    }
+    REQUIRE(descending > 0);
+}
 
 /** A level with a locked chest of potions-or-keys at the origin, a chest of gold at x 20, a
  * trapped one at x 40, a barrel at x 60, a gate across x 80 and spikes at x 100. */
@@ -91,6 +136,59 @@ struct Fixture {
 
     explicit Fixture(std::string_view name) { REQUIRE(layout.load(sampleLevel(name))); }
 };
+
+TEST_CASE("chests follow descending and rotating platforms with their obstacle and preview",
+          "[game][world][fixtures][chest-platform]") {
+    const auto dir = test::scratchDirectory("chest-platform");
+    writeTextFile(dir / "world.json", R"({"objects":[
+        {"name":"ROOT","position":[100,10,50],"child":1},
+        {"name":"LIFT","position":[0,0,0],"flags":4100}],
+        "itemInfos":[{"type":2,"subtype":46,"name":"CHEST","radius":1,"height":2},
+                     {"type":1,"subtype":4,"name":"POT_RED","radius":1}],
+        "itemInstances":[{"info":0,"position":[101,10,50],"minPlayers":1,
+                          "params":[1,0,0,0,1,0,0,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    WorldCollision collision;
+    collision.build({{{0, 1, 0}, {Vec3{-4, 0, -4}, Vec3{4, 0, -4}, Vec3{0, 0, 4}}, 1, 4100}});
+    collision.setMovingObjects(std::array<s32, 1>{1});
+    const Mat4 initial = glm::translate(Mat4{1}, Vec3{100, 20, 50});
+    collision.setObjectTransform(1, initial);
+    test::FakeRenderDevice device;
+    ItemArchive art;
+    Chests chests;
+    REQUIRE(chests.bind(device, layout, art, &collision));
+    REQUIRE(chests.chest(0).floor);
+    CHECK(chests.chest(0).figure.position().y == Approx(20.1f));
+    CHECK(collision.objectTransform(1) == initial);
+    const Mat4 local = chests.chest(0).floor->local;
+    const Mat4 moved =
+        glm::translate(Mat4{1}, Vec3{100, -10, 50}) * glm::rotate(Mat4{1}, 0.5f, Vec3{0, 1, 0});
+    collision.setObjectTransform(1, moved);
+    chests.syncFloors();
+    const Mat4 expected = moved * local;
+    CHECK(chests.chest(0).figure.transform() == expected);
+    CHECK(chests.chest(0).preview.transform() == expected);
+    CHECK(chests.obstacles()[0].centre == Vec3{expected[3]});
+    CHECK(chests.obstacles()[0].yaw == Approx(0.5f));
+    // Opening remains possible at the new position, never at the abandoned one.
+    const std::array oldVisitor{ChestVisitor{Vec3{101, 20, 50}, 1, 1}};
+    CHECK(chests.update(0, oldVisitor).empty());
+    const std::array newVisitor{ChestVisitor{Vec3{expected[3]}, 1, 1}};
+    const auto events = chests.update(0, newVisitor);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].position == Vec3{expected[3]});
+    CHECK(events[0].contents == 1);
+    chests.hold(0, 42);
+    collision.setObjectTransform(1, initial);
+    chests.update(0, {});
+    CHECK(chests.chest(0).figure.transform() == initial * local);
+    CHECK(chests.chest(0).held == 42);
+    for (s32 i = 0; i < 100; ++i) {
+        chests.syncFloors();
+    }
+    CHECK(chests.chest(0).figure.transform() == initial * local);
+}
 
 TEST_CASE("X-Ray reveals the nearest closed chest without spending keys or changing its loot",
           "[game][world][fixtures][xray]") {
@@ -297,13 +395,26 @@ TEST_CASE("a locked chest wants a key, opens, and gives up what it held",
     REQUIRE(chests.holdingTouchedBy(party[0]) == -1);
     REQUIRE(chests.obstacles().size() == 1);
 
-    // The chest of gold pays its opener; with two players the trapped one blows up.
+    // Gold stays in the opened chest until a player touches it.
     party[0].position = Vec3{21.9f, 0.0f, 0.0f};
     chests.update(1.0f / 30.0f, party);
     events = chests.update(1.0f / 30.0f, party);
     REQUIRE(events.size() == 1);
-    REQUIRE(events[0].gold == 200);
+    REQUIRE(events[0].kind == ChestEvent::Kind::Opened);
+    REQUIRE(events[0].gold == 0);
     REQUIRE(events[0].contents == -1);
+    REQUIRE(chests.update(1.0f, {}).empty());
+    REQUIRE_FALSE(chests.chest(1).gone);
+    const std::array otherVisitor{ChestVisitor{Vec3{100, 0, 0}, 0.75f, 0}, party[0]};
+    events = chests.update(0, otherVisitor);
+    REQUIRE(events.size() == 1);
+    REQUIRE(events[0].kind == ChestEvent::Kind::Collected);
+    REQUIRE(events[0].visitor == 1);
+    REQUIRE(events[0].gold == 200);
+    REQUIRE(chests.update(Chests::kCollectedSeconds * 0.5f, otherVisitor).empty());
+    REQUIRE_FALSE(chests.chest(1).gone);
+    REQUIRE(chests.update(Chests::kCollectedSeconds * 0.5f, otherVisitor).empty());
+    REQUIRE(chests.chest(1).gone);
     chests.setPlayerCount(2);
     party[0].position = Vec3{41.9f, 0.0f, 0.0f};
     chests.update(1.0f / 30.0f, party);

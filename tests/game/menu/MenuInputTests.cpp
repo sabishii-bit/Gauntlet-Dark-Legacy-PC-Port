@@ -1,4 +1,6 @@
 
+#include <array>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -104,6 +106,48 @@ TEST_CASE("held directions are reported alongside presses", "[game][menu]") {
     REQUIRE(menu.leftHeld);
     REQUIRE_FALSE(menu.upHeld);
     REQUIRE_FALSE(readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(0)).leftHeld);
+}
+
+TEST_CASE("four controllers steer only their own menu lanes with held sticks",
+          "[game][menu][multiplayer]") {
+    Input input;
+    const std::array axes{PadAxis::LeftY, PadAxis::LeftX, PadAxis::LeftY, PadAxis::LeftX};
+    const std::array directions{-0.8f, 0.8f, 0.8f, -0.8f};
+    std::array<PadSnapshot, Input::kMaxPads> pads;
+    for (s32 player = 0; player < Input::kMaxPads; ++player) {
+        auto& pad = pads[static_cast<usize>(player)];
+        pad.connected = true;
+        pad.axes[static_cast<usize>(axes[static_cast<usize>(player)])] =
+            directions[static_cast<usize>(player)];
+        input.setPad(player, pad);
+    }
+    for (s32 player = 0; player < Input::kMaxPads; ++player) {
+        const auto menu = readMenuInput(input, {}, MenuInputSource::forPlayer(player));
+        CHECK(menu.up == (player == 0));
+        CHECK(menu.right == (player == 1));
+        CHECK(menu.down == (player == 2));
+        CHECK(menu.left == (player == 3));
+    }
+    input.beginPoll();
+    for (s32 player = 0; player < Input::kMaxPads; ++player) {
+        const auto menu = readMenuInput(input, {}, MenuInputSource::forPlayer(player));
+        CHECK_FALSE(menu.any());
+        CHECK(menu.upHeld == (player == 0));
+        CHECK(menu.rightHeld == (player == 1));
+        CHECK(menu.downHeld == (player == 2));
+        CHECK(menu.leftHeld == (player == 3));
+    }
+    // A disconnected pad cannot continue steering; the remaining slots stay assigned.
+    input.setPad(1, {});
+    CHECK_FALSE(readMenuInput(input, {}, MenuInputSource::forPlayer(1)).rightHeld);
+    CHECK(readMenuInput(input, {}, MenuInputSource::forPlayer(3)).leftHeld);
+    input.beginPoll();
+    input.setPad(1, pads[1]);
+    CHECK(readMenuInput(input, {}, MenuInputSource::forPlayer(1)).right);
+    CHECK_FALSE(readMenuInput(input, {}, MenuInputSource::forPlayer(3)).left);
+    MenuBindings rebound;
+    rebound.padRight = {PadButton::DpadRight};
+    CHECK_FALSE(readMenuInput(input, rebound, MenuInputSource::forPlayer(1)).right);
 }
 
 TEST_CASE("the escape binding is read from the keyboard alone, typing or not", "[game][menu]") {

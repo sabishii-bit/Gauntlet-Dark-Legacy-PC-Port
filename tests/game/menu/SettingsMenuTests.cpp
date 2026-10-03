@@ -262,4 +262,53 @@ TEST_CASE("Controls stays disabled in every scope and cannot mutate bindings", "
         CHECK(f.writes == 0);
     }
 }
+
+TEST_CASE("multiplayer radio choices use retail labels and persist only successful writes",
+          "[settings][multiplayer]") {
+    // GC OPTMENU_MULTIPLAYER entries at 0x8011ED7C: strings at 0x80347568,
+    // 0x80113900 and 0x8011391C; the selected radio is optglobals + 0x9C.
+    Fixture f;
+    f.down();
+    f.select();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    REQUIRE(f.menu.menu().definition().items[1].enabled);
+    f.down();
+    f.select();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Multiplayer);
+    CHECK(f.menu.menu().selection() == 0);
+    const auto checkLabels = [&] {
+        const auto& rows = f.menu.menu().definition().items;
+        REQUIRE(rows.size() == 3);
+        CHECK(rows[0].text == "Normal");
+        CHECK(rows[1].text == "Shots Stun Other Players");
+        CHECK(rows[2].text == "Shots Hurt Other Players");
+    };
+    checkLabels();
+    CHECK(f.menu.menu().definition().items[0].markedPart == 1);
+    f.down();
+    f.fail = true;
+    f.select();
+    CHECK(f.writes == 0);
+    CHECK(f.config.multiplayer.mode == MultiplayerMode::Normal);
+    CHECK(f.menu.config().multiplayer.mode == MultiplayerMode::Normal);
+    CHECK(f.menu.menu().definition().items[0].markedPart == 1);
+    CHECK(f.menu.menu().definition().items[1].markedPart == 0);
+    f.fail = false;
+    f.select();
+    CHECK(f.config.multiplayer.mode == MultiplayerMode::Stun);
+    CHECK(f.writes == 1);
+    CHECK(f.menu.menu().definition().items[1].markedPart == 1);
+    f.down();
+    f.select();
+    CHECK(f.config.multiplayer.mode == MultiplayerMode::Hurt);
+    CHECK(f.menu.menu().definition().items[2].markedPart == 1);
+    CHECK(f.menu.menu().definition().items[1].markedPart == 0);
+    f.back();
+    CHECK(f.menu.page() == SettingsMenu::Page::Game);
+    CHECK(f.menu.menu().selection() == 1);
+    f.select();
+    CHECK(f.menu.page() == SettingsMenu::Page::Multiplayer);
+    CHECK(f.menu.menu().selection() == 2);
+    checkLabels();
+}
 } // namespace

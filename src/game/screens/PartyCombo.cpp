@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/PowerupEffects.h"
+#include "game/screens/FloorRiding.h"
 #include "game/screens/PartyCollision.h"
 
 namespace gdl::game {
@@ -21,6 +22,7 @@ constexpr std::string_view kSeatNode = "DUMMY"; ///< the costume's marker the pa
 bool free(const PlayerRuntime& runtime) {
     if (runtime.life != PlayerLife::Standing || runtime.departed || runtime.combo.active() ||
         runtime.capture.active() || runtime.transport.active() || runtime.figure == nullptr ||
+        runtime.floor.object < 0 || (runtime.floor.flags & FloorRiding::kMoving) != 0 ||
         !runtime.figure->animator().bound() || !runtime.figure->animator().comboTakeable()) {
         return false;
     }
@@ -53,7 +55,9 @@ void PartyCombo::begin(std::span<PlayerRuntime> players, usize grabber, usize pa
     if (grabber >= players.size() || partner >= players.size() || grabber == partner) {
         return;
     }
-    const s32 grabberClass = players[grabber].actor.save().character % kStartingClassCount;
+    const s32 character = players[grabber].actor.save().character;
+    const s32 grabberClass =
+        character == kSumnerClass ? ComboMove::kWizard : character % kStartingClassCount;
     ComboMove::link(players[grabber].combo, grabber, players[partner].combo, partner, grabberClass);
     if (players[partner].figure != nullptr) {
         players[partner].figure->setCombo(grabberClass, false);
@@ -79,6 +83,9 @@ void PartyCombo::animate(std::span<PlayerRuntime> players, usize index, s32 tick
         return;
     }
     PlayerRuntime& runtime = players[index];
+    if (runtime.combo.role == ComboRole::Held) {
+        ComboMove::tick(runtime.combo, ticks, seconds);
+    }
     if (runtime.figure != nullptr) {
         runtime.figure->setCombo(runtime.combo.grabberClass, runtime.combo.rideAsked);
         runtime.figure->animate(0, ticks, seconds, deedOf(runtime));
@@ -174,14 +181,19 @@ void PartyCombo::fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f
                                  : meant;
     const Vec3 pushed{to.x - meant.x, 0.0f, to.z - meant.z};
     const bool wall = std::hypot(pushed.x, pushed.z) > PartyCollision::kCoincident;
-    const std::optional<usize> other = PartyCollision::resolve(players, flier, before, to);
+    const Vec3 worldResolved = to;
+    std::optional<usize> other = PartyCollision::resolve(players, flier, before, to);
+    const auto thrower = static_cast<usize>(std::max(state.partner, 0));
+    if (other == thrower && state.graceSeconds > 0.0f) {
+        to = worldResolved;
+        other.reset();
+    }
     if (other.has_value()) {
         players[*other].knockback.shove(meant - before, seconds);
     }
     actor.place(to);
     // What it strikes turns it: an item or another member three eighths round, a wall by
     // reflection; not its thrower until the grace is over (pmotion.c 1157).
-    const auto thrower = static_cast<usize>(std::max(state.partner, 0));
     std::optional<f32> turned;
     if (events.impact && events.impact(flier, thrower, ComboMove::kWarriorBlow)) {
         turned = ComboMove::bounceYaw(actor.yaw());

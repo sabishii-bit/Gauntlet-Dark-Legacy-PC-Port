@@ -79,4 +79,24 @@ TEST_CASE("Projectiles report a mesh target instead of disappearing against its 
     CHECK(impacts[0].target == 6000);
     CHECK(impacts[0].damage == Catch::Approx(10));
 }
+
+TEST_CASE("narrow area-cover probes cannot step through a mesh between sample points",
+          "[walls][missile-target][multiplayer-combat]") {
+    CollisionTriangle triangle;
+    triangle.vertices = {Vec3{-5, 0, 5}, Vec3{5, 0, 5}, Vec3{0, 10, 5}};
+    triangle.normal = {0, 0, 1};
+    const std::array surface{triangle};
+    const MissileTarget target{6000, {0, 0, 5}, 5, 10, surface};
+    StrikeHit probe;
+    probe.radius = 0.1f;
+    probe.damage = 1;
+    probe.from = {0, 2, 0};
+    probe.centre = {0, 2.5f, 10};
+    probe.swept = true;
+    // At fixed quarter-unit sampling this slight rise makes 41 intervals: both
+    // samples beside the wall miss it by more than this probe's tenth-unit radius.
+    CHECK(target.reachedBy(probe));
+    probe.from.x = probe.centre.x = 10;
+    CHECK_FALSE(target.reachedBy(probe));
+}
 } // namespace

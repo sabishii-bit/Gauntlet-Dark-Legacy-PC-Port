@@ -143,6 +143,25 @@ void MoveStrikes::clear() {
     m_next = 1;
 }
 
+void MoveStrikes::hitPlayer(u32 id, bool reflected, const Vec3& from) {
+    const auto found = std::ranges::find(m_strikes, id, &Strike::id);
+    if (found == m_strikes.end() || !found->flies) {
+        return;
+    }
+    if (!reflected) {
+        m_strikes.erase(found);
+        return;
+    }
+    constexpr f32 kMostLife = 10.0f;
+    constexpr f32 kLifeLost = 1.0f;
+    constexpr f32 kMostDamage = 15.0f;
+    found->position = from;
+    found->facing = -found->facing;
+    found->secondsLeft =
+        found->secondsLeft > kMostLife ? kMostLife : found->secondsLeft - kLifeLost;
+    found->damage = std::min(found->damage, kMostDamage);
+}
+
 const MoveStrikes::Strike* MoveStrikes::find(u32 id) const {
     const auto found = std::ranges::find(m_strikes, id, &Strike::id);
     return found != m_strikes.end() ? &*found : nullptr;

@@ -74,6 +74,27 @@ f32 playingIndex(const PlayerAnimator& animator) {
     return animator.pose().matrices()[0][3].x;
 }
 
+TEST_CASE("critter block requests classify heavy attacks and their recoveries only",
+          "[player-animation][critter-block]") {
+    // PlayerAttackType followed by PlayerAttacking(level 1), grouped independently
+    // by retail sequence names so enum ordering cannot silently widen the query.
+    const std::array provoking{
+        "ATTSTART",    "ATTSLOW1",  "ATTSLOW1R", "ATTPWRACLOSE", "ATTPWRACLOSER", "ATTPWRAMED",
+        "ATTPWRAMEDR", "ATT360",    "ATT360R",   "ATTPWRATHROW", "ATTPWRATHROWR", "ATTPWRB",
+        "ATTPWRC",     "ATTFIREL",  "ATTFIRELR", "ATTFIRER",     "ATTFIRERR",     "SSHOT1",
+        "SSHOT2",      "SSHOTR",    "ATTCHOP",   "ATTCHOPR",     "ATTBREATHE",    "ATTBREATHER",
+        "COMBOACT1",   "COMBOACT2", "COMBOACT3", "COMBOWAR1",    "COMBOWAR2",     "COMBOWAR3",
+        "COMBOVAL",    "COMBOWIZ",  "COMBOARC",  "COMBODWF1",    "COMBODWF2",     "COMBODWF3",
+        "COMBOKNI",    "COMBOSOR",  "COMBOJES"};
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        const auto action = static_cast<Action>(i);
+        const auto name = PlayerAnimator::kSequenceNames[i];
+        CAPTURE(name);
+        const bool expected = std::ranges::find(provoking, name) != provoking.end();
+        CHECK(PlayerAnimator::isBlockableAttack(action) == expected);
+    }
+}
+
 TEST_CASE("attack invulnerability follows turbo and combo animations through recovery",
           "[player-animation][attack-invulnerability]") {
     TreeInfo tree;

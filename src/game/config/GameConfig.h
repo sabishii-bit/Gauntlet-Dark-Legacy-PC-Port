@@ -9,6 +9,8 @@
 #include "engine/core/Types.h"
 #include "engine/platform/Input.h"
 
+#include "game/config/MultiplayerMode.h"
+
 namespace gdl::game {
 
 struct DisplayConfig {
@@ -54,6 +56,11 @@ struct DifficultyConfig {
     f32 gain() const;
 };
 
+struct MultiplayerConfig {
+    static constexpr std::array<std::string_view, 3> kNames{"normal", "stun", "hurt"};
+    MultiplayerMode mode = MultiplayerMode::Normal;
+};
+
 /** Where characters are saved: a `saves` folder beside the game when the directory is
  * empty, the directory itself when it is absolute, else that directory beside the game. */
 struct SaveConfig {
@@ -71,10 +78,10 @@ struct MenuBindings {
     std::vector<Key> back{Key::Backspace};
     std::vector<Key> start{Key::Enter};
     std::vector<Key> escape{Key::Escape}; ///< leaves a name being typed; quits elsewhere
-    std::vector<PadButton> padUp{PadButton::DpadUp};
-    std::vector<PadButton> padDown{PadButton::DpadDown};
-    std::vector<PadButton> padLeft{PadButton::DpadLeft};
-    std::vector<PadButton> padRight{PadButton::DpadRight};
+    std::vector<PadButton> padUp{PadButton::DpadUp, PadButton::LeftStickUp};
+    std::vector<PadButton> padDown{PadButton::DpadDown, PadButton::LeftStickDown};
+    std::vector<PadButton> padLeft{PadButton::DpadLeft, PadButton::LeftStickLeft};
+    std::vector<PadButton> padRight{PadButton::DpadRight, PadButton::LeftStickRight};
     std::vector<PadButton> padSelect{PadButton::A};
     std::vector<PadButton> padBack{PadButton::Y};
     std::vector<PadButton> padStart{PadButton::Start};
@@ -141,6 +148,7 @@ struct GameConfig {
     TextConfig text;
     SaveConfig save;
     DifficultyConfig difficulty;
+    MultiplayerConfig multiplayer;
     MenuBindings menu;
     PlayBindings play;
 

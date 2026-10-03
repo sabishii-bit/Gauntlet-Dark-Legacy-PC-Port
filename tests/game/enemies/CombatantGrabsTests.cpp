@@ -137,6 +137,51 @@ TEST_CASE("missed grabs do not throw and death frees a held player without damag
     }
 }
 
+TEST_CASE("grab collision resolves equal distances by player slot rather than view order",
+          "[game][yeti][combatant-grab][multiplayer-targeting]") {
+    Fixture f;
+    f.players[1].position = f.players[0].position;
+    SECTION("sparse slots in reversed order") {
+        f.fighter.update(2, 25.0f / 30, f.players);
+        const auto events = f.fighter.actor.takeGrabs();
+        REQUIRE(events.size() == 1);
+        CHECK(events.front().player == 1);
+    }
+    SECTION("invalid closer identity cannot displace a real slot") {
+        f.players[0].player = -1;
+        f.players[0].position = {0, 0, 0};
+        f.fighter.update(2, 25.0f / 30, f.players);
+        const auto events = f.fighter.actor.takeGrabs();
+        REQUIRE(events.size() == 1);
+        CHECK(events.front().player == 1);
+    }
+}
+
+TEST_CASE("a missing or hidden grabbed player is released without throwing another slot",
+          "[game][yeti][combatant-grab][multiplayer-targeting]") {
+    Fixture f;
+    f.fighter.update(2, 25.0f / 30, f.players);
+    REQUIRE(f.fighter.actor.takeGrabs().front().player == 3);
+    // Advance beyond the grab window before removing the held player.
+    f.fighter.update(2, 10.0f / 30, f.players);
+    f.fighter.actor.takeGrabs();
+    SECTION("death or departure hides the retained runtime slot") {
+        f.players[0].hidden = true;
+        f.fighter.update(2, 1.0f / 30, f.players);
+    }
+    SECTION("sparse view omits the held slot entirely") {
+        f.fighter.update(2, 1.0f / 30, std::span<const EnemyView>{f.players}.subspan(1));
+    }
+    const auto events = f.fighter.actor.takeGrabs();
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().player == 3);
+    CHECK_FALSE(events.front().attachment.has_value());
+    CHECK(events.front().damage == 0);
+    CHECK(events.front().velocity == Vec3{0});
+    f.fighter.update(2, 65.0f / 30, f.players);
+    CHECK(f.fighter.actor.takeGrabs().empty());
+}
+
 TEST_CASE("destination steps follow the ready target within the authored home radius",
           "[game][yeti][boss-movement]") {
     Fixture f(true);

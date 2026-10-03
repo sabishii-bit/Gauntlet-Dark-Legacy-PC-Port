@@ -106,6 +106,17 @@ TEST_CASE("the configuration round-trips through JSON files", "[game][config]") 
     REQUIRE(loaded.toJson() == config.toJson());
 }
 
+TEST_CASE("stick menu bindings are ordinary rebindable configuration names", "[game][config]") {
+    GameConfig config;
+    config.mergeJson(R"({"controls":{"pad":{"up":["LeftStickRight"],"right":[]}}})");
+    GameConfig restored;
+    restored.mergeJson(config.toJson());
+    CHECK(restored.menu.padUp == std::vector<PadButton>{PadButton::LeftStickRight});
+    CHECK(restored.menu.padRight.empty());
+    CHECK(restored.play.padRight.empty());
+    CHECK(restored.play.padSelectorUp == std::vector<PadButton>{PadButton::DpadUp});
+}
+
 TEST_CASE("the shipped defaults file matches the built-in defaults", "[game][config]") {
     const std::filesystem::path file = test::dataDirectory() / "config.json";
     if (!std::filesystem::exists(file)) {
@@ -151,6 +162,33 @@ TEST_CASE("the difficulty names a gain on the levels' own scales", "[game][confi
     GameConfig again;
     again.mergeJson(config.toJson());
     REQUIRE(again.difficulty.level == "nightmare");
+}
+
+TEST_CASE("multiplayer modes round-trip and invalid modes leave the selection unchanged",
+          "[game][config][multiplayer]") {
+    GameConfig config;
+    CHECK(config.multiplayer.mode == MultiplayerMode::Normal);
+    for (const auto mode :
+         {MultiplayerMode::Normal, MultiplayerMode::Stun, MultiplayerMode::Hurt}) {
+        config.multiplayer.mode = mode;
+        GameConfig restored;
+        restored.mergeJson(config.toJson());
+        CHECK(restored.multiplayer.mode == mode);
+        CHECK(restored.toJson() == config.toJson());
+    }
+    config.mergeJson(R"({"game":{"difficulty":"easy"}})");
+    CHECK(config.multiplayer.mode == MultiplayerMode::Hurt);
+    for (const auto* invalid :
+         {R"({"game":{"multiplayer":"friendly"}})", R"({"game":{"multiplayer":3}})",
+          R"({"game":{"multiplayer":null}})"}) {
+        CHECK_THROWS_AS(config.mergeJson(invalid), FormatError);
+        CHECK(config.multiplayer.mode == MultiplayerMode::Hurt);
+    }
+    const auto file = test::scratchDirectory("config-multiplayer") / "settings.json";
+    config.saveFile(file);
+    GameConfig restored;
+    REQUIRE(restored.loadFile(file));
+    CHECK(restored.multiplayer.mode == MultiplayerMode::Hurt);
 }
 
 } // namespace

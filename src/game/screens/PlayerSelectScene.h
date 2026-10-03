@@ -55,6 +55,9 @@ public:
     void close();
     bool isOpen() const { return m_open; }
 
+    /** Applies all joining Start presses together without advancing existing lanes. */
+    void join(const Inputs& inputs);
+
     SelectOutcome update(f64 deltaSeconds, const Inputs& inputs);
 
     /** Steps the screen by whole ticks; update() calls this from wall-clock time. */

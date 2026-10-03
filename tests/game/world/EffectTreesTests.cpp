@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <filesystem>
+#include <string_view>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -21,6 +22,74 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("standalone player emitters animate native sprites and retain their particle tails",
+          "[effects][player-particles][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    TextureAnimator clock;
+    clock.bind(archive.trees.textureAnimations(), archive.textures, device);
+    for (const auto* name : {"WIZ_HEAD_Y", "DRAGKEY_PART"}) {
+        CAPTURE(name);
+        const auto slot = archive.textures.find(name);
+        REQUIRE(slot);
+        const auto& animations = archive.trees.textureAnimations();
+        const auto animation = std::ranges::find(animations, name, &TextureAnimationInfo::name);
+        REQUIRE(animation != animations.end());
+        const bool cyclesOnClock = std::string_view{name} == "WIZ_HEAD_Y";
+        // Native WEAPONS records 21/74: both store ten frames, but the
+        // dragon-key sprite is keyed (flag 53), not a free-running cycle.
+        CHECK(animation->flag == (cyclesOnClock ? -1 : 53));
+        CHECK(animation->frames == 10);
+        CHECK(animation->rate == 2);
+        ParticleDescriptor descriptor;
+        descriptor.texture = name;
+        descriptor.emitFrames = 30;
+        descriptor.particleLife = 15;
+        descriptor.rate.fill(1);
+        descriptor.width = {1, 1, 1, 1};
+        descriptor.alpha = descriptor.red = descriptor.green =
+            descriptor.blue = {255, 255, 255, 255};
+        EffectTrees effects;
+        const u32 id = effects.startParticles(device, archive, descriptor, *slot, Mat4{1});
+        bool changed = false;
+        const Texture* original = &archive.textures.texture(device, *slot);
+        clock.clear();
+        clock.bind(archive.trees.textureAnimations(), archive.textures, device);
+        for (u32 frame = 1; frame <= 10; ++frame) {
+            clock.step();
+            effects.update(1.0f / 30);
+            REQUIRE(effects.count() == 1);
+            const auto& field = effects.effect(0).trails;
+            CHECK(field.particleCount() == frame);
+            for (usize i = 0; i < clock.size(); ++i) {
+                if (!clock.keyed(i) && clock.slot(i) == *slot && clock.motion(i).frame != nullptr) {
+                    CHECK(field.textureOf(0) == clock.motion(i).frame);
+                }
+            }
+            if (!cyclesOnClock) {
+                CHECK(field.textureOf(0) == original);
+            }
+            changed |= field.textureOf(0) != original;
+        }
+        CHECK(changed == cyclesOnClock);
+        effects.finish(id);
+        effects.update(1.0f / 30);
+        REQUIRE(effects.playing(id));
+        CHECK(effects.effect(0).trails.particleCount() == 10);
+        effects.draw(device, Mat4{1}, {});
+        CHECK_FALSE(device.draws.empty());
+        for (s32 frame = 0; frame < 16; ++frame) {
+            effects.update(1.0f / 30);
+        }
+        CHECK_FALSE(effects.playing(id));
+        effects.startParticles(device, archive, descriptor, *slot, Mat4{1});
+        effects.clear();
+        CHECK(effects.count() == 0);
+    }
+}
 
 TEST_CASE("Garm eye ribbons inherit camera-facing parent transforms before drawing their mesh",
           "[effects][garm][assets]") {

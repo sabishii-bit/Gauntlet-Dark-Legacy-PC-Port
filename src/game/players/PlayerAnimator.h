@@ -346,6 +346,8 @@ public:
     static PlayerMotion motionFor(f32 stickMagnitude);
 
     Action action() const { return m_current; }
+    /** Whether this action belongs to the attack groups that provoke a creature's block. */
+    static bool isBlockableAttack(Action action);
     /** Whether the body is anywhere in a throw; its feet stay where they are meanwhile. */
     bool throwing() const { return isThrow(m_current); }
     /** Whether the body is busy with a potion. */

@@ -99,6 +99,9 @@ ClassStats parseClassStats(std::string_view text) {
         effect.offset = vec3(entry, "offset");
         effect.scale = entry.value("scale", 1.0f);
         effect.flags = entry.value("flags", 0U);
+        effect.lifetime = entry.value("lifetime", 0.0f);
+        effect.radius = entry.value("radius", 0.0f);
+        effect.alphaMod = entry.value("alphaMod", s16{0});
         stats.moveEffects.push_back(std::move(effect));
     }
     for (const Json& entry : root.value("moveStrikes", Json::array())) {

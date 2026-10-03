@@ -163,6 +163,9 @@ TEST_CASE("a class wad gives its moves: the effects they show and the strikes th
     std::memcpy(&bytes[effects + 0x20], "S_WARTURBOB", 11);
     putF32(bytes, effects + 0x38, 5.0f);
     putF32(bytes, effects + 0x48, 2.0f);
+    putF32(bytes, effects + 0x40, 0.5f);
+    putF32(bytes, effects + 0x44, 3.0f);
+    put16(effects + 0x32, -150);
     put16(strikes, 4);
     putF32(bytes, strikes + 0x0C, 12.0f);
     putF32(bytes, strikes + 0x14, 0.5f);
@@ -190,6 +193,9 @@ TEST_CASE("a class wad gives its moves: the effects they show and the strikes th
     REQUIRE(parsed.effects[0].next == -1);
     REQUIRE(parsed.effects[0].offset == std::array<f32, 3>{0.0f, 5.0f, 0.0f});
     REQUIRE(parsed.effects[0].scale == 2.0f);
+    CHECK(parsed.effects[0].lifetime == 0.5f);
+    CHECK(parsed.effects[0].radius == 3.0f);
+    CHECK(parsed.effects[0].alphaMod == -150);
     REQUIRE(parsed.strikes.size() == 2);
     REQUIRE(parsed.strikes[0].type == 4);
     REQUIRE(parsed.strikes[0].radius == 12.0f);

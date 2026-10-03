@@ -160,6 +160,23 @@ TEST_CASE("wall sweeps stop thin-wall crossings and preserve the starting side",
     CHECK(stoppedCorner.z == Approx(4.5f));
 }
 
+TEST_CASE("wall sweeps respect the authored front face instead of sealing one-way entrances",
+          "[world][collision][wall-sweep][wall-facing]") {
+    WorldCollision collision;
+    collision.build(room()); // the face at x=5 points toward -x
+    CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.5f));
+    CHECK(collision.sweepWalls({9, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(0));
+    // Starting within the radius on the back side must still permit entry.
+    CHECK(collision.sweepWalls({5.2f, 0, 0}, {4, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4));
+    CHECK(collision.sweepWalls({5.2f, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(9));
+    CHECK(collision.sweepWalls({4.8f, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(0));
+    // Moving faces use their transformed normals, not the local face direction.
+    collision.setMovingObjects(std::array<s32, 1>{1});
+    collision.setObjectTransform(1, glm::rotate(Mat4{1}, kPi, Vec3{0, 1, 0}));
+    CHECK(collision.sweepWalls({0, 0, 0}, {-9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(-4.5f));
+    CHECK(collision.sweepWalls({-9, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(0));
+}
+
 TEST_CASE("floor edges retain tangential travel without bridging disconnected floors",
           "[world][collision][cliff]") {
     WorldCollision collision;

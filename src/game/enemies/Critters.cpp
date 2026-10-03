@@ -158,17 +158,23 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         collect(actor);
     }
 }
-void Critters::hurt(s32 id, const EnemyHit& hit) {
+f32 Critters::hurt(s32 id, const EnemyHit& hit) {
     if (id < 0 || id >= kMost) {
-        return;
+        return 0;
     }
     auto& actor = m_critters[static_cast<usize>(id)];
-    actor.hurt(hit);
+    const f32 credited = actor.hurt(hit);
     collect(actor);
+    return credited;
 }
 void Critters::freeze(s32 id, s32 ticks) {
     if (id >= 0 && id < kMost) {
         m_critters[static_cast<usize>(id)].freeze(ticks);
+    }
+}
+void Critters::damagedPlayer(s32 id, s32 player, f32 amount) {
+    if (id >= 0 && id < kMost) {
+        m_critters[static_cast<usize>(id)].damagedPlayer(player, amount);
     }
 }
 void Critters::blind(s32 id, s32 ticks) {

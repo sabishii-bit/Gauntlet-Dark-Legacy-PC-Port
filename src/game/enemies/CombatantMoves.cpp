@@ -63,6 +63,7 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
         critter.moveEffect = false;
     }
     critter.move = static_cast<s32>(index);
+    critter.moveTarget = -1;
     critter.moveDone = false;
     critter.finishedSeconds = 0.0f;
     critter.struckThisMove.clear();
@@ -80,28 +81,42 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
 }
 
 void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) {
-    critter.target = -1;
-    critter.targetDistance = 100000.0f;
+    critter.targets.clear();
+    const bool boss = critter.definition->kind() == CombatantKind::Boss;
     const TargetCriteria& sight = critter.definition->sight();
     for (const EnemyView& view : players) {
-        if (view.hidden) {
+        if (critter.state != State::Active || critter.blindTicks > 0 || view.hidden ||
+            (!boss && view.invisible) || view.player < 0 ||
+            static_cast<usize>(view.player) >= kPlayerSlots) {
             continue;
         }
         const f32 distance = flatDistance(view.position, critter.position);
-        if (!sight.allows(distance, 0.0f, view.position.y - critter.position.y)) {
+        const f32 bearing = yawBetween(critter.position, view.position) - critter.yaw;
+        if (!sight.allows(distance, bearing, view.position.y - critter.position.y) ||
+            !sight.allowsPhase(attackRate(critter),
+                               flatDistance(critter.position, critter.homePosition))) {
             continue;
         }
+        const f32 score = targetScore(critter, view.position);
         // On its round of the lookouts it takes only a player within its placement's sight
         // (CritterGetSingleTargetPlayer's visrad).
         if (critter.patrol.active() && critter.patrol.sight() > 0.0f &&
-            targetScore(critter, view.position) > critter.patrol.sight()) {
+            score > critter.patrol.sight()) {
             continue;
         }
-        if (distance < critter.targetDistance) {
-            critter.targetDistance = distance;
-            critter.target = view.player;
-        }
+        constexpr f32 kRecentlyHitPenalty = 1000.0f;
+        const f32 anger = boss ? inverseAnger(critter, static_cast<usize>(view.player)) : 1.0f;
+        critter.targets.push_back({view.player, distance,
+                                   score * anger * (view.recentlyHit ? kRecentlyHitPenalty : 1),
+                                   anger});
     }
+    std::ranges::sort(critter.targets, [](const Target& a, const Target& b) {
+        return a.score != b.score ? a.score < b.score : a.player < b.player;
+    });
+    if (!boss && critter.targets.size() > 1) {
+        critter.targets.resize(1);
+    }
+    selectFirstTarget(critter);
     // A player found ends the round for good.
     if (critter.target >= 0 && critter.patrol.active()) {
         critter.patrol.end();
@@ -109,10 +124,93 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
     }
 }
 
+void Combatant::selectFirstTarget(Actor& critter) {
+    critter.target = critter.targets.empty() ? -1 : critter.targets.front().player;
+    critter.targetDistance = critter.targets.empty() ? 100000.0f : critter.targets.front().distance;
+}
+
+f32 Combatant::targetClock(const Actor& critter) {
+    return critter.parent != nullptr ? critter.parent->m_actor.age : critter.age;
+}
+
+f32 Combatant::inverseAnger(const Actor& critter, usize player) {
+    const PlayerDamage& memory = critter.playerDamage[player];
+    const f32 now = targetClock(critter);
+    const f32 dealt = now - memory.dealtTime > kAngerMemory ? 0 : memory.dealt;
+    const f32 received = now - memory.receivedTime > kAngerMemory ? 0 : memory.received;
+    return dealt < 1.0f ? 11.0f : std::clamp(received / dealt, 0.01f, 10.0f);
+}
+
+void Combatant::rememberDamage(f32& total, f32& lastTime, f32 now, f32 amount) {
+    if (now - lastTime > kAngerMemory) {
+        total = 0;
+    }
+    total += amount;
+    lastTime = now;
+}
+
+void Combatant::chooseFamilyTargets(std::span<const EnemyView> players) {
+    chooseTarget(m_actor, players);
+    std::array<s32, kPlayerSlots> counts{};
+    const auto count = [&](const Actor& actor) {
+        for (const Target& target : actor.targets) {
+            ++counts[static_cast<usize>(target.player)];
+        }
+    };
+    count(m_actor);
+    for (auto& child : m_children) {
+        child->m_actor.position = m_actor.position;
+        child->m_actor.yaw = m_actor.yaw;
+        chooseTarget(child->m_actor, players);
+        count(child->m_actor);
+    }
+    // A pattern owns the whole chain. Otherwise limit each player's candidate memberships,
+    // removing the weakest child claim first, never the root's or a child's active pattern.
+    if (m_actor.pattern >= 0) {
+        return;
+    }
+    for (const Target& target : m_actor.targets) {
+        s32 limit = 4;
+        if (target.inverseAnger > 1) {
+            limit = 2;
+        } else if (target.inverseAnger > 0.75f) {
+            limit = 3;
+        }
+        s32& assigned = counts[static_cast<usize>(target.player)];
+        while (assigned > limit) {
+            Actor* weakest = nullptr;
+            f32 worst = 0;
+            for (auto& child : m_children) {
+                Actor& actor = child->m_actor;
+                if (actor.pattern >= 0) {
+                    continue;
+                }
+                for (const Target& candidate : actor.targets) {
+                    if (candidate.player == target.player &&
+                        (weakest == nullptr || candidate.score > worst)) {
+                        weakest = &actor;
+                        worst = candidate.score;
+                        break;
+                    }
+                }
+            }
+            if (weakest == nullptr) {
+                break;
+            }
+            std::erase_if(weakest->targets, [&](const Target& candidate) {
+                return candidate.player == target.player;
+            });
+            selectFirstTarget(*weakest);
+            --assigned;
+        }
+    }
+}
+
 f32 Combatant::targetScore(const Actor& critter, const Vec3& position) {
     constexpr f32 kSquarelyAhead = 0.5f;
     const f32 distance = flatDistance(position, critter.position);
-    const f32 dot = std::cos(wrapAngle(yawBetween(critter.position, position) - critter.yaw));
+    const f32 dot = std::cos(wrapAngle(yawBetween(critter.position, position) - critter.yaw -
+                                       critter.definition->sight().yaw));
     return dot > kSquarelyAhead ? distance / dot : 2.0f * distance;
 }
 
@@ -158,19 +256,18 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
         critter.stock->definition.selection == CombatantDefinition::Selection::Patterns;
     for (usize i = 0; i < data.moves().size(); ++i) {
         const MoveDefinition& move = data.moves()[i];
-        // Attacks, the steps (walks, turns and back-steps, types 48 to 63), the stance and
-        // the taunt.
+        // Attacks have already been searched by last-use time. This fallback
+        // must not reselect the current attack that search deliberately excludes.
         const bool step =
             move.type >= MoveDefinition::kStepFrom && move.type < MoveDefinition::kStepTo;
-        const bool considered =
-            step || (!patterns && (move.attack() || move.type == MoveDefinition::kReady ||
-                                   move.type == MoveDefinition::kTaunt));
+        const bool considered = step || (!patterns && (move.type == MoveDefinition::kReady ||
+                                                       move.type == MoveDefinition::kTaunt));
         constexpr u32 kLinkedOnly = 4;
         if (!considered || critter.cooldowns[i] > 0.0f || (move.flags & kLinkedOnly) != 0) {
             continue;
         }
-        // Attacks and walks want a player; the stance and the taunt want none in particular.
-        if ((move.attack() || step) && view == nullptr) {
+        // Walks want a player; the stance and the taunt want none in particular.
+        if (step && view == nullptr) {
             continue;
         }
         if (!move.target.allows(distance, bearing, vertical) ||
@@ -359,8 +456,41 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         }
         return;
     }
-    if (critter.stock->definition.selection == CombatantDefinition::Selection::Patterns &&
-        choosePatternAttack(critter, players)) {
+    // The ordinary fighters search defensive moves before offensive attacks.
+    if (critter.stock->definition.selection == CombatantDefinition::Selection::Priority) {
+        std::optional<usize> block;
+        for (usize i = 0; i < data.moves().size(); ++i) {
+            const MoveDefinition& move = data.moves()[i];
+            constexpr u32 kLinkedOnly = 4;
+            constexpr u32 kRequiresNode = 0x10;
+            if (move.type != MoveDefinition::kBlock || (move.flags & kLinkedOnly) != 0 ||
+                ((move.flags & 2U) != 0 && !critter.childrenIntact) ||
+                (move.cooldown > 0 && critter.age < critter.moveTimes[i] + move.cooldown) ||
+                !critter.stock->tree->findSequence(move.anim).has_value()) {
+                continue;
+            }
+            if ((move.flags & kRequiresNode) != 0 &&
+                (!nodeAvailable(critter, move.colnode) ||
+                 (move.link >= 0 &&
+                  (static_cast<usize>(move.link) >= data.moves().size() ||
+                   !nodeAvailable(critter,
+                                  data.moves()[static_cast<usize>(move.link)].colnode))))) {
+                continue;
+            }
+            const s32 player = attackTarget(critter, move.target, players);
+            const EnemyView* target = player >= 0 ? viewOf(players, player) : nullptr;
+            if (target != nullptr && target->blockableAttack) {
+                block = i; // The last eligible BLOCK in the authored table wins.
+            }
+        }
+        if (block.has_value()) {
+            transition(*block); // A refused interrupt still owns this frame's request.
+            return;
+        }
+    }
+    // Golem/general/gargoyle AI and boss AI both search attacks before ready steps,
+    // using the same oldest-use scheduler and animation interruption rules.
+    if (choosePatternAttack(critter, players)) {
         return;
     }
     if (const auto next = bestMove(critter, players); next.has_value()) {

@@ -16,6 +16,7 @@
 
 #include "game/players/EnemyShrink.h"
 #include "game/players/ItemPickup.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
@@ -519,7 +520,8 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         }
     }
     m_critterExperienceOwed.fill(0.0f);
-    const auto playerCount = static_cast<s32>(players.size());
+    const auto playerCount = static_cast<s32>(std::ranges::count_if(
+        players, [](const PlayerRuntime& player) { return !player.departed; }));
     const std::span<const LevelEnemy> roster = level != nullptr
                                                    ? std::span<const LevelEnemy>(level->enemies)
                                                    : std::span<const LevelEnemy>{};
@@ -533,15 +535,20 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
             ItemArchive* archive = m_bosses.archive();
             m_bossMeter.bind(m_bosses.healthMeters(),
                              archive != nullptr ? &archive->textures : nullptr);
-            // The first of the party carrying its legend item brings it to the fight.
+            // The first eligible controller carries the item, independently of party
+            // storage order. Fallen players waiting in the tower cannot perform the rite.
+            const PlayerRuntime* bearer = nullptr;
             for (const PlayerRuntime& runtime : players) {
                 const PlayerActor& actor = runtime.actor;
-                if (actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
-                    m_bosses.bringLegend(actor.player())) {
-                    log::info("Level {}: player {} brings the {} its legend item", levelName,
-                              actor.player() + 1, bossNameOf(level->bossType));
-                    break;
+                if (!runtime.departed && runtime.life == PlayerLife::Standing &&
+                    actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
+                    (bearer == nullptr || actor.player() < bearer->actor.player())) {
+                    bearer = &runtime;
                 }
+            }
+            if (bearer != nullptr && m_bosses.bringLegend(bearer->actor.player())) {
+                log::info("Level {}: player {} brings the {} its legend item", levelName,
+                          bearer->actor.player() + 1, bossNameOf(level->bossType));
             }
         }
     }
@@ -783,9 +790,13 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.position = actor.position();
         view.radius = actor.radius();
         view.height = actor.height();
+        view.collisionHeight = actor.followPoint().y - actor.position().y;
         view.level = experienceLevel(actor.save().experience());
         view.hidden = player.life != PlayerLife::Standing;
         view.damageable = PlayerHealth::canBeDamaged(player);
+        view.recentlyHit = player.effectGap > 0 || player.breathGap > 0;
+        view.blockableAttack = player.figure != nullptr && PlayerAnimator::isBlockableAttack(
+                                                               player.figure->animator().action());
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         view.invisible = powerups.invisible();
         view.antiDeath = (powerups.armor & DeathRules::kProtection) != 0;
@@ -845,7 +856,7 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
     }
 }
 
-void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
+bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                       const Events& events) {
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
@@ -874,7 +885,9 @@ void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
         }
         events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,
                     {blow.flags, blow.direction});
+        return true;
     }
+    return false;
 }
 
 void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
@@ -939,12 +952,14 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     updateBags(seconds);
     shrinkOpponents(players);
     const std::vector<EnemyView> views = enemyViews(players);
-    std::vector<Obstacle> boxes = m_generators.enemyObstacles();
-    boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
+    m_generators.setPlayerCount(static_cast<s32>(std::ranges::count_if(
+        players, [](const PlayerRuntime& player) { return !player.departed; })));
     const LevelInfo* level = m_resources->world.level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
     const bool timeStopped = PlayerPowerups::timeStopped(players);
     m_generators.update(ticks, m_enemies, views, fixtures, timeStopped);
+    std::vector<Obstacle> boxes = m_generators.enemyObstacles();
+    boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed, timeStopped);
     std::vector<MissileStop> inTheWay;
     for (const Obstacle& box : m_generators.obstacles()) {
@@ -1085,6 +1100,11 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                 players[player].life == PlayerLife::Standing && players[player].effectGap <= 0) {
                 events.hurt(player, hit.damage, HurtKind::Pierce, true, {hit.flags, hit.direction});
                 players[player].effectGap = hit.repeatGap;
+                if (hit.ownerKind == CombatantKind::Boss) {
+                    m_bosses.damagedPlayer(hit.player, hit.damage, hit.critter);
+                } else {
+                    m_critters.damagedPlayer(hit.critter, hit.player, hit.damage);
+                }
             }
         }
     }
@@ -1107,7 +1127,9 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     events.advanceLegend(seconds);
     for (const CombatBlow& blow : m_bosses.takeBlows()) {
-        applyCritterBlow(blow, players, events);
+        if (applyCritterBlow(blow, players, events)) {
+            m_bosses.damagedPlayer(blow.player, blow.damage, blow.critter);
+        }
     }
     awardBossLosses(players, events);
     events.advanceVictory(ticks, seconds);
@@ -1127,7 +1149,9 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     followCritterEffects(players);
     finishSummons(views);
     for (const CombatBlow& blow : m_critters.takeBlows()) {
-        applyCritterBlow(blow, players, events);
+        if (applyCritterBlow(blow, players, events)) {
+            m_critters.damagedPlayer(blow.critter, blow.player, blow.damage);
+        }
     }
     awardCritterLosses(players, events);
     events.levels();
@@ -1215,11 +1239,11 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
 }
 
 /** A hit on one of the swarm, from a player or the world. */
-void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                                 std::span<const PlayerRuntime> players, bool close,
-                                 std::optional<Vec3> where) {
+f32 LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                                std::span<const PlayerRuntime> players, bool close,
+                                std::optional<Vec3> where) {
     if (!m_resources.has_value()) {
-        return;
+        return 0;
     }
     EnemyHit hit;
     hit.damage = power;
@@ -1237,7 +1261,7 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
         }
     }
     const f32 before = m_enemies.healthOf(id);
-    m_enemies.hurt(id, hit);
+    const f32 credited = m_enemies.hurt(id, hit);
     // A player hitting what generators breed is taught, the tenth time, to go for them
     // instead (combat.c:307; not where a boss is fought).
     const LevelInfo* level = m_resources->world.level();
@@ -1247,14 +1271,15 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
         ++m_hitStreak[static_cast<usize>(byPlayer)] >= kStreakLesson) {
         m_lessons.emplace_back(HelpMessages::kDestroyGenerators, byPlayer);
     }
+    return credited;
 }
 
 /** A hit on one of the great ones. */
-void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction,
-                                   s32 byPlayer, std::optional<Vec3> where, bool close,
-                                   std::span<const PlayerRuntime> players, s32 node) {
+f32 LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                                  std::optional<Vec3> where, bool close,
+                                  std::span<const PlayerRuntime> players, s32 node) {
     if (!m_resources.has_value()) {
-        return;
+        return 0;
     }
     EnemyHit hit;
     hit.damage = power;
@@ -1270,7 +1295,7 @@ void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& dir
             hit.level = experienceLevel(actor.save().experience());
         }
     }
-    m_critters.hurt(id, hit);
+    return m_critters.hurt(id, hit);
 }
 
 f32 LevelOpponents::generatorPowerScale(s32 level, f32 placeLevel) {

@@ -16,6 +16,26 @@ using Catch::Matchers::WithinAbs;
 constexpr f64 kEpsilon = 1e-5;
 constexpr usize kRampFrames = 240; ///< a gain ramp at 48 kHz
 
+TEST_CASE("downsampling across a short queue keeps its phase without an unsigned underrun",
+          "[audio][stream][stream-downsample]") {
+    AudioStream stream(AudioStreamDesc{96000, 1}, 48000);
+    stream.push(std::array<f32, 1>{0.25f});
+    std::array<f32, 2> out{};
+    stream.mixInto(out);
+    CHECK(out[0] == 0.25f);
+    REQUIRE(stream.queuedSeconds() == 0);
+    // Frame 1 is skipped by the 2:1 rate, even though it arrives in the next push.
+    stream.push(std::array<f32, 3>{0.5f, 0.75f, 1.0f});
+    out.fill(0);
+    stream.mixInto(out);
+    CHECK(out[0] == 0.75f);
+    stream.finish();
+    CHECK(stream.drained());
+    out.fill(0);
+    stream.mixInto(out);
+    CHECK(out[0] == 0);
+}
+
 TEST_CASE("mono input at the output rate is duplicated to both channels", "[audio][stream]") {
     AudioStream stream(AudioStreamDesc{48000, 1}, 48000);
     const std::array<f32, 4> kInput{0.25f, 0.5f, 0.75f, 1.0f};

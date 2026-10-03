@@ -72,6 +72,42 @@ void TowerCamera::snapAttention(std::span<const CameraSubject> subjects, const C
     place();
 }
 
+/** CamGetPlayerAvgPos(mode 5) centres screen bounds, including their view-space depth,
+ * then unprojects. A world-space midpoint lets nearer players slip out of the view
+ * when other party members move tangentially along its farther edges. */
+Vec3 TowerCamera::projectedMiddleOf(std::span<const CameraSubject> subjects,
+                                    const CameraRange& range) const {
+    if (subjects.size() <= 1) {
+        return middleOf(subjects, range);
+    }
+    Vec3 low{1.0e20f};
+    Vec3 high{-1.0e20f};
+    const Vec3 right = m_camera.right();
+    const Vec3 up = m_camera.up();
+    const Vec3 forward = m_camera.forward();
+    for (const CameraSubject& subject : subjects) {
+        const Vec3 relative = subject.follow - m_camera.position;
+        const f32 depth = glm::dot(relative, forward);
+        if (depth <= WorldCamera::kNear) {
+            return middleOf(subjects, range);
+        }
+        // Viewport scale and centre cancel when unprojecting the bounds midpoint.
+        const Vec3 projected{glm::dot(relative, right) / depth, glm::dot(relative, up) / depth,
+                             depth};
+        low = glm::min(low, projected);
+        high = glm::max(high, projected);
+    }
+    const Vec3 centre = (low + high) * 0.5f;
+    Vec3 middle = m_camera.position + right * (centre.x * centre.z) + up * (centre.y * centre.z) +
+                  forward * centre.z;
+    for (s32 k = 0; k < 3; ++k) {
+        if (range.boundsMin[k] < range.boundsMax[k]) {
+            middle[k] = std::clamp(middle[k], range.boundsMin[k], range.boundsMax[k]);
+        }
+    }
+    return middle;
+}
+
 bool TowerCamera::update(std::span<const CameraSubject> subjects,
                          std::span<const WorldLocator> markers, const CameraRange& range,
                          const CameraView& view, f32 seconds) {
@@ -80,7 +116,7 @@ bool TowerCamera::update(std::span<const CameraSubject> subjects,
     }
     const Vec3 middle = middleOf(subjects, range);
     m_ringIndex = (m_ringIndex + 1) % kRing;
-    m_ringPositions[static_cast<usize>(m_ringIndex)] = middle;
+    m_ringPositions[static_cast<usize>(m_ringIndex)] = projectedMiddleOf(subjects, range);
 
     chooseMarker(markers, middle);
     aim(markers, subjects.size(), range, false);

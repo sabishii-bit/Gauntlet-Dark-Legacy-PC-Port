@@ -101,6 +101,349 @@ s32 stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto&
     return steps;
 }
 
+TEST_CASE("enemies ride descending platforms while gameplay is frozen",
+          "[game][enemies][enemy-platform][assets]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    const auto floor = triangle({-40, 0, -40}, {40, 0, -40}, {0, 0, 40}, {0, 1, 0});
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, Mat4{1});
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = Vec3{2, 0, 0};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const auto action = enemies.animatorOf(*id)->action();
+    const auto stun = enemies.stunTicksOf(*id);
+    const auto heading = enemies.memoryOf(*id).heading;
+    for (s32 frame = 1; frame <= 60; ++frame) {
+        const auto step = static_cast<f32>(frame);
+        const Mat4 platform = glm::translate(Mat4{1}, Vec3{0, -0.5f * step, 0}) *
+                              glm::rotate(Mat4{1}, 0.01f * step, Vec3{0, 1, 0});
+        collision.setObjectTransform(0, platform);
+        enemies.syncFloors();
+        const Vec3 expected{platform * Vec4{spawn.position, 1}};
+        CHECK(glm::distance(enemies.positionOf(*id), expected) < 0.001f);
+        enemies.syncFloors(); // no accumulated delta on repeated synchronization
+        CHECK(glm::distance(enemies.positionOf(*id), expected) < 0.001f);
+        CHECK(enemies.animatorOf(*id)->action() == action);
+        CHECK(enemies.stunTicksOf(*id) == stun);
+        CHECK(enemies.memoryOf(*id).heading == heading);
+    }
+    // Ordinary updates carry bodies too, before AI; no movement input is needed.
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -40, 0}));
+    enemies.update(0, 0, {});
+    CHECK(enemies.positionOf(*id).y == Approx(-40));
+    const Vec3 before = enemies.positionOf(*id);
+    collision.setSolid(0, false);
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -60, 0}));
+    enemies.syncFloors();
+    CHECK(enemies.positionOf(*id) == before);
+}
+
+TEST_CASE("swarm sight measures collision centres across floors",
+          "[game][enemies][enemy-sight][multiplayer][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(id);
+    auto elevated = playerAt({0, 40, 0}, 3);
+    SECTION("another floor is outside the sight sphere") {
+        enemies.update(kTicks, kStep, std::array{elevated});
+        CHECK(enemies.targetOf(*id) == -1);
+    }
+    SECTION("a nearby floor wins over the horizontally closest player") {
+        elevated.position.y = 20;
+        const std::array players{elevated, playerAt({0, 0, 10}, 1)};
+        enemies.update(kTicks, kStep, players);
+        CHECK(enemies.targetOf(*id) == 1);
+    }
+    SECTION("native collision offset is not inferred from body height") {
+        elevated.position = {0, 0, 0};
+        elevated.collisionHeight = 23.0f;
+        const std::array players{elevated, playerAt({0, 0, 10}, 1)};
+        enemies.update(kTicks, kStep, players);
+        CHECK(enemies.targetOf(*id) == 1);
+    }
+    SECTION("IT overrides range but losing the tag restores ordinary sight") {
+        elevated.it = true;
+        enemies.update(kTicks, kStep, std::array{elevated});
+        CHECK(enemies.targetOf(*id) == 3);
+        elevated.it = false;
+        for (s32 frame = 0; frame < 8; ++frame) {
+            enemies.update(kTicks, kStep, std::array{elevated});
+        }
+        CHECK(enemies.targetOf(*id) == -1);
+    }
+}
+
+TEST_CASE("swarm target ties and crowding follow controller IDs rather than roster order",
+          "[game][enemies][enemy-sight][multiplayer][assets]") {
+    const bool reversed = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto first = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    const auto second = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(first);
+    REQUIRE(second);
+    std::array players{playerAt({-20, 0, 0}, 1), playerAt({20, 0, 0}, 3)};
+    if (reversed) {
+        std::ranges::reverse(players);
+    }
+    enemies.update(kTicks, kStep, players);
+    CHECK(enemies.targetOf(*first) == 1);
+    CHECK(enemies.targetOf(*second) == 3);
+}
+
+TEST_CASE("fallen players do not block generator births but invisible standing players do",
+          "[game][enemies][multiplayer][enemy-spawn][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const bool hidden = GENERATE(false, true);
+    const bool invisible = GENERATE(false, true);
+    auto blocker = playerAt({0, 0, 0}, 3);
+    blocker.radius = 20; // covers every candidate octant
+    blocker.hidden = hidden;
+    blocker.invisible = invisible;
+    const auto born =
+        enemies.spawn({.kind = kGruntKind, .tier = 1, .generator = 7}, std::array{blocker});
+    CHECK(born.has_value() == hidden);
+}
+
+TEST_CASE("swarm melee contacts the actual nearest live player independently of roster order",
+          "[game][enemies][enemy-contact][multiplayer][assets]") {
+    const bool reversed = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(id);
+    std::array players{playerAt({0, 0, 2}, 3), playerAt({0, 0, 0.5f}, 1)};
+    s32 expected = 1;
+    SECTION("the closer overlapping player receives the blow") {}
+    SECTION("equal distances use the lower controller ID") {
+        players[0].position.z = -0.5f;
+    }
+    SECTION("a fallen closer player has no contact body") {
+        players[1].hidden = true;
+        expected = 3;
+    }
+    SECTION("invisible bodies still intercept an enemy pursuing someone else") {
+        players[1].invisible = true;
+    }
+    SECTION("the nearest collision centre can differ from the nearest feet") {
+        players[1].collisionHeight = 9.0f;
+        expected = 3;
+    }
+    if (reversed) {
+        std::ranges::reverse(players);
+    }
+    std::vector<EnemyBlow> blows;
+    const auto elapsed = stepsUntil(
+        enemies, players,
+        [&] {
+            blows = enemies.takeBlows();
+            return !blows.empty();
+        },
+        300);
+    REQUIRE(elapsed < 300);
+    REQUIRE(blows.size() == 1);
+    CHECK(blows.front().player == expected);
+}
+
+TEST_CASE("a long enemy step cannot tunnel through a player's body",
+          "[game][enemies][enemy-contact][body-contact][assets]") {
+    const bool elevated = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    EnemyScales scales;
+    scales.speed = 100; // Twenty units per update: both endpoints are outside the body.
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id =
+        enemies.spawn({.kind = kGruntKind, .tier = 1, .algorithm = kSeekWay, .placed = true}, {});
+    REQUIRE(id);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        enemies.update(kTicks, kStep, {});
+    }
+    REQUIRE(enemies.stunTicksOf(*id) <= 0);
+    const Vec3 before = enemies.positionOf(*id);
+    auto player = playerAt(before + Vec3{0, 0, 10}, 3);
+    player.collisionHeight = elevated ? 20.0f : 3.0f;
+    enemies.update(kTicks, kStep, std::array{player});
+    REQUIRE(enemies.targetOf(*id) == 3);
+    if (elevated) {
+        CHECK(enemies.positionOf(*id).z == Approx(before.z + 20));
+        CHECK_FALSE(enemies.animatorOf(*id)->swinging());
+    } else {
+        CHECK(enemies.positionOf(*id) == before);
+        CHECK(enemies.animatorOf(*id)->swinging());
+    }
+}
+
+TEST_CASE("enemy contact uses the authored collision centre instead of the player's feet",
+          "[game][enemies][enemy-contact][body-contact][assets]") {
+    const bool elevated = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id =
+        enemies.spawn({.kind = kGruntKind, .tier = 1, .algorithm = kSeekWay, .placed = true}, {});
+    REQUIRE(id);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        enemies.update(kTicks, kStep, {});
+    }
+    const Vec3 before = enemies.positionOf(*id);
+    auto player = playerAt(before + Vec3{0, 0, 2});
+    player.collisionHeight = elevated ? 20.0f : 3.0f;
+    enemies.update(kTicks, kStep, std::array{player});
+    REQUIRE(enemies.targetOf(*id) == 0);
+    CHECK(enemies.animatorOf(*id)->swinging() == !elevated);
+    if (elevated) {
+        CHECK(enemies.positionOf(*id).z > before.z);
+    } else {
+        CHECK(enemies.positionOf(*id) == before);
+    }
+}
+
+TEST_CASE("world collision clips an enemy sweep before looking for player contact",
+          "[game][enemies][enemy-contact][body-contact][assets]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(yard());
+    EnemyScales scales;
+    scales.speed = 100;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind,
+                                   .tier = 1,
+                                   .algorithm = kSeekWay,
+                                   .position = Vec3{0, 0, 10},
+                                   .placed = true},
+                                  {});
+    REQUIRE(id);
+    // Consume the initial stun and entry animation without taking a step.
+    enemies.update(30, 2.0f, {});
+    const Vec3 before = enemies.positionOf(*id);
+    REQUIRE(before.z == Approx(10));
+    const std::array party{playerAt({0, 0, 30})};
+    enemies.update(kTicks, kStep, party);
+    REQUIRE(enemies.targetOf(*id) == 0);
+    CHECK(enemies.positionOf(*id).z > before.z);
+    CHECK(enemies.positionOf(*id).z < 20); // the wall, not the player, stops the step
+    CHECK_FALSE(enemies.animatorOf(*id)->swinging());
+}
+
+TEST_CASE("a knockback can carry an overlapping enemy away from a player",
+          "[game][enemies][enemy-contact][body-contact][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .tier = 3, .placed = true}, {});
+    REQUIRE(id);
+    const Vec3 before = enemies.positionOf(*id);
+    EnemyHit knock;
+    knock.damage = 2;
+    knock.flags = EnemyHit::kKnockDown;
+    knock.direction = {0, 0, 1};
+    enemies.hurt(*id, knock);
+    const std::array players{playerAt(before + Vec3{0, 0, -1})};
+    enemies.update(kTicks, kStep, players);
+    REQUIRE(enemies.targetOf(*id) == 0);
+    CHECK(enemies.positionOf(*id).z > before.z);
+    CHECK(enemies.takeBlows().empty());
+}
+
+TEST_CASE("swarm contact does not expose an invisible party without a sight target",
+          "[game][enemies][enemy-contact][multiplayer][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(id);
+    auto player = playerAt({0, 0, 0.5f}, 3);
+    player.invisible = true;
+    for (s32 frame = 0; frame < 120; ++frame) {
+        enemies.update(kTicks, kStep, std::array{player});
+        CHECK(enemies.targetOf(*id) == -1);
+        CHECK(enemies.takeBlows().empty());
+    }
+}
+
+TEST_CASE("swarm movement treats sleeping bodies as solid and dying bodies as clear",
+          "[game][enemies][enemy-crowd][assets]") {
+    const bool dying = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto walker =
+        enemies.spawn({.kind = kGruntKind, .tier = 1, .algorithm = kSeekWay, .placed = true}, {});
+    REQUIRE(walker);
+    // Finish entry/stun before placing either the target or the body in its path.
+    for (s32 frame = 0; frame < 120; ++frame) {
+        enemies.update(kTicks, kStep, {});
+    }
+    const Vec3 before = enemies.positionOf(*walker);
+    const std::array players{playerAt(before + Vec3{0, 0, 20})};
+    const f32 clearance = 2 * enemies.radiusOf(*walker);
+    const Vec3 blocking = before + Vec3{0, 0, clearance + 0.01f};
+    const auto blocker = enemies.spawn(
+        {.kind = kGruntKind, .tier = 1, .position = blocking, .placed = true, .asleep = true}, {});
+    REQUIRE(blocker);
+    if (dying) {
+        EnemyHit hit;
+        hit.damage = 1000;
+        enemies.hurt(*blocker, hit);
+        REQUIRE(enemies.dying(*blocker));
+    }
+    enemies.update(kTicks, kStep, players);
+    const Vec3 after = enemies.positionOf(*walker);
+    if (dying) {
+        // The walker updates before the corpse's animation; the body is still present
+        // when both the path probe and final movement collision inspect it.
+        CHECK(after.z > before.z + 0.01f);
+        CHECK(after.x == Approx(before.x).margin(0.001f));
+        CHECK(glm::distance(after, blocking) < clearance);
+    } else {
+        CHECK(glm::distance(after, blocking) >= clearance);
+    }
+}
+
+TEST_CASE("a dying enemy releases spawn clearance before its body disappears",
+          "[game][enemies][enemy-spawn][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto blocker = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(blocker);
+    const EnemySpawn birth{.kind = kGruntKind, .tier = 1, .generator = 7};
+    CHECK_FALSE(enemies.spawn(birth, {}));
+    EnemyHit hit;
+    hit.damage = 1000;
+    enemies.hurt(*blocker, hit);
+    REQUIRE(enemies.dying(*blocker));
+    // The spawn sweep (fn_8004646C) skips DYING, not merely INACTIVE.
+    CHECK(enemies.spawn(birth, {}).has_value());
+    CHECK(enemies.dying(*blocker));
+}
+
 TEST_CASE("generator births cannot cross a wall to an unobstructed destination",
           "[game][enemies][enemy-collision][assets]") {
     test::FakeRenderDevice device;

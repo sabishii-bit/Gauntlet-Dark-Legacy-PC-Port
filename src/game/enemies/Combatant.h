@@ -80,7 +80,10 @@ public:
     bool raisesArenaRocks() const;
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {}, bool timeStopped = false);
-    void hurt(const EnemyHit& hit, s32 partId = -1);
+    /** Healing credit after armor/party scaling, before level and hit-node adjustments. */
+    f32 hurt(const EnemyHit& hit, s32 partId = -1);
+    /** Records a routed hit's nominal damage to a player, after contact/cooldown gates. */
+    void damagedPlayer(s32 player, f32 amount, s32 partId = -1);
     /** The level's harmful surfaces, which hurt it where it walks against or onto them
      * (CritterWorldDamage); borrowed, none for nothing. */
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
@@ -158,6 +161,20 @@ public:
     std::vector<CombatArenaActivation> takeArenaActivations();
 
 private:
+    static constexpr usize kPlayerSlots = 4;
+    static constexpr f32 kAngerMemory = 15.0f;
+    struct PlayerDamage {
+        f32 dealt = 0;
+        f32 received = 0;
+        f32 dealtTime = 0;
+        f32 receivedTime = 0;
+    };
+    struct Target {
+        s32 player = -1;
+        f32 distance = 0;
+        f32 score = 0;
+        f32 inverseAnger = 1;
+    };
     enum class State : u8 { Inactive, Active, Dying };
     struct HitNode {
         f32 health = 0;
@@ -184,7 +201,10 @@ private:
         Vec3 push{0.0f, 0.0f, 0.0f};
         s32 target = -1;
         f32 targetDistance = 100000.0f;
-        s32 move = -1; ///< the move playing
+        std::vector<Target> targets;
+        std::array<PlayerDamage, kPlayerSlots> playerDamage{};
+        s32 move = -1;       ///< the move playing
+        s32 moveTarget = -1; ///< player locked by MoveSetup, independent of the fresh roster
         s32 pattern = -1;
         f32 finishedSeconds = 0.0f;
         f32 age = 0.0f;
@@ -247,7 +267,7 @@ private:
     void inheritBodyPose();
     void synchronizeChild();
     void collectChildEvents(Combatant& part);
-    void hurtActor(const EnemyHit& hit);
+    f32 hurtActor(const EnemyHit& hit);
     f32 damageNode(s32 index, f32 amount, u32 flags);
     static bool nodeAvailable(const Actor& actor, std::string_view name);
     static bool nodeRemoved(const Actor& actor, usize node);
@@ -268,7 +288,7 @@ private:
     static f32 targetScore(const Actor& critter, const Vec3& position);
     bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
     static s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
-                            std::span<const EnemyView> players);
+                            std::span<const EnemyView> players, bool fallback = false);
     static f32 attackRate(const Actor& critter);
     static bool supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound);
     std::optional<f32> startArea(Actor& critter, s32 id, const AttackDefinition& damage,
@@ -304,6 +324,11 @@ private:
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);
     static void chooseTarget(Actor& critter, std::span<const EnemyView> players);
+    void chooseFamilyTargets(std::span<const EnemyView> players);
+    static void selectFirstTarget(Actor& critter);
+    static f32 inverseAnger(const Actor& critter, usize player);
+    static f32 targetClock(const Actor& critter);
+    static void rememberDamage(f32& total, f32& lastTime, f32 now, f32 amount);
     bool blockedByItems(Actor& critter, const Vec3& to);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
 

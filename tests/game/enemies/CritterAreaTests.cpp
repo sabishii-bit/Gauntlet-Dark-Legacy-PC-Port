@@ -619,7 +619,7 @@ TEST_CASE("single arena eruptions select the nearest available anchor once per w
     REQUIRE(tied[0].index == 1); // retail piecewise distance, not sqrt's slightly nearer index 0
 }
 
-TEST_CASE("an eruption losing its player preserves the retail rotated-index fallback",
+TEST_CASE("an eruption keeps its in-flight player after that slot becomes hidden",
           "[game][boss-areas][yeti]") {
     const auto root = areaArchive(true, false, true);
     test::FakeRenderDevice device;
@@ -643,7 +643,7 @@ TEST_CASE("an eruption losing its player preserves the retail rotated-index fall
     fixture.update(4, 0.06f, players);
     const auto events = actor.takeArenaActivations();
     REQUIRE(events.size() == 1);
-    REQUIRE(events[0].index == 4); // tests inactive entry 0, returns rotated (active) entry 1
+    REQUIRE(events[0].index == 9); // SafeRockNearestTarget reads its locked slot, not its state
 
     REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
     targets[0].active = true;
@@ -652,6 +652,48 @@ TEST_CASE("an eruption losing its player preserves the retail rotated-index fall
     fixture.update(6, 0.1f, players);
     fixture.update(6, 0.1f, players);
     REQUIRE(actor.takeArenaActivations().empty());
+}
+
+TEST_CASE("an untargeted linked eruption preserves the retail rotated-index fallback",
+          "[game][boss-areas][yeti][combatant-target-lock]") {
+    const auto root = areaArchive(true, false, true);
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"originOffset":[0,50,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"link":1},
+        {"name":"WHIP","anim":"STEP","type":130,"priority":10,"cooldown":20,
+         "frameStart":1,"frameEnd":1,"damage0":0}],
+      "damages":[{"type":6,"damage":40,"flags":32,"radius":0.1,"maxDistance":10,
+                  "minDot":0.8,"offset":[0,3,0],"sfxIndex":0}],
+      "sounds":[{"name":"NULLFX","flags":0,"life":0.5,"offset":[0,2,0]}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'I');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    std::array<CombatArenaTarget, 2> targets{{{9, glm::translate(Mat4{1}, Vec3{20, 0, 35})},
+                                              {4, glm::translate(Mat4{1}, Vec3{0, 0, 35})}}};
+    actor.setArenaTargets(targets);
+    std::array players{playerAt({20, 0, 35})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    const auto first = actor.takeArenaActivations();
+    REQUIRE(first.size() == 1);
+    REQUIRE(first.front().index == 9); // establish cursor at roster entry 0
+    fixture.update(60, 21.0f, players);
+    REQUIRE(actor.moveName() == "READY");
+    targets[1].active = true;
+    actor.setArenaTargets(targets);
+    players[0].hidden = true;
+    // The link authorizes this new move without any candidate; hiding a player
+    // after a targeted move began would instead preserve that move's identity.
+    fixture.update(1, 0.001f, players);
+    REQUIRE(actor.moveName() == "WHIP");
+    REQUIRE(actor.target() == -1);
+    fixture.update(4, 0.06f, players);
+    const auto events = actor.takeArenaActivations();
+    REQUIRE(events.size() == 1);
+    REQUIRE(events.front().index == 4); // tests inactive entry 0, returns rotated active entry 1
 }
 
 TEST_CASE("Yeti stomp reaches the front of the arena from its root effect offset",

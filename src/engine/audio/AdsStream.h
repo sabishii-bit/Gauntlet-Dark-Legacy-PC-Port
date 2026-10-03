@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "engine/audio/MusicDeclicker.h"
 #include "engine/audio/StreamSource.h"
 #include "engine/codec/AdsAudio.h"
 #include "engine/core/Types.h"
@@ -15,10 +16,11 @@ namespace gdl {
  */
 class AdsStream final : public StreamSource {
 public:
+    enum class Restoration : u8 { Enabled, Disabled };
     static constexpr usize kPieceBytes = usize{64} * 1024; ///< decoded per read at most
 
-    /** Reads the file and its header; false (with a warning) when it cannot be played. */
-    bool open(const std::filesystem::path& file);
+    /** Reads native music with impulse restoration; Disabled retains the exact decoded PCM. */
+    bool open(const std::filesystem::path& file, Restoration restoration = Restoration::Enabled);
     bool opened() const { return m_info.channels != 0; }
     const AdsAudioInfo& info() const { return m_info; }
     /** The stream's length in seconds. */
@@ -36,6 +38,11 @@ private:
     AdsAudioDecoder m_decoder;
     AdsAudioInfo m_info;
     bool m_flushed = false;
+    Restoration m_restoration = Restoration::Enabled;
+    MusicDeclicker m_declicker;
+    MusicDeclicker m_burstRepair;
+    std::vector<f32> m_decoded;
+    std::vector<f32> m_restored;
 };
 
 } // namespace gdl

@@ -14,6 +14,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/config/MultiplayerMode.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/MissileStreak.h"
 
@@ -67,6 +68,8 @@ struct MissileLaunch {
     MissileWallSound wallSound = MissileWallSound::Level;
     u32 flags = 0;
     MissileStreak streak;
+    MultiplayerMode multiplayer = MultiplayerMode::Normal;
+    f32 playerHitGap = 0.25f; ///< hit-effect frames / 30, when authored
 };
 
 /** Something a missile stops against: a cylinder, or an authored triangle surface. */
@@ -101,6 +104,17 @@ struct MissileImpact {
     s32 node = -1;
     s32 worldObject = -1; ///< struck collision owner, independent of a creature target
     bool liquid = false;  ///< water contact replaces ordinary impact audio
+    s32 player = -1;      ///< input lane of a struck player, independent of world target ids
+    Vec3 direction{0.0f};
+    bool stun = false;
+    f32 playerHitGap = 0.25f;
+};
+
+/** Player cylinders supplied separately from world targets, including missile reflection. */
+struct MissilePlayer {
+    s32 player = 0;
+    MissileTarget body;
+    bool reflective = false;
 };
 
 /**
@@ -143,12 +157,21 @@ public:
         u32 flags = 0;
         std::vector<s32> pierced;
         MissileStreak streak;
+        MultiplayerMode multiplayer = MultiplayerMode::Normal;
+        f32 playerHitGap = 0.25f;
+        struct PlayerContact {
+            s32 player = -1;
+            f32 remaining = 0;
+        };
+        std::vector<PlayerContact> playerContacts;
     };
 
     /** A missile's pace from the stat that throws it. */
     static f32 speedFor(s32 stat);
     /** What a missile does to what it hits, by the thrower's strength (or magic). */
     static f32 damageFor(s32 stat);
+    /** A point hit's cooldown comes from its impact animation's frame count at 30 Hz. */
+    static f32 hitGap(const ItemArchive* archive, std::string_view tree);
     /** How far a throw reaches when the attack had been going `attackSeconds`. */
     static f32 reachFor(f32 attackSeconds);
     /** The velocity that sets a missile off along `direction` to come down at its reach. */
@@ -161,7 +184,8 @@ public:
     const EffectTrees& visuals() const { return m_visuals; }
     /** Flies every missile on by `seconds`; those a wall or floor stops are taken away. */
     void update(f32 seconds, const WorldCollision* collision,
-                std::span<const MissileTarget> targets = {});
+                std::span<const MissileTarget> targets = {},
+                std::span<const MissilePlayer> players = {});
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
     void clear();

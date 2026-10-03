@@ -13,28 +13,56 @@ f32 Combatant::attackRate(const Actor& critter) {
 }
 
 s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria,
-                            std::span<const EnemyView> players) {
-    if (critter.blindTicks > 0) {
-        return -1;
-    }
-    const Vec3 home = critter.position - critter.homePosition;
-    if (!criteria.allowsPhase(attackRate(critter), glm::length(Vec2{home.x, home.z}))) {
-        return -1;
-    }
-    s32 target = -1;
-    f32 nearest = std::numeric_limits<f32>::max();
-    for (const EnemyView& player : players) {
-        const Vec3 delta = player.position - critter.position;
-        const f32 distance = glm::length(Vec2{delta.x, delta.z});
-        const f32 bearing = std::atan2(delta.x, delta.z) - critter.yaw;
-        if (!player.hidden && distance < nearest &&
-            critter.definition->sight().allows(distance, 0.0f, delta.y) &&
-            criteria.allows(distance, bearing, delta.y)) {
-            nearest = distance;
-            target = player.player;
+                            std::span<const EnemyView> players, bool fallback) {
+    for (const Actor* owner = &critter; owner != nullptr;
+         owner = fallback && owner->parent != nullptr ? &owner->parent->m_actor : nullptr) {
+        const Actor& source = *owner;
+        if (source.blindTicks > 0) {
+            return -1;
+        }
+        const Vec3 home = source.position - source.homePosition;
+        if (criteria.maxHomeDistance > 0 &&
+            glm::length(Vec2{home.x, home.z}) > criteria.maxHomeDistance) {
+            return -1;
+        }
+        const bool phase =
+            criteria.allowsPhase(attackRate(source), glm::length(Vec2{home.x, home.z}));
+        if (!phase && !fallback) {
+            return -1;
+        }
+        s32 target = -1;
+        f32 nearest = std::numeric_limits<f32>::max();
+        for (const Target& candidate : source.targets) {
+            const EnemyView* player = viewOf(players, candidate.player);
+            if (player == nullptr || player->hidden) {
+                continue;
+            }
+            const Vec3 delta = player->position - source.position;
+            const f32 distance = glm::length(Vec2{delta.x, delta.z});
+            const f32 bearing = std::atan2(delta.x, delta.z) - source.yaw;
+            const bool eligible = phase && criteria.allows(distance, bearing, delta.y);
+            // ReCalcTarget's rejected scores still rank MoveSetup's fallback. A player
+            // too near outranks one too far, then one outside the cone, then the rate gate.
+            f32 score = distance * candidate.inverseAnger;
+            if (!phase) {
+                score = 1.2e21f;
+            } else if (distance < criteria.minDistance) {
+                score = 1.01e21f;
+            } else if (criteria.maxDistance > 0 && distance > criteria.maxDistance) {
+                score = 1.02e21f;
+            } else if (!eligible) {
+                score = 1.1e21f;
+            }
+            if (score < nearest && (eligible || fallback)) {
+                nearest = score;
+                target = player->player;
+            }
+        }
+        if (target >= 0) {
+            return target;
         }
     }
-    return target;
+    return -1;
 }
 
 bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> players) {
@@ -149,6 +177,7 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
         return false;
     }
     critter.target = playerChoice;
+    critter.moveTarget = playerChoice;
     if (const EnemyView* target = viewOf(players, playerChoice)) {
         const Vec3 delta = target->position - critter.position;
         critter.targetDistance = glm::length(Vec2{delta.x, delta.z});

@@ -28,6 +28,20 @@ void EffectTrees::placeAt(u32 id, const Mat4& attachment, std::optional<Vec3> fl
     }
 }
 
+void EffectTrees::redirect(u32 id, const Vec3& position, const Vec3& velocity) {
+    for (const auto& effect : m_effects) {
+        if (effect->id == id) {
+            effect->position = position;
+            effect->velocity = velocity;
+            effect->yaw = std::atan2(velocity.x, velocity.z);
+            if (effect->flightDirection) {
+                effect->flightDirection = velocity;
+            }
+            return;
+        }
+    }
+}
+
 bool EffectTrees::start(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                         const Vec3& position, f32 scale) {
     Setting setting;
@@ -132,6 +146,32 @@ void EffectTrees::attachTrail(u32 id, const ParticleDescriptor& descriptor,
             return;
         }
     }
+}
+
+u32 EffectTrees::startParticles(RenderDevice& device, ItemArchive& archive,
+                                const ParticleDescriptor& descriptor, u32 textureSlot,
+                                const Mat4& attachment) {
+    auto effect = std::make_unique<Effect>();
+    effect->id = m_nextId++;
+    effect->name = descriptor.texture;
+    effect->attachment = attachment;
+    effect->position = Vec3{attachment[3]};
+    effect->archive = &archive;
+    effect->particleTextureSlot = textureSlot;
+    effect->trails.start(descriptor, attachment, &archive.textures.texture(device, textureSlot),
+                         effect->id);
+    const bool known = std::ranges::any_of(m_motions, [&](const auto& motion) {
+        return motion->archive == &archive && motion->lenders.empty();
+    });
+    if (!known) {
+        auto motion = std::make_unique<Motion>();
+        motion->archive = &archive;
+        motion->animator.bind(archive.trees.textureAnimations(), archive.textures, device);
+        m_motions.push_back(std::move(motion));
+    }
+    const u32 id = effect->id;
+    m_effects.push_back(std::move(effect));
+    return id;
 }
 
 u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
@@ -253,11 +293,27 @@ void EffectTrees::update(f32 seconds) {
     }
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         effect->lived += seconds;
+        if (effect->particleTextureSlot) {
+            for (const auto& motion : m_motions) {
+                if (motion->archive != effect->archive || !motion->lenders.empty()) {
+                    continue;
+                }
+                for (usize i = 0; i < motion->animator.size(); ++i) {
+                    if (!motion->animator.keyed(i) &&
+                        motion->animator.slot(i) == *effect->particleTextureSlot) {
+                        if (const auto state = motion->animator.motion(i); state.frame != nullptr) {
+                            effect->trails.setTexture(0, *state.frame);
+                        }
+                    }
+                }
+            }
+        }
         if (effect->retiring) {
             effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
             effect->trails.step(seconds);
             for (const auto& motion : m_motions) {
-                if (motion->archive == effect->archive && motion->lenders == effect->lenders) {
+                if (effect->tree != nullptr && motion->archive == effect->archive &&
+                    motion->lenders == effect->lenders) {
                     motion->animator.apply(effect->particles, *effect->tree,
                                            effect->player.sequence(),
                                            static_cast<s32>(effect->player.frame()));
@@ -272,6 +328,9 @@ void EffectTrees::update(f32 seconds) {
                                           : glm::translate(Mat4{1.0f}, effect->position));
         }
         effect->trails.step(seconds);
+        if (effect->tree == nullptr) {
+            continue;
+        }
         if (effect->tree->sequences.empty() || effect->timed) {
             effect->secondsLeft -= seconds;
         }
@@ -319,6 +378,9 @@ void EffectTrees::update(f32 seconds) {
         }
     }
     std::erase_if(m_effects, [](const std::unique_ptr<Effect>& effect) {
+        if (effect->tree == nullptr) {
+            return !effect->trails.active(0);
+        }
         if (effect->retiring) {
             return effect->particles.field().particleCount() == 0 &&
                    effect->trails.particleCount() == 0;
@@ -338,7 +400,7 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
         const auto direction = effect->flightDirection;
         const Mat4 placed = direction.has_value() ? frame.along(effect->transform(), *direction)
                                                   : effect->transform();
-        if (!effect->retiring) {
+        if (!effect->retiring && effect->tree != nullptr) {
             // Its last moments fade it out (ProcessEffects' fxfade).
             const f32 alpha =
                 effect->fadeSeconds > 0.0f

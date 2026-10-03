@@ -74,6 +74,7 @@ public:
 
 private:
     static Vec3 middleOf(std::span<const CameraSubject> subjects, const CameraRange& range);
+    Vec3 projectedMiddleOf(std::span<const CameraSubject> subjects, const CameraRange& range) const;
     void chooseMarker(std::span<const WorldLocator> markers, const Vec3& near);
     void aim(std::span<const WorldLocator> markers, usize count, const CameraRange& range,
              bool jump);

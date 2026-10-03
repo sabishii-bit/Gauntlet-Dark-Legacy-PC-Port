@@ -61,11 +61,7 @@ void Combatant::aimGaze(Actor& critter, f32 seconds, std::span<const EnemyView> 
                       critter.frozenTicks > 0 || critter.blindTicks > 0;
     std::optional<Vec3> target;
     if (!held) {
-        s32 who = critter.target;
-        if (who < 0 && critter.parent != nullptr) {
-            who = critter.parent->m_actor.target; // CritterGetTargetSub falls back to the parent
-        }
-        if (const EnemyView* view = viewOf(players, who)) {
+        if (const EnemyView* view = viewOf(players, critter.moveTarget)) {
             target = view->position + Vec3{0.0f, 0.5f * view->height, 0.0f};
         }
     }
@@ -104,6 +100,12 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
         if (part->dying()) {
             part->update(ticks, seconds, players);
         } else if (forced) {
+            // CritterMoveSetup asks GetTargetSub in parent-fallback mode. A body can
+            // begin its pattern after this frame's independent head roster was pruned.
+            if (actor.target < 0 && actor.blindTicks <= 0) {
+                actor.target = m_actor.target;
+                actor.targetDistance = m_actor.targetDistance;
+            }
             const auto& pattern = part->data()->patterns()[static_cast<usize>(m_actor.pattern)];
             if (m_actor.patternStep < pattern.moves.size()) {
                 const auto step = static_cast<usize>(pattern.moves[m_actor.patternStep]);

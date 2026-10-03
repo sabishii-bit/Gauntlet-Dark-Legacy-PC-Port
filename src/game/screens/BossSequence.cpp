@@ -1,5 +1,6 @@
 #include "game/screens/BossSequence.h"
 
+#include <algorithm>
 #include <format>
 
 #include "engine/core/Types.h"
@@ -113,8 +114,8 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
     }
 }
 
-/** Everyone in play receives the victory bit, including at the altar. BossDeath only
- * creates the floating key and its sound for the eight ordinary realm bosses. */
+/** Standing players receive the victory bit (BossDeath followed by PlayerGiveRune).
+ * BossDeath only creates the floating key and its sound for the eight ordinary bosses. */
 void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
                           std::span<PlayerRuntime> players) {
     if (!m_resources) {
@@ -131,8 +132,15 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     const s32 order = LevelRef::orderOf(r.world.ref().realmId);
     u16 found = 0;
     for (PlayerRuntime& runtime : players) {
+        if (runtime.departed) {
+            continue;
+        }
         PlayerActor& actor = runtime.actor;
-        actor.save().progress().relics.addShard(order);
+        if (runtime.life == PlayerLife::Standing) {
+            actor.save().progress().relics.addShard(order);
+        }
+        // The narrator counts runes held by everyone still joined, including the fallen
+        // waiting in the tower (PlayerHasShard's state != 0 union).
         found |= actor.save().progress().relics.runes;
     }
     // The realm's runestones are those its levels' records number, from one.
@@ -156,7 +164,7 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
         }
         std::vector<Vec3> standing;
         for (const PlayerRuntime& runtime : players) {
-            if (runtime.life == PlayerLife::Standing) {
+            if (!runtime.departed && runtime.life == PlayerLife::Standing) {
                 standing.push_back(runtime.actor.position());
             }
         }
@@ -189,7 +197,7 @@ bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const Player
     if (result.sparkle) {
         if (r.weapons.loaded()) {
             for (const PlayerRuntime& runtime : players) {
-                if (runtime.life == PlayerLife::Standing) {
+                if (!runtime.departed && runtime.life == PlayerLife::Standing) {
                     r.effects.start(r.device, r.weapons, kSpawnEffect, runtime.actor.position());
                 }
             }
@@ -233,7 +241,8 @@ void BossSequence::spewCoins(const CombatSpew& spew, LevelOpponents& opponents,
         }
         return;
     }
-    const auto count = static_cast<s32>(players.size());
+    const auto count = static_cast<s32>(std::ranges::count_if(
+        players, [](const PlayerRuntime& runtime) { return !runtime.departed; }));
     for (const SpewedCoin& coin : BossCoins::spray(r.world.ref().realmId, count, spew.velocity,
                                                    spew.halfAngle, m_coinRandom)) {
         r.world.throwItem(r.device, coin.name, spew.origin, coin.velocity,

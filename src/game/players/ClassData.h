@@ -46,6 +46,9 @@ struct MoveEffect {
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 scale = 1.0f;
     u32 flags = 0;
+    f32 lifetime = 0.0f;
+    f32 radius = 0.0f; ///< a particle record's emission rate per game frame
+    s16 alphaMod = 0;  ///< a particle record's speed in hundredths of a unit/second
     /** A particle emitter rather than a tree and a sound: `tree` names its texture and
      * `sound` the node it is hung from (PsfxDoParticle), such as the magic users' hand glow. */
     bool particle() const { return (flags & kParticleFlags) != 0; }

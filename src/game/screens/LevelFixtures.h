@@ -70,6 +70,8 @@ public:
     void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
+    /** Carry containers and their children without advancing gameplay during a camera cut. */
+    void syncFloors();
     void strikeSafeRock(usize index, f32 power);
     /** Magic on a shut chest holding Death (fn_8005C1DC): he becomes the level's apple, with
      * his dying cry, and the chest rocks. False for any other chest. */
@@ -122,6 +124,7 @@ public:
     static constexpr f32 kBarrelWarning = 9.0f;  ///< a player this near a spent barrel is told
 
 private:
+    void syncChestContents();
     void updateClouds(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     /** A trapped chest goes up: its burst, its bang and a blast of fifty at the trap scale;
      * whoever opened it, or else the nearest standing, is told chests may do this. */

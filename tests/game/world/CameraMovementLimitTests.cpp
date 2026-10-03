@@ -62,6 +62,22 @@ TEST_CASE("camera boundaries allow recovery and block further separation", "[gam
                                         projection));
 }
 
+TEST_CASE("a corner projection cannot restore movement through an already limited edge",
+          "[game][camera-limit]") {
+    WorldCamera camera;
+    camera.position = Vec3{0, 15, -25};
+    camera.pitch = std::atan2(15.0f, 25.0f);
+    const CameraView projection;
+    const Vec3 before{50, 0, 60};
+    // Sliding along the right edge adds forward motion. Removing that motion at
+    // the top edge must not leave a rightward escape through the first edge.
+    const Vec3 after = before + Vec3{1, 0, 0};
+    CHECK(CameraMovementLimit::constrain(before, after, Vec3{0}, camera, projection) == before);
+    const Vec3 returning = before - Vec3{1, 0, 1};
+    CHECK(CameraMovementLimit::constrain(before, returning, Vec3{0}, camera, projection) ==
+          returning);
+}
+
 TEST_CASE("opposing players cannot zoom the shared camera out without bound",
           "[game][camera-limit]") {
     std::array<CameraSubject, 2> party{
@@ -87,4 +103,48 @@ TEST_CASE("opposing players cannot zoom the shared camera out without bound",
     REQUIRE(CameraMovementLimit::allows(party[0].feet, party[0].feet + Vec3{0.2f, 0, 0},
                                         camera.attention(), camera.camera(), view));
 }
+TEST_CASE("four opposing players stay within the shared view and can walk back together",
+          "[game][camera-limit][multiplayer]") {
+    const std::array<Vec3, 4> directions{Vec3{-1, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 0, -1},
+                                         Vec3{0, 0, 1}};
+    std::array<CameraSubject, 4> party;
+    for (usize i = 0; i < party.size(); ++i) {
+        party[i] = {directions[i] * 2.0f, directions[i] * 2.0f + Vec3{0, 2.5f, 0}};
+    }
+    TowerCamera camera;
+    const CameraRange range;
+    const CameraView view;
+    camera.reset(party, {}, range, view);
+    for (s32 frame = 0; frame < 1800; ++frame) {
+        for (usize i = 0; i < party.size(); ++i) {
+            const Vec3 after = CameraMovementLimit::constrain(
+                party[i].feet, party[i].feet + directions[i] * 0.2f, camera.attention(),
+                camera.camera(), view, party[i].follow - party[i].feet);
+            party[i].follow += after - party[i].feet;
+            party[i].feet = after;
+        }
+        camera.update(party, {}, range, view, 1.0f / 30.0f);
+    }
+    CHECK(camera.distance() <= range.radiusMax + 0.01f);
+    for (const auto& player : party) {
+        // The shared view may translate while edge-tangent motion is preserved.
+        // Bound separation from the party, not travel from the world's origin.
+        CHECK(glm::distance(player.feet, camera.attention()) < range.radiusMax * 2.0f);
+        for (const Vec3& point : {player.feet, player.follow}) {
+            const Vec3 relative = point - camera.camera().position;
+            const f32 depth = glm::dot(relative, camera.camera().forward());
+            REQUIRE(depth > 0);
+            const f32 halfWidth = depth * std::tan(view.horizontalFov * 0.5f);
+            CHECK(std::abs(glm::dot(relative, camera.camera().right())) < halfWidth);
+            CHECK(std::abs(glm::dot(relative, camera.camera().up())) < halfWidth / view.aspect);
+        }
+        const Vec3 towards = camera.attention() - player.feet;
+        const Vec3 back = player.feet + glm::normalize(Vec3{towards.x, 0, towards.z}) * 0.2f;
+        const Vec3 recovered =
+            CameraMovementLimit::constrain(player.feet, back, camera.attention(), camera.camera(),
+                                           view, player.follow - player.feet);
+        CHECK(glm::distance(recovered, back) == Approx(0).margin(1.0e-5));
+    }
+}
+
 } // namespace

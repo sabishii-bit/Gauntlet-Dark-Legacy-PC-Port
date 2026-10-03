@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -31,13 +32,14 @@ struct ChestEvent {
     enum class Kind : u8 {
         Unlocked, ///< a visitor's key went into it: spend it and sound the chest
         Refused,  ///< touched without a key
-        Opened    ///< its lid is up: what was in it comes out
+        Opened,   ///< its lid is up: what was in it comes out
+        Collected ///< a visitor takes an open gold chest's treasure
     };
     Kind kind = Kind::Unlocked;
     usize chest = 0;
     usize visitor = 0;     ///< who unlocked it (for Opened, who had)
     s32 contents = -1;     ///< Unlocked/Opened: the resolved pickup record, or -1
-    s32 gold = 0;          ///< Opened: what a chest of gold pays its opener
+    s32 gold = 0;          ///< Collected: what a chest of gold pays its visitor
     bool explodes = false; ///< Opened: it was a trapped chest
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
@@ -46,8 +48,8 @@ struct ChestEvent {
  * A level's chests, worked the way the original works them: each is a container item whose
  * first parameter names the item record inside it (or a list to pick one from at random). A
  * chest stands shut and solid until someone against it has a key to spend; it then plays its
- * opening with its pickup riding NULL1; its lid up, it makes that pickup collectible, pays gold
- * paid straight to its opener when it is a chest of gold, or a blast when it is trapped.
+ * opening with its pickup riding NULL1; its lid up, it makes that pickup collectible, lets a
+ * visitor take its gold when it is a chest of gold, or blasts when it is trapped.
  */
 class Chests {
 public:
@@ -61,6 +63,7 @@ public:
     static constexpr s32 kOpening = 1;
     static constexpr s32 kOpen = 2;
     static constexpr s32 kSeedStep = 439; ///< what each random pick moves the seed on by
+    static constexpr f32 kCollectedSeconds = 8.0f / 60.0f; ///< ItemTouch's retirement delay
     static constexpr f32 kRefusalSeconds = 2.5f;
     static constexpr s32 kTransmuted = 1;        ///< the subtype a conversion leaves in the record
     static constexpr f32 kWobblePerPower = 3.0f; ///< ticks of rocking a point of magic
@@ -89,6 +92,12 @@ public:
         ItemFigure preview; ///< visual only: never a collectible or an RNG draw
         ItemFigure figure;
         Obstacle box;
+        struct Floor {
+            s32 object = -1;
+            Mat4 local{1.0f};
+        };
+        std::optional<Floor> floor;
+        std::optional<f32> collectedSeconds;
     };
 
     /** Stands a chest at every chest item of the layout (barrels are not chests). */
@@ -98,6 +107,8 @@ public:
     usize size() const { return m_chests.size(); }
     const Chest& chest(usize index) const { return *m_chests[index]; }
     void setPlayerCount(s32 players);
+    /** Carries the container and its obstacle with its authored supporting platform. */
+    void syncFloors();
 
     /** Steps the chests under the party; what happened is returned for the game to act on. */
     std::vector<ChestEvent> update(f32 seconds, std::span<const ChestVisitor> party);
@@ -137,6 +148,7 @@ private:
     std::vector<std::unique_ptr<Chest>> m_chests;
     std::vector<ItemInfo> m_infos;
     u32 m_seed = 0;
+    const WorldCollision* m_collision = nullptr;
 };
 
 } // namespace gdl::game

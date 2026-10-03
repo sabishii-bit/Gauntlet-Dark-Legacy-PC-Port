@@ -76,6 +76,8 @@ public:
     /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
     /** What the camera takes in: a generator breeds only on screen; none takes all in. */
     void setView(std::optional<ViewVolume> view) { m_view = view; }
+    /** Joined participants, including those waiting in the tower but not those who quit. */
+    void setPlayerCount(s32 players) { m_players = players; }
     /** Obstacles supplied here are fixtures; the other generators are included internally. */
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {}, bool timeStopped = false);
@@ -118,6 +120,9 @@ private:
     };
 
     struct Generator {
+        enum class Presence : u8 { Shown, Hidden, Suppressed };
+        s32 minPlayers = 0;
+        Presence presence = Presence::Shown;
         s32 kind = 0;
         s32 tier = 1;
         s32 algorithm = -1;
@@ -146,11 +151,13 @@ private:
     bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
                     ItemArchive* realmItems = nullptr);
     static s32 stateFor(const Generator& generator, bool destroyed);
+    void updatePresence(Generator& generator, bool seen) const;
 
     std::vector<Generator> m_generators;
     std::optional<ViewVolume> m_view;
     std::vector<std::unique_ptr<Bodies>> m_bodies;
     GeneratorScales m_scales;
+    s32 m_players = 1;
     u32 m_specialBirth = 0; ///< shared round-robin cursor, as in retail's enemy spawner
 };
 

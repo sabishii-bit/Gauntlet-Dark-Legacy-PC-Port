@@ -25,9 +25,10 @@ public:
     static std::optional<usize> resolve(std::span<const PlayerRuntime> players, usize mover,
                                         const Vec3& from, Vec3& to);
     /** Resolves `mover`'s step of `seconds` and shoves whoever it ran into by the step it
-     * meant. */
-    static void step(std::span<PlayerRuntime> players, usize mover, const Vec3& from, f32 seconds,
-                     const WorldCollision* collision = nullptr);
+     * meant, returning the contacted party index. */
+    static std::optional<usize> step(std::span<PlayerRuntime> players, usize mover,
+                                     const Vec3& from, f32 seconds,
+                                     const WorldCollision* collision = nullptr);
 };
 
 } // namespace gdl::game

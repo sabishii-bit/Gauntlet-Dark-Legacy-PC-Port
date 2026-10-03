@@ -94,6 +94,10 @@ enum class PadButton : u8 {
     DpadLeft,
     LeftTrigger, ///< virtual button: normalized trigger crosses 0.5, releases below 0.4
     RightTrigger,
+    LeftStickUp, ///< virtual directions for rebindable menu navigation
+    LeftStickRight,
+    LeftStickDown,
+    LeftStickLeft,
     Count
 };
 

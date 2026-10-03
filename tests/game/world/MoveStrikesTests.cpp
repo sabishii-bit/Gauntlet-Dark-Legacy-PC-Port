@@ -13,6 +13,31 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("player contact stops point strikes and reflective armor reverses and weakens them",
+          "[game][world][strikes][multiplayer-combat]") {
+    MoveStrike row;
+    row.type = MoveStrike::kFlies;
+    row.hitRadius = 1;
+    row.speed = 20;
+    row.maxTime = 20;
+    row.amount = 70;
+    MoveStrikes strikes;
+    const u32 id = strikes.start(row, 3, Vec3{0}, Vec3{0, 0, 1}, 10);
+    const auto hits = strikes.update(0.5f, nullptr);
+    REQUIRE(hits.size() == 1);
+    strikes.hitPlayer(id, true, hits[0].from);
+    REQUIRE(strikes.find(id));
+    CHECK(strikes.find(id)->position == Vec3{0});
+    CHECK(strikes.find(id)->facing.z == -1);
+    CHECK(strikes.find(id)->damage == 15);
+    CHECK(strikes.find(id)->secondsLeft == 10);
+    CHECK(strikes.find(id)->owner == 3);
+    strikes.hitPlayer(id, true, Vec3{0});
+    CHECK(strikes.find(id)->secondsLeft == 9);
+    strikes.hitPlayer(id, false, Vec3{0});
+    CHECK(strikes.find(id) == nullptr);
+}
+
 TEST_CASE("a burst expands after its wind-up and loses damage before its visual tail",
           "[game][world][strikes]") {
     MoveStrike burst;

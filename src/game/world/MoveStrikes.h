@@ -65,6 +65,8 @@ public:
     u32 start(const MoveStrike& strike, s32 owner, const Vec3& position, const Vec3& facing,
               f32 ownDamage, f32 effectSeconds = 0.0f);
     std::vector<StrikeHit> update(f32 seconds, const WorldCollision* collision);
+    /** Reflect a point strike at armor, keeping its owner, or end it on body contact. */
+    void hitPlayer(u32 id, bool reflected, const Vec3& from);
     void clear();
 
     usize count() const { return m_strikes.size(); }

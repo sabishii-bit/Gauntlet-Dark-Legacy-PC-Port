@@ -57,6 +57,18 @@ Vec3 CameraMovementLimit::constrain(const Vec3& before, const Vec3& after, const
             step -= horizontal * (glm::dot(step, horizontal) / length);
         }
     }
+    // At a corner, projecting onto the second edge can restore motion through the
+    // first: its ground-plane tangents are not orthogonal. Retail's CamLimitPlayerDpos
+    // stops combined horizontal/vertical clipping rather than escaping either edge.
+    // Recheck the final step against every plane, preserving inward recovery and the
+    // actor's authored vertical movement.
+    for (usize i = 0; i < planes.size(); ++i) {
+        const Vec3 anchor = before + step + (i == 3 ? Vec3{0} : anchorOffset);
+        if (glm::dot(anchor - camera.position, planes[i]) > 0 &&
+            glm::dot(step, planes[i]) > 1.0e-6f) {
+            return Vec3{before.x, after.y, before.z};
+        }
+    }
     return before + step;
 }
 

@@ -538,6 +538,36 @@ TEST_CASE("held potion throws fly forward on the retail ballistic arc",
     CHECK(impacts.front().position.z < bottle.position.z + 30);
 }
 
+TEST_CASE("unspecified carried potions cast and throw without consuming empty inventory",
+          "[game][world][player-arsenal][cheats][multiplayer]") {
+    Fixture f;
+    f.actor.save().color = 2; // Red: cycling to fire must not retroactively award a colour bonus.
+    auto& inventory = f.actor.save().progress().inventory;
+    CHECK_FALSE(f.arsenal.usePotion(f.actor));
+    f.arsenal.throwPotion(f.actor);
+    CHECK(f.arsenal.missiles().count() == 0);
+    inventory.addPotions(0, 2);
+    const auto burst = f.arsenal.usePotion(f.actor);
+    REQUIRE(burst);
+    CHECK(burst->potion == 1);
+    CHECK(burst->damage == Approx(40));
+    CHECK(burst->potency == Approx(f.arsenal.magicPowerOf(f.actor)));
+    f.arsenal.throwPotion(f.actor);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    CHECK(f.arsenal.missiles().missile(0).potion == 2);
+    CHECK(inventory.potions.empty());
+
+    PlayerActor partner;
+    partner.spawn(1, {}, nullptr, Vec3{0}, 0);
+    partner.save().progress().inventory.addPotions(0, 1);
+    const auto shared = f.arsenal.usePotion(partner);
+    REQUIRE(shared);
+    CHECK(shared->potion == 3);
+    CHECK(f.arsenal.resolvePotionKind(2) == 2); // Explicit colours do not advance the cycle.
+    CHECK(f.arsenal.resolvePotionKind(0) == 4);
+    CHECK(f.arsenal.resolvePotionKind(0) == 1);
+}
+
 TEST_CASE("a potion of the caster's own colour goes off a tenth stronger",
           "[game][world][player-arsenal][damage-types]") {
     Fixture f;

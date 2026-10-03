@@ -170,7 +170,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
 
 void Combatant::eruptArena(Actor& critter, s32 id, const AttackDefinition& damage,
                            std::span<const EnemyView> players) {
-    const EnemyView* player = viewOf(players, critter.target);
+    const EnemyView* player = viewOf(players, critter.moveTarget);
     const CombatArenaTarget* nearest = nullptr;
     f32 best = 1.0e21f;
     const auto count = static_cast<s32>(critter.arenaTargets.size());

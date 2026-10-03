@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <set>
 #include <string>
 
@@ -79,13 +80,14 @@ TEST_CASE("the body's pattern drives the heads' own pattern step, whose move sta
     REQUIRE(body.child(1)->moveName() == "SPIT");
     // A six-frame spit within a thirty-frame step: started over four times at the least.
     REQUIRE(spits >= 4);
-    // Its own use is not recorded (CritterMoveDone leaves a pattern's child alone): the head
+    // Its own use is not recorded (CritterMoveDone leaves a pattern's child alone). With
+    // one untouched player, distribution keeps the root and the last tied head: head 2
     // spits again by its own choice once the body's pattern is over.
     bool ownSpit = false;
     for (s32 frame = 0; frame < 120 && !ownSpit; ++frame) {
         fixture.step();
         body.takeCues();
-        ownSpit = body.moveName() != "READYP" && body.child(1)->moveName() == "SPIT";
+        ownSpit = body.moveName() != "READYP" && body.child(2)->moveName() == "SPIT";
     }
     REQUIRE(ownSpit);
     REQUIRE(body.moveType() == 1); // and the body keeps to SYNC while a head attacks
@@ -102,7 +104,10 @@ TEST_CASE("the body falls with its last head, after each head's own fall",
     body.takeLosses();
     EnemyHit hit;
     hit.damage = 1000;
-    body.hurt(hit, 1);
+    const f32 bodyHealth = body.health();
+    const f32 headHealth = body.child(1)->health();
+    CHECK(body.hurt(hit, 1) == Approx(headHealth));
+    CHECK(body.health() == bodyHealth); // a lethal head hit still earns its healing credit
     REQUIRE_FALSE(body.child(1)->alive());
     REQUIRE(body.alive());
     fixture.step();
@@ -126,6 +131,17 @@ TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][
     REQUIRE(body.child(1)->maxHealth() == 1200);
     REQUIRE(body.child(2)->maxHealth() == 1500);
     REQUIRE(body.child(3)->maxHealth() == 1200);
+    // These come from the loaded native CRITTER/CHIMERA.WAD, not unpacked JSON.
+    CHECK(body.child(1)->data()->sight().yaw == Approx(-std::numbers::pi_v<f32> / 6));
+    CHECK(body.child(2)->data()->sight().yaw == 0);
+    CHECK(body.child(3)->data()->sight().yaw == Approx(std::numbers::pi_v<f32> / 6));
+    REQUIRE(body.data()->patterns().size() == 1);
+    const auto& pattern = body.data()->patterns().front();
+    CHECK(pattern.cooldown == 16);
+    CHECK(pattern.target.minDistance == 35);
+    CHECK(pattern.target.minDot == Approx(0).margin(0.000001));
+    CHECK(pattern.target.minRateScale == 0);
+    CHECK(pattern.target.maxRateScale == 0);
     for (s32 id = 1; id <= 3; ++id) {
         REQUIRE(body.child(id)->data()->moves().size() == 15);
         REQUIRE(body.child(id)->moveType() == -1); // START is copied from the body.
@@ -134,6 +150,15 @@ TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][
     std::set<std::string> effects;
     bool sync = false;
     for (s32 frame = 0; frame < 3600; ++frame) {
+        // Fight back often enough to retain the body's fifteen-second anger memory.
+        // An untouched player straight ahead only engages the lion independently:
+        // the side heads' authored sight yaw gives them weaker claims under cap two.
+        if (frame % 300 == 0) {
+            EnemyHit hit;
+            hit.player = fixture.players[0].player;
+            hit.damage = 12; // Ten after armor raises candidate capacity to all four parts.
+            body.hurt(hit);
+        }
         // Move the target between projectile and close-combat ranges, not an idle launch.
         fixture.players[0].position = Vec3{0, 0, frame < 1800 ? 40.0f : 18.0f};
         fixture.step();
@@ -262,6 +287,18 @@ TEST_CASE("Chimera's heads turn to the party from their necks", "[game][chimera]
     // well to the left of a player straight ahead, so ahead it is at its limit and only a
     // player round to the left is within it: the two settle apart.
     const auto neckYaw = [](ChimeraFixture& given, const Vec3& player, const char* node) {
+        // MoveSetup must first assign a real head target. CopyParentAnimation keeps
+        // that identity for gaze, but holding the body from spawn never assigns one.
+        EnemyHit hit;
+        hit.player = 0;
+        hit.damage = 12;
+        given.fight.actor.hurt(hit); // permits all heads in the target roster
+        for (s32 frame = 0; frame < 600 && given.fight.actor.child(1)->moveName().empty();
+             ++frame) {
+            given.step();
+            given.fight.actor.takeCues();
+        }
+        REQUIRE_FALSE(given.fight.actor.child(1)->moveName().empty());
         given.players[0].position = player;
         given.fight.actor.hold(true);
         for (s32 frame = 0; frame < 120; ++frame) {

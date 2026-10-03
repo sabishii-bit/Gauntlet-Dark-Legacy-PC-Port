@@ -387,7 +387,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     m_hits.push_back(
                         {victim->player, damage.damage * flying.shot.damageScale, damage.flags,
                          speed > 0.0f ? flying.velocity / speed : Vec3{0.0f},
-                         damage.damage * flying.shot.damageScale > 2 ? kProjectileHitGap : 0});
+                         damage.damage * flying.shot.damageScale > 2 ? kProjectileHitGap : 0,
+                         flying.shot.critter, flying.shot.data->kind()});
                     if ((damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0) {
                         // Reflecting super shots leave an impact and spend their
                         // pass-through bit; ordinary super shots keep travelling.
@@ -506,7 +507,8 @@ void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
             constexpr u32 kNoHitEffect = 0x1000000;
             flags = (flags & ~kHeavyHitFlags) | kNoHitEffect;
         }
-        m_hits.push_back({player.player, area.currentDamage(), flags, push, area.hitGap()});
+        m_hits.push_back({player.player, area.currentDamage(), flags, push, area.hitGap(),
+                          flying.shot.critter, flying.shot.data->kind()});
     }
 }
 
@@ -523,7 +525,8 @@ void CombatantProjectiles::stickyContacts(Flying& flying, f32 seconds,
                 CombatantProjectile::contact(flying.position, flying.position, reach,
                                              player.position, player.radius, player.height)) {
                 m_hits.push_back({player.player, damage.damage * flying.shot.damageScale,
-                                  damage.flags, Vec3{0}, 0});
+                                  damage.flags, Vec3{0}, 0, flying.shot.critter,
+                                  flying.shot.data->kind()});
             }
         }
     }

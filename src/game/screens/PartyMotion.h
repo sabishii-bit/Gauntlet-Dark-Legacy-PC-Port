@@ -95,8 +95,9 @@ public:
     static StrafeWay strafeWayOf(f32 heading, f32 facing);
     static MoveInput chargeInput(const PlayerActor& actor, const MoveInput& stick, f32 cameraYaw);
     static PlayerDeed turboDeed(const PlayerRuntime& runtime, const PlayInput& input);
-    /** It goes to the first other player standing against the one who is it, once that one
-     * has been it a second (PlayerMotion, pmotion.c 1182); the fallen are it no more. */
-    static void passIt(std::span<PlayerRuntime> players, s32 ticks, const Events& events);
+    /** Passes IT at the step's resolved player contacts after a second of possession;
+     * the fallen are it no more. Contacts are indexed by party member, not input lane. */
+    static void passIt(std::span<PlayerRuntime> players, s32 ticks, const Events& events,
+                       std::span<const std::optional<usize>> contacts);
 };
 } // namespace gdl::game

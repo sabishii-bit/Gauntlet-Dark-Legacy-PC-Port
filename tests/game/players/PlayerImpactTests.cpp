@@ -23,7 +23,8 @@ TEST_CASE("damage flags select grounded reactions rather than damage amount alon
     REQUIRE(impact.reaction(10, 0, true) == PlayerDeed::None);
     impact.flags = PlayerImpact::kStun;
     REQUIRE(impact.reaction(1, 0, false) == PlayerDeed::Reel);
-    REQUIRE(impact.reaction(0, 0, false) == PlayerDeed::None);
+    REQUIRE(impact.reaction(0, 0, false) == PlayerDeed::Reel);
+    REQUIRE(impact.reaction(-1, 0, false) == PlayerDeed::None);
     impact.flags = PlayerImpact::kSpike;
     REQUIRE(impact.reaction(1, 0, false) == PlayerDeed::None);
     REQUIRE(impact.reaction(2, 0, false) == PlayerDeed::Spike);

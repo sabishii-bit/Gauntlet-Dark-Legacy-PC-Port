@@ -89,6 +89,9 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
                 effect.offset[axis] = readWadF32(bytes, at + 0x34 + axis * 4, kWhat);
             }
             effect.scale = readWadF32(bytes, at + 0x48, kWhat);
+            effect.lifetime = readWadF32(bytes, at + 0x40, kWhat);
+            effect.radius = readWadF32(bytes, at + 0x44, kWhat);
+            effect.alphaMod = s16At(at + 0x32);
             record.effects.push_back(std::move(effect));
         }
     }

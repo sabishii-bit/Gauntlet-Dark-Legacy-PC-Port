@@ -104,6 +104,22 @@ TEST_CASE("a spread party pulls the camera out no further than the level's maxim
     REQUIRE(camera.distance() == Approx(24.0f).margin(0.01f)); // compact: the shortest range wins
 }
 
+TEST_CASE("near and far players are centred in projected space rather than world space",
+          "[game][world][camera][multiplayer]") {
+    const std::vector<CameraSubject> party{standing(0, -8), standing(0, 8)};
+    TowerCamera camera;
+    camera.reset(party, {}, CameraRange{}, CameraView{});
+    for (s32 frame = 0; frame < 200; ++frame) {
+        camera.update(party, {}, CameraRange{}, CameraView{}, 1.0f / 30.0f);
+    }
+    const auto height = [&](const CameraSubject& subject) {
+        const Vec3 relative = subject.follow - camera.camera().position;
+        return glm::dot(relative, camera.camera().up()) /
+               glm::dot(relative, camera.camera().forward());
+    };
+    CHECK(height(party[0]) == Approx(-height(party[1])).margin(1.0e-4f));
+}
+
 TEST_CASE("a clearly nearer marker takes over and the camera turns to it over fifty steps",
           "[game][world][camera]") {
     const std::vector<WorldLocator> markers{marker(Vec3{0.0f, 0.0f, 0.0f}, 0.3f, kPi),

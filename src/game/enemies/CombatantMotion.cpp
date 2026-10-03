@@ -36,7 +36,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             critter.position.y = floor->y;
         }
     }
-    const EnemyView* view = viewOf(players, critter.target);
+    const EnemyView* view = viewOf(players, critter.moveTarget);
     if (move != nullptr && move->turnRate > 0.0f && view != nullptr && critter.grabbed < 0) {
         const f32 wanted =
             movement.facing(yawBetween(critter.position, view->position), critter.initialYaw);
@@ -59,11 +59,12 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         return; // Zero-radius bosses may turn, but neither locomotion nor knockback moves them.
     }
     Vec3 translation = critter.push * seconds;
-    if (move != nullptr && move->type == MoveDefinition::kStepToPoint && view != nullptr) {
+    const EnemyView* destination = viewOf(players, critter.target);
+    if (move != nullptr && move->type == MoveDefinition::kStepToPoint && destination != nullptr) {
         // The ready-move search refreshes targetPos during local locomotion.
         // CritterInitHeader enables that search from the MOVE roster, even when
         // the raw TYPE does not yet have its derived 0x10000 flag.
-        critter.stepTarget = view->position;
+        critter.stepTarget = destination->position;
     }
     if (move != nullptr && move->speed != 0.0f && critter.state == State::Active) {
         const f32 pace = move->speed * m_scales.speed * seconds;

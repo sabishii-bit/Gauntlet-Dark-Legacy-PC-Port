@@ -7,6 +7,7 @@
 #include <numbers>
 
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/world/AnimationPlayer.h"
 
@@ -54,6 +55,33 @@ constexpr f32 kHaloVolume = 224.0f / 255.0f;
 constexpr f32 kDeathVolume = 127.0f / 255.0f;
 constexpr s32 kTicksPerFrame = 2; ///< of 60 Hz, in one 30 Hz frame
 
+/** Long-range area hits look through the damageable item families, not solid-world walls. */
+bool playerAreaBlocked(const Vec3& from, const Vec3& to, const LevelFixtures& fixtures,
+                       const LevelWorld& world) {
+    constexpr f32 kProbeRadius = 0.1f;
+    for (const Obstacle& barrel : fixtures.barrels().obstacles()) {
+        if (barrel.blocksSegment(from, to, kProbeRadius)) {
+            return true;
+        }
+    }
+    const auto& rocks = fixtures.safeRocks();
+    for (usize i = 0; i < rocks.size(); ++i) {
+        if (rocks.standing(i) && rocks.rock(i).armor > 0 &&
+            rocks.rock(i).obstacle.blocksSegment(from, to, kProbeRadius)) {
+            return true;
+        }
+    }
+    const StrikeHit probe{
+        .centre = to, .radius = kProbeRadius, .damage = 1, .from = from, .swept = true};
+    const auto& walls = world.walls();
+    for (usize i = 0; i < walls.size(); ++i) {
+        if (walls.standing(i) && walls.target(i, 0).reachedBy(probe)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 void PlayerAttacks::bind(const Resources& resources) {
     clear();
@@ -61,6 +89,9 @@ void PlayerAttacks::bind(const Resources& resources) {
 }
 void PlayerAttacks::clear() {
     if (m_resources.has_value()) {
+        for (const auto& particle : m_particleEffects) {
+            m_resources->effects.stop(particle.effect);
+        }
         for (const auto& item : m_items) {
             m_resources->effects.stop(item.effect);
         }
@@ -72,11 +103,11 @@ void PlayerAttacks::clear() {
         }
     }
     m_strikes.clear();
+    m_particleEffects.clear();
     m_strikeEffects.clear();
     m_strikeSources.clear();
     m_shields.clear();
     m_potions.clear();
-    m_nextPotionKind = 1;
     m_items.clear();
     m_resources.reset();
 }
@@ -302,24 +333,34 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         }
         id = m_strikes.start(volume, actor.player(), base, facing, ownDamageOf(index, players),
                              effectSeconds);
-        m_strikeSources.push_back(StrikeSource{id, index, strikeIndex, {}});
+        m_strikeSources.push_back(StrikeSource{id,
+                                               index,
+                                               strikeIndex,
+                                               {},
+                                               m_resources->multiplayer != nullptr
+                                                   ? *m_resources->multiplayer
+                                                   : MultiplayerMode::Normal,
+                                               strike.damageType});
     }
     const Vec3 origin = MoveStrikes::originOf(strike, base, facing);
     const MoveStrikes::Strike* started = m_strikes.find(id);
     // An effect may bring another with it.
     usize followed = 0;
-    for (s32 at = strike.effect; at >= 0 && static_cast<usize>(at) < stats->moveEffects.size() &&
-                                 followed < stats->moveEffects.size();
-         at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
-        const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
+    u32 previousEffect = 0;
+    for (s32 effectIndex = strike.effect;
+         effectIndex >= 0 && static_cast<usize>(effectIndex) < stats->moveEffects.size() &&
+         followed < stats->moveEffects.size();
+         effectIndex = stats->moveEffects[static_cast<usize>(effectIndex)].next, ++followed) {
+        const MoveEffect& effect = stats->moveEffects[static_cast<usize>(effectIndex)];
         if ((effect.flags & 2U) != 0 && m_resources->shake != nullptr) {
             m_resources->shake->start();
         }
-        // A particle record's names are a texture and a node, neither a tree nor a sound;
-        // its emitter is not drawn yet.
         if (effect.particle()) {
+            startParticles(index, effect, previousEffect, players);
+            previousEffect = 0;
             continue;
         }
+        previousEffect = 0;
         if (!effect.sound.empty()) {
             if (const auto sound = players[index].figure->voice().find(effect.sound);
                 sound.has_value() && m_resources->sounds != nullptr) {
@@ -340,7 +381,7 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
             setting.velocity = started->facing * started->speed;
             setting.seconds = started->secondsLeft;
             // What flies launches once, then its looping tree carries it on.
-            if (at == strike.effect && strike.loopEffect >= 0 &&
+            if (effectIndex == strike.effect && strike.loopEffect >= 0 &&
                 static_cast<usize>(strike.loopEffect) < stats->moveEffects.size()) {
                 setting.then = stats->moveEffects[static_cast<usize>(strike.loopEffect)].tree;
             }
@@ -350,7 +391,7 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
                          facing * effect.offset.z;
         // The strike's first effect gives off a light twice its reach in the class's colour,
         // swelling over a burst's life and steady on what flies (PlyrSfxDoDamageSub).
-        if (at == strike.effect && strike.harms()) {
+        if (effectIndex == strike.effect && strike.harms()) {
             const f32 reach = strike.radius > 0.0f ? strike.radius : strike.hitRadius;
             setting.light = EffectTrees::Light{
                 DynamicLights::ofClass(players[index].actor.save().character),
@@ -358,18 +399,146 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         }
         const u32 shown =
             m_resources->effects.startSet(m_resources->device, *archive, effect.tree, at3, setting);
+        previousEffect = shown;
         if (shown != 0 && started != nullptr && started->flies) {
             m_strikeEffects.push_back(StrikeEffect{id, shown});
         }
     }
 }
 
+void PlayerAttacks::startParticles(usize index, const MoveEffect& effect, u32 parent,
+                                   std::span<PlayerRuntime> players) {
+    if (!m_resources || index >= players.size()) {
+        return;
+    }
+    ItemArchive* archive = moveEffectsOf(index, players);
+    ItemArchive* textureArchive = nullptr;
+    u32 textureSlot = 0;
+    for (ItemArchive* candidate : {archive, &m_resources->weapons}) {
+        if (candidate == nullptr) {
+            continue;
+        }
+        const auto slot = candidate->textures.find(effect.tree);
+        if (slot && !candidate->textures.entry(*slot).external() &&
+            !candidate->textures.entry(*slot).noPicture) {
+            textureArchive = candidate;
+            textureSlot = *slot;
+            break;
+        }
+    }
+    if (textureArchive == nullptr) {
+        log::warn("Player particles: no texture {}", effect.tree);
+        return;
+    }
+    // PsfxDoParticle starts a default emitter, not one of the authored presets.
+    // Its named setters configure a spherical cone and particle life/fade, not a volume.
+    ParticleDescriptor descriptor;
+    descriptor.texture = effect.tree;
+    descriptor.emitFrames =
+        effect.lifetime < 0.0f
+            ? ParticleDescriptor::kEndless
+            : static_cast<u32>(
+                  std::clamp(effect.lifetime * ParticleDescriptor::kFrameRate, 1.0f, 65535.0f));
+    descriptor.fadeFrames = 1; // 0.034 seconds, truncated at 30 Hz
+    descriptor.angle = ParticleDescriptor::kSphere;
+    descriptor.rate.fill(effect.radius);
+    descriptor.speed = static_cast<f32>(effect.alphaMod) * 0.01f / ParticleDescriptor::kFrameRate;
+    const bool shortLife = (effect.flags & MoveEffect::kParticleFlags) == 0x02000000U;
+    descriptor.particleLife = shortLife ? 6 : 15;
+    descriptor.particleFade = shortLife ? 0 : 15;
+    descriptor.red = descriptor.green = descriptor.blue = descriptor.alpha =
+        ParticleEnvelope{255, 255, 255, 255};
+    const f32 width = 0.5f * effect.scale;
+    descriptor.width = ParticleEnvelope{width, width, width, width};
+    ParticleEffect particle;
+    particle.actor = index;
+    particle.parent = (effect.flags & 0x40000U) != 0 ? parent : 0;
+    particle.node = effect.sound;
+    particle.offset = effect.offset;
+    if (particle.parent == 0 && (effect.flags & 0x2000U) != 0) {
+        const s32 partner = players[index].combo.partner;
+        if (partner >= 0 && static_cast<usize>(partner) < players.size()) {
+            particle.actor = static_cast<usize>(partner);
+            particle.node.clear();
+        }
+    }
+    particle.effect = m_resources->effects.startParticles(m_resources->device, *textureArchive,
+                                                          descriptor, textureSlot, Mat4{1});
+    m_particleEffects.push_back(std::move(particle));
+    updateParticles(players);
+}
+
+void PlayerAttacks::updateParticles(std::span<PlayerRuntime> players) {
+    if (!m_resources) {
+        return;
+    }
+    std::erase_if(m_particleEffects, [&](const ParticleEffect& particle) {
+        auto& effects = m_resources->effects;
+        if (!effects.playing(particle.effect)) {
+            return true;
+        }
+        if (particle.actor >= players.size() || players[particle.actor].figure == nullptr ||
+            players[particle.actor].life == PlayerLife::InTower ||
+            players[particle.actor].departed) {
+            effects.stop(particle.effect);
+            return true;
+        }
+        const auto& player = players[particle.actor];
+        const auto& save = player.actor.save();
+        Mat4 placement =
+            PlayerFigure::bodyPlacement(player.capture.body().value_or(player.actor.transform()),
+                                        save, PowerupEffects::of(save.progress().inventory));
+        if (particle.parent != 0) {
+            bool found = false;
+            for (usize i = 0; i < effects.count(); ++i) {
+                if (effects.effect(i).id == particle.parent) {
+                    placement = effects.effect(i).transform();
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                effects.stop(particle.effect);
+                return true;
+            }
+        } else if (!particle.node.empty()) {
+            placement = player.figure->attachment(placement, particle.node).value_or(placement);
+        }
+        effects.placeAt(particle.effect, glm::translate(placement, particle.offset));
+        return false;
+    });
+}
+
 /** All target families share the strike's cosine cone and swept cylinder contacts. */
+void PlayerAttacks::presentStrikeHit(usize index, const MoveStrike& row, const Vec3& at,
+                                     std::span<PlayerRuntime> players, bool sound) {
+    if (!m_resources || index >= players.size()) {
+        return;
+    }
+    ItemArchive* archive = moveEffectsOf(index, players);
+    const ClassStats* stats = m_resources->classes.stats(players[index].actor.save().character);
+    if (archive == nullptr || stats == nullptr || row.hitEffect < 0 ||
+        static_cast<usize>(row.hitEffect) >= stats->moveEffects.size()) {
+        return;
+    }
+    const MoveEffect& effect = stats->moveEffects[static_cast<usize>(row.hitEffect)];
+    if ((effect.flags & 2U) != 0 && m_resources->shake != nullptr) {
+        m_resources->shake->start();
+    }
+    if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
+        m_resources->effects.start(m_resources->device, *archive, effect.tree, at, effect.scale);
+    }
+    if (sound && !effect.sound.empty()) {
+        m_resources->audio.playNamed(effect.sound);
+    }
+}
+
 void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     if (!m_resources.has_value()) {
         return;
     }
+    updateParticles(players);
     for (auto& source : m_strikeSources) {
         for (auto& contact : source.contacts) {
             contact.remaining -= seconds;
@@ -386,7 +555,99 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
             static_cast<usize>(source->row) >= stats->moveStrikes.size()) {
             continue;
         }
-        const MoveStrike& row = stats->moveStrikes[static_cast<usize>(source->row)];
+        MoveStrike row = stats->moveStrikes[static_cast<usize>(source->row)];
+        row.damageType = source->damageType;
+        bool stoppedByPlayer = false;
+        if (source->multiplayer == MultiplayerMode::Hurt && targets.hurt &&
+            (row.damageType & Damage::kMagic) == 0) {
+            for (usize index = 0; index < players.size(); ++index) {
+                auto& player = players[index];
+                if (player.actor.player() == hit.owner || player.life != PlayerLife::Standing ||
+                    player.departed) {
+                    continue;
+                }
+                const Vec3 toward = player.actor.position() - hit.centre;
+                const f32 across = std::hypot(toward.x, toward.z);
+                StrikeHit contact = hit;
+                constexpr f32 kNearShare = 0.3f;
+                constexpr f32 kNearCone = 0.85f;
+                if (!hit.swept && across < kNearShare * (hit.radius + player.actor.radius())) {
+                    contact.arc *= kNearCone;
+                }
+                if (!contact.reaches(player.actor.position(), player.actor.radius(),
+                                     player.actor.height())) {
+                    continue;
+                }
+                constexpr f32 kCoverFrom = 10.0f;
+                if (!hit.swept && across > kCoverFrom &&
+                    playerAreaBlocked(hit.centre, player.actor.followPoint(), targets.fixtures,
+                                      m_resources->world)) {
+                    continue;
+                }
+                constexpr u32 kReflectiveArmor = 0x01020000;
+                const u32 armor =
+                    PowerupEffects::of(player.actor.save().progress().inventory).armor;
+                if (hit.swept && (armor & kReflectiveArmor) != 0) {
+                    m_strikes.hitPlayer(hit.strike, true, hit.from);
+                    m_resources->audio.playNamed("S_RICOCHET");
+                    for (const auto& effect : m_strikeEffects) {
+                        if (effect.strike == hit.strike) {
+                            m_resources->effects.redirect(effect.effect, hit.from,
+                                                          -hit.facing * row.speed);
+                            m_resources->effects.shortenLifetime(effect.effect, 1, 10);
+                        }
+                    }
+                    stoppedByPlayer = true;
+                    break;
+                }
+                if (player.effectGap <= 0) {
+                    constexpr f32 kAreaPush = 0.25f;
+                    Vec3 direction = hit.swept ? hit.facing : Vec3{toward.x, 0, toward.z};
+                    if (!hit.swept && across > 0) {
+                        direction *= kAreaPush / across;
+                    }
+                    u32 flags = row.damageType;
+                    if (!hit.swept && hit.damage < 5) {
+                        constexpr u32 kLightAreaMask = 0x170;
+                        constexpr u32 kNoHitEffect = 0x1000000;
+                        flags = (flags & ~kLightAreaMask) | kNoHitEffect;
+                    }
+                    targets.hurt(index, hit.damage, HurtKind::Blow, {flags, direction});
+                    if ((row.damageType & Damage::kGas) != 0) {
+                        player.effectGap = kShieldHarmEvery;
+                    } else if (hit.damage > 2) {
+                        f32 gap = hit.hitGap;
+                        if (hit.swept) {
+                            const bool passThrough = (row.damageType & powerup::kSuperShot) != 0;
+                            const std::string_view tree =
+                                row.hitEffect >= 0 && static_cast<usize>(row.hitEffect) <
+                                                          stats->moveEffects.size()
+                                    ? stats->moveEffects[static_cast<usize>(row.hitEffect)].tree
+                                    : std::string_view{};
+                            gap = passThrough ? 1.0f
+                                              : PlayerMissiles::hitGap(
+                                                    moveEffectsOf(source->actor, players), tree);
+                        }
+                        player.effectGap = gap;
+                    }
+                }
+                if (hit.swept && (row.damageType & powerup::kSuperShot) != 0 &&
+                    (row.damageType & powerup::kReflect) != 0 && row.hitEffect >= 0 &&
+                    hit.damage > 2) {
+                    presentStrikeHit(source->actor, row, player.actor.position(), players, false);
+                    source->damageType &= ~powerup::kSuperShot;
+                }
+                if (hit.swept && (row.damageType & powerup::kSuperShot) == 0) {
+                    presentStrikeHit(source->actor, row, player.actor.followPoint(), players);
+                    m_strikes.hitPlayer(hit.strike, false, hit.from);
+                    stoppedByPlayer = true;
+                    break;
+                }
+            }
+        }
+        if (stoppedByPlayer) {
+            continue;
+        }
         targets.fixtures.shootScenery(hit.centre, hit.radius);
         for (const MissileTarget& target : strikeTargets(targets)) {
             if (!target.reachedBy(hit)) {
@@ -412,24 +673,7 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
                 contact->remaining = gap;
             }
             strikeTarget(target, hit.damage, row.damageType, owner, players, targets);
-            ItemArchive* archive = moveEffectsOf(source->actor, players);
-            if (archive == nullptr) {
-                continue;
-            }
-            const s32 mark = row.hitEffect;
-            if (mark >= 0 && static_cast<usize>(mark) < stats->moveEffects.size()) {
-                const MoveEffect& effect = stats->moveEffects[static_cast<usize>(mark)];
-                if ((effect.flags & 2U) != 0 && m_resources->shake != nullptr) {
-                    m_resources->shake->start();
-                }
-                if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
-                    m_resources->effects.start(m_resources->device, *archive, effect.tree,
-                                               target.base, effect.scale);
-                }
-                if (!effect.sound.empty()) {
-                    m_resources->audio.playNamed(effect.sound);
-                }
-            }
+            presentStrikeHit(source->actor, row, target.base, players);
         }
     }
     targets.fixtures.settleBlasts(players, targets.fixtureEvents);
@@ -452,17 +696,20 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
         return;
     }
     PlayerActor& actor = players[index].actor;
-    const s32 kind = actor.save().progress().inventory.takePotion();
-    if (kind == 0) {
+    auto& inventory = actor.save().progress().inventory;
+    if (inventory.potions.empty()) {
         return;
     }
+    const s32 stored = inventory.takePotion();
+    const s32 kind = m_resources->arsenal.resolvePotionKind(stored);
     const auto look = static_cast<usize>(std::clamp(kind, 0, 4));
-    const f32 power = m_resources->arsenal.potionPowerOf(actor, kind);
+    const f32 power = m_resources->arsenal.potionPowerOf(actor, stored);
     const f32 size = std::min(PlayerArsenal::kBurstPerPower * power, 1.0f);
     PotionShield shield;
     shield.actor = index;
     shield.radius = kShieldPotency * power;
-    shield.damage = kShieldDamage * damage::colourBonus(actor.save().color, static_cast<u32>(look));
+    shield.damage =
+        kShieldDamage * damage::colourBonus(actor.save().color, static_cast<u32>(stored));
     shield.flags = EnemyHit::kMagic | static_cast<u32>(kind) |
                    damage::magicHeal(experienceLevel(actor.save().experience()));
     shield.secondsLeft = kShieldSeconds;
@@ -687,20 +934,17 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
         for (const s32 id : targets.opponents.enemies().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
             const Vec3 struck = targets.opponents.enemies().positionOf(id);
-            const f32 before = healthOf(kEnemyTargetBase + id, targets);
-            targets.opponents.strikeEnemy(id, shield.damage, shield.flags, struck - at,
-                                          actor.player(), players);
-            healHit(actor.player(), shield.flags, kEnemyTargetBase + id, before, struck, players,
-                    targets);
+            const f32 credit = targets.opponents.strikeEnemy(id, shield.damage, shield.flags,
+                                                             struck - at, actor.player(), players);
+            healHit(actor.player(), shield.flags, credit, struck, players, targets);
         }
         for (const s32 id : targets.opponents.critters().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
             const Vec3 struck = targets.opponents.critters().positionOf(id);
-            const f32 before = healthOf(kCritterTargetBase + id, targets);
-            targets.opponents.strikeCritter(id, shield.damage, shield.flags, struck - at,
-                                            actor.player(), std::nullopt, false, players);
-            healHit(actor.player(), shield.flags, kCritterTargetBase + id, before, struck, players,
-                    targets);
+            const f32 credit =
+                targets.opponents.strikeCritter(id, shield.damage, shield.flags, struck - at,
+                                                actor.player(), std::nullopt, false, players);
+            healHit(actor.player(), shield.flags, credit, struck, players, targets);
         }
         for (const s32 id : targets.opponents.generators().within(at, shield.radius)) {
             targets.opponents.strikeGenerator(id, shield.damage, actor.player());
@@ -712,10 +956,9 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             hit.player = actor.player();
             hit.level = experienceLevel(actor.save().experience());
             hit.direction = *targets.opponents.bosses().position() - at;
-            const f32 before = healthOf(kBossTargetBase, targets);
-            targets.opponents.bosses().hurt(hit);
-            healHit(actor.player(), shield.flags, kBossTargetBase, before,
-                    *targets.opponents.bosses().position(), players, targets);
+            const f32 credit = targets.opponents.bosses().hurt(hit);
+            healHit(actor.player(), shield.flags, credit, *targets.opponents.bosses().position(),
+                    players, targets);
         }
         // Magic leaves the walls, the rocks and every barrel but one holding something alone.
         for (const usize barrel : targets.fixtures.barrels().within(at, shield.radius)) {
@@ -941,9 +1184,26 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     std::erase_if(candidates, [](const MissileTarget& target) {
         return target.id >= kSafeRockTargetBase && target.id < kWallTargetBase;
     });
-    return TargetAssist::select(actor.followPoint(), facing, candidates,
-                                targets.opponents.bosses().view().alive ? TargetAssist::kBossRange
-                                                                        : TargetAssist::kRange,
+    const f32 range =
+        targets.opponents.bosses().view().alive ? TargetAssist::kBossRange : TargetAssist::kRange;
+    const auto ordinary = TargetAssist::select(actor.followPoint(), facing, candidates, range,
+                                               &m_resources->world.collision());
+    if (ordinary || targets.multiplayer != MultiplayerMode::Hurt) {
+        return ordinary;
+    }
+    candidates.clear();
+    {
+        for (usize i = 0; i < targets.players.size(); ++i) {
+            const PlayerRuntime& player = targets.players[i];
+            if (player.actor.player() != actor.player() && player.life == PlayerLife::Standing &&
+                !player.departed) {
+                candidates.push_back({kPlayerTargetBase + static_cast<s32>(i),
+                                      player.actor.position(), player.actor.radius(),
+                                      player.actor.height()});
+            }
+        }
+    }
+    return TargetAssist::select(actor.followPoint(), facing, candidates, range,
                                 &m_resources->world.collision());
 }
 
@@ -977,6 +1237,32 @@ PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong, cons
     return sense.low ? PlayerDeed::MeleeLow : PlayerDeed::Melee;
 }
 
+std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor,
+                                                        const Targets& targets, f32 reach) {
+    std::optional<MissileTarget> nearest;
+    if (targets.multiplayer != MultiplayerMode::Hurt) {
+        return nearest;
+    }
+    for (usize i = 0; i < targets.players.size(); ++i) {
+        const PlayerRuntime& player = targets.players[i];
+        if (player.actor.player() == actor.player() || player.life != PlayerLife::Standing ||
+            player.departed) {
+            continue;
+        }
+        const Vec3 toward = player.actor.position() - actor.position();
+        const f32 length = glm::length(toward);
+        const f32 distance = length - player.actor.radius();
+        if (length > 0 && distance < reach &&
+            glm::dot(toward / length, actor.facing()) >= kGrabCone) {
+            nearest =
+                MissileTarget{kPlayerTargetBase + static_cast<s32>(i), player.actor.position(),
+                              player.actor.radius(), player.actor.height()};
+            reach = distance;
+        }
+    }
+    return nearest;
+}
+
 MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held,
                                      const Targets& targets) const {
     MeleeSense sense;
@@ -985,9 +1271,12 @@ MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held,
         return sense;
     }
     const f32 bias = held ? kHeldReach : 0.0f;
-    const auto target =
+    auto target =
         TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
                              actor.radius() + kStepReach + bias, &m_resources->world.collision());
+    if (!target) {
+        target = meleePlayer(actor, targets, actor.radius() + kStepReach + bias);
+    }
     if (!target) {
         return sense;
     }
@@ -1012,9 +1301,12 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const PlayerAnimator& animator = players[index].figure->animator();
     // The blow lands on whatever is nearest within a step, whichever way it lies: the
     // swing has already turned to it.
-    const auto target =
+    auto target =
         TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
                              actor.radius() + kStepReach, &m_resources->world.collision());
+    if (!target) {
+        target = meleePlayer(actor, targets, actor.radius() + kStepReach);
+    }
     // The swing's sweep brings down the SHOOTFALL scenery within it (combat.c's item query).
     targets.fixtures.shootScenery(actor.position(), actor.radius() + kStepReach);
     if (!target) {
@@ -1052,10 +1344,17 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const Vec3 point = target->base + Vec3{0, target->height * 0.5f, 0};
     const Vec3 direction = target->base - actor.position();
     const s32 id = target->id;
+    if (id >= kPlayerTargetBase) {
+        if (targets.hurt) {
+            targets.hurt(static_cast<usize>(id - kPlayerTargetBase), damage, HurtKind::Burn,
+                         {flags, glm::normalize(direction)});
+        }
+        return;
+    }
     if (strikeSwitch(id, flags)) {
         return;
     }
-    const f32 before = healthOf(id, targets);
+    f32 credit = 0.0f;
     if (id >= kWallTargetBase) {
         targets.fixtures.strikeWall(static_cast<usize>(id - kWallTargetBase), damage, flags);
         if (targets.fixtureEvents.help) {
@@ -1068,15 +1367,15 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         hit.node = target->node;
         Bosses& bosses = targets.opponents.bosses();
         const BossView before = bosses.view();
-        bosses.hurt(hit, id - kBossTargetBase);
+        credit = bosses.hurt(hit, id - kBossTargetBase);
         // A blow a sleeping boss does not take, or the last, tells for three.
         players[index].streak.record(!before.alive || !before.awake || !bosses.view().alive);
     } else if (id >= kCritterTargetBase) {
         const s32 critter = id - kCritterTargetBase;
         const Critters& critters = targets.opponents.critters();
         const bool standing = critters.alive(critter) && !critters.dying(critter);
-        targets.opponents.strikeCritter(critter, damage, flags, direction, actor.player(), point,
-                                        true, players, target->node);
+        credit = targets.opponents.strikeCritter(critter, damage, flags, direction, actor.player(),
+                                                 point, true, players, target->node);
         players[index].streak.record(!standing || !critters.alive(critter) ||
                                      critters.dying(critter));
     } else if (id >= kGeneratorTargetBase) {
@@ -1086,8 +1385,8 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         const s32 enemy = id - kEnemyTargetBase;
         const Enemies& enemies = targets.opponents.enemies();
         const bool standing = enemies.alive(enemy);
-        targets.opponents.strikeEnemy(enemy, damage, flags, direction, actor.player(), players,
-                                      true, point);
+        credit = targets.opponents.strikeEnemy(enemy, damage, flags, direction, actor.player(),
+                                               players, true, point);
         // Only a blow on something taller than the short counts towards the run (hht > 2).
         if (target->height > kLowEnemy) {
             players[index].streak.record(!standing || !enemies.alive(enemy));
@@ -1097,7 +1396,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
                                       targets.fixtureEvents);
         targets.fixtures.settleBlasts(players, targets.fixtureEvents);
     }
-    healHit(actor.player(), flags, id, before, point, players, targets);
+    healHit(actor.player(), flags, credit, point, players, targets);
 }
 
 void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players) {
@@ -1151,11 +1450,20 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         missileTargets.push_back(
             MissileTarget{stop++, box.centre, std::max(box.halfAcross, box.halfAlong), box.height});
     }
+    std::vector<MissilePlayer> missilePlayers;
     for (const auto& player : players) {
         m_resources->arsenal.followCaster(player.actor);
+        if (player.life == PlayerLife::Standing && !player.departed) {
+            constexpr u32 kReflectiveArmor = 0x01020000;
+            const u32 armor = PowerupEffects::of(player.actor.save().progress().inventory).armor;
+            missilePlayers.push_back(
+                {player.actor.player(),
+                 {0, player.actor.position(), player.actor.radius(), player.actor.height()},
+                 (armor & kReflectiveArmor) != 0});
+        }
     }
-    m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
-                                           missileTargets);
+    m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(), missileTargets,
+                                           missilePlayers);
     // A weapon still flying brings down the SHOOTFALL scenery it passes (fn_8005EE18).
     const PlayerMissiles& flying = m_resources->arsenal.missiles();
     for (usize i = 0; i < flying.count(); ++i) {
@@ -1179,6 +1487,21 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
             }
         }
         m_resources->arsenal.presentImpact(impact, playerDistance);
+        if (impact.player >= 0) {
+            const auto player = std::ranges::find_if(players, [&impact](const PlayerRuntime& p) {
+                return p.actor.player() == impact.player;
+            });
+            if (player != players.end() && player->effectGap <= 0 && targets.hurt) {
+                targets.hurt(
+                    static_cast<usize>(player - players.begin()), impact.stun ? 0 : impact.damage,
+                    impact.stun ? HurtKind::QuietBlow : HurtKind::Blow,
+                    {impact.flags | (impact.stun ? PlayerImpact::kStun : 0), impact.direction});
+                if (impact.damage > 2) {
+                    player->effectGap = impact.playerHitGap;
+                }
+            }
+            continue;
+        }
         if (impact.potion != 0) {
             beginPotion(impact);
             continue;
@@ -1197,7 +1520,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         if (strikeSwitch(impact.target, impact.flags)) {
             continue;
         }
-        const f32 before = healthOf(impact.target, targets);
+        f32 credit = 0.0f;
         if (impact.target >= kWallTargetBase) {
             targets.fixtures.strikeWall(static_cast<usize>(impact.target - kWallTargetBase),
                                         impact.damage, impact.flags);
@@ -1219,7 +1542,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                     hit.level = experienceLevel(actor.save().experience());
                 }
             }
-            targets.opponents.bosses().hurt(hit, impact.target - kBossTargetBase);
+            credit = targets.opponents.bosses().hurt(hit, impact.target - kBossTargetBase);
         } else if (impact.target >= kCritterTargetBase) {
             Vec3 direction{0.0f, 0.0f, 1.0f};
             for (const PlayerRuntime& runtime : players) {
@@ -1229,9 +1552,9 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                     direction.y = 0.0f;
                 }
             }
-            targets.opponents.strikeCritter(impact.target - kCritterTargetBase, impact.damage,
-                                            impact.flags, direction, impact.owner, impact.position,
-                                            false, players, impact.node);
+            credit = targets.opponents.strikeCritter(
+                impact.target - kCritterTargetBase, impact.damage, impact.flags, direction,
+                impact.owner, impact.position, false, players, impact.node);
         } else if (impact.target >= kGeneratorTargetBase) {
             targets.opponents.strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage,
                                               impact.owner, players);
@@ -1245,16 +1568,15 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                     direction.y = 0.0f;
                 }
             }
-            targets.opponents.strikeEnemy(impact.target - kEnemyTargetBase, impact.damage,
-                                          impact.flags, direction, impact.owner, players, false,
-                                          impact.position);
+            credit = targets.opponents.strikeEnemy(impact.target - kEnemyTargetBase, impact.damage,
+                                                   impact.flags, direction, impact.owner, players,
+                                                   false, impact.position);
         } else if (impact.target >= 0) {
             targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
                                           impact.owner, players, targets.fixtureEvents);
             targets.fixtures.settleBlasts(players, targets.fixtureEvents);
         }
-        healHit(impact.owner, impact.flags, impact.target, before, impact.position, players,
-                targets);
+        healHit(impact.owner, impact.flags, credit, impact.position, players, targets);
     }
     updatePotions(seconds, players, targets);
     updateItems(seconds, players, targets);
@@ -1278,15 +1600,14 @@ void PlayerAttacks::shootPotion(const MissileImpact& impact, std::span<PlayerRun
         if (players[i].actor.player() != impact.owner) {
             continue;
         }
-        const s32 colour = *kind != 0 ? *kind : m_nextPotionKind;
+        const s32 colour = m_resources->arsenal.resolvePotionKind(*kind);
         MissileImpact own;
         own.owner = impact.owner;
         own.position = impact.position;
         own.potion = colour;
-        own.potency =
-            kShotMagicShare * m_resources->arsenal.potionPowerOf(players[i].actor, colour);
+        own.potency = kShotMagicShare * m_resources->arsenal.potionPowerOf(players[i].actor, *kind);
         own.damage = kPotionDamage *
-                     damage::colourBonus(players[i].actor.save().color, static_cast<u32>(colour));
+                     damage::colourBonus(players[i].actor.save().color, static_cast<u32>(*kind));
         own.flags = damage::magicHeal(experienceLevel(players[i].actor.save().experience()));
         m_resources->arsenal.burstPotion(colour, impact.position, own.potency, true);
         beginPotion(own);
@@ -1310,10 +1631,7 @@ void PlayerAttacks::shatterPotion(s32 kind, const Vec3& position) {
     }
     // start_magic(-1, ..., 0.8): power = 20 * 0.8, damage = 40 * 0.8.
     // Ownerless magic has neither a player's color/level bonus nor AudioPotion.
-    if (kind == 0) {
-        kind = m_nextPotionKind;
-        m_nextPotionKind = m_nextPotionKind % 4 + 1;
-    }
+    kind = m_resources->arsenal.resolvePotionKind(kind);
     MissileImpact impact;
     impact.owner = -1;
     impact.position = position;
@@ -1438,23 +1756,22 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                         hit.level = experienceLevel(player.actor.save().experience());
                     }
                 }
-                const f32 before = healthOf(target.id, targets);
-                targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
-                healHit(byPlayer, flags, target.id, before, target.base, players, targets);
+                const f32 credit =
+                    targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
+                healHit(byPlayer, flags, credit, target.base, players, targets);
             } else if (target.id >= kCritterTargetBase) {
                 const s32 id = target.id - kCritterTargetBase;
-                const f32 before = healthOf(target.id, targets);
-                targets.opponents.strikeCritter(id, power, flags, direction, byPlayer, target.base,
-                                                false, players);
-                healHit(byPlayer, flags, target.id, before, target.base, players, targets);
+                const f32 credit = targets.opponents.strikeCritter(
+                    id, power, flags, direction, byPlayer, target.base, false, players);
+                healHit(byPlayer, flags, credit, target.base, players, targets);
             } else if (target.id >= kGeneratorTargetBase) {
                 targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power, byPlayer,
                                                   players);
             } else if (target.id >= kEnemyTargetBase) {
                 const s32 id = target.id - kEnemyTargetBase;
-                const f32 before = healthOf(target.id, targets);
-                targets.opponents.strikeEnemy(id, power, flags, direction, byPlayer, players);
-                healHit(byPlayer, flags, target.id, before, target.base, players, targets);
+                const f32 credit =
+                    targets.opponents.strikeEnemy(id, power, flags, direction, byPlayer, players);
+                healHit(byPlayer, flags, credit, target.base, players, targets);
             } else {
                 targets.fixtures.strikeBarrel(static_cast<usize>(target.id), power, byPlayer,
                                               players, targets.fixtureEvents);
@@ -1480,34 +1797,18 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                   [](const PotionBurst& burst) { return burst.elapsed >= burst.duration; });
 }
 
-f32 PlayerAttacks::healthOf(s32 id, const Targets& targets) {
-    if (id >= kSafeRockTargetBase) {
-        return 0.0f;
-    }
-    if (id >= kBossTargetBase) {
-        return targets.opponents.bosses().view().health;
-    }
-    if (id >= kCritterTargetBase) {
-        return targets.opponents.critters().healthOf(id - kCritterTargetBase);
-    }
-    if (id >= kEnemyTargetBase && id < kGeneratorTargetBase) {
-        return targets.opponents.enemies().healthOf(id - kEnemyTargetBase);
-    }
-    return 0.0f;
-}
-
-void PlayerAttacks::healHit(s32 owner, u32 flags, s32 id, f32 before, const Vec3& at,
+void PlayerAttacks::healHit(s32 owner, u32 flags, f32 credit, const Vec3& at,
                             std::span<PlayerRuntime> players, const Targets& targets) {
     if (damage::heals(flags)) {
-        healFrom(owner, before - healthOf(id, targets), at, players, targets);
+        healFrom(owner, credit, at, players, targets);
     }
 }
 
 /** From level 75 a hit that carries DMG_HEAL (a caster's magic from 25, the healing weapon)
- * heals as it harms (do_heal_players, damage_enemy and CritterDamage): they take a tenth of
- * what it took, more by 0.016 a level past 75, and every other standing player within their
- * magic's power half that, none past their most; it shows over what was harmed and teaches
- * them so. */
+ * heals from its family's credited damage (do_heal_players, damage_enemy and CritterDamage),
+ * not the final health loss: a tenth, more by 0.016 a level past 75. Standing partners within
+ * the caster's magic power get half that, none past their most; it shows over the target and
+ * teaches them so. */
 void PlayerAttacks::healFrom(s32 owner, f32 harm, const Vec3& at, std::span<PlayerRuntime> players,
                              const Targets& targets) {
     if (!m_resources.has_value() || harm <= 0.0f) {
@@ -1537,7 +1838,7 @@ void PlayerAttacks::healFrom(s32 owner, f32 harm, const Vec3& at, std::span<Play
     const f32 reach = m_resources->arsenal.magicPowerOf(caster->actor);
     for (PlayerRuntime& other : players) {
         const Vec3 apart = other.actor.position() - caster->actor.position();
-        if (&other != &*caster && other.life == PlayerLife::Standing &&
+        if (&other != &*caster && other.life == PlayerLife::Standing && !other.departed &&
             std::hypot(apart.x, apart.z) < reach) {
             heal(other, given * kHealingOthers);
         }

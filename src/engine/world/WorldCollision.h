@@ -113,7 +113,8 @@ public:
                       std::vector<WallContact>* contacts = nullptr) const;
     /** Sweeps a cylinder horizontally, stopping at the first wall and sliding along it.
      * `bottom` and `top` are world-space probe heights; the destination's y is unchanged.
-     * Unlike overlap correction, crossing a thin wall cannot select its far side. */
+     * Faces block approaches from their normal side only. Opposing faces make a wall
+     * solid on both sides; crossing a thin wall cannot select its far side. */
     Vec3 sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top) const;
 
 private:

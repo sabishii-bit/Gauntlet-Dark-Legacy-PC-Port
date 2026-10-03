@@ -4,15 +4,17 @@
 #include <format>
 
 namespace gdl::game {
-bool PlayerFamiliar::bind(RenderDevice& device, ItemArchive& archive, s32 level,
-                          const Vec3& offset) {
+bool PlayerFamiliar::bind(RenderDevice& device, ItemArchive& archive, s32 level, const Vec3& offset,
+                          std::span<TextureSet* const> lenders) {
     m_tier = tierFor(level);
-    return bindTree(device, archive, m_tier > 0 ? std::format("FAMILIAR{}", m_tier) : "", offset);
+    return bindTree(device, archive, m_tier > 0 ? std::format("FAMILIAR{}", m_tier) : "", offset,
+                    lenders);
 }
 bool PlayerFamiliar::bindTree(RenderDevice& device, ItemArchive& archive, std::string_view name,
-                              const Vec3& offset) {
+                              const Vec3& offset, std::span<TextureSet* const> lenders) {
     m_tree = nullptr;
     m_model.clear();
+    m_textures.clear();
     m_player.stop();
     m_offset = offset;
     m_frames = 0;
@@ -21,11 +23,12 @@ bool PlayerFamiliar::bindTree(RenderDevice& device, ItemArchive& archive, std::s
         return false;
     }
     const auto& tree = archive.trees.tree(*index);
-    if (tree.sequences.empty() || !m_model.bind(tree, archive.models, archive.textures, device)) {
+    if (tree.sequences.empty() ||
+        !m_model.bind(tree, archive.models, archive.textures, device, lenders)) {
         return false;
     }
     m_tree = &tree;
-    m_textures.bind(archive.trees.textureAnimations(), archive.textures, device);
+    m_textures.bind(archive.trees.textureAnimations(), archive.textures, device, lenders);
     m_player.start(tree.sequences[0], 0);
     update(0, false);
     return true;

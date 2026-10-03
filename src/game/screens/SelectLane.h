@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
@@ -93,7 +94,7 @@ public:
     struct Frame {
         bool othersActive = false; ///< another lane holds a player
         bool othersSelecting = false;
-        u32 slotsInUse = 0; ///< save slots other lanes loaded
+        std::vector<usize> slotsInUse; ///< save slots other lanes hold or are accessing
     };
 
     void reset(s32 index, LaneServices* services);

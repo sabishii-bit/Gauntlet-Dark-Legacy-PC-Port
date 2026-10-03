@@ -185,6 +185,48 @@ TEST_CASE("a player joining a game in progress finds the party locked in beside 
     CHECK(scene.lane(1).lockedIn());
 }
 
+TEST_CASE("selection entry keeps every simultaneous joining Start without advancing existing lanes",
+          "[game][select][multiplayer][assets]") {
+    // check_active_players (0x8008FED4) collects every inactive controller before
+    // init_player_select(1); the screen transition must not lose the later presses.
+    test::FakeRenderDevice device;
+    const Fixture f("select-simultaneous-join");
+    CharacterSave existing;
+    existing.name = "HERE";
+    PlayerSelectScene scene;
+    bool inTower = false;
+    SECTION("from the tower") {
+        const std::array party{PartyMember{2, existing, 1, false, 0, {14}}};
+        REQUIRE(scene.open(device, f.context(), -1, party));
+        inTower = true;
+    }
+    SECTION("from the title") {
+        REQUIRE(scene.open(device, f.context(), 2));
+    }
+    PlayerSelectScene::Inputs joining{};
+    for (auto& input : joining) {
+        input.start = true;
+        input.select = true;
+    }
+    scene.join(joining);
+    CHECK(scene.lane(0).state() == SelectLane::State::TopMenu);
+    CHECK(scene.lane(1).state() == SelectLane::State::TopMenu);
+    CHECK(scene.lane(3).state() == SelectLane::State::TopMenu);
+    if (inTower) {
+        CHECK(scene.lane(2).lockedIn());
+        REQUIRE(scene.party().size() == 1);
+        CHECK(scene.party()[0].slot == 1);
+        CHECK(scene.party()[0].helpHeard == std::vector<s32>{14});
+    } else {
+        CHECK(scene.lane(2).state() == SelectLane::State::TopMenu);
+        CHECK(scene.party().empty());
+    }
+    CHECK(scene.time() == 0);
+    scene.close();
+    scene.join(joining);
+    CHECK_FALSE(scene.lane(0).active());
+}
+
 TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-greeting");
@@ -227,7 +269,7 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
 }
 
 TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkpoints",
-          "[game][select][post-shop][assets]") {
+          "[game][select][post-shop][assets][multiplayer]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop");
     PlayerSelectScene scene;
@@ -238,16 +280,27 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
     fallen.name = "FALLEN";
     const std::array party{PartyMember{0, alive, std::nullopt, false, 0, {14, 27}},
                            PartyMember{2, alive, 1}, PartyMember{3, fallen, 2, true}};
+    SaveSlots slots;
+    REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
+    REQUIRE(slots.write(2, fallen));
     REQUIRE(scene.openAfterLevel(device, f.context(), party));
     CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
     CHECK(scene.lane(2).state() == SelectLane::State::SaveMenu);
     CHECK(scene.lane(3).lockedIn());
     CHECK_FALSE(scene.lane(1).active());
+    scene.step(1, player(3, true, true, true, true));
+    CHECK(scene.lane(3).lockedIn());
     CHECK(scene.step(60, player(0, false, true)) == SelectOutcome::Running);
     CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
     scene.step(1, player(0, true)); // Done; the other survivor still owns its menu.
     CHECK(scene.lane(0).lockedIn());
+    auto restart = player(0, false, false, true);
+    restart[3].start = true;
+    scene.step(1, restart);
+    CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
+    CHECK(scene.lane(3).lockedIn());
     CHECK(scene.step(60, nobody()) == SelectOutcome::Running);
+    scene.step(1, player(0, true));
     scene.step(1, player(2, true));
     SelectOutcome outcome = SelectOutcome::Running;
     for (s32 i = 0; i <= PlayerSelectScene::kIdleFrames; ++i) {
@@ -260,7 +313,11 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
     CHECK(result[0].helpHeard == std::vector<s32>{14, 27});
     CHECK(result[1].slot == 1);
     CHECK(result[2].fallen);
+    CHECK(result[2].slot == 2);
     CHECK(result[2].save.toJson() == fallen.toJson());
+    CharacterSave checkpoint;
+    REQUIRE(scene.saves().load(2, checkpoint));
+    CHECK(checkpoint.toJson() == fallen.toJson());
 }
 
 TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",

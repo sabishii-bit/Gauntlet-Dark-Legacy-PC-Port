@@ -64,15 +64,19 @@ bool MissileTarget::touches(const Vec3& point, f32 reach) const {
 }
 
 bool MissileTarget::reachedBy(const StrikeHit& strike) const {
+    if (strike.radius <= 0 || strike.damage <= 0) {
+        return false;
+    }
     if (surface.empty()) {
         return strike.reaches(base, radius, height);
     }
-    constexpr f32 kStep = 0.25f;
+    constexpr f32 kMaxStep = 0.25f;
+    // Thin sight probes must not leap over a face between the sampled positions.
+    const f32 step = std::min(kMaxStep, strike.radius * 0.5f);
     const auto steps =
-        strike.swept
-            ? std::max(
-                  1, static_cast<s32>(std::ceil(glm::distance(strike.from, strike.centre) / kStep)))
-            : 1;
+        strike.swept ? std::max(1, static_cast<s32>(
+                                       std::ceil(glm::distance(strike.from, strike.centre) / step)))
+                     : 1;
     for (s32 i = 0; i <= steps; ++i) {
         const Vec3 origin = strike.swept ? glm::mix(strike.from, strike.centre,
                                                     static_cast<f32>(i) / static_cast<f32>(steps))

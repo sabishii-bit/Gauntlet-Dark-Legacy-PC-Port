@@ -35,8 +35,8 @@ std::optional<usize> PartyCollision::resolve(std::span<const PlayerRuntime> play
         const PlayerRuntime& other = players[i];
         // Only the standing count, and not one carried off or hung on a partner (hud_flags
         // 0x20).
-        if (i == mover || other.life != PlayerLife::Standing || other.capture.held() ||
-            other.combo.riding) {
+        if (i == mover || other.life != PlayerLife::Standing || other.departed ||
+            other.capture.held() || other.combo.riding) {
             continue;
         }
         const Vec3& centre = other.actor.position();
@@ -74,10 +74,11 @@ std::optional<usize> PartyCollision::resolve(std::span<const PlayerRuntime> play
     return nearest;
 }
 
-void PartyCollision::step(std::span<PlayerRuntime> players, usize mover, const Vec3& from,
-                          f32 seconds, const WorldCollision* collision) {
+std::optional<usize> PartyCollision::step(std::span<PlayerRuntime> players, usize mover,
+                                          const Vec3& from, f32 seconds,
+                                          const WorldCollision* collision) {
     if (mover >= players.size()) {
-        return;
+        return std::nullopt;
     }
     PlayerActor& actor = players[mover].actor;
     const Vec3 meant = actor.position();
@@ -89,7 +90,9 @@ void PartyCollision::step(std::span<PlayerRuntime> players, usize mover, const V
         } else {
             actor.place(to);
         }
+        return other;
     }
+    return std::nullopt;
 }
 
 } // namespace gdl::game

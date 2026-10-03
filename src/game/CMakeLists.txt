@@ -44,6 +44,7 @@ add_library(game STATIC
     app/AttractSequencer.h
     app/AttractSequencer.cpp
     config/GameConfig.h
+    config/MultiplayerMode.h
     config/GameConfig.cpp
     players/ClassData.h
     players/MagicPerks.h
@@ -55,6 +56,8 @@ add_library(game STATIC
     players/Progression.cpp
     players/CharacterSave.h
     players/CharacterSave.cpp
+    players/NameCheats.h
+    players/NameCheats.cpp
     players/TurboMeter.h
     players/TurboMeter.cpp
     players/TurboMove.cpp
@@ -70,6 +73,8 @@ add_library(game STATIC
     players/ItemPickup.cpp
     players/PickupVoices.cpp
     combat/Damage.h
+    combat/BodyContact.h
+    combat/BodyContact.cpp
     combat/Damage.cpp
     combat/DamageTypes.cpp
     screens/PlayerPowerups.h

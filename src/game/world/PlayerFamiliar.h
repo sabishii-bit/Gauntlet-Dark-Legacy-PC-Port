@@ -20,7 +20,8 @@ public:
         }
         return level >= 30 ? 1 : 0;
     }
-    bool bind(RenderDevice& device, ItemArchive& archive, s32 level, const Vec3& offset);
+    bool bind(RenderDevice& device, ItemArchive& archive, s32 level, const Vec3& offset,
+              std::span<TextureSet* const> lenders = {});
     bool bound() const { return m_tree != nullptr; }
     void update(f32 seconds, bool attack);
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
@@ -29,7 +30,7 @@ public:
 
 private:
     bool bindTree(RenderDevice& device, ItemArchive& archive, std::string_view name,
-                  const Vec3& offset);
+                  const Vec3& offset, std::span<TextureSet* const> lenders);
     const TreeInfo* m_tree = nullptr;
     TreeModel m_model;
     TreePose m_pose;

@@ -87,6 +87,8 @@ add_library(engine STATIC
     audio/StreamSource.h
     audio/AdsStream.h
     audio/AdsStream.cpp
+    audio/MusicDeclicker.cpp
+    audio/MusicDeclicker.h
     audio/StreamPlaylist.cpp
     audio/StreamPlaylist.h
     assets/PngImage.h

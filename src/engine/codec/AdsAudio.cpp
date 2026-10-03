@@ -109,7 +109,6 @@ void AdsAudioDecoder::decodeRound(std::span<const u8> round, std::vector<f32>& i
     for (usize c = 0; c < channels; ++c) {
         m_channels[c].decode(round.subspan(c * m_info.blockSize, m_info.blockSize), m_scratch);
     }
-    interleavedOut.reserve(interleavedOut.size() + samplesPerChannel * channels);
     for (usize i = 0; i < samplesPerChannel; ++i) {
         for (usize c = 0; c < channels; ++c) {
             interleavedOut.push_back(static_cast<f32>(m_scratch[c * samplesPerChannel + i]) *

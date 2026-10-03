@@ -138,13 +138,14 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
                       std::span<const LevelEnemy> roster, s32 realm, ItemArchive* realmItems) {
     clear();
     m_scales = scales;
+    m_players = players;
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     for (const ItemInstance& instance : layout.itemInstances()) {
         if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
             continue;
         }
         const ItemInfo& info = infos[static_cast<usize>(instance.info)];
-        if (info.type != ItemInfo::kGenerator || !shownToParty(instance.minPlayers, players)) {
+        if (info.type != ItemInfo::kGenerator) {
             continue;
         }
         const bool special = info.name == "SPECIAL" && (realm == 5 || realm == 6);
@@ -177,6 +178,10 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             continue;
         }
         Generator generator;
+        generator.minPlayers = instance.minPlayers;
+        generator.presence = shownToParty(instance.minPlayers, players)
+                                 ? Generator::Presence::Shown
+                                 : Generator::Presence::Hidden;
         generator.kind = kind;
         // The strength is also the state it stands in: a strength-one generator is one state
         // from gone and looks it.
@@ -226,6 +231,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.box.halfAlong = body->zSize > 0.0f ? body->zSize : body->radius;
         generator.box.height = body->height;
         generator.box.cylinderRadius = body->collisionType == 1 ? body->radius : 0.0f;
+        generator.box.solid = generator.presence == Generator::Presence::Shown;
         generator.countdown = 0;
         m_generators.push_back(std::move(generator));
     }
@@ -294,15 +300,38 @@ void Generators::clear() {
     m_bodies.clear();
 }
 
+void Generators::updatePresence(Generator& generator, bool seen) const {
+    // do_items' minoff gate changes an existing item's presence offscreen. A hidden
+    // placement encountered on screen is suppressed for the rest of the level.
+    if (generator.presence == Generator::Presence::Hidden) {
+        if (seen) {
+            generator.presence = Generator::Presence::Suppressed;
+        } else if (shownToParty(generator.minPlayers, m_players)) {
+            generator.presence = Generator::Presence::Shown;
+        }
+    } else if (generator.presence == Generator::Presence::Shown && !seen &&
+               !shownToParty(generator.minPlayers, m_players)) {
+        generator.presence = Generator::Presence::Hidden;
+    }
+    generator.box.solid = generator.presence == Generator::Presence::Shown && generator.state > 0;
+}
+
 void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                         std::span<const Obstacle> obstacles, bool timeStopped) {
     if (ticks <= 0) {
         return;
     }
-    // How many of each generator's are still about.
+    // Refresh the entire obstacle roster before any generator attempts a birth.
+    for (Generator& generator : m_generators) {
+        const bool seen = generator.boss || !m_view.has_value() ||
+                          m_view->sees(generator.position, generator.viewRadius);
+        updatePresence(generator, seen);
+    }
+    // enemy_dies calls uncouple_enemy before the death animation. Only living
+    // offspring occupy the generator's quota, not their lingering corpses.
     std::vector<s32> out(m_generators.size(), 0);
     for (s32 id = 0; id < Enemies::kMost; ++id) {
-        if (!enemies.alive(id) && !enemies.dying(id)) {
+        if (!enemies.alive(id)) {
             continue;
         }
         const s32 generator = enemies.generatorOf(id);
@@ -312,17 +341,27 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     }
     for (usize g = 0; g < m_generators.size(); ++g) {
         Generator& generator = m_generators[g];
+        const bool seen = generator.boss || !m_view.has_value() ||
+                          m_view->sees(generator.position, generator.viewRadius);
+        if (generator.presence != Generator::Presence::Shown) {
+            continue;
+        }
         if (generator.bossFigure != nullptr && generator.state > 0) {
             generator.bossFigure->update(static_cast<f32>(ticks) / 60.0f);
         }
         if (generator.state <= 0 || generator.tier <= 0 || generator.most <= 0) {
             continue;
         }
+        // do_items checks the living brood quota before generate_now ticks its timer.
+        // A full brood freezes the remaining wait; a death frees a slot, not a free birth.
+        if (out[g] >= generator.most) {
+            continue;
+        }
         if (generator.countdown > 0) {
             generator.countdown -= ticks;
             continue;
         }
-        if (timeStopped || out[g] >= generator.most) {
+        if (timeStopped) {
             continue;
         }
         // It breeds only on screen, by twice its size, and with a player not too far off
@@ -332,8 +371,6 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             near = near || (!view.hidden &&
                             glm::distance(view.position, generator.position) <= kActiveDistance);
         }
-        const bool seen = generator.boss || !m_view.has_value() ||
-                          m_view->sees(generator.position, generator.viewRadius);
         if (!near || !seen) {
             continue;
         }
@@ -352,7 +389,7 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.generator = static_cast<s32>(g);
         std::vector<Obstacle> birthObstacles{obstacles.begin(), obstacles.end()};
         for (usize other = 0; other < m_generators.size(); ++other) {
-            if (other != g && m_generators[other].state > 0) {
+            if (other != g && standing(static_cast<s32>(other))) {
                 birthObstacles.push_back(m_generators[other].box);
             }
         }
@@ -390,7 +427,7 @@ std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, s32 byPlayer
         return std::nullopt;
     }
     Generator& generator = m_generators[static_cast<usize>(id)];
-    if (generator.state <= 0) {
+    if (generator.state <= 0 || generator.presence != Generator::Presence::Shown) {
         return std::nullopt;
     }
     const f32 amount = std::max(power - generator.armor, byPlayer >= 0 ? 1.0f : 0.0f);
@@ -433,7 +470,7 @@ std::optional<s32> Generators::struckBy(const Vec3& from, const Vec3& to, f32 ra
     const f32 length = glm::length(sweep);
     for (usize g = 0; g < m_generators.size(); ++g) {
         const Generator& generator = m_generators[g];
-        if (generator.state <= 0) {
+        if (generator.state <= 0 || generator.presence != Generator::Presence::Shown) {
             continue;
         }
         const f32 reach = std::max(generator.box.halfAcross, generator.box.halfAlong);
@@ -459,7 +496,7 @@ std::vector<s32> Generators::within(const Vec3& centre, f32 radius) const {
     std::vector<s32> out;
     for (usize g = 0; g < m_generators.size(); ++g) {
         const Generator& generator = m_generators[g];
-        if (generator.state <= 0) {
+        if (generator.state <= 0 || generator.presence != Generator::Presence::Shown) {
             continue;
         }
         const f32 reach = std::max(generator.box.halfAcross, generator.box.halfAlong);
@@ -474,7 +511,7 @@ std::vector<s32> Generators::within(const Vec3& centre, f32 radius) const {
 std::vector<Obstacle> Generators::obstacles() const {
     std::vector<Obstacle> out;
     for (const Generator& generator : m_generators) {
-        if (generator.state > 0) {
+        if (generator.state > 0 && generator.presence == Generator::Presence::Shown) {
             out.push_back(generator.box);
         }
     }
@@ -484,7 +521,8 @@ std::vector<Obstacle> Generators::obstacles() const {
 std::vector<Obstacle> Generators::enemyObstacles() const {
     std::vector<Obstacle> out;
     for (const Generator& generator : m_generators) {
-        if (generator.state > 0 && generator.kind != kWormKind) {
+        if (generator.state > 0 && generator.presence == Generator::Presence::Shown &&
+            generator.kind != kWormKind) {
             out.push_back(generator.box);
         }
     }
@@ -493,6 +531,9 @@ std::vector<Obstacle> Generators::enemyObstacles() const {
 
 void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const Generator& generator : m_generators) {
+        if (generator.presence != Generator::Presence::Shown) {
+            continue;
+        }
         if (generator.boss) {
             if (generator.state > 0 && generator.bossFigure != nullptr) {
                 generator.bossFigure->draw(device, clip, lighting);
@@ -514,7 +555,8 @@ void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
 
 bool Generators::standing(s32 id) const {
     return id >= 0 && static_cast<usize>(id) < m_generators.size() &&
-           m_generators[static_cast<usize>(id)].state > 0;
+           m_generators[static_cast<usize>(id)].state > 0 &&
+           m_generators[static_cast<usize>(id)].presence == Generator::Presence::Shown;
 }
 
 bool Generators::bodyShown(s32 id) const {
@@ -522,6 +564,9 @@ bool Generators::bodyShown(s32 id) const {
         return false;
     }
     const Generator& generator = m_generators[static_cast<usize>(id)];
+    if (generator.presence != Generator::Presence::Shown) {
+        return false;
+    }
     if (generator.boss) {
         return generator.state > 0 && generator.bossFigure != nullptr &&
                generator.bossFigure->hasFigure();
