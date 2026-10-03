@@ -1313,6 +1313,101 @@ TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
 
 constexpr u32 kKnockOver = 0x100; ///< a hit that knocks a great one over
 
+TEST_CASE("ordinary critter movement sweeps player collision volumes in three dimensions",
+          "[combatant][critter-body-contact]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "floorOffset":2,"originOffset":[0,4,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 3;
+    player.position = {1, 0, 0};
+    player.collisionHeight = 6.0f;
+    f32 seconds = 1.0f / 30;
+    bool blocked = true;
+    SECTION("same-floor inward movement stops") {}
+    SECTION("a player on another floor does not obstruct it") {
+        player.position.y = 20;
+        blocked = false;
+    }
+    SECTION("a step leaving an existing overlap is allowed") {
+        player.position.x = -1;
+        blocked = false;
+    }
+    SECTION("a long step cannot pass through a player") {
+        player.position.x = 5;
+        seconds = 1;
+    }
+    SECTION("wall radius is horizontal while radius is vertical") {
+        player.position.x = 2.5f;
+        blocked = false;
+    }
+    SECTION("native collision centre overrides visual height") {
+        player.position.y = -12;
+        player.collisionHeight = 18.0f;
+    }
+    SECTION("invisible players retain physical contact") {
+        player.invisible = true;
+    }
+    SECTION("hidden players do not obstruct it") {
+        player.hidden = true;
+        blocked = false;
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, seconds, std::span{&player, 1});
+    CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f * seconds));
+}
+
+TEST_CASE("node-based critters use solid animated parts for player movement contact",
+          "[combatant][critter-body-contact]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "typeFlags":256,"colCount":1}],
+      "nodes":[{"nodeName":"BODY","position":[5,6,0],"radius":1,"flags":8}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    REQUIRE(assets.data.parts().size() == 1);
+    REQUIRE(assets.data.typeFlags() == 256);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 1;
+    player.position = {6, 0, 0};
+    player.collisionHeight = 6.0f;
+    bool blocked = true;
+    SECTION("the authored solid node stops the movement") {}
+    SECTION("no artificial body fallback fills the gap behind that node") {
+        player.position.x = 1;
+        blocked = false;
+    }
+    SECTION("a player above that node is not in contact") {
+        player.position.y = 20;
+        blocked = false;
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, std::span{&player, 1});
+    CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f / 30));
+}
+
 TEST_CASE("golem knockback resistance remains a family rule not a shared actor special case",
           "[game][combatant]") {
     s32 readyInterrupt = 60;

@@ -3,6 +3,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/BodyContact.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/EnemyMind.h"
 namespace gdl::game {
@@ -92,10 +93,36 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         critter.position = to;
         return;
     }
-    // Never onto a player: it stops against them.
+    // CritterCollidePlayers sweeps collision centres, not floor positions. An
+    // overlapping body may move outward; players on another floor do not block it.
+    const Vec3 offset = to - critter.position;
+    const auto touchesPlayer = [&](const EnemyView& player) {
+        const Vec3 centre =
+            player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
+        constexpr u32 kNodeMovement = 0x100;
+        if ((critter.definition->typeFlags() & kNodeMovement) != 0) {
+            const auto parts = critter.definition->parts();
+            for (usize i = 0; i < parts.size(); ++i) {
+                const auto& part = parts[i];
+                if ((part.flags & CritterPart::kSolid) == 0 || critter.hitNodes[i].health <= 0 ||
+                    !nodeAvailable(critter, part.node)) {
+                    continue;
+                }
+                const Vec3 from{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
+                if (movementTouchesBody(from, from + offset, centre, player.radius + part.radius,
+                                        0.5f * player.height + part.radius)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        const Vec3 from = partPosition(critter, {});
+        return movementTouchesBody(from, from + offset, centre,
+                                   player.radius + critter.definition->wallRadius(),
+                                   0.5f * player.height + critter.definition->radius());
+    };
     for (const EnemyView& other : players) {
-        if (!other.hidden &&
-            flatDistance(other.position, to) < other.radius + critter.definition->radius()) {
+        if (!other.hidden && touchesPlayer(other)) {
             return;
         }
     }
