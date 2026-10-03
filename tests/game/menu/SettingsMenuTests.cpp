@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -136,12 +137,50 @@ TEST_CASE("options omit generic instructions but retain actionable notices", "[s
     f.down();
     f.select();
     f.select();
-    CHECK(footerDrawn()); // difficulty applies next level
+    CHECK_FALSE(footerDrawn()); // no unsolicited difficulty footer
     f.back();
     f.back();
     f.down();
     f.select();
     CHECK_FALSE(footerDrawn()); // compass
+}
+
+TEST_CASE("multiplayer labels and both cursor representations fit the parchment",
+          "[settings][menu]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = 33; c <= 126; ++c) {
+        glyphs.push_back({c, 24, 0, 0});
+    }
+    const auto font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
+    f.painter.setFont(&font, &f.texture);
+    f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment());
+    f.down();
+    f.select();
+    f.down();
+    f.select();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Multiplayer);
+    const auto& definition = f.menu.menu().definition();
+    CHECK(definition.scale <= 0.65f);
+    CHECK(definition.cursorScale == definition.scale);
+    CHECK(f.menu.menu().iconScale() == OptionMenu::iconPixelsPerUnit({}) * definition.scale);
+    for (const auto& item : definition.items) {
+        CHECK(definition.x + f.painter.measure(item.text + " ~", definition.scale) <= 512 - 64);
+    }
+    test::FakeRenderDevice device;
+    test::FakeTexture arrows{32, 32};
+    MenuTextures textures;
+    textures.arrows = &arrows;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    const auto arrow = std::ranges::find_if(
+        device.draws, [&](const auto& draw) { return draw.texture == &arrows; });
+    REQUIRE(arrow != device.draws.end());
+    const Vec2 size = test::maxCorner(*arrow) - test::minCorner(*arrow);
+    CHECK(std::abs(size.x - 22 * definition.scale) < 0.001f);
+    CHECK(std::abs(size.y - 20 * definition.scale) < 0.001f);
 }
 
 TEST_CASE("difficulty and compass options survive a configuration save", "[settings]") {

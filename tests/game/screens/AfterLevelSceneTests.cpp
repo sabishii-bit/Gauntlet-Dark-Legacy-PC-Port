@@ -52,6 +52,13 @@ TEST_CASE("only the end of H4 selects Final Stats in the production screen", "[s
     }
     REQUIRE(scene.open(device, context, party, {}, {}, "H4", ShopVisit::Shop));
     CHECK(scene.session().visit() == ShopVisit::Shop);
+    scene.render(device, makeLetterboxProjection(640, 448, 1920, 1080), 640, 448);
+    REQUIRE_FALSE(device.draws.empty());
+    const auto& background = device.draws.front();
+    CHECK(background.transform == Mat4{1});
+    CHECK(test::minCorner(background) == Vec2{-1, -1});
+    CHECK(test::maxCorner(background) == Vec2{1, 1});
+    CHECK(background.vertices.front().color == Color::black());
 }
 TEST_CASE("shop music follows the departed realm including non-gameplay fallbacks",
           "[shop][screens][audio]") {
@@ -528,8 +535,9 @@ TEST_CASE("after-level screen renders every phase with retail assets", "[shop][s
     // No opaque rectangle may hide the parchment. Only the full-screen clear is untextured.
     for (const auto& draw : device.draws) {
         if (draw.texture == &device.whiteTexture()) {
-            REQUIRE(test::minCorner(draw) == Vec2{0, 0});
-            REQUIRE(test::maxCorner(draw) == Vec2{512, 384});
+            REQUIRE(draw.transform == Mat4{1});
+            REQUIRE(test::minCorner(draw) == Vec2{-1, -1});
+            REQUIRE(test::maxCorner(draw) == Vec2{1, 1});
         }
     }
     // Walk every catalog entry: this also exercises all optional artwork and text wrapping.

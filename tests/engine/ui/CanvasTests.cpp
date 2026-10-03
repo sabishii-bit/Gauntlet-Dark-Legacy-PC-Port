@@ -1,5 +1,8 @@
+#include <cmath>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/math/Math.h"
 #include "engine/ui/Canvas.h"
@@ -58,6 +61,67 @@ TEST_CASE("nothing is submitted for an empty canvas", "[ui][canvas]") {
     canvas.begin(device, Mat4{1.0f});
     canvas.end();
     REQUIRE(device.draws.empty());
+}
+
+TEST_CASE("screen fills cover widescreen margins without changing the canvas transform",
+          "[ui][canvas]") {
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    const auto transform = makeLetterboxProjection(512, 384, 1920, 1080);
+    const Color dim = Color::rgba(0, 0, 0, 150);
+    canvas.begin(device, transform);
+    canvas.fill({0, 0, 512, 384}, Color::white());
+    canvas.fillScreen(dim);
+    canvas.fill({0, 0, 1, 1}, Color::white());
+    canvas.end();
+    REQUIRE(device.draws.size() == 3);
+    CHECK(device.draws[0].transform == transform);
+    CHECK(device.draws[1].transform == Mat4{1});
+    CHECK(test::minCorner(device.draws[1]) == Vec2{-1, -1});
+    CHECK(test::maxCorner(device.draws[1]) == Vec2{1, 1});
+    CHECK_FALSE(device.draws[1].state.depthTest);
+    CHECK_FALSE(device.draws[1].state.depthWrite);
+    for (const auto& vertex : device.draws[1].vertices) {
+        CHECK(vertex.color == dim);
+    }
+    CHECK(device.draws[2].transform == transform);
+}
+
+TEST_CASE("canvas masks only unused margins at standard wide ultrawide and portrait ratios",
+          "[ui][canvas]") {
+    const auto extent = GENERATE(Extent2D{640, 448}, Extent2D{1280, 720}, Extent2D{3440, 1440},
+                                 Extent2D{600, 1000});
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    const auto transform =
+        makeVirtualScreenTransform(makeLetterboxProjection(640, 448, static_cast<f32>(extent.width),
+                                                           static_cast<f32>(extent.height)),
+                                   512, 384, 640, 448);
+    canvas.begin(device, transform);
+    canvas.maskOutside({0, 0, 512, 384});
+    canvas.end();
+    if (extent.width == 640) {
+        CHECK(device.draws.empty());
+        return;
+    }
+    REQUIRE(device.draws.size() == 1);
+    const auto& draw = device.draws.front();
+    CHECK(draw.transform == Mat4{1});
+    CHECK_FALSE(draw.state.depthTest);
+    CHECK_FALSE(draw.state.depthWrite);
+    const Vec4 low = transform * Vec4{0, 0, 0, 1};
+    const Vec4 high = transform * Vec4{512, 384, 0, 1};
+    f32 area = 0;
+    for (usize i = 0; i < draw.vertices.size(); i += 3) {
+        const Vec2 a{draw.vertices[i].position};
+        const Vec2 b{draw.vertices[i + 1].position};
+        const Vec2 c{draw.vertices[i + 2].position};
+        const Vec2 middle = (a + b + c) / 3.0f;
+        CHECK((middle.x <= low.x || middle.x >= high.x || middle.y <= low.y || middle.y >= high.y));
+        area += std::abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
+        CHECK(draw.vertices[i].color == Color::black());
+    }
+    CHECK(area == Approx(4 - (high.x - low.x) * (high.y - low.y)));
 }
 
 TEST_CASE("the virtual screen transform stretches onto the frame", "[ui][canvas]") {

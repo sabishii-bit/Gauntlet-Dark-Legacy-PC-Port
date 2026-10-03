@@ -313,7 +313,7 @@ void AfterLevelScene::render(RenderDevice& device, const Mat4& projection, f32 w
         return;
     }
     m_canvas.begin(device, makeVirtualScreenTransform(projection, 512, 384, width, height));
-    m_canvas.fill(Rect{0, 0, 512, 384}, Color::black());
+    m_canvas.fillScreen(Color::black());
     for (s32 player = 0; player < 4; ++player) {
         drawBackground(player);
     }

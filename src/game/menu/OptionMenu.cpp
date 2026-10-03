@@ -98,7 +98,7 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     m_iconY = 0;
     m_iconTimer = kIconGlideTicks;
     m_iconDrawY = 0;
-    m_iconScale = iconPixelsPerUnit(screen);
+    m_iconScale = iconPixelsPerUnit(screen) * m_definition.cursorScale;
     const auto count = static_cast<s32>(m_definition.items.size());
     m_selection = count == 0 ? 0 : std::clamp(selection, 0, count - 1);
     if (count > 0 && !m_definition.items[static_cast<usize>(m_selection)].enabled) {
@@ -381,8 +381,10 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
                 Vec2{static_cast<f32>(m_columnX + kIconOffsetX), static_cast<f32>(m_iconDrawY)},
                 m_iconScale, iconAngle());
         } else if (textures.arrows != nullptr) {
-            const auto width = static_cast<f32>(kArrowGlyphWidth * kArrowDrawScale);
-            const auto height = static_cast<f32>(kArrowGlyphHeight * kArrowDrawScale);
+            const f32 width =
+                static_cast<f32>(kArrowGlyphWidth * kArrowDrawScale) * m_definition.cursorScale;
+            const f32 height =
+                static_cast<f32>(kArrowGlyphHeight * kArrowDrawScale) * m_definition.cursorScale;
             const auto centerX = static_cast<f32>(m_columnX + kIconOffsetX);
             const Rect area{centerX - width / 2.0f, static_cast<f32>(m_iconDrawY) - height / 2.0f,
                             width, height};

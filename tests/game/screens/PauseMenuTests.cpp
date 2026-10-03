@@ -57,8 +57,12 @@ TEST_CASE("pause menus route character management and preserve the live party", 
     MenuInput back;
     back.back = true;
     const auto step = [&](const MenuInput& input) { return menu.update(1.0 / 60, input); };
-    menu.render(device, Mat4{1}, 640, 448);
+    menu.render(device, makeLetterboxProjection(640, 448, 2560, 1080), 640, 448);
     CHECK_FALSE(device.draws.empty());
+    REQUIRE(device.draws.front().transform == Mat4{1});
+    CHECK(test::minCorner(device.draws.front()) == Vec2{-1, -1});
+    CHECK(test::maxCorner(device.draws.front()) == Vec2{1, 1});
+    CHECK(device.draws.front().vertices.front().color == Color::rgba(0, 0, 0, 150));
     SECTION("resume and quit confirmation") {
         CHECK(step(back) == PauseOutcome::Resume);
         for (s32 i = 0; i < 4; ++i) {

@@ -177,7 +177,7 @@ void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, 
     const auto virtualHeight = static_cast<f32>(m_screen.height);
     m_canvas.begin(
         device, makeVirtualScreenTransform(projection, virtualWidth, virtualHeight, width, height));
-    m_canvas.fill({0, 0, virtualWidth, virtualHeight}, Color::rgba(0, 0, 0, 150));
+    m_canvas.fillScreen(Color::rgba(0, 0, 0, 150));
     if (m_page == Page::Options) {
         m_settings.draw(m_canvas, m_text, m_art);
     } else {

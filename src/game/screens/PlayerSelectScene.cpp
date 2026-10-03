@@ -453,7 +453,7 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
                                                       frameHeight));
     if (!towerVisible()) {
-        m_canvas.fill(Rect{0.0f, 0.0f, width, height}, kBackdrop);
+        m_canvas.fillScreen(kBackdrop);
     }
 
     const auto laneWidth = static_cast<f32>(SelectLane::kWidth);
@@ -482,6 +482,7 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
     for (const SelectLane& lane : m_lanes) {
         lane.drawText(m_canvas, m_time);
     }
+    m_canvas.maskOutside({0, 0, width, height});
     m_canvas.end();
 }
 

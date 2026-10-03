@@ -169,7 +169,10 @@ TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][assets]"
     scene.render(device, projection, 640.0f, 448.0f);
     REQUIRE(device.draws.size() >= 6);
     REQUIRE(device.draws[0].vertices.size() == 6);
-    REQUIRE(test::maxCorner(device.draws[0]).x == 256.0f);
+    REQUIRE(device.draws[0].transform == Mat4{1});
+    REQUIRE(test::minCorner(device.draws[0]) == Vec2{-1, -1});
+    REQUIRE(test::maxCorner(device.draws[0]) == Vec2{1, 1});
+    REQUIRE(test::maxCorner(device.draws[1]).x == 256.0f);
 
     device.draws.clear();
     scene.step(1, press(true));
