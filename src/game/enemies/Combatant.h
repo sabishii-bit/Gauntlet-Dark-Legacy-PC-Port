@@ -276,6 +276,8 @@ private:
             AnimationPlayer player;
             TreePose pose;
             Mat4 world{1}; ///< fixed world parent when ADDA does not follow a node
+            f32 previousFrame = 0;
+            u64 previousGeneration = 0;
         };
         std::vector<Attachment> attachments;
         CombatantGaze gaze; ///< the turn of its head and eyes to its target

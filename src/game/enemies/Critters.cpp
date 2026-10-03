@@ -1,7 +1,6 @@
 #include "game/enemies/Critters.h"
 
 #include <cctype>
-#include <cmath>
 #include <utility>
 
 #include "game/enemies/Gargoyle.h"
@@ -37,7 +36,6 @@ void Critters::close() {
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
-    m_textureFrames = 0;
 }
 CombatantAssets* Critters::stockFor(const CombatantDefinition& definition) {
     for (auto& stock : m_stocks) {
@@ -153,14 +151,11 @@ void Critters::syncFloors() {
 void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players, bool timeStopped,
                       std::span<const CombatantObstacle> items, Enemies* swarm) {
     syncFloors();
+    for (const auto& stock : m_stocks) {
+        stock->textures.advance(ticks > 0 ? seconds : 0.0f);
+    }
     if (ticks <= 0) {
         return;
-    }
-    m_textureFrames += seconds * AnimationPlayer::kDefaultRate;
-    const auto frames = static_cast<u32>(std::floor(m_textureFrames));
-    m_textureFrames -= static_cast<f32>(frames);
-    for (const auto& stock : m_stocks) {
-        stock->textures.step(frames);
     }
     for (auto& actor : m_critters) {
         if (!actor.present()) {

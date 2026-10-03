@@ -73,7 +73,7 @@ void TowerPromotion::clear() {
     m_player.stop();
     m_pose = TreePose{};
     m_textures = TextureAnimator{};
-    m_frames = 0;
+    m_presentationAdvanced = false;
 }
 void TowerPromotion::bind(RenderDevice& device, ItemArchive& items, const WorldLayout& layout,
                           std::span<const PlayerRuntime> players) {
@@ -158,21 +158,36 @@ void TowerPromotion::animate(f32 seconds) {
     if (m_tree == nullptr) {
         return;
     }
+    m_previousFrame = m_player.presentationFrame();
+    m_previousGeneration = m_player.generation();
+    m_presentationAdvanced = seconds > 0;
     m_player.advance(seconds, true);
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     const auto frame = static_cast<s32>(m_player.frame());
     m_model.setFrame(m_player.sequence(), frame);
-    m_frames += seconds * AnimationPlayer::kDefaultRate;
-    const auto elapsed = static_cast<u32>(std::floor(m_frames));
-    m_frames -= static_cast<f32>(elapsed);
-    m_textures.step(elapsed);
+    m_textures.advance(seconds);
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
 }
-void TowerPromotion::draw(RenderDevice& device, const Mat4& clip,
-                          const WorldLighting& lighting) const {
+void TowerPromotion::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                          f32 renderAlpha) const {
     if (active() && m_tree != nullptr) {
+        const f32 blend = renderAlpha < 0 || m_presentationAdvanced ? renderAlpha : 1.0f;
+        f32 visualFrame = m_player.frame();
+        TreePose visualPose;
+        const TreePose* pose = &m_pose;
+        if (blend >= 0) {
+            visualFrame = m_previousGeneration == m_player.generation()
+                              ? std::lerp(m_previousFrame, m_player.presentationFrame(),
+                                          std::clamp(blend, 0.0f, 1.0f))
+                              : m_player.presentationFrame();
+            visualPose.evaluate(*m_tree, m_player.sequence(), visualFrame, false, true);
+            pose = &visualPose;
+        }
+        m_model.setPresentationFrame(m_player.sequence(), visualFrame);
+        m_textures.apply(m_model, *m_tree, m_player.sequence(), visualFrame,
+                         m_textures.presentationOffset(blend));
         const auto frame = m_camera.has_value() ? CameraFrame::of(*m_camera) : CameraFrame{};
-        m_model.draw(device, clip, m_transform, lighting, m_pose.matrices(), &frame);
+        m_model.draw(device, clip, m_transform, lighting, pose->matrices(), &frame);
     }
 }
 void TowerPromotion::drawCaption(Canvas& canvas, const TextPainter& text, f32 width,

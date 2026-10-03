@@ -33,7 +33,6 @@ void BossVictoryPresentation::clear() {
     m_pose = TreePose{};
     m_presentationAdvanced = false;
     m_textures = TextureAnimator{};
-    m_textureFrames = 0.0f;
     m_position = Vec3{0.0f};
     m_yaw = 0.0f;
     m_sparkled = false;
@@ -60,7 +59,6 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
     // and no depth writes (0x80), including the animated lower-body meshes.
     m_model.setAppearance(true, Color::white(), false, true);
     m_textures.bind(items.trees.textureAnimations(), items.textures, device);
-    m_textureFrames = 0.0f;
     if (!figure.sequences.empty()) {
         m_player.start(figure.sequences[0], 0);
     }
@@ -94,6 +92,7 @@ BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 s
                                                                 const MessageTable& strings,
                                                                 bool voicePlaying) {
     Update result;
+    m_textures.advance(0);
     m_previousFrame = m_player.presentationFrame();
     m_previousGeneration = m_player.generation();
     m_presentationAdvanced = seconds > 0 && m_visit.wizardShown() && m_player.playing();
@@ -112,10 +111,7 @@ BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 s
         m_player.advance(seconds, true);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
         m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
-        m_textureFrames += seconds * AnimationPlayer::kDefaultRate;
-        const auto frames = static_cast<u32>(std::floor(m_textureFrames));
-        m_textureFrames -= static_cast<f32>(frames);
-        m_textures.step(frames);
+        m_textures.advance(seconds);
         m_textures.apply(m_model, *m_tree, m_player.sequence(), static_cast<s32>(m_player.frame()));
     }
     if (m_visit.sparkling() && !m_sparkled) {
@@ -147,14 +143,19 @@ void BossVictoryPresentation::drawWizard(RenderDevice& device, const Mat4& clip,
         glm::rotate(glm::translate(Mat4{1.0f}, m_position), m_yaw, Vec3{0.0f, 1.0f, 0.0f});
     TreePose visualPose;
     const TreePose* pose = &m_pose;
-    if (frameBlend >= 0 && m_presentationAdvanced) {
-        const f32 frame = m_previousGeneration == m_player.generation()
-                              ? std::lerp(m_previousFrame, m_player.presentationFrame(),
-                                          std::clamp(frameBlend, 0.0f, 1.0f))
-                              : m_player.presentationFrame();
+    const f32 blend = frameBlend < 0 || m_presentationAdvanced ? frameBlend : 1.0f;
+    f32 frame = m_player.frame();
+    if (blend >= 0 && m_player.playing()) {
+        frame = m_previousGeneration == m_player.generation()
+                    ? std::lerp(m_previousFrame, m_player.presentationFrame(),
+                                std::clamp(blend, 0.0f, 1.0f))
+                    : m_player.presentationFrame();
         visualPose.evaluate(*m_tree, m_player.sequence(), frame, false, true);
         pose = &visualPose;
     }
+    m_model.setPresentationFrame(m_player.sequence(), frame);
+    m_textures.apply(m_model, *m_tree, m_player.sequence(), frame,
+                     m_textures.presentationOffset(blend));
     m_model.draw(device, clip, model, lighting, pose->matrices(), camera, m_visit.wizardAlpha());
 }
 

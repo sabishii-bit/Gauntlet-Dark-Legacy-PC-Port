@@ -105,7 +105,7 @@ public:
         f32 height = 0.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 transform{1.0f};
-        TreeModel model;
+        mutable TreeModel model;
         TreePose pose;
         const TreeInfo* figure = nullptr; ///< the tree the model and pose come from
         ItemArchive* archive = nullptr;   ///< where the figure and its textures came from
@@ -290,7 +290,6 @@ private:
     std::vector<ArchiveMotion> m_motions;
     const WorldCollision* m_collision = nullptr; ///< the floor thrown items land on
     s32 m_players = 0;
-    f32 m_frameRemainder = 0.0f;
     f32 m_revealTime = 0.0f;
     bool m_revealing = false;
     bool m_capturePending = false;

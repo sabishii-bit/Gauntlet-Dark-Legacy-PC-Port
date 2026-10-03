@@ -174,6 +174,7 @@ void Enemies::close() {
         for (TreeModel& statue : stock->deathStatues) {
             statue.clear();
         }
+        stock->textures.clear();
         stock->archive.release();
     }
     m_stocks.clear();
@@ -240,6 +241,8 @@ bool Enemies::loadKind(s32 kind) {
         m_stocks.push_back(std::move(stock));
         return true;
     }
+    stock->textures.bind(stock->archive.trees.textureAnimations(), stock->archive.textures,
+                         *m_device);
     for (s32 tier = 1; tier <= 3; ++tier) {
         const auto tree = stock->archive.trees.find(std::format("{}{}", info.prefix, tier));
         if (!tree.has_value()) {
@@ -288,6 +291,7 @@ bool Enemies::loadKind(s32 kind) {
     if (kind == kDeathKind) {
         for (usize i = 0; i < stock->deathStatues.size(); ++i) {
             if (const auto tree = stock->archive.trees.find(std::format("DEATHSTATUE{}", i + 1))) {
+                stock->deathStatueTrees[i] = &stock->archive.trees.tree(*tree);
                 stock->deathStatues[i].bind(stock->archive.trees.tree(*tree), stock->archive.models,
                                             stock->archive.textures, *m_device);
             }
@@ -638,6 +642,9 @@ void Enemies::generatorGone(s32 generator) {
 void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
                      f32 missileSpeedScale, bool timeStopped) {
+    for (auto& stock : m_stocks) {
+        stock->textures.advance(timeStopped ? 0.0f : seconds);
+    }
     syncFloors();
     if (timeStopped) {
         for (Enemy& enemy : m_enemies) {
@@ -1682,29 +1689,31 @@ std::vector<EnemyCue> Enemies::takeCues() {
     return std::exchange(m_cues, {});
 }
 
-const TreeModel* Enemies::bodyOf(const Enemy& enemy) {
+Enemies::Figure Enemies::bodyOf(const Enemy& enemy) {
     Stock* stock = stockOf(enemy.kind);
     if (stock == nullptr || !stock->unseen.sequences.empty()) {
-        return nullptr;
+        return {};
     }
     if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
-        const TreeModel& statue = stock->deathStatues[enemy.tier == 2 ? 1 : 0];
+        const usize index = enemy.tier == 2 ? 1 : 0;
+        TreeModel& statue = stock->deathStatues[index];
         if (statue.bound()) {
-            return &statue;
+            return {&statue, stock->deathStatueTrees[index], &stock->textures};
         }
     }
     if (enemy.variant != 0) {
         const auto v = static_cast<usize>(enemy.variant - kArcherStrength);
         if (v < stock->variantBodies.size() && stock->variantBodies[v].bound()) {
-            return &stock->variantBodies[v];
+            return {&stock->variantBodies[v], stock->variantTrees[v], &stock->textures};
         }
     }
     s32 tier = enemy.tier;
     while (tier > 1 && stock->trees[static_cast<usize>(tier - 1)] == nullptr) {
         --tier;
     }
-    const TreeModel& body = stock->bodies[static_cast<usize>(tier - 1)];
-    return body.bound() ? &body : nullptr;
+    const auto index = static_cast<usize>(tier - 1);
+    TreeModel& body = stock->bodies[index];
+    return body.bound() ? Figure{&body, stock->trees[index], &stock->textures} : Figure{};
 }
 
 std::vector<EnemyBurst> Enemies::takeBursts() {
@@ -1840,13 +1849,19 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             (enemy.killed && enemy.algorithm == kSuicideWay)) {
             continue;
         }
-        const TreeModel* found = bodyOf(enemy);
-        if (found == nullptr) {
+        const Figure found = bodyOf(enemy);
+        if (found.model == nullptr || found.tree == nullptr) {
             continue;
         }
-        TreeModel& body =
-            *const_cast<TreeModel*>(found); // NOLINT(cppcoreguidelines-pro-type-const-cast)
-        body.resetTextures();
+        TreeModel& body = *found.model;
+        const AnimationPlayer& player = enemy.animator.player();
+        const f32 blend = presentationBlend(enemy, presentationAlpha);
+        const f32 visualFrame =
+            presentationAlpha >= 0 ? enemy.animator.presentationFrame(blend) : player.frame();
+        const bool statue = enemy.kind == kDeathKind && enemy.state == State::Asleep;
+        found.textures->apply(body, *found.tree, statue ? 0 : player.sequence(),
+                              statue ? 0 : visualFrame,
+                              found.textures->presentationOffset(presentationAlpha));
         body.setAppearance((enemy.killed && enemy.kind != kDeathKind) || enemy.flashSeconds > 0);
         if (enemy.flashSeconds > 0) {
             body.setMaskedTexture(hitFlash);
@@ -1875,8 +1890,6 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             }
         }
         // The flip-book kinds change their whole mesh with the frame; the rest are posed.
-        const AnimationPlayer& player = enemy.animator.player();
-        const f32 blend = presentationBlend(enemy, presentationAlpha);
         const Vec3 position = blend == 1
                                   ? enemy.position
                                   : glm::mix(enemy.presentationPosition, enemy.position, blend);

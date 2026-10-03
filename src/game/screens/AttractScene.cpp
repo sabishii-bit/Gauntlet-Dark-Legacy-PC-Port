@@ -25,6 +25,7 @@ f32 blendAngle(f32 from, f32 to, f32 fraction) {
 bool AttractCamera::start(std::span<const WorldLocator> markers) {
     m_remaining.clear();
     m_finished = true;
+    m_interpolate = false;
     m_hold = 0.0f;
     const WorldLocator* start = nullptr;
     for (const auto& marker : markers) {
@@ -39,6 +40,7 @@ bool AttractCamera::start(std::span<const WorldLocator> markers) {
         return false;
     }
     m_camera = cameraOf(*start);
+    m_previousCamera = m_camera;
     m_finished = false;
     selectNext();
     return true;
@@ -61,6 +63,8 @@ void AttractCamera::selectNext() {
 }
 
 void AttractCamera::update(f32 seconds) {
+    m_previousCamera = m_camera;
+    m_interpolate = seconds > 0.0f;
     f32 left = std::max(0.0f, seconds);
     while (!m_finished && left > 0.0f) {
         if (m_hold > 0.0f) {
@@ -73,6 +77,10 @@ void AttractCamera::update(f32 seconds) {
         left -= step;
         m_travelled += step * kRailSpeed;
         const f32 fraction = m_distance > 0.0f ? std::min(m_travelled / m_distance, 1.0f) : 1.0f;
+        // Coincident markers can change orientation instantaneously; never smooth that cut.
+        if (m_distance == 0.0f) {
+            m_interpolate = false;
+        }
         m_camera.position = glm::mix(m_from.position, m_target.position, fraction);
         m_camera.pitch = blendAngle(m_from.pitch, m_target.rotation.x, fraction);
         m_camera.yaw = blendAngle(m_from.yaw, m_target.rotation.y, fraction);
@@ -83,6 +91,11 @@ void AttractCamera::update(f32 seconds) {
             break;
         }
     }
+}
+
+WorldCamera AttractCamera::presentedCamera(f32 alpha) const {
+    return alpha >= 0.0f && m_interpolate ? m_camera.interpolate(m_previousCamera, alpha)
+                                          : m_camera;
 }
 
 bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
@@ -161,6 +174,7 @@ AttractOutcome AttractScene::update(f64 seconds, const MenuInput& input) {
     if (m_elapsed > kInputDelay && (input.start || input.select)) {
         return AttractOutcome::Title;
     }
+    m_world.capturePresentation();
     m_rail.update(static_cast<f32>(seconds));
     m_world.update(static_cast<f32>(seconds));
     const Vec3 eye = m_rail.camera().position;
@@ -172,14 +186,16 @@ AttractOutcome AttractScene::update(f64 seconds, const MenuInput& input) {
                                                          : AttractOutcome::Running;
 }
 
-void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height) {
+void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height,
+                          f32 presentationAlpha) {
     if (!m_open) {
         return;
     }
     const f32 fov = glm::radians(
         m_context.config != nullptr ? m_context.config->camera.horizontalFovDegrees : 60.0f);
-    const WorldCamera& camera = m_rail.camera();
-    m_world.draw(device, camera.clipTransform(fov, width, height, projection), camera);
+    const WorldCamera camera = m_rail.presentedCamera(presentationAlpha);
+    m_world.draw(device, camera.clipTransform(fov, width, height, projection), camera,
+                 presentationAlpha);
     if (m_context.strings != nullptr) {
         m_canvas.begin(device,
                        makeVirtualScreenTransform(projection, 512.0f, 384.0f, width, height));

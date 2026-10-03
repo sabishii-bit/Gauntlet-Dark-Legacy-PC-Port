@@ -516,11 +516,14 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     const VkCommandBuffer cmd = frame.commandBuffer;
     GDL_ASSERT(state.maskedTexture == nullptr || state.lightmap == nullptr,
                "masked colour and lightmap share the second texture stage");
+    const f32 textureBlend = state.effectiveTextureBlend();
     const Texture* second = m_whiteTexture.get();
     if (state.maskedTexture != nullptr) {
         second = state.maskedTexture;
     } else if (state.lightmap != nullptr) {
         second = state.lightmap;
+    } else if (textureBlend > 0.0f) {
+        second = state.nextTexture;
     }
     const std::array<VkDescriptorSet, 2> sets{
         dynamic_cast<const VulkanTexture&>(texture).descriptorSet(),
@@ -529,8 +532,8 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
                             static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
     const VulkanPipeline::PushConstants constants{
         transform, Vec4{state.uvOffset.x, state.uvOffset.y, state.alphaTest, state.darken},
-        Vec4{state.uvScale.x, state.uvScale.y, state.maskedTexture != nullptr ? 1.0f : 0.0f,
-             state.colorScale}};
+        Vec4{state.uvScale.x, state.uvScale.y,
+             state.maskedTexture != nullptr ? 1.0f : -textureBlend, state.colorScale}};
     vkCmdPushConstants(cmd, m_pipeline->layout(),
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        VulkanPipeline::kPushConstantSize, &constants);

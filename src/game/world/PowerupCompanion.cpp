@@ -140,6 +140,9 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
         return;
     }
     const auto current = static_cast<s32>(m_player.sequence());
+    m_previousFrame = m_player.presentationFrame();
+    m_previousGeneration = m_player.generation();
+    m_presentationAdvanced = seconds > 0;
     s32 wanted = kReady;
     if (m_kind == Kind::Pojo) {
         wanted = swung ? kAttack : pojoSequenceOf(action);
@@ -156,18 +159,30 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
     const auto frame = static_cast<s32>(m_player.frame());
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     m_model.setFrame(m_player.sequence(), frame);
-    m_frames += seconds * AnimationPlayer::kDefaultRate;
-    const auto elapsed = static_cast<u32>(std::floor(m_frames));
-    m_frames -= static_cast<f32>(elapsed);
-    m_textures.step(elapsed);
+    m_textures.advance(seconds);
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
 }
 
 void PowerupCompanion::draw(RenderDevice& device, const Mat4& clip, const Mat4& at,
-                            const WorldLighting& lighting, f32 alpha,
-                            const CameraFrame* camera) const {
+                            const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
+                            f32 renderAlpha) const {
     if (m_tree != nullptr) {
-        m_model.draw(device, clip, at, lighting, m_pose.matrices(), camera, alpha);
+        const f32 blend = renderAlpha < 0 || m_presentationAdvanced ? renderAlpha : 1.0f;
+        f32 frame = m_player.frame();
+        TreePose visualPose;
+        const TreePose* pose = &m_pose;
+        if (blend >= 0) {
+            frame = m_previousGeneration == m_player.generation()
+                        ? std::lerp(m_previousFrame, m_player.presentationFrame(),
+                                    std::clamp(blend, 0.0f, 1.0f))
+                        : m_player.presentationFrame();
+            visualPose.evaluate(*m_tree, m_player.sequence(), frame, false, true);
+            pose = &visualPose;
+        }
+        m_model.setPresentationFrame(m_player.sequence(), frame);
+        m_textures.apply(m_model, *m_tree, m_player.sequence(), frame,
+                         m_textures.presentationOffset(blend));
+        m_model.draw(device, clip, at, lighting, pose->matrices(), camera, alpha);
     }
 }
 
@@ -176,7 +191,8 @@ void PowerupCompanion::clear() {
     m_tree = nullptr;
     m_model.clear();
     m_player.stop();
-    m_frames = 0.0f;
+    m_textures.clear();
+    m_presentationAdvanced = false;
 }
 
 } // namespace gdl::game

@@ -22,11 +22,14 @@ public:
     bool start(std::span<const WorldLocator> markers);
     void update(f32 seconds);
     const WorldCamera& camera() const { return m_camera; }
+    /** Samples completed rail states without advancing its route or hold timer. */
+    WorldCamera presentedCamera(f32 alpha) const;
     bool finished() const { return m_finished; }
 
 private:
     void selectNext();
     WorldCamera m_camera;
+    WorldCamera m_previousCamera;
     WorldCamera m_from;
     std::vector<WorldLocator> m_remaining;
     WorldLocator m_target;
@@ -34,6 +37,7 @@ private:
     f32 m_travelled = 0.0f;
     f32 m_hold = 0.0f;
     bool m_finished = true;
+    bool m_interpolate = false;
 };
 
 enum class AttractOutcome : u8 { Running, Finished, Title };
@@ -45,7 +49,8 @@ public:
     void close();
     bool isOpen() const { return m_open; }
     AttractOutcome update(f64 seconds, const MenuInput& input);
-    void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
+    void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height,
+                f32 presentationAlpha = -1.0f);
     const AttractCamera& rail() const { return m_rail; }
     const LevelWorld& world() const { return m_world; }
 

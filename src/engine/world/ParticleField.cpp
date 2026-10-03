@@ -121,6 +121,25 @@ void ParticleField::setNode(usize index, const Mat4& node) {
 void ParticleField::setTexture(usize index, const Texture& texture) {
     if (index < m_entries.size()) {
         m_entries[index].texture = &texture;
+        m_entries[index].presentedTexture = nullptr;
+    }
+}
+
+void ParticleField::setTextureBlend(usize index, const Texture& current, const Texture* next,
+                                    f32 blend) {
+    if (index < m_entries.size()) {
+        auto& entry = m_entries[index];
+        entry.presentedTexture = &current;
+        entry.nextTexture = next;
+        entry.textureBlend = blend;
+    }
+}
+
+void ParticleField::clearTextureBlends() {
+    for (Entry& entry : m_entries) {
+        entry.presentedTexture = nullptr;
+        entry.nextTexture = nullptr;
+        entry.textureBlend = 0.0f;
     }
 }
 
@@ -155,6 +174,7 @@ usize ParticleField::particleCount() const {
 }
 
 void ParticleField::step(f32 seconds) {
+    clearTextureBlends();
     m_lastAdvance = std::max(seconds, 0.0f) * kFrameRate;
     m_frameRemainder += m_lastAdvance;
     const f32 whole = std::floor(m_frameRemainder);
@@ -192,10 +212,18 @@ void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& rig
         if (entry.emitter.particles().empty()) {
             continue;
         }
-        if (!open || entry.texture != texture || !(entry.state == state)) {
+        const Texture* presentedTexture = entry.texture;
+        DrawState presentedState = entry.state;
+        if (presentationAlpha >= 0.0f && entry.presentedTexture != nullptr &&
+            (entry.state.blend == BlendMode::Additive || !entry.state.depthWrite)) {
+            presentedTexture = entry.presentedTexture;
+            presentedState.nextTexture = entry.nextTexture;
+            presentedState.textureBlend = entry.textureBlend;
+        }
+        if (!open || presentedTexture != texture || !(presentedState == state)) {
             flush();
-            texture = entry.texture;
-            state = entry.state;
+            texture = presentedTexture;
+            state = presentedState;
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
             open = true;

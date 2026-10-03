@@ -21,6 +21,8 @@ class TreeParticles;
 struct TextureMotion {
     u32 slot = 0;
     const Texture* frame = nullptr; ///< null for a scroll
+    const Texture* nextFrame = nullptr;
+    f32 frameBlend = 0.0f;
     Vec2 offset{0.0f, 0.0f};
     Vec2 scale{1.0f, 1.0f};
     std::optional<f32> alpha; ///< subtree opacity for a keyed fade, not a texture change
@@ -55,29 +57,49 @@ public:
     /** Where an animation is in its cycle. */
     s32 counter(usize index) const { return m_entries[index].counter; }
     u32 slot(usize index) const { return m_entries[index].slot; }
+    /** Authored scrolling axis, including its sign (zero for a texture cycle). */
+    Vec2 scrollDirection(usize index) const { return m_entries[index].direction; }
     /** Whether an entry is keyed to a sequence's frame rather than stepped. */
     bool keyed(usize index) const { return m_entries[index].keyed; }
 
     /** Where an animation stands. */
-    TextureMotion motion(usize index) const;
+    TextureMotion motion(usize index, std::optional<f32> frameOffset = {}) const;
     /** Where the animation numbered `info` in what was bound stands at sequence frame
      * `frame`; nothing when it was not bound. */
-    std::optional<TextureMotion> motionAt(s32 info, s32 frame) const;
+    std::optional<TextureMotion> motionAt(s32 info, f32 frame) const;
+    std::optional<TextureMotion> motionAt(s32 info, s32 frame) const {
+        return motionAt(info, static_cast<f32>(frame));
+    }
     /** How far a keyed scroll has run at `sinceStart` frames past its first: the original's
      * easing over `rate` frames, then steady to its `frames`, then held. */
     static f32 scrollAt(s32 sinceStart, s32 rate, s32 frames);
     /** The same with the stretch it puts on the coordinate: none (the picture collapsed)
      * before it starts, then growing from one to `frames / rate` as it runs. */
-    static ScrollState scrollStateAt(s32 sinceStart, s32 rate, s32 frames);
+    static ScrollState scrollStateAt(f32 sinceStart, s32 rate, s32 frames);
+    static ScrollState scrollStateAt(s32 sinceStart, s32 rate, s32 frames) {
+        return scrollStateAt(static_cast<f32>(sinceStart), rate, frames);
+    }
+    /** Advances the fixed simulation clock, retaining its fractional remainder for drawing. */
+    void advance(f32 seconds);
+    /** Sample between the previous and current update; negative alpha requests native steps. */
+    std::optional<f32> presentationOffset(f32 alpha) const;
     /** Advances `ticks` game frames. */
     void step(u32 ticks = 1);
     /** Shows every animation where it stands. */
     void apply(WorldScene& scene) const;
     /** Resets a shared model, then applies clock, sequence and texture-node overrides in
      * that order. Sequence overrides must not leak into the next instance's draw. */
-    void apply(TreeModel& model, const TreeInfo& tree, u32 sequence, s32 frame) const;
+    void apply(TreeModel& model, const TreeInfo& tree, u32 sequence, f32 frame,
+               std::optional<f32> frameOffset = {}) const;
+    void apply(TreeModel& model, const TreeInfo& tree, u32 sequence, s32 frame) const {
+        apply(model, tree, sequence, static_cast<f32>(frame));
+    }
     /** Resolves particle sprite frames using the same clock and keyed sequence. */
-    void apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence, s32 frame) const;
+    void apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence, f32 frame,
+               std::optional<f32> frameOffset = {}) const;
+    void apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence, s32 frame) const {
+        apply(particles, tree, sequence, static_cast<f32>(frame));
+    }
     /** Advances `ticks` game frames, showing each step. */
     void step(WorldScene& scene, u32 ticks = 1);
 
@@ -99,6 +121,8 @@ private:
     std::vector<Entry> m_entries;
     std::vector<s32> m_entryOfInfo; ///< per animation bound, its entry or -1
     u32 m_frame = 0;
+    f32 m_remainder = 0.0f;
+    f32 m_advance = 0.0f;
 };
 
 } // namespace gdl

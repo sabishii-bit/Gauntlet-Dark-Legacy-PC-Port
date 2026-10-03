@@ -97,7 +97,7 @@ private:
     void refreshTextures();
 
     const TreeInfo* m_tree = nullptr;
-    TreeModel m_model;
+    mutable TreeModel m_model;
     TreePose m_pose;
     mutable TreePose m_presentationPose;
     Mat4 m_previousTransform{1};
@@ -106,9 +106,8 @@ private:
     bool m_presentationCaptured = false;
     bool m_presentationAdvanced = false;
     AnimationPlayer m_player;
-    TreeParticles m_particles;
+    mutable TreeParticles m_particles;
     TextureAnimator m_textures;
-    f32 m_textureFrames = 0;
     u32 m_textureSequence = 0;
     s32 m_textureFrame = 0;
     bool m_gateParticles = false;

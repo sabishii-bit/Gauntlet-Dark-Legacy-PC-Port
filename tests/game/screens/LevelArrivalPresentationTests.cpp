@@ -20,8 +20,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-std::filesystem::path spawnFixture(std::string_view name, bool animated = true,
-                                   bool cycle = false) {
+std::filesystem::path spawnFixture(std::string_view name, bool animated = true, bool cycle = false,
+                                   bool soft = false) {
     const auto root = test::scratchDirectory(name);
     writeTextFile(root / "mesh.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 1\nvt 1 1\nvt 0 0\nvn 0 1 0\n"
                                      "usemtl tex0\nf 1/1/1 2/2/1 3/3/1\n");
@@ -40,7 +40,9 @@ std::filesystem::path spawnFixture(std::string_view name, bool animated = true,
                                       : R"({"texture":0,"source":-2,"frames":4})";
     writeTextFile(root / "animations.json", R"({"textureAnimations":[)" + texture +
                                                 R"(],"trees":[{"name":"STARTFX","nodes":[
-        {"name":"ROOT","object":"BODY","position":[0,0,0]}],"sequences":[)" +
+        {"name":"ROOT","object":"BODY","objectFlags":)" +
+                                                (soft ? "128" : "0") +
+                                                R"(,"position":[0,0,0]}],"sequences":[)" +
                                                 sequence + "]}]}");
     return root;
 }
@@ -288,5 +290,78 @@ TEST_CASE("arrival fractional draws leave spawn holds and native poses unchanged
     device.draws.clear();
     arrival.drawEffects(device, Mat4{1}, {}, 0.5f);
     CHECK(device.draws.empty());
+}
+
+TEST_CASE("arrival scrolling and flipbooks sample monitor refreshes without advancing clocks",
+          "[game][screens][arrival][presentation]") {
+    for (const bool cycle : {false, true}) {
+        CAPTURE(cycle);
+        ItemArchive archive;
+        REQUIRE(archive.load(spawnFixture(
+            cycle ? "arrival-cycle-sampling" : "arrival-scroll-sampling", false, cycle, true)));
+        test::FakeRenderDevice device;
+        LevelArrivalPresentation arrival;
+        const std::array<Vec3, 2> positions{Vec3{0}, Vec3{2, 0, 0}};
+        arrival.begin(device, archive, positions);
+        const auto draw = [&](f32 blend) {
+            device.draws.clear();
+            arrival.drawEffects(device, Mat4{1}, {}, blend);
+            REQUIRE(device.draws.size() == positions.size());
+            REQUIRE_FALSE(device.draws[0].state.depthWrite);
+            CHECK(device.draws[0].state.uvOffset == device.draws[1].state.uvOffset);
+            CHECK(device.draws[0].state.textureBlend == device.draws[1].state.textureBlend);
+            return device.draws[0];
+        };
+        arrival.animate(1.0f / 60.0f);
+        for (const f32 blend : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.5f}) {
+            const auto shown = draw(blend);
+            if (cycle) {
+                CHECK(shown.texture == &archive.textures.texture(device, 1));
+                CHECK(shown.state.textureBlend == Approx(blend * 0.5f));
+            } else {
+                CHECK(shown.state.uvOffset.x == Approx(blend * 0.125f));
+            }
+        }
+        const auto native = draw(-1);
+        CHECK(native.state.uvOffset.x == Approx(0));
+        CHECK(native.state.textureBlend == Approx(0));
+        const auto current = draw(1);
+        arrival.capturePresentation();
+        const auto held = draw(0);
+        CHECK(held.state.uvOffset == current.state.uvOffset);
+        CHECK(held.state.textureBlend == current.state.textureBlend);
+        arrival.animate(0);
+        const auto zeroTime = draw(0.75f);
+        CHECK(zeroTime.state.uvOffset == current.state.uvOffset);
+        CHECK(zeroTime.state.textureBlend == current.state.textureBlend);
+        arrival.animate(1.0f / 60.0f);
+        const auto next = draw(1);
+        if (cycle) {
+            CHECK(next.texture == &archive.textures.texture(device, 2));
+            CHECK(next.state.textureBlend == Approx(0));
+        } else {
+            CHECK(next.state.uvOffset.x == Approx(0.25f));
+        }
+    }
+}
+
+TEST_CASE("solid arrival flipbooks preserve native cutout coverage between refreshes",
+          "[game][screens][arrival][presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(spawnFixture("arrival-solid-cycle-sampling", false, true)));
+    test::FakeRenderDevice device;
+    LevelArrivalPresentation arrival;
+    const std::array<Vec3, 1> positions{Vec3{0}};
+    arrival.begin(device, archive, positions);
+    arrival.animate(1.0f / 60.0f);
+    for (const f32 blend : {0.0f, 0.5f, 1.0f}) {
+        device.draws.clear();
+        arrival.drawEffects(device, Mat4{1}, {}, blend);
+        REQUIRE(device.draws.size() == 1);
+        CHECK(device.draws[0].state.depthWrite);
+        CHECK(device.draws[0].texture == &archive.textures.texture(device, 1));
+        CHECK(device.draws[0].state.nextTexture == nullptr);
+        CHECK(device.draws[0].state.textureBlend == 0);
+    }
 }
 } // namespace

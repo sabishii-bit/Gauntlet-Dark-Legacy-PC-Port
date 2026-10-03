@@ -20,6 +20,9 @@ public:
     void setEmitting(bool emitting);
     void setLocalScales(std::span<const NodePose> poses);
     void setTextureFrame(u32 slot, const Texture& texture);
+    /** Render-only sprite sampling; clear before preparing a new draw's texture clock. */
+    void setTextureBlend(u32 slot, const Texture& current, const Texture* next, f32 blend);
+    void clearTextureBlends();
     /** Ends emission without discarding particles already in flight. */
     void stop();
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,

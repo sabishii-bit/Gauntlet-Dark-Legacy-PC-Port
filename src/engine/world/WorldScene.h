@@ -70,6 +70,8 @@ public:
     void capturePresentation();
     /** Shows `texture` wherever the level's texture `slot` is drawn; null restores it. */
     void setTextureFrame(u32 slot, const Texture* texture);
+    /** Soft-sprite cycle sampled at draw time; opaque materials retain the native frame. */
+    void setTextureCycle(u32 slot, std::span<const Texture* const> frames, f32 position, f32 speed);
     /** Slides the coordinates of everything drawn with `slot`. */
     void setTextureOffset(u32 slot, const Vec2& offset);
     /** Continuous scroll sampled relative to the current whole texture frame. Native
@@ -91,7 +93,7 @@ public:
     /** Draws the still opaque geometry, the moving objects, the still translucent geometry,
      * then the sorted objects farthest from the camera first (those flagged to face it
      * turned its way), and the glows last; `clip` maps world to clip space.
-     * A texture-frame offset samples continuous scrolls without advancing flipbooks. */
+     * A texture-frame offset samples scrolls and soft flipbooks without advancing clocks. */
     void draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
               f32 presentationAlpha = -1.0f, std::optional<f32> textureFrameOffset = {}) const;
     /** Insert dynamic solid objects between these passes so glass and light rays
@@ -117,6 +119,9 @@ private:
     struct Slot {
         const Texture* texture = nullptr; ///< what the set (or a lender) holds for it
         const Texture* frame = nullptr;   ///< what an animation shows instead, when set
+        std::vector<const Texture*> cycle;
+        f32 cyclePosition = 0.0f;
+        f32 cycleSpeed = 0.0f;
         Vec2 offset{0.0f, 0.0f};
         Vec2 scrollPhase{0.0f};
         Vec2 scrollVelocity{0.0f};
@@ -125,6 +130,7 @@ private:
 
         const Texture* current() const { return frame != nullptr ? frame : texture; }
         Vec2 presentedOffset(std::optional<f32> frameOffset) const;
+        const Texture* presentedTexture(DrawState& state, std::optional<f32> frameOffset) const;
     };
     struct Batch {
         u32 slot = 0;

@@ -800,7 +800,7 @@ void Gauntlet::onRender(RenderDevice& device) {
         return;
     }
     if (m_demo.isOpen()) {
-        m_demo.render(device, projection, frameWidth, frameHeight);
+        m_demo.render(device, projection, frameWidth, frameHeight, presentationAlpha());
         return;
     }
     if (m_afterLevel.isOpen()) {

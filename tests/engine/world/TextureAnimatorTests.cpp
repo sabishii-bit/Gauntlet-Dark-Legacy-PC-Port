@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -289,6 +290,53 @@ TEST_CASE("keyed subtree fades clamp at their offset and end without resolving a
     f.animator.step(f.scene, 100);
     REQUIRE(f.animator.counter(0) == 0);
     REQUIRE(f.animator.motionAt(0, 18)->alpha == 1.0f);
+}
+
+TEST_CASE("fractional texture sampling preserves native clocks and signed scroll wraps",
+          "[world][animation][texture-presentation]") {
+    Fixture f("texture-render-clock");
+    auto keyed = cycle("KEY", 0, TextureAnimationInfo::kScrollU, 8, 0, 4);
+    keyed.flag = 0;
+    keyed.offset = 2;
+    const std::array animations{cycle("RAIN", 1, TextureAnimationInfo::kScrollV, -4, 0, 0),
+                                cycle("CYCLE", 0, 0, 2, 0, 2), keyed};
+    for (const s32 fps : {30, 60, 120, 144}) {
+        f.animator.bind(animations, f.textures, f.device);
+        s32 ticks = 0;
+        for (s32 render = 1; render <= fps; ++render) {
+            const f64 time = static_cast<f64>(render) / static_cast<f64>(fps);
+            const auto desired = static_cast<s32>(std::floor(time * 60.0 + 0.000001));
+            while (ticks < desired) {
+                f.animator.advance(1.0f / 60.0f);
+                ++ticks;
+            }
+            const auto alpha = static_cast<f32>(time * 60.0 - static_cast<f64>(ticks));
+            const auto offset = f.animator.presentationOffset(alpha);
+            const auto frame = f.animator.frame();
+            const f32 sampleFrame = ticks == 0 ? 0.0f : static_cast<f32>(time * 30.0 - 0.5);
+            const auto scroll = f.animator.motion(0, offset);
+            CHECK(scroll.offset.y == Approx(-glm::fract(sampleFrame / 4)).margin(0.00001));
+            const auto cycleFrame = f.animator.motion(1, offset);
+            const f32 sample = glm::fract(sampleFrame / 4) * 2;
+            CHECK(cycleFrame.frame == &f.textures.texture(f.device, static_cast<u32>(sample)));
+            CHECK(cycleFrame.frameBlend == Approx(glm::fract(sample)).margin(0.00001));
+            CHECK(f.animator.frame() == frame);
+        }
+        CHECK(f.animator.frame() == 30);
+        CHECK(f.animator.counter(0) == 2);
+    }
+    const auto before = f.animator.motion(0);
+    f.animator.advance(0);
+    CHECK(f.animator.presentationOffset(0) == f.animator.presentationOffset(1));
+    CHECK_FALSE(f.animator.presentationOffset(-1));
+    CHECK(f.animator.motion(0).offset == before.offset);
+    const auto start = f.animator.motionAt(2, 2.0f);
+    const auto half = f.animator.motionAt(2, 2.5f);
+    REQUIRE(start);
+    REQUIRE(half);
+    CHECK(start->scale.x == 0);
+    CHECK(half->offset.x == Approx(-3.625f));
+    CHECK(half->scale.x == Approx(4.625f));
 }
 
 TEST_CASE("a cycle ends where its frames cannot be read", "[world][animation]") {

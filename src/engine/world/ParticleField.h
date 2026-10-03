@@ -44,6 +44,9 @@ public:
     void setSpriteScale(usize index, f32 scale);
     /** Replaces a sprite frame without restarting its emitter or live particles. */
     void setTexture(usize index, const Texture& texture);
+    /** Render-only flipbook pair. Native texture bindings and emission remain unchanged. */
+    void setTextureBlend(usize index, const Texture& current, const Texture* next, f32 blend);
+    void clearTextureBlends();
     /** Ends an emitter's emission; its particles live out their time. */
     void stop(usize index);
     bool active(usize index) const { return m_entries[index].emitter.active(); }
@@ -62,6 +65,9 @@ private:
         ParticleEmitter emitter;
         const Texture* texture = nullptr;
         DrawState state;
+        const Texture* presentedTexture = nullptr;
+        const Texture* nextTexture = nullptr;
+        f32 textureBlend = 0.0f;
     };
 
     std::vector<Entry> m_entries;

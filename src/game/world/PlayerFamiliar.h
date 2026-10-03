@@ -24,6 +24,10 @@ public:
               std::span<TextureSet* const> lenders = {});
     bool bound() const { return m_tree != nullptr; }
     void update(f32 seconds, bool attack);
+    void capturePresentation() {
+        m_presentationAdvanced = false;
+        m_textures.advance(0);
+    }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, f32 alpha, const CameraFrame* camera = nullptr,
               f32 renderAlpha = 1.0f) const;
@@ -42,7 +46,7 @@ private:
     AnimationPlayer m_player;
     TextureAnimator m_textures;
     Vec3 m_offset{0};
-    f32 m_frames = 0;
+    bool m_presentationAdvanced = false;
     s32 m_tier = 0;
 };
 } // namespace gdl::game

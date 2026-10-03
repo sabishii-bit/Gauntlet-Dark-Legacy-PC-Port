@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -647,6 +648,24 @@ TEST_CASE("a tree model adds glowing nodes onto the frame without writing depth"
     REQUIRE_FALSE(device.draws[1].state.depthTest);
     REQUIRE(device.draws[1].state.alphaTest == DrawState::kTranslucentAlphaTest);
     REQUIRE(device.draws[1].vertices[0].position == Vec3{0.0f, 2.0f, 0.0f});
+    const Texture& first = textures.texture(device, 0);
+    const Texture& second = textures.texture(device, 1);
+    figure.setTextureFrame(0, &first, &second, 0.5f);
+    figure.setTextureFrame(1, &first, &second, 0.5f);
+    device.draws.clear();
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].state.nextTexture == nullptr);
+    CHECK(device.draws[1].state.nextTexture == &second);
+    CHECK(device.draws[1].state.textureBlend == 0.5f);
+    figure.setMaskedTexture(&first);
+    device.draws.clear();
+    figure.draw(device, Mat4{1}, Mat4{1});
+    CHECK(device.draws[1].state.nextTexture == nullptr);
+    figure.resetTextures();
+    device.draws.clear();
+    figure.draw(device, Mat4{1}, Mat4{1});
+    CHECK(device.draws[1].state.nextTexture == nullptr);
 }
 
 TEST_CASE("a tree model shows texture frames and slides coordinates it is given",
@@ -770,6 +789,51 @@ TEST_CASE("a tree model refuses a figure with a missing mesh", "[world][model]")
     TreeModel figure;
     REQUIRE_FALSE(figure.bind(trees.tree(0), models, textures, device));
     REQUIRE_FALSE(figure.bound());
+}
+
+TEST_CASE("keyed soft flipbooks retain discrete frames without presentation sampling",
+          "[world][animation][texture-presentation]") {
+    const auto dir = sampleFigure("tree-keyed-native-frames");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    TreeInfo tree = trees.tree(0);
+    tree.nodes[2].objectFlags = TreeNodeInfo::kAdditiveFlag;
+    tree.sequences.resize(1);
+    SECTION("sequence override") {
+        tree.sequences[0].textureAnimationStart = 0;
+        tree.sequences[0].textureAnimationCount = 1;
+    }
+    SECTION("subtree override") {
+        tree.nodes[2].textureAnimation = 0;
+    }
+    TextureAnimationInfo animation;
+    animation.texture = 1;
+    animation.source = 0;
+    animation.frames = 2;
+    animation.rate = 2;
+    animation.flag = 0;
+    test::FakeRenderDevice device;
+    TreeModel model;
+    REQUIRE(model.bind(tree, models, textures, device));
+    TextureAnimator animator;
+    animator.bind(std::array{animation}, textures, device);
+    REQUIRE(animator.motionAt(0, 1.5f).has_value());
+    CHECK(animator.motionAt(0, 1.5f)->frameBlend == Approx(0.75f));
+    for (const bool presentation : {false, true, false}) {
+        device.draws.clear();
+        animator.apply(model, tree, 0, 1.0f,
+                       presentation ? std::optional<f32>{0.0f} : std::nullopt);
+        model.draw(device, Mat4{1}, Mat4{1});
+        REQUIRE(device.draws.size() == 2);
+        const auto& draw = device.draws.back();
+        CHECK(draw.texture == &textures.texture(device, 0));
+        CHECK(draw.state.nextTexture == (presentation ? &textures.texture(device, 1) : nullptr));
+        CHECK(draw.state.textureBlend == (presentation ? 0.5f : 0.0f));
+    }
 }
 
 TEST_CASE("tree texture overrides follow each sequence and reset between shared instances",

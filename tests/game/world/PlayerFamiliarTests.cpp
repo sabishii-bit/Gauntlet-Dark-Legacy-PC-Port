@@ -147,7 +147,6 @@ TEST_CASE("the green knight familiar renders fractional poses without advancing 
         REQUIRE(a.size() == b.size());
         bool moved = false;
         for (usize part = 0; part < a.size(); ++part) {
-            REQUIRE(a[part].texture == b[part].texture);
             REQUIRE(a[part].vertices.size() == b[part].vertices.size());
             for (usize vertex = 0; vertex < a[part].vertices.size(); ++vertex) {
                 moved |= glm::length(a[part].vertices[vertex].position -
@@ -166,13 +165,26 @@ TEST_CASE("the green knight familiar renders fractional poses without advancing 
         bool interpolated = false;
         for (s32 step = 0; step < 60; ++step) {
             familiar.update(1.0f / 60.0f, false);
+            const auto native = draw(-1);
             const auto previous = draw(0);
             const auto middle = draw(0.5f);
             const auto current = draw(1);
             REQUIRE_FALSE(current.empty());
             interpolated |= differs(previous, middle) && differs(middle, current);
-            // Additional monitor refreshes only sample geometry, not texture clocks.
-            CHECK_FALSE(differs(middle, draw(0.5f)));
+            // Monitor refreshes sample the same texture pair and preserve native clock state.
+            const auto repeated = draw(0.5f);
+            CHECK_FALSE(differs(middle, repeated));
+            const auto nativeAfter = draw(-1);
+            REQUIRE(nativeAfter.size() == native.size());
+            for (usize part = 0; part < middle.size(); ++part) {
+                CHECK(repeated[part].texture == middle[part].texture);
+                CHECK(repeated[part].state.nextTexture == middle[part].state.nextTexture);
+                CHECK(repeated[part].state.textureBlend == middle[part].state.textureBlend);
+                CHECK(repeated[part].state.uvOffset == middle[part].state.uvOffset);
+                CHECK(nativeAfter[part].texture == native[part].texture);
+                CHECK(nativeAfter[part].state.uvOffset == native[part].state.uvOffset);
+                CHECK(nativeAfter[part].state.textureBlend == 0);
+            }
         }
         CHECK(interpolated);
     }

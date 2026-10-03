@@ -96,6 +96,19 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
         return nullptr;
     }
     figure->m_costume = &figure->m_costumeArchive.trees.tree(*tree);
+    const auto animations = figure->m_costumeArchive.trees.textureAnimations();
+    if (!animations.empty()) {
+        // Costume cycles include hand glows whose frames belong to POWERUPS.
+        if (!figure->m_sharedTextures.loaded() &&
+            std::ranges::any_of(animations, [](const auto& animation) {
+                return animation.cycles() && animation.source < 0;
+            })) {
+            figure->m_sharedTextures.load(figure->m_sharedTextureDirectory);
+        }
+        const std::array<TextureSet*, 1> lenders{&figure->m_sharedTextures};
+        figure->m_costumeTextures.bind(animations, figure->m_costumeArchive.textures, device,
+                                       lenders);
+    }
     figure->m_directory = directory;
     figure->m_effectDirectory =
         classFolder(root, save.character, std::format("SFX{}", colorCode(save.color)));
@@ -318,6 +331,7 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
 void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
     ++m_animationRevision;
     m_visualTransforms.clear();
+    m_costumeTextures.advance(seconds);
     // PlayerMotion consumes the familiar-shot bit on the following simulation step,
     // not on every frame the attack button is held.
     m_familiarReleased = m_familiarPending && deed != PlayerDeed::Die;
@@ -345,6 +359,12 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
                               ? matrices[static_cast<usize>(source)]
                               : glm::translate(Mat4{1.0f}, m_costume->worldPosition(n));
     }
+}
+
+void PlayerFigure::capturePresentation() {
+    m_costumeTextures.advance(0);
+    m_familiar.capturePresentation();
+    m_companion.capturePresentation();
 }
 
 void PlayerFigure::updateTrail(const Mat4& body, s32 ticks) {
@@ -441,10 +461,37 @@ std::optional<Mat4> PlayerFigure::visualAttachment(const Mat4& body,
     return std::nullopt;
 }
 
+void PlayerFigure::applyCostumeTextures(TreeModel& model, f32 frameBlend) const {
+    // Costume trees have no action sequences. Their free-running cycles must not reset
+    // the separately applied hit skin or hide/show state of held equipment.
+    const auto offset = m_costumeTextures.presentationOffset(frameBlend);
+    for (usize i = 0; i < m_costumeTextures.size(); ++i) {
+        if (m_costumeTextures.keyed(i)) {
+            continue;
+        }
+        const auto motion = m_costumeTextures.motion(i, offset);
+        if (motion.frame != nullptr) {
+            model.setTextureFrame(motion.slot, motion.frame, motion.nextFrame, motion.frameBlend);
+        } else {
+            Vec2 moved = model.textureOffset(motion.slot);
+            const Vec2 direction = m_costumeTextures.scrollDirection(i);
+            if (direction.x != 0) {
+                moved.x = motion.offset.x;
+            }
+            if (direction.y != 0) {
+                moved.y = motion.offset.y;
+            }
+            model.setTextureOffset(motion.slot, moved, motion.scale);
+        }
+    }
+}
+
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon,
                         const CameraFrame* camera, f32 frameBlend) const {
     preparePresentation(frameBlend);
+    applyCostumeTextures(m_model, frameBlend);
+    applyCostumeTextures(m_weapon, frameBlend);
     m_model.draw(device, clip, body, lighting, m_visualTransforms, nullptr, alpha);
     // The earned familiar is its own skin tree (PlayerProcessSkinFX), beside any companion.
     m_familiar.draw(device, clip, body, lighting, alpha, camera, frameBlend);
@@ -455,7 +502,8 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     case PowerupCompanion::Mount::Body: break;
     }
     if (mount.has_value()) {
-        m_companion.draw(device, clip, *mount, lighting, alpha * m_companionAlpha, camera);
+        m_companion.draw(device, clip, *mount, lighting, alpha * m_companionAlpha, camera,
+                         frameBlend);
     }
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;

@@ -185,7 +185,6 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_player.stop();
     m_particles = {};
     m_textures.clear();
-    m_textureFrames = 0;
     m_textureSequence = 0;
     m_textureFrame = 0;
     m_gateParticles = false;
@@ -255,6 +254,7 @@ void ItemFigure::play(s32 index, bool loop) {
 void ItemFigure::capturePresentation() {
     m_previousTransform = m_transform;
     m_previousFrame = m_player.presentationFrame();
+    m_textures.advance(0);
     m_previousGeneration = m_player.generation();
     m_presentationCaptured = true;
     m_presentationAdvanced = false;
@@ -269,10 +269,7 @@ void ItemFigure::update(f32 seconds) {
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     }
     m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
-    m_textureFrames += seconds * ParticleDescriptor::kFrameRate;
-    const auto frames = static_cast<u32>(m_textureFrames);
-    m_textureFrames -= static_cast<f32>(frames);
-    m_textures.step(frames);
+    m_textures.advance(seconds);
     refreshTextures();
     m_particles.setLocalScales(m_pose.poses());
     m_particles.step(seconds, m_transform, m_pose.matrices());
@@ -341,6 +338,7 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
     if (m_tree != nullptr) {
         Mat4 placement = m_transform;
         const TreePose* pose = &m_pose;
+        f32 visualFrame = static_cast<f32>(m_textureFrame);
         if (presentationAlpha >= 0 && m_presentationCaptured) {
             const f32 blend = std::clamp(presentationAlpha, 0.0f, 1.0f);
             if (glm::distance(Vec3{m_previousTransform[3]}, Vec3{m_transform[3]}) <=
@@ -354,12 +352,20 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
                         : m_player.presentationFrame();
                 m_presentationPose.evaluate(*m_tree, m_player.sequence(), frame, false, true);
                 pose = &m_presentationPose;
+                visualFrame = frame;
             }
+        }
+        m_textures.apply(m_model, *m_tree, m_textureSequence, visualFrame,
+                         m_textures.presentationOffset(presentationAlpha));
+        if (!m_holdPose) {
+            m_model.setPresentationFrame(m_player.sequence(), visualFrame);
         }
         m_model.draw(device, clip, glm::scale(placement, Vec3{scale}), lighting, pose->matrices(),
                      camera, alpha, pass);
         if (pass != TreeModel::Pass::DepthWriting) {
             const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
+            m_textures.apply(m_particles, *m_tree, m_textureSequence, visualFrame,
+                             m_textures.presentationOffset(presentationAlpha));
             m_particles.draw(device, clip, frame.right, frame.up,
                              m_presentationAdvanced ? presentationAlpha : -1.0f);
         }

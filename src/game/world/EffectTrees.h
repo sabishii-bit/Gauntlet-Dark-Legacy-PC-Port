@@ -168,7 +168,6 @@ private:
     std::vector<std::unique_ptr<Effect>> m_effects;
     std::vector<std::unique_ptr<Motion>> m_motions;
     std::vector<TextureSet*> m_lenders;
-    f32 m_frames = 0.0f;
     bool m_presentationAdvanced = false;
     u32 m_nextId = 1;
 };

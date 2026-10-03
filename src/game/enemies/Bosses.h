@@ -148,7 +148,6 @@ private:
     const WorldCollision* m_collision = nullptr;
     EnemyScales m_scales;
     char m_realm = 'G';
-    f32 m_textureFrames = 0;
     std::optional<s32> m_id;
     std::optional<Vec3> m_cameraBase;
     std::optional<Vec3> m_defeat;

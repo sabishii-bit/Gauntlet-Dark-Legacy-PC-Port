@@ -57,7 +57,7 @@ private:
     struct Spawn {
         Vec3 position{0.0f};
         const TreeInfo* tree = nullptr;
-        TreeModel model;
+        mutable TreeModel model;
         TreePose pose;
         AnimationPlayer player;
         f32 previousFrame = 0;
@@ -67,7 +67,6 @@ private:
     std::vector<Spawn> m_spawns;
     TextureAnimator m_textures;
     s32 m_ticks = 0;
-    f32 m_frames = 0.0f;
     StartCamera m_camera;
     f32 m_titleSlide = 0.0f;
     bool m_titleLanded = false;

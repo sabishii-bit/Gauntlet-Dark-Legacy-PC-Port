@@ -12,6 +12,7 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 
@@ -51,6 +52,8 @@ public:
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None);
+    /** Clears the last presentation interval when a scene tick may hold the figure. */
+    void capturePresentation();
     u64 animationRevision() const { return m_animationRevision; }
     /** Synchronize the temporary companion before animation (the fire shield's blaze comes
      * from `weapons`). The archives must outlive this figure; switching off does not
@@ -141,6 +144,7 @@ private:
     /** Binds an owned archive's model, loading shared texture pixels only when used. */
     bool bindModel(TreeModel& model, const TreeInfo& tree, ItemArchive& archive,
                    RenderDevice& device);
+    void applyCostumeTextures(TreeModel& model, f32 frameBlend) const;
     /** Binds `object` of `archive` as the lone node of `tree` into `model` when it changed. */
     static void bindObject(RenderDevice& device, ItemArchive& archive, std::string_view object,
                            TreeInfo& tree, TreeModel& model);
@@ -149,14 +153,15 @@ private:
     TextureSet m_familiarTextures; ///< WEAPONS owns the class SFX archives' animated frames
     std::filesystem::path m_sharedTextureDirectory;
     ItemArchive m_costumeArchive;
+    TextureAnimator m_costumeTextures;
     AnimationSet m_actions;
-    TreeModel m_model;
+    mutable TreeModel m_model;
     PlayerAnimator m_animator;
     u64 m_animationRevision = 0;
     const TreeInfo* m_costume = nullptr;
     std::filesystem::path m_directory;
     TreeInfo m_weaponTree;
-    TreeModel m_weapon;
+    mutable TreeModel m_weapon;
     TreeInfo m_handItemTree;
     TreeModel m_handItem;
     bool m_handItemHeld = false;
