@@ -97,6 +97,7 @@ private:
     BitmapFont m_font32;
     TextPainter m_text;
     Canvas m_canvas;
+    Mat4 m_pointerTransform{1};
     MenuTextures m_menuTextures;
     OptionMenu m_titleMenu;
     SettingsMenu m_optionsMenu;

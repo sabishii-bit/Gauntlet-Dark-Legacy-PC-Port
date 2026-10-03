@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -9,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/StatusBox.h"
 
 namespace {
@@ -145,6 +147,96 @@ TEST_CASE("status boxes need the unpacked panels", "[game][screens]") {
     StatusBoxPainter painter;
     REQUIRE_FALSE(painter.load(device, test::scratchDirectory("status-box-none"), nullptr));
     REQUIRE_FALSE(painter.loaded());
+}
+
+TEST_CASE("powerup usage rounds time to one decimal and shows whole remaining charges",
+          "[game][screens][powerup-usage]") {
+    PowerupSlot slot{12.36f, powerup::kSpeed, 50, 0, true};
+    CHECK(StatusBoxPainter::usageAmount(slot) == "12.4");
+    slot.strength = 9.96f;
+    CHECK(StatusBoxPainter::usageAmount(slot) == "10.0");
+    slot.strength = 0.04f;
+    CHECK(StatusBoxPainter::usageAmount(slot) == "0.0");
+    slot.strength = -1;
+    CHECK(StatusBoxPainter::usageAmount(slot).empty());
+    slot = PowerupSlot{-1, powerup::kWeapon, 12, powerup::kSuperShot, true};
+    CHECK(StatusBoxPainter::usageAmount(slot) == "12");
+    slot.on = false;
+    CHECK(StatusBoxPainter::usageAmount(slot).empty());
+    slot.on = true;
+    slot.strength = 0;
+    CHECK(StatusBoxPainter::usageAmount(slot).empty());
+    slot.strength = -1;
+    slot.charge = -1;
+    CHECK(StatusBoxPainter::usageAmount(slot).empty());
+    slot.charge = std::numeric_limits<f32>::infinity();
+    CHECK(StatusBoxPainter::usageAmount(slot).empty());
+}
+
+TEST_CASE("powerup usage fits the unused bottom of all four full status cards in the score font",
+          "[game][screens][powerup-usage][assets]") {
+    const auto root = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    test::FakeRenderDevice device;
+    StatusBoxPainter painter;
+    REQUIRE(painter.load(device, root, &strings));
+    Canvas canvas;
+    StatusBoxView view;
+    view.mode = StatusBoxView::Mode::Status;
+    view.active = true;
+    view.name = "WWWWWW";
+    view.gold = 99999;
+    view.health = 10400;
+    view.keys = 9;
+    view.potions = 9;
+    view.level = 99;
+    view.runes = 0xFFF;
+    view.bossKeys = 0xFF;
+    view.keysShown = true;
+    for (s32 player = 0; player < 4; ++player) {
+        CAPTURE(player);
+        view.powerup.reset();
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        painter.draw(canvas, player, view, true);
+        canvas.end();
+        const auto baseline = device.draws;
+        const Texture* score = nullptr;
+        for (const auto& draw : baseline) {
+            if (test::minCorner(draw).y == 359.5f) {
+                score = draw.texture;
+            }
+        }
+        REQUIRE(score != nullptr);
+        view.powerup = PowerupSlot{9999.96f, powerup::kArmor, 0, powerup::kInvulnerable, true};
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        painter.draw(canvas, player, view, true);
+        canvas.end();
+        REQUIRE(device.draws.size() > baseline.size());
+        for (usize i = 0; i < baseline.size(); ++i) {
+            CHECK(test::minCorner(device.draws[i]) == test::minCorner(baseline[i]));
+            CHECK(test::maxCorner(device.draws[i]) == test::maxCorner(baseline[i]));
+        }
+        bool scoreDigits = false;
+        bool decimal = false;
+        for (usize i = baseline.size(); i < device.draws.size(); ++i) {
+            const auto& draw = device.draws[i];
+            const Vec2 low = test::minCorner(draw);
+            const Vec2 high = test::maxCorner(draw);
+            CHECK(low.x >= static_cast<f32>(player * StatusBoxPainter::kWidth +
+                                            StatusBoxPainter::kUsageLeft));
+            CHECK(high.x <= static_cast<f32>(player * StatusBoxPainter::kWidth +
+                                             StatusBoxPainter::kUsageRight));
+            CHECK(low.y >= static_cast<f32>(StatusBoxPainter::kUsageY));
+            CHECK(high.y < static_cast<f32>(StatusBoxPainter::kY + StatusBoxPainter::kHeight));
+            scoreDigits = scoreDigits || draw.texture == score;
+            decimal = decimal || draw.texture == &device.whiteTexture();
+        }
+        CHECK(scoreDigits);
+        CHECK(decimal);
+    }
 }
 
 } // namespace

@@ -21,6 +21,13 @@ constexpr s32 kArrowSheetSize = 32;
 constexpr s32 kArrowDrawScale = 2;
 constexpr s32 kFullAlpha = 255;
 constexpr s32 kDisabledAlpha = 128;
+constexpr f32 kArrowSize = 5;
+constexpr f32 kArrowGap = 6;
+
+bool contains(const Rect& area, const Vec2& point) {
+    return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
+           point.y < area.y + area.height;
+}
 
 u8 clampByte(s32 value) {
     return static_cast<u8>(std::clamp(value, 0, kFullAlpha));
@@ -93,6 +100,8 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     m_screen = screen;
     m_open = true;
     m_backdropReleased = false;
+    m_lastPointer.reset();
+    m_hoverPart = 0;
     m_time = 0;
     m_finishTimer = 0;
     m_iconY = 0;
@@ -123,6 +132,26 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
         m_columnY = m_definition.y;
     }
     m_columnX = m_definition.x < 0 ? -(m_definition.x + m_columnWidth / 2) : m_definition.x;
+
+    m_itemAreas.clear();
+    m_alternateX.clear();
+    for (usize i = 0; i < m_definition.items.size(); ++i) {
+        const auto& item = m_definition.items[i];
+        const auto label = item.text + (item.markedPart == 1 ? " ~" : "");
+        const auto x = painter.leftEdge(itemX(i), label, m_definition.scale);
+        auto right = x + painter.measure(label, m_definition.scale);
+        const auto alternate = itemX(i) + painter.measure(item.text + "    ", m_definition.scale);
+        if (!item.alternate.empty()) {
+            right = alternate + painter.measure(item.alternate + " ~", m_definition.scale);
+        }
+        if (!item.value.empty()) {
+            right = std::max(right, m_definition.valueX + m_definition.valueWidth +
+                                        static_cast<s32>(kArrowGap + kArrowSize));
+        }
+        m_itemAreas.push_back({static_cast<f32>(x), static_cast<f32>(itemY(i)),
+                               static_cast<f32>(right - x), static_cast<f32>(m_lineHeight)});
+        m_alternateX.push_back(alternate);
+    }
 
     const s32 width = m_definition.backdropWidth < 0 ? m_columnWidth + kBackdropMargin * 2
                                                      : m_definition.backdropWidth;
@@ -178,6 +207,41 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks) {
     if (count == 0) {
         return input.back ? MenuEvent{MenuAction::Back, 0} : MenuEvent{};
     }
+    const s32 previous = m_selection;
+    if (!input.pointerNormalized && input.pointer) {
+        const bool moved = !m_lastPointer || *m_lastPointer != *input.pointer;
+        m_lastPointer = input.pointer;
+        if (moved || input.pointerPressed) {
+            m_hoverPart = 0;
+            for (usize i = 0; i < m_itemAreas.size(); ++i) {
+                const auto& item = m_definition.items[i];
+                if (!item.enabled || !contains(m_itemAreas[i], *input.pointer)) {
+                    continue;
+                }
+                focus(i);
+                if (!item.alternate.empty()) {
+                    m_hoverPart = input.pointer->x >= static_cast<f32>(m_alternateX[i]) ? 2 : 1;
+                }
+                if (input.pointerPressed) {
+                    const s32 direction =
+                        !item.value.empty() &&
+                                input.pointer->x >= static_cast<f32>(m_definition.valueX) -
+                                                        kArrowGap - kArrowSize &&
+                                input.pointer->x < static_cast<f32>(m_definition.valueX)
+                            ? -1
+                            : 1;
+                    return {MenuAction::Choice, item.code, m_hoverPart, direction};
+                }
+                break;
+            }
+        }
+    } else {
+        m_lastPointer.reset();
+        m_hoverPart = 0;
+    }
+    if (input.up || input.down || input.left || input.right || input.select || input.start) {
+        m_hoverPart = 0;
+    }
     if (input.select || (m_definition.startSelects && input.start)) {
         if (!m_definition.items[static_cast<usize>(m_selection)].enabled) {
             return {};
@@ -196,7 +260,13 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks) {
         m_selection = nextEnabled(m_selection, -1);
         return MenuEvent{MenuAction::Moved, 0};
     }
-    return {};
+    return previous != m_selection ? MenuEvent{MenuAction::Moved, 0} : MenuEvent{};
+}
+
+void OptionMenu::focus(usize item) {
+    if (item < m_definition.items.size() && m_definition.items[item].enabled) {
+        m_selection = static_cast<s32>(item);
+    }
 }
 
 /** The next enabled item from `from` in direction `step`, wrapping; `from` when none. */
@@ -350,7 +420,9 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
                     std::min(fade, pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks)));
                 glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
                 glow.expand = kGlowExpand;
-                painter.draw(canvas, activeX, y, activeText, glow);
+                const bool hoverAlternate = m_hoverPart == 2 || (m_hoverPart == 0 && alternate);
+                painter.draw(canvas, hoverAlternate ? secondX : x, y,
+                             hoverAlternate ? item.alternate : item.text, glow);
             }
             drawLabel(canvas, painter, activeX, y, activeText + " ~", m_definition.scale,
                       m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
@@ -389,8 +461,6 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         if (!item.value.empty()) {
             drawPart(m_definition.valueX, item.value);
             if (item.enabled) {
-                constexpr f32 kArrowSize = 5;
-                constexpr f32 kArrowGap = 6;
                 const auto center = static_cast<f32>(y) + static_cast<f32>(m_lineHeight) / 2;
                 const auto left = static_cast<f32>(m_definition.valueX) - kArrowGap;
                 const auto right =

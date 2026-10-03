@@ -45,6 +45,7 @@ private:
     MenuTextures m_art;
     MenuScreen m_screen;
     Canvas m_canvas;
+    Mat4 m_pointerTransform{1};
     OptionMenu m_menu;
     SettingsMenu m_settings;
     std::vector<PartyMember> m_party;

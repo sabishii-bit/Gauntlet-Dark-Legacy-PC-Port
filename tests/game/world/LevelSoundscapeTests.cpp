@@ -683,26 +683,42 @@ TEST_CASE("level ambience outlives early cue teardown but not close or rebind",
     soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
     const SoundHandle first = soundscape.ambience().emitter(0).handle;
     REQUIRE(player.isPlaying(first));
-    std::array<f32, 128> output{};
-    mixer.mix(output);
-    REQUIRE(output.back() > 0.0f); // ambient items prefer TOWAMB, unlike named effects
-    soundscape.stopCues();
-    REQUIRE(player.isPlaying(first));
-    soundscape.bindAmbience(layout);
-    REQUIRE_FALSE(player.isPlaying(first));
-    soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
-    const SoundHandle second = soundscape.ambience().emitter(0).handle;
-    REQUIRE(player.isPlaying(second));
-    soundscape.suspend();
-    CHECK_FALSE(player.isPlaying(second));
-    CHECK(soundscape.ambience().size() == 1);
-    soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
-    const SoundHandle resumed = soundscape.ambience().emitter(0).handle;
-    CHECK(player.isPlaying(resumed));
-    soundscape.close();
-    CHECK_FALSE(player.isPlaying(resumed));
-    REQUIRE_FALSE(player.isPlaying(second));
-    REQUIRE(soundscape.ambience().size() == 0);
+    SECTION("pause silences ambience without muting unrelated menu voices") {
+        const SoundHandle menu = soundscape.playNamed("FIRE");
+        REQUIRE(player.isPlaying(menu));
+        soundscape.pauseAmbience();
+        CHECK_FALSE(player.isPlaying(first));
+        CHECK(player.isPlaying(menu));
+        CHECK(soundscape.ambience().playingCount() == 0);
+        soundscape.pauseAmbience(); // repeated pause is harmless
+        soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
+        const SoundHandle restarted = soundscape.ambience().emitter(0).handle;
+        CHECK(player.isPlaying(restarted));
+        CHECK(restarted != first);
+        soundscape.close();
+    }
+    SECTION("cue teardown preserves ambience until suspension or close") {
+        std::array<f32, 128> output{};
+        mixer.mix(output);
+        REQUIRE(output.back() > 0.0f); // ambient items prefer TOWAMB, unlike named effects
+        soundscape.stopCues();
+        REQUIRE(player.isPlaying(first));
+        soundscape.bindAmbience(layout);
+        REQUIRE_FALSE(player.isPlaying(first));
+        soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
+        const SoundHandle second = soundscape.ambience().emitter(0).handle;
+        REQUIRE(player.isPlaying(second));
+        soundscape.suspend();
+        CHECK_FALSE(player.isPlaying(second));
+        CHECK(soundscape.ambience().size() == 1);
+        soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
+        const SoundHandle resumed = soundscape.ambience().emitter(0).handle;
+        CHECK(player.isPlaying(resumed));
+        soundscape.close();
+        CHECK_FALSE(player.isPlaying(resumed));
+        REQUIRE_FALSE(player.isPlaying(second));
+        REQUIRE(soundscape.ambience().size() == 0);
+    }
 }
 
 TEST_CASE("level soundscape is silent without an output and tolerates missing music",
@@ -764,18 +780,18 @@ TEST_CASE("Wraith music resolves its numbered ADS parts and produces audio",
     soundscape.close();
 }
 
-/** A stream of a single mono DSP frame with zero predictors and positive residuals. */
+/** One audible mono DSP frame followed by the format's unplayed transport trailer. */
 std::vector<u8> dspStream() {
     test::ByteWriter stream;
     stream.putFourcc("dhSS");
     for (const u32 value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
         stream.putU32(std::byteswap(value));
     }
-    stream.putFourcc("dbSS").putU32(std::byteswap(8U));
+    stream.putFourcc("dbSS").putU32(std::byteswap(16U));
     std::array<u8, 96> channel{};
-    channel[3] = 14;
+    channel[3] = 28;
     const std::array<u8, 8> frame{0, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
-    stream.putBytes(channel).putBytes(frame);
+    stream.putBytes(channel).putBytes(frame).putBytes(frame);
     return stream.bytes();
 }
 

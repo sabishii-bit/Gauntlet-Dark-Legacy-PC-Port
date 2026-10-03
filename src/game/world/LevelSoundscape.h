@@ -46,6 +46,9 @@ public:
      * speaking or a trigger camera running: sounds.c 909). */
     void updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear, f32 volume,
                         bool ducked = false, const WorldScene* world = nullptr);
+    /** Stop proximity loops while gameplay is held; the next gameplay update restores them.
+     * Leaves music, narration and menu sounds under their own controls. */
+    void pauseAmbience();
     static constexpr f32 kDuckedLevel = 16.0f / 255.0f;
     /** Lets the zones ask for the area holding the party (items.c 4514-4522, 4733-4736). */
     void updateMusicAreas(std::span<const Vec3> listeners);

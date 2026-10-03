@@ -138,7 +138,7 @@ public:
     bool isOpen() const { return m_open; }
 
     PlayOutcome update(f64 deltaSeconds, const Inputs& inputs);
-    /** Silence drain loops before the options menu stops gameplay updates. */
+    /** Silence ambience and drain loops before the options menu stops gameplay updates. */
     void pauseGameplaySounds();
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight,
                 bool optionsOpen = false, f32 frameBlend = -1.0f);

@@ -898,6 +898,10 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(scene.ambience().playingCount() == 0);
     scene.update(1.0 / 60.0, still);
     REQUIRE(scene.ambience().playingCount() >= 1);
+    scene.pauseGameplaySounds();
+    CHECK(scene.ambience().playingCount() == 0);
+    scene.update(1.0 / 60.0, still);
+    CHECK(scene.ambience().playingCount() >= 1);
     scene.close();
     REQUIRE(scene.ambience().size() == 0);
     // Standing at Sumner's lectern activates the authored beam pad after arrival.

@@ -136,6 +136,16 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     glfwSetWindowUserPointer(m_window, this);
     glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
     glfwSetKeyCallback(m_window, &GlfwWindow::keyCallback);
+    glfwSetMouseButtonCallback(m_window, [](GLFWwindow* window, s32 button, s32 action, s32) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
+            self->m_input.latchPointer();
+        }
+        if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+            auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
+            self->m_input.latchPointerBack();
+        }
+    });
 
     if (desc.mode != WindowMode::Windowed &&
         !setDisplayMode(desc.mode, {desc.width, desc.height})) {
@@ -163,6 +173,17 @@ void GlfwWindow::pollEvents() {
     }
     pollKeyboard();
     pollGamepads();
+    f64 x = 0;
+    f64 y = 0;
+    s32 width = 0;
+    s32 height = 0;
+    glfwGetCursorPos(m_window, &x, &y);
+    glfwGetWindowSize(m_window, &width, &height);
+    const bool inside = width > 0 && height > 0 && x >= 0 && y >= 0 && x < width && y < height &&
+                        glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE;
+    m_input.setPointer(
+        {width > 0 ? static_cast<f32>(x / width) : 0, height > 0 ? static_cast<f32>(y / height) : 0,
+         inside, inside && glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS});
 }
 
 void GlfwWindow::setIcon(std::span<const Image> images) {

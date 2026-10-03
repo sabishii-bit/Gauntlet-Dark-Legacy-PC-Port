@@ -120,10 +120,11 @@ void PauseMenu::showQuit() {
     menu.items = {{text("pause.no"), 0}, {text("pause.yes"), 1}};
     m_menu.open(menu, m_text, m_screen);
 }
-PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
+PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     if (!m_open) {
         return PauseOutcome::Running;
     }
+    const auto input = mapMenuPointer(rawInput, m_pointerTransform);
     const auto rate =
         m_context.config != nullptr ? m_context.config->timing.tickRate : TimingConfig{}.tickRate;
     m_tickRemainder += std::max(seconds, 0.0) * rate;
@@ -181,8 +182,9 @@ void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, 
     }
     const auto virtualWidth = static_cast<f32>(m_screen.width);
     const auto virtualHeight = static_cast<f32>(m_screen.height);
-    m_canvas.begin(
-        device, makeVirtualScreenTransform(projection, virtualWidth, virtualHeight, width, height));
+    m_pointerTransform =
+        makeVirtualScreenTransform(projection, virtualWidth, virtualHeight, width, height);
+    m_canvas.begin(device, m_pointerTransform);
     m_canvas.fillScreen(Color::rgba(0, 0, 0, 150));
     if (m_page == Page::Options) {
         m_settings.draw(m_canvas, m_text, m_art);

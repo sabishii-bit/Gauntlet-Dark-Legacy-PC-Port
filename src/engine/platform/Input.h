@@ -10,6 +10,14 @@
 
 namespace gdl {
 
+/** Cursor position normalized to the window's client area, independent of pixel density. */
+struct PointerSnapshot {
+    f32 x = 0;
+    f32 y = 0;
+    bool inside = false;
+    bool down = false;
+};
+
 enum class Key : u8 {
     Unknown = 0,
     Escape,
@@ -136,6 +144,12 @@ public:
 
     /** Characters typed since the last poll, as Unicode code points in order. */
     std::span<const u32> typedText() const { return m_typed; }
+    const PointerSnapshot& pointer() const { return m_pointer; }
+    bool wasPointerPressed() const { return m_pointerPressed; }
+    bool wasPointerBackPressed() const { return m_pointerBackPressed; }
+    void setPointer(const PointerSnapshot& pointer);
+    void latchPointer() { m_pointerPressed = true; }
+    void latchPointerBack() { m_pointerBackPressed = true; }
 
     /** Platform-layer entry points. */
     void beginPoll();
@@ -164,6 +178,9 @@ private:
     std::array<std::array<bool, static_cast<usize>(PadButton::Count)>, kMaxPads>
         m_pendingPadPresses{};
     std::vector<u32> m_typed;
+    PointerSnapshot m_pointer;
+    bool m_pointerPressed = false;
+    bool m_pointerBackPressed = false;
 };
 
 } // namespace gdl

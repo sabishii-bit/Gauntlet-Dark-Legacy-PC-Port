@@ -44,6 +44,8 @@ void SettingsMenu::open(const GameConfig& config, const StringTable* strings, Pe
     m_clock = std::move(clock);
     m_confirmVideo = false;
     m_audioDirty = false;
+    m_audioDrag.reset();
+    m_audioPointer.reset();
     m_scope = scope;
     m_painter = &painter;
     m_screen = screen;
@@ -435,6 +437,36 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         return {MenuAction::Moved, 0};
     }
     if (m_page == Page::Audio && !m_menu.closing()) {
+        constexpr f32 kSliderX = 128;
+        if (input.pointer && !input.pointerNormalized) {
+            for (usize i = 0; i < 2; ++i) {
+                const auto area = AudioSlider::track(
+                    kSliderX, static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()));
+                const bool inside =
+                    input.pointer->x >= area.x && input.pointer->x <= area.x + area.width &&
+                    input.pointer->y >= area.y && input.pointer->y < area.y + area.height;
+                if (inside && (m_audioPointer != input.pointer || input.pointerPressed)) {
+                    m_menu.focus(i);
+                }
+                if (inside && input.pointerPressed) {
+                    m_audioDrag = i;
+                }
+            }
+            m_audioPointer = input.pointer;
+            if (m_audioDrag && (input.pointerHeld || input.pointerPressed)) {
+                m_menu.focus(*m_audioDrag);
+                const auto volume = AudioSlider::volumeAt(input.pointer->x, kSliderX);
+                const auto current =
+                    *m_audioDrag == 0 ? m_config.audio.musicVolume : m_config.audio.effectsVolume;
+                change(AudioSlider::value(volume) - AudioSlider::value(current));
+                return {MenuAction::Moved, 0};
+            }
+        } else {
+            m_audioPointer.reset();
+        }
+        if (!input.pointerHeld) {
+            m_audioDrag.reset();
+        }
         const bool stereo = m_menu.selection() == 2;
         if ((!stereo && horizontal && ticks > 0) || (stereo && (input.left || input.right))) {
             change((input.left || input.leftHeld ? -1 : 1) * (stereo ? 1 : ticks));
@@ -454,8 +486,9 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         rebuild(input.up ? row : 0);
         return {MenuAction::Moved, 0};
     }
-    if (m_page == Page::Graphics && input.select) {
-        const auto code = m_menu.definition().items[static_cast<usize>(m_menu.selection())].code;
+    auto event = m_menu.update(mapped, ticks);
+    if (m_page == Page::Graphics && event.action == MenuAction::Choice) {
+        const auto code = event.code;
         if (code == 5) {
             m_confirmVideo = m_video.apply(m_config);
             m_notice = m_confirmVideo ? "" : text("settings.failed");
@@ -474,14 +507,14 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_config.timing.gameplayFrameRate = defaults.timing.gameplayFrameRate;
             rebuild(kVideoRows + 1);
         } else if (code == 7) {
-            mapped.select = false;
-            mapped.back = true;
+            event.action = MenuAction::Back;
+        } else if (event.direction != 0) {
+            change(event.direction);
         }
         if (code != 7) {
             return {};
         }
     }
-    const auto event = m_menu.update(mapped, ticks);
     if (event.action == MenuAction::Back) {
         if (m_page == Page::Graphics) {
             m_config = m_video.saved();
@@ -536,7 +569,10 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_page = Page::Multiplayer;
             rebuild(static_cast<s32>(m_config.multiplayer.mode));
         } else if (m_page == Page::Audio) {
-            // Confirm selects the row but does not alter its setting.
+            if (event.code == 2 && event.part != 0 && m_config.audio.stereo != (event.part == 2)) {
+                change(1);
+                flushAudio();
+            }
         } else {
             change(1);
         }

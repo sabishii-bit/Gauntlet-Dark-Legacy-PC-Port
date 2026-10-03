@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <vector>
+
 #include "engine/core/Types.h"
 
 #include "game/players/Inventory.h"
@@ -34,6 +37,12 @@ public:
     static constexpr f32 kLabelScale = 0.45f;
 
     SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks);
+    /** Remember the acquired slot without opening or restarting the selector. */
+    void focus(const Inventory& inventory, s32 kind, u32 flags);
+    /** Active finite usage: selection first, then acquisitions newest first. */
+    s32 usageSlot(const Inventory& inventory) const;
+    static bool charged(const PowerupSlot& slot);
+    static std::optional<f32> remaining(const PowerupSlot& slot);
     void close();
 
     State state() const { return m_state; }
@@ -48,6 +57,7 @@ private:
     State m_state = State::Closed;
     s32 m_selection = -1;
     s32 m_slide = 0;
+    std::vector<s32> m_acquired;
 };
 
 } // namespace gdl::game

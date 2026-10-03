@@ -8,6 +8,7 @@
 
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/PartyHud.h"
 namespace {
 using namespace gdl;
@@ -138,6 +139,36 @@ TEST_CASE("party HUD clears transient presentation without altering participants
     REQUIRE_FALSE(hud.help().showing());
     REQUIRE_FALSE(hud.selector(3).showing());
     REQUIRE(players[0].actor.save().health() == 123);
+}
+
+TEST_CASE("pickup focus and usage are private to each player's controller identity",
+          "[game][screens][party-hud][selector][multiplayer]") {
+    PartyHud hud;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 2> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].actor.spawn(i == 0 ? 3 : 1, {}, nullptr, Vec3{0}, 0);
+        Inventory& inventory = players[i].actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kSpeed, 0, 5, 12.3f);
+        inventory.addPowerup(powerup::kSpecial, powerup::kGrowth, 0, 30);
+    }
+    hud.focusPickup(players[0].actor, powerup::kSpeed, 0);
+    hud.focusPickup(players[1].actor, powerup::kSpecial, powerup::kGrowth);
+    REQUIRE(hud.selector(3).selection() == 0);
+    REQUIRE(hud.selector(1).selection() == 1);
+    REQUIRE(hud.selector(0).selection() == -1);
+    REQUIRE(PartyHud::status(3, players, &hud.selector(3)).powerup->strength == 12.3f);
+    REQUIRE(PartyHud::status(1, players, &hud.selector(1)).powerup->strength == 30);
+    hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 32, audio);
+    hud.stepSelector(players[0].actor, {}, 1, audio);
+    hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 1, audio);
+    REQUIRE_FALSE(players[0].actor.save().progress().inventory.powerups[0].on);
+    REQUIRE(players[1].actor.save().progress().inventory.powerups[0].on);
+    REQUIRE(PartyHud::status(3, players, &hud.selector(3)).powerup->flags == powerup::kGrowth);
+    players[0].life = PlayerLife::Dying;
+    REQUIRE_FALSE(PartyHud::status(3, players, &hud.selector(3)).powerup);
+    players[1].departed = true;
+    REQUIRE_FALSE(PartyHud::status(1, players, &hud.selector(1)).powerup);
 }
 TEST_CASE("crystal-style item announcements use common audio and do not replay when seen",
           "[game][screens][party-hud][items]") {

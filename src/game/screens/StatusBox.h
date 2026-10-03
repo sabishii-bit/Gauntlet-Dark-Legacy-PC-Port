@@ -14,6 +14,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/players/Inventory.h"
 #include "game/players/TurboMeter.h"
 
 namespace gdl::game {
@@ -43,6 +44,7 @@ struct StatusBoxView {
     u16 runes = 0;                       ///< the runestones held, a bit each (retail's shards)
     u16 bossKeys = 0;                    ///< the bosses' keys, a bit per realm in the tower's order
     bool keysShown = false;              ///< the keys show only a while after a level opens
+    std::optional<PowerupSlot> powerup;  ///< active item's remaining usage, below health and gold
 };
 
 /**
@@ -93,6 +95,11 @@ public:
     static constexpr s32 kHeight = 64;
     static constexpr s32 kBarY = 304;
     static constexpr s32 kBarHeight = 16;
+    static constexpr s32 kUsageY = 377;
+    static constexpr s32 kUsageLeft = 8;
+    static constexpr s32 kUsageRight = 120;
+    static constexpr f32 kUsageScale = 0.375f; ///< SCORE digits fit in the unused bottom row
+    static constexpr f32 kUsageNameScale = 0.75f;
 
     /** Loads the panels and fonts from the unpacked data; false when they are missing. */
     bool load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
@@ -115,11 +122,14 @@ public:
     /** Draws a pickup count above slot `slot`: the STATIC `icon`, then "count/total". */
     void drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count, s32 total);
     void setCountTextures(TextureSet* textures) { m_countTextures = textures; }
+    /** The quantity alone: one decimal for time, whole usable charges otherwise. */
+    static std::string usageAmount(const PowerupSlot& slot);
 
 private:
     const Texture* selectTexture(std::string_view name);
     const Texture* staticTexture(std::string_view name);
     std::string_view text(std::string_view id) const;
+    void drawUsage(Canvas& canvas, s32 left, const PowerupSlot& powerup, Color tint);
 
     RenderDevice* m_device = nullptr;
     const StringTable* m_strings = nullptr;
