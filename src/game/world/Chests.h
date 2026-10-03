@@ -135,7 +135,8 @@ public:
     /** An emptied chest goes, as the original's does. */
     void remove(usize chest);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr, f32 presentationAlpha = -1.0f) const;
+    void capturePresentation();
 
     /** The item record a container's first parameter leads to: itself, or the pick from a
      * list by the original's rule, which moves `seed` on. */

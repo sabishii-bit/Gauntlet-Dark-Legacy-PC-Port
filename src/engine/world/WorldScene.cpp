@@ -376,9 +376,28 @@ void WorldScene::setTextureFrame(u32 slot, const Texture* texture) {
 }
 
 void WorldScene::setTextureOffset(u32 slot, const Vec2& offset) {
+    setTextureScroll(slot, offset, Vec2{0}, Vec2{0});
+}
+
+void WorldScene::setTextureScroll(u32 slot, const Vec2& offset, const Vec2& phase,
+                                  const Vec2& velocity) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.offset = offset;
+        found->second.scrollPhase = phase;
+        found->second.scrollVelocity = velocity;
     }
+}
+
+Vec2 WorldScene::Slot::presentedOffset(std::optional<f32> frameOffset) const {
+    if (!frameOffset) {
+        return offset;
+    }
+    const Vec2 sampled = offset + scrollPhase + scrollVelocity * *frameOffset;
+    const auto wrap = [](f32 value, f32 velocity) {
+        const f32 sign = velocity < 0 ? -1.0f : 1.0f;
+        return velocity != 0 ? sign * glm::fract(sign * value) : value;
+    };
+    return {wrap(sampled.x, scrollVelocity.x), wrap(sampled.y, scrollVelocity.y)};
 }
 
 const Texture* WorldScene::textureOf(u32 slot) const {
@@ -432,12 +451,13 @@ const Mat4& WorldScene::presentedWorldOf(usize object, f32 alpha) const {
     return m_presentedWorld[object];
 }
 
-void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4& clip) const {
+void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4& clip,
+                           std::optional<f32> textureFrameOffset) const {
     const Slot& slot = m_slots.at(batch.slot);
     DrawState state;
     state.blend = batch.additive ? BlendMode::Additive : BlendMode::Alpha;
     state.lightmap = batch.lightmap;
-    state.uvOffset = slot.offset;
+    state.uvOffset = slot.presentedOffset(textureFrameOffset);
     state.alphaTest = batch.translucent ? kAlphaTest : 0.0f;
     state.cullBack = true;
     state.depthWrite = batch.depthWrite;
@@ -488,8 +508,8 @@ Color WorldScene::shadeAt(bool additive, bool prelit, const MeshVertex& vertex,
 /** Places, lights and draws a unit's parts: its opaque ones when `opaque`, its translucent
  * and glowing ones when `translucent`. */
 void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
-                          const CameraFrame& camera, bool opaque, bool translucent,
-                          f32 alpha) const {
+                          const CameraFrame& camera, bool opaque, bool translucent, f32 alpha,
+                          std::optional<f32> textureFrameOffset) const {
     if (!unit.visible || unit.alpha <= 0.0f) {
         return;
     }
@@ -519,7 +539,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         DrawState state;
         state.blend = part.additive ? BlendMode::Additive : BlendMode::Alpha;
         state.lightmap = part.lightmap;
-        state.uvOffset = slot.offset;
+        state.uvOffset = slot.presentedOffset(textureFrameOffset);
         state.alphaTest = part.translucent ? kAlphaTest : 0.0f;
         state.cullBack = true;
         state.depthWrite = unit.depthWrite && unit.alpha >= 1.0f;
@@ -530,13 +550,13 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
 }
 
 void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                      f32 presentationAlpha) const {
-    drawOpaque(device, clip, camera, presentationAlpha);
-    drawDeferred(device, clip, camera, presentationAlpha);
+                      f32 presentationAlpha, std::optional<f32> textureFrameOffset) const {
+    drawOpaque(device, clip, camera, presentationAlpha, textureFrameOffset);
+    drawDeferred(device, clip, camera, presentationAlpha, textureFrameOffset);
 }
 
 void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                            f32 presentationAlpha) const {
+                            f32 presentationAlpha, std::optional<f32> textureFrameOffset) const {
     std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
     std::fill(m_presentedValid.begin(), m_presentedValid.end(), u8{0});
     // Background sheets can intersect the arena in geometry space (A5's lightning
@@ -544,23 +564,24 @@ void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip, const Camera
     // actors and pillars. Draw the authored depthless far layer before the solids.
     for (const Unit& unit : m_units) {
         if (unit.background) {
-            drawUnit(device, unit, clip, camera, true, true, presentationAlpha);
+            drawUnit(device, unit, clip, camera, true, true, presentationAlpha, textureFrameOffset);
         }
     }
     usize next = 0;
     while (next < m_batches.size() && !m_batches[next].translucent && !m_batches[next].additive) {
-        drawBatch(device, m_batches[next++], clip);
+        drawBatch(device, m_batches[next++], clip, textureFrameOffset);
     }
     // Moving objects' solid parts join the opaque; everything blended sorts by depth.
     for (const Unit& unit : m_units) {
         if (!unit.sorted && !unit.background) {
-            drawUnit(device, unit, clip, camera, true, false, presentationAlpha);
+            drawUnit(device, unit, clip, camera, true, false, presentationAlpha,
+                     textureFrameOffset);
         }
     }
 }
 
 void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                              f32 presentationAlpha) const {
+                              f32 presentationAlpha, std::optional<f32> textureFrameOffset) const {
     const Vec3& eye = camera.position;
     std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
     std::fill(m_presentedValid.begin(), m_presentedValid.end(), u8{0});
@@ -569,7 +590,7 @@ void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip, const Came
         ++next;
     }
     while (next < m_batches.size() && !m_batches[next].additive) {
-        drawBatch(device, m_batches[next++], clip);
+        drawBatch(device, m_batches[next++], clip, textureFrameOffset);
     }
     // Larger view depths draw first. Negative authored biases defer overlays until after
     // ordinary translucent surfaces; depth testing still occludes them behind solid walls.
@@ -585,11 +606,12 @@ void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip, const Came
     for (const usize i : m_order) {
         const Unit& unit = m_units[i];
         if (!unit.background) {
-            drawUnit(device, unit, clip, camera, unit.sorted, true, presentationAlpha);
+            drawUnit(device, unit, clip, camera, unit.sorted, true, presentationAlpha,
+                     textureFrameOffset);
         }
     }
     while (next < m_batches.size()) {
-        drawBatch(device, m_batches[next++], clip);
+        drawBatch(device, m_batches[next++], clip, textureFrameOffset);
     }
 }
 

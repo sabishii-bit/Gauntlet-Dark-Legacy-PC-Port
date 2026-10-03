@@ -219,19 +219,27 @@ std::vector<CombatantObstacle> LevelFixtures::critterObstacles() const {
     return items;
 }
 
+void LevelFixtures::capturePresentation() {
+    m_chests.capturePresentation();
+    m_gates.capturePresentation();
+    m_traps.capturePresentation();
+    m_barrels.capturePresentation();
+}
+
 void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                         const CameraFrame* camera) const {
-    m_chests.draw(device, clip, lighting, camera);
-    m_gates.draw(device, clip, lighting);
-    m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting);
-    m_barrels.draw(device, clip, lighting);
+                         const CameraFrame* camera, f32 presentationAlpha) const {
+    m_chests.draw(device, clip, lighting, camera, presentationAlpha);
+    m_gates.draw(device, clip, lighting, presentationAlpha);
+    m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting, presentationAlpha);
+    m_barrels.draw(device, clip, lighting, presentationAlpha);
     m_safeRocks.draw(device, clip, lighting);
     m_rubble.draw(device, clip, lighting);
 }
 
 void LevelFixtures::drawEffects(RenderDevice& device, const Mat4& clip,
-                                const WorldLighting& lighting, const CameraFrame* camera) const {
-    m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::Effects);
+                                const WorldLighting& lighting, const CameraFrame* camera,
+                                f32 presentationAlpha) const {
+    m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::Effects, presentationAlpha);
 }
 
 void LevelFixtures::leaveRubble(std::string_view object, const Mat4& transform) {

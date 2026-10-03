@@ -103,7 +103,9 @@ public:
     const Mat4& transformOf(usize index) const { return m_barrels[index]->figure.transform(); }
     /** The boxes of those still in the way. */
     std::vector<Obstacle> obstacles() const;
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 presentationAlpha = -1.0f) const;
+    void capturePresentation();
 
 private:
     static f32 opacity(const Barrel& barrel);

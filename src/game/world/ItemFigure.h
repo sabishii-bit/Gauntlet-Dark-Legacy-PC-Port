@@ -58,9 +58,11 @@ public:
     /** Starts the figure's sequence number `index`. */
     void play(s32 index, bool loop);
     void update(f32 seconds);
+    /** Captures visual state before a fixed update, including ticks that hold animation. */
+    void capturePresentation();
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               f32 alpha = 1.0f, f32 scale = 1.0f, const CameraFrame* camera = nullptr,
-              TreeModel::Pass pass = TreeModel::Pass::All) const;
+              TreeModel::Pass pass = TreeModel::Pass::All, f32 presentationAlpha = -1.0f) const;
     /** Traps suppress emission in OFF without killing their live particle tails. */
     void gateParticlesOnSequence(bool enabled);
     const TreeParticles& particles() const { return m_particles; }
@@ -97,6 +99,12 @@ private:
     const TreeInfo* m_tree = nullptr;
     TreeModel m_model;
     TreePose m_pose;
+    mutable TreePose m_presentationPose;
+    Mat4 m_previousTransform{1};
+    f32 m_previousFrame = 0;
+    u64 m_previousGeneration = 0;
+    bool m_presentationCaptured = false;
+    bool m_presentationAdvanced = false;
     AnimationPlayer m_player;
     TreeParticles m_particles;
     TextureAnimator m_textures;

@@ -78,6 +78,25 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     m_samples =
         static_cast<VkSampleCountFlagBits>(presentationSamples(m_requestedSamples, supported));
 
+    // An optional effect must not downgrade AA or reject otherwise valid GPUs.
+    VkImageFormatProperties sampledDepth{};
+    VkImageFormatProperties sampledColor{};
+    VkFormatProperties colorFeatures{};
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, m_colorFormat, &colorFeatures);
+    m_supportsPostProcess =
+        (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0 &&
+        vkGetPhysicalDeviceImageFormatProperties(
+            physicalDevice, m_depthFormat, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0,
+            &sampledDepth) == VK_SUCCESS &&
+        (sampledDepth.sampleCounts & m_samples) != 0 &&
+        vkGetPhysicalDeviceImageFormatProperties(
+            physicalDevice, m_colorFormat, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0,
+            &sampledColor) == VK_SUCCESS &&
+        (colorFeatures.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) !=
+            0;
+
     u32 modeCount = 0;
     GDL_VK_CHECK(
         vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &modeCount, nullptr));
@@ -118,6 +137,9 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     createInfo.imageExtent = m_extent;
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (m_supportsPostProcess) {
+        createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -155,6 +177,9 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     depthInfo.samples = m_samples;
     depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if (m_supportsPostProcess) {
+        depthInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
     depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VmaAllocationCreateInfo depthAlloc{};

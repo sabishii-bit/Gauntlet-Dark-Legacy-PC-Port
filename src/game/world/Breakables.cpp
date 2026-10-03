@@ -236,10 +236,18 @@ std::vector<Obstacle> Breakables::obstacles() const {
     return boxes;
 }
 
-void Breakables::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
+void Breakables::capturePresentation() {
+    for (const auto& barrel : m_barrels) {
+        barrel->figure.capturePresentation();
+    }
+}
+
+void Breakables::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                      f32 presentationAlpha) const {
     for (const std::unique_ptr<Barrel>& barrel : m_barrels) {
         if (barrel->shown && !barrel->gone) {
-            barrel->figure.draw(device, clip, lighting, opacity(*barrel));
+            barrel->figure.draw(device, clip, lighting, opacity(*barrel), 1, nullptr,
+                                TreeModel::Pass::All, presentationAlpha);
         }
     }
 }

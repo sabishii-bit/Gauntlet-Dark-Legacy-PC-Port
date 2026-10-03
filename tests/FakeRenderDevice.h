@@ -6,6 +6,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/DepthOfField.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
@@ -79,8 +80,15 @@ public:
     }
 
     void waitIdle() override {}
+    bool applyDepthOfField(const DepthOfField& settings) override {
+        depthOfFieldDrawOffsets.push_back(draws.size());
+        depthOfFieldSettings.push_back(settings);
+        return true;
+    }
 
     std::vector<RecordedDraw> draws;
+    std::vector<usize> depthOfFieldDrawOffsets;
+    std::vector<DepthOfField> depthOfFieldSettings;
     u32 frames = 0;
     u32 texturesCreated = 0;
     u32 textureUpdates = 0;

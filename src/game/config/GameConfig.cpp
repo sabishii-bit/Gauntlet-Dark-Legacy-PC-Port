@@ -140,6 +140,7 @@ void GameConfig::mergeJson(std::string_view json) {
             }
         }
         read(d, "vsync", display.vsync);
+        read(d, "depthOfField", display.depthOfField);
         if (d.contains("sampleCount")) {
             const auto& samples = d.at("sampleCount");
             display.sampleCount = 1;
@@ -291,7 +292,8 @@ std::string GameConfig::toJson() const {
         {"frameWidth", display.frameWidth},     {"frameHeight", display.frameHeight},
         {"windowWidth", display.windowWidth},   {"windowHeight", display.windowHeight},
         {"windowMode", windowModeName},         {"vsync", display.vsync},
-        {"sampleCount", display.sampleCount},   {"maxFrameRate", display.maxFrameRate}};
+        {"sampleCount", display.sampleCount},   {"maxFrameRate", display.maxFrameRate},
+        {"depthOfField", display.depthOfField}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};
     root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},

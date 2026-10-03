@@ -112,12 +112,14 @@ TEST_CASE("graphics settings round-trip with thirty fps presentation defaults",
     GameConfig config;
     CHECK(config.display.vsync);
     CHECK(config.display.sampleCount == 1);
+    CHECK_FALSE(config.display.depthOfField);
     CHECK(config.display.maxFrameRate == 30);
     CHECK(config.timing.gameplayFrameRate == 30);
     for (const u32 samples : {1U, 2U, 4U}) {
         for (const u32 rate : {30U, 60U, 0U}) {
             config.display.vsync = false;
             config.display.sampleCount = samples;
+            config.display.depthOfField = rate == 60;
             config.display.maxFrameRate = rate;
             config.timing.gameplayFrameRate = rate;
             GameConfig restored;

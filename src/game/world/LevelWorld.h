@@ -65,6 +65,7 @@ public:
     /** Begin a scene tick; particles retain their current picture if this tick is held. */
     void capturePresentation() {
         m_particlesAdvanced = false;
+        m_textureAdvance = 0;
         m_scene.capturePresentation();
         m_placedItems.capturePresentation();
     }
@@ -243,7 +244,8 @@ public:
     void drawOpaque(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,
                     f32 presentationAlpha = -1.0f) const {
         const CameraFrame frame = CameraFrame::of(camera);
-        m_scene.drawOpaque(device, clip, frame, presentationAlpha);
+        m_scene.drawOpaque(device, clip, frame, presentationAlpha,
+                           presentedTextureFrameOffset(presentationAlpha));
         m_skorneArena.draw(device, clip, m_litNow, m_particlesAdvanced ? presentationAlpha : -1.0f);
         m_fallingScenery.draw(device, clip, m_litNow,
                               m_particlesAdvanced ? presentationAlpha : -1.0f);
@@ -256,7 +258,8 @@ public:
     void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,
                       f32 presentationAlpha = -1.0f) const {
         const CameraFrame frame = CameraFrame::of(camera);
-        m_scene.drawDeferred(device, clip, frame, presentationAlpha);
+        m_scene.drawDeferred(device, clip, frame, presentationAlpha,
+                             presentedTextureFrameOffset(presentationAlpha));
         m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::Effects,
                            presentationAlpha);
         m_particles.draw(device, clip, frame.right, frame.up,
@@ -264,6 +267,7 @@ public:
     }
 
 private:
+    std::optional<f32> presentedTextureFrameOffset(f32 alpha) const;
     void loadLevelData(const std::filesystem::path& unpackedRoot);
     LevelRef m_ref = LevelRef::tower();
     void syncCollision();
@@ -291,6 +295,7 @@ private:
     std::vector<RotatorCue> m_rotatorCues;
     std::vector<s32> m_movingObjects; ///< objects whose collision follows their animation
     f32 m_frameRemainder = 0.0f;      ///< game frames owed to the texture animations
+    f32 m_textureAdvance = 0.0f;      ///< texture frames elapsed in the latest simulation tick
     WorldCollision m_collision;
     WorldData m_worldData;
     WorldLighting m_lighting;

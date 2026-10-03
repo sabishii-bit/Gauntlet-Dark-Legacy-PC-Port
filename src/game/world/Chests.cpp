@@ -373,16 +373,24 @@ std::vector<Obstacle> Chests::obstacles() const {
     return boxes;
 }
 
+void Chests::capturePresentation() {
+    for (const auto& chest : m_chests) {
+        chest->figure.capturePresentation();
+        chest->preview.capturePresentation();
+    }
+}
+
 void Chests::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                  const CameraFrame* camera) const {
+                  const CameraFrame* camera, f32 presentationAlpha) const {
     for (const std::unique_ptr<Chest>& chest : m_chests) {
         if (chest->shown && !chest->gone) {
             if (chest->revealed) {
                 // Retail MBTreeSetAlpha(0xC0) is transparency, not opacity.
-                chest->preview.draw(device, clip, lighting, 1.0f, 0.65f, camera);
+                chest->preview.draw(device, clip, lighting, 1.0f, 0.65f, camera,
+                                    TreeModel::Pass::All, presentationAlpha);
             }
             chest->figure.draw(device, clip, lighting, chest->revealed ? 63.0f / 255.0f : 1.0f,
-                               1.0f, camera);
+                               1.0f, camera, TreeModel::Pass::All, presentationAlpha);
         }
     }
 }

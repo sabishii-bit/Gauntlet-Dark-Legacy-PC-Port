@@ -20,6 +20,7 @@ class VulkanContext;
 class VulkanSwapchain;
 class VulkanPipeline;
 class VulkanTexture;
+class VulkanPostProcess;
 
 /** Vulkan implementation of RenderDevice with two frames in flight. */
 class VulkanRenderDevice final : public RenderDevice {
@@ -42,6 +43,7 @@ public:
     void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
               const DrawState& state) override;
     void waitIdle() override;
+    bool applyDepthOfField(const DepthOfField& settings) override;
 
 private:
     static constexpr u32 kFramesInFlight = 2;
@@ -91,6 +93,7 @@ private:
     std::unique_ptr<VulkanPipeline> m_pipeline;         ///< alpha blended
     std::unique_ptr<VulkanPipeline> m_additivePipeline; ///< the same, adding onto the frame
     std::unique_ptr<VulkanPipeline> m_opaquePipeline;   ///< no framebuffer blending
+    std::unique_ptr<VulkanPostProcess> m_postProcess;
     BlendMode m_boundBlend = BlendMode::Alpha;
 
     static constexpr u32 kTexturesPerPool = 512;
@@ -109,6 +112,8 @@ private:
     u32 m_imageIndex = 0;
     bool m_frameOpen = false;
     bool m_renderingStarted = false;
+    bool m_frameHasContent = false;
+    bool m_postProcessUnsupportedReported = false;
     bool m_vertexOverflowReported = false;
 
     Vec4 m_clearColor{0.0f, 0.0f, 0.0f, 1.0f};

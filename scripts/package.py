@@ -80,7 +80,8 @@ def make_plan(executable: pathlib.Path, assets: pathlib.Path, data: pathlib.Path
         raise ValueError(f"--assets must name the original Gauntlet directory: {assets}")
     carddemo = child_directory(assets.parent, "carddemo")
     shaders = executable.parent / "shaders"
-    for shader in ("immediate.vert.spv", "immediate.frag.spv"):
+    for shader in ("immediate.vert.spv", "immediate.frag.spv", "postprocess.vert.spv",
+                   "depth_of_field.frag.spv", "depth_of_field_ms.frag.spv"):
         require_file(shaders / shader)
     require_file(data / "config.json")
     require_file(data / "text/en.json")

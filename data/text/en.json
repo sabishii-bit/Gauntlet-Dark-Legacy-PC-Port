@@ -263,6 +263,7 @@
   "settings.vsync": "V-Sync",
   "settings.fps": "FPS",
   "settings.antialiasing": "Anti-Aliasing",
+  "settings.depthOfField": "Depth of Field",
   "settings.on": "On",
   "settings.off": "Off",
   "settings.unlimited": "Unlimited",

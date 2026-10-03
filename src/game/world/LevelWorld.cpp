@@ -301,10 +301,18 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
     m_particlesAdvanced = seconds > 0;
     m_placedItems.update(seconds);
     // Texture animations count whole game frames.
-    m_frameRemainder += seconds * WorldAnimator::kFramesPerSecond;
+    m_textureAdvance = std::max(seconds, 0.0f) * WorldAnimator::kFramesPerSecond;
+    m_frameRemainder += m_textureAdvance;
     const f32 frames = std::floor(m_frameRemainder);
     m_frameRemainder -= frames;
     m_textureAnimator.step(m_scene, static_cast<u32>(frames));
+}
+
+std::optional<f32> LevelWorld::presentedTextureFrameOffset(f32 alpha) const {
+    if (alpha < 0) {
+        return std::nullopt;
+    }
+    return m_frameRemainder - m_textureAdvance * (1.0f - std::clamp(alpha, 0.0f, 1.0f));
 }
 
 /** Takes the light, the camera range and the sounds from the realm's data. */
@@ -359,6 +367,7 @@ void LevelWorld::clear() {
     m_items.clear();
     m_realmItems.clear();
     m_frameRemainder = 0.0f;
+    m_textureAdvance = 0.0f;
     m_level = nullptr;
     m_audio = nullptr;
 }

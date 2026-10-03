@@ -14,6 +14,7 @@ namespace gdl {
 class Window;
 class ImmediateBatch;
 class Texture;
+struct DepthOfField;
 
 struct RenderDeviceDesc {
     bool vsync = true;
@@ -93,6 +94,10 @@ public:
                       const DrawState& state = {}) = 0;
 
     virtual void waitIdle() = 0;
+
+    /** Blurs the scene drawn so far, leaving subsequent HUD/menu draws sharp.
+     * Returns false when the device cannot sample its depth/color buffers. */
+    virtual bool applyDepthOfField(const DepthOfField& settings) = 0;
 };
 
 std::unique_ptr<RenderDevice> createVulkanRenderDevice(Window& window,

@@ -10,6 +10,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/AnimationSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
@@ -321,6 +322,75 @@ TEST_CASE("Chimera approach lowers the chained arena elevator", "[game][world][c
     CHECK(world.scene().worldTransform(kElevator)[3].y == Approx(initial - 23.0f));
     CHECK(halfway);
     CHECK(boss.position()->y == Approx(initialBoss - 23.0f).margin(0.15f));
+}
+
+TEST_CASE("Desecrated Temple rain follows rendered frames independently of native updates",
+          "[game][world][rain][presentation][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELE1/ANIM.PS2");
+    AnimationSet animations;
+    REQUIRE(animations.load(root / "LEVELS/LEVELE1"));
+    usize rainRecords = 0;
+    for (const auto& animation : animations.textureAnimations()) {
+        if (animation.name == "RAIN") {
+            ++rainRecords;
+            CHECK(animation.texture == 82);
+            CHECK(animation.freeRunning());
+            CHECK(animation.rate == 0);
+            CHECK(animation.frames ==
+                  (animation.source == TextureAnimationInfo::kScrollV ? -10 : -300));
+        }
+    }
+    REQUIRE(rainRecords == 2);
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(catalog.byName("E1"));
+    for (const s32 renderRate : {30, 60, 120, 144}) {
+        CAPTURE(renderRate);
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *catalog.byName("E1")));
+        const Texture* rain = world.scene().textureOf(82);
+        REQUIRE(rain != nullptr);
+        s32 tick = 0;
+        const auto sample = [&](f32 alpha, f32 nativeFrames) {
+            device.draws.clear();
+            world.drawDeferred(device, Mat4{1}, WorldCamera{}, alpha);
+            usize count = 0;
+            for (const auto& draw : device.draws) {
+                if (draw.texture == rain) {
+                    ++count;
+                    CHECK(draw.state.uvOffset.x ==
+                          Approx(-glm::fract(nativeFrames / 300)).margin(0.00001f));
+                    CHECK(draw.state.uvOffset.y ==
+                          Approx(-glm::fract(nativeFrames / 10)).margin(0.00001f));
+                }
+            }
+            REQUIRE(count > 0);
+        };
+        // A little beyond the first V wrap; clock updates stay at sixty a second.
+        for (s32 frame = 1; frame <= renderRate / 2; ++frame) {
+            const f64 ticks = static_cast<f64>(frame) * 60 / renderRate;
+            const auto whole = static_cast<s32>(std::floor(ticks));
+            while (tick < whole) {
+                world.capturePresentation();
+                world.update(1.0f / 60);
+                ++tick;
+            }
+            const auto alpha = static_cast<f32>(ticks - whole);
+            const f32 shownFrames = tick == 0 ? 0 : (static_cast<f32>(tick - 1) + alpha) * 0.5f;
+            const u32 nativeFrame = world.textureAnimator().frame();
+            const usize particles = world.particles().particleCount();
+            sample(alpha, shownFrames);
+            CHECK(world.textureAnimator().frame() == nativeFrame);
+            CHECK(world.particles().particleCount() == particles);
+        }
+        world.capturePresentation(); // a held tick never rewinds or advances its scroll
+        for (const f32 alpha : {0.0f, 0.25f, 0.75f, 1.0f}) {
+            sample(alpha, static_cast<f32>(tick) * 0.5f);
+        }
+    }
 }
 
 TEST_CASE("Temple spawning and entrance movement reject the wall-only underlay",

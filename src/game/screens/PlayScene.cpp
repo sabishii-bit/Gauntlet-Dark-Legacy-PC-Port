@@ -8,6 +8,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/render/DepthOfField.h"
 #include "engine/world/WorldCamera.h"
 
 #include "game/players/ClassData.h"
@@ -704,6 +705,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     PartyFigures::snapshot(m_players);
     m_effects.capturePresentation();
     m_world->capturePresentation();
+    m_fixtures.capturePresentation();
     m_towerRelics.capturePresentation();
     m_arrival.capturePresentation();
     m_bossSequence.capturePresentation();
@@ -1159,7 +1161,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                    TreeModel::Pass::DepthWriting);
     m_transporters.draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = companionCamera;
-    m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
+    m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
@@ -1173,7 +1175,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_bossSequence.frozenTexture(), opponentBlend);
     m_world->drawDeferred(device, clip, camera, effectBlend);
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
-    m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera);
+    m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     drawShadows(device, clip, camera.position, frameBlend, opponentBlend);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
@@ -1189,6 +1191,25 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera, projectileBlend);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera, effectBlend);
     m_arrival.drawEffects(device, clip, m_world->lighting(), effectBlend);
+    if (config.display.depthOfField) {
+        DepthOfField blur;
+        const Mat4 view = camera.view();
+        blur.clipToView = view * glm::inverse(clip);
+        // This is an optional port effect, not retail camera behavior. Keep the entire
+        // party (and nearby combat) sharp, not just player one's focal plane.
+        for (const auto& player : m_players) {
+            if (!player.departed && player.life == PlayerLife::Standing) {
+                const Vec3 position =
+                    player.previous.continuous
+                        ? glm::mix(player.previous.position, player.actor.position(), frameBlend)
+                        : player.actor.position();
+                const f32 distance = (view * Vec4{position, 1.0f}).z;
+                blur.focusEnd = std::max(blur.focusEnd, distance + player.actor.height() * 3.0f);
+            }
+        }
+        blur.transition = std::max(20.0f, blur.focusEnd);
+        device.applyDepthOfField(blur);
+    }
     if (config.camera.compass && !optionsOpen && !m_gameOver.active()) {
         m_compass.draw(device, clip, camera, config.horizontalFovRadians(),
                        frameWidth / frameHeight, m_world->lighting());

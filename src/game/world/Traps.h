@@ -107,8 +107,9 @@ public:
     std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
                                 bool timeStopped = false);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr,
-              TreeModel::Pass pass = TreeModel::Pass::All) const;
+              const CameraFrame* camera = nullptr, TreeModel::Pass pass = TreeModel::Pass::All,
+              f32 presentationAlpha = -1.0f) const;
+    void capturePresentation();
 
 private:
     s32 restTicks(const Trap& trap);

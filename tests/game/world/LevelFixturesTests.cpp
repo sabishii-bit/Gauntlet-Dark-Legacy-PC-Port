@@ -33,6 +33,79 @@ using Catch::Approx;
 
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 
+TEST_CASE("fixture presentation samples poses and floor placement without changing gameplay",
+          "[fixtures][presentation]") {
+    const auto root = test::scratchDirectory("fixture-presentation");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"FIXTURE","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":4,"frameRate":30,
+       "tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[0,3]}]},
+       {"name":"OPEN","frames":0}]}]})");
+    test::convertModelFixture(root);
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    ItemFigure figure;
+    ItemInstance instance;
+    instance.position = {7, 0, 0};
+    REQUIRE(figure.place(device, archive, "FIXTURE", instance, nullptr));
+    const auto corner = [&](f32 alpha) {
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, {}, 1, 1, nullptr, TreeModel::Pass::All, alpha);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws[0].vertices[0].position;
+    };
+    CHECK(corner(0) == Vec3{7, 0, 0}); // first placement has no previous occupant
+    figure.capturePresentation();
+    figure.placeAt(glm::translate(Mat4{1}, Vec3{11, 0, 0}));
+    figure.update(1.0f / 60);
+    const auto nativeSocket = figure.nodeTransform("ROOT");
+    const f32 progress = figure.progress();
+    const bool finished = figure.finished();
+    for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 0.5f}) {
+        const Vec3 point = corner(alpha);
+        CHECK(point.x == Approx(7 + 4 * alpha));
+        CHECK(point.y == Approx(0.5f * alpha));
+        CHECK(figure.position() == Vec3{11, 0, 0});
+        CHECK(figure.nodeTransform("ROOT") == nativeSocket);
+        CHECK(figure.progress() == progress);
+        CHECK(figure.finished() == finished);
+    }
+    SECTION("held ticks freeze fractional animation") {
+        figure.capturePresentation();
+        CHECK(corner(0) == corner(1));
+    }
+    SECTION("new sequences and loops do not interpolate across their cut") {
+        figure.play(0, true);
+        CHECK(corner(0).y == 0);
+        figure.update(3.5f / 30);
+        figure.capturePresentation();
+        figure.update(1.0f / 30);
+        CHECK(corner(0).y == Approx(0.5f));
+        CHECK(corner(1).y == Approx(0.5f));
+    }
+    SECTION("empty open sequences retain the final lid pose") {
+        figure.play(0, false);
+        figure.update(1);
+        const auto lid = figure.nodeTransform("ROOT");
+        figure.play(1, false);
+        figure.capturePresentation();
+        figure.update(1.0f / 60);
+        CHECK(corner(0).y == Approx(3));
+        CHECK(corner(1).y == Approx(3));
+        CHECK(figure.nodeTransform("ROOT") == lid);
+    }
+    SECTION("teleports snap instead of sweeping through the level") {
+        figure.placeAt(glm::translate(Mat4{1}, Vec3{100, 0, 0}));
+        CHECK(corner(0).x == 100);
+    }
+}
+
 TEST_CASE("Maze traps and fixtures ride their authored floors from the initial animation pose",
           "[fixtures][item-support][assets]") {
     const auto root =

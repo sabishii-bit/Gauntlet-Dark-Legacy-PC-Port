@@ -354,4 +354,8 @@ gdl_add_shaders(gauntlet
     OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin/shaders"
     SOURCES
         ${CMAKE_SOURCE_DIR}/shaders/immediate.vert
-        ${CMAKE_SOURCE_DIR}/shaders/immediate.frag)
+        ${CMAKE_SOURCE_DIR}/shaders/immediate.frag
+        ${CMAKE_SOURCE_DIR}/shaders/postprocess.vert
+        ${CMAKE_SOURCE_DIR}/shaders/depth_of_field.frag
+        ${CMAKE_SOURCE_DIR}/shaders/depth_of_field_ms.frag
+    INCLUDES ${CMAKE_SOURCE_DIR}/shaders/depth_of_field.glsl)

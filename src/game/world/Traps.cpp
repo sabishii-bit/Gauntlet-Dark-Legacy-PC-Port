@@ -221,11 +221,17 @@ bool Traps::touches(const Trap& trap, const TrapVictim& victim) {
     return expanded.touchedBy(horizontal, 0.0f, 0.0f);
 }
 
+void Traps::capturePresentation() {
+    for (const auto& trap : m_traps) {
+        trap->figure.capturePresentation();
+    }
+}
+
 void Traps::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                 const CameraFrame* camera, TreeModel::Pass pass) const {
+                 const CameraFrame* camera, TreeModel::Pass pass, f32 presentationAlpha) const {
     for (const std::unique_ptr<Trap>& trap : m_traps) {
         if (trap->shown) {
-            trap->figure.draw(device, clip, lighting, 1, 1, camera, pass);
+            trap->figure.draw(device, clip, lighting, 1, 1, camera, pass, presentationAlpha);
         }
     }
 }

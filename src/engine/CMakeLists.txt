@@ -50,6 +50,8 @@ add_library(engine STATIC
     render/ImmediateBatch.h
     render/ImmediateBatch.cpp
     render/RenderDevice.h
+    render/DepthOfField.h
+    render/DepthOfField.cpp
     render/DebugTextures.h
     render/DebugTextures.cpp
     render/vulkan/VulkanCommon.h
@@ -61,6 +63,8 @@ add_library(engine STATIC
     render/vulkan/VulkanSwapchain.cpp
     render/vulkan/VulkanPipeline.h
     render/vulkan/VulkanPipeline.cpp
+    render/vulkan/VulkanPostProcess.h
+    render/vulkan/VulkanPostProcess.cpp
     render/vulkan/VulkanTexture.h
     render/vulkan/VulkanTexture.cpp
     render/vulkan/VulkanRenderDevice.h

@@ -154,6 +154,49 @@ TEST_CASE("rain composes both scrolling coordinates without accumulating old off
     CHECK(f.scene.textureOffset(1).x == Approx(-10.0f / 300.0f));
 }
 
+TEST_CASE("scroll presentation samples both axes across wraps without stepping native clocks",
+          "[world][animation][presentation][rain]") {
+    Fixture f("texture-animator-scroll-presentation");
+    const std::array animations{
+        cycle("RAIN", 1, TextureAnimationInfo::kScrollV, -10, 0, 0),
+        cycle("RAIN", 1, TextureAnimationInfo::kScrollU, -300, 0, 0),
+        cycle("SLOW", 0, TextureAnimationInfo::kScrollU, 4, 0, 3),
+        cycle("TORCHB", 3, TextureAnimationInfo::kByName, 2, 0, 2, "TORCH00")};
+    f.animator.bind(animations, f.textures, f.device, f.lenders);
+    f.animator.step(f.scene, 10);
+    const Texture* rain = f.scene.textureOf(1);
+    const Texture* slow = f.scene.textureOf(0);
+    const Texture* torch = f.scene.textureOf(3);
+    REQUIRE(rain != nullptr);
+    const auto sample = [&](f32 offset) {
+        f.device.draws.clear();
+        f.scene.draw(f.device, Mat4{1}, CameraFrame{}, 0.5f, offset);
+        usize rainDraws = 0;
+        usize slowDraws = 0;
+        for (const auto& draw : f.device.draws) {
+            if (draw.texture == rain) {
+                ++rainDraws;
+                CHECK(draw.state.uvOffset.x == Approx(-(10 + offset) / 300));
+                CHECK(draw.state.uvOffset.y == Approx(-glm::fract((10 + offset) / 10)));
+            }
+            if (draw.texture == slow) {
+                ++slowDraws;
+                CHECK(draw.state.uvOffset.x == Approx((10 + offset) / 12));
+            }
+        }
+        CHECK(rainDraws > 0);
+        CHECK(slowDraws > 1); // both a static batch and an individually placed unit
+        CHECK(f.animator.frame() == 10);
+        CHECK(f.animator.counter(0) == 0);
+        CHECK(f.scene.textureOffset(1).y == 0);
+        CHECK(f.scene.textureOf(3) == torch); // flipbooks keep their authored cadence
+    };
+    for (const f32 offset : {-0.5f, -0.375f, -0.25f, -0.125f, 0.0f, 0.25f, -0.5f}) {
+        CAPTURE(offset);
+        sample(offset);
+    }
+}
+
 TEST_CASE("an animation keyed to a sequence is never stepped, but read off at a frame",
           "[world][animation]") {
     Fixture f("texture-animator");

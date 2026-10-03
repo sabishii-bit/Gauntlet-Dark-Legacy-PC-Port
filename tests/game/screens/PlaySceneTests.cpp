@@ -134,6 +134,45 @@ TEST_CASE("the native compass follows its preference and is hidden behind option
     }
 }
 
+TEST_CASE("optional depth of field runs after the world and before the HUD", "[dof][assets]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = unpackedRoot();
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, CharacterSave{}},
+                                         PartyMember{1, CharacterSave{}}};
+    PlayOptions options;
+    options.welcome = false;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    scene.render(device, projection, 640, 448);
+    CHECK(device.depthOfFieldDrawOffsets.empty());
+    config.display.depthOfField = true;
+    config.camera.compass = true;
+    device.draws.clear();
+    scene.render(device, projection, 640, 448);
+    REQUIRE(device.depthOfFieldDrawOffsets.size() == 1);
+    const auto split = device.depthOfFieldDrawOffsets.front();
+    CHECK(split > 0);
+    CHECK(split < device.draws.size());
+    const auto& blur = device.depthOfFieldSettings.front();
+    const auto camera = scene.viewCamera();
+    const auto clip = camera.clipTransform(config.horizontalFovRadians(), 640, 448, projection);
+    for (s32 player = 0; player < 2; ++player) {
+        const auto* actor = scene.actor(player);
+        REQUIRE(actor != nullptr);
+        const Vec4 at = clip * Vec4{actor->position(), 1};
+        const auto distance = blur.viewDistance(Vec2{at} / at.w * 0.5f + Vec2{0.5f}, at.z / at.w);
+        CHECK(blur.blurFraction(distance) == 0);
+    }
+    config.display.depthOfField = false;
+    scene.render(device, projection, 640, 448);
+    CHECK(device.depthOfFieldDrawOffsets.size() == 1);
+}
+
 TEST_CASE("Temple switch cutscene carries its chest and enemy continuously",
           "[game][screens][chest-platform][enemy-platform][assets]") {
     const auto root = unpackedRoot();
