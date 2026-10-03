@@ -465,7 +465,11 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
                                         actor.save().progress().inventory.keys, worn.xray(), step});
         // Traps pass under a levitating body (ItemTouch's trap case).
         const bool floating = (worn.special & powerup::kLevitation) != 0;
-        victims.push_back(TrapVictim{floating ? kNowhere : position, actor.radius()});
+        // Item contact uses col_radius (the WAD's whole width), not the half-width
+        // footprint used to slide against walls. Using that footprint lets a sweep
+        // pass through the outer half of the character beside the water in A1.
+        victims.push_back(TrapVictim{floating ? kNowhere : actor.followPoint(), actor.reach(),
+                                     actor.height() * 0.5f});
     }
     for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
         if (event.visitor >= players.size()) {

@@ -185,12 +185,13 @@ TEST_CASE("floor attachments move trap damage and fixture collision without revi
     gates.syncFloors();
     const Vec3 expected = Vec3{moved * Vec4{1, 0.1f, 0, 1}};
     CHECK(glm::distance(traps.trap(0).figure.position(), expected) < 0.001f);
-    CHECK(glm::distance(traps.trap(0).box.centre, expected) < 0.001f);
+    CHECK(glm::distance(traps.trap(0).box.centre, expected + Vec3{0, 1, 0}) < 0.001f);
     CHECK(glm::distance(barrels.barrel(0).box.centre, expected) < 0.001f);
     CHECK(glm::distance(gates.gate(0).box.centre, expected) < 0.001f);
     CHECK(gates.gate(0).box.yaw == Approx(0.5f));
     const std::array victims{TrapVictim{Vec3{101, 20, 50}}, TrapVictim{expected}};
-    const auto hits = traps.update(2, 0, victims);
+    CHECK(traps.update(2, 0, victims).empty());    // wind-up
+    const auto hits = traps.update(1, 0, victims); // strike
     REQUIRE(hits.size() == 1);
     CHECK(hits[0].victim == 1);
     CHECK(hits[0].damage == 20);
@@ -779,7 +780,8 @@ TEST_CASE("trap hits preserve authored impact properties and rotated direction",
     REQUIRE(traps.bind(device, layout, items, nullptr));
     const std::array<TrapVictim, 4> victims{TrapVictim{{0, 0, 0}}, TrapVictim{{20, 0, 0}},
                                             TrapVictim{{40, 0, 0}}, TrapVictim{{60, 0, 0}}};
-    const auto hits = traps.update(2, 1.0f / 30, victims);
+    CHECK(traps.update(2, 1.0f / 30, victims).empty());    // wind-up
+    const auto hits = traps.update(1, 1.0f / 60, victims); // strike
     REQUIRE(hits.size() == 4);
     const std::array<u32, 4> properties{32, 8192, 1, 2};
     for (usize i = 0; i < hits.size(); ++i) {
@@ -792,6 +794,36 @@ TEST_CASE("trap hits preserve authored impact properties and rotated direction",
         } else {
             CHECK(hits[i].impact.direction == Vec3{0});
         }
+    }
+}
+
+TEST_CASE("trap contact uses body height and independently expanded rectangular axes",
+          "[game][world][fixtures][trap-impact]") {
+    const auto dir = test::scratchDirectory("trap-body-contact");
+    writeTextFile(dir / "world.json", R"({
+      "objects": [{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+      "animations": [], "particles": [], "locators": [],
+      "itemInfos": [{"type":8,"subtype":4,"name":"TENTACLE","value":20,
+        "collisionType":3,"height":5,"radius":9,"xSize":4,"zSize":1,"activeOff":1}],
+      "itemInstances": [{"info":0,"position":[0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    Traps traps;
+    REQUIRE(traps.bind(device, layout, items, nullptr));
+    REQUIRE(traps.trap(0).box.centre == Vec3{0, 1, 0});
+    const std::array victims{
+        TrapVictim{{5.4f, 1, 2.4f}, 1.5f, 2}, // expanded corner, not a rounded corner
+        TrapVictim{{0, -6, 0}, 1.5f, 2},      // lower body-height boundary
+        TrapVictim{{0, 8, 0}, 1.5f, 2},       // upper body-height boundary
+        TrapVictim{{0, -6.1f, 0}, 1.5f, 2},   TrapVictim{{0, 8.1f, 0}, 1.5f, 2},
+        TrapVictim{{5.6f, 1, 0}, 1.5f, 2},    TrapVictim{{0, 1, 2.6f}, 1.5f, 2}};
+    CHECK(traps.update(2, 1.0f / 30, victims).empty()); // wind-up cannot consume a hit
+    const auto hits = traps.update(1, 1.0f / 60, victims);
+    REQUIRE(hits.size() == 3);
+    for (usize i = 0; i < hits.size(); ++i) {
+        CHECK(hits[i].victim == i);
     }
 }
 
@@ -892,8 +924,9 @@ TEST_CASE("Stop Time retracts live traps and leaves a half-second rest on releas
     CHECK(traps.trap(0).ticksLeft == 30);
     CHECK(traps.update(29, 29.0f / 60, party).empty());
     CHECK_FALSE(traps.armed(0));
-    CHECK_FALSE(traps.update(1, 1.0f / 60, party).empty());
+    CHECK(traps.update(1, 1.0f / 60, party).empty()); // wind-up after the rest
     CHECK(traps.armed(0));
+    CHECK_FALSE(traps.update(1, 1.0f / 60, party).empty());
 }
 
 TEST_CASE("potion magic stops a trap for 600 ticks, or disarms it for good",
@@ -1083,7 +1116,8 @@ TEST_CASE("Courtyard tentacles retain authored height and hit the rotated offset
         const Vec3 across = rotate({1, 0, 0});
         const Vec3 forward = rotate({0, 0, 1});
         CHECK(glm::distance(Vec3{trap.figure.transform()[2]}, forward) < 0.0001f);
-        CHECK(glm::distance(trap.box.centre, instance.position - 4.0f * across) < 0.0001f);
+        CHECK(glm::distance(trap.box.centre,
+                            instance.position - 4.0f * across + rotate({0, 1, 0})) < 0.0001f);
         // Seven units along the sweep lies inside the authored -4 +/-4 box, but outside
         // the former origin-centred box. Test from the walking floor, not the box centre.
         Vec3 contact = instance.position - 7.0f * across;

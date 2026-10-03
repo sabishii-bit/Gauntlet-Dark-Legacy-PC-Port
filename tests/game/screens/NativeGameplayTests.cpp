@@ -118,6 +118,70 @@ TEST_CASE("native tower gameplay loads player tuning and responds to movement an
     CHECK(scene.actorCount() == 0);
 }
 
+TEST_CASE("native Courtyard tentacle knocks down the knight on the water-side sweep edge",
+          "[game][screens][native-gameplay][courtyard-tentacles][assets]") {
+    const auto root = nativeRoot();
+    const AssetLocator assets(root);
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(5);
+    REQUIRE(stats);
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto courtyard = catalog.byName("A1");
+    REQUIRE(courtyard);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *courtyard));
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.assets = &assets;
+    context.tower = &world;
+    context.levels = &catalog;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.character = 5;
+    save.color = 2;
+    save.progress().experience = levelExperience(99);
+    save.progress().health = 9999;
+    const std::array party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    for (const auto& item : world.layout().itemInstances()) {
+        if (item.info >= 0 && item.minPlayers == 1 &&
+            world.layout().itemInfos()[static_cast<usize>(item.info)].name == "TENTACLE") {
+            const Vec3 local{-4, 0, -1.0f - stats->width * 0.75f};
+            Vec3 point = Vec3{itemPlacement(item.position, item.rotation) * Vec4{local, 1}};
+            const auto floor = world.collision().floorAt(point, 5, 5);
+            REQUIRE(floor);
+            REQUIRE(world.layout().objects()[static_cast<usize>(floor->object)].name ==
+                    "A1ELEV666");
+            point.y = floor->y;
+            options.position = point;
+        }
+    }
+    REQUIRE(options.position);
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.actor(0));
+    REQUIRE(scene.animator(0));
+    bool knockedDown = false;
+    for (s32 frame = 0; frame < 600 && !knockedDown; ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        const auto action = scene.animator(0)->action();
+        knockedDown = action == PlayerAnimator::Action::FallBack ||
+                      action == PlayerAnimator::Action::FallForward;
+    }
+    CHECK(knockedDown);
+    CHECK(scene.actor(0)->position().y == Catch::Approx(options.position->y - 10));
+    CHECK(scene.actor(0)->save().health() < 9990);
+    scene.close();
+}
+
 TEST_CASE("native costume tiers bind their own models and shared class animation",
           "[game][figure][native-gameplay][assets]") {
     const auto root = nativeRoot();

@@ -22,8 +22,9 @@ namespace gdl::game {
 
 /** Someone a trap can hurt. */
 struct TrapVictim {
-    Vec3 position{0.0f, 0.0f, 0.0f};
+    Vec3 position{0.0f, 0.0f, 0.0f}; ///< collision centre, not the feet
     f32 radius = 0.75f;
+    f32 halfHeight = 1.5f;
 };
 
 /** A trap caught someone this update. */
@@ -41,8 +42,8 @@ struct TrapHit {
  * A level's traps (spikes, flames, saw blades), cycled the way the original cycles them: each
  * rests on its first sequence for a time drawn afresh each round (its record's off time,
  * negative meaning at random between half of it and one and a half), then plays its others
- * one after another and rests again. While it is out of its rest whoever stands in its box
- * is hurt by its record's value, and is then left alone until the sequence it was caught in
+ * one after another and rests again. During strike sequences 2 and 4, whoever touches its
+ * collision volume is hurt by its record's value, and is left alone until that sequence
  * has run out twice over, as the original leaves them. The level scales the times and the
  * damage.
  */
@@ -73,6 +74,7 @@ public:
         bool shown = true;
         bool disarmed = false; ///< still and harmless for good
         bool gone = false;
+        bool rectangularContact = false; ///< native coltype 3 expands each axis by the body radius
         ItemFigure figure;
         Obstacle box;
         ItemSupport support;
@@ -90,7 +92,7 @@ public:
     /** Traps that left their resting sequence during the latest update. */
     std::span<const usize> wakes() const { return m_wakes; }
     void setPlayerCount(s32 players);
-    /** Whether a trap is out of its rest, and hurts. */
+    /** Whether a trap is out of its rest (including harmless wind-up and recovery). */
     bool armed(usize index) const { return m_traps[index]->action != kResting; }
 
     /** Potion magic's lesser valkyrie perk (fn_8005BA1C): back to its rest and held there
@@ -110,6 +112,7 @@ public:
 
 private:
     s32 restTicks(const Trap& trap);
+    static bool touches(const Trap& trap, const TrapVictim& victim);
 
     std::vector<std::unique_ptr<Trap>> m_traps;
     std::vector<usize> m_wakes;
