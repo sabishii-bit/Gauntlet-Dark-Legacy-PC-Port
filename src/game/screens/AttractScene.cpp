@@ -196,6 +196,9 @@ void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 widt
     const WorldCamera camera = m_rail.presentedCamera(presentationAlpha);
     m_world.draw(device, camera.clipTransform(fov, width, height, projection), camera,
                  presentationAlpha);
+    if (m_context.config != nullptr && m_context.config->display.bloom) {
+        device.applyBloom();
+    }
     if (m_context.strings != nullptr) {
         m_canvas.begin(device,
                        makeVirtualScreenTransform(projection, 512.0f, 384.0f, width, height));

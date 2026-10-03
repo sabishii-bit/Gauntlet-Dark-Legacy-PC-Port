@@ -356,6 +356,7 @@ gdl_add_shaders(gauntlet
         ${CMAKE_SOURCE_DIR}/shaders/immediate.vert
         ${CMAKE_SOURCE_DIR}/shaders/immediate.frag
         ${CMAKE_SOURCE_DIR}/shaders/postprocess.vert
+        ${CMAKE_SOURCE_DIR}/shaders/bloom.frag
         ${CMAKE_SOURCE_DIR}/shaders/depth_of_field.frag
         ${CMAKE_SOURCE_DIR}/shaders/depth_of_field_ms.frag
     INCLUDES ${CMAKE_SOURCE_DIR}/shaders/depth_of_field.glsl)

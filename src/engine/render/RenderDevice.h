@@ -112,6 +112,9 @@ public:
     /** Blurs the scene drawn so far, leaving subsequent HUD/menu draws sharp.
      * Returns false when the device cannot sample its depth/color buffers. */
     virtual bool applyDepthOfField(const DepthOfField& settings) = 0;
+    /** Adds restrained bloom to the scene drawn so far, never to subsequent HUD/menu draws.
+     * Returns false when the device cannot run scene post-processing. */
+    virtual bool applyBloom() = 0;
 };
 
 std::unique_ptr<RenderDevice> createVulkanRenderDevice(Window& window,

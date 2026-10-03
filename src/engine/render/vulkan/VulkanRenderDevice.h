@@ -44,6 +44,7 @@ public:
               const DrawState& state) override;
     void waitIdle() override;
     bool applyDepthOfField(const DepthOfField& settings) override;
+    bool applyBloom() override;
 
 private:
     static constexpr u32 kFramesInFlight = 2;
@@ -84,6 +85,7 @@ private:
     void reserveUploadBuffer(FrameResources& frame, VkDeviceSize bytes);
     void recreateSwapchain();
     void beginRendering();
+    bool preparePostProcess();
 
     Window& m_window;
     RenderDeviceDesc m_desc;

@@ -24,6 +24,7 @@ public:
     bool changePresentation = false;
     bool changeWindow = false;
     bool depthOfField = false;
+    bool bloom = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
@@ -129,12 +130,17 @@ protected:
         glow.maskedTexture = m_texture.get();
         device.draw(m_batch, *m_texture, projection, glow);
         device.draw(m_batch, *m_texture, projection);
+        if (bloom) {
+            CHECK(device.applyBloom());
+        }
         if (depthOfField) {
             DepthOfField blur;
             blur.clipToView = glm::inverse(projection);
             blur.focusEnd = 0.1f;
             blur.transition = 0.1f;
             CHECK(device.applyDepthOfField(blur));
+        }
+        if (depthOfField || bloom) {
             // Switching back must LOAD the postprocessed scene, retain depth, and restore
             // the normal pipeline/vertex stream rather than clearing it for the HUD.
             device.draw(m_batch, *m_texture, projection);
@@ -243,6 +249,31 @@ TEST_CASE("depth of field survives MSAA and window changes before drawing the HU
         app.changeWindow = true;
     }
     SECTION("changing multisample count") {
+        app.changePresentation = true;
+    }
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 18);
+}
+
+TEST_CASE("bloom survives resize and MSAA alone and combined with depth of field",
+          "[gpu][app][bloom]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl bloom test";
+    desc.enableValidation = true;
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 18;
+    desc.maxFrameRate = 60;
+    ProbeApplication app(std::move(desc));
+    app.bloom = true;
+    SECTION("bloom only with resizing") {
+        app.changeWindow = true;
+    }
+    SECTION("bloom only with changing AA") {
+        app.changePresentation = true;
+    }
+    SECTION("bloom followed by DOF with changing AA") {
+        app.depthOfField = true;
         app.changePresentation = true;
     }
     REQUIRE(app.run() == 0);

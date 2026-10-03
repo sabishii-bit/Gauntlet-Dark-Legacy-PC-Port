@@ -143,7 +143,7 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));
-    const GameConfig config;
+    GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     GameContext context;
@@ -162,8 +162,14 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     scene.render(device, Mat4{1.0f}, 640, 480, 0.0f);
     REQUIRE_FALSE(device.draws.empty());
     const Mat4 startClip = device.draws.front().transform;
+    CHECK(device.bloomDrawOffsets.empty());
+    config.display.bloom = true;
     device.draws.clear();
     scene.render(device, Mat4{1.0f}, 640, 480, 1.0f);
+    REQUIRE(device.bloomDrawOffsets.size() == 1);
+    CHECK(device.bloomDrawOffsets.front() > 0);
+    CHECK(device.bloomDrawOffsets.front() < device.draws.size()); // Press Start stays unprocessed.
+    config.display.bloom = false;
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws.front().transform != startClip);
     const auto current = scene.rail().camera().position;

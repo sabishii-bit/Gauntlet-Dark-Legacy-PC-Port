@@ -17,8 +17,9 @@ namespace gdl {
 VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                                VkFormat colorFormat, VkFormat depthFormat,
                                VkDescriptorSetLayout textureSetLayout, BlendMode blend,
-                               VkSampleCountFlagBits samples, bool depthOfField)
+                               VkSampleCountFlagBits samples, Effect effect)
     : m_context(context) {
+    const bool postProcess = effect != Effect::None;
     const bool additive = blend == BlendMode::Additive;
     const VkDevice device = m_context.device();
 
@@ -38,11 +39,13 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     GDL_VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_layout));
 
     const VkShaderModule vertexModule = loadShaderModule(
-        shaderDirectory / (depthOfField ? "postprocess.vert.spv" : "immediate.vert.spv"));
+        shaderDirectory / (postProcess ? "postprocess.vert.spv" : "immediate.vert.spv"));
     const char* fragment = "immediate.frag.spv";
-    if (depthOfField) {
+    if (effect == Effect::DepthOfField) {
         fragment = samples == VK_SAMPLE_COUNT_1_BIT ? "depth_of_field.frag.spv"
                                                     : "depth_of_field_ms.frag.spv";
+    } else if (effect == Effect::Bloom) {
+        fragment = "bloom.frag.spv";
     }
     const VkShaderModule fragmentModule = loadShaderModule(shaderDirectory / fragment);
 
@@ -85,7 +88,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     vertexInput.pVertexBindingDescriptions = &binding;
     vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
     vertexInput.pVertexAttributeDescriptions = attributes.data();
-    if (depthOfField) {
+    if (postProcess) {
         vertexInput.vertexBindingDescriptionCount = 0;
         vertexInput.vertexAttributeDescriptionCount = 0;
     }
@@ -114,7 +117,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = depthOfField ? VK_FALSE : VK_TRUE;
+    depthStencil.depthTestEnable = postProcess ? VK_FALSE : VK_TRUE;
     depthStencil.depthWriteEnable = additive ? VK_FALSE : VK_TRUE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 

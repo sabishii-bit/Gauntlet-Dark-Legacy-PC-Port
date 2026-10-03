@@ -264,6 +264,7 @@
   "settings.fps": "FPS",
   "settings.antialiasing": "Anti-Aliasing",
   "settings.depthOfField": "Depth of Field",
+  "settings.bloom": "Bloom",
   "settings.on": "On",
   "settings.off": "Off",
   "settings.unlimited": "Unlimited",
