@@ -65,6 +65,47 @@ struct Fixture {
     }
 };
 
+TEST_CASE("invalid combo pairs release both participants and restore attached positions",
+          "[game][screens][combo][multiplayer]") {
+    Fixture f;
+    PartyCombo::begin(f.players, 0, 1);
+    f.players[1].combo.riding = true;
+    f.players[1].combo.saved = {2, 0, 3};
+    f.players[1].actor.place({0, 10, 0});
+    SECTION("initiator died") {
+        f.players[0].life = PlayerLife::Dying;
+    }
+    SECTION("partner died") {
+        f.players[1].life = PlayerLife::Dying;
+    }
+    SECTION("initiator left") {
+        f.players[0].departed = true;
+    }
+    SECTION("partner left") {
+        f.players[1].departed = true;
+    }
+    SECTION("initiator no longer owns the pairing") {
+        ComboMove::clear(f.players[0].combo);
+    }
+    PartyCombo::cancelInvalid(f.players);
+    CHECK_FALSE(f.players[0].combo.active());
+    CHECK_FALSE(f.players[1].combo.active());
+    CHECK(f.players[1].actor.position() == Vec3{2, 0, 3});
+    PartyCombo::cancelInvalid(f.players);
+    CHECK(f.players[1].actor.position() == Vec3{2, 0, 3});
+}
+
+TEST_CASE("combo cleanup preserves an unrelated pair when a slot is reused",
+          "[game][screens][combo][multiplayer]") {
+    std::array<PlayerRuntime, 4> players;
+    PartyCombo::begin(players, 0, 1);
+    PartyCombo::begin(players, 1, 3);
+    PartyCombo::cancelInvalid(players);
+    CHECK_FALSE(players[0].combo.active());
+    CHECK(players[1].combo.role == ComboRole::Grabber);
+    CHECK(players[3].combo.role == ComboRole::Held);
+}
+
 TEST_CASE("nobody without a figure takes hold or is taken hold of", "[game][screens][combo]") {
     Fixture f;
     REQUIRE(PartyCombo::partnerFor(f.players, 0) == std::nullopt);

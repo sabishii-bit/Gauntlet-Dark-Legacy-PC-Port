@@ -8,11 +8,6 @@
 #include "game/enemies/EnemyMind.h"
 namespace gdl::game {
 namespace {
-f32 flatDistance(const Vec3& a, const Vec3& b) {
-    const f32 dx = a.x - b.x;
-    const f32 dz = a.z - b.z;
-    return std::sqrt(dx * dx + dz * dz);
-}
 f32 yawBetween(const Vec3& from, const Vec3& to) {
     return std::atan2(to.x - from.x, to.z - from.z);
 }
@@ -96,11 +91,13 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     // CritterCollidePlayers sweeps collision centres, not floor positions. An
     // overlapping body may move outward; players on another floor do not block it.
     const Vec3 offset = to - critter.position;
-    const auto touchesPlayer = [&](const EnemyView& player) {
+    const auto playerSeparation = [&](const EnemyView& player) -> std::optional<Vec3> {
         const Vec3 centre =
             player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
         constexpr u32 kNodeMovement = 0x100;
         if ((critter.definition->typeFlags() & kNodeMovement) != 0) {
+            std::optional<Vec3> separation;
+            f32 nearest = 0;
             const auto parts = critter.definition->parts();
             for (usize i = 0; i < parts.size(); ++i) {
                 const auto& part = parts[i];
@@ -111,20 +108,41 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                 const Vec3 from{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
                 if (movementTouchesBody(from, from + offset, centre, player.radius + part.radius,
                                         0.5f * player.height + part.radius)) {
-                    return true;
+                    const f32 distance = glm::length(
+                        Vec2{centre.x - from.x - offset.x, centre.z - from.z - offset.z});
+                    if (!separation || distance < nearest) {
+                        nearest = distance;
+                        separation = centre - from;
+                    }
                 }
             }
-            return false;
+            return separation;
         }
         const Vec3 from = partPosition(critter, {});
-        return movementTouchesBody(from, from + offset, centre,
-                                   player.radius + critter.definition->wallRadius(),
-                                   0.5f * player.height + critter.definition->radius());
-    };
-    for (const EnemyView& other : players) {
-        if (!other.hidden && touchesPlayer(other)) {
-            return;
+        if (movementTouchesBody(from, from + offset, centre,
+                                player.radius + critter.definition->wallRadius(),
+                                0.5f * player.height + critter.definition->radius())) {
+            return centre - (from + offset);
         }
+        return std::nullopt;
+    };
+    bool playerContact = false;
+    for (const EnemyView& other : players) {
+        if (other.hidden) {
+            continue;
+        }
+        if (const auto separation = playerSeparation(other)) {
+            playerContact = true;
+            const f32 length = glm::length(*separation);
+            if (length > 0) {
+                const f32 depth = std::clamp(
+                    critter.definition->wallRadius() + other.radius - length, 1.0f, 3.0f);
+                m_pushes.push_back({other.player, *separation * (2.0f * depth / length)});
+            }
+        }
+    }
+    if (playerContact) {
+        return;
     }
     if (m_collision != nullptr) {
         const f32 wallRadius = critter.definition->wallRadius();
@@ -139,13 +157,36 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     if (blockedByItems(critter, to)) {
         return;
     }
+    if (blockedBySwarm(critter, to)) {
+        return;
+    }
     for (const Combatant& peer : peers) {
         const Actor& other = peer.m_actor;
         if (&other == &critter || other.state == State::Inactive) {
             continue;
         }
-        if (flatDistance(other.position, to) <
-            other.stock->data.radius() + critter.definition->radius()) {
+        const Vec3 from = partPosition(critter, {});
+        const Vec3 peerDestination = from + to - critter.position;
+        const f32 radius = critter.definition->wallRadius();
+        // CritterMoveNodeCol mode 1 checks active nodes, then the body's fallback.
+        // Dying critters keep that body until their instance is removed.
+        if ((other.definition->typeFlags() & 2U) != 0) {
+            const auto parts = other.definition->parts();
+            for (usize i = 0; i < parts.size(); ++i) {
+                const auto& part = parts[i];
+                if (other.hitNodes[i].health <= 0 || !nodeAvailable(other, part.node)) {
+                    continue;
+                }
+                const Vec3 centre{attachmentTransform(other, part.node) * Vec4{part.position, 1}};
+                if (movementTouchesBody(from, peerDestination, centre, radius + part.radius,
+                                        radius + part.radius)) {
+                    return;
+                }
+            }
+        }
+        if (movementTouchesBody(from, peerDestination, partPosition(other, {}),
+                                radius + other.definition->wallRadius(),
+                                radius + other.definition->radius())) {
             return;
         }
     }
@@ -166,6 +207,66 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             hurt(hit);
         }
     }
+}
+
+bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
+    // CritterCollideEnemies chooses one nearest contact. Only a golem may
+    // trample enemies whose half-height is at most two; other contacts stop it.
+    const Vec3 from = partPosition(critter, {});
+    const Vec3 delta = to - critter.position;
+    const EnemyBody* nearest = nullptr;
+    Vec3 contact{0};
+    f32 nearestDistance = 0;
+    for (const EnemyBody& enemy : m_swarm) {
+        const f32 radius = critter.definition->wallRadius() + enemy.radius;
+        const f32 height = critter.definition->radius() + enemy.halfHeight;
+        std::optional<Vec3> hit;
+        const auto touch = [&](const Vec3& start, f32 r, f32 h) -> std::optional<Vec3> {
+            if (!movementTouchesBody(start, start + delta, enemy.centre, r, h)) {
+                return std::nullopt;
+            }
+            const f32 length = glm::dot(delta, delta);
+            const f32 t =
+                length > 0 ? std::clamp(glm::dot(enemy.centre - start, delta) / length, 0.0f, 1.0f)
+                           : 0;
+            return start + t * delta;
+        };
+        if ((critter.definition->typeFlags() & 0x100U) != 0) {
+            const auto parts = critter.definition->parts();
+            for (usize i = 0; i < parts.size(); ++i) {
+                const auto& part = parts[i];
+                if ((part.flags & CritterPart::kSolid) == 0 || critter.hitNodes[i].health <= 0 ||
+                    !nodeAvailable(critter, part.node)) {
+                    continue;
+                }
+                hit = touch(Vec3{attachmentTransform(critter, part.node) * Vec4{part.position, 1}},
+                            radius + part.radius, height + part.radius);
+                if (hit) {
+                    break;
+                }
+            }
+        } else {
+            hit = touch(from, radius, height);
+        }
+        if (hit) {
+            const f32 distance =
+                glm::length(Vec2{hit->x - from.x - delta.x, hit->z - from.z - delta.z});
+            if (nearest == nullptr || distance < nearestDistance) {
+                nearest = &enemy;
+                nearestDistance = distance;
+                contact = *hit;
+            }
+        }
+    }
+    if (nearest == nullptr) {
+        return false;
+    }
+    if (critter.stock->definition.kind == CombatantKind::Golem && nearest->halfHeight <= 2) {
+        m_tramples.push_back(
+            {nearest->id, critter.definition->itemDamage() * m_scales.damage, contact});
+        return false;
+    }
+    return true;
 }
 
 /** Whether the level's items keep the great one from `to` (CritterCollideItems): a golem

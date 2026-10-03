@@ -55,7 +55,8 @@ public:
 
     /** `items` are what of the level's stands where they walk. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                bool timeStopped = false, std::span<const CombatantObstacle> items = {});
+                bool timeStopped = false, std::span<const CombatantObstacle> items = {},
+                Enemies* swarm = nullptr);
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();
@@ -66,6 +67,7 @@ public:
     std::vector<CombatShot> takeShots();
     /** Their blows on what they walked into, since the last call. */
     std::vector<CombatantRam> takeRams() { return std::exchange(m_rams, {}); }
+    std::vector<CombatPush> takePushes() { return std::exchange(m_pushes, {}); }
 
     f32 hurt(s32 id, const EnemyHit& hit);
     void damagedPlayer(s32 id, s32 player, f32 amount);
@@ -155,6 +157,7 @@ private:
     std::vector<CombatSpew> m_spews;
     std::vector<CombatShot> m_shots;
     std::vector<CombatantRam> m_rams;
+    std::vector<CombatPush> m_pushes;
     f32 m_textureFrames = 0;
     const Texture* m_hitFlash = nullptr; ///< borrowed from the level
 };

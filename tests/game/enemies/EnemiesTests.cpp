@@ -39,6 +39,41 @@ std::filesystem::path unpackedRoot() {
     return test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
 }
 
+TEST_CASE("recycling a brood slot releases its original generator even if replacement fails",
+          "[enemies][generator-feedback][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.generator = 4;
+    spawn.placed = true;
+    REQUIRE(enemies.spawn(spawn, {}).has_value());
+    const auto born = enemies.takeGeneratorEvents();
+    REQUIRE(born.size() == 1);
+    CHECK(born[0].generator == 4);
+    CHECK(born[0].kind == EnemyGeneratorEvent::Kind::Born);
+    spawn.generator = 7;
+    spawn.priority = EnemySpawn::Priority::Visible;
+    bool fails = false;
+    SECTION("successful replacement") {}
+    SECTION("all birth exits obstructed") {
+        fails = true;
+        spawn.placed = false;
+    }
+    const std::array players{EnemyView{.radius = 100}};
+    CHECK(enemies.spawn(spawn, players).has_value() == !fails);
+    const auto events = enemies.takeGeneratorEvents();
+    REQUIRE(events.size() == (fails ? 1 : 2));
+    CHECK(events[0].generator == 4);
+    CHECK(events[0].kind == EnemyGeneratorEvent::Kind::Detached);
+    if (!fails) {
+        CHECK(events[1].generator == 7);
+        CHECK(events[1].kind == EnemyGeneratorEvent::Kind::Born);
+    }
+    CHECK(enemies.takeGeneratorEvents().empty());
+}
+
 /** A one-triangle IT, enough to stand and walk. */
 std::filesystem::path itArchive() {
     const auto root = test::scratchDirectory("it-enemy");

@@ -7,6 +7,17 @@
 
 #include "game/enemies/CombatantKind.h"
 namespace gdl::game {
+/** Physical contact adds velocity without dealing damage or selecting a hit reaction. */
+struct CombatPush {
+    s32 player = -1;
+    Vec3 velocity{0};
+};
+/** A golem's uncredited contact damage to a small swarm enemy. */
+struct CombatTrample {
+    s32 enemy = -1;
+    f32 damage = 0;
+    Vec3 position{0};
+};
 /** Hold updates carry an animated attachment; release carries the authored throw force.
  * Damage is deferred until the thrown player reaches the floor. A zero force cancels. */
 struct CombatGrab {

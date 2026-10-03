@@ -33,6 +33,8 @@ public:
     static std::optional<usize> partnerFor(std::span<const PlayerRuntime> players, usize index);
     /** Ties the pair together as the grabber's move begins. */
     static void begin(std::span<PlayerRuntime> players, usize grabber, usize partner);
+    /** Releases both sides of an invalid pair, restoring attached bodies before normal motion. */
+    static void cancelInvalid(std::span<PlayerRuntime> players);
     /** Whether the combo moves this body instead of its own walking: it rides, is held,
      * flies or is steered. */
     static bool aside(const PlayerRuntime& runtime);

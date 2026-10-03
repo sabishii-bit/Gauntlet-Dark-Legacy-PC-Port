@@ -995,7 +995,15 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     advanceDeathShots();
     events.settleBlasts();
     updateStatues(ticks, seconds, players);
-    m_critters.update(ticks, seconds, views, timeStopped, critterObstacles(walkedInto));
+    m_critters.update(ticks, seconds, views, timeStopped, critterObstacles(walkedInto), &m_enemies);
+    for (const CombatPush& push : m_critters.takePushes()) {
+        for (PlayerRuntime& player : players) {
+            if (player.actor.player() == push.player && player.life == PlayerLife::Standing &&
+                !player.departed && !player.capture.active() && !player.combo.riding) {
+                player.knockback.addVelocity(push.velocity);
+            }
+        }
+    }
     for (const CombatantRam& ram : m_critters.takeRams()) {
         if (ram.id >= kGeneratorRamBase) {
             strikeGenerator(ram.id - kGeneratorRamBase, ram.damage, -1, players);

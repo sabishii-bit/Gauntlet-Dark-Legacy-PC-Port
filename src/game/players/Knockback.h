@@ -52,6 +52,8 @@ public:
     /** Another member's step of `seconds` ran into the character: it is shoved by it, as
      * by the step a 30 Hz frame would have made. */
     void shove(const Vec3& displacement, f32 seconds);
+    /** Direct contact velocity, independent of damage, reaction flags and party shoves. */
+    void addVelocity(const Vec3& velocity) { m_velocity += velocity; }
     /** The frame is over: what shoved the character this frame shows it next. */
     void endFrame();
     /** Whether the character was shoved in the last frame. */

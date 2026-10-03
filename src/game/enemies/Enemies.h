@@ -89,6 +89,21 @@ struct EnemyLoss {
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
+/** A living swarm member's collision body, independent of its render/aiming bounds. */
+struct EnemyBody {
+    s32 id = -1;
+    Vec3 centre{0};
+    f32 radius = 0;
+    f32 halfHeight = 0;
+};
+
+/** Ordered generator bookkeeping, including patrol offspring's change to future births. */
+struct EnemyGeneratorEvent {
+    enum class Kind : u8 { Born, Detached, PatrolHit, PatrolDetached };
+    s32 generator = -1;
+    Kind kind = Kind::Born;
+};
+
 /** What a player's hit carries besides damage: the original's damage-type bits that matter. */
 struct EnemyHit {
     static constexpr u32 kKnockBack = 0x10;
@@ -229,6 +244,7 @@ public:
     void wake(s32 id);
     /** Forgets everything of a generator that is gone. */
     void generatorGone(s32 generator);
+    std::vector<EnemyGeneratorEvent> takeGeneratorEvents();
 
     /** Steps every mind and body `ticks` (`seconds` long) with the players where they are;
      * what the throwers let go flies in `missiles`, when given. */
@@ -282,6 +298,7 @@ public:
     f32 yawOf(s32 id) const;
     f32 radiusOf(s32 id) const;
     f32 heightOf(s32 id) const;
+    std::vector<EnemyBody> movementBodies() const;
     s32 targetOf(s32 id) const;
     /** Carry grounded bodies with moving scenery, without advancing AI or animation. */
     void syncFloors();
@@ -415,7 +432,8 @@ private:
                     s32 self) const;
     static f32 turnToward(const Enemy& enemy, f32 wanted, s32 ticks);
     f32 fightOf(const Enemy& enemy) const;
-    static void die(Enemy& enemy);
+    void die(Enemy& enemy);
+    void detachGenerator(Enemy& enemy);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
     static f32 playerDistance(const Enemy& enemy, const EnemyView& player);
     static f32 wrap(f32 angle);
@@ -438,6 +456,7 @@ private:
     std::vector<DeathEvent> m_deathEvents;
     std::vector<EnemyDeathShot> m_deathShots;
     std::vector<s32> m_tagged;
+    std::vector<EnemyGeneratorEvent> m_generatorEvents;
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
     std::optional<ViewVolume> m_view;

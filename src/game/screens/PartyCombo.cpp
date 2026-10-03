@@ -64,6 +64,42 @@ void PartyCombo::begin(std::span<PlayerRuntime> players, usize grabber, usize pa
     }
 }
 
+void PartyCombo::cancelInvalid(std::span<PlayerRuntime> players) {
+    const auto release = [](PlayerRuntime& player) {
+        if (player.combo.riding) {
+            player.actor.place(player.combo.saved);
+        }
+        ComboMove::clear(player.combo);
+        if (player.figure != nullptr) {
+            player.figure->setCombo(-1, false);
+        }
+    };
+    for (usize i = 0; i < players.size(); ++i) {
+        PlayerRuntime& player = players[i];
+        if (!player.combo.active()) {
+            continue;
+        }
+        const s32 index = player.combo.partner;
+        PlayerRuntime* partner = index >= 0 && static_cast<usize>(index) < players.size() &&
+                                         static_cast<usize>(index) != i
+                                     ? &players[static_cast<usize>(index)]
+                                     : nullptr;
+        const bool paired = partner != nullptr && partner->combo.active() &&
+                            partner->combo.partner == static_cast<s32>(i);
+        const bool roles = paired && ((player.combo.role == ComboRole::Grabber) !=
+                                      (partner->combo.role == ComboRole::Grabber));
+        if (roles && player.life == PlayerLife::Standing && !player.departed &&
+            partner->life == PlayerLife::Standing && !partner->departed) {
+            continue;
+        }
+        release(player);
+        // A reused slot may now belong to another pair; never tear down that pair.
+        if (paired) {
+            release(*partner);
+        }
+    }
+}
+
 bool PartyCombo::aside(const PlayerRuntime& runtime) {
     return runtime.combo.riding || runtime.combo.role == ComboRole::Held ||
            runtime.combo.role == ComboRole::Thrown;
@@ -104,18 +140,12 @@ void PartyCombo::animate(std::span<PlayerRuntime> players, usize index, s32 tick
 }
 
 void PartyCombo::advance(std::span<PlayerRuntime> players, usize grabber, s32 ticks) {
+    cancelInvalid(players);
     if (grabber >= players.size() || players[grabber].combo.role != ComboRole::Grabber) {
         return;
     }
     PlayerRuntime& g = players[grabber];
     const s32 partnerIndex = g.combo.partner;
-    if (partnerIndex < 0 || static_cast<usize>(partnerIndex) >= players.size() ||
-        static_cast<usize>(partnerIndex) == grabber ||
-        players[static_cast<usize>(partnerIndex)].life != PlayerLife::Standing ||
-        g.life != PlayerLife::Standing) {
-        ComboMove::clear(g.combo);
-        return;
-    }
     PlayerRuntime& p = players[static_cast<usize>(partnerIndex)];
     ComboPhase phase;
     if (g.figure != nullptr) {

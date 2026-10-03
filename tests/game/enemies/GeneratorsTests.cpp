@@ -199,6 +199,63 @@ std::filesystem::path sampleLevel(std::string_view name) {
     return dir;
 }
 
+TEST_CASE("patrol offspring alert their generator and release quota before their corpse vanishes",
+          "[generators][enemies][generator-feedback][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
+    const auto fixture = test::scratchDirectory("generator-patrol-feedback");
+    writeTextFile(fixture / "world.json", R"({
+      "objects":[{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+      "animations":[],"particles":[],"locators":[],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10}],
+      "itemInstances":[{"info":0,"minPlayers":1,"position":[0,0,0],"rotation":[0,0,0],
+                        "params":[1,0,15,0,2,0,2,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(fixture));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 13, {}, 3);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.generator = 0;
+    spawn.algorithm = 15;
+    spawn.placed = true;
+    spawn.position = {20, 0, 0};
+    const auto patrol = enemies.spawn(spawn, {});
+    REQUIRE(patrol.has_value());
+    spawn.algorithm = 7;
+    spawn.position.x = 40;
+    REQUIRE(enemies.spawn(spawn, {}).has_value());
+    generators.update(2, enemies, {});
+    REQUIRE(generators.livingOf(0) == 2);
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 1;
+    enemies.hurt(*patrol, hit);
+    generators.update(2, enemies, {});
+    CHECK(generators.algorithmOf(0) == 0);
+    CHECK(generators.livingOf(0) == 2);
+    CHECK(enemies.algorithmOf(*patrol) == 15); // siblings are not rewritten
+    hit.damage = 10000;
+    enemies.hurt(*patrol, hit);
+    generators.update(2, enemies, {});
+    CHECK(generators.livingOf(0) == 0); // patrol uncoupling resets, not merely decrements
+    CHECK(enemies.generatorOf(*patrol) == -1);
+    CHECK(enemies.bred(*patrol));
+    const std::array party{EnemyView{.player = 3, .position = {0, 0, 100}}};
+    generators.update(2, enemies, party);
+    CHECK(generators.bredOf(0) == 1);
+    CHECK(generators.livingOf(0) == 1);
+    // A lingering corpse must not release that new birth's quota a second time.
+    for (s32 frame = 0; frame < 180; ++frame) {
+        enemies.update(2, kStep, {});
+    }
+    generators.update(2, enemies, {});
+    CHECK(generators.livingOf(0) == 1);
+}
+
 TEST_CASE("generator population changes wait for offscreen without losing brood or damage",
           "[generators][multiplayer][generator-presence][assets]") {
     const auto root =

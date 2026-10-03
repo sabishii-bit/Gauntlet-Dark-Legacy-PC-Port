@@ -107,6 +107,7 @@ public:
     s32 intervalOf(s32 id) const;
     s32 countdownOf(s32 id) const;
     s32 bredOf(s32 id) const;
+    s32 livingOf(s32 id) const { return m_generators[static_cast<usize>(id)].living; }
     const Vec3& positionOf(s32 id) const;
     const Obstacle& boxOf(s32 id) const;
     /** The generator's parameters as a level's record gives them, for tests and tools. */
@@ -135,6 +136,7 @@ private:
         s32 countdown = 0;
         f32 ratio = 0.0f; ///< grows each birth, stretching the countdown
         s32 bred = 0;
+        s32 living = 0; ///< retail quota counter, reset when a patrol offspring detaches
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 placement{1};
         f32 yaw = 0.0f;
@@ -152,6 +154,7 @@ private:
                     ItemArchive* realmItems = nullptr);
     static s32 stateFor(const Generator& generator, bool destroyed);
     void updatePresence(Generator& generator, bool seen) const;
+    void applyBroodEvents(Enemies& enemies);
 
     std::vector<Generator> m_generators;
     std::optional<ViewVolume> m_view;
