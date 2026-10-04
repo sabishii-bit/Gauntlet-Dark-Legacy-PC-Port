@@ -89,6 +89,73 @@ TEST_CASE("cursor facing survives backward movement and strafe without overridin
     CHECK(f.players[0].actor.yaw() == yaw);
 }
 
+TEST_CASE("cursor-relative forward input runs at full-stick pace without changing strafe controls",
+          "[controls][cursor][party-motion][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    Input keyboard;
+    keyboard.setKey(Key::W, true);
+    auto& input = f.inputs[3];
+    input.move = readMoveInput(keyboard, PlayBindings{}, true, kNoPad);
+    REQUIRE(input.move.magnitude == 1.0f);
+    input.aimPoint = Vec3{80, 0, 0};
+    bool shouldRun = true;
+    SECTION("W runs toward the cursor") {}
+    SECTION("a full stick still runs") {
+        input.aimPoint.reset();
+    }
+    SECTION("the explicit strafe modifier retains the forward strafe") {
+        input.strafe = true;
+        shouldRun = false;
+    }
+    SECTION("forward shooting retains its moving attack") {
+        input.attack = true;
+        shouldRun = false;
+    }
+    SECTION("backward movement keeps its backward strafe") {
+        input.move.direction = Vec2{0, -1};
+        shouldRun = false;
+    }
+    SECTION("left movement keeps its side strafe") {
+        input.move.direction = Vec2{-1, 0};
+        shouldRun = false;
+    }
+    SECTION("right movement keeps its side strafe") {
+        input.move.direction = Vec2{1, 0};
+        shouldRun = false;
+    }
+    for (s32 frame = 0; frame < 120; ++frame) {
+        f.step();
+    }
+    const auto& animator = player.figure->animator();
+    CHECK(animator.running() == shouldRun);
+    CHECK(animator.strafing() == !shouldRun);
+    const f32 pace = shouldRun ? PlayerAnimator::kRunPace : PlayerAnimator::kStrafePace;
+    CHECK(animator.moveScale() == Approx(pace));
+    const Vec3 before = player.actor.position();
+    const f32 yaw = player.actor.yaw();
+    f.step();
+    CHECK(glm::distance(before, player.actor.position()) ==
+          Approx(player.actor.speed() * pace / 30.0f).margin(0.0001f));
+    if (input.aimPoint) {
+        const Vec3 toward = *input.aimPoint - before;
+        CHECK(player.actor.yaw() == Approx(std::atan2(toward.x, toward.z)));
+    } else {
+        CHECK(player.actor.yaw() == yaw);
+    }
+}
+
 TEST_CASE("a damage flash expires after two simulation frames without holding controls",
           "[game][screens][party-motion]") {
     Fixture f;

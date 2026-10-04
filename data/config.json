@@ -40,6 +40,7 @@
     "multiplayer": "normal"
   },
   "controls": {
+    "explicitMovement": true,
     "keyboard": {
       "up": ["Up", "W"],
       "down": ["Down", "S"],
@@ -80,10 +81,10 @@
         "selectorRight": ["L"]
       },
       "pad": {
-        "up": [],
-        "down": [],
-        "left": [],
-        "right": [],
+        "up": ["LeftStickUp"],
+        "down": ["LeftStickDown"],
+        "left": ["LeftStickLeft"],
+        "right": ["LeftStickRight"],
         "attack": ["A"],
         "usePotion": ["X"],
         "throwPotion": [],

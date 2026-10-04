@@ -119,4 +119,40 @@ TEST_CASE("remapped player actions retain same-device turbo and potion chords",
     CHECK(buttons.turboAttackPressed);
     CHECK_FALSE(readPlayButtons(input, playBindings(config, 0), true, 0).turboAttackPressed);
 }
+TEST_CASE("pause navigation recovers from a disabled or disconnected owner without stealing input",
+          "[controls][menu][pause]") {
+    GameConfig config;
+    Input input;
+    input.setKey(Key::Enter, true);
+    auto controller = pad("controller");
+    input.setPad(1, controller);
+    CHECK_FALSE(readPauseMenuInput(input, config, 1).select);
+    config.controls[1].device = "none";
+    CHECK(readPauseMenuInput(input, config, 1).select);
+    config.controls[1].device = "controller";
+    CHECK_FALSE(readPauseMenuInput(input, config, 1).select);
+    input.setPad(1, {});
+    CHECK(readPauseMenuInput(input, config, 1).select);
+}
+
+TEST_CASE("legacy implicit movement imports as explicit stick bindings without changing new remaps",
+          "[controls][config]") {
+    GameConfig config;
+    auto legacy = nlohmann::json::parse(config.toJson());
+    legacy["controls"].erase("explicitMovement");
+    for (const auto* direction : {"up", "down", "left", "right"}) {
+        legacy["controls"]["play"]["pad"][direction] = nlohmann::json::array();
+    }
+    legacy["controls"]["players"][1]["bindings"]["up"]["buttons"] = {"DpadUp"};
+    config.mergeJson(legacy.dump());
+    CHECK(config.play.padUp == std::vector{PadButton::LeftStickUp});
+    CHECK(config.controls[1].play.padUp == std::vector{PadButton::DpadUp, PadButton::LeftStickUp});
+    config.controls[1].play.padUp = {PadButton::DpadDown};
+    config.controls[1].play.padDown.clear();
+    GameConfig restored;
+    restored.mergeJson(config.toJson());
+    CHECK(restored.controls[1].play.padUp == std::vector{PadButton::DpadDown});
+    CHECK(restored.controls[1].play.padDown.empty());
+    CHECK(restored.toJson() == config.toJson());
+}
 } // namespace

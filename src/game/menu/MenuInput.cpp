@@ -150,6 +150,13 @@ MenuInput readSharedMenuInput(const Input& input, const GameConfig& config) {
     return result;
 }
 
+MenuInput readPauseMenuInput(const Input& input, const GameConfig& config, s32 owner) {
+    const auto source = playerInputSource(input, config, owner);
+    return source.keyboard || input.isPadConnected(source.pad)
+               ? readPlayerMenuInput(input, config, owner)
+               : readSharedMenuInput(input, config);
+}
+
 MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform) {
     if (input.pointer && input.pointerNormalized) {
         const auto clip = Vec4{input.pointer->x * 2 - 1, input.pointer->y * 2 - 1, 0.5f, 1};

@@ -207,7 +207,7 @@ TEST_CASE("stick menu bindings are ordinary rebindable configuration names", "[g
     restored.mergeJson(config.toJson());
     CHECK(restored.menu.padUp == std::vector<PadButton>{PadButton::LeftStickRight});
     CHECK(restored.menu.padRight.empty());
-    CHECK(restored.play.padRight.empty());
+    CHECK(restored.play.padRight == std::vector<PadButton>{PadButton::LeftStickRight});
     CHECK(restored.play.padSelectorUp == std::vector<PadButton>{PadButton::DpadUp});
 }
 

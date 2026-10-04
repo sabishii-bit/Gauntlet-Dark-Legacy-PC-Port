@@ -630,7 +630,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
 void Gauntlet::updatePause(f64 deltaSeconds) {
     const s32 pausePlayer = m_pause.player();
     const auto outcome =
-        m_pause.update(deltaSeconds, readPlayerMenuInput(input(), m_config, m_pause.player()));
+        m_pause.update(deltaSeconds, readPauseMenuInput(input(), m_config, m_pause.player()));
     if (outcome == PauseOutcome::Running) {
         return;
     }

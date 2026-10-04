@@ -87,8 +87,7 @@ void SettingsMenu::rebuild(s32 selection) {
     };
     switch (m_page) {
     case Page::Controls:
-        m_controls.define(definition, m_config, *m_painter,
-                          [this](std::string_view id) { return text(id); });
+        m_controls.define(definition, *m_painter, [this](std::string_view id) { return text(id); });
         break;
     case Page::Root: {
         add(text("menu.audio"), 0);
@@ -555,7 +554,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (m_page == Page::Root) {
             if (event.code == 3) {
                 m_page = Page::Controls;
-                m_controls.begin();
+                m_controls.begin(m_config);
                 rebuild();
                 return {};
             }

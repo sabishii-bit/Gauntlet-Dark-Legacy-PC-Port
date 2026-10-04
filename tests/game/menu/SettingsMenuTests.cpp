@@ -59,6 +59,13 @@ struct Fixture {
         menu.update(input, 1);
     }
     void release() { menu.update({}, 1); }
+    void applyControls() {
+        const auto& items = menu.menu().definition().items;
+        const auto apply = std::ranges::find(items, 104, &MenuItem::code);
+        REQUIRE(apply != items.end());
+        menu.menu().focus(static_cast<usize>(apply - items.begin()));
+        select();
+    }
 };
 
 TEST_CASE("mouse operates settings pages sliders and graphics without keyboard confirmation",
@@ -855,7 +862,8 @@ TEST_CASE("controls capture waits for release and binds the chosen player's mous
     f.menu.menu().focus(2);
     f.select(); // player 3, not the settings menu's owner
     f.right();  // automatic -> keyboard
-    REQUIRE(f.config.controls[2].device == "keyboard");
+    REQUIRE(f.config.controls[2].device.empty());
+    CHECK(f.menu.menu().definition().items[0].value == "Mouse and Keyboard");
     f.menu.menu().focus(5); // Quick Attack
     physical.beginPoll();
     physical.setKey(Key::Enter, true);
@@ -870,6 +878,8 @@ TEST_CASE("controls capture waits for release and binds the chosen player's mous
     physical.beginPoll();
     physical.setKey(Key::MouseRight, true);
     step();
+    CHECK_FALSE(f.config.controls[2].customized);
+    f.applyControls();
     CHECK(f.config.controls[2].play.attack == std::vector{Key::MouseRight});
     CHECK(f.config.controls[2].customized);
     CHECK_FALSE(f.config.controls[0].customized);
@@ -885,6 +895,7 @@ TEST_CASE("controls capture waits for release and binds the chosen player's mous
     physical.beginPoll();
     physical.setKey(Key::F3, true);
     step();
+    f.applyControls();
     CHECK(f.config.controls[2].play.attack == std::vector{Key::MouseRight});
     CHECK(f.menu.menu().definition().body == std::vector<std::string>{"COULD NOT SAVE SETTINGS"});
 }
@@ -905,9 +916,14 @@ TEST_CASE("controls lists a hot-plugged controller and cancels capture without c
     f.menu.update(readMenuInput(physical, f.config.menu), 1);
     f.right();
     f.right();
-    f.right();
+    CHECK(f.config.controls[0].device.empty());
+    f.applyControls();
     CHECK(f.config.controls[0].device == "test-guid");
     CHECK(f.menu.menu().definition().items[0].value == "Linux USB Gamepad 1");
+    CHECK(f.menu.menu().definition().items[1].value == "Left Stick Up");
+    CHECK(f.menu.menu().definition().items[2].value == "Left Stick Down");
+    CHECK(f.menu.menu().definition().items[3].value == "Left Stick Left");
+    CHECK(f.menu.menu().definition().items[4].value == "Left Stick Right");
     f.menu.menu().focus(5);
     f.select();
     physical.beginPoll();
@@ -919,6 +935,148 @@ TEST_CASE("controls lists a hot-plugged controller and cancels capture without c
     physical.setPad(6, {});
     f.menu.update(readMenuInput(physical, f.config.menu), 1);
     CHECK(f.menu.menu().definition().items[0].value == "Disconnected");
+}
+
+TEST_CASE("control drafts apply explicitly, discard on Back, and restore actual defaults",
+          "[settings][controls]") {
+    Fixture f;
+    f.menu.menu().focus(4);
+    f.select();
+    f.select();
+    const auto original = f.config.toJson();
+    f.right(); // Player 1: Automatic -> keyboard; None is never offered.
+    REQUIRE(f.menu.menu().definition().items[0].value == "Mouse and Keyboard");
+    CHECK(f.config.toJson() == original);
+    f.right();
+    CHECK(f.menu.menu().definition().items[0].value == "Automatic");
+    f.right();
+    SECTION("Back discards the pending device") {
+        f.back();
+        CHECK(f.writes == 0);
+        CHECK(f.config.toJson() == original);
+        f.select();
+        CHECK(f.menu.menu().definition().items[0].value == "Automatic");
+    }
+    SECTION("Apply saves and Defaults remain staged") {
+        f.applyControls();
+        CHECK(f.writes == 1);
+        CHECK(f.config.controls[0].device == "keyboard");
+        f.right(); // Apply -> Restore Defaults
+        f.select();
+        CHECK(f.writes == 1);
+        CHECK_FALSE(f.config.controls[0].customized);
+        f.applyControls();
+        CHECK(f.writes == 2);
+        CHECK(f.config.controls[0].play.padUp == std::vector{PadButton::LeftStickUp});
+        CHECK(f.config.controls[0].menu.padSelect == MenuBindings{}.padSelect);
+    }
+}
+
+TEST_CASE("controller default rows expose stick directions and potion gestures before Apply",
+          "[settings][controls]") {
+    Fixture f;
+    Input physical;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.guid = "xinput";
+    pad.name = "XInput Controller";
+    physical.setPad(0, pad);
+    f.menu.menu().focus(4);
+    f.select();
+    f.select();
+    f.menu.update(readPlayerMenuInput(physical, f.config, 0), 1);
+    f.right();
+    f.right(); // Player 1 skips None.
+    REQUIRE(f.menu.menu().definition().items[0].value == "XInput Controller 1");
+    CHECK(f.menu.menu().definition().items[1].value == "Left Stick Up");
+    f.menu.menu().focus(7);
+    f.right();
+    CHECK(f.menu.menu().definition().items[3].value == "X (hold)");
+    CHECK(f.menu.menu().definition().items[4].value == "X (double tap)");
+    CHECK(f.writes == 0);
+    // An unplugged device cannot remove the last available input route.
+    physical.setPad(0, {});
+    f.menu.update(readPlayerMenuInput(physical, f.config, 0), 1);
+    f.applyControls();
+    CHECK(f.writes == 0);
+    CHECK(f.config.controls[0].device.empty());
+    CHECK(f.menu.menu().definition().body == std::vector<std::string>{"COULD NOT SAVE SETTINGS"});
+}
+
+TEST_CASE("control pages sit above a horizontal action bar and arrows support mouse paging",
+          "[settings][controls][mouse]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = ' '; c <= '~'; ++c) {
+        glyphs.push_back({c, 8, 0, 0});
+    }
+    f.font = BitmapFont::fromGlyphs(32, 8, std::move(glyphs));
+    f.menu.menu().focus(4);
+    f.select();
+    f.select();
+    const auto& menu = f.menu.menu();
+    const auto& definition = menu.definition();
+    REQUIRE(definition.items.size() == 11);
+    CHECK(definition.items[7].text == "Page");
+    CHECK(definition.items[7].value == "1/4");
+    CHECK(definition.items[8].text == "Apply");
+    CHECK(definition.items[9].text == "Restore Defaults");
+    CHECK(definition.items[10].text == "Back");
+    CHECK(menu.itemY(7) < menu.itemY(8));
+    CHECK(menu.itemY(8) == menu.itemY(9));
+    CHECK(menu.itemY(9) == menu.itemY(10));
+    for (usize i = 8; i < 10; ++i) {
+        const auto box = menu.itemArea(i);
+        CHECK(box.x + box.width < menu.itemArea(i + 1).x);
+    }
+    MenuInput click;
+    click.pointer =
+        Vec2{static_cast<f32>(definition.valueX - 8), static_cast<f32>(menu.itemY(7) + 2)};
+    click.pointerPressed = true;
+    f.menu.update(click, 1);
+    CHECK(menu.definition().items[7].value == "4/4");
+    f.right();
+    CHECK(menu.definition().items[7].value == "1/4");
+    f.down();
+    REQUIRE(menu.selection() == 8);
+    f.right();
+    CHECK(menu.selection() == 9);
+    f.right();
+    CHECK(menu.selection() == 10);
+    f.right();
+    CHECK(menu.selection() == 8);
+    MenuInput up;
+    up.up = true;
+    f.menu.update(up, 1);
+    CHECK(menu.selection() == 7);
+}
+
+TEST_CASE("disabling another player's device stays pending and old navigation survives Apply",
+          "[settings][controls]") {
+    Fixture f;
+    Input physical;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.guid = "controller";
+    physical.setPad(1, pad);
+    f.menu.menu().focus(4);
+    f.select();
+    f.menu.menu().focus(1);
+    f.select();
+    f.menu.update(readPlayerMenuInput(physical, f.config, 1), 1);
+    f.right(); // keyboard
+    f.right(); // None (allowed for player 2)
+    REQUIRE(f.menu.menu().definition().items[0].value == "None");
+    CHECK(f.config.controls[1].device.empty());
+    f.applyControls();
+    REQUIRE(f.config.controls[1].device == "none");
+    physical.beginPoll();
+    pad.buttons[static_cast<usize>(PadButton::DpadRight)] = true;
+    physical.setPad(1, pad);
+    // The newly unassigned owner supplies no mapped input, but the editor keeps its
+    // original device route until it closes.
+    f.menu.update(readPlayerMenuInput(physical, f.config, 1), 1);
+    CHECK(f.menu.menu().selection() == 9);
 }
 
 TEST_CASE("multiplayer radio choices use retail labels and persist only successful writes",

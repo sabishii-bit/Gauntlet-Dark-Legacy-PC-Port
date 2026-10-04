@@ -125,6 +125,29 @@ TEST_CASE("the stick moves past its dead zone and the pad buttons add to it",
     REQUIRE(readMoveInput(input, PlayBindings{}, false, kAllPads).any());
 }
 
+TEST_CASE("explicit stick movement preserves analog magnitude and can be rebound or removed",
+          "[controls][players]") {
+    Input input;
+    PadSnapshot pad;
+    pad.connected = true;
+    PlayBindings bindings;
+    for (const f32 amount : {0.1f, 0.4f, 0.625f, 1.0f}) {
+        pad.axes[static_cast<usize>(PadAxis::LeftY)] = -amount;
+        input.setPad(0, pad);
+        const auto move = readMoveInput(input, bindings, false, 0);
+        CHECK(move.magnitude == Approx(std::max(0.0f, (amount - 0.25f) / 0.75f)));
+    }
+    bindings.padUp = {PadButton::A};
+    CHECK_FALSE(readMoveInput(input, bindings, false, 0).any());
+    pad.buttons[static_cast<usize>(PadButton::A)] = true;
+    input.setPad(0, pad);
+    CHECK(readMoveInput(input, bindings, false, 0).magnitude == 1.0f);
+    bindings.padUp.clear();
+    CHECK_FALSE(readMoveInput(input, bindings, false, 0).any());
+    bindings.padRight = {PadButton::LeftStickUp};
+    CHECK(readMoveInput(input, bindings, false, 0).direction == Vec2{1, 0});
+}
+
 TEST_CASE("turbo is held; the charge and the attack are known the frame they go down",
           "[game][players][controls]") {
     Input input;

@@ -11,9 +11,20 @@ constexpr s32 kDevice = 100;
 constexpr s32 kNext = 101;
 constexpr s32 kDefaults = 102;
 constexpr s32 kBack = 103;
+constexpr s32 kApply = 104;
+constexpr s32 kFirstAction = 8;
+constexpr s32 kActionCount = 3;
+constexpr s32 kActionY = 268;
+constexpr s32 kActionGap = 24;
+constexpr s32 kCanvasWidth = 512;
 constexpr s32 kCaptureTicks = 600;
+s32 pageCount() {
+    return (static_cast<s32>(controlActions().size()) + kPageSize - 1) / kPageSize;
+}
 } // namespace
-void ControlSettings::begin() {
+void ControlSettings::begin(const GameConfig& config) {
+    m_draft = config;
+    m_navigation = config;
     m_player = -1;
     m_page = 0;
     m_capture = -1;
@@ -23,6 +34,10 @@ std::vector<PlayerControlConfig> ControlSettings::choices(const GameConfig& conf
     std::vector<PlayerControlConfig> result(3);
     result[1].device = "keyboard";
     result[2].device = "none";
+    // Player 1 always retains an assignment, including keyboard recovery in Automatic.
+    if (m_player == 0) {
+        result.pop_back();
+    }
     for (usize player = 0; player < config.controls.size(); ++player) {
         if (static_cast<s32>(player) != m_player && config.controls[player].device == "keyboard") {
             result.erase(result.begin() + 1);
@@ -48,8 +63,7 @@ std::vector<PlayerControlConfig> ControlSettings::choices(const GameConfig& conf
     }
     return result;
 }
-void ControlSettings::define(MenuDefinition& definition, const GameConfig& config,
-                             const TextPainter& painter,
+void ControlSettings::define(MenuDefinition& definition, const TextPainter& painter,
                              const std::function<std::string(std::string_view)>& text) const {
     definition.title = text("menu.controls");
     definition.titleScale = 0.75f;
@@ -64,6 +78,7 @@ void ControlSettings::define(MenuDefinition& definition, const GameConfig& confi
     definition.items.clear();
     definition.body.clear();
     definition.itemPositions.clear();
+    const auto& config = m_draft;
     if (m_player < 0) {
         for (s32 player = 0; player < 4; ++player) {
             definition.items.push_back(
@@ -97,16 +112,26 @@ void ControlSettings::define(MenuDefinition& definition, const GameConfig& confi
         const auto actions = controlActions();
         const auto assigned = controlDevices(config, m_devices)[static_cast<usize>(m_player)];
         const bool canBind = assigned.keyboard || m_devices.isPadConnected(assigned.pad);
+        const auto buttonLabel = [&](PadButton button) {
+            switch (button) {
+            case PadButton::LeftStickUp: return text("controls.stickUp");
+            case PadButton::LeftStickDown: return text("controls.stickDown");
+            case PadButton::LeftStickLeft: return text("controls.stickLeft");
+            case PadButton::LeftStickRight: return text("controls.stickRight");
+            default: return std::string(padButtonName(button));
+            }
+        };
         for (s32 row = 0; row < kPageSize; ++row) {
             const s32 index = m_page * kPageSize + row;
             if (index >= static_cast<s32>(actions.size())) {
                 break;
             }
             const auto& action = actions[static_cast<usize>(index)];
+            const std::string_view actionId = action.id;
             std::string value;
             if (m_capture == index) {
                 value = text("controls.press");
-            } else if (profile.device == "keyboard" || (profile.device.empty() && m_player == 0)) {
+            } else if (assigned.keyboard) {
                 for (const auto key : action.keyboard(profile)) {
                     if (!value.empty()) {
                         value += "/";
@@ -115,14 +140,22 @@ void ControlSettings::define(MenuDefinition& definition, const GameConfig& confi
                 }
                 if (profile.device.empty() && !action.controller(profile).empty()) {
                     value += " / ";
-                    value += padButtonName(action.controller(profile).front());
+                    value += buttonLabel(action.controller(profile).front());
                 }
             } else {
                 for (const auto button : action.controller(profile)) {
                     if (!value.empty()) {
                         value += "/";
                     }
-                    value += padButtonName(button);
+                    value += buttonLabel(button);
+                }
+                if (value.empty() && profile.play.padMagicGestures &&
+                    !profile.play.padUsePotion.empty() &&
+                    (actionId == "throwPotion" || actionId == "shieldPotion")) {
+                    value =
+                        buttonLabel(profile.play.padUsePotion.front()) + " (" +
+                        text(actionId == "throwPotion" ? "controls.hold" : "controls.doubleTap") +
+                        ")";
                 }
             }
             if (value.empty()) {
@@ -135,7 +168,14 @@ void ControlSettings::define(MenuDefinition& definition, const GameConfig& confi
                 {text("controls." + std::string(action.id)), index, 0, canBind, {}, 0, value});
         }
         definition.items.push_back(
-            {text("controls.page") + " " + std::to_string(m_page + 1) + "/4", kNext});
+            {text("controls.page"),
+             kNext,
+             0,
+             true,
+             {},
+             0,
+             std::to_string(m_page + 1) + "/" + std::to_string(pageCount())});
+        definition.items.push_back({text("settings.apply"), kApply});
         definition.items.push_back({text("settings.defaults"), kDefaults});
         definition.items.push_back({text("settings.back"), kBack});
     }
@@ -154,9 +194,20 @@ void ControlSettings::define(MenuDefinition& definition, const GameConfig& confi
             value += "...";
         }
     }
+    if (m_player >= 0) {
+        s32 width = kActionGap * (kActionCount - 1);
+        for (usize i = kFirstAction; i < definition.items.size(); ++i) {
+            width += painter.measure(definition.items[i].text, definition.scale);
+        }
+        s32 x = (kCanvasWidth - width) / 2;
+        for (usize i = kFirstAction; i < definition.items.size(); ++i) {
+            definition.itemPositions[i] = Vec2{static_cast<f32>(x), kActionY};
+            x += painter.measure(definition.items[i].text, definition.scale) + kActionGap;
+        }
+    }
     if (m_failed || m_capture >= 0) {
         definition.body = {text(m_failed ? "settings.failed" : "controls.cancel")};
-        definition.bodyY = 286;
+        definition.bodyY = 304;
         definition.bodyScale = 0.4f;
     }
 }
@@ -175,16 +226,9 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
         }
         m_devices = *input.devices;
     }
-    const auto save = [&](const GameConfig& next) {
-        m_failed = !persist || !persist(next);
-        if (!m_failed) {
-            config = next;
-        }
-        rebuild(menu.selection());
-    };
     if (m_capture >= 0) {
         m_timeout -= std::max(0, ticks);
-        const auto device = controlDevices(config, m_devices)[static_cast<usize>(m_player)];
+        const auto device = controlDevices(m_draft, m_devices)[static_cast<usize>(m_player)];
         if (m_timeout <= 0 || m_devices.wasKeyPressed(Key::Escape)) {
             m_capture = -1;
             rebuild(menu.selection());
@@ -216,8 +260,7 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
             return false;
         }
         if (key || button) {
-            auto next = config;
-            auto& profile = next.controls[static_cast<usize>(m_player)];
+            auto& profile = m_draft.controls[static_cast<usize>(m_player)];
             if (!profile.customized) {
                 profile.play = config.play;
                 profile.menu = config.menu;
@@ -231,7 +274,7 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
                 action.controller(profile) = {*button};
             }
             m_capture = -1;
-            save(next);
+            rebuild(menu.selection());
         }
         return false;
     }
@@ -239,16 +282,40 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
         rebuild(menu.selection());
     }
     auto mapped = input;
+    // Keep the session's original controls alive even after Apply changes its owner.
+    if (input.devices != nullptr) {
+        const auto recovery = readSharedMenuInput(m_devices, m_navigation);
+        mapped.up |= recovery.up;
+        mapped.down |= recovery.down;
+        mapped.left |= recovery.left;
+        mapped.right |= recovery.right;
+        mapped.select |= recovery.select;
+        mapped.back |= recovery.back;
+    }
     // A fixed keyboard escape route survives changing the device/menu bindings in this editor.
     mapped.back |= m_devices.wasKeyPressed(Key::Escape);
     mapped.up |= m_devices.wasKeyPressed(Key::Up);
     mapped.down |= m_devices.wasKeyPressed(Key::Down);
+    mapped.left |= m_devices.wasKeyPressed(Key::Left);
+    mapped.right |= m_devices.wasKeyPressed(Key::Right);
     mapped.select |= m_devices.wasKeyPressed(Key::Enter);
+    if (m_player >= 0 && menu.selection() >= kFirstAction && !mapped.back && !mapped.select) {
+        if (mapped.left || mapped.right) {
+            rebuild(kFirstAction +
+                    (menu.selection() - kFirstAction + (mapped.left ? -1 : 1) + kActionCount) %
+                        kActionCount);
+            return false;
+        }
+        if (mapped.up || mapped.down) {
+            rebuild(mapped.up ? kFirstAction - 1 : 0);
+            return false;
+        }
+    }
     auto event = menu.update(mapped, ticks);
-    if ((input.left || input.right) && m_player >= 0) {
+    if ((mapped.left || mapped.right) && !mapped.back && !mapped.select && m_player >= 0) {
         const auto code = menu.definition().items[static_cast<usize>(menu.selection())].code;
         if (code == kDevice || code == kNext) {
-            event = {MenuAction::Choice, code, 0, input.left ? -1 : 1};
+            event = {MenuAction::Choice, code, 0, mapped.left ? -1 : 1};
         }
     }
     if (event.action == MenuAction::Back ||
@@ -258,6 +325,8 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
         }
         const s32 player = m_player;
         m_player = -1;
+        m_draft = config;
+        m_failed = false;
         rebuild(player);
         return false;
     }
@@ -267,16 +336,17 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
     if (m_player < 0) {
         m_player = event.code;
         m_page = 0;
+        m_draft = config;
+        m_failed = false;
         rebuild(0);
         return false;
     }
     if (event.code == kNext) {
-        m_page = (m_page + (event.direction < 0 ? -1 : 1) + 4) % 4;
-        rebuild(7);
+        m_page = (m_page + (event.direction < 0 ? -1 : 1) + pageCount()) % pageCount();
+        rebuild(kFirstAction - 1);
     } else if (event.code == kDevice) {
-        auto next = config;
-        auto& profile = next.controls[static_cast<usize>(m_player)];
-        const auto devices = choices(config);
+        auto& profile = m_draft.controls[static_cast<usize>(m_player)];
+        const auto devices = choices(m_draft);
         const auto found = std::ranges::find_if(devices, [&](const auto& choice) {
             return choice.device == profile.device && choice.occurrence == profile.occurrence;
         });
@@ -287,11 +357,29 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
         profile.device = chosen.device;
         profile.name = chosen.name;
         profile.occurrence = chosen.occurrence;
-        save(next);
-    } else if (event.code == kDefaults) {
+        m_failed = false;
+        rebuild(menu.selection());
+    } else if (event.code == kApply) {
         auto next = config;
-        next.controls[static_cast<usize>(m_player)].customized = false;
-        save(next);
+        next.controls[static_cast<usize>(m_player)] =
+            m_draft.controls[static_cast<usize>(m_player)];
+        const auto devices = controlDevices(next, m_devices);
+        const bool usable = std::ranges::any_of(devices, [&](const auto& device) {
+            return device.keyboard || m_devices.isPadConnected(device.pad);
+        });
+        m_failed = next.controls[0].device == "none" || !usable || !persist || !persist(next);
+        if (!m_failed) {
+            config = next;
+            m_draft = next;
+        }
+        rebuild(menu.selection());
+    } else if (event.code == kDefaults) {
+        auto& profile = m_draft.controls[static_cast<usize>(m_player)];
+        profile.play = PlayBindings{};
+        profile.menu = MenuBindings{};
+        profile.customized = true;
+        m_failed = false;
+        rebuild(menu.selection());
     } else if (event.code >= 0 && event.code < static_cast<s32>(controlActions().size())) {
         m_capture = event.code;
         m_failed = false;

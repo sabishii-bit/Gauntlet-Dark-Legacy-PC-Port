@@ -72,6 +72,8 @@ MenuInputSource playerInputSource(const Input& input, const GameConfig& config, 
 MenuInput readPlayerMenuInput(const Input& input, const GameConfig& config, s32 player,
                               bool typing = false);
 MenuInput readSharedMenuInput(const Input& input, const GameConfig& config);
+/** Keep a paused menu recoverable when its owner disables or disconnects their device. */
+MenuInput readPauseMenuInput(const Input& input, const GameConfig& config, s32 owner);
 
 /** Maps a window-normalized cursor through the same virtual transform used for drawing. */
 MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform);

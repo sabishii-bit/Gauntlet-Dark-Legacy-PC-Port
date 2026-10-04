@@ -317,9 +317,15 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const bool strafes = !held && !down && !charging && player < inputs.size() &&
                              (inputs[player].strafe || aim.has_value()) && move.any();
         if (players[i].figure != nullptr) {
+            // Mouse aim locks facing, but forward movement uses the ordinary full-stick
+            // gait. Backing up, sidestepping, and moving shots retain their strafe actions.
+            const bool cursorForward = aim && !inputs[player].strafe && !inputs[player].attack &&
+                                       inputs[player].move.direction.x == 0.0f &&
+                                       inputs[player].move.direction.y > 0.0f;
             players[i].figure->setStrafe(
-                strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
-                        : StrafeWay::None);
+                strafes && !cursorForward
+                    ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
+                    : StrafeWay::None);
         }
         players[i].glow.step(seconds);
         // Riding a moving floor, the body goes where the floor took it (PlayerCheckFloor).

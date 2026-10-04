@@ -103,10 +103,10 @@ struct PlayBindings {
     std::vector<Key> right{Key::Right, Key::D};
     /** On a pad the stick walks; the directional buttons work the powerup selector, as the
      * original's do, and walk only when bound to. */
-    std::vector<PadButton> padUp;
-    std::vector<PadButton> padDown;
-    std::vector<PadButton> padLeft;
-    std::vector<PadButton> padRight;
+    std::vector<PadButton> padUp{PadButton::LeftStickUp};
+    std::vector<PadButton> padDown{PadButton::LeftStickDown};
+    std::vector<PadButton> padLeft{PadButton::LeftStickLeft};
+    std::vector<PadButton> padRight{PadButton::LeftStickRight};
     std::vector<Key> attack{Key::Space, Key::MouseLeft};
     std::vector<PadButton> padAttack{PadButton::A};
     std::vector<Key> usePotion{Key::E};

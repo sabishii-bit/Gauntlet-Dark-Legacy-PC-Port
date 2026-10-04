@@ -271,6 +271,27 @@ void GameConfig::mergeJson(std::string_view json) {
     if (root.contains("controls") && root.at("controls").contains("players")) {
         readControlProfiles(root.at("controls").at("players"), *this);
     }
+    if (root.contains("controls") && !root.at("controls").value("explicitMovement", false)) {
+        // Older saves added the left stick outside the binding lists. Preserve that
+        // input when importing them, while allowing new profiles to remap it completely.
+        const auto migrate = [](PlayBindings& bindings) {
+            const auto add = [](std::vector<PadButton>& buttons, PadButton direction) {
+                if (std::ranges::find(buttons, direction) == buttons.end()) {
+                    buttons.push_back(direction);
+                }
+            };
+            add(bindings.padUp, PadButton::LeftStickUp);
+            add(bindings.padDown, PadButton::LeftStickDown);
+            add(bindings.padLeft, PadButton::LeftStickLeft);
+            add(bindings.padRight, PadButton::LeftStickRight);
+        };
+        migrate(play);
+        for (auto& profile : controls) {
+            if (profile.customized) {
+                migrate(profile.play);
+            }
+        }
+    }
     if (!std::isfinite(play.magicHoldSeconds) || play.magicHoldSeconds <= 0.0f ||
         play.magicHoldSeconds > 2.0f || !std::isfinite(play.magicDoubleTapSeconds) ||
         play.magicDoubleTapSeconds <= 0.0f || play.magicDoubleTapSeconds > 2.0f) {
@@ -320,7 +341,8 @@ std::string GameConfig::toJson() const {
     root["game"] = {
         {"difficulty", difficulty.level},
         {"multiplayer", MultiplayerConfig::kNames[static_cast<usize>(multiplayer.mode)]}};
-    root["controls"] = {{"keyboard",
+    root["controls"] = {{"explicitMovement", true},
+                        {"keyboard",
                          {{"up", keyNames(menu.up)},
                           {"down", keyNames(menu.down)},
                           {"left", keyNames(menu.left)},

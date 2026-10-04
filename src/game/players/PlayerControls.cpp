@@ -13,9 +13,20 @@ bool anyKeyDown(const Input& input, std::span<const Key> keys) {
     return std::ranges::any_of(keys, [&](Key key) { return input.isKeyDown(key); });
 }
 
-bool anyButtonDown(const Input& input, s32 pad, std::span<const PadButton> buttons) {
-    return std::ranges::any_of(
-        buttons, [&](PadButton button) { return input.isPadButtonDown(pad, button); });
+f32 movementAmount(const Input& input, s32 pad, std::span<const PadButton> buttons, Vec2 analog) {
+    f32 amount = 0;
+    for (const auto button : buttons) {
+        f32 value = 0;
+        switch (button) {
+        case PadButton::LeftStickUp: value = analog.y; break;
+        case PadButton::LeftStickDown: value = -analog.y; break;
+        case PadButton::LeftStickLeft: value = -analog.x; break;
+        case PadButton::LeftStickRight: value = analog.x; break;
+        default: value = input.isPadButtonDown(pad, button) ? 1.0f : 0.0f; break;
+        }
+        amount = std::max(amount, value);
+    }
+    return amount;
 }
 
 /** The stick's deflection beyond the dead zone, rescaled so full tilt stays 1. */
@@ -53,11 +64,11 @@ MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool k
         if (!input.isPadConnected(index)) {
             continue;
         }
-        sum += stick(input, index, bindings.stickDeadZone);
-        sum.x += anyButtonDown(input, index, bindings.padRight) ? 1.0f : 0.0f;
-        sum.x -= anyButtonDown(input, index, bindings.padLeft) ? 1.0f : 0.0f;
-        sum.y += anyButtonDown(input, index, bindings.padUp) ? 1.0f : 0.0f;
-        sum.y -= anyButtonDown(input, index, bindings.padDown) ? 1.0f : 0.0f;
+        const Vec2 analog = stick(input, index, bindings.stickDeadZone);
+        sum.x += movementAmount(input, index, bindings.padRight, analog);
+        sum.x -= movementAmount(input, index, bindings.padLeft, analog);
+        sum.y += movementAmount(input, index, bindings.padUp, analog);
+        sum.y -= movementAmount(input, index, bindings.padDown, analog);
     }
     MoveInput out;
     const f32 length = glm::length(sum);
