@@ -66,6 +66,74 @@ PlayerSelectScene::Inputs player(s32 index, bool select, bool back = false, bool
     return inputs;
 }
 
+TEST_CASE("letterboxed mouse loads a character and creates another in only its hovered lane",
+          "[select][mouse][assets]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-scene-mouse");
+    SaveSlots slots;
+    REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
+    CharacterSave saved;
+    saved.name = "MOUSE";
+    saved.gold = 321;
+    REQUIRE(slots.write(0, saved));
+    PlayerSelectScene scene;
+    REQUIRE(scene.open(device, f.context(), 0));
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
+    scene.render(device, projection, 640, 448);
+    const auto pointerAt = [&](const Rect& area, bool click = true, bool back = false) {
+        const auto clip =
+            transform * Vec4{area.x + area.width / 2, area.y + area.height / 2, 0.5f, 1};
+        MenuInput input;
+        input.pointer = (Vec2{clip} + Vec2{1}) / 2.0f;
+        input.pointerNormalized = true;
+        input.pointerPressed = click;
+        input.pointerBack = back;
+        PlayerSelectScene::Inputs inputs;
+        inputs.fill(input); // every device read carries the same physical pointer
+        return scene.step(1, inputs);
+    };
+    pointerAt(scene.lane(0).menu().itemArea(1));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::LoadPick);
+    CHECK_FALSE(scene.lane(1).active());
+    CHECK_FALSE(scene.lane(2).active());
+    CHECK_FALSE(scene.lane(3).active());
+    pointerAt(scene.lane(0).menu().itemArea(0));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::Loading);
+    scene.step(SelectLane::kOperationStepTicks * 3, nobody());
+    scene.step(SelectLane::kNoticeTicks, nobody());
+    REQUIRE(scene.lane(0).state() == SelectLane::State::ClassPick);
+    CHECK(scene.lane(0).save().name == "MOUSE");
+    CHECK(scene.lane(0).save().gold == 321);
+    pointerAt({270, 90, 20, 20});
+    REQUIRE(scene.lane(2).state() == SelectLane::State::TopMenu);
+    CHECK_FALSE(scene.lane(1).active());
+    CHECK_FALSE(scene.lane(3).active());
+    pointerAt(scene.lane(2).menu().itemArea(0));
+    REQUIRE(scene.lane(2).state() == SelectLane::State::NameEntry);
+    CHECK(scene.lane(2).nameEntry().name().empty());
+    const auto clickControl = [&](SelectLane::PointerAction action, char letter = 0) {
+        const auto targets = scene.lane(2).pointerTargets();
+        const auto it = std::ranges::find_if(targets, [&](const auto& target) {
+            return target.action == action && (letter == 0 || target.letter == letter);
+        });
+        REQUIRE(it != targets.end());
+        pointerAt(it->area);
+    };
+    clickControl(SelectLane::PointerAction::Letter, 'C');
+    clickControl(SelectLane::PointerAction::Accept);
+    scene.step(NameEntry::kFlashTicks + 1, nobody());
+    REQUIRE(scene.lane(2).state() == SelectLane::State::ClassPick);
+    CHECK(scene.lane(2).save().name == "C");
+    CHECK(scene.lane(0).save().name == "MOUSE");
+    pointerAt({270, 90, 20, 20}, false, true);
+    CHECK(scene.lane(2).state() == SelectLane::State::TopMenu);
+    CHECK(scene.lane(0).state() == SelectLane::State::ClassPick);
+    CHECK(scene.lane(0).slotInUse() == 0);
+    pointerAt({-40, 90, 20, 20}, false, true);
+    CHECK(scene.lane(0).state() == SelectLane::State::ClassPick);
+}
+
 TEST_CASE("the select screen refuses to open without unpacked data", "[game][select]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-empty");

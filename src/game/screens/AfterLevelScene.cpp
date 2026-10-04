@@ -6,6 +6,7 @@
 #include <exception>
 #include <format>
 #include <string>
+#include <utility>
 
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
@@ -146,6 +147,10 @@ void AfterLevelScene::close() {
     m_music = kNoSound;
     m_effects.clear();
     m_lastSounds.clear();
+    m_pointerTargets.clear();
+    m_hoverTargets.fill(std::nullopt);
+    m_lastPointer.fill(std::nullopt);
+    m_pointerTransform = Mat4{1};
     m_glow = nullptr;
     m_text.setFont(nullptr, nullptr);
     m_boxes.release();
@@ -248,6 +253,7 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs) {
             heard[player].back = false;
         }
     }
+    pointerInput(heard, wasScrolling);
     m_session.update(seconds, heard);
     updateTallySound();
     for (const auto& lane : m_session.lanes()) {
@@ -277,6 +283,69 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs) {
     // The original leaves the shop only once its effects have died away (do_shop's
     // sndFxUpdate test), so the last confirmation is heard whole.
     return m_session.finished() && !effectsPlaying();
+}
+
+void AfterLevelScene::pointerInput(ShopSession::Inputs& inputs,
+                                   const std::array<bool, 4>& scrolling) {
+    for (const auto& lane : m_session.lanes()) {
+        const auto player = static_cast<usize>(lane.member.player);
+        const bool rightClick = inputs[player].pointerBack;
+        inputs[player].pointerBack = false; // Sell needs a row, not just the lane's background.
+        auto& input = inputs[player];
+        input = mapMenuPointer(std::move(input), m_pointerTransform,
+                               Rect{static_cast<f32>(lane.member.player * StatusBoxPainter::kWidth),
+                                    0, StatusBoxPainter::kWidth, StatusBoxPainter::kY});
+        const bool moved = input.pointer && m_lastPointer[player] != input.pointer;
+        m_lastPointer[player] = input.pointer;
+        const bool keyboard = input.up || input.down || input.left || input.right || input.select ||
+                              input.back || input.start || input.upHeld || input.downHeld ||
+                              input.leftHeld || input.rightHeld;
+        if (!input.pointer || keyboard || lane.phase == ShopPhase::Done) {
+            m_hoverTargets[player].reset();
+            continue;
+        }
+        const bool active = moved || input.pointerPressed || rightClick || input.pointerScroll != 0;
+        const auto hit = std::ranges::find_if(
+            m_pointerTargets.rbegin(), m_pointerTargets.rend(), [&](const PointerTarget& target) {
+                const auto& point = *input.pointer;
+                return target.player == lane.member.player && target.phase == lane.phase &&
+                       point.x >= target.area.x && point.x < target.area.right() &&
+                       point.y >= target.area.y && point.y < target.area.bottom();
+            });
+        if (!active) {
+            if (hit == m_pointerTargets.rend() || !m_hoverTargets[player] ||
+                hit->action != m_hoverTargets[player]->action ||
+                hit->row != m_hoverTargets[player]->row ||
+                hit->phase != m_hoverTargets[player]->phase) {
+                m_hoverTargets[player].reset();
+            }
+            continue;
+        }
+        if (lane.phase == ShopPhase::Shopping && input.pointerScroll != 0) {
+            input.up = input.pointerScroll > 0;
+            input.down = input.pointerScroll < 0;
+            m_hoverTargets[player].reset();
+            continue;
+        }
+        if (hit == m_pointerTargets.rend()) {
+            m_hoverTargets[player].reset();
+            continue;
+        }
+        m_hoverTargets[player] = *hit;
+        switch (hit->action) {
+        case PointerAction::Buy:
+        case PointerAction::Sell:
+            if (m_session.focus(lane.member.player, hit->row) && !scrolling[player]) {
+                input.back =
+                    (rightClick || (input.pointerPressed && hit->action == PointerAction::Sell));
+                input.select = input.pointerPressed && !input.back;
+            }
+            break;
+        case PointerAction::Previous: input.up = input.pointerPressed; break;
+        case PointerAction::Next: input.down = input.pointerPressed; break;
+        case PointerAction::Continue: input.select = input.pointerPressed; break;
+        }
+    }
 }
 void AfterLevelScene::updateTallySound() {
     if (m_context.sounds == nullptr || !m_tallyCue.has_value()) {

@@ -50,6 +50,12 @@ constexpr s32 kStatGlowWidth = 68;
 constexpr s32 kLevelY = 292;
 constexpr s32 kLettersY = 340;
 constexpr s32 kLetterStep = 18;
+constexpr s32 kGridColumns = 8;
+constexpr s32 kGridX = 8;
+constexpr s32 kGridY = 144;
+constexpr s32 kGridCellWidth = 14;
+constexpr s32 kGridCellHeight = 16;
+constexpr s32 kColorControlX = 76;
 /** Where each lane's first name letter starts, a few pixels into the lane. */
 constexpr std::array<s32, 4> kLetterStartX{8, 10, 10, 7};
 constexpr s32 kNameCenterOffset = 64;
@@ -92,6 +98,24 @@ constexpr std::string_view kIconRight = "BUTTON_R";
 constexpr std::string_view kIconSelect = "BUTTON_X";
 constexpr std::string_view kIconBack = "BUTTON_TRI";
 
+bool contains(const Rect& area, const Vec2& point) {
+    return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
+           point.y < area.y + area.height;
+}
+
+Rect iconArea(s32 x, s32 y) {
+    return {static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(kPromptIconSize),
+            static_cast<f32>(kPromptIconSize)};
+}
+
+Rect letterArea(s32 x, usize letter) {
+    const auto index = static_cast<s32>(letter);
+    const s32 row = index / kGridColumns;
+    return {static_cast<f32>(x + kGridX + index % kGridColumns * kGridCellWidth),
+            static_cast<f32>(kGridY + row * kGridCellHeight), static_cast<f32>(kGridCellWidth),
+            static_cast<f32>(kGridCellHeight)};
+}
+
 /** Opacity from the original's blit alpha, where 0 is opaque and 256 invisible. */
 u8 opacityFromBlitAlpha(s32 alpha) {
     return static_cast<u8>(kFullOpacity - std::clamp(alpha, 0, kFullOpacity));
@@ -115,6 +139,10 @@ void SelectLane::reset(s32 index, LaneServices* services) {
     m_pickColor = 0;
     m_slotInUse.reset();
     m_slotTarget.reset();
+    m_pointer.reset();
+    m_hoverArea.reset();
+    m_pointerLetter.reset();
+    m_pointerMode = false;
     m_menu.close();
     m_blits = {};
 }
@@ -383,10 +411,14 @@ void SelectLane::clearPlayer() {
     m_hasCharacter = false;
 }
 
-SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const Frame& frame) {
+SelectLane::Result SelectLane::update(const MenuInput& rawInput, s32 ticks, const Frame& frame) {
     stepAnimations(ticks);
     m_promptStart = frame.othersSelecting;
+    const auto input = pointerInput(rawInput);
     if (m_state == State::Inactive) {
+        if (input.start) {
+            activate();
+        }
         return Result::None;
     }
     const MenuEvent event = m_menu.isOpen() ? m_menu.update(input, ticks) : MenuEvent{};
@@ -466,7 +498,8 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
             returnBack();
             break;
         }
-        switch (m_nameEntry.update(input, ticks)) {
+        switch (m_pointerLetter ? m_nameEntry.choose(*m_pointerLetter)
+                                : m_nameEntry.update(input, ticks)) {
         case NameEntry::Event::LetterChanged: play(SelectSound::CursorVertical); break;
         case NameEntry::Event::LetterRemoved: play(SelectSound::CursorHorizontal); break;
         case NameEntry::Event::LetterAdded:
@@ -729,12 +762,177 @@ void SelectLane::drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s3
     }
 }
 
+Rect SelectLane::promptArea(s32 y, std::string_view label) const {
+    const auto* painter = m_services != nullptr ? m_services->smallPainter : nullptr;
+    const s32 width = kPromptIconSize + kPromptGap +
+                      (painter != nullptr ? painter->measure(label, kSmallScale) : 0);
+    const s32 height =
+        std::max(kPromptIconSize,
+                 kPromptTextDrop + (painter != nullptr ? painter->lineHeight(kSmallScale) : 0));
+    return {static_cast<f32>(x() + kPromptX), static_cast<f32>(y),
+            static_cast<f32>(std::min(width, kWidth - kPromptX)), static_cast<f32>(height)};
+}
+
+std::vector<SelectLane::PointerTarget> SelectLane::pointerTargets() const {
+    std::vector<PointerTarget> targets;
+    const auto prompt = [&](PointerAction action, s32 y, std::string_view label) {
+        targets.push_back({promptArea(y, text(label)), action});
+    };
+    if (m_state == State::Inactive) {
+        targets.push_back(
+            {{static_cast<f32>(x()), 0, static_cast<f32>(kWidth), static_cast<f32>(kPanelHeight)},
+             PointerAction::Start});
+        return targets;
+    }
+    if (m_state == State::NameEntry) {
+        if (!m_nameEntry.editing() || !m_pointerMode) {
+            return targets;
+        }
+        for (usize i = 0; i < NameEntry::kLetters.size(); ++i) {
+            targets.push_back({letterArea(x(), i), PointerAction::Letter, NameEntry::kLetters[i]});
+        }
+        prompt(PointerAction::Erase, kLegendClassY, "select.editLetter");
+        prompt(PointerAction::Accept, kPromptSelectY, "select.accept");
+        prompt(PointerAction::Back, kPromptBackY, "select.cancel");
+        return targets;
+    }
+    if (m_state == State::ClassPick) {
+        targets.push_back({iconArea(x() + kLegendX, kLegendClassY), PointerAction::Left});
+        targets.push_back(
+            {iconArea(x() + kLegendX + kPromptIconSize, kLegendClassY), PointerAction::Right});
+        if (m_pointerMode) {
+            targets.push_back({iconArea(x() + kColorControlX, kLegendClassY), PointerAction::Up});
+            targets.push_back({iconArea(x() + kColorControlX + kPromptIconSize, kLegendClassY),
+                               PointerAction::Down});
+        }
+        if (classKnown(m_pickClass)) {
+            prompt(PointerAction::Select, kPromptSelectY, "select.select");
+        }
+        return targets;
+    }
+    if (m_state == State::LockedIn) {
+        if (m_promptStart && !animating() && m_services != nullptr &&
+            m_services->smallPainter != nullptr) {
+            const auto& painter = *m_services->smallPainter;
+            const auto lines = text("select.lockedIn");
+            usize start = 0;
+            s32 y = kLockedTextY;
+            while (start < lines.size()) {
+                const auto end = std::min(lines.find('\n', start), lines.size());
+                const auto line = lines.substr(start, end - start);
+                targets.push_back(
+                    {{static_cast<f32>(
+                          painter.leftEdge(-(x() + kNameCenterOffset), line, kSmallScale)),
+                      static_cast<f32>(y), static_cast<f32>(painter.measure(line, kSmallScale)),
+                      static_cast<f32>(painter.lineHeight(kSmallScale))},
+                     PointerAction::Start});
+                start = end + 1;
+                y += kLockedLineStep;
+            }
+        }
+        return targets;
+    }
+    if (m_menu.isOpen()) {
+        prompt(PointerAction::Select, kPromptSelectY, "select.select");
+        if (m_state == State::TopMenu || m_state == State::LoadPick || m_state == State::SavePick) {
+            prompt(PointerAction::Back, kPromptBackY, "select.back");
+        }
+    }
+    return targets;
+}
+
+MenuInput SelectLane::pointerInput(const MenuInput& rawInput) {
+    auto input = rawInput;
+    m_pointerLetter.reset();
+    m_hoverArea.reset();
+    if (input.up || input.down || input.left || input.right || input.select || input.start ||
+        (input.back && !input.pointerBack)) {
+        m_pointerMode = false;
+    }
+    if (!input.pointer || input.pointerNormalized) {
+        m_pointer.reset();
+        return input;
+    }
+    if (m_pointer != input.pointer || input.pointerPressed || input.pointerBack) {
+        m_pointerMode = true;
+    }
+    m_pointer = input.pointer;
+    if (m_pointerMode) {
+        for (const auto& target : pointerTargets()) {
+            if (!contains(target.area, *input.pointer)) {
+                continue;
+            }
+            m_hoverArea = target.area;
+            if (!input.pointerPressed) {
+                break;
+            }
+            input.pointerPressed = false;
+            switch (target.action) {
+            case PointerAction::Select: input.select = true; break;
+            case PointerAction::Back: input.back = true; break;
+            case PointerAction::Left: input.left = true; break;
+            case PointerAction::Right: input.right = true; break;
+            case PointerAction::Up: input.up = true; break;
+            case PointerAction::Down: input.down = true; break;
+            case PointerAction::Start: input.start = true; break;
+            case PointerAction::Letter: m_pointerLetter = target.letter; break;
+            case PointerAction::Erase: input.erase = true; break;
+            case PointerAction::Accept: m_pointerLetter = NameEntry::kEndMark; break;
+            }
+            break;
+        }
+    }
+    if ((m_state == State::LoadPick || m_state == State::SavePick) && input.pointerScroll != 0) {
+        input.up |= input.pointerScroll > 0;
+        input.down |= input.pointerScroll < 0;
+    }
+    return input;
+}
+
+void SelectLane::drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const {
+    if (m_services == nullptr || !m_services->staticTexture) {
+        return;
+    }
+    if (m_hoverArea == area) {
+        canvas.fill(area, kGlowColor.withAlpha(150));
+    }
+    if (const auto* texture = m_services->staticTexture(icon)) {
+        canvas.draw(*texture, area);
+    }
+}
+
+void SelectLane::drawNameGrid(Canvas& canvas) const {
+    if (m_services == nullptr || m_services->smallPainter == nullptr) {
+        return;
+    }
+    const auto& painter = *m_services->smallPainter;
+    for (usize i = 0; i < NameEntry::kLetters.size(); ++i) {
+        const auto area = letterArea(x(), i);
+        if (m_hoverArea == area) {
+            canvas.fill(area, kGlowColor.withAlpha(150));
+        }
+        TextStyle style;
+        style.scale = kSmallScale;
+        const auto center = static_cast<s32>(area.x + area.width / 2);
+        const auto y =
+            static_cast<s32>(area.y) + (kGridCellHeight - painter.lineHeight(style.scale)) / 2;
+        painter.draw(canvas, -center, y, NameEntry::kLetters.substr(i, 1), style);
+    }
+    drawPrompt(canvas, kIconLeft, kLegendClassY, text("select.editLetter"));
+    drawPrompt(canvas, kIconSelect, kPromptSelectY, text("select.accept"));
+    drawPrompt(canvas, kIconBack, kPromptBackY, text("select.cancel"));
+}
+
 void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, s32 y,
                             std::string_view label) const {
     if (m_services == nullptr || m_services->smallPainter == nullptr) {
         return;
     }
     const s32 iconX = x() + kPromptX;
+    const bool hovered = m_hoverArea == promptArea(y, label);
+    if (hovered) {
+        canvas.fill(promptArea(y, label), kGlowColor.withAlpha(150));
+    }
     if (m_services->staticTexture) {
         if (const Texture* texture = m_services->staticTexture(icon)) {
             canvas.draw(*texture,
@@ -866,6 +1064,15 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         showSelect = false;
         drawLines(canvas, *m_services->largePainter, kCaptionY, kCaptionStep, kCaptionScale,
                   text("select.enterName"), Color::white());
+        if (m_pointerMode && m_nameEntry.editing()) {
+            drawNameGrid(canvas);
+            if (m_services->keyboardLane == m_index) {
+                drawLines(canvas, small, kLevelY, kLineHeight, kSmallScale, text("select.typeName"),
+                          Color::white());
+            }
+            drawNameEntry(canvas, time);
+            break;
+        }
         if (m_services->staticTexture) {
             const s32 leftX = x() + kLegendX;
             const s32 rightX = leftX + kPromptIconSize;
@@ -908,17 +1115,18 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
             const s32 rightX = leftX + kPromptIconSize;
             for (const auto& [name, iconX] :
                  {std::pair{kIconLeft, leftX}, std::pair{kIconRight, rightX}}) {
-                if (const Texture* texture = m_services->staticTexture(name)) {
-                    canvas.draw(*texture,
-                                Rect{static_cast<f32>(iconX), static_cast<f32>(kLegendClassY),
-                                     static_cast<f32>(kPromptIconSize),
-                                     static_cast<f32>(kPromptIconSize)});
-                }
+                drawPointerIcon(canvas, name, iconArea(iconX, kLegendClassY));
             }
-            TextStyle style;
-            style.scale = kSmallScale;
-            small.draw(canvas, rightX + kPromptIconSize + kPromptGap,
-                       kLegendClassY + kPromptTextDrop, text("select.changeLetter"), style);
+            if (m_pointerMode) {
+                drawPointerIcon(canvas, kIconUp, iconArea(x() + kColorControlX, kLegendClassY));
+                drawPointerIcon(canvas, kIconDown,
+                                iconArea(x() + kColorControlX + kPromptIconSize, kLegendClassY));
+            } else {
+                TextStyle style;
+                style.scale = kSmallScale;
+                small.draw(canvas, rightX + kPromptIconSize + kPromptGap,
+                           kLegendClassY + kPromptTextDrop, text("select.changeLetter"), style);
+            }
         }
         drawStats(canvas, time);
         break;
@@ -967,6 +1175,9 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
     case State::LockedIn:
         showSelect = false;
         if (m_promptStart && !animating()) {
+            if (m_hoverArea) {
+                canvas.fill(*m_hoverArea, kGlowColor.withAlpha(150));
+            }
             drawLines(canvas, small, kLockedTextY, kLockedLineStep, kSmallScale,
                       text("select.lockedIn"), Color::white());
         }

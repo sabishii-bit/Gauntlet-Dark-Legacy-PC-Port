@@ -105,6 +105,142 @@ struct Fixture {
     }
 };
 
+TEST_CASE(
+    "mouse creates a named character changes its class and color and saves without click through",
+    "[select][mouse]") {
+    Fixture f("select-mouse-create");
+    f.lane.activate();
+    const auto clickAt = [&](const Rect& area,
+                             const SelectLane::Frame& frame = SelectLane::Frame{}) {
+        MenuInput input;
+        input.pointer = Vec2{area.x + area.width / 2, area.y + area.height / 2};
+        input.pointerPressed = true;
+        return f.step(input, 1, frame);
+    };
+    const auto clickControl = [&](SelectLane::PointerAction action, char letter = 0) {
+        const auto targets = f.lane.pointerTargets();
+        const auto it = std::ranges::find_if(targets, [&](const auto& target) {
+            return target.action == action && (letter == 0 || target.letter == letter);
+        });
+        REQUIRE(it != targets.end());
+        clickAt(it->area);
+    };
+    clickAt(f.lane.menu().itemArea(0));
+    REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
+    CHECK(f.lane.nameEntry().name().empty());
+    clickControl(SelectLane::PointerAction::Letter, 'A');
+    clickControl(SelectLane::PointerAction::Letter, 'Z');
+    CHECK(f.lane.nameEntry().name() == "AZ");
+    clickControl(SelectLane::PointerAction::Erase);
+    CHECK(f.lane.nameEntry().name() == "A");
+    MenuInput typed;
+    typed.typed = "b";
+    f.step(typed);
+    CHECK(f.lane.nameEntry().name() == "AB");
+    REQUIRE_FALSE(f.lane.pointerTargets().empty()); // typing does not hide the mouse grid
+    clickControl(SelectLane::PointerAction::Accept);
+    f.step({}, NameEntry::kFlashTicks + 1);
+    REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
+    clickControl(SelectLane::PointerAction::Right);
+    CHECK(f.lane.pickedClass() == 1);
+    clickControl(SelectLane::PointerAction::Up);
+    CHECK(f.lane.pickedColor() == 1);
+    clickControl(SelectLane::PointerAction::Select);
+    REQUIRE(f.lane.lockedIn());
+    CHECK(f.lane.save().name == "AB");
+    f.lane.manage();
+    clickAt(f.lane.menu().itemArea(0));
+    REQUIRE(f.lane.state() == SelectLane::State::SavePick);
+    SelectLane::Frame reserved;
+    reserved.slotsInUse = {0};
+    clickAt(f.lane.menu().itemArea(0), reserved);
+    CHECK(f.lane.state() == SelectLane::State::SavePick);
+    CHECK_FALSE(f.slots.slot(0).occupied);
+    clickAt(f.lane.menu().itemArea(0));
+    REQUIRE(f.lane.state() == SelectLane::State::Saving);
+    f.step({}, SelectLane::kOperationStepTicks * 3);
+    CHECK(f.slots.slot(0).name == "AB");
+    f.step({}, SelectLane::kNoticeTicks);
+    REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
+    clickAt(f.lane.menu().itemArea(0));
+    clickAt(f.lane.menu().itemArea(0));
+    REQUIRE(f.lane.state() == SelectLane::State::OverwriteConfirm);
+    CHECK(f.lane.menu().selection() == 1); // the slot click never confirms the new page
+    clickAt(f.lane.menu().itemArea(1));
+    CHECK(f.lane.state() == SelectLane::State::SavePick);
+}
+
+TEST_CASE("mouse name grid uses its displayed cells and highlights the hovered character",
+          "[select][mouse]") {
+    Fixture f("select-mouse-grid");
+    f.lane.activate();
+    f.step(press(true));
+    MenuInput hover;
+    hover.pointer = Vec2{static_cast<f32>(f.lane.x()) + 1, 150};
+    f.step(hover);
+    const auto targets = f.lane.pointerTargets();
+    usize letters = 0;
+    for (const auto& target : targets) {
+        if (target.action != SelectLane::PointerAction::Letter) {
+            continue;
+        }
+        ++letters;
+        CHECK(target.area.x >= static_cast<f32>(f.lane.x()));
+        CHECK(target.area.x + target.area.width <=
+              static_cast<f32>(f.lane.x() + SelectLane::kWidth));
+        CHECK(target.area.y >= 144);
+        CHECK(target.area.y + target.area.height <= 224);
+    }
+    CHECK(letters == NameEntry::kLetters.size());
+    const auto area = targets.front().area;
+    hover.pointer = Vec2{area.x + 1, area.y + 1};
+    f.step(hover);
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.lane.drawText(canvas, 0);
+    canvas.end();
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        return std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
+            return vertex.color == Color::rgba(130, 0, 234, 150) && vertex.position.x == area.x &&
+                   vertex.position.y == area.y;
+        });
+    }));
+    hover.pointerPressed = true;
+    f.step(hover);
+    CHECK(f.lane.nameEntry().name() == "A");
+}
+
+TEST_CASE("stationary mouse preserves keyboard focus and unavailable load rows stay inert",
+          "[select][mouse]") {
+    Fixture f("select-mouse-focus");
+    CharacterSave saved;
+    saved.name = "SAVED";
+    REQUIRE(f.slots.write(0, saved));
+    f.lane.activate();
+    const auto area = f.lane.menu().itemArea(0);
+    MenuInput input;
+    input.pointer = Vec2{area.x + 1, area.y + 1};
+    f.step(input);
+    CHECK(f.lane.menu().selection() == 0);
+    input.down = true;
+    f.step(input);
+    CHECK(f.lane.menu().selection() == 1);
+    input.down = false;
+    f.step(input);
+    CHECK(f.lane.menu().selection() == 1);
+    input.select = true;
+    f.step(input);
+    REQUIRE(f.lane.state() == SelectLane::State::LoadPick);
+    const auto empty = f.lane.menu().itemArea(1);
+    input.select = false;
+    input.pointerPressed = true;
+    input.pointer = Vec2{empty.x + 1, empty.y + 1};
+    f.step(input);
+    CHECK(f.lane.state() == SelectLane::State::LoadPick);
+    CHECK_FALSE(f.lane.reservedSlot());
+}
+
 TEST_CASE("name cheats enter through the ordinary character selection flow",
           "[game][select][cheats]") {
     Fixture f;

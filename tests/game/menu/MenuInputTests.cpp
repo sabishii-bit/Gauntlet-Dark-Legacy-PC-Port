@@ -17,6 +17,46 @@ using gdl::game::MenuInput;
 using gdl::game::MenuInputSource;
 using gdl::game::readMenuInput;
 
+TEST_CASE("pointer regions isolate player lanes without taking away device commands",
+          "[game][menu][mouse][multiplayer]") {
+    for (const auto extent : std::array{Vec2{640, 448}, Vec2{1920, 1080}, Vec2{900, 1200}}) {
+        const Mat4 transform = makeLetterboxProjection(512, 384, extent.x, extent.y);
+        for (s32 owner = 0; owner < 4; ++owner) {
+            const Vec4 point =
+                transform * Vec4{static_cast<f32>(owner) * 128.0f + 64, 180, 0.5f, 1};
+            Input raw;
+            raw.setPointer({(point.x / point.w + 1) / 2, (point.y / point.w + 1) / 2, true, true});
+            raw.latchPointerBack();
+            raw.scrollPointer(-2.5f);
+            for (s32 lane = 0; lane < 4; ++lane) {
+                const auto input = readMenuInput(raw, {}, MenuInputSource::forPlayer(lane));
+                const Rect region{static_cast<f32>(lane) * 128.0f, 0, 128, 384};
+                const auto mapped = gdl::game::mapMenuPointer(input, transform, region);
+                CHECK(mapped.pointer.has_value() == (lane == owner));
+                CHECK(mapped.pointerPressed == (lane == owner));
+                CHECK(mapped.pointerHeld == (lane == owner));
+                CHECK(mapped.pointerBack == (lane == owner));
+                CHECK(mapped.back == (lane == owner));
+                CHECK(mapped.pointerScroll == (lane == owner ? -2.5f : 0));
+                MenuInput device = input;
+                device.back = true;
+                device.down = true;
+                const auto simultaneous = gdl::game::mapMenuPointer(device, transform, region);
+                CHECK(simultaneous.back);
+                CHECK(simultaneous.down);
+            }
+        }
+    }
+    MenuInput boundary;
+    boundary.pointer = Vec2{128, 20};
+    boundary.pointerPressed = true;
+    CHECK_FALSE(gdl::game::mapMenuPointer(boundary, Mat4{1}, Rect{0, 0, 128, 384}).pointer);
+    CHECK(gdl::game::mapMenuPointer(boundary, Mat4{1}, Rect{128, 0, 128, 384}).pointer);
+    Input outside;
+    outside.scrollPointer(1);
+    CHECK(readMenuInput(outside, {}).pointerScroll == 0);
+}
+
 TEST_CASE("mouse taps survive render polls and map through letterboxed canvas coordinates",
           "[game][menu][mouse]") {
     Input polled;

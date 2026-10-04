@@ -111,6 +111,7 @@ private:
     TextPainter m_initials;
     StatusBoxPainter m_boxes;
     Canvas m_canvas;
+    Mat4 m_pointerTransform{1};
     SoundSet m_commonSounds;
     SoundSet m_selectSounds;
     SoundHandle m_music = kNoSound;

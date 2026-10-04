@@ -84,6 +84,25 @@ public:
 
     enum class Result : u8 { None, Cleared, Leave };
 
+    enum class PointerAction : u8 {
+        Select,
+        Back,
+        Left,
+        Right,
+        Up,
+        Down,
+        Start,
+        Letter,
+        Erase,
+        Accept
+    };
+    /** One visible mouse control in the lane's canvas coordinates. */
+    struct PointerTarget {
+        Rect area;
+        PointerAction action = PointerAction::Select;
+        char letter = 0;
+    };
+
     /** What the status box under the lane shows. */
     enum class BoxMode : u8 {
         Plain,     ///< the tinted stone panel
@@ -135,6 +154,8 @@ public:
     s32 pickedColor() const { return m_pickColor; }
     std::optional<usize> slotInUse() const { return m_slotInUse; }
     const NameEntry& nameEntry() const { return m_nameEntry; }
+    const OptionMenu& menu() const { return m_menu; }
+    std::vector<PointerTarget> pointerTargets() const;
     BoxMode boxMode() const;
 
     /** The class the status box pictures: the one being picked, else the character's. */
@@ -176,6 +197,10 @@ private:
     void drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s32 lineHeight, f32 scale,
                    std::string_view lines, Color color) const;
     void drawPrompt(Canvas& canvas, std::string_view icon, s32 y, std::string_view label) const;
+    Rect promptArea(s32 y, std::string_view label) const;
+    MenuInput pointerInput(const MenuInput& input);
+    void drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const;
+    void drawNameGrid(Canvas& canvas) const;
     void drawStats(Canvas& canvas, s32 time) const;
     void drawNameEntry(Canvas& canvas, s32 time) const;
     void drawState(Canvas& canvas, s32 time) const;
@@ -198,7 +223,11 @@ private:
     std::optional<usize> m_slotTarget;
     OptionMenu m_menu;
     NameEntry m_nameEntry;
+    std::optional<Vec2> m_pointer;
+    std::optional<Rect> m_hoverArea;
+    std::optional<char> m_pointerLetter;
     std::array<Blit, 5> m_blits{};
+    bool m_pointerMode = false;
 };
 
 } // namespace gdl::game

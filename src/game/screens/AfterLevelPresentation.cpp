@@ -23,7 +23,37 @@ constexpr s32 kGreaterMagicPerkLevel = 50;
 constexpr Color kMagicLineColor = Color::rgba(255, 128, 192);
 constexpr Color kPriceFlash = Color::rgba(255, 0, 0);
 constexpr s32 kWizardClass = 2;
+constexpr Color kPointerHighlight = Color::rgba(130, 0, 234);
 } // namespace
+void AfterLevelScene::pointerTarget(const ShopLane& lane, PointerAction action, const Rect& area,
+                                    usize row) {
+    const auto left = static_cast<f32>(lane.member.player * StatusBoxPainter::kWidth);
+    const f32 x = std::max(area.x, left);
+    const f32 y = std::max(area.y, 0.0f);
+    const f32 right = std::min(area.right(), left + StatusBoxPainter::kWidth);
+    const f32 bottom = std::min(area.bottom(), static_cast<f32>(StatusBoxPainter::kY));
+    if (right > x && bottom > y) {
+        m_pointerTargets.push_back(
+            {lane.member.player, lane.phase, action, row, Rect{x, y, right - x, bottom - y}});
+    }
+}
+bool AfterLevelScene::pointerHovered(const ShopLane& lane, PointerAction action, usize row) const {
+    const auto& hover = m_hoverTargets[static_cast<usize>(lane.member.player)];
+    return hover && hover->phase == lane.phase && hover->action == action && hover->row == row;
+}
+void AfterLevelScene::drawContinue(const ShopLane& lane, s32 x, s32 y, s32 size, s32 labelX,
+                                   s32 labelY) {
+    constexpr f32 kScale = 0.5f;
+    const auto label = text("shop.continue");
+    prompt(x, y, size);
+    line(labelX, labelY, label, kScale,
+         pointerHovered(lane, PointerAction::Continue) ? kPointerHighlight : Color::white(), true);
+    const s32 right = std::max(x + size, labelX + m_text.measure(label, kScale));
+    const s32 bottom = std::max(y + size, labelY + m_text.lineHeight(kScale));
+    pointerTarget(lane, PointerAction::Continue,
+                  Rect{static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(right - x),
+                       static_cast<f32>(bottom - y)});
+}
 void AfterLevelScene::line(s32 x, s32 y, std::string_view value, f32 scale, Color color,
                            bool glow) {
     if (glow && m_glow != nullptr) {
@@ -109,8 +139,7 @@ void AfterLevelScene::drawTally(const ShopLane& lane, s32 x) {
              Color::white(), rank == lane.tally.growingRank());
     }
     if (lane.tally.finished()) {
-        prompt(x + 16, 89, 20);
-        line(x + 32, 92, text("shop.continue"), 0.5f, Color::white(), true);
+        drawContinue(lane, x + 16, 89, 20, x + 32, 92);
     }
     line(-(x + 64), 8, text("shop.stats"), 0.45f, Color::black());
 }
@@ -166,8 +195,7 @@ void AfterLevelScene::drawStats(const ShopLane& lane, s32 x) {
         drawMagicLine(lane, x);
     }
     if (lane.statsReady()) {
-        prompt(x + 16, 280, 16);
-        line(x + 40, 280, text("shop.continue"), 0.5f, Color::white(), true);
+        drawContinue(lane, x + 16, 280, 16, x + 40, 280);
     }
 }
 void AfterLevelScene::drawMagicLine(const ShopLane& lane, s32 x) {
@@ -225,19 +253,40 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         // A traded row's price shows red for thirty ticks once the cursor leaves it.
         const bool flashing = !selected && lane.flashTicks > 0 && i == lane.flashRow;
         const Color price = flashing ? kPriceFlash.withAlpha(alpha) : label;
+        const bool interactive = available && alpha == 255;
+        const bool owned = ownsShopItem(lane.member.save, item);
+        const f32 scale = 0.5f * item.scale;
+        const s32 descriptionY = y + (item.texture.empty() ? 12 : 32);
+        const auto lines = 1 + static_cast<s32>(std::ranges::count(item.description, '\n'));
+        const s32 rowTop = owned && item.price > 0 ? y - 6 : y;
+        const s32 rowBottom = descriptionY + lines * m_text.lineHeight(scale);
+        if (interactive) {
+            pointerTarget(lane, PointerAction::Buy,
+                          Rect{static_cast<f32>(x + 8), static_cast<f32>(rowTop), 112,
+                               static_cast<f32>(rowBottom - rowTop)},
+                          i);
+        }
         image(item.texture, x + 20, y, Color::white().withAlpha(alpha));
         if (item.price > 0) {
-            const bool owned = ownsShopItem(lane.member.save, item);
-            line(x + 58, y + (owned ? -6 : 12), std::format("{}{}", text("shop.buy"), item.price),
-                 0.5f, price, selected);
+            const auto buy = std::format("{}{}", text("shop.buy"), item.price);
+            const s32 buyY = y + (owned ? -6 : 12);
+            const bool hoveringSell = pointerHovered(lane, PointerAction::Sell, i);
+            const bool hoveringBuy = pointerHovered(lane, PointerAction::Buy, i);
+            line(x + 58, buyY, buy, 0.5f, price, selected && !hoveringSell);
             if (owned) {
-                line(x + 58, y + 12, std::format("{}{}", text("shop.sell"), item.price * 3 / 4),
-                     0.5f, price, selected);
+                const auto sell = std::format("{}{}", text("shop.sell"), item.price * 3 / 4);
+                line(x + 58, y + 12, sell, 0.5f, price, selected && !hoveringBuy);
+                if (interactive) {
+                    pointerTarget(lane, PointerAction::Sell,
+                                  Rect{static_cast<f32>(x + 58), static_cast<f32>(y + 12),
+                                       static_cast<f32>(m_text.measure(sell, 0.5f)),
+                                       static_cast<f32>(m_text.lineHeight(0.5f))},
+                                  i);
+                }
             }
         }
-        s32 textY = y + (item.texture.empty() ? 12 : 32);
+        s32 textY = descriptionY;
         std::string_view description = item.description;
-        const f32 scale = 0.5f * item.scale;
         while (!description.empty()) {
             const auto end = description.find('\n');
             line(-(x + 64), textY, description.substr(0, end), scale, label, selected);
@@ -249,10 +298,22 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         }
     }
     if (up) {
-        image("MORE_UP", x + 32, 32);
+        image("MORE_UP", x + 32, 32,
+              pointerHovered(lane, PointerAction::Previous) ? kPointerHighlight : Color::white());
+        if (const auto* art = texture("MORE_UP")) {
+            pointerTarget(lane, PointerAction::Previous,
+                          Rect{static_cast<f32>(x + 32), 32, static_cast<f32>(art->width()),
+                               static_cast<f32>(art->height())});
+        }
     }
     if (down) {
-        image("MORE_DOWN", x + 32, 280);
+        image("MORE_DOWN", x + 32, 280,
+              pointerHovered(lane, PointerAction::Next) ? kPointerHighlight : Color::white());
+        if (const auto* art = texture("MORE_DOWN")) {
+            pointerTarget(lane, PointerAction::Next,
+                          Rect{static_cast<f32>(x + 32), 280, static_cast<f32>(art->width()),
+                               static_cast<f32>(art->height())});
+        }
     }
 }
 void AfterLevelScene::drawInventory(const ShopLane& lane, s32 x) {
@@ -276,9 +337,9 @@ void AfterLevelScene::drawInventory(const ShopLane& lane, s32 x) {
         m_text.draw(m_canvas, count.x, count.y, std::format("/{}", count.m), style);
     }
     if (lane.inventory.showsPrompt()) {
-        prompt(x + InventoryPanel::kPromptX, InventoryPanel::kPromptY, InventoryPanel::kPromptSize);
-        line(x + InventoryPanel::kPromptLabelX, InventoryPanel::kPromptY, text("shop.continue"),
-             InventoryPanel::kPromptLabelScale, Color::white(), true);
+        drawContinue(lane, x + InventoryPanel::kPromptX, InventoryPanel::kPromptY,
+                     InventoryPanel::kPromptSize, x + InventoryPanel::kPromptLabelX,
+                     InventoryPanel::kPromptY);
     }
 }
 void AfterLevelScene::drawLane(const ShopLane& lane) {
@@ -312,7 +373,9 @@ void AfterLevelScene::render(RenderDevice& device, const Mat4& projection, f32 w
     if (!m_open) {
         return;
     }
-    m_canvas.begin(device, makeVirtualScreenTransform(projection, 512, 384, width, height));
+    m_pointerTargets.clear();
+    m_pointerTransform = makeVirtualScreenTransform(projection, 512, 384, width, height);
+    m_canvas.begin(device, m_pointerTransform);
     m_canvas.fillScreen(Color::black());
     for (s32 player = 0; player < 4; ++player) {
         drawBackground(player);

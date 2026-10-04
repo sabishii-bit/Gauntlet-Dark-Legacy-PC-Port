@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <span>
+#include <utility>
 
 #include "engine/core/Types.h"
 
@@ -88,6 +89,7 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
         out.pointerPressed = input.wasPointerPressed();
         out.pointerHeld = input.pointer().down;
         out.pointerBack = input.wasPointerBackPressed();
+        out.pointerScroll = input.pointerScroll();
     }
     out.up = pressed(bindings.up, bindings.padUp);
     out.down = pressed(bindings.down, bindings.padDown);
@@ -120,6 +122,22 @@ MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform) {
         input.pointerNormalized = false;
     }
     input.back |= input.pointerBack;
+    return input;
+}
+
+MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform, const Rect& region) {
+    const bool deviceBack = input.back;
+    input = mapMenuPointer(std::move(input), canvasTransform);
+    if (!input.pointer || input.pointer->x < region.x ||
+        input.pointer->x >= region.x + region.width || input.pointer->y < region.y ||
+        input.pointer->y >= region.y + region.height) {
+        input.pointer.reset();
+        input.pointerPressed = false;
+        input.pointerHeld = false;
+        input.pointerBack = false;
+        input.pointerScroll = 0;
+        input.back = deviceBack;
+    }
     return input;
 }
 

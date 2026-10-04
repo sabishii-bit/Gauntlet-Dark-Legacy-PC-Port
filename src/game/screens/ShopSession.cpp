@@ -161,6 +161,22 @@ void ShopSession::cue(const ShopLane& lane, ShopCue cue) {
 std::vector<ShopEvent> ShopSession::takeEvents() {
     return std::exchange(m_events, {});
 }
+bool ShopSession::focus(s32 player, usize row) {
+    const auto found =
+        std::ranges::find(m_lanes, player, [](const ShopLane& lane) { return lane.member.player; });
+    if (found == m_lanes.end() || found->phase != ShopPhase::Shopping ||
+        row >= m_catalog.items().size() || !found->selectable(m_catalog.items()[row])) {
+        return false;
+    }
+    if (found->cursor != row) {
+        cue(*found, row < found->cursor ? ShopCue::CursorPrevious : ShopCue::CursorNext);
+        found->cursor = row;
+    }
+    found->heldDirection = 0;
+    found->repeatTicks = 0;
+    found->repeatStep = 0;
+    return true;
+}
 void ShopSession::update(f64 seconds, const Inputs& inputs) {
     if (!std::isfinite(seconds) || seconds < 0) {
         return;

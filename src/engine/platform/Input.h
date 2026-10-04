@@ -147,9 +147,12 @@ public:
     const PointerSnapshot& pointer() const { return m_pointer; }
     bool wasPointerPressed() const { return m_pointerPressed; }
     bool wasPointerBackPressed() const { return m_pointerBackPressed; }
+    /** Vertical wheel motion since the last poll; positive scrolls upward. */
+    f32 pointerScroll() const { return m_pointerScroll; }
     void setPointer(const PointerSnapshot& pointer);
     void latchPointer() { m_pointerPressed = true; }
     void latchPointerBack() { m_pointerBackPressed = true; }
+    void scrollPointer(f32 amount) { m_pointerScroll += amount; }
 
     /** Platform-layer entry points. */
     void beginPoll();
@@ -178,6 +181,7 @@ private:
     std::array<std::array<bool, static_cast<usize>(PadButton::Count)>, kMaxPads>
         m_pendingPadPresses{};
     std::vector<u32> m_typed;
+    f32 m_pointerScroll = 0;
     PointerSnapshot m_pointer;
     bool m_pointerPressed = false;
     bool m_pointerBackPressed = false;

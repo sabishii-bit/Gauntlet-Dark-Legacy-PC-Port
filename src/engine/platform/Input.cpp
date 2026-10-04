@@ -133,6 +133,7 @@ f32 Input::padAxis(s32 pad, PadAxis axis) const {
 void Input::beginPoll() {
     m_pointerPressed = false;
     m_pointerBackPressed = false;
+    m_pointerScroll = 0;
     for (usize key = 0; key < kKeyCount; ++key) {
         m_previousKeys[key] = keyDown(key);
     }
@@ -153,6 +154,7 @@ void Input::accumulate(const Input& polled) {
     m_pointer = polled.m_pointer;
     m_pointerPressed |= polled.m_pointerPressed;
     m_pointerBackPressed |= polled.m_pointerBackPressed;
+    m_pointerScroll += polled.m_pointerScroll;
     m_keys = polled.m_keys;
     for (usize key = 1; key < kKeyCount; ++key) {
         m_latchedKeys[key] |= polled.wasKeyPressed(static_cast<Key>(key));

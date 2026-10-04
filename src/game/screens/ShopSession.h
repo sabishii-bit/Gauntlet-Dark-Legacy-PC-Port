@@ -79,6 +79,8 @@ public:
                const std::array<s32, 3>& maxima, const ClassDataSet& classes, ShopCatalog catalog,
                ShopVisit visit = ShopVisit::Level);
     void update(f64 seconds, const Inputs& inputs);
+    /** Focus a visible mouse-picked row; transactions still use update's ordinary rules. */
+    bool focus(s32 player, usize row);
     bool finished() const;
     const std::vector<ShopLane>& lanes() const { return m_lanes; }
     const ShopCatalog& catalog() const { return m_catalog; }

@@ -407,6 +407,201 @@ TEST_CASE("shop ignores transaction presses during scrolling without queuing a l
     REQUIRE(scene.session().party()[0].save.gold == 4725);
 }
 
+TEST_CASE("shop mouse targets rendered rows prices arrows and wheel in only the hovered lane",
+          "[shop][mouse][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameContext context;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    CharacterSave save;
+    save.gold = 5000;
+    save.progress().health = 100;
+    save.progress().inventory.addKeys(1);
+    const std::array<PartyMember, 2> party{{{3, save}, {1, save}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1", ShopVisit::Shop));
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
+    const auto render = [&] {
+        device.draws.clear();
+        scene.render(device, projection, 640, 448);
+    };
+    const auto pointer = [&](Vec2 point, bool press = false, bool back = false, f32 wheel = 0) {
+        const Vec4 clip = transform * Vec4{point, 0.5f, 1};
+        ShopSession::Inputs input{};
+        for (auto& lane : input) {
+            lane.pointer = (Vec2{clip} / clip.w + Vec2{1}) * 0.5f;
+            lane.pointerNormalized = true;
+            lane.pointerPressed = press;
+            lane.pointerBack = back;
+            lane.pointerScroll = wheel;
+        }
+        return input;
+    };
+    const auto rowY = [&](usize cursor, usize row) {
+        const auto layout = ShopLayout::make(scene.session().catalog().items(), cursor, 32);
+        return static_cast<f32>(layout.rows[row]) + layout.target;
+    };
+    constexpr f32 kLaneX = 3 * 128;
+    render();
+    SECTION("one click buys the pointed row and the sell price performs a sale") {
+        scene.update(0, pointer({kLaneX + 60, rowY(0, 2) - 3}, true));
+        REQUIRE(scene.session().lanes()[0].cursor == 2);
+        REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Bought);
+        REQUIRE(scene.session().party()[0].save.progress().inventory.keys == 2);
+        REQUIRE(scene.session().party()[0].save.gold == 4900);
+        REQUIRE(scene.session().party()[1].save.gold == 5000);
+        scene.update(1, {}); // finish the newly focused row's scroll
+        render();
+        scene.update(0, pointer({kLaneX + 60, rowY(2, 2) + 16}, true));
+        REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Sold);
+        REQUIRE(scene.session().party()[0].save.progress().inventory.keys == 1);
+        REQUIRE(scene.session().party()[0].save.gold == 4975);
+        scene.update(0, pointer({kLaneX + 60, rowY(2, 2) + 16})); // held, not a fresh click
+        REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+    }
+    SECTION("right click sells only a hit row and never an unpointed player's selection") {
+        scene.update(0, pointer({kLaneX + 24, rowY(0, 2) + 3}, false, true));
+        REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Sold);
+        REQUIRE(scene.session().party()[0].save.progress().inventory.keys == 0);
+        REQUIRE(scene.session().party()[1].save.progress().inventory.keys == 1);
+        scene.update(1, {});
+        render();
+        scene.update(0, pointer({kLaneX + 3, 310}, false, true));
+        REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+        REQUIRE_FALSE(scene.session().lanes()[1].transacted);
+    }
+    SECTION("hover highlights the row but a stationary cursor cannot undo controller navigation") {
+        const Vec2 point{kLaneX + 24, rowY(0, 2) + 3};
+        scene.update(0, pointer(point));
+        REQUIRE(scene.session().lanes()[0].cursor == 2);
+        render();
+        const f32 buyY = rowY(0, 2) - 6 + 0.25f;
+        REQUIRE(std::ranges::any_of(device.draws, [&](const auto& draw) {
+            return std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
+                return vertex.position.x == kLaneX + 58.25f && vertex.position.y == buyY &&
+                       vertex.color == Color::white();
+            });
+        }));
+        auto input = pointer(point);
+        input[3].down = true;
+        scene.update(1, input);
+        REQUIRE(scene.session().lanes()[0].cursor == 3);
+        render();
+        scene.update(1, pointer(point));
+        REQUIRE(scene.session().lanes()[0].cursor == 3);
+        REQUIRE(scene.session().lanes()[1].cursor == 0);
+        REQUIRE(scene.session().party()[0].save.gold == 5000);
+    }
+    SECTION("arrows and wheel navigate only their lane and ignore the HUD") {
+        scene.update(0, pointer({kLaneX + 34, 282}, true));
+        REQUIRE(scene.session().lanes()[0].cursor == 1);
+        render();
+        scene.update(0, pointer({kLaneX + 80, 180}, false, false, -1));
+        REQUIRE(scene.session().lanes()[0].cursor == 2);
+        scene.update(1, {});
+        render();
+        scene.update(0, pointer({kLaneX + 80, 180}, false, false, 1));
+        REQUIRE(scene.session().lanes()[0].cursor == 1);
+        scene.update(0, pointer({kLaneX + 80, 340}, false, false, -1));
+        REQUIRE(scene.session().lanes()[0].cursor == 1);
+        REQUIRE(scene.session().lanes()[1].cursor == 0);
+    }
+    SECTION("faded rows and transaction clicks during scrolling are not actionable") {
+        ShopSession::Inputs keys{};
+        keys[3].down = true;
+        for (s32 i = 0; i < 7; ++i) {
+            scene.update(0, keys);
+        }
+        scene.update(0, pointer({kLaneX + 24, rowY(0, 2) + 3}, true));
+        REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+        scene.update(10, {});
+        render();
+        const auto cursor = scene.session().lanes()[0].cursor;
+        const auto layout = ShopLayout::make(scene.session().catalog().items(), cursor, 32);
+        bool faded = false;
+        for (usize row = 0; row < layout.rows.size(); ++row) {
+            const f32 y = static_cast<f32>(layout.rows[row]) + layout.target;
+            if (ShopLayout::opacity(y) > 0 && ShopLayout::opacity(y) < 255) {
+                scene.update(0, pointer({kLaneX + 24, y + 1}, true));
+                REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+                REQUIRE(scene.session().lanes()[0].cursor == cursor);
+                faded = true;
+                break;
+            }
+        }
+        REQUIRE(faded);
+        REQUIRE(scene.session().party()[0].save.gold == 5000);
+    }
+    SECTION("disabled rows and unjoined columns cannot focus or transact") {
+        auto empty = save;
+        empty.gold = 0;
+        empty.progress().inventory.keys = 0;
+        const std::array<PartyMember, 1> broke{{{3, empty}}};
+        REQUIRE(scene.open(device, context, broke, {}, {}, "G1", ShopVisit::Shop));
+        render();
+        scene.update(0, pointer({kLaneX + 24, rowY(0, 2) + 3}, true));
+        REQUIRE(scene.session().lanes()[0].cursor == 0);
+        REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+        scene.update(0, pointer({24, rowY(0, 2) + 3}, true));
+        REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+    }
+}
+
+TEST_CASE("mouse continues through tally exit stats inventory and final stats without lane bleed",
+          "[shop][mouse][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameContext context;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    const std::array<PartyMember, 2> party{{{2, CharacterSave{}}, {0, CharacterSave{}}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1"));
+    const auto render = [&] { scene.render(device, Mat4{1}, 512, 384); };
+    const auto click = [&](f32 y) {
+        ShopSession::Inputs inputs{};
+        for (auto& input : inputs) {
+            input.pointer = Vec2{2 * 128 + 48, y};
+            input.pointerPressed = true;
+        }
+        return scene.update(0, inputs);
+    };
+    scene.update(10, {});
+    render();
+    click(96);
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Shopping);
+    REQUIRE(scene.session().lanes()[1].phase == ShopPhase::Tally);
+    render();
+    click(88); // Exit is initially at y=72; its label starts at 84.
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::AfterStats);
+    scene.update(1, {});
+    render();
+    click(285);
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Inventory);
+    render();
+    click(285);
+    REQUIRE(scene.session().lanes()[0].inventory.phase() == InventoryPanel::Phase::Leaving);
+    scene.update(1, {});
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Done);
+    REQUIRE(scene.session().lanes()[1].phase == ShopPhase::Tally);
+
+    REQUIRE(scene.open(device, context, party, {}, {}, "H4", ShopVisit::FinalStats));
+    render();
+    click(285);
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::FinalStats);
+    scene.update(6, {});
+    render();
+    click(285);
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Done);
+    REQUIRE(scene.session().lanes()[1].phase == ShopPhase::FinalStats);
+}
+
 TEST_CASE("after-level screen renders every phase with retail assets", "[shop][screens][assets]") {
     const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::assetOrSkip("SELECT/textures.ngc");

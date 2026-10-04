@@ -415,8 +415,12 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
         // character menu with Start (do_player_select). Keep its checkpoint inert.
         const bool fallen =
             lane.retainsEntryCharacter() && entry != m_entryParty.end() && entry->fallen;
-        const SelectLane::Result result =
-            lane.update(fallen ? MenuInput{} : inputs[static_cast<usize>(i)], ticks, frame);
+        const auto laneArea =
+            Rect{static_cast<f32>(lane.x()), 0, static_cast<f32>(SelectLane::kWidth),
+                 static_cast<f32>(m_screen.height)};
+        const auto input =
+            mapMenuPointer(inputs[static_cast<usize>(i)], m_pointerTransform, laneArea);
+        const SelectLane::Result result = lane.update(fallen ? MenuInput{} : input, ticks, frame);
         if (result == SelectLane::Result::Leave) {
             leave = true;
         }
@@ -450,8 +454,9 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
             camera.clipTransform(m_screen.horizontalFov, frameWidth, frameHeight, frameProjection),
             camera);
     }
-    m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
-                                                      frameHeight));
+    m_pointerTransform =
+        makeVirtualScreenTransform(frameProjection, width, height, frameWidth, frameHeight);
+    m_canvas.begin(device, m_pointerTransform);
     if (!towerVisible()) {
         m_canvas.fillScreen(kBackdrop);
     }

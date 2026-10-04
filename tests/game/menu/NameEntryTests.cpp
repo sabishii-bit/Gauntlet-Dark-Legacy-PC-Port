@@ -36,6 +36,31 @@ TEST_CASE("the letter cycle runs through letters, underscore, digits and the end
     REQUIRE(NameEntry::previousLetter('C') == 'B');
 }
 
+TEST_CASE("mouse letter choices share typed validation and finish only once", "[name][mouse]") {
+    NameEntry entry;
+    entry.begin("");
+    CHECK(entry.choose('!') == NameEntry::Event::None);
+    CHECK(entry.choose('a') == NameEntry::Event::LetterAdded);
+    CHECK(entry.choose(' ') == NameEntry::Event::LetterAdded);
+    CHECK(entry.choose('2') == NameEntry::Event::LetterAdded);
+    CHECK(entry.name() == "A_2");
+    MenuInput typed;
+    typed.typed = "b";
+    CHECK(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
+    CHECK(entry.choose(NameEntry::kEndMark) == NameEntry::Event::Accepted);
+    CHECK(entry.name() == "A_2B");
+    CHECK(entry.choose('C') == NameEntry::Event::None);
+    CHECK(entry.choose(NameEntry::kEndMark) == NameEntry::Event::None);
+    entry.update({}, NameEntry::kFlashTicks + 1);
+    CHECK(entry.finished());
+    entry.begin("");
+    for (const char letter : std::string_view("ABCDEF")) {
+        entry.choose(letter);
+    }
+    CHECK(entry.flashing());
+    CHECK(entry.name() == "ABCDEF");
+}
+
 TEST_CASE("letters are picked, entered and removed", "[game][menu][name]") {
     NameEntry entry;
     entry.begin("");

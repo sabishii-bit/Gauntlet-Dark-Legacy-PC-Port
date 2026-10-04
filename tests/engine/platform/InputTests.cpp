@@ -8,6 +8,26 @@ namespace {
 
 using namespace gdl;
 
+TEST_CASE("fractional mouse wheel motion accumulates once per simulation step",
+          "[platform][input][mouse]") {
+    Input raw;
+    Input buffered;
+    raw.scrollPointer(0.25f);
+    raw.scrollPointer(0.5f);
+    buffered.accumulate(raw);
+    CHECK(buffered.pointerScroll() == 0.75f);
+    raw.beginPoll();
+    CHECK(raw.pointerScroll() == 0);
+    raw.scrollPointer(-0.25f);
+    buffered.accumulate(raw);
+    CHECK(buffered.pointerScroll() == 0.5f);
+    buffered.beginPoll();
+    CHECK(buffered.pointerScroll() == 0);
+    raw.beginPoll();
+    buffered.accumulate(raw);
+    CHECK(buffered.pointerScroll() == 0);
+}
+
 TEST_CASE("render polls preserve taps and text until a simulation update consumes them",
           "[platform][input][graphics]") {
     Input raw;

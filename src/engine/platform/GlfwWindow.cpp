@@ -146,6 +146,10 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
             self->m_input.latchPointerBack();
         }
     });
+    glfwSetScrollCallback(m_window, [](GLFWwindow* window, f64, f64 vertical) {
+        auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
+        self->m_input.scrollPointer(static_cast<f32>(vertical));
+    });
 
     if (desc.mode != WindowMode::Windowed &&
         !setDisplayMode(desc.mode, {desc.width, desc.height})) {

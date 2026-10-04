@@ -32,6 +32,18 @@ public:
     const std::vector<std::string>& lastSounds() const { return m_lastSounds; }
 
 private:
+    enum class PointerAction : u8 { Buy, Sell, Previous, Next, Continue };
+    struct PointerTarget {
+        s32 player = 0;
+        ShopPhase phase = ShopPhase::Done;
+        PointerAction action = PointerAction::Continue;
+        usize row = 0;
+        Rect area;
+    };
+    void pointerInput(ShopSession::Inputs& inputs, const std::array<bool, 4>& scrolling);
+    void pointerTarget(const ShopLane& lane, PointerAction action, const Rect& area, usize row = 0);
+    bool pointerHovered(const ShopLane& lane, PointerAction action, usize row = 0) const;
+    void drawContinue(const ShopLane& lane, s32 x, s32 y, s32 size, s32 labelX, s32 labelY);
     std::string_view text(std::string_view id) const;
     const Texture* texture(std::string_view name);
     void drawLane(const ShopLane& lane);
@@ -70,6 +82,10 @@ private:
     const Texture* m_glow = nullptr;
     std::array<f32, 4> m_scroll{};
     std::array<s32, 4> m_scrollSpeed{};
+    Mat4 m_pointerTransform{1};
+    std::vector<PointerTarget> m_pointerTargets;
+    std::array<std::optional<PointerTarget>, 4> m_hoverTargets;
+    std::array<std::optional<Vec2>, 4> m_lastPointer;
     f64 m_time = 0;
     f64 m_frameTime = 0;
     StatusBoxPainter m_boxes;

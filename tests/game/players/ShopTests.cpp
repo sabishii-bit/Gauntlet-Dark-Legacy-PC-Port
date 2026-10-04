@@ -98,6 +98,60 @@ TEST_CASE("Final Stats preview respects individual lanes and fallen players",
     session.update(0, inputs);
     CHECK(session.finished());
 }
+
+TEST_CASE("mouse shop focus validates phase ownership availability and ordinary transactions",
+          "[shop][mouse]") {
+    auto broke = shopper();
+    broke.gold = 0;
+    broke.progress().inventory.addKeys(1);
+    const std::array<PartyMember, 3> party{{{3, shopper()}, {1, broke}, {2, shopper(), {}, true}}};
+    ShopSession session;
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::Shop);
+    CHECK_FALSE(session.focus(0, 1));
+    CHECK_FALSE(session.focus(2, 1));
+    CHECK_FALSE(session.focus(3, 999));
+    CHECK_FALSE(session.focus(1, 2)); // Neither affordable nor owned.
+    REQUIRE(session.focus(1, 1));     // An owned key can be sold with an empty wallet.
+    CHECK(session.lanes()[0].cursor == 0);
+    CHECK(session.lanes()[1].cursor == 1);
+    CHECK(session.takeEvents() == std::vector<ShopEvent>{{1, ShopCue::CursorNext}});
+    ShopSession::Inputs input{};
+    input[1].back = true;
+    session.update(0, input);
+    CHECK(session.party()[1].save.progress().inventory.keys == 0);
+    CHECK(session.party()[1].save.gold == 75);
+    REQUIRE(session.focus(3, 1));
+    input = {};
+    input[3].select = true;
+    session.update(0, input);
+    CHECK(session.party()[0].save.progress().inventory.keys == 1);
+    CHECK(session.party()[0].save.gold == 4900);
+    CHECK(session.party()[1].save.gold == 75);
+    REQUIRE(session.focus(3, 0));
+    session.update(0, input);
+    CHECK(session.lanes()[0].phase == ShopPhase::AfterStats);
+    CHECK_FALSE(session.focus(3, 1));
+}
+
+TEST_CASE("mouse row focus clears a pending controller repeat without changing the wallet",
+          "[shop][mouse]") {
+    const std::array<PartyMember, 1> party{{{0, shopper()}}};
+    ShopSession session;
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::Shop);
+    ShopSession::Inputs input{};
+    input[0].down = true;
+    input[0].downHeld = true;
+    session.update(0, input);
+    input[0].down = false;
+    session.update(29.0 / 60, input);
+    REQUIRE(session.lanes()[0].repeatTicks == 29);
+    REQUIRE(session.focus(0, 2));
+    REQUIRE(session.lanes()[0].repeatTicks == 0);
+    REQUIRE(session.lanes()[0].heldDirection == 0);
+    session.update(1.0 / 60, input);
+    CHECK(session.lanes()[0].cursor == 2);
+    CHECK(session.party()[0].save.gold == 5000);
+}
 TEST_CASE("shop catalog requires an exit and rejects malformed rows", "[shop][assets-model]") {
     REQUIRE(catalog().items().size() == 3);
     REQUIRE(catalog().items()[1].price == 100);
