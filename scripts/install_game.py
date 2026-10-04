@@ -33,7 +33,9 @@ def main():
         print(f"Verified {metadata['version']} ({metadata['platform']})")
         return 0
     if args.check_wizard:
-        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        # Release checks also exercise the actual X11 plugin under Xvfb. An
+        # offscreen-only smoke test cannot detect missing desktop dependencies.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
         from installer.wizard import Wizard
         app = QApplication([])

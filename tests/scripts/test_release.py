@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from installer.install import retry_locked
 from publish_release import validated_assets
-from release import digest, installer_notices
+from release import check_frozen_installer, digest, installer_notices
 
 
 class ReleaseTests(unittest.TestCase):
@@ -33,6 +33,30 @@ class ReleaseTests(unittest.TestCase):
         self.packages[1][1].unlink()
         with self.assertRaises(FileNotFoundError):
             validated_assets(self.root, self.tag)
+
+    def test_linux_frozen_wizard_checks_real_x11_plugin_as_well_as_offscreen(self):
+        with mock.patch("release.devenv.WINDOWS", False), mock.patch(
+                "release.freezer_environment", side_effect=lambda: {}), mock.patch("release.subprocess.run") as run:
+            check_frozen_installer(self.root / "setup", self.root)
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_args_list[1].kwargs["env"]["QT_QPA_PLATFORM"], "offscreen")
+        self.assertEqual(run.call_args_list[2].args[0][:2], ["xvfb-run", "-a"])
+        self.assertEqual(run.call_args_list[2].kwargs["env"]["QT_QPA_PLATFORM"], "xcb")
+
+    def test_windows_frozen_checks_do_not_require_xvfb(self):
+        with mock.patch("release.devenv.WINDOWS", True), mock.patch(
+                "release.freezer_environment", side_effect=lambda: {}), mock.patch("release.subprocess.run") as run:
+            check_frozen_installer(self.root / "setup.exe", self.root)
+        self.assertEqual(run.call_count, 2)
+        self.assertNotIn("QT_QPA_PLATFORM", run.call_args_list[0].kwargs["env"])
+
+    def test_frozen_desktop_failure_blocks_packaging(self):
+        import subprocess
+        with mock.patch("release.devenv.WINDOWS", False), mock.patch(
+                "release.freezer_environment", side_effect=lambda: {}), mock.patch(
+                "release.subprocess.run", side_effect=[None, None, subprocess.CalledProcessError(1, "xvfb-run")]):
+            with self.assertRaisesRegex(RuntimeError, "wizard-x11"):
+                check_frozen_installer(self.root / "setup", self.root)
 
     def test_modified_binary_is_rejected(self):
         self.packages[0][0][0].write_bytes(b"changed")

@@ -47,6 +47,14 @@ class WizardTests(unittest.TestCase):
                 sys, "executable", str(self.root / "setup.exe")):
             self.assertEqual(installer_directory(), self.root.resolve())
 
+    def test_frozen_wizard_check_preserves_requested_desktop_plugin(self):
+        from install_game import main
+        with mock.patch.dict(os.environ, {"QT_QPA_PLATFORM": "xcb"}), mock.patch.object(
+                sys, "argv", ["setup", "--check-wizard"]), mock.patch(
+                "PySide6.QtWidgets.QApplication"), mock.patch("installer.wizard.Wizard"):
+            self.assertEqual(main(), 0)
+            self.assertEqual(os.environ["QT_QPA_PLATFORM"], "xcb")
+
     def test_drop_local_image_and_reject_remote_url(self):
         from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
         from PySide6.QtGui import QDropEvent

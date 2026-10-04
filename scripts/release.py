@@ -260,14 +260,7 @@ def build_release(args):
                    str(ROOT / "scripts/install_game.py")]
         subprocess.run(freezer, cwd=ROOT, env=freezer_environment(), check=True)
         frozen = staging / "dist" / (name + (".exe" if devenv.WINDOWS else ""))
-        for check in ("--check-payload", "--check-wizard"):
-            diagnostic = staging / f"{check[2:]}.log"
-            try:
-                subprocess.run([str(frozen), check, "--diagnostic-log", str(diagnostic)],
-                               env=freezer_environment(), check=True, timeout=120)
-            except subprocess.CalledProcessError as error:
-                detail = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else "No Python traceback"
-                raise RuntimeError(f"Frozen installer failed {check}:\n{detail}") from error
+        check_frozen_installer(frozen, staging)
         if devenv.WINDOWS:
             shutil.copyfile(frozen, output / final_name)
         else:
@@ -282,6 +275,25 @@ def build_release(args):
         (output / f"{name}.sha256").write_text(
             "".join(f"{digest(path)}  {path.name}\n" for path in artifacts), encoding="ascii")
     print(f"Ready: {output / final_name}")
+
+
+def check_frozen_installer(frozen, staging):
+    """Check embedded bytes and native GUI startup, including Linux's desktop plugin."""
+    checks = [("payload", [str(frozen), "--check-payload"], None),
+              ("wizard", [str(frozen), "--check-wizard"], "offscreen")]
+    if not devenv.WINDOWS:
+        checks.append(("wizard-x11", ["xvfb-run", "-a", str(frozen), "--check-wizard"], "xcb"))
+    for name, command, platform_plugin in checks:
+        diagnostic = staging / f"check-{name}.log"
+        environment = freezer_environment()
+        if platform_plugin:
+            environment["QT_QPA_PLATFORM"] = platform_plugin
+        try:
+            subprocess.run([*command, "--diagnostic-log", str(diagnostic)],
+                           env=environment, check=True, timeout=120)
+        except subprocess.CalledProcessError as error:
+            detail = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else "No Python traceback"
+            raise RuntimeError(f"Frozen installer failed {name}:\n{detail}") from error
 
 
 def main():

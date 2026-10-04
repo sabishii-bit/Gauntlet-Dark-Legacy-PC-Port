@@ -45,7 +45,7 @@ jobs:
         run: python -m pip install -r scripts/installer/requirements.txt
       - name: Linux wizard runtime libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+        run: sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-shape0 libxcb-keysyms1 libxcb-icccm4 xvfb xauth
       - name: Script and offscreen wizard tests
         run: python -m unittest discover -s tests/scripts -v
         env:
