@@ -190,8 +190,10 @@ struct GameConfig {
     /** The same, for a game standing in `gameDirectory`. */
     std::filesystem::path saveDirectory(const std::filesystem::path& gameDirectory) const;
 
-    /** Where this user's settings live: under the platform's per-user configuration directory. */
+    /** Installed portable builds use config/ beside the executable; developer builds use the
+     * platform's per-user configuration directory. */
     static std::filesystem::path userSettingsPath();
+    static std::filesystem::path userSettingsPath(const std::filesystem::path& gameDirectory);
 };
 
 } // namespace gdl::game

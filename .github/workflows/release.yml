@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  VCPKG_DISABLE_METRICS: 1
+
+jobs:
+  installers:
+    name: Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check alpha tag against VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python scripts/release.py check-tag "${{ github.ref_name }}"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+      - name: Build tools
+        run: python scripts/setup.py --yes --no-build
+      - name: Installer tools
+        run: python -m pip install -r scripts/installer/requirements.txt
+      - name: Linux wizard runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Script and offscreen wizard tests
+        run: python -m unittest discover -s tests/scripts -v
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Build, test and package Windows installer
+        if: runner.os == 'Windows'
+        run: python scripts/release.py build
+      - name: Build, test and package Linux installer
+        if: runner.os == 'Linux'
+        run: python scripts/release.py build
+        env:
+          CXX: g++-14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: out/releases/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish alpha prerelease
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: installers
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: release-assets
+          merge-multiple: true
+      # Refuse to mutate an existing release; both platform jobs must succeed first.
+      - name: Publish verified installers (no game assets)
+        run: python scripts/publish_release.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}

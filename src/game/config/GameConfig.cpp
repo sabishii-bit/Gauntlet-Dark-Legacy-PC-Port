@@ -434,6 +434,13 @@ std::filesystem::path GameConfig::saveDirectory(const std::filesystem::path& gam
 }
 
 std::filesystem::path GameConfig::userSettingsPath() {
+    return userSettingsPath(paths::executableDirectory());
+}
+
+std::filesystem::path GameConfig::userSettingsPath(const std::filesystem::path& gameDirectory) {
+    if (std::filesystem::is_regular_file(gameDirectory / "portable.flag")) {
+        return gameDirectory / "config" / kSettingsFile;
+    }
 #if defined(_WIN32)
     std::filesystem::path base = environmentPath("APPDATA");
 #else

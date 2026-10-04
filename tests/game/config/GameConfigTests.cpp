@@ -1,5 +1,6 @@
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -254,6 +255,22 @@ TEST_CASE("user settings live in a per-user folder", "[game][config]") {
     const std::filesystem::path path = GameConfig::userSettingsPath();
     REQUIRE(path.filename() == "settings.json");
     REQUIRE(path.parent_path().filename() == "GauntletDarkLegacy");
+}
+
+TEST_CASE("installed portable builds keep settings beside the game without migrating user files",
+          "[game][config]") {
+    const auto game = test::scratchDirectory("portable-settings");
+    const auto original = GameConfig::userSettingsPath(game);
+    REQUIRE(original.parent_path().filename() == "GauntletDarkLegacy");
+    // A directory named portable.flag is not an opt-in marker.
+    std::filesystem::create_directory(game / "portable.flag");
+    REQUIRE(GameConfig::userSettingsPath(game) == original);
+    std::filesystem::remove(game / "portable.flag");
+    std::ofstream(game / "portable.flag") << "Portable installation\n";
+    REQUIRE(GameConfig::userSettingsPath(game) == game / "config" / "settings.json");
+    REQUIRE(GameConfig{}.saveDirectory(game) == game / "saves");
+    REQUIRE_FALSE(std::filesystem::exists(game / "config"));
+    std::filesystem::remove_all(game);
 }
 
 TEST_CASE("the difficulty names a gain on the levels' own scales", "[game][config]") {

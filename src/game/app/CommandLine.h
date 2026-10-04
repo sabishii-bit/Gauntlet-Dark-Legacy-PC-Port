@@ -10,7 +10,7 @@
 
 namespace gdl::game {
 
-enum class CommandLineAction : u8 { Run, ShowHelp, Fail };
+enum class CommandLineAction : u8 { Run, ShowHelp, ShowVersion, Fail };
 
 struct GameOptions {
     std::string playMovie; ///< play this VQ movie (name without extension) and quit

@@ -56,7 +56,8 @@ TEST_CASE("title mouse click opens options and right click leaves them",
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr); // Resolve SKIP before entering an assertion.
+    REQUIRE(scene.open(device, context));
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
     scene.render(device, projection, 640, 448);
     MenuInput click;

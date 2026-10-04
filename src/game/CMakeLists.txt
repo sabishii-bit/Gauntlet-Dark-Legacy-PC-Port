@@ -330,7 +330,7 @@ target_link_libraries(gauntlet PRIVATE gdl::game)
 # converts while building; nothing from the assets is checked in.
 get_filename_component(GDL_DISC_DIR "${GDL_ASSET_DIR}" DIRECTORY)
 set(GDL_CARD_ICON "${GDL_DISC_DIR}/carddemo/icon.tpl")
-if(WIN32 AND EXISTS "${GDL_CARD_ICON}")
+if(WIN32 AND GDL_EMBED_DISC_ICON AND EXISTS "${GDL_CARD_ICON}")
     enable_language(RC)
     set(GDL_ICON_FILE "${CMAKE_BINARY_DIR}/icon/carddemo/icon.ico")
     add_custom_command(
@@ -346,12 +346,14 @@ if(WIN32 AND EXISTS "${GDL_CARD_ICON}")
 endif()
 
 target_compile_definitions(gauntlet PRIVATE
+    GDL_VERSION="${GDL_VERSION}"
     GDL_DEFAULT_ASSET_DIR="${GDL_ASSET_DIR}"
     GDL_DEFAULT_DATA_DIR="${GDL_DATA_DIR}")
 
 gdl_apply_compiler_options(gauntlet)
 
 set_target_properties(gauntlet PROPERTIES
+    BUILD_RPATH "$ORIGIN/lib"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>"
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     FOLDER "game")

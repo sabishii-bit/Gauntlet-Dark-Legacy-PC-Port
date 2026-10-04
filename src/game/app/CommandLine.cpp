@@ -83,6 +83,9 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
                 return fail(std::move(desc), std::format("--frames: '{}' is not a number", value));
             }
             desc.maxFrames = frames;
+        } else if (arg == "--version") {
+            result.action = CommandLineAction::ShowVersion;
+            return result;
         } else if (arg == "--help" || arg == "-h") {
             result.action = CommandLineAction::ShowHelp;
             return result;
@@ -108,6 +111,7 @@ const char* usageText() {
            "  --validation       force the Vulkan validation layer on\n"
            "  --no-validation    force it off (default on in Debug builds)\n"
            "  --frames <n>       quit after n frames (smoke testing)\n"
+           "  --version          print the build version and exit\n"
            "  --help             this text\n"
            "Defaults use Gauntlet/ beside the executable, then the configured developer tree.\n"
            "Keep the original carddemo/ alongside Gauntlet/. No export step is required.";

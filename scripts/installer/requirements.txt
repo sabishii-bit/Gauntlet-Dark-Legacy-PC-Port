@@ -1,0 +1,3 @@
+# Build-time only. Players receive a frozen executable, not a Python environment.
+PyInstaller==6.22.3
+PySide6-Essentials==6.11.2

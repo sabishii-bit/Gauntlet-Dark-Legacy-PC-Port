@@ -118,7 +118,8 @@ TEST_CASE("boss framing keeps the player's collision envelope inside the view",
 TEST_CASE("native Chimera camera frames the player body at the front of the arena",
           "[game][world][camera][chimera][assets]") {
     WorldData data;
-    REQUIRE(data.load(test::assetOrSkip("WDATA/CASTLE.WAD")));
+    const auto castle = test::assetOrSkip("WDATA/CASTLE.WAD");
+    REQUIRE(data.load(castle));
     const auto level =
         std::ranges::find_if(data.levels(), [](const auto& value) { return value.name == "A5"; });
     REQUIRE(level != data.levels().end());

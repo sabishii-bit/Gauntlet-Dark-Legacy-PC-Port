@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 3.30)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" GDL_VERSION LIMIT_COUNT 1)
+if(NOT GDL_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)-alpha\\.([1-9][0-9]*)$")
+    message(FATAL_ERROR "VERSION must be an alpha semantic version, e.g. 0.1.0-alpha.1")
+endif()
+set(GDL_VERSION_CORE "${CMAKE_MATCH_1}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+
 project(GauntletDarkLegacy
-    VERSION 0.1.0
+    VERSION "${GDL_VERSION_CORE}"
     DESCRIPTION "C++26 / Vulkan reconstruction of the Gauntlet Dark Legacy engine"
     LANGUAGES CXX)
 
@@ -24,6 +31,7 @@ endif()
 option(GDL_ENABLE_VULKAN_VALIDATION
     "Enable the Khronos validation layer when it is available at runtime" ON)
 option(GDL_BUILD_TESTS "Build the test suite" ON)
+option(GDL_EMBED_DISC_ICON "Embed the user's disc icon (OFF for public releases)" ON)
 
 set(GDL_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets/GUNE5D/Gauntlet" CACHE PATH
     "Game asset directory (the GUNE5D/Gauntlet tree)")

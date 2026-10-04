@@ -33,6 +33,11 @@ TEST_CASE("no arguments keeps the defaults", "[game][commandline]") {
     REQUIRE(result.desc.window.title == "test");
 }
 
+TEST_CASE("version can be queried without assets or a graphics device", "[game][commandline]") {
+    const std::array<std::string_view, 1> args{"--version"};
+    REQUIRE(parseCommandLine(args, defaults()).action == CommandLineAction::ShowVersion);
+}
+
 TEST_CASE("options override the defaults", "[game][commandline]") {
     constexpr std::array<std::string_view, 6> kArgs{"--assets",        "W:/data",  "--no-vsync",
                                                     "--no-validation", "--frames", "42"};

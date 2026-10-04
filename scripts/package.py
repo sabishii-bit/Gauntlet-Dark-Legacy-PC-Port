@@ -69,16 +69,16 @@ def linked_entry(path: pathlib.Path) -> bool:
             bool(getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT))
 
 
-def make_plan(executable: pathlib.Path, assets: pathlib.Path, data: pathlib.Path,
+def make_plan(executable: pathlib.Path, assets: Optional[pathlib.Path], data: pathlib.Path,
               output: pathlib.Path, runtime_dirs: tuple[pathlib.Path, ...] = ()) -> PackagePlan:
     """Validate all inputs and enumerate the exact copy, without writing anything."""
     executable = executable.resolve()
-    assets = assets.resolve()
+    assets = assets.resolve() if assets else None
     data = data.resolve()
     require_file(executable)
-    if assets.name.casefold() != "gauntlet" or not assets.is_dir():
+    if assets and (assets.name.casefold() != "gauntlet" or not assets.is_dir()):
         raise ValueError(f"--assets must name the original Gauntlet directory: {assets}")
-    carddemo = child_directory(assets.parent, "carddemo")
+    carddemo = child_directory(assets.parent, "carddemo") if assets else None
     shaders = executable.parent / "shaders"
     for shader in ("immediate.vert.spv", "immediate.frag.spv", "postprocess.vert.spv",
                    "depth_of_field.frag.spv", "depth_of_field_ms.frag.spv",
@@ -90,7 +90,10 @@ def make_plan(executable: pathlib.Path, assets: pathlib.Path, data: pathlib.Path
     for directory in runtime_dirs:
         if not directory.is_dir():
             raise ValueError(f"Runtime directory not found: {directory}")
-    output = validate_output(output, [assets.parent, executable.parent, data, *runtime_dirs])
+    inputs = [executable.parent, data, *runtime_dirs]
+    if assets:
+        inputs.append(assets.parent)
+    output = validate_output(output, inputs)
 
     files = []
     directories = set()
@@ -134,8 +137,9 @@ def make_plan(executable: pathlib.Path, assets: pathlib.Path, data: pathlib.Path
                 add_file(path, pathlib.Path(path.name))
     add_tree(shaders, pathlib.Path("shaders"))
     add_tree(data, pathlib.Path("data"))
-    add_tree(assets, pathlib.Path(assets.name))
-    add_tree(carddemo, pathlib.Path(carddemo.name))
+    if assets:
+        add_tree(assets, pathlib.Path(assets.name))
+        add_tree(carddemo, pathlib.Path(carddemo.name))
     return PackagePlan(output, tuple(files), tuple(sorted(directories)))
 
 

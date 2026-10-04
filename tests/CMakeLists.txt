@@ -295,6 +295,8 @@ add_dependencies(tests gauntlet_shaders)
 # CTest entry labelled "gpu" so machines without a display can skip them
 # with `ctest -LE gpu`. Tests tagged [assets] skip themselves when the game
 # data is not installed.
-catch_discover_tests(tests TEST_SPEC "~[gpu]" TEST_PREFIX "unit.")
+set(GDL_TEST_DISCOVERY_FILTER "~[gpu]" CACHE STRING
+    "Catch2 discovery filter (public release runners exclude private asset tests)")
+catch_discover_tests(tests TEST_SPEC "${GDL_TEST_DISCOVERY_FILTER}" TEST_PREFIX "unit.")
 add_test(NAME gpu.integration COMMAND tests "[gpu]")
 set_tests_properties(gpu.integration PROPERTIES LABELS gpu)

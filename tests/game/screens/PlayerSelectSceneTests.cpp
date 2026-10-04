@@ -77,7 +77,8 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
     saved.gold = 321;
     REQUIRE(slots.write(0, saved));
     PlayerSelectScene scene;
-    REQUIRE(scene.open(device, f.context(), 0));
+    const auto context = f.context(); // Missing retail assets must skip outside REQUIRE.
+    REQUIRE(scene.open(device, context, 0));
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
     const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
     scene.render(device, projection, 640, 448);
@@ -269,13 +270,14 @@ TEST_CASE("selection entry keeps every simultaneous joining Start without advanc
     existing.name = "HERE";
     PlayerSelectScene scene;
     bool inTower = false;
+    const auto context = f.context();
     SECTION("from the tower") {
         const std::array party{PartyMember{2, existing, 1, false, 0, {14}}};
-        REQUIRE(scene.open(device, f.context(), -1, party));
+        REQUIRE(scene.open(device, context, -1, party));
         inTower = true;
     }
     SECTION("from the title") {
-        REQUIRE(scene.open(device, f.context(), 2));
+        REQUIRE(scene.open(device, context, 2));
     }
     PlayerSelectScene::Inputs joining{};
     for (auto& input : joining) {
@@ -357,7 +359,8 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
     SaveSlots slots;
     REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
     REQUIRE(slots.write(2, fallen));
-    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    const auto context = f.context();
+    REQUIRE(scene.openAfterLevel(device, context, party));
     CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
     CHECK(scene.lane(2).state() == SelectLane::State::SaveMenu);
     CHECK(scene.lane(3).lockedIn());
@@ -405,7 +408,8 @@ TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
     second.name = "SECOND";
     const std::array party{PartyMember{0, first, std::nullopt, false, 0, {14}},
                            PartyMember{1, second}};
-    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    const auto context = f.context();
+    REQUIRE(scene.openAfterLevel(device, context, party));
     PlayerSelectScene::Inputs both{};
     both[0].up = both[1].up = true;
     for (s32 i = 0; i < 3; ++i) {
@@ -443,7 +447,8 @@ TEST_CASE("post-shop keeps Done selected and protects an existing save when over
     save.gold = 4567;
     const std::array party{PartyMember{0, save, 0}};
     PlayerSelectScene scene;
-    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    const auto context = f.context();
+    REQUIRE(scene.openAfterLevel(device, context, party));
     // The GameCube card-directory probe returns at most one, selecting Done.
     PlayerSelectScene::Inputs up{};
     up[0].up = true;
@@ -475,7 +480,8 @@ TEST_CASE("post-shop snapshots follow a loaded character rather than the pending
     live.gold = 600;
     const std::array party{PartyMember{0, live, 0, false, 0, {14}}};
     PlayerSelectScene scene;
-    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    const auto context = f.context();
+    REQUIRE(scene.openAfterLevel(device, context, party));
     PlayerSelectScene::Inputs up{};
     up[0].up = true;
     scene.step(1, up); // Quit

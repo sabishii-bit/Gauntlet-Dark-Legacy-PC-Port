@@ -297,9 +297,13 @@ TEST_CASE("boss health opens new moves and evaluates each player's eligibility",
     fixture.update(6, 0.1f, party);
     fixture.update(6, 0.1f, party);
     REQUIRE(critters.moveName() == "HEALTHY");
+    REQUIRE(critters.health() == 100);
     EnemyHit hit;
-    hit.damage = 50;
+    // Two standing players halve boss damage. Deal 100 to reach the 50-health
+    // phase; this test exercises eligibility, not single-player damage scaling.
+    hit.damage = 100;
     critters.hurt(hit);
+    REQUIRE(critters.health() == 50);
     fixture.update(6, 0.1f, party);
     REQUIRE(critters.moveName() == "WOUNDED");
     const auto shots = critters.takeShots();

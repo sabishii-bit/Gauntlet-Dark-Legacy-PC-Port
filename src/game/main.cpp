@@ -46,12 +46,15 @@ int runGauntlet(std::span<char*> rawArgs) {
         gdl::game::parseCommandLine(args, std::move(defaults), std::move(defaultOptions));
     switch (parsed.action) {
     case gdl::game::CommandLineAction::ShowHelp: std::puts(gdl::game::usageText()); return 0;
+    case gdl::game::CommandLineAction::ShowVersion: std::puts(GDL_VERSION); return 0;
     case gdl::game::CommandLineAction::Fail:
         gdl::log::error("{}", parsed.message);
         std::puts(gdl::game::usageText());
         return 2;
     case gdl::game::CommandLineAction::Run: break;
     }
+
+    gdl::log::info("Gauntlet Dark Legacy {}", GDL_VERSION);
 
     // Settings: the shipped defaults, then the player's own file, then the command line.
     gdl::game::GameConfig config;
