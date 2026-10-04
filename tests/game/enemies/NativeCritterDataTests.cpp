@@ -226,14 +226,14 @@ void equivalent(const CritterData& a, const CritterData& b) {
     REQUIRE(a.originOffset() == b.originOffset());
     REQUIRE(a.hitSoundFar() == b.hitSoundFar());
     REQUIRE(a.hitSoundClose() == b.hitSoundClose());
-    REQUIRE(targetValues(a.sight()) == targetValues(b.sight()));
-    REQUIRE(meterValues(a.meter()) == meterValues(b.meter()));
-    REQUIRE(movementValues(a.movement()) == movementValues(b.movement()));
+    REQUIRE((targetValues(a.sight()) == targetValues(b.sight())));
+    REQUIRE((meterValues(a.meter()) == meterValues(b.meter())));
+    REQUIRE((movementValues(a.movement()) == movementValues(b.movement())));
     REQUIRE(a.moves().size() == b.moves().size());
     for (usize i = 0; i < a.moves().size(); ++i) {
         CAPTURE(i);
-        REQUIRE(moveValues(a.moves()[i]) == moveValues(b.moves()[i]));
-        REQUIRE(targetValues(a.moves()[i].target) == targetValues(b.moves()[i].target));
+        REQUIRE((moveValues(a.moves()[i]) == moveValues(b.moves()[i])));
+        REQUIRE((targetValues(a.moves()[i].target) == targetValues(b.moves()[i].target)));
     }
     REQUIRE(a.patterns().size() == b.patterns().size());
     for (usize i = 0; i < a.patterns().size(); ++i) {
@@ -241,26 +241,26 @@ void equivalent(const CritterData& a, const CritterData& b) {
         REQUIRE(a.patterns()[i].moves == b.patterns()[i].moves);
         REQUIRE(a.patterns()[i].flags == b.patterns()[i].flags);
         REQUIRE(a.patterns()[i].cooldown == b.patterns()[i].cooldown);
-        REQUIRE(targetValues(a.patterns()[i].target) == targetValues(b.patterns()[i].target));
+        REQUIRE((targetValues(a.patterns()[i].target) == targetValues(b.patterns()[i].target)));
     }
     REQUIRE(a.damages().size() == b.damages().size());
     for (usize i = 0; i < a.damages().size(); ++i) {
         CAPTURE(i);
-        REQUIRE(damageValues(a.damages()[i]) == damageValues(b.damages()[i]));
+        REQUIRE((damageValues(a.damages()[i]) == damageValues(b.damages()[i])));
     }
     REQUIRE(a.sounds().size() == b.sounds().size());
     for (usize i = 0; i < a.sounds().size(); ++i) {
         CAPTURE(i);
-        REQUIRE(effectValues(a.sounds()[i]) == effectValues(b.sounds()[i]));
+        REQUIRE((effectValues(a.sounds()[i]) == effectValues(b.sounds()[i])));
     }
     REQUIRE(a.parts().size() == b.parts().size());
     for (usize i = 0; i < a.parts().size(); ++i) {
         CAPTURE(i);
-        REQUIRE(partValues(a.parts()[i]) == partValues(b.parts()[i]));
+        REQUIRE((partValues(a.parts()[i]) == partValues(b.parts()[i])));
     }
     REQUIRE(a.looks().size() == b.looks().size());
     for (usize i = 0; i < a.looks().size(); ++i) {
-        REQUIRE(lookValues(a.looks()[i]) == lookValues(b.looks()[i]));
+        REQUIRE((lookValues(a.looks()[i]) == lookValues(b.looks()[i])));
     }
 }
 

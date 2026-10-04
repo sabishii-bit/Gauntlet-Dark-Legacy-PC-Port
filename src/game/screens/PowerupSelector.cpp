@@ -18,13 +18,15 @@ void PowerupSelector::close() {
 }
 
 void PowerupSelector::focus(const Inventory& inventory, s32 kind, u32 flags) {
-    const auto found = std::ranges::find_if(inventory.powerups, [&](const PowerupSlot& slot) {
-        return slot.held() && slot.kind == kind && slot.flags == flags;
-    });
-    if (found == inventory.powerups.end()) {
+    const auto index =
+        std::distance(inventory.powerups.begin(),
+                      std::ranges::find_if(inventory.powerups, [&](const PowerupSlot& slot) {
+                          return slot.held() && slot.kind == kind && slot.flags == flags;
+                      }));
+    if (index == std::ssize(inventory.powerups)) {
         return;
     }
-    m_selection = static_cast<s32>(std::distance(inventory.powerups.begin(), found));
+    m_selection = static_cast<s32>(index);
     std::erase(m_acquired, m_selection);
     m_acquired.insert(m_acquired.begin(), m_selection);
 }

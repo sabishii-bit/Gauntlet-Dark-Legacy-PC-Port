@@ -109,8 +109,9 @@ void PartyMotion::passIt(std::span<PlayerRuntime> players, s32 ticks, const Even
             it.itTicks = 0;
             continue;
         }
-        if (it.itTicks > kItHold && i < contacts.size() && contacts[i].has_value()) {
-            const usize j = *contacts[i];
+        const auto contact = i < contacts.size() ? contacts[i] : std::nullopt;
+        if (it.itTicks > kItHold && contact.has_value()) {
+            const usize j = *contact;
             if (j < players.size() && j != i && players[j].life == PlayerLife::Standing &&
                 !players[j].departed) {
                 players[j].itTicks = 1;

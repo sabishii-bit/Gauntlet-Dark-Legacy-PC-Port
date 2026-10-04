@@ -479,9 +479,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
         f32 visualFrame = effect->player.frame();
         if (continuous) {
             placement = blendPlacement(effect->previousTransform, placement, blend);
-            if (direction && effect->previousDirection &&
-                glm::dot(*direction, *effect->previousDirection) > 0) {
-                direction = glm::mix(*effect->previousDirection, *direction, blend);
+            const auto previousDirection = effect->previousDirection;
+            if (direction && previousDirection && glm::dot(*direction, *previousDirection) > 0) {
+                direction = glm::mix(*previousDirection, *direction, blend);
             }
             if (effect->tree != nullptr && effect->player.playing()) {
                 visualFrame =
@@ -530,10 +530,10 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                                        visualFrame, offset);
             }
             effect->trails.clearTextureBlends();
-            if (offset && effect->particleTextureSlot) {
+            const auto textureSlot = effect->particleTextureSlot;
+            if (offset && textureSlot) {
                 for (usize i = 0; i < motion->animator.size(); ++i) {
-                    if (!motion->animator.keyed(i) &&
-                        motion->animator.slot(i) == *effect->particleTextureSlot) {
+                    if (!motion->animator.keyed(i) && motion->animator.slot(i) == *textureSlot) {
                         const auto sample = motion->animator.motion(i, offset);
                         if (sample.frame != nullptr) {
                             effect->trails.setTextureBlend(0, *sample.frame, sample.nextFrame,

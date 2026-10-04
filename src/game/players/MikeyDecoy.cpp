@@ -15,10 +15,13 @@ void MikeyDecoy::update(f32 seconds, Inventory& inventory, const Vec3& position,
 }
 
 void MikeyDecoy::step(Inventory& inventory, const Vec3& position, f32 timerRate) {
-    const auto found = std::ranges::find_if(inventory.powerups, [](const PowerupSlot& slot) {
-        return slot.kind == powerup::kSpecial && slot.flags == powerup::kMikey;
-    });
-    PowerupSlot* slot = found != inventory.powerups.end() ? &*found : nullptr;
+    PowerupSlot* slot = nullptr;
+    for (auto& candidate : inventory.powerups) {
+        if (candidate.kind == powerup::kSpecial && candidate.flags == powerup::kMikey) {
+            slot = &candidate;
+            break;
+        }
+    }
     if (slot != nullptr && slot->working() && slot->strength > 0) {
         slot->strength = std::max(0.0f, slot->strength - timerRate / kFramesPerSecond);
     }

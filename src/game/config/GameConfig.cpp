@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <exception>
+#include <iterator>
 #include <limits>
 #include <numbers>
 
@@ -188,12 +189,12 @@ void GameConfig::mergeJson(std::string_view json) {
                 throw FormatError("multiplayer mode must be normal, stun or hurt");
             }
             const auto name = game.at("multiplayer").get<std::string>();
-            const auto found = std::ranges::find(MultiplayerConfig::kNames, name);
-            if (found == MultiplayerConfig::kNames.end()) {
+            const auto index = std::distance(MultiplayerConfig::kNames.begin(),
+                                             std::ranges::find(MultiplayerConfig::kNames, name));
+            if (index == std::ssize(MultiplayerConfig::kNames)) {
                 throw FormatError("multiplayer mode must be normal, stun or hurt");
             }
-            multiplayer.mode =
-                static_cast<MultiplayerMode>(found - MultiplayerConfig::kNames.begin());
+            multiplayer.mode = static_cast<MultiplayerMode>(index);
         }
     }
     if (root.contains("controls")) {
