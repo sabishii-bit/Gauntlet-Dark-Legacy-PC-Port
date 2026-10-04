@@ -99,6 +99,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services.slots = m_saves.opened() ? &m_saves : nullptr;
     m_services.classes = &m_classes;
     m_services.strings = m_context.strings;
+    m_services.controlLabels = m_context.controlLabels;
     m_services.menuPainter = &m_large;
     m_services.smallPainter = &m_small;
     m_services.initialsPainter = &m_initials;

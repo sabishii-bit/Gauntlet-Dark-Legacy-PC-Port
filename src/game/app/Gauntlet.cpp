@@ -167,6 +167,20 @@ GameContext Gauntlet::context() {
     GameContext context;
     context.config = &m_config;
     context.strings = &m_strings;
+    context.controlLabels = [this](s32 player, std::string_view action) {
+        if (player < 0) {
+            player = m_promptDevices.lastPlayer();
+            if (m_play->scene.isOpen() && m_play->scene.actor(player) == nullptr) {
+                for (s32 candidate = 0; candidate < PlayScene::kPlayerCount; ++candidate) {
+                    if (m_play->scene.actor(candidate) != nullptr) {
+                        player = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+        return m_promptDevices.label(input(), m_config, player, action);
+    };
     context.sounds = m_sounds.get();
     context.assets = m_assets.get();
     context.tower = &m_play->world;
@@ -189,6 +203,7 @@ GameContext Gauntlet::context() {
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
+    m_promptDevices.update(input(), m_config);
     if (updateIdle(deltaSeconds)) {
         return;
     }

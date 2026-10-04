@@ -68,6 +68,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
+    m_messages.setControlLabels(context.controlLabels);
+    m_hud.setControlLabels(context.controlLabels);
     m_names.load(device, m_context.unpackedRoot, m_staticTextures);
     m_weapons.load(context.unpackedRoot / kWeaponsArchive);
     m_figures.loadSkins(device, world.powerups(), m_weapons);

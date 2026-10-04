@@ -209,7 +209,8 @@ void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 widt
     if (m_context.strings != nullptr) {
         m_canvas.begin(device,
                        makeVirtualScreenTransform(projection, 512.0f, 384.0f, width, height));
-        const auto label = m_context.strings->get("title.pressStart");
+        const auto label =
+            controlText(m_context.strings->get("title.pressStart"), m_context.controlLabels, -1);
         TextStyle glow;
         glow.color = Color::rgba(130, 0, 234)
                          .withAlpha(pulseOpacity(static_cast<s32>(m_elapsed * 60.0), 40, 5));

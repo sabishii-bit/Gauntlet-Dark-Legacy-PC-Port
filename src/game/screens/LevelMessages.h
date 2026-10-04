@@ -7,6 +7,7 @@
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 
+#include "game/menu/ControlPrompts.h"
 #include "game/menu/ScrollBox.h"
 
 namespace gdl::game {
@@ -31,6 +32,7 @@ public:
     void load(RenderDevice& device, TextureSet& textures, const std::filesystem::path& root,
               const StringTable* strings);
     void clear();
+    void setControlLabels(const ControlLabels& labels) { m_controlLabels = labels; }
     /** With no page, shows the whole message (the welcome); otherwise just that page. */
     bool open(RenderDevice& device, std::string_view name, const StringTable* strings,
               std::optional<usize> page = std::nullopt);
@@ -46,6 +48,7 @@ public:
 
 private:
     BitmapFont m_font32;
+    ControlLabels m_controlLabels;
     TextPainter m_text;
     MessageTable m_scrollText;
     ScrollBox m_scroll; ///< references our painter, so this owner must not move

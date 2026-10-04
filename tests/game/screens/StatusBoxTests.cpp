@@ -65,11 +65,17 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     REQUIRE(StatusBoxPainter::potionIcon(4) == "POTION_ICON_GRE");
     REQUIRE(StatusBoxPainter::potionIcon(77) == "POTION_ICON_RED");
 
-    // Fallen out of the tower: BUTTON_X beside waiting in the tower, BUTTON_TRI beside quitting,
+    // Fallen out of the tower: mapped confirm/cancel beside waiting and quitting,
     // in place of the gold and health (player.c 1397).
     StatusBoxView fallen = view;
     fallen.inTower = true;
     fallen.towerPrompt = true;
+    std::vector<std::string> promptedActions;
+    painter.setControlLabels([&](s32 player, std::string_view action) {
+        CHECK(player == 1);
+        promptedActions.emplace_back(action);
+        return "F2";
+    });
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
     painter.draw(canvas, 1, fallen, true);
@@ -78,12 +84,18 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     bool quit = false;
     for (const test::RecordedDraw& draw : device.draws) {
         const Vec2 corner = test::minCorner(draw);
-        wait = wait || corner == Vec2{128.0f + 6.0f, 332.0f};
-        quit = quit || corner == Vec2{128.0f + 6.0f, 352.0f};
+        for (const auto& vertex : draw.vertices) {
+            const auto& position = vertex.position;
+            wait = wait ||
+                   (position.x >= 134 && position.x < 154 && position.y >= 332 && position.y < 352);
+            quit = quit ||
+                   (position.x >= 134 && position.x < 154 && position.y >= 352 && position.y < 372);
+        }
         CHECK(corner != Vec2{128.0f + 8.0f, 323.0f}); // no key icon
     }
     CHECK(wait);
     CHECK(quit);
+    CHECK(promptedActions == std::vector<std::string>{"menuSelect", "menuBack"});
 
     // A pickup card at the bar over the box, and a count above it.
     device.draws.clear();

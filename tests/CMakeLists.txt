@@ -3,6 +3,7 @@ include(Catch)
 
 add_executable(tests
     game/config/ControlProfilesTests.cpp
+    game/menu/ControlPromptsTests.cpp
     game/players/CursorAimTests.cpp
     game/enemies/DeathRulesTests.cpp
     game/enemies/EnemiesDeathTests.cpp

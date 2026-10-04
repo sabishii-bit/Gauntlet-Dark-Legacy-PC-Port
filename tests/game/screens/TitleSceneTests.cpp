@@ -190,11 +190,19 @@ TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][assets]"
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    const auto context = f.context(nullptr);
+    auto context = f.context(nullptr);
+    bool prompted = false;
+    context.controlLabels = [&](s32 player, std::string_view action) {
+        CHECK(player == -1);
+        CHECK(action == "menuStart");
+        prompted = true;
+        return "F2";
+    };
     REQUIRE(scene.open(device, context));
     scene.step(30, MenuInput{});
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     scene.render(device, projection, 640.0f, 448.0f);
+    CHECK(prompted);
     REQUIRE(device.draws.size() >= 6);
     REQUIRE(device.draws[0].vertices.size() == 6);
     REQUIRE(device.draws[0].transform == Mat4{1});

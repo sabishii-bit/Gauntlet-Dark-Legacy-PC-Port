@@ -14,7 +14,6 @@ constexpr s32 kFont32SpaceWidth = 16;
 constexpr std::string_view kFontTexture = "FONT32";
 constexpr std::string_view kGlowTexture = "FONT32_GLOW";
 constexpr std::string_view kScrollTexture = "SCROLL_A";
-constexpr std::string_view kButtonTexture = "BUTTON_TRI";
 constexpr std::string_view kFireRingTexture = "GREENCIRCTRANS";
 constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 constexpr std::string_view kScrollTextFile = "text/scroll_e.json";
@@ -54,7 +53,6 @@ void LevelMessages::load(RenderDevice& device, TextureSet& textures,
     }
     art.backdrop = texture(kScrollTexture);
     art.glow = texture(kGlowTexture);
-    art.button = texture(kButtonTexture);
     const auto scroll = textures.find(kScrollTexture);
     const auto ring = textures.find(kFireRingTexture);
     const auto mask = textures.find(kFireMaskTexture);
@@ -82,6 +80,7 @@ void LevelMessages::load(RenderDevice& device, TextureSet& textures,
 }
 
 void LevelMessages::clear() {
+    m_controlLabels = {};
     m_scroll.close();
     m_scroll.setArt({});
     m_scroll.setText(nullptr);
@@ -105,7 +104,8 @@ bool LevelMessages::open(RenderDevice& device, std::string_view name, const Stri
         log::warn("Tower: no page {} of the message {}", *page, name);
         return false;
     }
-    const std::string prompt = strings != nullptr ? std::string(strings->get(kPromptText)) : "";
+    const std::string prompt =
+        strings != nullptr ? controlText(strings->get(kPromptText), m_controlLabels, -1) : "";
     return m_scroll.open(
         device, page.has_value() ? std::vector<std::string>{message.pages[*page]} : message.pages,
         message.scale, prompt);

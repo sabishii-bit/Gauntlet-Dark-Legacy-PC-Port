@@ -57,7 +57,7 @@ public:
     static constexpr s32 kEnterTicks = 120;
     static constexpr s32 kLeaveTicks = 15;
     static constexpr s32 kLaneWidth = 128;
-    /** The accept prompt: BUTTON_X at (16, 280), 16 square, its label from 40. */
+    /** The mapped accept prompt at (16, 280), 16 square, its caption from 40. */
     static constexpr s32 kPromptX = 16;
     static constexpr s32 kPromptY = 280;
     static constexpr s32 kPromptSize = 16;

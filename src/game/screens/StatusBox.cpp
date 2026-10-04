@@ -71,6 +71,7 @@ bool StatusBoxPainter::load(RenderDevice& device, const std::filesystem::path& u
 }
 
 void StatusBoxPainter::release() {
+    m_controlLabels = {};
     m_countTextures = nullptr;
     m_initials.setFont(nullptr, nullptr);
     m_score.setFont(nullptr, nullptr);
@@ -125,14 +126,14 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     if (view.towerPrompt) {
         // The fallen player's choice, in white beside its buttons (player.c 1397).
         const auto button = [&](std::string_view name, s32 y) {
-            if (const Texture* texture = staticTexture(name)) {
-                canvas.draw(*texture, Rect{static_cast<f32>(left + kPromptIconX),
-                                           static_cast<f32>(y), static_cast<f32>(kPromptIconSize),
-                                           static_cast<f32>(kPromptIconSize)});
-            }
+            drawControlLabel(canvas, m_smallCaps,
+                             Rect{static_cast<f32>(left + kPromptIconX), static_cast<f32>(y),
+                                  static_cast<f32>(kPromptIconSize),
+                                  static_cast<f32>(kPromptIconSize)},
+                             controlLabel(m_controlLabels, slot, name));
         };
-        button("BUTTON_X", kWaitIconY);
-        button("BUTTON_TRI", kQuitIconY);
+        button("menuSelect", kWaitIconY);
+        button("menuBack", kQuitIconY);
         if (m_smallCaps.ready()) {
             TextStyle style;
             style.scale = kInTowerScale;

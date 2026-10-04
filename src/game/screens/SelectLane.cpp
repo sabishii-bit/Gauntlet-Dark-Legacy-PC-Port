@@ -91,12 +91,12 @@ constexpr std::string_view kShadowSuffix = "SHADW";
 constexpr std::string_view kSumnerPortrait = "S12_SUM";
 constexpr std::string_view kQuestMarkTexture = "SELSCRN_QUESTMARK";
 constexpr std::string_view kStatGlowTexture = "ATT_GLOW";
-constexpr std::string_view kIconUp = "BUTTON_U";
-constexpr std::string_view kIconDown = "BUTTON_D";
-constexpr std::string_view kIconLeft = "BUTTON_L";
-constexpr std::string_view kIconRight = "BUTTON_R";
-constexpr std::string_view kIconSelect = "BUTTON_X";
-constexpr std::string_view kIconBack = "BUTTON_TRI";
+constexpr std::string_view kIconUp = "menuUp";
+constexpr std::string_view kIconDown = "menuDown";
+constexpr std::string_view kIconLeft = "menuLeft";
+constexpr std::string_view kIconRight = "menuRight";
+constexpr std::string_view kIconSelect = "menuSelect";
+constexpr std::string_view kIconBack = "menuBack";
 
 bool contains(const Rect& area, const Vec2& point) {
     return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
@@ -202,9 +202,11 @@ std::optional<usize> SelectLane::reservedSlot() const {
                : std::nullopt;
 }
 
-std::string_view SelectLane::text(std::string_view id) const {
-    return m_services != nullptr && m_services->strings != nullptr ? m_services->strings->get(id)
-                                                                   : id;
+std::string SelectLane::text(std::string_view id) const {
+    const auto value =
+        m_services != nullptr && m_services->strings != nullptr ? m_services->strings->get(id) : id;
+    return controlText(value, m_services != nullptr ? m_services->controlLabels : ControlLabels{},
+                       m_index);
 }
 
 bool SelectLane::classKnown(s32 classIndex) const {
@@ -890,15 +892,14 @@ MenuInput SelectLane::pointerInput(const MenuInput& rawInput) {
 }
 
 void SelectLane::drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const {
-    if (m_services == nullptr || !m_services->staticTexture) {
+    if (m_services == nullptr || m_services->smallPainter == nullptr) {
         return;
     }
     if (m_hoverArea == area) {
         canvas.fill(area, kGlowColor.withAlpha(150));
     }
-    if (const auto* texture = m_services->staticTexture(icon)) {
-        canvas.draw(*texture, area);
-    }
+    drawControlLabel(canvas, *m_services->smallPainter, area,
+                     controlLabel(m_services->controlLabels, m_index, icon));
 }
 
 void SelectLane::drawNameGrid(Canvas& canvas) const {
@@ -933,13 +934,10 @@ void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, s32 y,
     if (hovered) {
         canvas.fill(promptArea(y, label), kGlowColor.withAlpha(150));
     }
-    if (m_services->staticTexture) {
-        if (const Texture* texture = m_services->staticTexture(icon)) {
-            canvas.draw(*texture,
-                        Rect{static_cast<f32>(iconX), static_cast<f32>(y),
-                             static_cast<f32>(kPromptIconSize), static_cast<f32>(kPromptIconSize)});
-        }
-    }
+    drawControlLabel(canvas, *m_services->smallPainter,
+                     Rect{static_cast<f32>(iconX), static_cast<f32>(y),
+                          static_cast<f32>(kPromptIconSize), static_cast<f32>(kPromptIconSize)},
+                     controlLabel(m_services->controlLabels, m_index, icon));
     TextStyle style;
     style.scale = kSmallScale;
     m_services->smallPainter->draw(canvas, iconX + kPromptIconSize + kPromptGap,
@@ -974,7 +972,7 @@ void SelectLane::drawStats(Canvas& canvas, s32 time) const {
         const usize best = m_pickClass == kSumnerClass ? StatBlock::kCount : stats.best();
         s32 y = kStatsY;
         for (usize row = 0; row < StatBlock::kCount; ++row, y += kStatsStep) {
-            const std::string_view name = text(ids[row]);
+            const auto name = text(ids[row]);
             const s32 width = m_services->largePainter->measure(name, kStatScale);
             const s32 nameX = x() + kStatNameRight - width;
             TextStyle style;
@@ -1073,15 +1071,15 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
             drawNameEntry(canvas, time);
             break;
         }
-        if (m_services->staticTexture) {
+        if (m_services->smallPainter != nullptr) {
             const s32 leftX = x() + kLegendX;
             const s32 rightX = leftX + kPromptIconSize;
             const auto icon = [&](std::string_view name, s32 iconX, s32 iconY) {
-                if (const Texture* texture = m_services->staticTexture(name)) {
-                    canvas.draw(*texture, Rect{static_cast<f32>(iconX), static_cast<f32>(iconY),
-                                               static_cast<f32>(kPromptIconSize),
-                                               static_cast<f32>(kPromptIconSize)});
-                }
+                drawControlLabel(canvas, small,
+                                 Rect{static_cast<f32>(iconX), static_cast<f32>(iconY),
+                                      static_cast<f32>(kPromptIconSize),
+                                      static_cast<f32>(kPromptIconSize)},
+                                 controlLabel(m_services->controlLabels, m_index, name));
             };
             TextStyle style;
             style.scale = kSmallScale;
@@ -1110,7 +1108,7 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
     }
     case State::ClassPick: {
         showSelect = classKnown(m_pickClass);
-        if (m_services->staticTexture) {
+        if (m_services->smallPainter != nullptr) {
             const s32 leftX = x() + kLegendX;
             const s32 rightX = leftX + kPromptIconSize;
             for (const auto& [name, iconX] :

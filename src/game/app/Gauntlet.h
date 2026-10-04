@@ -84,6 +84,7 @@ private:
     GameConfig m_config;
     std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
     std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;
+    PromptDevices m_promptDevices;
     StringTable m_strings;
     std::unique_ptr<AudioDevice> m_audio;
     std::unique_ptr<SoundPlayer> m_sounds;

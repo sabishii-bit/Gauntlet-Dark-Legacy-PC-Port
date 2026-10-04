@@ -16,6 +16,7 @@ add_library(game STATIC
     world/MissileTarget.cpp
     menu/SettingsMenu.cpp
     menu/ControlSettings.cpp
+    menu/ControlPrompts.cpp
     menu/VideoSettings.cpp
     menu/CompassHud.cpp
     screens/SaveMenu.cpp

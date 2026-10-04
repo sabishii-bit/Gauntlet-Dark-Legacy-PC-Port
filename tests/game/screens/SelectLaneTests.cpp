@@ -275,6 +275,26 @@ TEST_CASE("name cheats enter through the ordinary character selection flow",
     }
 }
 
+TEST_CASE("select lane prompts query that lane's actions instead of fixed button artwork",
+          "[game][select][prompts]") {
+    Fixture f;
+    std::vector<std::string> actions;
+    f.services.controlLabels = [&](s32 player, std::string_view action) {
+        CHECK(player == 1);
+        actions.emplace_back(action);
+        return "F2";
+    };
+    f.services.staticTexture = {};
+    f.lane.activate();
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.lane.drawText(canvas, 0);
+    canvas.end();
+    CHECK(std::ranges::find(actions, "menuSelect") != actions.end());
+    CHECK(std::ranges::find(actions, "menuBack") != actions.end());
+}
+
 TEST_CASE("a lane joins on activation and leaves from the first menu", "[game][select]") {
     Fixture f;
     REQUIRE_FALSE(f.lane.active());

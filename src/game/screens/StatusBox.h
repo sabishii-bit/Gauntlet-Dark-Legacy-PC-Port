@@ -14,6 +14,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/menu/ControlPrompts.h"
 #include "game/players/Inventory.h"
 #include "game/players/TurboMeter.h"
 
@@ -62,9 +63,9 @@ public:
     static constexpr s32 kPromptIconX = 6; ///< the prompt's buttons, within the box
     static constexpr s32 kPromptTextX = 20;
     static constexpr s32 kPromptIconSize = 14;
-    static constexpr s32 kWaitIconY = 332; ///< BUTTON_X, to wait in the tower
+    static constexpr s32 kWaitIconY = 332; ///< mapped confirm, to wait in the tower
     static constexpr s32 kWaitTextY = 336;
-    static constexpr s32 kQuitIconY = 352; ///< BUTTON_TRI, to quit the game
+    static constexpr s32 kQuitIconY = 352; ///< mapped cancel, to quit the game
     static constexpr s32 kQuitTextY = 356;
     static constexpr s32 kCarriedY = 323; ///< the key and potion icons' top
     static constexpr s32 kCarriedTextY = 327;
@@ -105,6 +106,7 @@ public:
     bool load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
               const StringTable* strings);
     void release();
+    void setControlLabels(const ControlLabels& labels) { m_controlLabels = labels; }
     bool loaded() const { return m_device != nullptr; }
     /** The small capitals the boxes' levels are written in, which the help messages share. */
     const TextPainter& smallCaps() const { return m_smallCaps; }
@@ -133,6 +135,7 @@ private:
 
     RenderDevice* m_device = nullptr;
     const StringTable* m_strings = nullptr;
+    ControlLabels m_controlLabels;
     TextureSet m_select;
     TextureSet m_static;
     TextureSet* m_countTextures = nullptr; ///< borrowed level-specific pickup icons

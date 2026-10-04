@@ -136,12 +136,20 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
     Fixture f("level-messages-language");
     writeTextFile(f.root / "text/test.json",
                   R"({"scroll.welcome.1": "B", "scroll.welcome.2": "A",
-                      "scroll.pressButton": "AB"})");
+                      "scroll.pressButton": "{bind:menuSelect}"})");
     StringTable strings;
     REQUIRE(strings.load(f.root / "text", "test", "test"));
     f.messages.clear();
     f.messages.load(f.device, f.textures, f.root, &strings);
+    bool resolved = false;
+    f.messages.setControlLabels([&](s32 player, std::string_view action) {
+        CHECK(player == -1);
+        CHECK(action == "menuSelect");
+        resolved = true;
+        return "AB";
+    });
     REQUIRE(f.messages.open(f.device, "WELCOME", &strings));
+    CHECK(resolved);
     REQUIRE(f.messages.scroll().lines() == std::vector<std::string>{"B"});
     f.messages.clear();
     REQUIRE_FALSE(f.messages.active());

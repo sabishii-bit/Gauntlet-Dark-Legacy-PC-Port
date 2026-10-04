@@ -613,6 +613,13 @@ TEST_CASE("after-level screen renders every phase with retail assets", "[shop][s
     GameContext context;
     context.unpackedRoot = root;
     context.strings = &strings;
+    bool prompted = false;
+    context.controlLabels = [&](s32 player, std::string_view action) {
+        CHECK(player == 2);
+        CHECK(action == "menuSelect");
+        prompted = true;
+        return "RB";
+    };
     AfterLevelScene scene;
     CharacterSave save;
     save.gold = 5000;
@@ -773,6 +780,7 @@ TEST_CASE("after-level screen renders every phase with retail assets", "[shop][s
     REQUIRE(scene.update(0.25, {}));
     scene.render(device, projection, 512, 384);
     REQUIRE(scene.session().party()[0].save.gold == 5000);
+    CHECK(prompted);
     scene.close();
     REQUIRE_FALSE(scene.isOpen());
 }

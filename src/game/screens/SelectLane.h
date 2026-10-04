@@ -13,6 +13,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/menu/ControlPrompts.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/NameEntry.h"
 #include "game/menu/OptionMenu.h"
@@ -40,6 +41,7 @@ struct LaneServices {
     SaveSlots* slots = nullptr; ///< null when saving is unavailable
     const ClassDataSet* classes = nullptr;
     const StringTable* strings = nullptr;
+    ControlLabels controlLabels;
     const TextPainter* menuPainter = nullptr; ///< lays the menus out
     MenuScreen screen;
     std::function<void(SelectSound, const SelectLane&)> playSound; ///< the lane, for greetings
@@ -185,7 +187,7 @@ private:
     void changeClass(s32 step, s32 colorStep);
     void setPortrait();
     void play(SelectSound sound) const;
-    std::string_view text(std::string_view id) const;
+    std::string text(std::string_view id) const;
     s32 wrapClass(s32 classIndex, s32 step) const;
     bool classKnown(s32 classIndex) const;
     s32 pickLevel() const;

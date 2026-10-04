@@ -8,6 +8,7 @@
 #include "engine/io/AssetLocator.h"
 
 #include "game/config/GameConfig.h"
+#include "game/menu/ControlPrompts.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
 
@@ -18,7 +19,8 @@ namespace gdl::game {
 struct GameContext {
     const GameConfig* config = nullptr;
     const StringTable* strings = nullptr;
-    SoundPlayer* sounds = nullptr;        ///< optional; screens run silently without one
+    ControlLabels controlLabels;   ///< live bindings for a player; -1 denotes a shared prompt
+    SoundPlayer* sounds = nullptr; ///< optional; screens run silently without one
     const AssetLocator* assets = nullptr; ///< the game's files as shipped, for its streams
     LevelWorld* tower = nullptr;          ///< the level in play, shared by the screens: the hub
                                           ///< tower until the party travels

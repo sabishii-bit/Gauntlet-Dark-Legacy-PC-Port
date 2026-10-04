@@ -423,7 +423,8 @@ void TitleScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
     if (m_loadingTimer > 0) {
         drawGlowText(kTextCenterX, kTextY, text("title.loading"));
     } else if (!m_titleMenu.isOpen() && !m_optionsMenu.isOpen() && !m_fire.active()) {
-        drawGlowText(kTextCenterX, kTextY, text("title.pressStart"));
+        drawGlowText(kTextCenterX, kTextY,
+                     controlText(text("title.pressStart"), m_context.controlLabels, -1));
     }
     m_fire.draw(m_canvas);
     if (m_optionsMenu.isOpen()) {

@@ -77,7 +77,7 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
         }
         for (const auto* name :
              {"SHOP_SCROLL_1", "SHOP_SCROLL_2", "SHP_GOLD", "SHP_BONES", "SHP_EXP", "S1_BORDER",
-              "S2_BORDER", "BUTTON_X", "MORE_UP", "MORE_DOWN", "WINDOW_EMPTY"}) {
+              "S2_BORDER", "MORE_UP", "MORE_DOWN", "WINDOW_EMPTY"}) {
             if (texture(name) == nullptr) {
                 throw FormatError(std::format("shop: missing artwork {}", name));
             }

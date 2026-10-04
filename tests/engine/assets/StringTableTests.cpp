@@ -56,7 +56,7 @@ TEST_CASE("the shipped English table names the title screen text", "[assets][tex
     }
     StringTable table;
     REQUIRE(table.load(dir, "en"));
-    REQUIRE(table.get("title.pressStart") == "Press Start");
+    REQUIRE(table.get("title.pressStart") == "Press {bind:menuStart}");
     REQUIRE(table.get("menu.options") == "Options");
     REQUIRE(table.get("menu.player") == "Player {}");
 }
