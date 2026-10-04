@@ -222,9 +222,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 : std::nullopt;
         if (aim) {
             players[i].cursorAiming = true;
-            move = cursorRelativeMove(move, actor.position(), *aim, cameraYaw);
+            const Vec3 toward = *aim - actor.position();
+            const Vec3 facing =
+                std::hypot(toward.x, toward.z) < 0.01f
+                    ? actor.position() + Vec3{std::sin(actor.yaw()), 0, std::cos(actor.yaw())}
+                    : *aim;
+            move = cursorRelativeMove(move, actor.position(), facing, cameraYaw);
             if (animator == nullptr || (animator->turnScale() >= 1.0f && !animator->shoving())) {
-                actor.faceToward(*aim);
+                actor.faceToward(facing);
             }
         }
         // What the buttons ask: a potion first, when one is carried, then the attack.

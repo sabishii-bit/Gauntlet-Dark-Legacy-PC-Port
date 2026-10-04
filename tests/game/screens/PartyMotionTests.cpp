@@ -89,6 +89,20 @@ TEST_CASE("cursor facing survives backward movement and strafe without overridin
     CHECK(f.players[0].actor.yaw() == yaw);
 }
 
+TEST_CASE("cursor over the player preserves facing and forward movement without aim assist",
+          "[controls][cursor][party-motion]") {
+    Fixture f;
+    auto& actor = f.players[0].actor;
+    actor.faceToward({10, 0, 0});
+    f.inputs[3].aimPoint = actor.position();
+    f.inputs[3].move = {{0, 1}, 1};
+    f.step();
+    CHECK(actor.yaw() == Approx(glm::half_pi<f32>()));
+    CHECK(actor.position().x > 0);
+    CHECK(actor.position().z == Approx(0).margin(0.0001));
+    CHECK(f.players[0].cursorAiming);
+}
+
 TEST_CASE("cursor-relative forward input runs at full-stick pace without changing strafe controls",
           "[controls][cursor][party-motion][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")

@@ -3,31 +3,39 @@
 #include <algorithm>
 #include <cmath>
 
-#include "engine/world/WorldCamera.h"
-
 namespace gdl::game {
-std::optional<Vec3> cursorAimPoint(Vec2 cursor, const Mat4& clip, const WorldCollision& collision,
-                                   f32 fallbackHeight) {
+std::optional<Vec3> cursorAimPoint(Vec2 cursor, const Mat4& clip, const Vec3& position) {
+    constexpr f32 kCursorDeadZone = 0.004f; // NDC: two thousandths of the window extent
+    constexpr f32 kProjectionEpsilon = 1.0e-6f;
     if (!std::isfinite(cursor.x) || !std::isfinite(cursor.y) || cursor.x < 0 || cursor.x > 1 ||
-        cursor.y < 0 || cursor.y > 1 || std::abs(glm::determinant(clip)) < 1.0e-9f) {
+        cursor.y < 0 || cursor.y > 1) {
         return {};
     }
-    const Mat4 inverse = glm::inverse(clip);
-    const auto unproject = [&](f32 depth) {
-        const Vec4 point = inverse * Vec4{cursor.x * 2 - 1, cursor.y * 2 - 1, depth, 1};
-        return Vec3{point} / point.w;
-    };
-    const Vec3 from = unproject(WorldCamera::kDepthRange);
-    const Vec3 to = unproject(0);
-    if (const auto hit = collision.pickSurface(from, to)) {
-        return hit;
-    }
-    const f32 dy = to.y - from.y;
-    if (std::abs(dy) < 1.0e-6f) {
+    const Vec4 projected = clip * Vec4{position, 1};
+    if (!std::isfinite(projected.w) || projected.w <= kProjectionEpsilon) {
         return {};
     }
-    const f32 t = (fallbackHeight - from.y) / dy;
-    return t >= 0 && t <= 1 ? std::optional{from + (to - from) * t} : std::nullopt;
+    const Vec2 screen = Vec2{projected} / projected.w;
+    const Vec2 delta = cursor * 2.0f - Vec2{1} - screen;
+    // Invert the projected horizontal axes at the player, not a ray's world hit.
+    // The perspective derivative keeps facing aligned through camera pitch/roll,
+    // widescreen and off-centre players, even when the cursor is above the horizon.
+    const Vec2 x = Vec2{clip[0]} - screen * clip[0].w;
+    const Vec2 z = Vec2{clip[2]} - screen * clip[2].w;
+    const f32 determinant = x.x * z.y - z.x * x.y;
+    if (!std::isfinite(determinant) || std::abs(determinant) < kProjectionEpsilon) {
+        return {};
+    }
+    if (glm::length(delta) < kCursorDeadZone) {
+        return position;
+    }
+    const Vec2 direction{(delta.x * z.y - z.x * delta.y) / determinant,
+                         (x.x * delta.y - delta.x * x.y) / determinant};
+    const f32 length = glm::length(direction);
+    if (!std::isfinite(length) || length < kProjectionEpsilon) {
+        return {};
+    }
+    return position + Vec3{direction.x / length, 0, direction.y / length};
 }
 MoveInput cursorRelativeMove(MoveInput move, const Vec3& position, const Vec3& aim, f32 cameraYaw) {
     const Vec3 toward = aim - position;

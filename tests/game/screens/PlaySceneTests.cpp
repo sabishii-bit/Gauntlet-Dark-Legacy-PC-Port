@@ -160,15 +160,16 @@ TEST_CASE("a rendered tower camera directs a real player's cursor facing after a
         scene.viewCamera().clipTransform(config.horizontalFovRadians(), 640, 448, projection);
     const Vec4 projected = clip * Vec4{target, 1};
     const Vec2 pointer = (Vec2{projected} / projected.w + Vec2{1}) * 0.5f;
-    const auto aim = scene.cursorAim(pointer, origin.y);
+    const auto aim = scene.cursorAim(pointer, origin);
     REQUIRE(aim);
+    CHECK(glm::distance(*aim - origin, glm::normalize(target - origin)) == Approx(0).margin(0.001));
     PlayScene::Inputs inputs;
     inputs[0].aimPoint = aim;
     scene.update(1.0 / 60.0, inputs);
     CHECK(scene.actor(0)->yaw() ==
           Approx(std::atan2(aim->x - origin.x, aim->z - origin.z)).margin(0.001));
     scene.close();
-    CHECK_FALSE(scene.cursorAim(pointer, origin.y));
+    CHECK_FALSE(scene.cursorAim(pointer, origin));
 }
 
 TEST_CASE("optional bloom and depth of field run after the world and before the HUD",

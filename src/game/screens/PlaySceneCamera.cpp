@@ -4,9 +4,9 @@
 #include "game/screens/PlayScene.h"
 
 namespace gdl::game {
-std::optional<Vec3> PlayScene::cursorAim(Vec2 cursor, f32 height) const {
+std::optional<Vec3> PlayScene::cursorAim(Vec2 cursor, const Vec3& position) const {
     return m_world != nullptr && m_presentedClip
-               ? cursorAimPoint(cursor, *m_presentedClip, m_world->collision(), height)
+               ? cursorAimPoint(cursor, *m_presentedClip, position)
                : std::nullopt;
 }
 

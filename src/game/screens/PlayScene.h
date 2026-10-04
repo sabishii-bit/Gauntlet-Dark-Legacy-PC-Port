@@ -152,7 +152,7 @@ public:
     /** The camera the scene is seen through: the start camera while it holds and rides in,
      * the crystals during the welcome's cut, else the follow camera. */
     WorldCamera viewCamera() const;
-    std::optional<Vec3> cursorAim(Vec2 cursor, f32 height) const;
+    std::optional<Vec3> cursorAim(Vec2 cursor, const Vec3& position) const;
     /** The boss fight's camera, used while a boss level's boss stands. */
     const BossCamera& bossCamera() const { return m_bossCamera; }
     bool bossCameraOn() const;

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/world/WorldCamera.h"
+#include "engine/world/WorldCollision.h"
 
 #include "game/players/CursorAim.h"
 
@@ -23,7 +24,7 @@ TEST_CASE("cursor movement is forward backward and strafe relative to aim not ca
     move = cursorRelativeMove({{0, 1}, 1}, position, aim, glm::half_pi<f32>());
     CHECK(move.direction.y == Approx(1));
 }
-TEST_CASE("cursor ray picks the nearest sloped and moving solid surface",
+TEST_CASE("surface picking still resolves the nearest sloped and moving solid surface",
           "[controls][cursor][collision]") {
     CollisionTriangle triangle;
     triangle.vertices = {Vec3{-10, 0, -10}, Vec3{10, 0, -10}, Vec3{0, 10, 10}};
@@ -42,19 +43,25 @@ TEST_CASE("cursor ray picks the nearest sloped and moving solid surface",
     collision.setSolid(4, false);
     CHECK_FALSE(collision.pickSurface({0, 20, 0}, {0, -20, 0}));
 }
-TEST_CASE("cursor unprojection follows the rendered camera and falls back over empty ground",
+TEST_CASE("screen-direction aim keeps the player's height and has a stable centre dead zone",
           "[controls][cursor]") {
     WorldCamera camera;
     camera.position = {0, 10, -10};
     camera.pitch = glm::quarter_pi<f32>();
     const auto clip = WorldCamera::projection(glm::radians(60.0f), 1.5f) * camera.view();
-    const WorldCollision empty;
-    auto point = cursorAimPoint({0.5f, 0.5f}, clip, empty, 0);
+    const Vec3 position{0};
+    auto point = cursorAimPoint({0.5f, 0.5f}, clip, position);
     REQUIRE(point);
     CHECK(point->y == Approx(0).margin(0.001));
     CHECK(point->z == Approx(0).margin(0.001));
-    CHECK_FALSE(cursorAimPoint({-0.1f, 0.5f}, clip, empty, 0));
-    CHECK_FALSE(cursorAimPoint({0.5f, 0.5f}, Mat4{0}, empty, 0));
+    CHECK(glm::distance(*point, position) == Approx(0).margin(0.001));
+    point = cursorAimPoint({0.501f, 0.5f}, clip, position);
+    REQUIRE(point);
+    CHECK(*point == position);
+    CHECK_FALSE(cursorAimPoint({-0.1f, 0.5f}, clip, position));
+    CHECK_FALSE(cursorAimPoint({0.5f, 0.5f}, Mat4{0}, position));
+    CHECK_FALSE(cursorAimPoint({std::numeric_limits<f32>::quiet_NaN(), 0.5f}, clip, position));
+    CHECK_FALSE(cursorAimPoint({0.5f, 0.5f}, clip, camera.position - camera.forward()));
 }
 TEST_CASE("a controller does not acquire mouse facing from a stationary menu cursor",
           "[controls][cursor]") {
@@ -73,19 +80,49 @@ TEST_CASE("a controller does not acquire mouse facing from a stationary menu cur
     CHECK_FALSE(cursor.update(input, bindings, false, 0));
 }
 
-TEST_CASE("mouse picking round-trips a surface through a widescreen rendered camera",
+TEST_CASE("screen direction follows the displayed player through camera and viewport changes",
+          "[controls][cursor]") {
+    for (const auto viewport : {Vec2{640, 448}, Vec2{1920, 1080}, Vec2{3440, 1440}}) {
+        for (const f32 yaw : {0.0f, 0.8f, 2.0f}) {
+            for (const f32 pitch : {0.2f, 0.8f, 1.5f}) {
+                WorldCamera camera;
+                camera.yaw = yaw;
+                camera.pitch = pitch;
+                camera.roll = 0.12f;
+                const Vec3 position{4, 7, -3};
+                camera.position = position - camera.forward() * 40.0f + camera.right() * 4.0f;
+                const auto projection = makeLetterboxProjection(640, 448, viewport.x, viewport.y);
+                const auto clip = camera.clipTransform(glm::radians(60.0f), 640, 448, projection);
+                for (const auto offset :
+                     {Vec3{3, 0, 4}, Vec3{-3, 0, 4}, Vec3{3, 0, -4}, Vec3{-3, 0, -4}}) {
+                    const Vec4 projected = clip * Vec4{position + offset, 1};
+                    const Vec2 pointer = (Vec2{projected} / projected.w + Vec2{1}) * 0.5f;
+                    const auto aim = cursorAimPoint(pointer, clip, position);
+                    REQUIRE(aim);
+                    CHECK(aim->y == position.y);
+                    CHECK(glm::distance(*aim - position, glm::normalize(offset)) ==
+                          Approx(0).margin(0.0001));
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("mouse direction remains forward above the horizon instead of picking sky or scenery",
           "[controls][cursor]") {
     WorldCamera camera;
-    camera.position = {0, 10, -10};
-    camera.pitch = glm::quarter_pi<f32>();
-    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
-    const auto clip = camera.clipTransform(glm::radians(60.0f), 640, 448, projection);
-    const Vec3 target{3, 0, 4};
-    const Vec4 projected = clip * Vec4{target, 1};
-    const Vec2 pointer = (Vec2{projected} / projected.w + Vec2{1}) * 0.5f;
-    const WorldCollision collision;
-    const auto picked = cursorAimPoint(pointer, clip, collision, target.y);
-    REQUIRE(picked);
-    CHECK(glm::distance(*picked, target) == Approx(0).margin(0.001));
+    camera.pitch = 0.15f;
+    const Vec3 position{0};
+    camera.position = -camera.forward() * 20.0f;
+    const auto clip = camera.clipTransform(glm::radians(60.0f), 640, 448,
+                                           makeLetterboxProjection(640, 448, 1920, 1080));
+    for (const f32 y : {0.4f, 0.2f, 0.0f}) {
+        const auto aim = cursorAimPoint({0.5f, y}, clip, position);
+        REQUIRE(aim);
+        CHECK(aim->x == Approx(0).margin(0.0001));
+        CHECK(aim->y == position.y);
+        CHECK(aim->z == Approx(1));
+    }
 }
 } // namespace
+#include <limits>

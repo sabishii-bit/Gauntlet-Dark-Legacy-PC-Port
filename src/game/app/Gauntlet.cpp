@@ -462,7 +462,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
                                                              source.pad)) {
             if (const auto* actor = m_play->scene.actor(player)) {
                 in.aimPoint = m_play->scene.cursorAim(
-                    Vec2{input().pointer().x, input().pointer().y}, actor->position().y);
+                    Vec2{input().pointer().x, input().pointer().y}, actor->position());
             }
         }
         const PlayButtons buttons = m_controls[static_cast<usize>(player)].read(
