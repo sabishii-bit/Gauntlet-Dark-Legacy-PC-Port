@@ -50,6 +50,9 @@ public:
         bool loop = true;   ///< with seconds, false holds the final pose until the lifetime ends
         bool persistent = false; ///< retained until stop/clear, independently of animation
         bool emitParticles = true;
+        /** Retail's AAANULLOBJ fallback for static mesh names absent from an effect archive.
+         * Opt-in for verified sparse trees; corrupt meshes/textures still fail. */
+        bool missingObjectsAreEmpty = false;
         bool settled = false; ///< begin at the final pose, without playing the entrance
         bool additive = false;
         /** With `seconds`: the tree plays once and this one then repeats in its place. */
@@ -75,6 +78,7 @@ public:
         bool timed = false; ///< lifetime is separate from animation speed or completion
         bool persistent = false;
         bool emitParticles = true;
+        bool missingObjectsAreEmpty = false;
         bool additive = false;
         std::string then;      ///< the tree that takes over once this has played
         bool retiring = false; ///< mesh gone; no new emission, but live particles finish

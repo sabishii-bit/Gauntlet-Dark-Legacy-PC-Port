@@ -132,6 +132,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     if (m_device != nullptr && launch.riderArchive != nullptr && !launch.riderTree.empty()) {
         EffectTrees::Setting setting;
         setting.persistent = true;
+        setting.missingObjectsAreEmpty = true;
         const std::array<TextureSet*, 1> lenders{launch.textureLender};
         missile.rider = m_visuals.startSet(
             *m_device, *launch.riderArchive, launch.riderTree, missile.position, setting,

@@ -38,6 +38,41 @@ std::filesystem::path presentationFixture() {
     return root;
 }
 
+TEST_CASE("sparse effect trees opt into empty missing static objects without losing particles",
+          "[effects][weapon-streak]") {
+    const auto root = presentationFixture();
+    writeTextFile(root / "animations.json", R"({
+      "particles":[{"enables":16928,"texture":"WHITE","particleLife":[1,0],
+                    "rate":[30,30,30,30],"flags":128,"flagMask":128}],
+      "trees":[{"name":"SPARSE","nodes":[
+        {"name":"XNWEAP","object":"ABSENT","parent":-1,"position":[0,2,0]},
+        {"name":"EMITTER","parent":0,"position":[0,1,0],"particle":0},
+        {"name":"VISIBLE","object":"TRI","parent":0,"position":[0,0,0]}],
+        "sequences":[{"name":"ACTIVE","frames":0,"frameRate":30}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.persistent = true;
+    CHECK(effects.startSet(device, archive, "SPARSE", {}, setting) == 0);
+    setting.missingObjectsAreEmpty = true;
+    REQUIRE(effects.startSet(device, archive, "SPARSE", {}, setting) != 0);
+    effects.update(0.1f);
+    REQUIRE(effects.count() == 1);
+    const auto& effect = effects.effect(0);
+    CHECK(effect.model.nodeCount() == 1); // Keep valid meshes rather than dropping the whole model.
+    REQUIRE(effect.particles.field().size() == 1);
+    CHECK(effect.particles.field().particleCount() > 0);
+    CHECK(Vec3(effect.particles.field().emitter(0).node()[3]) == Vec3(0, 3, 0));
+    CHECK(effect.tree->nodes[0].object == "ABSENT"); // Original asset and node indexing unchanged.
+    effects.draw(device, Mat4{1}, {});
+    CHECK(device.draws.size() >= 2); // Existing geometry and its particles both survive.
+    effects.clear();
+    setting.missingObjectsAreEmpty = false;
+    CHECK(effects.startSet(device, archive, "SPARSE", {}, setting) == 0);
+}
+
 TEST_CASE("effect presentation samples attachments and fractional poses without advancing clocks",
           "[effects][presentation]") {
     ItemArchive archive;

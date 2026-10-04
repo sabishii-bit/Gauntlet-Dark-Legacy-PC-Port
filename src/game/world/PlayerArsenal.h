@@ -65,6 +65,7 @@ public:
     const PlayerMissiles& missiles() const { return m_missiles; }
 
 private:
+    MissileStreak weaponStreak(const PlayerActor& actor, bool superShot = false);
     void loadPotionModels();
     void healingCast(const PlayerActor& actor, f32 power);
     struct CastEffect {

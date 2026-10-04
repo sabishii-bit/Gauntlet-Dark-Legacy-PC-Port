@@ -80,6 +80,35 @@ void PlayerArsenal::clear() {
     }
     m_resources.reset();
 }
+MissileStreak PlayerArsenal::weaponStreak(const PlayerActor& actor, bool superShot) {
+    MissileStreak streak;
+    if (!m_resources) {
+        return streak;
+    }
+    const auto texture = m_resources->weapons.textures.find("WEP_STREAK");
+    if (!texture) {
+        return streak;
+    }
+    streak.texture = &m_resources->weapons.textures.texture(m_resources->device, *texture);
+    // StartMissile's tables at GUNE5D 8011A178/8011A188: saturated costume colours,
+    // not the pastel HUD tints. Wizard/sorceress families have transparency 192;
+    // other classes and the white Super Shot use 64. MBPolyInst quantizes opacity
+    // through (255 - transparency) / 2 before GX doubles it: 62 or 190.
+    constexpr std::array kColors{Color::rgba(255, 255, 0, 190), Color::rgba(0, 0, 255, 190),
+                                 Color::rgba(255, 0, 0, 190), Color::rgba(0, 255, 0, 190)};
+    const auto& save = actor.save();
+    streak.color = superShot
+                       ? Color::rgba(255, 255, 255, 190)
+                       : kColors[static_cast<usize>(std::clamp(save.color, 0, kColorCount - 1))];
+    const s32 family = save.character == kSumnerClass ? 2 : save.character % kStartingClassCount;
+    if (!superShot && (family == 2 || family == 6)) {
+        streak.color.a = 62;
+    }
+    if (const auto* stats = m_resources->classes.stats(save.character)) {
+        streak.forward = stats->streakForward;
+    }
+    return streak;
+}
 void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
                                  const Vec3& direction, f32 scale, bool spreads,
                                  std::optional<Vec3> target) {
@@ -123,6 +152,8 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     launch.model = &figure.missile();
     launch.archive = figure.missileArchive();
     launch.tree = figure.missileTree();
+    launch.streak = weaponStreak(actor);
+    launch.textureLender = &m_resources->weapons.textures;
     // An elemental weapon's throw carries the element's WEAP_TW effect of the costume
     // colour's effects (PlayerStartMissile, combat.c 1030); the wizards and sorceresses
     // throw that effect alone, their weapon unseen.
@@ -222,16 +253,7 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     launch.model = &m_superShot;
     launch.archive = &m_resources->weapons;
     launch.tree = "SUPERARROW";
-    if (const auto texture = m_resources->weapons.textures.find("WEP_STREAK")) {
-        launch.streak.texture =
-            &m_resources->weapons.textures.texture(m_resources->device, *texture);
-        // StartMissile's white Super Shot streak uses transparency 64. MBPolyInst
-        // packs (255 - transparency) / 2, then doubles it for GX: opacity 190.
-        launch.streak.color = Color::rgba(255, 255, 255, 190);
-        if (const auto* stats = m_resources->classes.stats(actor.save().character)) {
-            launch.streak.forward = stats->streakForward;
-        }
-    }
+    launch.streak = weaponStreak(actor, true);
     for (const auto& direction : PlayerMissiles::spread(launch.direction, worn.shots())) {
         launch.velocity = direction * launch.speed;
         m_missiles.launch(launch);
@@ -327,6 +349,7 @@ void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body,
     launch.model = &m_gauntlets[which];
     launch.archive = &m_resources->weapons;
     launch.tree = kSpecs[which].model;
+    launch.streak = weaponStreak(actor, (launch.flags & powerup::kSuperShot) != 0);
     if (auto* archive = body->effects()) {
         launch.textureLender = &archive->textures;
     }

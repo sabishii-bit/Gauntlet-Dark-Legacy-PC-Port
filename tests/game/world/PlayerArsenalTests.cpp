@@ -17,6 +17,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/world/PlayerArsenal.h"
+#include "game/world/WeaponGlow.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
@@ -84,6 +85,78 @@ TEST_CASE("every Super Shot volley renders the authored weapon streak until expi
         CHECK(f.device.draws.empty());
     }
     f.arsenal.clear();
+}
+
+TEST_CASE("amulet throws retain their player streak alongside all four authored elemental effects",
+          "[game][player-arsenal][weapon-streak][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    for (s32 character = 0; character < kStartingClassCount; ++character) {
+        CAPTURE(character);
+        Fixture f;
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        REQUIRE(f.classes.load(root / "pdata"));
+        f.actor.save().character = character;
+        f.actor.save().color = 3; // Green costume; deliberately not the fire/lightning/light tint.
+        auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+        REQUIRE(figure);
+        f.arsenal.bind(
+            {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+        auto& inventory = f.actor.save().progress().inventory;
+        for (u32 element = 1; element <= 4; ++element) {
+            CAPTURE(element);
+            inventory.powerups = {};
+            inventory.addPowerup(powerup::kWeapon, element, 0, 60);
+            f.arsenal.launchWeapon(f.actor, figure.get(), {0, 0, 1}, 1, true);
+            REQUIRE(f.arsenal.missiles().count() == 1);
+            const auto& shot = f.arsenal.missiles().missile(0);
+            REQUIRE(shot.streak.texture != nullptr);
+            REQUIRE(shot.rider != 0);
+            CHECK(shot.streak.forward == f.classes.stats(character)->streakForward);
+            const bool magicWeapon = character == 2 || character == 6;
+            const auto color = Color::rgba(0, 255, 0, magicWeapon ? 62 : 190);
+            CHECK(shot.streak.color == color);
+            CHECK((shot.effect == 0) == magicWeapon);
+            f.arsenal.missiles().update(0.1f, nullptr);
+            const auto& visuals = f.arsenal.missiles().visuals();
+            bool riderFound = false;
+            for (usize i = 0; i < visuals.count(); ++i) {
+                const auto& effect = visuals.effect(i);
+                if (effect.id == shot.rider) {
+                    riderFound = true;
+                    CHECK(effect.name == WeaponGlow::throwTree(element));
+                    CHECK(effect.position == shot.position);
+                    if (effect.particles.field().size() > 0) {
+                        CHECK(effect.particles.field().particleCount() > 0);
+                        for (usize emitter = 0; emitter < effect.particles.field().size();
+                             ++emitter) {
+                            CHECK(effect.particles.field().textureOf(emitter) !=
+                                  &f.device.whiteTexture());
+                        }
+                    }
+                }
+            }
+            REQUIRE(riderFound);
+            WorldCamera view;
+            view.pitch = 0.6f;
+            const auto camera = CameraFrame::of(view);
+            f.device.draws.clear();
+            f.arsenal.missiles().draw(f.device, Mat4{1}, {}, &camera);
+            usize streaks = 0;
+            for (const auto& draw : f.device.draws) {
+                if (draw.texture == shot.streak.texture) {
+                    ++streaks;
+                    REQUIRE(draw.vertices.size() == 6);
+                    CHECK(draw.vertices.front().color == color);
+                    CHECK(draw.state.depthTest);
+                }
+            }
+            CHECK(streaks == 1);
+            CHECK(f.device.draws.size() > streaks); // The elemental rider is also rendered.
+            f.arsenal.missiles().update(PlayerMissiles::kLifeSeconds, nullptr);
+            CHECK(f.arsenal.missiles().count() == 0);
+        }
+        f.arsenal.clear(); // Figures own the borrowed amulet trees.
+    }
 }
 
 TEST_CASE("level 75 potion casts wear the authored healing hearts without granting free health",
@@ -280,6 +353,8 @@ TEST_CASE("equipped gauntlets route the shooter's textures into complete project
     f.arsenal.launchGauntlet(f.actor, figure.get(), true);
     REQUIRE(f.arsenal.missiles().count() == 1);
     REQUIRE(f.arsenal.missiles().missile(0).effect != 0);
+    REQUIRE(f.arsenal.missiles().missile(0).streak.texture != nullptr);
+    CHECK(f.arsenal.missiles().missile(0).streak.color == Color::rgba(255, 255, 0, 190));
     f.arsenal.missiles().update(0.1f, nullptr);
     const auto& field = f.arsenal.missiles().visuals().effect(0).particles.field();
     REQUIRE(field.size() == 2);
@@ -362,7 +437,8 @@ std::filesystem::path impactAssets() {
     writeTextFile(weapons / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
     writeFile(weapons / "white.png", test::kTinyPng);
     writeTextFile(weapons / "textures.json",
-                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2},
+                  {"name":"WEP_STREAK","file":"white.png","width":2,"height":2}]})");
     writeTextFile(weapons / "animations.json", R"({"trees":[
       {"name":"SPARKS","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":10,"frameRate":30}]},
@@ -384,6 +460,62 @@ std::filesystem::path impactAssets() {
                                bankSamples);
     test::convertModelFixture(weapons);
     return root;
+}
+
+TEST_CASE("normal and spread throws render saturated costume streaks for every class",
+          "[game][player-arsenal][weapon-streak]") {
+    Fixture f;
+    REQUIRE(f.weapons.load(impactAssets() / "WEAPONS"));
+    PlayerFigure figure;
+    WorldCamera view;
+    view.pitch = 0.6f;
+    const auto camera = CameraFrame::of(view);
+    constexpr std::array kColors{Color::rgba(255, 255, 0, 190), Color::rgba(0, 0, 255, 190),
+                                 Color::rgba(255, 0, 0, 190), Color::rgba(0, 255, 0, 190)};
+    for (s32 character = 0; character < kClassCount; ++character) {
+        for (s32 color = 0; color < kColorCount; ++color) {
+            for (const u32 spread : {0U, powerup::kThreeWayShot, powerup::kFiveWayShot}) {
+                CAPTURE(character, color, spread);
+                f.arsenal.bind(
+                    {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+                f.actor.save().character = character;
+                f.actor.save().color = color;
+                auto& inventory = f.actor.save().progress().inventory;
+                inventory.powerups = {};
+                if (spread != 0) {
+                    inventory.addPowerup(powerup::kWeapon, spread, 0, 30);
+                }
+                f.arsenal.launchWeapon(f.actor, &figure, {0, 0, 1}, 1, true);
+                const usize count = static_cast<usize>(PowerupEffects::of(inventory).shots());
+                REQUIRE(f.arsenal.missiles().count() == count);
+                const auto* texture = f.arsenal.missiles().missile(0).streak.texture;
+                REQUIRE(texture != nullptr);
+                Color expected = kColors[static_cast<usize>(color)];
+                if (character == 2 || character == 6 || character == 10 || character == 14 ||
+                    character == 16) {
+                    expected.a = 62;
+                }
+                f.arsenal.missiles().update(0.1f, nullptr);
+                f.device.draws.clear();
+                f.arsenal.missiles().draw(f.device, Mat4{1}, {}, &camera);
+                REQUIRE(f.device.draws.size() == count);
+                for (const auto& draw : f.device.draws) {
+                    CHECK(draw.texture == texture);
+                    REQUIRE(draw.vertices.size() == 6);
+                    CHECK(draw.vertices.front().color == expected);
+                    CHECK(draw.state.depthTest);
+                    CHECK(glm::length(glm::cross(
+                              draw.vertices[1].position - draw.vertices[0].position,
+                              draw.vertices[2].position - draw.vertices[0].position)) > 0);
+                }
+                f.arsenal.missiles().update(PlayerMissiles::kLifeSeconds, nullptr);
+                f.device.draws.clear();
+                f.arsenal.missiles().draw(f.device, Mat4{1}, {}, &camera);
+                CHECK(f.device.draws.empty());
+            }
+        }
+    }
+    f.arsenal.clear();
 }
 
 TEST_CASE("weapon wall impacts render once and use the level-selected sound",

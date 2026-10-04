@@ -87,9 +87,22 @@ bool EffectTrees::start(RenderDevice& device, ItemArchive& archive, std::string_
 }
 
 bool EffectTrees::bindVisuals(Effect& effect) {
-    const bool mesh = effect.model.bind(*effect.tree, effect.archive->models,
-                                        effect.archive->textures, *effect.device);
-    const bool wantsMesh = std::ranges::any_of(effect.tree->nodes, [](const TreeNodeInfo& node) {
+    std::optional<TreeInfo> sparseTree;
+    if (effect.missingObjectsAreEmpty) {
+        // AtreeNodeInit -> MBOX_ReallyFindObject(create=1) substitutes AAANULLOBJ.
+        // Several WEAP_TW trees intentionally omit XNWEAP while retaining their
+        // particle children. Keep node indices/poses; never mutate the shared archive.
+        sparseTree = *effect.tree;
+        for (auto& node : sparseTree->nodes) {
+            if (!node.object.empty() && !effect.archive->models.find(node.object)) {
+                node.object.clear();
+            }
+        }
+    }
+    const auto& geometry = sparseTree ? *sparseTree : *effect.tree;
+    const bool mesh = effect.model.bind(geometry, effect.archive->models, effect.archive->textures,
+                                        *effect.device, effect.lenders);
+    const bool wantsMesh = std::ranges::any_of(geometry.nodes, [](const TreeNodeInfo& node) {
         return !node.object.empty() || std::ranges::any_of(node.objectFrames, [](const auto& run) {
             return !run.object.empty();
         });
@@ -237,6 +250,7 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->timed = setting.seconds > 0.0f;
     effect->persistent = setting.persistent;
     effect->emitParticles = setting.emitParticles;
+    effect->missingObjectsAreEmpty = setting.missingObjectsAreEmpty;
     effect->additive = setting.additive;
     effect->repeats = (effect->timed || effect->persistent) && setting.then.empty() && setting.loop;
     effect->then = setting.then;

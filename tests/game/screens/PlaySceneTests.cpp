@@ -22,6 +22,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
+#include "game/combat/DamageTypes.h"
 #include "game/config/GameConfig.h"
 #include "game/enemies/Enemies.h"
 #include "game/menu/ScrollBox.h"
@@ -389,8 +390,11 @@ TEST_CASE("Temple organist remains audible over three loops in the scenario scen
     scene.close();
 }
 
-TEST_CASE("normal attack input emits visible Super Shot streaks on successive shots",
-          "[game][screens][super-shot-scene][assets]") {
+TEST_CASE("normal attack input emits visible weapon and amulet streaks on successive shots",
+          "[game][screens][super-shot-scene][weapon-streak-scene][assets]") {
+    const u32 weapon = GENERATE(0U, damage::kFire, damage::kElectric, damage::kLight, damage::kAcid,
+                                powerup::kSuperShot);
+    CAPTURE(weapon);
     const auto root = unpackedRoot();
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/level-g1-healing-knight.json");
@@ -408,7 +412,13 @@ TEST_CASE("normal attack input emits visible Super Shot streaks on successive sh
     context.tower = &world;
     context.unpackedRoot = root;
     PlayScene scene;
-    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
+    auto party = scenario.partyMembers();
+    auto& inventory = party.front().save.progress().inventory;
+    inventory.powerups = {};
+    if (weapon != 0) {
+        inventory.addPowerup(powerup::kWeapon, weapon, 30, -1);
+    }
+    REQUIRE(scene.open(device, context, world, party, scenario.tower));
     for (s32 shot = 0; shot < 2; ++shot) {
         for (s32 tick = 0; tick < 120; ++tick) {
             REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
@@ -422,7 +432,10 @@ TEST_CASE("normal attack input emits visible Super Shot streaks on successive sh
         }
         REQUIRE(scene.missiles().count() > 0);
         const auto& missile = scene.missiles().missile(0);
-        REQUIRE((missile.flags & powerup::kSuperShot) != 0);
+        CHECK((missile.flags & (powerup::kSuperShot | damage::kElementMask)) == weapon);
+        if (weapon > 0 && weapon <= damage::kAcid) {
+            REQUIRE(missile.rider != 0);
+        }
         REQUIRE(missile.streak.texture != nullptr);
         device.draws.clear();
         scene.render(device, makeScreenProjection(640, 448), 640, 448);
@@ -433,6 +446,9 @@ TEST_CASE("normal attack input emits visible Super Shot streaks on successive sh
             }
             REQUIRE(draw.vertices.size() == 6);
             CHECK(draw.vertices.front().color.a == 190);
+            CHECK(draw.vertices.front().color == (weapon == powerup::kSuperShot
+                                                      ? Color::rgba(255, 255, 255, 190)
+                                                      : Color::rgba(0, 255, 0, 190)));
             CHECK(draw.state.depthTest);
             visible =
                 glm::length(glm::cross(draw.vertices[1].position - draw.vertices[0].position,
