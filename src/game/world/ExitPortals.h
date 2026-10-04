@@ -64,6 +64,8 @@ public:
         ItemFigure icon;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 transform{1.0f};
+        s32 support = -1;
+        Mat4 supportLocal{1.0f}; ///< placement relative to the authored moving floor
         f32 radius = 3.0f;
         std::string tag;                     ///< "g1"
         std::optional<LevelRef> destination; ///< none for a tag naming no level
@@ -83,8 +85,9 @@ public:
 
     /** Stands a portal at every exit item of the layout, its figure from `items` (which must
      * outlive them), falling back to `realmItems` for missing trees; true when the level has any.
-     * Both archives must outlive the portals. With `access` (the tower's), a portal the party
-     * may not pass wears the EXIT_OFF figure instead and takes nobody (fn_8005B5B8). */
+     * Both archives and the collision world must outlive the portals. With `access` (the tower's),
+     * a portal the party may not pass wears the EXIT_OFF figure instead and takes nobody
+     * (fn_8005B5B8). */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const LevelCatalog& catalog, const WorldCollision* collision,
               ItemArchive* realmItems = nullptr, const TowerAccess* access = nullptr);
@@ -95,6 +98,8 @@ public:
     /** The gates of the portals bound shut, whose glows the tower puts out. */
     std::vector<ShutGate> shutGates() const;
     void setAlpha(std::string_view tag, f32 alpha);
+    /** Carries exits with their supporting floors, including during route-reveal cameras. */
+    void syncFloors();
 
     /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
      * the whole party, retaining its raised glow while the departure plays. */
@@ -122,6 +127,7 @@ private:
     static bool standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra);
 
     const TreeInfo* m_tree = nullptr;
+    const WorldCollision* m_collision = nullptr; ///< borrowed through clear()
     std::array<s32, kSequences.size()> m_sequences{-1, -1, -1, -1, -1};
     std::vector<s32> m_waiting;
     std::vector<Portal> m_portals;

@@ -136,8 +136,19 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
             journey.options.welcome = false;
             journey.options.arriving = true;
             journey.options.arrivalWorld = static_cast<u32>(std::max(reference->realmId, 0));
-            if (!m_afterLevel.open(renderDevice(), sceneContext, journey.party, scenario.results,
-                                   level->shopMaxima, levelName, scenario.shopVisit)) {
+            if (scenario.ending) {
+                const LevelCompletion flow(level->bossType, true);
+                if (flow.movie().empty()) {
+                    log::error("Ending scenario requires Garm or Underworld Skorne");
+                    return false;
+                }
+                recordLevelBeaten(journey.party, reference->realmId, reference->index, level->rune,
+                                  level->legend);
+                journey.completion =
+                    Journey::Completion{flow, scenario.results, level->shopMaxima, levelName};
+            } else if (!m_afterLevel.open(renderDevice(), sceneContext, journey.party,
+                                          scenario.results, level->shopMaxima, levelName,
+                                          scenario.shopVisit)) {
                 return false;
             }
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
@@ -358,6 +369,9 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     if (m_journey.has_value()) {
         if (outcome == SelectOutcome::Done) {
             m_journey->party = std::move(party);
+            if (m_journey->completion) {
+                m_journey->completion->flow.advance();
+            }
             finishJourney();
             return;
         }
@@ -536,25 +550,22 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
             recordLevelBeaten(journey.party, left.realmId, left.index,
                               level != nullptr ? level->rune : 0,
                               level != nullptr ? level->legend : 0);
+            if (journey.destination.isTower()) {
+                journey.completion = Journey::Completion{
+                    LevelCompletion(level != nullptr ? level->bossType : -1,
+                                    m_play->scene.victory().finished()),
+                    m_play->scene.levelResults(),
+                    level != nullptr ? level->shopMaxima : std::array<s32, 3>{1000, 100, 1000},
+                    left.name};
+            }
         }
         keepParty(journey.party);
-        const auto results = m_play->scene.levelResults();
         if (journey.secret && !m_play->world.ref().isSecret()) {
             m_play->scene.suspendForChallenge();
             m_parent = std::move(m_play);
             m_play = std::make_unique<PlaySession>();
         } else {
             m_play->scene.close();
-        }
-        if (completedLevel && journey.destination.isTower()) {
-            const auto* level = m_play->world.level();
-            const auto maxima =
-                level != nullptr ? level->shopMaxima : std::array<s32, 3>{1000, 100, 1000};
-            if (!m_afterLevel.open(renderDevice(), context(), journey.party, results, maxima,
-                                   m_play->world.ref().name)) {
-                log::warn("Shop unavailable; keeping level rewards and continuing. Run gdlunpack "
-                          "--only SHPDATA.");
-            }
         }
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();
@@ -725,9 +736,14 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     if (m_afterLevel.update(deltaSeconds, inputs)) {
         GDL_VERIFY(m_journey.has_value(), "Shop requires a pending journey");
         m_journey->party = m_afterLevel.session().party();
-        const bool manageCharacters = m_afterLevel.session().visit() == ShopVisit::Level;
+        const bool manageCharacters = m_afterLevel.session().visit() == ShopVisit::Level ||
+                                      m_afterLevel.session().visit() == ShopVisit::Completion;
         keepParty();
         m_afterLevel.close();
+        if (m_journey->completion) {
+            m_journey->completion->flow.advance();
+            return;
+        }
         if (manageCharacters &&
             !m_select.openAfterLevel(renderDevice(), context(), m_journey->party)) {
             log::warn("Post-level character menu unavailable; keeping rewards and returning.");
@@ -735,10 +751,55 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     }
 }
 
+bool Gauntlet::updateCompletion(f64 deltaSeconds) {
+    Journey& journey = *m_journey;
+    if (!journey.completion) {
+        return false;
+    }
+    auto& completion = *journey.completion;
+    switch (completion.flow.stage()) {
+    case LevelCompletion::Stage::Movie:
+        if (!journey.movieStarted) {
+            journey.movieStarted = startMovie(completion.flow.movie());
+            if (journey.movieStarted) {
+                log::info("Boss completion movie: {}", completion.flow.movie());
+                return true;
+            }
+        } else if (m_movie.update(deltaSeconds)) {
+            // do_gamemovie permits the action-button skip only for movie_state 1;
+            // these two ending movies use state 2 and run through their ending.
+            return true;
+        }
+        m_movie.close();
+        m_movieActive = false;
+        journey.movieStarted = false;
+        completion.flow.advance();
+        return true;
+    case LevelCompletion::Stage::Results:
+        if (!m_afterLevel.open(renderDevice(), context(), journey.party, completion.results,
+                               completion.maxima, completion.levelName, completion.flow.visit())) {
+            log::warn("Completion results unavailable; preserving rewards and offering save.");
+            completion.flow.advance();
+        }
+        return true;
+    case LevelCompletion::Stage::Characters:
+        if (!m_select.openAfterLevel(renderDevice(), context(), journey.party)) {
+            log::warn("Post-level character menu unavailable; keeping rewards and returning.");
+            completion.flow.advance();
+        }
+        return true;
+    case LevelCompletion::Stage::Done: return false;
+    }
+    return false;
+}
+
 void Gauntlet::updateJourney(f64 deltaSeconds) {
     GDL_VERIFY(m_journey.has_value(), "Updating a journey requires a pending journey");
     Journey& journey = *m_journey;
     if (!journey.shown) {
+        return;
+    }
+    if (updateCompletion(deltaSeconds)) {
         return;
     }
     if (journey.secret) {

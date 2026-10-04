@@ -42,11 +42,15 @@ Scenario Scenario::fromJson(std::string_view text) {
         throw FormatError("scenario: not an object");
     }
     const std::string screen = root.value("screen", std::string("tower"));
-    if (screen != "tower" && screen != "shop") {
+    if (screen != "tower" && screen != "shop" && screen != "ending") {
         throw FormatError("scenario: unknown screen " + screen);
     }
     Scenario scenario;
-    scenario.afterLevel = screen == "shop";
+    scenario.ending = screen == "ending";
+    scenario.afterLevel = screen == "shop" || scenario.ending;
+    if (scenario.ending && root.contains("shopVisit")) {
+        throw FormatError("scenario: ending uses its boss's results flow, not shopVisit");
+    }
     const std::string visit = root.value("shopVisit", std::string("level"));
     if (visit == "shop") {
         scenario.shopVisit = ShopVisit::Shop;

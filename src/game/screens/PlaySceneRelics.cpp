@@ -33,6 +33,7 @@ void PlayScene::beginTowerRelics() {
     revealTowerRoutes();
 }
 void PlayScene::revealTowerRoutes() {
+    m_portals.syncFloors();
     for (const auto kind : {TowerCompletion::Kind::Window, TowerCompletion::Kind::Underworld,
                             TowerCompletion::Kind::Garm}) {
         const auto tag = TowerCompletion::portal(kind);

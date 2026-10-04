@@ -50,6 +50,7 @@ struct Scenario {
     PlayOptions tower;
     std::string level;       ///< the level to open onto, such as G1; none is the tower
     bool afterLevel = false; ///< tally/shop preview before returning to the tower
+    bool ending = false;     ///< play the final boss's movie before its normal results/save flow
     ShopVisit shopVisit = ShopVisit::Level;
     std::vector<LevelResults> results;
 

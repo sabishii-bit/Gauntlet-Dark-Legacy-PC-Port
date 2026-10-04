@@ -118,6 +118,57 @@ TEST_CASE("exit flame stays on while a visitor walks around a usable portal",
     CHECK_FALSE(f.portals.flamePosition(party));
 }
 
+TEST_CASE("exit portals ride their authored floor through motion and collision holds",
+          "[game][world][portals][portal-platform]") {
+    const auto dir = sampleLevel("portals-moving-floor");
+    writeTextFile(dir / "world.json", R"({
+      "objects":[{"name":"LIFT","position":[10,5,20],"flags":4102}],
+      "itemInfos":[{"type":9,"radius":3},{"type":9,"radius":3,"collisionFlags":1}],
+      "itemInstances":[
+        {"info":0,"position":[12,5,23],"rotation":[0,0,0],
+         "params":[0,0,0,0,103,49,0,0,0,0,0,0]},
+        {"info":1,"position":[15,5,23],"rotation":[0,0,0],
+         "params":[0,0,0,0,103,49,0,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    WorldCollision collision;
+    collision.build(
+        {CollisionTriangle{.vertices = {Vec3{-30, 0, -30}, Vec3{30, 0, 30}, Vec3{30, 0, -30}},
+                           .object = 0},
+         CollisionTriangle{.vertices = {Vec3{-30, 0, -30}, Vec3{-30, 0, 30}, Vec3{30, 0, 30}},
+                           .object = 0}});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{10, -15, 20}));
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(dir));
+    ExitPortals portals;
+    REQUIRE(portals.bind(device, layout, items, catalog, &collision));
+    REQUIRE(portals.portal(0).support == 0);
+    CHECK(glm::distance(portals.portal(0).position, Vec3{12, -15 + ExitPortals::kFloorLift, 23}) <
+          0.001f);
+    const Mat4 moved =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{30, 10, 40}), 1.57079637f, Vec3{0, 1, 0});
+    collision.setSolid(0, false);
+    collision.setObjectTransform(0, moved);
+    portals.animate(0);
+    const Vec3 expected{moved * Vec4{2, ExitPortals::kFloorLift, 3, 1}};
+    CHECK(glm::distance(portals.portal(0).position, expected) < 0.001f);
+    CHECK(Vec3{portals.portal(0).transform[3]} == portals.portal(0).position);
+    CHECK(portals.portal(1).support == -1);
+    CHECK(portals.portal(1).position == Vec3{15, 5, 23});
+    const std::array party{PortalVisitor{expected, 0.75f}};
+    std::optional<usize> reached;
+    for (s32 frame = 0; frame < 100 && !reached; ++frame) {
+        reached = portals.update(2, 1.0f / 30, party);
+    }
+    CHECK(reached == 0);
+    portals.clear();
+    portals.syncFloors();
+    CHECK(portals.size() == 0);
+}
+
 TEST_CASE("exit portal artwork retains authored yaw pitch and roll", "[portals][item-rotation]") {
     const auto dir = sampleLevel("portals-rotation");
     writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],

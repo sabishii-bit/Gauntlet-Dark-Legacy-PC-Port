@@ -247,6 +247,8 @@ TEST_CASE("tower completion runs after arrival and promotions and releases contr
     REQUIRE(route("e1").alpha == 0);
     REQUIRE(route("f1").alpha == 0);
     REQUIRE(route("h4").alpha == 0);
+    const f32 initialGarmHeight = route("h4").position.y;
+    REQUIRE(route("h4").support >= 0);
     const Vec3 position = scene.actor(0)->position();
     REQUIRE(world.startPoint(8) != nullptr);
     REQUIRE(world.startPoint(0) != nullptr);
@@ -300,6 +302,10 @@ TEST_CASE("tower completion runs after arrival and promotions and releases contr
     REQUIRE_FALSE(route("e1").shut);
     REQUIRE_FALSE(route("f1").shut);
     REQUIRE_FALSE(route("h4").shut);
+    CHECK(route("h4").position.y > initialGarmHeight + 5);
+    const auto garmFloor = world.collision().floorAt(route("h4").position, 0.5f, 1);
+    REQUIRE(garmFloor);
+    CHECK(route("h4").position.y == Catch::Approx(garmFloor->y + ExitPortals::kFloorLift));
     bool lift = false;
     for (usize i = 0; i < world.triggers().size(); ++i) {
         const auto& trigger = world.triggers().trigger(i);

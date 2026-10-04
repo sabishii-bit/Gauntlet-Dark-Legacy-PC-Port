@@ -1,0 +1,17 @@
+{
+    "screen": "ending",
+    "level": "H4",
+    "welcome": false,
+    "party": [
+        {
+            "player": 0, "class": "KNI", "color": "GRE", "name": "TEST",
+            "level": 99, "promotedLevel": 99, "gold": 5000, "health": 9999,
+            "runes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            "shards": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "beaten": ["h1", "h2", "h3"],
+            "results": {"gold": 1200, "kills": 32, "experience": 1500},
+            "lifetime": {"enemiesKilled": 12345, "generatorsDestroyed": 678,
+                         "goldFound": 54321, "playSeconds": 93780}
+        }
+    ]
+}

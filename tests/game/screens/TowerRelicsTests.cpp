@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -258,6 +260,57 @@ TEST_CASE("tower return routes relic ceremonies before releasing player controls
     REQUIRE(scene.towerRelics().figures().count() == 2);
     scene.close();
 }
+
+TEST_CASE("fully unlocked tower carries Garm's usable portal up with its revealed pedestal",
+          "[game][tower-relics][portals][garm-portal][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/tower-fully-unlocked.json");
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
+    usize index = 0;
+    while (index < scene.portals().size() && scene.portals().portal(index).tag != "h4") {
+        ++index;
+    }
+    REQUIRE(index < scene.portals().size());
+    const auto& portal = scene.portals().portal(index);
+    REQUIRE(portal.destination);
+    CHECK(portal.destination->name == "H4");
+    REQUIRE_FALSE(portal.shut);
+    REQUIRE(portal.model.bound());
+    REQUIRE(portal.alpha == 1);
+    REQUIRE(portal.support >= 0);
+    CHECK(world.layout().objects()[static_cast<usize>(portal.support)].name == "L1ELEV669");
+    const auto& authored = world.layout().itemInstances()[static_cast<usize>(portal.instance)];
+    CHECK(portal.position.y > authored.position.y + 5);
+    const auto floor = world.collision().floorAt(portal.position, 0.5f, 1);
+    REQUIRE(floor);
+    CHECK(floor->object == portal.support);
+    CHECK(portal.position.y == Catch::Approx(floor->y + ExitPortals::kFloorLift));
+    CHECK(Vec3{portal.transform[3]} == portal.position);
+    device.draws.clear();
+    portal.model.draw(device, Mat4{1}, portal.transform, world.lighting(), portal.pose.matrices());
+    CHECK_FALSE(device.draws.empty());
+
+    // The actual scene's relocated portal must accept visitors at its visible height,
+    // not the old authored spot nine units below the raised platform.
+    const std::array visitor{PortalVisitor{portal.position, 0.75f}};
+    CHECK(scene.portals().flamePosition(visitor) == portal.position);
+    const std::array underground{PortalVisitor{authored.position, 0.75f}};
+    CHECK_FALSE(scene.portals().flamePosition(underground));
+    scene.close();
+}
 TEST_CASE("tower relic ceremony draws fractional motion without consuming its events",
           "[game][tower-relics][assets][presentation]") {
     const auto root =
@@ -308,5 +361,85 @@ TEST_CASE("tower relic ceremony draws fractional motion without consuming its ev
     display.draw(device, Mat4{1}, world.lighting(), {}, 0.5f);
     display.drawWizard(device, Mat4{1}, world.lighting(), {}, 0.5f);
     CHECK(device.draws.empty());
+}
+TEST_CASE("Garm victory returns above the lowered battlefield bridge",
+          "[game][garm-return][tower-relics][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/after-garm-victory.json");
+    auto party = scenario.partyMembers();
+    REQUIRE_FALSE(party.empty());
+    // Only the just-completed boss is added by the ending flow. Its fixture must
+    // already carry the prerequisites earned on the way to Garm.
+    party[0].save.progress().levels.recordBeaten(8, 3);
+    REQUIRE(TowerAccess(party).liftsOpen());
+
+    for (const bool preadvanced : {false, true}) {
+        CAPTURE(preadvanced);
+        test::FakeRenderDevice device;
+        LevelWorld world;
+        REQUIRE(world.load(device, root));
+        // Character saving shares and animates this tower before gameplay resumes.
+        if (preadvanced) {
+            for (s32 tick = 0; tick < 1800; ++tick) {
+                world.update(1.0f / 60);
+            }
+        }
+        LevelCatalog levels;
+        REQUIRE(levels.load(root));
+        const GameConfig config;
+        GameContext context;
+        context.config = &config;
+        context.levels = &levels;
+        context.unpackedRoot = root;
+        PlayOptions options;
+        options.welcome = false;
+        options.arriving = true;
+        options.arrivalWorld = 8;
+        PlayScene scene;
+        REQUIRE(scene.open(device, context, world, party, options));
+        const auto* actor = scene.actor(0);
+        REQUIRE(actor);
+        const auto* marker = world.startPoint(11);
+        REQUIRE(marker);
+        CHECK(marker->position == Vec3{2.953125f, -28.40625f, 37.773438f});
+        CHECK(actor->position().x == Catch::Approx(marker->position.x));
+        CHECK(actor->position().z == Catch::Approx(marker->position.z));
+
+        // The collision-only floor at the marker also exists with the bridge closed.
+        // Check actual drawn geometry, which used to remain 16 units above the player.
+        ModelSet models;
+        REQUIRE(models.load(root / LevelRef::tower().directory));
+        constexpr usize kBridgeFloor = 2568;
+        REQUIRE(world.layout().objects()[kBridgeFloor].name == "L1FLOOR_LINE656");
+        const auto model = models.find(world.layout().objects()[kBridgeFloor].name);
+        REQUIRE(model);
+        const auto& mesh = models.mesh(*model);
+        REQUIRE_FALSE(mesh.vertices.empty());
+        const Mat4 transform = world.scene().worldTransform(kBridgeFloor);
+        for (const auto& vertex : mesh.vertices) {
+            const Vec3 drawn = Vec3{transform * Vec4{vertex.position, 1}};
+            CHECK(std::abs(drawn.y - actor->position().y) < 0.5f);
+        }
+        std::vector<WallContact> contacts;
+        const Vec3 initial = actor->position();
+        const Vec3 corrected = world.collision().resolveWalls(
+            initial, actor->radius(), initial.y + 0.5f, initial.y + actor->height(), &contacts);
+        CHECK(glm::distance(initial, corrected) < 0.001f);
+        CHECK(contacts.empty());
+        for (s32 tick = 0; tick < 600; ++tick) {
+            scene.update(1.0 / 30, {});
+        }
+        const Vec3 settled = actor->position();
+        CHECK(glm::distance(initial, settled) < 0.5f);
+        PlayScene::Inputs input{};
+        input[0].move = MoveInput{Vec2{0, 1}, 1};
+        for (s32 tick = 0; tick < 90; ++tick) {
+            scene.update(1.0 / 30, input);
+        }
+        CHECK(glm::distance(actor->position(), settled) > 5);
+        scene.close();
+    }
 }
 } // namespace

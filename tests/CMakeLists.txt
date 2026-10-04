@@ -134,6 +134,7 @@ add_executable(tests
     game/app/CommandLineTests.cpp
     game/app/ScenarioTests.cpp
     game/app/AttractSequencerTests.cpp
+    game/app/LevelCompletionTests.cpp
     game/app/MusicDuckTests.cpp
     game/screens/MovieSceneTests.cpp
     game/menu/MenuInputTests.cpp

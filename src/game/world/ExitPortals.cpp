@@ -10,6 +10,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/world/ItemSupport.h"
+
 namespace gdl::game {
 
 namespace {
@@ -63,6 +65,9 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
                        const LevelCatalog& catalog, const WorldCollision* collision,
                        ItemArchive* realmItems, const TowerAccess* access) {
     clear();
+    m_collision = collision;
+    const auto authored = itemSupportWorld(layout, collision);
+    const auto* supportWorld = authored ? &*authored : collision;
     ItemArchive& art = itemArchiveForTree(items, kFigure, realmItems);
     const auto tree = art.loaded() ? art.trees.find(kFigure) : std::nullopt;
     if (tree.has_value()) {
@@ -89,7 +94,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         portal.tag = tagOf(instance);
         portal.destination = catalog.byTag(portal.tag);
         portal.position = instance.position;
-        if (collision != nullptr) {
+        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
             if (const auto floor =
                     collision->floorAt(instance.position, kFloorReachAbove, kFloorReachBelow);
                 floor.has_value()) {
@@ -97,6 +102,17 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             }
         }
         portal.transform = itemPlacement(portal.position, instance.rotation);
+        if (supportWorld != nullptr && (info.collisionFlags & 1U) == 0) {
+            if (const auto floor = supportWorld->floorAt(instance.position, 4, 10)) {
+                if (const auto transform = supportWorld->objectTransform(floor->object)) {
+                    Vec3 position = instance.position;
+                    position.y = floor->y + kFloorLift;
+                    portal.support = floor->object;
+                    portal.supportLocal =
+                        glm::inverse(*transform) * itemPlacement(position, instance.rotation);
+                }
+            }
+        }
         if (portal.secret) {
             ItemArchive& iconArt = itemArchiveForTree(items, info.name, realmItems);
             portal.icon.place(device, iconArt, info.name, instance, collision);
@@ -120,13 +136,34 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         log::warn("Exit portals: no {} figure; the level's {} exits work unseen", kFigure,
                   m_portals.size());
     }
+    syncFloors();
     return !m_portals.empty();
 }
 
 void ExitPortals::clear() {
     m_portals.clear();
     m_tree = nullptr;
+    m_collision = nullptr;
     m_sequences.fill(-1);
+}
+
+void ExitPortals::syncFloors() {
+    if (m_collision == nullptr) {
+        return;
+    }
+    for (auto& portal : m_portals) {
+        if (portal.support < 0) {
+            continue;
+        }
+        if (const auto transform = m_collision->objectTransform(portal.support)) {
+            // Collision may switch off while the floor moves; its children still ride it.
+            portal.transform = *transform * portal.supportLocal;
+            portal.position = Vec3{portal.transform[3]};
+            if (portal.secret) {
+                portal.icon.placeAt(portal.transform);
+            }
+        }
+    }
 }
 void ExitPortals::setAlpha(std::string_view tag, f32 alpha) {
     for (auto& portal : m_portals) {
@@ -175,6 +212,7 @@ bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, f
 
 std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
                                          std::span<const PortalVisitor> party) {
+    syncFloors();
     std::optional<usize> left;
     // A larger party is given a wider portal: a unit more for each member past the first.
     const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
@@ -238,6 +276,7 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
 }
 
 void ExitPortals::animate(f32 seconds) {
+    syncFloors();
     for (Portal& portal : m_portals) {
         if (portal.secret) {
             if (!portal.consumed) {

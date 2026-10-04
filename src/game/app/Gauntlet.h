@@ -17,6 +17,7 @@
 
 #include "game/app/AttractSequencer.h"
 #include "game/app/CommandLine.h"
+#include "game/app/LevelCompletion.h"
 #include "game/app/MusicDuck.h"
 #include "game/config/GameConfig.h"
 #include "game/players/CursorAim.h"
@@ -64,6 +65,7 @@ private:
     void updateAfterLevel(f64 deltaSeconds);
     void finishJourney();
     void updateJourney(f64 deltaSeconds);
+    bool updateCompletion(f64 deltaSeconds);
     /** Writes the party in play back into its save slots. */
     void keepParty();
     void keepParty(std::span<const PartyMember> party);
@@ -116,6 +118,13 @@ private:
     /** A journey between levels: the picture is drawn over an empty view for a frame, so
      * that it is on screen while the next level loads, which holds everything up. */
     struct Journey {
+        struct Completion {
+            LevelCompletion flow;
+            std::vector<LevelResults> results;
+            std::array<s32, 3> maxima;
+            std::string levelName;
+        };
+        std::optional<Completion> completion;
         LevelRef destination;
         std::vector<PartyMember> party;
         PlayOptions options;
