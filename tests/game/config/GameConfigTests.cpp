@@ -74,6 +74,19 @@ TEST_CASE("shipped defaults use thirty fps without changing the simulation clock
     CHECK(config.timing.gameplayFrameRate == 60);
 }
 
+TEST_CASE("shipped and reset attack defaults lead with left click and preserve custom mappings",
+          "[game][config][controls]") {
+    GameConfig config;
+    REQUIRE(config.play.attack.front() == Key::MouseLeft);
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    CHECK(config.play.attack == PlayBindings{}.attack);
+    config.mergeJson(R"({"controls":{"play":{"keyboard":{"attack":["Q"]}}}})");
+    CHECK(config.play.attack == std::vector{Key::Q});
+    GameConfig restored;
+    restored.mergeJson(config.toJson());
+    CHECK(restored.play.attack == std::vector{Key::Q});
+}
+
 TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][config]") {
     GameConfig config;
     config.mergeJson(R"({

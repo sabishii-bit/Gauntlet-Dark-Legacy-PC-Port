@@ -107,7 +107,7 @@ struct PlayBindings {
     std::vector<PadButton> padDown{PadButton::LeftStickDown};
     std::vector<PadButton> padLeft{PadButton::LeftStickLeft};
     std::vector<PadButton> padRight{PadButton::LeftStickRight};
-    std::vector<Key> attack{Key::Space, Key::MouseLeft};
+    std::vector<Key> attack{Key::MouseLeft, Key::Space};
     std::vector<PadButton> padAttack{PadButton::A};
     std::vector<Key> usePotion{Key::E};
     std::vector<PadButton> padUsePotion{PadButton::X};

@@ -66,7 +66,7 @@
         "down": ["Down", "S"],
         "left": ["Left", "A"],
         "right": ["Right", "D"],
-        "attack": ["Space", "MouseLeft"],
+        "attack": ["MouseLeft", "Space"],
         "usePotion": ["E"],
         "throwPotion": ["Q"],
         "shieldPotion": ["C"],

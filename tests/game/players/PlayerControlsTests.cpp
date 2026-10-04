@@ -85,6 +85,31 @@ TEST_CASE("the attack is held by its key or its pad button", "[game][players][co
     REQUIRE_FALSE(readAttackInput(input, rebound, false, 1));
 }
 
+TEST_CASE("default mouse attack presses holds and releases only for the keyboard owner",
+          "[game][players][controls]") {
+    Input input;
+    PlayBindings bindings;
+    REQUIRE(bindings.attack.front() == Key::MouseLeft);
+    input.beginPoll();
+    input.setKey(Key::MouseLeft, true);
+    CHECK(readAttackInput(input, bindings, true, kNoPad));
+    auto buttons = readPlayButtons(input, bindings, true, kNoPad);
+    CHECK(buttons.attack);
+    CHECK(buttons.attackPressed);
+    CHECK_FALSE(readPlayButtons(input, bindings, false, kNoPad).attack);
+    input.beginPoll();
+    buttons = readPlayButtons(input, bindings, true, kNoPad);
+    CHECK(buttons.attack);
+    CHECK_FALSE(buttons.attackPressed);
+    input.setKey(Key::MouseLeft, false);
+    CHECK_FALSE(readPlayButtons(input, bindings, true, kNoPad).attack);
+    input.setKey(Key::MouseLeft, true);
+    bindings.attack = {Key::Q};
+    CHECK_FALSE(readAttackInput(input, bindings, true, kNoPad));
+    input.setKey(Key::Q, true);
+    CHECK(readAttackInput(input, bindings, true, kNoPad));
+}
+
 TEST_CASE("the stick moves past its dead zone and the pad buttons add to it",
           "[game][players][controls]") {
     Input input;
