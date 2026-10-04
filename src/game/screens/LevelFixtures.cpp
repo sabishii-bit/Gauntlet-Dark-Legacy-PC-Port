@@ -50,6 +50,8 @@ constexpr f32 kShelterFrom = 10.0f;  ///< past this a wall between shelters a pl
 constexpr f32 kShelterProbe = 0.1f;
 constexpr f32 kChestBlastWidth = 2.5f;
 constexpr f32 kChestBlastHeight = 3.0f;
+constexpr f32 kBarrelBlastWidth = 1.75f;
+constexpr f32 kBarrelBlastHeight = 2.0f;
 constexpr s32 kBarrelReached = 0; ///< a blast's own ids for what it has reached
 constexpr s32 kWallReached = 1000;
 constexpr s32 kRockReached = 2000;
@@ -847,12 +849,15 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
             return std::nullopt;
         }
         EffectTrees::Setting setting;
+        Vec3 position = struck->position;
         if (tree == kBarrelBlast) {
+            position.y += kBarrelBlastHeight;
+            setting.stretch = Vec3{kBarrelBlastWidth, 1, kBarrelBlastWidth};
             setting.light = EffectTrees::Light{DynamicLights::blast(),
                                                DynamicLights::kBlastRadiusScale * kBlastRadius};
         }
         const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
-                                                     tree, struck->position, setting);
+                                                     tree, position, setting);
         return m_resources->effects.remaining(id);
     };
     switch (struck->kind) {
@@ -877,7 +882,7 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         const f32 seconds = effect(kBarrelBlast).value_or(kExplosionSeconds);
         effect(kBarrelSmoke);
         leaveRubble(Rubble::kBlownBarrel, m_barrels.transformOf(barrel));
-        m_blasts.push_back(Blast{.position = struck->position,
+        m_blasts.push_back(Blast{.position = struck->position + Vec3{0, kBarrelBlastHeight, 0},
                                  .radius = kBlastRadius,
                                  .damage = kBarrelBlastDamage * trapDamageScale(),
                                  .seconds = seconds,
@@ -1036,15 +1041,6 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
         expire(ring.players, ring.playerReady);
         expire(ring.opponents, ring.opponentReady);
     }
-    const auto first = [&](std::vector<s32>& reached, s32 id) {
-        if (std::ranges::find(reached, id) != reached.end()) {
-            return false;
-        }
-        if (holds) {
-            reached.push_back(id);
-        }
-        return true;
-    };
     for (usize i = 0; i < players.size(); ++i) {
         if (players[i].life != PlayerLife::Standing ||
             std::ranges::find(ring.players, i) != ring.players.end()) {
@@ -1113,28 +1109,48 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
         spoilFood(felt.position, reach, felt.damage, players, events);
         return; // fn_8005C1DC: gas does not subtract item health or detonate containers.
     }
-    for (const usize barrel : m_barrels.within(felt.position, reach)) {
-        if (first(ring.reached, kBarrelReached + static_cast<s32>(barrel))) {
-            strikeBarrel(barrel, felt.damage, -1, players, events);
+    blastScenery(felt.position, felt.radius, felt.damage, ring.flags, players, events,
+                 ring.reached);
+    opponents();
+    blastPickups(felt.position, felt.radius, felt.damage, ring.flags, players, events);
+}
+
+void LevelFixtures::blastScenery(const Vec3& position, f32 radius, f32 damage, u32 flags,
+                                 std::span<PlayerRuntime> players, const Events& events,
+                                 std::vector<s32>& reached) {
+    if (!m_resources.has_value() || (flags & kPoisonDamage) != 0) {
+        return;
+    }
+    const bool destructive = (flags & kExplosionDamage) != 0;
+    const f32 reach = std::max(0.0f, radius - (destructive ? kItemBlastInset : 0.0f));
+    const auto first = [&](s32 id) {
+        if (std::ranges::find(reached, id) != reached.end()) {
+            return false;
+        }
+        if (damage > kRingHeldFrom) {
+            reached.push_back(id);
+        }
+        return true;
+    };
+    for (const usize barrel : m_barrels.within(position, reach)) {
+        if (first(kBarrelReached + static_cast<s32>(barrel))) {
+            strikeBarrel(barrel, damage, -1, players, events);
         }
     }
     const auto& walls = m_resources->world.walls();
     for (usize i = 0; i < walls.size(); ++i) {
-        if (walls.standing(i) && walls.target(i, 0).touches(felt.position, reach) &&
-            first(ring.reached, kWallReached + static_cast<s32>(i))) {
-            strikeWall(i, felt.damage);
+        if (walls.standing(i) && walls.target(i, 0).touches(position, reach) &&
+            first(kWallReached + static_cast<s32>(i))) {
+            strikeWall(i, damage);
         }
     }
     for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
-        if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, reach, 0.0f) &&
-            first(ring.reached, kRockReached + static_cast<s32>(rock))) {
-            strikeSafeRock(rock, felt.damage);
+        if (m_safeRocks.rock(rock).obstacle.touchedBy(position, reach, 0.0f) &&
+            first(kRockReached + static_cast<s32>(rock))) {
+            strikeSafeRock(rock, damage);
         }
     }
-    opponents();
-    const bool destructive = (ring.flags & kExplosionDamage) != 0;
-    blastFixtures(felt.position, reach, felt.damage, events, ring.reached, destructive);
-    blastPickups(felt.position, felt.radius, felt.damage, ring.flags, players, events);
+    blastFixtures(position, reach, damage, events, reached, destructive);
 }
 
 void LevelFixtures::blastPickups(const Vec3& position, f32 radius, f32 damage, u32 flags,

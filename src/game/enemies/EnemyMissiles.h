@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <random>
 #include <span>
@@ -177,6 +178,9 @@ struct RockHit {
  */
 class EnemyMissiles {
 public:
+    /** Apply this already-expanded blast to scenery, remembering contacts across frames.
+     * The callback must not start another EnemyMissiles blast during this update. */
+    using SceneryBlast = std::function<void(const PickupBlastReach&, std::vector<s32>&)>;
     static constexpr f32 kLife = 3.0f;     ///< StartMissile's lifetime, and a death shot's flight
     static constexpr f32 kGravity = 40.0f; ///< the fall a straight lobVelocity assumes
     static constexpr f32 kLeastFlight = 0.3f;
@@ -231,7 +235,8 @@ public:
      * players it hurts; armour that reflects sends one back, after which it strikes the
      * `swarm`, as the blasts do (each by the id it is offered under). */
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
-                std::span<const MissileTarget> swarm = {}, std::span<const MissileStop> items = {});
+                std::span<const MissileTarget> swarm = {}, std::span<const MissileStop> items = {},
+                const SceneryBlast& scenery = {});
     std::vector<EnemyMissileHit> takeHits();
     /** The blows on safe rocks since the last call. */
     std::vector<RockHit> takeRockHits();
@@ -266,12 +271,14 @@ private:
         f32 stageLeft = 0.0f;
         std::vector<Held> players;
         std::vector<Held> swarm;
+        std::vector<s32> scenery;
     };
 
     bool stopped(const EnemyMissile& missile, std::span<const MissileStop> items, const Vec3& from,
                  const Vec3& to, f32 radius);
     void stepBursts(f32 seconds, const WorldCollision* collision,
-                    std::span<const EnemyView> players, std::span<const MissileTarget> swarm);
+                    std::span<const EnemyView> players, std::span<const MissileTarget> swarm,
+                    const SceneryBlast& scenery);
 
     std::vector<EnemyMissile> m_missiles;
     std::vector<Burst> m_bursts;

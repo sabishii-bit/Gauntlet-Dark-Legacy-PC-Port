@@ -361,7 +361,7 @@ void EnemyMissiles::blast(EnemyBlast blast) {
  * One of the swarm is left alone for the rest of the stage, and a second at least. */
 void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
                                std::span<const EnemyView> players,
-                               std::span<const MissileTarget> swarm) {
+                               std::span<const MissileTarget> swarm, const SceneryBlast& scenery) {
     const auto held = [](std::vector<Held>& holds, s32 id) {
         return std::ranges::any_of(holds, [id](const Held& hold) { return hold.id == id; });
     };
@@ -386,7 +386,11 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
         const f32 radius = blast.radius * (kBurstFade + (1.0f - phase));
         const f32 damage = blast.damage * kBurstGrowth * (phase - kBurstFade);
         const f32 remaining = phase * stage;
-        m_pickupBlasts.push_back(PickupBlastReach{blast.position, radius, damage, blast.flags});
+        const PickupBlastReach reach{blast.position, radius, damage, blast.flags};
+        m_pickupBlasts.push_back(reach);
+        if (scenery) {
+            scenery(reach, burst.scenery);
+        }
         u32 flags = blast.flags;
         if (damage < kBurstKnockFrom) {
             flags &= ~0x170u;
@@ -491,12 +495,12 @@ std::vector<RockHit> EnemyMissiles::takeRockHits() {
 
 void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                            std::span<const EnemyView> players, std::span<const MissileTarget> swarm,
-                           std::span<const MissileStop> items) {
+                           std::span<const MissileStop> items, const SceneryBlast& scenery) {
     if (seconds <= 0) {
         return;
     }
     m_ricochetIn = std::max(0.0f, m_ricochetIn - seconds);
-    stepBursts(seconds, collision, players, swarm);
+    stepBursts(seconds, collision, players, swarm, scenery);
     for (EnemyMissile& missile : m_missiles) {
         f32 remaining = std::min(seconds, missile.secondsLeft);
         const f32 gravity = std::max(missile.kind.weight, 0.0f);

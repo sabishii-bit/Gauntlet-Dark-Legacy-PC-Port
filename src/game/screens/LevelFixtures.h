@@ -99,6 +99,11 @@ public:
     void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,
                const Events& events, f32 seconds = kExplosionSeconds);
     void settleBlasts(std::span<PlayerRuntime> players, const Events& events);
+    /** Applies an already-expanded blast to containers and breakable scenery only.
+     * The source owns `reached` for the blast lifetime, preventing repeated damage. */
+    void blastScenery(const Vec3& position, f32 radius, f32 damage, u32 flags,
+                      std::span<PlayerRuntime> players, const Events& events,
+                      std::vector<s32>& reached);
     /** WorldExplosion: realm-specific art and damage, at an animated or shot world object. */
     void worldExplosion(const Vec3& position, std::span<PlayerRuntime> players,
                         const Events& events);

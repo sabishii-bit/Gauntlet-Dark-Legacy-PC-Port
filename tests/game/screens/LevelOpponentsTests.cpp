@@ -1833,7 +1833,8 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .arenaTargets = {},
         .activateArena = {},
         .shake = {},
-        .help = {}};
+        .help = {},
+        .blastScenery = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
@@ -2368,8 +2369,14 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     ItemArchive weapons;
     EffectTrees effects;
     LevelSoundscape audio;
-    std::array<PlayerRuntime, 1> players;
+    // Retain SuicideExplosion's radius 6 (80348144), but intentionally include items.
+    const s32 rate = GENERATE(30, 60, 120);
+    std::array<PlayerRuntime, 3> players;
     players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 3}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    players[2].actor.spawn(2, {}, nullptr, Vec3{0}, 0);
+    players[1].actor.place(Vec3{0, 0, 5.5f + players[1].actor.radius()});
+    players[2].actor.place(Vec3{0, 0, 6.1f + players[2].actor.radius()});
     players[0].actor.save().progress().health = 1000;
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
@@ -2383,6 +2390,12 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     REQUIRE(neighbour.has_value());
     const f32 before = opponents.enemies().healthOf(*neighbour);
     std::vector<std::pair<HurtKind, u32>> hurts;
+    std::array<s32, 3> contacts{};
+    std::array<f32, 3> firstDamage{};
+    std::array<f32, 3> firstContact{};
+    f32 elapsed = 0;
+    usize scenerySteps = 0;
+    usize pickupSteps = 0;
     LevelOpponents::Events events;
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
@@ -2390,20 +2403,43 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.blast = [](const Vec3&, f32, f32) { FAIL("The suicide's blast is its own now"); };
-    events.hurt = [&](usize, f32 amount, HurtKind kind, bool, const PlayerImpact& hit) {
+    events.blastScenery = [&](const PickupBlastReach& reach, std::vector<s32>& reached) {
+        CHECK(reach.radius <= 6.0f);
+        CHECK(reach.damage > 0.0f);
+        CHECK(reach.flags == 0x421u);
+        if (scenerySteps++ == 0) {
+            CHECK(reached.empty());
+            reached.push_back(42);
+        } else {
+            CHECK(reached == std::vector<s32>{42});
+        }
+    };
+    events.hurt = [&](usize player, f32 amount, HurtKind kind, bool, const PlayerImpact& hit) {
         CHECK(amount > 0.0f);
+        REQUIRE(player < contacts.size());
+        if (contacts[player]++ == 0) {
+            firstDamage[player] = amount;
+            firstContact[player] = elapsed;
+        }
         hurts.emplace_back(kind, hit.flags);
     };
     opponents.strikeEnemy(*bomber, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
-    for (s32 frame = 0; frame < 45; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+    for (s32 frame = 0; frame < rate * 2; ++frame) {
+        elapsed = static_cast<f32>(frame) / static_cast<f32>(rate);
+        opponents.update(1, 1.0f / static_cast<f32>(rate), players, {}, events);
+        pickupSteps += opponents.takePickupBlasts().size();
     }
     // Fire, a knock down and an explosion (0x421), felt once.
-    REQUIRE(hurts.size() == 1);
+    REQUIRE(hurts.size() == 2);
+    CHECK(contacts == std::array<s32, 3>{1, 1, 0});
+    CHECK(firstContact[1] > 0.5f);
+    CHECK(firstDamage[1] < firstDamage[0]);
     CHECK(hurts[0].first == HurtKind::Blow);
     CHECK((hurts[0].second & 0x421u) == 0x421u);
     CHECK(opponents.enemies().healthOf(*neighbour) < before);
     CHECK(opponents.missiles().burstCount() == 0);
+    CHECK(scenerySteps > 1);
+    CHECK(pickupSteps == scenerySteps);
     opponents.close();
 }
 

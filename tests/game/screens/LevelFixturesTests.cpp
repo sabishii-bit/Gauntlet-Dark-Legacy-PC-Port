@@ -649,7 +649,22 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
     const Vec3 cask = f.fixtures.barrels().barrel(*red).figure.position();
     f.players[0].actor.place(cask + Vec3{20, 0, 0}); // outside the blast, inside nine? no
     const usize heaps = f.fixtures.rubble().size();
+    const usize beforeEffects = f.effects.count();
     f.fixtures.strikeBarrel(*red, 10000, -1, party, f.events);
+    // StartExplosion(24): horizontal scale 1.75, raised 2 units (GC 80348168/80348150).
+    // Fire and damage share the raised centre; debris smoke stays at the barrel's feet.
+    REQUIRE(f.effects.count() == beforeEffects + 2);
+    const auto& fireball = f.effects.effect(beforeEffects);
+    CHECK(fireball.name == "EXPLOSION");
+    CHECK(fireball.position == cask + Vec3(0, 2, 0));
+    CHECK(fireball.stretch == Vec3(1.75f, 1, 1.75f));
+    CHECK(f.effects.remaining(fireball.id) == Catch::Approx(1));
+    CHECK(f.effects.effect(beforeEffects + 1).name == "DESTSMOKE");
+    CHECK(f.effects.effect(beforeEffects + 1).position == cask);
+    bool raisedDamage = false;
+    f.events.opponents = [&](const Vec3& position, f32, f32, std::vector<s32>&, u32) {
+        raisedDamage |= position == cask + Vec3(0, 2, 0);
+    };
     CHECK(f.fixtures.rubble().size() > heaps);
     CHECK(f.fixtures.barrels().opacityOf(*red) == 1.0f);
     f.players[0].actor.place(cask + Vec3{5, 0, 0});
@@ -660,10 +675,111 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
         lowest = std::min(lowest, f.fixtures.barrels().opacityOf(*red));
     }
     CHECK(f.fixtures.barrels().barrel(*red).gone);
+    CHECK(raisedDamage);
     CHECK(lowest < 1.0f); // it faded as it broke
     CHECK(std::ranges::find(helps, HelpMessages::kRedBarrels) != helps.end());
     f.fixtures.clear();
     CHECK(f.fixtures.rubble().size() == 0);
+}
+
+TEST_CASE(
+    "enemy blast steps destroy nearby chests and detonate barrels without restarting the blast",
+    "[level-fixtures][enemy-burst][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.events.help = [](s32, usize) { return true; };
+    f.events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
+    for (PlayerRuntime& player : f.players) {
+        player.actor.place(Vec3{10000});
+    }
+    EnemyMissiles missiles;
+    const EnemyMissiles::SceneryBlast scenery = [&](const PickupBlastReach& step,
+                                                    std::vector<s32>& reached) {
+        f.fixtures.blastScenery(step.position, step.radius, step.damage, step.flags, f.players,
+                                f.events, reached);
+    };
+    EnemyBlast blast;
+    blast.radius = 6;
+    blast.damage = 50;
+    blast.flags = 0x421;
+    blast.stages = {1};
+    SECTION("a closed chest is destroyed as the expanding ring reaches it") {
+        std::optional<usize> index;
+        for (usize i = 0; i < f.fixtures.chests().size() && !index; ++i) {
+            const auto& chest = f.fixtures.chests().chest(i);
+            if (chest.shown && !chest.gone && chest.subtype != Chests::kTrappedChest) {
+                index = i;
+            }
+        }
+        REQUIRE(index);
+        const Vec3 at = f.fixtures.chests().chest(*index).figure.position();
+        blast.position = at + Vec3{3, 0, 0};
+        SECTION("fire destroys the container") {
+            missiles.blast(blast);
+            for (s32 frame = 0; frame < 61; ++frame) {
+                missiles.update(1.0f / 60, nullptr, {}, {}, {}, scenery);
+            }
+            CHECK(f.fixtures.chests().chest(*index).gone);
+            CHECK(f.fixtures.rubble().size() > 0);
+        }
+        SECTION("gas does not destroy the container") {
+            blast.flags = EnemyBlast::kGas;
+            missiles.blast(blast);
+            for (s32 frame = 0; frame < 61; ++frame) {
+                missiles.update(1.0f / 60, nullptr, {}, {}, {}, scenery);
+            }
+            CHECK_FALSE(f.fixtures.chests().chest(*index).gone);
+        }
+        SECTION("a chest outside the blast stays intact") {
+            blast.position = at + Vec3{20, 0, 0};
+            missiles.blast(blast);
+            for (s32 frame = 0; frame < 61; ++frame) {
+                missiles.update(1.0f / 60, nullptr, {}, {}, {}, scenery);
+            }
+            CHECK_FALSE(f.fixtures.chests().chest(*index).gone);
+        }
+    }
+    SECTION("a red barrel starts its own explosion once") {
+        std::optional<usize> index;
+        for (usize i = 0; i < f.fixtures.barrels().size() && !index; ++i) {
+            if (f.fixtures.barrels().standing(i) &&
+                f.fixtures.barrels().barrel(i).kind == BreakableStrike::Kind::Exploding) {
+                index = i;
+            }
+        }
+        REQUIRE(index);
+        blast.position = f.fixtures.barrels().barrel(*index).figure.position();
+        missiles.blast(blast);
+        for (s32 frame = 0; frame < 61; ++frame) {
+            missiles.update(1.0f / 60, nullptr, {}, {}, {}, scenery);
+        }
+        CHECK_FALSE(f.fixtures.barrels().standing(*index));
+        usize fireballs = 0;
+        for (usize i = 0; i < f.effects.count(); ++i) {
+            const auto& effect = f.effects.effect(i);
+            if (effect.name == "EXPLOSION" && effect.position == blast.position + Vec3(0, 2, 0)) {
+                ++fireballs;
+            }
+        }
+        CHECK(fireballs == 1);
+        bool chain = false;
+        f.events.opponents = [&](const Vec3& at, f32, f32, std::vector<s32>&, u32) {
+            chain |= at == blast.position + Vec3(0, 2, 0);
+        };
+        f.fixtures.settleBlasts(f.players, f.events);
+        CHECK(chain);
+    }
+    CHECK(missiles.burstCount() == 0);
+    f.fixtures.clear();
 }
 
 TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pickup",
@@ -715,12 +831,14 @@ TEST_CASE("the swarm's missiles are stopped by rocks, bottles and the triggers t
         Fixture f;
         f.fixtures.clear();
         REQUIRE(f.world.load(f.device, root, *catalog.byName("C3")));
+        f.world.setPlayerCount(4);
         f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
         f.fixtures.setPlayerCount(4);
         const auto& triggers = f.world.triggers();
         const auto shootable =
-            std::ranges::count_if(std::views::iota(usize{0}, triggers.size()),
-                                  [&](usize i) { return triggers.trigger(i).shootable; });
+            std::ranges::count_if(std::views::iota(usize{0}, triggers.size()), [&](usize i) {
+                return triggers.trigger(i).enabled && triggers.trigger(i).shootable;
+            });
         REQUIRE(shootable > 0);
         const auto potions =
             static_cast<std::ptrdiff_t>(f.world.placedItems().shootablePotions().size());
@@ -736,6 +854,7 @@ TEST_CASE("the swarm's missiles are stopped by rocks, bottles and the triggers t
     Fixture f;
     f.fixtures.clear();
     REQUIRE(f.world.load(f.device, root, *catalog.byName("B6")));
+    f.world.setPlayerCount(4);
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(4);
     const SafeRocks& rocks = f.fixtures.safeRocks();

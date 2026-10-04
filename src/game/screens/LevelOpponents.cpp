@@ -274,6 +274,8 @@ void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
         start(kSuicideRing, burst.position, ring);
         blast.radius = kBlastRadius;
         blast.flags = kBlastFlags;
+        // Intentional port change: unlike retail's 0x29 collision mask, fiery suicide
+        // blasts also reach destructible scenery and loose items.
         blast.stages = {m_resources->effects.remaining(fire).value_or(kBlastSeconds)};
     }
     // The fragments are the thrower kind's own, in the first archive that has them.
@@ -980,7 +982,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         inTheWay.insert(inTheWay.end(), stops.begin(), stops.end());
     }
     m_enemyMissiles.update(seconds, &m_resources->world.collision(), views, swarmTargets(),
-                           inTheWay);
+                           inTheWay, events.blastScenery);
     landEnemyMissiles(players, events);
     playEnemyCues();
     // What blows itself up goes up with the bomb's bang; one struck down stops crying out

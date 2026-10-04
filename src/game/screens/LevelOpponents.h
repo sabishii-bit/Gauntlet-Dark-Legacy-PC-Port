@@ -60,6 +60,7 @@ public:
         std::function<void()> shake;
         /** A lesson for the whole party, over the first standing player. */
         std::function<bool(s32, usize)> help;
+        EnemyMissiles::SceneryBlast blastScenery;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();

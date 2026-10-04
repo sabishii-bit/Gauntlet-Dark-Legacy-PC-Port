@@ -582,7 +582,12 @@ LevelOpponents::Events PlayScene::opponentEvents() {
                 m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
             },
         .shake = [this] { m_shake.start(); },
-        .help = [this](s32 id, usize i) { return postHelp(id, i); }};
+        .help = [this](s32 id, usize i) { return postHelp(id, i); },
+        .blastScenery =
+            [this](const PickupBlastReach& reach, std::vector<s32>& reached) {
+                m_fixtures.blastScenery(reach.position, reach.radius, reach.damage, reach.flags,
+                                        m_players, fixtureEvents(), reached);
+            }};
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
