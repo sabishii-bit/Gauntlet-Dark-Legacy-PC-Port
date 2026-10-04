@@ -27,6 +27,24 @@ s16 paramS16(const ItemInstance& instance, usize at) {
     return value;
 }
 
+u32 flagsOf(const ItemInfo& info, const ItemInstance& instance) {
+    const u32 params = static_cast<u16>(paramS16(instance, 2));
+    u32 flags = params | kDefaultFlags;
+    switch (info.subtype) {
+    case 20: flags = 0x10; break;
+    case 21: flags = 8; break;
+    case 22: flags = 0x12; break;
+    case 23: flags = 10; break;
+    case 25: flags = 0x804; break;
+    case 26: flags = 2; break;
+    case 27: flags = 0x80C; break;
+    case 28: flags = 9; break;
+    case 29: flags = 10; break;
+    default: break;
+    }
+    return flags | (params & ~0xFFU);
+}
+
 } // namespace
 
 s32 LevelTriggers::crystalsNeeded(s32 realm) {
@@ -55,6 +73,56 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
     }
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
+    // Height-driven floors must be at their closed endpoint before contact markers
+    // choose a supporting floor, just like keyed floors already are. Otherwise an
+    // upper landing's call switch can attach to a lift that starts below it.
+    std::optional<WorldCollision> initialCollision;
+    if (collision != nullptr) {
+        initialCollision = *collision;
+        std::vector<f32> heights(layout.objects().size(), 0.0f);
+        for (const auto& instance : instances) {
+            if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
+                continue;
+            }
+            const auto& info = infos[static_cast<usize>(instance.info)];
+            const s32 object = paramS16(instance, 0);
+            if (info.type != ItemInfo::kTrigger || object < 0 ||
+                static_cast<usize>(object) >= heights.size() ||
+                (flagsOf(info, instance) & LevelTrigger::kFades) != 0 ||
+                animator.trackOf(object).has_value()) {
+                continue;
+            }
+            auto& height = heights[static_cast<usize>(object)];
+            if (height == 0.0f) {
+                height = 0.1f * static_cast<f32>(paramS16(instance, 8));
+            }
+        }
+        for (usize i = 0; i < heights.size(); ++i) {
+            if (auto placement = collision->objectTransform(static_cast<s32>(i))) {
+                auto node = static_cast<s32>(i);
+                for (usize guard = 0; node >= 0 && guard < heights.size(); ++guard) {
+                    const auto at = static_cast<usize>(node);
+                    if (heights[at] != 0.0f) {
+                        // Replace, rather than add to, an existing endpoint: callers
+                        // may bind against collision that is already initialized.
+                        if (const auto current = collision->objectTransform(node)) {
+                            f32 initialY = layout.worldPosition(at).y;
+                            auto parent = node;
+                            for (usize depth = 0; parent >= 0 && depth < heights.size(); ++depth) {
+                                initialY += heights[static_cast<usize>(parent)];
+                                parent = m_parents[static_cast<usize>(parent)];
+                            }
+                            (*placement)[3].y += initialY - (*current)[3].y;
+                        }
+                        break;
+                    }
+                    node = m_parents[at];
+                }
+                initialCollision->setObjectTransform(static_cast<s32>(i), *placement);
+            }
+        }
+    }
+    const auto* initialFloors = initialCollision ? &*initialCollision : collision;
     for (usize i = 0; i < instances.size(); ++i) {
         const ItemInstance& instance = instances[i];
         if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size() ||
@@ -76,9 +144,9 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                     m_parents[static_cast<usize>(floor.object)] == trigger.target);
         };
         std::optional<FloorHit> support;
-        const WorldCollision* supportCollision = collision;
+        const WorldCollision* supportCollision = initialFloors;
         if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
-            support = collision->floorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
+            support = initialFloors->floorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
             if (restCollision &&
                 (!support || ((params & LevelTrigger::kOnTarget) != 0 && !onTarget(*support)))) {
                 const auto rest =
@@ -100,7 +168,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                 if (const auto placement = supportCollision->objectTransform(support->object)) {
                     trigger.floor = support->object;
                     trigger.localPlacement = glm::inverse(*placement) * trigger.placement;
-                    if (const auto current = collision->objectTransform(trigger.floor)) {
+                    if (const auto current = initialFloors->objectTransform(trigger.floor)) {
                         trigger.placement = *current * trigger.localPlacement;
                         trigger.spot = Vec3{trigger.placement[3]};
                     }
@@ -108,20 +176,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             }
         }
         // The trigger's flags: the kind's own, then whatever the instance adds.
-        u32 flags = params | kDefaultFlags;
-        switch (info.subtype) {
-        case 20: flags = 0x10; break;
-        case 21: flags = 8; break;
-        case 22: flags = 0x12; break;
-        case 23: flags = 10; break;
-        case 25: flags = 0x804; break;
-        case 26: flags = 2; break;
-        case 27: flags = 0x80C; break;
-        case 28: flags = 9; break;
-        case 29: flags = 10; break;
-        default: break;
-        }
-        flags |= params & ~0xFFU;
+        u32 flags = flagsOf(info, instance);
         if (support && trigger.target >= 0 && (flags & LevelTrigger::kWholeParty) != 0 &&
             (support->object == trigger.target ||
              (support->object >= 0 && static_cast<usize>(support->object) < m_parents.size() &&

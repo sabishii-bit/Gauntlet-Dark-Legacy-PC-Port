@@ -22,6 +22,7 @@
 #include "TestSupport.h"
 #include "game/enemies/CritterStatues.h"
 #include "game/players/PlayerActor.h"
+#include "game/screens/FloorRiding.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/LevelWorld.h"
@@ -33,6 +34,124 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+TEST_CASE("G1 upper landing calls the lift before walking down to the bridge logs and key",
+          "[triggers][g1-bridge-logs][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    world.startTriggers({});
+    world.updateTriggers(0, {});
+    const auto indexOf = [&](s32 instance) {
+        for (usize i = 0; i < world.triggers().size(); ++i) {
+            if (world.triggers().trigger(i).instance == instance) {
+                return i;
+            }
+        }
+        return world.triggers().size();
+    };
+    const usize call = indexOf(308);
+    const usize aboard = indexOf(313);
+    const usize logA = indexOf(53);
+    const usize logB = indexOf(54);
+    REQUIRE(call < world.triggers().size());
+    REQUIRE(aboard < world.triggers().size());
+    REQUIRE(logA < world.triggers().size());
+    REQUIRE(logB < world.triggers().size());
+    CHECK(world.triggers().trigger(call).floor == -1);
+    CHECK(world.triggers().trigger(call).spot.y == Approx(27.3701f).margin(0.02f));
+    CHECK(world.triggers().trigger(aboard).floor == 227);
+    CHECK(world.triggers().trigger(aboard).spot.y == Approx(19.3891f).margin(0.02f));
+    std::array<PlayerRuntime, 1> party;
+    auto& actor = party[0].actor;
+    actor.spawn(0, {}, nullptr, {53, 27.3f, -209.84f}, 0);
+    actor.settle(world.collision());
+    FloorRiding::land(party, 0, actor.position(), world.collision());
+    // The bridge's breakable parapet guards the lift; its collision must be broken
+    // through the same damage path before the character can reach the landing.
+    bool brokeParapet = false;
+    for (usize i = 0; i < world.walls().size(); ++i) {
+        const auto& wall = world.walls().wall(i);
+        if (glm::distance(Vec3{wall.transform[3]}, Vec3{48.4765625f, 28.7109375f, -208.734375f}) <
+            0.1f) {
+            REQUIRE(world.strikeWall(i, 1000) == 0);
+            brokeParapet = true;
+        }
+    }
+    REQUIRE(brokeParapet);
+    const auto step = [&](Vec2 direction = Vec2{0}) {
+        world.update(kStep);
+        FloorRiding::carry(party[0], world.collision());
+        const Vec3 before = actor.position();
+        actor.update(MoveInput{.direction = direction,
+                               .magnitude = glm::length(direction) > 0 ? 1.0f : 0.0f},
+                     0, kStep, &world.collision());
+        actor.fall(kStep, world.collision());
+        FloorRiding::land(party, 0, before, world.collision());
+        const std::array visitors{TriggerVisitor{.position = actor.position(),
+                                                 .radius = actor.radius(),
+                                                 .floorObject = party[0].floor.object,
+                                                 .height = actor.height()}};
+        world.updateTriggers(kStep, visitors);
+    };
+    const auto walk = [&](Vec2 goal) {
+        for (s32 frame = 0; frame < 180; ++frame) {
+            const Vec2 delta = goal - Vec2{actor.position().x, actor.position().z};
+            if (glm::length(delta) < 0.6f) {
+                return;
+            }
+            step(glm::normalize(delta));
+        }
+        CAPTURE(goal.x, goal.y, actor.position().x, actor.position().y, actor.position().z);
+        FAIL("walking route did not reach its waypoint");
+    };
+    walk({49.4f, -209.84f});
+    for (s32 frame = 0; frame < 30 && !world.triggers().trigger(call).fired; ++frame) {
+        step({-1, 0});
+    }
+    CAPTURE(actor.position().x, actor.position().y, actor.position().z, actor.radius());
+    REQUIRE(world.triggers().trigger(call).fired);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        step();
+    }
+    walk({46.875f, -208.28f});
+    for (s32 frame = 0; frame < 180 && actor.position().y > 19.4f; ++frame) {
+        step();
+    }
+    CAPTURE(actor.position().x, actor.position().y, actor.position().z);
+    REQUIRE(world.triggers().trigger(aboard).fired);
+    CHECK(actor.position().y == Approx(19.2891f).margin(0.2f));
+    walk({48.9f, -204});
+    walk({54.6875f, -203.0f});
+    REQUIRE(world.triggers().trigger(logA).fired);
+    REQUIRE(world.triggers().trigger(logB).fired);
+    for (s32 frame = 0; frame < 180; ++frame) {
+        step();
+    }
+    walk({58.96f, -205.89f});
+    // This bonus key is authored for two or more players, not a missing solo key.
+    usize key = world.placedItems().size();
+    for (usize i = 0; i < world.placedItems().size(); ++i) {
+        if (world.placedItems().item(i).instance == 307) {
+            key = i;
+            break;
+        }
+    }
+    REQUIRE(key < world.placedItems().size());
+    CHECK_FALSE(world.placedItems().item(key).visible);
+    world.setPlayerCount(2);
+    CHECK(world.placedItems().item(key).visible);
+    const std::array collectors{Collector{actor.position(), actor.radius(), actor.height()}};
+    const auto pickups = world.collect(device, collectors);
+    bool tookKey = false;
+    for (const auto& pickup : pickups) {
+        tookKey |= world.placedItems().item(pickup.item).instance == 307;
+    }
+    CHECK(tookKey);
+}
 
 struct SwitchFixture {
     test::FakeRenderDevice device;
@@ -165,6 +284,48 @@ TEST_CASE("floor-bound party pads require that floor while no-snap markers keep 
     visitors[0].floorObject = 0;
     f.triggers.update(kStep, visitors, f.animator, f.scene, &collision);
     CHECK(pad.fired);
+}
+
+TEST_CASE("a lowered lift does not take its upper landing call switch down with it",
+          "[triggers][platform-contact][initial-floor-binding]") {
+    SwitchFixture f(
+        R"({"info":0,"position":[0.2,10.1,0],
+            "params":[0,0,10,0,255,255,0,0,176,255,0,0]},
+           {"info":0,"position":[-3,10.1,0],
+            "params":[0,0,12,5,1,255,0,0,176,255,0,0]})",
+        R"({"name":"WALL","position":[0,10.1,0],"flags":4096},
+           {"name":"FLOOR","position":[0,10,0]})");
+    CollisionTriangle lift;
+    lift.object = 0;
+    lift.objectFlags = WorldObject::kFloor | WorldObject::kAnimated;
+    lift.normal = Vec3{0, 1, 0};
+    lift.vertices = {Vec3{-10, 0, -10}, Vec3{0.5f, 0, -10}, Vec3{0.5f, 0, 10}};
+    CollisionTriangle landing;
+    landing.object = 1;
+    landing.objectFlags = WorldObject::kFloor;
+    landing.normal = Vec3{0, 1, 0};
+    landing.vertices = {Vec3{0, 10, -10}, Vec3{10, 10, -10}, Vec3{0, 10, 10}};
+    WorldCollision collision;
+    collision.build({lift, landing});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    // At rest the lift is just higher than the landing within the floor probe.
+    // Binding must use its -8 closed endpoint, not attach both markers to it.
+    for (const f32 existingHeight : {10.1f, 2.1f}) {
+        CAPTURE(existingHeight);
+        collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, existingHeight, 0}));
+        f.triggers.bind(f.layout, f.animator, &collision);
+        REQUIRE(f.triggers.size() == 2);
+        CHECK(f.triggers.trigger(0).floor == -1);
+        CHECK(f.triggers.trigger(0).spot.y == Approx(10.1f));
+        CHECK(f.triggers.trigger(1).floor == 0);
+        CHECK(f.triggers.trigger(1).spot.y == Approx(2.2f));
+        CHECK((f.triggers.trigger(1).flags & LevelTrigger::kOnTarget) != 0);
+        // A projection for binding does not mutate the caller's collision.
+        CHECK((*collision.objectTransform(0))[3].y == Approx(existingHeight));
+    }
+    const std::array visitor{TriggerVisitor{.position = Vec3{0.2f, 10, 0}}};
+    f.triggers.update(kStep, visitor, f.animator, f.scene, &collision);
+    CHECK(f.triggers.trigger(0).fired);
 }
 
 TEST_CASE("subtype 23 supplies a movement lesson only when it has a target", "[triggers][help]") {
@@ -454,7 +615,9 @@ TEST_CASE("fading a target hides and unblocks its entire subtree", "[game][world
     }
 }
 
-TEST_CASE("every catalogued level retains and activates its ordinary root switches",
+// Dispatch-only coverage: no collision and a synthetic visitor at the marker bypass
+// route reachability and do not certify correct party-size eligibility.
+TEST_CASE("isolated root-switch dispatch retains the catalogued ordinary switches",
           "[game][world][switch-census][assets]") {
     const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
     LevelCatalog catalog;
