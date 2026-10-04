@@ -31,6 +31,16 @@ class WizardTests(unittest.TestCase):
         self.dialog = mock.patch("installer.wizard.QMessageBox.critical").start()
         self.addCleanup(mock.patch.stopall)
 
+    def test_initial_window_has_no_destination_or_ready_helper_message(self):
+        from PySide6.QtWidgets import QLabel
+        from installer.wizard import STRINGS
+        self.assertEqual(self.window.status.text(), "")
+        self.assertNotIn("destination_help", STRINGS)
+        self.assertNotIn("ready", STRINGS)
+        labels = [label.text() for label in self.window.findChildren(QLabel)]
+        self.assertFalse(any("Defaults to the folder" in text or
+                             "Ready to install." in text for text in labels))
+
     def test_frozen_default_is_installer_folder_not_bundle_temp(self):
         from installer.wizard import installer_directory
         with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(
