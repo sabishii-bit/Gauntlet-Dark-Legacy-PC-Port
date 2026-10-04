@@ -1097,7 +1097,7 @@ std::vector<MissileTarget> PlayerAttacks::strikeTargets(const Targets& targets) 
         const LevelTriggers& triggers = m_resources->world.triggers();
         for (usize i = 0; i < triggers.size(); ++i) {
             const LevelTrigger& trigger = triggers.trigger(i);
-            if (trigger.shootable) {
+            if (trigger.enabled && trigger.shootable) {
                 all.push_back(MissileTarget{kSwitchTargetBase + static_cast<s32>(i), trigger.spot,
                                             trigger.radius, trigger.height});
             }

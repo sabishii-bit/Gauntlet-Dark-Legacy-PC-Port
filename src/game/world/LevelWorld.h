@@ -79,7 +79,8 @@ public:
      * note, when the level has no such object, as the temple's and underworld's have none. */
     bool shutPortalGlow(s32 world, s32 gate);
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */
-    void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors);
+    void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors,
+                        bool cameraHeld = false);
     const LevelTriggers& triggers() const { return m_triggers; }
     void activateTrigger(s32 id, bool atOnce);
     void shootTrigger(usize index) { m_triggers.shoot(index); }
@@ -121,6 +122,11 @@ public:
     }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
     void setPlayerCount(s32 players) {
+        if (m_playerCount == players) {
+            return;
+        }
+        m_playerCount = players;
+        m_triggers.setPlayerCount(players);
         m_placedItems.setPlayerCount(players);
         m_walls.setPlayerCount(players, m_collision);
         m_fallingScenery.setPlayerCount(players);
@@ -270,6 +276,7 @@ private:
     std::optional<f32> presentedTextureFrameOffset(f32 alpha) const;
     void loadLevelData(const std::filesystem::path& unpackedRoot);
     LevelRef m_ref = LevelRef::tower();
+    s32 m_playerCount = -1;
     void syncCollision();
 
     ModelSet m_models;

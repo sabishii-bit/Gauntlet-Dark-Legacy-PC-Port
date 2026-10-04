@@ -7,6 +7,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/world/WorldScene.h"
 
 namespace gdl::game {
 
@@ -21,6 +22,7 @@ enum class MusicSwitch : u8 {
 /** A sound item that names a music area: a sphere that asks for that area's stream. */
 struct MusicZone {
     s32 instance = -1;
+    s32 parent = -1;
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
     s32 area = 0; ///< the stream's index in the realm's audio record, from nought
@@ -49,13 +51,15 @@ public:
     static MusicSwitch switchOf(const ItemInstance& instance);
 
     /** Takes every sound item naming an area; false when there is none. */
-    bool bind(const WorldLayout& layout);
+    bool bind(const WorldLayout& layout, const WorldScene* world = nullptr);
     void clear();
     /** The highest area whose zone holds the nearest listener, with the zone's way over;
      * nothing outside every zone or without a listener. */
-    std::optional<MusicCue> pick(std::span<const Vec3> listeners) const;
+    std::optional<MusicCue> pick(std::span<const Vec3> listeners,
+                                 const WorldScene* world = nullptr) const;
     /** The pick when it is an area other than `current`, the one asked for already. */
-    std::optional<MusicCue> update(std::span<const Vec3> listeners, s32 current) const;
+    std::optional<MusicCue> update(std::span<const Vec3> listeners, s32 current,
+                                   const WorldScene* world = nullptr) const;
 
     usize size() const { return m_zones.size(); }
     const MusicZone& zone(usize index) const { return m_zones[index]; }

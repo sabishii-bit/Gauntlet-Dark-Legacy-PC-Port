@@ -68,6 +68,8 @@ public:
               std::span<const LevelEnemy> roster = {}, s32 realm = -1,
               ItemArchive* realmItems = nullptr);
     void clear();
+    /** Carries bodies, contact boxes and birth origins with their supporting world nodes. */
+    void syncFloors();
     /** A boss effect leaves a tier-one generator. Its optional BOSSGEN art is borrowed. */
     bool placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items, Enemies& enemies,
                    s32 kind, const Mat4& placement, const WorldCollision* collision,
@@ -144,6 +146,10 @@ private:
         f32 clearance = 0.0f;
         f32 viewRadius = 0.0f; ///< how far outside the view it still counts as on screen
         Obstacle box;
+        s32 support = -1;
+        Mat4 supportLocal{1};
+        Vec3 boxOffset{0};
+        f32 boxYaw = 0;
         std::unique_ptr<ItemFigure> bossFigure;
         bool boss = false;
     };
@@ -155,7 +161,10 @@ private:
     static s32 stateFor(const Generator& generator, bool destroyed);
     void updatePresence(Generator& generator, bool seen) const;
     void applyBroodEvents(Enemies& enemies);
+    static void bindSupport(Generator& generator, const ItemInfo& info, const Vec3& authored,
+                            const WorldCollision* collision);
 
+    const WorldCollision* m_collision = nullptr;
     std::vector<Generator> m_generators;
     std::optional<ViewVolume> m_view;
     std::vector<std::unique_ptr<Bodies>> m_bodies;

@@ -8,7 +8,7 @@ void PlayScene::updateSwitchCutscene(s32 ticks, f32 seconds) {
     // The scenery and activated switch keep animating; combat clocks, projectiles,
     // generators, damage, inventory timers and player input do not advance.
     m_world->update(seconds);
-    m_world->updateTriggers(seconds, visitors());
+    m_world->updateTriggers(seconds, visitors(), true);
     m_fixtures.syncFloors();
     m_opponents.syncFloors();
     m_portals.animate(seconds);

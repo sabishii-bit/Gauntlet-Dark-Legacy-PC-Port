@@ -70,6 +70,10 @@ void Rotators::bindFigures(RenderDevice& device, const WorldLayout& layout, Item
             continue;
         }
         const ItemInstance& instance = layout.itemInstances()[static_cast<usize>(rotator.instance)];
+        // NoGeometry leaves the trigger active but gives it only an empty scene node.
+        if ((instance.flags & 2U) != 0) {
+            continue;
+        }
         const ItemInfo& info = layout.itemInfos()[static_cast<usize>(instance.info)];
         auto pad = std::make_unique<ItemFigure>();
         if (pad->place(device, items, info.name, instance, nullptr)) {

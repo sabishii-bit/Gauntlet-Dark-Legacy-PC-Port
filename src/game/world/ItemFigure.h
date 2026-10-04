@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -54,6 +55,11 @@ public:
      * case the item still has its place and its obstacle. */
     bool place(RenderDevice& device, ItemArchive& items, std::string_view name,
                const ItemInstance& instance, const WorldCollision* collision);
+    /** Scenery may have no animation tree: try its static name, nameL1, then nameL1ROOT.
+     * Ordinary place() callers retain their tree-only contract. */
+    bool placeStaticFallback(RenderDevice& device, ItemArchive& items, std::string_view name,
+                             const ItemInstance& instance, const WorldCollision* collision,
+                             u32 objectFlags);
 
     /** Starts the figure's sequence number `index`. */
     void play(s32 index, bool loop);
@@ -97,6 +103,7 @@ private:
     void refreshTextures();
 
     const TreeInfo* m_tree = nullptr;
+    std::unique_ptr<TreeInfo> m_staticTree;
     mutable TreeModel m_model;
     TreePose m_pose;
     mutable TreePose m_presentationPose;

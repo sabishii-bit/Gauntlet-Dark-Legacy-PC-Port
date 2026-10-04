@@ -88,6 +88,9 @@ struct LevelTrigger {
     bool occupied = false;       ///< someone was on it the last update
     bool movementLesson = false; ///< subtype 23's lesson, posted while its target exists
     bool forced = false;         ///< a special trigger remains activated without a visitor
+    s32 minPlayers = 0;          ///< minimum joined party, or 10 plus an exact party size
+    bool enabled = true;         ///< available to the current joined party
+    u32 heldContacts = 0;        ///< previous effective contacts, retained during camera holds
     s32 floor = -1;              ///< animated supporting floor, when attached
     Mat4 localPlacement{1.0f};   ///< item placement in its supporting floor's space
     Mat4 placement{1.0f};        ///< current world placement, shared by contact and artwork
@@ -140,6 +143,11 @@ public:
     void clear();
     usize size() const { return m_triggers.size(); }
     const LevelTrigger& trigger(usize index) const { return m_triggers[index]; }
+    /** Joined participants, including the fallen. Whole-party contact still counts only the
+     * standing visitors. Without an explicit count, isolated callers use their visitors. */
+    void setPlayerCount(s32 players);
+    /** Preserve switch contacts while an event camera holds the party in place. */
+    void setCameraHeld(bool held) { m_cameraHeld = held; }
     /** A thrown weapon, a burst or a blast has hit a shootable trigger: on the next update it
      * goes off as though the whole party stood in it (ItemDamage's trigger case). */
     void shoot(usize index);
@@ -213,10 +221,13 @@ private:
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
     /** Whether anyone stands in the trigger's spot, `radius` wide. */
     bool reaches(const LevelTrigger& trigger, f32 radius, const TriggerVisitor& visitor) const;
-    bool visited(const LevelTrigger& trigger, f32 radius,
-                 std::span<const TriggerVisitor> visitors) const;
+    bool onTarget(const LevelTrigger& trigger, const TriggerVisitor& visitor) const;
+    void refreshEligibility(s32 players);
+    void collectContacts(usize index, u32 mask, std::span<u32> contacts) const;
     void fire(usize index, bool active, bool atOnce, WorldAnimator& animator, WorldScene& scene,
               WorldCollision* collision);
+    void fireNode(usize index, bool active, bool atOnce, WorldAnimator& animator, WorldScene& scene,
+                  WorldCollision* collision);
     /** True when the target's commanded state changes. */
     static bool openTarget(Target& target, bool open, bool atOnce, WorldAnimator& animator,
                            WorldScene& scene, WorldCollision* collision);
@@ -232,6 +243,8 @@ private:
     std::vector<Vec3> m_wakes;
     f32 m_frameRemainder = 0.0f;
     f32 m_emptyToggleDelay = 0.0f;
+    s32 m_playerCount = -1; ///< negative: infer joined count from the standing visitor span
+    bool m_cameraHeld = false;
 };
 
 } // namespace gdl::game

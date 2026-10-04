@@ -1330,6 +1330,11 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
         }
     }
     REQUIRE(target < triggers.size());
+    const s32 required = triggers.trigger(target).minPlayers;
+    REQUIRE(required > 1);
+    REQUIRE(required <= 4);
+    const bool eligible = GENERATE(false, true);
+    f.world.setPlayerCount(eligible ? required : 1);
     const Vec3 spot = triggers.trigger(target).spot + Vec3{0, 1, 0};
     MissileSpec spec;
     spec.weight = 0;
@@ -1355,7 +1360,7 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
             break;
         }
     }
-    CHECK(shot);
+    CHECK(shot == eligible);
     f.fixtures.clear();
 }
 

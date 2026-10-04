@@ -2,6 +2,8 @@
 #include <array>
 #include <cmath>
 #include <ranges>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -13,6 +15,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/SampleLevel.h"
 #include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
@@ -26,6 +29,66 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+TEST_CASE("rotator NoGeometry suppresses the pad mesh without disabling contact",
+          "[rotators][rotator-visibility]") {
+    const u32 flags = GENERATE(0U, 2U);
+    const auto dir = test::sampleLevel("rotator-visibility");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"BRIDGEPAD",
+      "nodes":[{"name":"PAD","object":"WALL","parent":-1,"position":[0,0,0]}]}]})");
+    writeTextFile(dir / "world.json", std::string{R"({
+      "objects":[{"name":"TABLE","position":[0,0,0],"flags":4096}],
+      "itemInfos":[{"type":12,"subtype":2,"name":"BRIDGEPAD","radius":3,"height":5}],
+      "itemInstances":[{"info":0,"position":[0,0,0],"flags":)"} +
+                                          std::to_string(flags) +
+                                          R"(,"params":[0,0,0,0,10,215,35,60,0,0,128,63]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    ItemArchive items;
+    REQUIRE(items.load(dir));
+    test::FakeRenderDevice device;
+    Rotators rotators;
+    rotators.bind(layout);
+    rotators.bindFigures(device, layout, items);
+    REQUIRE(rotators.size() == 1);
+    CHECK(static_cast<bool>(rotators.rotator(0).pad) == (flags == 0));
+    WorldScene scene;
+    const std::array visitors{TriggerVisitor{.position = Vec3{0}}};
+    rotators.update(kStep, visitors, scene);
+    CHECK(rotators.rotator(0).started);
+    CHECK(rotators.rotator(0).turned > 0);
+}
+
+TEST_CASE("native mines and ice turntable sensors remain invisible but functional",
+          "[rotators][rotator-visibility][assets]") {
+    const std::string name = GENERATE("I2", "J3");
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELI2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    WorldLayout layout;
+    REQUIRE(layout.load(root / (std::string{"LEVELS/LEVEL"} + name)));
+    ItemArchive items;
+    REQUIRE(items.load(root / (std::string{"ITEMS/LEVEL"} + name[0])));
+    test::FakeRenderDevice device;
+    Rotators rotators;
+    rotators.bind(layout);
+    rotators.bindFigures(device, layout, items);
+    WorldScene scene;
+    usize pads = 0;
+    for (usize i = 0; i < rotators.size(); ++i) {
+        const auto& pad = rotators.rotator(i);
+        if (pad.subtype != Rotators::kTurnedByPad) {
+            continue;
+        }
+        ++pads;
+        CAPTURE(name, pad.instance);
+        CHECK((layout.itemInstances()[static_cast<usize>(pad.instance)].flags & 2U) != 0);
+        CHECK_FALSE(pad.pad);
+        const std::array visitors{TriggerVisitor{.position = pad.spot}};
+        rotators.update(kStep, visitors, scene);
+        CHECK(pad.started);
+    }
+    CHECK(pads == (std::string_view{name} == "I2" ? 1 : 2));
+}
 
 TEST_CASE("turntable pads use the authored contact height and the player's half height",
           "[rotators][platform-contact]") {

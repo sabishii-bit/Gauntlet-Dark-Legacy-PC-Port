@@ -189,6 +189,190 @@ struct SwitchFixture {
     f32 height() const { return scene.worldTransform(0)[3].y; }
 };
 
+TEST_CASE("trigger eligibility uses the joined party and exact-count variants",
+          "[triggers][trigger-party-gates]") {
+    const auto minimum = GENERATE(0, 1, 2, 3, 4, 11, 12, 13, 14);
+    const auto joined = GENERATE(1, 2, 3, 4);
+    SwitchFixture f(std::format(
+        R"({{"info":0,"minPlayers":{},"position":[0,0,0],"params":[0,0,0,0,2,255,0,0,0,0,0,0]}})",
+        minimum));
+    f.triggers.setPlayerCount(joined);
+    // Fallen members still count for the placement variant, but do not stand on it.
+    const std::array standing{TriggerVisitor{.party = 3}};
+    f.step(kStep, standing);
+    const bool eligible = minimum > 10 ? joined == minimum - 10 : joined >= minimum;
+    CAPTURE(minimum, joined);
+    CHECK(f.triggers.trigger(0).enabled == eligible);
+    CHECK(f.triggers.trigger(0).fired == eligible);
+    CHECK(f.triggers.opened(0) == eligible);
+}
+
+TEST_CASE(
+    "a disabled trigger cannot initiate a chain but an eligible successor survives a hidden link",
+    "[triggers][trigger-party-gates][trigger-chain-party]") {
+    const auto rootMinimum = GENERATE(1, 2);
+    SwitchFixture f(
+        std::format(
+            R"({{"info":0,"minPlayers":{},"position":[0,0,0],"params":[255,255,2,0,2,255,1,2,0,0,0,0]}},
+           {{"info":0,"minPlayers":2,"position":[100,0,0],"params":[0,0,2,0,2,255,2,3,0,0,0,0]}},
+           {{"info":0,"minPlayers":1,"position":[200,0,0],"params":[1,0,2,0,2,255,3,0,0,0,0,0]}})",
+            rootMinimum),
+        R"({"name":"WALL","position":[0,10,0]}, {"name":"WALL","position":[0,20,0]})");
+    f.triggers.setPlayerCount(1);
+    const std::array standing{TriggerVisitor{.party = 0}};
+    f.step(kStep, standing);
+    CHECK_FALSE(f.triggers.trigger(1).enabled);
+    CHECK_FALSE(f.triggers.trigger(1).fired);
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK(f.triggers.opened(1) == (rootMinimum == 1));
+    f.triggers.setPlayerCount(2);
+    f.step(kStep, standing);
+    CHECK(f.triggers.trigger(1).enabled);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.triggers.opened(1));
+}
+
+TEST_CASE("whole-party successors combine player identities from distinct contact roots",
+          "[triggers][trigger-chain-party]") {
+    SwitchFixture f(
+        R"({"info":0,"position":[0,0,0],"params":[255,255,2,0,2,255,0,9,0,0,0,0]},
+           {"info":0,"position":[10,0,0],"params":[255,255,2,0,2,255,0,9,0,0,0,0]},
+           {"info":0,"position":[100,0,0],"params":[0,0,2,4,2,255,9,0,0,0,0,0]})");
+    f.triggers.setPlayerCount(4);
+    std::array standing{TriggerVisitor{.party = 0},
+                        TriggerVisitor{.position = Vec3{1000, 0, 0}, .party = 3}};
+    f.step(kStep, standing);
+    CHECK(f.triggers.trigger(0).fired);
+    CHECK_FALSE(f.triggers.trigger(2).fired);
+    CHECK_FALSE(f.triggers.opened(0));
+    standing[1].position = Vec3{10, 0, 0};
+    f.step(kStep, standing);
+    CHECK(f.triggers.trigger(2).fired);
+    CHECK(f.triggers.opened(0));
+    // Joined-but-fallen slots 1 and 2 do not block a standing-party requirement.
+    CHECK(f.triggers.takeOpenings().size() == 1);
+}
+
+TEST_CASE("a linked floor requirement filters only that node's contact identities",
+          "[triggers][trigger-chain-party]") {
+    SwitchFixture f(
+        R"({"info":0,"position":[0,0,0],"params":[255,255,2,0,2,255,1,2,0,0,0,0]},
+           {"info":0,"position":[100,0,0],"params":[0,0,2,1,2,255,2,3,0,0,0,0]},
+           {"info":0,"position":[200,0,0],"params":[1,0,2,0,2,255,3,0,0,0,0,0]})",
+        R"({"name":"WALL","position":[0,10,0]}, {"name":"WALL","position":[0,20,0]})");
+    std::array standing{TriggerVisitor{.party = 2}};
+    f.step(kStep, standing);
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK(f.triggers.opened(1));
+    standing[0].floorObject = 0;
+    f.step(kStep, standing);
+    CHECK(f.triggers.opened(0));
+}
+
+TEST_CASE("joined party changes re-enable retained triggers without replaying disabled shots",
+          "[triggers][trigger-party-gates]") {
+    SwitchFixture f(
+        R"({"info":0,"minPlayers":12,"position":[0,0,0],"params":[0,0,2,0,2,255,0,0,0,0,0,0]})",
+        R"({"name":"WALL","position":[0,10,0]})", 31);
+    const std::array standing{TriggerVisitor{.position = Vec3{100, 0, 0}, .party = 0}};
+    f.triggers.setPlayerCount(1);
+    f.triggers.shoot(0);
+    f.step(kStep, standing);
+    CHECK_FALSE(f.triggers.trigger(0).shot);
+    CHECK_FALSE(f.triggers.trigger(0).enabled);
+    f.triggers.setPlayerCount(2);
+    f.step(kStep, standing);
+    CHECK(f.triggers.trigger(0).enabled);
+    CHECK_FALSE(f.triggers.opened(0));
+    f.triggers.shoot(0);
+    f.step(kStep, standing);
+    CHECK(f.triggers.opened(0));
+    f.triggers.setPlayerCount(3);
+    CHECK_FALSE(f.triggers.trigger(0).enabled);
+    f.triggers.setPlayerCount(2);
+    CHECK(f.triggers.trigger(0).enabled);
+    CHECK(f.triggers.opened(0));
+}
+
+TEST_CASE("a root's floor requirement prevents contact from reaching its successors",
+          "[triggers][trigger-chain-party]") {
+    SwitchFixture f(
+        R"({"info":0,"position":[0,0,0],"params":[0,0,2,1,2,255,1,2,0,0,0,0]},
+           {"info":0,"position":[100,0,0],"params":[1,0,2,0,2,255,2,0,0,0,0,0]})",
+        R"({"name":"WALL","position":[0,10,0]}, {"name":"WALL","position":[0,20,0]})");
+    std::array standing{TriggerVisitor{.party = 0}};
+    f.step(kStep, standing);
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK_FALSE(f.triggers.opened(1));
+    standing[0].floorObject = 0;
+    f.step(kStep, standing);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.triggers.opened(1));
+}
+
+TEST_CASE("an event camera preserves pressure contact only until it releases the party",
+          "[triggers][trigger-chain-party][trigger-camera-hold]") {
+    SwitchFixture f(
+        R"({"info":0,"position":[0,0,0],"params":[0,0,0,0,2,255,1,2,0,0,0,0]},
+           {"info":0,"position":[100,0,0],"params":[1,0,0,0,2,255,2,0,0,0,0,0]})",
+        R"({"name":"WALL","position":[0,10,0]}, {"name":"WALL","position":[0,20,0]})");
+    std::array standing{TriggerVisitor{.party = 2}};
+    f.triggers.setPlayerCount(1);
+    f.step(kStep, standing);
+    REQUIRE(f.triggers.opened(0));
+    REQUIRE(f.triggers.opened(1));
+    f.triggers.setCameraHeld(true);
+    standing[0].position.x = 1000;
+    f.step(kStep, standing);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.triggers.opened(1));
+    SECTION("release forgets the old contacts") {
+        f.triggers.setCameraHeld(false);
+        f.step(kStep, standing);
+    }
+    SECTION("a player who leaves the standing party cannot hold a pad") {
+        f.step(kStep);
+    }
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK_FALSE(f.triggers.opened(1));
+}
+
+TEST_CASE("A5's native linked whole-party switch rejects a single participant's contact",
+          "[triggers][trigger-chain-party][assets]") {
+    const auto file = test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2");
+    WorldLayout layout;
+    REQUIRE(layout.load(file.parent_path()));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr);
+    triggers.setPlayerCount(2);
+    usize root = triggers.size();
+    for (usize i = 0; i < triggers.size(); ++i) {
+        if (triggers.trigger(i).instance == 1) {
+            root = i;
+            break;
+        }
+    }
+    REQUIRE(root < triggers.size());
+    const auto& trigger = triggers.trigger(root);
+    REQUIRE(trigger.next >= 0);
+    const auto& successor = triggers.trigger(static_cast<usize>(trigger.next));
+    REQUIRE(successor.target == 25);
+    REQUIRE((successor.flags & LevelTrigger::kWholeParty) != 0);
+    std::array standing{TriggerVisitor{.position = trigger.spot, .party = 0},
+                        TriggerVisitor{.position = trigger.spot + Vec3{1000, 0, 0}, .party = 1}};
+    WorldScene scene;
+    triggers.update(kStep, standing, animator, scene, nullptr);
+    CHECK(trigger.fired);
+    CHECK_FALSE(successor.fired);
+    CHECK_FALSE(triggers.opened(25));
+    standing[1].position = trigger.spot;
+    triggers.update(kStep, standing, animator, scene, nullptr);
+    CHECK(successor.fired);
+    CHECK(triggers.opened(25));
+}
+
 TEST_CASE("trigger contact uses authored height and the visitor's half height",
           "[triggers][temple-gates]") {
     SwitchFixture f(R"({"info":0,"position":[0,-5,0],"params":[0,0,0,0,0,255,0,0,0,0,0,0]})",
@@ -615,8 +799,8 @@ TEST_CASE("fading a target hides and unblocks its entire subtree", "[game][world
     }
 }
 
-// Dispatch-only coverage: no collision and a synthetic visitor at the marker bypass
-// route reachability and do not certify correct party-size eligibility.
+// Dispatch-only coverage: synthetic visitors at the marker test party-size variants,
+// but bypass collision and therefore do not certify route reachability.
 TEST_CASE("isolated root-switch dispatch retains the catalogued ordinary switches",
           "[game][world][switch-census][assets]") {
     const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
@@ -639,23 +823,35 @@ TEST_CASE("isolated root-switch dispatch retains the catalogued ordinary switche
             triggers.bind(layout, animator, nullptr);
             switches += triggers.size();
             for (usize i = 0; i < triggers.size(); ++i) {
-                animator.bind(layout);
-                triggers.bind(layout, animator, nullptr);
                 const auto trigger = triggers.trigger(i);
                 CAPTURE(name, i, trigger.flags, trigger.target);
                 if (trigger.chained ||
                     (trigger.flags & (LevelTrigger::kRequirement | LevelTrigger::kCloses)) != 0) {
                     continue;
                 }
-                const std::array party{
-                    TriggerVisitor{.position = trigger.spot, .floorObject = trigger.target}};
-                WorldScene scene;
-                triggers.update(kStep, party, animator, scene, nullptr);
-                CHECK(triggers.trigger(i).fired);
-                if (trigger.target >= 0) {
-                    CHECK(triggers.opened(trigger.target));
+                for (s32 count = 1; count <= 4; ++count) {
+                    animator.bind(layout);
+                    triggers.bind(layout, animator, nullptr);
+                    triggers.setPlayerCount(count);
+                    std::vector<TriggerVisitor> party;
+                    party.reserve(static_cast<usize>(count));
+                    for (s32 player = 0; player < count; ++player) {
+                        party.push_back(TriggerVisitor{.position = trigger.spot,
+                                                       .floorObject = trigger.target,
+                                                       .party = player});
+                    }
+                    WorldScene scene;
+                    triggers.update(kStep, party, animator, scene, nullptr);
+                    const bool eligible = trigger.minPlayers > 10 ? count == trigger.minPlayers - 10
+                                                                  : count >= trigger.minPlayers;
+                    CAPTURE(count, trigger.minPlayers);
+                    CHECK(triggers.trigger(i).enabled == eligible);
+                    CHECK(triggers.trigger(i).fired == eligible);
+                    if (eligible && trigger.target >= 0) {
+                        CHECK(triggers.opened(trigger.target));
+                    }
+                    activated += eligible ? 1 : 0;
                 }
-                ++activated;
             }
         }
     }
@@ -751,7 +947,7 @@ TEST_CASE("Tower and Province trigger figures respect their authored geometry ex
         for (usize i = 0; i < triggers.size(); ++i) {
             const auto& instance =
                 layout.itemInstances()[static_cast<usize>(triggers.trigger(i).instance)];
-            if ((instance.flags & 2) != 0) {
+            if ((instance.flags & 2) != 0 || !triggers.trigger(i).enabled) {
                 ++hidden;
                 continue;
             }
@@ -1074,9 +1270,17 @@ TEST_CASE("catalogued platform pads respond at their actual supporting surface",
                 const s32 parent = layout.objects()[static_cast<usize>(floor->object)].parent;
                 CAPTURE(floor->object, parent, floor->y);
                 CHECK((floor->object == trigger.target || parent == trigger.target));
-                const std::array visitors{
-                    TriggerVisitor{.position = Vec3{trigger.spot.x, floor->y, trigger.spot.z},
-                                   .floorObject = floor->object}};
+                const s32 count = trigger.minPlayers > 10 ? trigger.minPlayers - 10
+                                                          : std::max(1, trigger.minPlayers);
+                triggers.setPlayerCount(count);
+                std::vector<TriggerVisitor> visitors;
+                visitors.reserve(static_cast<usize>(count));
+                for (s32 player = 0; player < count; ++player) {
+                    visitors.push_back(
+                        TriggerVisitor{.position = Vec3{trigger.spot.x, floor->y, trigger.spot.z},
+                                       .floorObject = floor->object,
+                                       .party = player});
+                }
                 WorldScene scene;
                 triggers.update(kStep, visitors, animator, scene, &collision);
                 CHECK(triggers.trigger(i).fired);
@@ -1107,6 +1311,7 @@ TEST_CASE("Underworld switch artwork remains visible before and after trigger co
     triggers.bind(layout, animator, nullptr);
     triggers.bindFigures(device, layout, items);
     REQUIRE(triggers.size() == 11);
+    triggers.setPlayerCount(3);
     WorldScene scene;
     for (usize i = 0; i < triggers.size(); ++i) {
         const auto& trigger = triggers.trigger(i);
@@ -1153,6 +1358,7 @@ TEST_CASE("a target on the wall is set off by what hits it, and walking past doe
         }
     }
     REQUIRE(shootable.size() == 2);
+    triggers.setPlayerCount(2);
     const usize first = shootable.front();
     const LevelTrigger& target = triggers.trigger(first);
     REQUIRE(target.target >= 0);

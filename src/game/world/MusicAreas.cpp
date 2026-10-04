@@ -26,7 +26,7 @@ MusicSwitch MusicAreas::switchOf(const ItemInstance& instance) {
     return how == 1 ? MusicSwitch::Faded : MusicSwitch::AtOnce;
 }
 
-bool MusicAreas::bind(const WorldLayout& layout) {
+bool MusicAreas::bind(const WorldLayout& layout, const WorldScene* world) {
     clear();
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
@@ -43,6 +43,22 @@ bool MusicAreas::bind(const WorldLayout& layout) {
         MusicZone zone;
         zone.instance = static_cast<s32>(i);
         zone.position = instance.position;
+        constexpr f32 kParentReach = 10;
+        f32 nearest = kParentReach;
+        for (const auto& animation : layout.animations()) {
+            if (animation.object < 0 ||
+                static_cast<usize>(animation.object) >= layout.objects().size()) {
+                continue;
+            }
+            const auto object = static_cast<usize>(animation.object);
+            const Vec3 position = world != nullptr ? Vec3{world->worldTransform(object)[3]}
+                                                   : layout.worldPosition(object);
+            const f32 distance = glm::distance(instance.position, position);
+            if (distance < nearest) {
+                nearest = distance;
+                zone.parent = animation.object;
+            }
+        }
         std::memcpy(&zone.radius, instance.params.data(), sizeof(zone.radius));
         zone.area = area - 1;
         zone.how = switchOf(instance);
@@ -55,14 +71,19 @@ void MusicAreas::clear() {
     m_zones.clear();
 }
 
-std::optional<MusicCue> MusicAreas::pick(std::span<const Vec3> listeners) const {
+std::optional<MusicCue> MusicAreas::pick(std::span<const Vec3> listeners,
+                                         const WorldScene* world) const {
     std::optional<MusicCue> best;
     for (const MusicZone& zone : m_zones) {
         if (best.has_value() && zone.area <= best->area) {
             continue;
         }
+        // A sound item uses its parent's center, rather than retaining a local offset.
+        const Vec3 center = world != nullptr && zone.parent >= 0
+                                ? Vec3{world->worldTransform(static_cast<usize>(zone.parent))[3]}
+                                : zone.position;
         for (const Vec3& listener : listeners) {
-            if (glm::distance(listener, zone.position) < zone.radius) {
+            if (glm::distance(listener, center) < zone.radius) {
                 best = MusicCue{zone.area, zone.how};
                 break;
             }
@@ -71,8 +92,9 @@ std::optional<MusicCue> MusicAreas::pick(std::span<const Vec3> listeners) const 
     return best;
 }
 
-std::optional<MusicCue> MusicAreas::update(std::span<const Vec3> listeners, s32 current) const {
-    const std::optional<MusicCue> cue = pick(listeners);
+std::optional<MusicCue> MusicAreas::update(std::span<const Vec3> listeners, s32 current,
+                                           const WorldScene* world) const {
+    const std::optional<MusicCue> cue = pick(listeners, world);
     if (!cue.has_value() || cue->area == current) {
         return std::nullopt;
     }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include "engine/core/Types.h"
 
@@ -181,6 +182,7 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_yaw = std::atan2(m_transform[2].x, m_transform[2].z);
     m_placement = m_transform;
     m_tree = nullptr;
+    m_staticTree.reset();
     m_index = -1;
     m_player.stop();
     m_particles = {};
@@ -210,6 +212,42 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_textures.bind(items.trees.textureAnimations(), items.textures, device);
     play(0, true);
     return true;
+}
+
+bool ItemFigure::placeStaticFallback(RenderDevice& device, ItemArchive& items,
+                                     std::string_view name, const ItemInstance& instance,
+                                     const WorldCollision* collision, u32 objectFlags) {
+    if (place(device, items, name, instance, collision)) {
+        return true;
+    }
+    // A present but invalid tree is not a request to silently substitute another mesh.
+    if (!items.loaded() || items.trees.find(name)) {
+        return false;
+    }
+    for (const char* suffix : {"", "L1", "L1ROOT"}) {
+        const auto model = items.models.find(std::string{name} + suffix);
+        if (!model) {
+            continue;
+        }
+        m_staticTree = std::make_unique<TreeInfo>();
+        m_staticTree->name = name;
+        TreeNodeInfo node;
+        node.name = name;
+        node.object = items.models.entry(*model).name;
+        node.objectFlags = objectFlags;
+        m_staticTree->nodes.push_back(std::move(node));
+        if (!m_model.bind(*m_staticTree, items.models, items.textures, device)) {
+            m_staticTree.reset();
+            return false;
+        }
+        m_tree = m_staticTree.get();
+        m_pose.rest(*m_tree);
+        m_textures.bind(items.trees.textureAnimations(), items.textures, device);
+        m_holdPose = false;
+        m_index = 0;
+        return true;
+    }
+    return false;
 }
 
 void ItemFigure::gateParticlesOnSequence(bool enabled) {

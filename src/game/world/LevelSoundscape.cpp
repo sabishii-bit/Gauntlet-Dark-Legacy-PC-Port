@@ -56,13 +56,13 @@ void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* outpu
     }
 }
 
-void LevelSoundscape::bindAmbience(const WorldLayout& layout) {
+void LevelSoundscape::bindAmbience(const WorldLayout& layout, const WorldScene* world) {
     if (m_output != nullptr) {
         m_ambience.stop(*m_output);
     }
     const std::array<SoundSet*, 2> banks{&m_ambient, &m_level};
     m_ambience.bind(layout, banks);
-    m_areas.bind(layout);
+    m_areas.bind(layout, world);
     m_objectFlags.clear();
     m_objectFlags.reserve(layout.objects().size());
     for (const WorldObject& object : layout.objects()) {
@@ -90,8 +90,8 @@ void LevelSoundscape::pauseAmbience() {
     stopLoop(m_hourglass);
 }
 
-void LevelSoundscape::updateMusicAreas(std::span<const Vec3> listeners) {
-    if (const std::optional<MusicCue> cue = m_areas.update(listeners, m_musicArea);
+void LevelSoundscape::updateMusicAreas(std::span<const Vec3> listeners, const WorldScene* world) {
+    if (const std::optional<MusicCue> cue = m_areas.update(listeners, m_musicArea, world);
         cue.has_value()) {
         selectMusicArea(cue->area, cue->how);
     }

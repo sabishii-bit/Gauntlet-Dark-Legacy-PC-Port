@@ -94,6 +94,7 @@ void LevelFixtures::bind(const Resources& resources) {
                  trapDamageScale(), &world.realmItems());
     m_barrels.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
     m_safeRocks.bind(device, world.layout(), world.items());
+    m_scenery.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
 }
 void LevelFixtures::clear() {
     if (m_resources) {
@@ -106,6 +107,7 @@ void LevelFixtures::clear() {
     m_traps.clear();
     m_barrels.clear();
     m_safeRocks.clear();
+    m_scenery.clear();
     m_rubble.clear();
     m_doomedChests.clear();
     m_clouds.clear();
@@ -118,11 +120,12 @@ void LevelFixtures::setPlayerCount(s32 count) {
     m_traps.setPlayerCount(count);
     m_barrels.setPlayerCount(count);
     m_safeRocks.setPlayerCount(count);
+    m_scenery.setPlayerCount(count);
 }
 std::vector<Obstacle> LevelFixtures::obstacles() const {
     std::vector<Obstacle> result = m_chests.obstacles();
-    for (const auto& group :
-         {m_gates.obstacles(), m_barrels.obstacles(), m_safeRocks.obstacles()}) {
+    for (const auto& group : {m_gates.obstacles(), m_barrels.obstacles(), m_safeRocks.obstacles(),
+                              m_scenery.obstacles()}) {
         result.insert(result.end(), group.begin(), group.end());
     }
     return result;
@@ -149,6 +152,9 @@ std::vector<MissileStop> LevelFixtures::missileStops() const {
         stops.push_back(MissileStop::of(box));
     }
     for (const Obstacle& box : m_barrels.obstacles()) {
+        stops.push_back(MissileStop::of(box));
+    }
+    for (const Obstacle& box : m_scenery.obstacles()) {
         stops.push_back(MissileStop::of(box));
     }
     for (usize i = 0; i < m_safeRocks.size(); ++i) {
@@ -178,7 +184,7 @@ std::vector<MissileStop> LevelFixtures::missileStops() const {
         const LevelTriggers& triggers = m_resources->world.triggers();
         for (usize i = 0; i < triggers.size(); ++i) {
             const LevelTrigger& trigger = triggers.trigger(i);
-            if (trigger.shootable) {
+            if (trigger.enabled && trigger.shootable) {
                 stops.push_back(upright(trigger.spot, trigger.radius, trigger.height));
             }
         }
@@ -197,7 +203,8 @@ std::vector<CombatantObstacle> LevelFixtures::critterObstacles() const {
     for (const Obstacle& box : m_chests.obstacles()) {
         add(box, CombatantObstacle::Kind::Chest);
     }
-    for (const auto& group : {m_gates.obstacles(), m_safeRocks.obstacles()}) {
+    for (const auto& group :
+         {m_gates.obstacles(), m_safeRocks.obstacles(), m_scenery.obstacles()}) {
         for (const Obstacle& box : group) {
             add(box, CombatantObstacle::Kind::Blocks);
         }
@@ -224,6 +231,7 @@ void LevelFixtures::capturePresentation() {
     m_gates.capturePresentation();
     m_traps.capturePresentation();
     m_barrels.capturePresentation();
+    m_scenery.capturePresentation();
 }
 
 void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
@@ -234,12 +242,15 @@ void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLigh
     m_barrels.draw(device, clip, lighting, presentationAlpha);
     m_safeRocks.draw(device, clip, lighting);
     m_rubble.draw(device, clip, lighting);
+    m_scenery.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting,
+                   presentationAlpha);
 }
 
 void LevelFixtures::drawEffects(RenderDevice& device, const Mat4& clip,
                                 const WorldLighting& lighting, const CameraFrame* camera,
                                 f32 presentationAlpha) const {
     m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::Effects, presentationAlpha);
+    m_scenery.draw(device, clip, lighting, camera, TreeModel::Pass::Effects, presentationAlpha);
 }
 
 void LevelFixtures::leaveRubble(std::string_view object, const Mat4& transform) {
@@ -315,7 +326,8 @@ void LevelFixtures::blastFixtures(const Vec3& position, f32 reach, f32 damage, c
         const LevelTrigger& trigger = triggers.trigger(i);
         const Vec3 away = trigger.spot - position;
         const s32 id = kTriggerReached + static_cast<s32>(i);
-        if (trigger.shootable && std::hypot(away.x, away.z) <= reach + trigger.radius &&
+        if (trigger.enabled && trigger.shootable &&
+            std::hypot(away.x, away.z) <= reach + trigger.radius &&
             std::ranges::find(reached, id) == reached.end()) {
             reached.push_back(id);
             m_resources->world.shootTrigger(i);
@@ -391,6 +403,7 @@ void LevelFixtures::syncFloors() {
     m_traps.syncFloors();
     m_barrels.syncFloors();
     m_gates.syncFloors();
+    m_scenery.syncFloors();
     syncChestContents();
 }
 
@@ -448,8 +461,11 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         detonateChest(chest, std::nullopt, players, events);
     }
     m_safeRocks.update(seconds);
+    m_scenery.update(seconds);
     const auto cover = m_safeRocks.obstacles();
     boxes.insert(boxes.end(), cover.begin(), cover.end());
+    const auto scenery = m_scenery.obstacles();
+    boxes.insert(boxes.end(), scenery.begin(), scenery.end());
     std::vector<ChestVisitor> visitors;
     std::vector<TrapVictim> victims;
     visitors.reserve(players.size());

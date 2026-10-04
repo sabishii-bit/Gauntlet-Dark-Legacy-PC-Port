@@ -280,7 +280,9 @@ void LevelWorld::activateTrigger(s32 id, bool atOnce) {
     }
 }
 
-void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {
+void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors,
+                                bool cameraHeld) {
+    m_triggers.setCameraHeld(cameraHeld);
     m_triggers.update(seconds, visitors, m_worldAnimator, m_scene, &m_collision);
     std::vector<RotatorCue> cues = m_rotators.update(seconds, visitors, m_scene);
     m_rotatorCues.insert(m_rotatorCues.end(), cues.begin(), cues.end());
@@ -370,6 +372,7 @@ void LevelWorld::clear() {
     m_textureAdvance = 0.0f;
     m_level = nullptr;
     m_audio = nullptr;
+    m_playerCount = -1;
 }
 
 std::optional<WorldCamera> LevelWorld::entranceCamera(u32 startIndex) const {

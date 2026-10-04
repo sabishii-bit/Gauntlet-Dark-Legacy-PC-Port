@@ -21,6 +21,7 @@
 #include "game/world/LockedGates.h"
 #include "game/world/Rubble.h"
 #include "game/world/SafeRocks.h"
+#include "game/world/StaticScenery.h"
 #include "game/world/Traps.h"
 namespace gdl::game {
 /** Owns interactive scenery and its hazard chains. Scene services are borrowed while bound.
@@ -120,6 +121,7 @@ public:
     const SafeRocks& safeRocks() const { return m_safeRocks; }
     SafeRocks& safeRocks() { return m_safeRocks; }
     const Rubble& rubble() const { return m_rubble; }
+    const StaticScenery& scenery() const { return m_scenery; }
     static constexpr f32 kItemBlastInset = 1.5f; ///< DMG_EXPLODE shortens the item query
     static constexpr f32 kItemBlastPower = 5.0f; ///< the least that breaks an item apart
     static constexpr f32 kBarrelWarning = 9.0f;  ///< a player this near a spent barrel is told
@@ -177,6 +179,7 @@ private:
     Traps m_traps;
     Breakables m_barrels;
     SafeRocks m_safeRocks;
+    StaticScenery m_scenery;
     Rubble m_rubble;
     std::vector<usize> m_doomedChests; ///< trapped chests a blast set off, to go up next update
 };

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <vector>
 
@@ -37,9 +39,7 @@ ViewVolume lookingAt(const Vec3& target) {
 }
 constexpr f32 kStep = 1.0f / 30.0f;
 
-TEST_CASE("wall generators share their authored facing across rendering collision and spawning",
-          "[game][generators][item-orientation]") {
-    const auto root = test::scratchDirectory("wall-generator-orientation");
+void writeGeneratorArchive(const std::filesystem::path& root) {
     const auto archive = root / "MONSTERS/GRU";
     std::filesystem::create_directories(archive);
     writeTextFile(archive / "body.obj",
@@ -55,6 +55,12 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":10,"rate":30},
                      {"name":"WALK","frames":10,"rate":30}]}]})");
+}
+
+TEST_CASE("wall generators share their authored facing across rendering collision and spawning",
+          "[game][generators][item-orientation]") {
+    const auto root = test::scratchDirectory("wall-generator-orientation");
+    writeGeneratorArchive(root);
     writeTextFile(root / "world.json", R"({
         "objects":[{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
         "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
@@ -101,6 +107,115 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
         }
     }
     REQUIRE(found);
+}
+
+TEST_CASE("generators retain authored support offsets through platform motion and collision holds",
+          "[game][generators][generator-platform]") {
+    const auto root = test::scratchDirectory("generator-platform");
+    writeGeneratorArchive(root);
+    writeTextFile(root / "world.json", R"({
+      "objects":[{"name":"LIFT","position":[10,5,20],"flags":4102}],
+      "itemInfos":[
+        {"type":3,"name":"GRU","radius":2,"height":5,"xSize":3,"zSize":1,"hitPoints":10},
+        {"type":3,"name":"GRU","radius":2,"height":5,"collisionFlags":1,"hitPoints":10}],
+      "itemInstances":[
+        {"info":0,"minPlayers":1,"position":[12,5,23],"rotation":[0,0,0],
+         "params":[1,0,7,0,5,0,20,0,0,0,0,0]},
+        {"info":1,"minPlayers":1,"position":[15,5,23],"rotation":[0,0,0],
+         "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    WorldCollision collision;
+    collision.build(
+        {CollisionTriangle{.vertices = {Vec3{-30, 0, -30}, Vec3{30, 0, 30}, Vec3{30, 0, -30}},
+                           .object = 0},
+         CollisionTriangle{.vertices = {Vec3{-30, 0, -30}, Vec3{-30, 0, 30}, Vec3{30, 0, 30}},
+                           .object = 0}});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{10, -15, 20}));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, &collision, 4, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, &collision, {}, 1));
+    REQUIRE(generators.count() == 2);
+    CHECK(glm::distance(generators.positionOf(0), Vec3{12, -15 + ItemFigure::kFloorLift, 23}) <
+          0.001f);
+    const Mat4 moved =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{30, 10, 40}), 1.57079637f, Vec3{0, 1, 0});
+    collision.setSolid(0, false);
+    collision.setObjectTransform(0, moved);
+    generators.syncFloors();
+    const Vec3 expected{moved * Vec4{2, ItemFigure::kFloorLift, 3, 1}};
+    CHECK(glm::distance(generators.positionOf(0), expected) < 0.001f);
+    CHECK(glm::distance(generators.boxOf(0).centre, expected) < 0.001f);
+    CHECK(generators.boxOf(0).yaw == Approx(1.57079637f));
+    // The collision-flag exception overlaps the same authored floor, but stays fixed.
+    CHECK(generators.positionOf(1) == Vec3{15, 5, 23});
+    generators.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 2);
+    const Vec3 front{moved * Vec4{2, ItemFigure::kFloorLift, 4, 1}};
+    CHECK(glm::distance(device.draws[0].vertices[0].position, front) < 0.001f);
+    // Births use the carried center and facing once the floor becomes walkable again.
+    collision.setSolid(0, true);
+    generators.setView(lookingAt(expected));
+    const std::array party{EnemyView{.position = expected + Vec3{15, 0, 0}}};
+    generators.update(2, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    REQUIRE(enemies.alive(0));
+    CHECK(enemies.positionOf(0).x > expected.x);
+    CHECK(enemies.positionOf(0).y == Approx(10).margin(0.2f));
+    const auto hit = generators.strike(0, 1000, 0);
+    REQUIRE(hit.has_value());
+    CHECK(glm::distance(hit->position, expected) < 0.001f);
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{40, 20, 50}));
+    generators.syncFloors();
+    CHECK(glm::distance(generators.positionOf(0), Vec3{42, 20 + ItemFigure::kFloorLift, 53}) <
+          0.001f);
+    CHECK_FALSE(generators.boxOf(0).solid);
+}
+
+TEST_CASE("the Sky Dominion generator rides its authored animated floor",
+          "[game][generators][generator-platform][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELK1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("K1");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    Enemies enemies;
+    enemies.open(device, root, &world.collision(), Enemies::kMost, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), {}, 1,
+                            world.level()->enemies, level->realmId, &world.items()));
+    const Vec3 authored = world.layout().itemInstances().at(317).position;
+    s32 id = -1;
+    for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
+        const Vec3 at = generators.positionOf(i);
+        if (glm::length(Vec2{at.x - authored.x, at.z - authored.z}) < 0.1f) {
+            id = i;
+            break;
+        }
+    }
+    REQUIRE(id >= 0);
+    const auto support = world.collision().objectTransform(164);
+    REQUIRE(support.has_value());
+    const Vec3 start = generators.positionOf(id);
+    const Vec4 local = glm::inverse(*support) * Vec4{start, 1};
+    f32 traveled = 0;
+    for (s32 tick = 0; tick < 180; ++tick) {
+        world.update(kStep);
+        generators.syncFloors();
+        const auto current = world.collision().objectTransform(164);
+        REQUIRE(current.has_value());
+        const Vec3 expected{*current * local};
+        CHECK(glm::distance(generators.positionOf(id), expected) < 0.001f);
+        traveled = std::max(traveled, glm::distance(start, expected));
+    }
+    CHECK(traveled > 0.1f);
 }
 
 TEST_CASE("generators alternate successful zig-zag births without turning their bodies",

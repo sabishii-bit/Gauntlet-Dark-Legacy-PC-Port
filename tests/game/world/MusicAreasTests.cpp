@@ -5,14 +5,20 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ModelSet.h"
 #include "engine/assets/SoundSet.h"
+#include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/math/Math.h"
+#include "engine/world/WorldScene.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/world/AmbientSounds.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 #include "game/world/MusicAreas.h"
 
 namespace {
@@ -156,6 +162,109 @@ TEST_CASE("the shipped levels' music zones name their realm's stream areas",
         REQUIRE(MusicAreas::areaOf(
                     layout.itemInstances()[static_cast<usize>(ambience.emitter(i).instance)]) == 0);
     }
+}
+
+TEST_CASE("music zones bind the initially posed node and retain its identity as it moves",
+          "[game][world][music-areas][music-platform]") {
+    const auto directory = test::scratchDirectory("music-moving-parent");
+    writeTextFile(directory / "world.json", R"({
+      "objects":[{"name":"LIFT","position":[100,0,0],"flags":4096}],
+      "animations":[{"object":0,"frames":2,"state":257,
+        "track":{"flags":16,"frames":[0,1],"values":[0,100]}}],
+      "itemInfos":[{"type":13,"name":""}],
+      "itemInstances":[
+        {"info":0,"position":[0,0,0],"params":[0,0,0,64,2,0,0,0,2,0,0,0]},
+        {"info":0,"position":[50,0,0],"params":[0,0,0,64,1,0,0,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldScene scene;
+    // A placement-only scene needs no mesh, but keeps the same node transforms.
+    scene.build(layout, models, textures, device);
+    REQUIRE(scene.moving(0));
+    scene.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{4, 0, 0}));
+    MusicAreas areas;
+    REQUIRE(areas.bind(layout, &scene));
+    REQUIRE(areas.zone(0).parent == 0);
+    REQUIRE(areas.zone(1).parent == -1);
+    const auto at = [&](const Vec3& position) {
+        return areas.update(std::array{position}, MusicAreas::kNoArea, &scene);
+    };
+    REQUIRE(at(Vec3{4, 0, 0}).has_value());
+    CHECK(at(Vec3{4, 0, 0})->area == 1);
+    // The node's center replaces the authored center; its four-unit offset is not kept.
+    CHECK_FALSE(at(Vec3{0}).has_value());
+    scene.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{104, 30, -20}));
+    CHECK_FALSE(at(Vec3{4, 0, 0}).has_value());
+    REQUIRE(at(Vec3{104, 30, -20}).has_value());
+    CHECK(at(Vec3{104, 30, -20})->how == MusicSwitch::AtOnce);
+    CHECK_FALSE(at(Vec3{104, 32, -20}).has_value());
+    REQUIRE(at(Vec3{50, 0, 0}).has_value());
+    CHECK(at(Vec3{50, 0, 0})->area == 0);
+    areas.clear();
+    CHECK(areas.size() == 0);
+}
+
+TEST_CASE("the Dream World's elevator carries its native music-area center",
+          "[game][world][music-areas][music-platform][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELJ6/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("J6");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    world.setPlayerCount(1);
+    world.startTriggers({});
+    const WorldScene& scene = world.scene();
+    MusicAreas areas;
+    REQUIRE(areas.bind(world.layout(), &scene));
+    const MusicZone* elevator = nullptr;
+    for (usize i = 0; i < areas.size(); ++i) {
+        if (areas.zone(i).instance == 626) {
+            elevator = &areas.zone(i);
+        }
+    }
+    REQUIRE(elevator != nullptr);
+    REQUIRE(elevator->parent == 686);
+    const LevelTrigger* pad = nullptr;
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        if (world.triggers().trigger(i).instance == 22) {
+            pad = &world.triggers().trigger(i);
+        }
+    }
+    REQUIRE(pad != nullptr);
+    REQUIRE(pad->target == 686);
+    REQUIRE_FALSE(pad->chained);
+    // Exercise the native BRIDGEPAD through a real standing visitor, not a forced
+    // activation or an arbitrary scene transform. The visitor rides the same floor.
+    TriggerVisitor visitor;
+    visitor.position = pad->spot;
+    visitor.floorObject = 688;
+    visitor.party = 0;
+    const Vec3 start{scene.worldTransform(686)[3]};
+    const Vec3 local = Vec3{glm::inverse(scene.worldTransform(688)) * Vec4{visitor.position, 1}};
+    for (s32 frame = 0; frame < 300; ++frame) {
+        visitor.position = Vec3{scene.worldTransform(688) * Vec4{local, 1}};
+        world.updateTriggers(1.0f / 30, std::array{visitor});
+        world.update(1.0f / 30);
+        const Vec3 at{scene.worldTransform(686)[3]};
+        const auto movingCue = areas.update(std::array{at}, MusicAreas::kNoArea, &scene);
+        REQUIRE(movingCue.has_value());
+        CHECK(movingCue->area == elevator->area);
+    }
+    const Vec3 center{scene.worldTransform(686)[3]};
+    REQUIRE(glm::distance(start, center) > elevator->radius);
+    const auto cue = areas.update(std::array{center}, MusicAreas::kNoArea, &scene);
+    REQUIRE(cue.has_value());
+    CHECK(cue->area == elevator->area);
+    CHECK(cue->how == elevator->how);
+    const Vec3 outside = center + Vec3{0, elevator->radius + 1, 0};
+    CHECK_FALSE(areas.update(std::array{outside}, MusicAreas::kNoArea, &scene).has_value());
 }
 
 } // namespace

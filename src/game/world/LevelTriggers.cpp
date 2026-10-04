@@ -20,6 +20,12 @@ constexpr f32 kFloorAbove = 4.0f;
 constexpr f32 kFloorBelow = 10.0f;
 constexpr f32 kFloorRadius = 1.0f;
 constexpr f32 kFloorLift = 0.1f;
+constexpr s32 kPlayerSlots = 4;
+
+u32 visitorBit(const TriggerVisitor& visitor, usize index) {
+    const auto slot = visitor.party >= 0 ? static_cast<usize>(visitor.party) : index;
+    return slot < static_cast<usize>(kPlayerSlots) ? 1U << slot : 0;
+}
 
 s16 paramS16(const ItemInstance& instance, usize at) {
     s16 value = 0;
@@ -132,6 +138,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         const ItemInfo& info = infos[static_cast<usize>(instance.info)];
         LevelTrigger trigger;
         trigger.instance = static_cast<s32>(i);
+        trigger.minPlayers = instance.minPlayers;
         trigger.spot = instance.position;
         trigger.placement = itemPlacement(instance.position, instance.rotation);
         const s16 object = paramS16(instance, 0);
@@ -252,6 +259,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             }
         }
     }
+    refreshEligibility(1);
 }
 
 void LevelTriggers::clear() {
@@ -260,11 +268,31 @@ void LevelTriggers::clear() {
     m_targets.clear();
     m_parents.clear();
     m_refusals.clear();
+    m_lessons.clear();
     m_openings.clear();
     m_settled.clear();
     m_cameraCues.clear();
     m_wakes.clear();
     m_frameRemainder = 0.0f;
+    m_emptyToggleDelay = 0.0f;
+    m_playerCount = -1;
+    m_cameraHeld = false;
+}
+
+void LevelTriggers::setPlayerCount(s32 players) {
+    m_playerCount = std::clamp(players, 0, kPlayerSlots);
+    refreshEligibility(m_playerCount);
+}
+
+void LevelTriggers::refreshEligibility(s32 players) {
+    for (LevelTrigger& trigger : m_triggers) {
+        trigger.enabled = shownToParty(trigger.minPlayers, players);
+        if (!trigger.enabled) {
+            trigger.occupied = false;
+            trigger.heldContacts = 0;
+            trigger.shot = false;
+        }
+    }
 }
 
 void LevelTriggers::bindFigures(RenderDevice& device, const WorldLayout& layout,
@@ -292,9 +320,9 @@ void LevelTriggers::bindFigures(RenderDevice& device, const WorldLayout& layout,
 
 void LevelTriggers::draw(RenderDevice& device, const Mat4& clip,
                          const WorldLighting& lighting) const {
-    for (const auto& figure : m_figures) {
-        if (figure != nullptr) {
-            figure->draw(device, clip, lighting);
+    for (usize i = 0; i < m_figures.size(); ++i) {
+        if (m_figures[i] != nullptr && m_triggers[i].enabled) {
+            m_figures[i]->draw(device, clip, lighting);
         }
     }
 }
@@ -437,71 +465,73 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
     usize followed = 0;
     for (auto at = static_cast<s32>(index); at >= 0 && followed++ < m_triggers.size();
          at = m_triggers[static_cast<usize>(at)].next) {
-        LevelTrigger& trigger = m_triggers[static_cast<usize>(at)];
-        if (trigger.forced) {
-            continue;
-        }
-        const bool contact =
-            active || ((trigger.flags & LevelTrigger::kKeepContact) != 0 && trigger.fired);
-        const bool wasFired = trigger.fired;
-        if (Target* target = targetOf(trigger.target); target != nullptr) {
-            target->pressed = target->pressed || contact;
-            if ((trigger.flags & LevelTrigger::kWholeParty) != 0) {
-                target->wholePartyReady = target->wholePartyReady || active;
-            }
-            bool open = target->open;
-            if ((trigger.flags & LevelTrigger::kCloses) != 0) {
-                if (contact && target->settled) {
-                    open = false;
-                }
-                trigger.fired = !open;
-            } else if ((trigger.flags & LevelTrigger::kOpensOnce) != 0) {
-                if (contact && target->settled) {
-                    open = true;
-                }
-                trigger.fired = open;
-            } else if ((trigger.flags & LevelTrigger::kToggles) != 0) {
-                if (contact && !target->settled) {
-                    trigger.toggleCooldown = kToggleDelay;
-                } else if (contact && trigger.toggleCooldown <= 0) {
-                    open = !open;
-                    trigger.toggleCooldown = kToggleDelay;
-                } else if (!contact && (trigger.flags & 0x800U) != 0) {
-                    // Empty-pad delay is one second per additional participant.
-                    trigger.toggleCooldown = m_emptyToggleDelay;
-                }
-                trigger.fired = contact;
-            } else {
-                if (contact) {
-                    open = true;
-                }
-                trigger.fired = contact;
-            }
-            if (openTarget(*target, open, atOnce, animator, scene, collision)) {
-                target->spot = trigger.spot;
-                target->sound = trigger.sound;
-                m_openings.push_back(openingOf(*target, atOnce));
-            }
-        } else if (contact || (trigger.flags & LevelTrigger::kToggles) != 0) {
-            trigger.fired = contact;
-        }
-        if (trigger.fired && !wasFired && contact && !atOnce) {
-            m_cameraCues.push_back({trigger.id, trigger.target, (trigger.flags & 0x1000U) != 0});
-            if ((trigger.flags & LevelTrigger::kWakesStatue) != 0) {
-                m_wakes.push_back(trigger.spot);
-            }
-        }
-        if (trigger.fired != wasFired && static_cast<usize>(at) < m_figures.size() &&
-            m_figures[static_cast<usize>(at)]) {
-            auto& figure = *m_figures[static_cast<usize>(at)];
-            const s32 onSequence = atOnce ? 2 : 1;
-            figure.play(trigger.fired ? onSequence : 3, false);
-        }
+        fireNode(static_cast<usize>(at), active, atOnce, animator, scene, collision);
     }
 }
 
-bool LevelTriggers::reaches(const LevelTrigger& trigger, f32 radius,
-                            const TriggerVisitor& visitor) const {
+void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimator& animator,
+                             WorldScene& scene, WorldCollision* collision) {
+    LevelTrigger& trigger = m_triggers[index];
+    if (trigger.forced || !trigger.enabled) {
+        return;
+    }
+    const bool contact = active;
+    const bool wasFired = trigger.fired;
+    if (Target* target = targetOf(trigger.target); target != nullptr) {
+        target->pressed = target->pressed || contact;
+        if ((trigger.flags & LevelTrigger::kWholeParty) != 0) {
+            target->wholePartyReady = target->wholePartyReady || active;
+        }
+        bool open = target->open;
+        if ((trigger.flags & LevelTrigger::kCloses) != 0) {
+            if (contact && target->settled) {
+                open = false;
+            }
+            trigger.fired = !open;
+        } else if ((trigger.flags & LevelTrigger::kOpensOnce) != 0) {
+            if (contact && target->settled) {
+                open = true;
+            }
+            trigger.fired = open;
+        } else if ((trigger.flags & LevelTrigger::kToggles) != 0) {
+            if (contact && !target->settled) {
+                trigger.toggleCooldown = kToggleDelay;
+            } else if (contact && trigger.toggleCooldown <= 0) {
+                open = !open;
+                trigger.toggleCooldown = kToggleDelay;
+            } else if (!contact && (trigger.flags & 0x800U) != 0) {
+                // Empty-pad delay is one second per additional participant.
+                trigger.toggleCooldown = m_emptyToggleDelay;
+            }
+            trigger.fired = contact;
+        } else {
+            if (contact) {
+                open = true;
+            }
+            trigger.fired = contact;
+        }
+        if (openTarget(*target, open, atOnce, animator, scene, collision)) {
+            target->spot = trigger.spot;
+            target->sound = trigger.sound;
+            m_openings.push_back(openingOf(*target, atOnce));
+        }
+    } else if (contact || (trigger.flags & LevelTrigger::kToggles) != 0) {
+        trigger.fired = contact;
+    }
+    if (trigger.fired && !wasFired && contact && !atOnce) {
+        m_cameraCues.push_back({trigger.id, trigger.target, (trigger.flags & 0x1000U) != 0});
+        if ((trigger.flags & LevelTrigger::kWakesStatue) != 0) {
+            m_wakes.push_back(trigger.spot);
+        }
+    }
+    if (trigger.fired != wasFired && index < m_figures.size() && m_figures[index]) {
+        auto& figure = *m_figures[index];
+        const s32 onSequence = atOnce ? 2 : 1;
+        figure.play(trigger.fired ? onSequence : 3, false);
+    }
+}
+
+bool LevelTriggers::onTarget(const LevelTrigger& trigger, const TriggerVisitor& visitor) const {
     if ((trigger.flags & LevelTrigger::kOnTarget) != 0) {
         const s32 floor = visitor.floorObject;
         if (floor != trigger.target &&
@@ -510,23 +540,28 @@ bool LevelTriggers::reaches(const LevelTrigger& trigger, f32 radius,
             return false;
         }
     }
+    return true;
+}
+
+bool LevelTriggers::reaches(const LevelTrigger& trigger, f32 radius,
+                            const TriggerVisitor& visitor) const {
+    if (!onTarget(trigger, visitor)) {
+        return false;
+    }
     const Vec3 away = visitor.position - trigger.spot;
     const f32 reach = radius + visitor.radius;
     return away.x * away.x + away.z * away.z <= reach * reach &&
            std::abs(away.y) <= trigger.height + visitor.height * 0.5f;
 }
 
-bool LevelTriggers::visited(const LevelTrigger& trigger, f32 radius,
-                            std::span<const TriggerVisitor> visitors) const {
-    if (visitors.empty()) {
-        return false;
+void LevelTriggers::collectContacts(usize index, u32 mask, std::span<u32> contacts) const {
+    // Contact identities travel through the entire chain. Each node's party-size,
+    // floor and whole-party requirements govern that node, not later successors.
+    usize followed = 0;
+    for (auto at = static_cast<s32>(index); at >= 0 && followed++ < m_triggers.size();
+         at = m_triggers[static_cast<usize>(at)].next) {
+        contacts[static_cast<usize>(at)] |= mask;
     }
-    const auto inRange = [&](const TriggerVisitor& visitor) {
-        return reaches(trigger, radius, visitor);
-    };
-    return (trigger.flags & LevelTrigger::kWholeParty) != 0
-               ? std::ranges::all_of(visitors, inRange)
-               : std::ranges::any_of(visitors, inRange);
 }
 
 void LevelTriggers::shoot(usize index) {
@@ -537,9 +572,11 @@ void LevelTriggers::shoot(usize index) {
 
 void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                             WorldScene& scene, WorldCollision* collision) {
+    refreshEligibility(m_playerCount >= 0 ? m_playerCount : static_cast<s32>(visitors.size()));
     for (usize i = 0; i < m_triggers.size(); ++i) {
         const LevelTrigger& trigger = m_triggers[i];
-        if ((trigger.flags & LevelTrigger::kRequirement) != 0 && qualifies(trigger, visitors)) {
+        if (trigger.enabled && (trigger.flags & LevelTrigger::kRequirement) != 0 &&
+            qualifies(trigger, visitors)) {
             fire(i, true, true, animator, scene, collision);
         }
     }
@@ -597,7 +634,13 @@ void LevelTriggers::activate(s32 id, bool atOnce, WorldAnimator& animator, World
 
 void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors,
                            WorldAnimator& animator, WorldScene& scene, WorldCollision* collision) {
+    refreshEligibility(m_playerCount >= 0 ? m_playerCount : static_cast<s32>(visitors.size()));
     m_emptyToggleDelay = visitors.empty() ? 0.0f : static_cast<f32>(visitors.size() - 1);
+    u32 standingMask = 0;
+    for (usize i = 0; i < visitors.size(); ++i) {
+        standingMask |= visitorBit(visitors[i], i);
+    }
+    std::vector<u32> contacts(m_triggers.size(), 0);
     for (Target& target : m_targets) {
         target.pressed = false;
         target.wholePartyReady = false;
@@ -617,7 +660,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     }
     for (usize i = 0; i < m_triggers.size(); ++i) {
         LevelTrigger& trigger = m_triggers[i];
-        if (trigger.forced) {
+        if (trigger.forced || !trigger.enabled) {
             continue;
         }
         if (trigger.refusalCooldown > 0.0f) {
@@ -628,7 +671,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         if (trigger.shot) {
             trigger.shot = false;
             if ((trigger.flags & LevelTrigger::kRequirement) == 0 || qualifies(trigger, visitors)) {
-                fire(i, true, false, animator, scene, collision);
+                collectContacts(i, standingMask, contacts);
                 continue;
             }
         }
@@ -640,23 +683,30 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         const bool qualified = qualifies(trigger, visitors);
         const f32 radius =
             trigger.needsCrystals() && qualified ? trigger.radius * kMetReach : trigger.radius;
-        // The first onto a spot the whole party must share is told so, with others about.
-        if ((trigger.flags & LevelTrigger::kWholeParty) != 0) {
-            const auto on = std::ranges::find_if(visitors, [&](const TriggerVisitor& visitor) {
-                return reaches(trigger, radius, visitor);
-            });
-            if (on != visitors.end() && !trigger.occupied && visitors.size() > 1) {
-                m_lessons.push_back(
-                    TriggerLesson{on->party, (trigger.flags & LevelTrigger::kOnTarget) != 0});
+        u32 mask = 0;
+        const TriggerVisitor* first = nullptr;
+        for (usize visitor = 0; visitor < visitors.size(); ++visitor) {
+            if (reaches(trigger, radius, visitors[visitor])) {
+                mask |= visitorBit(visitors[visitor], visitor);
+                if (first == nullptr) {
+                    first = &visitors[visitor];
+                }
             }
-            trigger.occupied = on != visitors.end();
         }
-        if (!visited(trigger, radius, visitors)) {
-            fire(i, false, false, animator, scene, collision);
+        // A direct contact contributes its player's bit even when that root itself
+        // needs the whole party. Other root spots may contribute the missing bits.
+        if ((trigger.flags & LevelTrigger::kWholeParty) != 0) {
+            if (first != nullptr && !trigger.occupied && visitors.size() > 1) {
+                m_lessons.push_back(
+                    TriggerLesson{first->party, (trigger.flags & LevelTrigger::kOnTarget) != 0});
+            }
+            trigger.occupied = first != nullptr;
+        }
+        if (mask == 0) {
             continue;
         }
         if (qualified) {
-            fire(i, true, false, animator, scene, collision);
+            collectContacts(i, mask, contacts);
         } else if ((trigger.flags & LevelTrigger::kRequirement) != 0 &&
                    trigger.refusalCooldown <= 0.0f) {
             // Told once what the spot wants, then not again for a while.
@@ -664,6 +714,32 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
                 TriggerRefusal{static_cast<s32>(i), trigger.id, trigger.needsCrystals()});
             trigger.refusalCooldown = kRefusalCooldown;
         }
+    }
+    // Evaluate each node once, after every contact root has supplied its visitors.
+    // An unavailable linked node is skipped locally, not a break in the chain.
+    for (usize i = 0; i < m_triggers.size(); ++i) {
+        auto& trigger = m_triggers[i];
+        if (trigger.forced || !trigger.enabled) {
+            continue;
+        }
+        u32 mask = contacts[i];
+        if (m_cameraHeld || (trigger.flags & LevelTrigger::kKeepContact) != 0) {
+            mask |= trigger.heldContacts;
+        }
+        mask &= standingMask;
+        for (usize visitor = 0; visitor < visitors.size(); ++visitor) {
+            if (!onTarget(trigger, visitors[visitor])) {
+                mask &= ~visitorBit(visitors[visitor], visitor);
+            }
+        }
+        if ((trigger.flags & LevelTrigger::kWholeParty) != 0 && mask != standingMask) {
+            mask = 0;
+        }
+        if (!qualifies(trigger, visitors)) {
+            mask = 0;
+        }
+        trigger.heldContacts = mask;
+        fireNode(i, mask != 0, false, animator, scene, collision);
     }
     // An unoccupied pad must not cancel another pad's contact, or reset a target
     // registered as a latch by its first switch.
@@ -722,7 +798,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         }
     }
     for (usize i = 0; i < m_figures.size(); ++i) {
-        if (m_figures[i] == nullptr) {
+        if (m_figures[i] == nullptr || !m_triggers[i].enabled) {
             continue;
         }
         auto& figure = *m_figures[i];

@@ -165,7 +165,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_levels.observe(actor.player(), experienceLevel(actor.save().experience()));
     }
     world.startTriggers(visitors(), &m_towerAccess);
-    m_audio.bindAmbience(world.layout());
+    m_audio.bindAmbience(world.layout(), &world.scene());
     std::vector<CameraSubject> subjects;
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
@@ -728,6 +728,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     const auto ticks =
         std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
+    // Item availability counts joined players, including those waiting in the tower;
+    // whole-party switch contact separately counts only the standing visitors.
+    m_world->setPlayerCount(static_cast<s32>(std::ranges::count_if(
+        m_players, [](const PlayerRuntime& player) { return !player.departed; })));
     m_audio.updateNarration(seconds);
     // The music's areas: the boss waking asks for the second, the zones for theirs.
     m_audio.bossAwake(m_opponents.bosses().view().awake);
@@ -906,6 +910,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         PartyFigures::updateDecoys(*m_device, m_players, m_world->powerups(), seconds, m_effects);
     }
     m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
+    m_opponents.syncFloors();
     m_world->revealCrystals(seconds);
     m_hud.pickups().step(ticks, seconds);
     m_sumner.update(seconds);
@@ -1085,7 +1090,7 @@ void PlayScene::updateAmbience() {
         }
     }
     m_audio.updateHourglass(hourglass, {frame.position, frame.right});
-    m_audio.updateMusicAreas(listeners);
+    m_audio.updateMusicAreas(listeners, &m_world->scene());
 }
 
 /** The party as the level's triggers see it. */

@@ -8,6 +8,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/world/ItemSupport.h"
+
 namespace gdl::game {
 
 namespace {
@@ -137,6 +139,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
                       const WorldCollision* collision, const GeneratorScales& scales, s32 players,
                       std::span<const LevelEnemy> roster, s32 realm, ItemArchive* realmItems) {
     clear();
+    m_collision = collision;
+    const auto authored = itemSupportWorld(layout, collision);
     m_scales = scales;
     m_players = players;
     const std::vector<ItemInfo>& infos = layout.itemInfos();
@@ -209,7 +213,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.armor = info.armor > 0 ? static_cast<f32>(info.armor) : defaultArmor;
         const Mat4 placement = itemPlacement(instance.position, instance.rotation);
         generator.position = instance.position;
-        if (collision != nullptr) {
+        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
             if (const auto floor = collision->floorAt(instance.position, 3.0f, 6.0f)) {
                 // AddItemSub uses the same floor lift as other placed items.
                 // Ground portals otherwise share the floor's depth exactly.
@@ -234,10 +238,59 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.box.height = body->height;
         generator.box.cylinderRadius = body->collisionType == 1 ? body->radius : 0.0f;
         generator.box.solid = generator.presence == Generator::Presence::Shown;
+        bindSupport(generator, info, instance.position, authored ? &*authored : collision);
         generator.countdown = 0;
         m_generators.push_back(std::move(generator));
     }
+    syncFloors();
     return true;
+}
+
+void Generators::bindSupport(Generator& generator, const ItemInfo& info, const Vec3& authored,
+                             const WorldCollision* collision) {
+    if (collision == nullptr || (info.collisionFlags & 1U) != 0) {
+        return;
+    }
+    const auto floor = collision->floorAt(authored, 4, 10);
+    if (!floor) {
+        return;
+    }
+    const auto transform = collision->objectTransform(floor->object);
+    if (!transform) {
+        return;
+    }
+    generator.boxOffset = Vec3{glm::inverse(generator.placement) * Vec4{generator.box.centre, 1}};
+    generator.boxYaw = generator.box.yaw - generator.yaw;
+    Mat4 placement = generator.placement;
+    placement[3] = Vec4{authored.x, floor->y + ItemFigure::kFloorLift, authored.z, 1};
+    generator.support = floor->object;
+    generator.supportLocal = glm::inverse(*transform) * placement;
+}
+
+void Generators::syncFloors() {
+    if (m_collision == nullptr) {
+        return;
+    }
+    for (Generator& generator : m_generators) {
+        if (generator.support < 0) {
+            continue;
+        }
+        const auto transform = m_collision->objectTransform(generator.support);
+        if (!transform) {
+            generator.support = -1;
+            continue;
+        }
+        // Disabling a floor's collision does not detach its scenery children.
+        generator.placement = *transform * generator.supportLocal;
+        generator.position = Vec3{generator.placement[3]};
+        generator.yaw = std::atan2(generator.placement[2].x, generator.placement[2].z);
+        generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
+        generator.box.centre = Vec3{generator.placement * Vec4{generator.boxOffset, 1}};
+        generator.box.yaw = generator.yaw + generator.boxYaw;
+        if (generator.bossFigure != nullptr) {
+            generator.bossFigure->placeAt(generator.placement);
+        }
+    }
 }
 
 bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items,
@@ -287,11 +340,17 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
     generator.clearance = info.height;
     generator.box = generator.bossFigure->obstacle(info);
+    bindSupport(generator, info, instance.position, collision);
+    if (collision != nullptr) {
+        m_collision = collision;
+    }
     m_generators.push_back(std::move(generator));
+    syncFloors();
     return true;
 }
 
 void Generators::clear() {
+    m_collision = nullptr;
     m_specialBirth = 0;
     m_generators.clear();
     for (auto& bodies : m_bodies) {
@@ -340,6 +399,7 @@ void Generators::applyBroodEvents(Enemies& enemies) {
 
 void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                         std::span<const Obstacle> obstacles, bool timeStopped) {
+    syncFloors();
     if (ticks <= 0) {
         return;
     }

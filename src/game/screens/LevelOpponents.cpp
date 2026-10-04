@@ -941,6 +941,7 @@ LevelOpponents::critterObstacles(std::span<const CombatantObstacle> fixtures) co
 void LevelOpponents::syncFloors() {
     m_enemies.syncFloors();
     m_critters.syncFloors();
+    m_generators.syncFloors();
 }
 
 void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,

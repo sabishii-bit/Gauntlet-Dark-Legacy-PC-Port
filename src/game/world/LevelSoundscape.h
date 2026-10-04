@@ -41,7 +41,7 @@ public:
     void open(const std::filesystem::path& root, SoundPlayer* output, const LevelAudioInfo* info,
               char realm = 'L', bool boss = false);
     /** Binds the level's ambient loops, its music zones and its objects' flags. */
-    void bindAmbience(const WorldLayout& layout);
+    void bindAmbience(const WorldLayout& layout, const WorldScene* world = nullptr);
     /** Places the loops; `ducked` holds every one that plays at kDuckedLevel instead (Sumner
      * speaking or a trigger camera running: sounds.c 909). */
     void updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear, f32 volume,
@@ -51,7 +51,7 @@ public:
     void pauseAmbience();
     static constexpr f32 kDuckedLevel = 16.0f / 255.0f;
     /** Lets the zones ask for the area holding the party (items.c 4514-4522, 4733-4736). */
-    void updateMusicAreas(std::span<const Vec3> listeners);
+    void updateMusicAreas(std::span<const Vec3> listeners, const WorldScene* world = nullptr);
     /** Starts the first area's stream at `volume`, the level's; `assets` is borrowed for the
      * other areas' streams until the music stops. */
     void startMusic(const AssetLocator* assets, f32 volume);

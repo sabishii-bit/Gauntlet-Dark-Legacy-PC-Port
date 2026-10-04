@@ -879,4 +879,39 @@ TEST_CASE("the tower puts out a shut portal's glow, opens the lifts and stands a
     REQUIRE(tower.triggers().opened(static_cast<s32>(elevator)));
 }
 
+TEST_CASE("level trigger eligibility uses joined count independently of standing contacts",
+          "[game][world][trigger-party-integration][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A4");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto& triggers = world.triggers();
+    usize index = 0;
+    while (index < triggers.size() && triggers.trigger(index).instance != 264) {
+        ++index;
+    }
+    REQUIRE(index < triggers.size());
+    const auto marker = triggers.trigger(index);
+    REQUIRE(world.layout().itemInstances()[264].minPlayers == 2);
+    REQUIRE((marker.flags & LevelTrigger::kWholeParty) == 0);
+    const std::array contacts{
+        TriggerVisitor{.position = marker.spot, .floorObject = marker.target, .party = 0}};
+    // This is dispatch integration, not a claim that a walking route reached the pad.
+    world.setPlayerCount(1);
+    world.startTriggers(contacts);
+    world.updateTriggers(1.0f / 30, contacts);
+    CHECK_FALSE(triggers.trigger(index).fired);
+    CHECK_FALSE(triggers.opened(marker.target));
+    // A second joined player may be waiting in the tower and contribute no contact.
+    world.setPlayerCount(2);
+    world.updateTriggers(1.0f / 30, contacts);
+    CHECK(triggers.trigger(index).fired);
+    CHECK(triggers.opened(marker.target));
+}
+
 } // namespace
