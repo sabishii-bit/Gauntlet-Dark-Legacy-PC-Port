@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from installer.install import retry_locked
 from publish_release import validated_assets
-from release import digest
+from release import digest, installer_notices
 
 
 class ReleaseTests(unittest.TestCase):
@@ -68,6 +68,27 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 retry_locked(operation)
         operation.assert_called_once()
+
+    def test_linux_qt_wheels_use_matching_upstream_notices(self):
+        notice = self.root / "LICENSE.txt"
+        notice.write_text("fixture notice", encoding="utf-8")
+        empty = mock.Mock(files=[])
+        freezer = mock.Mock(files=[Path("LICENSE.txt")])
+        freezer.locate_file.return_value = notice
+        with mock.patch("release.importlib.metadata.distribution", side_effect=[empty, empty, freezer]), mock.patch(
+                "release.importlib.metadata.version", return_value="6.11.2"), mock.patch(
+                "release.upstream_license", return_value=(notice, "licenses/upstream.txt")) as upstream:
+            files = installer_notices(self.root)
+        self.assertEqual(len(files), 11)
+        self.assertEqual(upstream.call_count, 10)
+        for call in upstream.call_args_list:
+            self.assertEqual(call.args[2], "6.11.2")
+        self.assertTrue(any(call.args[3] == "LGPL-3.0-only.txt" for call in upstream.call_args_list))
+
+    def test_missing_freezer_notice_still_fails(self):
+        with mock.patch("release.importlib.metadata.distribution", return_value=mock.Mock(files=[])):
+            with self.assertRaisesRegex(ValueError, "PyInstaller"):
+                installer_notices(self.root)
 
 
 if __name__ == "__main__":

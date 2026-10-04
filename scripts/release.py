@@ -101,6 +101,45 @@ def make_payload(output, files, release_version, commit, system, executable):
     return metadata
 
 
+def upstream_license(staging, project, release_version, name):
+    """Obtain a verbatim notice from the dependency's exact source release."""
+    repository = {"Qt": "qt/qtbase", "QtForPython": "pyside/pyside-setup"}[project]
+    url = f"https://raw.githubusercontent.com/{repository}/v{release_version}/LICENSES/{name}"
+    with urllib.request.urlopen(url, timeout=60) as response:
+        content = response.read(128 * 1024)
+    if len(content) < 80 or len(content) == 128 * 1024 or b"<html" in content.lower():
+        raise ValueError(f"Invalid license download: {url}")
+    target = staging / f"{project}-{name}"
+    target.write_bytes(content)
+    return target, f"licenses/installer/{project}/{name}"
+
+
+def installer_notices(staging):
+    files = []
+    for name in ("PySide6-Essentials", "shiboken6", "PyInstaller"):
+        distribution = importlib.metadata.distribution(name)
+        found = [path for path in distribution.files or ()
+                 if any(word in str(path).lower() for word in ("license", "copying"))
+                 and distribution.locate_file(path).is_file()]
+        # Qt for Python's Linux wheels omit these records altogether. Its exact
+        # source-release notices below are mandatory on every platform instead.
+        if not found and name == "PyInstaller":
+            raise ValueError(f"Missing license files for {name}")
+        for index, path in enumerate(found):
+            files.append((Path(distribution.locate_file(path)),
+                          f"licenses/installer/{name}/{index}-{path.name}"))
+    qt_version = importlib.metadata.version("PySide6-Essentials")
+    if importlib.metadata.version("shiboken6") != qt_version:
+        raise ValueError("PySide and Shiboken versions differ")
+    for name in ("Apache-2.0.txt", "BSD-3-Clause.txt", "GFDL-1.3-no-invariants-only.txt",
+                 "GPL-2.0-only.txt", "GPL-3.0-only.txt", "LGPL-3.0-only.txt",
+                 "LicenseRef-Qt-Commercial.txt", "Qt-GPL-exception-1.0.txt"):
+        files.append(upstream_license(staging, "QtForPython", qt_version, name))
+    for name in ("LGPL-3.0-only.txt", "GPL-3.0-only.txt"):
+        files.append(upstream_license(staging, "Qt", qt_version, name))
+    return files
+
+
 def licenses(binary, staging):
     """Carry the installed dependency copyright/license notices, not generated asset data."""
     files = []
@@ -119,28 +158,7 @@ def licenses(binary, staging):
     if not copyrights:
         raise ValueError(f"Missing vcpkg license inventory: {share}")
     files.extend((path, f"licenses/vcpkg/{path.parent.name}.txt") for path in copyrights)
-    for name in ("PySide6-Essentials", "shiboken6", "PyInstaller"):
-        distribution = importlib.metadata.distribution(name)
-        found = [path for path in distribution.files or ()
-                 if any(word in str(path).lower() for word in ("license", "copying"))
-                 and distribution.locate_file(path).is_file()]
-        if not found:
-            raise ValueError(f"Missing license files for {name}")
-        for index, path in enumerate(found):
-            files.append((Path(distribution.locate_file(path)),
-                          f"licenses/installer/{name}/{index}-{path.name}"))
-    # PySide wheels contain the commercial notice but omit the open-source license
-    # texts. Include the verbatim open-source terms from this exact Qt release too.
-    qt_version = importlib.metadata.version("PySide6-Essentials")
-    for name in ("LGPL-3.0-only.txt", "GPL-3.0-only.txt"):
-        url = f"https://raw.githubusercontent.com/qt/qtbase/v{qt_version}/LICENSES/{name}"
-        with urllib.request.urlopen(url, timeout=60) as response:
-            text = response.read(128 * 1024)
-        if b"GNU" not in text or len(text) < 1000:
-            raise ValueError(f"Invalid Qt license download: {url}")
-        target = staging / name
-        target.write_bytes(text)
-        files.append((target, f"licenses/installer/Qt/{name}"))
+    files.extend(installer_notices(staging))
     python_notices = [Path(sys.base_prefix) / "LICENSE.txt",
                       Path(f"/usr/share/doc/python{sys.version_info.major}.{sys.version_info.minor}/copyright")]
     python_notice = next((path for path in python_notices if path.is_file()), None)
@@ -271,12 +289,17 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     validate = commands.add_parser("check-tag")
     validate.add_argument("tag")
+    commands.add_parser("check-installer-tools", help="validate dependency notices before compiling the game")
     build = commands.add_parser("build")
     build.add_argument("--allow-dirty", action="store_true", help="local QA only; marks receipt dirty")
     build.add_argument("--output", type=Path, default=ROOT / "out/releases")
     args = parser.parse_args()
     if args.command == "check-tag":
         print(validate_tag(args.tag))
+    elif args.command == "check-installer-tools":
+        (ROOT / "build").mkdir(exist_ok=True)
+        with temporary_directory(ROOT / "build", "installer-tools-") as staging:
+            print(f"Verified {len(installer_notices(staging))} installer dependency notices")
     else:
         build_release(args)
 

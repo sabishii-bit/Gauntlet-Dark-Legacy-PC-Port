@@ -50,6 +50,8 @@ jobs:
         run: python -m unittest discover -s tests/scripts -v
         env:
           QT_QPA_PLATFORM: offscreen
+      - name: Check installer dependency notices
+        run: python scripts/release.py check-installer-tools
       - name: Build, test and package Windows installer
         if: runner.os == 'Windows'
         run: python scripts/release.py build
