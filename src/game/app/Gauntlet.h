@@ -1,5 +1,4 @@
 #pragma once
-
 #include <array>
 #include <memory>
 #include <optional>
@@ -20,6 +19,7 @@
 #include "game/app/CommandLine.h"
 #include "game/app/MusicDuck.h"
 #include "game/config/GameConfig.h"
+#include "game/players/CursorAim.h"
 #include "game/players/PlayerControls.h"
 #include "game/screens/AfterLevelScene.h"
 #include "game/screens/AttractScene.h"
@@ -83,6 +83,7 @@ private:
     GameOptions m_options;
     GameConfig m_config;
     std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
+    std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;
     StringTable m_strings;
     std::unique_ptr<AudioDevice> m_audio;
     std::unique_ptr<SoundPlayer> m_sounds;

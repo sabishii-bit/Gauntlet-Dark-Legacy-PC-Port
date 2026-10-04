@@ -111,6 +111,13 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services.staticTexture = [this](std::string_view name) { return staticTexture(name); };
     m_services.glowSheet = staticTexture("FONT32_GLOW");
     m_services.keyboardLane = MenuInputSource::kKeyboardPlayer;
+    if (m_context.config != nullptr) {
+        for (usize player = 0; player < m_context.config->controls.size(); ++player) {
+            if (m_context.config->controls[player].device == "keyboard") {
+                m_services.keyboardLane = static_cast<s32>(player);
+            }
+        }
+    }
     m_services.menuTextures.font = staticTexture("FONT32");
     m_services.menuTextures.glow = m_services.glowSheet;
     for (s32 i = 0; i < kLaneCount; ++i) {

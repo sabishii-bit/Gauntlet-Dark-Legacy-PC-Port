@@ -98,7 +98,9 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
     case PartyMotion::Action::FamiliarShot:
         m_arsenal.launchFamiliar(
             m_players[i].actor, m_players[i].figure.get(),
-            m_attacks.aim(m_players[i].actor, m_players[i].actor.facing(), attackTargets()));
+            m_players[i].cursorAiming
+                ? std::nullopt
+                : m_attacks.aim(m_players[i].actor, m_players[i].actor.facing(), attackTargets()));
         break;
     case PartyMotion::Action::StrongThrow:
         launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
@@ -106,7 +108,9 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
     case PartyMotion::Action::SuperShot:
         m_arsenal.launchSuperShot(
             m_players[i].actor, m_players[i].figure.get(),
-            m_attacks.aim(m_players[i].actor, m_players[i].actor.facing(), attackTargets()));
+            m_players[i].cursorAiming
+                ? std::nullopt
+                : m_attacks.aim(m_players[i].actor, m_players[i].actor.facing(), attackTargets()));
         break;
     case PartyMotion::Action::ShieldPotion: m_attacks.shieldPotion(i, m_players); break;
     case PartyMotion::Action::ItemAttack: m_attacks.useItemAttack(i, m_players); break;

@@ -6,6 +6,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/config/ControlProfiles.h"
+
 namespace gdl::game {
 
 namespace {
@@ -83,6 +85,7 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
         return anyKeyDown(input, keys, source) || anyButtonDown(input, buttons, source.pad);
     };
     MenuInput out;
+    out.devices = &input;
     if (input.pointer().inside) {
         out.pointer = Vec2{input.pointer().x, input.pointer().y};
         out.pointerNormalized = true;
@@ -112,6 +115,39 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
         out.erase = input.wasKeyPressed(Key::Backspace);
     }
     return out;
+}
+
+MenuInputSource playerInputSource(const Input& input, const GameConfig& config, s32 player) {
+    const auto device = controlDevices(config, input).at(static_cast<usize>(player));
+    return {device.keyboard, device.pad};
+}
+MenuInput readPlayerMenuInput(const Input& input, const GameConfig& config, s32 player,
+                              bool typing) {
+    auto source = playerInputSource(input, config, player);
+    source.text = typing;
+    return readMenuInput(input, menuBindings(config, player), source);
+}
+MenuInput readSharedMenuInput(const Input& input, const GameConfig& config) {
+    // Keyboard recovery remains available at the title even if every player is unassigned.
+    const auto devices = controlDevices(config, input);
+    const bool assignedKeyboard = std::ranges::any_of(devices, &ControlDevice::keyboard);
+    auto result = readMenuInput(input, config.menu, {!assignedKeyboard, MenuInputSource::kNoPad});
+    for (s32 player = 0; player < 4; ++player) {
+        const auto lane = readPlayerMenuInput(input, config, player);
+        result.up |= lane.up;
+        result.down |= lane.down;
+        result.left |= lane.left;
+        result.right |= lane.right;
+        result.select |= lane.select;
+        result.back |= lane.back;
+        result.start |= lane.start;
+        result.escape |= lane.escape;
+        result.upHeld |= lane.upHeld;
+        result.downHeld |= lane.downHeld;
+        result.leftHeld |= lane.leftHeld;
+        result.rightHeld |= lane.rightHeld;
+    }
+    return result;
 }
 
 MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform) {

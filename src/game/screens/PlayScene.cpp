@@ -210,6 +210,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
+    m_presentedClip.reset();
     m_previousCamera.reset();
     m_runeMeter.clear();
     m_runeItem.reset();
@@ -323,9 +324,11 @@ void PlayScene::throwWeapon(const PlayerActor& actor) {
 
 void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads) {
     if (index < m_players.size()) {
-        m_arsenal.launchWeapon(m_players[index].actor, m_players[index].figure.get(), direction,
-                               scale, spreads,
-                               m_attacks.aim(m_players[index].actor, direction, attackTargets()));
+        m_arsenal.launchWeapon(
+            m_players[index].actor, m_players[index].figure.get(), direction, scale, spreads,
+            m_players[index].cursorAiming
+                ? std::nullopt
+                : m_attacks.aim(m_players[index].actor, direction, attackTargets()));
     }
 }
 
@@ -1156,6 +1159,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             : currentCamera;
     const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
                                            frameProjection);
+    m_presentedClip = clip;
     const CameraFrame companionCamera = CameraFrame::of(camera);
     m_world->drawOpaque(device, clip, camera, effectBlend);
     m_towerRelics.draw(device, clip, m_world->lighting(), camera, effectBlend);

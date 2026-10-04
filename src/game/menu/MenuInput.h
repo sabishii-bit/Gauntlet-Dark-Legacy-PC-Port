@@ -14,8 +14,9 @@ namespace gdl::game {
 /** One frame of menu commands from the keyboard and/or pads: presses, which directions are
  * still held for auto-repeat, and what a text field with the keyboard received. */
 struct MenuInput {
-    std::optional<Vec2> pointer; ///< canvas coordinates after mapMenuPointer
-    f32 pointerScroll = 0;       ///< wheel motion, positive upward
+    const Input* devices = nullptr; ///< borrowed only for this update's binding capture
+    std::optional<Vec2> pointer;    ///< canvas coordinates after mapMenuPointer
+    f32 pointerScroll = 0;          ///< wheel motion, positive upward
     bool pointerNormalized = false;
     bool pointerPressed = false;
     bool pointerHeld = false;
@@ -67,6 +68,10 @@ struct MenuInputSource {
 
 MenuInput readMenuInput(const Input& input, const MenuBindings& bindings,
                         MenuInputSource source = {});
+MenuInputSource playerInputSource(const Input& input, const GameConfig& config, s32 player);
+MenuInput readPlayerMenuInput(const Input& input, const GameConfig& config, s32 player,
+                              bool typing = false);
+MenuInput readSharedMenuInput(const Input& input, const GameConfig& config);
 
 /** Maps a window-normalized cursor through the same virtual transform used for drawing. */
 MenuInput mapMenuPointer(MenuInput input, const Mat4& canvasTransform);

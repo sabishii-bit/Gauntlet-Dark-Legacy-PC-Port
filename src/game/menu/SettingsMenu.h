@@ -6,15 +6,25 @@
 #include "engine/core/Types.h"
 
 #include "game/config/GameConfig.h"
+#include "game/menu/ControlSettings.h"
 #include "game/menu/OptionMenu.h"
 #include "game/menu/VideoSettings.h"
 
 namespace gdl::game {
 
-/** Shared title/pause settings with transactional edits; Controls is not implemented. */
+/** Shared title/pause settings with transactional edits. */
 class SettingsMenu {
 public:
-    enum class Page : u8 { Root, Audio, Game, Compass, Difficulty, Multiplayer, Graphics };
+    enum class Page : u8 {
+        Root,
+        Audio,
+        Game,
+        Compass,
+        Difficulty,
+        Multiplayer,
+        Graphics,
+        Controls
+    };
     enum class Scope : u8 { Title, Tower, Level };
     using Persist = std::function<bool(const GameConfig&)>;
     using PreviewAudio = std::function<void(const AudioConfig&)>;
@@ -39,6 +49,7 @@ private:
     void commit(GameConfig next);
     std::string text(std::string_view id) const;
     OptionMenu m_menu;
+    ControlSettings m_controls;
     MenuDefinition m_backdrop;
     const TextPainter* m_painter = nullptr;
     const StringTable* m_strings = nullptr;

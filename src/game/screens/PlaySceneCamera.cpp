@@ -1,8 +1,14 @@
 #include "engine/core/Types.h"
 
+#include "game/players/CursorAim.h"
 #include "game/screens/PlayScene.h"
 
 namespace gdl::game {
+std::optional<Vec3> PlayScene::cursorAim(Vec2 cursor, f32 height) const {
+    return m_world != nullptr && m_presentedClip
+               ? cursorAimPoint(cursor, *m_presentedClip, m_world->collision(), height)
+               : std::nullopt;
+}
 
 bool PlayScene::scriptedCamera() const {
     return m_switchCutscene.showing() || m_arrival.camera().active() ||

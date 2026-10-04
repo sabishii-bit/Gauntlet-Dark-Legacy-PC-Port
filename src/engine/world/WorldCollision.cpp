@@ -685,4 +685,33 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
     return out;
 }
 
+std::optional<Vec3> WorldCollision::pickSurface(const Vec3& from, const Vec3& to) const {
+    const Vec3 direction = to - from;
+    f32 nearest = 1.0f;
+    std::optional<Vec3> hit;
+    eachTriangle(std::min(from.x, to.x), std::min(from.z, to.z), std::max(from.x, to.x),
+                 std::max(from.z, to.z), [&](const CollisionTriangle& triangle) {
+                     if (contactOnly(triangle.object) ||
+                         (triangle.objectFlags & (kFloorQueryFlags | kWallQueryFlags)) == 0) {
+                         return;
+                     }
+                     const Vec3 edge1 = triangle.vertices[1] - triangle.vertices[0];
+                     const Vec3 edge2 = triangle.vertices[2] - triangle.vertices[0];
+                     const Vec3 p = glm::cross(direction, edge2);
+                     const f32 determinant = glm::dot(edge1, p);
+                     if (std::abs(determinant) < 1.0e-6f) {
+                         return;
+                     }
+                     const Vec3 offset = from - triangle.vertices[0];
+                     const f32 u = glm::dot(offset, p) / determinant;
+                     const Vec3 q = glm::cross(offset, edge1);
+                     const f32 v = glm::dot(direction, q) / determinant;
+                     const f32 t = glm::dot(edge2, q) / determinant;
+                     if (u >= 0 && v >= 0 && u + v <= 1 && t >= 0 && t <= nearest) {
+                         nearest = t;
+                         hit = from + direction * t;
+                     }
+                 });
+    return hit;
+}
 } // namespace gdl

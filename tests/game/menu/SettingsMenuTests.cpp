@@ -819,7 +819,8 @@ TEST_CASE("volume sliders use the five original sprite extents and inactive opac
     CHECK(Vec2(device.draws[4].vertices[0].position) == Vec2{368, 133});
 }
 
-TEST_CASE("Controls stays disabled in every scope and cannot mutate bindings", "[settings]") {
+TEST_CASE("Controls is available in every scope and opening it does not mutate bindings",
+          "[settings]") {
     Fixture f;
     for (const auto scope :
          {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
@@ -827,15 +828,97 @@ TEST_CASE("Controls stays disabled in every scope and cannot mutate bindings", "
         const auto& items = f.menu.menu().definition().items;
         const auto controls = std::ranges::find(items, 3, &MenuItem::code);
         REQUIRE(controls != items.end());
-        CHECK_FALSE(controls->enabled);
+        CHECK(controls->enabled);
         const auto bindings = f.config.toJson();
-        for (usize i = 0; i < items.size() * 2; ++i) {
-            f.down();
-            CHECK(items[static_cast<usize>(f.menu.menu().selection())].code != 3);
-        }
+        f.menu.menu().focus(static_cast<usize>(controls - items.begin()));
+        f.select();
+        CHECK(f.menu.page() == SettingsMenu::Page::Controls);
+        CHECK(f.menu.menu().definition().items.size() == 5);
         CHECK(f.config.toJson() == bindings);
         CHECK(f.writes == 0);
     }
+}
+
+TEST_CASE("controls capture waits for release and binds the chosen player's mouse buttons",
+          "[settings][controls][mouse]") {
+    Fixture f;
+    Input physical;
+    const auto step = [&] {
+        auto input = readMenuInput(physical, f.config.menu);
+        f.menu.update(input, 1);
+    };
+    const auto& root = f.menu.menu().definition().items;
+    const auto found = std::ranges::find(root, 3, &MenuItem::code);
+    REQUIRE(found != root.end());
+    f.menu.menu().focus(static_cast<usize>(found - root.begin()));
+    f.select();
+    f.menu.menu().focus(2);
+    f.select(); // player 3, not the settings menu's owner
+    f.right();  // automatic -> keyboard
+    REQUIRE(f.config.controls[2].device == "keyboard");
+    f.menu.menu().focus(5); // Quick Attack
+    physical.beginPoll();
+    physical.setKey(Key::Enter, true);
+    step();
+    REQUIRE_FALSE(f.config.controls[2].customized);
+    physical.beginPoll();
+    step(); // opening press remains held
+    REQUIRE_FALSE(f.config.controls[2].customized);
+    physical.beginPoll();
+    physical.setKey(Key::Enter, false);
+    step();
+    physical.beginPoll();
+    physical.setKey(Key::MouseRight, true);
+    step();
+    CHECK(f.config.controls[2].play.attack == std::vector{Key::MouseRight});
+    CHECK(f.config.controls[2].customized);
+    CHECK_FALSE(f.config.controls[0].customized);
+    // A failed write must not replace the live profile.
+    physical.beginPoll();
+    physical.setKey(Key::MouseRight, false);
+    step();
+    f.fail = true;
+    f.menu.menu().focus(5);
+    f.select();
+    physical.beginPoll();
+    step();
+    physical.beginPoll();
+    physical.setKey(Key::F3, true);
+    step();
+    CHECK(f.config.controls[2].play.attack == std::vector{Key::MouseRight});
+    CHECK(f.menu.menu().definition().body == std::vector<std::string>{"COULD NOT SAVE SETTINGS"});
+}
+
+TEST_CASE("controls lists a hot-plugged controller and cancels capture without changing bindings",
+          "[settings][controls]") {
+    Fixture f;
+    Input physical;
+    f.menu.menu().focus(4);
+    f.select(); // Controls in the title scope
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Controls);
+    f.select(); // player 1
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.name = "Linux USB Gamepad";
+    pad.guid = "test-guid";
+    physical.setPad(6, pad);
+    f.menu.update(readMenuInput(physical, f.config.menu), 1);
+    f.right();
+    f.right();
+    f.right();
+    CHECK(f.config.controls[0].device == "test-guid");
+    CHECK(f.menu.menu().definition().items[0].value == "Linux USB Gamepad 1");
+    f.menu.menu().focus(5);
+    f.select();
+    physical.beginPoll();
+    physical.setKey(Key::Escape, true);
+    f.menu.update(readMenuInput(physical, f.config.menu), 1);
+    CHECK_FALSE(f.config.controls[0].customized);
+    physical.beginPoll();
+    physical.setKey(Key::Escape, false);
+    physical.setPad(6, {});
+    f.menu.update(readMenuInput(physical, f.config.menu), 1);
+    CHECK(f.menu.menu().definition().items[0].value == "Disconnected");
 }
 
 TEST_CASE("multiplayer radio choices use retail labels and persist only successful writes",

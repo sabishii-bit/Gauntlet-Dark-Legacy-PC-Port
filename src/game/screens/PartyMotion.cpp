@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/ComboMove.h"
+#include "game/players/CursorAim.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/FloorRiding.h"
 #include "game/screens/PartyCollision.h"
@@ -138,6 +139,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
     for (usize i = 0; i < players.size(); ++i) {
         players[i].hitFlashTicks = std::max(0, players[i].hitFlashTicks - ticks);
         PlayerActor& actor = players[i].actor;
+        players[i].cursorAiming = false;
         actor.clearWallContacts();
         const auto player = static_cast<usize>(actor.player());
         const bool down = players[i].life != PlayerLife::Standing;
@@ -210,10 +212,21 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (events.grabDeath) {
             deathHeld = events.grabDeath(i, ticks, !held && !down && !reeling && !entering);
         }
-        const MoveInput& move =
+        MoveInput move =
             !held && !down && !immobilized && !entering && !deathHeld && player < inputs.size()
                 ? inputs[player].move
                 : MoveInput{};
+        const auto aim =
+            !held && !down && !reeling && !entering && !deathHeld && player < inputs.size()
+                ? inputs[player].aimPoint
+                : std::nullopt;
+        if (aim) {
+            players[i].cursorAiming = true;
+            move = cursorRelativeMove(move, actor.position(), *aim, cameraYaw);
+            if (animator == nullptr || (animator->turnScale() >= 1.0f && !animator->shoving())) {
+                actor.faceToward(*aim);
+            }
+        }
         // What the buttons ask: a potion first, when one is carried, then the attack.
         PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
         if (!down && players[i].reaction != PlayerDeed::None) {
@@ -302,7 +315,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].figure != nullptr && players[i].figure->animator().shoving();
         // Strafing, the character steps the way the stick is pushed without turning to it.
         const bool strafes = !held && !down && !charging && player < inputs.size() &&
-                             inputs[player].strafe && move.any();
+                             (inputs[player].strafe || aim.has_value()) && move.any();
         if (players[i].figure != nullptr) {
             players[i].figure->setStrafe(
                 strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
@@ -392,7 +405,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         // Stationary normal attacks face the assisted target. The stick, strafe,
         // charging and authored turbo movement retain control of their heading.
-        if (!move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&
+        if (!aim && !move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&
             (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack ||
              deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
              deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow ||

@@ -185,15 +185,15 @@ TEST_CASE("four controllers steer only their own menu lanes with held sticks",
     Input input;
     const std::array axes{PadAxis::LeftY, PadAxis::LeftX, PadAxis::LeftY, PadAxis::LeftX};
     const std::array directions{-0.8f, 0.8f, 0.8f, -0.8f};
-    std::array<PadSnapshot, Input::kMaxPads> pads;
-    for (s32 player = 0; player < Input::kMaxPads; ++player) {
+    std::array<PadSnapshot, axes.size()> pads;
+    for (s32 player = 0; player < static_cast<s32>(pads.size()); ++player) {
         auto& pad = pads[static_cast<usize>(player)];
         pad.connected = true;
         pad.axes[static_cast<usize>(axes[static_cast<usize>(player)])] =
             directions[static_cast<usize>(player)];
         input.setPad(player, pad);
     }
-    for (s32 player = 0; player < Input::kMaxPads; ++player) {
+    for (s32 player = 0; player < static_cast<s32>(pads.size()); ++player) {
         const auto menu = readMenuInput(input, {}, MenuInputSource::forPlayer(player));
         CHECK(menu.up == (player == 0));
         CHECK(menu.right == (player == 1));
@@ -201,7 +201,7 @@ TEST_CASE("four controllers steer only their own menu lanes with held sticks",
         CHECK(menu.left == (player == 3));
     }
     input.beginPoll();
-    for (s32 player = 0; player < Input::kMaxPads; ++player) {
+    for (s32 player = 0; player < static_cast<s32>(pads.size()); ++player) {
         const auto menu = readMenuInput(input, {}, MenuInputSource::forPlayer(player));
         CHECK_FALSE(menu.any());
         CHECK(menu.upHeld == (player == 0));

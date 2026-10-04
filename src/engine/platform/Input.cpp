@@ -27,13 +27,16 @@ constexpr bool validPad(s32 pad) {
 }
 
 constexpr std::array<std::string_view, static_cast<usize>(Key::Count)> kKeyNames{
-    "",      "Escape",    "Enter",       "Space",   "Tab", "Backspace", "Up", "Down", "Left",
-    "Right", "LeftShift", "LeftControl", "LeftAlt", "A",   "B",         "C",  "D",    "E",
-    "F",     "G",         "H",           "I",       "J",   "K",         "L",  "M",    "N",
-    "O",     "P",         "Q",           "R",       "S",   "T",         "U",  "V",    "W",
-    "X",     "Y",         "Z",           "0",       "1",   "2",         "3",  "4",    "5",
-    "6",     "7",         "8",           "9",       "F1",  "F2",        "F3", "F4",   "F5",
-    "F6",    "F7",        "F8",          "F9",      "F10", "F11",       "F12"};
+    "",           "Escape", "Enter", "Space",     "Tab",         "Backspace", "Up",
+    "Down",       "Left",   "Right", "LeftShift", "LeftControl", "LeftAlt",   "A",
+    "B",          "C",      "D",     "E",         "F",           "G",         "H",
+    "I",          "J",      "K",     "L",         "M",           "N",         "O",
+    "P",          "Q",      "R",     "S",         "T",           "U",         "V",
+    "W",          "X",      "Y",     "Z",         "0",           "1",         "2",
+    "3",          "4",      "5",     "6",         "7",           "8",         "9",
+    "F1",         "F2",     "F3",    "F4",        "F5",          "F6",        "F7",
+    "F8",         "F9",     "F10",   "F11",       "F12",         "MouseLeft", "MouseRight",
+    "MouseMiddle"};
 
 constexpr std::array<std::string_view, static_cast<usize>(PadButton::Count)> kPadButtonNames{
     "A",
@@ -56,7 +59,39 @@ constexpr std::array<std::string_view, static_cast<usize>(PadButton::Count)> kPa
     "LeftStickUp",
     "LeftStickRight",
     "LeftStickDown",
-    "LeftStickLeft"};
+    "LeftStickLeft",
+    "Button1",
+    "Button2",
+    "Button3",
+    "Button4",
+    "Button5",
+    "Button6",
+    "Button7",
+    "Button8",
+    "Button9",
+    "Button10",
+    "Button11",
+    "Button12",
+    "Button13",
+    "Button14",
+    "Button15",
+    "Button16",
+    "Button17",
+    "Button18",
+    "Button19",
+    "Button20",
+    "Button21",
+    "Button22",
+    "Button23",
+    "Button24",
+    "Button25",
+    "Button26",
+    "Button27",
+    "Button28",
+    "Button29",
+    "Button30",
+    "Button31",
+    "Button32"};
 
 bool sameIgnoringCase(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
@@ -75,6 +110,15 @@ bool sameIgnoringCase(std::string_view a, std::string_view b) {
 
 std::string_view keyName(Key key) {
     return validKey(key) ? kKeyNames[index(key)] : std::string_view{};
+}
+
+const PadSnapshot* Input::padDevice(s32 pad) const {
+    return validPad(pad) && m_pads[static_cast<usize>(pad)].connected
+               ? &m_pads[static_cast<usize>(pad)]
+               : nullptr;
+}
+const PadSnapshot* Input::padSlot(s32 pad) const {
+    return validPad(pad) ? &m_pads[static_cast<usize>(pad)] : nullptr;
 }
 
 std::optional<Key> keyFromName(std::string_view name) {
@@ -160,8 +204,13 @@ void Input::accumulate(const Input& polled) {
         m_latchedKeys[key] |= polled.wasKeyPressed(static_cast<Key>(key));
         m_pendingKeyPresses[key] |= polled.wasKeyPressed(static_cast<Key>(key));
     }
-    m_pads = polled.m_pads;
     for (s32 pad = 0; pad < kMaxPads; ++pad) {
+        if (m_pads[pad].guid != polled.m_pads[pad].guid) {
+            m_previousPads[pad] = {};
+            m_latchedPads[pad].fill(false);
+            m_pendingPadPresses[pad].fill(false);
+        }
+        m_pads[pad] = polled.m_pads[pad];
         if (!m_pads[pad].connected) {
             m_latchedPads[pad].fill(false);
             m_pendingPadPresses[pad].fill(false);
@@ -192,12 +241,25 @@ void Input::latchKey(Key key) {
 void Input::setPad(s32 pad, const PadSnapshot& snapshot) {
     if (validPad(pad)) {
         const PadSnapshot previous = m_pads[pad];
+        if (previous.connected != snapshot.connected || previous.guid != snapshot.guid) {
+            m_previousPads[pad] = {};
+            m_latchedPads[pad].fill(false);
+            m_pendingPadPresses[pad].fill(false);
+        }
         m_pads[pad] = snapshot.connected ? snapshot : PadSnapshot{};
+        if (!snapshot.connected) {
+            m_pads[pad].name = previous.name;
+            m_pads[pad].guid = previous.guid;
+            m_latchedPads[pad].fill(false);
+            m_pendingPadPresses[pad].fill(false);
+        }
         for (const auto button : {PadButton::LeftTrigger, PadButton::RightTrigger}) {
             const PadAxis axis =
                 button == PadButton::LeftTrigger ? PadAxis::LeftTrigger : PadAxis::RightTrigger;
-            const f32 threshold =
-                previous.connected && previous.buttons[index(button)] ? 0.4f : 0.5f;
+            const f32 threshold = previous.connected && previous.guid == snapshot.guid &&
+                                          previous.buttons[index(button)]
+                                      ? 0.4f
+                                      : 0.5f;
             m_pads[pad].buttons[index(button)] =
                 snapshot.connected && snapshot.axes[index(axis)] >= threshold;
         }
@@ -211,8 +273,10 @@ void Input::setPad(s32 pad, const PadSnapshot& snapshot) {
                 button == PadButton::LeftStickUp || button == PadButton::LeftStickLeft;
             const f32 direction = negative ? -1.0f : 1.0f;
             const auto axis = vertical ? PadAxis::LeftY : PadAxis::LeftX;
-            const f32 threshold =
-                previous.connected && previous.buttons[index(button)] ? 0.4f : 0.5f;
+            const f32 threshold = previous.connected && previous.guid == snapshot.guid &&
+                                          previous.buttons[index(button)]
+                                      ? 0.4f
+                                      : 0.5f;
             m_pads[pad].buttons[index(button)] =
                 snapshot.connected && direction * snapshot.axes[index(axis)] >= threshold;
         }

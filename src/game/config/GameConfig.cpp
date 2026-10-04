@@ -15,6 +15,8 @@
 #include "engine/io/File.h"
 #include "engine/platform/Paths.h"
 
+#include "game/config/ControlProfiles.h"
+
 namespace gdl::game {
 
 bool DisplayConfig::matchesWindow(WindowMode mode, Extent2D size) const {
@@ -266,6 +268,9 @@ void GameConfig::mergeJson(std::string_view json) {
             read(moves, "actionChords", play.actionChords);
         }
     }
+    if (root.contains("controls") && root.at("controls").contains("players")) {
+        readControlProfiles(root.at("controls").at("players"), *this);
+    }
     if (!std::isfinite(play.magicHoldSeconds) || play.magicHoldSeconds <= 0.0f ||
         play.magicHoldSeconds > 2.0f || !std::isfinite(play.magicDoubleTapSeconds) ||
         play.magicDoubleTapSeconds <= 0.0f || play.magicDoubleTapSeconds > 2.0f) {
@@ -374,6 +379,7 @@ std::string GameConfig::toJson() const {
                           {"magicDoubleTapSeconds", play.magicDoubleTapSeconds},
                           {"padMagicGestures", play.padMagicGestures},
                           {"actionChords", play.actionChords}}}};
+    root["controls"]["players"] = writeControlProfiles(*this);
     return root.dump(2) + "\n";
 }
 

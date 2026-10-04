@@ -107,7 +107,7 @@ struct PlayBindings {
     std::vector<PadButton> padDown;
     std::vector<PadButton> padLeft;
     std::vector<PadButton> padRight;
-    std::vector<Key> attack{Key::Space};
+    std::vector<Key> attack{Key::Space, Key::MouseLeft};
     std::vector<PadButton> padAttack{PadButton::A};
     std::vector<Key> usePotion{Key::E};
     std::vector<PadButton> padUsePotion{PadButton::X};
@@ -118,7 +118,7 @@ struct PlayBindings {
     std::vector<Key> strafe{Key::LeftControl}; ///< held: steps keep the facing
     std::vector<PadButton> padStrafe{PadButton::RightTrigger};
     std::vector<Key> strongAttack{
-        Key::R}; ///< the slow attack: with nothing in reach, a strong throw
+        Key::R, Key::MouseRight}; ///< the slow attack: with nothing in reach, a strong throw
     std::vector<PadButton> padStrongAttack{PadButton::Y};
     std::vector<Key> turbo{Key::LeftShift}; ///< held with the attack for a turbo attack
     std::vector<PadButton> padTurbo{PadButton::B};
@@ -144,6 +144,18 @@ struct PlayBindings {
     bool actionChords = true; ///< quick+turbo, quick+magic and turbo+magic follow action bindings
 };
 
+/** A physical device assignment and independent bindings. Empty device preserves legacy
+ * keyboard/player-one plus pad-slot routing. GUID + occurrence distinguishes identical pads;
+ * GLFW supplies no cross-platform persistent per-unit serial number. */
+struct PlayerControlConfig {
+    std::string device; ///< empty: automatic; keyboard; none; otherwise a controller GUID
+    std::string name;
+    s32 occurrence = 0;
+    bool customized = false;
+    MenuBindings menu;
+    PlayBindings play;
+};
+
 /**
  * Everything the game reads instead of hard-coding: the shipped defaults in `data/config.json`
  * with the player's settings merged over them.
@@ -159,6 +171,7 @@ struct GameConfig {
     MultiplayerConfig multiplayer;
     MenuBindings menu;
     PlayBindings play;
+    std::array<PlayerControlConfig, 4> controls;
 
     /** Merges every value the file provides; false (with a warning) when it cannot be read. */
     bool loadFile(const std::filesystem::path& file);

@@ -137,6 +137,11 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
     glfwSetKeyCallback(m_window, &GlfwWindow::keyCallback);
     glfwSetMouseButtonCallback(m_window, [](GLFWwindow* window, s32 button, s32 action, s32) {
+        if (action == GLFW_PRESS && button >= GLFW_MOUSE_BUTTON_LEFT &&
+            button <= GLFW_MOUSE_BUTTON_MIDDLE) {
+            auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
+            self->m_input.latchKey(static_cast<Key>(static_cast<s32>(Key::MouseLeft) + button));
+        }
         if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
             auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
             self->m_input.latchPointer();
@@ -207,6 +212,11 @@ void GlfwWindow::pollKeyboard() {
     for (const auto& mapping : kKeyMap) {
         m_input.setKey(mapping.key, glfwGetKey(m_window, mapping.glfwKey) == GLFW_PRESS);
     }
+    for (s32 button = GLFW_MOUSE_BUTTON_LEFT; button <= GLFW_MOUSE_BUTTON_MIDDLE; ++button) {
+        m_input.setKey(static_cast<Key>(static_cast<s32>(Key::MouseLeft) + button),
+                       glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE &&
+                           glfwGetMouseButton(m_window, button) == GLFW_PRESS);
+    }
 }
 
 void GlfwWindow::charCallback(GLFWwindow* window, u32 codepoint) {
@@ -238,6 +248,10 @@ void GlfwWindow::pollGamepads() {
         if (glfwJoystickIsGamepad(joystick) == GLFW_TRUE &&
             glfwGetGamepadState(joystick, &state) == GLFW_TRUE) {
             snapshot.connected = true;
+            const char* name = glfwGetGamepadName(joystick);
+            const char* guid = glfwGetJoystickGUID(joystick);
+            snapshot.name = name != nullptr ? name : "";
+            snapshot.guid = guid != nullptr ? guid : "";
             for (usize i = 0; i < kPadButtonMap.size(); ++i) {
                 snapshot.buttons[i] = state.buttons[kPadButtonMap[i]] == GLFW_PRESS;
             }
@@ -247,6 +261,38 @@ void GlfwWindow::pollGamepads() {
                     value = (value + 1.0f) * 0.5f;
                 }
                 snapshot.axes[i] = value;
+            }
+        }
+        if (!snapshot.connected && glfwJoystickPresent(joystick) == GLFW_TRUE) {
+            snapshot.connected = true;
+            const char* name = glfwGetJoystickName(joystick);
+            const char* guid = glfwGetJoystickGUID(joystick);
+            snapshot.name = name != nullptr ? name : "";
+            snapshot.guid = guid != nullptr ? guid : "";
+            s32 count = 0;
+            const auto* buttonData = glfwGetJoystickButtons(joystick, &count);
+            const std::span buttons(buttonData, static_cast<usize>(count));
+            for (s32 i = 0; i < std::min(count, 32); ++i) {
+                snapshot.buttons[static_cast<usize>(PadButton::Button1) + static_cast<usize>(i)] =
+                    buttons[i] == GLFW_PRESS;
+            }
+            const auto* axisData = glfwGetJoystickAxes(joystick, &count);
+            const std::span axes(axisData, static_cast<usize>(count));
+            if (count >= 2) {
+                snapshot.axes[static_cast<usize>(PadAxis::LeftX)] = axes[0];
+                snapshot.axes[static_cast<usize>(PadAxis::LeftY)] = axes[1];
+            }
+            const auto* hatData = glfwGetJoystickHats(joystick, &count);
+            const std::span hats(hatData, static_cast<usize>(count));
+            if (count > 0) {
+                snapshot.buttons[static_cast<usize>(PadButton::DpadUp)] =
+                    (hats[0] & GLFW_HAT_UP) != 0;
+                snapshot.buttons[static_cast<usize>(PadButton::DpadDown)] =
+                    (hats[0] & GLFW_HAT_DOWN) != 0;
+                snapshot.buttons[static_cast<usize>(PadButton::DpadLeft)] =
+                    (hats[0] & GLFW_HAT_LEFT) != 0;
+                snapshot.buttons[static_cast<usize>(PadButton::DpadRight)] =
+                    (hats[0] & GLFW_HAT_RIGHT) != 0;
             }
         }
         m_input.setPad(pad, snapshot);

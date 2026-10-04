@@ -15,6 +15,7 @@ namespace gdl::game {
 /** One player's input for a frame of play. */
 struct PlayInput {
     MoveInput move;
+    std::optional<Vec3> aimPoint; ///< mouse aiming, absent for retail controller movement
     MenuInput menu;
     bool attack = false; ///< the attack button is held
     bool usePotion = false;

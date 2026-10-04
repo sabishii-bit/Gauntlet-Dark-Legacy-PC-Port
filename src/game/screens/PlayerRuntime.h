@@ -30,6 +30,7 @@ enum class PlayerLife : u8 { Standing, Dying, InTower };
  * differ from this record's position in the party; figures may be unavailable. */
 struct PlayerRuntime {
     PlayerActor actor;
+    bool cursorAiming = false; ///< manual facing must not be redirected by controller assistance
     struct Presentation {
         Vec3 position{0};
         f32 yaw = 0;

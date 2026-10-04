@@ -15,6 +15,7 @@ add_library(game STATIC
     world/DestructibleWalls.cpp
     world/MissileTarget.cpp
     menu/SettingsMenu.cpp
+    menu/ControlSettings.cpp
     menu/VideoSettings.cpp
     menu/CompassHud.cpp
     screens/SaveMenu.cpp
@@ -47,6 +48,7 @@ add_library(game STATIC
     config/GameConfig.h
     config/MultiplayerMode.h
     config/GameConfig.cpp
+    config/ControlProfiles.cpp
     players/ClassData.h
     players/MagicPerks.h
     players/MagicPerks.cpp
@@ -89,6 +91,7 @@ add_library(game STATIC
     players/PowerupEndings.cpp
     players/PlayerControls.h
     players/PlayerControls.cpp
+    players/CursorAim.cpp
     players/PlayerActor.h
     players/PlayerActor.cpp
     players/PlayerCapture.h

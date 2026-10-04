@@ -86,6 +86,10 @@ void SettingsMenu::rebuild(s32 selection) {
         definition.items.push_back({std::move(label), code});
     };
     switch (m_page) {
+    case Page::Controls:
+        m_controls.define(definition, m_config, *m_painter,
+                          [this](std::string_view id) { return text(id); });
+        break;
     case Page::Root: {
         add(text("menu.audio"), 0);
         if (m_scope == Scope::Title) {
@@ -95,7 +99,7 @@ void SettingsMenu::rebuild(s32 selection) {
             add(text("menu.compass"), 2);
         }
         add(text("menu.graphics"), kGraphicsCode);
-        definition.items.push_back({text("menu.controls"), 3, 0, false});
+        definition.items.push_back({text("menu.controls"), 3});
         constexpr s32 kMargin = 64;
         const s32 left = definition.x < 0 ? kMargin : definition.x;
         s32 longest = 1;
@@ -399,6 +403,14 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     if (!m_menu.isOpen()) {
         return {};
     }
+    if (m_page == Page::Controls) {
+        if (m_controls.update(input, ticks, m_menu, m_config, m_persist,
+                              [this](s32 selected) { rebuild(selected); })) {
+            m_page = Page::Root;
+            rebuild();
+        }
+        return {};
+    }
     if (m_confirmVideo) {
         if (m_video.update()) {
             m_confirmVideo = false;
@@ -541,6 +553,12 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     }
     if (event.action == MenuAction::Choice) {
         if (m_page == Page::Root) {
+            if (event.code == 3) {
+                m_page = Page::Controls;
+                m_controls.begin();
+                rebuild();
+                return {};
+            }
             m_page =
                 event.code == kGraphicsCode ? Page::Graphics : static_cast<Page>(event.code + 1);
             if (m_page == Page::Graphics) {

@@ -2,6 +2,8 @@ find_package(Catch2 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    game/config/ControlProfilesTests.cpp
+    game/players/CursorAimTests.cpp
     game/enemies/DeathRulesTests.cpp
     game/enemies/EnemiesDeathTests.cpp
     game/screens/LevelOpponentsDeathTests.cpp

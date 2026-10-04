@@ -3,6 +3,7 @@
 #include <array>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -80,6 +81,9 @@ enum class Key : u8 {
     F10,
     F11,
     F12,
+    MouseLeft,
+    MouseRight,
+    MouseMiddle,
     Count
 };
 
@@ -106,6 +110,38 @@ enum class PadButton : u8 {
     LeftStickRight,
     LeftStickDown,
     LeftStickLeft,
+    Button1,
+    Button2,
+    Button3,
+    Button4,
+    Button5,
+    Button6,
+    Button7,
+    Button8,
+    Button9,
+    Button10,
+    Button11,
+    Button12,
+    Button13,
+    Button14,
+    Button15,
+    Button16,
+    Button17,
+    Button18,
+    Button19,
+    Button20,
+    Button21,
+    Button22,
+    Button23,
+    Button24,
+    Button25,
+    Button26,
+    Button27,
+    Button28,
+    Button29,
+    Button30,
+    Button31,
+    Button32,
     Count
 };
 
@@ -114,6 +150,8 @@ enum class PadAxis : u8 { LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigge
 /** State of one gamepad for one frame. */
 struct PadSnapshot {
     bool connected = false;
+    std::string name;
+    std::string guid;
     std::array<bool, static_cast<usize>(PadButton::Count)> buttons{};
     std::array<f32, static_cast<usize>(PadAxis::Count)> axes{};
 };
@@ -130,13 +168,15 @@ std::optional<PadButton> padButtonFromName(std::string_view name);
  * follows, so a tap shorter than a frame is never lost. */
 class Input {
 public:
-    static constexpr s32 kMaxPads = 4;
+    static constexpr s32 kMaxPads = 16; ///< physical GLFW slots, not the four player lanes
 
     bool isKeyDown(Key key) const;
     bool wasKeyPressed(Key key) const;
     bool wasKeyReleased(Key key) const;
 
     bool isPadConnected(s32 pad) const;
+    const PadSnapshot* padDevice(s32 pad) const;
+    const PadSnapshot* padSlot(s32 pad) const; ///< retains identity while a slot is unplugged
     bool isPadButtonDown(s32 pad, PadButton button) const;
     bool wasPadButtonPressed(s32 pad, PadButton button) const;
     /** Sticks report -1..1, triggers 0..1. */

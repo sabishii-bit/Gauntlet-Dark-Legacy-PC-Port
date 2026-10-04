@@ -70,6 +70,25 @@ struct Fixture {
     }
 };
 
+TEST_CASE("cursor facing survives backward movement and strafe without overriding cutscene holds",
+          "[controls][cursor][party-motion]") {
+    Fixture f;
+    f.inputs[3].aimPoint = Vec3{10, 0, 0};
+    f.inputs[3].move = {{0, -1}, 1};
+    f.step();
+    CHECK(f.players[0].actor.position().x < 0);
+    CHECK(f.players[0].actor.yaw() == Approx(glm::half_pi<f32>()));
+    f.inputs[3].move = {{1, 0}, 1};
+    f.step();
+    CHECK(f.players[0].actor.position().z < 0);
+    const Vec3 before = f.players[0].actor.position();
+    const f32 yaw = f.players[0].actor.yaw();
+    f.inputs[3].aimPoint = Vec3{-10, 0, 0};
+    f.step(true);
+    CHECK(f.players[0].actor.position() == before);
+    CHECK(f.players[0].actor.yaw() == yaw);
+}
+
 TEST_CASE("a damage flash expires after two simulation frames without holding controls",
           "[game][screens][party-motion]") {
     Fixture f;

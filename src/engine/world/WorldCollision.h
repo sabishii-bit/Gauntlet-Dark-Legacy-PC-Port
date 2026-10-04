@@ -117,6 +117,8 @@ public:
      * solid on both sides; crossing a thin wall cannot select its far side. */
     Vec3 sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top,
                     std::vector<WallContact>* contacts = nullptr) const;
+    /** Nearest visible solid surface along a finite picking ray, including moving geometry. */
+    std::optional<Vec3> pickSurface(const Vec3& from, const Vec3& to) const;
 
 private:
     std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,

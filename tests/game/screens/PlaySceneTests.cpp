@@ -134,6 +134,43 @@ TEST_CASE("the native compass follows its preference and is hidden behind option
     }
 }
 
+TEST_CASE("a rendered tower camera directs a real player's cursor facing after arrival",
+          "[controls][cursor][assets]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = unpackedRoot();
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, CharacterSave{}}};
+    PlayOptions options;
+    options.welcome = false;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 tick = 0; tick < 240; ++tick) {
+        scene.update(1.0 / 60.0, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    REQUIRE(scene.actor(0) != nullptr);
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    scene.render(device, projection, 640, 448);
+    const Vec3 origin = scene.actor(0)->position();
+    const Vec3 target = origin + Vec3{2, 0, 2};
+    const auto clip =
+        scene.viewCamera().clipTransform(config.horizontalFovRadians(), 640, 448, projection);
+    const Vec4 projected = clip * Vec4{target, 1};
+    const Vec2 pointer = (Vec2{projected} / projected.w + Vec2{1}) * 0.5f;
+    const auto aim = scene.cursorAim(pointer, origin.y);
+    REQUIRE(aim);
+    PlayScene::Inputs inputs;
+    inputs[0].aimPoint = aim;
+    scene.update(1.0 / 60.0, inputs);
+    CHECK(scene.actor(0)->yaw() ==
+          Approx(std::atan2(aim->x - origin.x, aim->z - origin.z)).margin(0.001));
+    scene.close();
+    CHECK_FALSE(scene.cursorAim(pointer, origin.y));
+}
+
 TEST_CASE("optional bloom and depth of field run after the world and before the HUD",
           "[bloom][dof][ambient-occlusion][assets]") {
     test::FakeRenderDevice device;
