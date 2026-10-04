@@ -138,15 +138,16 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     for (usize i = 0; i < m_definition.items.size(); ++i) {
         const auto& item = m_definition.items[i];
         const auto label = item.text + (item.markedPart == 1 ? " ~" : "");
-        const auto x = painter.leftEdge(itemX(i), label, m_definition.scale);
+        auto x = painter.leftEdge(itemX(i), label, m_definition.scale);
         auto right = x + painter.measure(label, m_definition.scale);
         const auto alternate = itemX(i) + painter.measure(item.text + "    ", m_definition.scale);
         if (!item.alternate.empty()) {
             right = alternate + painter.measure(item.alternate + " ~", m_definition.scale);
         }
         if (!item.value.empty()) {
-            right = std::max(right, m_definition.valueX + m_definition.valueWidth +
-                                        static_cast<s32>(kArrowGap + kArrowSize));
+            x = std::min(x, valueX(i) - static_cast<s32>(kArrowGap + kArrowSize));
+            right = std::max(right,
+                             valueX(i) + valueWidth(i) + static_cast<s32>(kArrowGap + kArrowSize));
         }
         m_itemAreas.push_back({static_cast<f32>(x), static_cast<f32>(itemY(i)),
                                static_cast<f32>(right - x), static_cast<f32>(m_lineHeight)});
@@ -223,13 +224,12 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks) {
                     m_hoverPart = input.pointer->x >= static_cast<f32>(m_alternateX[i]) ? 2 : 1;
                 }
                 if (input.pointerPressed) {
-                    const s32 direction =
-                        !item.value.empty() &&
-                                input.pointer->x >= static_cast<f32>(m_definition.valueX) -
-                                                        kArrowGap - kArrowSize &&
-                                input.pointer->x < static_cast<f32>(m_definition.valueX)
-                            ? -1
-                            : 1;
+                    const s32 direction = !item.value.empty() &&
+                                                  input.pointer->x >= static_cast<f32>(valueX(i)) -
+                                                                          kArrowGap - kArrowSize &&
+                                                  input.pointer->x < static_cast<f32>(valueX(i))
+                                              ? -1
+                                              : 1;
                     return {MenuAction::Choice, item.code, m_hoverPart, direction};
                 }
                 break;
@@ -296,6 +296,16 @@ s32 OptionMenu::itemX(usize index) const {
     return index < m_definition.itemPositions.size()
                ? static_cast<s32>(m_definition.itemPositions[index].x)
                : m_definition.x;
+}
+
+s32 OptionMenu::valueX(usize index) const {
+    const auto& column = m_definition.items[index].valueColumn;
+    return column ? column->x : m_definition.valueX;
+}
+
+s32 OptionMenu::valueWidth(usize index) const {
+    const auto& column = m_definition.items[index].valueColumn;
+    return column ? column->width : m_definition.valueWidth;
 }
 
 u8 OptionMenu::fadeOpacity() const {
@@ -459,12 +469,11 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         };
         drawPart(itemX(i), label);
         if (!item.value.empty()) {
-            drawPart(m_definition.valueX, item.value);
+            drawPart(valueX(i), item.value);
             if (item.enabled) {
                 const auto center = static_cast<f32>(y) + static_cast<f32>(m_lineHeight) / 2;
-                const auto left = static_cast<f32>(m_definition.valueX) - kArrowGap;
-                const auto right =
-                    static_cast<f32>(m_definition.valueX + m_definition.valueWidth) + kArrowGap;
+                const auto left = static_cast<f32>(valueX(i)) - kArrowGap;
+                const auto right = static_cast<f32>(valueX(i) + valueWidth(i)) + kArrowGap;
                 const auto color =
                     (selected ? m_definition.colors.on : m_definition.colors.off).withAlpha(fade);
                 canvas.fillTriangle({left - kArrowSize, center}, {left, center - kArrowSize},

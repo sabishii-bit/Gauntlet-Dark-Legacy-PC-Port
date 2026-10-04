@@ -1017,8 +1017,17 @@ TEST_CASE("control pages sit above a horizontal action bar and arrows support mo
     const auto& menu = f.menu.menu();
     const auto& definition = menu.definition();
     REQUIRE(definition.items.size() == 11);
-    CHECK(definition.items[7].text == "Page");
-    CHECK(definition.items[7].value == "1/4");
+    CHECK(definition.items[7].text.empty());
+    CHECK(definition.items[7].value == "Page 1/4");
+    REQUIRE(definition.items[7].valueColumn);
+    const auto pageColumn = *definition.items[7].valueColumn;
+    CHECK(std::abs(pageColumn.x * 2 + pageColumn.width - 512) <= 1);
+    CHECK(pageColumn.width == f.painter.measure("Page 1/4", definition.scale));
+    CHECK(menu.itemX(7) == pageColumn.x);
+    CHECK(menu.itemArea(7).x < pageColumn.x); // the left arrow is clickable too
+    CHECK(menu.itemX(0) < pageColumn.x);
+    CHECK(pageColumn.x < definition.valueX);
+    CHECK(menu.itemY(7) > menu.itemY(6) + menu.lineHeight());
     CHECK(definition.items[8].text == "Apply");
     CHECK(definition.items[9].text == "Restore Defaults");
     CHECK(definition.items[10].text == "Back");
@@ -1030,13 +1039,15 @@ TEST_CASE("control pages sit above a horizontal action bar and arrows support mo
         CHECK(box.x + box.width < menu.itemArea(i + 1).x);
     }
     MenuInput click;
-    click.pointer =
-        Vec2{static_cast<f32>(definition.valueX - 8), static_cast<f32>(menu.itemY(7) + 2)};
+    click.pointer = Vec2{static_cast<f32>(pageColumn.x - 8), static_cast<f32>(menu.itemY(7) + 2)};
     click.pointerPressed = true;
     f.menu.update(click, 1);
-    CHECK(menu.definition().items[7].value == "4/4");
+    CHECK(menu.definition().items[7].value == "Page 4/4");
+    click.pointer->x = static_cast<f32>(pageColumn.x + pageColumn.width + 8);
+    f.menu.update(click, 1);
+    CHECK(menu.definition().items[7].value == "Page 1/4");
     f.right();
-    CHECK(menu.definition().items[7].value == "1/4");
+    CHECK(menu.definition().items[7].value == "Page 2/4");
     f.down();
     REQUIRE(menu.selection() == 8);
     f.right();

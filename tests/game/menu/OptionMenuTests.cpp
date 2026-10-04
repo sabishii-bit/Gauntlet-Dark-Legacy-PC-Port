@@ -177,6 +177,46 @@ TEST_CASE("two-column choices draw arrows and gray disabled values without a cur
     CHECK(grayValue);
 }
 
+TEST_CASE("standalone choice rows draw and hit-test their own centered column",
+          "[game][menu][mouse]") {
+    Fixture f;
+    MenuDefinition definition;
+    definition.items = {{"AA", 0}, {"", 1}};
+    definition.items[0].value = "ON";
+    definition.items[1].value = "PAGE";
+    definition.items[1].valueColumn = MenuValueColumn{240, 32};
+    definition.itemPositions = {{64, 100}, {240, 140}};
+    definition.valueX = 350;
+    definition.valueWidth = 40;
+    definition.showCursor = false;
+    f.menu.open(definition, f.painter, {});
+    CHECK(f.menu.itemArea(1) == Rect{229, 140, 54, 10});
+    test::FakeRenderDevice device;
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    std::vector<f32> arrowTips;
+    for (const auto& draw : device.draws) {
+        if (draw.vertices.size() == 3 && draw.texture == &device.whiteTexture()) {
+            arrowTips.push_back(draw.vertices.front().position.x);
+        }
+    }
+    CHECK(arrowTips == std::vector<f32>{339, 401, 229, 283});
+    MenuInput click;
+    click.pointerPressed = true;
+    click.pointer = Vec2{232, 145};
+    auto event = f.menu.update(click, 1);
+    CHECK(event.code == 1);
+    CHECK(event.direction == -1);
+    click.pointer = Vec2{280, 145};
+    event = f.menu.update(click, 1);
+    CHECK(event.code == 1);
+    CHECK(event.direction == 1);
+}
+
 TEST_CASE("navigation wraps and reports choices and backing out", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});

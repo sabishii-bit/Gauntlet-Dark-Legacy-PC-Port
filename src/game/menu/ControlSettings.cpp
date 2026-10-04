@@ -167,14 +167,14 @@ void ControlSettings::define(MenuDefinition& definition, const TextPainter& pain
             definition.items.push_back(
                 {text("controls." + std::string(action.id)), index, 0, canBind, {}, 0, value});
         }
-        definition.items.push_back(
-            {text("controls.page"),
-             kNext,
-             0,
-             true,
-             {},
-             0,
-             std::to_string(m_page + 1) + "/" + std::to_string(pageCount())});
+        definition.items.push_back({"",
+                                    kNext,
+                                    0,
+                                    true,
+                                    {},
+                                    0,
+                                    text("controls.page") + " " + std::to_string(m_page + 1) + "/" +
+                                        std::to_string(pageCount())});
         definition.items.push_back({text("settings.apply"), kApply});
         definition.items.push_back({text("settings.defaults"), kDefaults});
         definition.items.push_back({text("settings.back"), kBack});
@@ -195,6 +195,11 @@ void ControlSettings::define(MenuDefinition& definition, const TextPainter& pain
         }
     }
     if (m_player >= 0) {
+        auto& page = definition.items[kFirstAction - 1];
+        const auto pageWidth = painter.measure(page.value, definition.scale);
+        const auto pageX = (kCanvasWidth - pageWidth) / 2;
+        page.valueColumn = MenuValueColumn{pageX, pageWidth};
+        definition.itemPositions[kFirstAction - 1].x = static_cast<f32>(pageX);
         s32 width = kActionGap * (kActionCount - 1);
         for (usize i = kFirstAction; i < definition.items.size(); ++i) {
             width += painter.measure(definition.items[i].text, definition.scale);

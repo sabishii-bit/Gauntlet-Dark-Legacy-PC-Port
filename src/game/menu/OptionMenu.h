@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,12 @@ struct MenuScreen {
     f32 horizontalFov = glm::radians(60.0f);
 };
 
+/** Placement of a choice and its arrows independently of the other rows. */
+struct MenuValueColumn {
+    s32 x = 0;
+    s32 width = 0;
+};
+
 struct MenuItem {
     std::string text;
     s32 code = 0;
@@ -33,7 +40,8 @@ struct MenuItem {
     std::string alternate{};
     s32 markedPart = 0; ///< 0: no mark, 1: first choice, 2: alternate choice
     // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
-    std::string value{}; ///< optional separate choice column
+    std::string value{};                                       ///< optional separate choice column
+    std::optional<MenuValueColumn> valueColumn = std::nullopt; ///< overrides the shared column
 };
 
 struct MenuColors {
@@ -181,6 +189,8 @@ private:
     void glideIcon(s32 ticks);
     s32 nextEnabled(s32 from, s32 step) const;
     const Texture* itemSheet(const MenuTextures& textures, bool selected) const;
+    s32 valueX(usize index) const;
+    s32 valueWidth(usize index) const;
 
     MenuDefinition m_definition;
     MenuScreen m_screen;
