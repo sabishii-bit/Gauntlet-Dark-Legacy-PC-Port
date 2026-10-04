@@ -69,7 +69,8 @@ struct MissileLaunch {
     u32 flags = 0;
     MissileStreak streak;
     MultiplayerMode multiplayer = MultiplayerMode::Normal;
-    f32 playerHitGap = 0.25f; ///< hit-effect frames / 30, when authored
+    f32 playerHitGap = 0.25f;  ///< hit-effect frames / 30, when authored
+    bool breaksPotions = true; ///< companion shots pass through collectible bottles
 };
 
 /** Something a missile stops against: a cylinder, or an authored triangle surface. */
@@ -85,6 +86,7 @@ struct MissileTarget {
     s32 node = -1; ///< collision-part index; id still identifies the owning creature
     f32 targetScoreScale = 1.0f; ///< for choosing between one creature's live parts
     f32 maxTargetDistance = 0.0f;
+    bool potionBottle = false;
     Vec3 pointNear(const Vec3& point) const;
     bool touches(const Vec3& point, f32 reach) const;
     bool reachedBy(const StrikeHit& strike) const;
@@ -164,6 +166,7 @@ public:
         MissileStreak streak;
         MultiplayerMode multiplayer = MultiplayerMode::Normal;
         f32 playerHitGap = 0.25f;
+        bool breaksPotions = true;
         struct PlayerContact {
             s32 player = -1;
             f32 remaining = 0;

@@ -266,6 +266,7 @@ TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapo
     CHECK(shot.damage == 10);
     CHECK(shot.flags == 0x11);
     CHECK(shot.owner == 3);
+    CHECK_FALSE(shot.breaksPotions);
     CHECK(shot.spec->weight == (boss ? 0 : 10));
     REQUIRE(shot.effect != 0);
     CHECK(f.arsenal.missiles().visuals().effect(0).name == "PHOENIX_FBALL");
@@ -310,8 +311,11 @@ TEST_CASE("a ranged volley fires the player's weapon and both earned and Phoenix
         f.arsenal.launchWeapon(f.actor, figure.get(), f.actor.facing(), 1, true, aim);
         f.arsenal.launchFamiliar(f.actor, figure.get(), aim);
         REQUIRE(f.arsenal.missiles().count() == 3);
+        CHECK(f.arsenal.missiles().missile(0).breaksPotions);
         const auto& familiar = f.arsenal.missiles().missile(1);
         const auto& phoenix = f.arsenal.missiles().missile(2);
+        CHECK_FALSE(familiar.breaksPotions);
+        CHECK_FALSE(phoenix.breaksPotions);
         CHECK(familiar.damage == Catch::Approx(0.1f * static_cast<f32>(level)));
         CHECK(familiar.flags == 0);
         CHECK(phoenix.damage == 10);

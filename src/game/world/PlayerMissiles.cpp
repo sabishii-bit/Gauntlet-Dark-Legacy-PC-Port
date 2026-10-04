@@ -119,6 +119,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.streak = launch.streak;
     missile.multiplayer = launch.multiplayer;
     missile.playerHitGap = launch.playerHitGap;
+    missile.breaksPotions = launch.breaksPotions;
     if (m_device != nullptr && launch.archive != nullptr && !launch.tree.empty()) {
         EffectTrees::Setting setting;
         setting.persistent = true;
@@ -269,6 +270,9 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             }
             // What stands in its way stops it before any wall behind does.
             for (const auto& target : targets) {
+                if (target.potionBottle && !missile.breaksPotions) {
+                    continue;
+                }
                 if (std::ranges::find(missile.pierced, target.id) != missile.pierced.end()) {
                     continue;
                 }

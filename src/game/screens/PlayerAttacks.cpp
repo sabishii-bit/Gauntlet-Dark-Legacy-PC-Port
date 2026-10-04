@@ -1460,6 +1460,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         missileTargets.push_back(MissileTarget{kPotionTargetBase + static_cast<s32>(bottle),
                                                item.position, std::max(item.radius, 0.5f),
                                                std::max(item.height, 1.0f)});
+        missileTargets.back().potionBottle = true;
     }
     // Chests, shut gates and raised tent walls stop it and take nothing (SfxSkipItem).
     s32 stop = kItemStopBase;

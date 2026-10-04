@@ -2215,7 +2215,7 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     f.opponents.close();
 }
 
-TEST_CASE("a thrown weapon breaks a bottle lying about: its magic and the thrower's both go off",
+TEST_CASE("world bottles detonate on weapon shots but ignore companion shots",
           "[game][screens][player-attacks][shot-potion][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -2246,18 +2246,30 @@ TEST_CASE("a thrown weapon breaks a bottle lying about: its magic and the throwe
     launch.velocity = Vec3{0, 0, 20};
     launch.spec = &spec;
     launch.damage = 10;
+    SECTION("player weapon detonates both the bottle and the owner's magic") {}
+    SECTION("companion projectile passes through without consuming the bottle") {
+        launch.breaksPotions = false;
+    }
     REQUIRE(f.arsenal.missiles().launch(launch));
     f.attacks.updateProjectiles(0.5f, f.players, f.targets);
-    CHECK(f.world.placedItems().item(bottle).taken);
+    CHECK(f.world.placedItems().item(bottle).taken == launch.breaksPotions);
     // The bottle's own blue magic and the thrower's, the thrower told shooting does less.
     usize bursts = 0;
     for (usize i = 0; i < f.effects.count(); ++i) {
         bursts += f.effects.effect(i).name == "MP_ELEC" ? 1 : 0;
     }
-    CHECK(bursts == 2);
-    CHECK(helps == std::vector<s32>{HelpMessages::kShotMagic});
-    // Magic, hand blows and aiming never take a bottle for a target.
-    CHECK(f.world.placedItems().shootablePotions().empty());
+    if (launch.breaksPotions) {
+        CHECK(bursts == 2);
+        CHECK(helps == std::vector<s32>{HelpMessages::kShotMagic});
+        CHECK(f.world.placedItems().shootablePotions().empty());
+    } else {
+        CHECK(bursts == 0);
+        CHECK(helps.empty());
+        const auto remaining = f.world.placedItems().shootablePotions();
+        CHECK(std::ranges::find(remaining, bottle) != remaining.end());
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        CHECK(f.arsenal.missiles().missile(0).position.z > origin.z);
+    }
     f.attacks.clear();
     f.fixtures.clear();
 }

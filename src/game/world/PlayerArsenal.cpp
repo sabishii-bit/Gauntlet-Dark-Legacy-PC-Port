@@ -281,8 +281,9 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     static constexpr MissileSpec kLevelShot{"FAMILIAR_SPIT", {}, 1, 0, 10, true, {}};
     static constexpr MissileSpec kBossShot{"FAMILIAR_SPIT", {}, 1, 0, 0, true, {}};
     MissileLaunch launch;
-    // Familiar spit's fixed collision mask excludes players in every game mode.
+    // Companion shots do not hit players or detonate collectible potions.
     launch.owner = actor.player();
+    launch.breaksPotions = false;
     const f32 scale = PlayerFigure::bodyScale(actor.save(), worn);
     launch.position = Vec3{actor.transform() * Vec4{stats->familiarShotOffset * scale, 1}};
     launch.direction = actor.facing();

@@ -23,6 +23,30 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("companion shots pass through potions and still hit the enemy behind them",
+          "[game][missiles][shot-potion]") {
+    static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true};
+    for (const bool breaksPotions : {false, true}) {
+        CAPTURE(breaksPotions);
+        PlayerMissiles missiles;
+        MissileLaunch launch;
+        launch.spec = &kSpec;
+        launch.position = {0, 1, 0};
+        launch.velocity = Vec3{0, 0, 20};
+        launch.damage = 10;
+        launch.breaksPotions = breaksPotions;
+        std::array targets{MissileTarget{1, {0, 0, 3}, 1, 3}, MissileTarget{2, {0, 0, 7}, 1, 3}};
+        targets[0].potionBottle = true;
+        REQUIRE(missiles.launch(launch));
+        missiles.update(0.5f, nullptr, targets);
+        const auto impacts = missiles.takeImpacts();
+        REQUIRE(impacts.size() == 1);
+        CHECK(impacts[0].target == (breaksPotions ? 1 : 2));
+        CHECK(impacts[0].damage == 10);
+        CHECK(missiles.count() == 0);
+    }
+}
+
 TEST_CASE("weapon presentation interpolates flight without changing contacts or lifetime",
           "[game][missiles][presentation]") {
     static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 6, 0, false};

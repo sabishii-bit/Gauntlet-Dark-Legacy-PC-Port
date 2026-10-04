@@ -10,6 +10,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
+#include "game/enemies/LegendItems.h"
 #include "game/players/LevelRecord.h"
 #include "game/players/Progression.h"
 #include "game/world/LevelWorld.h"
@@ -67,6 +68,19 @@ TEST_CASE("fully unlocked tower scenario supplies a maxed green Knight without p
     CHECK_FALSE(save.progress().promotionPending());
     CHECK(save.health() == 9999);
     CHECK(save.gold == 99999);
+    const auto& inventory = save.progress().inventory;
+    CHECK(inventory.keys == Inventory::kMostKeys);
+    CHECK(inventory.potions == std::vector<s32>{1, 2, 3, 4, 1, 2, 3, 4, 0});
+    REQUIRE(scenario.party.front().powerups.size() == Inventory::kPowerupSlots);
+    for (usize slot = 0; slot < Inventory::kPowerupSlots; ++slot) {
+        const auto& held = inventory.powerups[slot];
+        CHECK(held == scenario.party.front().powerups[slot]);
+        CHECK(held.held());
+        CHECK_FALSE(held.on); // ready to select, without burning through the test inventory
+    }
+    for (s32 boss = 34; boss <= 42; ++boss) {
+        CHECK(save.progress().relics.hasLegend(legendRealmOf(boss)));
+    }
     CHECK_FALSE(party.front().slot.has_value());
     CHECK_FALSE(scenario.tower.welcome.value_or(true));
     CHECK(scenario.level.empty());
