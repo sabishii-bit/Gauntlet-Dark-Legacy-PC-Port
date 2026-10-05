@@ -271,7 +271,7 @@ TEST_CASE("rapid fire speeds throwing but not arrival or idle", "[game][items][p
     CHECK(rapidShots > normalShots);
     REQUIRE(normal.bind(tree));
     REQUIRE(rapid.bind(tree));
-    rapid.setAttackSpeed(true, true);
+    rapid.setAttackSpeed(true, false);
     for (s32 i = 0; i < 10; ++i) {
         normal.update(PlayerMotion::Stand, 2, kStep);
         rapid.update(PlayerMotion::Stand, 2, kStep);

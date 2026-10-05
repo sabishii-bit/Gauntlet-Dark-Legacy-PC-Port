@@ -475,7 +475,8 @@ public:
         return m_current >= Action::Hammer && m_current <= Action::FireRightRecover;
     }
     PlayerDeed itemReleased() const { return m_itemReleased; }
-    /** Item animation multipliers leave movement and simulation clocks unchanged. */
+    /** Item animation multipliers are latched when the next sequence starts;
+     * movement, simulation and transition clocks remain unchanged. */
     void setAttackSpeed(bool rapid, bool speed) {
         m_rapid = rapid;
         m_speed = speed;
@@ -521,7 +522,9 @@ private:
 
     /** How the current action answers a request. */
     struct Decision {
-        Action action = Action::Ready;
+        explicit Decision(Action request = Action::Ready) : action(request), requested(request) {}
+        Action action;
+        Action requested; ///< before follow-up/refinement, for native item-speed eligibility
         Cut cut = Cut::WhenDoneIfDifferent;
         bool repeat = false;
         f32 transition = 0.0f;
@@ -543,6 +546,7 @@ private:
     static Action recoveryOf(Action swing);
     static MeleeBlow blowOf(Action swing);
     static bool retainsAttackPress(Action action);
+    f32 animationDuration(const Decision& decision) const;
     void play(const Decision& decision, f32 seconds);
 
     const TreeInfo* m_tree = nullptr;

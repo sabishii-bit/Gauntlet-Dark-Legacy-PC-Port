@@ -134,6 +134,7 @@ void PlayerAnimator::unbind() {
     m_comboClass = -1;
     m_comboRide = false;
     m_attackSeconds = 0.0f;
+    m_player.setSpeed(1.0f);
     m_player.stop();
     m_presentationPrevious = TreePose{};
 }
@@ -293,8 +294,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
             m_dead = true;
             return;
         }
-        Decision fall;
-        fall.action = Action::Death;
+        Decision fall{Action::Death};
         fall.cut = dying() ? Cut::WhenDoneIfDifferent : Cut::Now;
         if (!m_dead) {
             play(fall, seconds);
@@ -307,8 +307,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         return;
     }
     if (deed == PlayerDeed::Grabbed || deed == PlayerDeed::Thrown) {
-        Decision captured;
-        captured.action = deed == PlayerDeed::Grabbed ? Action::Grabbed : Action::FallBack;
+        Decision captured{deed == PlayerDeed::Grabbed ? Action::Grabbed : Action::FallBack};
         captured.cut = m_current == captured.action ? Cut::WhenDoneIfDifferent : Cut::Now;
         captured.repeat = deed == PlayerDeed::Grabbed;
         play(captured, seconds);
@@ -369,8 +368,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
             reaction = Action::Whirled;
         }
         if (m_sequences[index(reaction)] >= 0) {
-            Decision reel;
-            reel.action = reaction;
+            Decision reel{reaction};
             reel.cut = webbed() ? Cut::IfDifferent : Cut::Now;
             reel.repeat = reaction == Action::WebReact;
             play(reel, seconds);
@@ -384,8 +382,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // A turbo move cuts into standing, walking and running at once and plays through; a
     // legend item's gesture is made the same way, but pays and lets go of nothing.
     if (canBegin(deed)) {
-        Decision move;
-        move.action = turboActionOf(deed);
+        Decision move{turboActionOf(deed)};
         move.cut = Cut::Now;
         m_legendAsked = isLegend(deed);
         m_shieldAsked = false;
@@ -406,7 +403,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked || guarding()) {
-        Decision guard;
+        Decision guard{asked ? Action::Defend : Action::Ready};
         if (asked && (!guarding() || m_current == Action::DefendLower)) {
             guard.action =
                 m_sequences[index(Action::DefendRaise)] >= 0 ? Action::DefendRaise : Action::Defend;
@@ -434,6 +431,20 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
                             deed == PlayerDeed::Shove || deed == PlayerDeed::StrongAttack ||
                             isLegend(deed);
+    // Locking the body below must not erase the request used by DoPlayerAction's
+    // speed selection. Native fn_80088938 retains held attack bits even during
+    // strong/item attacks, and PlayerMotion selects their requested action again.
+    Action lockedSpeedRequest = Action::Ready;
+    if (turboing()) {
+        lockedSpeedRequest = turboActionOf(deed);
+        if (deed == PlayerDeed::Attack && playable(Action::Throw)) {
+            lockedSpeedRequest = m_strafe != StrafeWay::None && motion != PlayerMotion::Stand
+                                     ? strafeStep(m_strafe, true)
+                                     : Action::Throw;
+        } else if (deed == PlayerDeed::Defend) {
+            lockedSpeedRequest = Action::Defend;
+        }
+    }
     if (reacting() || struck || turboing() || turboAsked) {
         deed = PlayerDeed::None;
         motion = PlayerMotion::Stand;
@@ -526,7 +537,11 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     if (m_pushed && afoot && playable(Action::Pushed)) {
         requested = Action::Pushed;
     }
-    play(decide(requested), seconds);
+    auto decision = decide(requested);
+    if (lockedSpeedRequest != Action::Ready) {
+        decision.requested = lockedSpeedRequest;
+    }
+    play(decision, seconds);
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     if (m_player.transitioning()) {
         m_pose.blend(m_previous, m_player.transition());
@@ -534,8 +549,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
 }
 
 PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
-    Decision d;
-    d.action = requested;
+    Decision d{requested};
     switch (m_current) {
     case Action::Ready:
         d.repeat = true;
@@ -1159,19 +1173,47 @@ f32 PlayerAnimator::turnScale() const {
     }
 }
 
+f32 PlayerAnimator::animationDuration(const Decision& decision) const {
+    // DoPlayerAction 800AD280..800AD370 uses the requested attack type,
+    // not the old action or selected follow-up. Types 1 and >=11 ignore both
+    // items; a selected combo also stays unscaled when its request is READY.
+    const Action request = decision.requested;
+    if ((decision.action >= Action::ComboAct1 && decision.action <= Action::ComboJes) ||
+        (request >= Action::ComboAct1 && request <= Action::ComboJes)) {
+        return 1.0f;
+    }
+    switch (request) {
+    case Action::Shove:
+    case Action::DefendRaise:
+    case Action::Defend:
+    case Action::DefendLower:
+    case Action::TurboStrong:
+    case Action::TurboFull:
+    case Action::SpecialShot:
+    case Action::SpecialShotRecover:
+    case Action::SpecialShotRepeat:
+    case Action::Hammer:
+    case Action::HammerRecover:
+    case Action::Breathe:
+    case Action::BreatheRecover: return 1.0f;
+    default: break;
+    }
+    // Rapid Fire accepts only types 9 and 10 (ordinary/strong throws and
+    // gauntlets), not the shooting strafes in type 7. Speed is the fallback,
+    // so owning both items never compounds their 0.75 duration multiplier.
+    const bool rapidAction = isThrow(request) || request == Action::StrongThrow ||
+                             request == Action::StrongThrowRecover ||
+                             (request >= Action::FireLeft && request <= Action::FireRightRecover);
+    constexpr f32 kItemAnimationDuration = 0.75f;
+    return (m_rapid && rapidAction) || m_speed ? kItemAnimationDuration : 1.0f;
+}
+
 void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     const u32 target = sequenceOf(decision.action);
-    const bool rapidAction = isThrow(m_current) || (m_current >= Action::StrafeShootForward1 &&
-                                                    m_current <= Action::StrafeShootRight2);
-    const bool speedAction =
-        m_speed && !entering() && !dying() && !reacting() && !turboing() && !conjuring();
-    constexpr f32 kItemAnimationDuration = 0.75f;
-    const f32 duration = (m_rapid && rapidAction) || speedAction ? kItemAnimationDuration : 1.0f;
-    // CalcAnimInfo also snaps when the scaled frame duration is shorter than
-    // 1/30. This adapter scales elapsed time instead of the stored period, so
-    // include that scale when choosing the native fractional-frame behavior.
-    m_player.setSmooth(m_player.secondsPerFrame() * duration >= AnimationPlayer::kTick);
-    m_player.advance(seconds / duration, decision.repeat);
+    // InitAnim caches animscale in seqscale at sequence start. Advance the
+    // old sequence and any blend using real elapsed time, not a new item's
+    // multiplier; CalcAnimInfo's smooth/snap test uses that cached period.
+    m_player.advance(seconds, decision.repeat);
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;
     bool restart = false;
@@ -1288,6 +1330,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         m_attackSeconds = 0.0f;
     }
     m_previous = m_pose;
+    m_player.setSpeed(1.0f / animationDuration(decision));
     m_player.start(m_tree->sequences[target], target, decision.transition, decision.startFrame);
     if (decision.action == Action::Start) {
         m_entered = true;
