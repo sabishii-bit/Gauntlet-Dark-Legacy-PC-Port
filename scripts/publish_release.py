@@ -1,11 +1,50 @@
 """CI-only publication of both verified installers; never overwrite an existing release."""
 
+import argparse
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 
-from release import ROOT, digest, validate_tag
+from release import ROOT, SEMVER, digest, validate_tag
+
+
+def alpha_order(tag):
+    """Numeric precedence for the alpha-only versions accepted by the build."""
+    value = tag.removeprefix("v")
+    if not SEMVER.fullmatch(value):
+        return None
+    core, alpha = value.split("-alpha.")
+    return (*map(int, core.split(".")), int(alpha))
+
+
+def require_new_version(tag, existing_tags):
+    """Published releases and drafts both reserve their version; never reuse or downgrade."""
+    candidate = alpha_order(tag)
+    if candidate is None:
+        raise ValueError("A release requires an alpha semantic version")
+    for existing in existing_tags:
+        if existing == tag:
+            raise ValueError(f"Release {tag} already exists; increment VERSION instead")
+        previous = alpha_order(existing)
+        if previous is not None and candidate <= previous:
+            raise ValueError(f"Release {tag} must be newer than existing release {existing}")
+
+
+def check_publication():
+    """Fail closed before building and again before publishing, without mutating GitHub."""
+    if os.environ.get("GITHUB_EVENT_NAME") != "push":
+        raise ValueError("Only a pushed version tag may publish; manual runs are build-only")
+    tag = validate_tag(os.environ["RELEASE_TAG"])
+    if os.environ.get("GITHUB_REF") != f"refs/tags/{tag}":
+        raise ValueError("Publication requires the matching version tag, not a branch")
+    # --paginate includes old versions and drafts. Authentication/network failures abort,
+    # rather than being mistaken for proof that the version has not been published.
+    existing = subprocess.check_output(
+        ["gh", "api", "--paginate", "repos/{owner}/{repo}/releases", "--jq", ".[].tag_name"],
+        cwd=ROOT, text=True).splitlines()
+    require_new_version(tag, existing)
+    return tag
 
 
 def validated_assets(folder, tag):
@@ -28,8 +67,14 @@ def validated_assets(folder, tag):
     return assets
 
 
-def main():
-    tag = validate_tag(os.environ["RELEASE_TAG"])
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="check eligibility without publishing")
+    args = parser.parse_args(argv)
+    tag = check_publication()
+    if args.check:
+        print(f"Eligible new release: {tag}")
+        return
     assets = validated_assets(ROOT / "release-assets", tag)
     notes = (
         "Alpha QA build — expect bugs and keep backups of your saves.\n\n"

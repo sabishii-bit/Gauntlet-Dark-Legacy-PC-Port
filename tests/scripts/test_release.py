@@ -1,6 +1,8 @@
 """Publication refuses partial, tampered or unexpected release inventories."""
 
 from pathlib import Path
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -8,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from installer.install import retry_locked
-from publish_release import validated_assets
+from publish_release import check_publication, main as publish_main, require_new_version, validated_assets
 from release import check_frozen_installer, digest, installer_notices
 
 
@@ -27,6 +29,75 @@ class ReleaseTests(unittest.TestCase):
             checksum = self.root / (stem + ".sha256")
             checksum.write_text("".join(f"{digest(path)}  {path.name}\n" for path in paths), encoding="ascii")
             self.packages.append((paths, checksum))
+
+    def test_version_must_increase_without_reusing_a_published_or_draft_release(self):
+        for candidate, existing in (
+                ("v0.1.0-alpha.2", "v0.1.0-alpha.2"),
+                ("v0.1.0-alpha.1", "v0.1.0-alpha.2"),
+                ("v0.1.0-alpha.3", "v0.2.0-alpha.1")):
+            with self.subTest(candidate=candidate, existing=existing), self.assertRaises(ValueError):
+                require_new_version(candidate, [existing])
+        require_new_version("v0.1.0-alpha.10", ["v0.1.0-alpha.9"])
+        require_new_version("v0.2.0-alpha.1", ["v0.1.0-alpha.99"])
+        require_new_version(self.tag, [])
+
+    def test_manual_and_branch_runs_cannot_publish(self):
+        for event, ref in (("workflow_dispatch", "refs/heads/main"),
+                           ("workflow_dispatch", f"refs/tags/{self.tag}"),
+                           ("push", "refs/heads/main"),
+                           ("push", "refs/tags/v0.1.0-alpha.2")):
+            with self.subTest(event=event, ref=ref), mock.patch.dict(os.environ, {
+                    "GITHUB_EVENT_NAME": event, "GITHUB_REF": ref, "RELEASE_TAG": self.tag}), mock.patch(
+                    "publish_release.validate_tag", return_value=self.tag), mock.patch(
+                    "publish_release.subprocess.check_output") as query, mock.patch(
+                    "publish_release.subprocess.run") as publish:
+                with self.assertRaises(ValueError):
+                    publish_main([])
+                query.assert_not_called()
+                publish.assert_not_called()
+
+    def test_duplicate_release_or_failed_remote_check_never_publishes(self):
+        for result in (self.tag + "\n", subprocess.CalledProcessError(1, "gh api")):
+            with self.subTest(result=result), mock.patch.dict(os.environ, {
+                    "GITHUB_EVENT_NAME": "push", "GITHUB_REF": f"refs/tags/{self.tag}",
+                    "RELEASE_TAG": self.tag}), mock.patch(
+                    "publish_release.validate_tag", return_value=self.tag), mock.patch(
+                    "publish_release.subprocess.check_output", side_effect=[result]), mock.patch(
+                    "publish_release.subprocess.run") as publish:
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    publish_main([])
+                publish.assert_not_called()
+
+    def test_preflight_is_read_only_and_publication_creates_but_never_updates(self):
+        with mock.patch.dict(os.environ, {
+                "GITHUB_EVENT_NAME": "push", "GITHUB_REF": f"refs/tags/{self.tag}",
+                "RELEASE_TAG": self.tag}), mock.patch(
+                "publish_release.validate_tag", return_value=self.tag), mock.patch(
+                "publish_release.subprocess.check_output", return_value="") as query, mock.patch(
+                "publish_release.subprocess.run") as publish, mock.patch(
+                "publish_release.ROOT", self.root):
+            self.assertEqual(check_publication(), self.tag)
+            self.assertIn("--paginate", query.call_args.args[0])
+            publish_main(["--check"])
+            publish.assert_not_called()
+            with mock.patch("publish_release.validated_assets", return_value=[self.root / "setup.exe"]):
+                publish_main([])
+            publish.assert_called_once()
+            command = publish.call_args.args[0]
+            self.assertEqual(command[:4], ["gh", "release", "create", self.tag])
+            self.assertIn("--verify-tag", command)
+            self.assertNotIn("--clobber", command)
+
+    def test_release_workflow_has_no_branch_push_and_serializes_all_versions(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
+        triggers = workflow.split("permissions:", 1)[0]
+        self.assertIn("tags: ['v*']", triggers)
+        self.assertNotIn("branches:", triggers)
+        self.assertIn("group: release\n  cancel-in-progress: false", workflow)
+        self.assertIn("needs: preflight", workflow)
+        publication = workflow.split("  publish:", 1)[1]
+        self.assertIn("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')", publication)
+        self.assertIn("needs: installers", publication)
 
     def test_both_platforms_are_required(self):
         self.assertEqual(len(validated_assets(self.root, self.tag)), 6)

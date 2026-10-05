@@ -9,15 +9,34 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  # All versions share a lock: never build/publish overlapping releases.
+  group: release
   cancel-in-progress: false
 
 env:
   VCPKG_DISABLE_METRICS: 1
 
 jobs:
+  preflight:
+    name: Check release eligibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Manual runs produce CI artifacts only, even when a tag is selected.
+      - name: Require a new alpha version before building installers
+        if: github.event_name == 'push'
+        run: python scripts/publish_release.py --check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+
   installers:
     name: Installer (${{ matrix.os }})
+    needs: preflight
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -69,7 +88,7 @@ jobs:
 
   publish:
     name: Publish alpha prerelease
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: installers
     runs-on: ubuntu-24.04
     permissions:

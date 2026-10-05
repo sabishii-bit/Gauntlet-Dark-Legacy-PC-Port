@@ -8,6 +8,8 @@ Maintainer workflow (from a clean, committed checkout):
 
 Bump VERSION, commit, and push v<VERSION> to publish a GitHub prerelease. A manual
 Release workflow run builds downloadable artifacts without publishing a release.
+This also applies to manual runs on tags. Published/draft versions cannot be reused;
+new alpha versions must increase, and release runs share one concurrency lock.
 No disc image, native assets, extracted media, saves or personal settings are shipped.
 Linux targets x86-64 Ubuntu 24.04+ desktops; Vulkan 1.3 drivers remain prerequisites.
 Windows targets x64 Windows 10/11. Installers are unsigned until signing is configured.
