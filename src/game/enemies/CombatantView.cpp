@@ -169,7 +169,11 @@ std::vector<MissileTarget> Combatant::bodyTargets(bool solidOnly) const {
 }
 std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
     std::vector<MissileTarget> out;
-    if (!alive()) {
+    // CritterMoveNodeCol (GC 0x800374fc) retains a root's movement body while
+    // its DEATH sequence runs; CritterDelInst removes it at the final pose.
+    // It is no longer a damage target. Dead child branches stay unavailable,
+    // including the persistent stump effects retained under a living parent.
+    if (!present() || (!alive() && (!solidOnly || m_actor.parent != nullptr))) {
         return out;
     }
     const auto& actor = m_actor;

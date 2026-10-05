@@ -137,9 +137,11 @@ struct EnemySpawn {
     Vec3 direction{0.0f, 0.0f, 1.0f};
     f32 clearance = 0.0f; ///< how far out from `position` it is set (a generator's height)
     s32 generator = -1;
-    bool placed = false;                     ///< set exactly where asked, as a level's placement is
-    bool asleep = false;                     ///< a placement of no strength waits to be woken
-    f32 throwInterval = 1.0f;                ///< seconds, before the level's missile-rate scale
+    bool placed = false;             ///< set exactly where asked, as a level's placement is
+    bool patrolBirth = false;        ///< generate_single's sentry, not an ordinary repeating brood
+    bool allBirthDirections = false; ///< special -2/-3 generators bypass the resolved species mask
+    bool asleep = false;             ///< a placement of no strength waits to be woken
+    f32 throwInterval = 1.0f;        ///< seconds, before the level's missile-rate scale
     Priority priority = Priority::Offscreen; ///< replacement permission, independent of strength
     /** A placement's own sight radius, before the level's scale (the float after its strength
      * and way, SetItem items.c 5569); nought for the kind's thirty. */
@@ -230,6 +232,9 @@ public:
     s32 inView() const { return m_inView; }
     /** The lookouts its patrollers walk between. */
     void setLookouts(LookoutRoute lookouts) { m_lookouts = std::move(lookouts); }
+    /** Snapshot of the larger creatures' solid collision nodes and root fallbacks.
+     * Refreshed before births and movement; owns the values, not the caller's view. */
+    void setCombatantBodies(std::span<const MissileTarget> bodies);
 
     /** Loads a kind's archive ahead of need; false when it is not there. */
     bool loadKind(s32 kind);
@@ -326,6 +331,7 @@ public:
 
 private:
     enum class State : u8 { Inactive, Active, Asleep, Dying };
+    enum class Birth : u8 { Brood, Placement, Patrol };
 
     struct Stock {
         s32 kind = -1;
@@ -352,6 +358,7 @@ private:
         s32 variant = 0; ///< the strength placed at: 4 an archer, 5 a bomber, 6 a suicide
         s32 generator = -1;
         bool bred = false; ///< a generator bred it
+        Birth birth = Birth::Brood;
         f32 health = 0.0f;
         f32 fullHealth = 0.0f;
         f32 sight = kBaseSight;
@@ -478,6 +485,7 @@ private:
     std::vector<EnemyDeathShot> m_deathShots;
     std::vector<s32> m_tagged;
     std::vector<EnemyGeneratorEvent> m_generatorEvents;
+    std::vector<EnemyBody> m_combatants;
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
     std::optional<ViewVolume> m_view;

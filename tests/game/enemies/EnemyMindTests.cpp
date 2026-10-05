@@ -173,17 +173,19 @@ TEST_CASE("the chase refuses headings that lead into things or straight back, an
     REQUIRE(turning.heading == 0.5f);
 }
 
-TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounces within eight, "
+TEST_CASE("the seek sweeps its route side, the prowler pounces within eight, "
           "and the wanderer turns at dead ends",
           "[game][enemies][mind]") {
     const EnemyMind& seek = enemyMindOf(kSeekWay);
     MindMemory memory;
+    memory.route = 1;
     MindSense sense = senseAhead();
     // Straight is blocked, right is clear: a sixteenth right is taken.
     sense.clear = [](f32 heading) { return heading > 0.1f; };
     MindIntent intent = seek.think(memory, sense);
     REQUIRE(intent.heading == Approx(kPi / 8.0f));
     // Only the left is clear, and only well round.
+    memory.route = -1;
     sense.clear = [](f32 heading) { return heading < -1.0f; };
     intent = seek.think(memory, sense);
     REQUIRE(intent.heading == Approx(-3.0f * kPi / 8.0f));
@@ -196,6 +198,7 @@ TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounc
     const EnemyMind& prowl = enemyMindOf(kProwlWay);
     MindMemory rat;
     rat.heading = 1.0f;
+    rat.headingBefore = rat.heading;
     intent = prowl.think(rat, senseAhead(20.0f));
     REQUIRE(intent.heading == 1.0f);
     REQUIRE_FALSE(intent.become.has_value());
@@ -207,24 +210,25 @@ TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounc
     rat.heading = 1.0f;
     CHECK(prowl.think(rat, crowded).heading == 1.0f);
     CHECK(enemyMindOf(kSeekAliasWay).name() == "seek");
-    // The wanderer keeps straight on, turns an eighth at a bump and holds it thirty ticks,
-    // faces a player against it.
+    // A wanderer's probe turns a quarter left, then the twenty-tick hold turns it again.
     const EnemyMind& wander = enemyMindOf(kWanderWay);
     MindMemory roaming;
     roaming.heading = 0.0f;
     MindSense bump;
     bump.ticks = 2;
     bump.bumpedWall = true;
+    bump.wanderClear = [](f32) { return false; };
     intent = wander.think(roaming, bump);
-    REQUIRE(intent.heading == Approx(kPi / 4.0f));
-    REQUIRE(roaming.turns == 1);
-    REQUIRE(roaming.deadEnd == 30);
+    REQUIRE(intent.heading == Approx(-kPi / 2.0f));
+    REQUIRE(roaming.turns == 0);
+    REQUIRE(roaming.deadEnd == 20);
+    bump.wanderClear = [](f32) { return true; };
     intent = wander.think(roaming, bump);
-    REQUIRE(intent.heading == Approx(kPi / 4.0f)); // held
-    REQUIRE(roaming.turns == 1);
+    REQUIRE(intent.heading == Approx(-kPi / 2.0f)); // held
+    REQUIRE(roaming.turns == 0);
     MindSense touching;
     touching.contact = 0;
-    touching.contactPosition = Vec3{-5.0f, 0.0f, 0.0f};
+    touching.contactPosition = Vec3{5.0f, 0.0f, 0.0f};
     intent = wander.think(roaming, touching);
     REQUIRE(intent.heading == Approx(-kPi / 2.0f));
 }
@@ -432,6 +436,74 @@ TEST_CASE("generator zig-zag births alternate their swings instead of circling",
     }
 }
 
+TEST_CASE("zig-zaggers use crowded distance when changing to a close approach",
+          "[game][enemies][mind][zigzag-parity]") {
+    // move_logic14 0x8004A108 reads close_dist (+0x278), not actual_dist (+0x27c).
+    const EnemyMind& zig = enemyMindOf(kZigZagWay);
+    MindSense sense = senseAhead(7);
+    sense.closeDistance = 9;
+    MindMemory crowded;
+    crowded.heading = kPi / 4;
+    crowded.headingBefore = crowded.heading;
+    crowded.zigZag.count = 10;
+    CHECK(zig.think(crowded, sense).heading == Approx(kPi / 4));
+    CHECK(crowded.zigZag.count == 8);
+
+    // Once the crowd clears, an equally close player receives the direct Seek approach.
+    sense.closeDistance = 8;
+    MindMemory clear;
+    clear.heading = kPi / 4;
+    clear.headingBefore = clear.heading; // no abandoned heading for Seek's anti-backtrack guard
+    clear.zigZag.count = 10;
+    CHECK(zig.think(clear, sense).heading == Approx(0).margin(0.000001));
+    CHECK(clear.zigZag.count == 10);
+}
+
+TEST_CASE("zig-zaggers judge drift against a decoy but reseed toward the actual player",
+          "[game][enemies][mind][zigzag-parity]") {
+    // move_logic14 0x8004A170 uses Mikey's +0x9e4 position for facing, but 0x8004A360
+    // selects the player's +0x44 position unconditionally when calculating a fresh aim.
+    const EnemyMind& zig = enemyMindOf(kZigZagWay);
+    MindSense sense = senseAhead();
+    sense.targetPlayerPosition = Vec3{0, 0, 20};
+    sense.targetPosition = {20, 0, 0};
+    MindMemory memory;
+    memory.heading = kPi / 8;
+    memory.zigZag.count = 10;
+    memory.zigZag.side = 1;
+
+    SECTION("a blocked step reseeds around the body rather than its decoy") {
+        sense.blocked = true;
+        const auto intent = zig.think(memory, sense);
+        // The current step is taken before the fresh aim applies to the following tick.
+        CHECK(intent.heading == Approx(kPi / 8));
+        CHECK(memory.heading == Approx(kPi / 4));
+        CHECK(memory.zigZag.count == 0);
+        CHECK(memory.zigZag.hold == 30);
+    }
+
+    SECTION("a decoy behind the current heading can trigger the four-swing reseed") {
+        memory.heading = 0;
+        memory.zigZag.swings = 4;
+        sense.targetPosition = {0, 0, -20};
+        CHECK(zig.think(memory, sense).heading == Approx(0).margin(0.000001));
+        CHECK(memory.heading == Approx(-kPi / 4));
+        CHECK(memory.zigZag.swings == 0);
+        CHECK(memory.zigZag.hold == 30);
+    }
+
+    SECTION("a decoy ahead suppresses reseeding even when the real player is behind") {
+        memory.heading = 0;
+        memory.zigZag.swings = 4;
+        sense.targetPosition = {0, 0, 20};
+        sense.targetPlayerPosition = Vec3{0, 0, -20};
+        zig.think(memory, sense);
+        CHECK(memory.heading == Approx(0).margin(0.000001));
+        CHECK(memory.zigZag.swings == 4);
+        CHECK(memory.zigZag.hold == -sense.ticks);
+    }
+}
+
 TEST_CASE("the ranged casters wait, then attack from where they stand or keep their distance",
           "[game][enemies][mind]") {
     const EnemyMind& stand = enemyMindOf(kStandCastWay);
@@ -540,6 +612,7 @@ TEST_CASE("the caster seeks and casts on its wait, wanders unseen, and fights cl
     const EnemyMind& cast = enemyMindOf(kCastWay);
     REQUIRE(cast.name() == "cast");
     MindMemory memory;
+    memory.primed = true; // the initial casting hold has elapsed
     MindSense sense = senseAhead(20.0f);
     sense.tier = 3;
     sense.castWait = 90;
@@ -558,6 +631,7 @@ TEST_CASE("the caster seeks and casts on its wait, wanders unseen, and fights cl
     intent = cast.think(memory, sense);
     REQUIRE(intent.action == EnemyAction::Walk);
     MindMemory weak;
+    weak.primed = true;
     sense.tier = 1;
     REQUIRE(cast.think(weak, sense).action == EnemyAction::Attack);
     // Unseen it wanders; within six it chases, hand to hand.
@@ -575,6 +649,7 @@ TEST_CASE("the lunger creeps up facing its player and lunges or makes its power 
           "[game][enemies][mind]") {
     const EnemyMind& lunge = enemyMindOf(kLungeWay);
     MindMemory memory;
+    memory.primed = true; // the initial lunge hold has elapsed
     // Nobody to face: it stands.
     MindSense alone;
     alone.ticks = 2;
@@ -589,8 +664,9 @@ TEST_CASE("the lunger creeps up facing its player and lunges or makes its power 
     intent = lunge.think(memory, sense);
     REQUIRE(intent.action == EnemyAction::Attack);
     REQUIRE(intent.heading == Approx(kPi / 2.0f));
-    REQUIRE(intent.pace == 0.5f);
+    REQUIRE(intent.pace == 0.0f);
     MindMemory far;
+    far.primed = true;
     MindSense distant = sense;
     distant.targetDistance = 12.0f;
     REQUIRE(lunge.think(far, distant).action == EnemyAction::PowerAttack);
@@ -610,6 +686,171 @@ TEST_CASE("the lunger creeps up facing its player and lunges or makes its power 
         REQUIRE(intent.action == EnemyAction::Walk);
     }
     REQUIRE(lunge.think(memory, sense).action == EnemyAction::Attack);
+}
+
+TEST_CASE("a seek sweep reaches behind its route side without reversing its last heading",
+          "[game][enemies][mind][ai-parity]") {
+    // move_logic00 (0x80046B54), table 0x8011C0C4: zero, then eight cumulative pi/8 steps.
+    const EnemyMind& seek = enemyMindOf(kSeekWay);
+    for (const s32 side : {-1, 1}) {
+        MindMemory memory;
+        memory.route = side;
+        MindSense sense = senseAhead();
+        std::vector<f32> probes;
+        sense.clear = [&](f32 heading) {
+            probes.push_back(heading);
+            return static_cast<f32>(side) * heading > kPi / 2;
+        };
+        const MindIntent intent = seek.think(memory, sense);
+        CHECK(intent.heading == Approx(static_cast<f32>(side) * 5 * kPi / 8));
+        REQUIRE(probes.size() == 6);
+        for (usize i = 0; i < probes.size(); ++i) {
+            CHECK(probes[i] == Approx(static_cast<f32>(side) * static_cast<f32>(i) * kPi / 8));
+        }
+        CHECK(memory.collided == 5);
+    }
+
+    SECTION("a just-abandoned bearing and a near reversal are not retried") {
+        MindMemory memory;
+        memory.route = 1;
+        memory.heading = kPi / 8;
+        memory.headingBefore = 0;
+        CHECK(seek.think(memory, senseAhead()).heading == Approx(kPi / 8));
+        CHECK(memory.headingBefore == Approx(kPi / 8));
+
+        memory.heading = kPi;
+        memory.headingBefore = kPi;
+        CHECK(seek.think(memory, senseAhead()).heading == Approx(kPi / 8));
+    }
+}
+
+TEST_CASE("patrollers ignore disconnected lookouts and retain crowding in their chase threshold",
+          "[game][enemies][mind][ai-parity]") {
+    // move_logic15 (0x8004A430): next >= 0 qualifies a starting node, close_dist gates chase.
+    const EnemyMind& patrol = enemyMindOf(kPatrolWay);
+    LookoutRoute route;
+    route.points = {{2, 0, 0}, {0, 0, 10}, {10, 0, 10}};
+    route.next = {-1, 2, 1};
+    MindMemory memory;
+    MindSense sense;
+    sense.lookouts = &route;
+    CHECK(patrol.think(memory, sense).heading == Approx(0));
+    CHECK(memory.lookout == 1);
+
+    sense = senseAhead(23);
+    sense.closeDistance = 25;
+    sense.lookouts = &route;
+    patrol.think(memory, sense);
+    CHECK(memory.lookout == 1);
+    sense.closeDistance = 23;
+    patrol.think(memory, sense);
+    CHECK(memory.lookout == -1);
+
+    SECTION("all disconnected nodes safely fall back to wandering") {
+        route.next = {-1, -1, -1};
+        memory = {};
+        memory.heading = 0.3f;
+        sense.target = -1;
+        CHECK(patrol.think(memory, sense).heading == Approx(0.3f));
+        CHECK(memory.lookout == -1);
+    }
+}
+
+TEST_CASE("a ranged caster tracks its player while backing off or nudging around a block",
+          "[game][enemies][mind][ai-parity]") {
+    // move_logic29 (0x8004BF9C) always turns toward ang, independently of its translation.
+    MindMemory memory;
+    memory.primed = true;
+    MindSense sense = senseAhead(7);
+    const EnemyMind& range = enemyMindOf(kRangeCastWay);
+    range.think(memory, sense);
+    sense.targetPosition = {7, 0, 0};
+    sense.blocked = true;
+    const auto intent = range.think(memory, sense);
+    REQUIRE(intent.facing.has_value());
+    CHECK(*intent.facing == Approx(kPi / 2));
+    CHECK(intent.heading != Approx(*intent.facing));
+    CHECK(intent.pace == Approx(0.8f));
+}
+
+TEST_CASE("casters and Garm brood respect their initial holds and planted attack frames",
+          "[game][enemies][mind][ai-parity]") {
+    // format_brain (0x80050394): way 30 waits 60+RandInt(60); way 31 RandInt(30).
+    MindSense sense = senseAhead(20);
+    sense.ticks = 1;
+    sense.random = 7;
+    MindMemory caster;
+    const EnemyMind& cast = enemyMindOf(kCastWay);
+    for (s32 tick = 0; tick < 66; ++tick) {
+        CHECK(cast.think(caster, sense).action == EnemyAction::Walk);
+    }
+    CHECK(cast.think(caster, sense).action == EnemyAction::Attack);
+
+    const EnemyMind& lunge = enemyMindOf(kLungeWay);
+    MindMemory brood;
+    for (s32 tick = 0; tick < 7; ++tick) {
+        const auto intent = lunge.think(brood, sense);
+        CHECK(intent.action == EnemyAction::Walk);
+        CHECK(intent.pace == Approx(0.5f));
+    }
+    auto intent = lunge.think(brood, sense);
+    CHECK(intent.action == EnemyAction::PowerAttack);
+    CHECK(intent.pace == 0);
+    // move_logic31 (0x8004C650) updates velocity only for actions 12/13 and the wait branch.
+    for (const auto action : {EnemyAction::PowerAttack, EnemyAction::PowerAttackRecover}) {
+        sense.action = action;
+        intent = lunge.think(brood, sense);
+        CHECK(intent.pace == 0);
+        CHECK(brood.counter == 37);
+    }
+    sense.action = EnemyAction::Start;
+    CHECK(lunge.think(brood, sense).pace == 0);
+    CHECK(brood.counter == 37);
+}
+
+TEST_CASE("wanderers probe ahead and mirror quarter turns through a twenty-tick corner hold",
+          "[game][enemies][mind][wander-parity]") {
+    // move_logic05/06 (0x80047844/0x80047BF0) probe before a collision is reported.
+    for (const s32 way : {kWanderWay, kWanderOtherWay}) {
+        const f32 side = way == kWanderWay ? -1.0f : 1.0f;
+        MindMemory memory;
+        MindSense sense;
+        sense.ticks = 2;
+        sense.wanderClear = [](f32) { return false; };
+        const EnemyMind& wander = enemyMindOf(way);
+        CHECK(wander.think(memory, sense).heading == Approx(side * kPi / 2));
+        CHECK(memory.deadEnd == 20);
+        CHECK(memory.turns == 0);
+        sense.wanderClear = [](f32) { return true; };
+        for (s32 step = 0; step < 9; ++step) {
+            CHECK(wander.think(memory, sense).heading == Approx(side * kPi / 2));
+        }
+        CHECK(wander.think(memory, sense).heading == Approx(kPi));
+        CHECK(memory.deadEnd == 0);
+        CHECK(memory.turns == 1);
+        // A fresh failed probe turns immediately, even with a hold already running.
+        sense.wanderClear = [](f32) { return false; };
+        wander.think(memory, sense);
+        CHECK(memory.deadEnd == 20);
+        CHECK(wander.think(memory, sense).heading == Approx(0).margin(0.000001));
+        CHECK(memory.deadEnd == 18);
+    }
+}
+
+TEST_CASE("unseen seeking and chasing alternate their fallback wander direction by slot",
+          "[game][enemies][mind][wander-parity]") {
+    for (const s32 way : {kSeekWay, kChaseWay, kZigZagWay, kCastWay}) {
+        for (const bool mirrored : {false, true}) {
+            MindSense sense = senseAhead();
+            sense.recognized = false;
+            sense.mirroredWander = mirrored;
+            sense.wanderClear = [](f32) { return false; };
+            MindMemory memory;
+            const auto intent = enemyMindOf(way).think(memory, sense);
+            CHECK(intent.heading == Approx((mirrored ? 1.0f : -1.0f) * kPi / 2));
+            CHECK(intent.pace == 1);
+        }
+    }
 }
 
 TEST_CASE("a sense tells the way to its player and which side round is nearer",

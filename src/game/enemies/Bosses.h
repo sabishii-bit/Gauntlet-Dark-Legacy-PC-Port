@@ -97,7 +97,7 @@ public:
     bool blinded() const;
     bool curbed() const;
 
-    std::vector<MissileTarget> targets() const;
+    std::vector<MissileTarget> targets(bool solidOnly = false) const;
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
     bool within(const Vec3& centre, f32 radius) const;
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;

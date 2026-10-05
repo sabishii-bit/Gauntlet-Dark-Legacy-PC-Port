@@ -176,6 +176,135 @@ s32 stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto&
     return steps;
 }
 
+TEST_CASE("wandering bodies turn before their feet reach the wall detected ahead",
+          "[enemies][wander-body-probe][assets]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(yard());
+    for (const s32 way : {kWanderWay, kWanderOtherWay}) {
+        CAPTURE(way);
+        Enemies enemies;
+        enemies.open(device, unpackedRoot(), &collision, 1, {}, 1);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        EnemySpawn spawn;
+        spawn.placed = true;
+        spawn.algorithm = way;
+        spawn.position = {0, 0, 18.1f};
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        enemies.update(kTicks, kStep, {});
+        const f32 sign = way == kWanderWay ? -1.0f : 1.0f;
+        CHECK(enemies.memoryOf(*id).heading == Approx(sign * 1.570796327f));
+        CHECK(enemies.memoryOf(*id).deadEnd == 20);
+        // The placement's initial hold keeps its feet still on this first tick;
+        // the mind has already chosen the safe heading rather than waiting to hit.
+        CHECK(enemies.positionOf(*id) == spawn.position);
+    }
+}
+
+TEST_CASE("dog broods use only the two native birth directions while leader broods use one",
+          "[enemies][brood-directions][assets]") {
+    test::FakeRenderDevice device;
+    constexpr s32 kDogKind = 18;
+    constexpr s32 kLeaderWay = 12;
+    for (const bool leader : {false, true}) {
+        CAPTURE(leader);
+        Enemies enemies;
+        enemies.open(device, unpackedRoot(), nullptr, 1, {}, 1);
+        EnemySpawn spawn;
+        spawn.kind = leader ? kGruntKind : kDogKind;
+        spawn.algorithm = leader ? kLeaderWay : kChaseWay;
+        spawn.generator = 0;
+        spawn.clearance = 4;
+        REQUIRE(enemies.loadKind(spawn.kind));
+        const f32 distance = spawn.clearance + enemyKind(spawn.kind).radius;
+        std::vector<EnemyView> blockers{playerAt({0, 0, distance})};
+        if (!leader) {
+            blockers.push_back(playerAt({0, 0, -distance}, 1));
+        }
+        // The lateral openings do not authorize inventing another birth direction.
+        CHECK_FALSE(enemies.spawn(spawn, blockers).has_value());
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        CHECK(enemies.positionOf(*id).x == Approx(0));
+        CHECK(std::abs(enemies.positionOf(*id).z) == Approx(distance));
+        if (leader) {
+            CHECK(enemies.positionOf(*id).z > 0);
+        }
+    }
+}
+
+TEST_CASE("swarm movement cannot pass through the larger creatures' solid collision nodes",
+          "[enemies][combatant-obstacles][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const bool above = GENERATE(false, true);
+    const std::array bodies{MissileTarget{0, Vec3{0, above ? 30.0f : 0.0f, 7}, 3, 8}};
+    enemies.setCombatantBodies(bodies);
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.algorithm = kChaseWay;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const std::array players{playerAt({0, 0, 25})};
+    f32 nearest = 1000;
+    for (s32 frame = 0; frame < 240; ++frame) {
+        enemies.update(kTicks, kStep, players);
+        const Vec3 at = enemies.positionOf(*id);
+        nearest = std::min(nearest, glm::length(Vec2{at.x, at.z - 7}));
+    }
+    if (above) {
+        CHECK(nearest < 2); // An upper-storey creature does not block the floor below.
+    } else {
+        CHECK(nearest >= 3 + enemies.radiusOf(*id) - 0.01f);
+        CHECK(enemies.positionOf(*id).z > 12); // Must route around, not deadlock against it.
+    }
+}
+
+TEST_CASE("combatant collision rejects generator births and releases the space when removed",
+          "[enemies][combatant-obstacles][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.clearance = 4;
+    // Block all three permitted grunt birth directions from outside the bodies.
+    // Retail deliberately permits an already-overlapping body to escape outward.
+    const std::array bodies{MissileTarget{0, Vec3{0, 0, 5.5f}, 3, 8},
+                            MissileTarget{1, Vec3{3.9f, 0, 3.9f}, 3, 8},
+                            MissileTarget{2, Vec3{-3.9f, 0, 3.9f}, 3, 8}};
+    enemies.setCombatantBodies(bodies);
+    CHECK_FALSE(enemies.spawn(spawn, {}));
+    enemies.setCombatantBodies({});
+    CHECK(enemies.spawn(spawn, {}));
+}
+
+TEST_CASE("a knocked swarm enemy cannot tunnel through a combatant collision node",
+          "[enemies][combatant-obstacles][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const std::array bodies{MissileTarget{0, Vec3{0, 0, 3}, 1, 8}};
+    enemies.setCombatantBodies(bodies);
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = EnemyHit::kKnockBack;
+    hit.direction = {0, 0, 1};
+    enemies.hurt(*id, hit);
+    for (s32 frame = 0; frame < 12; ++frame) {
+        enemies.update(kTicks, kStep, {});
+        CHECK(enemies.positionOf(*id).z <= 3 - 1 - enemies.radiusOf(*id) + 0.01f);
+    }
+}
+
 TEST_CASE("enemies ride descending platforms while gameplay is frozen",
           "[game][enemies][enemy-platform][assets]") {
     test::FakeRenderDevice device;
@@ -1948,7 +2077,9 @@ TEST_CASE("an item that cancels a walking step reports a blocked body to its min
     enemies.open(device, routingAssets(), nullptr, 4, {}, 3);
     REQUIRE(enemies.loadKind(kGruntKind));
     EnemySpawn spawn;
-    spawn.algorithm = kWanderWay;
+    // Prowl attempts the straight step. Wander now probes and avoids this item
+    // before movement, so it cannot exercise the body's cancelled-step feedback.
+    spawn.algorithm = kProwlWay;
     spawn.placed = true;
     spawn.position.z = 0.5f;
     const auto id = enemies.spawn(spawn, {});
@@ -2097,6 +2228,7 @@ TEST_CASE("the swarm runs from a lit suicide bomber near it", "[game][enemies][a
     spawn.tier = 1;
     spawn.algorithm = kChaseWay;
     spawn.position = Vec3{-24.0f, 0.0f, 0.0f};
+    spawn.placed = false; // FoundSuicideBomber excludes placed enemies (birth_style != 0).
     const auto chaser = enemies.spawn(spawn, {});
     REQUIRE(chaser.has_value());
     const std::vector<EnemyView> near{playerAt(Vec3{-30.0f, 0.0f, 12.0f})};
@@ -2116,6 +2248,33 @@ TEST_CASE("the swarm runs from a lit suicide bomber near it", "[game][enemies][a
         enemies.update(kTicks, kStep, near);
     }
     CHECK(apart() > before);
+}
+
+TEST_CASE("a placed archer does not abandon its perch when a nearby bomber lights its fuse",
+          "[enemies][bomber-placement][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 13, {}, 2);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.tier = kSuicideStrength;
+    spawn.position = {-30, 0, 0};
+    const auto bomber = enemies.spawn(spawn, {});
+    REQUIRE(bomber);
+    spawn.tier = kArcherStrength;
+    spawn.algorithm = kThrowWay;
+    spawn.position = {-24, 0, 0};
+    const auto archer = enemies.spawn(spawn, {});
+    REQUIRE(archer);
+    const std::array players{playerAt({-30, 0, 12})};
+    bool lit = false;
+    for (s32 frame = 0; frame < 100; ++frame) {
+        enemies.update(kTicks, kStep, players);
+        lit |= enemies.alive(*bomber) && enemies.animatorOf(*bomber)->action() == EnemyAction::Run;
+        CHECK(enemies.positionOf(*archer) == spawn.position);
+    }
+    REQUIRE(lit);
 }
 
 TEST_CASE("a way of nought is filled in by kind and strength as the original does",

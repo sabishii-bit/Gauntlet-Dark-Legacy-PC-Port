@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -55,6 +56,168 @@ void writeGeneratorArchive(const std::filesystem::path& root) {
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":10,"rate":30},
                      {"name":"WALK","frames":10,"rate":30}]}]})");
+}
+
+TEST_CASE("generator visibility uses its expanded activation sphere and freezes distant timers",
+          "[game][generators][generator-activation]") {
+    const auto root = test::scratchDirectory("generator-activation-sphere");
+    writeGeneratorArchive(root);
+    writeTextFile(root / "world.json", R"({
+      "objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10}],
+      "itemInstances":[{"info":0,"minPlayers":1,"position":[0,0,0],
+                        "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    ViewVolume view;
+    view.position = {-35, 0, -20};
+    // SetItem (0x800646f8) starts with 2*max(radius,height), then multiplies
+    // generator visrad by four. Its body need not yet be inside the camera.
+    REQUIRE_FALSE(view.sees({}, 10));
+    REQUIRE(view.sees({}, 40));
+    generators.setView(view);
+    const std::array party{EnemyView{.position = {0, 0, 30}}};
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    const s32 countdown = generators.countdownOf(0);
+    REQUIRE(countdown > 0);
+    generators.setView(lookingAt({10000, 0, 0}));
+    generators.update(countdown + kTicks, enemies, party);
+    // do_items skips the normal generator dispatcher offscreen; generate_now
+    // must not consume its wait until the generator enters the broad sphere again.
+    CHECK(generators.countdownOf(0) == countdown);
+    CHECK(generators.bredOf(0) == 1);
+    generators.setView(view);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.countdownOf(0) == countdown - kTicks);
+}
+
+TEST_CASE("patrol generators create one sentry without ordinary brood visibility or quota gates",
+          "[game][generators][generator-patrol]") {
+    const auto root = test::scratchDirectory("generator-lone-sentry");
+    writeGeneratorArchive(root);
+    writeTextFile(root / "world.json", R"({
+      "objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10}],
+      "itemInstances":[{"info":0,"minPlayers":1,"position":[0,0,0],
+                        "params":[1,0,15,0,5,0,20,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    GeneratorScales scales;
+    scales.most = GENERATE(0.0f, 1.0f);
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, scales, 1));
+    generators.setView(lookingAt({10000, 0, 0}));
+    // generate_single (0x80063444), called before generate_now for AI15:
+    // no nearby player required, one child, descriptor radius rather than height.
+    generators.update(kTicks, enemies, {});
+    REQUIRE(generators.bredOf(0) == 1);
+    REQUIRE(enemies.alive(0));
+    CHECK(enemies.generatorOf(0) == 0);
+    CHECK(enemies.algorithmOf(0) == kPatrolWay);
+    CHECK_FALSE(enemies.bred(0)); // birth_style 2 must not teach the ordinary brood lesson.
+    // The native diagonal octants use 0.707, not an exact inverse square root.
+    CHECK(glm::length(enemies.positionOf(0)) == Approx(2 + enemies.radiusOf(0)).margin(0.001f));
+    CHECK(generators.countdownOf(0) == 0);
+    const std::array party{EnemyView{.player = 0, .position = {0, 0, 30}}};
+    generators.setView(lookingAt({}));
+    for (s32 step = 0; step < 300; ++step) {
+        generators.update(kTicks, enemies, party);
+    }
+    CHECK(generators.bredOf(0) == 1);
+    CHECK(generators.livingOf(0) == 1);
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 10000;
+    enemies.hurt(0, hit);
+    generators.update(kTicks, enemies, {});
+    CHECK(generators.algorithmOf(0) == 0);
+    CHECK(generators.livingOf(0) == 0);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.bredOf(0) == (scales.most > 0 ? 2 : 1));
+}
+
+TEST_CASE("authored always-active generators retain their offscreen update exception",
+          "[game][generators][generator-activation]") {
+    const bool instanceFlag = GENERATE(false, true);
+    const auto root = test::scratchDirectory("generator-always-active");
+    writeGeneratorArchive(root);
+    const std::string flags = instanceFlag ? R"("activeType":1)" : R"("activeType":65)";
+    const std::string instance = instanceFlag ? R"("flags":1)" : R"("flags":0)";
+    writeTextFile(root / "world.json",
+                  R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10,)" +
+                      flags + R"(}],"itemInstances":[{"info":0,"position":[0,0,0],)" + instance +
+                      R"(,"params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    generators.setView(lookingAt({10000, 0, 0}));
+    const std::array party{EnemyView{.position = {0, 0, 30}}};
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    const s32 countdown = generators.countdownOf(0);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.countdownOf(0) == countdown - kTicks);
+}
+
+TEST_CASE("generator durability uses authored armor and whole hit points",
+          "[game][generators][generator-durability]") {
+    const s32 armor = GENERATE(-1, 0, 3);
+    const s32 player = GENERATE(-1, 0);
+    const auto root = test::scratchDirectory("generator-authored-armor");
+    writeGeneratorArchive(root);
+    writeTextFile(root / "world.json",
+                  R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":7,"armor":)" +
+                      std::to_string(armor) + R"(}],
+      "itemInstances":[{"info":0,"position":[0,0,0],
+                        "params":[2,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    GeneratorScales scales;
+    scales.health = 0.75f;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, scales, 1));
+    // SetItem copies iteminfo.armor directly, then truncates scaled health.
+    // fn_8005C1DC subtracts Round(power - armor), for environmental hits too.
+    REQUIRE(generators.healthOf(0) == 10);
+    if (armor < 0) {
+        CHECK_FALSE(generators.strike(0, 10000, player));
+        CHECK(generators.healthOf(0) == 10);
+        CHECK(generators.stateOf(0) == 2);
+        return;
+    }
+    REQUIRE(generators.strike(0, static_cast<f32>(armor) + 2.6f, player));
+    CHECK(generators.healthOf(0) == 7);
+    CHECK(generators.stateOf(0) == 2);
+    REQUIRE(generators.strike(0, static_cast<f32>(armor) + 1.6f, player));
+    CHECK(generators.healthOf(0) == 5);
+    CHECK(generators.stateOf(0) == 1);
+    REQUIRE(generators.strike(0, static_cast<f32>(armor), player));
+    CHECK(generators.healthOf(0) == 4); // Nonpositive remainder becomes one before Round.
+    REQUIRE(generators.strike(0, static_cast<f32>(armor) + 0.49f, player));
+    CHECK(generators.healthOf(0) == 4);
+    REQUIRE(generators.strike(0, static_cast<f32>(armor) + 0.5f, player));
+    CHECK(generators.healthOf(0) == 3);
+    REQUIRE(generators.strike(0, 10000, player));
+    CHECK(generators.healthOf(0) == 0);
+    CHECK_FALSE(generators.standing(0));
 }
 
 TEST_CASE("wall generators share their authored facing across rendering collision and spawning",
@@ -361,6 +524,65 @@ TEST_CASE("Temple and Underworld special generators draw their authored trees an
     CHECK(generators.bodyShown(chosen)); // broken ruin remains
 }
 
+TEST_CASE("special generators preserve authored durability while their troops keep realm strength",
+          "[game][generators][generator-special-birth][assets]") {
+    const s32 realm = GENERATE(5, 6);
+    const bool temple = realm == 5;
+    const auto* archive = temple ? "ITEMS/LEVELE" : "ITEMS/LEVELF";
+    const auto root = test::assetOrSkip(std::string(archive) + "/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    const std::array templeKinds{"ICE", "IMP", "PLA", "ZOM"};
+    const std::array hellKinds{"DEM", "WAR", "GHO", "SKY"};
+    for (const auto* kind : temple ? templeKinds : hellKinds) {
+        test::assetOrSkip(std::string("MONSTERS/") + kind + "/ANIM.PS2");
+    }
+    const auto fixture = test::scratchDirectory("generator-special-birth");
+    writeTextFile(fixture / "world.json", R"({
+      "objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"SPECIAL","radius":2,"height":5,"hitPoints":10}],
+      "itemInstances":[{"info":0,"position":[0,0,0],
+                        "params":[2,0,7,0,0,0,0,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(fixture));
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    REQUIRE(items.load(root / archive));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 8, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, realm, &items));
+    // SetItem applies the authored tier's durability/defaults before replacing the
+    // special generator's state. F1's authored tier is two even though troops are three.
+    REQUIRE(generators.healthOf(0) == 20);
+    REQUIRE(generators.mostOf(0) == 5);
+    REQUIRE(generators.intervalOf(0) == 10);
+    REQUIRE(generators.tierOf(0) == (temple ? 2 : 3));
+    REQUIRE(generators.strike(0, 11, 0));
+    REQUIRE(generators.stateOf(0) == 1);
+    REQUIRE(generators.healthOf(0) == 9);
+    const std::array party{EnemyView{.position = {0, 0, -30}}};
+    // All forward humanoid directions are blocked. generate_enemy switches on the
+    // unresolved -2/-3 type, allowing the other bearings even for PLA/WAR/SKY.
+    const std::array blockers{
+        Obstacle{.centre = {0, 0, 3}, .halfAcross = 30, .halfAlong = 1, .height = 50}};
+    const std::array templeSpecies{16, 23, 14, 13};
+    const std::array hellSpecies{2, 24, 20, 25};
+    for (s32 birth = 0; birth < 3; ++birth) {
+        if (generators.countdownOf(0) > 0) {
+            generators.update(generators.countdownOf(0), enemies, party, blockers);
+        }
+        generators.update(kTicks, enemies, party, blockers);
+        REQUIRE(generators.bredOf(0) == birth + 1);
+        REQUIRE(enemies.alive(birth));
+        CHECK(enemies.kindOf(birth) ==
+              (temple ? templeSpecies : hellSpecies)[static_cast<usize>(birth)]);
+        CHECK(enemies.tierOf(birth) == (temple ? 2 : 3));
+        CHECK(enemies.positionOf(birth).z <= 0.01f);
+    }
+}
+
 /** A field with one grunt generator of strength two at the origin facing +z, one of strength
  * three at x 60 for a party of two, and a rats' one at x 120. */
 std::filesystem::path sampleLevel(std::string_view name) {
@@ -370,7 +592,7 @@ std::filesystem::path sampleLevel(std::string_view name) {
   "animations": [], "particles": [], "locators": [],
   "itemInfos": [
     {"type": 3, "name": "GRU", "radius": 2, "height": 5, "collisionType": 1, "hitPoints": 10,
-     "activeType": 5, "activeOff": -30, "activeOn": 1},
+     "activeType": 5, "activeOff": -30, "activeOn": 1, "armor": 3},
     {"type": 3, "name": "RAT", "radius": 2, "height": 5, "collisionType": 1, "hitPoints": 10},
     {"type": 3, "name": "BOSSGEN", "radius": 2, "height": 5, "hitPoints": 10}
   ],

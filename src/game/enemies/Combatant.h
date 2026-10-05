@@ -31,7 +31,7 @@ namespace gdl::game {
  * stops the great one, but a golem or gargoyle walks through a chest and breaks what is
  * breakable, stopping only while it stands or as it blows up. */
 struct CombatantObstacle {
-    enum class Kind : u8 { Blocks, Chest, Breakable };
+    enum class Kind : u8 { Blocks, Chest, Breakable, LowGenerator };
     Obstacle box;
     Kind kind = Kind::Blocks;
     s32 id = -1; ///< a breakable's: a barrel's index, or a generator's from 2000
@@ -364,6 +364,11 @@ private:
     static Mat4 modelTransform(const Actor& critter);
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);
+    /** Integrates translation, returning whether a player stopped the step. */
+    bool translate(Actor& critter, f32 seconds, const MoveDefinition* move,
+                   std::span<const EnemyView> players, std::span<const Combatant> peers);
+    static void rotate(Actor& critter, f32 seconds, const MoveDefinition* move,
+                       std::span<const EnemyView> players);
     static void chooseTarget(Actor& critter, std::span<const EnemyView> players);
     void chooseFamilyTargets(std::span<const EnemyView> players);
     static void selectFirstTarget(Actor& critter);

@@ -50,6 +50,7 @@ constexpr std::array<s32, 4> kHellAlgorithms{30, 30, 7, 7};
 // A generator's kind resolves as though bred at no strength: never the medium's second row.
 constexpr s32 kGeneratorKindStrength = 0;
 constexpr std::array<s32, 3> kCasterAlgorithms{28, 29, 30}; ///< dropped once a state crumbles
+constexpr f32 kGeneratorViewScale = 8.0f;
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -171,7 +172,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             }
         }
         const s32 specialTier = realm == 5 ? 2 : 3;
-        const s32 strength = special ? specialTier : std::max(paramOf(instance, 0), 1);
+        const s32 authoredStrength = std::max(paramOf(instance, 0), 1);
+        const s32 strength = special ? specialTier : authoredStrength;
         const s32 kind = levelKindOf(roster, *named, kGeneratorKindStrength);
         if (special) {
             for (const s32 species : realm == 5 ? kTempleKinds : kHellKinds) {
@@ -195,7 +197,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         if (generator.algorithm < 0) {
             generator.algorithm = enemyKind(kind).algorithm;
         }
-        const auto tierIndex = static_cast<usize>(std::clamp(strength, 1, kStates) - 1);
+        const auto tierIndex = static_cast<usize>(std::clamp(authoredStrength, 1, kStates) - 1);
         s32 most = paramOf(instance, 2);
         s32 interval = paramOf(instance, 3);
         if (most == 0) {
@@ -207,10 +209,12 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         // Scaled the way the original truncates them: to a whole count and interval.
         generator.most = static_cast<s32>(static_cast<f32>(most) * scales.most);
         generator.interval = static_cast<s32>(static_cast<f32>(interval) * scales.rate);
-        generator.threshold = static_cast<f32>(info.hitPoints) * scales.health;
-        generator.health = static_cast<f32>(info.hitPoints * generator.tier) * scales.health;
-        const f32 defaultArmor = special ? 0.0f : enemyKind(kind).generatorArmor;
-        generator.armor = info.armor > 0 ? static_cast<f32>(info.armor) : defaultArmor;
+        generator.threshold = std::trunc(static_cast<f32>(body->hitPoints) * scales.health);
+        // Durability and defaults use the authored strength before a special brood
+        // replaces its troop tier. Damage and initial health are whole hit points.
+        generator.health =
+            std::trunc(static_cast<f32>(info.hitPoints * authoredStrength) * scales.health);
+        generator.armor = static_cast<f32>(info.armor);
         const Mat4 placement = itemPlacement(instance.position, instance.rotation);
         generator.position = instance.position;
         if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
@@ -230,7 +234,9 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             generator.direction = Vec3{0.0f, 0.0f, 1.0f};
         }
         generator.clearance = body->height;
-        generator.viewRadius = 2.0f * std::max(info.radius, info.height);
+        generator.patrolClearance = body->radius;
+        generator.viewRadius = kGeneratorViewScale * std::max(info.radius, info.height);
+        generator.alwaysActive = (info.activeType & 0x40U) != 0 || (instance.flags & 1U) != 0;
         generator.box.centre = generator.position;
         generator.box.yaw = generator.yaw;
         generator.box.halfAcross = body->xSize > 0.0f ? body->xSize : body->radius;
@@ -310,7 +316,8 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.countdown = 40;
     generator.most = static_cast<s32>(static_cast<f32>(kDefaultMost[0]) * m_scales.most);
     generator.interval = static_cast<s32>(static_cast<f32>(kDefaultInterval[0]) * m_scales.rate);
-    generator.health = generator.threshold = static_cast<f32>(info.hitPoints) * m_scales.health;
+    generator.health = generator.threshold =
+        std::trunc(static_cast<f32>(info.hitPoints) * m_scales.health);
     generator.armor = static_cast<f32>(info.armor);
     ItemInstance instance;
     instance.position = Vec3{placement[3]};
@@ -339,6 +346,7 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.yaw = yaw;
     generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
     generator.clearance = info.height;
+    generator.patrolClearance = info.radius;
     generator.box = generator.bossFigure->obstacle(info);
     bindSupport(generator, info, instance.position, collision);
     if (collision != nullptr) {
@@ -422,29 +430,35 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         if (generator.bossFigure != nullptr && generator.state > 0) {
             generator.bossFigure->update(static_cast<f32>(ticks) / 60.0f);
         }
-        if (generator.state <= 0 || generator.tier <= 0 || generator.most <= 0) {
+        if (generator.state <= 0 || generator.tier <= 0) {
+            continue;
+        }
+        const bool patrol = generator.algorithm == kPatrolWay;
+        if (!patrol && !seen && !generator.alwaysActive) {
             continue;
         }
         // do_items checks the living brood quota before generate_now ticks its timer.
         // A full brood freezes the remaining wait; a death frees a slot, not a free birth.
-        if (generator.living >= generator.most) {
+        // Patrol generators instead keep one sentry, with no ordinary quota or wait.
+        if (patrol ? generator.living > 0
+                   : generator.most <= 0 || generator.living >= generator.most) {
             continue;
         }
-        if (generator.countdown > 0) {
+        if (!patrol && generator.countdown > 0) {
             generator.countdown -= ticks;
             continue;
         }
         if (timeStopped) {
             continue;
         }
-        // It breeds only on screen, by twice its size, and with a player not too far off
-        // (fn_800606FC's visibility, generate_now's distance); a boss's own always does.
+        // Ordinary broods require a nearby player; a lone patrol sentry starts offscreen
+        // as well, without waiting for the party to approach its post.
         bool near = false;
         for (const EnemyView& view : players) {
             near = near || (!view.hidden &&
                             glm::distance(view.position, generator.position) <= kActiveDistance);
         }
-        if (!near || !seen) {
+        if (!patrol && !near) {
             continue;
         }
         EnemySpawn spawn;
@@ -454,11 +468,16 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         if (generator.kind == -2 || generator.kind == -3) {
             const usize at = m_specialBirth++ % kTempleKinds.size();
             spawn.kind = generator.kind == -2 ? kTempleKinds[at] : kHellKinds[at];
+            spawn.tier = generator.kind == -2 ? 2 : 3;
             spawn.algorithm = generator.kind == -2 ? 7 : kHellAlgorithms[at];
+            spawn.allBirthDirections = true;
         }
         spawn.position = generator.position;
         spawn.direction = generator.direction;
-        spawn.clearance = generator.clearance;
+        spawn.clearance = patrol ? generator.patrolClearance : generator.clearance;
+        spawn.patrolBirth = patrol;
+        spawn.priority =
+            seen || patrol ? EnemySpawn::Priority::Offscreen : EnemySpawn::Priority::FreeSlotOnly;
         spawn.generator = static_cast<s32>(g);
         if (generator.algorithm == kZigZagWay) {
             spawn.zigZagSide = (generator.bred & 1) == 0 ? 1 : -1;
@@ -476,6 +495,9 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             continue;
         }
         ++generator.bred;
+        if (patrol) {
+            continue;
+        }
         // The next takes longer, the countdown stretched by a share that grows a birth at a
         // time and wraps.
         generator.countdown = static_cast<s32>(
@@ -500,19 +522,20 @@ s32 Generators::stateFor(const Generator& generator, bool destroyed) {
     return 3;
 }
 
-std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, s32 byPlayer) {
+std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, [[maybe_unused]] s32 byPlayer) {
     if (id < 0 || static_cast<usize>(id) >= m_generators.size()) {
         return std::nullopt;
     }
     Generator& generator = m_generators[static_cast<usize>(id)];
-    if (generator.state <= 0 || generator.presence != Generator::Presence::Shown) {
+    if (generator.state <= 0 || generator.presence != Generator::Presence::Shown ||
+        generator.armor < 0.0f) {
         return std::nullopt;
     }
-    const f32 amount = std::max(power - generator.armor, byPlayer >= 0 ? 1.0f : 0.0f);
+    f32 amount = power - generator.armor;
     if (amount <= 0.0f) {
-        return std::nullopt;
+        amount = 1.0f;
     }
-    generator.health -= amount;
+    generator.health = std::max(generator.health - std::round(amount), 0.0f);
     const s32 state = stateFor(generator, false);
     const bool changed = state != generator.state;
     generator.state = state;

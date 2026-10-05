@@ -33,12 +33,28 @@ constexpr f32 kOnScreenMargin = 15.0f; ///< past twice its radius, what still co
 constexpr f32 kBomberScare = 10.0f;    ///< the swarm keeps this far from a lit suicide bomber
 constexpr f32 kCastTicks = 90.0f;      ///< a caster's least wait, times the level's missile rate
 constexpr s32 kScorpionKind = 0;
+constexpr s32 kDogKind = 18;
+constexpr s32 kLeaderWay = 12;
 constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
 
 constexpr s32 kRetargetEvery = 8; ///< frames between a mind looking round again
 constexpr f32 kRunFrom = 1.25f;   ///< a pace this much over a walk's runs
 constexpr f32 kStopped = 0.01f;   ///< a step that gets less than this is a dead stop
+
+/** fn_8004646C asks CritterMoveNodeCol before the swarm grid. Mode 2 uses only
+ * solid nodes (and the root fallback), expanding their vertical radius by the
+ * mover's radius, not its humanoid height. */
+const EnemyBody* combatantContact(std::span<const EnemyBody> bodies, const Vec3& from,
+                                  const Vec3& to, f32 radius) {
+    for (const auto& body : bodies) {
+        if (movementTouchesBody(from, to, body.centre, radius + body.radius,
+                                radius + body.halfHeight)) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
 
 // The octants about a generator, as its facing is turned into each.
 Vec3 octant(const Vec3& v, s32 direction, f32& yawOffset) {
@@ -187,6 +203,7 @@ void Enemies::close() {
     m_deathShots.clear();
     m_tagged.clear();
     m_generatorEvents.clear();
+    m_combatants.clear();
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
@@ -202,6 +219,16 @@ Enemies::Stock* Enemies::stockOf(s32 kind) {
         }
     }
     return nullptr;
+}
+
+void Enemies::setCombatantBodies(std::span<const MissileTarget> bodies) {
+    m_combatants.clear();
+    for (const auto& body : bodies) {
+        if (body.radius > 0 && body.height > 0) {
+            m_combatants.push_back({body.id, body.base + Vec3{0, 0.5f * body.height, 0},
+                                    body.radius, 0.5f * body.height});
+        }
+    }
 }
 
 const Enemies::Stock* Enemies::stockOf(s32 kind) const {
@@ -444,8 +471,18 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     }
     const bool mirrored = smallKind(spawn.kind) && (m_random() & 1U) != 0;
     enemy.algorithm = resolvedWayOf(spawn.kind, spawn.tier, spawn.algorithm, mirrored);
+    if (spawn.patrolBirth) {
+        enemy.algorithm = kPatrolWay; // generate_single overrides the kind's remapping.
+    }
+    if (enemy.algorithm == kSeekWay || enemy.algorithm == kLurkWay || enemy.algorithm == kCastWay) {
+        enemy.mind.route = 1; // format_brain's initial corner-search side.
+    }
     enemy.generator = spawn.generator;
-    enemy.bred = spawn.generator >= 0;
+    enemy.bred = spawn.generator >= 0 && !spawn.patrolBirth;
+    enemy.birth = spawn.placed ? Birth::Placement : Birth::Brood;
+    if (spawn.patrolBirth) {
+        enemy.birth = Birth::Patrol;
+    }
     enemy.radius = kind.radius;
     enemy.height = kind.height;
     enemy.reach = 0.5f * kind.height;
@@ -525,8 +562,17 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     } else {
         const f32 out = spawn.kind == kWormKind ? 0.0f : spawn.clearance + enemy.radius;
         const Vec3 v = spawn.direction * out;
-        u32 mask = octantMaskOf(spawn.kind);
-        const s32 directions = 8;
+        u32 mask = spawn.allBirthDirections ? 0 : octantMaskOf(spawn.kind);
+        // generate_enemy (GC 0x8004f4b4) gives dogs front/back exits;
+        // leaders use only the generator's forward bearing. Special mixed
+        // broods choose their directions from the original -2/-3 kind instead.
+        s32 directions = 8;
+        if (!spawn.allBirthDirections && spawn.kind == kDogKind) {
+            directions = 2;
+        }
+        if (enemy.algorithm == kLeaderWay) {
+            directions = 1;
+        }
         const auto start = static_cast<s32>(m_random() % static_cast<u32>(directions));
         s32 d = start;
         do {
@@ -548,6 +594,8 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                     clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
                         return box.solid && box.contact(spawn.position, at, 0.5f * enemy.radius);
                     });
+                clear = clear && combatantContact(m_combatants, spawn.position, at,
+                                                  0.5f * enemy.radius) == nullptr;
                 if (!clear) {
                     mask |= 1U << static_cast<u32>(d);
                 } else if (clearAt(enemy, at, players, obstacles, *slot)) {
@@ -1117,12 +1165,16 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
             return false;
         }
     }
+    const Vec3 offset{0, enemyKind(enemy.kind).collisionHeight, 0};
+    if (combatantContact(m_combatants, enemy.position + offset, at + offset, enemy.radius) !=
+        nullptr) {
+        return false;
+    }
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& other = m_enemies[static_cast<usize>(i)];
         if (i == self || other.state == State::Inactive || other.state == State::Dying) {
             continue;
         }
-        const Vec3 offset{0, enemyKind(enemy.kind).collisionHeight, 0};
         const Vec3 centre = other.position + Vec3{0, enemyKind(other.kind).collisionHeight, 0};
         if (movementTouchesBody(enemy.position + offset, at + offset, centre,
                                 enemy.radius + other.radius, enemy.reach + other.reach)) {
@@ -1149,6 +1201,7 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.recognized = enemy.recognized;
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
         sense.targetPosition = view->decoy.value_or(view->position);
+        sense.targetPlayerPosition = view->position;
     }
     sense.contact = enemy.contact;
     if (const EnemyView* view = viewOf(players, enemy.contact); view != nullptr) {
@@ -1160,6 +1213,7 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.otherSide = enemy.otherSide;
     sense.generatorGone = enemy.generator < 0;
     sense.onScreen = enemy.onScreen;
+    sense.mirroredWander = (slot & 1) != 0;
     sense.lookouts = &m_lookouts;
     sense.action = enemy.animator.action();
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
@@ -1179,6 +1233,21 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
         // Route selection must see the same floor, item and body obstructions as movement.
         return probeClear(enemy, probe, obstacles, slot);
     };
+    sense.wanderClear = [this, &enemy, obstacles, slot, reach](f32 heading) {
+        const Vec3 direction{std::sin(heading), 0, std::cos(heading)};
+        // move_logic05/06 look radius + 0.5 ahead at radius + 0.1 above the feet,
+        // then check the tick- and level-scaled step from do_enemies' speed table.
+        if (m_collision != nullptr) {
+            const Vec3 from = enemy.position + Vec3{0, enemy.radius + 0.1f, 0};
+            const Vec3 to = from + direction * (enemy.radius + 0.5f);
+            std::vector<WallContact> contacts;
+            m_collision->sweepWalls(from, to, 0, from.y, from.y, &contacts);
+            if (!contacts.empty()) {
+                return false;
+            }
+        }
+        return probeClear(enemy, enemy.position + direction * reach, obstacles, slot);
+    };
     return sense;
 }
 
@@ -1193,8 +1262,9 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     s32 algorithm = enemy.algorithm;
     // Near a lit bomber most ways run from it for the tick (FoundSuicideBomber): within ten
     // of it, its player within this one's sight, and not held after a bump or rising.
+    // Level placements and generate_single sentries have nonzero birth_style and stay put.
     if (m_bomber >= 0 && m_bomber != slot && fleesBombers(algorithm) && enemy.mind.deadEnd <= 0 &&
-        enemy.animator.action() != EnemyAction::Start) {
+        enemy.birth == Birth::Brood && enemy.animator.action() != EnemyAction::Start) {
         const Enemy& bomber = m_enemies[static_cast<usize>(m_bomber)];
         if (bomber.targetDistance <= enemy.sight &&
             glm::distance(bomber.position, enemy.position) < kBomberScare) {
@@ -1204,7 +1274,7 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     }
     std::optional<f32> retreat;
     if (enemy.kind == kDeathKind) {
-        algorithm = enemy.target >= 0 ? kSeekWay : kWanderWay;
+        algorithm = kSeekWay; // move_logic03 uses Seek's slot-dependent wander fallback.
         if (enemy.target < 0) {
             const EnemyView* threat = nullptr;
             f32 nearest = enemy.sight;
@@ -1418,6 +1488,13 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         // A slide that still gets somewhere is no bump; a dead stop is.
         enemy.bumpedWall = true;
         enemy.blocked = true;
+        return;
+    }
+    if (const auto* body = combatantContact(m_combatants, from + collisionOffset,
+                                            to + collisionOffset, enemy.radius)) {
+        enemy.bumpedOther = true;
+        enemy.blocked = true;
+        enemy.otherSide = turnDirection(from, body->centre);
         return;
     }
     for (const Obstacle& box : obstacles) {

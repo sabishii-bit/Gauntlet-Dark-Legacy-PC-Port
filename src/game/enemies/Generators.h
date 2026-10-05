@@ -75,8 +75,8 @@ public:
                    s32 kind, const Mat4& placement, const WorldCollision* collision,
                    std::string_view tree = "BOSSGEN", bool settled = false);
 
-    /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
-    /** What the camera takes in: a generator breeds only on screen; none takes all in. */
+    /** Ordinary broods update inside this view; patrol and always-active posts are exempt.
+     * No view means every generator is visible. */
     void setView(std::optional<ViewVolume> view) { m_view = view; }
     /** Joined participants, including those waiting in the tower but not those who quit. */
     void setPlayerCount(s32 players) { m_players = players; }
@@ -144,7 +144,9 @@ private:
         f32 yaw = 0.0f;
         Vec3 direction{0.0f, 0.0f, 1.0f};
         f32 clearance = 0.0f;
-        f32 viewRadius = 0.0f; ///< how far outside the view it still counts as on screen
+        f32 patrolClearance = 0.0f;
+        f32 viewRadius = 0.0f;     ///< how far outside the view it still counts as on screen
+        bool alwaysActive = false; ///< authored offscreen updates, independent of visibility
         Obstacle box;
         s32 support = -1;
         Mat4 supportLocal{1};

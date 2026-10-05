@@ -18,8 +18,11 @@ constexpr s32 kShortWait = 10;         ///< ticks a heading is held after a bump
 constexpr s32 kLongWait = 60;
 constexpr s32 kShortWaitOther = 15; ///< when the bump was another enemy
 constexpr s32 kLongWaitOther = 50;
-constexpr f32 kWanderTurn = kPi / 4.0f; ///< a wanderer turns this much at a dead end
-constexpr s32 kWanderWait = 30;
+constexpr f32 kWanderTurn = kPi / 2.0f; ///< a quarter turn at a blocked probe or an expired hold
+constexpr s32 kWanderWait = 20;
+constexpr s32 kWanderCycle = 4;
+constexpr f32 kProwlTurn = kPi / 4.0f;
+constexpr s32 kProwlWait = 30;
 constexpr f32 kProwlPounce = 8.0f;        ///< a prowler goes for a player this close
 constexpr s32 kProwlTurns = 4;            ///< turns at stops before it turns the other way
 constexpr f32 kLoiterTurn = kPi / 180.0f; ///< a tick: a sixth of a turn a second (do_ai way 11)
@@ -55,6 +58,7 @@ constexpr f32 kLookoutHeight = 4.0f;
 constexpr f32 kCastCloseIn = 6.0f; ///< a caster this near its player fights it hand to hand
 constexpr s32 kCastLeast = 20;     ///< ticks a cast is asked for, and as many as ten more
 constexpr s32 kCastSpread = 10;
+constexpr s32 kCastFirstWait = 60; ///< the moving caster's initial hold, plus up to as many ticks
 /** A fleer's nudges off straight away, one more for each step in a row that gets nowhere:
  * five degrees either side, then ten, to twenty (lbl_8011BF60's first eight). */
 constexpr std::array<f32, 8> kFleeNudges{0.0872664601f, -0.0872664601f, 0.17453292f, -0.17453292f,
@@ -103,12 +107,20 @@ void countDown(MindMemory& memory, s32 ticks) {
     }
 }
 
-/** Straight at the player, or the nearest clear heading either side of straight, out to
- * half a turn. */
+/** Alternate the side an unseen enemy takes around walls by its slot. */
+MindIntent fallbackWander(MindMemory& memory, const MindSense& sense) {
+    return enemyMindOf(sense.mirroredWander ? kWanderOtherWay : kWanderWay).think(memory, sense);
+}
+
+/** Straight at the player, or the first clear heading swept along its route's side, out to
+ * half a turn, without returning to a just-abandoned heading or reversing in place. */
 class SeekMind : public EnemyMind {
 public:
     std::string_view name() const override { return "seek"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        if (!sense.recognized || sense.target < 0) {
+            return fallbackWander(memory, sense);
+        }
         countDown(memory, sense.ticks);
         MindIntent intent;
         if (memory.deadEnd > 0) {
@@ -118,39 +130,52 @@ public:
         const f32 face = sense.faceAngle(memory.heading);
         f32 heading = face;
         for (s32 k = 0; k <= 8; ++k) {
-            const s32 turns = (k + 1) / 2; // out from straight, a sixteenth either side
-            const f32 offset = static_cast<f32>(turns) * (kPi / 8.0f) * (k % 2 == 0 ? 1.0f : -1.0f);
+            const f32 offset =
+                static_cast<f32>(k) * (kPi / 8.0f) * (memory.route > 0 ? 1.0f : -1.0f);
             const f32 candidate = wrapAngle(face + offset);
+            if ((std::abs(memory.heading - memory.headingBefore) > kHeadingSlack &&
+                 std::abs(candidate - memory.headingBefore) <= kHeadingSlack) ||
+                std::abs(wrapAngle(candidate - memory.heading)) >= kPi - kHeadingSlack) {
+                continue;
+            }
             if (sense.clearAlong(candidate)) {
                 heading = candidate;
+                memory.collided = k;
                 break;
             }
         }
+        memory.headingBefore = memory.heading;
         memory.heading = heading;
         intent.heading = heading;
         return intent;
     }
 };
 
-/** Straight on until something is in the way, then an eighth of a turn round; a player
- * against it is faced. */
+/** Probe ahead and turn a quarter to its own side around obstructions. A twenty-tick hold
+ * ends with another quarter turn, but does not prevent an intervening probe from turning. */
 class WanderMind : public EnemyMind {
 public:
+    explicit WanderMind(f32 turn) : m_turn(turn) {}
     std::string_view name() const override { return "wander"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        countDown(memory, sense.ticks);
-        if (sense.contact >= 0) {
-            memory.heading = yawBetween(sense.position, sense.contactPosition);
-        } else if ((sense.bumpedWall || sense.bumpedOther) && memory.deadEnd <= 0) {
-            memory.heading =
-                wrapAngle(memory.heading + (memory.route < 0 ? -kWanderTurn : kWanderTurn));
+        if (memory.deadEnd > 0) {
+            memory.deadEnd -= sense.ticks;
+            if (memory.deadEnd <= 0) {
+                memory.heading = wrapAngle(memory.heading + m_turn);
+                memory.turns = (memory.turns + 1) % kWanderCycle;
+            }
+        }
+        if (!sense.wanderClearAlong(memory.heading)) {
+            memory.heading = wrapAngle(memory.heading + m_turn);
             hold(memory, kWanderWait);
-            ++memory.turns;
         }
         MindIntent intent;
         intent.heading = memory.heading;
         return intent;
     }
+
+private:
+    f32 m_turn;
 };
 
 /** The rat's way (move_logic02, 04): after a player only while one is within eight (its
@@ -167,7 +192,7 @@ public:
         }
         MindIntent intent;
         if (sense.blocked) {
-            hold(memory, kWanderWait);
+            hold(memory, kProwlWait);
         }
         if (memory.deadEnd > 0) {
             memory.deadEnd -= sense.ticks;
@@ -205,7 +230,7 @@ public:
     std::string_view name() const override { return "chase"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
         if (!sense.recognized || sense.target < 0) {
-            return enemyMindOf(kWanderWay).think(memory, sense);
+            return fallbackWander(memory, sense);
         }
         if (sense.blocked) {
             if (sense.bumpedOther && (memory.route == 0 || std::abs(memory.route) > 2)) {
@@ -418,7 +443,7 @@ public:
     std::string_view name() const override { return "flee"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
         if (!sense.bomber.has_value()) {
-            return enemyMindOf(kWanderWay).think(memory, sense);
+            return fallbackWander(memory, sense);
         }
         f32 nudge = 0.0f;
         if (!sense.blocked) {
@@ -559,6 +584,7 @@ public:
             intent.pace = kRangePace;
             intent.action = EnemyAction::Walk;
             intent.turn = memory.mode != 1; // backing off, it keeps facing them
+            intent.facing = memory.heading;
             return intent;
         }
         askRangedAttack(memory, sense, intent);
@@ -576,9 +602,9 @@ public:
     std::string_view name() const override { return "zig-zag"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
         if (sense.target < 0 || !sense.recognized) {
-            return enemyMindOf(kWanderWay).think(memory, sense);
+            return fallbackWander(memory, sense);
         }
-        if (sense.targetDistance <= kZigZagCloseIn) {
+        if (sense.closeDistance <= kZigZagCloseIn) {
             return enemyMindOf(kSeekWay).think(memory, sense);
         }
         ZigZag& zig = memory.zigZag;
@@ -599,7 +625,9 @@ public:
             if (zig.swings >= kSwingsBeforeAim) {
                 zig.side = -zig.side;
             }
-            memory.heading = wrapAngle(face + (zig.side > 0 ? offset : -offset));
+            const f32 playerFacing = yawBetween(
+                sense.position, sense.targetPlayerPosition.value_or(sense.targetPosition));
+            memory.heading = wrapAngle(playerFacing + (zig.side > 0 ? offset : -offset));
             zig.count = 0;
             zig.swings = 0;
             ++zig.spread;
@@ -621,24 +649,31 @@ class PatrolMind : public EnemyMind {
 public:
     std::string_view name() const override { return "patrol"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        if (sense.target >= 0 && sense.targetDistance <= kPatrolNotice * sense.sight &&
+        if (sense.target >= 0 && sense.closeDistance <= kPatrolNotice * sense.sight &&
             flatDistance(sense.targetPosition, sense.position) <= kPatrolNotice * sense.sight) {
             memory.lookout = -1;
             return enemyMindOf(kSeekWay).think(memory, sense);
         }
         if (sense.lookouts == nullptr || sense.lookouts->empty()) {
-            return enemyMindOf(kWanderWay).think(memory, sense);
+            return fallbackWander(memory, sense);
         }
         const LookoutRoute& route = *sense.lookouts;
         if (memory.lookout < 0 || static_cast<usize>(memory.lookout) >= route.points.size()) {
             f32 best = 0.0f;
+            memory.lookout = -1;
             for (usize i = 0; i < route.points.size(); ++i) {
+                if (i >= route.next.size() || route.next[i] < 0) {
+                    continue;
+                }
                 const f32 distance = glm::distance(route.points[i], sense.position);
                 if (memory.lookout < 0 || distance < best) {
                     best = distance;
                     memory.lookout = static_cast<s32>(i);
                 }
             }
+        }
+        if (memory.lookout < 0) {
+            return fallbackWander(memory, sense);
         }
         const Vec3& point = route.points[static_cast<usize>(memory.lookout)];
         memory.heading = yawBetween(sense.position, point);
@@ -661,10 +696,14 @@ public:
     std::string_view name() const override { return "cast"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
         if (sense.target < 0 || !sense.recognized) {
-            return enemyMindOf(kWanderWay).think(memory, sense);
+            return fallbackWander(memory, sense);
         }
         if (sense.targetDistance <= kCastCloseIn) {
             return enemyMindOf(kChaseWay).think(memory, sense);
+        }
+        if (!memory.primed) {
+            memory.primed = true;
+            memory.fuse = kCastFirstWait + static_cast<s32>(sense.random % kCastFirstWait);
         }
         if (memory.deadEnd <= 0) {
             memory.fuse -= sense.ticks;
@@ -691,6 +730,10 @@ class LungeMind : public EnemyMind {
 public:
     std::string_view name() const override { return "lunge"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        if (!memory.primed) {
+            memory.primed = true;
+            memory.counter = static_cast<s32>(sense.random % kFirstWaitSpread);
+        }
         MindIntent intent;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
@@ -708,13 +751,9 @@ public:
             intent.strike = sense.targetDistance <= kLungeLands;
             break;
         case EnemyAction::PowerAttack:
-        case EnemyAction::PowerAttackRecover:
-            intent.pace = kCreepPace;
-            memory.counter = wait;
-            break;
+        case EnemyAction::PowerAttackRecover: memory.counter = wait; break;
         default:
             if (memory.counter <= 0) {
-                intent.pace = kCreepPace;
                 intent.action = sense.targetDistance <= kLungeFrom ? EnemyAction::Attack
                                                                    : EnemyAction::PowerAttack;
             } else if (sense.action != EnemyAction::Start) {
@@ -729,9 +768,10 @@ public:
 };
 
 const SeekMind kSeek;
-const WanderMind kWander;
-const ProwlMind kProwl{kWanderTurn, kMirroredProwlWay};
-const ProwlMind kMirroredProwl{-kWanderTurn, kProwlWay};
+const WanderMind kWander{-kWanderTurn};
+const WanderMind kMirroredWander{kWanderTurn};
+const ProwlMind kProwl{kProwlTurn, kMirroredProwlWay};
+const ProwlMind kMirroredProwl{-kProwlTurn, kProwlWay};
 const ChaseMind kChase;
 const LoiterMind kLoiter;
 const FleeMind kFlee;
@@ -836,8 +876,8 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kSkirmishWay:
     case kSkirmishBombWay: return kSkirmish;
     case kSuicideWay: return kSuicide;
+    case kWanderOtherWay: return kMirroredWander;
     case kWanderWay:
-    case kWanderOtherWay:
     default: return kWander;
     }
 }

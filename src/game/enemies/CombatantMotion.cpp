@@ -20,6 +20,8 @@ constexpr f32 kFootClearance = 0.1f;
 constexpr f32 kWallProbeHeight = 8.0f; ///< how high over its feet walls stop it
 constexpr f32 kBlindTurnShare = 0.1f;
 constexpr f32 kSupportReach = 0.1f;
+constexpr u32 kReturnFacing = 0x20;
+constexpr u32 kNodeMovement = 0x100;
 } // namespace
 void Combatant::rememberFloor() {
     Actor& actor = m_actor;
@@ -54,6 +56,42 @@ void Combatant::syncFloor() {
 
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                       std::span<const EnemyView> players, std::span<const Combatant> peers) {
+    // Both native AIs translate using the previous facing, then turn. Only
+    // CritterGolemAI (GC 0x800396a4) skips the turn on player contact;
+    // CritterBossAI (0x80039ad8) always turns after its home-clamped step.
+    const bool playerContact = translate(critter, seconds, move, players, peers);
+    if (!playerContact || critter.stock->definition.kind == CombatantKind::Boss) {
+        rotate(critter, seconds, move, players);
+    }
+}
+
+void Combatant::rotate(Actor& critter, f32 seconds, const MoveDefinition* move,
+                       std::span<const EnemyView> players) {
+    const CritterMovement& movement = critter.definition->movement();
+    const EnemyView* view = viewOf(players, critter.moveTarget);
+    if (move != nullptr && move->turnRate > 0.0f) {
+        f32 wanted = critter.yaw;
+        // CritterRotate (GC 0x8003af4c) checks this before the grabbed-player
+        // branch: Skorne's GRAB and Wraith's DEATH return to their authored facing.
+        if ((move->flags & kReturnFacing) != 0) {
+            wanted = critter.initialYaw;
+        } else if (critter.grabbed < 0 && view != nullptr) {
+            wanted =
+                movement.facing(yawBetween(critter.position, view->position), critter.initialYaw);
+        } else if (critter.grabbed < 0 && critter.patrolAim.has_value()) {
+            // With no player, the waypoint branch is not facing-limit clamped.
+            wanted = yawBetween(critter.position, *critter.patrolAim);
+        }
+        const f32 delta = wrapAngle(wanted - critter.yaw);
+        // Blinded, it turns at a tenth of its rate.
+        const f32 step =
+            move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
+        critter.yaw = wrapAngle(critter.yaw + std::clamp(delta, -step, step));
+    }
+}
+
+bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* move,
+                          std::span<const EnemyView> players, std::span<const Combatant> peers) {
     const CritterMovement& movement = critter.definition->movement();
     const bool bounded = critter.stock->definition.boundsToHome;
     // CritterBossAI (GC 0x80039ad8) probes the supporting floor every frame,
@@ -64,27 +102,8 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             critter.position.y = floor->y;
         }
     }
-    const EnemyView* view = viewOf(players, critter.moveTarget);
-    if (move != nullptr && move->turnRate > 0.0f && view != nullptr && critter.grabbed < 0) {
-        const f32 wanted =
-            movement.facing(yawBetween(critter.position, view->position), critter.initialYaw);
-        const f32 d = wrapAngle(wanted - critter.yaw);
-        // Blinded, it turns at a tenth of its rate.
-        const f32 step =
-            move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
-        critter.yaw =
-            wrapAngle(std::abs(d) <= step ? wanted : critter.yaw + (d > 0.0f ? step : -step));
-    } else if (move != nullptr && move->turnRate > 0.0f && view == nullptr &&
-               critter.patrolAim.has_value() && critter.grabbed < 0) {
-        // With no player, it turns to the lookout it makes for, unbounded by the facing
-        // limit (CritterRotate's waypoint branch).
-        const f32 d = wrapAngle(yawBetween(critter.position, *critter.patrolAim) - critter.yaw);
-        const f32 step =
-            move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
-        critter.yaw = wrapAngle(critter.yaw + std::clamp(d, -step, step));
-    }
     if (bounded && movement.roamRadius <= 0.0f) {
-        return; // Zero-radius bosses may turn, but neither locomotion nor knockback moves them.
+        return false; // Zero-radius bosses may still turn, but cannot change position.
     }
     Vec3 translation = critter.push * seconds;
     const EnemyView* destination = viewOf(players, critter.target);
@@ -108,7 +127,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         }
     }
     if (glm::length(translation) <= 0.0f) {
-        return;
+        return false;
     }
     Vec3 to = critter.position + translation;
     if (bounded && critter.state != State::Dying) {
@@ -118,7 +137,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     // heights are not ordinary walking-floor probes (several stand above the arena).
     if (bounded) {
         critter.position = to;
-        return;
+        return false;
     }
     // CritterCollidePlayers sweeps collision centres, not floor positions. An
     // overlapping body may move outward; players on another floor do not block it.
@@ -126,7 +145,6 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     const auto playerSeparation = [&](const EnemyView& player) -> std::optional<Vec3> {
         const Vec3 centre =
             player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
-        constexpr u32 kNodeMovement = 0x100;
         if ((critter.definition->typeFlags() & kNodeMovement) != 0) {
             std::optional<Vec3> separation;
             f32 nearest = 0;
@@ -174,7 +192,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         }
     }
     if (playerContact) {
-        return;
+        return true;
     }
     if (m_collision != nullptr) {
         const f32 wallRadius = critter.definition->wallRadius();
@@ -182,15 +200,15 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                                        to.y + kWallProbeHeight);
         const auto floor = m_collision->floorAt(to, kStepUp, kDrop);
         if (!floor.has_value()) {
-            return;
+            return false;
         }
         to.y = floor->y;
     }
     if (blockedByItems(critter, to)) {
-        return;
+        return false;
     }
     if (blockedBySwarm(critter, to)) {
-        return;
+        return false;
     }
     for (const Combatant& peer : peers) {
         const Actor& other = peer.m_actor;
@@ -212,14 +230,14 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                 const Vec3 centre{attachmentTransform(other, part.node) * Vec4{part.position, 1}};
                 if (movementTouchesBody(from, peerDestination, centre, radius + part.radius,
                                         radius + part.radius)) {
-                    return;
+                    return false;
                 }
             }
         }
         if (movementTouchesBody(from, peerDestination, partPosition(other, {}),
                                 radius + other.definition->wallRadius(),
                                 radius + other.definition->radius())) {
-            return;
+            return false;
         }
     }
     critter.position = to;
@@ -235,7 +253,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             EnemyHit hit;
             if (HazardSurfaces::burning(m_hazards->flagsOf(touch->object))) {
                 if (critter.burnGap > 0) {
-                    return;
+                    return false;
                 }
                 critter.burnGap = HazardSurfaces::kEnemyBurnGap;
             }
@@ -246,6 +264,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             hurt(hit);
         }
     }
+    return false;
 }
 
 bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
@@ -313,11 +332,56 @@ bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
  * times its type's, every step it is against it, stopped only while that stands or as it
  * blows up; everything else solid stops it. */
 bool Combatant::blockedByItems(Actor& critter, const Vec3& to) {
-    const f32 reach = critter.definition->wallRadius();
     const bool breaks = critter.stock->definition.breaksItems;
     const f32 blow = critter.definition->itemDamage() * m_scales.damage;
+    const Vec3 delta = to - critter.position;
     return std::ranges::any_of(m_obstacles, [&](const CombatantObstacle& item) {
-        if (!item.box.solid || !item.box.touchedBy(to, reach, 0.0f)) {
+        // fn_8005D5C8: low generators may be crushed by golems/gargoyles,
+        // but a general simply steps over them rather than ramming or stopping.
+        if (!item.box.solid || (!breaks && item.kind == CombatantObstacle::Kind::LowGenerator)) {
+            return false;
+        }
+        const auto touches = [&](const Vec3& from, f32 radius, f32 halfHeight) {
+            const Vec3 destination = from + delta;
+            if (destination.y + halfHeight < item.box.centre.y ||
+                destination.y - halfHeight > item.box.centre.y + item.box.height) {
+                return false;
+            }
+            // Obstacle's ordinary touchedBy takes floor-space positions. Here the
+            // native item test receives a collision centre and separate vertical
+            // radius, so test the footprint independently of that floor convention.
+            const Vec3 footprint{destination.x, item.box.centre.y, destination.z};
+            if (!item.box.touchedBy(footprint, radius, 0)) {
+                return false;
+            }
+            // fn_8005F0F4 permits movement outward from an existing overlap.
+            const Vec3 startFootprint{from.x, item.box.centre.y, from.z};
+            const Vec2 toward{item.box.centre.x - from.x, item.box.centre.z - from.z};
+            return !item.box.touchedBy(startFootprint, radius, 0) ||
+                   glm::dot(Vec2{delta.x, delta.z}, toward) >= 0;
+        };
+        bool contact = false;
+        // CritterCollideItems (GC 0x80034f60): TYPE 0x100 uses live solid
+        // NODE spheres, not a second cylinder invented around the actor's feet.
+        if ((critter.definition->typeFlags() & kNodeMovement) != 0) {
+            const auto parts = critter.definition->parts();
+            for (usize i = 0; i < parts.size(); ++i) {
+                const auto& part = parts[i];
+                if ((part.flags & CritterPart::kSolid) == 0 || critter.hitNodes[i].health <= 0 ||
+                    !nodeAvailable(critter, part.node)) {
+                    continue;
+                }
+                const Vec3 centre{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
+                if (touches(centre, part.radius, part.radius)) {
+                    contact = true;
+                    break;
+                }
+            }
+        } else {
+            contact = touches(partPosition(critter, {}), critter.definition->wallRadius(),
+                              critter.definition->radius());
+        }
+        if (!contact) {
             return false;
         }
         if (!breaks || item.kind == CombatantObstacle::Kind::Blocks) {

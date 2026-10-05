@@ -65,6 +65,7 @@ struct MindSense {
     s32 ticks = 1;
     s32 target = -1; ///< the player it is after, if any
     Vec3 targetPosition{0.0f, 0.0f, 0.0f};
+    std::optional<Vec3> targetPlayerPosition; ///< the player's body, not its distracting decoy
     f32 targetDistance = 100000.0f;
     f32 closeDistance = 100000.0f; ///< the target's distance with the crowding others add
     bool recognized = false;       ///< it has seen its player within sight
@@ -88,6 +89,9 @@ struct MindSense {
     std::function<bool(f32 heading)> clear;
     /** Whether a step along a heading keeps the whole body off the walls. */
     std::function<bool(f32 heading)> open;
+    /** The wanderer's forward wall ray followed by its tick-scaled movement-step body probe. */
+    std::function<bool(f32 heading)> wanderClear;
+    bool mirroredWander = false; ///< alternating slots take opposite fallback routes
 
     /** The way to the player, or the way the mind was going with no player to face. */
     f32 faceAngle(f32 fallback) const;
@@ -96,6 +100,9 @@ struct MindSense {
     s32 nearerSide() const;
     bool clearAlong(f32 heading) const { return !clear || clear(heading); }
     bool openAlong(f32 heading) const { return !open || open(heading); }
+    bool wanderClearAlong(f32 heading) const {
+        return wanderClear ? wanderClear(heading) : clearAlong(heading);
+    }
 };
 
 /** What a mind decides for the tick. */

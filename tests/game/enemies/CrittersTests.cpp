@@ -4,6 +4,7 @@
 #include <numbers>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -861,6 +862,267 @@ TEST_CASE("move effects without an animated node use the root rather than the bo
     const auto parent = critters.nodeTransform(*cues[0].node);
     REQUIRE(parent.has_value());
     REQUIRE(glm::distance(Vec3{*parent * Vec4{cues[0].nodeOffset, 1}}, cues[0].position) < 0.001f);
+}
+
+TEST_CASE("a return-facing move turns to its initial yaw rather than its player target",
+          "[game][combatant][critter-motion-audit]") {
+    const auto root = targetedCritter();
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"typeFlags":1024}],
+      "moves":[{"name":"READY","anim":"ROARATK","type":32,"priority":1,
+                "turnRate":1.5707964},
+               {"name":"DEATH","anim":"ROARATK","type":17,"priority":4095,
+                "flags":32,"turnRate":1.5707964,"hold":1}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    const std::array party{playerAt(Vec3{20, 0, 0})};
+    for (s32 frame = 0; frame < 10; ++frame) {
+        fixture.update(kTicks, kStep, party);
+    }
+    REQUIRE(fixture.actor.yaw() > 0.1f);
+    const f32 turned = fixture.actor.yaw();
+    EnemyHit kill;
+    kill.damage = 1000;
+    fixture.actor.hurt(kill);
+    // CritterRotate 0x8003af4c: MOVE flag 0x20 selects initial yaw before
+    // checking the current target. WRAITH DEATH and both SKORNE GRABs use it.
+    fixture.update(kTicks, kStep, party);
+    REQUIRE(fixture.actor.moveName() == "DEATH");
+    CHECK(fixture.actor.yaw() < turned);
+    for (s32 frame = 0; frame < 12; ++frame) {
+        fixture.update(kTicks, kStep, {});
+    }
+    CHECK(fixture.actor.yaw() == Approx(0).margin(0.0001f));
+}
+
+TEST_CASE("retail Skorne grabs and Wraith death author a return to initial facing",
+          "[game][combatant][critter-motion-audit][assets]") {
+    for (const std::string name : {"SKORNE1", "SKORNE2", "WRAITH"}) {
+        DYNAMIC_SECTION(name) {
+            CritterData data;
+            REQUIRE(data.load(test::assetOrSkip("CRITTER/" + name + ".WAD")));
+            const std::string_view wanted = name == "WRAITH" ? "DEATH" : "GRAB";
+            const auto move = std::ranges::find(data.moves(), wanted, &MoveDefinition::name);
+            REQUIRE(move != data.moves().end());
+            CHECK((move->flags & 0x20) != 0);
+            CHECK(move->turnRate > 0);
+        }
+    }
+}
+
+TEST_CASE("ordinary creature item contact follows solid nodes and body collision height",
+          "[game][combatant][critter-motion-audit][critter-rams]") {
+    const auto root = targetedCritter();
+    bool node = true;
+    bool solid = true;
+    bool blocked = true;
+    Obstacle box;
+    box.centre = {6, 5, 0};
+    box.halfAcross = 0.5f;
+    box.halfAlong = 0.5f;
+    box.height = 2;
+    SECTION("the raised solid limb contacts the barrier") {}
+    SECTION("the gap behind a limb has no invented root collider") {
+        box.centre = {1, 0, 0};
+        blocked = false;
+    }
+    SECTION("barriers on another floor do not collide") {
+        box.centre.y = 20;
+        blocked = false;
+    }
+    SECTION("damage-only nodes do not stop movement") {
+        solid = false;
+        blocked = false;
+    }
+    SECTION("a limb already overlapping the barrier may move outward") {
+        box.centre.x = 4.5f;
+        blocked = false;
+    }
+    SECTION("body contact uses the raised centre and its own vertical radius") {
+        node = false;
+        box.centre = {1, 7.5f, 0};
+    }
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"DJINN","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "originOffset":[0,6,0],"colCount":1,"typeFlags":)" +
+                                                   std::to_string(node ? 256 : 0) + R"(}],
+      "nodes":[{"nodeName":"BODY","position":[5,6,0],"radius":1,"flags":)" +
+                                                   std::to_string(solid ? 8 : 0) + R"(}],
+      "moves":[{"name":"READY","anim":"ROARATK","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    CombatantDefinition definition;
+    definition.name = "DJINN";
+    definition.kind = CombatantKind::General;
+    REQUIRE(assets.load(device, root, definition, 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const std::array items{CombatantObstacle{.box = box}};
+    actor.setObstacles(items);
+    EnemyHit push;
+    push.damage = 1;
+    push.flags = 0x100;
+    push.direction = {1, 0, 0};
+    actor.hurt(push);
+    actor.update(kTicks, kStep, {});
+    CHECK(actor.position().x == Approx(blocked ? 0 : 10.0f * kStep));
+}
+
+TEST_CASE("generals walk over low generators while golems and gargoyles ram them",
+          "[game][combatant][critter-motion-audit][critter-rams]") {
+    const auto root = targetedCritter();
+    CombatantDefinition definition;
+    definition.name = "DJINN";
+    definition.kind = CombatantKind::General;
+    s32 kind = 8;
+    bool tall = false;
+    SECTION("general passes a low generator") {}
+    SECTION("general stops at a tall generator") {
+        tall = true;
+    }
+    SECTION("golem rams a low generator") {
+        definition.kind = CombatantKind::Golem;
+        definition.breaksItems = true;
+        kind = 3;
+    }
+    SECTION("gargoyle rams a low generator") {
+        definition.kind = CombatantKind::Gargoyle;
+        definition.breaksItems = true;
+        kind = 7;
+    }
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"DJINN","type":)" + std::to_string(kind) +
+                                                   R"(}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "originOffset":[0,2,0],"damageScale":10}],
+      "moves":[{"name":"READY","anim":"ROARATK","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, definition, 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    Obstacle box;
+    box.centre = {1, 0, 0};
+    box.halfAcross = 0.5f;
+    box.halfAlong = 0.5f;
+    box.height = tall ? 4.0f : 3.0f;
+    const std::array items{CombatantObstacle{.box = box,
+                                             .kind = tall ? CombatantObstacle::Kind::Blocks
+                                                          : CombatantObstacle::Kind::LowGenerator,
+                                             .id = 9,
+                                             .health = 100}};
+    actor.setObstacles(items);
+    EnemyHit push;
+    push.damage = 1;
+    push.flags = 0x100;
+    push.direction = {1, 0, 0};
+    actor.hurt(push);
+    actor.update(kTicks, kStep, {});
+    CHECK(actor.position().x == Approx(tall || definition.breaksItems ? 0 : 10.0f * kStep));
+    const auto rams = actor.takeRams();
+    REQUIRE(rams.size() == (definition.breaksItems ? 1 : 0));
+    if (!rams.empty()) {
+        CHECK(rams[0].id == 9);
+        CHECK(rams[0].damage == 10);
+    }
+}
+
+TEST_CASE("a dying great one remains a movement obstacle but not a damage target until removed",
+          "[game][combatant][critter-motion-audit][critter-death-contact]") {
+    const auto root = targetedCritter();
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"DJINN","type":8}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":2,"wallRadius":1,
+                "originOffset":[0,2,0],"colCount":1,"typeFlags":258}],
+      "nodes":[{"nodeName":"BODY","position":[0,2,0],"radius":1,"flags":8}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"interrupt":0},
+               {"name":"DEATH","anim":"ROARATK","type":17,"priority":4095}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    CombatantDefinition definition;
+    definition.name = "DJINN";
+    definition.kind = CombatantKind::General;
+    REQUIRE(assets.load(device, root, definition, 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto bodies = actor.bodyTargets(true);
+    REQUIRE(bodies.size() == 2); // one live solid NODE plus the body fallback
+    REQUIRE_FALSE(actor.bodyTargets().empty());
+    EnemyHit kill;
+    kill.damage = 1000;
+    actor.hurt(kill);
+    REQUIRE(actor.dying());
+    CHECK(actor.bodyTargets().empty());
+    CHECK(actor.bodyTargets(true).size() == bodies.size());
+    actor.update(kTicks, kStep, {});
+    REQUIRE(actor.dying());
+    REQUIRE(actor.moveName() == "DEATH");
+    CHECK(actor.bodyTargets().empty());
+    CHECK(actor.bodyTargets(true).size() == bodies.size());
+    for (s32 frame = 0; frame < 60 && actor.present(); ++frame) {
+        actor.update(kTicks, kStep, {});
+    }
+    REQUIRE_FALSE(actor.present());
+    CHECK(actor.bodyTargets(true).empty());
+    CHECK(actor.bodyTargets().empty());
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.clear();
+    CHECK(actor.bodyTargets(true).empty());
+}
+
+TEST_CASE("great ones translate on their old facing and only player contact suppresses a turn",
+          "[game][combatant][critter-motion-order]") {
+    for (const auto kind : {CombatantKind::Golem, CombatantKind::Gargoyle, CombatantKind::General,
+                            CombatantKind::Boss}) {
+        DYNAMIC_SECTION("family " << static_cast<s32>(kind)) {
+            const auto root = targetedCritter();
+            writeTextFile(root / "critter/DJINN.json", R"({
+              "descriptors":[{"prefix":"DJINN","type":)" + std::to_string(static_cast<s32>(kind)) +
+                                                           R"(}],
+              "types":[{"moveCount":2,"maxHealth":100,"radius":2,"wallRadius":1,
+                        "originOffset":[0,2,0],"roamRadius":100,"typeFlags":1024}],
+              "moves":[{"name":"READY","anim":"READY","type":32,"interrupt":90},
+                       {"name":"WALK","anim":"ROARATK","type":52,"priority":16,
+                        "speed":6,"turnRate":1.5707964}]})");
+            test::FakeRenderDevice device;
+            CombatantAssets assets;
+            CombatantDefinition definition;
+            definition.name = "DJINN";
+            definition.kind = kind;
+            definition.boundsToHome = kind == CombatantKind::Boss;
+            REQUIRE(assets.load(device, root, definition, 'G'));
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+            std::array players{playerAt({20, 0, 0})};
+            std::array<CombatantObstacle, 1> items{};
+            bool playerContact = false;
+            bool itemContact = false;
+            SECTION("unobstructed step uses the pre-turn direction") {}
+            SECTION("ordinary player contact holds the facing while a boss remains unbounded") {
+                players[0].position = {1.5f, 0, 0.2f};
+                playerContact = kind != CombatantKind::Boss;
+            }
+            SECTION("an item stops the step but does not suppress the turn") {
+                items[0].box.centre = {0, 0, 0.75f};
+                items[0].box.halfAcross = 0.25f;
+                items[0].box.halfAlong = 0.25f;
+                items[0].box.height = 4.0f;
+                actor.setObstacles(items);
+                itemContact = kind != CombatantKind::Boss;
+            }
+            actor.update(kTicks, kStep, players);
+            REQUIRE(actor.moveName() == "WALK");
+            // Both native AIs translate before rotating. CritterGolemAI skips
+            // the turn only when CritterTranslate reports player contact.
+            CHECK(actor.position().x == Approx(0).margin(0.00001f));
+            CHECK(actor.position().z == Approx(playerContact || itemContact ? 0 : 6 * kStep));
+            CHECK(actor.yaw() == Approx(playerContact ? 0 : 0.5f * kPi * kStep));
+        }
+    }
 }
 
 TEST_CASE("the Lich's emergence gravel attaches at his ground root",

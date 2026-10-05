@@ -274,10 +274,10 @@ void Bosses::damagedPlayer(s32 player, f32 amount, s32 partId) {
     }
 }
 
-std::vector<MissileTarget> Bosses::targets() const {
+std::vector<MissileTarget> Bosses::targets(bool solidOnly) const {
     // Single-body bosses have animated hit nodes too. Their floor anchor is not
     // a damage volume: Skorne's lies below the arena, well beneath his torso.
-    return m_fighter.bodyTargets();
+    return m_fighter.bodyTargets(solidOnly);
 }
 
 std::optional<s32> Bosses::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {

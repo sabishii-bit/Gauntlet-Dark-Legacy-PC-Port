@@ -866,7 +866,7 @@ TEST_CASE("the opponent movement recheck preserves player wall clearance",
     opponents.close();
 }
 
-TEST_CASE("mountain creatures stop a player in melee range and release collision on death",
+TEST_CASE("mountain creatures stop players until their dying collision bodies are removed",
           "[level-opponents][collision][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
     test::assetOrSkip("MONSTERS/GOLEM/LEVELB/ANIM.PS2");
@@ -901,6 +901,19 @@ TEST_CASE("mountain creatures stop a player in melee range and release collision
         hit.damage = 1000000;
         opponents.critters().hurt(*id, hit);
         REQUIRE_FALSE(opponents.critters().alive(*id));
+        // PlayerCollideEnemies uses CritterMoveNodeCol(..., -1, 2), just
+        // like swarm movement: hp == 0 is not CritterDelInst. Damage targets
+        // disappear immediately, but a golem's remaining body stays solid.
+        CHECK(opponents.critters().targets().empty());
+        CHECK_FALSE(opponents.critters().targets(true).empty());
+        if (kind == CombatantKind::Golem) {
+            CHECK(glm::distance(opponents.resolveMovement(player, from, to), to) > 1);
+        }
+        for (s32 frame = 0; frame < 600 && opponents.critters().count() > 0; ++frame) {
+            opponents.critters().update(2, 1.0f / 30, {});
+        }
+        REQUIRE(opponents.critters().count() == 0);
+        CHECK(opponents.critters().targets(true).empty());
         CHECK(glm::distance(opponents.resolveMovement(player, from, to), to) < 1e-4f);
         opponents.close();
     }

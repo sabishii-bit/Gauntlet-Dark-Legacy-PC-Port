@@ -931,7 +931,7 @@ LevelOpponents::critterObstacles(std::span<const CombatantObstacle> fixtures) co
         CombatantObstacle item;
         item.box = m_generators.boxOf(g);
         if (item.box.height <= kShortGenerator) {
-            item.kind = CombatantObstacle::Kind::Breakable;
+            item.kind = CombatantObstacle::Kind::LowGenerator;
             item.id = kGeneratorRamBase + g;
             item.health = std::numeric_limits<s32>::max(); // it stops them while it stands
         }
@@ -966,6 +966,12 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     const LevelInfo* level = m_resources->world.level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
     const bool timeStopped = PlayerPowerups::timeStopped(players);
+    // fn_8004646C checks the live critter pool before ordinary enemy bodies,
+    // both for route probes and check_enemy_pos's generator-birth clearance.
+    auto combatants = m_critters.targets(true);
+    const auto bosses = m_bosses.targets(true);
+    combatants.insert(combatants.end(), bosses.begin(), bosses.end());
+    m_enemies.setCombatantBodies(combatants);
     m_generators.update(ticks, m_enemies, views, fixtures, timeStopped);
     std::vector<Obstacle> boxes = m_generators.enemyObstacles();
     boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
