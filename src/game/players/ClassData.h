@@ -121,6 +121,7 @@ struct ClassStats {
     f32 magicMax = 0.0f;
     f32 height = 0.0f;
     f32 width = 0.0f;
+    f32 attentionY = 0.0f; ///< name and attention anchor above the feet (PDAT attny)
     f32 collisionY = 0.0f; ///< the body's centre above the feet, which the camera follows
     Vec3 weaponOffset{0.0f, 0.0f, 0.0f}; ///< where a thrown weapon leaves, from the centre
     Vec3 familiarOffset{0.0f};     ///< permanent familiar attachment in the player's local space

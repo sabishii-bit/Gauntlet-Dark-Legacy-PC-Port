@@ -22,6 +22,7 @@ void PlayerActor::spawn(s32 player, const CharacterSave& save, const ClassStats*
     m_radius = kDefaultWidth * 0.5f;
     m_height = kDefaultHeight;
     m_followHeight = kDefaultFollowHeight;
+    m_attentionHeight = kDefaultFollowHeight;
     if (stats != nullptr) {
         const s32 level = experienceLevel(save.experience());
         speedStat = static_cast<f32>(displayStats(*stats, level, save.progress()).speed());
@@ -33,6 +34,9 @@ void PlayerActor::spawn(s32 player, const CharacterSave& save, const ClassStats*
         }
         if (stats->collisionY > 0.0f) {
             m_followHeight = stats->collisionY;
+        }
+        if (stats->attentionY > 0.0f) {
+            m_attentionHeight = stats->attentionY;
         }
     }
     m_speed = kMinSpeed + std::clamp(speedStat * kStatScale, 0.0f, 1.0f) * (kMaxSpeed - kMinSpeed);
@@ -87,9 +91,15 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
     const auto steps = std::max(1, static_cast<s32>(std::ceil(distance / (m_radius * 0.5f))));
     const Vec3 stride = offset / static_cast<f32>(steps);
     for (s32 i = 0; i < steps; ++i) {
+        // PlayerWallCollide tests a sphere at coly + 1 with the class's full
+        // width as its radius. Keep our horizontal sweep, but exclude faces
+        // wholly below that volume, such as a lowered lift's deck sides.
+        constexpr f32 kWallOriginLift = 1.0f;
+        const f32 minimumWallY = m_position.y + m_followHeight + kWallOriginLift - reach();
         Vec3 target = m_position + stride;
         target = collision->sweepWalls(m_position, target, m_radius, target.y + kFootClearance,
-                                       target.y + m_height - kFootClearance, &m_wallContacts);
+                                       target.y + m_height - kFootClearance, &m_wallContacts,
+                                       minimumWallY);
         auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
         if (!floor) {
             // Floor contact spans the body's radius, not just a ray under its
@@ -104,7 +114,8 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
                 return;
             }
             target = collision->sweepWalls(m_position, *edge, m_radius, edge->y + kFootClearance,
-                                           edge->y + m_height - kFootClearance, &m_wallContacts);
+                                           edge->y + m_height - kFootClearance, &m_wallContacts,
+                                           minimumWallY);
             const auto support = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
             if (!support) {
                 return;
@@ -119,6 +130,14 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
 
 bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
     auto floor = collision.floorAt(m_position, kStepUp, kDrop, kFloorEdgeReach);
+    // A footprint still supported by a lift must not sink to lower ground
+    // under its centre. Keep a centre contact already at foot height, so a
+    // nearby surface cannot lift the body before it actually steps onto it.
+    const auto footprint = collision.floorAt(m_position, kFloorEdgeReach, kDrop, m_radius);
+    if (footprint &&
+        (!floor || (floor->y < m_position.y - kFloorEdgeReach && footprint->y > floor->y))) {
+        floor = footprint;
+    }
     if (!floor) {
         floor = collision.floorAt(m_position, kStepUp, kDrop, m_radius);
     }

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,6 +15,75 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+TEST_CASE("pause draws the five native rune seal frames on the menus that request them",
+          "[pause][pause-seal][assets]") {
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    TextureSet reference;
+    REQUIRE(reference.load(context.unpackedRoot / "STATIC"));
+    const auto seal = reference.find("LOGO_BURN1");
+    REQUIRE(seal);
+    REQUIRE(*seal + 5 <= reference.size());
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    // OPTMENU_TOWER/INGAME (8011E218/8011E4E4) share the native seal rectangle.
+    // show_optmenu advances its five consecutive texture entries every eight menu ticks.
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    const auto canvasProjection = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
+    const auto isSeal = [](const test::RecordedDraw& draw) {
+        return test::minCorner(draw) == Vec2{290, 142} && test::maxCorner(draw) == Vec2{514, 314};
+    };
+    for (u32 tick = 0; tick <= 40; ++tick) {
+        CAPTURE(tick);
+        device.draws.clear();
+        menu.render(device, projection, 640, 448);
+        const auto found = std::ranges::find_if(device.draws, isSeal);
+        REQUIRE(found != device.draws.end());
+        REQUIRE(found->texture);
+        const auto& expected = reference.image(*seal + (tick / 8) % 5);
+        const auto* actual = dynamic_cast<const test::FakeTexture*>(found->texture);
+        REQUIRE(actual);
+        CHECK(actual->pixels == expected.pixels);
+        CHECK(found->transform == canvasProjection);
+        if (tick != 40) {
+            menu.update(1.0 / 60, {});
+        }
+    }
+    MenuInput select;
+    select.select = true;
+    MenuInput back;
+    back.back = true;
+    MenuInput down;
+    down.down = true;
+    menu.update(1.0 / 60, select); // Settings records 8011E390/8011E638 also carry the seal.
+    device.draws.clear();
+    menu.render(device, projection, 640, 448);
+    CHECK(std::ranges::any_of(device.draws, isSeal));
+    menu.update(1.0 / 60, select); // Audio's record 8011E9C8 has no seal.
+    device.draws.clear();
+    menu.render(device, projection, 640, 448);
+    CHECK(std::ranges::none_of(device.draws, isSeal));
+    menu.update(1.0 / 60, back);
+    menu.update(1.0 / 60, down); // Compass, native record 8011EF60, retains the seal.
+    menu.update(1.0 / 60, select);
+    device.draws.clear();
+    menu.render(device, projection, 640, 448);
+    CHECK(std::ranges::any_of(device.draws, isSeal));
+    menu.update(1.0 / 60, back);
+    menu.update(1.0 / 60, back);
+    for (s32 row = 0; row < 4; ++row) {
+        menu.update(1.0 / 60, down);
+    }
+    menu.update(1.0 / 60, select); // The smaller Quit Game dialog has no seal.
+    device.draws.clear();
+    menu.render(device, projection, 640, 448);
+    CHECK(std::ranges::none_of(device.draws, isSeal));
+}
+
 TEST_CASE("pause loads the native axe and plays navigation and timed volume samples",
           "[pause][audio-samples][assets]") {
     test::assetOrSkip("audio/COMMON.vbk");

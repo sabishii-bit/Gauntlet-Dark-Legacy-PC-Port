@@ -75,6 +75,7 @@ ClassStats parseNativeClassStats(std::span<const u8> bytes) {
     stats.magicMax = source.magicMax;
     stats.height = source.height;
     stats.width = source.width;
+    stats.attentionY = source.attachY;
     stats.collisionY = source.collisionY;
     stats.weaponOffset = vectorOf(source.weaponOffset);
     stats.familiarOffset = vectorOf(source.familiarOffset);

@@ -115,6 +115,7 @@ void sameClass(const ClassStats& actual, const ClassStats& expected) {
     sameFloat(actual.magicMax, expected.magicMax);
     sameFloat(actual.height, expected.height);
     sameFloat(actual.width, expected.width);
+    sameFloat(actual.attentionY, expected.attentionY);
     sameFloat(actual.collisionY, expected.collisionY);
     sameFloat(actual.powerupTime, expected.powerupTime);
     sameFloat(actual.streakForward, expected.streakForward);
@@ -184,6 +185,7 @@ TEST_CASE("native class tuning preserves combat and presentation tables",
     CHECK(stats.fightMax == 999.0f);
     CHECK(stats.magicMax == 500.0f);
     CHECK(stats.collisionY == 2.5f);
+    CHECK(stats.attentionY == 4.4f);
     CHECK(stats.powerupTime == 1.25f);
     CHECK(stats.weaponOffset == Vec3{-0.5f, 0.5f, 1.5f});
     CHECK(stats.familiarOffset == Vec3{-1.0f, 5.0f, 0.75f});

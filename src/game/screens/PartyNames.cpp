@@ -6,6 +6,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/screens/PartyFigures.h"
+
 namespace gdl::game {
 
 namespace {
@@ -44,13 +46,14 @@ std::string PartyNames::shownName(std::string_view saveName) {
     return shown;
 }
 
-std::optional<Vec2> PartyNames::screenOf(const Mat4& clip, const Vec3& point, f32 width,
-                                         f32 height) {
+std::optional<Vec2> PartyNames::screenOf(const Mat4& clip, const Vec3& point,
+                                         const Mat4& canvasProjection) {
     const Vec4 at = clip * Vec4{point, 1.0f};
     if (at.w <= kBehind) {
         return std::nullopt;
     }
-    return Vec2{(at.x / at.w * 0.5f + 0.5f) * width, (0.5f - at.y / at.w * 0.5f) * height};
+    const Vec4 onCanvas = glm::inverse(canvasProjection) * at;
+    return Vec2{onCanvas} / onCanvas.w;
 }
 
 void PartyNames::show(std::span<PlayerRuntime> players) {
@@ -70,7 +73,7 @@ void PartyNames::step(std::span<PlayerRuntime> players, s32 ticks, bool held) {
 }
 
 void PartyNames::draw(Canvas& canvas, std::span<const PlayerRuntime> players, const Mat4& clip,
-                      f32 width, f32 height) const {
+                      const Mat4& canvasProjection, f32 frameBlend) const {
     if (m_held || !m_text.ready()) {
         return;
     }
@@ -81,7 +84,9 @@ void PartyNames::draw(Canvas& canvas, std::span<const PlayerRuntime> players, co
         if (runtime.nameTicks <= 0 || runtime.life != PlayerLife::Standing) {
             continue;
         }
-        const std::optional<Vec2> at = screenOf(clip, runtime.actor.followPoint(), width, height);
+        const Vec3 offset = runtime.actor.attentionPoint() - runtime.actor.position();
+        const Vec3 anchor = Vec3{PartyFigures::presentationBody(runtime, frameBlend)[3]} + offset;
+        const std::optional<Vec2> at = screenOf(clip, anchor, canvasProjection);
         if (!at.has_value()) {
             continue;
         }

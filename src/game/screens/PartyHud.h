@@ -53,8 +53,8 @@ public:
     void drawSelectors(Canvas& canvas, const TextPainter& text, const StringTable* strings,
                        std::span<const PlayerRuntime> players) const;
     void drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
-                  std::span<const PlayerRuntime> players, const Mat4& clip, f32 width,
-                  f32 height) const;
+                  std::span<const PlayerRuntime> players, const Mat4& clip,
+                  const Mat4& canvasProjection, f32 width, f32 height) const;
     const PowerupSelector& selector(s32 player) const {
         return m_selectors[static_cast<usize>(std::clamp(player, 0, kPlayerCount - 1))];
     }

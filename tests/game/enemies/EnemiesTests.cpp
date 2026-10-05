@@ -701,6 +701,68 @@ TEST_CASE("generator births cannot cross a wall to an unobstructed destination",
     REQUIRE_FALSE(id.has_value());
 }
 
+TEST_CASE("generator birth walls are tested before settling onto an upper landing",
+          "[game][enemies][enemy-collision][alpha-spawn-height][assets]") {
+    // check_enemy_pos (8004F9AC) rejects the start-to-offset WallCollide before
+    // FloorCollide can change the birth height. A valid upper floor must not
+    // lift that wall test over an obstruction on the path out of the generator.
+    constexpr s32 kLeaderWay = 12;
+    bool wall = true;
+    f32 birthY = 1;
+    SECTION("low wall blocks the route beneath the upper landing") {}
+    SECTION("an unobstructed route may settle onto the upper landing") {
+        wall = false;
+    }
+    SECTION("a birth already above the low wall remains clear") {
+        birthY = 6;
+    }
+    std::vector<CollisionTriangle> geometry{
+        triangle({-20, 6, 5}, {20, 6, 5}, {20, 6, 20}, {0, 1, 0}),
+        triangle({-20, 6, 5}, {20, 6, 20}, {-20, 6, 20}, {0, 1, 0})};
+    if (wall) {
+        geometry.push_back(triangle({-20, 0, 4}, {20, 3, 4}, {20, 0, 4}, {0, 0, -1}));
+        geometry.push_back(triangle({-20, 0, 4}, {-20, 3, 4}, {20, 3, 4}, {0, 0, -1}));
+    }
+    WorldCollision collision;
+    collision.build(geometry);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kLeaderWay; // One forward exit isolates the wall/floor query order.
+    spawn.generator = 0;
+    spawn.position = {0, birthY, 0};
+    spawn.clearance = 8;
+    const f32 radius = enemyKind(kGruntKind).radius;
+    const f32 height = enemyKind(kGruntKind).height;
+    const Vec3 candidate{0, birthY, spawn.clearance + radius};
+    const auto floor = collision.floorAt(candidate, 6, 6);
+    REQUIRE(floor);
+    REQUIRE(floor->y == Approx(6));
+    const Vec3 landing{candidate.x, floor->y, candidate.z};
+    // Both the final destination and the incorrectly elevated path are clear.
+    REQUIRE(collision.resolveWalls(landing, radius, 6.1f, 6 + height - 0.1f) == landing);
+    REQUIRE(collision.sweepWalls(spawn.position, landing, radius, 6.1f, 6 + height - 0.1f) ==
+            landing);
+    const bool blocked = wall && birthY < 6;
+    const Vec3 swept = collision.sweepWalls(spawn.position, candidate, radius, birthY + 0.1f,
+                                            birthY + height - 0.1f);
+    CHECK((swept.z < candidate.z - 0.01f) == blocked);
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value() == !blocked);
+    if (id) {
+        CHECK(enemies.positionOf(*id) == landing);
+    }
+    const auto events = enemies.takeGeneratorEvents();
+    REQUIRE(events.size() == (blocked ? 0 : 1));
+    if (!blocked) {
+        CHECK(events[0].generator == 0);
+        CHECK(events[0].kind == EnemyGeneratorEvent::Kind::Born);
+    }
+    enemies.close();
+}
+
 TEST_CASE("a newly released Death cannot be pushed through a wall by an item body",
           "[game][enemies][enemy-collision][assets]") {
     test::FakeRenderDevice device;

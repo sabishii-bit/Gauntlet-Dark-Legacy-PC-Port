@@ -16,6 +16,8 @@ constexpr s32 kQuitTextX = -256;
 constexpr s32 kQuitBackdropY = 64;
 constexpr s32 kQuitBackdropWidth = 320;
 constexpr s32 kQuitBackdropHeight = 220;
+constexpr std::string_view kSealTexture = "LOGO_BURN1";
+constexpr Rect kSealArea{290, 142, 224, 172};
 } // namespace
 std::string PauseMenu::text(std::string_view id) const {
     return std::string(m_context.strings != nullptr ? m_context.strings->get(id) : id);
@@ -91,6 +93,12 @@ void PauseMenu::loadDecorations(RenderDevice& device) {
     if (const auto arrows = m_textures.find("ARROWS")) {
         m_art.arrows = &m_textures.texture(device, *arrows);
     }
+    if (const auto seal = m_textures.find(kSealTexture);
+        seal && m_textures.size() - *seal >= m_art.burn.size()) {
+        for (usize frame = 0; frame < m_art.burn.size(); ++frame) {
+            m_art.burn[frame] = &m_textures.texture(device, *seal + static_cast<u32>(frame));
+        }
+    }
     const auto directory = m_context.unpackedRoot / "POWERUPS";
     if (m_powerupTextures.load(directory) && m_powerupModels.load(directory) &&
         m_powerupTrees.load(directory)) {
@@ -127,6 +135,8 @@ void PauseMenu::playMenuSound(const MenuEvent& event, bool horizontal) {
 MenuDefinition PauseMenu::backdrop() const {
     auto menu = MenuDefinition::parchment();
     menu.backdropX = 16;
+    menu.burn = kSealTexture;
+    menu.burnArea = kSealArea;
     menu.playerLabel = std::format("{}: {}", text("files.player"), m_player + 1);
     return menu;
 }
@@ -161,6 +171,8 @@ void PauseMenu::showQuit() {
     menu.fades = true;
     menu.prompts = false;
     menu.playerLabel.clear();
+    menu.burn.clear();
+    menu.burnArea = {};
     menu.items = {{text("pause.no"), 0}, {text("pause.yes"), 1}};
     m_menu.open(menu, m_text, m_screen);
 }
@@ -241,10 +253,16 @@ void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, 
         makeVirtualScreenTransform(projection, virtualWidth, virtualHeight, width, height);
     m_canvas.begin(device, m_pointerTransform);
     m_canvas.fillScreen(Color::rgba(0, 0, 0, 150));
+    auto art = m_art;
+    if (m_page == Page::Quit ||
+        (m_page == Page::Options && m_settings.page() != SettingsMenu::Page::Root &&
+         m_settings.page() != SettingsMenu::Page::Compass)) {
+        art.burn.fill(nullptr);
+    }
     if (m_page == Page::Options) {
-        m_settings.draw(m_canvas, m_text, m_art);
+        m_settings.draw(m_canvas, m_text, art);
     } else {
-        m_menu.draw(m_canvas, m_text, m_art);
+        m_menu.draw(m_canvas, m_text, art);
     }
     m_canvas.end();
 }

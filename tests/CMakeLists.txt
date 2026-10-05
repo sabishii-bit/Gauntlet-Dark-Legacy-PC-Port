@@ -256,6 +256,7 @@ add_executable(tests
     game/world/PowerupCompanionTests.cpp
     game/world/WeaponTrailTests.cpp
     game/screens/FloorRidingTests.cpp
+    game/world/NativeTraversalTests.cpp
     game/screens/PartyFiguresTests.cpp
     game/screens/PartyNamesTests.cpp
     game/screens/PartyHudTests.cpp

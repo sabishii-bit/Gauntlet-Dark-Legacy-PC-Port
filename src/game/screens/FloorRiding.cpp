@@ -48,6 +48,15 @@ void FloorRiding::land(std::span<PlayerRuntime> players, usize index, const Vec3
     const auto support = [&] {
         auto hit = collision.floorAt(actor.position(), kProbeAbove, kProbeBelow,
                                      PlayerActor::kFloorEdgeReach);
+        // Keep ownership consistent with the footprint supporting the feet,
+        // even when lower ground lies beneath the body's centre. A centre
+        // contact already at foot height wins over an adjacent near-level face.
+        const auto footprint = collision.floorAt(actor.position(), PlayerActor::kFloorEdgeReach,
+                                                 kProbeBelow, actor.radius());
+        if (footprint && (!hit || (hit->y < actor.position().y - PlayerActor::kFloorEdgeReach &&
+                                   footprint->y > hit->y))) {
+            hit = footprint;
+        }
         return hit ? hit
                    : collision.floorAt(actor.position(), kProbeAbove, kProbeBelow, actor.radius());
     };

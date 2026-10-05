@@ -1948,6 +1948,110 @@ TEST_CASE("block presentation limits duration and cannot restart during its cool
     REQUIRE(f.players[0].blockLeft == 1);
 }
 
+TEST_CASE("ordinary melee and finishers preserve the weapon element while guard flashes do not",
+          "[game][player-attacks][alpha-elemental-melee][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    const u32 element = GENERATE(0U, 1U, 2U, 3U, 4U);
+    const auto blow =
+        GENERATE(MeleeBlow::Plain, MeleeBlow::Heavy, MeleeBlow::Kick, MeleeBlow::Power);
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    std::array<PlayerRuntime, 2> party;
+    party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+    party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 2.5f}, 0);
+    auto& inventory = party[0].actor.save().progress().inventory;
+    if (element != 0) {
+        inventory.addPowerup(powerup::kWeapon, element, 0, 60);
+    }
+    party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+    REQUIRE(party[0].figure);
+    const auto& animator = party[0].figure->animator();
+    f.targets.multiplayer = MultiplayerMode::Hurt;
+    f.targets.players = party;
+    s32 contacts = 0;
+    u32 extra = 0;
+    f32 multiplier = 1;
+    PlayerDeed first = PlayerDeed::Melee;
+    switch (blow) {
+    case MeleeBlow::Heavy:
+        extra = EnemyHit::kKnockBack;
+        multiplier = 2;
+        first = PlayerDeed::MeleeSlow;
+        break;
+    case MeleeBlow::Kick: first = PlayerDeed::MeleeLow; break;
+    case MeleeBlow::Power:
+        extra = EnemyHit::kKnockDown;
+        multiplier = 3;
+        break;
+    default: break;
+    }
+    // PlayerMotion +0x3824 begins with field_11C for all melee damage, then ORs
+    // knockback/down for heavy/power swings. The guard flash is a separate path.
+    f.targets.hurt = [&](usize index, f32 amount, HurtKind, const PlayerImpact& impact) {
+        CHECK(index == 1);
+        ++contacts;
+        CHECK(impact.flags == (element | extra));
+        CHECK(amount == Approx(PlayerMissiles::kLeastDamage * multiplier));
+    };
+    const auto advance = [&](PlayerDeed deed) {
+        party[0].figure->animate(0, 2, 1.0f / 30, deed);
+        if (animator.meleeBlow() == blow) {
+            f.attacks.melee(0, party, f.targets);
+        }
+    };
+    advance(first);
+    if (blow == MeleeBlow::Power) {
+        advance(PlayerDeed::MeleeSlow); // buffered strong press after the first quick swing
+    }
+    for (s32 frame = 0; frame < 120 && contacts == 0; ++frame) {
+        advance(PlayerDeed::None);
+    }
+    REQUIRE(contacts == 1);
+    // StartBlockFX (8009233C) always chooses FX_BLOCK; it never reads the
+    // weapon's low-nibble element or creates a retaliatory elemental attack.
+    f.attacks.showBlock(0, 10, 20, party);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "BLOCKFX");
+    CHECK(contacts == 1);
+    f.effects.clear();
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, party);
+    auto& enemies = f.opponents.enemies();
+    // Exercise both surviving and lethal enemy routes at this same completed
+    // contact, including the finisher's elemental death burst and skin choice.
+    for (const bool lethal : {false, true}) {
+        CAPTURE(lethal);
+        EnemyScales scales;
+        scales.health = lethal ? 0.01f : 10.0f;
+        enemies.open(f.device, root, nullptr, 4, scales, 7);
+        REQUIRE(enemies.loadKind(13));
+        EnemySpawn spawn;
+        spawn.kind = 13;
+        spawn.tier = 3;
+        spawn.placed = true;
+        spawn.position = {0, 0, 2.5f};
+        REQUIRE(enemies.spawn(spawn, {}));
+        f.attacks.melee(0, party, f.targets);
+        const auto feedback = enemies.takeFeedback();
+        REQUIRE(feedback.size() == 1);
+        CHECK(feedback[0].close);
+        CHECK(feedback[0].killed == lethal);
+        CHECK(damage::element(feedback[0].flags) == element);
+        CHECK(feedback[0].effect() == damage::hitEffect(element, lethal));
+        constexpr std::array<std::string_view, 5> kSkins{"DEATHBLOOD", "DEATHFIRE", "DEATHELEC",
+                                                         "DEATHLIGHT", "DEATHACID"};
+        CHECK(feedback[0].deathSkin() == kSkins[element]);
+        CHECK(contacts == 1); // An enemy target takes priority over player fallback.
+    }
+    f.attacks.clear();
+    f.opponents.close();
+    f.arsenal.clear();
+    f.effects.clear();
+}
+
 TEST_CASE("player attacks clear transient state and safely ignore closed or missing figures",
           "[game][screens][player-attacks]") {
     Fixture f;

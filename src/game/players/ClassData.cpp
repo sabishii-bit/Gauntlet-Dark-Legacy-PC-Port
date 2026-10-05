@@ -52,6 +52,7 @@ ClassStats parseClassStats(std::string_view text) {
     readRange(root, "magic", stats.magicMin, stats.magicMax);
     stats.height = root.value("height", 0.0f);
     stats.width = root.value("width", 0.0f);
+    stats.attentionY = root.value("attachY", 0.0f);
     stats.collisionY = root.value("collisionY", 0.0f);
     stats.powerupTime = root.value("powerupTime", 1.0f);
     stats.streakForward = root.value("streakForward", 0.0f);

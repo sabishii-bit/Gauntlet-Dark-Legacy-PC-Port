@@ -255,21 +255,21 @@ void PartyHud::drawSelectors(Canvas& canvas, const TextPainter& text, const Stri
 }
 
 void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
-                        std::span<const PlayerRuntime> players, const Mat4& clip, f32 width,
-                        f32 height) const {
+                        std::span<const PlayerRuntime> players, const Mat4& clip,
+                        const Mat4& canvasProjection, f32 width, f32 height) const {
     if (!m_help.showing()) {
         return;
     }
     Vec2 head{width * 0.5f, height * 0.5f};
     if (m_helpPosition) {
-        head = PartyNames::screenOf(clip, *m_helpPosition, width, height).value_or(head);
+        head = PartyNames::screenOf(clip, *m_helpPosition, canvasProjection).value_or(head);
     }
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() != m_help.player()) {
             continue;
         }
-        head = PartyNames::screenOf(clip, actor.followPoint(), width, height).value_or(head);
+        head = PartyNames::screenOf(clip, actor.attentionPoint(), canvasProjection).value_or(head);
     }
     const auto sheet = textures.loaded() ? textures.find(kScrollTexture) : std::nullopt;
     const Texture* scroll = nullptr;

@@ -150,4 +150,73 @@ TEST_CASE("a travelling lift keeps riders aboard without freezing movement on it
     CHECK_FALSE(collision.floorExitBlocked(7));
 }
 
+TEST_CASE("a travelling lift retains footprint support above lower ground",
+          "[game][screens][floor-riding][lift-support]") {
+    WorldCollision collision;
+    auto triangles = square({-5, -5}, {0, 5}, 2, 7, FloorRiding::kMoving | kFloorQuery);
+    const auto ground = square({-5, -5}, {5, 5}, 0, 8, kFloorQuery);
+    triangles.insert(triangles.end(), ground.begin(), ground.end());
+    collision.build(triangles);
+    collision.setMovingObjects(std::array<s32, 1>{7});
+    collision.setObjectTransform(7, Mat4{1});
+    collision.setFloorExitBlocked(7, true);
+    std::array<PlayerRuntime, 1> players;
+    auto& actor = players[0].actor;
+    actor.spawn(0, {}, nullptr, {0.1f, 2, 0}, 0);
+    FloorRiding::land(players, 0, actor.position(), collision);
+    REQUIRE(players[0].floor.object == 7);
+
+    // The lift moved down, while the feet still straddle its edge. Lower
+    // ground under the centre is not a reason to sink through that support.
+    collision.setObjectTransform(7, glm::translate(Mat4{1}, Vec3{0, -0.1f, 0}));
+    FloorRiding::carry(players[0], collision);
+    const Vec3 carried = actor.position();
+    actor.update(MoveInput{.direction = {1, 0}, .magnitude = 1}, 0, 1.0f / 30.0f, &collision);
+    FloorRiding::land(players, 0, carried, collision);
+    CHECK(actor.position() == carried);
+    CHECK_FALSE(actor.fall(1.0f / 30.0f, collision));
+    CHECK(actor.position().y == Approx(1.9f));
+    CHECK(players[0].floor.object == 7);
+
+    collision.setSolid(7, false);
+    CHECK(actor.fall(1.0f / 30.0f, collision));
+    CHECK(actor.position().y < 1.9f);
+}
+
+TEST_CASE("an unlocked lift keeps ownership of feet supported across its edge",
+          "[game][screens][floor-riding][lift-support-owner]") {
+    bool onDeck = true;
+    f32 deckHeight = 0.8f;
+    SECTION("feet already supported by the deck") {}
+    SECTION("a higher adjacent deck does not claim feet on the ground") {
+        onDeck = false;
+        deckHeight = 0.3f;
+    }
+    SECTION("a one-packing-unit step does not steal support before boarding") {
+        onDeck = false;
+        deckHeight = PlayerActor::kFloorEdgeReach;
+    }
+    WorldCollision collision;
+    auto triangles = square({-5, -5}, {0, 5}, deckHeight, 7, FloorRiding::kMoving | kFloorQuery);
+    const auto ground = square({-5, -5}, {5, 5}, 0, 8, kFloorQuery);
+    triangles.insert(triangles.end(), ground.begin(), ground.end());
+    collision.build(triangles);
+    collision.setMovingObjects(std::array<s32, 1>{7});
+    collision.setObjectTransform(7, Mat4{1});
+    std::array<PlayerRuntime, 1> players;
+    auto& actor = players[0].actor;
+    actor.spawn(0, {}, nullptr, {0.1f, onDeck ? deckHeight : 0, 0}, 0);
+    FloorRiding::land(players, 0, actor.position(), collision);
+    CHECK(players[0].floor.object == (onDeck ? 7 : 8));
+    CHECK(players[0].floor.placement.has_value() == onDeck);
+    CHECK_FALSE(actor.fall(1.0f / 30.0f, collision));
+    CHECK(actor.position().y == Approx(onDeck ? deckHeight : 0));
+
+    // Ownership must agree with the support retained by fall(), so a lift
+    // starting its next movement still carries an edge-standing rider.
+    collision.setObjectTransform(7, glm::translate(Mat4{1}, Vec3{0, 0.2f, 0}));
+    FloorRiding::carry(players[0], collision);
+    CHECK(actor.position().y == Approx(onDeck ? deckHeight + 0.2f : 0));
+}
+
 } // namespace

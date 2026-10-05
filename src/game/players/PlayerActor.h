@@ -26,7 +26,7 @@ public:
     static constexpr f32 kMaxSpeed = 12.5f; ///< units per second at a speed stat of 1000
     static constexpr f32 kStatScale = 0.001f;
     static constexpr f32 kMoveLimit = 1.5f;    ///< at most this many speeds of travel per second
-    static constexpr f32 kStepUp = 1.5f;       ///< the highest ledge walked up
+    static constexpr f32 kStepUp = 3.0f;       ///< the native new-floor height limit
     static constexpr f32 kDrop = 3.0f;         ///< the deepest drop walked down
     static constexpr f32 kFallSpeed = 16.0f;   ///< how fast a body sinks to a floor gone lower
     static constexpr f32 kFallReach = 1000.0f; ///< how far under it a floor is looked for
@@ -93,6 +93,8 @@ public:
 
     /** The point the camera follows: the body's centre above the feet. */
     Vec3 followPoint() const { return m_position + Vec3{0.0f, m_followHeight, 0.0f}; }
+    /** The name/attention anchor, independent of the body's collision centre. */
+    Vec3 attentionPoint() const { return m_position + Vec3{0.0f, m_attentionHeight, 0.0f}; }
 
     /** Model space (feet at the origin, facing +z) to the world. */
     Mat4 transform() const;
@@ -110,6 +112,7 @@ private:
     f32 m_radius = kDefaultWidth * 0.5f;
     f32 m_height = kDefaultHeight;
     f32 m_followHeight = kDefaultFollowHeight;
+    f32 m_attentionHeight = kDefaultFollowHeight;
     bool m_moving = false;
     std::vector<WallContact> m_wallContacts;
 };

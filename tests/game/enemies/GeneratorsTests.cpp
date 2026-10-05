@@ -1370,6 +1370,58 @@ TEST_CASE("worm pits allow walking and birth at their centre without losing thei
     CHECK(walkers.positionOf(*walker).z > 0);
 }
 
+TEST_CASE("G2 library births cannot bypass the ramp wall while upper-floor broods stay elevated",
+          "[generators][alpha-g2-births][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G2");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level());
+    const s32 chosen = GENERATE(18, 22);
+    const u32 seed = GENERATE(1U, 7U, 13U, 29U);
+    CAPTURE(chosen, seed);
+    {
+        Enemies enemies;
+        enemies.open(device, root, &world.collision(), world.level()->maxEnemies, {}, seed);
+        Generators generators;
+        REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), {}, 1,
+                                world.level()->enemies, 5, &world.items()));
+        REQUIRE(static_cast<usize>(chosen) < generators.count());
+        REQUIRE(generators.standing(chosen));
+        const Vec3 at = generators.positionOf(chosen);
+        ViewVolume view;
+        view.position = at + Vec3{0, 20, 0};
+        view.forward = Vec3{0, -1, 0};
+        view.up = Vec3{0, 0, 1};
+        generators.setView(view);
+        const std::array party{EnemyView{.position = at + Vec3{0, 0, 20}}};
+        generators.update(kTicks, enemies, party);
+        REQUIRE(generators.bredOf(chosen) == 1);
+        usize checked = 0;
+        for (s32 i = 0; i < world.level()->maxEnemies; ++i) {
+            if (enemies.alive(i) && enemies.generatorOf(i) == chosen) {
+                const Vec3 born = enemies.positionOf(i);
+                CAPTURE(born.x, born.y, born.z);
+                if (chosen == 22) {
+                    // This lower generator formerly spawned at y6.30777 on object1400
+                    // after moving the wall query above the wall beside its doorway.
+                    CHECK(at.y == Approx(1.0140625f));
+                    CHECK(born.y < 2);
+                } else {
+                    CHECK(born.y == Approx(9.71875f));
+                }
+                ++checked;
+            }
+        }
+        CHECK(checked == 1);
+    }
+}
+
 TEST_CASE("Temple generators can breed at every native collision placement",
           "[game][generators][temple-births][assets]") {
     const auto root =

@@ -1,4 +1,5 @@
 #include <numbers>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -93,6 +94,21 @@ TEST_CASE("an actor walks at its class speed, facing its heading, relative to th
     // Model space is placed at the feet, turned to the heading.
     const Vec4 nose = actor.transform() * Vec4{0.0f, 0.0f, 1.0f, 1.0f};
     REQUIRE(nose.z == Approx(actor.position().z + 1.0f));
+}
+
+TEST_CASE("attention anchors remain separate from collision and camera-follow heights",
+          "[game][players][actor][name-anchor]") {
+    PlayerActor actor;
+    ClassStats stats = warrior();
+    stats.attentionY = 4.4f;
+    actor.spawn(0, {}, &stats, Vec3{1, 2, 3}, 0);
+    CHECK(actor.attentionPoint() == Vec3{1, 6.4f, 3});
+    CHECK(actor.followPoint() == Vec3{1, 4.5f, 3});
+    actor.place(Vec3{4, 5, 6});
+    CHECK(actor.attentionPoint() == Vec3{4, 9.4f, 6});
+    CHECK(actor.followPoint() == Vec3{4, 7.5f, 6});
+    actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    CHECK(actor.attentionPoint().y == PlayerActor::kDefaultFollowHeight);
 }
 
 TEST_CASE("an action that holds the feet still lets the body turn", "[game][players][actor]") {
@@ -298,7 +314,7 @@ TEST_CASE("a footprint does not bridge a broad gap or climb an unreachable landi
     SECTION("broad gap") {}
     SECTION("landing too high") {
         gap = 0.4f;
-        height = 2;
+        height = 3.1f;
     }
     SECTION("landing too low") {
         gap = 0.4f;
@@ -341,6 +357,63 @@ TEST_CASE("the tower's authored stair ramps allow continuous uphill and downhill
             REQUIRE((actor.position().z - before.z) * sign > 0.0009f);
         }
     }
+}
+
+TEST_CASE("a body can reboard a lowered deck whose side is below its wall volume",
+          "[game][players][actor][lift-reboard]") {
+    constexpr f32 kDeck = 1.9375f; // G1's lowered second lift above its north ground
+    const Vec3 up{0, 1, 0};
+    const Vec3 west{-1, 0, 0};
+    auto surfaces = std::vector{
+        triangle({-10, 0, -4}, {10, 0, -4}, {10, 0, 4}, up),
+        triangle({-10, 0, -4}, {10, 0, 4}, {-10, 0, 4}, up),
+        triangle({0, kDeck, -4}, {10, kDeck, -4}, {10, kDeck, 4}, up),
+        triangle({0, kDeck, -4}, {10, kDeck, 4}, {0, kDeck, 4}, up),
+    };
+    f32 wallHeight = kDeck;
+    bool blocked = false;
+    SECTION("the deck side is beneath the native wall sphere") {}
+    SECTION("a taller wall still blocks the approach") {
+        wallHeight = 3;
+        blocked = true;
+    }
+    surfaces.push_back(triangle({0, 0, -4}, {0, wallHeight, -4}, {0, wallHeight, 4}, west));
+    surfaces.push_back(triangle({0, 0, -4}, {0, wallHeight, 4}, {0, 0, 4}, west));
+    WorldCollision collision;
+    collision.build(std::move(surfaces));
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {-2, 0, 0}, 0);
+    for (s32 tick = 0; tick < 60; ++tick) {
+        actor.update(push(1, 0), 0, 1.0f / 60, &collision);
+        actor.fall(1.0f / 60, collision);
+    }
+    if (blocked) {
+        CHECK(actor.position().x <= -actor.radius() + 0.001f);
+        CHECK(actor.position().y == 0);
+    } else {
+        CHECK(actor.position().x > 2.5f);
+        CHECK(actor.position().y == Approx(kDeck));
+    }
+}
+
+TEST_CASE("clearing a low side does not permit walking beyond an unsupported edge",
+          "[game][players][actor][lift-reboard][cliff]") {
+    const Vec3 up{0, 1, 0};
+    const Vec3 west{-1, 0, 0};
+    WorldCollision collision;
+    collision.build({triangle({-10, 0, -4}, {0, 0, -4}, {0, 0, 4}, up),
+                     triangle({-10, 0, -4}, {0, 0, 4}, {-10, 0, 4}, up),
+                     triangle({0, 0, -4}, {0, 1.9f, -4}, {0, 1.9f, 4}, west),
+                     triangle({0, 0, -4}, {0, 1.9f, 4}, {0, 0, 4}, west)});
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {-2, 0, 0}, 0);
+    for (s32 tick = 0; tick < 60; ++tick) {
+        actor.update(push(1, 0), 0, 1.0f / 60, &collision);
+        actor.fall(1.0f / 60, collision);
+    }
+    CHECK(actor.position().x > -actor.radius());
+    CHECK(actor.position().x <= PlayerActor::kFloorEdgeReach);
+    CHECK(actor.position().y == 0);
 }
 
 TEST_CASE("pushing against opposing faces of a thin wall cannot select its far side",

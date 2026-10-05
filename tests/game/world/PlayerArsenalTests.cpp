@@ -38,6 +38,64 @@ struct Fixture {
     }
 };
 
+TEST_CASE("red potion bursts retain all eighteen authored flame emitters",
+          "[game][player-arsenal][alpha-potion-flames][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    REQUIRE(f.classes.load(root / "pdata"));
+    const auto treeIndex = f.weapons.trees.find("MP_FIRE");
+    REQUIRE(treeIndex);
+    const auto& tree = f.weapons.trees.tree(*treeIndex);
+    CHECK(std::ranges::count_if(tree.nodes, [](const auto& node) { return node.particle >= 0; }) ==
+          18);
+    // StartMagicFX (80092DF4) starts MP_FIRE itself: its eighteen PARTCLE children
+    // use template 8 / DRAGONBREATH, rather than a separate code-created fire effect.
+    for (const s32 hz : {30, 60, 120}) {
+        CAPTURE(hz);
+        f.effects.clear();
+        f.arsenal.burstPotion(1, f.actor.position(), 32, false);
+        REQUIRE(f.effects.count() == 1);
+        const auto& effect = f.effects.effect(0);
+        REQUIRE(effect.name == "MP_FIRE");
+        const auto& field = effect.particles.field();
+        REQUIRE(field.size() == 18);
+        for (usize emitter = 0; emitter < field.size(); ++emitter) {
+            CHECK(field.emitter(emitter).descriptor().texture == "DRAGONBREATH");
+            CHECK(field.textureOf(emitter) != &f.device.whiteTexture());
+        }
+        // Check the actual submitted flame quads, not just the mesh rings/sparks.
+        for (s32 tick = 0; tick < hz; ++tick) {
+            f.effects.update(1.0f / static_cast<f32>(hz));
+            if (tick != hz / 2 - 1 && tick != hz - 1) {
+                continue;
+            }
+            CAPTURE(tick);
+            REQUIRE(field.particleCount() > 0);
+            f.device.draws.clear();
+            effect.particles.draw(f.device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+            REQUIRE_FALSE(f.device.draws.empty());
+            bool visible = false;
+            for (const auto& draw : f.device.draws) {
+                REQUIRE(draw.texture != &f.device.whiteTexture());
+                CHECK(draw.state.blend == BlendMode::Additive);
+                for (usize vertex = 0; vertex + 2 < draw.vertices.size(); vertex += 3) {
+                    const auto& a = draw.vertices[vertex];
+                    const auto& b = draw.vertices[vertex + 1];
+                    const auto& c = draw.vertices[vertex + 2];
+                    visible |=
+                        a.color.a > 0 && glm::length(glm::cross(b.position - a.position,
+                                                                c.position - a.position)) > 0;
+                }
+            }
+            CHECK(visible);
+        }
+        f.effects.update(4);
+        CHECK(f.effects.count() == 0);
+    }
+    f.arsenal.clear();
+}
+
 TEST_CASE("every Super Shot volley renders the authored weapon streak until expiry",
           "[game][player-arsenal][super-shot-streak][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();

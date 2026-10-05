@@ -197,6 +197,32 @@ TEST_CASE("wall sweeps respect the authored front face instead of sealing one-wa
     CHECK(collision.sweepWalls({-9, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(0));
 }
 
+TEST_CASE("wall clearance excludes only faces wholly below the caller's volume",
+          "[world][collision][wall-sweep][wall-clearance]") {
+    WorldCollision collision;
+    collision.build({triangle({5, 0, -10}, {5, 1.9f, -10}, {5, 1.9f, 10}, {-1, 0, 0}, 7),
+                     triangle({5, 0, -10}, {5, 1.9f, 10}, {5, 0, 10}, {-1, 0, 0}, 7)});
+    std::vector<WallContact> contacts;
+    // Unchanged cylinder callers still stop at the short face.
+    CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.5f));
+    CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f, &contacts, 2.0f).x == 9);
+    CHECK(contacts.empty());
+
+    // The same moving face blocks again when it rises into the volume. The
+    // cutoff is in world space, including when the object also turns.
+    collision.setMovingObjects(std::array<s32, 1>{7});
+    collision.setObjectTransform(7, glm::translate(Mat4{1}, Vec3{0, 1, 0}));
+    CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f, &contacts, 2.0f).x ==
+          Approx(4.5f));
+    REQUIRE(contacts.size() == 1);
+    CHECK(contacts.front().object == 7);
+    const Mat4 turned =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{0, 1, 0}), kPi * 0.5f, Vec3{0, 1, 0});
+    collision.setObjectTransform(7, turned);
+    CHECK(collision.sweepWalls({0, 0, 0}, {0, 0, -9}, 0.5f, 0.2f, 2.8f, nullptr, 2.0f).z ==
+          Approx(-4.5f));
+}
+
 TEST_CASE("floor edges retain tangential travel without bridging disconnected floors",
           "[world][collision][cliff]") {
     WorldCollision collision;

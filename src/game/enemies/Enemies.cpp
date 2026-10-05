@@ -580,9 +580,12 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                 f32 yawOffset = 0.0f;
                 const Vec3 offset = octant(v, d, yawOffset);
                 Vec3 at = spawn.position + offset;
-                bool clear = settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
-                if (clear && m_collision != nullptr) {
-                    // A clear destination is not sufficient: the birth must not cross a wall.
+                bool clear = true;
+                if (m_collision != nullptr) {
+                    // check_enemy_pos (0x8004F9AC) checks the path out of the generator
+                    // BEFORE FloorCollide selects a landing. Raising this sweep to the
+                    // selected floor lets G2's library births skip a low wall and appear
+                    // on the ramp overhead. Keep the existing body query at birth height.
                     const f32 bottom = at.y + kFootClearance;
                     const f32 top = at.y + enemy.height - kFootClearance;
                     const Vec3 swept =
@@ -590,6 +593,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                     const Vec3 pushed = m_collision->resolveWalls(at, enemy.radius, bottom, top);
                     clear = flatDistance(swept, at) < 0.01f && flatDistance(pushed, at) < 0.01f;
                 }
+                clear = clear && settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
                 clear =
                     clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
                         return box.solid && box.contact(spawn.position, at, 0.5f * enemy.radius);

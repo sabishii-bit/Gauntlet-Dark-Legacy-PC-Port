@@ -576,7 +576,8 @@ std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 abov
 }
 
 Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top,
-                                std::vector<WallContact>* contacts) const {
+                                std::vector<WallContact>* contacts,
+                                std::optional<f32> minimumY) const {
     Vec2 position{from.x, from.z};
     Vec2 remaining{to.x - from.x, to.z - from.z};
     for (s32 pass = 0; pass < kPasses && glm::length(remaining) > kSweepEpsilon; ++pass) {
@@ -590,6 +591,11 @@ Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f3
                 if (contactOnly(triangle.object) || (triangle.objectFlags & kWallQueryFlags) == 0 ||
                     (triangle.objectFlags & kLiquidSurface) != 0 ||
                     std::abs(triangle.normal.y) >= kFloorNormalY) {
+                    return;
+                }
+                if (minimumY && std::ranges::all_of(triangle.vertices, [&](const Vec3& point) {
+                        return point.y < *minimumY;
+                    })) {
                     return;
                 }
                 const Vec3 step{remaining.x, 0, remaining.y};
