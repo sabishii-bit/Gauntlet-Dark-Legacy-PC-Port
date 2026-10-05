@@ -96,22 +96,30 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
 
 void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) {
     critter.targets.clear();
+    critter.targetYaw = critter.yaw;
     const bool boss = critter.definition->kind() == CombatantKind::Boss;
     const TargetCriteria& sight = critter.definition->sight();
+    const Vec3 origin = targetingOrigin(critter);
     for (const EnemyView& view : players) {
         if (critter.state != State::Active || critter.blindTicks > 0 || view.hidden ||
             (!boss && view.invisible) || view.player < 0 ||
             static_cast<usize>(view.player) >= kPlayerSlots) {
             continue;
         }
-        const f32 distance = flatDistance(view.position, critter.position);
-        const f32 bearing = yawBetween(critter.position, view.position) - critter.yaw;
-        if (!sight.allows(distance, bearing, view.position.y - critter.position.y) ||
+        // Sight measures the player's collision centre against the body's rotated
+        // TYPE origin, not either actor's feet. Attack retargeting keeps this geometry.
+        const Vec3 target =
+            view.position + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
+        const Vec3 delta = target - origin;
+        const f32 distance = glm::length(Vec2{delta.x, delta.z});
+        const Vec2 direction = distance > 0 ? Vec2{delta.x, delta.z} / distance : Vec2{0};
+        const f32 bearing = yawBetween(origin, target) - critter.yaw;
+        if (!sight.allows(distance, bearing, delta.y) ||
             !sight.allowsPhase(attackRate(critter),
                                flatDistance(critter.position, critter.homePosition))) {
             continue;
         }
-        const f32 score = targetScore(critter, view.position);
+        const f32 score = targetScore(critter, target);
         // On its round of the lookouts it takes only a player within its placement's sight
         // (CritterGetSingleTargetPlayer's visrad).
         if (critter.patrol.active() && critter.patrol.sight() > 0.0f &&
@@ -122,7 +130,7 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
         const f32 anger = boss ? inverseAnger(critter, static_cast<usize>(view.player)) : 1.0f;
         critter.targets.push_back({view.player, distance,
                                    score * anger * (view.recentlyHit ? kRecentlyHitPenalty : 1),
-                                   anger});
+                                   anger, direction});
     }
     std::ranges::sort(critter.targets, [](const Target& a, const Target& b) {
         return a.score != b.score ? a.score < b.score : a.player < b.player;
@@ -220,11 +228,22 @@ void Combatant::chooseFamilyTargets(std::span<const EnemyView> players) {
     }
 }
 
+Vec3 Combatant::targetingOrigin(const Actor& critter) {
+    const Actor* root = &critter;
+    while (root->parent != nullptr) {
+        root = &root->parent->m_actor;
+    }
+    // Child parts inherit the root's targeting centre. A head's own mesh
+    // attachment and TYPE origin do not relocate its sight window.
+    return partPosition(*root, {});
+}
+
 f32 Combatant::targetScore(const Actor& critter, const Vec3& position) {
     constexpr f32 kSquarelyAhead = 0.5f;
-    const f32 distance = flatDistance(position, critter.position);
-    const f32 dot = std::cos(wrapAngle(yawBetween(critter.position, position) - critter.yaw -
-                                       critter.definition->sight().yaw));
+    const Vec3 origin = targetingOrigin(critter);
+    const f32 distance = flatDistance(position, origin);
+    const f32 dot = std::cos(
+        wrapAngle(yawBetween(origin, position) - critter.yaw - critter.definition->sight().yaw));
     return dot > kSquarelyAhead ? distance / dot : 2.0f * distance;
 }
 
@@ -254,9 +273,14 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
     f32 bearing = kPi;
     f32 vertical = 0.0f;
     if (view != nullptr) {
-        distance = critter.targetDistance;
-        bearing = wrapAngle(yawBetween(critter.position, view->position) - critter.yaw);
-        vertical = view->position.y - critter.position.y;
+        // Ready selection calls CalcTarget again, including its vertical gate;
+        // attack selection instead consumes the previously gathered target record.
+        const Vec3 origin = targetingOrigin(critter);
+        const Vec3 target =
+            view->position + Vec3{0, view->collisionHeight.value_or(0.5f * view->height), 0};
+        distance = flatDistance(target, origin);
+        bearing = wrapAngle(yawBetween(origin, target) - critter.yaw);
+        vertical = target.y - origin.y;
     }
     // With nobody in its sights, one on its round walks to the next lookout.
     if (view == nullptr) {

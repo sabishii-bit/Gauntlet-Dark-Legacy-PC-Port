@@ -47,6 +47,128 @@ TEST_CASE("the minds are found by the original's way numbers, strangers wanderin
     REQUIRE(wrapAngle(1.0f) == 1.0f);
 }
 
+TEST_CASE("delegated enemy strategies reset their own state only when the effective way changes",
+          "[game][enemies][mind][mind-transition]") {
+    // format_brain 0x80050394 runs after move_logic's delegation gates. do_enemies retains
+    // the effective algorithm in prev_ai before restoring the authored algorithm each tick.
+    const auto& prowl = enemyMindOf(kProwlWay);
+    MindMemory memory;
+    prowl.think(memory, senseAhead(20));
+    memory.heading = 0.4f;
+    memory.headingBefore = memory.heading;
+    memory.deadEnd = 24;
+    memory.route = -2;
+    memory.collided = 6;
+    memory.counter = 3;
+
+    const auto close = prowl.think(memory, senseAhead(4));
+    CHECK(close.heading == Approx(0).margin(0.000001));
+    CHECK(memory.deadEnd == 0);
+    CHECK(memory.route == 1);
+    CHECK(memory.collided == 0);
+
+    memory.deadEnd = 12;
+    prowl.think(memory, senseAhead(4));
+    CHECK(memory.deadEnd == 10); // the same delegated seek does not reformat every tick
+
+    prowl.think(memory, senseAhead(20));
+    CHECK(memory.deadEnd == 0);
+    CHECK(memory.counter == 0); // a resumed prowl starts a fresh four-turn count
+}
+
+TEST_CASE("enemy births initialize the authored strategy before any temporary fallback",
+          "[game][enemies][mind][mind-transition]") {
+    // init_enemy_vars calls format_brain before the first movement update.
+    for (const s32 way : {kThrowWay, kBombWay, kSkirmishWay, kSkirmishBombWay}) {
+        MindMemory memory;
+        initializeEnemyMind(memory, way, 19);
+        CHECK(memory.effectiveWay == way);
+        CHECK(memory.fuse == 9);
+        auto sense = senseAhead(24);
+        const auto& mind = enemyMindOf(way);
+        CHECK_FALSE(mind.think(memory, sense).throwing);
+        CHECK(memory.fuse == 7);
+        mind.think(memory, sense);
+        CHECK(memory.fuse == 5);
+    }
+    for (const s32 way : {kStandCastWay, kRangeCastWay, kCastWay, kLungeWay}) {
+        MindMemory memory;
+        memory.heading = 0.4f;
+        memory.headingBefore = 0.3f;
+        initializeEnemyMind(memory, way, 37);
+        CHECK(memory.effectiveWay == way);
+        CHECK(memory.primed);
+        CHECK(memory.heading == 0.4f);
+        CHECK(memory.headingBefore == 0.3f);
+        if (way == kLungeWay) {
+            CHECK(memory.counter == 7);
+        } else {
+            CHECK(memory.fuse == (way == kCastWay ? 97 : 7));
+        }
+    }
+}
+
+TEST_CASE("unseen wandering does not carry a collision hold into a reacquired target",
+          "[game][enemies][mind][mind-transition]") {
+    const auto& seek = enemyMindOf(kSeekWay);
+    MindMemory memory;
+    MindSense unseen;
+    unseen.wanderClear = [](f32) { return false; };
+    seek.think(memory, unseen);
+    REQUIRE(memory.deadEnd == 20);
+    memory.headingBefore = memory.heading;
+    const auto found = seek.think(memory, senseAhead());
+    CHECK(memory.deadEnd == 0);
+    CHECK(found.heading == Approx(0).margin(0.000001));
+}
+
+TEST_CASE(
+    "ranged casters restart their entry delay after a close chase without resetting each tick",
+    "[game][enemies][mind][mind-transition]") {
+    for (const s32 way : {kStandCastWay, kRangeCastWay}) {
+        MindMemory memory;
+        const auto& mind = enemyMindOf(way);
+        auto distant = senseAhead(12);
+        distant.random = 9;
+        mind.think(memory, distant);
+        CHECK(memory.fuse == 7);
+        mind.think(memory, senseAhead(4));
+        const auto resumed = mind.think(memory, distant);
+        CHECK(resumed.action == EnemyAction::Ready);
+        CHECK(memory.fuse == 7);
+        mind.think(memory, distant);
+        CHECK(memory.fuse == 5);
+    }
+}
+
+TEST_CASE(
+    "temporary pursuits preserve shared range and zig-zag flags while resetting entry counters",
+    "[game][enemies][mind][mind-transition]") {
+    // format_brain preserves flag1/mode1 for 29, and flag1/flag2/mode1 for 14.
+    const auto& range = enemyMindOf(kRangeCastWay);
+    MindMemory keeper;
+    initializeEnemyMind(keeper, kRangeCastWay, 0);
+    range.think(keeper, senseAhead(7));
+    REQUIRE(keeper.mode == 1);
+    range.think(keeper, senseAhead(4));
+    range.think(keeper, senseAhead(9));
+    CHECK(keeper.mode == 1); // still backing off until the ten-unit boundary
+
+    const auto& zig = enemyMindOf(kZigZagWay);
+    MindMemory memory;
+    initializeEnemyMind(memory, kZigZagWay, 0);
+    memory.zigZag = {.count = 10, .side = -1, .spread = 3, .hold = 20, .swings = 2};
+    zig.think(memory, senseAhead(4));
+    REQUIRE(memory.effectiveWay == kSeekWay);
+    zig.think(memory, senseAhead(20));
+    CHECK(memory.effectiveWay == kZigZagWay);
+    CHECK(memory.zigZag.count == 43); // reentry resets count, so a new quarter-turn occurs
+    CHECK(memory.zigZag.hold == 0);
+    CHECK(memory.zigZag.side == 1);
+    CHECK(memory.zigZag.spread == 3);
+    CHECK(memory.zigZag.swings == 3);
+}
+
 TEST_CASE("the chase goes straight for its player, and round a corner the nearer way, further "
           "round with every bump",
           "[game][enemies][mind]") {
@@ -67,6 +189,10 @@ TEST_CASE("the chase goes straight for its player, and round a corner the nearer
     blind.recognized = false;
     intent = chase.think(memory, blind);
     REQUIRE(intent.heading == Approx(kPi / 4.0f));
+    // Reacquiring the target starts a fresh Chase before testing a later Chase collision.
+    chase.think(memory, sense);
+    REQUIRE(memory.collided == 0);
+    REQUIRE(memory.deadEnd == 0);
     // A dead stop against a wall: the heading is held ten ticks, one bump counted; against
     // another enemy, fifteen.
     sense = senseAhead();
@@ -392,6 +518,7 @@ TEST_CASE("the zig-zagger swings a quarter turn at a time and aims afresh once i
     const MindSense sense = senseAhead(20.0f); // the player straight ahead, along +z
     // Its first tick swings it a quarter turn, always the same way, and it walks on that way.
     const MindIntent intent = zig.think(memory, sense);
+    zig.afterMove(memory, sense, sense);
     CHECK(intent.heading == Approx(-kPi / 2.0f));
     CHECK(intent.pace == 1.0f);
     CHECK(memory.zigZag.count == 43);
@@ -401,6 +528,7 @@ TEST_CASE("the zig-zagger swings a quarter turn at a time and aims afresh once i
     s32 ticks = 2;
     for (; ticks < 600 && memory.zigZag.hold != 30; ticks += 2) {
         zig.think(memory, sense);
+        zig.afterMove(memory, sense, sense);
     }
     CHECK(ticks == 226); // the sixth swing, 43 ticks after the first and 45 apart
     CHECK(memory.zigZag.swings == 0);
@@ -427,6 +555,7 @@ TEST_CASE("generator zig-zag births alternate their swings instead of circling",
         sense.ticks = 1;
         for (s32 tick = 0; tick < 180; ++tick) {
             const auto intent = zig.think(memory, sense);
+            zig.afterMove(memory, sense, sense);
             // The first swing reverses the birth offset, then alternates either side
             // of the generator's forward direction, never turning away from its player.
             const s32 swing = tick == 0 ? 0 : (tick + 1) / 45;
@@ -475,6 +604,8 @@ TEST_CASE("zig-zaggers judge drift against a decoy but reseed toward the actual 
     SECTION("a blocked step reseeds around the body rather than its decoy") {
         sense.blocked = true;
         const auto intent = zig.think(memory, sense);
+        CHECK(memory.heading == Approx(kPi / 8));
+        zig.afterMove(memory, sense, sense);
         // The current step is taken before the fresh aim applies to the following tick.
         CHECK(intent.heading == Approx(kPi / 8));
         CHECK(memory.heading == Approx(kPi / 4));
@@ -487,6 +618,7 @@ TEST_CASE("zig-zaggers judge drift against a decoy but reseed toward the actual 
         memory.zigZag.swings = 4;
         sense.targetPosition = {0, 0, -20};
         CHECK(zig.think(memory, sense).heading == Approx(0).margin(0.000001));
+        zig.afterMove(memory, sense, sense);
         CHECK(memory.heading == Approx(-kPi / 4));
         CHECK(memory.zigZag.swings == 0);
         CHECK(memory.zigZag.hold == 30);
@@ -498,6 +630,7 @@ TEST_CASE("zig-zaggers judge drift against a decoy but reseed toward the actual 
         sense.targetPosition = {0, 0, 20};
         sense.targetPlayerPosition = Vec3{0, 0, -20};
         zig.think(memory, sense);
+        zig.afterMove(memory, sense, sense);
         CHECK(memory.heading == Approx(0).margin(0.000001));
         CHECK(memory.zigZag.swings == 4);
         CHECK(memory.zigZag.hold == -sense.ticks);
@@ -553,6 +686,41 @@ TEST_CASE("the ranged casters wait, then attack from where they stand or keep th
     CHECK(intent.turn);
     CHECK(range.think(keeper, senseAhead(15.0f)).action != EnemyAction::Walk);
     CHECK(keeper.mode == 0);
+}
+
+TEST_CASE("zig-zag completion uses the moved position and only the handler that actually ran",
+          "[game][enemies][mind][zigzag-parity]") {
+    const auto& zig = enemyMindOf(kZigZagWay);
+    MindMemory memory;
+    memory.heading = kPi / 8;
+    memory.zigZag.count = 10;
+    memory.zigZag.side = 1;
+    auto before = senseAhead();
+    before.blocked = true; // last update's blockage must not cause this update's reseed
+    zig.think(memory, before);
+    CHECK(memory.heading == Approx(kPi / 8));
+    auto after = before;
+    after.position = {4, 0, 0};
+    after.blocked = false;
+    zig.afterMove(memory, before, after);
+    CHECK(memory.heading == Approx(kPi / 8));
+    CHECK(memory.zigZag.hold == -2);
+
+    zig.think(memory, before);
+    after.blocked = true;
+    zig.afterMove(memory, before, after);
+    CHECK(memory.heading == Approx(std::atan2(-4.0f, 20.0f) + kPi / 4));
+    CHECK(memory.zigZag.hold == 30);
+
+    auto close = senseAhead(4);
+    zig.think(memory, close);
+    const auto held = memory.zigZag;
+    close.blocked = true;
+    zig.afterMove(memory, close, close);
+    CHECK(memory.effectiveWay == kSeekWay);
+    CHECK(memory.zigZag.count == held.count);
+    CHECK(memory.zigZag.hold == held.hold);
+    CHECK(memory.zigZag.swings == held.swings);
 }
 
 TEST_CASE("the patroller walks the lookouts until a player comes near", "[game][enemies][mind]") {
@@ -622,14 +790,13 @@ TEST_CASE("the caster seeks and casts on its wait, wanders unseen, and fights cl
     MindIntent intent = cast.think(memory, sense);
     REQUIRE(intent.action == EnemyAction::PowerAttack);
     REQUIRE(intent.heading == Approx(0.0f));
-    REQUIRE(memory.deadEnd == 21); // counted down as it seeks, this tick too
+    REQUIRE(memory.deadEnd == 0); // move_logic30's Seek delegate reformats against prev_ai=30
     REQUIRE(memory.fuse == 23 + 90);
-    for (s32 tick = 2; tick < 23; tick += 2) {
-        REQUIRE(cast.think(memory, sense).action == EnemyAction::PowerAttack);
-    }
-    // The window out, it walks until its wait is.
+    // The animation owns completion of the requested attack; AI does not request it for
+    // an invented 23-tick window after the delegate has cleared dead_end.
     intent = cast.think(memory, sense);
     REQUIRE(intent.action == EnemyAction::Walk);
+    REQUIRE(memory.fuse == 23 + 90 - sense.ticks);
     MindMemory weak;
     weak.primed = true;
     sense.tier = 1;

@@ -757,8 +757,9 @@ TEST_CASE("exact-party generators can appear offscreen but never pop into an obs
     CHECK(device.draws.empty() == encountered);
 }
 
-TEST_CASE("boss generators use the stage record and breed after the birth delay",
-          "[spider][assets][stop-time]") {
+TEST_CASE(
+    "boss generators use the stage record without mistaking animation startup for birth delay",
+    "[spider][assets][stop-time]") {
     const auto root =
         test::assetOrSkip("MONSTERS/SPI/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -780,22 +781,67 @@ TEST_CASE("boss generators use the stage record and breed after the birth delay"
     REQUIRE(generators.tierOf(0) == 1);
     REQUIRE(generators.mostOf(0) == 10);
     REQUIRE(generators.intervalOf(0) == 5);
-    REQUIRE(generators.countdownOf(0) == 40);
+    REQUIRE(generators.countdownOf(0) == 0);
     REQUIRE_FALSE(generators.bodyShown(0));
     const std::vector<EnemyView> party{{0, {0, 0, 20}, 1, 6}};
-    generators.update(20, enemies, party, {}, true);
-    CHECK(generators.countdownOf(0) == 20);
-    generators.update(20, enemies, party, {}, true);
-    CHECK(generators.countdownOf(0) == 0);
+    // SetItem stores 40 in activetime (+0xc6), but zero in data.gen.counter (+0xe4).
+    // generate_now reads the latter; Stop Time prevents its ready birth independently.
     generators.update(600, enemies, party, {}, true);
     REQUIRE(generators.bredOf(0) == 0);
     generators.update(2, enemies, party);
     REQUIRE(generators.bredOf(0) == 1);
+    REQUIRE(generators.countdownOf(0) == 30);
+    generators.update(10, enemies, party, {}, true);
+    CHECK(generators.countdownOf(0) == 20);
+    generators.update(20, enemies, party, {}, true);
+    CHECK(generators.countdownOf(0) == 0);
+    generators.update(600, enemies, party, {}, true);
+    CHECK(generators.bredOf(0) == 1);
+    generators.update(2, enemies, party);
+    REQUIRE(generators.bredOf(0) == 2);
     const auto event = generators.strike(0, 10, 0);
     REQUIRE(event.has_value());
     REQUIRE(event->destroyed);
     generators.update(600, enemies, party);
+    REQUIRE(generators.bredOf(0) == 2);
+}
+
+TEST_CASE(
+    "boss generators follow authored camera activation rather than an unconditional exemption",
+    "[game][generators][boss-generator-activation]") {
+    const bool alwaysActive = GENERATE(false, true);
+    const auto root = test::scratchDirectory("boss-generator-activation");
+    writeGeneratorArchive(root);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    ItemArchive noArt;
+    ItemInfo info;
+    info.type = ItemInfo::kGenerator;
+    info.name = "BOSSGEN";
+    info.hitPoints = 10;
+    info.height = 5;
+    info.radius = 2;
+    info.activeType = alwaysActive ? 65 : 5;
+    REQUIRE(generators.placeBoss(device, info, noArt, enemies, kGruntKind, Mat4{1}, nullptr));
+    // PlaceItem -> SetItem -> AddItemSub preserves the descriptor's activeType;
+    // do_items has no BOSSGEN exception to its camera/always-active dispatch gate.
+    generators.setView(lookingAt({10000, 0, 0}));
+    const std::array party{EnemyView{.position = {0, 0, 30}}};
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(0) == (alwaysActive ? 1 : 0));
+    ViewVolume edge;
+    edge.position = {-35, 0, -20};
+    REQUIRE_FALSE(edge.sees({}, 10));
+    REQUIRE(edge.sees({}, 40));
+    generators.setView(edge);
+    generators.update(kTicks, enemies, party);
     REQUIRE(generators.bredOf(0) == 1);
+    const s32 countdown = generators.countdownOf(0);
+    generators.setView(lookingAt({10000, 0, 0}));
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.countdownOf(0) == countdown - (alwaysActive ? kTicks : 0));
 }
 
 TEST_CASE("boss generator artwork distinguishes a landed egg from looping bodies",

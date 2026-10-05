@@ -379,6 +379,196 @@ TEST_CASE("boss anger remembers each player's damage exchange for fifteen second
     CHECK(actor.target() == -1);
 }
 
+TEST_CASE("combatant sight measures player effect height from its elevated targeting centre",
+          "[combatant][multiplayer-targeting][combatant-target-origin]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":100,"floorOffset":5,
+                "originOffset":[0,7,0],"target":{"maxVertical":2}}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 2;
+    player.height = 100; // Visual height must not replace the native effect-position offset.
+    player.collisionHeight = 3.0f;
+    player.position = {0, 9, 10};
+    bool expected = true;
+    SECTION("centre") {}
+    SECTION("upper inclusive boundary") {
+        player.position.y = 11;
+    }
+    SECTION("lower inclusive boundary") {
+        player.position.y = 7;
+    }
+    SECTION("above the upper boundary") {
+        player.position.y = 11.01f;
+        expected = false;
+    }
+    SECTION("below the lower boundary") {
+        player.position.y = 6.99f;
+        expected = false;
+    }
+    SECTION("height fallback for a view without a native collision centre") {
+        player.height = 6;
+        player.collisionHeight.reset();
+    }
+    actor.update(2, 1.0f / 30, std::array{player});
+    CHECK(actor.target() == (expected ? 2 : -1));
+}
+
+TEST_CASE("combatant sight rotates an offset origin before testing distance and facing",
+          "[combatant][multiplayer-targeting][combatant-target-origin]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":100,"originOffset":[0,3,5],
+                "target":{"maxDistance":10,"minDot":0.5}}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    constexpr f32 kQuarterTurn = 1.5707963267948966f;
+    REQUIRE(actor.spawn(assets, 0, {}, kQuarterTurn, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 2;
+    player.position = {13, 0, 0};
+    bool expected = true;
+    SECTION("inside the shifted distance window") {}
+    SECTION("past the shifted distance window") {
+        player.position.x = 15.01f;
+        expected = false;
+    }
+    SECTION("ahead of the feet but behind the targeting centre") {
+        player.position.x = 2;
+        expected = false;
+    }
+    actor.update(2, 1.0f / 30, std::array{player});
+    CHECK(actor.target() == (expected ? 2 : -1));
+}
+
+TEST_CASE("ready movement checks effect-position height rather than floor height",
+          "[combatant][combatant-target-origin][critter-ready-selection]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"originOffset":[0,10,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":90},
+               {"name":"STEP","anim":"STEP","type":52,
+                "target":{"maxVertical":1}}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 2;
+    player.position = {0, 8, 10};
+    bool expected = true;
+    SECTION("upper inclusive boundary") {}
+    SECTION("lower inclusive boundary") {
+        player.position.y = 6;
+    }
+    SECTION("above the upper boundary") {
+        player.position.y = 8.01f;
+        expected = false;
+    }
+    SECTION("below the lower boundary") {
+        player.position.y = 5.99f;
+        expected = false;
+    }
+    actor.update(2, 1.0f / 30, std::array{player});
+    CHECK(actor.moveName() == (expected ? "STEP" : "READY"));
+}
+
+TEST_CASE("child target sight inherits the parent's targeting origin rather than its own mesh",
+          "[combatant][multiplayer-targeting][combatant-target-origin]") {
+    const auto root = test::headedBodyAssets();
+    writeTextFile(root / "critter/CHIMERA.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":1000,"childIndex":1,
+                "originOffset":[0,8,5],
+                "target":{"maxDistance":10,"minDot":0.5,"maxVertical":1}},
+               {"rootNode":"HEAD_L","moveCount":1,"maxHealth":100,"parentIndex":0,
+                "childIndex":-1,"floorOffset":50,"originOffset":[100,100,100],
+                "target":{"maxDistance":10,"minDot":0.5,"maxVertical":1}}],
+      "moves":[{"name":"READY","anim":"READY","type":32}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("CHIMERA"), 'A'));
+    Combatant actor;
+    constexpr f32 kQuarterTurn = 1.5707963267948966f;
+    REQUIRE(actor.spawn(assets, 40, {}, kQuarterTurn, nullptr, {}, 'A'));
+    EnemyView player;
+    player.player = 2;
+    player.position = {10, 5, 0};
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.child(41));
+    CHECK(actor.target() == 2);
+    CHECK(actor.child(41)->target() == 2);
+}
+
+TEST_CASE("child attack selection retains the target geometry sampled before its parent moves",
+          "[combatant][multiplayer-targeting][combatant-target-origin]") {
+    const auto root = test::headedBodyAssets();
+    writeTextFile(root / "critter/CHIMERA.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":1000,"childIndex":1,"roamRadius":100},
+               {"rootNode":"HEAD_L","moveIndex":1,"moveCount":2,"maxHealth":100,
+                "parentIndex":0,"childIndex":-1}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"speed":60},
+               {"name":"READY","anim":"READY","type":32,"interrupt":90},
+               {"name":"ATTACK","anim":"SPIT","type":128,
+                "target":{"minDistance":10,"minDot":0.88}}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("CHIMERA"), 'A'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'A'));
+    EnemyView player;
+    player.player = 2;
+    player.position = {5, 0, 10};
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.child(41));
+    REQUIRE(actor.position().z == Approx(2));
+    CHECK(actor.child(41)->moveName() == "ATTACK");
+}
+
+TEST_CASE("child attack selection uses the family's facing before the parent turns",
+          "[combatant][multiplayer-targeting][combatant-target-origin]") {
+    const auto root = test::headedBodyAssets();
+    writeTextFile(root / "critter/CHIMERA.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":1,"maxHealth":1000,"childIndex":1},
+               {"rootNode":"HEAD_L","moveIndex":1,"moveCount":2,"maxHealth":100,
+                "parentIndex":0,"childIndex":-1}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"turnRate":30},
+               {"name":"READY","anim":"READY","type":32,"interrupt":90},
+               {"name":"ATTACK","anim":"SPIT","type":128,
+                "target":{"minDot":0.95}}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("CHIMERA"), 'A'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'A'));
+    EnemyView player;
+    player.player = 2;
+    player.position = {5, 0, 10};
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.child(41));
+    REQUIRE(actor.yaw() == Approx(std::atan2(5.0f, 10.0f)));
+    // BossAI selects the child before CritterRotate. Turning into the cone
+    // makes it eligible next update, not retroactively in this one.
+    CHECK(actor.child(41)->moveName() == "READY");
+    actor.update(2, 1.0f / 30, std::array{player});
+    CHECK(actor.child(41)->moveName() == "ATTACK");
+}
+
 TEST_CASE("boss move selection uses the anger-ranked eligible roster",
           "[combatant][multiplayer-targeting]") {
     const auto root = familyAssets();

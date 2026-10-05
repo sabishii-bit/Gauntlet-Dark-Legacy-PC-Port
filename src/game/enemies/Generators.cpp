@@ -311,9 +311,12 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.kind = kind;
     generator.tier = 1;
     generator.state = 1;
-    // PlaceItem's default instance has strength one, AI zero and a forty-tick birth wait.
+    // The default instance has strength one and AI zero. Its forty-tick item
+    // animation startup is separate from the brood counter, which starts ready.
     generator.algorithm = 0;
-    generator.countdown = 40;
+    generator.countdown = 0;
+    generator.viewRadius = kGeneratorViewScale * std::max(info.radius, info.height);
+    generator.alwaysActive = (info.activeType & 0x40U) != 0;
     generator.most = static_cast<s32>(static_cast<f32>(kDefaultMost[0]) * m_scales.most);
     generator.interval = static_cast<s32>(static_cast<f32>(kDefaultInterval[0]) * m_scales.rate);
     generator.health = generator.threshold =
@@ -413,8 +416,8 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     }
     // Refresh the entire obstacle roster before any generator attempts a birth.
     for (Generator& generator : m_generators) {
-        const bool seen = generator.boss || !m_view.has_value() ||
-                          m_view->sees(generator.position, generator.viewRadius);
+        const bool seen =
+            !m_view.has_value() || m_view->sees(generator.position, generator.viewRadius);
         updatePresence(generator, seen);
     }
     // uncouple_enemy releases quota before the death animation. A patrol's
@@ -422,8 +425,8 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     applyBroodEvents(enemies);
     for (usize g = 0; g < m_generators.size(); ++g) {
         Generator& generator = m_generators[g];
-        const bool seen = generator.boss || !m_view.has_value() ||
-                          m_view->sees(generator.position, generator.viewRadius);
+        const bool seen =
+            !m_view.has_value() || m_view->sees(generator.position, generator.viewRadius);
         if (generator.presence != Generator::Presence::Shown) {
             continue;
         }

@@ -265,6 +265,12 @@ TEST_CASE("the eagle gargoyle breathes fire on a player near and throws its fire
     const auto breath = data.moveNamed("BREATH");
     REQUIRE(breath.has_value());
     REQUIRE(data.moves()[*breath].type == 131);
+    REQUIRE(data.originOffset().z == 5.0f);
+    REQUIRE(data.moves()[*breath].target.minDistance == 6.0f);
+    REQUIRE(data.moves()[*breath].target.maxDistance == 20.0f);
+    const auto bite = data.moveNamed("BITE");
+    REQUIRE(bite.has_value());
+    REQUIRE(data.moves()[*bite].target.maxDistance == 10.0f);
     REQUIRE(data.damage(data.moves()[*breath].damage0)->type == AttackDefinition::kBreath);
     // A player thirty ahead: past its entrance it throws the fireball, the shot leaving the
     // head at the move's launch frame, aimed at the player's middle.
@@ -310,13 +316,14 @@ TEST_CASE("the eagle gargoyle breathes fire on a player near and throws its fire
     REQUIRE(hits[0].direction.z > 0.0f);
     projectiles.clear(effects);
     effects.clear();
-    // A player twelve ahead is breathed on instead: contacts of five, held off by the
-    // player's breath gap.
+    // Twelve ahead of its TYPE targeting origin (five ahead of its feet) is
+    // beyond the bite/claw window: breath contacts of five, held off by the
+    // player's breath gap. Feet z12 is only seven from that origin and invites melee.
     Critters near;
     near.open(device, root, &collision, EnemyScales{}, 'A');
     const auto other = near.spawn(CombatantKind::Gargoyle, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
     REQUIRE(other.has_value());
-    const std::vector<EnemyView> close{playerAt(Vec3{0.0f, 0.0f, 12.0f})};
+    const std::vector<EnemyView> close{playerAt(Vec3{0.0f, 0.0f, 17.0f})};
     std::vector<CombatBlow> blows;
     bool breathed = false;
     for (s32 i = 0; i < 900 && blows.empty(); ++i) {

@@ -474,9 +474,7 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     if (spawn.patrolBirth) {
         enemy.algorithm = kPatrolWay; // generate_single overrides the kind's remapping.
     }
-    if (enemy.algorithm == kSeekWay || enemy.algorithm == kLurkWay || enemy.algorithm == kCastWay) {
-        enemy.mind.route = 1; // format_brain's initial corner-search side.
-    }
+    initializeEnemyMind(enemy.mind, enemy.algorithm, m_random());
     enemy.generator = spawn.generator;
     enemy.bred = spawn.generator >= 0 && !spawn.patrolBirth;
     enemy.birth = spawn.placed ? Birth::Placement : Birth::Brood;
@@ -1354,6 +1352,12 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
                       (paceOf(enemy.kind) * intent.pace * static_cast<f32>(ticks));
     move(enemy, slot, ticks, static_cast<f32>(ticks) / static_cast<f32>(kTicksPerSecond), step,
          players, obstacles);
+    if (!retreat.has_value() && enemy.mind.effectiveWay == kZigZagWay) {
+        // The zig-zagger re-aims after movement has established this step's position
+        // and contacts, rather than reacting to the previous update's collision.
+        enemyMindOf(algorithm).afterMove(enemy.mind, sensed,
+                                         sense(enemy, slot, ticks, players, obstacles));
+    }
 }
 
 // ---- bodies ------------------------------------------------------------------------------

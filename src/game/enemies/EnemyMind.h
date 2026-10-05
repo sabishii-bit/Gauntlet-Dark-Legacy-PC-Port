@@ -26,6 +26,7 @@ struct ZigZag {
 
 /** What an enemy remembers between ticks for its mind's sake. */
 struct MindMemory {
+    s32 effectiveWay = -1;    ///< the handler that actually ran, after temporary delegations
     f32 heading = 0.0f;       ///< the way it means to go
     f32 headingBefore = 0.0f; ///< the way it meant to go before that
     s32 route = 0;            ///< which way round a corner: negative left, positive right
@@ -129,11 +130,18 @@ public:
     virtual ~EnemyMind() = default;
     virtual std::string_view name() const = 0;
     virtual MindIntent think(MindMemory& memory, const MindSense& sense) const = 0;
+    /** Complete decisions that depend on the body's freshly resolved movement. */
+    virtual void afterMove([[maybe_unused]] MindMemory& memory,
+                           [[maybe_unused]] const MindSense& before,
+                           [[maybe_unused]] const MindSense& after) const {}
 };
 
 /** The mind that goes about the original's way number `algorithm`; a stranger's is the
  * wanderer's. */
 const EnemyMind& enemyMindOf(s32 algorithm);
+
+/** Initialize an enemy's strategy at birth, including the strategy's randomized hold. */
+void initializeEnemyMind(MindMemory& memory, s32 algorithm, u32 random);
 
 /** Whether a body of this way runs from a lit suicide bomber near it: the ways whose
  * move_logic checks FoundSuicideBomber first. */

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -37,10 +38,16 @@ s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria
             if (player == nullptr || player->hidden) {
                 continue;
             }
-            const Vec3 delta = player->position - source.position;
-            const f32 distance = glm::length(Vec2{delta.x, delta.z});
-            const f32 bearing = std::atan2(delta.x, delta.z) - source.yaw;
-            const bool eligible = phase && criteria.allows(distance, bearing, delta.y);
+            // Retargeting uses the geometry gathered before the whole family
+            // chooses moves, without repeating sight's vertical gate. Updating
+            // the body first must not move or turn its child's selection window.
+            const f32 distance = candidate.distance;
+            const f32 heading = source.targetYaw + criteria.yaw;
+            const f32 dot =
+                glm::dot(candidate.direction, Vec2{std::sin(heading), std::cos(heading)});
+            const bool eligible = phase && distance >= criteria.minDistance &&
+                                  (criteria.maxDistance <= 0 || distance <= criteria.maxDistance) &&
+                                  dot >= criteria.minDot;
             // ReCalcTarget's rejected scores still rank MoveSetup's fallback. A player
             // too near outranks one too far, then one outside the cone, then the rate gate.
             f32 score = distance * candidate.inverseAnger;
@@ -178,8 +185,12 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
     }
     critter.target = playerChoice;
     critter.moveTarget = playerChoice;
-    if (const EnemyView* target = viewOf(players, playerChoice)) {
-        const Vec3 delta = target->position - critter.position;
+    const auto selected = std::ranges::find(critter.targets, playerChoice, &Target::player);
+    if (selected != critter.targets.end()) {
+        critter.targetDistance = selected->distance;
+    } else if (const EnemyView* target = viewOf(players, playerChoice)) {
+        // GRABAGAIN can retain a held player absent from this frame's sight roster.
+        const Vec3 delta = target->position - targetingOrigin(critter);
         critter.targetDistance = glm::length(Vec2{delta.x, delta.z});
     }
     critter.pattern = patternChoice;

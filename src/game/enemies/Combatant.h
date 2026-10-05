@@ -180,6 +180,7 @@ private:
         f32 distance = 0;
         f32 score = 0;
         f32 inverseAnger = 1;
+        Vec2 direction{0}; ///< horizontal direction captured with distance by CalcTarget
     };
     enum class State : u8 { Inactive, Active, Dying };
     struct HitNode {
@@ -214,6 +215,7 @@ private:
         Vec3 push{0.0f, 0.0f, 0.0f};
         s32 target = -1;
         f32 targetDistance = 100000.0f;
+        f32 targetYaw = 0; ///< family facing when this update's target roster was gathered
         std::vector<Target> targets;
         std::array<PlayerDamage, kPlayerSlots> playerDamage{};
         s32 move = -1;       ///< the move playing
@@ -327,6 +329,8 @@ private:
     /** How a player scores as a target: its distance, doubled unless it lies squarely ahead
      * (CritterCalcTargetScore). */
     static f32 targetScore(const Actor& critter, const Vec3& position);
+    /** Native c.pos: the root's rotated TYPE origin, inherited by its child parts. */
+    static Vec3 targetingOrigin(const Actor& critter);
     bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
     static s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
                             std::span<const EnemyView> players, bool fallback = false);

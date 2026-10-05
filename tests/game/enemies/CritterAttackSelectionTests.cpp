@@ -113,6 +113,33 @@ TEST_CASE("queued pattern steps cannot skip a locked running animation",
     CHECK(fixture.actor.moveName() == "SECOND");
 }
 
+TEST_CASE("attack retargeting does not reapply the authored vertical sight window",
+          "[game][boss-attacks][combatant-target-origin]") {
+    bool pattern = false;
+    SECTION("standalone move") {}
+    SECTION("pattern entry") {
+        pattern = true;
+    }
+    const auto root = attackTable(
+        R"({"descriptors":[{"prefix":"DJINN","type":4}],
+        "types":[{"moveCount":2,"patternCount":1,"maxHealth":100,
+                  "target":{"maxVertical":30}}],
+        "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":90},
+                 {"name":"ATTACK","anim":"STEP","type":128,"flags":)" +
+        std::to_string(pattern ? 4 : 0) +
+        R"(,"target":{"maxVertical":1}}],
+        "patterns":[{"moves":[1],"flags":)" +
+        std::to_string(pattern ? 0 : 4096) + R"(,"target":{"maxVertical":1}}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    auto player = targetAt(10);
+    player.position.y = 20;
+    fixture.update(2, 1.0f / 30, std::array{player});
+    CHECK(fixture.actor.moveName() == "ATTACK");
+}
+
 TEST_CASE("an animation hold blocks ordinary cut-ins but not critical priority",
           "[game][boss-attacks][attack-interruption]") {
     for (const s32 priority : {513, MoveDefinition::kCutsIn}) {

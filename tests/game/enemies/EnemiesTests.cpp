@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <numbers>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -2011,6 +2012,50 @@ TEST_CASE("a sentry paces between its lookouts", "[game][enemies][mind]") {
     }
     CHECK(north > 9.0f);
     CHECK(south < -9.0f);
+}
+
+TEST_CASE("zig-zaggers react to the collision from this movement step without waiting a frame",
+          "[game][enemies][zigzag-step]") {
+    // move_logic14 calls do_enemy_move before testing dead_end and re-aiming.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 1, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kZigZagWay;
+    spawn.zigZagSide = 1;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const std::array party{playerAt({0, 0, 25})};
+    for (s32 step = 0; step < 20; ++step) {
+        enemies.update(kTicks, kStep, party);
+    }
+    const auto before = enemies.memoryOf(*id);
+    REQUIRE(before.zigZag.count > kTicks);
+    REQUIRE(before.zigZag.hold <= 0);
+    REQUIRE_FALSE(enemies.blockedOf(*id));
+    const Vec3 from = enemies.positionOf(*id);
+    const Vec3 direction{std::sin(before.heading), 0, std::cos(before.heading)};
+    constexpr f32 kBlockerRadius = 1;
+    const f32 separation = enemies.radiusOf(*id) + kBlockerRadius;
+    const f32 halfStep = enemies.paceOf(kGruntKind) * static_cast<f32>(kTicks) * 0.5f;
+    const std::array bodies{
+        MissileTarget{0, from + direction * (separation + halfStep), kBlockerRadius, 8}};
+    enemies.setCombatantBodies(bodies);
+    enemies.update(kTicks, kStep, party);
+    REQUIRE(enemies.blockedOf(*id));
+    CHECK(enemies.positionOf(*id) == from);
+    const auto& after = enemies.memoryOf(*id);
+    CHECK(after.zigZag.count == 0);
+    CHECK(after.zigZag.swings == 0);
+    CHECK(after.zigZag.spread == before.zigZag.spread + 1);
+    CHECK(after.zigZag.hold == 30);
+    const f32 offset = std::numbers::pi_v<f32> / 4 +
+                       std::numbers::pi_v<f32> / 12 * static_cast<f32>(before.zigZag.spread);
+    const Vec3 toPlayer = party[0].position - from;
+    const f32 facing = std::atan2(toPlayer.x, toPlayer.z);
+    CHECK(after.heading == Approx(wrapAngle(facing + (before.zigZag.side > 0 ? offset : -offset))));
 }
 
 TEST_CASE("chasers route around generator bodies instead of pushing into them forever",

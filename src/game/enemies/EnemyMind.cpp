@@ -38,13 +38,14 @@ constexpr f32 kLungeLands = 7.5f; ///< and its lunge lands on a player within th
 constexpr s32 kLungeWait = 30;    ///< ticks between attacks, and as many again at random
 constexpr f32 kCreepPace = 0.5f;
 constexpr f32 kFleePace = 2.0f;
-constexpr f32 kHandToHand = 6.0f;     ///< a ranged caster this near its player chases it
-constexpr s32 kFirstWaitSpread = 30;  ///< a ranged caster's first wait, in ticks, at random
-constexpr f32 kCastReach = 10.0f;     ///< and it casts only at a player this far above or below
-constexpr f32 kBackOffWithin = 8.0f;  ///< a range keeper backs off from within this
-constexpr f32 kBackedOff = 10.0f;     ///< until beyond this
-constexpr f32 kCloseInBeyond = 18.0f; ///< and closes in from beyond this
-constexpr f32 kClosedIn = 16.0f;      ///< until within this
+constexpr f32 kHandToHand = 6.0f;         ///< a ranged caster this near its player chases it
+constexpr s32 kFirstWaitSpread = 30;      ///< a ranged caster's first wait, in ticks, at random
+constexpr s32 kFirstThrowWaitSpread = 10; ///< archers and bombers' entry hold
+constexpr f32 kCastReach = 10.0f;         ///< and it casts only at a player this far above or below
+constexpr f32 kBackOffWithin = 8.0f;      ///< a range keeper backs off from within this
+constexpr f32 kBackedOff = 10.0f;         ///< until beyond this
+constexpr f32 kCloseInBeyond = 18.0f;     ///< and closes in from beyond this
+constexpr f32 kClosedIn = 16.0f;          ///< until within this
 constexpr f32 kRangePace = 0.8f;
 constexpr f32 kZigZagCloseIn = 8.0f;          ///< a zig-zagger this near its player seeks it
 constexpr s32 kSwingTicks = 45;               ///< between a zig-zagger's quarter-turn swings
@@ -107,6 +108,73 @@ void countDown(MindMemory& memory, s32 ticks) {
     }
 }
 
+/** Reinitialize only the state belonging to the entered strategy. Headings and shared
+ * mode/side flags survive: a temporary pursuit is not a newly spawned enemy. */
+void resetMind(MindMemory& memory, s32 way, const MindSense& sense) {
+    memory.deadEnd = 0;
+    switch (way) {
+    case kSeekWay:
+    case kLurkWay:
+        memory.route = 1;
+        memory.collided = 0;
+        break;
+    case kProwlWay:
+    case kMirroredProwlWay: memory.counter = 0; break;
+    case kWanderWay:
+    case kWanderOtherWay: memory.turns = 0; break;
+    case kChaseWay:
+        memory.route = 0;
+        memory.collided = 0;
+        memory.stuck = 0;
+        memory.skirting = false;
+        break;
+    case kZigZagWay:
+        memory.route = 0;
+        memory.collided = 0;
+        memory.stuck = 0;
+        memory.zigZag.count = 0;
+        memory.zigZag.hold = 0;
+        break;
+    case kSkirmishWay:
+    case kSkirmishBombWay:
+    case kThrowWay:
+    case kBombWay:
+        memory.fuse = static_cast<s32>(sense.random % kFirstThrowWaitSpread);
+        memory.turns = 0;
+        memory.stuck = 0;
+        break;
+    case kFleeWay: memory.counter = 0; break;
+    case kStandCastWay:
+    case kRangeCastWay:
+        memory.primed = true;
+        memory.fuse = static_cast<s32>(sense.random % kFirstWaitSpread);
+        memory.counter = 0;
+        memory.turns = 0;
+        break;
+    case kCastWay:
+        memory.route = 1;
+        memory.collided = 0;
+        memory.primed = true;
+        memory.fuse = kCastFirstWait + static_cast<s32>(sense.random % kCastFirstWait);
+        break;
+    case kLungeWay:
+        memory.primed = true;
+        memory.counter = static_cast<s32>(sense.random % kFirstWaitSpread);
+        break;
+    default: break;
+    }
+}
+
+/** The first call adopts birth-initialized memory; later calls format real transitions. */
+bool enterMind(MindMemory& memory, s32 way, const MindSense& sense) {
+    const bool changed = memory.effectiveWay >= 0 && memory.effectiveWay != way;
+    if (changed) {
+        resetMind(memory, way, sense);
+    }
+    memory.effectiveWay = way;
+    return changed;
+}
+
 /** Alternate the side an unseen enemy takes around walls by its slot. */
 MindIntent fallbackWander(MindMemory& memory, const MindSense& sense) {
     return enemyMindOf(sense.mirroredWander ? kWanderOtherWay : kWanderWay).think(memory, sense);
@@ -116,11 +184,17 @@ MindIntent fallbackWander(MindMemory& memory, const MindSense& sense) {
  * half a turn, without returning to a just-abandoned heading or reversing in place. */
 class SeekMind : public EnemyMind {
 public:
+    explicit SeekMind(s32 way) : m_way(way) {}
     std::string_view name() const override { return "seek"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
         if (!sense.recognized || sense.target < 0) {
             return fallbackWander(memory, sense);
         }
+        enterMind(memory, m_way, sense);
+        return steer(memory, sense);
+    }
+
+    static MindIntent steer(MindMemory& memory, const MindSense& sense) {
         countDown(memory, sense.ticks);
         MindIntent intent;
         if (memory.deadEnd > 0) {
@@ -149,15 +223,19 @@ public:
         intent.heading = heading;
         return intent;
     }
+
+private:
+    s32 m_way;
 };
 
 /** Probe ahead and turn a quarter to its own side around obstructions. A twenty-tick hold
  * ends with another quarter turn, but does not prevent an intervening probe from turning. */
 class WanderMind : public EnemyMind {
 public:
-    explicit WanderMind(f32 turn) : m_turn(turn) {}
+    WanderMind(f32 turn, s32 way) : m_turn(turn), m_way(way) {}
     std::string_view name() const override { return "wander"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        enterMind(memory, m_way, sense);
         if (memory.deadEnd > 0) {
             memory.deadEnd -= sense.ticks;
             if (memory.deadEnd <= 0) {
@@ -176,6 +254,7 @@ public:
 
 private:
     f32 m_turn;
+    s32 m_way;
 };
 
 /** The rat's way (move_logic02, 04): after a player only while one is within eight (its
@@ -190,8 +269,10 @@ public:
         if (sense.target >= 0 && sense.closeDistance <= kProwlPounce) {
             return enemyMindOf(kSeekWay).think(memory, sense);
         }
+        const bool changed =
+            enterMind(memory, m_mirror == kProwlWay ? kMirroredProwlWay : kProwlWay, sense);
         MindIntent intent;
-        if (sense.blocked) {
+        if (!changed && sense.blocked) {
             hold(memory, kProwlWait);
         }
         if (memory.deadEnd > 0) {
@@ -232,7 +313,8 @@ public:
         if (!sense.recognized || sense.target < 0) {
             return fallbackWander(memory, sense);
         }
-        if (sense.blocked) {
+        const bool changed = enterMind(memory, kChaseWay, sense);
+        if (!changed && sense.blocked) {
             if (sense.bumpedOther && (memory.route == 0 || std::abs(memory.route) > 2)) {
                 memory.route = sense.otherSide;
                 memory.collided = 0;
@@ -308,8 +390,10 @@ public:
  * the separate AI hold is counted down only while the player can be shot. */
 class ThrowMind : public EnemyMind {
 public:
+    explicit ThrowMind(s32 way) : m_way(way) {}
     std::string_view name() const override { return "throw"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        enterMind(memory, m_way, sense);
         MindIntent intent;
         intent.heading = sense.faceAngle(memory.heading);
         memory.heading = intent.heading;
@@ -325,6 +409,9 @@ public:
         }
         return intent;
     }
+
+private:
+    s32 m_way;
 };
 
 /** The archer's (move_logic16): facing its player and, when they are level with it, backing
@@ -333,13 +420,16 @@ public:
  * runs first, but releasing a missile does not set it: firing cadence belongs to the body. */
 class SkirmishMind : public EnemyMind {
 public:
+    explicit SkirmishMind(s32 way) : m_way(way) {}
     std::string_view name() const override { return "skirmish"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        const bool changed = enterMind(memory, m_way, sense);
+        const bool blocked = !changed && sense.blocked;
         // A fresh stop starts the nudges over.
-        if (sense.blocked && memory.stuck == 0) {
+        if (blocked && memory.stuck == 0) {
             memory.turns = 0;
         }
-        memory.stuck = sense.blocked ? 1 : 0;
+        memory.stuck = blocked ? 1 : 0;
         MindIntent intent;
         const f32 face = sense.faceAngle(memory.heading);
         memory.heading = face;
@@ -354,7 +444,7 @@ public:
             memory.keepingOff = sense.targetDistance <= kKeepOffFrom * sense.sight;
         } else if (sense.targetDistance > kKeepOffTo * sense.sight) {
             memory.keepingOff = false;
-        } else if (sense.blocked) {
+        } else if (blocked) {
             if (memory.turns < static_cast<s32>(kFleeNudges.size())) {
                 nudge = kFleeNudges[static_cast<usize>(memory.turns++)];
             } else {
@@ -375,6 +465,9 @@ public:
         }
         return intent;
     }
+
+private:
+    s32 m_way;
 };
 
 /** The suicide's: still until a player is within sight, a second of fuse, then a run at
@@ -383,6 +476,7 @@ class SuicideMind : public EnemyMind {
 public:
     std::string_view name() const override { return "suicide"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        enterMind(memory, kSuicideWay, sense);
         MindIntent intent;
         intent.heading = sense.faceAngle(memory.heading);
         memory.heading = intent.heading;
@@ -426,6 +520,7 @@ class LoiterMind : public EnemyMind {
 public:
     std::string_view name() const override { return "loiter"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        enterMind(memory, kLoiterWay, sense);
         memory.heading = wrapAngle(memory.heading + kLoiterTurn * static_cast<f32>(sense.ticks));
         MindIntent intent;
         intent.heading = memory.heading;
@@ -445,8 +540,9 @@ public:
         if (!sense.bomber.has_value()) {
             return fallbackWander(memory, sense);
         }
+        const bool changed = enterMind(memory, kFleeWay, sense);
         f32 nudge = 0.0f;
-        if (!sense.blocked) {
+        if (changed || !sense.blocked) {
             memory.counter = 0;
         } else if (memory.counter < static_cast<s32>(kFleeNudges.size())) {
             nudge = kFleeNudges[static_cast<usize>(memory.counter++)];
@@ -473,6 +569,7 @@ public:
             intent.become = kSeekWay;
             return intent;
         }
+        enterMind(memory, kLurkWay, sense);
         MindIntent intent;
         intent.heading = memory.heading;
         intent.pace = 0.0f;
@@ -522,6 +619,7 @@ public:
         if (sense.target >= 0 && sense.targetDistance <= kHandToHand) {
             return enemyMindOf(kChaseWay).think(memory, sense);
         }
+        enterMind(memory, kStandCastWay, sense);
         memory.heading = sense.faceAngle(memory.heading);
         MindIntent intent;
         intent.heading = memory.heading;
@@ -540,10 +638,12 @@ class RangeCastMind : public EnemyMind {
 public:
     std::string_view name() const override { return "range-cast"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        primeRangedWait(memory, sense);
         if (sense.target >= 0 && sense.targetDistance <= kHandToHand) {
             return enemyMindOf(kChaseWay).think(memory, sense);
         }
+        const bool changed = enterMind(memory, kRangeCastWay, sense);
+        const bool blocked = !changed && sense.blocked;
+        primeRangedWait(memory, sense);
         memory.heading = sense.faceAngle(memory.heading);
         MindIntent intent;
         intent.heading = memory.heading;
@@ -565,7 +665,7 @@ public:
                                      : sense.targetDistance <= kClosedIn) {
                     memory.mode = 0;
                 }
-                if (memory.mode != 0 && sense.blocked) {
+                if (memory.mode != 0 && blocked) {
                     if (memory.turns < static_cast<s32>(kFleeNudges.size())) {
                         nudge = kFleeNudges[static_cast<usize>(memory.turns++)];
                     } else {
@@ -573,7 +673,7 @@ public:
                     }
                 }
             }
-            if (!sense.blocked) {
+            if (!blocked) {
                 memory.turns = 0;
             }
         }
@@ -607,8 +707,8 @@ public:
         if (sense.closeDistance <= kZigZagCloseIn) {
             return enemyMindOf(kSeekWay).think(memory, sense);
         }
+        enterMind(memory, kZigZagWay, sense);
         ZigZag& zig = memory.zigZag;
-        const f32 face = sense.faceAngle(memory.heading);
         zig.count -= sense.ticks;
         if (zig.count <= 0) {
             zig.side = -zig.side;
@@ -618,16 +718,27 @@ public:
         }
         MindIntent intent;
         intent.heading = memory.heading;
+        return intent;
+    }
+
+    void afterMove(MindMemory& memory, const MindSense& before,
+                   const MindSense& after) const override {
+        if (memory.effectiveWay != kZigZagWay) {
+            return;
+        }
+        ZigZag& zig = memory.zigZag;
+        const f32 face = before.faceAngle(memory.heading);
         const f32 drift = wrapAngle(face - memory.heading);
-        if (zig.hold <= 0 &&
-            (sense.blocked || (zig.swings >= kSwingsBeforeAim && std::abs(drift) > kPi / 2.0f))) {
+        if (zig.hold <= 0 && (after.blocked || memory.deadEnd > 0 ||
+                              (zig.swings >= kSwingsBeforeAim && std::abs(drift) > kPi / 2.0f))) {
             const f32 offset = kAimOffset + (kAimOffsetGrowth * static_cast<f32>(zig.spread));
             if (zig.swings >= kSwingsBeforeAim) {
                 zig.side = -zig.side;
             }
             const f32 playerFacing = yawBetween(
-                sense.position, sense.targetPlayerPosition.value_or(sense.targetPosition));
+                after.position, after.targetPlayerPosition.value_or(after.targetPosition));
             memory.heading = wrapAngle(playerFacing + (zig.side > 0 ? offset : -offset));
+            memory.deadEnd = 0;
             zig.count = 0;
             zig.swings = 0;
             ++zig.spread;
@@ -636,9 +747,8 @@ public:
             if (zig.spread > 0) {
                 --zig.spread;
             }
-            zig.hold -= sense.ticks;
+            zig.hold -= before.ticks;
         }
-        return intent;
     }
 };
 
@@ -675,6 +785,7 @@ public:
         if (memory.lookout < 0) {
             return fallbackWander(memory, sense);
         }
+        enterMind(memory, kPatrolWay, sense);
         const Vec3& point = route.points[static_cast<usize>(memory.lookout)];
         memory.heading = yawBetween(sense.position, point);
         if (std::abs(point.y - sense.position.y) < kLookoutHeight &&
@@ -687,10 +798,9 @@ public:
     }
 };
 
-/** A caster: with nobody seen it wanders and near its player it chases; otherwise it seeks,
- * and every wait (the level's ninety ticks and up to half again) asks for its attack, the
- * power attack from the second strength, for twenty to thirty ticks; the attack's swing
- * casts its missile when it touches nobody (move_logic30). */
+/** A caster wanders unseen and chases up close; otherwise it seeks and requests a cast when
+ * its timer expires. The animation owns the swing; the temporary steering delegate clears
+ * the movement hold while preserving the next cast's randomized cooldown. */
 class CastMind : public EnemyMind {
 public:
     std::string_view name() const override { return "cast"; }
@@ -701,6 +811,8 @@ public:
         if (sense.targetDistance <= kCastCloseIn) {
             return enemyMindOf(kChaseWay).think(memory, sense);
         }
+        const s32 previousWay = memory.effectiveWay < 0 ? kCastWay : memory.effectiveWay;
+        enterMind(memory, kCastWay, sense);
         if (!memory.primed) {
             memory.primed = true;
             memory.fuse = kCastFirstWait + static_cast<s32>(sense.random % kCastFirstWait);
@@ -715,7 +827,12 @@ public:
             memory.fuse = window + static_cast<s32>((sense.random >> 8U) % spread) + sense.castWait;
         }
         const bool casting = memory.deadEnd > 0 && sense.onScreen;
-        MindIntent intent = enemyMindOf(kSeekWay).think(memory, sense);
+        // The steering delegate temporarily runs as Seek, but this remains a Cast tick.
+        // Its entry reset leaves the cast cooldown intact and clears the movement hold.
+        if (previousWay != kSeekWay) {
+            resetMind(memory, kSeekWay, sense);
+        }
+        MindIntent intent = SeekMind::steer(memory, sense);
         if (casting) {
             intent.action = sense.tier >= 2 ? EnemyAction::PowerAttack : EnemyAction::Attack;
         }
@@ -730,6 +847,7 @@ class LungeMind : public EnemyMind {
 public:
     std::string_view name() const override { return "lunge"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        enterMind(memory, kLungeWay, sense);
         if (!memory.primed) {
             memory.primed = true;
             memory.counter = static_cast<s32>(sense.random % kFirstWaitSpread);
@@ -767,9 +885,10 @@ public:
     }
 };
 
-const SeekMind kSeek;
-const WanderMind kWander{-kWanderTurn};
-const WanderMind kMirroredWander{kWanderTurn};
+const SeekMind kSeek{kSeekWay};
+const SeekMind kSeekAlias{kSeekAliasWay};
+const WanderMind kWander{-kWanderTurn, kWanderWay};
+const WanderMind kMirroredWander{kWanderTurn, kWanderOtherWay};
 const ProwlMind kProwl{kProwlTurn, kMirroredProwlWay};
 const ProwlMind kMirroredProwl{-kProwlTurn, kProwlWay};
 const ChaseMind kChase;
@@ -782,11 +901,20 @@ const PatrolMind kPatrol;
 const ZigZagMind kZigZag;
 const StandCastMind kStandCast;
 const RangeCastMind kRangeCast;
-const ThrowMind kThrow;
-const SkirmishMind kSkirmish;
+const ThrowMind kThrow{kThrowWay};
+const ThrowMind kBomb{kBombWay};
+const SkirmishMind kSkirmish{kSkirmishWay};
+const SkirmishMind kSkirmishBomb{kSkirmishBombWay};
 const SuicideMind kSuicide;
 
 } // namespace
+
+void initializeEnemyMind(MindMemory& memory, s32 algorithm, u32 random) {
+    MindSense sense;
+    sense.random = random;
+    resetMind(memory, algorithm, sense);
+    memory.effectiveWay = algorithm;
+}
 
 f32 wrapAngle(f32 angle) {
     while (angle > kPi) {
@@ -857,8 +985,8 @@ bool fleesBombers(s32 algorithm) {
 
 const EnemyMind& enemyMindOf(s32 algorithm) {
     switch (algorithm) {
-    case kSeekWay:
-    case kSeekAliasWay: return kSeek;
+    case kSeekWay: return kSeek;
+    case kSeekAliasWay: return kSeekAlias;
     case kProwlWay: return kProwl;
     case kMirroredProwlWay: return kMirroredProwl;
     case kChaseWay: return kChase;
@@ -871,10 +999,10 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kZigZagWay: return kZigZag;
     case kStandCastWay: return kStandCast;
     case kRangeCastWay: return kRangeCast;
-    case kThrowWay:
-    case kBombWay: return kThrow;
-    case kSkirmishWay:
-    case kSkirmishBombWay: return kSkirmish;
+    case kThrowWay: return kThrow;
+    case kBombWay: return kBomb;
+    case kSkirmishWay: return kSkirmish;
+    case kSkirmishBombWay: return kSkirmishBomb;
     case kSuicideWay: return kSuicide;
     case kWanderOtherWay: return kMirroredWander;
     case kWanderWay:
