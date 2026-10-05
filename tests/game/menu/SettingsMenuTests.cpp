@@ -527,6 +527,41 @@ TEST_CASE("audio previews held ticks and persists once on release", "[settings]"
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
 }
 
+TEST_CASE("audio sliders use timed native samples instead of a cursor tick per volume change",
+          "[settings][audio-samples]") {
+    Fixture f;
+    f.select();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Audio);
+    MenuInput held;
+    held.rightHeld = true;
+    CHECK(f.menu.update(held, 6).action == MenuAction::None);
+    CHECK(f.menu.audioSample().empty());
+    f.down();
+    CHECK(f.menu.update({}, 53).action == MenuAction::None);
+    CHECK(f.menu.audioSample().empty()); // exactly 60 elapsed menu ticks
+    f.menu.update({}, 1);
+    CHECK(f.menu.audioSample() == "S_WARN");
+    f.menu.update({}, 60);
+    CHECK(f.menu.audioSample().empty());
+    f.menu.update({}, 1);
+    CHECK(f.menu.audioSample() == "S_PICKUPMAGIC");
+    f.menu.update(held, 127); // effects 128 -> 255: no cursor or bound cue
+    CHECK(f.menu.audioSample().empty());
+    f.menu.update(held, 1);
+    CHECK(f.menu.audioSample() == "S_VOLMOVE");
+    f.menu.update(held, 15);
+    CHECK(f.menu.audioSample().empty());
+    f.menu.update(held, 1);
+    CHECK(f.menu.audioSample() == "S_VOLMOVE");
+    f.back();
+    f.menu.update({}, 100);
+    CHECK(f.menu.audioSample().empty());
+    f.select();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Audio);
+    f.menu.update({}, 100);
+    CHECK(f.menu.audioSample().empty()); // music row never emits effects samples
+}
+
 TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback deadline",
           "[settings][graphics]") {
     Fixture f;

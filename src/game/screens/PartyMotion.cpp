@@ -300,7 +300,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         actor.setPaceBonus(powerups.paceAdd);
-        // A body in a throw keeps its feet where they are, turning to the stick.
+        // Each attack's action controls how far the body may move.
         const bool closeAttack = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
                                  deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
         f32 actionPace = animator != nullptr ? animator->moveScale() : 1.0f;
@@ -313,8 +313,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             // The first input frame moves before the animation changes. Do not
             // bypass an existing reaction/arrival lock to start a quick swing.
             actionPace = std::min(actionPace, PlayerAnimator::kQuickMeleePace);
-        } else if (swingStarts || itemAttack || deed == PlayerDeed::StrongAttack) {
+        } else if (swingStarts || itemAttack) {
             actionPace = 0;
+        } else if (deed == PlayerDeed::StrongAttack && animator != nullptr &&
+                   animator->canBegin(deed)) {
+            // PlayerMotion consumes PWRA_THROW's A48=.25 even on its first frame.
+            // Held heavy input must not override a spin or power swing already playing.
+            actionPace = std::min(actionPace, PlayerAnimator::kStrongThrowPace);
         }
         const f32 pace = webbed ? PlayerAnimator::kWebPace : actionPace;
         const bool charging =
@@ -421,9 +426,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack ||
              deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
              deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow ||
-             deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
-             deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
-             deed == PlayerDeed::FireRight) &&
+             deed == PlayerDeed::Hammer || deed == PlayerDeed::Breathe ||
+             deed == PlayerDeed::FireLeft || deed == PlayerDeed::FireRight) &&
             events.aim) {
             if (const auto target = events.aim(i)) {
                 actor.faceToward(*target);

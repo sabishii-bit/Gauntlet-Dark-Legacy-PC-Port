@@ -210,7 +210,7 @@ TEST_CASE("static arrival effects cycle textures and rebinding clears borrowed a
     REQUIRE(arrival.active());
 }
 
-TEST_CASE("arrival title slides during the hold and disappears when the arrival finishes",
+TEST_CASE("arrival title grows and slides during the hold then disappears with the arrival",
           "[game][screens][arrival]") {
     const BitmapFont font = BitmapFont::fromGlyphs(10, 4, {{'A', 6, 0, 0}});
     const test::FakeTexture sheet{32, 16};
@@ -229,13 +229,18 @@ TEST_CASE("arrival title slides during the hold and disappears when the arrival 
     };
     draw("A");
     REQUIRE(device.draws.size() == 1);
-    REQUIRE(test::minCorner(device.draws[0]) == Vec2{253.5f, 48.5f});
+    REQUIRE(test::minCorner(device.draws[0]).y == Approx(48.0125f));
+    REQUIRE((test::maxCorner(device.draws[0]) - test::minCorner(device.draws[0])).y ==
+            Approx(9 * 0.025f));
     arrival.advance(20, false, Vec3{0.0f}, Vec3{0.0f});
     draw("A");
-    REQUIRE(test::minCorner(device.draws[0]).y == Approx(40.5f));
+    REQUIRE(test::minCorner(device.draws[0]).y == Approx(40.2625f));
+    REQUIRE((test::maxCorner(device.draws[0]) - test::minCorner(device.draws[0])).y ==
+            Approx(9 * 0.525f));
     arrival.advance(60, false, Vec3{0.0f}, Vec3{0.0f});
     draw("A");
-    REQUIRE(test::minCorner(device.draws[0]).y == Approx(16.5f));
+    REQUIRE(test::minCorner(device.draws[0]).y == Approx(17.0f));
+    REQUIRE((test::maxCorner(device.draws[0]) - test::minCorner(device.draws[0])).y == Approx(18));
     draw("");
     REQUIRE(device.draws.empty());
     const TextPainter unavailable;
@@ -252,7 +257,7 @@ TEST_CASE("arrival title slides during the hold and disappears when the arrival 
     arrival.begin(device, missing, {});
     arrival.advance(1, false, Vec3{0.0f}, Vec3{0.0f});
     draw("A");
-    REQUIRE(test::minCorner(device.draws[0]).y == Approx(16.5f)); // no ride: title sits
+    REQUIRE(test::minCorner(device.draws[0]).y == Approx(17.0f)); // no ride: title sits
     arrival.clear();
     draw("A");
     REQUIRE(device.draws.empty());

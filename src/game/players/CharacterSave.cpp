@@ -7,10 +7,12 @@
 #include <format>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include "engine/core/Assert.h"
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -117,6 +119,7 @@ LevelRecord levelsFromJson(const Json& object) {
 
 Json progressJson(const ClassProgress& progress) {
     return Json{{"experience", progress.experience},
+                {"gold", progress.gold},
                 {"promotedLevel", progress.appearanceLevel()},
                 {"health", progress.health},
                 {"fightAdd", progress.fightAdd},
@@ -138,6 +141,7 @@ Json progressJson(const ClassProgress& progress) {
 ClassProgress progressFromJson(const Json& object) {
     ClassProgress progress;
     progress.experience = object.value("experience", 0);
+    progress.gold = object.value("gold", 0);
     progress.promotedLevel =
         std::clamp(object.value("promotedLevel", experienceLevel(progress.experience)), 1,
                    experienceLevel(progress.experience));
@@ -173,6 +177,16 @@ ClassProgress progressFromJson(const Json& object) {
 
 } // namespace
 
+void CharacterSave::selectClass(s32 next) {
+    GDL_VERIFY(next >= 0 && next < kClassCount, "Selected class must be in range");
+    if (next == character) {
+        return;
+    }
+    progress().gold = gold;
+    character = next;
+    gold = progress().gold;
+}
+
 std::string CharacterSave::toJson() const {
     Json root;
     root["version"] = kSaveFormatVersion;
@@ -186,7 +200,11 @@ std::string CharacterSave::toJson() const {
     root["levelTotal"] = levelTotal;
     Json progress = Json::object();
     for (s32 i = 0; i < kClassCount; ++i) {
-        progress[std::string(classCode(i))] = progressJson(classes[static_cast<usize>(i)]);
+        Json entry = progressJson(classes[static_cast<usize>(i)]);
+        if (i == character) {
+            entry["gold"] = gold;
+        }
+        progress[std::string(classCode(i))] = std::move(entry);
     }
     root["classes"] = progress;
     return root.dump(2) + "\n";
@@ -225,6 +243,9 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
             }
         }
     }
+    // The top-level wallet remains authoritative for the selected class, including
+    // legacy saves that never recorded balances for the other classes.
+    save.progress().gold = save.gold;
     return save;
 }
 

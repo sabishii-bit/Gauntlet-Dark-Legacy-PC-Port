@@ -1,6 +1,9 @@
 #pragma once
 
+#include "engine/assets/AnimationSet.h"
 #include "engine/assets/BitmapFont.h"
+#include "engine/assets/ModelSet.h"
+#include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
@@ -31,15 +34,24 @@ public:
     bool musicAudible() const;
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
     const OptionMenu& menu() const { return m_menu; }
+    bool arrowBound() const { return m_arrow.bound(); }
 
 private:
     enum class Page : u8 { Main, Options, Quit };
     void showMain();
     void showQuit();
+    void loadDecorations(RenderDevice& device);
+    void playSound(std::string_view name);
+    void playMenuSound(const MenuEvent& event, bool horizontal);
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
     GameContext m_context;
     TextureSet m_textures;
+    TextureSet m_powerupTextures;
+    ModelSet m_powerupModels;
+    AnimationSet m_powerupTrees;
+    ModelSprite m_arrow;
+    SoundSet m_commonSounds;
     BitmapFont m_font;
     TextPainter m_text;
     MenuTextures m_art;

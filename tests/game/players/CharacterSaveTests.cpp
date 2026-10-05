@@ -57,6 +57,54 @@ TEST_CASE("lifetime totals persist per class and old saves do not fabricate hist
     CHECK(old.progress().lifetime.playSeconds == 0);
 }
 
+TEST_CASE("changing class banks each wallet without copying or discarding gold",
+          "[game][players][save][class-wallet]") {
+    // player_get_from_save / player_store_in_save use P_SAVE_STUFF[character].gold.
+    CharacterSave save;
+    save.gold = 1250;
+    save.selectClass(0);
+    CHECK(save.gold == 1250);
+    save.selectClass(1);
+    CHECK(save.gold == 0);
+    CHECK(save.classes[0].gold == 1250);
+    save.gold = 430;
+    save.selectClass(0);
+    CHECK(save.gold == 1250);
+    CHECK(save.classes[1].gold == 430);
+    save.gold -= 200;
+    auto loaded = CharacterSave::fromJson(save.toJson());
+    CHECK(loaded.gold == 1050);
+    CHECK(loaded.progress().gold == 1050);
+    CHECK(loaded.classes[1].gold == 430);
+    loaded.selectClass(1);
+    CHECK(loaded.gold == 430);
+    loaded.selectClass(0);
+    CHECK(loaded.gold == 1050);
+    CHECK(loaded.toJson() == save.toJson());
+}
+
+TEST_CASE("legacy gold belongs only to the selected class and keeps top-level compatibility",
+          "[game][players][save][class-wallet]") {
+    auto save = CharacterSave::fromJson(
+        R"({"version":1,"name":"OLD","character":2,"gold":723,"classes":{"WAR":{"experience":50}}})");
+    CHECK(save.gold == 723);
+    CHECK(save.classes[2].gold == 723);
+    save.selectClass(0);
+    CHECK(save.gold == 0);
+    save.selectClass(2);
+    CHECK(save.gold == 723);
+    // Older readers/writers only know the live top-level balance. Never replace it
+    // with a stale class checkpoint when opening one of their saves.
+    save = CharacterSave::fromJson(
+        R"({"name":"OLD","character":0,"gold":100,"classes":{"WAR":{"gold":900},"VAL":{"gold":50}}})");
+    CHECK(save.gold == 100);
+    CHECK(save.progress().gold == 100);
+    save.selectClass(1);
+    CHECK(save.gold == 50);
+    save.selectClass(0);
+    CHECK(save.gold == 100);
+}
+
 TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     const CharacterSave save = sampleSave();
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());

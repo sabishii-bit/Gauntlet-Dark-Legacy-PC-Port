@@ -413,6 +413,37 @@ TEST_CASE("super shot spends one charge per volley and preserves the last charge
     }
 }
 
+TEST_CASE("super shot ignores assisted targets while normal and depleted shots retain them",
+          "[game][player-arsenal][alpha-combat]") {
+    Fixture f;
+    PlayerFigure figure;
+    const Vec3 target = f.actor.position() + Vec3{8, 10, 20};
+    auto& inventory = f.actor.save().progress().inventory;
+    f.arsenal.launchWeapon(f.actor, &figure, f.actor.facing(), 1, true, target);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    const Vec3 normal = f.arsenal.missiles().missile(0).velocity;
+    CHECK(normal.x > 0);
+    CHECK(normal.y > 0);
+
+    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 1, -1);
+    f.arsenal.launchSuperShot(f.actor, &figure, target);
+    REQUIRE(f.arsenal.missiles().count() == 2);
+    const auto& charged = f.arsenal.missiles().missile(1);
+    CHECK((charged.flags & powerup::kSuperShot) != 0);
+    // ModifyPlayerDpos (0x80085fa0) keeps the supplied heading for Super Shot.
+    CHECK(charged.velocity.x == Approx(0).margin(0.0001f));
+    CHECK(charged.velocity.y == Approx(0).margin(0.0001f));
+    CHECK(charged.velocity.z > 0);
+
+    f.arsenal.launchSuperShot(f.actor, &figure, target);
+    REQUIRE(f.arsenal.missiles().count() == 3);
+    const auto& depleted = f.arsenal.missiles().missile(2);
+    CHECK((depleted.flags & powerup::kSuperShot) == 0);
+    CHECK(depleted.velocity.x == Approx(normal.x));
+    CHECK(depleted.velocity.y == Approx(normal.y));
+    CHECK(depleted.velocity.z == Approx(normal.z));
+}
+
 TEST_CASE("Skorne gauntlets use their own elemental projectiles without consuming super shot",
           "[game][items]") {
     for (const bool left : {false, true}) {

@@ -64,6 +64,9 @@ public:
     const MenuScreen& screen() const { return m_screen; }
     u8 glowOpacity() const { return m_glowOpacity; }
     bool musicPlaying() const;
+    SoundHandle musicHandle() const { return m_music; }
+    /** Relinquish a track successfully adopted by the character-select screen. */
+    void releaseMusic() { m_music = kNoSound; }
     bool arrowBound() const { return m_arrow.bound(); }
 
 private:

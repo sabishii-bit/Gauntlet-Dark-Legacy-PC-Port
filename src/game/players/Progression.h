@@ -36,6 +36,7 @@ struct LifetimeStats {
 
 struct ClassProgress {
     s32 experience = 0;
+    s32 gold = 0; ///< banked wallet; the selected class uses CharacterSave::gold while playing
     s32 promotedLevel =
         -1; ///< last tower award; -1 imports an existing character at its earned tier
     s32 health = 0;

@@ -57,7 +57,9 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_context = context;
     m_device = &device;
     m_world = &world;
-    if (!world.built() && !world.load(device, context.unpackedRoot)) {
+    // A character menu can replace the party without replacing the shared tower.
+    // Rebuild its initial pickups and gates before applying the new party's progress.
+    if ((!world.built() || world.isTower()) && !world.load(device, context.unpackedRoot)) {
         return false;
     }
     if (!m_hud.load(device, context.unpackedRoot, context.strings)) {

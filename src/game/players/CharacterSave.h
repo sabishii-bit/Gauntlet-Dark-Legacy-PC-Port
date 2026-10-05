@@ -21,7 +21,7 @@ struct CharacterSave {
     s32 character = 0; ///< class index
     s32 color = 0;
     u16 classUnlock = 0; ///< one bit per unlockable class, from the ninth
-    s32 gold = 0;
+    s32 gold = 0;        ///< the selected class's live wallet
     s32 levelTotal = 0;
     std::vector<s32> helpSeen;           ///< the help messages already shown to it, in order
     std::vector<std::string> moviesSeen; ///< legacy saves only; never gates level-entry movies
@@ -30,6 +30,9 @@ struct CharacterSave {
     const ClassProgress& progress() const { return classes[static_cast<usize>(character)]; }
     ClassProgress& progress() { return classes[static_cast<usize>(character)]; }
     s32 experience() const { return progress().experience; }
+
+    /** Banks the current class's wallet and restores the selected class's own balance. */
+    void selectClass(s32 next);
 
     /** The current class's health, full for a class never played. */
     s32 health() const { return progress().health > 0 ? progress().health : kStartingHealth; }

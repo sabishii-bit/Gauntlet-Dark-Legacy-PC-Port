@@ -44,6 +44,9 @@ void SettingsMenu::open(const GameConfig& config, const StringTable* strings, Pe
     m_clock = std::move(clock);
     m_confirmVideo = false;
     m_audioDirty = false;
+    m_audioSampleTicks = 0;
+    m_audioSampleMagic = false;
+    m_audioSample = {};
     m_audioDrag.reset();
     m_audioPointer.reset();
     m_scope = scope;
@@ -325,8 +328,12 @@ void SettingsMenu::change(s32 direction) {
             next.audio.stereo = !next.audio.stereo;
         } else {
             auto& volume = code == 0 ? next.audio.musicVolume : next.audio.effectsVolume;
-            volume =
-                static_cast<f32>(std::clamp(AudioSlider::value(volume) + direction, 0, 255)) / 255;
+            const auto previous = AudioSlider::value(volume);
+            volume = static_cast<f32>(std::clamp(previous + direction, 0, 255)) / 255;
+            if (code == 1 && AudioSlider::value(volume) == previous && m_audioSampleTicks > 15) {
+                m_audioSample = "S_VOLMOVE";
+                m_audioSampleTicks = 0;
+            }
         }
         m_config = std::move(next);
         m_menu.markItem(2, m_config.audio.stereo ? 2 : 1);
@@ -399,6 +406,7 @@ void SettingsMenu::change(s32 direction) {
     commit(std::move(next));
 }
 MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
+    m_audioSample = {};
     if (!m_menu.isOpen()) {
         return {};
     }
@@ -448,6 +456,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         return {MenuAction::Moved, 0};
     }
     if (m_page == Page::Audio && !m_menu.closing()) {
+        m_audioSampleTicks = std::min(61, m_audioSampleTicks + std::max(0, ticks));
         constexpr f32 kSliderX = 128;
         if (input.pointer && !input.pointerNormalized) {
             for (usize i = 0; i < 2; ++i) {
@@ -470,7 +479,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
                 const auto current =
                     *m_audioDrag == 0 ? m_config.audio.musicVolume : m_config.audio.effectsVolume;
                 change(AudioSlider::value(volume) - AudioSlider::value(current));
-                return {MenuAction::Moved, 0};
+                return {};
             }
         } else {
             m_audioPointer.reset();
@@ -481,7 +490,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         const bool stereo = m_menu.selection() == 2;
         if ((!stereo && horizontal && ticks > 0) || (stereo && (input.left || input.right))) {
             change((input.left || input.leftHeld ? -1 : 1) * (stereo ? 1 : ticks));
-            return {MenuAction::Moved, 0};
+            return stereo ? MenuEvent{MenuAction::Moved, 0} : MenuEvent{};
         }
         if (!flushAudio() && (input.back || input.escape)) {
             return {};
@@ -560,6 +569,9 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             }
             m_page =
                 event.code == kGraphicsCode ? Page::Graphics : static_cast<Page>(event.code + 1);
+            if (m_page == Page::Audio) {
+                m_audioSampleTicks = 0;
+            }
             if (m_page == Page::Graphics) {
                 if (m_queryDisplay) {
                     m_display = m_queryDisplay();
@@ -593,6 +605,12 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         } else {
             change(1);
         }
+    }
+    if (m_page == Page::Audio && m_menu.selection() == 1 && m_audioSampleTicks > 60 &&
+        (event.action == MenuAction::None || event.action == MenuAction::Moved)) {
+        m_audioSample = m_audioSampleMagic ? "S_PICKUPMAGIC" : "S_WARN";
+        m_audioSampleMagic = !m_audioSampleMagic;
+        m_audioSampleTicks = 0;
     }
     return event;
 }

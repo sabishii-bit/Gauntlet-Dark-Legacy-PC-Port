@@ -1955,6 +1955,39 @@ TEST_CASE("the melee sees what is near at any bearing, within a swing or a step"
     enemies.close();
 }
 
+TEST_CASE("generals never select low melee from their small collision parts",
+          "[game][player-attacks][alpha-combat][alpha-general-melee][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GENERAL/LEVELG/ANIM.PS2");
+    Fixture f;
+    auto& critters = f.opponents.critters();
+    critters.open(f.device, root, nullptr, {}, 'G');
+    const auto id = critters.spawnGeneral({0, 0, 5}, 0);
+    REQUIRE(id);
+    for (const f32 scale : {1.0f, 0.3f}) {
+        CAPTURE(scale);
+        critters.resize(*id, scale);
+        const auto targets = critters.targets();
+        REQUIRE_FALSE(targets.empty());
+        bool checked = false;
+        for (const auto& target : targets) {
+            if (target.height > PlayerAttacks::kLowEnemy) {
+                continue;
+            }
+            checked = true;
+            auto& actor = f.players[0].actor;
+            actor.place(target.base - Vec3{0, 0, target.radius + actor.radius() + 0.5f});
+            const auto sense = f.attacks.meleeSense(actor, true, f.targets);
+            REQUIRE(sense.range == MeleeRange::Swing);
+            // PlayerMotion's critter branch sets creature bit0x10, never low bit2.
+            CHECK_FALSE(sense.low);
+            CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Melee);
+        }
+        CHECK(checked);
+    }
+    critters.close();
+}
+
 TEST_CASE("a melee contact routes damage sound and impact once through level opponents",
           "[game][screens][player-attacks][melee][enemy-feedback][assets]") {
     const auto root =

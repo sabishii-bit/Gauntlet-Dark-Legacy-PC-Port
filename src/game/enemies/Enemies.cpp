@@ -391,7 +391,8 @@ const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, s32 player)
 
 std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
     // Prefer a free slot, otherwise the greatest recycling score. Dying/sleeping
-    // enemies get reduced scores; other unseen enemies get the offscreen bonus.
+    // enemies and authored sentries get reduced scores; other unseen enemies
+    // get the offscreen bonus.
     for (s32 i = 0; i < m_most; ++i) {
         if (m_enemies[static_cast<usize>(i)].state == State::Inactive) {
             return i;
@@ -407,7 +408,8 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
         }
         f32 cost = enemy.targetDistance;
         const bool seen = enemy.onScreen;
-        if (enemy.state == State::Dying || enemy.state == State::Asleep) {
+        if (enemy.state == State::Dying || enemy.state == State::Asleep ||
+            enemy.birth != Birth::Brood) {
             cost *= 0.01f;
         } else if (!seen) {
             cost += kFarRecycleCost;

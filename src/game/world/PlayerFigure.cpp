@@ -29,6 +29,7 @@ constexpr s32 kValkyrieClass = 1; ///< these two bear shields of their own, on t
 constexpr s32 kKnightClass = 5;
 constexpr s32 kJesterClass = 7; ///< whose hand goes
 constexpr std::string_view kHeldWeapon = "WEAP_HOLD";
+constexpr u32 kHeldWeaponFlags = 0x810; ///< load_player_geo's ordinary held object
 constexpr std::string_view kClassAnimations = "ANIM";
 constexpr std::string_view kSoundDirectory = "audio";
 constexpr s32 kOgre = 12;
@@ -96,22 +97,26 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
         return nullptr;
     }
     figure->m_costume = &figure->m_costumeArchive.trees.tree(*tree);
-    const auto animations = figure->m_costumeArchive.trees.textureAnimations();
-    if (!animations.empty()) {
-        // Costume cycles include hand glows whose frames belong to POWERUPS.
-        if (!figure->m_sharedTextures.loaded() &&
-            std::ranges::any_of(animations, [](const auto& animation) {
-                return animation.cycles() && animation.source < 0;
-            })) {
-            figure->m_sharedTextures.load(figure->m_sharedTextureDirectory);
-        }
-        const std::array<TextureSet*, 1> lenders{&figure->m_sharedTextures};
-        figure->m_costumeTextures.bind(animations, figure->m_costumeArchive.textures, device,
-                                       lenders);
-    }
     figure->m_directory = directory;
     figure->m_effectDirectory =
         classFolder(root, save.character, std::format("SFX{}", colorCode(save.color)));
+    const auto animations = figure->m_costumeArchive.trees.textureAnimations();
+    if (!animations.empty()) {
+        // Hand glows borrow POWERUPS; load_player_geo's special BOMB texmod
+        // borrows BOMB00..04 from this player's class SFX archive instead.
+        if (std::ranges::any_of(animations, [](const auto& animation) {
+                return animation.cycles() && animation.source < 0;
+            })) {
+            if (!figure->m_sharedTextures.loaded()) {
+                figure->m_sharedTextures.load(figure->m_sharedTextureDirectory);
+            }
+            figure->m_effects.load(figure->m_effectDirectory);
+        }
+        const std::array<TextureSet*, 2> lenders{&figure->m_sharedTextures,
+                                                 &figure->m_effects.textures};
+        figure->m_costumeTextures.bind(animations, figure->m_costumeArchive.textures, device,
+                                       lenders);
+    }
     figure->m_staysInHand = MissileSpec::of(save.character).staysInHand;
     figure->loadWeapon(save, device);
     // InitPlayer's SHADOWL1 node (flags 0x880: no depth write).
@@ -152,7 +157,8 @@ void PlayerFigure::loadMissile(const std::filesystem::path& root, const Characte
             bound =
                 bindModel(m_missile, m_costumeArchive.trees.tree(*tree), m_costumeArchive, device);
         }
-    } else if (m_effects.load(m_effectDirectory)) {
+    } else if (m_effects.loaded() || m_effects.load(m_effectDirectory)) {
+        // Costume animation may already hold pointers to this archive's textures.
         if (const auto tree = m_effects.trees.find(name); tree.has_value()) {
             bound = bindModel(m_missile, m_effects.trees.tree(*tree), m_effects, device);
         }
@@ -213,6 +219,11 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
     TreeNodeInfo held;
     held.name = weapon;
     held.object = weapon;
+    held.objectFlags = kHeldWeaponFlags;
+    if (save.character % kStartingClassCount == kJesterClass) {
+        // Native char_type 7 includes the Jackal: the held bomb is a billboard.
+        held.objectFlags |= CameraFrame::kFacingFull << CameraFrame::kFacingShift;
+    }
     m_weaponTree.nodes.push_back(held);
     if (!bindModel(m_weapon, m_weaponTree, m_costumeArchive, device)) {
         m_handNode = -1;
@@ -491,7 +502,7 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     preparePresentation(frameBlend);
     applyCostumeTextures(m_model, frameBlend);
     applyCostumeTextures(m_weapon, frameBlend);
-    m_model.draw(device, clip, body, lighting, m_visualTransforms, nullptr, alpha);
+    m_model.draw(device, clip, body, lighting, m_visualTransforms, camera, alpha);
     // The earned familiar is its own skin tree (PlayerProcessSkinFX), beside any companion.
     m_familiar.draw(device, clip, body, lighting, alpha, camera, frameBlend);
     std::optional<Mat4> mount = body;
@@ -520,12 +531,12 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
         const Mat4 wrist = hand < m_visualTransforms.size()
                                ? m_visualTransforms[hand]
                                : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand));
-        m_weapon.draw(device, clip, body * wrist, lighting, {}, nullptr, alpha);
+        m_weapon.draw(device, clip, body * wrist, lighting, {}, camera, alpha);
     }
     if (heldWeaponBound() && !m_handItemHeld) {
         for (const WeaponTrail::Ghost& ghost : m_trail.ghosts()) {
             if (ghost.shown) {
-                m_weapon.draw(device, clip, ghost.placement, lighting, {}, nullptr,
+                m_weapon.draw(device, clip, ghost.placement, lighting, {}, camera,
                               alpha * ghost.alpha());
             }
         }

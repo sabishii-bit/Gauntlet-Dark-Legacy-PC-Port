@@ -326,7 +326,7 @@ public:
      * shows being pushed instead (P_PUSHED, pmotion.c 2042). Set before each update. */
     void setPushed(bool pushed) { m_pushed = pushed; }
     /** The character whose body this is: some classes keep their feet in the power swings. */
-    void setCharacter(s32 character) { m_character = character; }
+    void setCharacter(s32 character);
     /** Which way the character strafes from now on (none: it walks and runs as ever). Set
      * before each update: moving, it steps that way with its facing held, and an attack asked
      * of it is made as it goes. */
@@ -400,14 +400,15 @@ public:
         if (meleeing()) {
             return meleePace();
         }
+        if (strongThrowing()) {
+            return kStrongThrowPace;
+        }
         if (running() || m_current == Action::ShieldRun) {
             return kRunPace;
         }
         if (strafing()) {
             return kStrafePace;
         }
-        // Strong throws remain planted per the GameCube playtest. AnimAction's
-        // generic PWRA_THROW quarter-pace branch still needs state-path reconciliation.
         return throwing() || meleeing() || conjuring() || reacting() || turboing() || guarding()
                    ? 0.0f
                    : 1.0f;
@@ -417,6 +418,7 @@ public:
     static constexpr f32 kStrafePace = 0.667f; ///< strafing steps, shooting or not
     static constexpr f32 kWebPace = 0.4f;
     static constexpr f32 kQuickMeleePace = 0.25f;
+    static constexpr f32 kStrongThrowPace = 0.25f;
     bool quickMeleeing() const {
         return m_current >= Action::Quick1 && m_current <= Action::Quick3Recover;
     }
@@ -518,6 +520,7 @@ private:
         Cut cut = Cut::WhenDoneIfDifferent;
         bool repeat = false;
         f32 transition = 0.0f;
+        f32 startFrame = 0.0f;
     };
 
     static bool isThrow(Action action) {

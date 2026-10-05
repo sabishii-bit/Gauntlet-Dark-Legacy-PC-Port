@@ -499,6 +499,35 @@ TEST_CASE("quitting an unsaved character asks first", "[game][select]") {
     REQUIRE_FALSE(f.lane.active());
 }
 
+TEST_CASE("changing the selected class restores its wallet after browsing without transfer",
+          "[game][select][class-wallet]") {
+    Fixture f("select-class-wallet");
+    CharacterSave save;
+    save.name = "GOLD";
+    save.gold = 800;
+    save.classes[1].gold = 120;
+    f.lane.resume(save, std::nullopt);
+    f.lane.manage();
+    const auto chooseChange = [&] {
+        f.step(press(false, false, false, true)); // Quit.
+        f.step(press(false, false, false, true)); // Change; no files to load.
+        f.step(press(true));
+        REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
+    };
+    chooseChange();
+    f.step(press(false, false, false, false, false, false, true));
+    CHECK(f.lane.save().gold == 800); // Browsing does not commit the class.
+    f.step(press(true));
+    REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
+    CHECK(f.lane.save().character == 1);
+    CHECK(f.lane.save().gold == 120);
+    chooseChange();
+    f.step(press(false, false, false, false, false, true));
+    f.step(press(true));
+    CHECK(f.lane.save().character == 0);
+    CHECK(f.lane.save().gold == 800);
+}
+
 TEST_CASE("loading with nothing saved shows a notice and drawing emits the lane",
           "[game][select]") {
     Fixture f("select-lane-empty");

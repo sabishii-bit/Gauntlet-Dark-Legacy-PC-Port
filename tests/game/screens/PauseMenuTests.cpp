@@ -3,6 +3,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/StringTable.h"
+#include "engine/audio/AudioMixer.h"
+#include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
@@ -12,6 +14,47 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+TEST_CASE("pause loads the native axe and plays navigation and timed volume samples",
+          "[pause][audio-samples][assets]") {
+    test::assetOrSkip("audio/COMMON.vbk");
+    test::assetOrSkip("POWERUPS/objects.ngc");
+    test::FakeRenderDevice device;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.sounds = &sounds;
+    context.saveSettings = [](const GameConfig&) { return true; };
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    REQUIRE(menu.arrowBound());
+    CHECK(sounds.voiceCount() == 1); // opening select
+    MenuInput choose;
+    choose.select = true;
+    menu.update(1.0 / 60, choose); // Settings
+    menu.update(1.0 / 60, choose); // Audio
+    CHECK(sounds.voiceCount() == 3);
+    MenuInput down;
+    down.down = true;
+    menu.update(1.0 / 60, down); // Effects
+    CHECK(sounds.voiceCount() == 4);
+    menu.update(1.0, {});
+    CHECK(sounds.voiceCount() == 5); // heartbeat preview
+    MenuInput right;
+    right.rightHeld = true;
+    menu.update(0.1, right);
+    CHECK(sounds.voiceCount() == 5); // changing volume does not click every frame
+    MenuInput back;
+    back.back = true;
+    menu.update(1.0 / 60, back);
+    CHECK(sounds.voiceCount() == 6);
+    menu.close();
+    CHECK_FALSE(menu.arrowBound());
+}
+
 TEST_CASE("pause mouse targets work after letterboxing for controller-owned pauses",
           "[pause][mouse][assets]") {
     test::FakeRenderDevice device;

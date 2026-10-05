@@ -627,6 +627,91 @@ TEST_CASE("returning parties do not respawn the province's introductory tower cr
     CHECK(visible() == 0);
 }
 
+TEST_CASE("reopening the shared tower rebuilds crystals and gates for the selected class",
+          "[tower-crystals][tower-access][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld tower;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = root;
+    context.tower = &tower;
+    context.levels = &catalog;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{0};
+    std::vector party{PartyMember{0, CharacterSave{}}};
+    PlayScene scene;
+    const auto visible = [&] {
+        usize count = 0;
+        for (usize i = 0; i < tower.placedItems().size(); ++i) {
+            const auto& item = tower.placedItems().item(i);
+            count += item.subtype == ItemInfo::kCrystal && item.visible ? 1 : 0;
+        }
+        return count;
+    };
+    const auto provinceGate = [&] {
+        for (usize i = 0; i < tower.triggers().size(); ++i) {
+            const auto& trigger = tower.triggers().trigger(i);
+            if (trigger.id == 1 && trigger.needsCrystals()) {
+                return trigger.target;
+            }
+        }
+        return s32{-1};
+    };
+    const auto townGlow = [&] {
+        const auto& objects = tower.layout().objects();
+        for (usize i = 0; i < objects.size(); ++i) {
+            if (objects[i].name == "L1NSNCG2_ACTIVE") {
+                return tower.scene().objectVisible(i);
+            }
+        }
+        FAIL("The tower must contain the second Province portal glow");
+        return false;
+    };
+    const auto takeCrystals = [&] {
+        usize taken = 0;
+        for (usize i = 0; i < tower.placedItems().size(); ++i) {
+            const auto& item = tower.placedItems().item(i);
+            if (item.subtype == ItemInfo::kCrystal && item.visible) {
+                const std::array collectors{Collector{item.position}};
+                taken += tower.collect(device, collectors).size();
+            }
+        }
+        return taken;
+    };
+    REQUIRE(scene.open(device, context, tower, party, options));
+    REQUIRE(provinceGate() >= 0);
+    REQUIRE(visible() == 15);
+    CHECK_FALSE(tower.triggers().opened(provinceGate()));
+    CHECK_FALSE(townGlow());
+    CHECK(takeCrystals() == 15);
+    CHECK(visible() == 0);
+    REQUIRE(scene.actor(0));
+    party = scene.party();
+    party[0].save.progress().crystals[1] = 15;
+    party[0].save.progress().levels.recordBeaten(7, 0, 0, 0);
+    // The same progressed class must keep its access and must not farm new crystals.
+    REQUIRE(scene.open(device, context, tower, party, options));
+    CHECK(visible() == 0);
+    CHECK(tower.triggers().opened(provinceGate()));
+    CHECK_FALSE(tower.collision().solid(provinceGate()));
+    CHECK(townGlow());
+    // A new class has independent progress, even when the character was never saved.
+    party[0].save.selectClass(1);
+    REQUIRE(scene.open(device, context, tower, party, options));
+    CHECK_FALSE(tower.triggers().opened(provinceGate()));
+    CHECK(tower.collision().solid(provinceGate()));
+    CHECK_FALSE(townGlow());
+    CHECK(visible() == 15);
+    CHECK(takeCrystals() == 15);
+    CHECK(visible() == 0);
+}
+
 TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner his archive",
           "[game][world][assets]") {
     test::assetOrSkip("LEVELS/LEVELL1/ANIM.PS2");

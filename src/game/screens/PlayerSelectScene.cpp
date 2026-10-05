@@ -53,7 +53,8 @@ std::string_view PlayerSelectScene::text(std::string_view id) const {
 }
 
 bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
-                             std::span<const PartyMember> party, bool manage) {
+                             std::span<const PartyMember> party, bool manage,
+                             SoundHandle continuingMusic) {
     close();
     m_context = context;
     m_screen = MenuScreen{};
@@ -135,7 +136,11 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
             m_lanes[static_cast<usize>(startingPlayer)].manage();
         }
     }
-    startMusic();
+    if (m_context.sounds != nullptr && m_context.sounds->isPlaying(continuingMusic)) {
+        m_music = continuingMusic;
+    } else {
+        startMusic();
+    }
     return true;
 }
 

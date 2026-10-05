@@ -377,7 +377,7 @@ void SelectLane::changeClass(s32 step, s32 colorStep) {
 
 /** Takes the picked class as the character and shows it standing ready. */
 void SelectLane::lockIn(bool fromLoad) {
-    m_save.character = m_pickClass;
+    m_save.selectClass(m_pickClass);
     m_save.color = m_pickColor;
     applyNameCheats(m_save);
     m_pickClass = m_save.character;

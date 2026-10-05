@@ -73,7 +73,7 @@ const HiddenCostume* hiddenCostume(std::string_view name) {
 
 bool applyNameCheats(CharacterSave& save) {
     if (const auto* costume = hiddenCostume(save.name)) {
-        save.character = costume->character;
+        save.selectClass(costume->character);
         save.color = costume->color;
         return true;
     }

@@ -62,6 +62,41 @@ TEST_CASE("without its picture the transition covers the view in black, above th
     REQUIRE(device.draws[0].vertices[0].color.a == 255);
 }
 
+TEST_CASE("releasing or reopening a transition discards every previous animation phase",
+          "[game][screens][transition]") {
+    test::FakeRenderDevice device;
+    TransitionScreen screen;
+    SECTION("partially rising") {
+        screen.comeUp();
+        screen.update(TransitionScreen::kFadeInSeconds / 2);
+    }
+    SECTION("fully covered") {
+        screen.cover();
+    }
+    SECTION("partially clearing") {
+        screen.cover();
+        screen.clearAway();
+        screen.update(TransitionScreen::kFadeOutSeconds / 2);
+    }
+    REQUIRE(screen.showing());
+    screen.release();
+    CHECK(screen.phase() == Phase::Off);
+    CHECK(screen.opacity() == 0);
+    screen.update(10);
+    CHECK_FALSE(screen.showing());
+
+    // A missing archive still begins a fresh transition, not a permanent black cover.
+    screen.cover();
+    REQUIRE_FALSE(screen.load(device, test::scratchDirectory("transition-reopen-none")));
+    CHECK(screen.phase() == Phase::Off);
+    CHECK(screen.opacity() == 0);
+    Canvas canvas;
+    canvas.begin(device, makeScreenProjection(512, 384));
+    screen.draw(canvas, 512);
+    canvas.end();
+    CHECK(device.draws.empty());
+}
+
 TEST_CASE("the native static archive holds the transition picture",
           "[game][screens][transition][assets]") {
     const std::filesystem::path root =

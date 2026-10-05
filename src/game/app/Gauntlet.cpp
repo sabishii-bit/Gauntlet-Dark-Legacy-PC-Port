@@ -321,8 +321,9 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
     if (outcome == TitleOutcome::Running) {
         return;
     }
-    m_title.close();
     if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart())) {
+        m_title.releaseMusic();
+        m_title.close();
         PlayerSelectScene::Inputs joining{};
         for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
             joining[static_cast<usize>(player)] = readPlayerMenuInput(input(), m_config, player);
@@ -330,6 +331,7 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
         m_select.join(joining);
         return;
     }
+    m_title.close();
     startNextAttractScreen();
 }
 
@@ -346,7 +348,8 @@ s32 Gauntlet::playerPressingStart() const {
 
 bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party,
                                  bool manage) {
-    if (m_select.open(renderDevice(), context(), startingPlayer, party, manage)) {
+    if (m_select.open(renderDevice(), context(), startingPlayer, party, manage,
+                      m_title.musicHandle())) {
         return true;
     }
     log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",
@@ -744,8 +747,13 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
             m_journey->completion->flow.advance();
             return;
         }
-        if (manageCharacters &&
-            !m_select.openAfterLevel(renderDevice(), context(), m_journey->party)) {
+        if (!manageCharacters) {
+            // Tower Shop and Inventory are menus, not another level entry.
+            // Restore play without a map, entering speech or encounter movie.
+            finishJourney();
+            return;
+        }
+        if (!m_select.openAfterLevel(renderDevice(), context(), m_journey->party)) {
             log::warn("Post-level character menu unavailable; keeping rewards and returning.");
         }
     }

@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 
 #include "TestSupport.h"
+#include "game/players/ClassData.h"
 #include "game/players/PlayerAnimator.h"
 
 namespace {
@@ -750,6 +751,120 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
     REQUIRE_FALSE(other.guarding());
 }
 
+TEST_CASE("strong ranged attacks retain quarter movement through release and recovery",
+          "[player-animation][alpha-combat]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"ATTPWRATHROW", "ATTPWRATHROWR"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 10;
+        tree.sequences.push_back(sequence);
+    }
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
+    REQUIRE(animator.strongThrowing());
+    // DoPlayerAction (0x800ac068), actions 99/100: A48=.25, A4C=1.
+    for (s32 frame = 0; frame < 60 && animator.strongThrowing(); ++frame) {
+        CHECK(animator.moveScale() == Approx(0.25f));
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
+    }
+    CHECK_FALSE(animator.strongThrowing());
+}
+
+TEST_CASE("strafe input can take over an ordinary throw without releasing fire",
+          "[player-animation][alpha-combat]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"STRAFE_ATKL1", "STRAFE_ATKL2"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 12;
+        tree.sequences.push_back(sequence);
+    }
+    for (s32 phase = 0; phase < 15; ++phase) {
+        CAPTURE(phase);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        for (s32 frame = 0; frame <= phase; ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+        }
+        REQUIRE(animator.throwing());
+        animator.setStrafe(StrafeWay::Left);
+        for (s32 frame = 0; frame < 30 && !animator.strafing(); ++frame) {
+            animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+        }
+        CHECK(animator.strafing());
+        CHECK_FALSE(animator.released());
+    }
+}
+
+TEST_CASE("ending a shooting strafe releases its pending shot before a quick stationary shot",
+          "[player-animation][alpha-combat]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"STRAFE_ATKL1", "STRAFE_ATKL2"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 24;
+        sequence.frameRate = 30;
+        tree.sequences.push_back(sequence);
+    }
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.setStrafe(StrafeWay::Left);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.strafing());
+    CHECK_FALSE(animator.released());
+    for (s32 frame = 0; frame < 18; ++frame) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+        CHECK_FALSE(animator.released());
+    }
+    animator.setStrafe(StrafeWay::None);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    CHECK(animator.strafing());
+    CHECK_FALSE(animator.released());
+    s32 frames = 0;
+    for (; frames < 30 && animator.strafing(); ++frames) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    }
+    REQUIRE_FALSE(animator.strafing());
+    REQUIRE(animator.released());
+    REQUIRE(animator.action() == Action::Throw);
+    // The finishing strafe release is followed by the ordinary quick-fire cycle,
+    // not by another full moving half-cycle (DoPlayerAction's switch(cur)).
+    s32 gap = 0;
+    do {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+        ++gap;
+    } while (!animator.released() && gap < 24);
+    CHECK(animator.released());
+    CHECK(gap < 24);
+}
+
+TEST_CASE("the sorceress kiss does not release an additional ordinary heavy projectile",
+          "[player-animation][alpha-combat]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"ATTPWRATHROW", "ATTPWRATHROWR"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 10;
+        tree.sequences.push_back(sequence);
+    }
+    for (const s32 character : {0, 6, 14}) {
+        CAPTURE(character);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.setCharacter(character);
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::StrongAttack);
+        s32 shots = 0;
+        for (s32 frame = 0; frame < 40 && animator.strongThrowing(); ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep);
+            shots += animator.strongReleased() ? 1 : 0;
+        }
+        // Native class_type is the eight-class animation family, not the costume id.
+        CHECK(shots == (character % kStartingClassCount == 6 ? 0 : 1));
+    }
+}
+
 TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recovers",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
@@ -768,11 +883,11 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
     REQUIRE(animator.action() == Action::StrongThrow);
     REQUIRE(animator.turboBegan());
     REQUIRE(animator.strongThrowing());
-    REQUIRE(animator.moveScale() == 0);
+    REQUIRE(animator.moveScale() == Approx(0.25f));
     s32 releases = 0;
     s32 steps = 0;
     while (animator.strongThrowing() && steps < 200) {
-        CHECK(animator.moveScale() == 0); // wind-up and recovery, including held input
+        CHECK(animator.moveScale() == Approx(0.25f)); // wind-up and recovery, including held input
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
         if (animator.strongReleased()) {
             REQUIRE(animator.action() == Action::StrongThrowRecover);
@@ -823,7 +938,7 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     // Another way is taken up at the end of the step; standing still, it stands.
     animator.setStrafe(StrafeWay::Back);
     REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeBack1, 60) < 60);
-    // An attack asked of it is made as it goes, one let fly as each half begins.
+    // An attack asked of it is made as it goes, one let fly as each half ends.
     s32 shots = 0;
     for (s32 i = 0; i < 120; ++i) {
         animator.update(PlayerMotion::Walk, kTicks, kStep, true);
@@ -873,10 +988,14 @@ TEST_CASE("a single attack press interrupts either half of every walking strafe"
             }
             INFO("direction " << static_cast<s32>(way) << " phase " << phase);
             animator.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::Attack);
-            REQUIRE(animator.released());
+            REQUIRE_FALSE(animator.released());
             REQUIRE(animator.action() == PlayerAnimator::strafeStep(way, true));
             animator.update(PlayerMotion::Walk, kTicks, kStep);
             REQUIRE_FALSE(animator.released());
+            for (s32 tick = 0; tick < 60 && !animator.released(); ++tick) {
+                animator.update(PlayerMotion::Walk, kTicks, kStep);
+            }
+            REQUIRE(animator.released());
         }
     }
 }
@@ -899,8 +1018,12 @@ TEST_CASE("retail class animations accept lateral strafe attack taps throughout 
                 }
                 INFO(code << " direction " << static_cast<s32>(way) << " phase " << phase);
                 animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
-                REQUIRE(animator.released());
+                REQUIRE_FALSE(animator.released());
                 REQUIRE(animator.action() == PlayerAnimator::strafeStep(way, true));
+                for (s32 tick = 0; tick < 60 && !animator.released(); ++tick) {
+                    animator.update(PlayerMotion::Run, kTicks, kStep);
+                }
+                REQUIRE(animator.released());
             }
         }
     }

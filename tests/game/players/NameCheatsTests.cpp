@@ -191,4 +191,21 @@ TEST_CASE("permanent turbo and super shot cheats use normal gameplay consumers",
     CHECK(shot->charge == -1);
 }
 
+TEST_CASE("hidden costume class selection uses that class's wallet",
+          "[game][cheats][class-wallet]") {
+    CharacterSave save;
+    save.name = "ICE600";
+    save.gold = 350;
+    save.classes[4].gold = 90;
+    REQUIRE(applyNameCheats(save));
+    CHECK(save.character == 4);
+    CHECK(save.gold == 90);
+    CHECK(save.classes[0].gold == 350);
+    save.gold = 105;
+    REQUIRE(applyNameCheats(save));
+    CHECK(save.gold == 105);
+    save.selectClass(0);
+    CHECK(save.gold == 350);
+}
+
 } // namespace

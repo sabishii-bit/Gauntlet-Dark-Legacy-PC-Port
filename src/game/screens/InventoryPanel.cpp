@@ -103,7 +103,7 @@ InventoryContents InventoryContents::of(const ClassProgress& progress) {
         contents.crystals[i] = progress.crystals[i + 1];
     }
     contents.legends = progress.relics.legends;
-    contents.runes = progress.relics.runes;
+    contents.shards = progress.relics.shards;
     return contents;
 }
 
@@ -202,9 +202,9 @@ std::vector<InventoryPiece> InventoryPanel::pieces(s32 laneX) const {
         const bool held = (m_contents.legends & (1U << realm)) != 0;
         add(held ? row.texture : row.empty, row.x, row.y);
     }
-    for (usize rune = 0; rune < kGlass.size(); ++rune) {
-        const PieceRow& row = kGlass[rune];
-        if (!row.texture.empty() && (m_contents.runes & (1U << rune)) != 0) {
+    for (usize shard = 0; shard < kGlass.size(); ++shard) {
+        const PieceRow& row = kGlass[shard];
+        if (!row.texture.empty() && (m_contents.shards & (1U << shard)) != 0) {
             add(row.texture, row.x, row.y);
         }
     }

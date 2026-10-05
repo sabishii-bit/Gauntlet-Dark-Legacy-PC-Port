@@ -1300,8 +1300,12 @@ MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held,
     const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), *target);
     sense.range =
         distance < actor.radius() + kSwingReach + bias ? MeleeRange::Swing : MeleeRange::Step;
+    const bool swarm = target->id >= kEnemyTargetBase && target->id < kGeneratorTargetBase;
+    const bool thing = !isCreature(target->id) && target->id < kPlayerTargetBase;
+    // PlayerMotion tests the swarm's height or the item's height, but never a
+    // critter's small NODE collision part, when setting the low-attack bit.
     sense.low = distance < actor.radius() + kStepReach &&
-                target->height <= (isCreature(target->id) ? kLowEnemy : kLowThing);
+                ((swarm && target->height <= kLowEnemy) || (thing && target->height <= kLowThing));
     const Vec3 toward = target->base - actor.position();
     if (std::hypot(toward.x, toward.z) > 1e-5f) {
         const f32 bearing = std::atan2(toward.x, toward.z) - actor.yaw();

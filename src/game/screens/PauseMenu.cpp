@@ -60,8 +60,13 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
         if (const auto parchment = m_textures.find("FONT32_PARCH")) {
             m_art.parchment = &m_textures.texture(device, *parchment);
         }
+        loadDecorations(device);
+        if (m_context.sounds != nullptr) {
+            m_commonSounds.load(context.unpackedRoot / "audio/COMMON");
+        }
         showMain();
         m_open = true;
+        playSound("S_OPTMENUSEL");
         return true;
     } catch (const std::exception& e) {
         log::warn("Pause menu: {}", e.what());
@@ -78,7 +83,46 @@ void PauseMenu::close() {
     m_art = MenuTextures{};
     m_text.setFont(nullptr, nullptr);
     m_textures.releaseTextures();
+    m_powerupTextures.releaseTextures();
+    m_arrow = ModelSprite{};
     m_party.clear();
+}
+void PauseMenu::loadDecorations(RenderDevice& device) {
+    if (const auto arrows = m_textures.find("ARROWS")) {
+        m_art.arrows = &m_textures.texture(device, *arrows);
+    }
+    const auto directory = m_context.unpackedRoot / "POWERUPS";
+    if (m_powerupTextures.load(directory) && m_powerupModels.load(directory) &&
+        m_powerupTrees.load(directory)) {
+        if (const auto tree = m_powerupTrees.find("ICON_ARROW");
+            tree &&
+            m_arrow.bind(m_powerupTrees.tree(*tree), m_powerupModels, m_powerupTextures, device)) {
+            m_art.icon = &m_arrow;
+        }
+    }
+}
+void PauseMenu::playSound(std::string_view name) {
+    if (m_context.sounds == nullptr || !m_commonSounds.loaded()) {
+        return;
+    }
+    const auto index = m_commonSounds.find(name);
+    if (!index) {
+        return;
+    }
+    try {
+        m_context.sounds->play(m_commonSounds.sequence(*index), 1, SoundCategory::Effects);
+    } catch (const std::exception& error) {
+        log::warn("Pause menu sound {}: {}", name, error.what());
+    }
+}
+void PauseMenu::playMenuSound(const MenuEvent& event, bool horizontal) {
+    if (event.action == MenuAction::Moved) {
+        playSound(horizontal ? "S_OPTMENUMOVHRZ" : "S_OPTMENUMOVVRT");
+    } else if (event.action == MenuAction::Choice) {
+        playSound("S_OPTMENUSEL");
+    } else if (event.action == MenuAction::Back) {
+        playSound("S_OPTMENUEXIT");
+    }
 }
 MenuDefinition PauseMenu::backdrop() const {
     auto menu = MenuDefinition::parchment();
@@ -132,7 +176,17 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     const auto ticks = static_cast<s32>(std::floor(m_tickRemainder + kRoundingTolerance));
     m_tickRemainder = std::max(0.0, m_tickRemainder - ticks);
     if (m_page == Page::Options) {
-        if (m_settings.update(input, ticks).action == MenuAction::Back) {
+        const auto previous = m_settings.page();
+        const auto event = m_settings.update(input, ticks);
+        playMenuSound(event, input.left || input.right);
+        if (!m_settings.audioSample().empty()) {
+            playSound(m_settings.audioSample());
+        }
+        if (event.action == MenuAction::None && previous != m_settings.page() &&
+            (input.back || input.escape || input.pointerBack)) {
+            playSound("S_OPTMENUEXIT");
+        }
+        if (event.action == MenuAction::Back) {
             showMain();
         }
         return PauseOutcome::Running;
@@ -140,6 +194,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     auto mapped = input;
     mapped.back |= input.escape;
     const auto event = m_menu.update(mapped, ticks);
+    playMenuSound(event, false);
     if (m_page == Page::Quit) {
         if (event.action == MenuAction::Choice && event.code == 1) {
             return m_inTower ? PauseOutcome::Title : PauseOutcome::ReturnTower;

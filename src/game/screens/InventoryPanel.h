@@ -18,7 +18,7 @@ struct InventoryContents {
     /** Gathered towards the eight provinces' gates: realms 1 to 8, the tower's crystal colours. */
     std::array<s32, kProvinceCount> crystals{};
     u16 legends = 0; ///< the legend items held, a bit per realm
-    u16 runes = 0;   ///< the runestones held, a bit each
+    u16 shards = 0;  ///< boss window glass held, a bit per tower-order province
 
     static InventoryContents of(const ClassProgress& progress);
     bool operator==(const InventoryContents&) const = default;

@@ -31,6 +31,8 @@ constexpr std::array<s32, 3> kPotionLessons{7, 94, 95}; ///< the first of them n
 constexpr std::string_view kSecretCoinCard = "COINHUD";
 constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
+constexpr std::array<std::string_view, Relics::kGargoyleKinds> kGargoyleIcons{
+    "SM_FANGS", "SM_FEATHERS", "SM_CLAWS"};
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 /** Whether taking `kind` is shown with the pickup's gesture (items.c 3157-3385). */
@@ -184,6 +186,24 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
     case ItemKind::Food: complainOfTheft(pickup.opener, actor.player(), players, services); break;
     case ItemKind::Runestone: shareRune(pickup.amount, players, services); break;
     case ItemKind::Legend: help(HelpMessages::kFirstLegendName + taking.count); break;
+    case ItemKind::GargoyleKey: {
+        // The collector was credited by takeItem; other living participants share
+        // one piece, while every recipient sees their own progress toward the statue.
+        const auto piece = static_cast<usize>(pickup.amount);
+        for (PlayerRuntime& member : players) {
+            if (member.departed || member.life != PlayerLife::Standing) {
+                continue;
+            }
+            Relics& relics = member.actor.save().progress().relics;
+            if (&member != &runtime) {
+                relics.addGargoylePiece(pickup.amount);
+            }
+            services.hud.pickups().showCount(member.actor.player(), kGargoyleIcons[piece],
+                                             relics.gargoylePieces[piece],
+                                             Relics::kGargoyleNeeded[piece]);
+        }
+        break;
+    }
     case ItemKind::Scroll:
         if (const LevelInfo* level = world.level();
             level != nullptr && taking.count >= 0 && services.openMessage) {

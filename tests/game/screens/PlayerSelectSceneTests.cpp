@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/StringTable.h"
@@ -21,6 +22,7 @@
 #include "game/players/Party.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/PlayerSelectScene.h"
+#include "game/screens/TitleScene.h"
 
 namespace {
 
@@ -143,6 +145,44 @@ TEST_CASE("the select screen refuses to open without unpacked data", "[game][sel
     REQUIRE_FALSE(scene.isOpen());
 }
 
+TEST_CASE("character selection continues the title music at its existing playback position",
+          "[select][title][music-handoff][assets]") {
+    test::assetOrSkip("audio/SELECT.vbk");
+    test::assetOrSkip("TITLE/textures.ngc");
+    test::FakeRenderDevice device;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const Fixture f("select-title-music");
+    const auto context = f.context(unpackedRoot(), &sounds);
+    TitleScene title;
+    PlayerSelectScene select;
+    REQUIRE(title.open(device, context));
+    const auto music = title.musicHandle();
+    REQUIRE(music != kNoSound);
+    SoundSet bank;
+    REQUIRE(bank.load(context.unpackedRoot / "audio/SELECT"));
+    const auto cue = bank.find("S_SELECTMUS");
+    REQUIRE(cue);
+    AudioMixer expectedMixer(48000);
+    SoundPlayer expectedPlayer(expectedMixer);
+    expectedPlayer.play(bank.sequence(*cue), 1, SoundCategory::Music);
+    std::vector<f32> actual(9600);
+    std::vector<f32> expected(9600);
+    mixer.mix(actual);
+    expectedMixer.mix(expected);
+    REQUIRE(actual == expected);
+    REQUIRE(select.open(device, context, -1, {}, false, music));
+    title.releaseMusic();
+    title.close();
+    CHECK(sounds.isPlaying(music));
+    CHECK(sounds.voiceCount() == 1);
+    mixer.mix(actual);
+    expectedMixer.mix(expected);
+    CHECK(actual == expected);
+    select.close();
+    CHECK_FALSE(sounds.isPlaying(music));
+}
+
 TEST_CASE("the starting player joins and others join on Start", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-join");
@@ -207,6 +247,54 @@ TEST_CASE("backing out of the last lane cancels the screen", "[game][select][ass
     const auto context = f.context();
     REQUIRE(scene.open(device, context, 0));
     REQUIRE(scene.step(1, player(0, false, true)) == SelectOutcome::Cancelled);
+}
+
+TEST_CASE("Manage Character Game Over removes only that player from the returned party",
+          "[game][select][manage-game-over][assets]") {
+    const bool saved = GENERATE(false, true);
+    const bool withTeammate = GENERATE(false, true);
+    CAPTURE(saved, withTeammate);
+    test::FakeRenderDevice device;
+    const Fixture f("select-scene-game-over");
+    PlayerSelectScene scene;
+    CharacterSave leaving;
+    leaving.name = "LEAVING";
+    const auto slot = saved ? std::optional<usize>{0} : std::nullopt;
+    std::vector party{PartyMember{0, leaving, slot}};
+    CharacterSave staying;
+    staying.name = "STAYING";
+    staying.gold = 456;
+    if (withTeammate) {
+        party.push_back(PartyMember{2, staying});
+    }
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 0, party, true));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::SaveMenu);
+    auto up = nobody();
+    up[0].up = true;
+    scene.step(1, up); // Game Over, immediately above Done.
+    auto outcome = scene.step(1, player(0, true));
+    if (!saved) {
+        REQUIRE(scene.lane(0).state() == SelectLane::State::QuitConfirm);
+        CHECK(scene.party().size() == party.size());
+        scene.step(1, up); // Yes; the default is No for an unsaved character.
+        outcome = scene.step(1, player(0, true));
+    }
+    CHECK_FALSE(scene.lane(0).active());
+    CHECK_FALSE(scene.lane(0).hasCharacter());
+    if (withTeammate) {
+        for (s32 frame = 0; frame < 200 && outcome == SelectOutcome::Running; ++frame) {
+            outcome = scene.step(1, nobody());
+        }
+        CHECK(outcome == SelectOutcome::Done);
+        const auto result = scene.party();
+        REQUIRE(result.size() == 1);
+        CHECK(result[0].player == 2);
+        CHECK(result[0].save.toJson() == staying.toJson());
+    } else {
+        CHECK(outcome == SelectOutcome::Cancelled);
+        CHECK(scene.party().empty());
+    }
 }
 
 TEST_CASE("the screen finishes once every player is locked in", "[game][select][assets]") {

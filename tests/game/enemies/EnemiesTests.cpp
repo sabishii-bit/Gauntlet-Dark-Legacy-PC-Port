@@ -77,6 +77,39 @@ TEST_CASE("recycling a brood slot releases its original generator even if replac
     CHECK(enemies.takeGeneratorEvents().empty());
 }
 
+TEST_CASE("full enemy pools prefer replacing brood over authored sentries",
+          "[enemies][generator-feedback][alpha-recycling][assets]") {
+    // find_enemy_slot (main.dol 0x8004FD00) reduces birth_style != 0's
+    // replacement score, independently of whether the sentry is asleep.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn sentry;
+    sentry.placed = true;
+    sentry.patrolBirth = GENERATE(false, true);
+    const auto sentryId = enemies.spawn(sentry, {});
+    REQUIRE(sentryId);
+    EnemySpawn brood;
+    brood.generator = 4;
+    brood.position = {20, 0, 0};
+    const auto broodId = enemies.spawn(brood, {});
+    REQUIRE(broodId);
+    REQUIRE(*sentryId != *broodId);
+    static_cast<void>(enemies.takeGeneratorEvents());
+
+    EnemySpawn incoming;
+    incoming.placed = true;
+    incoming.position = {40, 0, 0};
+    incoming.priority = EnemySpawn::Priority::Visible;
+    CHECK(enemies.spawn(incoming, {}) == broodId);
+    CHECK(enemies.positionOf(*sentryId) == sentry.position);
+    const auto events = enemies.takeGeneratorEvents();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].generator == 4);
+    CHECK(events[0].kind == EnemyGeneratorEvent::Kind::Detached);
+}
+
 /** A one-triangle IT, enough to stand and walk. */
 std::filesystem::path itArchive() {
     const auto root = test::scratchDirectory("it-enemy");

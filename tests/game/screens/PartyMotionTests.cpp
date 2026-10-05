@@ -240,6 +240,45 @@ TEST_CASE("party motion consults the shared-view limit before reporting moved su
     REQUIRE(f.players[0].actor.position().z < before.z);
 }
 
+TEST_CASE("super shot keeps the player's facing instead of turning toward assisted targets",
+          "[game][party-motion][alpha-combat]") {
+    Fixture f;
+    f.inputs[3].attack = true;
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::SuperShot; };
+    f.events.aim = [](usize) { return std::optional<Vec3>{{5, 3, 10}}; };
+    f.step();
+    CHECK(f.players[0].actor.yaw() == Approx(0));
+}
+
+TEST_CASE("held strong ranged input moves at quarter pace from its first frame",
+          "[game][party-motion][alpha-combat][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::StrongAttack; };
+    f.inputs[3].strongAttack = true;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    for (s32 frame = 0; frame < 8; ++frame) {
+        CAPTURE(frame);
+        const Vec3 before = player.actor.position();
+        f.step();
+        CHECK(glm::distance(before, player.actor.position()) ==
+              Approx(player.actor.speed() * 0.25f / 30.0f).margin(0.0001f));
+        CHECK(player.figure->animator().strongThrowing());
+    }
+}
+
 TEST_CASE("quick melee creeps forward from its first input frame while slow melee stays planted",
           "[game][party-motion][melee]") {
     Fixture f;

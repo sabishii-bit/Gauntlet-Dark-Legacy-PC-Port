@@ -300,6 +300,9 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
 
     if (m_optionsMenu.isOpen()) {
         const MenuEvent event = m_optionsMenu.update(input, ticks);
+        if (!m_optionsMenu.audioSample().empty()) {
+            playMenuSound(m_optionsMenu.audioSample());
+        }
         if (event.action == MenuAction::Back) {
             closeOptionsMenu();
         } else if (event.action == MenuAction::Choice) {

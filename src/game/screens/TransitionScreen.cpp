@@ -38,6 +38,8 @@ bool TransitionScreen::load(RenderDevice& device, const std::filesystem::path& u
 void TransitionScreen::release() {
     m_picture = nullptr;
     m_textures.releaseTextures();
+    m_phase = Phase::Off;
+    m_opacity = 0.0f;
 }
 
 void TransitionScreen::comeUp() {

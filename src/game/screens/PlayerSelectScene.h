@@ -46,7 +46,8 @@ public:
     /** Loads the unpacked select assets; `startingPlayer` joins at once, and the characters
      * of `party` (a game in progress) stand locked in their lanes. False when absent. */
     bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
-              std::span<const PartyMember> party = {}, bool manage = false);
+              std::span<const PartyMember> party = {}, bool manage = false,
+              SoundHandle continuingMusic = kNoSound);
     /** After a level, every surviving character gets Save/Change/Load/Quit/Done. */
     bool openAfterLevel(RenderDevice& device, const GameContext& context,
                         std::span<const PartyMember> party);

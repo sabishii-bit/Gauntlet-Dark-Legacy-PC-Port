@@ -1,9 +1,12 @@
 #include "game/players/PlayerAnimator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 
 #include "engine/core/Types.h"
+
+#include "game/players/ClassData.h"
 
 namespace gdl::game {
 
@@ -453,8 +456,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A class without the throw's sequences does not throw.
     attack = attack && m_sequences[index(Action::Throw)] >= 0;
-    const bool stepping = m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
-                          !throwing() && !meleeing() && !conjuring();
+    const bool stepping =
+        m_strafe != StrafeWay::None && motion != PlayerMotion::Stand && !meleeing() && !conjuring();
     if (stepping && attack && m_sequences[index(strafeStep(m_strafe, true))] >= 0) {
         play(decide(strafeStep(m_strafe, true)), seconds);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
@@ -647,6 +650,14 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::PowerLowRecover: d.cut = Cut::WhenDone; break;
     case Action::Throw:
     case Action::ThrowMoving:
+        // A close attack or moving shot takes over the wind-up at its current frame
+        // (DoPlayerAction, P_THROW/P_THROWQ's non-throw attack branch).
+        if (isMelee(requested) ||
+            (requested >= Action::StrafeShootForward1 && requested <= Action::StrafeShootRight2)) {
+            d.cut = Cut::IfDifferent;
+            d.startFrame = std::round(m_player.frame());
+            break;
+        }
         // The wind-up gives way to the release at its end, or at once from its second frame.
         d.action = m_current == Action::Throw ? Action::ThrowRelease : Action::ThrowMovingRelease;
         d.cut = m_player.frame() >= kReleaseFrame ? Cut::IfDifferent : Cut::WhenDoneIfDifferent;
@@ -805,7 +816,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     // An attack cuts into walking and running at once, and from their first halves takes the
     // moving wind-up.
     if (requested == Action::Throw && d.action == Action::Throw && !isThrow(m_current)) {
-        if (m_current != Action::Start && !meleeing() && !picking) {
+        if (m_current != Action::Start && !meleeing() && !strafing() && !picking) {
             d.cut = Cut::IfDifferent;
         }
         if (m_current == Action::Walk1 || m_current == Action::Run1) {
@@ -977,6 +988,11 @@ MeleeBlow PlayerAnimator::blowOf(Action swing) {
     }
 }
 
+void PlayerAnimator::setCharacter(s32 character) {
+    m_character =
+        character >= 0 && character < kSumnerClass ? character % kStartingClassCount : character;
+}
+
 f32 PlayerAnimator::meleePace() const {
     const bool rooted = m_character == kKnightClass || m_character == kSorceressClass;
     switch (m_current) {
@@ -1096,7 +1112,10 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     } else if (m_current == Action::Walk2 || m_current == Action::Run2) {
         m_footfall = Foot::Second;
     }
-    if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease) {
+    // Both ordinary releases and strafing half-cycles let fly when they give way,
+    // including the last moving shot when the strafe modifier is released.
+    if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease ||
+        (m_current >= Action::StrafeShootForward1 && m_current <= Action::StrafeShootRight2)) {
         m_released = true;
     }
     // Contacts belong to completed swings, never to an interruption by damage or death.
@@ -1136,7 +1155,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         m_superReleased = true;
     }
     if (m_current == Action::StrongThrow && decision.action == Action::StrongThrowRecover &&
-        !m_legendAsked) {
+        !m_legendAsked && m_character != kSorceressClass) {
         m_strongReleased = true;
     }
     if (m_legendAsked && decision.action != Action::UsePotion &&
@@ -1145,11 +1164,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         decision.action != Action::SpecialShotRecover) {
         m_legendAsked = false; // the gesture is over
     }
-    // A strafing attack lets fly as each of its halves begins; its steps sound like a walk's.
-    if (decision.action >= Action::StrafeShootForward1 &&
-        decision.action <= Action::StrafeShootRight2) {
-        m_released = true;
-    }
+    // A strafing step sounds like a walk's.
     if (strafing()) {
         const bool first = (index(m_current) - index(Action::StrafeForward1)) % 2 == 0;
         m_footfall = first ? Foot::First : Foot::Second;
@@ -1169,7 +1184,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         m_attackSeconds = 0.0f;
     }
     m_previous = m_pose;
-    m_player.start(m_tree->sequences[target], target, decision.transition);
+    m_player.start(m_tree->sequences[target], target, decision.transition, decision.startFrame);
     if (decision.action == Action::Start) {
         m_entered = true;
     }

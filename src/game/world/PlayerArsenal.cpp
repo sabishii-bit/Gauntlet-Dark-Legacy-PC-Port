@@ -242,9 +242,7 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     launch.owner = actor.player();
     launch.position = actor.followPoint() + actor.facing() * PlayerMissiles::kMuzzle;
     launch.direction = actor.facing();
-    if (target && glm::length(*target - launch.position) > 0.001f) {
-        launch.direction = glm::normalize(*target - launch.position);
-    }
+    // ModifyPlayerDpos bypasses target correction for the Super Shot damage flag.
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat) * (m_resources->bossEncounter ? 1.5f : 2.0f);
     launch.flags = worn.weapon | powerup::kSuperShot | 0x20U;

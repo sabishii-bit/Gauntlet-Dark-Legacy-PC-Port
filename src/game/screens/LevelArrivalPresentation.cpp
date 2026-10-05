@@ -139,7 +139,8 @@ void LevelArrivalPresentation::drawTitle(Canvas& canvas, const TextPainter& text
     if (!active() || title.empty() || !text.ready()) {
         return;
     }
-    const TextStyle style;
+    TextStyle style;
+    style.scale = m_titleSlide;
     const s32 y = kTitleY - static_cast<s32>(static_cast<f32>(kTitleLift) * m_titleSlide);
     text.draw(canvas, -static_cast<s32>(width / 2.0f), y, title, style);
 }

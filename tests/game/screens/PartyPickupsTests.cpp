@@ -304,4 +304,76 @@ TEST_CASE("the chest opener complains only about retail theft eligible pickups",
     audio.close();
 }
 
+TEST_CASE("golden idol pieces reward every living participant once and show personal counters",
+          "[pickups][multiplayer][golden-idol][assets]") {
+    const s32 kind = GENERATE(0, 1, 2);
+    const PlayerLife fallen = GENERATE(PlayerLife::Dying, PlayerLife::InTower);
+    CAPTURE(kind, fallen);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    const auto& records = world.layout().itemInfos();
+    const auto record = std::ranges::find_if(records, [&](const ItemInfo& info) {
+        return info.type == ItemInfo::kPowerup &&
+               info.subtype == static_cast<s32>(ItemKind::GargoyleKey) && info.value == kind;
+    });
+    REQUIRE(record != records.end());
+    const auto recordIndex = static_cast<s32>(std::distance(records.begin(), record));
+    const Vec3 spot{10.7f, 10.2f, -60.5f};
+    std::array<PlayerRuntime, 4> players;
+    const std::array<s32, 4> slots{1, 3, 0, 2};
+    const auto piece = static_cast<usize>(kind);
+    const s32 total = Relics::kGargoyleNeeded[piece];
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].actor.spawn(slots[i], {}, nullptr, i == 1 ? spot : spot + Vec3{40, 0, 0}, 0);
+        players[i].actor.save().progress().relics.gargoylePieces[piece] =
+            i == 0 ? total - 1 : static_cast<s32>(i) + 4;
+    }
+    players[2].life = fallen;
+    players[3].departed = true;
+    LevelFixtures fixtures;
+    PartyHud hud;
+    LevelSoundscape audio;
+    const ClassDataSet classes;
+    const PartyPickups::Services services{.world = world,
+                                          .fixtures = fixtures,
+                                          .hud = hud,
+                                          .audio = audio,
+                                          .classes = classes,
+                                          .sounds = nullptr,
+                                          .help = {},
+                                          .openMessage = {},
+                                          .challengeCoin = {}};
+    PartyPickups pickups;
+    constexpr std::array kIcons{"SM_FANGS", "SM_FEATHERS", "SM_CLAWS"};
+    for (s32 collected = 1; collected <= 2; ++collected) {
+        REQUIRE(world.placeItemRecord(device, recordIndex, spot));
+        pickups.collect(device, players, services);
+        REQUIRE(world.placedItems().item(world.placedItems().size() - 1).taken);
+        CHECK(players[0].actor.save().progress().relics.gargoylePieces[piece] == total);
+        CHECK(players[1].actor.save().progress().relics.gargoylePieces[piece] == 5 + collected);
+        CHECK(players[2].actor.save().progress().relics.gargoylePieces[piece] == 6);
+        CHECK(players[3].actor.save().progress().relics.gargoylePieces[piece] == 7);
+        for (usize i = 0; i < 2; ++i) {
+            const auto& count = hud.pickups().count(slots[i]);
+            CHECK(count.showing());
+            CHECK(count.icon == kIcons[piece]);
+            CHECK(count.count == (i == 0 ? total : 5 + collected));
+            CHECK(count.total == total);
+            CHECK(count.secondsLeft == PickupHud::kCountSeconds);
+        }
+        CHECK_FALSE(hud.pickups().count(slots[2]).showing());
+        CHECK_FALSE(hud.pickups().count(slots[3]).showing());
+    }
+    REQUIRE(hud.pickups().cards().size() == 2);
+    for (const auto& card : hud.pickups().cards()) {
+        CHECK(card.player == 3);
+        CHECK(card.texture == "GOLDNICON");
+    }
+}
+
 } // namespace

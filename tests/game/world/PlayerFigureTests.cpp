@@ -626,6 +626,88 @@ TEST_CASE("native wizard hand glow cycles borrow POWERUPS frames and blend betwe
     CHECK(glow->state.effectiveTextureBlend() == Catch::Approx(0.125f));
 }
 
+TEST_CASE("native jester-family held bombs borrow their five visible class-effect frames",
+          "[game][figure][held-effects][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/JES/SFXYEL/objects.ngc")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.character = GENERATE(7, 15);
+    save.color = GENERATE(0, 1, 2, 3);
+    CAPTURE(save.character, save.color);
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->heldWeaponBound());
+    auto* effects = figure->effects();
+    REQUIRE(effects);
+    const auto first = effects->textures.find("BOMB00");
+    REQUIRE(first);
+    CameraFrame camera;
+    camera.right = Vec3{0, 0, -1};
+    camera.forward = Vec3{1, 0, 0};
+    for (u32 frame = 0; frame < 6; ++frame) {
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, true, &camera);
+        const usize bodyDraws = device.draws.size();
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, &camera);
+        REQUIRE(device.draws.size() > bodyDraws);
+        const auto& bomb = device.draws[bodyDraws];
+        CHECK(bomb.texture == &effects->textures.texture(device, *first + frame % 5));
+        const auto* pixels = dynamic_cast<const test::FakeTexture*>(bomb.texture);
+        REQUIRE(pixels);
+        CHECK(pixels->pixels.size() > 4); // not the transparent animation-only placeholder
+        REQUIRE(bomb.vertices.size() >= 3);
+        const Vec3 normal =
+            glm::normalize(glm::cross(bomb.vertices[1].position - bomb.vertices[0].position,
+                                      bomb.vertices[2].position - bomb.vertices[0].position));
+        CHECK(std::abs(glm::dot(normal, camera.forward)) == Catch::Approx(1).margin(0.001f));
+        figure->animate(0, 2, 1.0f / 30);
+    }
+}
+
+TEST_CASE("native wizard hand glow follows the camera without rotating his body",
+          "[game][figure][held-effects][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/objects.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.character = 2;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    figure->animate(0, 1, 1.0f / 60);
+    const CameraFrame first;
+    figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, &first, 0.5f);
+    const auto before = device.draws;
+    CameraFrame turned;
+    turned.right = Vec3{0, 0, -1};
+    turned.forward = Vec3{1, 0, 0};
+    device.draws.clear();
+    figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, &turned, 0.5f);
+    REQUIRE(device.draws.size() == before.size());
+    bool foundGlow = false;
+    for (usize i = 0; i < before.size(); ++i) {
+        const auto& actual = device.draws[i];
+        REQUIRE(actual.vertices.size() == before[i].vertices.size());
+        if (actual.state.nextTexture != nullptr && actual.state.textureBlend > 0) {
+            foundGlow = true;
+            REQUIRE(actual.vertices.size() >= 3);
+            const Vec3 normal = glm::normalize(
+                glm::cross(actual.vertices[1].position - actual.vertices[0].position,
+                           actual.vertices[2].position - actual.vertices[0].position));
+            CHECK(std::abs(glm::dot(normal, turned.forward)) == Catch::Approx(1).margin(0.001f));
+            CHECK(actual.vertices[0].position != before[i].vertices[0].position);
+        } else {
+            for (usize vertex = 0; vertex < actual.vertices.size(); ++vertex) {
+                CHECK(actual.vertices[vertex].position == before[i].vertices[vertex].position);
+            }
+        }
+    }
+    CHECK(foundGlow);
+}
+
 TEST_CASE("an unloaded player figure is safe to animate and draw", "[game][world][figure]") {
     test::FakeRenderDevice device;
     PlayerFigure figure;

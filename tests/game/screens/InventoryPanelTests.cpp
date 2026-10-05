@@ -18,7 +18,7 @@ InventoryContents contents() {
     result.gargoylePieces = {3, 20, 40};
     result.crystals = {5, 100, 0, 7, 175, 1, 2, 250};
     result.legends = static_cast<u16>((1U << 2) | (1U << 7));
-    result.runes = static_cast<u16>((1U << 0) | (1U << 1) | (1U << 8) | (1U << 9));
+    result.shards = static_cast<u16>((1U << 0) | (1U << 1) | (1U << 8) | (1U << 9));
     return result;
 }
 
@@ -169,10 +169,11 @@ TEST_CASE("inventory panel counts the pieces and crystals against what the tower
 }
 
 TEST_CASE("inventory panel shows the legend items held, the empty pictures otherwise, and the "
-          "glass of the runestones held",
+          "glass of the bosses defeated",
           "[inventory-panel]") {
     // draw_inventory_panel: towerGetRuneNearStat picks `<name>_empty` (lbl_803473EC) for a
-    // realm's item not held; PlayerHasRune (800A2568), not PlayerHasShard, gates the pieces.
+    // realm's item not held; PlayerHasRune (800A2568) reads the boss-victory collection,
+    // awarded by BossDeath through PlayerGiveRune (800A2500), called shards in the remake.
     InventoryPanel panel;
     panel.open(contents());
     panel.step(InventoryPanel::kEnterTicks, false);
@@ -217,10 +218,33 @@ TEST_CASE("inventory contents come from the character's progress", "[inventory-p
     progress.crystals[9] = 7;
     REQUIRE(progress.relics.addLegend(3));
     REQUIRE(progress.relics.addRune(2));
+    REQUIRE(progress.relics.addShard(3));
     const auto taken = InventoryContents::of(progress);
     CHECK(taken.gargoylePieces == std::array<s32, 3>{1, 2, 3});
     CHECK(taken.crystals == std::array<s32, 8>{15, 0, 0, 0, 0, 0, 0, 4});
     CHECK(taken.legends == (1U << 3));
-    CHECK(taken.runes == (1U << 2));
+    CHECK(taken.shards == (1U << 3));
+}
+
+TEST_CASE("collectible runestones cannot masquerade as boss window glass",
+          "[inventory-panel][boss-glass]") {
+    ClassProgress progress;
+    REQUIRE(progress.relics.addRune(7));
+    InventoryPanel panel;
+    panel.open(InventoryContents::of(progress));
+    panel.step(InventoryPanel::kEnterTicks, false);
+    CHECK(piece(panel.pieces(0), "YETTI_PIECE") == nullptr);
+    CHECK(progress.relics.shards == 0);
+
+    REQUIRE(progress.relics.addShard(7));
+    panel.open(InventoryContents::of(progress));
+    panel.step(InventoryPanel::kEnterTicks, false);
+    CHECK(piece(panel.pieces(0), "YETTI_PIECE") != nullptr);
+
+    progress.relics.runes = 0;
+    panel.open(InventoryContents::of(progress));
+    panel.step(InventoryPanel::kEnterTicks, false);
+    CHECK(piece(panel.pieces(0), "YETTI_PIECE") != nullptr);
+    CHECK(piece(panel.pieces(0), "LITCH_PIECE") == nullptr);
 }
 } // namespace
