@@ -48,6 +48,10 @@ std::string_view soundName(SelectSound sound) {
 
 } // namespace
 
+PlayerSelectScene::~PlayerSelectScene() {
+    stopSounds();
+}
+
 std::string_view PlayerSelectScene::text(std::string_view id) const {
     return m_context.strings != nullptr ? m_context.strings->get(id) : id;
 }
@@ -178,10 +182,7 @@ std::vector<PartyMember> PlayerSelectScene::party() const {
 }
 
 void PlayerSelectScene::close() {
-    if (m_context.sounds != nullptr && m_music != kNoSound) {
-        m_context.sounds->stop(m_music);
-    }
-    m_music = kNoSound;
+    stopSounds();
     for (s32 i = 0; i < kLaneCount; ++i) {
         m_lanes[static_cast<usize>(i)].reset(i, nullptr);
     }
@@ -320,8 +321,15 @@ void PlayerSelectScene::playSound(SelectSound sound, const SelectLane& lane) {
         return;
     }
     try {
-        const SoundHandle handle =
-            m_context.sounds->play(bank->sequence(*index), 1.0f, SoundCategory::Effects);
+        std::erase_if(m_soundHandles,
+                      [this](SoundHandle handle) { return !m_context.sounds->isPlaying(handle); });
+        // AudioWithName puts every player's welcome and name in the same narration queue.
+        const SoundHandle handle = m_context.sounds->playAfter(
+            greeting ? m_greeting : kNoSound, bank->sequence(*index), 1.0f, SoundCategory::Effects);
+        if (handle == kNoSound) {
+            return;
+        }
+        m_soundHandles.push_back(handle);
         if (greeting) {
             greetCharacter(handle, lane.save());
         }
@@ -340,8 +348,27 @@ void PlayerSelectScene::greetCharacter(SoundHandle greeting, const CharacterSave
     if (!index.has_value()) {
         return;
     }
-    m_greeting = m_context.sounds->playAfter(greeting, m_selectSounds.sequence(*index), 1.0f,
-                                             SoundCategory::Effects);
+    const auto name = m_context.sounds->playAfter(greeting, m_selectSounds.sequence(*index), 1.0f,
+                                                  SoundCategory::Effects);
+    if (name != kNoSound) {
+        m_greeting = name;
+        m_soundHandles.push_back(name);
+    }
+}
+
+void PlayerSelectScene::stopSounds() {
+    // Pending sequences borrow both banks. Cancel only this screen's audio before the
+    // banks reload or die, then detach the output so a later close is harmless.
+    if (m_context.sounds != nullptr) {
+        m_context.sounds->stop(m_music);
+        for (const auto handle : m_soundHandles) {
+            m_context.sounds->stop(handle);
+        }
+    }
+    m_soundHandles.clear();
+    m_music = kNoSound;
+    m_greeting = kNoSound;
+    m_context.sounds = nullptr;
 }
 
 bool PlayerSelectScene::speaking() const {
@@ -448,7 +475,8 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
     if (leave || !anyActive) {
         return SelectOutcome::Cancelled;
     }
-    m_idleFrames = busy ? 0 : m_idleFrames + 1;
+    // BGMusicStart drains the narration queue before switching to the level's bank.
+    m_idleFrames = busy || speaking() ? 0 : m_idleFrames + 1;
     return m_idleFrames > kIdleFrames ? SelectOutcome::Done : SelectOutcome::Running;
 }
 

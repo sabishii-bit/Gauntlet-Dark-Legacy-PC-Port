@@ -209,6 +209,8 @@ void GameConfig::mergeJson(std::string_view json) {
             readKeys(k, "back", menu.back);
             readKeys(k, "start", menu.start);
             readKeys(k, "escape", menu.escape);
+            readKeys(k, "shopSell", menu.shopSell);
+            readKeys(k, "shopExit", menu.shopExit);
         }
         if (c.contains("pad")) {
             const Json& p = c.at("pad");
@@ -219,6 +221,8 @@ void GameConfig::mergeJson(std::string_view json) {
             readButtons(p, "select", menu.padSelect);
             readButtons(p, "back", menu.padBack);
             readButtons(p, "start", menu.padStart);
+            readButtons(p, "shopSell", menu.padShopSell);
+            readButtons(p, "shopExit", menu.padShopExit);
         }
         if (c.contains("play")) {
             const Json& moves = c.at("play");
@@ -351,7 +355,9 @@ std::string GameConfig::toJson() const {
                           {"select", keyNames(menu.select)},
                           {"back", keyNames(menu.back)},
                           {"start", keyNames(menu.start)},
-                          {"escape", keyNames(menu.escape)}}},
+                          {"escape", keyNames(menu.escape)},
+                          {"shopSell", keyNames(menu.shopSell)},
+                          {"shopExit", keyNames(menu.shopExit)}}},
                         {"pad",
                          {{"up", buttonNames(menu.padUp)},
                           {"down", buttonNames(menu.padDown)},
@@ -359,7 +365,9 @@ std::string GameConfig::toJson() const {
                           {"right", buttonNames(menu.padRight)},
                           {"select", buttonNames(menu.padSelect)},
                           {"back", buttonNames(menu.padBack)},
-                          {"start", buttonNames(menu.padStart)}}},
+                          {"start", buttonNames(menu.padStart)},
+                          {"shopSell", buttonNames(menu.padShopSell)},
+                          {"shopExit", buttonNames(menu.padShopExit)}}},
                         {"play",
                          {{"keyboard",
                            {{"up", keyNames(play.up)},

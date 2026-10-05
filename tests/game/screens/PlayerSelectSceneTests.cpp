@@ -1,6 +1,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <vector>
 
@@ -9,6 +10,7 @@
 
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/StringTable.h"
+#include "engine/assets/TextureSet.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundClip.h"
 #include "engine/audio/SoundPlayer.h"
@@ -430,6 +432,201 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
     REQUIRE(scene.speaking());
     drain(10.0);
     REQUIRE_FALSE(scene.speaking());
+}
+
+TEST_CASE("selection waits for the complete queued greetings before entering play",
+          "[select][select-welcome][assets][multiplayer]") {
+    // BGMusicStart (800A1144), called before round start, drains sndFxUpdate's
+    // narration queue before replacing the select bank with level audio.
+    test::FakeRenderDevice device;
+    const Fixture f("select-welcome-completion");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    PlayerSelectScene scene;
+    const auto context = f.context(unpackedRoot(), &sounds);
+    REQUIRE(scene.open(device, context, 0));
+    scene.step(1, player(2, false, false, true));
+    PlayerSelectScene::Inputs choose{};
+    choose[0].select = choose[2].select = true;
+    scene.step(1, choose); // New, in both nonadjacent lanes.
+    scene.step(1, choose); // Random names.
+    scene.step(NameEntry::kFlashTicks + 1, nobody());
+    scene.step(1, choose);
+    REQUIRE(scene.lane(0).lockedIn());
+    REQUIRE(scene.lane(2).lockedIn());
+    REQUIRE(scene.speaking());
+    scene.step(200, nobody()); // Finish the portraits without advancing the audio device.
+    SelectOutcome outcome = SelectOutcome::Running;
+    for (s32 frame = 0; frame <= PlayerSelectScene::kIdleFrames; ++frame) {
+        outcome = scene.step(1, nobody());
+    }
+    CHECK(outcome == SelectOutcome::Running);
+
+    SoundSet bank;
+    REQUIRE(bank.load(context.unpackedRoot / "audio/SELECT"));
+    const auto duration = [&](std::string_view name) {
+        const auto index = bank.find(name);
+        REQUIRE(index);
+        f64 seconds = 0;
+        for (const auto& part : bank.sequence(*index).steps) {
+            seconds += part.clip->seconds();
+        }
+        return seconds;
+    };
+    std::array<f64, 2> lengths{};
+    for (usize i = 0; i < lengths.size(); ++i) {
+        const auto& save = scene.lane(static_cast<s32>(i * 2)).save();
+        lengths[i] = duration("S_WELCOME") + duration(std::format("S_{}{}1S", colorCode(save.color),
+                                                                  classCode(save.character)));
+    }
+    std::array<f32, 9600> audio{};
+    const auto drain = [&](f64 seconds) {
+        const auto chunks = static_cast<s32>(std::ceil(seconds * 10));
+        for (s32 chunk = 0; chunk < chunks; ++chunk) {
+            mixer.mix(audio);
+            sounds.update();
+        }
+    };
+    drain(std::max(lengths[0], lengths[1]) + 0.3);
+    // Simultaneous welcomes must not overlap, or the last handle ends too early.
+    CHECK(scene.speaking());
+    CHECK(scene.step(1, nobody()) == SelectOutcome::Running);
+    drain(lengths[0] + lengths[1] + 1);
+    CHECK_FALSE(scene.speaking());
+    for (s32 frame = 0; frame <= PlayerSelectScene::kIdleFrames; ++frame) {
+        outcome = scene.step(1, nobody());
+    }
+    CHECK(outcome == SelectOutcome::Done);
+}
+
+TEST_CASE("closing selection cancels its queued welcome without stopping unrelated audio",
+          "[select][select-welcome][select-audio-lifetime][assets]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-welcome-close");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const SoundClip unrelatedClip{48000, 1, std::vector<f32>(480, 0.01f)};
+    SoundSequence unrelatedSequence;
+    unrelatedSequence.steps.push_back({&unrelatedClip, true, true});
+    const auto unrelated = sounds.play(unrelatedSequence);
+    const auto context = f.context(unpackedRoot(), &sounds);
+    std::array<f32, 960> audio{};
+    const auto audioStep = [&] {
+        mixer.mix(audio);
+        sounds.update();
+    };
+    {
+        PlayerSelectScene scene;
+        REQUIRE(scene.open(device, context, 0));
+        scene.step(1, player(0, true));
+        scene.step(1, player(0, true));
+        scene.step(NameEntry::kFlashTicks + 1, nobody());
+        scene.step(1, player(0, true));
+        REQUIRE(scene.speaking());
+        scene.close();
+        // Stop here on the unfixed implementation, before feeding any stale borrowers.
+        REQUIRE_FALSE(scene.speaking());
+        audioStep();
+        CHECK(sounds.voiceCount() == 1);
+        CHECK(sounds.isPlaying(unrelated));
+        REQUIRE(scene.open(device, context, 0));
+        scene.step(1, player(0, true)); // A live menu cue and music when destroyed.
+    }
+    audioStep();
+    CHECK(sounds.voiceCount() == 1);
+    for (s32 step = 0; step < 200; ++step) {
+        audioStep();
+    }
+    CHECK(sounds.isPlaying(unrelated));
+    CHECK(sounds.voiceCount() == 1);
+    CHECK(std::ranges::all_of(audio, [](f32 value) { return value == 0.01f; }));
+}
+
+TEST_CASE("a missing class announcement finishes after the welcome without holding selection",
+          "[select][select-welcome][assets]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-welcome-no-name");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const auto context = f.context(unpackedRoot(), &sounds);
+    SoundSet bank;
+    REQUIRE(bank.load(context.unpackedRoot / "audio/SELECT"));
+    REQUIRE_FALSE(bank.find("S_REDSUM1S"));
+    CharacterSave save;
+    save.name = "SUMNER";
+    save.character = kSumnerClass;
+    save.classUnlock = 0xFFFF;
+    SaveSlots slots;
+    REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
+    REQUIRE(slots.write(0, save));
+    PlayerSelectScene scene;
+    REQUIRE(scene.open(device, context, 0));
+    scene.step(1, player(0, true)); // Load, initially highlighted when a save exists.
+    scene.step(1, player(0, true));
+    scene.step(SelectLane::kOperationStepTicks * 3, nobody());
+    scene.step(SelectLane::kNoticeTicks, nobody());
+    REQUIRE(scene.lane(0).pickedClass() == kSumnerClass);
+    scene.step(1, player(0, true));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::SaveMenu);
+    scene.step(1, player(0, true)); // Loaded characters confirm Done after choosing their class.
+    REQUIRE(scene.lane(0).lockedIn());
+    REQUIRE(scene.speaking());
+    scene.step(200, nobody());
+    CHECK(scene.step(1, nobody()) == SelectOutcome::Running);
+    std::array<f32, 9600> audio{};
+    for (s32 chunk = 0; chunk < 100; ++chunk) {
+        mixer.mix(audio);
+        sounds.update();
+    }
+    REQUIRE_FALSE(scene.speaking());
+    SelectOutcome outcome = SelectOutcome::Running;
+    for (s32 frame = 0; frame <= PlayerSelectScene::kIdleFrames; ++frame) {
+        outcome = scene.step(1, nobody());
+    }
+    CHECK(outcome == SelectOutcome::Done);
+}
+
+TEST_CASE("the native character preview panel follows highlighted costume colors",
+          "[select][select-banner][assets]") {
+    // setup_player_display uses player_rgb on S4_<class>; the border and
+    // BK_RUNE_STONE_02 strip are separate artwork, not additional tint recipients.
+    test::FakeRenderDevice device;
+    const Fixture f("select-banner");
+    PlayerSelectScene scene;
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 2));
+    scene.step(1, player(2, true));
+    scene.step(1, player(2, true));
+    scene.step(NameEntry::kFlashTicks + 1, nobody());
+    REQUIRE(scene.lane(2).state() == SelectLane::State::ClassPick);
+    TextureSet reference;
+    REQUIRE(reference.load(context.unpackedRoot / "SELECT"));
+    const auto projection = makeScreenProjection(640, 448);
+    for (s32 character = 0; character < kStartingClassCount; ++character) {
+        REQUIRE(scene.lane(2).pickedClass() == character);
+        const auto panel = reference.find(std::format("S4_{}", classCode(character)));
+        REQUIRE(panel);
+        for (s32 color = 0; color < kColorCount; ++color) {
+            const auto picked = scene.lane(2).pickedColor();
+            CAPTURE(character, picked);
+            device.draws.clear();
+            scene.render(device, projection, 640, 448);
+            const auto found = std::ranges::find_if(device.draws, [&](const auto& draw) {
+                const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+                return texture != nullptr && texture->pixels == reference.image(*panel).pixels &&
+                       test::minCorner(draw) == Vec2{256, 320} &&
+                       test::maxCorner(draw) == Vec2{384, 384};
+            });
+            REQUIRE(found != device.draws.end());
+            CHECK(std::ranges::all_of(found->vertices, [&](const auto& vertex) {
+                return vertex.color == boxTint(picked, true);
+            }));
+            PlayerSelectScene::Inputs up{};
+            up[2].up = true;
+            scene.step(1, up);
+        }
+        scene.step(1, player(2, false, false, false, true));
+    }
 }
 
 TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkpoints",

@@ -43,6 +43,11 @@ public:
     static constexpr s32 kIdleFrames = 8;
     using Inputs = std::array<MenuInput, kLaneCount>;
 
+    PlayerSelectScene() = default;
+    ~PlayerSelectScene();
+    PlayerSelectScene(const PlayerSelectScene&) = delete;
+    PlayerSelectScene& operator=(const PlayerSelectScene&) = delete;
+
     /** Loads the unpacked select assets; `startingPlayer` joins at once, and the characters
      * of `party` (a game in progress) stand locked in their lanes. False when absent. */
     bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
@@ -96,6 +101,7 @@ private:
     void playSound(SelectSound sound, const SelectLane& lane);
     void greetCharacter(SoundHandle greeting, const CharacterSave& save);
     void startMusic();
+    void stopSounds();
 
     bool m_open = false;
     RenderDevice* m_device = nullptr;
@@ -117,6 +123,7 @@ private:
     SoundSet m_selectSounds;
     SoundHandle m_music = kNoSound;
     SoundHandle m_greeting = kNoSound;
+    std::vector<SoundHandle> m_soundHandles;
     ClassDataSet m_classes;
     LevelWorld* m_tower = nullptr;
     std::optional<WorldCamera> m_camera;

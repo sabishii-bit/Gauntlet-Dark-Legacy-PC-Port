@@ -46,6 +46,45 @@ TEST_CASE("player profiles persist independent mouse and controller mappings",
     invalid["controls"]["players"][1]["occurrence"] = -1;
     CHECK_THROWS_AS(restored.mergeJson(invalid.dump()), FormatError);
 }
+TEST_CASE("shop bindings inherit defaults and round-trip independent player overrides",
+          "[controls][config][shop-commands]") {
+    GameConfig config;
+    // Old settings have no shop actions; loading them must retain usable defaults.
+    config.mergeJson(R"({"controls":{"keyboard":{"back":["F3"]},
+        "pad":{"back":["LeftBumper"]},"players":[{}, {},
+        {"bindings":{"menuBack":{"keys":["F2"],"buttons":["RightBumper"]}}}, {}]}})");
+    auto saved = nlohmann::json::parse(config.toJson());
+    CHECK(saved["controls"]["keyboard"]["shopSell"] == nlohmann::json::array({"Backspace"}));
+    CHECK(saved["controls"]["keyboard"]["shopExit"] == nlohmann::json::array({"Escape"}));
+    CHECK(saved["controls"]["pad"]["shopSell"] == nlohmann::json::array({"X"}));
+    CHECK(saved["controls"]["pad"]["shopExit"] == nlohmann::json::array({"B"}));
+    CHECK(saved["controls"]["players"][2]["bindings"]["shopSell"]["keys"] ==
+          nlohmann::json::array({"Backspace"}));
+    CHECK(saved["controls"]["players"][2]["bindings"]["shopExit"]["buttons"] ==
+          nlohmann::json::array({"B"}));
+    config.mergeJson(R"({"controls":{"keyboard":{"shopSell":["K"],"shopExit":["L"]},
+        "pad":{"shopSell":["LeftTrigger"],"shopExit":["RightTrigger"]},"players":[{}, {},
+        {"bindings":{"shopSell":{"keys":[],"buttons":["LeftBumper"]},
+                     "shopExit":{"keys":["P"],"buttons":[]}}}, {}]}})");
+    GameConfig restored;
+    restored.mergeJson(config.toJson());
+    CHECK(restored.toJson() == config.toJson());
+    saved = nlohmann::json::parse(restored.toJson());
+    CHECK(saved["controls"]["keyboard"]["shopSell"] == nlohmann::json::array({"K"}));
+    CHECK(saved["controls"]["pad"]["shopExit"] == nlohmann::json::array({"RightTrigger"}));
+    CHECK(saved["controls"]["players"][2]["bindings"]["shopSell"]["keys"].empty());
+    CHECK(saved["controls"]["players"][2]["bindings"]["shopSell"]["buttons"] ==
+          nlohmann::json::array({"LeftBumper"}));
+    CHECK(saved["controls"]["players"][2]["bindings"]["shopExit"]["keys"] ==
+          nlohmann::json::array({"P"}));
+    CHECK(saved["controls"]["players"][2]["bindings"]["shopExit"]["buttons"].empty());
+    // Shop-only mappings never redefine generic Back or gameplay actions.
+    CHECK(restored.menu.back == std::vector{Key::F3});
+    CHECK(restored.menu.padBack == std::vector{PadButton::LeftBumper});
+    CHECK(restored.play.padUsePotion == std::vector{PadButton::X});
+    CHECK(restored.play.padTurbo == std::vector{PadButton::B});
+}
+
 TEST_CASE("explicit devices reserve physical slots without stealing another player's keyboard",
           "[controls][multiplayer]") {
     GameConfig config;

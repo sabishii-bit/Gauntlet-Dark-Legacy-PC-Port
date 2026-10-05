@@ -34,6 +34,15 @@ constexpr std::array kActions{
     ControlAction{"menuBack", nullptr, nullptr, &MenuBindings::back, &MenuBindings::padBack},
     ControlAction{"menuStart", nullptr, nullptr, &MenuBindings::start, &MenuBindings::padStart},
 };
+// Context-only bindings remain configurable without becoming generic menu actions.
+constexpr std::array kShopActions{
+    ControlAction{"shopSell", nullptr, nullptr, &MenuBindings::shopSell,
+                  &MenuBindings::padShopSell},
+    ControlAction{"shopExit", nullptr, nullptr, &MenuBindings::shopExit,
+                  &MenuBindings::padShopExit},
+};
+constexpr std::array kPersistedActions{std::span<const ControlAction>{kActions},
+                                       std::span<const ControlAction>{kShopActions}};
 } // namespace
 std::vector<Key>& ControlAction::keyboard(PlayerControlConfig& profile) const {
     return keys != nullptr ? profile.play.*keys : profile.menu.*menuKeys;
@@ -65,31 +74,33 @@ void readControlProfiles(const nlohmann::json& json, GameConfig& config) {
             continue;
         }
         const auto& bindings = value.at("bindings");
-        for (const auto& action : kActions) {
-            if (!bindings.contains(action.id)) {
-                continue;
-            }
-            const auto& binding = bindings.at(action.id);
-            if (binding.contains("keys")) {
-                auto& keys = action.keyboard(profile);
-                keys.clear();
-                for (const auto& name : binding.at("keys")) {
-                    const auto key = keyFromName(name.get<std::string>());
-                    if (!key) {
-                        throw FormatError("unknown control key");
-                    }
-                    keys.push_back(*key);
+        for (const auto actions : kPersistedActions) {
+            for (const auto& action : actions) {
+                if (!bindings.contains(action.id)) {
+                    continue;
                 }
-            }
-            if (binding.contains("buttons")) {
-                auto& buttons = action.controller(profile);
-                buttons.clear();
-                for (const auto& name : binding.at("buttons")) {
-                    const auto button = padButtonFromName(name.get<std::string>());
-                    if (!button) {
-                        throw FormatError("unknown control button");
+                const auto& binding = bindings.at(action.id);
+                if (binding.contains("keys")) {
+                    auto& keys = action.keyboard(profile);
+                    keys.clear();
+                    for (const auto& name : binding.at("keys")) {
+                        const auto key = keyFromName(name.get<std::string>());
+                        if (!key) {
+                            throw FormatError("unknown control key");
+                        }
+                        keys.push_back(*key);
                     }
-                    buttons.push_back(*button);
+                }
+                if (binding.contains("buttons")) {
+                    auto& buttons = action.controller(profile);
+                    buttons.clear();
+                    for (const auto& name : binding.at("buttons")) {
+                        const auto button = padButtonFromName(name.get<std::string>());
+                        if (!button) {
+                            throw FormatError("unknown control button");
+                        }
+                        buttons.push_back(*button);
+                    }
                 }
             }
         }
@@ -102,15 +113,17 @@ nlohmann::json writeControlProfiles(const GameConfig& config) {
         nlohmann::json value{
             {"device", profile.device}, {"name", profile.name}, {"occurrence", profile.occurrence}};
         if (profile.customized) {
-            for (const auto& action : kActions) {
-                auto& binding = value["bindings"][action.id];
-                binding["keys"] = nlohmann::json::array();
-                binding["buttons"] = nlohmann::json::array();
-                for (const auto key : action.keyboard(profile)) {
-                    binding["keys"].push_back(keyName(key));
-                }
-                for (const auto button : action.controller(profile)) {
-                    binding["buttons"].push_back(padButtonName(button));
+            for (const auto actions : kPersistedActions) {
+                for (const auto& action : actions) {
+                    auto& binding = value["bindings"][action.id];
+                    binding["keys"] = nlohmann::json::array();
+                    binding["buttons"] = nlohmann::json::array();
+                    for (const auto key : action.keyboard(profile)) {
+                        binding["keys"].push_back(keyName(key));
+                    }
+                    for (const auto button : action.controller(profile)) {
+                        binding["buttons"].push_back(padButtonName(button));
+                    }
                 }
             }
         }

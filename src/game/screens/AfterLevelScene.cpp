@@ -12,6 +12,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/config/ControlProfiles.h"
 #include "game/players/PickupVoices.h"
 #include "game/screens/ShopLayout.h"
 #include "game/screens/ShopMusic.h"
@@ -30,6 +31,28 @@ constexpr std::string_view kGainedLevelSound = "S_GAINEDLEVEL";
 constexpr std::string_view kPojoName = "S_POJO2";
 constexpr std::string_view kSoundDirectory = "audio";
 constexpr s32 kInitialScrollSpeed = 2; ///< pixels per 60 Hz tick
+
+MenuInput shopInput(MenuInput input, const GameConfig& config, s32 player) {
+    if (input.devices == nullptr) {
+        return input;
+    }
+    const auto source = playerInputSource(*input.devices, config, player);
+    const auto& bindings = menuBindings(config, player);
+    const auto pressed = [&](const auto& keys, const auto& buttons) {
+        return (source.keyboard &&
+                std::ranges::any_of(keys,
+                                    [&](Key key) { return input.devices->wasKeyPressed(key); })) ||
+               std::ranges::any_of(buttons, [&](PadButton button) {
+                   return input.devices->wasPadButtonPressed(source.pad, button);
+               });
+    };
+    // Retail has separate Buy, Sell and Exit buttons. Keep Start as an alias, but
+    // shared Select/Start presses (Enter) remain purchases even when scrolling drops them.
+    const bool start = input.start && !input.select;
+    input.back = pressed(bindings.shopSell, bindings.padShopSell);
+    input.start = start || pressed(bindings.shopExit, bindings.padShopExit);
+    return input;
+}
 } // namespace
 bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
                            std::span<const PartyMember> party,
@@ -243,6 +266,9 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs) {
     auto heard = inputs;
     for (const auto& lane : m_session.lanes()) {
         const auto player = static_cast<usize>(lane.member.player);
+        if (lane.phase == ShopPhase::Shopping && m_context.config != nullptr) {
+            heard[player] = shopInput(heard[player], *m_context.config, lane.member.player);
+        }
         const auto layout =
             ShopLayout::make(m_session.catalog().items(), lane.cursor, m_font.height());
         wasScrolling[player] = m_scroll[player] != layout.target;

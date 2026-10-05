@@ -13,9 +13,11 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
+#include "engine/platform/Input.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/menu/MenuInput.h"
 #include "game/screens/AfterLevelScene.h"
 #include "game/screens/ShopFrameLight.h"
 #include "game/screens/ShopLayout.h"
@@ -405,6 +407,84 @@ TEST_CASE("shop ignores transaction presses during scrolling without queuing a l
     scene.update(0, input);
     REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Sold);
     REQUIRE(scene.session().party()[0].save.gold == 4725);
+}
+
+TEST_CASE("shop commands use separate sell and exit bindings and retain the retail scroll lock",
+          "[shop][shop-commands][input][assets][multiplayer]") {
+    const bool keyboard = GENERATE(false, true);
+    const bool remapped = GENERATE(false, true);
+    CAPTURE(keyboard, remapped);
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    GameConfig config;
+    if (remapped) {
+        config.mergeJson(R"({"controls":{"players":[{},{},{"bindings":{
+            "menuSelect":{"keys":["P"],"buttons":["RightBumper"]},
+            "shopSell":{"keys":["K"],"buttons":["LeftBumper"]},
+            "shopExit":{"keys":["L"],"buttons":["RightTrigger"]}
+        }},{}]}})");
+    }
+    if (keyboard) {
+        config.controls[2].device = "keyboard";
+    }
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.gold = 5000;
+    save.progress().health = 100;
+    const std::array party{PartyMember{2, save}, PartyMember{3, save}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1", ShopVisit::Shop));
+    const auto press = [&](Key key, PadButton button) {
+        Input raw;
+        if (keyboard) {
+            raw.setKey(key, true);
+        } else {
+            PadSnapshot pad;
+            pad.connected = true;
+            pad.buttons[static_cast<usize>(button)] = true;
+            if (button == PadButton::RightTrigger) {
+                // Input derives virtual trigger presses from their analog axes.
+                pad.axes[static_cast<usize>(PadAxis::RightTrigger)] = 1.0f;
+            }
+            raw.setPad(2, pad);
+            REQUIRE(raw.wasPadButtonPressed(2, button));
+        }
+        ShopSession::Inputs inputs{};
+        for (s32 player = 0; player < 4; ++player) {
+            inputs[static_cast<usize>(player)] = readPlayerMenuInput(raw, config, player);
+        }
+        return scene.update(0, inputs);
+    };
+    press(Key::Down, PadButton::DpadDown);
+    press(Key::Down, PadButton::DpadDown);
+    REQUIRE(scene.session().lanes()[0].cursor == 2);
+    REQUIRE(scene.session().catalog().items()[2].type == 1); // Native key row.
+    const auto buy = [&] {
+        press(remapped ? Key::P : Key::Enter, remapped ? PadButton::RightBumper : PadButton::A);
+    };
+    buy();
+    CHECK_FALSE(scene.session().lanes()[0].transacted);
+    CHECK(scene.session().lanes()[0].cursor == 2);
+    CHECK(scene.session().party()[0].save.gold == 5000);
+    scene.update(2, {});
+    // Enter is both Select and Start by default; Select owns a transaction.
+    buy();
+    REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Bought);
+    CHECK(scene.session().party()[0].save.progress().inventory.keys == 1);
+    CHECK(scene.session().party()[0].save.gold == 4900);
+    press(remapped ? Key::K : Key::Backspace, remapped ? PadButton::LeftBumper : PadButton::X);
+    REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Sold);
+    CHECK(scene.session().party()[0].save.progress().inventory.keys == 0);
+    CHECK(scene.session().party()[0].save.gold == 4975);
+    press(remapped ? Key::L : Key::Escape, remapped ? PadButton::RightTrigger : PadButton::B);
+    CHECK(scene.session().lanes()[0].cursor == 0);
+    CHECK(scene.session().lanes()[0].scrollJump);
+    CHECK(scene.session().lanes()[0].phase == ShopPhase::Shopping);
+    CHECK(scene.session().party()[1].save.gold == 5000);
+    CHECK(scene.session().party()[1].save.progress().inventory.keys == 0);
+    CHECK(scene.session().lanes()[1].cursor == 0);
 }
 
 TEST_CASE("shop mouse targets rendered rows prices arrows and wheel in only the hovered lane",
