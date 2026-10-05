@@ -18,9 +18,10 @@ struct MoveEffectRecord {
     std::string sound;
     std::array<f32, 3> offset{};
     f32 scale = 1.0f;
-    f32 lifetime = 0.0f; ///< SFXX +0x40, emitter duration for particle records
-    f32 radius = 0.0f;   ///< SFXX +0x44, particles per game frame for particle records
-    s16 alphaMod = 0;    ///< SFXX +0x32, particle speed in hundredths of a unit/second
+    f32 lifetime = 0.0f;    ///< SFXX +0x40, emitter duration for particle records
+    f32 radius = 0.0f;      ///< SFXX +0x44, particles per game frame for particle records
+    s16 alphaMod = 0;       ///< SFXX +0x32, particle speed in hundredths of a unit/second
+    u32 color = 0xFFFFFFFF; ///< SFXX +0x4C, tree RGB; FFFFFFFF leaves its colour unchanged
 };
 
 /** One thing a move does at one of its frames: a burst about a point or something sent

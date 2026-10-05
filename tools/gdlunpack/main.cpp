@@ -1127,6 +1127,7 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
         json.key("lifetime").value(static_cast<f64>(effect.lifetime));
         json.key("radius").value(static_cast<f64>(effect.radius));
         json.key("alphaMod").value(static_cast<s32>(effect.alphaMod));
+        json.key("color").value(effect.color);
         json.endObject();
     }
     json.endArray();

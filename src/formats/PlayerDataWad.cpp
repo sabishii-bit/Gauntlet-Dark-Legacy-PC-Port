@@ -92,6 +92,7 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
             effect.lifetime = readWadF32(bytes, at + 0x40, kWhat);
             effect.radius = readWadF32(bytes, at + 0x44, kWhat);
             effect.alphaMod = s16At(at + 0x32);
+            effect.color = readWadU32(bytes, at + 0x4C, kWhat);
             record.effects.push_back(std::move(effect));
         }
     }

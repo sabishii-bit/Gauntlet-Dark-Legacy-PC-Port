@@ -47,8 +47,12 @@ struct MoveEffect {
     f32 scale = 1.0f;
     u32 flags = 0;
     f32 lifetime = 0.0f;
-    f32 radius = 0.0f; ///< a particle record's emission rate per game frame
-    s16 alphaMod = 0;  ///< a particle record's speed in hundredths of a unit/second
+    f32 radius = 0.0f;      ///< a particle record's emission rate per game frame
+    s16 alphaMod = 0;       ///< a particle record's speed in hundredths of a unit/second
+    u32 color = 0xFFFFFFFF; ///< SFXX tree RGB; the high byte is not tree opacity
+    /** DoPlyrSfx's MBTreeSetColor -> setPrimColor uses only RGB. FFFFFFFF leaves the
+     * tree unchanged, represented by the renderer's identity (white) multiplier. */
+    Color tint() const;
     /** A particle emitter rather than a tree and a sound: `tree` names its texture and
      * `sound` the node it is hung from (PsfxDoParticle), such as the magic users' hand glow. */
     bool particle() const { return (flags & kParticleFlags) != 0; }

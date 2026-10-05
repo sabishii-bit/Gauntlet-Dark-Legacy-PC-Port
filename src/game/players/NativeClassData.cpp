@@ -93,7 +93,7 @@ ClassStats parseNativeClassStats(std::span<const u8> bytes) {
     for (const auto& from : source.effects) {
         stats.moveEffects.push_back({from.next, from.tree, from.sound, vectorOf(from.offset),
                                      from.scale, from.flags, from.lifetime, from.radius,
-                                     from.alphaMod});
+                                     from.alphaMod, from.color});
     }
     for (const auto& from : source.strikes) {
         MoveStrike strike;

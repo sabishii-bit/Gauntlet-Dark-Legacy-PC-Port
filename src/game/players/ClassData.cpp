@@ -103,6 +103,7 @@ ClassStats parseClassStats(std::string_view text) {
         effect.lifetime = entry.value("lifetime", 0.0f);
         effect.radius = entry.value("radius", 0.0f);
         effect.alphaMod = entry.value("alphaMod", s16{0});
+        effect.color = entry.value("color", 0xFFFFFFFFU);
         stats.moveEffects.push_back(std::move(effect));
     }
     for (const Json& entry : root.value("moveStrikes", Json::array())) {
@@ -134,6 +135,11 @@ ClassStats parseClassStats(std::string_view text) {
 }
 
 } // namespace
+
+Color MoveEffect::tint() const {
+    return Color::rgba(static_cast<u8>((color >> 16) & 0xFF), static_cast<u8>((color >> 8) & 0xFF),
+                       static_cast<u8>(color & 0xFF));
+}
 
 f32 MoveStrike::dimming() const {
     constexpr s32 kCombo = 0x2000;

@@ -16,6 +16,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/world/ItemFigure.h"
 #include "game/world/PlayerArsenal.h"
 #include "game/world/WeaponGlow.h"
 namespace {
@@ -37,6 +38,90 @@ struct Fixture {
         arsenal.bind({device, classes, weapons, collision, effects, audio, nullptr, {}});
     }
 };
+
+usize visibleFlameTriangles(const test::FakeRenderDevice& device, const Texture* texture) {
+    REQUIRE(texture != nullptr);
+    REQUIRE(texture != &device.whiteTexture());
+    usize visible = 0;
+    for (const auto& draw : device.draws) {
+        if (draw.texture != texture) {
+            continue;
+        }
+        CHECK(draw.state.blend == BlendMode::Additive);
+        for (usize vertex = 0; vertex + 2 < draw.vertices.size(); vertex += 3) {
+            const auto& a = draw.vertices[vertex];
+            const auto& b = draw.vertices[vertex + 1];
+            const auto& c = draw.vertices[vertex + 2];
+            if (a.color.a > 0 &&
+                glm::length(glm::cross(b.position - a.position, c.position - a.position)) > 0) {
+                ++visible;
+            }
+        }
+    }
+    return visible;
+}
+
+TEST_CASE("placed red potion bottles submit their authored neck flame",
+          "[game][player-arsenal][alpha-potion-flames][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    const auto tree = powerups.trees.find("POT_RED");
+    REQUIRE(tree);
+    CHECK(std::ranges::count_if(powerups.trees.tree(*tree).nodes,
+                                [](const auto& node) { return node.particle >= 0; }) == 1);
+    const auto slot = powerups.textures.find("DRAGONBREATH");
+    REQUIRE(slot);
+    const auto* texture = &powerups.textures.texture(device, *slot);
+    for (const s32 hz : {30, 60, 120}) {
+        CAPTURE(hz);
+        ItemFigure bottle;
+        ItemInstance instance;
+        instance.position = {10, 0, 20};
+        REQUIRE(bottle.place(device, powerups, "POT_RED", instance, nullptr));
+        for (s32 tick = 0; tick < hz; ++tick) {
+            bottle.update(1.0f / static_cast<f32>(hz));
+        }
+        device.draws.clear();
+        bottle.draw(device, Mat4{1}, {}, 1, 1);
+        CHECK(visibleFlameTriangles(device, texture) > 0);
+    }
+}
+
+TEST_CASE("thrown red potions submit their authored three-emitter flame trail",
+          "[game][player-arsenal][alpha-potion-flames][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    for (const s32 hz : {30, 60, 120}) {
+        CAPTURE(hz);
+        // clear() releases the borrowed renderer too, so each run needs a fresh binding.
+        f.arsenal.bind(
+            {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+        f.actor.save().progress().inventory.addPotions(1, 1);
+        f.arsenal.throwPotion(f.actor, 30);
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        REQUIRE(f.arsenal.missiles().visuals().count() == 1);
+        const auto& effect = f.arsenal.missiles().visuals().effect(0);
+        REQUIRE(effect.name == "POT_RED_TW");
+        const auto& field = effect.particles.field();
+        REQUIRE(field.size() == 3);
+        for (usize emitter = 0; emitter < field.size(); ++emitter) {
+            CHECK(field.emitter(emitter).descriptor().texture == "FBALLX");
+        }
+        for (s32 tick = 0; tick < hz / 2; ++tick) {
+            f.arsenal.missiles().update(1.0f / static_cast<f32>(hz), nullptr);
+        }
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        CHECK(field.particleCount() > 0);
+        f.device.draws.clear();
+        f.arsenal.missiles().draw(f.device, Mat4{1}, {});
+        CHECK(visibleFlameTriangles(f.device, field.textureOf(0)) > 0);
+        f.arsenal.missiles().clear();
+    }
+    f.arsenal.clear();
+}
 
 TEST_CASE("red potion bursts retain all eighteen authored flame emitters",
           "[game][player-arsenal][alpha-potion-flames][assets]") {
@@ -73,22 +158,8 @@ TEST_CASE("red potion bursts retain all eighteen authored flame emitters",
             CAPTURE(tick);
             REQUIRE(field.particleCount() > 0);
             f.device.draws.clear();
-            effect.particles.draw(f.device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
-            REQUIRE_FALSE(f.device.draws.empty());
-            bool visible = false;
-            for (const auto& draw : f.device.draws) {
-                REQUIRE(draw.texture != &f.device.whiteTexture());
-                CHECK(draw.state.blend == BlendMode::Additive);
-                for (usize vertex = 0; vertex + 2 < draw.vertices.size(); vertex += 3) {
-                    const auto& a = draw.vertices[vertex];
-                    const auto& b = draw.vertices[vertex + 1];
-                    const auto& c = draw.vertices[vertex + 2];
-                    visible |=
-                        a.color.a > 0 && glm::length(glm::cross(b.position - a.position,
-                                                                c.position - a.position)) > 0;
-                }
-            }
-            CHECK(visible);
+            f.effects.draw(f.device, Mat4{1}, {});
+            CHECK(visibleFlameTriangles(f.device, field.textureOf(0)) > 0);
         }
         f.effects.update(4);
         CHECK(f.effects.count() == 0);

@@ -56,6 +56,7 @@ std::vector<u8> nativeClassWad() {
     putFloat(writer, 0.5f);
     putFloat(writer, 3.0f);
     putFloat(writer, 1.25f);
+    writer.putU32(0x7F12AB34);
     padTo(writer, kStrikeOffset);
     writer.putU16(2).putU16(0x2010).putU32(0x100021);
     putFloat(writer, 2.0f); // hit radius
@@ -150,6 +151,7 @@ void sameClass(const ClassStats& actual, const ClassStats& expected) {
         sameFloat(a.lifetime, b.lifetime);
         sameFloat(a.radius, b.radius);
         CHECK(a.alphaMod == b.alphaMod);
+        CHECK(a.color == b.color);
     }
     REQUIRE(actual.moveStrikes.size() == expected.moveStrikes.size());
     for (usize index = 0; index < actual.moveStrikes.size(); ++index) {
@@ -209,6 +211,8 @@ TEST_CASE("native class tuning preserves combat and presentation tables",
     CHECK(effect.lifetime == 0.5f);
     CHECK(effect.radius == 3.0f);
     CHECK(effect.alphaMod == 150);
+    CHECK(effect.color == 0x7F12AB34);
+    CHECK(effect.tint() == Color::rgba(0x12, 0xAB, 0x34));
     REQUIRE(stats.moveStrikes.size() == 1);
     const auto& strike = stats.moveStrikes.front();
     CHECK(strike.type == MoveStrike::kFlies);

@@ -1018,6 +1018,79 @@ TEST_CASE("Sonic Boom's chained ring turns with its caster and retains its autho
     CHECK((ring.transform() * ring.pose.matrices()[1])[3].y == Approx(4 + 1.92348f));
 }
 
+TEST_CASE("Sorceress power attacks draw the SFXX row's colour rather than costume white",
+          "[game][screens][player-attacks][alpha-kiss-color][assets]") {
+    const auto root = test::assetOrSkip("PDATA/SOR.WAD").parent_path().parent_path();
+    const s32 row = GENERATE(0, 1, 2);
+    const s32 costume = GENERATE(0, 2);
+    CAPTURE(row, costume);
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    auto& player = f.players[0];
+    player.actor.save().character = 6;
+    player.actor.save().color = costume;
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    const auto* stats = f.classes.stats(6);
+    REQUIRE(stats);
+    CHECK(stats->moves.turboAClose == 0);
+    CHECK(stats->moves.turboAStep == 1);
+    CHECK(stats->moves.turboAThrow == 2);
+    const auto step = [&](PlayerDeed deed) {
+        player.figure->animate(0, 2, 1.0f / 30, deed);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+    };
+    if (row == 2) {
+        step(PlayerDeed::StrongAttack);
+    } else {
+        step(PlayerDeed::Melee);
+        if (row == 1) {
+            const auto first = player.figure->animator().action();
+            step(PlayerDeed::None);
+            step(PlayerDeed::Melee);
+            for (s32 frame = 0; frame < 120 && player.figure->animator().action() == first;
+                 ++frame) {
+                step(PlayerDeed::Melee);
+            }
+            REQUIRE(player.figure->animator().meleeChain() == 2);
+        }
+        step(PlayerDeed::None);
+        step(PlayerDeed::MeleeSlow);
+    }
+    for (s32 frame = 0; frame < 180 && f.effects.count() == 0; ++frame) {
+        step(PlayerDeed::None);
+    }
+    REQUIRE(f.effects.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "SOR_PWRA1");
+    // Native SOR.WAD SFXX rows 0/1/2, +0x4C: 00FFFF00 / 00FF0000 / 0000FF00.
+    // DoPlyrSfx -> MBTreeSetColor sets RGB; its high byte is not tree opacity.
+    constexpr std::array<Color, 3> kColors{Color::rgba(255, 255, 0), Color::rgba(255, 0, 0),
+                                           Color::rgba(0, 255, 0)};
+    const Color expected = kColors[static_cast<usize>(row)];
+    CHECK(f.effects.effect(0).tint == expected);
+    f.effects.update(0.2f);
+    f.device.draws.clear();
+    WorldLighting lighting;
+    lighting.ambient = Vec3{1};
+    lighting.lightColor = Vec3{0};
+    f.effects.draw(f.device, Mat4{1}, lighting);
+    REQUIRE_FALSE(f.device.draws.empty());
+    usize visible = 0;
+    for (const auto& draw : f.device.draws) {
+        REQUIRE(draw.texture != nullptr);
+        CHECK(draw.texture != &f.device.whiteTexture());
+        for (const auto& vertex : draw.vertices) {
+            if (vertex.color.a > 0) {
+                ++visible;
+                CHECK(vertex.color.r == expected.r);
+                CHECK(vertex.color.g == expected.g);
+                CHECK(vertex.color.b == expected.b);
+            }
+        }
+    }
+    CHECK(visible > 0);
+}
+
 TEST_CASE("Spell Storm launches three knights after birth and plays its three decoys once",
           "[game][screens][player-attacks][alpha-effects][assets]") {
     const auto root = test::assetOrSkip("PDATA/SOR.WAD").parent_path().parent_path();

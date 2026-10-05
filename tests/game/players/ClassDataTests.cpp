@@ -98,7 +98,7 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
             "turboAThrow": 2, "turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
   "moveEffects": [
     {"next": 1, "tree": "WAR_POWERB", "sound": "S_WARTURBOB", "offset": [0, 5, 0], "scale": 2},
-    {"next": -1, "tree": "NULLFX", "sound": ""},
+    {"next": -1, "tree": "NULLFX", "sound": "", "color": 4278255360},
     {"next": -1, "tree": "WIZ_HEAD_Y", "sound": "R_WRIST", "flags": 33554432}],
   "moveStrikes": [
     {"type": 4, "radius": 12, "delay": 0.5, "arc": -1, "amount": 50, "effect": 0, "next": -1,
@@ -134,6 +134,10 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     REQUIRE(war->moves.combo1 == -1);
     REQUIRE(war->moveEffects.size() == 3);
     REQUIRE(war->moveEffects[0].tree == "WAR_POWERB");
+    CHECK(war->moveEffects[0].color == 0xFFFFFFFF); // legacy exports omit the field
+    CHECK(war->moveEffects[0].tint() == Color::white());
+    CHECK(war->moveEffects[1].color == 0xFF00FF00);
+    CHECK(war->moveEffects[1].tint() == Color::rgba(0, 255, 0));
     REQUIRE_FALSE(war->moveEffects[0].particle());
     REQUIRE(war->moveEffects[2].particle()); // a hand glow: texture and node, not tree and sound
     REQUIRE(war->moveEffects[0].next == 1);
@@ -146,6 +150,20 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     REQUIRE(war->strikesOf(1) == std::vector<s32>{1, 2, 1}); // a ring is followed once round
     REQUIRE(war->strikesOf(-1).empty());
     REQUIRE(war->strikesOf(9).empty());
+}
+
+TEST_CASE("move effect tint decodes RGB without treating its high byte as opacity",
+          "[game][players][alpha-kiss-color]") {
+    MoveEffect effect;
+    CHECK(effect.tint() == Color::white()); // native FFFFFFFF sentinel
+    for (const u32 packed : {0x0012AB34U, 0x7F12AB34U, 0xFF12AB34U}) {
+        effect.color = packed;
+        CHECK(effect.tint() == Color::rgba(0x12, 0xAB, 0x34, 255));
+    }
+    effect.color = 0x7FFFFFFF; // common native explicit white, not the sentinel
+    CHECK(effect.tint() == Color::white());
+    effect.color = 0;
+    CHECK(effect.tint() == Color::rgba(0, 0, 0, 255));
 }
 
 } // namespace

@@ -410,6 +410,7 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         }
         EffectTrees::Setting setting;
         setting.scale = effect.scale;
+        setting.tint = effect.tint();
         setting.yaw = std::atan2(facing.x, facing.z) + strike.angle;
         setting.seconds = effect.lifetime;
         setting.shrinks = (effect.flags & 0x10000U) != 0 && strike.hitEffect < 0;
