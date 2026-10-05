@@ -142,6 +142,8 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
 
 void ExitPortals::clear() {
     m_portals.clear();
+    m_waiting.clear();
+    m_visitors.clear();
     m_tree = nullptr;
     m_collision = nullptr;
     m_sequences.fill(-1);
@@ -210,12 +212,50 @@ bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, f
     return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
 }
 
+bool ExitPortals::readyToLeave(s32 party) const {
+    const auto visitor = std::ranges::find(m_visitors, party, &VisitorWait::party);
+    return visitor != m_visitors.end() && visitor->ticks >= kIdleTicks;
+}
+
+void ExitPortals::updateReadiness(s32 ticks, std::span<const PortalVisitor> party, f32 extra) {
+    // do_players 0x80076ECC-0x80076EF4 shares the wait when a prior-frame
+    // state4 player releases direction. DoExit then credits every on-exit peer,
+    // even one still holding a direction. Resolve this before changing credit.
+    const bool sharedWait = std::ranges::any_of(party, [&](const PortalVisitor& visitor) {
+        return visitor.still && readyToLeave(visitor.party);
+    });
+    std::vector<VisitorWait> visitors;
+    visitors.reserve(party.size());
+    for (const PortalVisitor& visitor : party) {
+        if (visitor.party < 0 || !std::ranges::any_of(m_portals, [&](const Portal& portal) {
+                return !portal.secret && !portal.shut && !portal.consumed &&
+                       standsOn(portal, visitor, extra);
+            })) {
+            continue;
+        }
+        const auto previous = std::ranges::find(m_visitors, visitor.party, &VisitorWait::party);
+        s32 idle = previous != m_visitors.end() ? previous->ticks : 0;
+        // DoExit 0x80087538-0x80087594 adds gFrameTicks and compares six.
+        // Moving preserves partial credit; leaving every exit clears it.
+        if (visitor.still || sharedWait) {
+            idle += std::clamp(ticks, 0, kIdleTicks - idle);
+        }
+        visitors.push_back({visitor.party, idle});
+    }
+    m_visitors = std::move(visitors);
+}
+
 std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
                                          std::span<const PortalVisitor> party) {
     syncFloors();
     std::optional<usize> left;
     // A larger party is given a wider portal: a unit more for each member past the first.
     const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
+    updateReadiness(ticks, party, extra);
+    // all_players_go_to_same_level 0x80078108 rejects any active state1 player,
+    // so a lit portal alone is not enough: every visitor must be ready (state4).
+    const bool partyReady = std::ranges::all_of(
+        party, [&](const PortalVisitor& visitor) { return readyToLeave(visitor.party); });
     for (usize index = 0; index < m_portals.size(); ++index) {
         Portal& portal = m_portals[index];
         if (portal.consumed || portal.shut) {
@@ -241,14 +281,17 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
                 // Commit travel with the column still raised. The departure owns
                 // the player's sinking animation; closing here drops the glow
                 // before the player has left the platform.
-                left = index;
+                if (partyReady) {
+                    left = index;
+                }
             } else if (ready || portal.action == 0) {
                 advance(portal, portal.action == kLast ? 1 : portal.action + 1);
             }
         } else if (on > 0) {
             // Those standing on it, waiting, are told everyone must come (pmotion.c 3932).
             for (const PortalVisitor& visitor : party) {
-                if (party.size() > 1 && visitor.still && standsOn(portal, visitor, extra)) {
+                if (party.size() > 1 && readyToLeave(visitor.party) &&
+                    standsOn(portal, visitor, extra)) {
                     m_waiting.push_back(visitor.party);
                 }
             }
