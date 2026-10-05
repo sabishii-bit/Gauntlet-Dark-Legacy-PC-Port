@@ -54,7 +54,9 @@ void PlayScene::answerTowerPrompts(const Inputs& inputs) {
 
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
                      const PlayerImpact& impact) {
-    if (index >= m_players.size()) {
+    // damage_player excludes trigger-camera shots even though existing effects
+    // and the player's action continue to advance beneath the input lock.
+    if (index >= m_players.size() || m_switchCutscene.active()) {
         return;
     }
     const LevelInfo* level = m_world->level();

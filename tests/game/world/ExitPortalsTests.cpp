@@ -5,7 +5,6 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
@@ -119,109 +118,6 @@ TEST_CASE("exit flame stays on while a visitor walks around a usable portal",
     CHECK_FALSE(f.portals.flamePosition(party));
 }
 
-TEST_CASE("ordinary portals require six native ticks of released directional input",
-          "[portals][alpha-portal-ready]") {
-    Fixture f("portal-idle-credit");
-    const s32 ticks = GENERATE(1, 2, 3);
-    CAPTURE(ticks);
-    std::array party{PortalVisitor{Vec3{10, 0, 10}, 0.75f, 3, false}};
-    bool leftWhileMoving = false;
-    for (s32 frame = 0; frame < 90; ++frame) {
-        leftWhileMoving |= f.portals.update(ticks, static_cast<f32>(ticks) / 60, party).has_value();
-    }
-    CHECK_FALSE(leftWhileMoving);
-    REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
-    REQUIRE(f.portals.portal(0).ticksLeft == 0);
-    party[0].still = true;
-    // DoExit 0x80087490 counts gFrameTicks, not render frames: six ticks are
-    // 0.1 seconds, whether supplied as six 60Hz updates or three 30Hz updates.
-    for (s32 frame = 0; frame < 12; ++frame) {
-        CHECK_FALSE(f.portals.update(0, 0, party));
-    }
-    for (s32 elapsed = ticks; elapsed <= 6; elapsed += ticks) {
-        CAPTURE(elapsed);
-        CHECK(f.portals.update(ticks, static_cast<f32>(ticks) / 60, party).has_value() ==
-              (elapsed == 6));
-    }
-}
-
-TEST_CASE("portal idle credit survives movement but not abandoning the visit",
-          "[portals][alpha-portal-ready]") {
-    Fixture f("portal-idle-retained");
-    std::array party{PortalVisitor{Vec3{10, 0, 10}, 0.75f, 3, false}};
-    for (s32 frame = 0; frame < 90; ++frame) {
-        f.portals.update(1, 1.0f / 60, party);
-    }
-    party[0].still = true;
-    CHECK_FALSE(f.portals.update(2, 2.0f / 60, party));
-    party[0].still = false;
-    for (s32 frame = 0; frame < 30; ++frame) {
-        CHECK_FALSE(f.portals.update(1, 1.0f / 60, party));
-    }
-    // Native DoExit does not zero idle_timer merely because joymag is nonzero.
-    party[0].still = true;
-    CHECK_FALSE(f.portals.update(3, 3.0f / 60, party));
-    CHECK(f.portals.update(1, 1.0f / 60, party) == 0);
-}
-
-TEST_CASE("one ready portal visitor shares the wait on the following update",
-          "[portals][alpha-portal-ready]") {
-    Fixture f("portal-shared-idle");
-    std::array party{PortalVisitor{Vec3{10, 0, 10}, 0.75f, 3, false},
-                     PortalVisitor{Vec3{11, 0, 10}, 0.75f, 1, false}};
-    bool leftWhileMoving = false;
-    for (s32 frame = 0; frame < 90; ++frame) {
-        leftWhileMoving |= f.portals.update(1, 1.0f / 60, party).has_value();
-    }
-    CHECK_FALSE(leftWhileMoving);
-    party[0].still = true;
-    for (s32 frame = 0; frame < 6; ++frame) {
-        CHECK_FALSE(f.portals.update(1, 1.0f / 60, party));
-    }
-    // do_players 0x80076ECC-0x80076EF4 sets the shared wait from an already
-    // ready player with direction released. DoExit then credits moving peers.
-    // Identity must survive a changed order; controller/party IDs are sparse.
-    std::ranges::reverse(party);
-    for (s32 frame = 0; frame < 5; ++frame) {
-        CHECK_FALSE(f.portals.update(1, 1.0f / 60, party));
-    }
-    CHECK(f.portals.update(1, 1.0f / 60, party) == 0);
-}
-
-TEST_CASE("portal readiness is cleared by leaving disappearing or rebinding",
-          "[portals][alpha-portal-ready]") {
-    Fixture f("portal-idle-reset");
-    std::array party{PortalVisitor{Vec3{10, 0, 10}, 0.75f, 3, true},
-                     PortalVisitor{Vec3{30, 0, 10}, 0.75f, 1, false}};
-    REQUIRE_FALSE(f.run(party, 100));
-    REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
-    f.portals.takeWaiting();
-    SECTION("leaving all exits resets credit") {
-        party[0].position = party[1].position;
-        REQUIRE_FALSE(f.portals.update(1, 1.0f / 60, party));
-    }
-    SECTION("a departed party member cannot lend old credit to a rejoin") {
-        REQUIRE_FALSE(f.portals.update(1, 1.0f / 60, std::span{party}.subspan(1)));
-    }
-    SECTION("rebinding clears both readiness and queued wait messages") {
-        REQUIRE_FALSE(f.portals.update(1, 1.0f / 60, party));
-        REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr));
-        CHECK(f.portals.takeWaiting().empty());
-    }
-    party[0].position = Vec3{10, 0, 10};
-    party[1].position = Vec3{11, 0, 10};
-    party[0].still = false;
-    for (s32 frame = 0; frame < 100; ++frame) {
-        CHECK_FALSE(f.portals.update(1, 1.0f / 60, party));
-    }
-    // One member is now absent; the surviving visitor must earn its own six.
-    party[0].still = true;
-    for (s32 frame = 0; frame < 5; ++frame) {
-        CHECK_FALSE(f.portals.update(1, 1.0f / 60, std::span{party}.first(1)));
-    }
-    CHECK(f.portals.update(1, 1.0f / 60, std::span{party}.first(1)) == 0);
-}
-
 TEST_CASE("exit portals ride their authored floor through motion and collision holds",
           "[game][world][portals][portal-platform]") {
     const auto dir = sampleLevel("portals-moving-floor");
@@ -262,7 +158,7 @@ TEST_CASE("exit portals ride their authored floor through motion and collision h
     CHECK(Vec3{portals.portal(0).transform[3]} == portals.portal(0).position);
     CHECK(portals.portal(1).support == -1);
     CHECK(portals.portal(1).position == Vec3{15, 5, 23});
-    const std::array party{PortalVisitor{expected, 0.75f, 0, true}};
+    const std::array party{PortalVisitor{expected, 0.75f}};
     std::optional<usize> reached;
     for (s32 frame = 0; frame < 100 && !reached; ++frame) {
         reached = portals.update(2, 1.0f / 30, party);
@@ -328,8 +224,8 @@ TEST_CASE("exit portal artwork retains authored yaw pitch and roll", "[portals][
 TEST_CASE("a portal runs through with the whole party on it and waits for stragglers",
           "[game][world][portals]") {
     Fixture f("portals-run");
-    const PortalVisitor on{Vec3{11.0f, 0.2f, 10.0f}, 0.75f, 1, false};
-    const PortalVisitor off{Vec3{30.0f, 0.0f, 10.0f}, 0.75f, 3, false};
+    const PortalVisitor on{Vec3{11.0f, 0.2f, 10.0f}, 0.75f};
+    const PortalVisitor off{Vec3{30.0f, 0.0f, 10.0f}, 0.75f};
     // Nobody near: it idles.
     REQUIRE_FALSE(f.run(std::array<PortalVisitor, 1>{off}, 60).has_value());
     REQUIRE(f.portals.portal(0).action == 0);
@@ -342,15 +238,12 @@ TEST_CASE("a portal runs through with the whole party on it and waits for stragg
     PortalVisitor waiting = on;
     waiting.party = 1;
     waiting.still = true;
-    f.run(std::array<PortalVisitor, 2>{waiting, off}, 2);
-    CHECK(f.portals.takeWaiting().empty());
     f.run(std::array<PortalVisitor, 2>{waiting, off}, 1);
     CHECK(f.portals.takeWaiting() == std::vector<s32>{1});
     f.run(std::array<PortalVisitor, 1>{waiting}, 1); // alone, there is nobody to wait for
     CHECK(f.portals.takeWaiting().empty());
     // The other arrives: transport starts with the raised glow still held.
-    const std::array<PortalVisitor, 2> together{
-        waiting, PortalVisitor{Vec3{9.0f, 0.0f, 11.0f}, 0.75f, 3, true}};
+    const std::array<PortalVisitor, 2> together{on, PortalVisitor{Vec3{9.0f, 0.0f, 11.0f}, 0.75f}};
     const auto left = f.run(together, 200);
     REQUIRE(left == 0U);
     REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
@@ -384,8 +277,7 @@ TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting
     const auto archive = test::assetOrSkip("ITEMS/LEVELL/ANIM.PS2").parent_path();
     REQUIRE(f.items.load(archive));
     REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr));
-    const std::array split{PortalVisitor{Vec3{10, 0, 10}, 0.75f, 1, true},
-                           PortalVisitor{Vec3{30, 0, 10}, 0.75f, 3, true}};
+    const std::array split{PortalVisitor{Vec3{10, 0, 10}}, PortalVisitor{Vec3{30, 0, 10}}};
     REQUIRE_FALSE(f.run(split, 200));
     REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
     const auto sequence = f.portals.portal(0).player.sequence();
@@ -401,7 +293,7 @@ TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting
         previous = portal.player.frame();
     }
     CHECK(wrapped);
-    const std::array together{split[0], PortalVisitor{split[0].position, 0.75f, 3, true}};
+    const std::array together{split[0], split[0]};
     // The wait does not expire before the missing player arrives.
     for (s32 i = 0; i < ExitPortals::kWaitingTicks - 1; ++i) {
         f.portals.update(1, 1.0f / 60, together);
@@ -425,7 +317,7 @@ TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting
     CHECK(f.portals.portal(0).action == ExitPortals::kWaiting);
     CHECK(f.portals.portal(0).player.sequence() == finalSequence);
     // Only abandoning the platform closes the column.
-    const std::array away{PortalVisitor{split[1].position, 0.75f, 1, true}, split[1]};
+    const std::array away{split[1], split[1]};
     REQUIRE_FALSE(f.portals.update(1, 1.0f / 60, away));
     CHECK(f.portals.portal(0).action == ExitPortals::kLast);
     // Rejoining during the closing sequence must start a fresh visit, not
@@ -517,7 +409,7 @@ TEST_CASE("a portal the tower keeps shut never wakes and takes nobody",
     REQUIRE(f.portals.portal(0).tag == "g2");
     REQUIRE(f.portals.portal(0).shut);
     REQUIRE(f.portals.shutGates() == std::vector{ExitPortals::ShutGate{7, 1}});
-    const std::array on{PortalVisitor{Vec3{10, 0, 10}, 0.75f, 0, true}};
+    const std::array on{PortalVisitor{Vec3{10, 0, 10}, 0.75f}};
     REQUIRE_FALSE(f.run(on, 400).has_value());
     REQUIRE(f.portals.portal(0).action == 0);
     REQUIRE(f.portals.takeWaiting().empty());

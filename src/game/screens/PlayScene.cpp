@@ -997,10 +997,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         standing.reserve(m_players.size());
         for (usize i = 0; i < m_players.size(); ++i) {
             if (!isDown(i)) {
-                const auto player = static_cast<usize>(m_players[i].actor.player());
-                standing.push_back(PortalVisitor{
-                    m_players[i].actor.position(), m_players[i].actor.radius(), static_cast<s32>(i),
-                    player >= inputs.size() || !inputs[player].move.any()});
+                standing.push_back(PortalVisitor{m_players[i].actor.position(),
+                                                 m_players[i].actor.radius(), static_cast<s32>(i),
+                                                 !m_players[i].actor.moving()});
             }
         }
         // With everyone fallen, the last death played out and the announcer done, the party

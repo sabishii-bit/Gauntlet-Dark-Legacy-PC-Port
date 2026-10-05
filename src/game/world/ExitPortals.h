@@ -29,8 +29,8 @@ namespace gdl::game {
 struct PortalVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.75f;
-    s32 party = -1;     ///< stable party identity, required for ordinary departure
-    bool still = false; ///< directional input released, not an animation or collision lock
+    s32 party = -1;     ///< who it is, by place in the party
+    bool still = false; ///< standing without moving
 };
 
 /**
@@ -49,7 +49,6 @@ public:
     static constexpr s32 kWaiting = 3; ///< the sequence a portal holds at for stragglers
     static constexpr s32 kLast = 4;
     static constexpr s32 kWaitingTicks = 45; ///< how long the waiting sequence holds
-    static constexpr s32 kIdleTicks = 6;     ///< DoExit's readiness wait, in native 60Hz ticks
     static constexpr f32 kReach = 3.0f;      ///< how far over or under a portal one counts
     static constexpr f32 kFloorLift = 0.1f;
 
@@ -105,8 +104,8 @@ public:
     /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
      * the whole party, retaining its raised glow while the departure plays. */
     std::optional<usize> update(s32 ticks, f32 seconds, std::span<const PortalVisitor> party);
-    /** Who is ready on a portal the rest of a party of more than one has yet to reach
-     * (DoExit's wait), by place in the party. */
+    /** Who stood still this update on a portal the rest of a party of more than one had yet
+     * to reach (DoExit's wait), by place in the party. */
     std::vector<s32> takeWaiting() { return std::exchange(m_waiting, {}); }
     /** The occupied exit's position for its continuous flame, including moving visitors. */
     std::optional<Vec3> flamePosition(std::span<const PortalVisitor> party) const;
@@ -122,13 +121,7 @@ public:
     static s32 gateOf(std::string_view tag);
 
 private:
-    struct VisitorWait {
-        s32 party = -1;
-        s32 ticks = 0;
-    };
     void advance(Portal& portal, s32 action);
-    bool readyToLeave(s32 party) const;
-    void updateReadiness(s32 ticks, std::span<const PortalVisitor> party, f32 extra);
     static void shut(RenderDevice& device, Portal& portal, ItemArchive& items,
                      ItemArchive* realmItems);
     static bool standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra);
@@ -137,7 +130,6 @@ private:
     const WorldCollision* m_collision = nullptr; ///< borrowed through clear()
     std::array<s32, kSequences.size()> m_sequences{-1, -1, -1, -1, -1};
     std::vector<s32> m_waiting;
-    std::vector<VisitorWait> m_visitors;
     std::vector<Portal> m_portals;
 };
 

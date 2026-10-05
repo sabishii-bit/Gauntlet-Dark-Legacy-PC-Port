@@ -114,7 +114,7 @@ TEST_CASE("the Fields elevators carry a standing player through the gameplay loo
     CHECK(high >= (poisonField ? 27.2f : 19.3f));
 }
 
-TEST_CASE("Temple switch shots letterbox the target while combat and controls wait",
+TEST_CASE("Temple switch shots hold enemy AI and input while existing player actions finish",
           "[switch-camera][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -137,7 +137,11 @@ TEST_CASE("Temple switch shots letterbox the target while combat and controls wa
     PlayOptions options;
     options.welcome = false;
     options.position = Vec3{61.25f, 0.325f, 6.75f};
-    const std::array party{PartyMember{0, CharacterSave{}}};
+    // Face west across the walkway, toward a nearby enemy rather than the wall.
+    options.yaw = -1.5707963f;
+    CharacterSave save;
+    save.progress().inventory.potions = {1};
+    const std::array party{PartyMember{0, save}};
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     for (s32 frame = 0; frame < 180; ++frame) {
@@ -157,6 +161,10 @@ TEST_CASE("Temple switch shots letterbox the target while combat and controls wa
     CHECK(scene.switchCutscene().target() == 560);
     const Vec3 held = scene.actor(0)->position();
     const auto health = scene.actor(0)->save().health();
+    // damage_player refuses hits during the trigger camera, even from effects
+    // that were already in flight before controls were disabled.
+    scene.harm(0, 10, HurtKind::Blow);
+    CHECK(scene.actor(0)->save().health() == health);
     const auto targets = scene.enemies().targets();
     REQUIRE_FALSE(targets.empty());
     const auto enemyCount = scene.enemies().count();
@@ -166,12 +174,48 @@ TEST_CASE("Temple switch shots letterbox the target while combat and controls wa
     input[0].menu.start = true;
     input[0].attack = true;
     input[0].usePotion = true;
+    REQUIRE(scene.runtime(0)->figure);
+    const bool finishingThrow = GENERATE(false, true);
+    if (finishingThrow) {
+        // Establish an in-flight action, rather than letting the held cutscene
+        // input manufacture one. It must complete once and return to its stance.
+        scene.runtime(0)->figure->animate(0, 1, 1.0f / 60, PlayerDeed::StrongAttack);
+        REQUIRE(scene.runtime(0)->figure->animator().action() ==
+                PlayerAnimator::Action::StrongThrow);
+    }
+    const auto& animator = scene.runtime(0)->figure->animator();
+    std::vector<Mat4> previousPose(animator.pose().matrices().begin(),
+                                   animator.pose().matrices().end());
+    bool animatedPlayer = false;
+    REQUIRE(scene.effects().count() > 0);
+    const u32 effectId = scene.effects().effect(0).id;
+    const f32 effectAge = scene.effects().effect(0).lived;
+    bool advancedEffect = false;
+    s32 throws = 0;
+    const auto potions = scene.actor(0)->save().progress().inventory.potions.size();
     bool sawShot = false;
     for (s32 frame = 0; frame < 240 && scene.switchCutscene().active(); ++frame) {
         REQUIRE(scene.update(1.0 / 30, input) == PlayOutcome::Running);
         CHECK(scene.actor(0)->position() == held);
         CHECK(scene.actor(0)->save().health() == health);
         CHECK(scene.enemies().count() == enemyCount);
+        CHECK(scene.actor(0)->save().progress().inventory.potions.size() == potions);
+        CHECK_FALSE(animator.released());
+        CHECK_FALSE(animator.potionUsed());
+        throws += animator.strongReleased() ? 1 : 0;
+        if (animator.strongReleased()) {
+            // This close-range throw strikes an enemy in its first physics
+            // update. A cutscene must not leave that weapon frozen in flight.
+            CHECK(scene.missiles().count() == 0);
+        }
+        for (usize i = 0; i < scene.effects().count(); ++i) {
+            const auto& effect = scene.effects().effect(i);
+            advancedEffect |= effect.id == effectId && effect.lived > effectAge;
+        }
+        const std::vector<Mat4> pose(animator.pose().matrices().begin(),
+                                     animator.pose().matrices().end());
+        animatedPlayer |= pose != previousPose;
+        previousPose = pose;
         for (const auto& target : targets) {
             CHECK(scene.enemies().positionOf(target.id) == target.base);
         }
@@ -203,6 +247,11 @@ TEST_CASE("Temple switch shots letterbox the target while combat and controls wa
         }
     }
     CHECK(sawShot);
+    CHECK(animatedPlayer);
+    CHECK(throws == (finishingThrow ? 1 : 0));
+    CHECK(advancedEffect);
+    CHECK(scene.missiles().count() == 0);
+    CHECK(animator.action() == PlayerAnimator::Action::Ready);
     CHECK_FALSE(scene.switchCutscene().active());
     CHECK(world.triggers().settled(560));
     CHECK(world.scene().worldTransform(560) != wallBefore);
@@ -215,6 +264,9 @@ TEST_CASE("Temple switch shots letterbox the target while combat and controls wa
         scene.update(1.0 / 30, input);
     }
     CHECK(scene.actor(0)->position() != held);
+    CHECK(scene.missiles().count() == 0);
+    scene.harm(0, 10, HurtKind::Blow);
+    CHECK(scene.actor(0)->save().health() < health);
     scene.close();
     CHECK_FALSE(scene.switchCutscene().active());
 }
