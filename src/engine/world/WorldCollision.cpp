@@ -625,6 +625,87 @@ Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f3
     return Vec3{position.x, to.y, position.y};
 }
 
+std::vector<WallContact> WorldCollision::surfaceContacts(const Vec3& centre, f32 radius, f32 bottom,
+                                                         f32 top) const {
+    std::vector<WallContact> contacts;
+    if (radius <= 0 || top < bottom) {
+        return contacts;
+    }
+    eachTriangle(
+        centre.x - radius, centre.z - radius, centre.x + radius, centre.z + radius,
+        [&](const CollisionTriangle& triangle) {
+            if ((triangle.objectFlags & (kWallQueryFlags | kFloorQueryFlags)) == 0 ||
+                (triangle.objectFlags & kLiquidSurface) != 0) {
+                return;
+            }
+            // Clip to the body's vertical interval, then intersect the resulting
+            // convex footprint with its circular cross-section. Two wall slices
+            // miss the lower/upper hemispheres of moving lava balls entirely.
+            std::array<Vec3, 8> polygon{triangle.vertices[0], triangle.vertices[1],
+                                        triangle.vertices[2]};
+            usize count = triangle.vertices.size();
+            for (const auto& [height, above] : {std::pair{bottom, true}, std::pair{top, false}}) {
+                std::array<Vec3, 8> clipped{};
+                usize clippedCount = 0;
+                for (usize i = 0; i < count; ++i) {
+                    const Vec3 a = polygon[i];
+                    const Vec3 b = polygon[(i + 1) % count];
+                    const bool inA = above ? a.y >= height : a.y <= height;
+                    const bool inB = above ? b.y >= height : b.y <= height;
+                    if (inA) {
+                        clipped[clippedCount++] = a;
+                    }
+                    if (inA != inB) {
+                        clipped[clippedCount++] = glm::mix(a, b, (height - a.y) / (b.y - a.y));
+                    }
+                }
+                polygon = clipped;
+                count = clippedCount;
+            }
+            if (count == 0) {
+                return;
+            }
+            const Vec2 here{centre.x, centre.z};
+            f32 nearest = radius * radius;
+            Vec3 point{};
+            bool touches = false;
+            bool positive = false;
+            bool negative = false;
+            f32 area = 0;
+            for (usize i = 0; i < count; ++i) {
+                const Vec3 a = polygon[i];
+                const Vec3 b = polygon[(i + 1) % count];
+                const Vec2 start{a.x, a.z};
+                const Vec2 edge{b.x - a.x, b.z - a.z};
+                const f32 side = edge.x * (here.y - start.y) - edge.y * (here.x - start.x);
+                positive |= side > kSweepEpsilon;
+                negative |= side < -kSweepEpsilon;
+                area += (a.x - centre.x) * (b.z - centre.z) - (b.x - centre.x) * (a.z - centre.z);
+                const f32 square = glm::dot(edge, edge);
+                const f32 t =
+                    square > 0 ? std::clamp(glm::dot(here - start, edge) / square, 0.0f, 1.0f) : 0;
+                const Vec3 candidate = glm::mix(a, b, t);
+                const Vec2 delta{candidate.x - centre.x, candidate.z - centre.z};
+                const f32 distance = glm::dot(delta, delta);
+                if (distance <= nearest) {
+                    nearest = distance;
+                    point = candidate;
+                    touches = true;
+                }
+            }
+            if (std::abs(area) > kSweepEpsilon && !(positive && negative)) {
+                touches = true;
+                point = {centre.x, std::clamp(centre.y, bottom, top), centre.z};
+            }
+            if (touches && std::ranges::none_of(contacts, [&](const WallContact& seen) {
+                    return seen.object == triangle.object;
+                })) {
+                contacts.push_back({triangle.object, point});
+            }
+        });
+    return contacts;
+}
+
 Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
                                   std::vector<WallContact>* contacts) const {
     Vec3 out = centre;

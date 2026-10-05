@@ -399,6 +399,7 @@ private:
         f32 veil = 0.0f;   ///< how far a veiling kind has faded out: 255 is gone from sight
         s32 veilClock = 0; ///< ticks it stays seen (above nought) or unseen (below)
         f32 flashSeconds = 0;
+        f32 burnGap = 0;
         f32 deathSeconds = 0;
         s32 deathSkinFrames = 0;
         std::string_view deathSkin;

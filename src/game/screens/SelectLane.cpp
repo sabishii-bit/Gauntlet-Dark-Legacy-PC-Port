@@ -898,8 +898,16 @@ void SelectLane::drawPointerIcon(Canvas& canvas, std::string_view icon, const Re
     if (m_hoverArea == area) {
         canvas.fill(area, kGlowColor.withAlpha(150));
     }
-    drawControlLabel(canvas, *m_services->smallPainter, area,
-                     controlLabel(m_services->controlLabels, m_index, icon));
+    // These are clickable navigation arrows, not mapped controller buttons.
+    std::string_view arrow = "v";
+    if (icon == kIconLeft) {
+        arrow = "<";
+    } else if (icon == kIconRight) {
+        arrow = ">";
+    } else if (icon == kIconUp) {
+        arrow = "^";
+    }
+    drawControlLabel(canvas, *m_services->smallPainter, area, arrow);
 }
 
 void SelectLane::drawNameGrid(Canvas& canvas) const {
@@ -924,7 +932,7 @@ void SelectLane::drawNameGrid(Canvas& canvas) const {
     drawPrompt(canvas, kIconBack, kPromptBackY, text("select.cancel"));
 }
 
-void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, s32 y,
+void SelectLane::drawPrompt(Canvas& canvas, std::string_view /*icon*/, s32 y,
                             std::string_view label) const {
     if (m_services == nullptr || m_services->smallPainter == nullptr) {
         return;
@@ -934,10 +942,6 @@ void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, s32 y,
     if (hovered) {
         canvas.fill(promptArea(y, label), kGlowColor.withAlpha(150));
     }
-    drawControlLabel(canvas, *m_services->smallPainter,
-                     Rect{static_cast<f32>(iconX), static_cast<f32>(y),
-                          static_cast<f32>(kPromptIconSize), static_cast<f32>(kPromptIconSize)},
-                     controlLabel(m_services->controlLabels, m_index, icon));
     TextStyle style;
     style.scale = kSmallScale;
     m_services->smallPainter->draw(canvas, iconX + kPromptIconSize + kPromptGap,
@@ -1074,28 +1078,15 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         if (m_services->smallPainter != nullptr) {
             const s32 leftX = x() + kLegendX;
             const s32 rightX = leftX + kPromptIconSize;
-            const auto icon = [&](std::string_view name, s32 iconX, s32 iconY) {
-                drawControlLabel(canvas, small,
-                                 Rect{static_cast<f32>(iconX), static_cast<f32>(iconY),
-                                      static_cast<f32>(kPromptIconSize),
-                                      static_cast<f32>(kPromptIconSize)},
-                                 controlLabel(m_services->controlLabels, m_index, name));
-            };
             TextStyle style;
             style.scale = kSmallScale;
             const s32 labelX = rightX + kPromptIconSize + kPromptGap;
-            icon(kIconUp, leftX, kLegendY);
-            icon(kIconDown, rightX, kLegendY);
             small.draw(canvas, labelX, kLegendY + kPromptTextDrop, text("select.changeLetter"),
                        style);
-            icon(kIconLeft, leftX, kLegendY + kLegendStep);
-            icon(kIconRight, rightX, kLegendY + kLegendStep);
             small.draw(canvas, labelX, kLegendY + kLegendStep + kPromptTextDrop,
                        text("select.editLetter"), style);
-            icon(kIconSelect, rightX, kLegendY + kLegendStep * 2);
             small.draw(canvas, labelX, kLegendY + kLegendStep * 2 + kPromptTextDrop,
                        text("select.accept"), style);
-            icon(kIconBack, rightX, kLegendY + kLegendStep * 3);
             small.draw(canvas, labelX, kLegendY + kLegendStep * 3 + kPromptTextDrop,
                        text("select.cancel"), style);
             if (m_services->keyboardLane == m_index) {

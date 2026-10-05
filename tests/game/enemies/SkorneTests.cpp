@@ -26,6 +26,73 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Throne Skorne hides his body at the explosion cue rather than after the death hold",
+          "[skorne][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE2.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    test::CombatantFixture fighter;
+    fighter.open(device, root, nullptr, {}, 'F');
+    REQUIRE(fighter.spawn("SKORNE2", {}, 0));
+    EnemyHit hit;
+    hit.damage = fighter.actor.maxHealth() * 2;
+    fighter.actor.hurt(hit);
+    bool exploded = false;
+    for (s32 frame = 0; frame < 900 && fighter.actor.present(); ++frame) {
+        fighter.update(2, 1.0f / 30, {});
+        for (const auto& cue : fighter.actor.takeCues()) {
+            exploded |= cue.tree == "BOSSDTHFX2";
+        }
+        if (exploded) {
+            device.draws.clear();
+            fighter.actor.draw(device, Mat4{1}, {}, nullptr);
+            CHECK(device.draws.empty());
+        }
+    }
+    REQUIRE(exploded);
+    REQUIRE_FALSE(fighter.actor.present());
+}
+
+TEST_CASE("Throne Skorne wing and chest attacks reach players on the arena floor",
+          "[skorne][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE2.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("F2")));
+    const auto* mark = world.layout().findLocator(LocatorKind::Boss);
+    REQUIRE(mark);
+    test::CombatantFixture fighter;
+    fighter.open(device, root, &world.collision(), {}, 'F');
+    REQUIRE(fighter.spawn("SKORNE2", mark->position, 0));
+    std::set<std::string> hitMoves;
+    for (const f32 distance : {30.0f, 35.0f, 40.0f}) {
+        REQUIRE(
+            fighter.actor.spawn(fighter.assets, 0, mark->position, 0, &world.collision(), {}, 'F'));
+        EnemyView player;
+        player.player = 0;
+        player.position = mark->position + Vec3{0, 0, distance};
+        const auto floor = world.collision().floorAt(player.position, 50, 50);
+        REQUIRE(floor);
+        player.position.y = floor->y;
+        player.height = 6;
+        player.radius = 1;
+        const std::array players{player};
+        for (s32 frame = 0; frame < 3600; ++frame) {
+            fighter.update(2, 1.0f / 30, players);
+            for (const auto& blow : fighter.actor.takeBlows()) {
+                if (blow.damage > 0) {
+                    hitMoves.emplace(fighter.actor.moveName());
+                }
+            }
+            fighter.actor.takeCues();
+            fighter.actor.takeShots();
+        }
+    }
+    CHECK(hitMoves.contains("WING_ATTACK"));
+    CHECK(hitMoves.contains("LIGHT"));
+}
+
 TEST_CASE("Skorne grab releases the player onto the altar rather than outside the map",
           "[skorne][capture][assets]") {
     const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();

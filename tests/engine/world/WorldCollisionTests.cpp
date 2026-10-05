@@ -63,6 +63,26 @@ TEST_CASE("the floor under a point is found within the probe range", "[world][co
     REQUIRE(collision.floorAt(Vec3{5.0f, 1.0f, 0.0f}, 2.0f, 3.0f)->y == Approx(0.0f));
 }
 
+TEST_CASE("hazard contact covers caps slopes and the full body height without blocking",
+          "[world][collision][contact-only]") {
+    WorldCollision collision;
+    collision.build({triangle({-2, 0.1f, -2}, {2, 0.1f, -2}, {0, 0.1f, 2}, {0, 1, 0}, 0),
+                     triangle({-2, 5.9f, -2}, {0, 5.9f, 2}, {2, 5.9f, -2}, {0, -1, 0}, 1)});
+    collision.setContactOnly(0, true);
+    collision.setContactOnly(1, true);
+    const auto contacts = collision.surfaceContacts({0, 0, 0}, 0.5f, 0, 6);
+    CHECK(contacts.size() == 2);
+    CHECK(collision.surfaceContacts({0, 0, 0}, 0.5f, 0.2f, 5.8f).empty());
+    CHECK(collision.surfaceContacts({4, 0, 0}, 0.5f, 0, 6).empty());
+    // Vertical edges and degenerate projections must not become infinite planes.
+    collision.build({triangle({0, 0, -1}, {0, 4, -1}, {0, 0, 1}, {1, 0, 0})});
+    CHECK(collision.surfaceContacts({0.4f, 0, 0}, 0.5f, 0, 6).size() == 1);
+    CHECK(collision.surfaceContacts({0, 0, 4}, 0.5f, 0, 6).empty());
+    CHECK(collision.surfaceContacts({0.6f, 0, 0}, 0.5f, 0, 6).empty());
+    collision.setSolid(0, false);
+    CHECK(collision.surfaceContacts({0, 0, 0}, 0.5f, 0, 6).empty());
+}
+
 TEST_CASE("contact-only walls retain contacts without blocking and leave other walls solid",
           "[world][collision][contact-only]") {
     auto triangles = room();

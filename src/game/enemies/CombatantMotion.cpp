@@ -224,7 +224,8 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     }
     critter.position = to;
     // A wall it walks against or a floor it walks onto may hurt it: the swarm's harms, burns
-    // and knocks at five and the felling kinds at fifteen, every step (CritterWorldDamage).
+    // and knocks at five and the felling kinds at fifteen (CritterWorldDamage). The port
+    // deliberately limits burning-floor hits to once per quarter second.
     if (m_hazards != nullptr && m_collision != nullptr && critter.state != State::Dying) {
         const auto touch = m_hazards->touching(*m_collision, to, critter.definition->wallRadius(),
                                                kWallProbeHeight);
@@ -232,6 +233,12 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                                   ? HazardSurfaces::enemyHarmOf(m_hazards->flagsOf(touch->object))
                                   : std::nullopt) {
             EnemyHit hit;
+            if (HazardSurfaces::burning(m_hazards->flagsOf(touch->object))) {
+                if (critter.burnGap > 0) {
+                    return;
+                }
+                critter.burnGap = HazardSurfaces::kEnemyBurnGap;
+            }
             hit.damage = harm->damage;
             hit.flags = harm->impact;
             hit.direction = touch->away;

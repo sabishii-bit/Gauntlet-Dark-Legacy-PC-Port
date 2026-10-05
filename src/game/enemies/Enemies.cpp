@@ -725,6 +725,7 @@ void Enemies::step(f32 seconds, std::span<const EnemyView> players,
             continue;
         }
         enemy.flashSeconds = std::max(0.0f, enemy.flashSeconds - kMotionSeconds);
+        enemy.burnGap = std::max(0.0f, enemy.burnGap - kMotionSeconds);
         if (enemy.state == State::Dying) {
             enemy.deathSeconds += kMotionSeconds;
             if (enemy.kind == kDeathKind) {
@@ -853,8 +854,7 @@ void Enemies::decayPush(Enemy& enemy, f32 seconds) {
     enemy.push.y = std::max(enemy.push.y - kGravity * seconds, 0.0f);
 }
 
-/** A burning floor or a roller hurts whatever enemy is against it or on it, every update
- * it is (EnemyWorldDamage); Garm's own brood is spared. */
+/** EnemyWorldDamage, with the requested quarter-second fire repeat gate. */
 void Enemies::touchHazards(Enemy& enemy, s32 slot) {
     if (m_hazards == nullptr || m_collision == nullptr || enemy.state != State::Active ||
         enemy.kind == kGarmBroodKind) {
@@ -868,6 +868,12 @@ void Enemies::touchHazards(Enemy& enemy, s32 slot) {
     const auto harm = HazardSurfaces::enemyHarmOf(m_hazards->flagsOf(touch->object));
     if (!harm) {
         return;
+    }
+    if (HazardSurfaces::burning(m_hazards->flagsOf(touch->object))) {
+        if (enemy.burnGap > 0) {
+            return;
+        }
+        enemy.burnGap = HazardSurfaces::kEnemyBurnGap;
     }
     EnemyHit hit;
     hit.damage = harm->damage;

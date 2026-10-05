@@ -97,11 +97,13 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
                    static_cast<f32>(kHeight)};
     const s32 color = view.active ? view.color : slot;
     if (bar) {
-        if (const Texture* strip = staticTexture(kStrip)) {
+        // init_frame_blits replaces S3 with the horned rune strip for a selected
+        // character. It stays untinted; the class panel below carries player_rgb.
+        if (const Texture* strip = staticTexture(view.active ? "BK_RUNE_STONE_02" : kStrip)) {
             canvas.draw(*strip,
                         Rect{static_cast<f32>(left), static_cast<f32>(kBarY),
                              static_cast<f32>(kWidth), static_cast<f32>(kBarHeight)},
-                        boxTint(color, view.active));
+                        Color::white());
         }
     }
     const Texture* panel = nullptr;
@@ -109,7 +111,7 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         panel = selectTexture(std::format("S4_{}", classCode(view.classIndex)));
     }
     if (panel != nullptr) {
-        canvas.draw(*panel, box);
+        canvas.draw(*panel, box, boxTint(color, view.active));
     } else if (const Texture* stone = staticTexture("S4")) {
         canvas.draw(*stone, box, boxTint(color, view.active));
     }
@@ -124,16 +126,7 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     }
     const Color tint = playerColor(color);
     if (view.towerPrompt) {
-        // The fallen player's choice, in white beside its buttons (player.c 1397).
-        const auto button = [&](std::string_view name, s32 y) {
-            drawControlLabel(canvas, m_smallCaps,
-                             Rect{static_cast<f32>(left + kPromptIconX), static_cast<f32>(y),
-                                  static_cast<f32>(kPromptIconSize),
-                                  static_cast<f32>(kPromptIconSize)},
-                             controlLabel(m_controlLabels, slot, name));
-        };
-        button("menuSelect", kWaitIconY);
-        button("menuBack", kQuitIconY);
+        // Keep the choices, without controller-button hints.
         if (m_smallCaps.ready()) {
             TextStyle style;
             style.scale = kInTowerScale;

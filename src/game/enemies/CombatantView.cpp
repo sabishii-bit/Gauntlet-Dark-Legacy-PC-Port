@@ -256,7 +256,7 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
                      const Texture* frozenTexture, const CameraFrame* camera,
                      const Texture* hitFlash, f32 presentationAlpha) const {
     const Actor& critter = m_actor;
-    if (critter.state == State::Inactive || critter.stock == nullptr) {
+    if (critter.state == State::Inactive || critter.stock == nullptr || critter.hidden) {
         return;
     }
     // The model is shared by this species, but object-frame selection belongs to the

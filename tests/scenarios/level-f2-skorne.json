@@ -1,0 +1,9 @@
+{
+    "screen": "tower",
+    "level": "F2",
+    "party": [
+        {"player": 0, "class": "WAR", "color": "GRE", "name": "TEST", "level": 74, "health": 10000,
+         "legends": [5]}
+    ],
+    "welcome": false
+}

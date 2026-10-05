@@ -111,6 +111,10 @@ public:
      */
     Vec3 resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
                       std::vector<WallContact>* contacts = nullptr) const;
+    /** All surface contacts of a cylinder, including sloped faces and caps.
+     * Unlike wall resolution this does not approximate contact at two heights. */
+    std::vector<WallContact> surfaceContacts(const Vec3& centre, f32 radius, f32 bottom,
+                                             f32 top) const;
     /** Sweeps a cylinder horizontally, stopping at the first wall and sliding along it.
      * `bottom` and `top` are world-space probe heights; the destination's y is unchanged.
      * Faces block approaches from their normal side only. Opposing faces make a wall

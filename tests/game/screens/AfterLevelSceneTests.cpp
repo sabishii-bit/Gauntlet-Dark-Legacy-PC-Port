@@ -780,7 +780,7 @@ TEST_CASE("after-level screen renders every phase with retail assets", "[shop][s
     REQUIRE(scene.update(0.25, {}));
     scene.render(device, projection, 512, 384);
     REQUIRE(scene.session().party()[0].save.gold == 5000);
-    CHECK(prompted);
+    CHECK_FALSE(prompted);
     scene.close();
     REQUIRE_FALSE(scene.isOpen());
 }

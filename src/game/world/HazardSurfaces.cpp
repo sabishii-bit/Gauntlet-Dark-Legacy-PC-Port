@@ -87,8 +87,9 @@ HazardSurfaces::touching(const WorldCollision& collision, const Vec3& position, 
     // PlayerMotion_FloorFX receives the wall from PlayerWallCollide before the
     // slide/floor correction. A final-position probe alone loses that contact.
     std::vector<WallContact> contacts(movement.begin(), movement.end());
-    collision.resolveWalls(position, radius + kReach, position.y + kFloorProbe,
-                           position.y + std::max(height - kFloorProbe, kFloorProbe), &contacts);
+    const auto surfaces =
+        collision.surfaceContacts(position, radius + kReach, position.y, position.y + height);
+    contacts.insert(contacts.end(), surfaces.begin(), surfaces.end());
     for (const WallContact& contact : contacts) {
         if (const auto harm = harmOfObject(contact.object)) {
             Vec3 away{position.x - contact.point.x, 0.0f, position.z - contact.point.z};

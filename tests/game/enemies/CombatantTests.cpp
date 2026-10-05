@@ -1953,8 +1953,13 @@ TEST_CASE("bosses load elemental armor from exported retail types", "[game][item
     REQUIRE(data.load(chimera));
     CHECK(data.shieldFlags() == 0);
 }
-TEST_CASE("a great one walking a harmful floor is hurt every step, for nobody's credit",
+TEST_CASE("a great one repeats fire damage at quarter seconds and other floor damage every step",
           "[combatant][hazards]") {
+    bool fire = false;
+    SECTION("felling surfaces keep their native cadence") {}
+    SECTION("fire surfaces use the port's repeat gate") {
+        fire = true;
+    }
     const auto root = familyAssets();
     writeTextFile(root / "critter/GOLEM.json", R"({
       "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
@@ -1962,15 +1967,17 @@ TEST_CASE("a great one walking a harmful floor is hurt every step, for nobody's 
       "moves":[{"name":"READY","anim":"STEP","type":32},
                {"name":"WALK","anim":"STEP","type":52,"priority":10,"speed":3}]})");
     const auto dir = test::scratchDirectory("critter-hazard-floor");
-    writeTextFile(dir / "world.json", R"({
-  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": 196612, "next": -1,
+    writeTextFile(dir / "world.json", std::string{R"({
+  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": )"} +
+                                          std::to_string(fire ? 0x10004 : 0x30004) +
+                                          R"(, "next": -1,
                "child": -1}],
   "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
 })");
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     HazardSurfaces hazards;
-    hazards.bind(layout); // 0x30000: a felling kind, fifteen to the swarm and great ones
+    hazards.bind(layout);
     const Vec3 up{0.0f, 1.0f, 0.0f};
     std::vector<CollisionTriangle> floor(2);
     floor[0].vertices = {Vec3{-200, 0, -200}, Vec3{200, 0, 200}, Vec3{200, 0, -200}};
@@ -2006,7 +2013,23 @@ TEST_CASE("a great one walking a harmful floor is hurt every step, for nobody's 
             continue;
         }
         CHECK(actor.health() < whole);
-        CHECK(std::fmod(whole - actor.health(), 15.0f) == Approx(0.0f).margin(0.01f));
+        const f32 damage = fire ? 5.0f : 15.0f;
+        CHECK(std::fmod(whole - actor.health(), damage) == Approx(0.0f).margin(0.01f));
+        f32 previous = actor.health();
+        s32 lastHit = -100;
+        s32 hits = 0;
+        for (s32 frame = 0; frame < 60; ++frame) {
+            actor.update(2, 1.0f / 30, players);
+            if (actor.health() < previous) {
+                if (fire) {
+                    CHECK(static_cast<f32>(frame - lastHit) / 30 >= 0.25f);
+                }
+                previous = actor.health();
+                lastHit = frame;
+                ++hits;
+            }
+        }
+        CHECK(hits >= 2);
         for (const auto& loss : actor.takeLosses()) {
             CHECK(loss.experience == 0.0f);
         }

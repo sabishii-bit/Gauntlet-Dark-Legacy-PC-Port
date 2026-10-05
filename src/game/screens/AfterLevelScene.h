@@ -56,7 +56,6 @@ private:
     void line(s32 x, s32 y, std::string_view value, f32 scale, Color color = Color::white(),
               bool glow = false);
     void image(std::string_view name, s32 x, s32 y, Color color = Color::white());
-    void prompt(s32 player, s32 x, s32 y, s32 size);
     void drawBackground(s32 player);
     void drawFrame(std::string_view name, s32 x, s32 y);
     void drawLaneBackdrop(const ShopLane& lane);

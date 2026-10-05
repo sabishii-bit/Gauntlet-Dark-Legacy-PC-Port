@@ -149,7 +149,7 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
         return "AB";
     });
     REQUIRE(f.messages.open(f.device, "WELCOME", &strings));
-    CHECK(resolved);
+    CHECK_FALSE(resolved);
     REQUIRE(f.messages.scroll().lines() == std::vector<std::string>{"B"});
     f.messages.clear();
     REQUIRE_FALSE(f.messages.active());

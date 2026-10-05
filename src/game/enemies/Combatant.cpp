@@ -200,6 +200,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     const s32 i = m_id;
     const CritterData& data = *critter.definition;
     critter.age += seconds;
+    critter.burnGap = std::max(0.0f, critter.burnGap - seconds);
     critter.sinceHurt += seconds;
     for (CritterArea& area : critter.areas) {
         area.secondsLeft -= seconds;

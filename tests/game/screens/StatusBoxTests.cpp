@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/ClassData.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/StatusBox.h"
 
@@ -42,6 +43,15 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     canvas.end();
     const usize full = device.draws.size();
     REQUIRE(full >= 4); // the bar, the panel, the frame, the icons and the text
+    REQUIRE(device.draws[1].vertices.front().color == boxTint(view.color, true));
+    TextureSet art;
+    REQUIRE(art.load(root / "STATIC"));
+    const auto horns = art.find("BK_RUNE_STONE_02");
+    REQUIRE(horns);
+    const auto& hornTexture = dynamic_cast<const test::FakeTexture&>(art.texture(device, *horns));
+    const auto* drawnTexture = dynamic_cast<const test::FakeTexture*>(device.draws[0].texture);
+    REQUIRE(drawnTexture != nullptr);
+    CHECK(drawnTexture->pixels == hornTexture.pixels);
 
     // Keys and potions carried add their icons and counts over the gold and the health.
     view.keys = 3;
@@ -65,8 +75,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     REQUIRE(StatusBoxPainter::potionIcon(4) == "POTION_ICON_GRE");
     REQUIRE(StatusBoxPainter::potionIcon(77) == "POTION_ICON_RED");
 
-    // Fallen out of the tower: mapped confirm/cancel beside waiting and quitting,
-    // in place of the gold and health (player.c 1397).
+    // Fallen out of the tower: choices remain, but do not resolve button hints.
     StatusBoxView fallen = view;
     fallen.inTower = true;
     fallen.towerPrompt = true;
@@ -80,22 +89,11 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     canvas.begin(device, Mat4{1.0f});
     painter.draw(canvas, 1, fallen, true);
     canvas.end();
-    bool wait = false;
-    bool quit = false;
     for (const test::RecordedDraw& draw : device.draws) {
         const Vec2 corner = test::minCorner(draw);
-        for (const auto& vertex : draw.vertices) {
-            const auto& position = vertex.position;
-            wait = wait ||
-                   (position.x >= 134 && position.x < 154 && position.y >= 332 && position.y < 352);
-            quit = quit ||
-                   (position.x >= 134 && position.x < 154 && position.y >= 352 && position.y < 372);
-        }
         CHECK(corner != Vec2{128.0f + 8.0f, 323.0f}); // no key icon
     }
-    CHECK(wait);
-    CHECK(quit);
-    CHECK(promptedActions == std::vector<std::string>{"menuSelect", "menuBack"});
+    CHECK(promptedActions.empty()); // choices remain, button hints do not
 
     // A pickup card at the bar over the box, and a count above it.
     device.draws.clear();

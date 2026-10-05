@@ -45,7 +45,6 @@ void AfterLevelScene::drawContinue(const ShopLane& lane, s32 x, s32 y, s32 size,
                                    s32 labelY) {
     constexpr f32 kScale = 0.5f;
     const auto label = text("shop.continue");
-    prompt(lane.member.player, x, y, size);
     line(labelX, labelY, label, kScale,
          pointerHovered(lane, PointerAction::Continue) ? kPointerHighlight : Color::white(), true);
     const s32 right = std::max(x + size, labelX + m_text.measure(label, kScale));
@@ -72,12 +71,6 @@ void AfterLevelScene::image(std::string_view name, s32 x, s32 y, Color color) {
                            static_cast<f32>(art->height())},
                       color);
     }
-}
-void AfterLevelScene::prompt(s32 player, s32 x, s32 y, s32 size) {
-    drawControlLabel(m_canvas, m_text,
-                     Rect{static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(size),
-                          static_cast<f32>(size)},
-                     controlLabel(m_context.controlLabels, player, "menuSelect"));
 }
 void AfterLevelScene::drawBackground(s32 player) {
     const s32 x = player * 128;

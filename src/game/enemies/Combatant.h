@@ -199,6 +199,7 @@ private:
         const Combatant* parent = nullptr;
         std::optional<usize> branch;
         f32 health = 0.0f;
+        f32 burnGap = 0;
         f32 maxHealth = 1.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
         struct Floor {

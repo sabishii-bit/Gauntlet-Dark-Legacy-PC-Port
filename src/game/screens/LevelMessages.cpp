@@ -17,7 +17,6 @@ constexpr std::string_view kScrollTexture = "SCROLL_A";
 constexpr std::string_view kFireRingTexture = "GREENCIRCTRANS";
 constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 constexpr std::string_view kScrollTextFile = "text/scroll_e.json";
-constexpr std::string_view kPromptText = "scroll.pressButton";
 constexpr std::string_view kScrollTextPrefix = "scroll";
 } // namespace
 
@@ -87,8 +86,8 @@ void LevelMessages::clear() {
     m_text.setFont(nullptr, nullptr);
 }
 
-bool LevelMessages::open(RenderDevice& device, std::string_view name, const StringTable* strings,
-                         std::optional<usize> page) {
+bool LevelMessages::open(RenderDevice& device, std::string_view name,
+                         const StringTable* /*strings*/, std::optional<usize> page) {
     if (!m_scrollText.loaded()) {
         return false;
     }
@@ -104,11 +103,9 @@ bool LevelMessages::open(RenderDevice& device, std::string_view name, const Stri
         log::warn("Tower: no page {} of the message {}", *page, name);
         return false;
     }
-    const std::string prompt =
-        strings != nullptr ? controlText(strings->get(kPromptText), m_controlLabels, -1) : "";
     return m_scroll.open(
         device, page.has_value() ? std::vector<std::string>{message.pages[*page]} : message.pages,
-        message.scale, prompt);
+        message.scale, {});
 }
 
 LevelMessages::Cues LevelMessages::step(s32 ticks, u32 accepted) {

@@ -43,7 +43,9 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         reach = damage->maxDistance;
         break;
     case AttackDefinition::kBreath:
-        breath = CombatantBreath::fromNode(partTransform(critter, move.colnode), *damage);
+        // CritterFirePlayerCollide uses the selected animation node, falling
+        // back to the model root, not the actor's collision/attention offset.
+        breath = CombatantBreath::fromNode(attachmentTransform(critter, move.colnode), *damage);
         centre = breath->origin;
         break;
     default: return;

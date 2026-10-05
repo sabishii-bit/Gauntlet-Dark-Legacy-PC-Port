@@ -1966,7 +1966,7 @@ TEST_CASE("an item that cancels a walking step reports a blocked body to its min
     CHECK(enemies.blockedOf(*id));
 }
 
-TEST_CASE("an enemy on a burning floor is burned every native frame it stands there",
+TEST_CASE("an enemy on a burning floor has a quarter-second repeat gate independent of render rate",
           "[game][enemies][hazards][assets]") {
     const auto dir = test::scratchDirectory("enemy-hazard-floor");
     writeTextFile(dir / "world.json", R"({
@@ -2010,6 +2010,12 @@ TEST_CASE("an enemy on a burning floor is burned every native frame it stands th
             nativeHealth = enemies.healthOf(*id);
         }
         CHECK(enemies.healthOf(*id) == Approx(*nativeHealth));
+        const f32 firstHit = whole - enemies.healthOf(*id);
+        const f32 afterFirst = enemies.healthOf(*id);
+        enemies.update(12, 0.2f, {});
+        CHECK(enemies.healthOf(*id) == Approx(afterFirst));
+        enemies.update(2, 1.0f / 30, {});
+        CHECK(enemies.healthOf(*id) == Approx(afterFirst - firstHit));
         CHECK(enemies.takeLosses().empty()); // the world's harm is worth nothing to anyone
         enemies.close();
     }
