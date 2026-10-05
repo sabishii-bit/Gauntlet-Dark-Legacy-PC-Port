@@ -1304,7 +1304,7 @@ bool PlayerAttacks::isCreature(s32 id) {
 }
 
 PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong, const Targets& targets,
-                                     bool moved, s32 chain) const {
+                                     bool moved, s32 chain, std::optional<Vec3> facing) const {
     if (const auto item =
             ItemAttack::select(PowerupEffects::of(actor.save().progress().inventory))) {
         return item->deed;
@@ -1313,7 +1313,7 @@ PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong, cons
     if (!m_resources) {
         return ranged;
     }
-    const MeleeSense sense = meleeSense(actor, true, targets);
+    const MeleeSense sense = meleeSense(actor, true, targets, facing);
     // What is a step away is struck only by stepping to it (never at something low), or
     // mid-chain by the slow swing.
     const bool steps = sense.range == MeleeRange::Step && moved && !sense.low;
@@ -1327,8 +1327,36 @@ PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong, cons
     return sense.low ? PlayerDeed::MeleeLow : PlayerDeed::Melee;
 }
 
+PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Targets& targets,
+                                             const Vec3& facing) const {
+    if (!m_resources) {
+        return PlayerDeed::None;
+    }
+    const auto target = meleeTarget(actor, targets, facing, actor.reach() + kStepReach);
+    if (!target || target->id < kEnemyTargetBase || target->id >= kSafeRockTargetBase) {
+        return PlayerDeed::None;
+    }
+    if (target->id >= kBossTargetBase) {
+        // PlayerMotion's boss-family exception permits only the two mobile
+        // encounters, DRIDER and LICH, to trigger an unpressed close attack.
+        constexpr s32 kSpiderQueen = 37;
+        constexpr s32 kLich = 41;
+        const s32 kind = targets.opponents.bosses().view().kind;
+        if (kind != kSpiderQueen && kind != kLich) {
+            return PlayerDeed::None;
+        }
+    }
+    const MeleeSense sense = senseOf(actor, false, *target);
+    if (sense.range != MeleeRange::Swing) {
+        return PlayerDeed::None;
+    }
+    // Forced melee bypasses ranged item attacks and does not spend ammunition.
+    return sense.low ? PlayerDeed::AutoMeleeLow : PlayerDeed::AutoMelee;
+}
+
 std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor,
-                                                        const Targets& targets, f32 reach) {
+                                                        const Targets& targets, f32 reach,
+                                                        const Vec3& facing) {
     std::optional<MissileTarget> nearest;
     if (targets.multiplayer != MultiplayerMode::Hurt) {
         return nearest;
@@ -1342,8 +1370,7 @@ std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor
         const Vec3 toward = player.actor.position() - actor.position();
         const f32 length = glm::length(toward);
         const f32 distance = length - player.actor.radius();
-        if (length > 0 && distance < reach &&
-            glm::dot(toward / length, actor.facing()) >= kGrabCone) {
+        if (length > 0 && distance < reach && glm::dot(toward / length, facing) >= kGrabCone) {
             nearest =
                 MissileTarget{kPlayerTargetBase + static_cast<s32>(i), player.actor.position(),
                               player.actor.radius(), player.actor.height()};
@@ -1353,36 +1380,56 @@ std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor
     return nearest;
 }
 
-MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held,
-                                     const Targets& targets) const {
+std::optional<MissileTarget> PlayerAttacks::meleeTarget(const PlayerActor& actor,
+                                                        const Targets& targets, const Vec3& facing,
+                                                        f32 reach) const {
+    if (!m_resources) {
+        return std::nullopt;
+    }
+    const f32 range =
+        targets.opponents.bosses().present() ? TargetAssist::kBossRange : TargetAssist::kRange;
+    auto target =
+        TargetAssist::ahead(actor.position(), actor.height(), facing, meleeTargets(targets), reach,
+                            range, &m_resources->world.collision());
+    if (!target) {
+        target = meleePlayer(actor, targets, reach, facing);
+    }
+    return target;
+}
+
+MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held, const Targets& targets,
+                                     std::optional<Vec3> facing) const {
     MeleeSense sense;
     sense.range = MeleeRange::Beyond;
     if (!m_resources) {
         return sense;
     }
     const f32 bias = held ? kHeldReach : 0.0f;
-    auto target =
-        TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
-                             actor.reach() + kStepReach + bias, &m_resources->world.collision());
-    if (!target) {
-        target = meleePlayer(actor, targets, actor.reach() + kStepReach + bias);
-    }
+    const auto target = meleeTarget(actor, targets, facing.value_or(actor.facing()),
+                                    actor.reach() + kStepReach + bias);
     if (!target) {
         return sense;
     }
-    const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), *target);
+    return senseOf(actor, held, *target);
+}
+
+MeleeSense PlayerAttacks::senseOf(const PlayerActor& actor, bool held,
+                                  const MissileTarget& target) {
+    MeleeSense sense;
+    const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), target);
+    const f32 bias = held ? kHeldReach : 0.0f;
     // PlayerMotion uses col_radius (the full PDAT width), not the half-width
     // cylinder used for horizontal movement. Target distance already excludes
     // the target's radius, so only the player's reach and authored margin remain.
     sense.range =
         distance < actor.reach() + kSwingReach + bias ? MeleeRange::Swing : MeleeRange::Step;
-    const bool swarm = target->id >= kEnemyTargetBase && target->id < kGeneratorTargetBase;
-    const bool thing = !isCreature(target->id) && target->id < kPlayerTargetBase;
+    const bool swarm = target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase;
+    const bool thing = !isCreature(target.id) && target.id < kPlayerTargetBase;
     // PlayerMotion tests the swarm's height or the item's height, but never a
     // critter's small NODE collision part, when setting the low-attack bit.
     sense.low = distance < actor.reach() + kStepReach &&
-                ((swarm && target->height <= kLowEnemy) || (thing && target->height <= kLowThing));
-    const Vec3 toward = target->base - actor.position();
+                ((swarm && target.height <= kLowEnemy) || (thing && target.height <= kLowThing));
+    const Vec3 toward = target.base - actor.position();
     if (std::hypot(toward.x, toward.z) > 1e-5f) {
         const f32 bearing = std::atan2(toward.x, toward.z) - actor.yaw();
         sense.yaw = std::remainder(bearing, 2.0f * std::numbers::pi_v<f32>);
@@ -1396,13 +1443,12 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     }
     const PlayerActor& actor = players[index].actor;
     const PlayerAnimator& animator = players[index].figure->animator();
-    // The blow lands on whatever is nearest within a step, whichever way it lies: the
-    // swing has already turned to it.
-    auto target = TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
-                                       actor.reach() + kStepReach, &m_resources->world.collision());
-    if (!target) {
-        target = meleePlayer(actor, targets, actor.reach() + kStepReach);
-    }
+    // PlayerMotion consumes this frame's PlayerGetTarget result when the blow
+    // lands, not a new all-bearing query. Desired heading may still point
+    // behind the body's yaw during a backward combo.
+    const auto target =
+        meleeTarget(actor, targets, players[index].meleeFacing.value_or(actor.facing()),
+                    actor.reach() + kStepReach);
     // The swing's sweep brings down the SHOOTFALL scenery within it (combat.c's item query).
     targets.fixtures.shootScenery(actor.position(), actor.reach() + kStepReach);
     if (!target) {

@@ -46,6 +46,7 @@ struct Fixture {
         .aim = {},
         .limitMovement = {},
         .attackDeed = {},
+        .automaticMeleeDeed = {},
         .meleeSense = {},
         .grabDeath = {},
         .resolveMovement = {},
@@ -245,7 +246,7 @@ TEST_CASE("super shot keeps the player's facing instead of turning toward assist
     Fixture f;
     f.inputs[3].attack = true;
     f.events.perform = [](usize, PartyMotion::Action) {};
-    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::SuperShot; };
+    f.events.attackDeed = [](usize, bool, bool, const Vec3&) { return PlayerDeed::SuperShot; };
     f.events.aim = [](usize) { return std::optional<Vec3>{{5, 3, 10}}; };
     f.step();
     CHECK(f.players[0].actor.yaw() == Approx(0));
@@ -266,7 +267,7 @@ TEST_CASE("held strong ranged input moves at quarter pace from its first frame",
     REQUIRE(player.figure);
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.events.perform = [](usize, PartyMotion::Action) {};
-    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::StrongAttack; };
+    f.events.attackDeed = [](usize, bool, bool, const Vec3&) { return PlayerDeed::StrongAttack; };
     f.inputs[3].strongAttack = true;
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
     for (s32 frame = 0; frame < 8; ++frame) {
@@ -284,15 +285,137 @@ TEST_CASE("quick melee creeps forward from its first input frame while slow mele
     Fixture f;
     f.inputs[3].attack = true;
     f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};
-    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::Melee; };
+    f.events.attackDeed = [](usize, bool, bool, const Vec3&) { return PlayerDeed::Melee; };
     f.step();
     const Vec3 quick = f.players[0].actor.position();
     CHECK(quick.z > 0);
     CHECK(quick.x == Approx(0).margin(0.0001f));
     CHECK(f.players[0].actor.yaw() == Approx(0));
-    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::MeleeSlow; };
+    f.events.attackDeed = [](usize, bool, bool, const Vec3&) { return PlayerDeed::MeleeSlow; };
     f.step();
     CHECK(f.players[0].actor.position() == quick);
+}
+
+TEST_CASE("automatic melee uses unpressed walking contacts and the sparse player's own controls",
+          "[party-motion][auto-melee][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    auto& player = f.players[0];
+    f.players[1].life = PlayerLife::InTower;
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& input = f.inputs[3];
+    input.move = {{0, 1}, 1};
+    s32 automaticQueries = 0;
+    s32 contacts = 0;
+    s32 ranged = 0;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [&](usize, PartyMotion::Action action) {
+        contacts += action == PartyMotion::Action::Melee ? 1 : 0;
+        ranged += action == PartyMotion::Action::ThrowWeapon ||
+                          action == PartyMotion::Action::StrongThrow ||
+                          action == PartyMotion::Action::SuperShot ||
+                          action == PartyMotion::Action::ItemAttack
+                      ? 1
+                      : 0;
+    };
+    f.events.automaticMeleeDeed = [&](usize index, const Vec3& facing) {
+        CHECK(index == 0);
+        CHECK(facing == Vec3{0, 0, 1});
+        ++automaticQueries;
+        return PlayerDeed::AutoMelee;
+    };
+    f.events.meleeSense = [](usize index, bool held, const Vec3& facing) {
+        CHECK(index == 0);
+        CHECK_FALSE(held);
+        CHECK(facing == Vec3{0, 0, 1});
+        return MeleeSense{};
+    };
+    bool eligible = true;
+    bool held = false;
+    SECTION("walking and running need no attack button") {}
+    SECTION("the assigned player alone may opt out") {
+        player.actor.save().autoAttack = false;
+        eligible = false;
+    }
+    SECTION("a different lane's input does not control this player") {
+        input.move = {};
+        f.inputs[0].move = {{0, 1}, 1};
+        eligible = false;
+    }
+    SECTION("standing") {
+        input.move = {};
+        eligible = false;
+    }
+    SECTION("explicit strafe") {
+        input.strafe = true;
+        eligible = false;
+    }
+    SECTION("cutscene hold") {
+        held = true;
+        eligible = false;
+    }
+    SECTION("damage reaction") {
+        player.reaction = PlayerDeed::Flinch;
+        eligible = false;
+    }
+    SECTION("a buffered input edge") {
+        input.attackPressed = true;
+        eligible = false;
+    }
+    SECTION("cursor-forward run") {
+        input.aimPoint = Vec3{0, 0, 80};
+    }
+    SECTION("cursor sidestep") {
+        input.aimPoint = Vec3{0, 0, 80};
+        input.move.direction = {1, 0};
+        eligible = false;
+    }
+    SECTION("already throwing") {
+        player.figure->animate(0, 2, 1.0f / 30.0f, PlayerDeed::Attack);
+        eligible = false;
+    }
+    const Vec3 before = player.actor.position();
+    f.step(held);
+    CHECK(automaticQueries == (eligible ? 1 : 0));
+    CHECK(player.figure->animator().meleeing() == eligible);
+    CHECK(player.figure->animator().meleeChain() == 0);
+    if (eligible) {
+        CHECK(player.actor.position().z - before.z ==
+              Approx(player.actor.speed() * PlayerAnimator::kQuickMeleePace / 30.0f));
+        input.move = {};
+        for (s32 frame = 0; frame < 45; ++frame) {
+            f.step();
+        }
+        CHECK(contacts == 1);
+        CHECK(ranged == 0);
+        CHECK(automaticQueries == 1);
+    }
+}
+
+TEST_CASE("a quick swing selects along desired movement without rotating the locked body",
+          "[party-motion][melee][target-assist]") {
+    Fixture f;
+    f.inputs[3].attack = true;
+    f.inputs[3].move = {{0, -1}, 1};
+    f.events.attackDeed = [](usize, bool, bool, const Vec3& facing) {
+        CHECK(facing.x == Approx(0).margin(0.0001f));
+        CHECK(facing.z == Approx(-1));
+        return PlayerDeed::Melee;
+    };
+    f.step();
+    CHECK(f.players[0].actor.yaw() == Approx(0));
+    f.inputs[3].strafe = true;
+    f.events.attackDeed = [](usize, bool, bool, const Vec3& facing) {
+        CHECK(facing == Vec3{0, 0, 1});
+        return PlayerDeed::Melee;
+    };
+    f.step();
 }
 
 TEST_CASE("camera clipping preserves a diagonal step along the screen edge",
@@ -675,7 +798,7 @@ TEST_CASE("held close attack input advances slowly and dispatches melee contacts
     s32 contacts = 0;
     s32 missiles = 0;
     f.events.advanceTurbo = [](usize, s32, f32) {};
-    f.events.attackDeed = [](usize, bool strong, bool) {
+    f.events.attackDeed = [](usize, bool strong, bool, const Vec3&) {
         return strong ? PlayerDeed::MeleeSlow : PlayerDeed::Melee;
     };
     f.events.perform = [&](usize, PartyMotion::Action action) {

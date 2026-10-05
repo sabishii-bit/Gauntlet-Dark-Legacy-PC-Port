@@ -2275,8 +2275,8 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
     }
 }
 
-TEST_CASE("the melee sees what is near at any bearing, within a swing or a step",
-          "[game][screens][player-attacks][melee][assets]") {
+TEST_CASE("melee acquires ahead of the requested heading, within a swing or a step",
+          "[game][screens][player-attacks][melee][alpha-auto-melee][assets]") {
     const auto root =
         test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     Fixture f;
@@ -2290,39 +2290,248 @@ TEST_CASE("the melee sees what is near at any bearing, within a swing or a step"
     spawn.position = {0, 0, 2.5f};
     REQUIRE(enemies.spawn(spawn, {}));
     PlayerActor& actor = f.players[0].actor;
-    // Behind the character: still within a swing, which turns to it.
+    // An unrequested target behind the character does not turn a throw into melee.
     actor.place({0, 0, 5});
     actor.turnTo(0.0f);
-    const MeleeSense behind = f.attacks.meleeSense(actor, true, f.targets);
+    CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Beyond);
+    CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Attack);
+    CHECK(f.attacks.attackDeed(actor, true, f.targets) == PlayerDeed::StrongAttack);
+    // Desired movement can acquire behind the body's current yaw, preserving
+    // the 180-degree combo's melee_yaw while the attack restricts body turning.
+    const Vec3 requested{0, 0, -1};
+    const MeleeSense behind = f.attacks.meleeSense(actor, true, f.targets, requested);
     CHECK(behind.range == MeleeRange::Swing);
     CHECK(std::abs(behind.yaw) == Approx(std::numbers::pi_v<f32>).margin(0.01f));
-    const PlayerDeed close = f.attacks.attackDeed(actor, false, f.targets);
+    const PlayerDeed close = f.attacks.attackDeed(actor, false, f.targets, false, 0, requested);
     CHECK((close == PlayerDeed::Melee || close == PlayerDeed::MeleeLow));
     // Backing off: a step away, it is stepped to only while the stick moves.
     bool stepped = false;
     for (f32 z = 5.0f; z < 12.0f && !stepped; z += 0.1f) {
         actor.place({0, 0, z});
-        const MeleeSense sense = f.attacks.meleeSense(actor, true, f.targets);
+        const MeleeSense sense = f.attacks.meleeSense(actor, true, f.targets, requested);
         if (sense.range != MeleeRange::Step) {
             continue;
         }
         stepped = true;
-        CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Attack);
-        CHECK(f.attacks.attackDeed(actor, false, f.targets, true) ==
+        CHECK(f.attacks.attackDeed(actor, false, f.targets, false, 0, requested) ==
+              PlayerDeed::Attack);
+        CHECK(f.attacks.attackDeed(actor, false, f.targets, true, 0, requested) ==
               (sense.low ? PlayerDeed::Attack : PlayerDeed::Melee));
-        CHECK(f.attacks.attackDeed(actor, true, f.targets, true) ==
+        CHECK(f.attacks.attackDeed(actor, true, f.targets, true, 0, requested) ==
               (sense.low ? PlayerDeed::StrongAttack : PlayerDeed::MeleeSlow));
         // Let go of, the attack reaches a unit less.
-        CHECK(f.attacks.meleeSense(actor, false, f.targets).range != MeleeRange::Swing);
+        CHECK(f.attacks.meleeSense(actor, false, f.targets, requested).range != MeleeRange::Swing);
     }
     CHECK(stepped);
     actor.place({0, 0, 20});
-    CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Beyond);
+    CHECK(f.attacks.meleeSense(actor, true, f.targets, requested).range == MeleeRange::Beyond);
     enemies.close();
 }
 
+TEST_CASE("automatic melee requires a forward creature inside the unheld swing band",
+          "[game][player-attacks][melee][alpha-auto-melee]") {
+    const auto root = turboAssets();
+    Fixture f;
+    auto& actor = f.players[0].actor;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = 3;
+    spawn.placed = true;
+    REQUIRE(enemies.spawn(spawn, {}));
+    const auto bodies = enemies.targets();
+    REQUIRE(bodies.size() == 1);
+    const auto& target = bodies.front();
+    const f32 boundary = actor.reach() + PlayerAttacks::kSwingReach;
+    for (const f32 gap : {boundary - 0.25f, boundary, boundary + 0.25f}) {
+        CAPTURE(gap, boundary);
+        actor.place(target.base - Vec3{0, 0, target.radius + gap});
+        CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Swing);
+        CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+              (gap < boundary ? PlayerDeed::AutoMelee : PlayerDeed::None));
+    }
+    actor.place(target.base - Vec3{0, 0, target.radius + boundary - 0.25f});
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, {0, 0, -1}) == PlayerDeed::None);
+    const PlayerAttacks unbound;
+    CHECK(unbound.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    auto& inventory = actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 3, 1);
+    const Inventory before = inventory;
+    CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::SuperShot);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
+    CHECK(inventory == before);
+    CHECK(f.arsenal.missiles().count() == 0);
+    enemies.close();
+}
+
+TEST_CASE("automatic melee selects live generators but never player fallback targets",
+          "[game][player-attacks][melee][alpha-auto-melee]") {
+    const auto root = turboAssets();
+    Fixture f;
+    auto& actor = f.players[0].actor;
+    auto& enemies = f.opponents.enemies();
+    auto& generators = f.opponents.generators();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    ItemInfo generator;
+    generator.type = ItemInfo::kGenerator;
+    generator.name = "BOSSGEN";
+    generator.hitPoints = 500;
+    generator.height = 6;
+    generator.xSize = 2;
+    generator.zSize = 2;
+    REQUIRE(generators.placeBoss(f.device, generator, f.weapons, enemies, kGruntKind, Mat4{1},
+                                 nullptr));
+    const auto& box = generators.boxOf(0);
+    actor.place(generators.positionOf(0) - Vec3{0, 0, std::max(box.halfAcross, box.halfAlong) + 1});
+    REQUIRE(generators.standing(0));
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
+    REQUIRE(generators.strike(0, 10000, 0));
+    REQUIRE_FALSE(generators.standing(0));
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    std::array<PlayerRuntime, 1> other;
+    other[0].actor.spawn(1, {}, nullptr, actor.position() + Vec3{0, 0, 2}, 0);
+    f.targets.players = other;
+    f.targets.multiplayer = MultiplayerMode::Hurt;
+    REQUIRE(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Swing);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    generators.clear();
+    enemies.close();
+}
+
+TEST_CASE("automatic melee tests the chosen target rather than searching past a closer barrel",
+          "[game][player-attacks][melee][alpha-auto-melee][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    std::optional<usize> barrel;
+    for (usize i = 0; i < f.fixtures.barrels().size(); ++i) {
+        if (f.fixtures.barrels().barrel(i).instance == 319) {
+            barrel = i;
+        }
+    }
+    REQUIRE(barrel);
+    REQUIRE(f.fixtures.barrels().standing(*barrel));
+    const auto& cask = f.fixtures.barrels().barrel(*barrel);
+    auto& actor = f.players[0].actor;
+    actor.place(cask.figure.position() - Vec3{0, 0, cask.radius + 0.5f});
+    REQUIRE(f.attacks.meleeSense(actor, true, f.targets).low);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = actor.position() + Vec3{0, 0, enemyKind(kGruntKind).radius + 1.5f};
+    REQUIRE(enemies.spawn(spawn, {}));
+    REQUIRE(f.attacks.meleeSense(actor, true, f.targets).low);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    f.fixtures.clear();
+    REQUIRE_FALSE(f.attacks.meleeSense(actor, true, f.targets).low);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
+    enemies.close();
+}
+
+TEST_CASE("automatic melee only permits the native DRIDER and LICH boss exceptions",
+          "[game][player-attacks][melee][alpha-auto-melee][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("CRITTER/DRIDER.WAD");
+    test::assetOrSkip("CRITTER/DRAGON.WAD");
+    Fixture f;
+    auto& bosses = f.opponents.bosses();
+    auto& actor = f.players[0].actor;
+    for (const s32 kind : {34, 37, 41}) {
+        CAPTURE(kind);
+        bosses.open(f.device, root, nullptr, {}, 'G');
+        REQUIRE(bosses.spawn(kind, {}, 0));
+        bosses.wake();
+        const auto bodies = bosses.targets();
+        REQUIRE_FALSE(bodies.empty());
+        bool checked = false;
+        for (const auto& target : bodies) {
+            actor.place(target.base - Vec3{0, 0, target.radius + 0.5f});
+            if (f.attacks.meleeSense(actor, false, f.targets).range != MeleeRange::Swing) {
+                continue;
+            }
+            checked = true;
+            CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+                  (kind == 34 ? PlayerDeed::None : PlayerDeed::AutoMelee));
+        }
+        CHECK(checked);
+        bosses.close();
+    }
+}
+
+TEST_CASE("a forward melee contact cannot be stolen by a nearer barrel behind the player",
+          "[game][player-attacks][melee][alpha-auto-melee][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    std::optional<usize> barrel;
+    for (usize i = 0; i < f.fixtures.barrels().size(); ++i) {
+        if (f.fixtures.barrels().barrel(i).instance == 319) {
+            barrel = i;
+        }
+    }
+    REQUIRE(barrel);
+    REQUIRE(f.fixtures.barrels().standing(*barrel));
+    const auto& cask = f.fixtures.barrels().barrel(*barrel);
+    const s32 barrelHealth = cask.health;
+    auto& player = f.players[0];
+    player.actor.place(cask.figure.position() + Vec3{0, 0, cask.radius + 0.5f});
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = player.actor.position() + Vec3{0, 0, enemyKind(kGruntKind).radius + 1.5f};
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    const f32 enemyHealth = enemies.healthOf(*enemy);
+    REQUIRE(f.attacks.automaticMeleeDeed(player.actor, f.targets, {0, 0, 1}) ==
+            PlayerDeed::AutoMelee);
+    player.figure->setMelee(f.attacks.meleeSense(player.actor, true, f.targets));
+    for (s32 frame = 0; frame < 90 && !player.figure->animator().meleeStruck(); ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30, frame == 0 ? PlayerDeed::Melee : PlayerDeed::None);
+    }
+    REQUIRE(player.figure->animator().meleeStruck());
+    player.meleeFacing = Vec3{0, 0, 1};
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(enemies.healthOf(*enemy) < enemyHealth);
+    CHECK(cask.health == barrelHealth);
+    // The body has not turned, but a requested backward combo uses its own
+    // heading at contact rather than being hard-wired to the body's facing.
+    player.meleeFacing = Vec3{0, 0, -1};
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(cask.health < barrelHealth);
+    f.opponents.close();
+}
+
 TEST_CASE("native player width governs melee bands and the anklebiter low threshold",
-          "[game][player-attacks][melee][alpha-melee-flow][assets]") {
+          "[game][player-attacks][melee][alpha-melee-flow][alpha-auto-melee][assets]") {
     const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
     test::assetOrSkip("MONSTERS/MAG/ANIM.PS2");
     test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
@@ -2349,6 +2558,9 @@ TEST_CASE("native player width governs melee bands and the anklebiter low thresh
             actor.spawn(0, save, stats, {}, 0);
             CAPTURE(kind, character, stats->width, target.radius);
             REQUIRE(actor.reach() == Approx(stats->width));
+            actor.place(target.base - Vec3{0, 0, target.radius + stats->width + 0.75f});
+            CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+                  (kind == 12 ? PlayerDeed::AutoMeleeLow : PlayerDeed::AutoMelee));
             // PlayerMotion reads col_radius (+0x850), the full PDAT width;
             // distance already excludes the target's own radius. The held
             // swing boundary is width+1+1 and the low boundary is width+2.
@@ -2362,6 +2574,8 @@ TEST_CASE("native player width governs melee bands and the anklebiter low thresh
             CHECK(f.attacks.attackDeed(actor, true, f.targets, true) ==
                   (kind == 12 ? PlayerDeed::MeleeSlowLow : PlayerDeed::MeleeSlow));
             CHECK(f.attacks.meleeSense(actor, false, f.targets).range == MeleeRange::Step);
+            CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+                  PlayerDeed::None);
 
             actor.place(target.base - Vec3{0, 0, target.radius + boundary + 0.1f});
             const auto step = f.attacks.meleeSense(actor, true, f.targets);
@@ -2427,7 +2641,7 @@ TEST_CASE("a completed low melee contact reaches the full native player width",
 }
 
 TEST_CASE("generals never select low melee from their small collision parts",
-          "[game][player-attacks][alpha-combat][alpha-general-melee][assets]") {
+          "[game][player-attacks][alpha-combat][alpha-general-melee][alpha-auto-melee][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
     test::assetOrSkip("MONSTERS/GENERAL/LEVELG/ANIM.PS2");
     Fixture f;
@@ -2453,6 +2667,8 @@ TEST_CASE("generals never select low melee from their small collision parts",
             // PlayerMotion's critter branch sets creature bit0x10, never low bit2.
             CHECK_FALSE(sense.low);
             CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Melee);
+            CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+                  PlayerDeed::AutoMelee);
         }
         CHECK(checked);
     }

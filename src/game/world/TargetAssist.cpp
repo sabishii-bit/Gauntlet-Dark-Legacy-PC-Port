@@ -48,6 +48,30 @@ std::optional<MissileTarget> TargetAssist::around(const Vec3& feet, f32 height,
     return nearest;
 }
 
+std::optional<MissileTarget> TargetAssist::ahead(const Vec3& feet, f32 height, const Vec3& facing,
+                                                 std::span<const MissileTarget> targets, f32 reach,
+                                                 f32 range, const WorldCollision* collision) {
+    const f32 facingLength = std::hypot(facing.x, facing.z);
+    if (facingLength < 1e-5f || range <= 0 || reach <= 0) {
+        return std::nullopt;
+    }
+    std::vector<MissileTarget> candidates;
+    for (const MissileTarget& target : targets) {
+        const Vec3 origin{feet.x, feet.y + height * 0.5f, feet.z};
+        const Vec3 offset = target.pointNear(origin) - origin;
+        const f32 flat = std::hypot(offset.x, offset.z);
+        const f32 distance = distanceTo(feet, height, target);
+        // closest_enemy / item targeting tighten the forward cone over the
+        // full search range, not over this swing's much shorter reach.
+        const f32 threshold = kFacingDot + distance * (1 - kFacingDot) / range;
+        const f32 dot = (offset.x * facing.x + offset.z * facing.z) / facingLength;
+        if (dot >= flat * threshold) {
+            candidates.push_back(target);
+        }
+    }
+    return around(feet, height, candidates, reach, collision);
+}
+
 std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
                                          std::span<const MissileTarget> targets, f32 range,
                                          const WorldCollision* collision) {

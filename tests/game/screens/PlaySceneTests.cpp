@@ -2526,6 +2526,108 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
     scene.close();
 }
 
+TEST_CASE("walking into a grunt deals automatic melee damage without firing equipped ammunition",
+          "[game][screens][automatic-melee-scene][autoattack][assets]") {
+    const bool enabled = GENERATE(true, false);
+    const u32 weapon = GENERATE(powerup::kSuperShot, powerup::kThunderHammer);
+    // Exercise both partial-stick walking and full-stick running through the real scene.
+    const f32 magnitude = weapon == powerup::kSuperShot ? 0.5f : 1.0f;
+    CAPTURE(enabled, weapon, magnitude);
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G1");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AUTO";
+    save.autoAttack = enabled;
+    save.progress().inventory.addPowerup(powerup::kWeapon, weapon, 7, -1);
+    // Prevent the control case's enemy blows from interrupting its approach. This
+    // armour neither reflects damage nor harms anything touching the player.
+    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    constexpr s32 kPlayer = 3; // controller identity differs from the sole runtime index
+    const std::array party{PartyMember{kPlayer, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{18.8f, 0.2f, 0.7f};
+    options.yaw = kPi * 0.5f;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 frame = 0; frame < 400 && awaitingEntrance(scene); ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    REQUIRE(scene.actor(0) == nullptr);
+    REQUIRE(scene.actor(kPlayer));
+    REQUIRE(scene.animator(kPlayer));
+    const auto& actor = *scene.actor(kPlayer);
+    const Vec3 start = actor.position();
+    const Vec3 goal = start + Vec3{4.5f, 0, 0};
+    for (s32 step = 0; step <= 6; ++step) {
+        const Vec3 point = glm::mix(start, goal, static_cast<f32>(step) / 6.0f);
+        REQUIRE(world.collision().floorAt(point, 0.25f, 0.25f));
+        for (usize i = 0; i < scene.barrels().size(); ++i) {
+            if (scene.barrels().standing(i)) {
+                const auto& barrel = scene.barrels().barrel(i);
+                const Vec3 offset = barrel.figure.position() - point;
+                REQUIRE(std::hypot(offset.x, offset.z) - barrel.radius > actor.reach() + 2.0f);
+            }
+        }
+    }
+    auto& enemies = scene.enemies();
+    REQUIRE(enemies.within(start, 8).empty());
+    REQUIRE(scene.generators().within(start, 8).empty());
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = goal;
+    spawn.direction = Vec3{-1, 0, 0};
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    const f32 health = enemies.healthOf(*enemy);
+    REQUIRE(health > 0);
+    REQUIRE(enemies.kindOf(*enemy) == kGruntKind);
+    REQUIRE(glm::distance(start, enemies.positionOf(*enemy)) - enemies.radiusOf(*enemy) >
+            actor.reach() + 1.0f);
+    REQUIRE(scene.missiles().count() == 0);
+    bool melee = false;
+    f32 mostTravel = 0;
+    f32 closestGap = 100;
+    for (s32 frame = 0; frame < 120 && enemies.healthOf(*enemy) == health; ++frame) {
+        const Vec3 toward = enemies.positionOf(*enemy) - actor.position();
+        const f32 heading = std::atan2(toward.x, toward.z) - scene.viewCamera().yaw;
+        PlayScene::Inputs input{};
+        input[kPlayer].move = MoveInput{Vec2{std::sin(heading), std::cos(heading)}, magnitude};
+        REQUIRE_FALSE(input[kPlayer].attack);
+        REQUIRE_FALSE(input[kPlayer].strafe);
+        REQUIRE(scene.update(1.0 / 60.0, input) == PlayOutcome::Running);
+        melee |= scene.animator(kPlayer)->meleeing();
+        mostTravel = std::max(mostTravel, glm::distance(actor.position(), start));
+        closestGap =
+            std::min(closestGap, glm::distance(actor.position(), enemies.positionOf(*enemy)) -
+                                     enemies.radiusOf(*enemy));
+        CHECK(scene.missiles().count() == 0);
+    }
+    CAPTURE(actor.position().x, actor.position().z, enemies.healthOf(*enemy), closestGap,
+            mostTravel, melee);
+    REQUIRE(mostTravel > 0.25f);
+    REQUIRE(closestGap < actor.reach() + 1.0f);
+    CHECK(melee == enabled);
+    CHECK((enemies.healthOf(*enemy) < health) == enabled);
+    const auto* ammunition = actor.save().progress().inventory.powerup(powerup::kWeapon, weapon);
+    REQUIRE(ammunition);
+    CHECK(ammunition->charge == 7);
+}
+
 TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill feeds the meter",
           "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();

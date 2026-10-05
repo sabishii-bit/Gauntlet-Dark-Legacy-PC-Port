@@ -195,6 +195,7 @@ std::string CharacterSave::toJson() const {
     root["color"] = color;
     root["classUnlock"] = classUnlock;
     root["gold"] = gold;
+    root["autoAttack"] = autoAttack;
     root["helpSeen"] = helpSeen;
     root["moviesSeen"] = moviesSeen;
     root["levelTotal"] = levelTotal;
@@ -226,6 +227,7 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     save.color = root.value("color", 0);
     save.classUnlock = static_cast<u16>(root.value("classUnlock", 0));
     save.gold = root.value("gold", 0);
+    save.autoAttack = root.value("autoAttack", save.autoAttack);
     save.helpSeen = root.value("helpSeen", std::vector<s32>{});
     save.moviesSeen = root.value("moviesSeen", std::vector<std::string>{});
     std::ranges::sort(save.helpSeen);

@@ -88,6 +88,8 @@ bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
     m_tree = &tree;
     m_entered = !enter;
     const u32 stance = sequenceOf(Action::Ready);
+    // DoPlayerAction enables AnimationInfo.flags bit 2 for every player action.
+    m_player.setSmooth(true);
     m_player.start(tree.sequences[stance], stance);
     m_pose.evaluate(tree, stance, 0.0f);
     m_previous = m_pose;
@@ -248,6 +250,10 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     evaluatePresentation(m_presentationPrevious);
     m_presentationGeneration = m_player.generation();
+    if ((deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow) &&
+        (motion == PlayerMotion::Stand || m_strafe != StrafeWay::None || !canAutoMelee())) {
+        deed = PlayerDeed::None;
+    }
     // A press is a button going down; it stays fresh until the next strike begins.
     const bool quickHeld =
         deed == PlayerDeed::Attack || deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow;
@@ -852,13 +858,15 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
  * away while the stick moves, else a swing, a kick or a low strike at what is short, the
  * strong one making the slow swing, or a slow swing at anything within reach mid-chain. */
 PlayerAnimator::Action PlayerAnimator::meleeRequest(PlayerDeed deed, bool moved) const {
-    const bool quick = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow;
+    const bool automatic = deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow;
+    const bool quick = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow || automatic;
     const bool strong = deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
     if (!quick && !strong) {
         return Action::Ready;
     }
-    const bool low = deed == PlayerDeed::MeleeLow || deed == PlayerDeed::MeleeSlowLow;
-    const bool lunge = m_melee.range == MeleeRange::Step && !low && moved;
+    const bool low = deed == PlayerDeed::MeleeLow || deed == PlayerDeed::MeleeSlowLow ||
+                     deed == PlayerDeed::AutoMeleeLow;
+    const bool lunge = m_melee.range == MeleeRange::Step && !low && moved && !automatic;
     if (strong && m_chain != 0 && moved && m_melee.range != MeleeRange::Beyond) {
         return Action::SlowStart;
     }
@@ -869,6 +877,79 @@ PlayerAnimator::Action PlayerAnimator::meleeRequest(PlayerDeed deed, bool moved)
         return low ? Action::LowKick : Action::Quick1;
     }
     return low ? Action::Low1 : Action::SlowStart;
+}
+
+bool PlayerAnimator::canAutoMelee() const {
+    if (!bound() || entering() || m_quickPress || m_strongPress) {
+        return false;
+    }
+    if (m_current >= Action::StrafeForward1 && m_current <= Action::StrafeRight2) {
+        return true;
+    }
+    switch (m_current) {
+    case Action::Ready:
+    case Action::Idle1:
+    case Action::Idle2:
+    case Action::Idle2Loop:
+    case Action::Walk1:
+    case Action::Walk2:
+    case Action::Run1:
+    case Action::Run2:
+    case Action::ShieldReady:
+    case Action::ShieldRun:
+    case Action::Pushed:
+    case Action::Pick:
+    case Action::Gag:
+    case Action::SlowStart:
+    case Action::SlowSwing:
+    case Action::SlowRecover:
+    case Action::PowerClose:
+    case Action::PowerCloseRecover:
+    case Action::PowerMed:
+    case Action::PowerMedRecover:
+    case Action::UsePotion:
+    case Action::UsePotionRelease:
+    case Action::ThrowPotion:
+    case Action::ThrowPotionRelease: return true;
+    default: return false;
+    }
+}
+
+bool PlayerAnimator::retainsAttackPress(Action action) {
+    if (action >= Action::StrafeForward1 && action <= Action::StrafeRight2) {
+        return true;
+    }
+    switch (action) {
+    case Action::ThrowRecover:
+    case Action::ThrowMovingRecover:
+    case Action::StrongThrowRecover:
+    case Action::SlowRecover:
+    case Action::Quick2Recover:
+    case Action::Quick3Recover:
+    case Action::Step2Recover:
+    case Action::Step3Recover:
+    case Action::WalkStrikeRecover:
+    case Action::RightRecover:
+    case Action::Right2Recover:
+    case Action::LeftRecover:
+    case Action::Left2Recover:
+    case Action::TurnRecover:
+    case Action::Turn2Recover:
+    case Action::TurnLeftRecover:
+    case Action::TurnLeft2Recover:
+    case Action::SpinRecover:
+    case Action::LowRecover:
+    case Action::LowKickRecover:
+    case Action::Death:
+    case Action::FallBack:
+    case Action::GetUpBack:
+    case Action::FallForward:
+    case Action::GetUpForward:
+    case Action::Whirled:
+    case Action::DefendRaise:
+    case Action::Defend: return true;
+    default: return false;
+    }
 }
 
 /** What follows a quick or stepping swing: a buffered strong press makes the chain's power
@@ -1085,9 +1166,12 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     const bool speedAction =
         m_speed && !entering() && !dying() && !reacting() && !turboing() && !conjuring();
     constexpr f32 kItemAnimationDuration = 0.75f;
-    m_player.advance(seconds /
-                         ((m_rapid && rapidAction) || speedAction ? kItemAnimationDuration : 1.0f),
-                     decision.repeat);
+    const f32 duration = (m_rapid && rapidAction) || speedAction ? kItemAnimationDuration : 1.0f;
+    // CalcAnimInfo also snaps when the scaled frame duration is shorter than
+    // 1/30. This adapter scales elapsed time instead of the stored period, so
+    // include that scale when choosing the native fractional-frame behavior.
+    m_player.setSmooth(m_player.secondsPerFrame() * duration >= AnimationPlayer::kTick);
+    m_player.advance(seconds / duration, decision.repeat);
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;
     bool restart = false;
@@ -1146,6 +1230,11 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     if ((blowOf(decision.action) != MeleeBlow::None && decision.action != Action::SlowSwing) ||
         decision.action == Action::SlowStart) {
         m_chain = m_quickPress || m_strongPress ? m_chain + 1 : 0;
+        m_quickPress = false;
+        m_strongPress = false;
+    } else if (!retainsAttackPress(decision.action)) {
+        // Wind-ups and ordinary locomotion consume old edges; recoveries and
+        // the native hold states preserve them for the next attack request.
         m_quickPress = false;
         m_strongPress = false;
     }

@@ -31,6 +31,9 @@ enum class PlayerLife : u8 { Standing, Dying, InTower };
 struct PlayerRuntime {
     PlayerActor actor;
     bool cursorAiming = false; ///< manual facing must not be redirected by controller assistance
+    /** This movement step's requested attack direction, which may differ from the
+     * body yaw locked by a quick swing. Shared by acquisition and contact. */
+    std::optional<Vec3> meleeFacing;
     struct Presentation {
         Vec3 position{0};
         f32 yaw = 0;

@@ -63,9 +63,11 @@ public:
         /** Shared-view tangent projection, rechecked against world and creature collision. */
         std::function<Vec3(usize, const Vec3&, const Vec3&)> limitMovement;
         /** What the attack buttons ask: strong or not, and whether the stick moves. */
-        std::function<PlayerDeed(usize, bool, bool)> attackDeed;
+        std::function<PlayerDeed(usize, bool, bool, const Vec3&)> attackDeed;
+        /** A walking/running contact without pressing attack, along the requested heading. */
+        std::function<PlayerDeed(usize, const Vec3&)> automaticMeleeDeed;
         /** Where the nearest thing to strike lies, an attack button held or not. */
-        std::function<MeleeSense(usize, bool)> meleeSense;
+        std::function<MeleeSense(usize, bool, const Vec3&)> meleeSense;
         /** Where the Death a halo wearer holds stands, when one is held this step (ticks, and
          * whether a hold may be made at all). */
         std::function<std::optional<Vec3>(usize, s32, bool)> grabDeath;

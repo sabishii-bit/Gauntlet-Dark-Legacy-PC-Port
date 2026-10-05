@@ -98,4 +98,37 @@ TEST_CASE("melee reach uses horizontal surfaces at any bearing, with vertical ov
     collision.build({{{0, 0, -1}, {Vec3{-10, 0, 2}, Vec3{10, 0, 2}, Vec3{0, 20, 2}}}});
     CHECK_FALSE(TargetAssist::around({0, 0, 0}, 6, targets, 6, &collision));
 }
+
+TEST_CASE("melee acquisition uses the requested direction without changing contact selection",
+          "[game][target-assist][melee][alpha-auto-melee]") {
+    const std::array targets{MissileTarget{0, {0, 0, -2}, 1, 6}, MissileTarget{1, {0, 0, 3}, 1, 6}};
+    const auto ahead = TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, targets, 4, 30);
+    REQUIRE(ahead);
+    CHECK(ahead->id == 1);
+    const auto behind = TargetAssist::ahead({0, 0, 0}, 6, {0, 0, -2}, targets, 4, 30);
+    REQUIRE(behind);
+    CHECK(behind->id == 0);
+    const auto contact = TargetAssist::around({0, 0, 0}, 6, targets, 4);
+    REQUIRE(contact);
+    CHECK(contact->id == 0);
+    CHECK_FALSE(TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, targets, 2, 30));
+    CHECK_FALSE(TargetAssist::ahead({0, 0, 0}, 6, Vec3{0}, targets, 4, 30));
+    CHECK_FALSE(TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, targets, 4, 0));
+    CHECK_FALSE(TargetAssist::ahead({0, 6, 0}, 6, {0, 0, 1}, targets, 4, 30));
+    WorldCollision collision;
+    collision.build({{{0, 0, -1}, {Vec3{-10, 0, 1}, Vec3{10, 0, 1}, Vec3{0, 20, 1}}}});
+    CHECK_FALSE(TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, targets, 4, 30, &collision));
+}
+
+TEST_CASE("the melee acquisition cone tightens over the encounter range, not the swing range",
+          "[game][target-assist][melee][alpha-auto-melee]") {
+    // PlayerGetTarget passes 30 normally and 200 in a boss encounter; the
+    // closest_enemy/item cone interpolates from 0.707 toward 1 over that range.
+    constexpr f32 kDot = 0.74f;
+    const std::array targets{MissileTarget{0, {6 * std::sqrt(1 - kDot * kDot), 0, 6 * kDot}, 1, 6}};
+    CHECK_FALSE(TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, targets, 10, TargetAssist::kRange));
+    CHECK(TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, targets, 10, TargetAssist::kBossRange));
+    const std::array close{MissileTarget{0, {2, 0, 3}, 1, 6}};
+    CHECK(TargetAssist::ahead({0, 0, 0}, 6, {0, 0, 1}, close, 3, TargetAssist::kRange));
+}
 } // namespace

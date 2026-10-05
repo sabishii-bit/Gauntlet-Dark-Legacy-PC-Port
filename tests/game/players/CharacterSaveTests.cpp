@@ -40,6 +40,64 @@ CharacterSave sampleSave() {
     return save;
 }
 
+TEST_CASE("autoattack defaults on for new and legacy characters",
+          "[game][players][save][autoattack]") {
+    // InitPlayerControls enables it; old remake saves have no preference to restore.
+    CHECK(CharacterSave{}.autoAttack);
+    CHECK(CharacterSave::fromJson(R"({"name":"OLD","character":0})").autoAttack);
+    CHECK(CharacterSave::fromJson(R"({"version":1,"name":"OLD","character":0})").autoAttack);
+    CHECK_FALSE(
+        CharacterSave::fromJson(R"({"version":1,"name":"OFF","character":0,"autoAttack":false})")
+            .autoAttack);
+    CHECK(CharacterSave::fromJson(R"({"version":1,"name":"ON","character":0,"autoAttack":true})")
+              .autoAttack);
+}
+
+TEST_CASE("autoattack persists with the named character across class switches",
+          "[game][players][save][autoattack]") {
+    // player_get_from_save/player_store_in_save use the shared control_autoattack
+    // header, not P_SAVE_STUFF[character]. A different name keeps its own setting.
+    auto save = sampleSave();
+    auto other = sampleSave();
+    other.name = "OTHER";
+    save.autoAttack = false;
+    CHECK(other.autoAttack);
+    for (const bool enabled : {false, true}) {
+        save.autoAttack = enabled;
+        save.selectClass(0);
+        CHECK(save.autoAttack == enabled);
+        save.selectClass(0);
+        CHECK(save.autoAttack == enabled);
+        save.selectClass(2);
+        CHECK(save.autoAttack == enabled);
+        const auto loaded = CharacterSave::fromJson(save.toJson());
+        CHECK(loaded.autoAttack == enabled);
+        CHECK(loaded.toJson() == save.toJson());
+    }
+    CHECK(other.autoAttack);
+}
+
+TEST_CASE("save slots reload independent autoattack preferences",
+          "[game][players][save][autoattack]") {
+    const auto dir = test::scratchDirectory("save-autoattack");
+    SaveSlots slots;
+    REQUIRE(slots.open(dir, 2));
+    auto save = sampleSave();
+    save.autoAttack = false;
+    REQUIRE(slots.write(0, save));
+    save.name = "OTHER";
+    save.autoAttack = true;
+    REQUIRE(slots.write(1, save));
+
+    SaveSlots reopened;
+    REQUIRE(reopened.open(dir, 2));
+    CharacterSave loaded;
+    REQUIRE(reopened.load(0, loaded));
+    CHECK_FALSE(loaded.autoAttack);
+    REQUIRE(reopened.load(1, loaded));
+    CHECK(loaded.autoAttack);
+}
+
 TEST_CASE("lifetime totals persist per class and old saves do not fabricate history",
           "[save][shop]") {
     auto save = sampleSave();

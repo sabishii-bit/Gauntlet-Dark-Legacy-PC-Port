@@ -26,6 +26,11 @@ public:
     static std::optional<MissileTarget> around(const Vec3& feet, f32 height,
                                                std::span<const MissileTarget> targets, f32 reach,
                                                const WorldCollision* collision = nullptr);
+    /** Acquires a close target in the requested direction. PlayerGetTarget's cone
+     * narrows with distance over the encounter's full targeting range. */
+    static std::optional<MissileTarget> ahead(const Vec3& feet, f32 height, const Vec3& facing,
+                                              std::span<const MissileTarget> targets, f32 reach,
+                                              f32 range, const WorldCollision* collision = nullptr);
     /** How far a body's surface lies from the middle of one standing at `feet`. */
     static f32 distanceTo(const Vec3& feet, f32 height, const MissileTarget& target);
 };

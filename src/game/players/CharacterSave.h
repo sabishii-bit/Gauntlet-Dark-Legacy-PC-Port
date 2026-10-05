@@ -23,7 +23,8 @@ struct CharacterSave {
     u16 classUnlock = 0; ///< one bit per unlockable class, from the ninth
     s32 gold = 0;        ///< the selected class's live wallet
     s32 levelTotal = 0;
-    std::vector<s32> helpSeen;           ///< the help messages already shown to it, in order
+    bool autoAttack = true;    ///< native control_autoattack belongs to the name, not the class
+    std::vector<s32> helpSeen; ///< the help messages already shown to it, in order
     std::vector<std::string> moviesSeen; ///< legacy saves only; never gates level-entry movies
     std::array<ClassProgress, kClassCount> classes{};
 

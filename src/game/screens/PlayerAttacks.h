@@ -96,10 +96,15 @@ public:
      * a swing, or within a step while the stick moves, else a throw. `chain` is how far into
      * a chain of close attacks it is. */
     PlayerDeed attackDeed(const PlayerActor& actor, bool strong, const Targets& targets,
-                          bool moved = false, s32 chain = 0) const;
+                          bool moved = false, s32 chain = 0, std::optional<Vec3> facing = {}) const;
+    /** The selected close target may start a walking body's unpressed quick strike.
+     * Movement, input and animation eligibility belong to the caller. */
+    PlayerDeed automaticMeleeDeed(const PlayerActor& actor, const Targets& targets,
+                                  const Vec3& facing) const;
     /** Where the nearest thing to strike lies (AnimAction's collision bits): a held attack
      * button reaches a unit further. */
-    MeleeSense meleeSense(const PlayerActor& actor, bool held, const Targets& targets) const;
+    MeleeSense meleeSense(const PlayerActor& actor, bool held, const Targets& targets,
+                          std::optional<Vec3> facing = {}) const;
     static constexpr f32 kSwingReach = 1.0f; ///< past the body's radius, within a swing
     static constexpr f32 kStepReach = 2.0f;  ///< within a step
     static constexpr f32 kHeldReach = 1.0f;  ///< added while an attack button is held
@@ -152,9 +157,12 @@ private:
     std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
     /** What a swing can reach: what is struck, but not the safe rocks. */
     std::vector<MissileTarget> meleeTargets(const Targets& targets) const;
+    std::optional<MissileTarget> meleeTarget(const PlayerActor& actor, const Targets& targets,
+                                             const Vec3& facing, f32 reach) const;
+    static MeleeSense senseOf(const PlayerActor& actor, bool held, const MissileTarget& target);
     /** Player melee is a forward-cone fallback, never displacing an enemy or item. */
-    static std::optional<MissileTarget> meleePlayer(const PlayerActor& actor,
-                                                    const Targets& targets, f32 reach);
+    static std::optional<MissileTarget>
+    meleePlayer(const PlayerActor& actor, const Targets& targets, f32 reach, const Vec3& facing);
     /** Sets off the switch a strike hit, unless it was only gas; true when it was one. */
     bool strikeSwitch(s32 id, u32 flags);
     /** What magic leaves alone: every barrel but one that holds something, the walls, the

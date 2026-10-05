@@ -141,6 +141,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         players[i].hitFlashTicks = std::max(0, players[i].hitFlashTicks - ticks);
         PlayerActor& actor = players[i].actor;
         players[i].cursorAiming = false;
+        players[i].meleeFacing.reset();
         actor.clearWallContacts();
         const auto player = static_cast<usize>(actor.player());
         const bool down = players[i].life != PlayerLife::Standing;
@@ -233,6 +234,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 actor.faceToward(facing);
             }
         }
+        // Movement can aim a new swing even while an existing swing holds body rotation.
+        // Explicit strafe and cursor aim retain the facing instead of the travel heading.
+        Vec3 attackFacing = actor.facing();
+        if (move.any() && !aim && player < inputs.size() && !inputs[player].strafe) {
+            const f32 heading = PlayerActor::headingOf(move, cameraYaw);
+            attackFacing = Vec3{std::sin(heading), 0, std::cos(heading)};
+        }
+        players[i].meleeFacing = attackFacing;
         // What the buttons ask: a potion first, when one is carried, then the attack.
         PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
         if (!down && players[i].reaction != PlayerDeed::None) {
@@ -269,12 +278,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
             } else if (in.strongAttack && players[i].figure != nullptr) {
-                deed = events.attackDeed ? events.attackDeed(i, true, move.any())
+                deed = events.attackDeed ? events.attackDeed(i, true, move.any(), attackFacing)
                                          : PlayerDeed::StrongAttack;
             } else if (in.turbo) {
                 deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
             } else if (in.attack) {
-                deed = events.attackDeed ? events.attackDeed(i, false, move.any())
+                deed = events.attackDeed ? events.attackDeed(i, false, move.any(), attackFacing)
                                          : PlayerDeed::Attack;
             }
             // The combo button with half the meter takes hold of a partner ahead, over
@@ -288,28 +297,40 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 }
             }
             events.select(i, in.selector, ticks);
+            const bool cursorForward =
+                aim && in.move.direction.x == 0.0f && in.move.direction.y > 0.0f;
+            if (deed == PlayerDeed::None && move.any() && !in.strafe && (!aim || cursorForward) &&
+                !in.attackPressed && !in.chargePressed && !in.turboAttackPressed &&
+                actor.save().autoAttack && animator != nullptr && animator->canAutoMelee() &&
+                events.automaticMeleeDeed) {
+                deed = events.automaticMeleeDeed(i, attackFacing);
+            }
         }
         // A pickup's gesture, or a gag at food gone bad, is made when nothing else is asked
         // (speak_kind, pmotion.c 1722).
         if (down) {
             players[i].gesture = PlayerDeed::None;
-        } else if (players[i].gesture != PlayerDeed::None && deed == PlayerDeed::None && !reeling &&
-                   !held) {
+        } else if (players[i].gesture != PlayerDeed::None &&
+                   (deed == PlayerDeed::None || deed == PlayerDeed::AutoMelee ||
+                    deed == PlayerDeed::AutoMeleeLow) &&
+                   !reeling && !held) {
             deed = players[i].gesture;
             players[i].gesture = PlayerDeed::None;
         }
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         actor.setPaceBonus(powerups.paceAdd);
         // Each attack's action controls how far the body may move.
-        const bool closeAttack = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
-                                 deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
+        const bool automatic = deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow;
+        const bool closeAttack = automatic || deed == PlayerDeed::Melee ||
+                                 deed == PlayerDeed::MeleeLow || deed == PlayerDeed::MeleeSlow ||
+                                 deed == PlayerDeed::MeleeSlowLow;
         f32 actionPace = animator != nullptr ? animator->moveScale() : 1.0f;
         const bool itemAttack = deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
                                 deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
                                 deed == PlayerDeed::FireRight;
         // A close attack under way paces the body by its own action.
         const bool swingStarts = closeAttack && (animator == nullptr || !animator->meleeing());
-        if (swingStarts && deed == PlayerDeed::Melee) {
+        if (swingStarts && (deed == PlayerDeed::Melee || deed == PlayerDeed::AutoMelee)) {
             // The first input frame moves before the animation changes. Do not
             // bypass an existing reaction/arrival lock to start a quick swing.
             actionPace = std::min(actionPace, PlayerAnimator::kQuickMeleePace);
@@ -358,7 +379,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         MoveInput attackMove = move;
         // AnimAction turns a close attack to the stick only part of the way, or not at all
         // (the quick swings); a step carries on along the facing with the stick let go.
-        const bool quickStarts = deed == PlayerDeed::Melee && swingStarts;
+        const bool quickStarts =
+            (deed == PlayerDeed::Melee || deed == PlayerDeed::AutoMelee) && swingStarts;
         f32 turn = animator != nullptr ? animator->turnScale() : 1.0f;
         if (quickStarts) {
             turn = 0.0f;
@@ -456,8 +478,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             // The close attack sees where the nearest thing to strike lies as it decides.
             const bool attackHeld = !held && !down && player < inputs.size() &&
                                     (inputs[player].attack || inputs[player].strongAttack);
-            if (events.meleeSense && (attackHeld || players[i].figure->animator().meleeing())) {
-                players[i].figure->setMelee(events.meleeSense(i, attackHeld));
+            if (events.meleeSense &&
+                (attackHeld || automatic || players[i].figure->animator().meleeing())) {
+                players[i].figure->setMelee(events.meleeSense(i, attackHeld, attackFacing));
             }
             players[i].figure->setCombo(players[i].combo.grabberClass, players[i].combo.rideAsked);
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);

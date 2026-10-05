@@ -43,6 +43,8 @@ enum class PlayerDeed : u8 {
     MeleeLow,
     MeleeSlow,
     MeleeSlowLow,
+    AutoMelee, ///< a moving body's close contact, not an attack-button press
+    AutoMeleeLow,
     SuperShot,
     Hammer,
     Breathe,
@@ -376,6 +378,9 @@ public:
     MeleeBlow meleeBlow() const { return m_meleeBlow; }
     /** Strikes counted into the current chain of close attacks (none outside one). */
     s32 meleeChain() const { return m_chain; }
+    /** Whether unpressed walking/running may begin a contact swing. Buffered attack
+     * edges and actions already owning the body must finish first. */
+    bool canAutoMelee() const;
     static bool isMelee(Action action) {
         return action >= Action::Quick1 && action <= Action::PowerLowRecover;
     }
@@ -537,6 +542,7 @@ private:
     bool buffered() const { return m_strongPress && m_chain != 0; }
     static Action recoveryOf(Action swing);
     static MeleeBlow blowOf(Action swing);
+    static bool retainsAttackPress(Action action);
     void play(const Decision& decision, f32 seconds);
 
     const TreeInfo* m_tree = nullptr;

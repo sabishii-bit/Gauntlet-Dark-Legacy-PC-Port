@@ -84,15 +84,15 @@ TEST_CASE("player visual poses interpolate subframes without moving gameplay joi
     PlayerAnimator animator;
     REQUIRE(animator.bind(tree, false));
     animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f);
-    REQUIRE(animator.player().frame() == 1.0f);
-    REQUIRE(playingIndex(animator) == Approx(1.0f));
+    REQUIRE(animator.player().frame() == 0.5f);
+    REQUIRE(playingIndex(animator) == Approx(0.5f));
     TreePose visual;
     for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
         CAPTURE(alpha);
         animator.evaluatePresentation(visual, alpha);
         CHECK(visual.matrices()[0][3].x == Approx(alpha * 0.5f));
-        CHECK(playingIndex(animator) == Approx(1.0f));
-        CHECK(animator.player().frame() == 1.0f);
+        CHECK(playingIndex(animator) == Approx(0.5f));
+        CHECK(animator.player().frame() == 0.5f);
         CHECK(animator.action() == Action::Ready);
     }
     animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f);
@@ -1291,6 +1291,91 @@ TreeInfo meleeTree() {
     return tree;
 }
 
+TEST_CASE("automatic contact swings do not fabricate button presses or combo counts",
+          "[player-animation][melee][auto-melee]") {
+    const TreeInfo tree = meleeTree();
+    for (const auto deed : {PlayerDeed::AutoMelee, PlayerDeed::AutoMeleeLow}) {
+        for (const s32 rate : {30, 60}) {
+            CAPTURE(deed, rate);
+            PlayerAnimator animator;
+            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.canAutoMelee());
+            const s32 ticks = 60 / rate;
+            const f32 seconds = 1.0f / static_cast<f32>(rate);
+            animator.setMelee({MeleeRange::Swing, deed == PlayerDeed::AutoMeleeLow, 0});
+            animator.update(PlayerMotion::Run, ticks, seconds, deed);
+            REQUIRE(animator.action() ==
+                    (deed == PlayerDeed::AutoMelee ? Action::Quick1 : Action::LowKick));
+            REQUIRE(animator.meleeChain() == 0);
+            REQUIRE_FALSE(animator.canAutoMelee());
+            s32 contacts = 0;
+            for (s32 frame = 0; frame < rate; ++frame) {
+                animator.update(PlayerMotion::Stand, ticks, seconds);
+                contacts += animator.meleeStruck() ? 1 : 0;
+                CHECK(animator.meleeChain() == 0);
+                CHECK_FALSE(animator.released());
+                CHECK_FALSE(animator.strongReleased());
+                CHECK_FALSE(animator.superReleased());
+                CHECK(animator.itemReleased() == PlayerDeed::None);
+            }
+            CHECK(contacts == 1);
+            CHECK(animator.action() == Action::Ready);
+            CHECK(animator.canAutoMelee());
+            animator.update(PlayerMotion::Run, ticks, seconds, deed);
+            // A real attack pressed during the automatic swing remains a fresh edge.
+            animator.update(PlayerMotion::Run, ticks, seconds, PlayerDeed::Melee);
+            bool counted = false;
+            for (s32 frame = 0; frame < rate && !counted; ++frame) {
+                animator.update(PlayerMotion::Run, ticks, seconds, PlayerDeed::Melee);
+                counted = animator.meleeChain() == 1;
+            }
+            CHECK(counted);
+        }
+    }
+}
+
+TEST_CASE("automatic melee cannot cut standing strafe arrival or ongoing actions",
+          "[player-animation][melee][auto-melee]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    SECTION("no movement") {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::AutoMelee);
+        CHECK(animator.action() == Action::Ready);
+    }
+    SECTION("strafe request") {
+        animator.setStrafe(StrafeWay::Forward);
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+        CHECK_FALSE(animator.meleeing());
+    }
+    SECTION("arrival") {
+        REQUIRE(animator.bind(tree, true));
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+        CHECK(animator.entering());
+    }
+    SECTION("reaction") {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Flinch);
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+        CHECK(animator.reacting());
+    }
+    SECTION("throw followed by contact") {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+        REQUIRE(animator.throwing());
+        CHECK_FALSE(animator.canAutoMelee());
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+        CHECK(animator.throwing());
+        for (s32 frame = 0; frame < 60 && animator.throwing(); ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep);
+        }
+        REQUIRE(animator.action() == Action::Ready);
+        // The old throw's button edge must not suppress contact attacks forever.
+        REQUIRE(animator.canAutoMelee());
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+        CHECK(animator.action() == Action::Quick1);
+        CHECK(animator.meleeChain() == 0);
+    }
+}
+
 TEST_CASE("item animation events separate breath entry from hammer and gauntlet impact",
           "[game][items][animation]") {
     const TreeInfo tree = meleeTree();
@@ -1391,6 +1476,42 @@ Action playOut(PlayerAnimator& animator, Action action, PlayerDeed deed, s32 lim
         animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
     }
     return animator.action();
+}
+
+TEST_CASE("automatic melee follows a slow recovery at its natural boundary without a stance gap",
+          "[player-animation][melee][auto-melee]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::MeleeSlow);
+    REQUIRE(animator.action() == Action::SlowStart);
+    REQUIRE(playOut(animator, Action::SlowStart, PlayerDeed::None) == Action::SlowSwing);
+    REQUIRE(playOut(animator, Action::SlowSwing, PlayerDeed::None) == Action::SlowRecover);
+    REQUIRE(animator.canAutoMelee());
+    // The request is eligible, but cannot truncate the authored recovery.
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+    CHECK(animator.action() == Action::SlowRecover);
+    for (s32 frame = 0; frame < 30 && animator.action() == Action::SlowRecover; ++frame) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
+    }
+    CHECK(animator.action() == Action::Quick1);
+    CHECK(animator.meleeChain() == 0);
+}
+
+TEST_CASE("an attack edge survives throw recovery until the following close swing",
+          "[player-animation][melee][auto-melee]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(playOut(animator, Action::Throw, PlayerDeed::Attack) == Action::ThrowRelease);
+    // A strong press is buffered while the ranged release still owns the action.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+    REQUIRE(playOut(animator, Action::ThrowRelease, PlayerDeed::MeleeSlow) == Action::ThrowRecover);
+    CHECK_FALSE(animator.canAutoMelee());
+    // Keep it held throughout: no new edge can hide a lost buffer at recovery entry.
+    REQUIRE(playOut(animator, Action::ThrowRecover, PlayerDeed::MeleeSlow) == Action::SlowStart);
+    CHECK(animator.meleeChain() == 1);
 }
 
 TEST_CASE("a strong press within a chain of swings makes the chain's power swing",
