@@ -793,6 +793,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_transition.update(seconds);
     m_towerRelics.animate(seconds);
     if (m_leaving) {
+        // DoExit uses state4, outside msgUpdate's active-reader states1/2/3/5.
+        // Dismiss the last lesson instead of freezing its timer through departure.
+        m_hud.help().clear();
         // Departing survivors are held, but another player's death and tower choice
         // still run until the party can leave together.
         bool dying = false;
@@ -1113,7 +1116,9 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
         const PlayerActor& actor = m_players[i].actor;
         TriggerVisitor visitor;
         visitor.position = presenceOf(i);
-        visitor.radius = actor.radius();
+        // Pressure pads share fn_8005F0F4's item-contact radius: PDAT.width,
+        // not the smaller footprint used by the remake's movement collision.
+        visitor.radius = actor.reach();
         visitor.height = actor.height();
         visitor.crystals = actor.save().progress().crystals;
         visitor.gargoylePieces = actor.save().progress().relics.gargoylePieces;

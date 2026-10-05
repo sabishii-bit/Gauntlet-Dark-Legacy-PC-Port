@@ -1471,6 +1471,70 @@ TEST_CASE("Temple generators can breed at every native collision placement",
     CHECK(checked > 0);
 }
 
+TEST_CASE("all solo G1 generators have a viable native birth and authored initial wait",
+          "[game][generators][alpha-g1-birth-census][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level());
+    // InitEnemies (0x800510A4) uses WDATA's maxenemies, not the pool's full 25.
+    REQUIRE(world.level()->maxEnemies == 13);
+    const auto seed = GENERATE(1U, 7U, 41U);
+    GeneratorScales scales;
+    scales.health = world.level()->tuning.generatorHealth;
+    scales.rate = world.level()->tuning.generatorRateScale(1);
+    scales.most = world.level()->tuning.generatorMostScale(1);
+    usize checked = 0;
+    for (s32 chosen = 0;; ++chosen) {
+        Enemies enemies;
+        enemies.open(device, root, &world.collision(), world.level()->maxEnemies, {}, seed);
+        Generators generators;
+        REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), scales, 1,
+                                world.level()->enemies));
+        if (static_cast<usize>(chosen) >= generators.count()) {
+            break;
+        }
+        if (!generators.standing(chosen)) {
+            continue;
+        }
+        // Isolate births without removing neighbours' blocking volumes. Even a
+        // downward view activates several expanded visibility spheres; otherwise
+        // earlier generators consume the 13-slot pool and fabricate dead exits.
+        std::vector<Obstacle> neighbours;
+        for (s32 other = 0; static_cast<usize>(other) < generators.count(); ++other) {
+            if (other != chosen && generators.standing(other)) {
+                neighbours.push_back(generators.boxOf(other));
+                REQUIRE(generators.strike(other, 100000, -1));
+                REQUIRE_FALSE(generators.standing(other));
+            }
+        }
+        const Vec3 at = generators.positionOf(chosen);
+        ViewVolume view;
+        view.position = at + Vec3{0, 20, 0};
+        view.forward = Vec3{0, -1, 0};
+        view.up = Vec3{0, 0, 1};
+        generators.setView(view);
+        const std::array party{EnemyView{.position = at + Vec3{0, 0, 20}}};
+        generators.update(kTicks, enemies, party, neighbours);
+        CAPTURE(seed, chosen, at.x, at.y, at.z, generators.kindOf(chosen),
+                generators.mostOf(chosen), generators.algorithmOf(chosen));
+        CHECK(generators.bredOf(chosen) == 1);
+        CHECK(generators.livingOf(chosen) == 1);
+        // do_items' first wait is 6 * interval; generate_now consumes the timer
+        // before considering another birth. Patrol posts have no such wait.
+        if (generators.algorithmOf(chosen) != kPatrolWay) {
+            CHECK(generators.countdownOf(chosen) == 6 * generators.intervalOf(chosen));
+        }
+        ++checked;
+    }
+    CHECK(checked == 47);
+}
+
 TEST_CASE("Desert C1 births retain the roster and a clear path from each authored generator",
           "[game][generators][desert-births][assets]") {
     const auto root =

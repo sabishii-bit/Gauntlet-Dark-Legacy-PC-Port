@@ -25,6 +25,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/config/GameConfig.h"
 #include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
@@ -88,6 +89,89 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     scene.close();
     scene.close();
     REQUIRE(scene.actorCount() == 0);
+}
+
+TEST_CASE("G2 gold pad wakes Death at the native item-contact reach",
+          "[game][screens][g2-death-gold][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2");
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G2");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto triggerOf = [&](s32 instance) {
+        for (usize i = 0; i < world.triggers().size(); ++i) {
+            if (world.triggers().trigger(i).instance == instance) {
+                return i;
+            }
+        }
+        FAIL("missing native G2 Death trigger");
+        return usize{0};
+    };
+    const usize pad = triggerOf(60);
+    const usize wake = triggerOf(61);
+    const auto& marker = world.triggers().trigger(pad);
+    REQUIRE(marker.next == static_cast<s32>(wake));
+    REQUIRE((world.triggers().trigger(wake).flags & LevelTrigger::kWakesStatue) != 0);
+    REQUIRE(marker.radius == Approx(0.7f));
+    // fn_8005F0F4 uses the class's full width for both pickups and pressure pads.
+    // This point overlaps the native .5-half-width box and .7-radius broad phase,
+    // but lies beyond the remake's .75-radius movement body's contact reach.
+    f32 offset = 1.8f;
+    bool wakes = true;
+    SECTION("inside the authored pad") {}
+    SECTION("the gold's outer rim legitimately lies outside its smaller pad") {
+        offset = -2.6f;
+        wakes = false;
+    }
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = marker.spot + Vec3{0, 0, offset};
+    PlayScene scene;
+    const std::array party{PartyMember{0, CharacterSave{}}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.actor(0));
+    REQUIRE(scene.actor(0)->reach() == Approx(1.5f));
+    // A debug position skips the entrance camera, not the materialisation hold.
+    for (s32 frame = 0; frame < 400 && awaitingEntrance(scene); ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    for (s32 frame = 0; frame < 3; ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    }
+    CAPTURE(scene.actor(0)->position().x, scene.actor(0)->position().y,
+            scene.actor(0)->position().z);
+    CHECK(world.triggers().trigger(pad).fired == wakes);
+    CHECK(world.triggers().trigger(wake).fired == wakes);
+    usize gold = world.placedItems().size();
+    for (usize i = 0; i < world.placedItems().size(); ++i) {
+        const auto& item = world.placedItems().item(i);
+        if (item.instance == 393) {
+            gold = i;
+        }
+    }
+    REQUIRE(gold < world.placedItems().size());
+    const auto& treasure = world.placedItems().item(gold);
+    CAPTURE(treasure.position.x, treasure.position.y, treasure.position.z, treasure.radius,
+            treasure.height, treasure.visible, treasure.carried, treasure.contained);
+    CHECK(treasure.taken);
+    bool death = false;
+    for (s32 frame = 0; frame < 180 && !death; ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+        for (const auto& target : scene.enemies().targets()) {
+            death |= scene.enemies().kindOf(target.id) == kDeathKind;
+        }
+    }
+    CHECK(death == wakes);
 }
 
 TEST_CASE("the native compass follows its preference and is hidden behind options",
@@ -1440,6 +1524,50 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
     REQUIRE(world.isTower());
 }
 
+TEST_CASE("G1 departure dismisses a gameplay lesson without waiting for its display timer",
+          "[game][screens][exit-help][portal-travel][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{118.3f, 86.3f, -472.5f};
+    PlayScene scene;
+    const std::array party{PartyMember{0, CharacterSave{}}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 frame = 0; frame < 400 && awaitingEntrance(scene); ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    REQUIRE_FALSE(scene.leaving());
+    // A normal gameplay request posts a lesson immediately before the portal
+    // accepts the party. This exercises the same caption lifecycle as message22.
+    PlayScene::Inputs use;
+    use[0].usePotion = true;
+    REQUIRE(scene.update(1.0 / 60.0, use) == PlayOutcome::Running);
+    REQUIRE(scene.help().showing());
+    REQUIRE(scene.help().id() == HelpMessages::kNoPotion);
+    for (s32 frame = 0; frame < 120 && !scene.leaving(); ++frame) {
+        REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    }
+    REQUIRE(scene.leaving());
+    // Native msgUpdate clears the timer once no player remains in states1/2/3/5;
+    // DoExit uses state4. The completed caption must not freeze during descent.
+    REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
+    CHECK_FALSE(scene.help().showing());
+    CHECK(std::ranges::find(scene.actor(0)->save().helpSeen, HelpMessages::kNoPotion) !=
+          scene.actor(0)->save().helpSeen.end());
+}
+
 TEST_CASE("portal departure finishes a teammate's death and accepts that player's tower choice",
           "[game][screens][assets][portal-travel][multiplayer]") {
     // do_players keeps case 8's death running and loaded false until it ends,
@@ -2418,14 +2546,45 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
     const std::vector<PartyMember> party{PartyMember{0, save}};
     PlayOptions options;
     options.welcome = false;
-    options.position = Vec3{15.8f, 0.2f, 0.7f}; // open ground by the level's start
-    options.yaw = 0.5f;                         // looking away from the barrel beside it
+    options.position = Vec3{18.8f, 0.2f, 0.7f}; // clear of the start area's barrel
+    options.yaw = 0.5f;
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
     for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
         scene.update(1.0 / 60.0, still);
     }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    const PlayerActor* actor = scene.actor(0);
+    REQUIRE(actor != nullptr);
+    REQUIRE(actor->position().x == Approx(options.position->x));
+    REQUIRE(actor->position().z == Approx(options.position->z));
+    REQUIRE(world.collision().floorAt(actor->position(), 0.1f, 0.1f).has_value());
+    // Isolate the throw from close targets: facing-aware melee selection remains
+    // separate work, so looking away from a nearby barrel is not a precondition.
+    constexpr f32 kHeldSwingMargin = 2.0f; // PlayerMotion: one for the swing, one held
+    const f32 meleeReach = actor->reach() + kHeldSwingMargin;
+    bool checkedStartBarrel = false;
+    for (usize i = 0; i < scene.barrels().size(); ++i) {
+        if (!scene.barrels().standing(i)) {
+            continue;
+        }
+        const auto& barrel = scene.barrels().barrel(i);
+        const Vec3 offset = barrel.figure.position() - actor->position();
+        const f32 gap = std::hypot(offset.x, offset.z) - barrel.radius;
+        CAPTURE(i, barrel.instance, gap, meleeReach);
+        REQUIRE(gap > meleeReach);
+        if (barrel.instance == 319) {
+            REQUIRE(gap == Approx(5.151435f));
+            checkedStartBarrel = true;
+        }
+    }
+    REQUIRE(checkedStartBarrel);
+    for (const auto& target : scene.enemies().targets()) {
+        const Vec3 offset = target.base - actor->position();
+        REQUIRE(std::hypot(offset.x, offset.z) - target.radius > meleeReach);
+    }
+    REQUIRE(scene.generators().within(actor->position(), meleeReach).empty());
     PlayScene::Inputs strong{};
     strong[0].strongAttack = true;
     scene.update(1.0 / 60.0, strong);

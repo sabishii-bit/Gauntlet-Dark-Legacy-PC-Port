@@ -2321,6 +2321,111 @@ TEST_CASE("the melee sees what is near at any bearing, within a swing or a step"
     enemies.close();
 }
 
+TEST_CASE("native player width governs melee bands and the anklebiter low threshold",
+          "[game][player-attacks][melee][alpha-melee-flow][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/MAG/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    auto& enemies = f.opponents.enemies();
+    for (const s32 kind : {12, 13}) {
+        enemies.open(f.device, root, nullptr, 4, {}, 7);
+        REQUIRE(enemies.loadKind(kind));
+        EnemySpawn spawn;
+        spawn.kind = kind;
+        spawn.tier = 3;
+        spawn.placed = true;
+        REQUIRE(enemies.spawn(spawn, {}));
+        const auto bodies = enemies.targets();
+        REQUIRE(bodies.size() == 1);
+        const auto& target = bodies.front();
+        for (s32 character = 0; character < kStartingClassCount; ++character) {
+            const auto* stats = f.classes.stats(character);
+            REQUIRE(stats);
+            CharacterSave save;
+            save.character = character;
+            auto& actor = f.players[0].actor;
+            actor.spawn(0, save, stats, {}, 0);
+            CAPTURE(kind, character, stats->width, target.radius);
+            REQUIRE(actor.reach() == Approx(stats->width));
+            // PlayerMotion reads col_radius (+0x850), the full PDAT width;
+            // distance already excludes the target's own radius. The held
+            // swing boundary is width+1+1 and the low boundary is width+2.
+            const f32 boundary = stats->width + 2;
+            actor.place(target.base - Vec3{0, 0, target.radius + boundary - 0.1f});
+            const auto swing = f.attacks.meleeSense(actor, true, f.targets);
+            CHECK(swing.range == MeleeRange::Swing);
+            CHECK(swing.low == (kind == 12));
+            CHECK(f.attacks.attackDeed(actor, false, f.targets, true) ==
+                  (kind == 12 ? PlayerDeed::MeleeLow : PlayerDeed::Melee));
+            CHECK(f.attacks.attackDeed(actor, true, f.targets, true) ==
+                  (kind == 12 ? PlayerDeed::MeleeSlowLow : PlayerDeed::MeleeSlow));
+            CHECK(f.attacks.meleeSense(actor, false, f.targets).range == MeleeRange::Step);
+
+            actor.place(target.base - Vec3{0, 0, target.radius + boundary + 0.1f});
+            const auto step = f.attacks.meleeSense(actor, true, f.targets);
+            CHECK(step.range == MeleeRange::Step);
+            CHECK_FALSE(step.low); // low classification has no held-button extension
+            CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Attack);
+            CHECK(f.attacks.attackDeed(actor, false, f.targets, true) == PlayerDeed::Melee);
+
+            actor.place(target.base - Vec3{0, 0, target.radius + boundary + 1.1f});
+            CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Beyond);
+            CHECK(f.attacks.attackDeed(actor, true, f.targets, true) == PlayerDeed::StrongAttack);
+        }
+    }
+    enemies.close();
+}
+
+TEST_CASE("a completed low melee contact reaches the full native player width",
+          "[game][player-attacks][melee][alpha-melee-flow][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/MAG/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    const auto* stats = f.classes.stats(0);
+    REQUIRE(stats);
+    auto& player = f.players[0];
+    player.actor.spawn(0, {}, stats, {}, 0);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    player.figure->setMelee({MeleeRange::Swing, true, 0});
+    player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::MeleeLow);
+    for (s32 frame = 0; frame < 120 && !player.figure->animator().meleeStruck(); ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30);
+    }
+    REQUIRE(player.figure->animator().meleeBlow() == MeleeBlow::Kick);
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(12));
+    EnemySpawn spawn;
+    spawn.kind = 12;
+    spawn.tier = 3;
+    spawn.placed = true;
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    const auto bodies = enemies.targets();
+    REQUIRE(bodies.size() == 1);
+    const auto& target = bodies.front();
+    const f32 boundary = stats->width + 2;
+    const f32 health = enemies.healthOf(*enemy);
+    player.actor.place(target.base - Vec3{0, 0, target.radius + boundary + 0.1f});
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(enemies.healthOf(*enemy) == health);
+    player.actor.place(target.base - Vec3{0, 0, target.radius + boundary - 0.1f});
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(enemies.healthOf(*enemy) < health);
+    const auto feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    CHECK(feedback.front().close);
+    CHECK((feedback.front().flags & EnemyHit::kKnockDown) != 0);
+    f.attacks.clear();
+    f.opponents.close();
+}
+
 TEST_CASE("generals never select low melee from their small collision parts",
           "[game][player-attacks][alpha-combat][alpha-general-melee][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
@@ -2571,9 +2676,8 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     inventory.addPotions(1, 1);
     usize releases = 0;
     f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
-    f.targets.fixtureEvents.help = [](s32, usize) {
+    f.targets.fixtureEvents.help = [](s32, usize) -> bool {
         FAIL("A bottle is not destroyed food");
-        return false;
     };
     f.targets.fixtureEvents.shatterPotion = [&](s32 kind, const Vec3& position) {
         CHECK(kind == 2);

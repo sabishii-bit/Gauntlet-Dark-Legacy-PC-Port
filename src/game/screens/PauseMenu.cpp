@@ -19,6 +19,10 @@ constexpr s32 kQuitBackdropHeight = 220;
 constexpr std::string_view kSealTexture = "LOGO_BURN1";
 constexpr Rect kSealArea{290, 142, 224, 172};
 } // namespace
+PauseMenu::~PauseMenu() {
+    stopSounds();
+}
+
 std::string PauseMenu::text(std::string_view id) const {
     return std::string(m_context.strings != nullptr ? m_context.strings->get(id) : id);
 }
@@ -26,6 +30,7 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
                      std::span<const PartyMember> party, s32 player) {
     close();
     m_context = context;
+    m_device = &device;
     m_party.assign(party.begin(), party.end());
     m_player = player;
     m_inTower = context.tower == nullptr || context.tower->isTower();
@@ -63,6 +68,7 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
             m_art.parchment = &m_textures.texture(device, *parchment);
         }
         loadDecorations(device);
+        loadFireFrames(device);
         if (m_context.sounds != nullptr) {
             m_commonSounds.load(context.unpackedRoot / "audio/COMMON");
         }
@@ -77,9 +83,16 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
     }
 }
 void PauseMenu::close() {
+    stopSounds();
     m_settings.close();
     m_open = false;
     m_tickRemainder = 0.0;
+    m_pendingOutcome = PauseOutcome::Running;
+    m_fire.reset();
+    m_fireMasks.clear();
+    m_fireRing.clear();
+    m_scrollImage = nullptr;
+    m_device = nullptr;
     m_menu = OptionMenu{};
     m_settings = SettingsMenu{};
     m_art = MenuTextures{};
@@ -118,11 +131,59 @@ void PauseMenu::playSound(std::string_view name) {
         return;
     }
     try {
-        m_context.sounds->play(m_commonSounds.sequence(*index), 1, SoundCategory::Effects);
+        std::erase_if(m_soundHandles,
+                      [&](SoundHandle handle) { return !m_context.sounds->isPlaying(handle); });
+        const auto handle =
+            m_context.sounds->play(m_commonSounds.sequence(*index), 1, SoundCategory::Effects);
+        if (handle != kNoSound) {
+            m_soundHandles.push_back(handle);
+        }
     } catch (const std::exception& error) {
         log::warn("Pause menu sound {}: {}", name, error.what());
     }
 }
+
+void PauseMenu::stopSounds() {
+    // Queued sequences borrow COMMON's samples. Stop only this menu's voices before reloading
+    // or destroying its bank, and detach the output so a later close is harmless.
+    if (m_context.sounds != nullptr) {
+        for (const auto handle : m_soundHandles) {
+            m_context.sounds->stop(handle);
+        }
+    }
+    m_soundHandles.clear();
+    m_context.sounds = nullptr;
+}
+
+void PauseMenu::loadFireFrames(RenderDevice& device) {
+    const auto ring = m_textures.find("GREENCIRCTRANS");
+    const auto mask = m_textures.find("GREENCIRCTRANSM");
+    const auto scroll = m_textures.find("SCROLL_A");
+    constexpr auto kFrames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
+    if (!ring || !mask || !scroll || m_textures.size() - *ring <= kFrames ||
+        m_textures.size() - *mask <= kFrames) {
+        log::warn("Pause menu: scroll dismissal textures are missing");
+        return;
+    }
+    for (u32 frame = 1; frame <= kFrames; ++frame) {
+        m_fireRing.push_back(&m_textures.texture(device, *ring + frame));
+        m_fireMasks.push_back(&m_textures.image(*mask + frame));
+    }
+    m_scrollImage = &m_textures.image(*scroll);
+}
+
+PauseOutcome PauseMenu::dismiss(PauseOutcome outcome) {
+    if (m_device == nullptr || m_scrollImage == nullptr ||
+        !m_fire.start(*m_device, m_menu.backdropArea(), *m_scrollImage, m_fireMasks, m_fireRing)) {
+        return outcome;
+    }
+    m_pendingOutcome = outcome;
+    m_menu.releaseBackdrop();
+    m_menu.closeWithFade();
+    playSound("S_OPTMENUSCROLL");
+    return PauseOutcome::Running;
+}
+
 void PauseMenu::playMenuSound(const MenuEvent& event, bool horizontal) {
     if (event.action == MenuAction::Moved) {
         playSound(horizontal ? "S_OPTMENUMOVHRZ" : "S_OPTMENUMOVVRT");
@@ -187,6 +248,11 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     constexpr f64 kRoundingTolerance = 1.0e-9;
     const auto ticks = static_cast<s32>(std::floor(m_tickRemainder + kRoundingTolerance));
     m_tickRemainder = std::max(0.0, m_tickRemainder - ticks);
+    if (m_pendingOutcome != PauseOutcome::Running) {
+        m_menu.update({}, ticks);
+        m_fire.step(ticks);
+        return m_fire.active() ? PauseOutcome::Running : m_pendingOutcome;
+    }
     if (m_page == Page::Options) {
         const auto previous = m_settings.page();
         const auto event = m_settings.update(input, ticks);
@@ -209,7 +275,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     playMenuSound(event, false);
     if (m_page == Page::Quit) {
         if (event.action == MenuAction::Choice && event.code == 1) {
-            return m_inTower ? PauseOutcome::Title : PauseOutcome::ReturnTower;
+            return dismiss(m_inTower ? PauseOutcome::Title : PauseOutcome::ReturnTower);
         }
         if (event.action == MenuAction::Back || event.action == MenuAction::Choice) {
             showMain();
@@ -217,7 +283,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
         return PauseOutcome::Running;
     }
     if (event.action == MenuAction::Back || (input.start && !input.select)) {
-        return PauseOutcome::Resume;
+        return dismiss(PauseOutcome::Resume);
     }
     if (event.action != MenuAction::Choice) {
         return PauseOutcome::Running;
@@ -247,12 +313,14 @@ void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, 
     if (!m_open) {
         return;
     }
+    m_fire.prepare(device);
     const auto virtualWidth = static_cast<f32>(m_screen.width);
     const auto virtualHeight = static_cast<f32>(m_screen.height);
     m_pointerTransform =
         makeVirtualScreenTransform(projection, virtualWidth, virtualHeight, width, height);
     m_canvas.begin(device, m_pointerTransform);
     m_canvas.fillScreen(Color::rgba(0, 0, 0, 150));
+    m_fire.draw(m_canvas);
     auto art = m_art;
     if (m_page == Page::Quit ||
         (m_page == Page::Options && m_settings.page() != SettingsMenu::Page::Root &&

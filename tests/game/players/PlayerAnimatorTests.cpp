@@ -387,6 +387,73 @@ TEST_CASE("a held attack winds up, lets go and recovers, over and over",
     REQUIRE(animator.moveScale() == 1.0f);
 }
 
+TEST_CASE("native class trees retain their quick throw cadence at the authored frame step",
+          "[game][players][animation][alpha-fire-cadence][assets]") {
+    struct ClassCadence {
+        const char* code;
+        s32 frames;
+    };
+    // DoPlayerAction's P_THROWQ cuts the wind-up from frame 2, then finishes
+    // THROW1 and THROW1R. CalcAnimInfo rounds rates below 30 and finishes at
+    // numframes-0.5; InitAnim starts each new sequence without leftover time.
+    // These periods use the actual class trees with a two-tick update. The
+    // original clock also accepts other tick counts: this is not evidence
+    // that every retail run, or the configurable remake, must update at 30 Hz.
+    const std::array<ClassCadence, 8> classes{{{"WAR", 13},
+                                               {"VAL", 11},
+                                               {"WIZ", 10},
+                                               {"ARC", 9},
+                                               {"DWF", 13},
+                                               {"KNI", 13},
+                                               {"SOR", 10},
+                                               {"JES", 8}}};
+    for (const auto& character : classes) {
+        const auto path =
+            test::assetOrSkip(std::string("PLAYERS/") + character.code + "/ANIM/ANIM.PS2");
+        AnimationSet actions;
+        REQUIRE(actions.load(path.parent_path()));
+        const auto found = actions.find(character.code);
+        REQUIRE(found);
+        std::array<s32, 2> periods{};
+        for (usize rate = 0; rate < periods.size(); ++rate) {
+            const s32 hz = rate == 0 ? 30 : 60;
+            PlayerAnimator animator;
+            REQUIRE(animator.bind(actions.tree(*found), false));
+            s32 previous = -1;
+            s32 shots = 0;
+            for (s32 frame = 0; frame < hz * 10 && shots < 10; ++frame) {
+                animator.update(PlayerMotion::Stand, 60 / hz, 1.0f / static_cast<f32>(hz),
+                                PlayerDeed::Attack);
+                if (!animator.released()) {
+                    continue;
+                }
+                CAPTURE(character.code, hz, frame, shots);
+                CHECK(animator.action() == Action::ThrowRecover);
+                if (previous >= 0) {
+                    const s32 period = frame - previous;
+                    if (periods[rate] == 0) {
+                        periods[rate] = period;
+                    }
+                    CHECK(period == periods[rate]);
+                    if (hz == 30) {
+                        CHECK(period == character.frames);
+                    }
+                }
+                previous = frame;
+                ++shots;
+            }
+            CAPTURE(character.code, hz, periods[rate]);
+            REQUIRE(shots == 10);
+            // Releasing the button during recovery must not begin another shot.
+            for (s32 frame = 0; frame < hz; ++frame) {
+                animator.update(PlayerMotion::Stand, 60 / hz, 1.0f / static_cast<f32>(hz));
+                CHECK_FALSE(animator.released());
+            }
+            CHECK(animator.action() == Action::Ready);
+        }
+    }
+}
+
 TEST_CASE("a potion is raised, then released once, however long its button is held",
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
@@ -1386,6 +1453,39 @@ TEST_CASE("a strong press within a chain of swings makes the chain's power swing
     REQUIRE(kick.action() == Action::LowKick);
     kick.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
     CHECK(playOut(kick, Action::LowKick, PlayerDeed::None) == Action::PowerLow);
+}
+
+TEST_CASE("a strong press during kick recovery retains the low finisher window",
+          "[game][players][animation][melee][alpha-melee-flow]") {
+    const TreeInfo tree = meleeTree();
+    for (const s32 rate : {30, 60, 120}) {
+        for (const bool finish : {false, true}) {
+            CAPTURE(rate, finish);
+            const f32 seconds = 1.0f / static_cast<f32>(rate);
+            PlayerAnimator animator;
+            REQUIRE(animator.bind(tree, false));
+            animator.setMelee({MeleeRange::Swing, true, 0});
+            animator.update(PlayerMotion::Stand, 1, seconds, PlayerDeed::MeleeLow);
+            REQUIRE(animator.action() == Action::LowKick);
+            for (s32 frame = 0; frame < rate && animator.action() == Action::LowKick; ++frame) {
+                animator.update(PlayerMotion::Stand, 1, seconds);
+            }
+            REQUIRE(animator.action() == Action::LowKickRecover);
+            REQUIRE(animator.meleeChain() == 1);
+            // DoPlayerAction's P_ATTACK_KICK_R repeats the same buffered-strong
+            // branch as the kick itself; releasing the button does not lose it.
+            animator.update(PlayerMotion::Stand, 1, seconds,
+                            finish ? PlayerDeed::MeleeSlowLow : PlayerDeed::None);
+            for (s32 frame = 0; frame < rate && animator.action() == Action::LowKickRecover;
+                 ++frame) {
+                animator.update(PlayerMotion::Stand, 1, seconds);
+                CHECK_FALSE(animator.released());
+                CHECK_FALSE(animator.strongReleased());
+            }
+            CHECK(animator.action() == (finish ? Action::PowerLow : Action::Ready));
+            CHECK(animator.turboBegan() == finish);
+        }
+    }
 }
 
 TEST_CASE("swings turn to where their target lies", "[game][players][animation][melee]") {

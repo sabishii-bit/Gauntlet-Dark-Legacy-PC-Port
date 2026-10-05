@@ -2,6 +2,7 @@
 #include <array>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
@@ -15,6 +16,175 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+TEST_CASE("resuming waits for the native acid scroll and blocks all menu input during it",
+          "[pause][pause-dismiss][assets]") {
+    const bool useStart = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    TextureSet reference;
+    REQUIRE(reference.load(context.unpackedRoot / "STATIC"));
+    const auto ring = reference.find("GREENCIRCTRANS");
+    REQUIRE(ring);
+    REQUIRE(*ring + 21 < reference.size());
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    const Rect area = menu.menu().backdropArea();
+    MenuInput leave;
+    leave.start = useStart;
+    leave.back = !useStart;
+    // OptionsDone (80070BDC) holds play until ServeFireScroll's 21 frames, two ticks each.
+    REQUIRE(menu.update(0, leave) == PauseOutcome::Running);
+    CHECK(menu.isOpen());
+    CHECK_FALSE(menu.musicAudible());
+    CHECK(menu.menu().backdropReleased());
+    CHECK(menu.menu().closing());
+    MenuInput ignored;
+    ignored.select = true;
+    ignored.down = true;
+    ignored.back = true;
+    ignored.start = true;
+    const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    for (u32 tick = 0; tick < 42; ++tick) {
+        CAPTURE(tick);
+        device.draws.clear();
+        menu.render(device, projection, 640, 448);
+        const auto& expected = reference.image(*ring + 1 + tick / 2);
+        const auto found = std::ranges::find_if(device.draws, [&](const auto& draw) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            return texture != nullptr && texture->pixels == expected.pixels &&
+                   test::minCorner(draw) == Vec2{area.x, area.y} &&
+                   test::maxCorner(draw) == Vec2{area.right(), area.bottom()};
+        });
+        REQUIRE(found != device.draws.end());
+        CHECK(menu.menu().selection() == 0);
+        const auto outcome = menu.update(1.0 / 60, ignored);
+        CHECK(outcome == (tick == 41 ? PauseOutcome::Resume : PauseOutcome::Running));
+    }
+    CHECK(device.textureUpdates == 21);
+    menu.close();
+    REQUIRE(menu.open(device, context, party, 0));
+    CHECK_FALSE(menu.menu().backdropReleased());
+    CHECK_FALSE(menu.menu().closing());
+    CHECK(menu.update(0, {}) == PauseOutcome::Running);
+    // Teardown is also legal before the wipe ends; reopened menus must not retain its borrows.
+    REQUIRE(menu.update(0, leave) == PauseOutcome::Running);
+    menu.render(device, projection, 640, 448);
+    const auto uploads = device.textureUpdates;
+    menu.close();
+    REQUIRE(menu.open(device, context, party, 0));
+    MenuInput down;
+    down.down = true;
+    menu.update(0, down);
+    CHECK(menu.menu().selection() == 1);
+    menu.render(device, projection, 640, 448);
+    CHECK(device.textureUpdates == uploads);
+}
+
+TEST_CASE("pause dismissal starts its native scroll sound once despite further input",
+          "[pause][pause-dismiss][assets]") {
+    test::assetOrSkip("audio/COMMON.vbk");
+    test::FakeRenderDevice device;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.sounds = &sounds;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    CHECK(sounds.voiceCount() == 1);
+    MenuInput back;
+    back.back = true;
+    CHECK(menu.update(0, back) == PauseOutcome::Running);
+    // AudioMenuExit and StartFireScroll's handle19 (S_OPTMENUSCROLL), once each.
+    CHECK(sounds.voiceCount() == 3);
+    CHECK(menu.update(0.5, back) == PauseOutcome::Running);
+    CHECK(sounds.voiceCount() == 3);
+    CHECK(menu.update(0.2, back) == PauseOutcome::Resume);
+    CHECK(sounds.voiceCount() == 3);
+}
+
+TEST_CASE("pause acid dismissal retains fractional ticks at different update rates",
+          "[pause][pause-dismiss][assets]") {
+    const s32 rate = GENERATE(30, 60, 144, 240);
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    MenuInput back;
+    back.back = true;
+    REQUIRE(menu.update(0, back) == PauseOutcome::Running);
+    const s32 updates = rate * 7 / 10;
+    for (s32 step = 1; step < updates; ++step) {
+        CHECK(menu.update(1.0 / rate, {}) == PauseOutcome::Running);
+    }
+    CHECK(menu.update(0.7 - static_cast<f64>(updates - 1) / rate, {}) == PauseOutcome::Resume);
+}
+
+TEST_CASE("pause reopening or destruction stops its borrowed bank voices but not other audio",
+          "[pause][pause-dismiss][pause-audio-lifetime][assets]") {
+    test::assetOrSkip("audio/COMMON.vbk");
+    test::FakeRenderDevice device;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const SoundClip unrelatedClip{48000, 1, std::vector<f32>(480, 0.01f)};
+    SoundSequence unrelatedSequence;
+    unrelatedSequence.steps.push_back({&unrelatedClip, true, true});
+    const auto unrelated = sounds.play(unrelatedSequence);
+    REQUIRE(sounds.isPlaying(unrelated));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.sounds = &sounds;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    const std::array party{PartyMember{}};
+    std::array<f32, 960> audio{};
+    const auto audioStep = [&] {
+        mixer.mix(audio); // Ten milliseconds drains the owned voices' stop ramps.
+        sounds.update();
+    };
+    {
+        PauseMenu menu;
+        REQUIRE(menu.open(device, context, party, 0));
+        MenuInput back;
+        back.back = true;
+        REQUIRE(menu.update(0, back) == PauseOutcome::Running);
+        REQUIRE(sounds.voiceCount() == 4); // External loop, open, exit and acid-scroll cues.
+        REQUIRE(menu.open(device, context, party, 0)); // Reloads COMMON while the cues are live.
+        audioStep();
+        CHECK(sounds.isPlaying(unrelated));
+        CHECK(sounds.voiceCount() == 2); // Only the new opening cue and unrelated loop survive.
+        REQUIRE(menu.update(0, back) == PauseOutcome::Running);
+        SECTION("explicit close releases borrowed voices before another bank reload") {
+            menu.close();
+            audioStep();
+            CHECK(sounds.voiceCount() == 1);
+            REQUIRE(menu.open(device, context, party, 0));
+        }
+        SECTION("destruction may also interrupt an active dismissal") {}
+    }
+    audioStep();
+    CHECK(sounds.voiceCount() == 1);
+    CHECK(sounds.isPlaying(unrelated));
+    // Keep feeding beyond the sound player's lookahead, after PauseMenu's bank is destroyed.
+    for (s32 step = 0; step < 200; ++step) {
+        audioStep();
+    }
+    CHECK(sounds.voiceCount() == 1);
+    CHECK(sounds.isPlaying(unrelated));
+    CHECK(std::ranges::all_of(audio, [](f32 value) { return value == 0.01f; }));
+}
+
 TEST_CASE("pause draws the five native rune seal frames on the menus that request them",
           "[pause][pause-seal][assets]") {
     test::FakeRenderDevice device;
@@ -75,6 +245,8 @@ TEST_CASE("pause draws the five native rune seal frames on the menus that reques
     CHECK(std::ranges::any_of(device.draws, isSeal));
     menu.update(1.0 / 60, back);
     menu.update(1.0 / 60, back);
+    CHECK_FALSE(menu.menu().backdropReleased());
+    CHECK_FALSE(menu.menu().closing());
     for (s32 row = 0; row < 4; ++row) {
         menu.update(1.0 / 60, down);
     }
@@ -151,7 +323,8 @@ TEST_CASE("pause mouse targets work after letterboxing for controller-owned paus
     CHECK(menu.update(1.0 / 60, click) == PauseOutcome::Shop);
     MenuInput back;
     back.pointerBack = true;
-    CHECK(menu.update(1.0 / 60, back) == PauseOutcome::Resume);
+    CHECK(menu.update(1.0 / 60, back) == PauseOutcome::Running);
+    CHECK(menu.update(0.7, {}) == PauseOutcome::Resume);
 }
 
 TEST_CASE("pause menu refuses absent artwork or a player outside the party", "[pause]") {
@@ -227,8 +400,11 @@ TEST_CASE("pause menus route character management and preserve the live party", 
     CHECK(test::minCorner(device.draws.front()) == Vec2{-1, -1});
     CHECK(test::maxCorner(device.draws.front()) == Vec2{1, 1});
     CHECK(device.draws.front().vertices.front().color == Color::rgba(0, 0, 0, 150));
-    SECTION("resume and quit confirmation") {
-        CHECK(step(back) == PauseOutcome::Resume);
+    SECTION("resume waits for dismissal") {
+        CHECK(step(back) == PauseOutcome::Running);
+        CHECK(menu.update(0.7, {}) == PauseOutcome::Resume);
+    }
+    SECTION("quit confirmation") {
         for (s32 i = 0; i < 4; ++i) {
             step(down);
         }
@@ -257,15 +433,18 @@ TEST_CASE("pause menus route character management and preserve the live party", 
         step(select);
         menu.update(1, {});
         step(down);
-        CHECK(step(select) == PauseOutcome::Title);
+        CHECK(step(select) == PauseOutcome::Running);
+        CHECK(menu.update(0.7, {}) == PauseOutcome::Title);
     }
     SECTION("shop and inventory") {
         // OPTMENU_TOWER: OPT_SHOP opens init_shop(1), OPT_INVENTORY init_shop(2).
         step(down);
         step(down);
         CHECK(step(select) == PauseOutcome::Shop);
+        CHECK_FALSE(menu.menu().backdropReleased());
         step(down);
         CHECK(step(select) == PauseOutcome::Inventory);
+        CHECK_FALSE(menu.menu().backdropReleased());
     }
     SECTION("music under the menu") {
         // options.c 813 ducks the music every frame the menu is up; 984 lets it play on
@@ -278,7 +457,8 @@ TEST_CASE("pause menus route character management and preserve the live party", 
         step(back);
         CHECK_FALSE(menu.musicAudible());
         step(back);
-        CHECK(step(back) == PauseOutcome::Resume);
+        CHECK(step(back) == PauseOutcome::Running);
+        CHECK(menu.update(0.7, {}) == PauseOutcome::Resume);
     }
     SECTION("shared settings") {
         step(select);
@@ -291,11 +471,13 @@ TEST_CASE("pause menus route character management and preserve the live party", 
         CHECK(AudioSlider::value(config.audio.musicVolume) == 127);
         step(back);
         step(back);
-        CHECK(step(back) == PauseOutcome::Resume);
+        CHECK(step(back) == PauseOutcome::Running);
+        CHECK(menu.update(0.7, {}) == PauseOutcome::Resume);
     }
     SECTION("character management returns to party selection") {
         step(down);
         CHECK(step(select) == PauseOutcome::Manage);
+        CHECK_FALSE(menu.menu().backdropReleased());
         REQUIRE_FALSE(menu.party()[0].slot.has_value());
         CHECK_FALSE(party[0].slot.has_value());
         CHECK(menu.party()[0].save.gold == 123);

@@ -1363,21 +1363,24 @@ MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held,
     const f32 bias = held ? kHeldReach : 0.0f;
     auto target =
         TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
-                             actor.radius() + kStepReach + bias, &m_resources->world.collision());
+                             actor.reach() + kStepReach + bias, &m_resources->world.collision());
     if (!target) {
-        target = meleePlayer(actor, targets, actor.radius() + kStepReach + bias);
+        target = meleePlayer(actor, targets, actor.reach() + kStepReach + bias);
     }
     if (!target) {
         return sense;
     }
     const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), *target);
+    // PlayerMotion uses col_radius (the full PDAT width), not the half-width
+    // cylinder used for horizontal movement. Target distance already excludes
+    // the target's radius, so only the player's reach and authored margin remain.
     sense.range =
-        distance < actor.radius() + kSwingReach + bias ? MeleeRange::Swing : MeleeRange::Step;
+        distance < actor.reach() + kSwingReach + bias ? MeleeRange::Swing : MeleeRange::Step;
     const bool swarm = target->id >= kEnemyTargetBase && target->id < kGeneratorTargetBase;
     const bool thing = !isCreature(target->id) && target->id < kPlayerTargetBase;
     // PlayerMotion tests the swarm's height or the item's height, but never a
     // critter's small NODE collision part, when setting the low-attack bit.
-    sense.low = distance < actor.radius() + kStepReach &&
+    sense.low = distance < actor.reach() + kStepReach &&
                 ((swarm && target->height <= kLowEnemy) || (thing && target->height <= kLowThing));
     const Vec3 toward = target->base - actor.position();
     if (std::hypot(toward.x, toward.z) > 1e-5f) {
@@ -1395,14 +1398,13 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const PlayerAnimator& animator = players[index].figure->animator();
     // The blow lands on whatever is nearest within a step, whichever way it lies: the
     // swing has already turned to it.
-    auto target =
-        TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
-                             actor.radius() + kStepReach, &m_resources->world.collision());
+    auto target = TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
+                                       actor.reach() + kStepReach, &m_resources->world.collision());
     if (!target) {
-        target = meleePlayer(actor, targets, actor.radius() + kStepReach);
+        target = meleePlayer(actor, targets, actor.reach() + kStepReach);
     }
     // The swing's sweep brings down the SHOOTFALL scenery within it (combat.c's item query).
-    targets.fixtures.shootScenery(actor.position(), actor.radius() + kStepReach);
+    targets.fixtures.shootScenery(actor.position(), actor.reach() + kStepReach);
     if (!target) {
         return;
     }

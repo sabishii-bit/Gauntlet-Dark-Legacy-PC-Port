@@ -146,6 +146,8 @@ public:
 
     /** Starts the fade-out for fading menus; removes others at once. */
     void close();
+    /** Fades the current text away even when the menu appeared without an entry fade. */
+    void closeWithFade();
 
     /** Stops drawing the backdrop, its flames and the icon; used when the backdrop is handed to
      * a burn effect while the text still fades. */

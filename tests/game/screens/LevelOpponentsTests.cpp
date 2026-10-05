@@ -144,8 +144,17 @@ TEST_CASE("courtyard grunts approach the entrance player", "[courtyard-grunt][as
     LevelFixtures fixtures;
     fixtures.bind({device, world, weapons, effects, audio, 1});
     LevelOpponents opponents;
-    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    // Match PlayScene: distant placements wait to be seen instead of filling
+    // the swarm pool before the entrance generators get their first update.
+    opponents.open({device, world, weapons, effects, audio, root, 1, true}, players);
     auto& enemies = opponents.enemies();
+    REQUIRE(opponents.pendingPlacements() > 0);
+    REQUIRE(world.level());
+    s32 initialAlive = 0;
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        initialAlive += enemies.alive(id) ? 1 : 0;
+    }
+    REQUIRE(initialAlive < world.level()->maxEnemies);
     auto views = LevelOpponents::enemyViews(players);
     views[0].level = 99; // the courtyard scenario's knight
     std::vector<s32> entranceGrunts;
@@ -1058,7 +1067,7 @@ TEST_CASE("the placed enemies stand only once the camera comes to see them",
 }
 
 TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
-          "[game][screens][level-opponents][help]") {
+          "[game][screens][level-opponents][help][generator-lesson]") {
     const auto root = test::scratchDirectory("hit-streak");
     writeMeleeEnemy(root, kGruntKind);
     test::FakeRenderDevice device;
@@ -1072,7 +1081,7 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     opponents.enemies().open(device, root, nullptr, 2, {.health = 1000}, 1);
     REQUIRE(opponents.enemies().loadKind(kGruntKind));
-    const auto bred = opponents.enemies().spawn(
+    auto bred = opponents.enemies().spawn(
         EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
     const auto placed = opponents.enemies().spawn(
         EnemySpawn{.kind = kGruntKind, .tier = 1, .position = {5, 0, 0}, .placed = true}, {});
@@ -1082,6 +1091,9 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     CHECK_FALSE(opponents.enemies().bred(*placed));
     std::vector<s32> helps;
     LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.help = [&](s32 id, usize player) {
@@ -1091,7 +1103,9 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     };
     const auto hit = [&](s32 id) {
         opponents.strikeEnemy(id, 5.0f, 0, {0, 0, 1}, 2, players);
-        opponents.settleRewards(players, events);
+        // The live scene updates opponents each frame; settleRewards is only
+        // called on portal departure and must not be needed to deliver lessons.
+        opponents.update(1, 1.0f / 60.0f, players, {}, events);
     };
     for (s32 i = 0; i < 20; ++i) {
         hit(*placed); // what a level placed does not count
@@ -1100,7 +1114,24 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
         hit(*bred);
     }
     CHECK(helps.empty());
+    SECTION("normal updates deliver the tenth-hit lesson") {}
+    SECTION("reopening discards a queued lesson and the previous party's hit streak") {
+        opponents.strikeEnemy(*bred, 5.0f, 0, {0, 0, 1}, 2, players);
+        opponents.close(); // the tenth hit queued a lesson, but it never reached an update
+        opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+        opponents.enemies().open(device, root, nullptr, 2, {.health = 1000}, 1);
+        REQUIRE(opponents.enemies().loadKind(kGruntKind));
+        bred = opponents.enemies().spawn(
+            EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
+        REQUIRE(bred);
+        for (s32 i = 0; i < 9; ++i) {
+            hit(*bred);
+        }
+        CHECK(helps.empty());
+    }
     hit(*bred);
+    CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
+    opponents.settleRewards(players, events); // leaving cannot replay an already delivered tip
     CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
     opponents.close();
 }

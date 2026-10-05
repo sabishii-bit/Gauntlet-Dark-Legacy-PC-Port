@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/assets/ModelSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
@@ -35,6 +36,81 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("G2 bats swoop and submit their bodies and parented wings for drawing",
+          "[game][world][g2-bats][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path();
+    const auto root = directory.parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G2");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ModelSet models;
+    REQUIRE(models.load(directory));
+    constexpr std::array<usize, 4> kBodies{1172, 1177, 1180, 1183};
+    constexpr std::array<usize, 12> kParts{1172, 1173, 1174, 1177, 1178, 1179,
+                                           1180, 1181, 1182, 1183, 1184, 1185};
+    std::array<f32, 4> low{};
+    std::array<f32, 4> high{};
+    for (usize i = 0; i < kBodies.size(); ++i) {
+        low[i] = high[i] = world.scene().worldTransform(kBodies[i])[3].y;
+    }
+    for (const usize object : kParts) {
+        CAPTURE(object, world.layout().objects()[object].name);
+        REQUIRE(world.worldAnimator().trackOf(static_cast<s32>(object)));
+        REQUIRE(world.scene().moving(object));
+        // PlayerMotion_FloorFX requires inherited bits16..19. The native bats
+        // have none; the wings' bit24 selects a parent-composed dynamic matrix,
+        // not damage (CreateDynobjGrid). Do not invent contact damage for them.
+        CHECK((world.hazards().flagsOf(static_cast<s32>(object)) & 0xF0000U) == 0);
+        CHECK_FALSE(world.hazards().harmOfObject(static_cast<s32>(object)));
+    }
+    // The longest native track has 250 frames at 30 Hz. Exercise the entire
+    // cycle through LevelWorld, including child transforms and ordinary updates.
+    for (s32 frame = 0; frame <= 250; ++frame) {
+        world.update(1.0f / 30.0f);
+        for (usize i = 0; i < kBodies.size(); ++i) {
+            const f32 y = world.scene().worldTransform(kBodies[i])[3].y;
+            low[i] = std::min(low[i], y);
+            high[i] = std::max(high[i], y);
+        }
+        if (frame % 25 != 0) {
+            continue;
+        }
+        device.draws.clear();
+        world.scene().draw(device, Mat4{1});
+        for (const usize object : kParts) {
+            CAPTURE(frame, object);
+            REQUIRE(world.scene().objectVisible(object));
+            const auto model = models.find(world.layout().objects()[object].name);
+            REQUIRE(model);
+            const Mesh& mesh = models.mesh(*model);
+            REQUIRE_FALSE(mesh.parts.empty());
+            for (const auto& part : mesh.parts) {
+                REQUIRE_FALSE(part.indices.empty());
+                const Texture* texture = world.scene().textureOf(part.texture);
+                REQUIRE(texture);
+                const Vec3 expected{world.scene().worldTransform(object) *
+                                    Vec4{mesh.vertices[part.indices.front()].position, 1}};
+                // Match a real draw's texture, vertex count and transformed first
+                // vertex, rather than merely checking that its asset was loaded.
+                CHECK(std::ranges::any_of(device.draws, [&](const test::RecordedDraw& draw) {
+                    return draw.texture == texture && draw.vertices.size() == part.indices.size() &&
+                           glm::distance(draw.vertices.front().position, expected) < 0.0001f;
+                }));
+            }
+        }
+    }
+    for (usize i = 0; i < kBodies.size(); ++i) {
+        CAPTURE(kBodies[i], low[i], high[i]);
+        // Authored root-height ranges are 4.69..16.94, 5.00..15.01,
+        // 4.24..16.13 and 6.40..13.75: these are substantial dives, not idles.
+        CHECK(high[i] - low[i] > 7.0f);
+    }
+}
 
 TEST_CASE("mountain spouts survive complete tower updates and draw submission",
           "[game][world][spout-integration][assets]") {

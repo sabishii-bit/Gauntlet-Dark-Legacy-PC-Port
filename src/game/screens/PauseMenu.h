@@ -5,10 +5,12 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
+#include "engine/audio/SoundPlayer.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/menu/BurnDialogueScroll.h"
 #include "game/menu/SettingsMenu.h"
 #include "game/players/Party.h"
 #include "game/screens/GameContext.h"
@@ -20,7 +22,7 @@ enum class PauseOutcome : u8 { Running, Resume, Manage, Title, ReturnTower, Shop
 class PauseMenu {
 public:
     PauseMenu() = default;
-    ~PauseMenu() = default;
+    ~PauseMenu();
     GDL_NON_COPYABLE_NON_MOVABLE(PauseMenu);
     bool open(RenderDevice& device, const GameContext& context, std::span<const PartyMember> party,
               s32 player);
@@ -41,7 +43,10 @@ private:
     void showMain();
     void showQuit();
     void loadDecorations(RenderDevice& device);
+    void loadFireFrames(RenderDevice& device);
+    PauseOutcome dismiss(PauseOutcome outcome);
     void playSound(std::string_view name);
+    void stopSounds();
     void playMenuSound(const MenuEvent& event, bool horizontal);
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
@@ -52,9 +57,15 @@ private:
     AnimationSet m_powerupTrees;
     ModelSprite m_arrow;
     SoundSet m_commonSounds;
+    std::vector<SoundHandle> m_soundHandles;
     BitmapFont m_font;
     TextPainter m_text;
     MenuTextures m_art;
+    BurnDialogueScroll m_fire;
+    std::vector<const Image*> m_fireMasks;
+    std::vector<const Texture*> m_fireRing;
+    const Image* m_scrollImage = nullptr;
+    RenderDevice* m_device = nullptr;
     MenuScreen m_screen;
     Canvas m_canvas;
     Mat4 m_pointerTransform{1};
@@ -62,6 +73,7 @@ private:
     SettingsMenu m_settings;
     std::vector<PartyMember> m_party;
     Page m_page = Page::Main;
+    PauseOutcome m_pendingOutcome = PauseOutcome::Running;
     s32 m_player = 0;
     f64 m_tickRemainder = 0.0;
     bool m_open = false;

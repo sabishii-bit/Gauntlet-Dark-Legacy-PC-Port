@@ -165,6 +165,7 @@ private:
     void fireDeathShot(const EnemyDeathShot& shot);
     void advanceDeathShots();
     void hearFrom(std::span<const PlayerRuntime> players);
+    void deliverLessons(std::span<const PlayerRuntime> players, const Events& events);
     void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
                         const Events& events);
     void awardEnemyLosses(const Events& events);
@@ -226,7 +227,7 @@ private:
      * original's hit_streak), by player id. */
     static constexpr usize kPlayerIds = 4; ///< players are numbered 0 to 3
     std::array<s32, kPlayerIds> m_hitStreak{};
-    /** Lessons waiting for the next settling: which, and for which player id. */
+    /** Lessons waiting for the next update or final settling, by player id. */
     std::vector<std::pair<s32, s32>> m_lessons;
     static constexpr s32 kStreakLesson = 10; ///< this many hits teach to destroy generators
     static constexpr s32 kGeneratorRamBase = 2000;

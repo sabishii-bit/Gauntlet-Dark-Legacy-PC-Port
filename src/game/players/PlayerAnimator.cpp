@@ -613,6 +613,14 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         break;
     case Action::Spin: d.action = buffered() ? Action::PowerMed : Action::SpinRecover; break;
     case Action::LowKick: d.action = buffered() ? Action::PowerLow : Action::LowKickRecover; break;
+    case Action::LowKickRecover:
+        // P_ATTACK_KICK_R retains the kick's buffered low-finisher branch.
+        if (buffered()) {
+            d.action = Action::PowerLow;
+        } else {
+            d.cut = Cut::WhenDone;
+        }
+        break;
     case Action::SlowStart: d.action = Action::SlowSwing; break;
     case Action::SlowSwing:
     case Action::Right:
@@ -635,7 +643,6 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         break;
     case Action::LowRecover:
     case Action::SlowRecover:
-    case Action::LowKickRecover:
     case Action::RightRecover:
     case Action::Right2Recover:
     case Action::LeftRecover:

@@ -462,6 +462,8 @@ void LevelOpponents::close() {
     m_deathShots.clear();
     m_yells.clear();
     m_hearers.clear();
+    m_lessons.clear();
+    m_hitStreak.fill(0); // load_player resets the new party's hit_streak
     m_critters.close();
     m_bossMeter.clear();
     m_bosses.close();
@@ -1198,13 +1200,13 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             }
         }
     }
+    deliverLessons(players, events);
     awardEnemyLosses(events);
 }
 
-void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const Events& events) {
-    if (!m_resources.has_value()) {
-        return;
-    }
+void LevelOpponents::deliverLessons(std::span<const PlayerRuntime> players, const Events& events) {
+    // PlayerDamagedEnemy posts message22 during combat. A queued hit must reach
+    // the next normal update, not wait for the portal's final reward settlement.
     for (const auto& [lesson, player] : std::exchange(m_lessons, {})) {
         for (usize i = 0; i < players.size() && events.help; ++i) {
             if (players[i].actor.player() == player) {
@@ -1212,6 +1214,13 @@ void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const
             }
         }
     }
+}
+
+void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    deliverLessons(players, events);
     hearFrom(players);
     awardBossLosses(players, events);
     awardCritterLosses(players, events);

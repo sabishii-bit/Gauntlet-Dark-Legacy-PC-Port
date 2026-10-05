@@ -279,6 +279,27 @@ TEST_CASE("fading menus close over thirty ticks and others at once", "[game][men
     REQUIRE_FALSE(f.menu.isOpen());
 }
 
+TEST_CASE("a menu can fade its text on exit without changing how it first appears",
+          "[game][menu][pause-dismiss]") {
+    Fixture f;
+    f.menu.open(threeItems(), f.painter, {});
+    CHECK(f.menu.fadeOpacity() == 255);
+    f.menu.releaseBackdrop();
+    f.menu.closeWithFade();
+    REQUIRE(f.menu.closing());
+    CHECK(f.menu.fadeOpacity() > 0);
+    CHECK(f.menu.fadeOpacity() < 255);
+    CHECK(f.menu.update(pressed(false, true, true, false), 14).action == MenuAction::None);
+    CHECK(f.menu.selection() == 0);
+    CHECK(f.menu.fadeOpacity() == 128);
+    CHECK(f.menu.update({}, 15).action == MenuAction::Closed);
+    CHECK_FALSE(f.menu.isOpen());
+    f.menu.open(threeItems(), f.painter, {});
+    CHECK_FALSE(f.menu.backdropReleased());
+    CHECK_FALSE(f.menu.closing());
+    CHECK(f.menu.fadeOpacity() == 255);
+}
+
 TEST_CASE("the selection icon glides between items", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});

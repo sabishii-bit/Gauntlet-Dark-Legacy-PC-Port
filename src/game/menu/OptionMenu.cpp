@@ -188,6 +188,11 @@ void OptionMenu::close() {
     }
 }
 
+void OptionMenu::closeWithFade() {
+    m_definition.fades = true;
+    close();
+}
+
 MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks) {
     if (!m_open) {
         return {};
