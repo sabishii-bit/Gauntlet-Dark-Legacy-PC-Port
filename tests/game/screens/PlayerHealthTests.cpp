@@ -344,7 +344,7 @@ TEST_CASE("player low health announcements take precedence over cries, not the b
     CHECK(std::ranges::count(last, "S_LIFEFORCE") > 0);
     CHECK(std::ranges::count(last, "S_ABOUT") > 0);
     CHECK(std::ranges::count(last, "S_LIFEFORCE") + std::ranges::count(last, "S_ABOUT") == 40);
-    REQUIRE(f.cries == std::vector<std::string>(40, "DIE1"));
+    REQUIRE(f.cries == std::vector<std::string>(40, "POISON"));
     f.cries.clear();
     // A blow that crosses a mark is still heard landing, and its harm still counts to a cry.
     f.player.actor.save().progress().health = 55;
@@ -418,24 +418,35 @@ TEST_CASE("player pain accumulates while burns and pierces retain their own cues
     f.hit(1, HurtKind::Gas);
     REQUIRE(f.cries.size() == 5);
     REQUIRE(f.cries[3] == "DIE1");
-    REQUIRE(f.cries[4] == "DIE1");
+    REQUIRE(f.cries[4] == "POISON");
     REQUIRE(f.sounds.size() == 1);
 }
 
-TEST_CASE("gas cloud pulses use accumulated pain rather than the direct poison trap voice",
+TEST_CASE("gas cloud pulses choke between accumulated pain cries, not with the spike groan",
           "[player-health][gas-feedback]") {
     Fixture f;
     for (s32 pulse = 0; pulse < 6; ++pulse) {
         f.hit(10, HurtKind::Gas);
         CHECK(f.player.actor.save().health() == 1000 - 10 * (pulse + 1));
         CHECK(f.player.gagSeconds == Approx(1));
-        CHECK(f.cries.back() != "POISON");
+        CHECK(f.cries.back() != "DIE1");
     }
     CHECK(std::ranges::count_if(f.cries, [](const auto& cry) { return cry.starts_with("PAIN"); }) ==
           2);
-    CHECK(std::ranges::count(f.cries, "DIE1") == 6);
+    CHECK(std::ranges::count(f.cries, "POISON") == 4);
+    CHECK(f.cries.size() == 6);
     CHECK(f.sounds.empty()); // No physical impact sound accompanies a gas cloud.
     CHECK(f.player.painOwed == 0);
+}
+
+TEST_CASE("a severe gas hit replaces the choking cue with one pain cry",
+          "[player-health][gas-feedback]") {
+    Fixture f;
+    f.hit(61, HurtKind::Gas);
+    REQUIRE(f.cries.size() == 1);
+    CHECK(f.cries.front().starts_with("PAIN"));
+    CHECK(f.player.painOwed == 0);
+    CHECK(f.sounds.empty());
 }
 
 TEST_CASE("surviving hits request reactions after health gates and damage scaling",

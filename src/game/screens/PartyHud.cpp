@@ -10,6 +10,7 @@
 #include "game/menu/OptionMenu.h"
 #include "game/menu/ScrollBox.h"
 #include "game/players/PickupVoices.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/PartyNames.h"
 namespace gdl::game {
@@ -20,6 +21,24 @@ constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
+
+/** AudioAmbientUpdate selects the first standing wearer in native player-ID order. */
+const PowerupSlot* stopTimeOf(std::span<const PlayerRuntime> players) {
+    const PowerupSlot* selected = nullptr;
+    s32 firstPlayer = PartyHud::kPlayerCount;
+    for (const auto& player : players) {
+        if (player.departed || player.life != PlayerLife::Standing || player.actor.player() < 0 ||
+            player.actor.player() >= firstPlayer) {
+            continue;
+        }
+        if (const auto* slot = player.actor.save().progress().inventory.powerup(
+                powerup::kSpecial, powerup::kStopTime)) {
+            selected = slot;
+            firstPlayer = player.actor.player();
+        }
+    }
+    return selected;
+}
 
 } // namespace
 bool PartyHud::load(RenderDevice& device, const std::filesystem::path& root,
@@ -44,7 +63,38 @@ void PartyHud::clear() {
     m_help.clear();
     m_helpPosition.reset();
     m_pickups.clear();
+    m_hourglass.clear();
+    m_localStopTimeTotal = 0;
+    m_sharedStopTimeTotal = nullptr;
     m_boxes.release();
+}
+
+bool PartyHud::bindHourglass(RenderDevice& device, ItemArchive& archive, f32* sharedTotal) {
+    m_sharedStopTimeTotal = sharedTotal;
+    return m_hourglass.bind(device, archive);
+}
+
+void PartyHud::stepHourglass(f32 seconds, std::span<const PlayerRuntime> players) {
+    m_hourglass.step(seconds);
+    // A scenario or carried save can begin with the item already present. Ordinary pickups
+    // record the total in focusPickup; toggling or pausing must not refill the sand.
+    if (stopTimeTotal() == 0) {
+        if (const auto* slot = stopTimeOf(players)) {
+            stopTimeTotal() = slot->strength;
+        }
+    }
+}
+
+bool PartyHud::drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> players) const {
+    const auto* slot = stopTimeOf(players);
+    if (slot == nullptr) {
+        return false;
+    }
+    // The shared timer uses a signed ratio: two permanent (-1) durations are full,
+    // whereas a permanent wearer with another player's finite total is over-empty.
+    const f32 ratio = stopTimeTotal() != 0 ? slot->strength / stopTimeTotal() : 0;
+    m_hourglass.draw(canvas, ratio, 1, true);
+    return true;
 }
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
     for (s32 player = 0; player < kPlayerCount; ++player) {
@@ -120,8 +170,18 @@ void PartyHud::focusPickup(const PlayerActor& actor, s32 kind, u32 flags) {
     if (actor.player() < 0 || actor.player() >= kPlayerCount) {
         return;
     }
-    m_selectors[static_cast<usize>(actor.player())].focus(actor.save().progress().inventory, kind,
-                                                          flags);
+    const Inventory& inventory = actor.save().progress().inventory;
+    m_selectors[static_cast<usize>(actor.player())].focus(inventory, kind, flags);
+    if (kind == powerup::kSpecial && (flags & powerup::kStopTime) != 0) {
+        // PlayerAddPowerup resets one shared sand total to the post-pickup duration, including
+        // a duplicate's half-strength extension. This is independent of which wearer is shown.
+        for (const auto& slot : inventory.powerups) {
+            if (slot.held() && slot.kind == kind && (slot.flags & powerup::kStopTime) != 0) {
+                stopTimeTotal() = slot.strength;
+                break;
+            }
+        }
+    }
 }
 
 StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> players,

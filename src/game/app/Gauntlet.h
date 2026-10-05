@@ -99,6 +99,7 @@ private:
     TitleScene m_title;
     PlayerSelectScene m_select;
     LevelCatalog m_levels;
+    f32 m_stopTimeTotal = 0; ///< most recent pickup's total, shared by parent and secret levels
     struct PlaySession {
         PlaySession() = default;
         PlaySession(const PlaySession&) = delete;

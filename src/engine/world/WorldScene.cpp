@@ -483,7 +483,10 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
     state.blend = batch.additive ? BlendMode::Additive : BlendMode::Alpha;
     state.lightmap = batch.lightmap;
     state.uvOffset = slot.presentedOffset(textureFrameOffset);
-    state.alphaTest = batch.translucent ? kAlphaTest : 0.0f;
+    // pbSetDORegs/setPrimAlpha enable GX_GREATER with reference 2 independently of the
+    // blend flag. Binary-alpha scenery (S8 wheat) belongs to the solid pass, but its clear
+    // texels must not write depth and hide subsequently drawn scenery.
+    state.alphaTest = kAlphaTest;
     state.cullBack = true;
     state.depthWrite = batch.depthWrite;
     state.depthTest = batch.depthTest;
@@ -567,7 +570,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         state.blend = part.additive ? BlendMode::Additive : BlendMode::Alpha;
         state.lightmap = part.lightmap;
         state.uvOffset = slot.presentedOffset(textureFrameOffset);
-        state.alphaTest = part.translucent ? kAlphaTest : 0.0f;
+        state.alphaTest = kAlphaTest; // Same native cutout test as the baked geometry.
         state.cullBack = true;
         state.depthWrite = unit.depthWrite && unit.alpha >= 1.0f;
         state.depthTest = unit.depthTest;

@@ -420,6 +420,14 @@ std::optional<Mat4> PlayerFigure::handAttachment(const Mat4& body) const {
                        : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand)));
 }
 
+Mat4 PlayerFigure::rootAttachment(const Mat4& body) const {
+    if (m_costume == nullptr || m_costume->nodes.empty()) {
+        return body;
+    }
+    return body * (m_transforms.empty() ? glm::translate(Mat4{1}, m_costume->worldPosition(0))
+                                        : m_transforms.front());
+}
+
 std::optional<Mat4> PlayerFigure::attachment(const Mat4& body,
                                              std::string_view objectSuffix) const {
     if (m_costume != nullptr) {

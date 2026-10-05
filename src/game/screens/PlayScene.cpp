@@ -76,6 +76,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_weapons.load(context.unpackedRoot / kWeaponsArchive);
     m_figures.loadSkins(device, world.powerups(), m_weapons);
     m_compass.bind(device, world.powerups());
+    m_hud.bindHourglass(device, world.powerups(), context.stopTimeTotal);
     const std::array<TextureSet*, 5> effectTextures{&m_weapons.textures, &world.items().textures,
                                                     &world.realmItems().textures,
                                                     &world.powerups().textures, &m_staticTextures};
@@ -115,6 +116,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         }
     }
     spawnParty(party, options);
+    m_hud.stepHourglass(0, m_players);
     PartyNames::show(m_players);
     // The bosses' keys show in the boxes as a level opens, but for a secret one (gamemain.c
     // 1990's music track 12).
@@ -748,6 +750,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_audio.holdNarration(victory != BossVictory::Stage::None &&
                           victory != BossVictory::Stage::Waiting);
     m_hud.stepRelics(ticks);
+    m_hud.stepHourglass(seconds, m_players);
     // Entry presentation also holds the names, preserving their full time after the camera ride.
     m_names.step(m_players, ticks,
                  spawning() || m_gameOver.active() || m_switchCutscene.active() ||
@@ -1267,7 +1270,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
             m_runeMeter.draw(m_canvas, *m_runeFrame, *m_runeColumn);
         }
-        if (m_challenge.state() != SecretChallenge::State::Inactive) {
+        if (!m_hud.drawHourglass(m_canvas, m_players) &&
+            m_challenge.state() != SecretChallenge::State::Inactive) {
             m_challengeHud.draw(m_canvas, m_challenge.remaining(), m_challenge.duration(),
                                 !spawning() && !m_messages.active());
         }

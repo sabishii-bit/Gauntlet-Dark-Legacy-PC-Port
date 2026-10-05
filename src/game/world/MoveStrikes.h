@@ -50,6 +50,7 @@ public:
         f32 arc = -1.0f;
         f32 damage = 0.0f;
         f32 delayLeft = 0.0f;
+        f32 launchIn = 0.0f; ///< DAMG 0x800 holds motion until the birth effect morphs
         f32 secondsLeft = 0.0f;
         f32 damageTime = 0.0f; ///< effect lifetime less the burst's wind-up
     };
@@ -67,6 +68,9 @@ public:
     std::vector<StrikeHit> update(f32 seconds, const WorldCollision* collision);
     /** Reflect a point strike at armor, keeping its owner, or end it on body contact. */
     void hitPlayer(u32 id, bool reflected, const Vec3& from);
+    /** Carry an area on its posed parent. Detached flying strikes are never reparented. */
+    void placeArea(u32 id, const Mat4& placement);
+    void stop(u32 id);
     void clear();
 
     usize count() const { return m_strikes.size(); }

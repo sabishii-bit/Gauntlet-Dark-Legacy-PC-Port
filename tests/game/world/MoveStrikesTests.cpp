@@ -38,6 +38,40 @@ TEST_CASE("player contact stops point strikes and reflective armor reverses and 
     CHECK(strikes.find(id) == nullptr);
 }
 
+TEST_CASE("a morph-held flying strike keeps its birth position and full flight lifetime",
+          "[game][world][strikes][alpha-effects]") {
+    MoveStrike row;
+    row.type = MoveStrike::kFlies;
+    row.flags = 0x840;
+    row.hitRadius = 10;
+    row.speed = 20;
+    row.maxTime = 6;
+    row.loopEffect = 1;
+    row.amount = 70;
+    MoveStrikes strikes;
+    const u32 id = strikes.start(row, 0, Vec3{0}, Vec3{0, 0, 1}, 1, 37.0f / 30);
+    const auto birthHits = strikes.update(1, nullptr);
+    REQUIRE(birthHits.size() == 1);
+    CHECK(birthHits[0].centre == Vec3{0}); // motion is held, collision is still active
+    REQUIRE(strikes.find(id));
+    CHECK(strikes.find(id)->position == Vec3{0});
+    CHECK(strikes.find(id)->secondsLeft > 6);
+    strikes.update(0.5f, nullptr);
+    REQUIRE(strikes.find(id));
+    CHECK(strikes.find(id)->position.z == Approx(6).margin(0.001f));
+    strikes.update(5.5f, nullptr);
+    REQUIRE(strikes.find(id));
+    CHECK(strikes.find(id)->position.z == Approx(116).margin(0.001f));
+    strikes.update(0.3f, nullptr);
+    CHECK_FALSE(strikes.find(id));
+    // The hold flag alone does not delay an effect that has no morph target.
+    row.loopEffect = -1;
+    const u32 immediate = strikes.start(row, 0, Vec3{0}, Vec3{0, 0, 1}, 1, 37.0f / 30);
+    strikes.update(0.5f, nullptr);
+    REQUIRE(strikes.find(immediate));
+    CHECK(strikes.find(immediate)->position.z == Approx(10));
+}
+
 TEST_CASE("a burst expands after its wind-up and loses damage before its visual tail",
           "[game][world][strikes]") {
     MoveStrike burst;

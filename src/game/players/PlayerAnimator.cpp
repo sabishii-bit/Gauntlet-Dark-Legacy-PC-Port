@@ -1034,6 +1034,8 @@ f32 PlayerAnimator::meleePace() const {
 
 f32 PlayerAnimator::turnScale() const {
     constexpr f32 kChargerTurn = 0.5f; // COMBODWF2's turn scale (action.c 1804)
+    constexpr f32 kFullTurboTurn = 0.25f;
+    constexpr f32 kSpellStormLockFrame = 11;
     if (m_current == Action::ComboDwf2) {
         return kChargerTurn;
     }
@@ -1041,6 +1043,12 @@ f32 PlayerAnimator::turnScale() const {
         return 0.0f;
     }
     switch (m_current) {
+    case Action::TurboFull:
+        // DoPlayerAction's A4C: full moves turn slowly; Spell Storm fixes its
+        // heading once the first knight's birth begins, strictly after frame 11.
+        return m_character == kSorceressClass && m_player.frame() > kSpellStormLockFrame
+                   ? 0.0f
+                   : kFullTurboTurn;
     case Action::PowerClose:
     case Action::PowerCloseRecover:
     case Action::PowerMedRecover:

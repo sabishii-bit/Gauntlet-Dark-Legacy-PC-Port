@@ -177,9 +177,6 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         } else if (runtime.painOwed >= kPainEvery) {
             runtime.painOwed -= kPainEvery;
             cryPain(events);
-            if ((received.flags & Damage::kGas) != 0) {
-                landBlow(runtime, events, received.flags);
-            }
         } else {
             landBlow(runtime, events, received.flags);
         }
@@ -190,9 +187,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
 /** A blow landing is heard now and then: an arrow's and a bolt's each their own
  * (AudioPlayerHit's rows). */
 void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events, u32 flags) {
-    // Cloud damage uses the queued severe-pain bark, not the direct poison-trap voice.
+    // Cloud damage uses the queued choking bark; piercing traps use the direct groan.
     if ((flags & Damage::kGas) != 0) {
-        events.cry("DIE1");
+        events.cry("POISON");
         return;
     }
     constexpr u32 kArrowHit = 0x20000;

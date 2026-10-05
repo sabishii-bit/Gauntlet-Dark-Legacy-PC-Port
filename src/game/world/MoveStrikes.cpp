@@ -62,6 +62,16 @@ u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position
     started.damage = damageOf(strike, ownDamage);
     started.delayLeft = strike.delay;
     started.secondsLeft = started.flies ? strike.maxTime : effectSeconds;
+    if (started.flies && strike.loopEffect >= 0) {
+        // ProcessEffects changes the birth tree on its last native tick. Its
+        // morph then gets a fresh maxTime, rather than spending it on the birth.
+        constexpr f32 kMorphLead = 0.03332f;
+        const f32 birth = std::max(effectSeconds - kMorphLead, 0.0f);
+        started.secondsLeft += birth;
+        if ((strike.flags & 0x800) != 0) {
+            started.launchIn = birth;
+        }
+    }
     started.damageTime = effectSeconds - strike.delay;
     m_strikes.push_back(started);
     return started.id;
@@ -112,7 +122,10 @@ std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* co
             continue;
         }
         strike.delayLeft = std::max(strike.delayLeft - seconds, 0.0f);
-        const f32 travelTime = std::clamp(strike.secondsLeft, 0.0f, seconds);
+        const f32 liveTime = std::clamp(strike.secondsLeft, 0.0f, seconds);
+        const f32 heldTime = std::min(strike.launchIn, liveTime);
+        strike.launchIn -= heldTime;
+        const f32 travelTime = liveTime - heldTime;
         strike.secondsLeft -= seconds;
         const f32 travel = strike.speed * travelTime;
         constexpr f32 kWallStep = 0.25f;
@@ -130,12 +143,29 @@ std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* co
             }
             strike.position = next;
         }
-        if (travelTime > 0 && strike.delayLeft <= 0.0f && strike.damage > 0.0f) {
+        if (liveTime > 0 && strike.delayLeft <= 0.0f && strike.damage > 0.0f) {
             hits.push_back(hit());
         }
     }
     std::erase_if(m_strikes, [](const Strike& strike) { return strike.secondsLeft <= 0.0f; });
     return hits;
+}
+
+void MoveStrikes::placeArea(u32 id, const Mat4& placement) {
+    const auto found = std::ranges::find(m_strikes, id, &Strike::id);
+    if (found == m_strikes.end() || found->flies) {
+        return;
+    }
+    found->position = Vec3{placement[3]};
+    const Vec3 forward{placement[2].x, 0, placement[2].z};
+    const f32 length = glm::length(forward);
+    if (length > 0) {
+        found->facing = forward / length;
+    }
+}
+
+void MoveStrikes::stop(u32 id) {
+    std::erase_if(m_strikes, [id](const Strike& strike) { return strike.id == id; });
 }
 
 void MoveStrikes::clear() {

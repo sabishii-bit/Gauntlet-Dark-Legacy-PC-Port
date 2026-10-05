@@ -3,6 +3,7 @@
 #include <cmath>
 #include <numbers>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
@@ -469,9 +470,11 @@ TEST_CASE("gas damage queues pain without overlapping direct choking voices",
     const auto bank = root / "audio/WAR";
     std::filesystem::create_directories(bank);
     const std::vector<s16> tone(96000, 8192);
-    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {tone.begin(), tone.end()}}}};
+    const std::vector<s16> groan(24000, -4096);
+    const std::array<test::NativeSoundSample, 2> bankSamples{
+        {{48000, {tone.begin(), tone.end()}}, {48000, {groan.begin(), groan.end()}}}};
     test::writeNativeSoundBank(bank, R"({"sounds":[
-      {"index":0,"name":"S_WARDIE1","id":0,"volume":127,"sequence":[{"sample":0}]},
+      {"index":0,"name":"S_WARDIE1","id":0,"volume":127,"sequence":[{"sample":1}]},
       {"index":1,"name":"S_WARPOISON","id":1,"volume":127,"sequence":[{"sample":0}]},
       {"index":2,"name":"S_WARPAIN1","id":2,"volume":127,"sequence":[{"sample":0}]},
       {"index":3,"name":"S_WARPAIN2","id":3,"volume":127,"sequence":[{"sample":0}]},
@@ -496,6 +499,9 @@ TEST_CASE("gas damage queues pain without overlapping direct choking voices",
     }
     CHECK(player.actor.save().health() == 940);
     CHECK(sounds.voiceCount() == 1); // The two-second bark occupies the bounded queue.
+    CHECK(f.audio.barkBacklog() == Approx(2));
+    health.hurt(player, 10, HurtKind::Pierce, true, false, 1, events);
+    CHECK(sounds.voiceCount() == 2); // A spike groan is direct, not dropped by the bark queue.
     CHECK(f.audio.barkBacklog() == Approx(2));
     f.attacks.clear();
     f.audio.close();
@@ -835,6 +841,262 @@ TEST_CASE("every native class can damage enemies with both turbo attacks",
             f.attacks.clear();
             f.opponents.close();
         }
+    }
+}
+
+TEST_CASE("strike carriers use primary SFXX duration without replacing flying maxTime",
+          "[game][screens][player-attacks][alpha-effect-lifetime]") {
+    const auto [kind, duration, expected] = GENERATE(
+        std::tuple{MoveStrike::kBursts, 4.0f, 4.0f}, std::tuple{MoveStrike::kBursts, 0.0f, 2.0f},
+        std::tuple{MoveStrike::kFlies, 4.0f, 6.0f}, std::tuple{MoveStrike::kFlies, 0.0f, 6.0f});
+    const auto root = turboAssets();
+    writeTextFile(root / "pdata/WAR.json",
+                  std::string{R"({"height":6,"width":2,"fight":[200,600],"speed":[200,600],
+      "armor":[200,600],"magic":[200,600],"moves":{"turboB":0},
+      "moveEffects":[{"tree":"BURST","lifetime":)"} +
+                      std::to_string(duration) + R"(}],"moveStrikes":[{"type":)" +
+                      std::to_string(kind) + R"(,"startFrame":1,"radius":12,"hitRadius":2,
+      "arc":-1,"amount":10,"effect":0,"maxTime":6}]})");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    player.turbo.add(50);
+    for (s32 frame = 0; frame < 4; ++frame) {
+        player.figure->animate(0, 1, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 1, 1.0f / 30, f.players, [](s32, usize) {});
+    }
+    REQUIRE(f.attacks.strikes().count() == 1);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.attacks.strikes().strike(0).secondsLeft == Approx(expected));
+    REQUIRE(f.effects.remaining(f.effects.effect(0).id));
+    CHECK(*f.effects.remaining(f.effects.effect(0).id) == Approx(expected));
+}
+
+TEST_CASE("Warrior and Minotaur combo damage lasts for the four-second native SFXX",
+          "[game][screens][player-attacks][alpha-effect-lifetime][assets]") {
+    const s32 character = GENERATE(0, 8);
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    test::assetOrSkip("PDATA/MIN.WAD");
+    test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& player = f.players[0];
+    player.actor.save().character = character;
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    const auto* stats = f.classes.stats(character);
+    REQUIRE(stats);
+    REQUIRE(stats->moveStrikes.size() > 9);
+    const auto& row = stats->moveStrikes[9];
+    CHECK(row.type == MoveStrike::kBursts);
+    CHECK(row.amount == 10);
+    REQUIRE(row.effect >= 0);
+    const auto& setting = stats->moveEffects.at(static_cast<usize>(row.effect));
+    CHECK(setting.tree == "WAR_COMBO2");
+    CHECK(setting.lifetime == 4);
+    auto* archive = player.figure->effects();
+    REQUIRE(archive);
+    const auto tree = archive->trees.find(setting.tree);
+    REQUIRE(tree);
+    const auto& sequences = archive->trees.tree(*tree).sequences;
+    REQUIRE_FALSE(sequences.empty());
+    CHECK(sequences.front().frames == 0);
+
+    u32 shown = 0;
+    player.turbo.add(100);
+    for (s32 frame = 0; frame < 90 && shown == 0; ++frame) {
+        player.figure->animate(0, 1, 1.0f / 30, frame == 0 ? PlayerDeed::Combo : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 1, 1.0f / 30, f.players, [](s32, usize) {});
+        for (usize i = 0; i < f.effects.count(); ++i) {
+            if (f.effects.effect(i).name == setting.tree) {
+                shown = f.effects.effect(i).id;
+            }
+        }
+        if (shown == 0) {
+            f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+            f.effects.update(1.0f / 30);
+        }
+    }
+    REQUIRE(shown != 0);
+    REQUIRE(f.attacks.strikes().count() > 0);
+    const auto& carrier = f.attacks.strikes().strike(f.attacks.strikes().count() - 1);
+    const u32 strike = carrier.id;
+    CHECK(carrier.damage == row.amount);
+    CHECK(carrier.secondsLeft == Approx(4));
+    REQUIRE(f.effects.remaining(shown));
+    CHECK(*f.effects.remaining(shown) == Approx(4));
+    for (const f32 seconds : {2.0f, 1.9f}) {
+        f.attacks.updateStrikes(seconds, f.players, f.targets);
+        f.effects.update(seconds);
+        REQUIRE(f.attacks.strikes().find(strike));
+        REQUIRE(f.effects.remaining(shown));
+        CHECK(f.attacks.strikes().find(strike)->secondsLeft ==
+              Approx(*f.effects.remaining(shown)).margin(0.001f));
+    }
+    f.attacks.updateStrikes(0.2f, f.players, f.targets);
+    f.effects.update(0.2f);
+    CHECK_FALSE(f.attacks.strikes().find(strike));
+    CHECK_FALSE(f.effects.playing(shown));
+}
+
+TEST_CASE("area effects follow the posed root unless their SFXX requests a detached snapshot",
+          "[game][screens][player-attacks][alpha-attachments]") {
+    for (const s32 flags : {0, 1, 0x40}) {
+        CAPTURE(flags);
+        const auto root = turboAssets();
+        writeTextFile(root / "PLAYERS/WAR/ANIM/animations.json", R"({"trees":[{"name":"WAR",
+          "nodes":[{"name":"BODY","parent":-1,"position":[0,3,0]}],"sequences":[
+          {"name":"READY","frames":60,"rate":30},
+          {"name":"ATTPWRB","frames":60,"rate":30}]}]})");
+        writeTextFile(root / "pdata/WAR.json",
+                      std::string{R"({"height":6,"width":2,"fight":[200,600],"speed":[200,600],
+          "armor":[200,600],"magic":[200,600],"moves":{"turboB":0},
+          "moveEffects":[{"tree":"BURST","offset":[1,0,2],"flags":)"} +
+                          std::to_string(flags) + R"(}],"moveStrikes":[
+          {"type":4,"startFrame":1,"radius":12,"arc":0.7,"delay":0.1,
+           "amount":50,"effect":0}]})");
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        auto& player = f.players[0];
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        player.turbo.add(100);
+        for (s32 frame = 0; frame < 4; ++frame) {
+            player.figure->animate(0, 1, 1.0f / 30,
+                                   frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 1, 1.0f / 30, f.players, [](s32, usize) {});
+        }
+        REQUIRE(f.effects.count() == 1);
+        REQUIRE(f.attacks.strikes().count() == 1);
+        const Vec3 start{1, flags == 0 ? 3.0f : 0.0f, 2};
+        CHECK(glm::distance(f.effects.effect(0).position, start) < 0.001f);
+        player.actor.place({10, 4, 5});
+        player.actor.turnTo(std::numbers::pi_v<f32> / 2);
+        f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+        const Vec3 expected = flags == 0x40 ? start : Vec3{12, flags == 0 ? 7.0f : 4.0f, 4};
+        CHECK(glm::distance(f.effects.effect(0).position, expected) < 0.001f);
+        CHECK(glm::distance(f.attacks.strikes().strike(0).position, expected) < 0.001f);
+        const Vec3 forward = flags == 0x40 ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+        CHECK(glm::distance(Vec3{f.effects.effect(0).transform()[2]}, forward) < 0.001f);
+        CHECK(glm::distance(f.attacks.strikes().strike(0).facing, forward) < 0.001f);
+        f.attacks.clear();
+        CHECK(f.effects.count() == (flags == 0x40 ? 1 : 0));
+    }
+}
+
+TEST_CASE("Sonic Boom's chained ring turns with its caster and retains its authored height",
+          "[game][screens][player-attacks][alpha-attachments][assets]") {
+    const auto root = test::assetOrSkip("PDATA/JES.WAD").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/JES/SFXYEL/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& player = f.players[0];
+    player.actor.save().character = 7;
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    player.turbo.add(50);
+    for (s32 frame = 0; frame < 4; ++frame) {
+        player.figure->animate(0, 1, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 1, 1.0f / 30, f.players, [](s32, usize) {});
+    }
+    REQUIRE(f.effects.count() == 2);
+    REQUIRE(f.effects.effect(0).name == "JES_PWRB1");
+    REQUIRE(f.effects.effect(1).name == "JES_PWRB2");
+    player.actor.place({10, 4, 5});
+    player.actor.turnTo(std::numbers::pi_v<f32> / 2);
+    f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+    for (usize i = 0; i < f.effects.count(); ++i) {
+        CHECK(glm::distance(f.effects.effect(i).position, player.actor.position()) < 0.001f);
+        CHECK(glm::distance(Vec3{f.effects.effect(i).transform()[2]}, Vec3{1, 0, 0}) < 0.001f);
+    }
+    const auto& ring = f.effects.effect(1);
+    REQUIRE(ring.pose.matrices().size() >= 2);
+    CHECK((ring.transform() * ring.pose.matrices()[1])[3].y == Approx(4 + 1.92348f));
+}
+
+TEST_CASE("Spell Storm launches three knights after birth and plays its three decoys once",
+          "[game][screens][player-attacks][alpha-effects][assets]") {
+    const auto root = test::assetOrSkip("PDATA/SOR.WAD").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/SOR/SFXYEL/ANIM.PS2");
+    for (const s32 hz : {30, 60, 120}) {
+        CAPTURE(hz);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        auto& player = f.players[0];
+        player.actor.save().character = 6;
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        const auto* stats = f.classes.stats(6);
+        REQUIRE(stats);
+        const auto rows = stats->strikesOf(stats->moves.turboC2);
+        REQUIRE(rows.size() == 6);
+        for (usize i = 0; i < rows.size(); ++i) {
+            const auto& row = stats->moveStrikes[static_cast<usize>(rows[i])];
+            CHECK(row.speed == (i < 3 ? 20 : 0));
+            CHECK((row.amount > 0) == (i < 3));
+            CHECK((row.loopEffect >= 0) == (i < 3));
+            CHECK((row.flags & 0x800) != 0);
+        }
+        struct Knight {
+            u32 id;
+            Vec3 origin;
+            bool launches;
+        };
+        std::vector<Knight> knights;
+        bool paid = false;
+        player.turbo.add(100);
+        const f32 seconds = 1.0f / static_cast<f32>(hz);
+        for (s32 step = 0; step < hz * 9; ++step) {
+            player.figure->animate(0, 1, seconds,
+                                   step == 0 ? PlayerDeed::TurboFull : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 1, seconds, f.players, [](s32, usize) {});
+            if (!paid && f.attacks.strikes().count() > 0) {
+                CHECK(player.turbo.held() == 0);
+                paid = true;
+            }
+            for (usize i = 0; i < f.effects.count(); ++i) {
+                const auto& effect = f.effects.effect(i);
+                if (effect.name != "SOR_PWRC3A") {
+                    continue;
+                }
+                const auto found = std::ranges::find(knights, effect.id, &Knight::id);
+                if (found == knights.end()) {
+                    knights.push_back({effect.id, effect.position, !effect.then.empty()});
+                } else if (effect.lived < 1) {
+                    CHECK(glm::distance(effect.position, found->origin) < 0.001f);
+                }
+                if (effect.then.empty()) {
+                    CHECK_FALSE(effect.repeats);
+                    CHECK_FALSE(effect.timed);
+                    if (effect.lived > 1.08f && effect.lived < 1.16f) {
+                        CHECK(glm::length(Vec3{effect.transform()[0]}) < 0.85f);
+                    }
+                }
+            }
+            f.attacks.updateStrikes(seconds, f.players, f.targets);
+            f.effects.update(seconds);
+            if (step == hz * 2) {
+                // Already detached, the knights do not turn with the caster.
+                player.actor.place({100, 0, 0});
+                player.actor.turnTo(std::numbers::pi_v<f32> / 2);
+            }
+            if (step == hz * 3 || step == hz * 7) {
+                REQUIRE(f.effects.count() == 3);
+                for (usize i = 0; i < f.effects.count(); ++i) {
+                    CHECK(f.effects.effect(i).name == "SOR_PWRC3B");
+                    CHECK(f.effects.effect(i).position.z > 5);
+                    CHECK(std::abs(f.effects.effect(i).position.x) < 5);
+                }
+            }
+        }
+        REQUIRE(knights.size() == 6);
+        CHECK(std::ranges::count(knights, true, &Knight::launches) == 3);
+        CHECK(f.effects.count() == 0);
+        CHECK(paid);
     }
 }
 

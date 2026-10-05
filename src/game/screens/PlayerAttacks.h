@@ -170,6 +170,16 @@ private:
     void startParticles(usize index, const MoveEffect& effect, u32 parent,
                         std::span<PlayerRuntime> players);
     void updateParticles(std::span<PlayerRuntime> players);
+    void updateMoveAttachments(std::span<PlayerRuntime> players);
+    /** Stationary effects parented to the caster by DoPlyrSfx, with their area carrier. */
+    struct MoveAttachment {
+        usize actor = 0;
+        u32 effect = 0;
+        u32 strike = 0;
+        Mat4 local{1};
+        bool bodyParent = false; ///< SFXX 1 bypasses the first animated node
+    };
+    std::vector<MoveAttachment> m_moveAttachments;
     struct ParticleEffect {
         usize actor = 0;
         u32 effect = 0;

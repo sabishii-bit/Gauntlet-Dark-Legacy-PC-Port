@@ -6,8 +6,10 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/io/File.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/players/NameCheats.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/PartyHud.h"
 namespace {
@@ -200,5 +202,173 @@ TEST_CASE("crystal-style item announcements use common audio and do not replay w
     REQUIRE_FALSE(hud.postHelp(148, 0, players, audio));
     REQUIRE(sounds.voiceCount() == 1);
     audio.close();
+}
+
+TEST_CASE("Stop Time sand follows native pickup totals and first active player identity",
+          "[game][screens][party-hud][stop-time-hud][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/textures.ngc").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    PartyHud hud;
+    REQUIRE(hud.bindHourglass(device, archive));
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    auto& third = players[0].actor.save().progress().inventory;
+    auto& first = players[1].actor.save().progress().inventory;
+    third.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 120);
+    hud.focusPickup(players[0].actor, powerup::kSpecial, powerup::kStopTime);
+    first.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 60);
+    hud.focusPickup(players[1].actor, powerup::kSpecial, powerup::kStopTime);
+    third.advance(100);
+    first.advance(30);
+    hud.stepHourglass(0, players);
+    Canvas canvas;
+    const auto draw = [&] {
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        const bool shown = hud.drawHourglass(canvas, players);
+        canvas.end();
+        return shown;
+    };
+    const auto expectSand = [&](f32 remaining, f32 total) {
+        REQUIRE(draw());
+        REQUIRE(device.draws.size() == 3);
+        REQUIRE(device.draws.back().vertices.size() == 12);
+        const auto expected = ChallengeHud::sand(remaining, total);
+        CHECK(device.draws.back().vertices[0].position.y == expected.upper.y);
+        CHECK(device.draws.back().vertices[6].position.y == expected.lower.y);
+    };
+    expectSand(30, 60); // Controller 1 wins, although controller 3 is first in the vector.
+    const Texture* falling = device.draws[1].texture;
+    hud.stepHourglass(1.0f / 30, players);
+    expectSand(30, 60);
+    CHECK(device.draws[1].texture != falling);
+    falling = device.draws[1].texture;
+    hud.stepHourglass(0, players); // A paused update cannot advance the falling grains.
+    expectSand(30, 60);
+    CHECK(device.draws[1].texture == falling);
+
+    first.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 60);
+    hud.focusPickup(players[1].actor, powerup::kSpecial, powerup::kStopTime);
+    first.advance(15);
+    expectSand(45, 60); // Renewed duration is 30 + half of 60, not the old total.
+    third.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 40);
+    hud.focusPickup(players[0].actor, powerup::kSpecial, powerup::kStopTime);
+    first.advance(25);
+    expectSand(20, 40); // The most recent pickup resets the shared total for every wearer.
+    first.powerups[0].on = false;
+    expectSand(40, 40);
+    first.powerups[0].on = true;
+    expectSand(20, 40); // Switching back on must not refill the sand.
+    players[1].life = PlayerLife::Dying;
+    expectSand(40, 40);
+    players[0].departed = true;
+    CHECK_FALSE(draw());
+    CHECK(device.draws.empty());
+    players[1].life = PlayerLife::Standing;
+    first.advance(20);
+    CHECK_FALSE(draw());
+
+    hud.clear();
+    REQUIRE(hud.bindHourglass(device, archive));
+    first.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 10);
+    hud.stepHourglass(0, players); // A carried/scenario item starts with its remaining total.
+    expectSand(10, 10);
+}
+
+TEST_CASE("permanent Stop Time keeps the signed shared timer ratio",
+          "[game][screens][party-hud][stop-time-hud][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/textures.ngc").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    PartyHud hud;
+    REQUIRE(hud.bindHourglass(device, archive));
+    CharacterSave save;
+    save.name = "NOVATO";
+    REQUIRE(applyNameCheats(save));
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, save, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    auto& permanent = players[0].actor.save().progress().inventory;
+    REQUIRE(permanent.powerups[0].strength == -1);
+    hud.stepHourglass(0, players);
+    Canvas canvas;
+    const auto expectSand = [&](bool full) {
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        REQUIRE(hud.drawHourglass(canvas, players));
+        canvas.end();
+        REQUIRE(device.draws.size() == 3);
+        REQUIRE(device.draws.back().vertices.size() == 12);
+        const auto expected = ChallengeHud::sand(full ? 1.0f : 0.0f, 1);
+        CHECK(device.draws.back().vertices[0].position.y == expected.upper.y);
+        CHECK(device.draws.back().vertices[6].position.y == expected.lower.y);
+    };
+    expectSand(true); // (-1 - -1) / -1 has zero elapsed time.
+    permanent.advance(1000);
+    expectSand(true);
+
+    auto& finite = players[1].actor.save().progress().inventory;
+    finite.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 60);
+    hud.focusPickup(players[1].actor, powerup::kSpecial, powerup::kStopTime);
+    expectSand(false); // A finite pickup replaces the shared total, even for NOVATO.
+    hud.focusPickup(players[0].actor, powerup::kSpecial, powerup::kStopTime);
+    expectSand(true);
+    permanent.powerups[0].on = false;
+    expectSand(false); // A finite wearer with a negative total is over-empty, not full.
+}
+
+TEST_CASE("parent and secret-level hourglasses share pickup totals across visits",
+          "[game][screens][party-hud][stop-time-hud][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/textures.ngc").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    f32 sharedTotal = 60;
+    PartyHud parent;
+    PartyHud secret;
+    REQUIRE(parent.bindHourglass(device, archive, &sharedTotal));
+    REQUIRE(secret.bindHourglass(device, archive, &sharedTotal));
+    std::array<PlayerRuntime, 1> parentPlayers;
+    std::array<PlayerRuntime, 1> secretPlayers;
+    CharacterSave save;
+    save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 20);
+    parentPlayers[0].actor.spawn(0, save, nullptr, Vec3{0}, 0);
+    secretPlayers[0].actor.spawn(0, save, nullptr, Vec3{0}, 0);
+    parent.stepHourglass(0, parentPlayers);
+    secret.stepHourglass(0, secretPlayers);
+    CHECK(sharedTotal == 60);
+    Canvas canvas;
+    const auto expectSand = [&](PartyHud& hud, std::span<const PlayerRuntime> players,
+                                f32 remaining, f32 total) {
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        REQUIRE(hud.drawHourglass(canvas, players));
+        canvas.end();
+        REQUIRE(device.draws.size() == 3);
+        REQUIRE(device.draws.back().vertices.size() == 12);
+        const auto expected = ChallengeHud::sand(remaining, total);
+        CHECK(device.draws.back().vertices[0].position.y == expected.upper.y);
+        CHECK(device.draws.back().vertices[6].position.y == expected.lower.y);
+    };
+    expectSand(parent, parentPlayers, 20, 60);
+    expectSand(secret, secretPlayers, 20, 60);
+    secretPlayers[0].actor.save().progress().inventory.addPowerup(powerup::kSpecial,
+                                                                  powerup::kStopTime, 0, 40);
+    secret.focusPickup(secretPlayers[0].actor, powerup::kSpecial, powerup::kStopTime);
+    CHECK(sharedTotal == 40); // Twenty remaining plus half of the new forty.
+    expectSand(secret, secretPlayers, 40, 40);
+    expectSand(parent, parentPlayers, 20, 40); // The suspended scene sees the same global total.
+    secret.clear();
+    CHECK(sharedTotal == 40);
+    expectSand(parent, parentPlayers, 20, 40);
+    REQUIRE(secret.bindHourglass(device, archive, &sharedTotal));
+    secret.stepHourglass(0, secretPlayers);
+    expectSand(secret, secretPlayers, 40, 40);
+    parent.clear();
+    CHECK(sharedTotal == 40);
 }
 } // namespace

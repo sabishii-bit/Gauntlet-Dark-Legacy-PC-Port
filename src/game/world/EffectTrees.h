@@ -57,6 +57,10 @@ public:
         bool additive = false;
         /** With `seconds`: the tree plays once and this one then repeats in its place. */
         std::string then;
+        /** Explicit native morph time, independent of the animation's rounded pose. */
+        std::optional<f32> morphIn;
+        bool holdForMorph = false; ///< suppress translation during the birth tree
+        bool shrinks = false;      ///< ProcessEffects' last 0.2 seconds shrink to nothing
         bool unlit = false;
         bool depthWrite = true;
         Color tint = Color::white();
@@ -80,7 +84,10 @@ public:
         bool emitParticles = true;
         bool missingObjectsAreEmpty = false;
         bool additive = false;
-        std::string then;      ///< the tree that takes over once this has played
+        std::string then; ///< the tree that takes over once this has played
+        std::optional<f32> morphIn;
+        bool holdForMorph = false;
+        bool shrinks = false;
         bool retiring = false; ///< mesh gone; no new emission, but live particles finish
         RenderDevice* device = nullptr;
         const TreeInfo* tree = nullptr;

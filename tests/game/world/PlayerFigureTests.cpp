@@ -549,6 +549,20 @@ std::filesystem::path costumeFixture(std::string_view name, bool animated) {
     return root;
 }
 
+TEST_CASE("the effect parent uses the costume root's mapped pose rather than class node zero",
+          "[game][figure][alpha-attachments]") {
+    test::FakeRenderDevice device;
+    const auto root = costumeFixture("figure-effect-root", true);
+    CharacterSave save;
+    save.color = 1;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{10, 20, 30});
+    CHECK(Vec3{figure->rootAttachment(body)[3]} == Vec3{17, 28, 39});
+    const PlayerFigure missing;
+    CHECK(missing.rootAttachment(body) == body);
+}
+
 TEST_CASE("costume and held weapon texture scrolling interpolates without clearing the hit skin",
           "[game][figure][cadence][texture-animation]") {
     const auto root = costumeFixture("figure-texture-clock", false);

@@ -695,6 +695,44 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
     REQUIRE_FALSE(other.turboBegan());
 }
 
+TEST_CASE("full turbos turn a quarter while Spell Storm locks its facing after frame eleven",
+          "[game][players][animation][alpha-turbo-turn]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"ATTPWRB", "ATTPWRC"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 60;
+        sequence.frameRate = 30;
+        tree.sequences.push_back(sequence);
+    }
+    for (const s32 character : {0, 1, 2, 3, 4, 5, 6, 7}) {
+        for (const auto deed : {PlayerDeed::TurboStrong, PlayerDeed::TurboFull}) {
+            CAPTURE(character, deed);
+            PlayerAnimator animator;
+            REQUIRE(animator.bind(tree, false));
+            animator.setCharacter(character);
+            animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+            REQUIRE(animator.action() == PlayerAnimator::turboActionOf(deed));
+            bool atEleven = false;
+            bool pastEleven = false;
+            for (s32 step = 0; step < 24; ++step) {
+                const f32 frame = animator.player().frame();
+                atEleven = atEleven || frame == 11;
+                pastEleven = pastEleven || frame > 11;
+                f32 expected = deed == PlayerDeed::TurboStrong ? 1.0f : 0.25f;
+                if (deed == PlayerDeed::TurboFull && character == 6 && frame > 11) {
+                    expected = 0;
+                }
+                CHECK(animator.turnScale() == expected);
+                CHECK(animator.moveScale() == 0);
+                animator.update(PlayerMotion::Stand, kTicks, kStep);
+            }
+            CHECK(atEleven);
+            CHECK(pastEleven);
+        }
+    }
+}
+
 TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and is let down",
           "[game][players][animation]") {
     TreeInfo tree = classTree();

@@ -27,10 +27,14 @@
 #include "game/enemies/Enemies.h"
 #include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
+#include "game/players/ClassData.h"
 #include "game/players/PlayerControls.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/screens/ChallengeHud.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/PlayScene.h"
+#include "game/world/ItemFigure.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/LevelWorld.h"
 
@@ -132,6 +136,48 @@ TEST_CASE("the native compass follows its preference and is hidden behind option
                       paused[draw].vertices[vertex].position);
             }
         }
+    }
+}
+
+TEST_CASE("Stop Time draws the native hourglass and retains its total across scene reopenings",
+          "[game][screens][stop-time-hud][assets]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = unpackedRoot();
+    f32 sharedTotal = 60;
+    context.stopTimeTotal = &sharedTotal;
+    CharacterSave save;
+    save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 20);
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    for (s32 visit = 0; visit < 2; ++visit) {
+        CAPTURE(visit);
+        REQUIRE(scene.open(device, context, world, party, options));
+        const auto timer = world.powerups().textures.find("TIMER");
+        const auto sand = world.powerups().textures.find("TIMER_SAND");
+        REQUIRE(timer);
+        REQUIRE(sand);
+        const Texture* frame = &world.powerups().textures.texture(device, *timer);
+        const Texture* grains = &world.powerups().textures.texture(device, *sand);
+        device.draws.clear();
+        scene.render(device, makeLetterboxProjection(640, 448, 640, 448), 640, 448);
+        CHECK(std::ranges::any_of(device.draws, [frame](const test::RecordedDraw& draw) {
+            return draw.texture == frame;
+        }));
+        const auto found = std::ranges::find_if(
+            device.draws, [grains](const auto& draw) { return draw.texture == grains; });
+        REQUIRE(found != device.draws.end());
+        REQUIRE(found->vertices.size() == 12);
+        const auto expected = ChallengeHud::sand(20, 60);
+        CHECK(found->vertices[0].position.y == expected.upper.y);
+        CHECK(found->vertices[6].position.y == expected.lower.y);
+        scene.close();
+        CHECK(sharedTotal == 60);
     }
 }
 
@@ -527,7 +573,7 @@ TEST_CASE("Temple floor pickups can be switched off through mapped D-pad presses
 }
 
 TEST_CASE("sparse party ids keep their state together across harm and scene reopening",
-          "[game][screens][game-over][assets]") {
+          "[game][screens][game-over][scene-fixture-baseline][assets]") {
     const auto root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
@@ -582,8 +628,19 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     CHECK(scene.actor(3)->save().toJson() == characterBeforeSave);
     scene.setSaveSlot(3, 7);
 
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const ClassStats* stats = classes.stats(first.character);
+    REQUIRE(stats != nullptr);
+    const f32 remaining =
+        static_cast<f32>(first.health()) -
+        (100.0f * world.level()->tuning.damage - armorDefense(*stats, first.progress()));
     scene.hurtPlayer(3, 100.0f, HurtKind::Blow);
-    REQUIRE(scene.actor(3)->save().health() == 201); // less a point of the class's armour
+    // Damage keeps its fractional part; only the status/save integer is rounded.
+    REQUIRE(scene.actor(3)->save().health() == std::lround(remaining));
+    REQUIRE(scene.runtime(3) != nullptr);
+    REQUIRE(static_cast<f32>(scene.actor(3)->save().health()) + scene.runtime(3)->healthFraction ==
+            Approx(remaining));
     REQUIRE(scene.actor(1)->save().health() == 700);
     REQUIRE_FALSE(scene.fallen(1));
     const auto expectedExperience =
@@ -677,7 +734,7 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
 }
 
 TEST_CASE("the party enters the tower at its entrance and walks under control",
-          "[game][screens][assets]") {
+          "[game][screens][scene-fixture-baseline][assets]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -843,14 +900,6 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
     REQUIRE(device.draws.size() > 10); // the level, the figures and the status boxes
 
-    // A party with experience walks in without the welcome.
-    CharacterSave veteran = save;
-    veteran.progress().experience = 500;
-    PlayScene again;
-    REQUIRE(again.open(device, context, world, std::vector<PartyMember>{PartyMember{0, veteran}}));
-    REQUIRE(again.intro() == PlayScene::Intro::None);
-    again.close();
-
     // Back does nothing in play: the tower is left through its own menus, never by a slip.
     PlayScene::Inputs leave{};
     leave[0].menu.back = true;
@@ -865,6 +914,15 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
         sounds.update();
         REQUIRE_FALSE(sounds.isPlaying(music));
     }
+
+    // Reopening rebuilds the tower's visit state. Release its previous borrowers first.
+    // A party with experience walks in without the welcome.
+    CharacterSave veteran = save;
+    veteran.progress().experience = 500;
+    PlayScene again;
+    REQUIRE(again.open(device, context, world, std::vector<PartyMember>{PartyMember{0, veteran}}));
+    REQUIRE(again.intro() == PlayScene::Intro::None);
+    again.close();
 }
 
 TEST_CASE("a scenario's options place the party and skip the welcome",
@@ -1168,9 +1226,9 @@ TEST_CASE("a character takes what lies in its way by the original's rules",
     scene.close();
 }
 
-TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder's, and a "
+TEST_CASE("in the fields runestones and gargoyle pieces belong to everyone, and a "
           "scroll is read where it lies",
-          "[game][screens][assets]") {
+          "[game][screens][scene-fixture-baseline][assets]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     test::assetOrSkip("TEXT/scroll_e.rom");
@@ -1207,11 +1265,12 @@ TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder'
     for (s32 i = 0; i < 400 && mine.runeCount() + theirs.runeCount() == 0; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    // The fields' rune (the eighth, from one) is held by both; the eagle's piece by whoever
-    // stood on it.
+    // The fields' rune (the eighth, from one) and eagle's piece each advance both
+    // standing players' collections, without crediting the taker twice.
     REQUIRE(mine.hasRune(7));
     REQUIRE(theirs.hasRune(7));
-    REQUIRE(mine.gargoylePieces[1] + theirs.gargoylePieces[1] == 1);
+    REQUIRE(mine.gargoylePieces[1] == 1);
+    REQUIRE(theirs.gargoylePieces[1] == 1);
     REQUIRE_FALSE(scene.scroll().active());
     // Its scroll's third page, dropped underfoot, opens over the party and is gone.
     s32 record = -1;
@@ -1582,7 +1641,7 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
 }
 
 TEST_CASE("in the fields harm is the level's own: help is given, barrels break, the fallen wait",
-          "[game][screens][assets]") {
+          "[game][screens][scene-fixture-baseline][assets]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     test::assetOrSkip("TEXT/english.rom");
@@ -1646,8 +1705,17 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
 
     // Hurt, the character loses health; with none left it falls, and its box says where it
     // waits. The party goes on without what the level gave it.
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const ClassStats* stats = classes.stats(save.character);
+    REQUIRE(stats != nullptr);
+    const f32 remaining = static_cast<f32>(save.health()) - (100.0f * world.level()->tuning.damage -
+                                                             armorDefense(*stats, save.progress()));
     scene.hurtPlayer(0, 100.0f, HurtKind::Blow);
-    REQUIRE(scene.actor(0)->save().health() == 201); // less a point of the class's armour
+    REQUIRE(scene.actor(0)->save().health() == std::lround(remaining));
+    REQUIRE(scene.runtime(0) != nullptr);
+    REQUIRE(static_cast<f32>(scene.actor(0)->save().health()) + scene.runtime(0)->healthFraction ==
+            Approx(remaining));
     REQUIRE_FALSE(scene.fallen(0));
     const auto white = world.powerups().textures.find("AAAWHITE");
     REQUIRE(white);
@@ -1800,7 +1868,8 @@ TEST_CASE("the fallen are asked to wait in the tower or quit, and the last to qu
     alone.close();
 }
 
-TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][screens][assets]") {
+TEST_CASE("spikes make whoever they catch flinch where they stand",
+          "[game][screens][scene-fixture-baseline][assets]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     const GameConfig config;
@@ -1827,7 +1896,20 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     for (s32 i = 0; i < 600 && scene.actor(0)->save().health() == 400; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(scene.actor(0)->save().health() == 391); // twenty, halved by the level, less armour
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const ClassStats* stats = classes.stats(save.character);
+    REQUIRE(stats != nullptr);
+    REQUIRE(world.level() != nullptr);
+    constexpr f32 kSpikeDamage = 20;
+    const f32 remaining =
+        static_cast<f32>(save.health()) -
+        (kSpikeDamage * world.level()->tuning.trapDamage * world.level()->tuning.damage -
+         armorDefense(*stats, save.progress()));
+    REQUIRE(scene.actor(0)->save().health() == std::lround(remaining));
+    REQUIRE(scene.runtime(0) != nullptr);
+    REQUIRE(static_cast<f32>(scene.actor(0)->save().health()) + scene.runtime(0)->healthFraction ==
+            Approx(remaining));
     // The tick after, the body flinches, and pushing the stick moves it nowhere until it is
     // over; then it walks off.
     PlayScene::Inputs walking{};
@@ -2622,7 +2704,7 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
 
 TEST_CASE("the fields' zombies are bred from their generators, chase the party, strike it and are "
           "shot down",
-          "[game][screens][assets]") {
+          "[game][screens][scene-fixture-baseline][assets]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
@@ -2654,7 +2736,26 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     }
     // The fields' generators stand for a party of one, at the level's scales, breeding the
     // fields' own kind: zombies, for the grunts the records name.
-    REQUIRE(scene.generators().count() == 47);
+    usize authored = 0;
+    usize visible = 0;
+    const auto& infos = world.layout().itemInfos();
+    for (const ItemInstance& instance : world.layout().itemInstances()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size() ||
+            infos[static_cast<usize>(instance.info)].type != ItemInfo::kGenerator) {
+            continue;
+        }
+        ++authored;
+        visible += shownToParty(instance.minPlayers, static_cast<s32>(party.size())) ? 1 : 0;
+    }
+    // Other party sizes' placements stay in the roster for later presence changes.
+    REQUIRE(authored > visible);
+    REQUIRE(visible > 0);
+    REQUIRE(scene.generators().count() == authored);
+    usize standing = 0;
+    for (usize g = 0; g < scene.generators().count(); ++g) {
+        standing += scene.generators().standing(static_cast<s32>(g)) ? 1 : 0;
+    }
+    REQUIRE(standing == visible);
     REQUIRE(scene.enemies().kindLoaded(13));
     REQUIRE_FALSE(scene.enemies().kindLoaded(kGruntKind));
     s32 nearest = -1;

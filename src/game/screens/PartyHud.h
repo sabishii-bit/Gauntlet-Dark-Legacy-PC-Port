@@ -7,6 +7,7 @@
 #include "engine/assets/MessageTable.h"
 #include "engine/core/Types.h"
 
+#include "game/screens/ChallengeHud.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PickupHud.h"
 #include "game/screens/PlayerRuntime.h"
@@ -32,6 +33,11 @@ public:
     void setControlLabels(const ControlLabels& labels) { m_boxes.setControlLabels(labels); }
     void setGlow(const Texture* texture) { m_glowSheet = texture; }
     void setCountTextures(TextureSet* textures) { m_boxes.setCountTextures(textures); }
+    /** The optional shared total belongs to the application and survives level travel. */
+    bool bindHourglass(RenderDevice& device, ItemArchive& archive, f32* sharedTotal = nullptr);
+    void stepHourglass(f32 seconds, std::span<const PlayerRuntime> players);
+    /** Stop Time uses the secret-level timer's artwork and takes precedence while worn. */
+    bool drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> players) const;
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks,
                       LevelSoundscape& audio);
     void focusPickup(const PlayerActor& actor, s32 kind, u32 flags);
@@ -59,7 +65,16 @@ public:
     const MessageTable& strings() const { return m_strings; }
 
 private:
+    f32& stopTimeTotal() {
+        return m_sharedStopTimeTotal != nullptr ? *m_sharedStopTimeTotal : m_localStopTimeTotal;
+    }
+    f32 stopTimeTotal() const {
+        return m_sharedStopTimeTotal != nullptr ? *m_sharedStopTimeTotal : m_localStopTimeTotal;
+    }
     StatusBoxPainter m_boxes;
+    ChallengeHud m_hourglass;
+    f32 m_localStopTimeTotal = 0;
+    f32* m_sharedStopTimeTotal = nullptr;
     PickupHud m_pickups;
     HelpMessages m_help;
     std::optional<Vec3> m_helpPosition;

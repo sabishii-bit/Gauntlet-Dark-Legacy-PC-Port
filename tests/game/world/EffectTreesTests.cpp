@@ -38,6 +38,41 @@ std::filesystem::path presentationFixture() {
     return root;
 }
 
+TEST_CASE("explicit effect morph clocks hold only the birth and preserve the flight time",
+          "[effects][alpha-effects]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(presentationFixture()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 2.1f;
+    setting.velocity = Vec3{0, 0, 20};
+    setting.then = "MOVING";
+    setting.morphIn = 0.1f;
+    setting.holdForMorph = true;
+    REQUIRE(effects.startSet(device, archive, "MOVING", {}, setting) != 0);
+    effects.update(0.05f);
+    REQUIRE(effects.count() == 1);
+    CHECK(effects.effect(0).position == Vec3{0});
+    CHECK_FALSE(effects.effect(0).repeats);
+    effects.update(0.1f); // half this update belongs to the flight
+    REQUIRE(effects.count() == 1);
+    CHECK(effects.effect(0).position.z == Catch::Approx(1));
+    CHECK(effects.effect(0).then.empty());
+    CHECK(effects.effect(0).repeats);
+    CHECK(effects.effect(0).secondsLeft == Catch::Approx(1.95f));
+    effects.update(1.9f);
+    REQUIRE(effects.count() == 1);
+    CHECK(effects.effect(0).position.z == Catch::Approx(39));
+    effects.update(0.1f);
+    CHECK(effects.count() == 0);
+    // A morph without the hold bit still travels throughout its birth.
+    setting.holdForMorph = false;
+    REQUIRE(effects.startSet(device, archive, "MOVING", {}, setting) != 0);
+    effects.update(0.05f);
+    CHECK(effects.effect(0).position.z == Catch::Approx(1));
+}
+
 TEST_CASE("sparse effect trees opt into empty missing static objects without losing particles",
           "[effects][weapon-streak]") {
     const auto root = presentationFixture();

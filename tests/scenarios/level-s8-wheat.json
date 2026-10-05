@@ -1,0 +1,15 @@
+{
+  "screen": "tower",
+  "level": "S8",
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 30,
+      "health": 2000
+    }
+  ],
+  "welcome": false
+}

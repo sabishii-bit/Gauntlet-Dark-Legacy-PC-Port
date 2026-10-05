@@ -98,6 +98,9 @@ void PlayerAttacks::clear() {
         for (const StrikeEffect& effect : m_strikeEffects) {
             m_resources->effects.stop(effect.effect);
         }
+        for (const MoveAttachment& attachment : m_moveAttachments) {
+            m_resources->effects.stop(attachment.effect);
+        }
         for (const PotionShield& shield : m_shields) {
             m_resources->effects.stop(shield.effect);
         }
@@ -105,6 +108,7 @@ void PlayerAttacks::clear() {
     m_strikes.clear();
     m_particleEffects.clear();
     m_strikeEffects.clear();
+    m_moveAttachments.clear();
     m_strikeSources.clear();
     m_shields.clear();
     m_potions.clear();
@@ -310,10 +314,14 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     f32 effectSeconds = 0;
     if (archive != nullptr && strike.effect >= 0 &&
         static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
-        if (const auto tree =
-                archive->trees.find(stats->moveEffects[static_cast<usize>(strike.effect)].tree)) {
+        const MoveEffect& effect = stats->moveEffects[static_cast<usize>(strike.effect)];
+        if (const auto tree = archive->trees.find(effect.tree)) {
             const auto& sequences = archive->trees.tree(*tree).sequences;
-            if (!sequences.empty()) {
+            // DoPlyrSfx gives the primary tree's authored maxlen to the same effect
+            // that carries damage. Animation length is only its untimed fallback.
+            if (effect.lifetime > 0) {
+                effectSeconds = effect.lifetime;
+            } else if (!sequences.empty()) {
                 const auto& sequence = sequences.front();
                 constexpr s32 kEmptyFrames = 30;
                 const auto frames =
@@ -326,7 +334,7 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     }
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
-    if (strike.harms()) {
+    if (strike.harms() && MoveStrikes::damageOf(strike, ownDamageOf(index, players)) > 0) {
         MoveStrike volume = strike;
         if (strike.effect >= 0 && static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
             volume.offset += stats->moveEffects[static_cast<usize>(strike.effect)].offset;
@@ -370,20 +378,50 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
                 m_resources->audio.playNamed(effect.sound);
             }
         }
+        std::optional<MoveAttachment> attachment;
+        // Stationary area trees follow the player's first posed node. Saved matrices,
+        // floor placement and stage/effect parents have separate SFXX policies.
+        constexpr u32 kOtherParents = 0x10U | 0x40U | 0x80U | 0x800U | 0x40000U;
+        if (!at && strike.type != MoveStrike::kFlies && strike.speed == 0 &&
+            (effect.flags & kOtherParents) == 0) {
+            MoveAttachment parent;
+            parent.actor = index;
+            parent.strike = effectIndex == strike.effect ? id : 0;
+            parent.bodyParent = (effect.flags & 1U) != 0;
+            if ((effect.flags & 0x2000U) != 0) {
+                const s32 partner = players[index].combo.partner;
+                if (partner >= 0 && static_cast<usize>(partner) < players.size()) {
+                    parent.actor = static_cast<usize>(partner);
+                }
+            }
+            const Vec3 offset = effect.offset + (parent.bodyParent ? Vec3{0} : strike.offset);
+            parent.local = glm::translate(Mat4{1}, offset);
+            if (effectIndex == strike.effect) {
+                parent.local = glm::rotate(parent.local, strike.angle, Vec3{0, 1, 0});
+            }
+            attachment = parent;
+        }
         if (effect.tree.empty() || effect.tree == kNoEffectTree || archive == nullptr ||
             !archive->trees.find(effect.tree).has_value()) {
+            if (attachment && attachment->strike != 0) {
+                m_moveAttachments.push_back(*attachment);
+            }
             continue;
         }
         EffectTrees::Setting setting;
         setting.scale = effect.scale;
         setting.yaw = std::atan2(facing.x, facing.z) + strike.angle;
-        if (started != nullptr && started->flies) {
+        setting.seconds = effect.lifetime;
+        setting.shrinks = (effect.flags & 0x10000U) != 0 && strike.hitEffect < 0;
+        if (effectIndex == strike.effect && started != nullptr && started->flies) {
             setting.velocity = started->facing * started->speed;
             setting.seconds = started->secondsLeft;
             // What flies launches once, then its looping tree carries it on.
-            if (effectIndex == strike.effect && strike.loopEffect >= 0 &&
+            if (strike.loopEffect >= 0 &&
                 static_cast<usize>(strike.loopEffect) < stats->moveEffects.size()) {
                 setting.then = stats->moveEffects[static_cast<usize>(strike.loopEffect)].tree;
+                setting.morphIn = started->secondsLeft - strike.maxTime;
+                setting.holdForMorph = (strike.flags & 0x800) != 0;
             }
         }
         const Vec3 side{facing.z, 0.0f, -facing.x};
@@ -391,19 +429,53 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
                          facing * effect.offset.z;
         // The strike's first effect gives off a light twice its reach in the class's colour,
         // swelling over a burst's life and steady on what flies (PlyrSfxDoDamageSub).
-        if (effectIndex == strike.effect && strike.harms()) {
+        if (effectIndex == strike.effect && started != nullptr) {
             const f32 reach = strike.radius > 0.0f ? strike.radius : strike.hitRadius;
-            setting.light = EffectTrees::Light{
-                DynamicLights::ofClass(players[index].actor.save().character),
-                DynamicLights::kBlastRadiusScale * reach, started == nullptr || !started->flies};
+            setting.light =
+                EffectTrees::Light{DynamicLights::ofClass(players[index].actor.save().character),
+                                   DynamicLights::kBlastRadiusScale * reach, !started->flies};
         }
         const u32 shown =
             m_resources->effects.startSet(m_resources->device, *archive, effect.tree, at3, setting);
         previousEffect = shown;
-        if (shown != 0 && started != nullptr && started->flies) {
+        if (attachment && (shown != 0 || attachment->strike != 0)) {
+            attachment->effect = shown;
+            m_moveAttachments.push_back(*attachment);
+        }
+        if (shown != 0 && effectIndex == strike.effect && started != nullptr && started->flies) {
             m_strikeEffects.push_back(StrikeEffect{id, shown});
         }
     }
+    updateMoveAttachments(players);
+}
+
+void PlayerAttacks::updateMoveAttachments(std::span<PlayerRuntime> players) {
+    if (!m_resources) {
+        return;
+    }
+    std::erase_if(m_moveAttachments, [&](const MoveAttachment& attachment) {
+        auto& effects = m_resources->effects;
+        if (!effects.playing(attachment.effect) && m_strikes.find(attachment.strike) == nullptr) {
+            return true;
+        }
+        if (attachment.actor >= players.size() || players[attachment.actor].figure == nullptr ||
+            players[attachment.actor].life == PlayerLife::InTower ||
+            players[attachment.actor].departed) {
+            effects.stop(attachment.effect);
+            m_strikes.stop(attachment.strike);
+            return true;
+        }
+        const auto& player = players[attachment.actor];
+        const auto& save = player.actor.save();
+        const Mat4 body =
+            PlayerFigure::bodyPlacement(player.capture.body().value_or(player.actor.transform()),
+                                        save, PowerupEffects::of(save.progress().inventory));
+        const Mat4 parent = attachment.bodyParent ? body : player.figure->rootAttachment(body);
+        const Mat4 placement = parent * attachment.local;
+        effects.placeAt(attachment.effect, placement);
+        m_strikes.placeArea(attachment.strike, placement);
+        return false;
+    });
 }
 
 void PlayerAttacks::startParticles(usize index, const MoveEffect& effect, u32 parent,
@@ -539,6 +611,7 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
         return;
     }
     updateParticles(players);
+    updateMoveAttachments(players);
     for (auto& source : m_strikeSources) {
         for (auto& contact : source.contacts) {
             contact.remaining -= seconds;
@@ -1081,13 +1154,13 @@ void PlayerAttacks::cry(usize index, std::string_view which, std::span<PlayerRun
     const std::string_view voice =
         classCode(players[index].actor.save().character % kStartingClassCount);
     const std::string name = std::format("S_{}{}", voice, which);
-    if (which.starts_with("PAIN") || which == "DIE1") {
+    if (which.starts_with("PAIN") || which == "POISON") {
         m_resources->audio.bark(body->voice(), name,
-                                which == "DIE1" ? LevelSoundscape::kBarkVolume
-                                                : LevelSoundscape::kPainVolume);
+                                which == "POISON" ? LevelSoundscape::kBarkVolume
+                                                  : LevelSoundscape::kPainVolume);
     } else {
         m_resources->audio.playFrom(body->voice(), name,
-                                    which == "POISON" ? LevelSoundscape::kPainVolume : 1.0f);
+                                    which == "DIE1" ? LevelSoundscape::kPainVolume : 1.0f);
     }
 }
 

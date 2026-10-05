@@ -195,6 +195,7 @@ GameContext Gauntlet::context() {
     context.sounds = m_sounds.get();
     context.assets = m_assets.get();
     context.tower = &m_play->world;
+    context.stopTimeTotal = &m_stopTimeTotal;
     if (!m_levels.loaded()) {
         m_levels.load(m_options.unpackedDirectory);
     }

@@ -115,7 +115,7 @@ TEST_CASE("a world scene places every object that has a mesh and draws it in pas
     REQUIRE(wall.lightmap() == nullptr);
     REQUIRE(wall.state.cullBack);
     REQUIRE(wall.state.depthWrite);
-    REQUIRE(wall.state.alphaTest == 0.0f);
+    REQUIRE(wall.state.alphaTest == WorldScene::kAlphaTest);
     const auto& floor = f.device.draws[1];
     REQUIRE(floor.texture == wall.texture);
     REQUIRE(floor.lightmap() == &f.textures.texture(f.device, 2));
@@ -222,6 +222,53 @@ TEST_CASE("Temple stained-glass light rays composite after the curtain meshes",
     REQUIRE(curtainCount > 0);
     REQUIRE(firstRay < device.draws.size());
     CHECK(lastCurtain < firstRay);
+}
+
+TEST_CASE("S8 wheat cutouts reject clear texels in both batched and independent scenery",
+          "[world][scene][wheat-alpha][assets]") {
+    const auto root = test::assetOrSkip("LEVELS/LEVELS8/WORLDS.PS2").parent_path();
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldLayout layout;
+    WorldScene scene;
+    REQUIRE(models.load(root));
+    REQUIRE(textures.load(root));
+    REQUIRE(layout.load(root));
+    const auto wheat = textures.find("WHEAT_STANDING_TOP2");
+    REQUIRE(wheat);
+    REQUIRE_FALSE(textures.entry(*wheat).translucent());
+    const auto& texture = dynamic_cast<const test::FakeTexture&>(textures.texture(device, *wheat));
+    usize clear = 0;
+    usize solid = 0;
+    for (usize i = 3; i < texture.pixels.size(); i += 4) {
+        clear += texture.pixels[i] == 0 ? 1 : 0;
+        solid += texture.pixels[i] == 255 ? 1 : 0;
+    }
+    REQUIRE(clear == 4357);
+    REQUIRE(solid == 3835);
+    std::vector<usize> controlled;
+    for (const bool individual : {false, true}) {
+        INFO(individual);
+        if (individual) {
+            for (usize i = 0; i < layout.objects().size(); ++i) {
+                controlled.push_back(i);
+            }
+        }
+        REQUIRE(scene.build(layout, models, textures, device, {}, {}, controlled));
+        device.draws.clear();
+        scene.drawOpaque(device, Mat4{1}, CameraFrame{});
+        usize wheatDraws = 0;
+        for (const auto& draw : device.draws) {
+            if (draw.texture == &texture) {
+                ++wheatDraws;
+                CHECK(draw.state.depthWrite);
+                CHECK(draw.state.depthTest);
+                CHECK(draw.state.alphaTest == WorldScene::kAlphaTest);
+            }
+        }
+        REQUIRE(wheatDraws > 0); // Binary-alpha art remains in the solid pass.
+    }
 }
 
 TEST_CASE("world depth comparison flags survive batching and independent unit draws",

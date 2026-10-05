@@ -50,7 +50,9 @@ Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 blend) {
 Mat4 EffectTrees::Effect::transform() const {
     Mat4 basis = attachment.value_or(glm::rotate(Mat4{1.0f}, yaw, Vec3{0, 1, 0}));
     basis[3] = Vec4{position, 1.0f};
-    return glm::scale(basis, Vec3{scale} * stretch);
+    const f32 remaining = secondsLeftOf(*this);
+    const f32 shrink = shrinks && remaining < 0.2f ? std::max(5 * remaining + 0.001f, 0.0f) : 1;
+    return glm::scale(basis, Vec3{scale * shrink} * stretch);
 }
 
 void EffectTrees::placeAt(u32 id, const Mat4& attachment, std::optional<Vec3> flightDirection) {
@@ -254,6 +256,9 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->additive = setting.additive;
     effect->repeats = (effect->timed || effect->persistent) && setting.then.empty() && setting.loop;
     effect->then = setting.then;
+    effect->morphIn = setting.morphIn;
+    effect->holdForMorph = setting.holdForMorph;
+    effect->shrinks = setting.shrinks;
     effect->device = &device;
     effect->archive = &archive;
     effect->lenders.assign(textureLenders.begin(), textureLenders.end());
@@ -392,7 +397,14 @@ void EffectTrees::update(f32 seconds) {
             }
             continue;
         }
-        effect->position += effect->velocity * seconds;
+        const f32 beforeMorph = effect->morphIn.value_or(0.0f);
+        const f32 motionSeconds = effect->holdForMorph && !effect->then.empty()
+                                      ? std::max(seconds - beforeMorph, 0.0f)
+                                      : seconds;
+        effect->position += effect->velocity * motionSeconds;
+        if (effect->morphIn) {
+            *effect->morphIn -= seconds;
+        }
         for (usize i = 0; i < effect->trails.size(); ++i) {
             effect->trails.setNode(i, effect->attachment.has_value()
                                           ? effect->transform()
@@ -406,8 +418,15 @@ void EffectTrees::update(f32 seconds) {
             effect->secondsLeft -= seconds;
         }
         // Played through, it gives way to the tree that repeats in its place.
-        if (!effect->then.empty() &&
-            (effect->tree->sequences.empty() || effect->player.finished())) {
+        f32 animationSeconds = seconds;
+        const bool morphReady = effect->morphIn
+                                    ? *effect->morphIn <= 0
+                                    : effect->tree->sequences.empty() || effect->player.finished();
+        if (!effect->then.empty() && morphReady) {
+            if (effect->morphIn) {
+                animationSeconds = std::max(seconds - beforeMorph, 0.0f);
+                effect->morphIn.reset();
+            }
             const auto next = effect->archive->trees.find(effect->then);
             const std::string name = std::move(effect->then);
             effect->then.clear();
@@ -428,7 +447,7 @@ void EffectTrees::update(f32 seconds) {
             }
         }
         if (!effect->tree->sequences.empty()) {
-            effect->player.advance(seconds * effect->playbackRate, effect->repeats);
+            effect->player.advance(animationSeconds * effect->playbackRate, effect->repeats);
             effect->pose.evaluate(*effect->tree, effect->player.sequence(), effect->player.frame());
             effect->model.setFrame(effect->player.sequence(),
                                    static_cast<s32>(effect->player.frame()));

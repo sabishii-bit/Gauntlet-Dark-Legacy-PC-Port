@@ -5,6 +5,7 @@
 
 #include "engine/assets/StringTable.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
 #include "game/config/GameConfig.h"
@@ -25,6 +26,7 @@ struct GameContext {
     LevelWorld* tower = nullptr;          ///< the level in play, shared by the screens: the hub
                                           ///< tower until the party travels
     const LevelCatalog* levels = nullptr; ///< where exit portals lead; without it they are dead
+    f32* stopTimeTotal = nullptr; ///< optional application-owned timer total shared across visits
     std::filesystem::path unpackedRoot;
     /** Applies and persists a settings edit; false leaves the active configuration unchanged. */
     std::function<bool(const GameConfig&)> saveSettings;

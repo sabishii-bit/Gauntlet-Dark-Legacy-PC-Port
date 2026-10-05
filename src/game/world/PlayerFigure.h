@@ -95,6 +95,8 @@ public:
     std::optional<Vec3> handPosition(const Mat4& body) const;
     /** The weapon hand's world transform, as the held weapon is drawn by it. */
     std::optional<Mat4> handAttachment(const Mat4& body) const;
+    /** The costume's first posed node, native player.node->child; body when unbound. */
+    Mat4 rootAttachment(const Mat4& body) const;
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
     s32 familiarTier() const { return m_familiar.tier(); }
