@@ -38,6 +38,7 @@ public:
         ItemArchive& weapons;             ///< the shields borne on the arm
         const PortalDeparture& departure; ///< the sinking and its skin
         f32 frameBlend = 1.0f;
+        s32 occupiedHand = -1; ///< player id carrying a hand-mounted legend item
     };
 
     /** Finds the damage flash in `powerups` and the chrome skins in `weapons` (InitEffects). */

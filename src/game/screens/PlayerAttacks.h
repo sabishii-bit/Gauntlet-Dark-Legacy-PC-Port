@@ -42,7 +42,8 @@ public:
         // Preserve world-only aggregate callers on compilers warning about omitted fields.
         std::span<const PlayerRuntime> players{}; // NOLINT(readability-redundant-member-init)
         std::function<void(usize, f32, HurtKind, const PlayerImpact&)>
-            hurt{}; // NOLINT(readability-redundant-member-init)
+            hurt{};            // NOLINT(readability-redundant-member-init)
+        s32 occupiedHand = -1; ///< a relic replaces this player's weapon glow
     };
     void bind(const Resources& resources);
     void clear();
@@ -72,7 +73,7 @@ public:
      * its element's WEAP_HOLD effect of the costume colour's effects rides the weapon hand at
      * the class's offset and scale for the character's tier; put out with the powerup, or
      * while the right gauntlet, the super shot or the thunder hammer fills the hand. */
-    void glowWeapons(std::span<PlayerRuntime> players);
+    void glowWeapons(std::span<PlayerRuntime> players, s32 occupiedHand = -1);
     void updateStrikes(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     /** A halo wearer whose nearest thing ahead is Death holds him, drawing a point off him a

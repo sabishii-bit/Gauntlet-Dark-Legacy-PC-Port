@@ -51,7 +51,7 @@ std::optional<LegendPresentation::Bearer>
 BossSequence::bearer(s32 player, s32 kind, std::span<const PlayerRuntime> players) {
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
-        if (actor.player() != player) {
+        if (actor.player() != player || runtime.departed || runtime.life != PlayerLife::Standing) {
             continue;
         }
         const PlayerFigure* figure = runtime.figure.get();
@@ -64,12 +64,17 @@ BossSequence::bearer(s32 player, s32 kind, std::span<const PlayerRuntime> player
         bearer.canGesture = figure != nullptr && runtime.life == PlayerLife::Standing;
         bearer.casting = figure != nullptr && figure->animator().castingLegend();
         bearer.released = figure != nullptr && figure->animator().legendReleased();
-        if (LegendShow::heldInHand(kind) && figure != nullptr) {
-            const f32 size = PlayerFigure::bodyScale(
-                actor.save(), PowerupEffects::of(actor.save().progress().inventory));
-            const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
-            if (const auto hand = figure->handPosition(body); hand.has_value()) {
-                bearer.holdPoint = *hand;
+        if (figure != nullptr) {
+            const Mat4 body = PlayerFigure::bodyPlacement(
+                runtime.capture.body().value_or(actor.transform()), actor.save(),
+                PowerupEffects::of(actor.save().progress().inventory));
+            bearer.holdTransform =
+                LegendShow::heldInHand(kind)
+                    ? figure->handAttachment(body)
+                    : std::optional{glm::translate(figure->rootAttachment(body),
+                                                   Vec3{0, LegendShow::kHeldLift, 0})};
+            if (bearer.holdTransform) {
+                bearer.holdPoint = Vec3{(*bearer.holdTransform)[3]};
             }
         }
         return bearer;
@@ -89,6 +94,11 @@ void BossSequence::showLegend(const LegendEvent& event, const Bosses& bosses,
 void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRuntime> players) {
     if (m_legend == nullptr) {
         return;
+    }
+    if (bosses.legend().stage() == LegendRite::Stage::Carried) {
+        const s32 player = bosses.legend().player();
+        const s32 kind = bosses.view().kind;
+        m_legend->carry(player, bosses.legendRealm(), kind, bearer(player, kind, players));
     }
     std::optional<LegendPresentation::Target> target;
     if (const Vec3* at = bosses.position(); at != nullptr) {

@@ -41,6 +41,7 @@ public:
         bool canGesture = false;
         bool casting = false;
         bool released = false;
+        std::optional<Mat4> holdTransform = std::nullopt;
     };
     struct Target {
         Vec3 position{0.0f};
@@ -62,6 +63,8 @@ public:
     LegendPresentation(LegendPresentation&&) = delete;
     LegendPresentation& operator=(LegendPresentation&&) = delete;
 
+    /** Shows the carried item before the boss rises, without starting its charge or sound. */
+    void carry(s32 player, s32 realm, s32 kind, const std::optional<Bearer>& bearer);
     void show(LegendCue cue, s32 player, s32 realm, s32 kind, const std::optional<Bearer>& bearer);
     Update update(f32 seconds, const std::optional<Bearer>& bearer,
                   const std::optional<Target>& target);
@@ -69,11 +72,14 @@ public:
     void clear();
     s32 player() const { return m_player; }
     s32 kind() const { return m_kind; }
+    /** The player whose ordinary hand weapon is replaced, not an overhead relic's bearer. */
+    s32 occupiedHand() const;
     /** Borrowed ice skin for the draw call, not part of the boss's gameplay state. */
     const Texture* frozenTexture() const { return m_frozenTexture; }
 
 private:
     void brandish(const Bearer& bearer);
+    void hold(const Bearer& bearer);
     void release(const Bearer& bearer, const std::optional<Target>& target);
     void land(const std::optional<Target>& target);
     void followTarget(const std::optional<Target>& target);
@@ -94,6 +100,7 @@ private:
     u32 m_attached = 0;
     bool m_gestureOwed = false;
     bool m_released = false;
+    bool m_brandished = false;
     f32 m_flightLeft = 0.0f;
     Vec3 m_flightPosition{0}; ///< Plague's SfxSetHitTarget flight tracks the animated eye
     SoundHandle m_loop = kNoSound;

@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <format>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -106,6 +107,79 @@ TEST_CASE("legend presentation retries the gesture until the bearer accepts it",
             PlayerDeed::None);
     fixture.presentation.clear();
     REQUIRE(fixture.presentation.player() == -1);
+}
+
+TEST_CASE("carried relics precede the charge and inherit their complete parent transform",
+          "[game][screens][legend][legend-held]") {
+    const s32 kind = GENERATE(34, 35, 36, 37, 38, 39, 40, 41, 42);
+    LegendFixture fixture;
+    fixture.load("legend-carried");
+    REQUIRE(fixture.weapons.load(legendArchive("legend-carried-weapons")));
+    fixture.bearer.holdTransform = glm::scale(
+        glm::rotate(glm::translate(Mat4{1}, Vec3{4, 9, 2}), 0.75f, Vec3{0, 0, 1}), Vec3{1.3f});
+    fixture.presentation.carry(2, legendRealmOf(kind), kind, fixture.bearer);
+    const auto* held = fixture.find("LEGENDHLD");
+    REQUIRE(held);
+    const u32 id = held->id;
+    CHECK(held->transform() == *fixture.bearer.holdTransform);
+    CHECK(fixture.presentation.occupiedHand() == (kind <= 39 ? 2 : -1));
+    CHECK(fixture.effects.count() == 1);
+    CHECK(fixture.sounds.empty());
+    CHECK(fixture.presentation.update(0, fixture.bearer, fixture.target).gesture ==
+          PlayerDeed::None);
+    fixture.effects.update(2);
+    fixture.presentation.carry(2, legendRealmOf(kind), kind, fixture.bearer);
+    REQUIRE(fixture.find("LEGENDHLD"));
+    CHECK(fixture.find("LEGENDHLD")->id == id);
+    CHECK(fixture.find("LEGENDHLD")->secondsLeft < LegendShow::kHeldSeconds);
+    fixture.show(LegendCue::Brandished, kind);
+    CHECK(fixture.find("LEGENDHLD")->id == id);
+    CHECK(fixture.effects.count() == 3);
+    CHECK(fixture.sounds == std::vector<std::string>{"S_LEGWPUP"});
+    fixture.show(LegendCue::Brandished, kind);
+    CHECK(fixture.effects.count() == 3);
+    CHECK(fixture.sounds.size() == 1);
+    fixture.bearer.holdTransform = glm::rotate(*fixture.bearer.holdTransform, 1.0f, Vec3{1, 0, 0});
+    fixture.presentation.update(0, fixture.bearer, fixture.target);
+    CHECK(fixture.find("LEGENDHLD")->transform() == *fixture.bearer.holdTransform);
+    SECTION("the animation release removes the held item and frees the hand") {
+        fixture.show(LegendCue::Thrown, kind);
+        fixture.bearer.released = true;
+        fixture.presentation.update(0, fixture.bearer, fixture.target);
+        CHECK(fixture.find("LEGENDHLD") == nullptr);
+        CHECK(fixture.presentation.occupiedHand() == -1);
+    }
+    SECTION("losing the bearer removes the held item without creating a projectile") {
+        fixture.presentation.update(0, std::nullopt, fixture.target);
+        CHECK(fixture.find("LEGENDHLD") == nullptr);
+        CHECK(fixture.find("LEGENDPRJ") == nullptr);
+        CHECK(fixture.presentation.occupiedHand() == -1);
+    }
+    fixture.presentation.clear();
+    CHECK(fixture.effects.count() == 0);
+    CHECK(fixture.presentation.occupiedHand() == -1);
+}
+
+TEST_CASE("all nine native boss archives render a carried legend before brandishing",
+          "[game][screens][legend][legend-held][native-assets][assets]") {
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELK5/ANIM.PS2").parent_path().parent_path().parent_path();
+    const auto [kind, level] =
+        GENERATE(std::pair{34, "B6"}, std::pair{35, "A5"}, std::pair{36, "C5"}, std::pair{37, "D5"},
+                 std::pair{38, "K5"}, std::pair{39, "I5"}, std::pair{40, "J5"}, std::pair{41, "G5"},
+                 std::pair{42, "E2"});
+    CAPTURE(kind, level);
+    LegendFixture fixture;
+    REQUIRE(fixture.items.load(root / "ITEMS" / (std::string{"LEVEL"} + level)));
+    fixture.bearer.holdTransform =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{3, 5, 8}), 0.5f, Vec3{0, 1, 0});
+    fixture.presentation.carry(2, legendRealmOf(kind), kind, fixture.bearer);
+    REQUIRE(fixture.find("LEGENDHLD"));
+    fixture.effects.draw(fixture.device, Mat4{1}, {});
+    REQUIRE_FALSE(fixture.device.draws.empty());
+    CHECK(fixture.find("LEGENDHLD")->transform() == *fixture.bearer.holdTransform);
+    CHECK(fixture.presentation.occupiedHand() == (kind <= 39 ? 2 : -1));
+    CHECK(fixture.sounds.empty());
 }
 
 TEST_CASE("legend flight follows its held pose and reports impact exactly once",

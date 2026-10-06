@@ -156,7 +156,8 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         const f32 alpha = alphaOf(runtime, worn);
         const WorldLighting lighting = runtime.glow.apply(world.lighting());
         figure.draw(device, clip, body, lighting, alpha, runtime.move.weaponHidden(), &camera,
-                    presentationBlend(runtime, scene.frameBlend));
+                    presentationBlend(runtime, scene.frameBlend),
+                    runtime.actor.player() == scene.occupiedHand);
         figure.drawHeadwear(device, world.powerups(), worn, clip, body, lighting, alpha);
         figure.drawGem(device, world.powerups(), runtime.gem.shown(), clip, body, lighting, alpha);
         // Who is it wears the realm's sign on their back (player.c 5885).

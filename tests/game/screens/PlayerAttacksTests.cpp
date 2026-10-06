@@ -456,6 +456,17 @@ TEST_CASE("an elemental weapon glows in the hand while it is worn",
     f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
     CHECK(f.effects.count() == 1);
     CHECK(player.weaponGlow.effect() == lit);
+    f.targets.occupiedHand = player.actor.player() + 1; // another player's relic
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(player.weaponGlow.effect() == lit);
+    f.targets.occupiedHand = player.actor.player();
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 0);
+    CHECK(player.weaponGlow.effect() == 0);
+    f.targets.occupiedHand = -1; // the relic has left the hand
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 1);
+    CHECK(player.weaponGlow.element() == 1);
     // The super shot fills the hand instead; taking the amulet off puts the glow out.
     inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 3, 1);
     f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);

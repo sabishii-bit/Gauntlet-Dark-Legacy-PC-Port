@@ -3,7 +3,10 @@
 #include <filesystem>
 #include <format>
 #include <numbers>
+#include <optional>
 #include <set>
+#include <span>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -33,6 +36,7 @@
 #include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/screens/BossSequence.h"
 #include "game/screens/ChallengeHud.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/PlayScene.h"
@@ -3716,6 +3720,87 @@ TEST_CASE("the Plague Fiend scene lends its boss frames to the arena rocks and a
     device.draws.clear();
     scene.safeRocks().draw(device, Mat4{1}, {});
     CHECK(device.draws.empty());
+}
+
+TEST_CASE("the Plague javelin is carried before rising and flies at retail speed on release",
+          "[game][screens][plague-flight][legend-held][native-assets][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELK5/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELK5/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
+    test::assetOrSkip("CRITTER/PBOSS.WAD");
+    GameConfig config;
+    config.timing.tickRate = GENERATE(30U, 60U, 120U);
+    const f32 step = 1.0f / static_cast<f32>(config.timing.tickRate);
+    CAPTURE(config.timing.tickRate);
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto arena = levels.byName("K5");
+    REQUIRE(arena);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *arena));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    const Scenario scenario = Scenario::load("tests/scenarios/level-k5-plague-javelin.json");
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
+    const auto findEffect = [&](std::string_view name) -> const EffectTrees::Effect* {
+        for (usize i = 0; i < scene.effects().count(); ++i) {
+            if (scene.effects().effect(i).name == name) {
+                return &scene.effects().effect(i);
+            }
+        }
+        return nullptr;
+    };
+    REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
+    REQUIRE(findEffect("LEGENDHLD"));
+    const u32 carried = findEffect("LEGENDHLD")->id;
+    CHECK(findEffect("COMBO_SPH") == nullptr);
+    const auto* runtime = scene.runtime(scene.bosses().legend().player());
+    REQUIRE(runtime);
+    REQUIRE(runtime->figure);
+    const auto hand = runtime->figure->handAttachment(PlayerFigure::bodyPlacement(
+        runtime->actor.transform(), runtime->actor.save(),
+        PowerupEffects::of(runtime->actor.save().progress().inventory)));
+    REQUIRE(hand);
+    CHECK(findEffect("LEGENDHLD")->transform() == *hand);
+    CHECK(runtime->actor.save().progress().relics.hasLegend(11));
+    const PlayScene::Inputs still{};
+    std::optional<Vec3> previous;
+    f32 flightSeconds = 0;
+    f32 pathLength = 0;
+    bool landed = false;
+    for (u32 tick = 0; tick < 45 * config.timing.tickRate && !landed; ++tick) {
+        scene.update(step, still);
+        if (const auto* held = findEffect("LEGENDHLD")) {
+            CHECK(held->id == carried); // charging must not recreate the held tree
+            const auto pose =
+                BossSequence::bearer(runtime->actor.player(), 38, std::span{runtime, 1});
+            REQUIRE(pose);
+            REQUIRE(pose->holdTransform);
+            CHECK(held->transform() == *pose->holdTransform);
+        }
+        const auto* projectile = findEffect("LEGENDPRJ");
+        if (projectile != nullptr) {
+            CHECK(findEffect("LEGENDHLD") == nullptr);
+            if (previous) {
+                pathLength += glm::distance(projectile->position, *previous);
+                flightSeconds += step;
+            }
+            previous = projectile->position;
+        } else if (previous) {
+            landed = scene.bosses().blinded();
+            REQUIRE(landed);
+        }
+    }
+    REQUIRE(landed);
+    REQUIRE(flightSeconds > 0);
+    CHECK(pathLength / flightSeconds == Catch::Approx(20).margin(0.001));
+    CHECK(findEffect("LEGENDHLD") == nullptr);
 }
 
 TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with the strong "

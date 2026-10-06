@@ -214,6 +214,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                         : TargetAssist::kFacingDot});
     m_bossSequence.bind(
         {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
+    m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
     m_open = true;
     if (world.isTower()) {
         m_promotion.begin(m_players, m_hud.strings());
@@ -439,7 +440,8 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
             m_players,
             [this](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
                 hurt(index, damage, kind, true, impact);
-            }};
+            },
+            m_bossSequence.occupiedHand()};
 }
 
 LevelFixtures::Events PlayScene::fixtureEvents() {
@@ -872,6 +874,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 figure->animate(0.0f, ticks, seconds);
             }
         }
+        m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
         m_world->update(seconds);
         updateAmbience();
         const bool cameraHandoff = m_arrival.camera().active();
@@ -1170,7 +1173,8 @@ PartyFigures::Scene PlayScene::figureScene(f32 frameBlend) {
     return {.world = *m_world,
             .weapons = m_weapons,
             .departure = m_departure,
-            .frameBlend = frameBlend};
+            .frameBlend = frameBlend,
+            .occupiedHand = m_bossSequence.occupiedHand()};
 }
 
 void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye, f32 frameBlend,

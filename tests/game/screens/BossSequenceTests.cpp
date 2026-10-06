@@ -87,7 +87,7 @@ TEST_CASE("boss sequence bearers use player ids and tolerate missing or fallen f
     f.players[1].figure = std::make_unique<PlayerFigure>();
     REQUIRE(BossSequence::bearer(1, 34, f.players)->canGesture);
     f.players[1].life = PlayerLife::Dying;
-    REQUIRE_FALSE(BossSequence::bearer(1, 34, f.players)->canGesture);
+    REQUIRE_FALSE(BossSequence::bearer(1, 34, f.players));
 }
 
 TEST_CASE("boss sequence is inert when closed or when no level record exists",

@@ -878,6 +878,13 @@ TEST_CASE("hand replacement priority and restoration render without retail asset
         figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, hideNormal);
         REQUIRE(device.draws.size() == 3); // two body nodes and exactly one hand weapon
         CHECK(device.draws.back().vertices.front().position == Vec3{x, 2, 3});
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, hideNormal, nullptr, 1, true);
+        CHECK(device.draws.size() == 2); // a relic replaces every weapon, not the body
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, hideNormal);
+        REQUIRE(device.draws.size() == 3);
+        CHECK(device.draws.back().vertices.front().position == Vec3{x, 2, 3});
     };
     PowerupEffects worn;
     checkWeapon(1);

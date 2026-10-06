@@ -506,7 +506,7 @@ void PlayerFigure::applyCostumeTextures(TreeModel& model, f32 frameBlend) const 
 
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon,
-                        const CameraFrame* camera, f32 frameBlend) const {
+                        const CameraFrame* camera, f32 frameBlend, bool handOccupied) const {
     preparePresentation(frameBlend);
     applyCostumeTextures(m_model, frameBlend);
     applyCostumeTextures(m_weapon, frameBlend);
@@ -529,6 +529,11 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
         if (const auto arm = visualAttachment(body, m_armNode)) {
             m_arm.draw(device, clip, *arm, lighting, {}, nullptr, alpha);
         }
+    }
+    // A separately drawn relic replaces both the class weapon and hand powerups.
+    // The other arm, costume and companions remain visible.
+    if (handOccupied) {
+        return;
     }
     if (m_handItemHeld) {
         if (const auto hand = visualAttachment(body, m_handNode)) {

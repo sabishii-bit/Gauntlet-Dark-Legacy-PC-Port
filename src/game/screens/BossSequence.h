@@ -57,6 +57,7 @@ public:
     const Texture* frozenTexture() const {
         return m_legend != nullptr ? m_legend->frozenTexture() : nullptr;
     }
+    s32 occupiedHand() const { return m_legend != nullptr ? m_legend->occupiedHand() : -1; }
     /** Player ids need not be contiguous; missing figures still supply fallback hold points. */
     static std::optional<LegendPresentation::Bearer> bearer(s32 player, s32 kind,
                                                             std::span<const PlayerRuntime> players);

@@ -34,6 +34,7 @@ void LegendPresentation::clear() {
     m_attached = 0;
     m_gestureOwed = false;
     m_released = false;
+    m_brandished = false;
     m_flightLeft = 0.0f;
     m_flightPosition = Vec3{0};
     m_frozenTexture = nullptr;
@@ -48,17 +49,36 @@ u32 LegendPresentation::start(ItemArchive& archive, std::string_view tree, const
     return id;
 }
 
+void LegendPresentation::carry(s32 player, s32 realm, s32 kind,
+                               const std::optional<Bearer>& bearer) {
+    if (!bearer || bearer->player != player) {
+        return;
+    }
+    if (m_player != player || m_kind != kind) {
+        clear();
+        m_player = player;
+        m_kind = kind;
+        m_realm = static_cast<char>('A' + std::clamp(realm - 1, 0, 25));
+    }
+    if (!m_released) {
+        hold(*bearer);
+    }
+}
+
+s32 LegendPresentation::occupiedHand() const {
+    return LegendShow::heldInHand(m_kind) && m_held != 0 && m_effects.playing(m_held) ? m_player
+                                                                                      : -1;
+}
+
 void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
                               const std::optional<Bearer>& bearer) {
     if (cue == LegendCue::Brandished) {
-        clear();
-        m_kind = kind;
-        m_realm = static_cast<char>('A' + std::clamp(realm - 1, 0, 25));
-        if (bearer.has_value() && bearer->player == player) {
-            m_player = player;
+        carry(player, realm, kind, bearer);
+        if (!m_brandished && bearer && m_player == player) {
+            m_brandished = true;
             brandish(*bearer);
+            playSound(LegendShow::Sound::PickedUp);
         }
-        playSound(LegendShow::Sound::PickedUp);
         return;
     }
     if (player != m_player) {
@@ -88,14 +108,22 @@ void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
     }
 }
 
-void LegendPresentation::brandish(const Bearer& bearer) {
-    if (m_assets.items.loaded() && m_assets.items.trees.find(LegendShow::kHeldTree).has_value()) {
+void LegendPresentation::hold(const Bearer& bearer) {
+    if (m_held == 0 && m_assets.items.loaded() &&
+        m_assets.items.trees.find(LegendShow::kHeldTree).has_value()) {
         EffectTrees::Setting setting;
         setting.seconds = LegendShow::kHeldSeconds;
         setting.unlit = true;
         setting.depthWrite = false;
         m_held = start(m_assets.items, LegendShow::kHeldTree, bearer.holdPoint, setting);
     }
+    if (m_held != 0) {
+        m_effects.placeAt(m_held,
+                          bearer.holdTransform.value_or(glm::translate(Mat4{1}, bearer.holdPoint)));
+    }
+}
+
+void LegendPresentation::brandish(const Bearer& bearer) {
     if (!m_assets.weapons.loaded()) {
         return;
     }
@@ -151,10 +179,13 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     }
     if (m_held != 0 && hasBearer) {
         if (m_effects.playing(m_held)) {
-            m_effects.moveTo(m_held, bearer->holdPoint);
+            hold(*bearer);
         } else {
             m_held = 0;
         }
+    } else if (m_held != 0) {
+        m_effects.stop(m_held);
+        m_held = 0;
     }
     if (m_flying != 0 && !m_effects.playing(m_flying)) {
         m_flying = 0;

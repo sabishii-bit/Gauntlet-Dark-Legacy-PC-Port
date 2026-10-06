@@ -1555,7 +1555,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     healHit(actor.player(), flags, credit, point, players, targets);
 }
 
-void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players) {
+void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players, s32 occupiedHand) {
     if (!m_resources) {
         return;
     }
@@ -1568,7 +1568,9 @@ void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players) {
                 runtime.capture.body().value_or(runtime.actor.transform()), save, worn);
             hand = runtime.figure->handAttachment(body);
         }
-        const u32 element = hand.has_value() ? WeaponGlow::elementOf(worn) : 0;
+        const u32 element = hand.has_value() && runtime.actor.player() != occupiedHand
+                                ? WeaponGlow::elementOf(worn)
+                                : 0;
         Vec3 offset{0.0f};
         Vec3 scale{0.0f};
         if (const ClassStats* stats = m_resources->classes.stats(save.character);
@@ -1591,7 +1593,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
     if (!m_resources) {
         return;
     }
-    glowWeapons(players);
+    glowWeapons(players, targets.occupiedHand);
     std::vector<MissileTarget> missileTargets = strikeTargets(targets);
     const PlacedItems& lying = m_resources->world.placedItems();
     for (const usize bottle : lying.shootablePotions()) {
