@@ -87,6 +87,8 @@ public:
     void step(u32 ticks = 1);
     /** Shows every animation where it stands. */
     void apply(WorldScene& scene) const;
+    /** Static meshes have clock-driven textures, but no sequence or node overrides. */
+    void apply(TreeModel& model, std::optional<f32> frameOffset = {}) const;
     /** Resets a shared model, then applies clock, sequence and texture-node overrides in
      * that order. Sequence overrides must not leak into the next instance's draw. */
     void apply(TreeModel& model, const TreeInfo& tree, u32 sequence, f32 frame,

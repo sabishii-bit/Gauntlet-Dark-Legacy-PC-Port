@@ -2,9 +2,11 @@
 
 #include <array>
 #include <memory>
+#include <span>
 #include <vector>
 
 #include "engine/core/Types.h"
+#include "engine/world/TextureAnimator.h"
 
 #include "game/enemies/CombatEvents.h"
 #include "game/world/ItemFigure.h"
@@ -36,6 +38,10 @@ public:
     };
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items);
+    /** Bind after the arena's lenders are loaded. K5's static rocks animate a texture
+     * whose images live in PBOSS, not in the item archive. All archives must outlive us. */
+    void bindAnimations(RenderDevice& device, ItemArchive& items,
+                        std::span<TextureSet* const> lenders = {});
     void clear();
     void setPlayerCount(s32 players);
     usize size() const { return m_rocks.size(); }
@@ -48,6 +54,8 @@ public:
     /** Eruption arenas start with invisible, non-solid rocks, not visible rubble. */
     void hideForEruptions();
     void scheduleActivation(usize index, f32 delay);
+    /** A held simulation tick must not keep interpolating the last running tick. */
+    void capturePresentation() { m_textures.advance(0); }
     void update(f32 seconds);
     std::vector<CombatArenaTarget> eruptionTargets() const;
     /** Complete visible roster, including active entries needed by retail's cycling selector. */
@@ -57,10 +65,13 @@ public:
     std::vector<Mat4> attackAnchors() const;
     bool blocksBreath(const Vec3& from, const Vec3& to) const;
     bool blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const;
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 presentationAlpha = -1.0f) const;
 
 private:
     std::vector<std::unique_ptr<Rock>> m_rocks;
+    std::vector<u32> m_textureSlots;
+    TextureAnimator m_textures;
 };
 
 } // namespace gdl::game

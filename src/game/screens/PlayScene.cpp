@@ -160,6 +160,13 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
                       context.config != nullptr ? context.config->difficulty.gain() : 1.0f, true},
                      m_players);
+    // Native texture names may cross from arena items into the boss archive. Bind only
+    // after that archive is loaded; fixtures are cleared before opponents on close.
+    ItemArchive* bossArchive = m_opponents.bosses().archive();
+    const std::array<TextureSet*, 3> arenaTextures{&world.textures(), &world.realmItems().textures,
+                                                   bossArchive != nullptr ? &bossArchive->textures
+                                                                          : nullptr};
+    m_fixtures.safeRocks().bindAnimations(device, world.items(), arenaTextures);
     if (m_opponents.bosses().raisesArenaRocks()) {
         m_fixtures.safeRocks().hideForEruptions();
     }

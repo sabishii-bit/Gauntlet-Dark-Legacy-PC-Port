@@ -68,6 +68,14 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
                 tree.nodes.push_back(node);
                 found = rock->models[static_cast<usize>(tier)].bind(tree, items.models,
                                                                     items.textures, device);
+                if (found) {
+                    for (const MeshPart& part : items.models.mesh(*index).parts) {
+                        if (std::ranges::find(m_textureSlots, part.texture) ==
+                            m_textureSlots.end()) {
+                            m_textureSlots.push_back(part.texture);
+                        }
+                    }
+                }
                 break;
             }
             if (!found) {
@@ -79,8 +87,25 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
     return !m_rocks.empty();
 }
 
+void SafeRocks::bindAnimations(RenderDevice& device, ItemArchive& items,
+                               std::span<TextureSet* const> lenders) {
+    std::vector<TextureAnimationInfo> animations;
+    for (const auto& animation : items.trees.textureAnimations()) {
+        // An item archive also contains effects keyed to other figures' sequences.
+        // These static meshes consume only clocks for slots present in their health tiers.
+        if (animation.freeRunning() && animation.texture >= 0 &&
+            std::ranges::find(m_textureSlots, static_cast<u32>(animation.texture)) !=
+                m_textureSlots.end()) {
+            animations.push_back(animation);
+        }
+    }
+    m_textures.bind(animations, items.textures, device, lenders);
+}
+
 void SafeRocks::clear() {
     m_rocks.clear();
+    m_textureSlots.clear();
+    m_textures.clear();
 }
 
 void SafeRocks::setPlayerCount(s32 players) {
@@ -142,6 +167,7 @@ void SafeRocks::update(f32 seconds) {
     if (!std::isfinite(seconds) || seconds <= 0) {
         return;
     }
+    m_textures.advance(seconds);
     for (usize i = 0; i < size(); ++i) {
         auto& rock = *m_rocks[i];
         if (rock.activationDelay > 0) {
@@ -194,11 +220,13 @@ std::vector<Mat4> SafeRocks::attackAnchors() const {
     return anchors;
 }
 
-void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
+void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                     f32 presentationAlpha) const {
     for (const auto& rock : m_rocks) {
         if (rock->shown && !rock->dormant) {
-            rock->models[static_cast<usize>(rock->tier)].draw(device, clip, rock->placement,
-                                                              lighting);
+            TreeModel& model = rock->models[static_cast<usize>(rock->tier)];
+            m_textures.apply(model, m_textures.presentationOffset(presentationAlpha));
+            model.draw(device, clip, rock->placement, lighting);
         }
     }
 }

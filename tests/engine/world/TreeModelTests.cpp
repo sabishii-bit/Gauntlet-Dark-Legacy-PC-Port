@@ -55,6 +55,65 @@ std::filesystem::path sampleFigure(std::string_view name) {
     return dir;
 }
 
+TEST_CASE("static model textures use free clocks without sequence overrides",
+          "[world][model][animation][static-texture-clock]") {
+    const auto dir = sampleFigure("static-model-texture-clock");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel model;
+    TreeInfo tree = trees.tree(0);
+    tree.nodes[1].objectFlags = TreeNodeInfo::kNoDepthWriteFlag;
+    REQUIRE(model.bind(tree, models, textures, device));
+    TextureAnimationInfo cycle;
+    cycle.texture = 0;
+    cycle.source = 0;
+    cycle.frames = 2;
+    cycle.rate = 1;
+    TextureAnimationInfo scroll;
+    scroll.texture = 1;
+    scroll.source = TextureAnimationInfo::kScrollU;
+    scroll.frames = 4;
+    auto vertical = scroll;
+    vertical.source = TextureAnimationInfo::kScrollV;
+    vertical.frames = -8;
+    auto keyed = cycle;
+    keyed.flag = 0;
+    keyed.source = 1;
+    keyed.frames = 1;
+    const std::array animations{cycle, scroll, vertical, keyed};
+    TextureAnimator animator;
+    animator.bind(animations, textures, device);
+    animator.advance(1.0f / 30.0f);
+    animator.apply(model, animator.presentationOffset(0.5f));
+    CHECK(model.textureOffset(1) == Vec2(0.125f, -0.0625f));
+    model.draw(device, Mat4{1}, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].texture == &textures.texture(device, 0));
+    CHECK(device.draws[0].state.nextTexture == &textures.texture(device, 1));
+    CHECK(device.draws[0].state.textureBlend == 0.5f);
+    // Drawing again does not advance or accumulate offsets. Native stepping omits blending.
+    animator.apply(model);
+    CHECK(model.textureOffset(1) == Vec2(0.25f, -0.125f));
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1}, {});
+    CHECK(device.draws[0].texture == &textures.texture(device, 1));
+    CHECK(device.draws[0].state.nextTexture == nullptr);
+    CHECK(animator.frame() == 1);
+    animator.step();
+    animator.apply(model);
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1}, {});
+    CHECK(device.draws[0].texture == &textures.texture(device, 0)); // not the keyed override
+    animator.clear();
+    animator.apply(model);
+    CHECK(model.textureOffset(1) == Vec2(0));
+}
+
 TEST_CASE("world occlusion is a per-draw policy and preserves authored halo blending",
           "[world][model][enemy-projectile-depth]") {
     const auto dir = sampleFigure("tree-model-world-occlusion");

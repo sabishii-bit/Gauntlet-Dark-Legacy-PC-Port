@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <filesystem>
+#include <limits>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -146,6 +148,94 @@ TEST_CASE("Yeti ice rocks stay invisible until their eruption completes",
     rocks.clear();
     rocks.update(10); // no timer or borrowed model survives close
     REQUIRE(rocks.eruptionTargets().empty());
+}
+
+TEST_CASE("Plague Fiend safe rocks cycle their native boss-owned texture frames",
+          "[game][world][safe-rocks][plague][native-assets][assets]") {
+    const auto root = test::assetOrSkip("LEVELS/LEVELK5/WORLDS.PS2").parent_path();
+    const auto itemRoot = test::assetOrSkip("ITEMS/LEVELK5/objects.ngc").parent_path();
+    const auto bossRoot = test::assetOrSkip("MONSTERS/PBOSS/objects.ngc").parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    ItemArchive items;
+    ItemArchive boss;
+    REQUIRE(items.load(itemRoot));
+    REQUIRE(boss.load(bossRoot));
+    const auto& animations = items.trees.textureAnimations();
+    const auto animation = std::ranges::find(animations, "BLOB_BOSS", &TextureAnimationInfo::name);
+    REQUIRE(animation != animations.end());
+    REQUIRE(animation->freeRunning());
+    REQUIRE(animation->source == TextureAnimationInfo::kByName);
+    REQUIRE(animation->frameName == "BLOB_BOSS00");
+    REQUIRE(animation->texture == 0);
+    REQUIRE(animation->frames == 15);
+    REQUIRE(animation->start == 0);
+    REQUIRE(animation->rate == 3); // ten images per second on the native thirty-frame clock
+    REQUIRE_FALSE(items.textures.find(animation->frameName).has_value());
+    const auto first = boss.textures.find(animation->frameName);
+    REQUIRE(first.has_value());
+    REQUIRE(*first + static_cast<u32>(animation->frames) <= boss.textures.size());
+    CAPTURE(animation->start, animation->rate);
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(device, layout, items));
+    REQUIRE(rocks.size() == 3);
+    rocks.setPlayerCount(1);
+    const std::array<TextureSet*, 1> lenders{&boss.textures};
+    rocks.bindAnimations(device, items, lenders);
+    const auto checkFrame = [&](s32 frame) {
+        device.draws.clear();
+        rocks.draw(device, Mat4{1}, {});
+        const Texture* expected = &boss.textures.texture(device, *first + static_cast<u32>(frame));
+        CHECK(std::ranges::count(device.draws, expected, &test::RecordedDraw::texture) == 3);
+    };
+    const s32 rate = std::max(animation->rate, 1);
+    // All fifteen images, including more than one wrap, through real mesh submissions.
+    for (s32 tick = 0; tick <= 2 * animation->frames * rate; ++tick) {
+        CAPTURE(tick);
+        const s32 frame = (animation->start + tick / rate) % animation->frames;
+        checkFrame(frame);
+        checkFrame(frame); // render frequency cannot step the texture clock
+        rocks.update(1.0f / 30.0f);
+    }
+    // Restarting an arena clears the old clock. Fractional samples follow display cadence,
+    // but these depth-writing surfaces retain discrete silhouettes rather than crossfade.
+    REQUIRE(rocks.bind(device, layout, items));
+    rocks.bindAnimations(device, items, lenders);
+    rocks.update(1.0f / 60.0f);
+    rocks.update(std::numeric_limits<f32>::quiet_NaN());
+    rocks.update(-1);
+    rocks.update(0);
+    device.draws.clear();
+    rocks.draw(device, Mat4{1}, {}, 1.0f);
+    const auto current = static_cast<u32>(animation->start);
+    const Texture* expected = &boss.textures.texture(device, *first + current);
+    usize animated = 0;
+    for (const auto& draw : device.draws) {
+        if (draw.texture == expected) {
+            ++animated;
+            CHECK(draw.state.nextTexture == nullptr);
+            CHECK(draw.state.textureBlend == 0);
+        }
+    }
+    REQUIRE(animated == 3);
+    rocks.update(3.0f / 30.0f);
+    rocks.capturePresentation(); // a cutscene holds the next simulation tick
+    for (const f32 alpha : {0.0f, 0.5f, 1.0f}) {
+        device.draws.clear();
+        rocks.draw(device, Mat4{1}, {}, alpha);
+        const Texture* held = &boss.textures.texture(device, *first + 1);
+        CHECK(std::ranges::count(device.draws, held, &test::RecordedDraw::texture) == 3);
+    }
+    rocks.hideForEruptions();
+    device.draws.clear();
+    rocks.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.empty());
+    rocks.clear();
+    boss.clear();
+    rocks.update(1);
+    rocks.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.empty());
 }
 
 TEST_CASE("breath cover segments respect shape height radius rotation and endpoints",

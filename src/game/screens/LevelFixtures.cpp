@@ -234,6 +234,7 @@ void LevelFixtures::capturePresentation() {
     m_gates.capturePresentation();
     m_traps.capturePresentation();
     m_barrels.capturePresentation();
+    m_safeRocks.capturePresentation();
     m_scenery.capturePresentation();
 }
 
@@ -243,7 +244,7 @@ void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLigh
     m_gates.draw(device, clip, lighting, presentationAlpha);
     m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting, presentationAlpha);
     m_barrels.draw(device, clip, lighting, presentationAlpha);
-    m_safeRocks.draw(device, clip, lighting);
+    m_safeRocks.draw(device, clip, lighting, presentationAlpha);
     m_rubble.draw(device, clip, lighting);
     m_scenery.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting,
                    presentationAlpha);

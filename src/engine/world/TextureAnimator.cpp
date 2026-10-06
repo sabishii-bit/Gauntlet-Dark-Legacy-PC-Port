@@ -304,6 +304,10 @@ void TextureAnimator::apply(WorldScene& scene) const {
     }
 }
 
+void TextureAnimator::apply(TreeModel& model, std::optional<f32> frameOffset) const {
+    apply(model, TreeInfo{}, 0, 0.0f, frameOffset);
+}
+
 void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence, f32 frame,
                             std::optional<f32> frameOffset) const {
     model.resetTextures();

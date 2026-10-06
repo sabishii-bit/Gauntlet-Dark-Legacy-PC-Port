@@ -3657,6 +3657,67 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE_FALSE(scene.bossMeter().bound());
 }
 
+TEST_CASE("the Plague Fiend scene lends its boss frames to the arena rocks and advances them",
+          "[game][screens][plague][safe-rocks][native-assets][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELK5/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELK5/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
+    test::assetOrSkip("CRITTER/PBOSS.WAD");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto arena = levels.byName("K5");
+    REQUIRE(arena.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *arena));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "TEST";
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{0, 0, 44};
+    options.yaw = kPi;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.safeRocks().size() == 3);
+    ItemArchive* boss = scene.bosses().archive();
+    REQUIRE(boss != nullptr);
+    const auto first = boss->textures.find("BLOB_BOSS00");
+    REQUIRE(first.has_value());
+    std::set<const Texture*> frames;
+    for (u32 i = 0; i < 15; ++i) {
+        frames.insert(&boss->textures.texture(device, *first + i));
+    }
+    const PlayScene::Inputs still{};
+    for (s32 tick = 0; tick < 1000 && awaitingEntrance(scene); ++tick) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    std::set<const Texture*> shown;
+    for (s32 tick = 0; tick < 180; ++tick) {
+        device.draws.clear();
+        scene.safeRocks().draw(device, Mat4{1}, {});
+        for (const auto& draw : device.draws) {
+            if (frames.contains(draw.texture)) {
+                shown.insert(draw.texture);
+            }
+        }
+        scene.update(1.0 / 60.0, still);
+    }
+    CHECK(shown == frames);
+    scene.close();
+    device.draws.clear();
+    scene.safeRocks().draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty());
+}
+
 TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with the strong "
           "throw, flies at the dragon and freezes it, and its death spews silver",
           "[game][screens][assets]") {
