@@ -86,23 +86,11 @@ public:
 
     enum class Result : u8 { None, Cleared, Leave };
 
-    enum class PointerAction : u8 {
-        Select,
-        Back,
-        Left,
-        Right,
-        Up,
-        Down,
-        Start,
-        Letter,
-        Erase,
-        Accept
-    };
+    enum class PointerAction : u8 { Select, Back, Left, Right, Up, Down, Start };
     /** One visible mouse control in the lane's canvas coordinates. */
     struct PointerTarget {
         Rect area;
         PointerAction action = PointerAction::Select;
-        char letter = 0;
     };
 
     /** What the status box under the lane shows. */
@@ -202,7 +190,6 @@ private:
     Rect promptArea(s32 y, std::string_view label) const;
     MenuInput pointerInput(const MenuInput& input);
     void drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const;
-    void drawNameGrid(Canvas& canvas) const;
     void drawStats(Canvas& canvas, s32 time) const;
     void drawNameEntry(Canvas& canvas, s32 time) const;
     void drawState(Canvas& canvas, s32 time) const;
@@ -227,7 +214,6 @@ private:
     NameEntry m_nameEntry;
     std::optional<Vec2> m_pointer;
     std::optional<Rect> m_hoverArea;
-    std::optional<char> m_pointerLetter;
     std::array<Blit, 5> m_blits{};
     bool m_pointerMode = false;
 };

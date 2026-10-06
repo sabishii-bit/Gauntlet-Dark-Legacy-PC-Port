@@ -21,7 +21,6 @@ class NameEntry {
 public:
     static constexpr usize kMaxLength = 6;
     static constexpr char kEndMark = '@';
-    static constexpr std::string_view kLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
     static constexpr s32 kFlashTicks = 60;
     static constexpr s32 kFlashPeriod = 16;
 
@@ -35,8 +34,6 @@ public:
 
     /** Applies one frame; Accepted fires once when the name is taken. */
     Event update(const MenuInput& input, s32 ticks);
-    /** Enters a clicked picker letter, or accepts the name through the end mark. */
-    Event choose(char letter);
 
     bool editing() const { return m_phase == Phase::Editing; }
     bool flashing() const { return m_phase == Phase::Flashing; }

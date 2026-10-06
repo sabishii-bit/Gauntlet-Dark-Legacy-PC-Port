@@ -204,6 +204,10 @@ TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][assets]"
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     scene.render(device, projection, 640.0f, 448.0f);
     CHECK_FALSE(prompted);
+    // The user-requested title prompt is literal, independent of controller remapping.
+    CHECK(f.strings.get("title.pressStart") == "Press Start");
+    REQUIRE(device.draws.back().vertices.size() == 60U);     // ten non-space glyph quads
+    CHECK(test::minCorner(device.draws.back()).y == 320.5f); // glyph raster's half-pixel inset
     REQUIRE(device.draws.size() >= 6);
     REQUIRE(device.draws[0].vertices.size() == 6);
     REQUIRE(device.draws[0].transform == Mat4{1});

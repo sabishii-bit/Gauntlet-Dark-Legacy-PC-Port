@@ -77,9 +77,9 @@ public:
         return std::ranges::any_of(m_lanes, [](const SelectLane& lane) { return lane.typing(); });
     }
 
-    /** The devices lane `index` reads this frame: its player's, typing while it takes a
-     * name. */
-    MenuInputSource inputSource(s32 index) const;
+    /** Read assigned controllers, routing the keyboard to just the focused name field
+     * while editing, even when that player normally uses a controller. */
+    Inputs readInputs(const Input& input) const;
     s32 time() const { return m_time; }
     bool musicPlaying() const;
 

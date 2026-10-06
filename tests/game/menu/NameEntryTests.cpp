@@ -36,27 +36,28 @@ TEST_CASE("the letter cycle runs through letters, underscore, digits and the end
     REQUIRE(NameEntry::previousLetter('C') == 'B');
 }
 
-TEST_CASE("mouse letter choices share typed validation and finish only once", "[name][mouse]") {
+TEST_CASE("typed names validate characters and finish only once", "[game][menu][name]") {
     NameEntry entry;
     entry.begin("");
-    CHECK(entry.choose('!') == NameEntry::Event::None);
-    CHECK(entry.choose('a') == NameEntry::Event::LetterAdded);
-    CHECK(entry.choose(' ') == NameEntry::Event::LetterAdded);
-    CHECK(entry.choose('2') == NameEntry::Event::LetterAdded);
-    CHECK(entry.name() == "A_2");
     MenuInput typed;
+    typed.typed = "!";
+    CHECK(entry.update(typed, 1) == NameEntry::Event::None);
+    typed.typed = "a 2";
+    CHECK(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
+    CHECK(entry.name() == "A_2");
     typed.typed = "b";
     CHECK(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
-    CHECK(entry.choose(NameEntry::kEndMark) == NameEntry::Event::Accepted);
+    MenuInput accept;
+    accept.select = true;
+    CHECK(entry.update(accept, 1) == NameEntry::Event::Accepted);
     CHECK(entry.name() == "A_2B");
-    CHECK(entry.choose('C') == NameEntry::Event::None);
-    CHECK(entry.choose(NameEntry::kEndMark) == NameEntry::Event::None);
+    CHECK(entry.update(typed, 1) == NameEntry::Event::None);
+    CHECK(entry.update(accept, 1) == NameEntry::Event::None);
     entry.update({}, NameEntry::kFlashTicks + 1);
     CHECK(entry.finished());
     entry.begin("");
-    for (const char letter : std::string_view("ABCDEF")) {
-        entry.choose(letter);
-    }
+    typed.typed = "abcdef";
+    CHECK(entry.update(typed, 1) == NameEntry::Event::Accepted);
     CHECK(entry.flashing());
     CHECK(entry.name() == "ABCDEF");
 }
@@ -138,9 +139,9 @@ TEST_CASE("typed letters go straight into the name", "[game][menu][name]") {
     erase.erase = true;
     REQUIRE(entry.update(erase, 1) == NameEntry::Event::LetterRemoved);
     REQUIRE(entry.name() == "BOB");
-    REQUIRE(entry.pendingLetter() == '_');
+    REQUIRE(entry.pendingLetter() == NameEntry::kEndMark);
 
-    // Erasing an empty name is nothing to the picker; the lane backs out instead.
+    // Erasing an empty name leaves the editor open.
     NameEntry empty;
     empty.begin("");
     REQUIRE(empty.update(erase, 1) == NameEntry::Event::None);

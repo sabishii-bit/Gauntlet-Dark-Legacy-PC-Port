@@ -112,23 +112,6 @@ NameEntry::Event NameEntry::finish() {
     return Event::Accepted;
 }
 
-NameEntry::Event NameEntry::choose(char letter) {
-    if (!editing()) {
-        return Event::None;
-    }
-    const auto picked = letter == kEndMark ? std::optional<char>{letter} : typedLetter(letter);
-    if (!picked) {
-        return Event::None;
-    }
-    m_pending = *picked;
-    m_repeatDirection = 0;
-    m_repeatCounter = 0;
-    m_repeatStep = 0;
-    MenuInput input;
-    input.select = true;
-    return update(input, 0);
-}
-
 NameEntry::Event NameEntry::update(const MenuInput& input, s32 ticks) {
     if (m_phase == Phase::Flashing) {
         m_timer -= ticks;
@@ -143,7 +126,9 @@ NameEntry::Event NameEntry::update(const MenuInput& input, s32 ticks) {
     }
 
     if (input.erase && !m_name.empty()) {
-        return removeLast();
+        const auto removed = removeLast();
+        m_pending = kEndMark;
+        return removed;
     }
     Event event = Event::None;
     for (const char typed : input.typed) {

@@ -9,6 +9,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/config/ControlProfiles.h"
 #include "game/players/Progression.h"
 
 namespace gdl::game {
@@ -396,10 +397,28 @@ bool PlayerSelectScene::musicPlaying() const {
            m_context.sounds->isPlaying(m_music);
 }
 
-MenuInputSource PlayerSelectScene::inputSource(s32 index) const {
-    MenuInputSource source = MenuInputSource::forPlayer(index);
-    source.text = lane(index).typing();
-    return source;
+PlayerSelectScene::Inputs PlayerSelectScene::readInputs(const Input& input) const {
+    s32 textOwner = -1;
+    for (s32 index = 0; index < kLaneCount; ++index) {
+        if (lane(index).typing() && (textOwner < 0 || index == m_services.keyboardLane)) {
+            textOwner = index;
+        }
+    }
+    Inputs inputs;
+    for (s32 index = 0; index < kLaneCount; ++index) {
+        auto source = m_context.config != nullptr
+                          ? playerInputSource(input, *m_context.config, index)
+                          : MenuInputSource::forPlayer(index);
+        if (textOwner >= 0) {
+            // Text entry temporarily borrows the keyboard; gameplay assignments stay intact.
+            source.keyboard = index == textOwner;
+            source.text = index == textOwner;
+        }
+        const auto bindings =
+            m_context.config != nullptr ? menuBindings(*m_context.config, index) : MenuBindings{};
+        inputs[static_cast<usize>(index)] = readMenuInput(input, bindings, source);
+    }
+    return inputs;
 }
 
 SelectOutcome PlayerSelectScene::update(f64 deltaSeconds, const Inputs& inputs) {
@@ -460,7 +479,11 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
                  static_cast<f32>(m_screen.height)};
         const auto input =
             mapMenuPointer(inputs[static_cast<usize>(i)], m_pointerTransform, laneArea);
+        const bool wasTyping = lane.typing();
         const SelectLane::Result result = lane.update(fallen ? MenuInput{} : input, ticks, frame);
+        if (lane.typing() && (!wasTyping || input.pointerPressed)) {
+            m_services.keyboardLane = i;
+        }
         if (result == SelectLane::Result::Leave) {
             leave = true;
         }

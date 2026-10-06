@@ -276,7 +276,7 @@
   "help.player_class_lc.15": "Medusa",
   "help.player_class_lc.16": "Hyena",
   "help.newlevel.1": "%s %s is now\na level %d %s!\n",
-  "title.pressStart": "",
+  "title.pressStart": "Press Start",
   "scroll.pressButton": "",
   "title.loading": "Loading...",
   "menu.start": "Start",

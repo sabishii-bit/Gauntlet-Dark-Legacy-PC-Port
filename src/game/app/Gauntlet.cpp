@@ -359,11 +359,7 @@ bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember
 }
 
 void Gauntlet::updateSelect(f64 deltaSeconds) {
-    PlayerSelectScene::Inputs inputs;
-    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
-        inputs[static_cast<usize>(player)] =
-            readPlayerMenuInput(input(), m_config, player, m_select.inputSource(player).text);
-    }
+    const auto inputs = m_select.readInputs(input());
     const SelectOutcome outcome = m_select.update(deltaSeconds, inputs);
     if (outcome == SelectOutcome::Running) {
         return;

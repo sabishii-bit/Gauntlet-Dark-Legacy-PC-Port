@@ -16,6 +16,7 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/platform/Input.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -117,16 +118,12 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
     pointerAt(scene.lane(2).menu().itemArea(0));
     REQUIRE(scene.lane(2).state() == SelectLane::State::NameEntry);
     CHECK(scene.lane(2).nameEntry().name().empty());
-    const auto clickControl = [&](SelectLane::PointerAction action, char letter = 0) {
-        const auto targets = scene.lane(2).pointerTargets();
-        const auto it = std::ranges::find_if(targets, [&](const auto& target) {
-            return target.action == action && (letter == 0 || target.letter == letter);
-        });
-        REQUIRE(it != targets.end());
-        pointerAt(it->area);
-    };
-    clickControl(SelectLane::PointerAction::Letter, 'C');
-    clickControl(SelectLane::PointerAction::Accept);
+    Input keyboard;
+    keyboard.addTypedChar('c');
+    scene.step(1, scene.readInputs(keyboard));
+    keyboard.beginPoll();
+    keyboard.setKey(Key::Enter, true);
+    scene.step(1, scene.readInputs(keyboard));
     scene.step(NameEntry::kFlashTicks + 1, nobody());
     REQUIRE(scene.lane(2).state() == SelectLane::State::ClassPick);
     CHECK(scene.lane(2).save().name == "C");
@@ -145,6 +142,87 @@ TEST_CASE("the select screen refuses to open without unpacked data", "[game][sel
     PlayerSelectScene scene;
     REQUIRE_FALSE(scene.open(device, f.context(test::scratchDirectory("select-none")), 0));
     REQUIRE_FALSE(scene.isOpen());
+}
+
+TEST_CASE("controller players can type names without steering other lanes",
+          "[game][select][multiplayer][assets]") {
+    test::FakeRenderDevice device;
+    Fixture f("select-controller-typing");
+    f.config.controls[0].device = "test-pad";
+    f.config.controls[1].device = "keyboard";
+    PlayerSelectScene scene;
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 0));
+    scene.step(1, player(1, false, false, true));
+    scene.step(1, player(1, true));
+    scene.step(1, player(0, true)); // most recently opened name field takes typing focus
+
+    Input raw;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.guid = "test-pad";
+    raw.setPad(0, pad);
+    raw.setKey(Key::W, true);
+    raw.setKey(Key::A, true);
+    raw.setKey(Key::Space, true);
+    for (const char letter : std::string_view("wa 2")) {
+        raw.addTypedChar(static_cast<u32>(letter));
+    }
+    auto inputs = scene.readInputs(raw);
+    CHECK(inputs[0].typed == "wa 2");
+    for (s32 index = 0; index < PlayerSelectScene::kLaneCount; ++index) {
+        CHECK_FALSE(inputs[static_cast<usize>(index)].any());
+        if (index != 0) {
+            CHECK(inputs[static_cast<usize>(index)].typed.empty());
+        }
+    }
+    scene.step(1, inputs);
+    CHECK(scene.lane(0).nameEntry().name() == "WA_2");
+    CHECK(scene.lane(1).nameEntry().name().empty());
+
+    raw.beginPoll();
+    raw.setKey(Key::W, false);
+    raw.setKey(Key::A, false);
+    raw.setKey(Key::Space, false);
+    raw.setKey(Key::Backspace, true);
+    scene.step(1, scene.readInputs(raw));
+    CHECK(scene.lane(0).nameEntry().name() == "WA_");
+    raw.beginPoll();
+    raw.setKey(Key::Backspace, false);
+    raw.setKey(Key::Enter, true);
+    inputs = scene.readInputs(raw);
+    CHECK(inputs[0].select);
+    CHECK_FALSE(inputs[1].select);
+    CHECK_FALSE(inputs[1].start);
+    scene.step(1, inputs);
+    scene.step(NameEntry::kFlashTicks + 1, nobody());
+    REQUIRE(scene.lane(0).state() == SelectLane::State::ClassPick);
+    CHECK(scene.lane(0).save().name == "WA_"); // Enter must not reinsert the erased letter
+
+    // Once one name finishes, the next editor can use the same physical keyboard.
+    raw.beginPoll();
+    raw.setKey(Key::Enter, false);
+    raw.addTypedChar('b');
+    scene.step(1, scene.readInputs(raw));
+    CHECK(scene.lane(1).nameEntry().name() == "B");
+    raw.beginPoll();
+    raw.setKey(Key::Escape, true);
+    scene.step(1, scene.readInputs(raw));
+    CHECK(scene.lane(1).state() == SelectLane::State::TopMenu);
+    CHECK(scene.lane(0).state() == SelectLane::State::ClassPick);
+    CHECK(f.config.controls[0].device == "test-pad");
+    CHECK(f.config.controls[1].device == "keyboard");
+
+    raw.beginPoll();
+    raw.setKey(Key::Escape, false);
+    raw.setKey(Key::W, true);
+    pad.buttons[static_cast<usize>(PadButton::DpadRight)] = true;
+    raw.setPad(0, pad);
+    inputs = scene.readInputs(raw);
+    CHECK(inputs[0].right);
+    CHECK_FALSE(inputs[0].up);
+    CHECK(inputs[1].up);
+    CHECK_FALSE(inputs[1].right);
 }
 
 TEST_CASE("character selection continues the title music at its existing playback position",
@@ -197,12 +275,13 @@ TEST_CASE("the starting player joins and others join on Start", "[game][select][
     REQUIRE(scene.step(1, player(0, false, false, true)) == SelectOutcome::Running);
     REQUIRE(scene.lane(0).active());
     REQUIRE(scene.lane(0).state() == SelectLane::State::TopMenu);
-    REQUIRE(scene.inputSource(0).keyboard);
-    REQUIRE_FALSE(scene.inputSource(0).text);
+    Input keyboard;
+    keyboard.addTypedChar('a');
+    REQUIRE(scene.readInputs(keyboard)[0].typed.empty());
     REQUIRE(scene.step(1, player(0, true)) == SelectOutcome::Running); // New
     REQUIRE(scene.lane(0).state() == SelectLane::State::NameEntry);
-    REQUIRE(scene.inputSource(0).text);
-    REQUIRE_FALSE(scene.inputSource(2).text);
+    REQUIRE(scene.readInputs(keyboard)[0].typed == "a");
+    REQUIRE(scene.readInputs(keyboard)[2].typed.empty());
 
     const Mat4 projection = makeLetterboxProjection(640, 448, 1920, 1080);
     scene.render(device, projection, 640.0f, 448.0f);
