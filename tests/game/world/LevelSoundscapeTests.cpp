@@ -1060,6 +1060,55 @@ TEST_CASE("flagged proximity sounds duck music while near and release after leav
     REQUIRE(f.soundscape.ambience().emitter(0).handle != speech);
 }
 
+TEST_CASE("soundscape forwards population changes to ambience and music zones",
+          "[game][world][soundscape][ambient-population]") {
+    AreaFixture f("soundscape-population");
+    writeBank(f.root, "TOWAMB", {"S_SPEECH"});
+    f.soundscape.open(f.root, &f.player, &f.info);
+    f.soundscape.startMusic(&f.assets, 1);
+    writeTextFile(f.root / "world.json", R"({
+      "objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":13}], "itemInstances":[
+        {"info":0,"minPlayers":3,"name":"S_SPEECH","position":[0,0,0],
+         "params":[0,0,128,64,0,0,0,0,1,0,0,0]},
+        {"info":0,"minPlayers":3,"position":[0,0,0],
+         "params":[0,0,32,65,2,0,0,0,2,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(f.root));
+    f.soundscape.bindAmbience(layout);
+    const std::array listeners{Vec3{0}};
+    const auto update = [&] {
+        f.soundscape.updateAmbience(listeners, {}, 1);
+        f.soundscape.updateMusicAreas(listeners);
+        f.frames(1);
+    };
+    f.soundscape.setPlayerCount(2);
+    update();
+    CHECK(f.soundscape.ambience().playingCount() == 0);
+    CHECK(f.soundscape.musicRequest() == 0);
+    CHECK(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    f.soundscape.setPlayerCount(3);
+    for (s32 tick = 0; tick < 30; ++tick) {
+        update();
+    }
+    CHECK(f.soundscape.ambience().playingCount() == 1);
+    CHECK(f.soundscape.musicRequest() == 1);
+    CHECK(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel / 2);
+    const auto voice = f.soundscape.ambience().emitter(0).handle;
+    f.soundscape.setPlayerCount(2);
+    for (s32 tick = 0; tick < 60; ++tick) {
+        update();
+    }
+    CHECK_FALSE(f.player.isPlaying(voice));
+    CHECK_FALSE(f.soundscape.ambience().musicScale().has_value());
+    CHECK(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    // Leaving a zone does not choose a different track; it only stops requesting it.
+    CHECK(f.soundscape.musicRequest() == 1);
+    f.soundscape.selectMusicArea(0, MusicSwitch::AtOnce);
+    update();
+    CHECK(f.soundscape.musicRequest() == 0);
+}
+
 TEST_CASE("the zones ask the music for their areas and a boss waking asks for the second",
           "[game][world][soundscape][music-areas]") {
     AreaFixture f("soundscape-zones");

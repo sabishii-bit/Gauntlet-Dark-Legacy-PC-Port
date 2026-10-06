@@ -757,8 +757,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
     // Item availability counts joined players, including those waiting in the tower;
     // whole-party switch contact separately counts only the standing visitors.
-    m_world->setPlayerCount(static_cast<s32>(std::ranges::count_if(
-        m_players, [](const PlayerRuntime& player) { return !player.departed; })));
+    const auto joinedPlayers = static_cast<s32>(std::ranges::count_if(
+        m_players, [](const PlayerRuntime& player) { return !player.departed; }));
+    m_world->setPlayerCount(joinedPlayers);
+    m_audio.setPlayerCount(joinedPlayers);
     m_audio.updateNarration(seconds);
     // The music's areas: the boss waking asks for the second, the zones for theirs.
     m_audio.bossAwake(m_opponents.bosses().view().awake);
@@ -1107,8 +1109,11 @@ void PlayScene::updateAmbience() {
     std::vector<Vec3> listeners;
     listeners.reserve(m_players.size());
     for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        listeners.push_back(actor.position());
+        // DistanceToClosestPlayer hears only state 1. damage_player changes a
+        // dying player to state 8 immediately; waiting/quit slots are not ears.
+        if (!runtime.departed && runtime.life == PlayerLife::Standing) {
+            listeners.push_back(runtime.actor.position());
+        }
     }
     const CameraFrame frame = CameraFrame::of(viewCamera());
     const LevelInfo* level = m_world->level();
@@ -1118,7 +1123,7 @@ void PlayScene::updateAmbience() {
                            &m_world->scene());
     std::optional<Vec3> hourglass;
     for (const auto& runtime : m_players) {
-        if (runtime.life == PlayerLife::Standing &&
+        if (!runtime.departed && runtime.life == PlayerLife::Standing &&
             (PowerupEffects::of(runtime.actor.save().progress().inventory).special &
              powerup::kStopTime) != 0) {
             hourglass = runtime.actor.position();

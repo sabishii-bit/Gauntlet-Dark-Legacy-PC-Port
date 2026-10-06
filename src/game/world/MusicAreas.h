@@ -23,6 +23,7 @@ enum class MusicSwitch : u8 {
 struct MusicZone {
     s32 instance = -1;
     s32 parent = -1;
+    s32 minPlayers = 0;
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
     s32 area = 0; ///< the stream's index in the realm's audio record, from nought
@@ -52,6 +53,8 @@ public:
 
     /** Takes every sound item naming an area; false when there is none. */
     bool bind(const WorldLayout& layout, const WorldScene* world = nullptr);
+    /** ItemVisible counts joined slots, not the number of listeners in range. */
+    void setPlayerCount(s32 count) { m_players = count; }
     void clear();
     /** The highest area whose zone holds the nearest listener, with the zone's way over;
      * nothing outside every zone or without a listener. */
@@ -66,6 +69,7 @@ public:
 
 private:
     std::vector<MusicZone> m_zones;
+    s32 m_players = 1;
 };
 
 } // namespace gdl::game

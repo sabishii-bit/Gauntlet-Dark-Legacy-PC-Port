@@ -61,13 +61,18 @@ void LevelSoundscape::bindAmbience(const WorldLayout& layout, const WorldScene* 
         m_ambience.stop(*m_output);
     }
     const std::array<SoundSet*, 2> banks{&m_ambient, &m_level};
-    m_ambience.bind(layout, banks);
+    m_ambience.bind(layout, banks, world);
     m_areas.bind(layout, world);
     m_objectFlags.clear();
     m_objectFlags.reserve(layout.objects().size());
     for (const WorldObject& object : layout.objects()) {
         m_objectFlags.push_back(object.flags);
     }
+}
+
+void LevelSoundscape::setPlayerCount(s32 count) {
+    m_ambience.setPlayerCount(count);
+    m_areas.setPlayerCount(count);
 }
 
 void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear,

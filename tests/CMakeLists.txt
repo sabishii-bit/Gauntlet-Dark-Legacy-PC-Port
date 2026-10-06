@@ -9,6 +9,7 @@ add_executable(tests
     game/enemies/DeathRulesTests.cpp
     game/enemies/EnemiesDeathTests.cpp
     game/screens/LevelOpponentsDeathTests.cpp
+    game/screens/PlaySceneAmbienceTests.cpp
     game/world/DestructibleWallsTests.cpp
     game/world/MissileTargetTests.cpp
     game/combat/DamageTests.cpp

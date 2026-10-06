@@ -164,6 +164,37 @@ TEST_CASE("the shipped levels' music zones name their realm's stream areas",
     }
 }
 
+TEST_CASE("music zones honor minimum and exact joined populations independently of listeners",
+          "[game][world][music-areas][ambient-population]") {
+    const auto directory = test::scratchDirectory("music-zone-population");
+    writeTextFile(directory / "world.json", R"({
+      "objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":13}], "itemInstances":[
+        {"info":0,"minPlayers":3,"position":[0,0,0],
+         "params":[0,0,32,65,2,0,0,0,2,0,0,0]},
+        {"info":0,"minPlayers":12,"position":[0,0,0],
+         "params":[0,0,32,65,3,0,0,0,1,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    MusicAreas areas;
+    REQUIRE(areas.bind(layout));
+    const std::array listener{Vec3{0}};
+    for (const s32 joined : {1, 2, 3, 4, 1}) {
+        CAPTURE(joined);
+        areas.setPlayerCount(joined);
+        const auto cue = areas.pick(listener);
+        REQUIRE(cue.has_value() == (joined > 1));
+        if (cue) {
+            CHECK(cue->area == (joined == 2 ? 2 : 1));
+            CHECK(cue->how == (joined == 2 ? MusicSwitch::Faded : MusicSwitch::AtOnce));
+        }
+        CHECK_FALSE(areas.pick({}).has_value());
+    }
+    areas.setPlayerCount(3);
+    REQUIRE(areas.bind(layout));
+    CHECK_FALSE(areas.pick(listener).has_value());
+}
+
 TEST_CASE("music zones bind the initially posed node and retain its identity as it moves",
           "[game][world][music-areas][music-platform]") {
     const auto directory = test::scratchDirectory("music-moving-parent");

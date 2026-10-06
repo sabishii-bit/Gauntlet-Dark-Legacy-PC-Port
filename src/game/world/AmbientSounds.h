@@ -16,7 +16,8 @@ namespace gdl::game {
 /** One of the level's sound items: a loop at a spot, heard within its radius. */
 struct AmbientEmitter {
     s32 instance = -1;
-    s32 parent = -1; ///< nearby animated world node, when the sound follows one
+    s32 parent = -1;    ///< nearby animated world node, when the sound follows one
+    s32 minPlayers = 0; ///< ItemVisible's minimum or encoded exact party size
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
     u16 flags = 0; ///< sound-item flags, distinct from music-zone switching modes
@@ -47,13 +48,16 @@ public:
     static constexpr u16 kDuckMusic = 1;
     static constexpr f32 kMusicDuckHold = 0.5f; ///< AudioSecretProc renews this while in range
 
-    /** How loud a loop of `radius` is `distance` away: 1 within, 0 past kSilentAt radii. */
+    /** Radii up to two are global; otherwise full within, silent past kSilentAt radii. */
     static f32 loudness(f32 distance, f32 radius);
     /** Where a spot sits between the ear's speakers, -1 left to 1 right. */
     static f32 panOf(const Vec3& position, const AmbientEar& ear);
 
     /** Takes every sound item whose name one of `banks` holds; false when there is none. */
-    bool bind(const WorldLayout& layout, std::span<SoundSet* const> banks);
+    bool bind(const WorldLayout& layout, std::span<SoundSet* const> banks,
+              const WorldScene* world = nullptr);
+    /** Joined slots, including fallen players; distinct from the standing listeners. */
+    void setPlayerCount(s32 count) { m_players = count; }
     /** Starts, adjusts and stops the loops for the listeners, at the level's sound volume. */
     void update(SoundPlayer& player, std::span<const Vec3> listeners, const AmbientEar& ear,
                 f32 levelVolume, std::optional<f32> volumeOverride = std::nullopt,
@@ -69,6 +73,7 @@ public:
 
 private:
     std::vector<AmbientEmitter> m_emitters;
+    s32 m_players = 1;
 };
 
 } // namespace gdl::game

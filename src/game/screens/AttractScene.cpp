@@ -134,7 +134,9 @@ bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
             m_audio.open(context.unpackedRoot, context.sounds, m_world.audio(),
                          m_world.ref().name.empty() ? 'L' : m_world.ref().name.front(),
                          m_world.level() != nullptr && m_world.level()->bossType >= 0);
-            m_audio.bindAmbience(m_world.layout());
+            m_audio.bindAmbience(m_world.layout(), &m_world.scene());
+            // ItemVisible uses two players for attract flybys, not one camera ear.
+            m_audio.setPlayerCount(2);
             m_audio.startMusic(context.assets, info->musicVolume);
             m_textures.load(context.unpackedRoot / "STATIC");
             if (m_font.load(context.unpackedRoot / "fonts/font32.json", 16)) {

@@ -173,7 +173,8 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     CHECK(device.ambientOcclusionDrawOffsets.front() > 0);
     CHECK(device.ambientOcclusionDrawOffsets.front() < device.bloomDrawOffsets.front());
     CHECK(device.bloomDrawOffsets.front() > 0);
-    CHECK(device.bloomDrawOffsets.front() < device.draws.size()); // Press Start stays unprocessed.
+    // The attract-mode button prompt was removed; bloom finishes the world image.
+    CHECK(device.bloomDrawOffsets.front() == device.draws.size());
     config.display.bloom = false;
     config.display.ambientOcclusion = false;
     REQUIRE_FALSE(device.draws.empty());

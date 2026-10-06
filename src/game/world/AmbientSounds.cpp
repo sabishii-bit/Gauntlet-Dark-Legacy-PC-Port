@@ -7,12 +7,15 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/world/ItemFigure.h"
 #include "game/world/MusicAreas.h"
 
 namespace gdl::game {
 
 f32 AmbientSounds::loudness(f32 distance, f32 radius) {
-    if (radius <= 0.0f || distance <= radius) {
+    // world_update, type 13: lbl_80346EF0 is 2.0, not zero. Small-radius
+    // sound items bypass distance attenuation (music zones do not).
+    if (radius <= 2.0f || distance <= radius) {
         return 1.0f;
     }
     // Linear from full at the radius to nothing at kSilentAt radii, as the original tapers.
@@ -35,7 +38,8 @@ f32 AmbientSounds::panOf(const Vec3& position, const AmbientEar& ear) {
     return std::clamp(glm::dot(away / length, right / span), -1.0f, 1.0f);
 }
 
-bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> banks) {
+bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> banks,
+                         const WorldScene* world) {
     clear();
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
@@ -51,17 +55,20 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
         }
         AmbientEmitter emitter;
         emitter.instance = static_cast<s32>(i);
+        emitter.minPlayers = instance.minPlayers;
         emitter.position = instance.position;
-        // Sound items follow the nearest animated node within ten units. Use the
-        // authored placement to bind it, then its current world position to listen.
+        // SetItem calls FindWorldAnimNode after the initial world pose is applied.
+        // Bind once from that pose, then keep following that node as it moves.
         f32 nearest = 10.0f;
         for (const auto& animation : layout.animations()) {
             if (animation.object < 0 ||
                 static_cast<usize>(animation.object) >= layout.objects().size()) {
                 continue;
             }
-            const f32 distance = glm::distance(
-                instance.position, layout.worldPosition(static_cast<usize>(animation.object)));
+            const auto object = static_cast<usize>(animation.object);
+            const Vec3 position = world != nullptr ? Vec3{world->worldTransform(object)[3]}
+                                                   : layout.worldPosition(object);
+            const f32 distance = glm::distance(instance.position, position);
             if (distance < nearest) {
                 nearest = distance;
                 emitter.parent = animation.object;
@@ -101,7 +108,9 @@ void AmbientSounds::update(SoundPlayer& player, std::span<const Vec3> listeners,
             const f32 distance = glm::distance(listener, emitter.position);
             nearest = nearest < 0.0f ? distance : std::min(nearest, distance);
         }
-        emitter.loudness = nearest < 0.0f ? 0.0f : loudness(nearest, emitter.radius);
+        emitter.loudness = nearest < 0.0f || !shownToParty(emitter.minPlayers, m_players)
+                               ? 0.0f
+                               : loudness(nearest, emitter.radius);
         if (emitter.loudness <= 0.0f) {
             if (emitter.handle != kNoSound) {
                 player.stop(emitter.handle);
@@ -141,6 +150,7 @@ void AmbientSounds::stop(SoundPlayer& player) {
 
 void AmbientSounds::clear() {
     m_emitters.clear();
+    m_players = 1;
 }
 
 usize AmbientSounds::playingCount() const {

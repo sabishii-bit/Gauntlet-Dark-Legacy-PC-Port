@@ -4,6 +4,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/world/ItemFigure.h"
+
 namespace gdl::game {
 namespace {
 constexpr usize kAreaOffset = 4;   ///< the area, a 32-bit word after the radius
@@ -42,6 +44,7 @@ bool MusicAreas::bind(const WorldLayout& layout, const WorldScene* world) {
         }
         MusicZone zone;
         zone.instance = static_cast<s32>(i);
+        zone.minPlayers = instance.minPlayers;
         zone.position = instance.position;
         constexpr f32 kParentReach = 10;
         f32 nearest = kParentReach;
@@ -69,13 +72,15 @@ bool MusicAreas::bind(const WorldLayout& layout, const WorldScene* world) {
 
 void MusicAreas::clear() {
     m_zones.clear();
+    m_players = 1;
 }
 
 std::optional<MusicCue> MusicAreas::pick(std::span<const Vec3> listeners,
                                          const WorldScene* world) const {
     std::optional<MusicCue> best;
     for (const MusicZone& zone : m_zones) {
-        if (best.has_value() && zone.area <= best->area) {
+        if (!shownToParty(zone.minPlayers, m_players) ||
+            (best.has_value() && zone.area <= best->area)) {
             continue;
         }
         // A sound item uses its parent's center, rather than retaining a local offset.

@@ -75,6 +75,9 @@ TEST_CASE("loudness holds within the radius and fades to nothing half a radius o
     REQUIRE(AmbientSounds::loudness(6.0f, 4.0f) == 0.0f);
     REQUIRE(AmbientSounds::loudness(9.0f, 4.0f) == 0.0f);
     REQUIRE(AmbientSounds::loudness(3.0f, 0.0f) == 1.0f); // no radius: heard anywhere
+    REQUIRE(AmbientSounds::loudness(100.0f, 1.0f) == 1.0f);
+    REQUIRE(AmbientSounds::loudness(100.0f, 2.0f) == 1.0f);
+    REQUIRE(AmbientSounds::loudness(100.0f, 2.01f) == 0.0f);
     // Pan follows where the spot lies along the ear's right hand, flat on the ground.
     AmbientEar ear;
     ear.position = Vec3{0.0f, 0.0f, 0.0f};
@@ -219,6 +222,106 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
     SoundSet empty;
     const std::array<SoundSet*, 1> none{&empty};
     REQUIRE_FALSE(ambience.bind(layout, none));
+}
+
+TEST_CASE("ambient population gates use joined slots and release both voice and music duck",
+          "[game][world][ambience][ambient-population]") {
+    const Fixture f("ambient-population");
+    writeTextFile(f.level / "world.json", R"({
+      "objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":13}], "itemInstances":[
+        {"info":0,"minPlayers":3,"name":"S_SFIREL","position":[0,0,0],
+         "params":[0,0,128,64,0,0,0,0,1,0,0,0]},
+        {"info":0,"minPlayers":12,"name":"S_SFIREL","position":[0,0,0],
+         "params":[0,0,128,64,0,0,0,0,1,0,0,0]}]})");
+    WorldLayout layout;
+    SoundSet bank;
+    REQUIRE(layout.load(f.level));
+    REQUIRE(bank.load(f.bank));
+    AmbientSounds ambience;
+    REQUIRE(ambience.bind(layout, std::array{&bank}));
+    REQUIRE(ambience.size() == 2);
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const std::array listeners{Vec3{0}}; // one standing listener, not the joined population
+    std::array<f32, 1600> samples{};
+    SoundHandle previous = kNoSound;
+    for (const s32 joined : {1, 2, 3, 4, 1, 3}) {
+        CAPTURE(joined);
+        ambience.setPlayerCount(joined);
+        ambience.update(player, listeners, {}, 1);
+        CHECK(ambience.emitter(0).loudness == (joined >= 3 ? 1 : 0));
+        CHECK(ambience.emitter(1).loudness == (joined == 2 ? 1 : 0));
+        CHECK(ambience.playingCount() == (joined > 1 ? 1 : 0));
+        CHECK(ambience.musicScale().has_value() == (joined > 1));
+        if (joined == 1) {
+            CHECK_FALSE(player.isPlaying(previous));
+        } else {
+            previous = ambience.emitter(joined == 2 ? 1 : 0).handle;
+            CHECK(player.isPlaying(previous));
+        }
+        mixer.mix(samples);
+        mixer.mix(samples); // drain any stopped voice's fade
+        CHECK(std::ranges::any_of(samples, [](f32 sample) { return std::abs(sample) > 0.01f; }) ==
+              (joined > 1));
+    }
+    // An eligible joined party with no active ears still hears nothing.
+    ambience.update(player, {}, {}, 1);
+    CHECK(ambience.playingCount() == 0);
+    CHECK_FALSE(ambience.musicScale().has_value());
+    CHECK_FALSE(player.isPlaying(previous));
+    ambience.clear();
+    REQUIRE(ambience.bind(layout, std::array{&bank}));
+    ambience.update(player, listeners, {}, 1);
+    CHECK(ambience.playingCount() == 0); // bind resets population to one
+    ambience.stop(player);
+}
+
+TEST_CASE("ambient parents bind from the initial animated pose rather than the rest position",
+          "[game][world][ambience][ambient-parent]") {
+    const Fixture f("ambient-posed-parent");
+    writeTextFile(f.level / "world.json", R"({
+      "objects":[{"name":"LIFT","position":[100,0,0]},
+                 {"name":"WRONG","position":[1,0,0]}],
+      "animations":[
+        {"object":0,"frames":2,"track":{"flags":16,"frames":[0,1],"values":[0,1]}},
+        {"object":1,"frames":2,"track":{"flags":16,"frames":[0,1],"values":[0,1]}}],
+      "itemInfos":[{"type":13}],
+      "itemInstances":[{"info":0,"name":"S_SFIREL","position":[0,0,0],
+        "params":[0,0,128,64,0,0,0,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(f.level));
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldScene world;
+    world.build(layout, models, textures, device);
+    world.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{3, 0, 0}));
+    world.setObjectTransform(1, glm::translate(Mat4{1}, Vec3{50, 0, 0}));
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    const LevelAudioInfo info{.bank = "TEST", .stream = {}};
+    // Exercise the production soundscape forwarding path, not just AmbientSounds::bind.
+    std::filesystem::create_directories(f.level / "audio");
+    for (const auto& entry : std::filesystem::directory_iterator(f.bank.parent_path())) {
+        if (entry.is_regular_file()) {
+            std::filesystem::copy_file(entry.path(), f.level / "audio" / entry.path().filename(),
+                                       std::filesystem::copy_options::overwrite_existing);
+        }
+    }
+    soundscape.open(f.level, &player, &info);
+    soundscape.bindAmbience(layout, &world);
+    REQUIRE(soundscape.ambience().size() == 1);
+    CHECK(soundscape.ambience().emitter(0).parent == 0);
+    const Vec3 moved{100, 20, -10};
+    world.setObjectTransform(0, glm::translate(Mat4{1}, moved));
+    soundscape.updateAmbience(std::array{moved}, {}, 1, false, &world);
+    CHECK(soundscape.ambience().emitter(0).position == moved);
+    CHECK(soundscape.ambience().playingCount() == 1);
+    soundscape.updateAmbience(std::array{Vec3{3, 0, 0}}, {}, 1, false, &world);
+    CHECK(soundscape.ambience().playingCount() == 0);
+    soundscape.close();
 }
 
 TEST_CASE("the Temple trigger repeatedly brings its organist sound and light into range",
