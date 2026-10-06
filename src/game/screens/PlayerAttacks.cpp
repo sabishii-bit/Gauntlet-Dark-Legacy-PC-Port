@@ -1451,16 +1451,19 @@ std::optional<MissileTarget> PlayerAttacks::contactEnemy(const PlayerActor& acto
             break;
         }
     }
-    // Root/node contact arbitration is separate from the swarm grid. Keep the
-    // existing shared search when a large creature is touching, rather than
-    // inventing swarm-over-critter priority until that query is reconstructed.
-    if (targets.opponents.critters().struckBy(from, to, actor.reach()) ||
-        targets.opponents.bosses().struckBy(from, to, actor.reach())) {
+    const auto& enemies = targets.opponents.enemies();
+    f32 endpointDistance = 0;
+    const auto id =
+        enemies.playerContact(from, to, actor.reach(), actor.height() * 0.5f, &endpointDistance);
+    if (!id) {
         return std::nullopt;
     }
-    const auto& enemies = targets.opponents.enemies();
-    const auto id = enemies.playerContact(from, to, actor.reach(), actor.height() * 0.5f);
-    if (!id) {
+    // Critter contacts replace a swarm seed only for a strictly smaller endpoint
+    // distance. Zero cannot lose that comparison, including stationary overlaps.
+    // Nonzero mixed contacts still use fresh selection until the shared native
+    // critter/root contact ordering is represented by the separate actor pools.
+    if (endpointDistance > 0 && (targets.opponents.critters().struckBy(from, to, actor.reach()) ||
+                                 targets.opponents.bosses().struckBy(from, to, actor.reach()))) {
         return std::nullopt;
     }
     const auto bodies = enemies.targets();
@@ -1582,6 +1585,12 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
             targets.hurt(static_cast<usize>(id - kPlayerTargetBase), damage, HurtKind::Burn,
                          {flags, glm::normalize(direction)});
         }
+        return;
+    }
+    if (id >= kStatueTargetBase) {
+        // fn_8005C1DC handles placed-enemy items separately from switches:
+        // the blow sets their wake flag, without damaging the future creature.
+        targets.opponents.wakeStatue(static_cast<usize>(id - kStatueTargetBase));
         return;
     }
     if (strikeSwitch(id, flags)) {

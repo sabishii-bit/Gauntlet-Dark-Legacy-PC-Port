@@ -165,6 +165,58 @@ TEST_CASE("touching a swarm enemy takes priority over a fresh barrel aim search"
     enemies.close();
 }
 
+TEST_CASE("a stationary swarm contact keeps priority when a general also overlaps",
+          "[game][player-attacks][alpha-contact-tie][assets]") {
+    const auto nativeRoot = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GENERAL/LEVELG/ANIM.PS2");
+    Fixture f;
+    const auto root = turboAssets();
+    const auto directory = root / "PLAYERS/WAR/YEL";
+    writeTextFile(directory / "world.json", R"({"objects":[
+      {"name":"BODY","position":[-100,0,0]}],"itemInfos":[
+      {"type":10,"subtype":43,"name":"BARREL","radius":0.5,"height":3,
+       "collisionOffset":[0,1.5,0],"armor":0}],
+      "itemInstances":[{"info":0,"position":[0,0,1.2]}]})");
+    LevelRef level;
+    level.directory = "PLAYERS/WAR/YEL";
+    REQUIRE(f.world.load(f.device, root, level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    REQUIRE(f.fixtures.barrels().size() == 1);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    REQUIRE(enemies.spawn({.kind = kGruntKind, .position = {2, 0, 1.5f}, .placed = true}, {}));
+    auto& critters = f.opponents.critters();
+    critters.open(f.device, nativeRoot, nullptr, {}, 'G');
+    REQUIRE(critters.spawnGeneral({0, 0, -0.5f}, 0));
+    const auto& actor = f.players[0].actor;
+    const Vec3 origin = actor.followPoint();
+    REQUIRE(critters.struckBy(origin, origin, actor.reach()));
+    // PlayerCollideItems replaces its swarm contact only for a STRICTLY nearer
+    // critter contact. A stationary contact is zero from the endpoint and cannot
+    // lose that comparison. Merely touching a general must not restart the
+    // fresh weighted search, which would prefer the barrel in this fixture.
+    const Vec3 enemyPoint{2, 3, 1.5f};
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == enemyPoint);
+    CHECK_FALSE(f.attacks.meleeSense(actor, true, f.targets).low);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
+    f.targets.players = f.players;
+    f.players[0].attackStep = PlayerRuntime::AttackStep{{0, 2.5f, -0.5f}, origin};
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == enemyPoint);
+    // A positive-distance swarm contact does not establish priority over a
+    // closer critter. Preserve the shared-search fallback for that unresolved case.
+    f32 contactDistance = 0;
+    const Vec3 across{4, 2.5f, 3};
+    REQUIRE(enemies.playerContact(across, origin, actor.reach(), actor.height() * 0.5f,
+                                  &contactDistance));
+    REQUIRE(contactDistance > 0);
+    f.players[0].attackStep = PlayerRuntime::AttackStep{across, origin};
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == Vec3{0, 2.5f, 1.2f});
+    // A retreat still rejects the swarm seed and allows fresh selection.
+    f.players[0].attackStep = PlayerRuntime::AttackStep{{1.5f, 2.5f, 1}, origin};
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == Vec3{0, 2.5f, 1.2f});
+}
+
 TEST_CASE("Death contact requires facing even when inside his radius",
           "[game][player-attacks][alpha-contact-target]") {
     Fixture f;
@@ -2397,6 +2449,59 @@ TEST_CASE("a caster whose magic strikes nothing is told not to waste it",
         f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
     }
     CHECK(helps.empty());
+}
+
+TEST_CASE("a normal melee blow wakes a placed statue instead of dispatching it as a switch",
+          "[game][player-attacks][critter-statues][alpha-statue-melee][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELA/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    const auto kind = GENERATE(CombatantKind::Golem, CombatantKind::Gargoyle);
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(catalog.byName("A1"));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("A1")));
+    f.world.setPlayerCount(1);
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    const auto& statues = f.opponents.statues();
+    REQUIRE(statues.count() == 3);
+    std::optional<usize> selected;
+    for (usize i = 0; i < statues.count(); ++i) {
+        if (statues.placement(i).kind == kind) {
+            selected = i;
+            break;
+        }
+    }
+    REQUIRE(selected);
+    const auto& placement = statues.placement(*selected);
+    auto& player = f.players[0];
+    player.actor.place(statues.positionOf(*selected) - Vec3{0, 0, placement.radius + 0.5f});
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    f.targets.players = f.players;
+    REQUIRE(f.attacks.meleeSense(player.actor, false, f.targets).range == MeleeRange::Swing);
+    REQUIRE_FALSE(statues.woken(*selected));
+    // Exercise the strike dispatcher, not LevelOpponents::wakeStatue directly.
+    // No opponent update/touch occurs: only the authored weapon impact wakes it.
+    player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Melee);
+    s32 strikes = 0;
+    for (s32 frame = 0; frame < 60 && strikes == 0; ++frame) {
+        if (player.figure->animator().meleeStruck()) {
+            f.attacks.melee(0, f.players, f.targets);
+            ++strikes;
+        }
+        player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::None);
+    }
+    REQUIRE(strikes == 1);
+    CHECK(statues.woken(*selected));
+    for (usize i = 0; i < statues.count(); ++i) {
+        if (i != *selected) {
+            CHECK_FALSE(statues.woken(i));
+        }
+    }
 }
 
 TEST_CASE("player shields consume one potion and expire even without artwork",

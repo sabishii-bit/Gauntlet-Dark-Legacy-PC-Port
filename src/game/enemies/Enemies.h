@@ -287,9 +287,10 @@ public:
     std::vector<MissileTarget> targets() const;
     /** PlayerCollideItems' swarm contact, separate from missile/physical movement reach.
      * Positions are collision centres; width is the player's full native col_radius.
-     * Returns the contact nearest the step endpoint, not the nearest enemy centre. */
-    std::optional<s32> playerContact(const Vec3& from, const Vec3& to, f32 width,
-                                     f32 halfHeight) const;
+     * Returns the contact nearest the step endpoint, not the nearest enemy centre.
+     * On success, optionally writes its horizontal distance from that endpoint. */
+    std::optional<s32> playerContact(const Vec3& from, const Vec3& to, f32 width, f32 halfHeight,
+                                     f32* endpointDistance = nullptr) const;
     /** The nearest live enemy whose body a blow sweeping from `from` to `to` with `radius`
      * touches. */
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;

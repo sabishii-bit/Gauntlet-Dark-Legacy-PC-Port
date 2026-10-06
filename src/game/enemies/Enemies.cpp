@@ -1884,7 +1884,7 @@ std::vector<EnemyBody> Enemies::movementBodies() const {
 }
 
 std::optional<s32> Enemies::playerContact(const Vec3& from, const Vec3& to, f32 width,
-                                          f32 halfHeight) const {
+                                          f32 halfHeight, f32* endpointDistance) const {
     std::optional<s32> best;
     f32 bestDistance = 0;
     s32 bestCell = 0;
@@ -1931,6 +1931,9 @@ std::optional<s32> Enemies::playerContact(const Vec3& from, const Vec3& to, f32 
         if (m_collision->wallBetween(from, centre)) {
             return std::nullopt;
         }
+    }
+    if (best && endpointDistance != nullptr) {
+        *endpointDistance = bestDistance;
     }
     return best;
 }

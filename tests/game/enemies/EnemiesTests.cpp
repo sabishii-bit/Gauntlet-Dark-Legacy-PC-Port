@@ -160,6 +160,17 @@ TEST_CASE("player swarm contact requires strict endpoint overlap and permits ret
     CHECK(enemies.playerContact({-1, y, 0}, {-0.5f, y, 0}, kWidth, 3) == id);
     CHECK_FALSE(enemies.playerContact({-1, y, 0}, {-1.5f, y, 0}, kWidth, 3));
     CHECK_FALSE(enemies.playerContact({-10, y, 0}, {10, y, 0}, kWidth, 3));
+    f32 endpointDistance = -1;
+    CHECK(enemies.playerContact({-1, y, 0}, {-1, y, 0}, kWidth, 3, &endpointDistance) == id);
+    CHECK(endpointDistance == 0);
+    CHECK(enemies.playerContact({-1, y, 0}, {-0.5f, y, 0}, kWidth, 3, &endpointDistance) == id);
+    CHECK(endpointDistance == 0);
+    // Passing the centre can still touch, but its nearest point is now behind
+    // the endpoint: another actor can win the native contact arbitration.
+    CHECK(enemies.playerContact({-1, y, 0}, {0.5f, y, 0}, kWidth, 3, &endpointDistance) == id);
+    CHECK(endpointDistance == Approx(0.5f));
+    CHECK_FALSE(enemies.playerContact({-1, y, 0}, {-1.5f, y, 0}, kWidth, 3, &endpointDistance));
+    CHECK(endpointDistance == Approx(0.5f)); // no output on a failed query
 }
 
 TEST_CASE("player contact wall rejection follows the actor centres rather than a horizontal slice",
