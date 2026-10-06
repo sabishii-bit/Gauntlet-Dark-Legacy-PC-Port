@@ -46,6 +46,9 @@ public:
         Vec3 position{0.0f};
         f32 height = 0.0f;
         std::optional<Mat4> root = std::nullopt;
+        /** Swept contact with the animated body, not just the homing anchor.
+         * Called synchronously during update; never retained by the presentation. */
+        std::function<bool(const Vec3&, const Vec3&, f32)> touches = nullptr;
     };
     struct Update {
         PlayerDeed gesture = PlayerDeed::None;

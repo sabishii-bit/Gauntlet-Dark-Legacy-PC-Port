@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -14,6 +15,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/enemies/Bosses.h"
 #include "game/screens/LegendPresentation.h"
 
 namespace {
@@ -183,6 +185,105 @@ TEST_CASE("the Plague eye recovers without inventing another relic sound",
     const auto sounds = fixture.sounds;
     fixture.show(LegendCue::WornOff, 38);
     CHECK(fixture.sounds == sounds);
+}
+
+TEST_CASE("native Plague javelin hits the body and leaves no projectile chasing the injured eye",
+          "[game][screens][legend][plague][native-assets][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    LegendFixture fixture;
+    REQUIRE(fixture.items.load(root / "ITEMS/LEVELK5"));
+    REQUIRE(fixture.weapons.load(root / "WEAPONS"));
+    Bosses bosses;
+    bosses.open(fixture.device, root, nullptr, {}, 'K');
+    REQUIRE(bosses.spawn(38, Vec3{0}, 0, 100));
+    REQUIRE(bosses.bringLegend(fixture.bearer.player));
+    fixture.bearer.position = {0, 0, 44};
+    fixture.bearer.facing = {0, 0, -1};
+    EnemyView player;
+    player.player = fixture.bearer.player;
+    player.position = fixture.bearer.position;
+    player.height = 6;
+    const std::array players{player};
+    constexpr f32 kStep = 1.0f / 60;
+    for (s32 tick = 0; tick < 1800 && !bosses.legend().thrown(); ++tick) {
+        bosses.update(1, kStep, players);
+    }
+    REQUIRE(bosses.legend().thrown());
+    fixture.show(LegendCue::Brandished, 38);
+    fixture.show(LegendCue::Thrown, 38);
+    fixture.bearer.released = true;
+    bool landed = false;
+    f32 remainingDistance = 0;
+    for (s32 tick = 0; tick < 360 && !landed; ++tick) {
+        bosses.update(1, kStep, players);
+        const auto eye = bosses.nodeTransform("BODY1_EYEBALL");
+        REQUIRE(eye);
+        fixture.target.position = Vec3{(*eye)[3]};
+        fixture.target.height = 0;
+        fixture.target.touches = [&](const Vec3& from, const Vec3& to, f32 radius) {
+            remainingDistance = glm::distance(to, fixture.target.position);
+            return bosses.struckBy(from, to, radius).has_value();
+        };
+        landed = fixture.presentation.update(kStep, fixture.bearer, fixture.target).landed;
+        fixture.effects.update(kStep);
+    }
+    REQUIRE(landed);
+    CHECK(remainingDistance > LegendShow::kSpeed * kStep);
+    CHECK(fixture.find("LEGENDPRJ") == nullptr);
+    // PBOSS has no LEGENDFX. The embedded weapon is PBOSSQEYEBALL, which
+    // Combatant draws at the eye's posed transform, not a world-space effect.
+    CHECK(fixture.find("LEGENDFX") == nullptr);
+    bosses.landLegend();
+    CHECK(bosses.blinded());
+    for (s32 tick = 0; tick < 120; ++tick) {
+        bosses.update(1, kStep, players);
+        fixture.presentation.update(kStep, fixture.bearer, fixture.target);
+        fixture.effects.update(kStep);
+        CHECK(fixture.find("LEGENDPRJ") == nullptr);
+    }
+}
+
+TEST_CASE("the Plague javelin lands on swept body contact before reaching the eye centre",
+          "[game][screens][legend][plague]") {
+    LegendFixture fixture;
+    fixture.load("legend-plague-contact");
+    fixture.show(LegendCue::Brandished, 38);
+    fixture.show(LegendCue::Thrown, 38);
+    fixture.bearer.released = true;
+    fixture.presentation.update(0, fixture.bearer, fixture.target);
+    s32 sweeps = 0;
+    fixture.target.touches = [&](const Vec3& from, const Vec3& to, f32 radius) {
+        ++sweeps;
+        CHECK(from == Vec3{0, 2, 1});
+        CHECK(to == Vec3{5, 2, 1});
+        CHECK(radius == 2);
+        return true;
+    };
+    CHECK(fixture.presentation.update(0.25f, fixture.bearer, fixture.target).landed);
+    CHECK(sweeps == 1);
+    CHECK(fixture.find("LEGENDPRJ") == nullptr);
+    fixture.target.position = {100, 40, 1};
+    CHECK_FALSE(fixture.presentation.update(1, fixture.bearer, fixture.target).landed);
+    CHECK(sweeps == 1);
+}
+
+TEST_CASE("an unavailable Plague body cannot be hit just by reaching its homing anchor",
+          "[game][screens][legend][plague]") {
+    LegendFixture fixture;
+    fixture.load("legend-plague-missing-body");
+    fixture.show(LegendCue::Brandished, 38);
+    fixture.show(LegendCue::Thrown, 38);
+    fixture.bearer.released = true;
+    fixture.target.touches = [](const Vec3&, const Vec3&, f32) { return false; };
+    CHECK_FALSE(fixture.presentation.update(2, fixture.bearer, fixture.target).landed);
+    const auto* flight = fixture.find("LEGENDPRJ");
+    REQUIRE(flight);
+    CHECK(flight->position == fixture.target.position + Vec3{0, 2, 0});
+    // Standing exactly on the anchor must neither divide by zero nor report a hit.
+    CHECK_FALSE(fixture.presentation.update(1, fixture.bearer, fixture.target).landed);
+    CHECK_FALSE(flight->flightDirection);
+    CHECK_FALSE(fixture.presentation.update(4, fixture.bearer, fixture.target).landed);
+    CHECK(fixture.find("LEGENDPRJ") == nullptr);
 }
 
 TEST_CASE("the genie lamp's blindness effect rides its root for 28 seconds",

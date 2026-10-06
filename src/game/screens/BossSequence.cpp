@@ -105,6 +105,9 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
                 target->position = Vec3{(*eye)[3]};
                 target->height = 0;
             }
+            target->touches = [&bosses](const Vec3& from, const Vec3& to, f32 radius) {
+                return bosses.struckBy(from, to, radius).has_value();
+            };
         }
     }
     const LegendPresentation::Update result =

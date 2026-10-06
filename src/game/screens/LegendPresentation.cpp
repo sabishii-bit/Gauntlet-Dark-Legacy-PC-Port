@@ -171,13 +171,23 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
                 const Vec3 delta = destination - m_flightPosition;
                 const f32 distance = glm::length(delta);
                 const f32 step = LegendShow::kSpeed * seconds;
-                if (distance <= step) {
+                const Vec3 next =
+                    distance <= step ? destination : m_flightPosition + delta * (step / distance);
+                // PlayerMotion supplies colrad=2 (GC 0x80347b98). ProcessEffects
+                // sweeps against CritterMoveNodeCol; reaching the eye's exact
+                // moving origin is not required to hit and replace its mesh.
+                constexpr f32 kJavelinRadius = 2;
+                const bool contact = target->touches
+                                         ? target->touches(m_flightPosition, next, kJavelinRadius)
+                                         : distance <= step;
+                if (contact) {
                     land(target);
                     result.landed = true;
                 } else {
-                    m_flightPosition += delta * (step / distance);
+                    m_flightPosition = next;
                     m_effects.placeAt(m_flying, glm::translate(Mat4{1}, m_flightPosition),
-                                      delta / distance);
+                                      distance > 0 ? std::optional{delta / distance}
+                                                   : std::nullopt);
                 }
             }
             if (m_flightLeft <= 0 && m_flying != 0) {
