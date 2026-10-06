@@ -113,6 +113,8 @@ add_library(game STATIC
     players/PlayerImpact.cpp
     world/LevelCatalog.h
     world/LevelCatalog.cpp
+    world/LevelItemArchives.h
+    world/LevelItemArchives.cpp
     world/ItemFigure.h
     world/ItemFigure.cpp
     world/ItemSupport.cpp

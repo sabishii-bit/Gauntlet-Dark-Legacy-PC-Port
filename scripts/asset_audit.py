@@ -3,6 +3,7 @@
 
     python scripts/asset_audit.py --verify
     python scripts/asset_audit.py --archive MONSTERS/DEM --lender LEVELS/LEVELB4
+    python scripts/asset_audit.py --levels
 
 Builds the selected preset. The default scan eagerly decodes the corpus but does
 not invent cross-archive load contexts. --verify additionally runs the native
@@ -56,6 +57,7 @@ def main() -> int:
     parser.add_argument("preset", nargs="?", default=devenv.release_preset())
     parser.add_argument("--assets", type=pathlib.Path)
     parser.add_argument("--archive", help="one archive relative to the native root")
+    parser.add_argument("--levels", action="store_true", help="strict catalogued level contexts; known retail omissions remain findings")
     parser.add_argument("--lender", action="append", default=[], help="relative lender, in runtime lookup order")
     parser.add_argument("--verify", action="store_true", help="also require non-skipped native behavior tests")
     args = parser.parse_args()
@@ -64,6 +66,8 @@ def main() -> int:
         parser.error(f"Unknown build preset: {args.preset}")
     if args.lender and not args.archive:
         parser.error("--lender requires --archive; a corpus has no single load context")
+    if args.levels and (args.archive or args.verify):
+        parser.error("--levels is a separate strict context report, not --archive or --verify")
     if args.verify and args.archive:
         parser.error("--verify requires the full corpus, not a selected archive")
     binary = devenv.ROOT / "build" / presets[args.preset]
@@ -79,10 +83,12 @@ def main() -> int:
             devenv.run(["cmake", "--preset", presets[args.preset],
                        f"-DGDL_ASSET_DIR={assets}"])
         devenv.run([sys.executable, str(devenv.ROOT / "scripts/build.py"), args.preset])
-        report = binary / "asset-audit.json"
+        report = binary / ("level-asset-audit.json" if args.levels else "asset-audit.json")
         report.unlink(missing_ok=True)
         command = [str(binary / "bin" / f"assetcheck{build.EXE}"), str(archive), "--report", str(report)]
-        if not args.archive:
+        if args.levels:
+            command += ["--levels"]
+        elif not args.archive:
             command += ["--recursive", "--decode-only"]
         for lender in lenders:
             command += ["--lender", str(lender)]

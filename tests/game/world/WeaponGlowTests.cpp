@@ -1,14 +1,21 @@
+#include <algorithm>
+#include <array>
 #include <filesystem>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/AssetAudit.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/players/PowerupEffects.h"
+#include "game/world/LevelItemArchives.h"
 #include "game/world/WeaponGlow.h"
 
 namespace {
@@ -137,5 +144,80 @@ TEST_CASE("the classes' effects hold every element's glow and throw effect",
     }
     glow.clear(effects);
     CHECK(effects.count() == 0);
+}
+
+TEST_CASE("native sparse weapon throws retain their particle effects for every class and colour",
+          "[assets][asset-conformance][weapon-glow]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
+    const auto players = root.parent_path().parent_path().parent_path();
+    TextureSet weapons;
+    TextureSet powerups;
+    TextureSet staticTextures;
+    LevelItemArchives levelItems;
+    REQUIRE(weapons.load(players.parent_path() / "WEAPONS"));
+    REQUIRE(powerups.load(players.parent_path() / "POWERUPS"));
+    REQUIRE(staticTextures.load(players.parent_path() / "STATIC"));
+    REQUIRE(levelItems.load(players.parent_path(), LevelRef::tower()));
+    // The scene's effect context: weapons, level items, realm items, powerups,
+    // static art. PIXIE's frame run belongs to WEAPONS, not the class archive.
+    const std::array lenders{&weapons, &levelItems.primary().textures, &levelItems.realm().textures,
+                             &powerups, &staticTextures};
+    usize reviewed = 0;
+    for (const auto* kind : {"ARC", "DWF", "JES", "KNI", "SOR", "VAL", "WAR", "WIZ"}) {
+        for (const auto* colour : {"BLU", "GRE", "RED", "YEL"}) {
+            CAPTURE(kind, colour);
+            const auto directory = players / kind / (std::string("SFX") + colour);
+            const auto audit = auditAssets(directory, lenders);
+            ItemArchive archive;
+            REQUIRE(archive.load(directory));
+            std::vector<std::string> missing;
+            for (const auto& issue : audit.issues) {
+                INFO(issue.record << ": " << issue.detail);
+                REQUIRE(issue.dependency);
+                REQUIRE(issue.record.starts_with("tree WEAP_TW_"));
+                REQUIRE(issue.detail.starts_with(
+                    "unresolved model (consumer may supply an empty node): WEAP_TW_"));
+                missing.push_back(issue.record);
+                ++reviewed;
+            }
+            std::vector<std::string> expected;
+            const std::string_view cls{kind};
+            for (const char element : std::string_view{"BGRY"}) {
+                if (cls == "SOR" || cls == "WIZ" || (cls == "ARC" && element == 'B') ||
+                    (cls == "KNI" && (element == 'B' || element == 'R'))) {
+                    continue;
+                }
+                expected.push_back(std::string("tree WEAP_TW_") + element +
+                                   (cls == "JES" ? " node CFXNWE" : " node XNWEAP"));
+            }
+            std::ranges::sort(missing);
+            CHECK(missing == expected);
+            test::FakeRenderDevice device;
+            EffectTrees effects;
+            effects.setTextureLenders(lenders);
+            for (u32 element = 1; element <= 4; ++element) {
+                const auto name = WeaponGlow::throwTree(element);
+                CAPTURE(name);
+                EffectTrees::Setting setting;
+                setting.persistent = true;
+                setting.missingObjectsAreEmpty = true;
+                REQUIRE(effects.startSet(device, archive, name, {}, setting) != 0);
+                effects.update(1.0f);
+                REQUIRE(effects.count() == 1);
+                const auto& particles = effects.effect(0).particles.field();
+                REQUIRE(particles.size() > 0);
+                CHECK(particles.particleCount() > 0);
+                for (usize i = 0; i < particles.size(); ++i) {
+                    CHECK(particles.textureOf(i) != &device.whiteTexture());
+                }
+                device.draws.clear();
+                effects.draw(device, Mat4{1}, {});
+                CHECK_FALSE(device.draws.empty());
+                effects.clear();
+            }
+        }
+    }
+    // Review the exact native holes, not a policy to accept every absent mesh.
+    CHECK(reviewed == 84);
 }
 } // namespace

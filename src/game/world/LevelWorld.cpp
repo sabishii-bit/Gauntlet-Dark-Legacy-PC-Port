@@ -68,30 +68,11 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     if (!m_animations.load(directory)) {
         log::warn("Level: no animation data; its textures stand still");
     }
-    // A boss level's own item archive (which holds the wizard who comes at the end) over
-    // the realm's.
-    const auto hasAnimations = [](const std::filesystem::path& path) {
-        const AssetLocator files(path);
-        return files.find("anim.ps2").has_value() || files.find("animations.json").has_value();
-    };
-    const bool own = !m_ref.ownItems.empty() && hasAnimations(unpackedRoot / m_ref.ownItems) &&
-                     m_items.load(unpackedRoot / m_ref.ownItems);
-    if (!own && !m_items.load(unpackedRoot / m_ref.items)) {
+    if (!m_itemArchives.load(unpackedRoot, m_ref)) {
         log::warn(
             "Level: without the realm's item archive its borrowed textures and figures are absent");
     }
-    if (own && m_ref.items != m_ref.ownItems && hasAnimations(unpackedRoot / m_ref.items)) {
-        m_realmItems.load(unpackedRoot / m_ref.items);
-    }
-    // Boss-specific items take precedence, but realm textures (including torch particles)
-    // remain available when that archive does not contain a requested bitmap.
-    std::vector<TextureSet*> lenders;
-    if (m_items.loaded()) {
-        lenders.push_back(&m_items.textures);
-    }
-    if (m_realmItems.loaded()) {
-        lenders.push_back(&m_realmItems.textures);
-    }
+    const auto lenders = m_itemArchives.textureLenders();
     const std::span<TextureSet* const> lent{lenders};
     std::vector<usize> controlledObjects;
     m_destruction.bind(m_layout);
@@ -189,16 +170,16 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         // their glow planes as walls. Keep their contact damage, not solid-body response.
         makeMoltenBallsContactOnly(m_layout, m_collision);
     }
-    m_triggers.bindFigures(device, m_layout, m_items);
+    m_triggers.bindFigures(device, m_layout, items());
     m_rotators.bind(m_layout);
-    m_rotators.bindFigures(device, m_layout, m_items);
+    m_rotators.bindFigures(device, m_layout, items());
     m_worldAnimator.apply(m_scene);
     syncCollision();
     m_particles.syncNodes(m_scene);
     if (!m_powerups.load(unpackedRoot / kPowerups)) {
         log::warn("Level: without the powerups archive the pickups are absent");
     }
-    const std::array<ItemArchive*, 2> archives{&m_items, &m_powerups};
+    const std::array<ItemArchive*, 2> archives{&items(), &m_powerups};
     if (!m_placedItems.bind(device, m_layout, m_collision.loaded() ? &m_collision : nullptr,
                             archives)) {
         log::warn("Level: none of the level's pickups could be placed");
@@ -380,8 +361,7 @@ void LevelWorld::clear() {
     m_collision.clear();
     m_markers.clear();
     m_textures.releaseTextures();
-    m_items.clear();
-    m_realmItems.clear();
+    m_itemArchives.clear();
     m_frameRemainder = 0.0f;
     m_textureAdvance = 0.0f;
     m_level = nullptr;

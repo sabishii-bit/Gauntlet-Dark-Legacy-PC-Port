@@ -3,6 +3,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -16,6 +17,9 @@
 #include "engine/io/File.h"
 #include "engine/world/AssetAudit.h"
 
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelItemArchives.h"
+
 namespace {
 using namespace gdl;
 
@@ -24,13 +28,21 @@ void printLine(std::FILE* stream, const std::string& line) {
     std::fputc('\n', stream);
 }
 
+struct ArchiveRequest {
+    std::filesystem::path directory;
+    std::optional<game::LevelRef> level;
+};
+
 int run(std::span<char*> args) {
     if (args.size() < 2 || std::string_view(args[1]) == "--help") {
         std::puts("assetcheck DIRECTORY [--lender DIRECTORY]... [--recursive --decode-only] "
                   "[--report FILE]\n"
+                  "assetcheck GAME_ROOT --levels [--report FILE]\n"
                   "A single archive checks dependencies in the supplied lender order.\n"
                   "Recursive decode-only mode inventories native archives; it does not certify "
                   "bindings.\n"
+                  "--levels checks catalogued level geometry using the runtime's item lenders; "
+                  "known absent retail particle templates remain explicit findings.\n"
                   "No assets are changed or exported. Exit 1 means findings; 2 means invalid "
                   "invocation.");
         return args.size() < 2 ? 2 : 0;
@@ -40,12 +52,15 @@ int run(std::span<char*> args) {
     std::vector<std::filesystem::path> lenderPaths;
     bool recursive = false;
     bool decodeOnly = false;
+    bool levels = false;
     for (usize i = 2; i < args.size(); ++i) {
         const std::string_view arg(args[i]);
         if (arg == "--recursive") {
             recursive = true;
         } else if (arg == "--decode-only") {
             decodeOnly = true;
+        } else if (arg == "--levels") {
+            levels = true;
         } else if ((arg == "--lender" || arg == "--report") && i + 1 < args.size()) {
             const std::filesystem::path value(args[++i]);
             if (arg == "--report") {
@@ -58,8 +73,10 @@ int run(std::span<char*> args) {
             return 2;
         }
     }
-    if (!std::filesystem::is_directory(root) || (recursive && !decodeOnly)) {
-        std::fputs("Supply an existing directory; recursive mode requires --decode-only.\n",
+    if (!std::filesystem::is_directory(root) || (recursive && !decodeOnly) ||
+        (levels && (recursive || decodeOnly || !lenderPaths.empty()))) {
+        std::fputs("Supply an existing directory; recursive mode requires --decode-only; "
+                   "--levels supplies its own contexts and cannot combine other modes.\n",
                    stderr);
         return 2;
     }
@@ -71,9 +88,24 @@ int run(std::span<char*> args) {
         }
         lenders.push_back(&sets[i]);
     }
-    std::vector<std::filesystem::path> archives;
+    std::vector<ArchiveRequest> archives;
     nlohmann::json excluded = nlohmann::json::array();
-    if (recursive) {
+    if (levels) {
+        game::LevelCatalog catalog;
+        if (!catalog.load(root)) {
+            std::fputs("No level catalogue found.\n", stderr);
+            return 2;
+        }
+        for (const auto& realm : catalog.realms()) {
+            for (const auto& name : realm.levels) {
+                const auto ref = catalog.byName(name);
+                if (!ref) {
+                    return 2;
+                }
+                archives.push_back({root / ref->directory, ref});
+            }
+        }
+    } else if (recursive) {
         for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
             if (entry.is_regular_file() &&
                 toLowerAscii(entry.path().filename().string()) == "objects.ngc") {
@@ -91,13 +123,13 @@ int run(std::span<char*> args) {
                         continue;
                     }
                 }
-                archives.push_back(entry.path().parent_path());
+                archives.push_back({entry.path().parent_path(), std::nullopt});
             }
         }
     } else {
-        archives.push_back(root);
+        archives.push_back({root, std::nullopt});
     }
-    std::ranges::sort(archives);
+    std::ranges::sort(archives, {}, &ArchiveRequest::directory);
     if (archives.empty()) {
         std::fputs("No native archives found; an empty scan is not a pass.\n", stderr);
         return 2;
@@ -108,15 +140,34 @@ int run(std::span<char*> args) {
     }
     nlohmann::json output{
         {"schema", 1},
-        {"scope", "objects.ngc archives, companion textures and local ANIM.PS2/WORLDS.PS2"},
+        {"scope", levels
+                      ? "catalogued level geometry/effects with runtime item texture lenders; "
+                        "not actor or item animation binding contexts"
+                      : "objects.ngc archives, companion textures and local ANIM.PS2/WORLDS.PS2"},
         {"dependencies_checked", !decodeOnly},
+        {"level_contexts", levels},
         {"lenders_in_order", context},
         {"excluded", excluded},
         {"archives", nlohmann::json::array()}};
     usize findings = 0;
     usize errors = 0;
-    for (const auto& directory : archives) {
-        const auto result = auditAssets(directory, lenders, !decodeOnly);
+    for (const auto& request : archives) {
+        const auto& directory = request.directory;
+        game::LevelItemArchives items;
+        auto activeLenders = lenders;
+        bool itemsLoaded = true;
+        if (request.level) {
+            itemsLoaded = items.load(root, *request.level);
+            activeLenders = items.textureLenders();
+        }
+        auto result = auditAssets(directory, activeLenders, !decodeOnly);
+        if (!itemsLoaded) {
+            result.issues.push_back({"item archives", "runtime item context failed to load", true});
+        }
+        nlohmann::json activeContext = nlohmann::json::array();
+        for (const auto* lender : activeLenders) {
+            activeContext.push_back(lender->directory().generic_string());
+        }
         nlohmann::json issues = nlohmann::json::array();
         for (const auto& issue : result.issues) {
             const bool error = !issue.dependency || !decodeOnly;
@@ -132,6 +183,8 @@ int run(std::span<char*> args) {
             }
         }
         output["archives"].push_back({{"directory", directory.generic_string()},
+                                      {"level", request.level ? request.level->name : ""},
+                                      {"lenders_in_order", activeContext},
                                       {"models", result.models},
                                       {"images", result.images},
                                       {"placeholders", result.placeholders},

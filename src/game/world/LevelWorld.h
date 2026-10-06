@@ -28,6 +28,7 @@
 #include "game/world/FallingScenery.h"
 #include "game/world/HazardSurfaces.h"
 #include "game/world/LevelCatalog.h"
+#include "game/world/LevelItemArchives.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/PlacedItems.h"
 #include "game/world/Rotators.h"
@@ -188,13 +189,13 @@ public:
     bool goldLeft() const { return m_placedItems.goldLeft(); }
     /** The level's item archive, lending the torch flames and Sumner; empty when it is not
      * unpacked. */
-    ItemArchive& items() { return m_items; }
+    ItemArchive& items() { return m_itemArchives.primary(); }
     /** Stage textures borrowed by native item/enemy animation slots such as LAVA. */
     TextureSet& textures() { return m_textures; }
     /** Common realm figures still available when a boss supplies its own item archive. */
-    ItemArchive& realmItems() { return m_realmItems; }
+    ItemArchive& realmItems() { return m_itemArchives.realm(); }
     ItemArchive& powerups() { return m_powerups; }
-    bool hasItems() const { return m_items.loaded(); }
+    bool hasItems() const { return m_itemArchives.loaded(); }
     const WorldCollision& collision() const { return m_collision; }
     /** The level's light, for everything standing in it. */
     /** The level's light as it is now, with whatever has been taken off its ambient. */
@@ -284,8 +285,7 @@ private:
     ModelSet m_models;
     TextureSet m_textures;
     AnimationSet m_animations; ///< the level's texture animations
-    ItemArchive m_items;
-    ItemArchive m_realmItems;
+    LevelItemArchives m_itemArchives;
     ItemArchive m_powerups;
     PlacedItems m_placedItems;
     SkorneArena m_skorneArena;

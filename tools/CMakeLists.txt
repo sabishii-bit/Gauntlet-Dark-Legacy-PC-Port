@@ -21,7 +21,7 @@ gdl_apply_compiler_options(gdlunpack)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 add_executable(assetcheck assetcheck/main.cpp)
-target_link_libraries(assetcheck PRIVATE gdl::engine nlohmann_json::nlohmann_json)
+target_link_libraries(assetcheck PRIVATE gdl::game nlohmann_json::nlohmann_json)
 gdl_apply_compiler_options(assetcheck)
 
 set_target_properties(vqdump gdlunpack assetcheck PROPERTIES

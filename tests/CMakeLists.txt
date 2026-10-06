@@ -186,6 +186,7 @@ add_executable(tests
     game/players/PlayerImpactTests.cpp
     game/world/LevelWorldTests.cpp
     game/world/LevelCatalogTests.cpp
+    game/world/LevelItemArchivesTests.cpp
     game/world/TowerAccessTests.cpp
     game/players/LevelRecordTests.cpp
     game/world/ExitPortalsTests.cpp

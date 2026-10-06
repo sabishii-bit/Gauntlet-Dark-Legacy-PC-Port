@@ -91,6 +91,24 @@ class AssetAuditTests(unittest.TestCase):
                 self.assertEqual(asset_audit.main(), 2)
                 self.assertFalse(report.exists())
 
+    def test_level_context_report_uses_runtime_lenders_and_keeps_findings_fatal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory).resolve()
+            binary = root / "build" / "test-preset"
+            binary.mkdir(parents=True)
+            with mock.patch.object(asset_audit.devenv, "ROOT", root), \
+                    mock.patch.object(asset_audit.build, "build_presets", return_value={"test-preset": "test-preset"}), \
+                    mock.patch.object(asset_audit.devenv, "run"), \
+                    mock.patch.object(asset_audit.subprocess, "run", return_value=CompletedProcess([], 1)) as run, \
+                    mock.patch.object(sys, "argv", ["asset_audit.py", "test-preset", "--assets", str(root), "--levels"]):
+                self.assertEqual(asset_audit.main(), 1)
+                command = run.call_args.args[0]
+                self.assertIn("--levels", command)
+                self.assertNotIn("--recursive", command)
+                self.assertNotIn("--decode-only", command)
+                self.assertNotIn("--lender", command)
+                self.assertIn(str(binary / "level-asset-audit.json"), command)
+
 
 if __name__ == "__main__":
     unittest.main()

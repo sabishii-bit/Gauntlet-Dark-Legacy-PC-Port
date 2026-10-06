@@ -372,4 +372,25 @@ TEST_CASE("damaged world files are rejected", "[formats][world]") {
     REQUIRE_THROWS_AS(WorldFile::parse(bytes), FormatError);
 }
 
+TEST_CASE("nonempty world effects cannot silently disappear behind invalid table offsets",
+          "[formats][world][asset-conformance]") {
+    for (const usize field : {kHeader + 4, kHeader + 12, kHeader + 20}) {
+        for (const u32 target : {0U, 96U, 119U, 0xFFFFFFF0U}) {
+            CAPTURE(field, target);
+            auto bytes = sampleWorld(true);
+            put32(bytes, field, target);
+            CHECK_THROWS_AS(WorldFile::parse(bytes), FormatError);
+        }
+    }
+    auto empty = sampleWorld(true);
+    put32(empty, kHeader + 8, 0);
+    put32(empty, kHeader + 16, 0);
+    put32(empty, kHeader + 4, 0);
+    put32(empty, kHeader + 12, 0);
+    put32(empty, kHeader + 20, 0);
+    const auto parsed = WorldFile::parse(empty);
+    CHECK(parsed.animations.empty());
+    CHECK(parsed.particles.empty());
+}
+
 } // namespace

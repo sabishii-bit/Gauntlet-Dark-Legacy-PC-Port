@@ -186,7 +186,10 @@ WorldFile WorldFile::parse(std::span<const u8> bytes) {
         world.particleSystemCount = extra.readU32();
         particleOffset = extra.readU32();
     }
-    if (world.particleSystemCount > 0 && particleOffset != 0) {
+    if (world.particleSystemCount > 0) {
+        if (particleOffset < kHeaderSize + kExtendedHeaderSize) {
+            throw FormatError("world file: particle templates have no valid table offset");
+        }
         checkRange(bytes, particleOffset, world.particleSystemCount, ParticleTemplateRecord::kSize,
                    "particle templates");
         for (u32 i = 0; i < world.particleSystemCount; ++i) {
@@ -196,7 +199,11 @@ WorldFile WorldFile::parse(std::span<const u8> bytes) {
         }
     }
 
-    if (world.animationCount > 0 && keyHeaderOffset != 0) {
+    if (world.animationCount > 0) {
+        if (keyHeaderOffset < kHeaderSize + kExtendedHeaderSize ||
+            animationOffset < kHeaderSize + kExtendedHeaderSize) {
+            throw FormatError("world file: animations have no valid table/key offset");
+        }
         checkRange(bytes, animationOffset, world.animationCount, kAnimationSize, "animations");
         const KeyHeader keys = readKeyHeader(bytes, keyHeaderOffset, "world file key header");
         for (u32 i = 0; i < world.animationCount; ++i) {
