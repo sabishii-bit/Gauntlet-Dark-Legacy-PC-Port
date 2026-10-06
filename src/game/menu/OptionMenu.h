@@ -211,6 +211,7 @@ private:
     s32 m_iconY = 0;
     s32 m_iconTimer = kIconGlideTicks;
     s32 m_iconDrawY = 0;
+    f32 m_iconRotation = 0;
     s32 m_bodyTop = 0;
     std::vector<Rect> m_itemAreas;
     std::vector<s32> m_alternateX;

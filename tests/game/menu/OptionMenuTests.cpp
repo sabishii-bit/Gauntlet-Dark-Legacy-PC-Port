@@ -321,6 +321,102 @@ TEST_CASE("the selection icon glides between items", "[game][menu]") {
     REQUIRE(f.menu.iconY() == second);
 }
 
+TEST_CASE("the menu icon retains the native rotation on both glide boundaries",
+          "[game][menu][menu-icon-timing]") {
+    // show_optmenu (GC 0x80073240..0x800732E4) starts the timer at one without
+    // rotating, then draws the incremented timer even when it reaches/passes 15.
+    // The following update settles the icon. Position and rotation share that phase.
+    for (const s32 ticks : {1, 2, 5, 20}) {
+        for (const usize selected : {usize{1}, usize{2}}) {
+            CAPTURE(ticks, selected);
+            Fixture f;
+            f.menu.open(threeItems(), f.painter, {});
+            const auto first = f.menu.iconY();
+            const auto target = f.menu.itemY(selected) + f.menu.lineHeight() / 2;
+            const auto base = selected == 1 ? kPi : 0.0f;
+            f.menu.focus(selected);
+            f.menu.update({}, ticks);
+            CHECK(f.menu.iconY() == first);
+            CHECK(f.menu.iconAngle() == base);
+            s32 timer = 1;
+            while (timer < OptionMenu::kIconGlideTicks) {
+                timer += ticks;
+                f.menu.update({}, ticks);
+                CAPTURE(timer);
+                CHECK(f.menu.iconY() ==
+                      first + (target - first) * timer / OptionMenu::kIconGlideTicks);
+                const auto angle =
+                    base + kPi * static_cast<f32>(timer) / OptionMenu::kIconGlideTicks;
+                CHECK(std::abs(f.menu.iconAngle() - angle) < 0.00001f);
+            }
+            f.menu.update({}, ticks);
+            CHECK(f.menu.iconY() == target);
+            CHECK(f.menu.iconAngle() == base);
+        }
+    }
+
+    Fixture f;
+    f.menu.open(threeItems(), f.painter, {});
+    f.menu.focus(1);
+    f.menu.update({}, 1);
+    f.menu.update({}, 7);
+    REQUIRE(f.menu.iconAngle() > kPi);
+    f.menu.close();
+    f.menu.open(threeItems(), f.painter, {}, 1);
+    CHECK(f.menu.iconY() == f.menu.itemY(1) + f.menu.lineHeight() / 2);
+    CHECK(f.menu.iconAngle() == kPi);
+}
+
+TEST_CASE("ornate menu glyphs retain their native entry and dismissal frames",
+          "[game][menu][menu-font-timing]") {
+    // show_optmenu (GC 0x80072AA4) deliberately changes FONT32GAR sheets before
+    // the labels resolve. This is authored animation, not damaged font geometry.
+    Fixture f;
+    const test::FakeTexture glow{64, 64};
+    const test::FakeTexture parchment{64, 64};
+    const std::array frames{test::FakeTexture{64, 64}, test::FakeTexture{64, 64},
+                            test::FakeTexture{64, 64}, test::FakeTexture{64, 64},
+                            test::FakeTexture{64, 64}, test::FakeTexture{64, 64}};
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    textures.glow = &glow;
+    textures.parchment = &parchment;
+    for (usize i = 0; i < frames.size(); ++i) {
+        textures.garamond[i] = &frames[i];
+    }
+    auto definition = threeItems();
+    definition.fades = true;
+    definition.parchmentFont = true;
+    definition.garamondIntro = true;
+    definition.showCursor = false;
+    for (const bool closing : {false, true}) {
+        for (s32 tick = closing ? 1 : 0; tick < OptionMenu::kFadeTicks; ++tick) {
+            CAPTURE(closing, tick);
+            f.menu.open(definition, f.painter, {});
+            if (closing) {
+                f.menu.update({}, OptionMenu::kFadeTicks);
+                f.menu.close();
+                f.menu.update({}, tick - 1);
+            } else {
+                f.menu.update({}, tick);
+            }
+            const auto frame = closing ? 6 - tick * 6 / OptionMenu::kFadeTicks : (tick - 10) / 2;
+            const Texture* selectedSheet =
+                frame < 6 ? &frames[static_cast<usize>(std::max(0, frame))] : &f.sheet;
+            const Texture* otherSheet = frame < 6 ? selectedSheet : &parchment;
+            test::FakeRenderDevice device;
+            Canvas canvas;
+            canvas.begin(device, Mat4{1});
+            f.menu.draw(canvas, f.painter, textures);
+            canvas.end();
+            REQUIRE(device.draws.size() == (selectedSheet == otherSheet ? 2 : 3));
+            CHECK(device.draws[0].texture == &glow);
+            CHECK(device.draws[1].texture == selectedSheet);
+            CHECK(device.draws.back().texture == otherSheet);
+        }
+    }
+}
+
 TEST_CASE("the glow pulse rises and falls with a hold between", "[game][menu]") {
     REQUIRE(pulseOpacity(0, 40, 5) == 128);
     REQUIRE(pulseOpacity(40, 40, 5) == 255);

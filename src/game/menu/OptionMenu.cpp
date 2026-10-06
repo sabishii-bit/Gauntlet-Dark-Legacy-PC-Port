@@ -107,6 +107,7 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     m_iconY = 0;
     m_iconTimer = kIconGlideTicks;
     m_iconDrawY = 0;
+    m_iconRotation = 0;
     m_iconScale = iconPixelsPerUnit(screen) * m_definition.cursorScale;
     const auto count = static_cast<s32>(m_definition.items.size());
     m_selection = count == 0 ? 0 : std::clamp(selection, 0, count - 1);
@@ -327,14 +328,11 @@ u8 OptionMenu::fadeOpacity() const {
 }
 
 f32 OptionMenu::iconAngle() const {
-    f32 angle = (m_selection & 1) != 0 ? kPi : 0.0f;
-    if (m_iconTimer > 0 && m_iconTimer < kIconGlideTicks) {
-        angle += kPi * static_cast<f32>(m_iconTimer) / static_cast<f32>(kIconGlideTicks);
-    }
-    return angle;
+    return ((m_selection & 1) != 0 ? kPi : 0.0f) + m_iconRotation;
 }
 
 void OptionMenu::glideIcon(s32 ticks) {
+    m_iconRotation = 0;
     if (m_definition.items.empty()) {
         return;
     }
@@ -347,6 +345,9 @@ void OptionMenu::glideIcon(s32 ticks) {
     } else if (m_iconTimer < kIconGlideTicks) {
         m_iconTimer += ticks;
         m_iconDrawY = m_iconY + (target - m_iconY) * m_iconTimer / kIconGlideTicks;
+        // Position and rotation use this update's interpolation, including the
+        // last increment. The next update settles both, not only the position.
+        m_iconRotation = kPi * static_cast<f32>(m_iconTimer) / kIconGlideTicks;
     } else {
         m_iconY = target;
         m_iconDrawY = target;
