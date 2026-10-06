@@ -72,6 +72,7 @@ private:
         bool planted = false; ///< stationary DAMG area, with birth/hold/end phases
         f32 phaseSeconds = 0;
         bool settled = false; ///< stationary impact, optionally followed by generator placement
+        f32 impactRadius = 0; ///< live damageradius; the final flight morph clears it
         std::optional<CritterArea> impactArea; ///< expanding damage after the flight ends
         bool leavesGenerator = false;
         bool summonsEnemies = false;
@@ -88,8 +89,9 @@ private:
              const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
     void stickyContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players);
-    static bool startImpactArea(Flying& flying, u32 effect, EffectTrees& effects,
-                                const WorldCollision* collision);
+    /** Places the impact (even a purely visual one); true if it owns ongoing area damage. */
+    static bool settleImpact(Flying& flying, u32 effect, EffectTrees& effects,
+                             const WorldCollision* collision);
     void impactContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players);
     void summon(Flying& flying);
     std::vector<Flying> m_flying;

@@ -27,6 +27,22 @@ constexpr u32 kSticky = 0x4000000;
 constexpr f32 kStickyLife = 20.0f;
 constexpr f32 kProjectileHitGap = 0.25f;
 
+f32 projectileHitGap(const ItemArchive& archive, const CombatEffectDefinition* impact,
+                     bool pierces) {
+    // ProcessEffects (0x80094be0) gives ordinary projectiles immunity for the
+    // impact's first sequence frame count / 30, not SFXX life or playback rate.
+    // Piercing attacks and absent/zero-frame impacts retain the 0.25s default.
+    if (!pierces && impact != nullptr) {
+        if (const auto tree = archive.trees.find(impact->tree)) {
+            const auto& sequences = archive.trees.tree(*tree).sequences;
+            if (!sequences.empty() && sequences.front().frames > 0) {
+                return static_cast<f32>(sequences.front().frames) / 30.0f;
+            }
+        }
+    }
+    return kProjectileHitGap;
+}
+
 ParticleDescriptor fireTrail(const CombatEffectDefinition& cue) {
     // CritterDoParticle's kind 2 modifies allocPsys defaults, not a preset.
     ParticleDescriptor trail;
@@ -120,7 +136,7 @@ void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
     constexpr u32 kArrow = 0x20000;
     // ProcessEffects aligns arrow effects with velocity every frame, including
     // its vertical component. Garm's eye ribbons use this, not a yaw-only pose.
-    const bool directed = !flying.stuck && (damage->flags & kArrow) != 0;
+    const bool directed = !flying.stuck && !flying.settled && (damage->flags & kArrow) != 0;
     effects.placeAt(flying.effect, transform,
                     directed ? std::optional<Vec3>{flying.velocity} : std::nullopt);
 }
@@ -155,6 +171,7 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
     flying.leavesGenerator = (cue->flags & 0x20000U) != 0;
     flying.summonsEnemies = (cue->flags & 0x400000U) != 0;
     flying.position = flying.shot.origin;
+    flying.impactRadius = damage->maxDistance * shot.scale;
     if (planted) {
         flying.planted = true;
         flying.stuck = true;
@@ -229,13 +246,18 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
         if (!effects.playing(flying.effect)) {
             if (!flying.stuck && !flying.settled && !flying.morphed && damage.morph >= 0) {
                 flying.morphed = true;
+                // ProcessEffects clears damageradius when no second morph remains.
+                // Plague's ACID_BALL0 can splash; ACID_BALL1 still hurts on contact
+                // but must not create another damaging area or explode on timeout.
+                if (damage.morphEnd < 0) {
+                    flying.impactRadius = 0;
+                }
                 flying.effect = show(flying, damage.morph, device, effects, sound,
                                      damage.morphLife > 0.0f ? damage.morphLife : kMorphLife);
-            } else if (!flying.settled && !flying.stuck && damage.maxDistance > 0 &&
+            } else if (!flying.settled && !flying.stuck && flying.impactRadius > 0 &&
                        damage.hitSound >= 0 &&
-                       startImpactArea(flying,
-                                       show(flying, damage.hitSound, device, effects, sound),
-                                       effects, collision)) {
+                       settleImpact(flying, show(flying, damage.hitSound, device, effects, sound),
+                                    effects, collision)) {
                 place(flying, effects);
             } else {
                 if (flying.morphed) {
@@ -385,11 +407,17 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         break;
                     }
                     const f32 speed = glm::length(flying.velocity);
-                    m_hits.push_back(
-                        {victim->player, damage.damage * flying.shot.damageScale, damage.flags,
-                         speed > 0.0f ? flying.velocity / speed : Vec3{0.0f},
-                         damage.damage * flying.shot.damageScale > 2 ? kProjectileHitGap : 0,
-                         flying.shot.critter, flying.shot.data->kind()});
+                    const f32 hitDamage = damage.damage * flying.shot.damageScale;
+                    const bool pierces =
+                        (damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0;
+                    const f32 hitGap =
+                        hitDamage > 2
+                            ? projectileHitGap(*flying.archive,
+                                               flying.shot.data->sound(damage.hitSound), pierces)
+                            : 0;
+                    m_hits.push_back({victim->player, hitDamage, damage.flags,
+                                      speed > 0.0f ? flying.velocity / speed : Vec3{0.0f}, hitGap,
+                                      flying.shot.critter, flying.shot.data->kind()});
                     if ((damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0) {
                         // Reflecting super shots leave an impact and spend their
                         // pass-through bit; ordinary super shots keep travelling.
@@ -425,7 +453,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     break;
                 }
                 const u32 impact = show(flying, damage.hitSound, device, effects, impactSound);
-                if (startImpactArea(flying, impact, effects, collision)) {
+                if (settleImpact(flying, impact, effects, collision)) {
                     // The impact owns a new damage lifetime. It is not an
                     // immediate full-radius second hit on the contact frame.
                 } else if (flying.leavesGenerator) {
@@ -449,27 +477,21 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
     std::erase_if(m_emittedEffects, [&](u32 effect) { return !effects.playing(effect); });
 }
 
-bool CombatantProjectiles::startImpactArea(Flying& flying, u32 effect, EffectTrees& effects,
-                                           const WorldCollision* collision) {
+bool CombatantProjectiles::settleImpact(Flying& flying, u32 effect, EffectTrees& effects,
+                                        const WorldCollision* collision) {
     const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
     const auto life = effects.remaining(effect);
-    if (damage.maxDistance <= 0 || !life.has_value() || *life <= 0) {
+    if (!life.has_value() || *life <= 0) {
         return false;
     }
-    CritterArea area;
-    area.radius = damage.maxDistance * flying.shot.scale;
-    area.minDot = damage.minDot;
-    area.damage = damage.damage * flying.shot.damageScale;
-    area.flags = damage.flags;
-    area.lifetime = area.secondsLeft = *life;
-    area.expanding = true;
-    flying.impactArea = area;
-    flying.effect = effect;
-    flying.settled = true;
+    const auto* impact = flying.shot.data->sound(damage.hitSound);
+    const bool alignToFloor = impact != nullptr && (impact->flags & 0x10U) != 0;
+    if (flying.impactRadius <= 0 && !alignToFloor) {
+        return false; // ordinary visual-only impacts keep the pose chosen by show()
+    }
     flying.velocity = flying.spin = Vec3{0};
     flying.rotation = Vec3{0};
-    const auto* impact = flying.shot.data->sound(damage.hitSound);
-    if (collision != nullptr && impact != nullptr && (impact->flags & 0x10U) != 0) {
+    if (collision != nullptr && alignToFloor) {
         const f32 radius = damage.radius * flying.shot.scale * 0.5f;
         if (const auto floor = collision->floorAt(flying.position, 1 + radius, 5 + radius)) {
             flying.position.y = floor->y + kFloorClearance;
@@ -478,6 +500,25 @@ bool CombatantProjectiles::startImpactArea(Flying& flying, u32 effect, EffectTre
                 -std::atan2(floor->normal.x, std::hypot(floor->normal.y, floor->normal.z));
         }
     }
+    // Floor alignment belongs to the impact's SFXX, even after the flight's
+    // blast radius has been cleared. It must not inherit arrow-facing either.
+    Mat4 placement = glm::translate(Mat4{1}, flying.position);
+    placement = glm::rotate(placement, flying.rotation.x, Vec3{1, 0, 0});
+    placement = glm::rotate(placement, flying.rotation.z, Vec3{0, 0, 1});
+    effects.placeAt(effect, placement);
+    if (flying.impactRadius <= 0) {
+        return false;
+    }
+    CritterArea area;
+    area.radius = flying.impactRadius;
+    area.minDot = damage.minDot;
+    area.damage = damage.damage * flying.shot.damageScale;
+    area.flags = damage.flags;
+    area.lifetime = area.secondsLeft = *life;
+    area.expanding = true;
+    flying.impactArea = area;
+    flying.effect = effect;
+    flying.settled = true;
     return true;
 }
 

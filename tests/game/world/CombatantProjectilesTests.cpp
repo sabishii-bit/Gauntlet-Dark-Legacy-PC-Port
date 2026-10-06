@@ -475,6 +475,106 @@ TEST_CASE("projectile impacts expand their damage then go harmless before the ar
     CHECK(f.effects.count() == 0);
 }
 
+TEST_CASE("projectile repeat immunity follows impact frames rather than a fixed quarter second",
+          "[boss-projectiles][projectile-impact]") {
+    Fixture f;
+    const auto root = test::scratchDirectory("projectile-hit-immunity");
+    // ProcessEffects uses impact frames / 30, independently of the sequence's
+    // playback rate and SFXX life. No impact/frames and piercing shots keep 0.25s.
+    const s32 frames = GENERATE(0, 3, 45);
+    const s32 rate = GENERATE(15, 60);
+    const bool piercing = GENERATE(false, true);
+    const bool smallHit = GENERATE(false, true);
+    CAPTURE(frames, rate, piercing, smallHit);
+    writeTextFile(
+        root / "animations.json",
+        R"({"trees":[{"name":"LOOP","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+        "sequences":[]},{"name":"HIT","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"PLAY","frames":)" +
+            std::to_string(frames) + R"(,"frameRate":)" + std::to_string(rate) + "}]}]}");
+    REQUIRE(f.archive.trees.load(root));
+    writeTextFile(root / "critter.json",
+                  R"({"types":[{"moveCount":1}],"moves":[{}],"descriptors":[{}],
+        "damages":[{"type":1,"minSpeed":30,"maxSpeed":30,"radius":0.5,"damage":)" +
+                      std::string(smallHit ? "2" : "20") + R"(,"flags":)" +
+                      std::string(piercing ? "1048576" : "0") +
+                      R"(,"behaviorFlags":9,"sfxIndex":0,"sfx":1}],
+        "sounds":[{"name":"LOOP","life":3},{"name":"HIT","life":7}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 0;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, {});
+    const std::array players{EnemyView{0, {0, 0, 2}, 1, 6}};
+    f.step(0.05f, players);
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    f32 expected = piercing || frames == 0 ? 0.25f : static_cast<f32>(frames) / 30;
+    if (smallHit) {
+        expected = 0;
+    }
+    CHECK(hits[0].repeatGap == Approx(expected));
+}
+
+TEST_CASE("Plague acid shots carry their authored impact immunity and expanding aftermath",
+          "[boss-projectiles][projectile-impact][plague][assets][native-assets]") {
+    Fixture f;
+    const s32 index = GENERATE(4, 5, 6, 7);
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    REQUIRE(f.data.load(root / "CRITTER/PBOSS.WAD"));
+    REQUIRE(f.archive.load(root / "MONSTERS/PBOSS"));
+    const auto* damage = f.data.damage(index);
+    REQUIRE(damage != nullptr);
+    REQUIRE(damage->maxDistance == 5);
+    constexpr std::array<f32, 4> kDamage{50, 50, 80, 60};
+    REQUIRE(damage->damage == kDamage[static_cast<usize>(index - 4)]);
+    REQUIRE(damage->flags == 0x20024);
+    REQUIRE(f.data.sound(damage->hitSound)->tree == "ACID_HIT");
+    const auto impact = f.archive.trees.find("ACID_HIT");
+    REQUIRE(impact.has_value());
+    const auto& sequences = f.archive.trees.tree(*impact).sequences;
+    REQUIRE_FALSE(sequences.empty());
+    REQUIRE(sequences[0].frames > 0);
+    const f32 immunity = static_cast<f32>(sequences[0].frames) / 30;
+    CAPTURE(index, immunity);
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = index;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    shot.realm = 'K';
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array players{EnemyView{0, {0, 0, 2}, 1, 6}};
+    f.step(1.0f / 30, players);
+    const auto direct = f.projectiles.takeHits();
+    REQUIRE(direct.size() == 1);
+    CHECK(direct[0].damage == damage->damage);
+    CHECK(direct[0].flags == damage->flags);
+    CHECK(direct[0].repeatGap == Approx(immunity));
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "ACID_HIT");
+    CHECK(f.sounds == std::vector<std::string>{"S_PLGATTCK3", "S_PLGPHIT3"});
+    REQUIRE(f.projectiles.count() == 1);
+    const Vec3 landed = f.effects.effect(0).position;
+    const std::array bystanders{EnemyView{1, landed + Vec3{4, -3, 0}, 0.25f, 6}};
+    const f32 life = *f.effects.remaining(f.effects.effect(0).id);
+    f.step(life * 0.1f, bystanders);
+    CHECK(f.projectiles.takeHits().empty());
+    f.step(life * 0.5f, bystanders);
+    const auto splash = f.projectiles.takeHits();
+    REQUIRE(splash.size() == 1);
+    CHECK(splash[0].player == 1);
+    CHECK(splash[0].damage == Approx(damage->damage * 0.105f));
+    CHECK(splash[0].flags == damage->flags);
+    f.step(life * 0.1f, bystanders);
+    CHECK(f.projectiles.takeHits().empty()); // final artwork tail is not damaging
+    f.step(life * 0.31f, bystanders);
+    CHECK(f.projectiles.count() == 0);
+    CHECK(f.effects.count() == 0);
+}
+
 TEST_CASE("timed-out explosive shots enter their impact phase without a collision",
           "[boss-projectiles][projectile-impact]") {
     Fixture f;
@@ -491,6 +591,90 @@ TEST_CASE("timed-out explosive shots enter their impact phase without a collisio
     CHECK(f.effects.effect(0).name == "HIT");
     f.projectiles.clear(f.effects);
     CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("only the final flight morph clears the projectile's expanding impact damage",
+          "[boss-projectiles][projectile-impact]") {
+    Fixture f;
+    const bool finalMorph = GENERATE(false, true);
+    const auto root = test::scratchDirectory("final-projectile-morph");
+    writeTextFile(root / "critter.json",
+                  R"({"types":[{"moveCount":1}],"moves":[{}],"descriptors":[{}],
+        "damages":[{"type":1,"minSpeed":30,"maxSpeed":30,"radius":0.5,
+        "damage":20,"maxDistance":10,"minDot":-1,"behaviorFlags":9,
+        "sfxIndex":0,"sfx":2,"morph":1,"morphLife":0.5,"morphEnd":)" +
+                      std::string(finalMorph ? "-1" : "2") + R"(}],"sounds":[
+        {"name":"SHOT"},{"name":"LOOP"},{"name":"HIT","life":1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    f.launch();
+    f.step(0.11f);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "LOOP");
+    SECTION("contact after morph still hurts but only a pending morph retains area damage") {
+        const Vec3 at = f.effects.effect(0).position;
+        const std::array players{EnemyView{0, at - Vec3{0, 3, 0}, 1, 6}};
+        f.step(0.05f, players);
+        const auto hits = f.projectiles.takeHits();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].damage == 40);
+        CHECK(f.projectiles.count() == (finalMorph ? 0U : 1U));
+        REQUIRE(f.effects.count() == 1);
+        CHECK(f.effects.effect(0).name == "HIT");
+        f.step(0.2f, players);
+        CHECK(f.projectiles.takeHits().empty() == finalMorph);
+    }
+    SECTION("expiration after the final flight does not manufacture an impact") {
+        f.step(0.51f);
+        CHECK(f.projectiles.count() == (finalMorph ? 0U : 1U));
+        CHECK(f.effects.count() == (finalMorph ? 0U : 1U));
+    }
+}
+
+TEST_CASE("Plague acid loses its expanding blast after its final flight morph",
+          "[boss-projectiles][projectile-impact][plague][assets][native-assets]") {
+    Fixture f;
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    REQUIRE(f.data.load(root / "CRITTER/PBOSS.WAD"));
+    REQUIRE(f.archive.load(root / "MONSTERS/PBOSS"));
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 4;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    shot.realm = 'K';
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.effects.effect(0).name == "ACID_BALL0");
+    f.step(0.2f);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "ACID_BALL1");
+    CHECK(f.effects.effect(0).secondsLeft == Approx(15));
+    SECTION("a flying acid ball still deals its direct hit and plays its impact") {
+        WorldCollision world;
+        CollisionTriangle floor;
+        floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+        world.build({floor});
+        const Vec3 at = f.effects.effect(0).position;
+        const std::array players{EnemyView{0, at - Vec3{0, 3, 0}, 1, 6}};
+        f.step(1.0f / 30, players, &world);
+        const auto hit = f.projectiles.takeHits();
+        REQUIRE(hit.size() == 1);
+        CHECK(hit[0].damage == 50);
+        CHECK(hit[0].flags == 0x20024);
+        CHECK(hit[0].repeatGap == Approx(22.0f / 30));
+        CHECK(f.projectiles.count() == 0); // ProcessEffects clears damageradius at final morph
+        REQUIRE(f.effects.count() == 1);
+        CHECK(f.effects.effect(0).name == "ACID_HIT");
+        CHECK(f.effects.effect(0).position.y == Approx(0.1f));
+        CHECK_FALSE(f.effects.effect(0).flightDirection.has_value());
+        f.step(0.4f, players);
+        CHECK(f.projectiles.takeHits().empty());
+    }
+    SECTION("flight expiration does not invent an explosive impact") {
+        f.step(15.1f);
+        CHECK(f.projectiles.count() == 0);
+        CHECK(f.effects.count() == 0);
+        CHECK(f.sounds == std::vector<std::string>{"S_PLGATTCK3"});
+    }
 }
 
 TEST_CASE("shipped projectile cues are trees and their only custom links are particle trails",

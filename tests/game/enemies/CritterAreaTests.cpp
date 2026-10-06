@@ -570,6 +570,47 @@ TEST_CASE("Plague Fiend SPOUT emits its visual and damage at authored stage anch
     REQUIRE(visuals == 2);
     REQUIRE(stageHit);
 }
+TEST_CASE("Plague Fiend SPLASH waits for its damage window and expanding carrier",
+          "[game][boss-areas][plague][assets][native-assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'K');
+    REQUIRE(fixture.spawn("PBOSS", Vec3{0}, 0));
+    const auto* damage = fixture.actor.data()->damage(8);
+    REQUIRE(damage != nullptr);
+    REQUIRE(damage->type == AttackDefinition::kRing);
+    REQUIRE(damage->speed == 1);
+    REQUIRE(damage->maxDistance == 30);
+    REQUIRE(fixture.actor.data()->sound(damage->sound)->tree == "NULLFX");
+    const std::array players{playerAt({0, 0, 20})};
+    s32 start = -1;
+    s32 hit = -1;
+    for (s32 frame = 0; frame < 3600 && hit < 0; ++frame) {
+        fixture.update(2, 1.0f / 30, players);
+        const auto move = fixture.actor.moveName();
+        const bool splash = move == "SPLASH" || move == "SPLASH2";
+        if (splash && start < 0) {
+            start = frame;
+        }
+        for (const auto& blow : fixture.actor.takeBlows()) {
+            if (splash) {
+                CHECK(blow.area);
+                CHECK(frame - start > 45); // frame 40 opens the carrier, not its full radius
+                CHECK(blow.damage < damage->damage);
+                CHECK(blow.origin.z > 0); // the invisible carrier really moves
+                CHECK(blow.repeatGap > 0);
+                hit = frame;
+            }
+        }
+        fixture.actor.takeCues();
+        fixture.actor.takeShots();
+    }
+    INFO("Last move: " << fixture.actor.moveName());
+    REQUIRE(start >= 0);
+    REQUIRE(hit > start);
+}
+
 TEST_CASE("single arena eruptions select the nearest available anchor once per window",
           "[game][boss-areas][yeti]") {
     const auto root = areaArchive(true, false, true);
