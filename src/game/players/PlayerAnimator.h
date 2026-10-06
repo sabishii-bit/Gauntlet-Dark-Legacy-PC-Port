@@ -489,8 +489,8 @@ public:
     }
     /** Whether this tick's step ended the strong throw's wind-up: the weapon flies. */
     bool strongReleased() const { return m_strongReleased; }
-    /** Whether the body can begin the turbo move `deed` now: it has the sequence and is not
-     * in the middle of anything. */
+    /** Whether this move has a sequence and may interrupt the current action.
+     * Turbos and special attacks can replace ordinary attacks, not other special moves. */
     bool canBegin(PlayerDeed deed) const;
     /** The action a turbo deed plays; the stance for any other deed. */
     static Action turboActionOf(PlayerDeed deed);
@@ -536,6 +536,8 @@ private:
     static bool isThrow(Action action) {
         return action >= Action::Throw && action <= Action::ThrowMovingRecover;
     }
+    /** Native attack categories 1..10, excluding an active legend-item gesture. */
+    bool ordinaryAttack() const;
     Decision decide(Action requested) const;
     f32 readyTransition() const;
     f32 meleePace() const;

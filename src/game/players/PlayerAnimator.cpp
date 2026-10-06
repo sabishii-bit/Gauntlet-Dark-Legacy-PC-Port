@@ -213,20 +213,36 @@ PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
     }
 }
 
+bool PlayerAnimator::ordinaryAttack() const {
+    return !m_legendAsked &&
+           (throwing() || meleeing() || strongThrowing() || guarding() ||
+            m_current == Action::Shove ||
+            (m_current >= Action::FireLeft && m_current <= Action::FireRightRecover) ||
+            (m_current >= Action::StrafeShootForward1 && m_current <= Action::StrafeShootRight2));
+}
+
 bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     const Action action = turboActionOf(deed);
-    if (action == Action::Ready) {
+    if (action == Action::Ready || !bound() || !playable(action) || entering() || conjuring() ||
+        reacting() || comboBound() || dying()) {
         return false;
     }
-    // A turbo move cuts a close attack off; nothing else does.
+    // DoPlayerAction (800AC068) resets current attack categories 1..10 to
+    // READY with mode 2 for a category >=11 request. Do not lose a one-tick
+    // turbo press while an ordinary throw, heavy throw or gauntlet is playing.
+    const bool priority = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
+                          deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
+                          deed == PlayerDeed::Breathe || deed == PlayerDeed::Combo;
+    if (priority && ordinaryAttack()) {
+        return true;
+    }
+    // The remaining requests retain their narrower interruption rules.
     const bool cutsMelee = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
                            deed == PlayerDeed::Shove || deed == PlayerDeed::Combo;
     const bool cutsGuard = cutsMelee || deed == PlayerDeed::SuperShot ||
                            deed == PlayerDeed::Hammer || deed == PlayerDeed::Breathe ||
                            deed == PlayerDeed::HurlLegend || deed == PlayerDeed::ShootLegend;
-    return bound() && m_sequences[index(action)] >= 0 && !entering() && !throwing() &&
-           (!meleeing() || cutsMelee) && !conjuring() && !reacting() && !turboing() &&
-           (!guarding() || cutsGuard) && !comboBound() && !dying();
+    return !throwing() && (!meleeing() || cutsMelee) && !turboing() && (!guarding() || cutsGuard);
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -401,10 +417,11 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // categories 1..10, not just recoveries. Strong throws, gauntlets and
     // shoves qualify even though turboing() also locks their animations;
     // true turbos, special shots, hammer, breath and combos do not.
-    const bool ordinaryAttack =
+    const bool interruptibleAttack =
         throwing() || meleeing() || strongThrowing() || m_current == Action::Shove ||
         (m_current >= Action::FireLeft && m_current <= Action::FireRightRecover);
-    const bool free = !entering() && !conjuring() && !reacting() && (!turboing() || ordinaryAttack);
+    const bool free =
+        !entering() && !conjuring() && !reacting() && (!turboing() || interruptibleAttack);
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked) {
@@ -421,6 +438,9 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
                             deed == PlayerDeed::Shove || deed == PlayerDeed::StrongAttack ||
                             isLegend(deed);
+    const bool potionInterrupt =
+        ordinaryAttack() && (deed == PlayerDeed::UsePotion || deed == PlayerDeed::ThrowPotion ||
+                             deed == PlayerDeed::ShieldPotion);
     // Locking the body below must not erase the request used by DoPlayerAction's
     // speed selection. Native fn_80088938 retains held attack bits even during
     // strong/item attacks, and PlayerMotion selects their requested action again.
@@ -435,7 +455,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
             lockedSpeedRequest = Action::Defend;
         }
     }
-    if (reacting() || struck || turboing() || turboAsked) {
+    if (reacting() || struck || (turboing() && !potionInterrupt) || turboAsked) {
         deed = PlayerDeed::None;
         motion = PlayerMotion::Stand;
     }
@@ -540,6 +560,12 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
 
 PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     Decision d{requested};
+    // Native requests at/after P_USE_MAGIC replace an ordinary attack's
+    // dispatch state with READY before its phase can choose a continuation.
+    if (ordinaryAttack() && (requested == Action::UsePotion || requested == Action::ThrowPotion)) {
+        d.cut = Cut::IfDifferent;
+        return d;
+    }
     switch (m_current) {
     case Action::Ready:
         d.repeat = true;
@@ -833,11 +859,6 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     // A potion cuts into standing, walking and running at once, as an attack does.
     // Nothing cuts the pickup's gesture short (P_PICKUP waits for its end).
     const bool picking = m_current == Action::Pick;
-    if (guarding() && (requested == Action::UsePotion || requested == Action::ThrowPotion)) {
-        // Native requests at/after P_USE_MAGIC replace a category-1 guard's
-        // dispatch state with READY before selecting their action.
-        d.action = requested;
-    }
     if ((requested == Action::UsePotion || requested == Action::ThrowPotion) &&
         d.action == requested && !isThrow(m_current) && !conjuring() &&
         m_current != Action::Start && !picking) {

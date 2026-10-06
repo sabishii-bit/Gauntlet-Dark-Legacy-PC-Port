@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <span>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -387,6 +388,129 @@ TEST_CASE("the Temple trigger repeatedly brings its organist sound and light int
         previous = ambience.emitter(organ).handle;
     }
     ambience.stop(player);
+}
+
+TEST_CASE("Ghost Town handcart sounds retain independent lifetimes after world destruction",
+          "[game][world][ambience][handcart-audio][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G2");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.audio() != nullptr);
+    REQUIRE(world.audio()->bank == "TOWN");
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape sounds;
+    sounds.open(root, &player, world.audio(), 'G');
+    sounds.bindAmbience(world.layout(), &world.scene());
+    sounds.setPlayerCount(2);
+
+    constexpr std::array<s32, 2> kInstances{335, 340};
+    constexpr std::array<usize, 2> kObjects{868, 871};
+    constexpr std::array<std::string_view, 2> kNames{"G2RAIL1", "G2RAIL2"};
+    std::array<const AmbientEmitter*, 2> carts{};
+    usize count = 0;
+    for (usize i = 0; i < sounds.ambience().size(); ++i) {
+        const auto& emitter = sounds.ambience().emitter(i);
+        if (emitter.bank->entry(emitter.sound).name != "S_HANDCAR") {
+            continue;
+        }
+        ++count;
+        for (usize cart = 0; cart < carts.size(); ++cart) {
+            if (emitter.instance == kInstances[cart]) {
+                carts[cart] = &emitter;
+            }
+        }
+    }
+    REQUIRE(count == 2);
+    for (usize cart = 0; cart < carts.size(); ++cart) {
+        REQUIRE(carts[cart] != nullptr);
+        const auto& emitter = *carts[cart];
+        CHECK(emitter.parent == static_cast<s32>(kObjects[cart]));
+        CHECK(world.layout().objects()[kObjects[cart]].name == kNames[cart]);
+        CHECK(emitter.radius == 20);
+        CHECK(emitter.minPlayers == 1);
+        CHECK(emitter.flags == 0);
+        const auto& entry = emitter.bank->entry(emitter.sound);
+        CHECK(entry.id == 0x29003E);
+        CHECK(entry.duration == -1);
+        REQUIRE(entry.sequence.size() == 1);
+        CHECK(entry.sequence.front().sample == 54);
+        CHECK(entry.sequence.front().loopStart);
+        CHECK(entry.sequence.front().loopBack);
+        CHECK(emitter.bank->sequence(emitter.sound).loops());
+        REQUIRE(emitter.bank->sample(54).seconds() < 6);
+    }
+    const auto positions = [&] {
+        return std::array{Vec3{world.scene().worldTransform(kObjects[0])[3]},
+                          Vec3{world.scene().worldTransform(kObjects[1])[3]}};
+    };
+    std::array<f32, 3200> output{};
+    const auto listen = [&](std::span<const Vec3> listeners) {
+        player.update();
+        sounds.updateAmbience(listeners, {.position = listeners.front()}, 1, false, &world.scene());
+        mixer.mix(output);
+    };
+    // Move beyond DoWorldAnimSub's first-frame reappearance window before the hit.
+    world.update(3.0f / 30.0f);
+    listen(positions());
+    const std::array handles{carts[0]->handle, carts[1]->handle};
+    REQUIRE(player.isPlaying(handles[0]));
+    REQUIRE(player.isPlaying(handles[1]));
+    REQUIRE(handles[0] != handles[1]);
+
+    // WorldObjectExplode (80055E04) hides the world tree, not its separate type-13
+    // item. The sound update (80062260) follows GetWorldMat without testing hidden
+    // bit 2, and AudioSecretProc (800A08B4) retains each in-range looping voice.
+    REQUIRE(world.explodeObject(carts[0]->parent, positions()[0]));
+    CHECK_FALSE(world.scene().objectVisible(kObjects[0]));
+    CHECK_FALSE(world.collision().solid(carts[0]->parent));
+    CHECK(world.scene().objectVisible(kObjects[1]));
+    CHECK(world.collision().solid(carts[1]->parent));
+    REQUIRE(world.takeWorldExplosions().size() == 1);
+    f32 peak = 0;
+    constexpr s32 kUpdates = 180; // Six seconds crosses the native sample's loop boundary.
+    for (s32 tick = 0; tick < kUpdates; ++tick) {
+        world.update(1.0f / 30.0f);
+        const auto current = positions();
+        listen(current);
+        CHECK_FALSE(world.scene().objectVisible(kObjects[0]));
+        for (usize cart = 0; cart < carts.size(); ++cart) {
+            CHECK(carts[cart]->position == current[cart]);
+            CHECK(carts[cart]->handle == handles[cart]);
+            CHECK(player.isPlaying(handles[cart]));
+        }
+        for (const f32 sample : output) {
+            peak = std::max(peak, std::abs(sample));
+        }
+    }
+    CHECK(peak > 0.01f);
+
+    // The authored motion now separates the two carts beyond their 30-unit
+    // audible reach. Leaving either one must not stop the other's same-name loop.
+    const auto apart = positions();
+    REQUIRE(glm::distance(apart[0], apart[1]) > 30);
+    listen(std::array{apart[1]});
+    CHECK(carts[0]->handle == kNoSound);
+    CHECK_FALSE(player.isPlaying(handles[0]));
+    CHECK(carts[1]->handle == handles[1]);
+    CHECK(player.isPlaying(handles[1]));
+    listen(std::array{apart[0]});
+    CHECK(player.isPlaying(carts[0]->handle));
+    CHECK(carts[0]->handle != handles[0]);
+    CHECK(carts[1]->handle == kNoSound);
+    CHECK_FALSE(player.isPlaying(handles[1]));
+    CHECK_FALSE(world.scene().objectVisible(kObjects[0]));
+    const SoundHandle resumed = carts[0]->handle;
+    listen(std::array{apart[0] + Vec3{0, 1000, 0}});
+    CHECK(carts[0]->handle == kNoSound);
+    CHECK_FALSE(player.isPlaying(resumed));
+    sounds.close();
 }
 
 TEST_CASE("the tower's ambience stands at the realms' portals and its braziers",

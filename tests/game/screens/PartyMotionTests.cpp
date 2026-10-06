@@ -144,6 +144,51 @@ TEST_CASE("turbo steering uses the action turn allowance for both cursor and sti
     }
 }
 
+TEST_CASE("a fresh turbo or potion press reaches a player already winding up a ranged attack",
+          "[party-motion][attack-interrupt][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    for (const auto source : {PlayerDeed::Attack, PlayerDeed::StrongAttack}) {
+        for (const bool potion : {false, true}) {
+            CAPTURE(source, potion);
+            Fixture f;
+            f.players[1].life = PlayerLife::InTower;
+            auto& player = f.players[0];
+            player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+            REQUIRE(player.figure);
+            player.turbo.add(TurboMeter::kFull);
+            player.actor.save().progress().inventory.addPotions(1, 1);
+            f.events.advanceTurbo = [](usize, s32, f32) {};
+            f.events.perform = [](usize, PartyMotion::Action) {};
+            player.figure->animate(0, 2, 1.0f / 30.0f, source);
+            const auto& animator = player.figure->animator();
+            REQUIRE(animator.action() == (source == PlayerDeed::Attack
+                                              ? PlayerAnimator::Action::Throw
+                                              : PlayerAnimator::Action::StrongThrow));
+            auto& input = f.inputs[3];
+            input.attack = true; // held primary input must not swallow the new press
+            input.usePotion = potion;
+            input.turboAttackPressed = !potion;
+            f.step();
+            REQUIRE(animator.action() == (potion ? PlayerAnimator::Action::UsePotion
+                                                 : PlayerAnimator::Action::TurboFull));
+            CHECK(animator.turboBegan() == !potion);
+            CHECK(animator.damageProtected() == !potion);
+            CHECK_FALSE(animator.potionUsed()); // only its release can consume inventory
+            input.usePotion = false;
+            input.turboAttackPressed = false;
+            const auto phase = animator.action();
+            f.step();
+            CHECK(animator.action() == phase);
+            CHECK_FALSE(animator.turboBegan());
+        }
+    }
+}
+
 TEST_CASE("a moving spin passes directly into its class finisher without a planted gap",
           "[party-motion][alpha-spin-finisher][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")

@@ -184,6 +184,7 @@ add_executable(tests
     game/players/PlayerTransportTests.cpp
     game/players/PlayerAnimatorTests.cpp
     game/players/PlayerAnimatorCadenceTests.cpp
+    game/players/PlayerAnimatorInterruptTests.cpp
     game/players/ItemAttackTests.cpp
     game/players/KnockbackTests.cpp
     game/players/PlayerImpactTests.cpp
