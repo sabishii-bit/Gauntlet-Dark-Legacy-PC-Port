@@ -187,8 +187,9 @@ TEST_CASE("resuming waits for the native acid scroll and blocks all menu input d
     CHECK(device.textureUpdates == uploads);
 }
 
-TEST_CASE("pause dismissal starts its native scroll sound once despite further input",
+TEST_CASE("resuming plays only the scroll dismissal without a navigation ding",
           "[pause][pause-dismiss][assets]") {
+    const s32 inputKind = GENERATE(0, 1, 2, 3);
     test::assetOrSkip("audio/COMMON.vbk");
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
@@ -203,14 +204,34 @@ TEST_CASE("pause dismissal starts its native scroll sound once despite further i
     REQUIRE(menu.open(device, context, party, 0));
     CHECK(sounds.voiceCount() == 1);
     MenuInput back;
-    back.back = true;
+    back.back = inputKind == 0;
+    back.start = inputKind == 1;
+    back.escape = inputKind == 2;
+    back.pointerBack = inputKind == 3;
     CHECK(menu.update(0, back) == PauseOutcome::Running);
-    // AudioMenuExit and StartFireScroll's handle19 (S_OPTMENUSCROLL), once each.
-    CHECK(sounds.voiceCount() == 3);
+    // The menu-opening cue and StartFireScroll's handle19, with no separate
+    // exit/select cue for resuming. Ordinary submenu navigation keeps its cues.
+    CHECK(sounds.voiceCount() == 2);
+    SoundSet common;
+    REQUIRE(common.load(context.unpackedRoot / "audio/COMMON"));
+    const auto opening = common.find("S_OPTMENUSEL");
+    const auto scroll = common.find("S_OPTMENUSCROLL");
+    REQUIRE(opening);
+    REQUIRE(scroll);
+    AudioMixer referenceMixer(48000);
+    SoundPlayer referenceSounds(referenceMixer);
+    REQUIRE(referenceSounds.play(common.sequence(*opening)) != kNoSound);
+    REQUIRE(referenceSounds.play(common.sequence(*scroll)) != kNoSound);
+    std::array<f32, 4096> actual{};
+    std::array<f32, 4096> expected{};
+    mixer.mix(actual);
+    referenceMixer.mix(expected);
+    REQUIRE(std::ranges::any_of(expected, [](f32 sample) { return sample != 0; }));
+    CHECK(actual == expected);
     CHECK(menu.update(0.5, back) == PauseOutcome::Running);
-    CHECK(sounds.voiceCount() == 3);
+    CHECK(sounds.voiceCount() == 2);
     CHECK(menu.update(0.2, back) == PauseOutcome::Resume);
-    CHECK(sounds.voiceCount() == 3);
+    CHECK(sounds.voiceCount() == 2);
 }
 
 TEST_CASE("pause acid dismissal retains fractional ticks at different update rates",
@@ -262,7 +283,7 @@ TEST_CASE("pause reopening or destruction stops its borrowed bank voices but not
         MenuInput back;
         back.back = true;
         REQUIRE(menu.update(0, back) == PauseOutcome::Running);
-        REQUIRE(sounds.voiceCount() == 4); // External loop, open, exit and acid-scroll cues.
+        REQUIRE(sounds.voiceCount() == 3);             // External loop, open and acid-scroll cues.
         REQUIRE(menu.open(device, context, party, 0)); // Reloads COMMON while the cues are live.
         audioStep();
         CHECK(sounds.isPlaying(unrelated));

@@ -272,6 +272,12 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     auto mapped = input;
     mapped.back |= input.escape;
     const auto event = m_menu.update(mapped, ticks);
+    if (m_page == Page::Main &&
+        (event.action == MenuAction::Back || (input.start && !input.select))) {
+        // Resuming is not a submenu confirmation/back step: only the scroll
+        // dismissal should sound, without the extra navigation ding.
+        return dismiss(PauseOutcome::Resume);
+    }
     playMenuSound(event, false);
     if (m_page == Page::Quit) {
         if (event.action == MenuAction::Choice && event.code == 1) {
@@ -281,9 +287,6 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
             showMain();
         }
         return PauseOutcome::Running;
-    }
-    if (event.action == MenuAction::Back || (input.start && !input.select)) {
-        return dismiss(PauseOutcome::Resume);
     }
     if (event.action != MenuAction::Choice) {
         return PauseOutcome::Running;
