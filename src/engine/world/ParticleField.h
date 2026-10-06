@@ -14,6 +14,8 @@
 
 namespace gdl {
 
+class WorldScene;
+
 /**
  * A level's particle systems: one emitter at every marker of the layout, started from the
  * template the marker's name picks ("PSYS" then the template's letter), stepped thirty
@@ -40,6 +42,9 @@ public:
                 u32 seed = 1);
     /** Moves an emitter's marker; new particles leave from there. */
     void setNode(usize index, const Mat4& node);
+    /** Refreshes animated world markers before emission. Live particles retain their
+     * birth positions and velocities; static markers and independent effects are unchanged. */
+    void syncNodes(const WorldScene& scene);
     void setEmitting(usize index, bool emitting);
     void setSpriteScale(usize index, f32 scale);
     /** Replaces a sprite frame without restarting its emitter or live particles. */
@@ -63,6 +68,7 @@ public:
 private:
     struct Entry {
         ParticleEmitter emitter;
+        s32 worldObject = -1; ///< animated source marker, kept with its batched emitter
         const Texture* texture = nullptr;
         DrawState state;
         const Texture* presentedTexture = nullptr;

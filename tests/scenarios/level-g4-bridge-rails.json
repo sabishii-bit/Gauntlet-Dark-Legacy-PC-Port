@@ -1,0 +1,8 @@
+{
+  "screen": "tower",
+  "level": "G4",
+  "party": [{"player": 0, "class": "KNI", "color": "GRE", "name": "TEST", "level": 60, "health": 6000, "keys": 9}],
+  "position": [-109.906, -6.1875, -62.129],
+  "yaw": 1.013625,
+  "welcome": false
+}

@@ -1,13 +1,16 @@
 #include <array>
+#include <utility>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/ParticleField.h"
+#include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
 #include "SampleLevel.h"
@@ -16,6 +19,99 @@
 namespace {
 
 using namespace gdl;
+
+TEST_CASE("animated world markers move new emissions without carrying existing particles",
+          "[world][particles][particle-attachment]") {
+    const auto dir = test::sampleLevel("particle-field-attachment");
+    writeTextFile(dir / "world.json", R"({
+      "objects":[
+        {"name":"GROUP","position":[10,0,0],"flags":4096,"child":1,"next":4},
+        {"name":"PSYSA","position":[1,0,0],"flags":6144,"next":2},
+        {"name":"PSYSB","position":[0,2,0],"flags":6144,"next":3},
+        {"name":"PSYSA_STATIC","position":[0,0,3],"flags":2048},
+        {"name":"WALL","position":[0,0,0]}],
+      "particles":[
+        {"id":"A","enables":25248,"particleLife":[3,0],"rate":[30,30,30,30],
+         "direction":[1,0,0],"speed":30,"texture":"STONE"},
+        {"id":"B","enables":25248,"particleLife":[3,0],"rate":[30,30,30,30],
+         "direction":[1,0,0],"speed":30,"texture":"GLASS"}]})");
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldLayout layout;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(layout.load(dir));
+    WorldScene scene;
+    REQUIRE(scene.build(layout, models, textures, device));
+    ParticleField field;
+    field.bind(layout, textures, device);
+    REQUIRE(field.size() == 3);
+    // Different textures reorder entries for batching; attachments belong to the
+    // emitter, not to its index in the source layout or sorted field.
+    const auto emitterAt = [&](usize object) {
+        for (usize i = 0; i < field.size(); ++i) {
+            if (Vec3{field.emitter(i).node()[3]} == layout.worldPosition(object)) {
+                return i;
+            }
+        }
+        return field.size();
+    };
+    const usize first = emitterAt(1);
+    const usize second = emitterAt(2);
+    const usize still = emitterAt(3);
+    REQUIRE(first < field.size());
+    REQUIRE(second < field.size());
+    REQUIRE(still < field.size());
+    REQUIRE(field.textureOf(first) != field.textureOf(second));
+    const ParticleDescriptor independent = field.emitter(first).descriptor();
+    const Mat4 independentNode = glm::translate(Mat4{1}, Vec3{-9, 8, 7});
+    const usize own = field.start(independent, independentNode, &device.whiteTexture());
+    field.syncNodes(scene);
+    field.step(1.0f / 30);
+    REQUIRE(field.particleCount() == 4);
+    const Particle old = field.emitter(first).particles()[0];
+    CHECK(old.origin == layout.worldPosition(1));
+    CHECK(old.velocity == Vec3{1, 0, 0});
+    scene.capturePresentation();
+    const Mat4 moved =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{20, -15, 5}), kHalfPi, Vec3{0, 0, 1});
+    scene.setObjectTransform(0, moved);
+    field.syncNodes(scene);
+    for (const auto& [object, emitter] :
+         std::array{std::pair{usize{1}, first}, std::pair{usize{2}, second}}) {
+        CHECK(glm::distance(Vec3{field.emitter(emitter).node()[3]},
+                            Vec3{scene.worldTransform(object)[3]}) < 0.0001f);
+    }
+    // A marker without native bit 0x1000 keeps its captured origin, even beneath
+    // a moving ancestor. Independently started effects remain caller-controlled.
+    CHECK(Vec3{field.emitter(still).node()[3]} == layout.worldPosition(3));
+    CHECK(field.emitter(own).node() == independentNode);
+    CHECK(field.emitter(first).particles()[0].origin == old.origin);
+    CHECK(field.emitter(first).particles()[0].velocity == old.velocity);
+    field.step(1.0f / 30);
+    REQUIRE(field.particleCount() == 8);
+    CHECK(field.emitter(first).positionOf(field.emitter(first).particles()[0]) ==
+          old.origin + old.velocity);
+    for (const auto& [object, emitter] :
+         std::array{std::pair{usize{1}, first}, std::pair{usize{2}, second}}) {
+        const auto& born = field.emitter(emitter).particles()[1];
+        CHECK(glm::distance(born.origin, Vec3{scene.worldTransform(object)[3]}) < 0.0001f);
+        CHECK(glm::distance(born.velocity, Vec3{0, 1, 0}) < 0.0001f);
+    }
+    CHECK(field.emitter(still).particles()[1].origin == layout.worldPosition(3));
+    CHECK(field.emitter(own).particles()[1].origin == Vec3{independentNode[3]});
+    // Presentation samples age, never the animated marker's interpolated pose.
+    for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha);
+        CHECK(field.particleCount() == 8);
+        CHECK(field.emitter(first).particles()[0].origin == old.origin);
+        CHECK(field.emitter(first).particles()[0].age == 1);
+        CHECK(field.emitter(first).particles()[1].age == 0);
+        CHECK(glm::distance(Vec3{field.emitter(first).node()[3]},
+                            Vec3{scene.worldTransform(1)[3]}) < 0.0001f);
+    }
+}
 
 TEST_CASE("particle flipbook pairs are render-only and preserve hard depth cutouts",
           "[world][particles][presentation][texture-blend]") {

@@ -67,6 +67,50 @@ TEST_CASE("enemy aim snapshots retain the native collision-height anchor",
     CHECK(target.height == enemies.heightOf(*id));
 }
 
+TEST_CASE("enemy rendering separates solid bodies from deferred ghost effects without repeats",
+          "[enemies][enemy-render-passes][assets]") {
+    const s32 kind = GENERATE(kGruntKind, 20, kDeathKind);
+    CAPTURE(kind);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kind));
+    EnemySpawn spawn;
+    spawn.kind = kind;
+    spawn.placed = true;
+    spawn.asleep = kind == kDeathKind;
+    REQUIRE(enemies.spawn(spawn, {}));
+    enemies.draw(device, Mat4{1}, {});
+    const auto together = device.draws;
+    REQUIRE_FALSE(together.empty());
+    const auto solidCount =
+        std::ranges::count_if(together, [](const auto& draw) { return draw.state.depthWrite; });
+    CHECK((solidCount == 0) == (kind == 20));
+    const auto drawPass = [&](TreeModel::Pass pass) {
+        enemies.draw(device, Mat4{1}, {}, nullptr, nullptr, nullptr, -1, pass);
+    };
+    device.draws.clear();
+    drawPass(TreeModel::Pass::DepthWriting);
+    CHECK(device.draws.size() == static_cast<usize>(solidCount));
+    CHECK(
+        std::ranges::all_of(device.draws, [](const auto& draw) { return draw.state.depthWrite; }));
+    const usize firstEffect = device.draws.size();
+    drawPass(TreeModel::Pass::Effects);
+    REQUIRE(device.draws.size() == together.size());
+    for (usize i = firstEffect; i < device.draws.size(); ++i) {
+        CHECK_FALSE(device.draws[i].state.depthWrite);
+        CHECK(device.draws[i].state.depthTest);
+    }
+    // Repeated draws preserve geometry, texture and animation state, including the
+    // sleeping Death path which bypasses the animator's pose.
+    for (const auto& draw : together) {
+        CHECK(std::ranges::count_if(device.draws, [&](const auto& split) {
+                  return split.texture == draw.texture && split.vertices == draw.vertices &&
+                         split.state.depthWrite == draw.state.depthWrite;
+              }) == 1);
+    }
+}
+
 TEST_CASE("recycling a brood slot releases its original generator even if replacement fails",
           "[enemies][generator-feedback][assets]") {
     test::FakeRenderDevice device;

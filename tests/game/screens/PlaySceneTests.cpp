@@ -4347,6 +4347,213 @@ TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth
     REQUIRE(device.draws[*firstHead].blend() == BlendMode::Additive);
     scene.close();
 }
+
+TEST_CASE("G4 ghosts stay on their own side of the trapped-chest fence",
+          "[game][screens][g4-ghost-fence][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG4/WORLDS.PS2");
+    test::assetOrSkip("MONSTERS/GHO/ANIM.PS2");
+    const s32 tier = GENERATE(1, 2, 3);
+    const f32 side = GENERATE(-1.0f, 1.0f);
+    CAPTURE(tier, side);
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G4");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    // The fence beside CHEST (448) and CHESTEXP (460), not a synthetic alpha plane.
+    const auto& barrier = world.layout().objects()[822];
+    REQUIRE(barrier.name == "G4NS#16");
+    REQUIRE(barrier.position == Vec3{87.578125f, 1.796875f, -54.359375f});
+    const auto fenceSlot = world.textures().find("IRON_FENCE_02");
+    REQUIRE(fenceSlot);
+    REQUIRE(world.textures().entry(*fenceSlot).translucent());
+    const Texture* fenceTexture = &world.textures().texture(device, *fenceSlot);
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{84.140625f, -0.828125f, -52.6015625f};
+    PlayScene scene;
+    const std::vector<PartyMember> party{{0, CharacterSave{}}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    constexpr s32 kGhostKind = 20;
+    auto& enemies = scene.enemies();
+    REQUIRE(enemyKind(kGhostKind).name == std::string_view{"GHO"});
+    REQUIRE(enemies.loadKind(kGhostKind));
+    EnemySpawn spawn;
+    spawn.kind = kGhostKind;
+    spawn.tier = tier;
+    spawn.placed = true;
+    spawn.position = barrier.position + Vec3{side * 5, -1.8f, 0};
+    const auto ghost = enemies.spawn(spawn, {});
+    REQUIRE(ghost);
+    // START begins mostly underground. Test the emerged body, without a target to chase.
+    const Vec3 initialPosition = enemies.positionOf(*ghost);
+    enemies.setView(std::nullopt);
+    for (s32 tick = 0; tick < 180 && enemies.animatorOf(*ghost)->entering(); tick += 2) {
+        enemies.update(2, 1.0f / 30.0f, {});
+    }
+    REQUIRE_FALSE(enemies.animatorOf(*ghost)->entering());
+    REQUIRE(enemies.positionOf(*ghost) == initialPosition);
+    ItemArchive* archive = enemies.archive(kGhostKind);
+    REQUIRE(archive != nullptr);
+    const auto treeIndex = archive->trees.find("GHO" + std::to_string(tier));
+    REQUIRE(treeIndex);
+    const auto& node = archive->trees.tree(*treeIndex).nodes.front();
+    REQUIRE(node.objectFlags == 0xC01880);
+    REQUIRE(node.additive());
+    REQUIRE_FALSE(node.writesDepth());
+    REQUIRE(node.testsDepth());
+    const auto sequence = enemies.animatorOf(*ghost)->player().sequence();
+    REQUIRE(sequence < node.objectFrames.size());
+    const auto model = archive->models.find(node.objectFrames[sequence].object);
+    REQUIRE(model);
+    std::vector<const Texture*> ghostTextures;
+    for (const auto& part : archive->models.mesh(*model).parts) {
+        ghostTextures.push_back(&archive->textures.texture(device, part.texture));
+    }
+    REQUIRE_FALSE(ghostTextures.empty());
+    device.draws.clear();
+    scene.render(device, makeScreenProjection(640, 448), 640, 448);
+    std::optional<usize> firstGhost;
+    std::optional<usize> lastFence;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        const auto& draw = device.draws[i];
+        if (draw.texture == fenceTexture) {
+            lastFence = i;
+            REQUIRE(draw.state.depthWrite);
+            REQUIRE(draw.state.depthTest);
+            REQUIRE(draw.state.alphaTest == WorldScene::kAlphaTest);
+        }
+        if (std::ranges::find(ghostTextures, draw.texture) != ghostTextures.end()) {
+            firstGhost = firstGhost.value_or(i);
+            REQUIRE(draw.blend() == BlendMode::Additive);
+            REQUIRE_FALSE(draw.state.depthWrite);
+            REQUIRE(draw.state.depthTest);
+        }
+    }
+    REQUIRE(firstGhost);
+    REQUIRE(lastFence);
+
+    // Probe emitted triangles along +X, from the fence's front face. Track only the
+    // ghost's additive contribution through the two actual draw states: a solid fence
+    // texel must hide the farther ghost, never the nearer one; a hole admits both.
+    const auto alphaAt = [](const Texture& texture, Vec2 uv) {
+        const auto& image = dynamic_cast<const test::FakeTexture&>(texture);
+        const auto width = static_cast<s32>(image.width());
+        const auto height = static_cast<s32>(image.height());
+        const f32 x = uv.x * static_cast<f32>(width) - 0.5f;
+        const f32 y = uv.y * static_cast<f32>(height) - 0.5f;
+        const auto ix = static_cast<s32>(std::floor(x));
+        const auto iy = static_cast<s32>(std::floor(y));
+        const auto texel = [&](s32 u, s32 v) {
+            const auto column = static_cast<usize>((u % width + width) % width);
+            const auto row = static_cast<usize>((v % height + height) % height);
+            return static_cast<f32>(image.pixels[(row * image.width() + column) * 4 + 3]) / 255;
+        };
+        return std::lerp(std::lerp(texel(ix, iy), texel(ix + 1, iy), x - std::floor(x)),
+                         std::lerp(texel(ix, iy + 1), texel(ix + 1, iy + 1), x - std::floor(x)),
+                         y - std::floor(y));
+    };
+    bool checkedSolid = false;
+    bool checkedHole = false;
+    const auto& ghostDraw = device.draws[*firstGhost];
+    for (usize g = 0; g + 2 < ghostDraw.vertices.size() && !(checkedSolid && checkedHole); g += 3) {
+        const auto& a = ghostDraw.vertices[g];
+        const auto& b = ghostDraw.vertices[g + 1];
+        const auto& c = ghostDraw.vertices[g + 2];
+        // A centroid can fall entirely in a chain-link hole (notably GHO2).
+        // Sample the triangle's interior without moving either authored mesh.
+        for (s32 sample = 0; sample < 64 && !(checkedSolid && checkedHole); ++sample) {
+            const s32 column = sample % 8;
+            const s32 row = sample / 8;
+            const f32 weightB = (static_cast<f32>(column) + 0.5f) / 8;
+            const f32 weightC = (static_cast<f32>(row) + 0.5f) / 8;
+            const f32 weightA = 1 - weightB - weightC;
+            if (weightA <= 0) {
+                continue;
+            }
+            const Vec3 point = a.position * weightA + b.position * weightB + c.position * weightC;
+            const Vec2 ghostUv = a.uv * weightA + b.uv * weightB + c.uv * weightC;
+            const f32 ghostAlpha =
+                alphaAt(*ghostDraw.texture, ghostUv) *
+                (static_cast<f32>(a.color.a) * weightA + static_cast<f32>(b.color.a) * weightB +
+                 static_cast<f32>(c.color.a) * weightC) /
+                255;
+            if (ghostAlpha <= ghostDraw.state.alphaTest) {
+                continue;
+            }
+            for (usize f = 0; f < device.draws.size(); ++f) {
+                const auto& fence = device.draws[f];
+                if (fence.texture != fenceTexture) {
+                    continue;
+                }
+                for (usize t = 0; t + 2 < fence.vertices.size(); t += 3) {
+                    const auto& p = fence.vertices[t];
+                    const auto& q = fence.vertices[t + 1];
+                    const auto& r = fence.vertices[t + 2];
+                    if (glm::distance(p.position, barrier.position) > 9) {
+                        continue;
+                    }
+                    const Vec2 edge1{q.position.y - p.position.y, q.position.z - p.position.z};
+                    const Vec2 edge2{r.position.y - p.position.y, r.position.z - p.position.z};
+                    const Vec2 offset{point.y - p.position.y, point.z - p.position.z};
+                    const f32 determinant = edge1.x * edge2.y - edge1.y * edge2.x;
+                    if (std::abs(determinant) < 0.001f) {
+                        continue;
+                    }
+                    const f32 u = (offset.x * edge2.y - offset.y * edge2.x) / determinant;
+                    const f32 v = (edge1.x * offset.y - edge1.y * offset.x) / determinant;
+                    if (u < 0 || v < 0 || u + v > 1) {
+                        continue;
+                    }
+                    const f32 fenceX =
+                        p.position.x * (1 - u - v) + q.position.x * u + r.position.x * v;
+                    const Vec2 uv = p.uv * (1 - u - v) + q.uv * u + r.uv * v;
+                    const f32 fenceAlpha = alphaAt(*fence.texture, uv);
+                    const bool hole = fenceAlpha < fence.state.alphaTest;
+                    if ((hole && checkedHole) || (!hole && (checkedSolid || fenceAlpha < 0.5f))) {
+                        continue;
+                    }
+                    REQUIRE((point.x - fenceX) * side > 1);
+                    f32 depth = 1.0e6f;
+                    f32 contribution = 0;
+                    for (const usize drawIndex :
+                         {*firstGhost < f ? *firstGhost : f, *firstGhost < f ? f : *firstGhost}) {
+                        const auto& state = device.draws[drawIndex].state;
+                        const bool isGhost = drawIndex == *firstGhost;
+                        const f32 fragmentX = isGhost ? point.x : fenceX;
+                        const f32 alpha = isGhost ? ghostAlpha : fenceAlpha;
+                        if (alpha < state.alphaTest || (state.depthTest && fragmentX > depth)) {
+                            continue;
+                        }
+                        contribution = isGhost ? contribution + alpha : contribution * (1 - alpha);
+                        if (state.depthWrite) {
+                            depth = fragmentX;
+                        }
+                    }
+                    CAPTURE(hole, point.x, fenceX, fenceAlpha, ghostAlpha);
+                    CHECK(contribution == Approx(hole || side < 0 ? ghostAlpha : 0));
+                    checkedHole |= hole;
+                    checkedSolid |= !hole;
+                }
+            }
+        }
+    }
+    REQUIRE(checkedSolid);
+    REQUIRE(checkedHole);
+    // Native AddSortObject (800B9CE4) defers the ghost with a -20000 key bias;
+    // the fence writes depth first, and the ghost still compares against it.
+    CHECK(*lastFence < *firstGhost);
+}
+
 TEST_CASE("tower portal columns draw after horizon sheets while retaining wall occlusion",
           "[game][screens][visual-parity][assets]") {
     const auto root = unpackedRoot();

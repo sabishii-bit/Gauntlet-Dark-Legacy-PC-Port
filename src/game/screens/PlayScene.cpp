@@ -1208,7 +1208,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting(), opponentBlend);
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
-                               &effectCamera, opponentBlend);
+                               &effectCamera, opponentBlend, TreeModel::Pass::DepthWriting);
     m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera,
                                 opponentBlend);
     // The boss stands out in the level's own light while the rite darkens the rest.
@@ -1222,6 +1222,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         device.applyAmbientOcclusion(occlusion);
     }
     m_world->drawDeferred(device, clip, camera, effectBlend);
+    // GHO's native 0xC01880 sorts its additive, non-depth-writing body after scenery.
+    // A fence blended over it instead makes even a nearer ghost appear behind the fence.
+    m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
+                               &effectCamera, opponentBlend, TreeModel::Pass::Effects);
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     drawShadows(device, clip, camera.position, frameBlend, opponentBlend);

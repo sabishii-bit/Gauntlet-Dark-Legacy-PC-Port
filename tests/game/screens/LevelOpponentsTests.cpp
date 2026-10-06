@@ -1809,7 +1809,7 @@ TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
 }
 
 TEST_CASE("opponent views preserve player identity and hide fallen participants",
-          "[game][screens][level-opponents]") {
+          "[game][screens][level-opponents][golem-contact]") {
     std::array<PlayerRuntime, 2> players;
     players[0].actor.spawn(3, {}, nullptr, Vec3{10, 0, 20}, 0);
     players[1].actor.spawn(1, {}, nullptr, Vec3{30, 0, 40}, 0);
@@ -1820,6 +1820,9 @@ TEST_CASE("opponent views preserve player identity and hide fallen participants"
     REQUIRE(views[0].player == 3);
     REQUIRE(views[0].position == players[0].actor.position());
     REQUIRE(views[0].radius == players[0].actor.radius());
+    REQUIRE(views[0].collisionRadius == players[0].actor.reach());
+    REQUIRE(views[0].collisionHeight ==
+            players[0].actor.followPoint().y - players[0].actor.position().y);
     REQUIRE_FALSE(views[0].hidden);
     REQUIRE(views[0].damageable);
     REQUIRE(views[0].invisible);

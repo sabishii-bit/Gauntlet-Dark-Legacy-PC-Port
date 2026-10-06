@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <format>
 #include <set>
@@ -13,6 +14,7 @@
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/render/ImmediateBatch.h"
 #include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldScene.h"
@@ -34,6 +36,124 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+TEST_CASE("G3 fountain completion lowers its fire emitters with the native fence chain",
+          "[triggers][particles][g3-fountain][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(catalog.byName("G3").has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G3")));
+    world.startTriggers({});
+    const auto& objects = world.layout().objects();
+    std::vector<usize> fences;
+    for (const std::string_view name : {"G3FENCE22", "G3FENCE23", "G3FENCE24", "G3FENCE25#0"}) {
+        for (usize i = 0; i < objects.size(); ++i) {
+            if (objects[i].name == name) {
+                fences.push_back(i);
+            }
+        }
+    }
+    REQUIRE(fences.size() == 4);
+    std::vector<std::pair<usize, usize>> flames;
+    for (usize object = 0; object < objects.size(); ++object) {
+        if (!objects[object].particles()) {
+            continue;
+        }
+        bool attached = false;
+        for (s32 parent = objects[object].parent; parent >= 0;
+             parent = objects[static_cast<usize>(parent)].parent) {
+            for (const usize fence : fences) {
+                attached |= static_cast<usize>(parent) == fence;
+            }
+        }
+        if (!attached) {
+            continue;
+        }
+        REQUIRE((objects[object].flags & WorldObject::kAnimated) != 0);
+        const Vec3 position = world.layout().worldPosition(object);
+        usize found = world.particles().size();
+        for (usize emitter = 0; emitter < world.particles().size(); ++emitter) {
+            if (glm::distance(Vec3{world.particles().emitter(emitter).node()[3]}, position) <
+                0.01f) {
+                REQUIRE(found == world.particles().size());
+                found = emitter;
+            }
+        }
+        REQUIRE(found < world.particles().size());
+        flames.emplace_back(object, found);
+    }
+    REQUIRE(flames.size() == 20);
+    usize completion = world.triggers().size();
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        if (world.triggers().trigger(i).instance == 396) {
+            completion = i;
+        }
+    }
+    REQUIRE(completion < world.triggers().size());
+    const auto& trigger = world.triggers().trigger(completion);
+    REQUIRE(trigger.id == 39);
+    REQUIRE_FALSE(trigger.chained);
+    // No puzzle completion: the held native tracks leave the fire at walking height.
+    for (s32 frame = 0; frame < 90; ++frame) {
+        world.update(kStep);
+        world.updateTriggers(kStep, {});
+    }
+    REQUIRE_FALSE(trigger.fired);
+    for (const auto& [object, emitter] : flames) {
+        REQUIRE_FALSE(world.particles().emitter(emitter).particles().empty());
+        CHECK(Vec3{world.particles().emitter(emitter).node()[3]}.y ==
+              Approx(world.layout().worldPosition(object).y));
+    }
+    // Enter the authored completion trigger, not a forced emitter shutdown. Its chain
+    // plays all four 62-frame fence tracks; their final Y offset is -20.029818 units.
+    const std::array visitors{
+        TriggerVisitor{.position = trigger.spot, .floorObject = trigger.floor}};
+    world.updateTriggers(kStep, visitors);
+    REQUIRE(trigger.fired);
+    for (s32 frame = 0; frame < 240; ++frame) {
+        world.update(kStep);
+        world.updateTriggers(kStep, {});
+    }
+    for (const usize fence : fences) {
+        CHECK(world.triggers().opened(static_cast<s32>(fence)));
+        CHECK(Vec3{world.scene().worldTransform(fence)[3]}.y ==
+              Approx(world.layout().worldPosition(fence).y - 20.029818f).margin(0.001f));
+    }
+    for (const auto& [object, index] : flames) {
+        CAPTURE(object, index);
+        const auto& emitter = world.particles().emitter(index);
+        const Vec3 liveNode{world.scene().worldTransform(object)[3]};
+        const Vec3 originalNode = world.layout().worldPosition(object);
+        CHECK(glm::distance(Vec3{emitter.node()[3]}, liveNode) < 0.001f);
+        // Native does not delete these emitters: new fire is below the floor, while
+        // particles born before the fences descended have lived out their short lives.
+        CHECK(emitter.active());
+        REQUIRE_FALSE(emitter.particles().empty());
+        for (const auto& particle : emitter.particles()) {
+            CHECK(particle.origin.y < world.layout().worldPosition(object).y - 10.0f);
+        }
+        // Full quads must clear the walking floor at each original marker, including
+        // rising motion and expanding widths. Billboard corners may extend off its edge.
+        const auto floor = world.collision().floorAt(originalNode, 4, 10);
+        REQUIRE(floor.has_value());
+        CHECK(emitter.descriptor().depthTest);
+        for (const f32 frameOffset : {-1.0f, 0.0f, 1.0f}) {
+            ImmediateBatch quads;
+            quads.begin(PrimitiveTopology::TriangleList);
+            emitter.draw(quads, Vec3{1, 0, 0}, Vec3{0, 1, 0}, frameOffset);
+            quads.end();
+            REQUIRE_FALSE(quads.empty());
+            f32 highest = liveNode.y;
+            for (const auto& vertex : quads.triangles()) {
+                highest = std::max(highest, vertex.position.y);
+            }
+            CHECK(highest < floor->y);
+        }
+    }
+}
 
 TEST_CASE("G1 upper landing calls the lift before walking down to the bridge logs and key",
           "[triggers][g1-bridge-logs][assets]") {

@@ -26,6 +26,7 @@
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
 #include "game/enemies/Golem.h"
+#include "game/players/ClassData.h"
 #include "game/world/PlacedItems.h"
 
 namespace {
@@ -862,6 +863,119 @@ TEST_CASE("move effects without an animated node use the root rather than the bo
     const auto parent = critters.nodeTransform(*cues[0].node);
     REQUIRE(parent.has_value());
     REQUIRE(glm::distance(Vec3{*parent * Vec4{cues[0].nodeOffset, 1}}, cues[0].position) < 0.001f);
+}
+
+TEST_CASE("critter blows use the player's contact cylinder independently of its wall footprint",
+          "[game][enemies][golem-contact]") {
+    const auto root = targetedCritter();
+    writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100}],
+      "moves":[{"name":"READY","anim":"READY","type":32},
+        {"name":"BLOW","anim":"ROARATK","type":128,"colnode":"BODY",
+         "frameStart":0,"frameEnd":25,"damage0":0}],
+      "damages":[{"type":0,"maxDistance":3,"damage":10}]})");
+    EnemyView player = playerAt({4.25f, -3, 0});
+    player.radius = 0.75f;
+    player.collisionRadius = 1.5f;
+    bool expected = true;
+    SECTION("contact extends beyond the wall footprint") {}
+    SECTION("the contact cylinder still ends at its authored radius") {
+        player.position.x = 4.75f;
+        expected = false;
+    }
+    SECTION("the collision centre may differ from half the visual height") {
+        player.position = {0, -12, 0};
+        player.collisionHeight = 12;
+    }
+    SECTION("above the expanded cylinder misses") {
+        player.position = {0, -18.25f, 0};
+        player.collisionHeight = 12;
+        expected = false;
+    }
+    SECTION("below the expanded cylinder misses") {
+        player.position = {0, -5.75f, 0};
+        player.collisionHeight = 12;
+        expected = false;
+    }
+    SECTION("an omitted contact radius retains the supplied cylinder") {
+        player.collisionRadius.reset();
+        expected = false;
+    }
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("DJINN", {}, 0));
+    usize blows = 0;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        fixture.update(kTicks, kStep, std::span{&player, 1});
+        blows += fixture.actor.takeBlows().size();
+    }
+    CHECK((blows > 0) == expected);
+}
+
+TEST_CASE("native town golem weapon swings retain their authored contact reach without a stomp",
+          "[game][enemies][golem-contact][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    test::assetOrSkip("PDATA/WAR.WAD");
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const ClassStats* warrior = classes.stats(0);
+    REQUIRE(warrior != nullptr);
+    f32 distance = 4.5f;
+    bool nativeRadius = true;
+    SECTION("all four swings reach a nearby warrior") {}
+    SECTION("overhead swings still miss near the edge of their selection range") {
+        distance = 6.5f;
+    }
+    SECTION("the smaller wall footprint reproduces the missed nearby overhead blow") {
+        nativeRadius = false;
+    }
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    for (const s32 updates : {30, 60, 120}) {
+        DYNAMIC_SECTION(updates << " updates per second") {
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+            EnemyView player = playerAt({0, 0, distance});
+            // load_player (0x80079F44) takes col_radius from PDAT.width unchanged.
+            player.radius = warrior->width * 0.5f;
+            if (nativeRadius) {
+                player.collisionRadius = warrior->width;
+            }
+            player.height = warrior->height;
+            player.collisionHeight = warrior->collisionY;
+            std::array<usize, 4> contacts{};
+            std::array<usize, 4> visits{};
+            constexpr std::array<std::string_view, 4> kSwings{"ATTACK1L", "ATTACK1R", "ATTACK2",
+                                                              "ATTACK3"};
+            for (s32 update = 0; update < updates * 20; ++update) {
+                actor.update(1, 1.0f / static_cast<f32>(updates), std::span{&player, 1});
+                const auto swing = std::ranges::find(kSwings, actor.moveName());
+                if (swing != kSwings.end()) {
+                    ++visits[static_cast<usize>(swing - kSwings.begin())];
+                }
+                for (const auto& blow : actor.takeBlows()) {
+                    if (!blow.gated || swing == kSwings.end()) {
+                        continue;
+                    }
+                    ++contacts[static_cast<usize>(swing - kSwings.begin())];
+                    CHECK(blow.player == player.player);
+                    CHECK(blow.damage == Approx(actor.moveName().starts_with("ATTACK1") ? 10 : 30));
+                }
+                actor.takeCues();
+            }
+            for (usize swing = 0; swing < kSwings.size(); ++swing) {
+                CAPTURE(kSwings[swing], visits[swing], contacts[swing]);
+                CHECK(visits[swing] > 0);
+                // The MOVE's seven-unit selection window is not a promise of
+                // contact. ATTACK2/3's authored active poses fall short at 6.5.
+                const bool reaches = (distance < 6.5f || swing < 2) && (nativeRadius || swing != 2);
+                CHECK((contacts[swing] > 0) == reaches);
+            }
+        }
+    }
 }
 
 TEST_CASE("a return-facing move turns to its initial yaw rather than its player target",

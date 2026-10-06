@@ -105,6 +105,9 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
             continue;
         }
         Entry entry;
+        if ((object.flags & WorldObject::kAnimated) != 0) {
+            entry.worldObject = static_cast<s32>(i);
+        }
         ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(*source);
         // Named world systems repeat their emission envelope until deactivated.
         descriptor.forever = true;
@@ -151,6 +154,14 @@ usize ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& nod
 void ParticleField::setNode(usize index, const Mat4& node) {
     if (index < m_entries.size()) {
         m_entries[index].emitter.setNode(node);
+    }
+}
+
+void ParticleField::syncNodes(const WorldScene& scene) {
+    for (Entry& entry : m_entries) {
+        if (entry.worldObject >= 0) {
+            entry.emitter.setNode(scene.worldTransform(static_cast<usize>(entry.worldObject)));
+        }
     }
 }
 

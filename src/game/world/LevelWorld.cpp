@@ -194,6 +194,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_rotators.bindFigures(device, m_layout, m_items);
     m_worldAnimator.apply(m_scene);
     syncCollision();
+    m_particles.syncNodes(m_scene);
     if (!m_powerups.load(unpackedRoot / kPowerups)) {
         log::warn("Level: without the powerups archive the pickups are absent");
     }
@@ -271,6 +272,7 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors,
     }
     m_worldAnimator.apply(m_scene);
     syncCollision();
+    m_particles.syncNodes(m_scene);
     m_placedItems.snapPresentation();
 }
 
@@ -278,6 +280,7 @@ void LevelWorld::activateTrigger(s32 id, bool atOnce) {
     m_triggers.activate(id, atOnce, m_worldAnimator, m_scene, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
+    m_particles.syncNodes(m_scene);
     if (atOnce) {
         m_placedItems.snapPresentation();
     }
@@ -290,6 +293,7 @@ void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> vis
     std::vector<RotatorCue> cues = m_rotators.update(seconds, visitors, m_scene);
     m_rotatorCues.insert(m_rotatorCues.end(), cues.begin(), cues.end());
     syncCollision();
+    m_particles.syncNodes(m_scene);
 }
 
 void LevelWorld::update(f32 seconds, bool timeStopped) {
@@ -302,6 +306,7 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
     m_fallingScenery.update(seconds);
     m_walls.update(seconds);
     syncCollision();
+    m_particles.syncNodes(m_scene);
     m_particles.step(seconds);
     m_particlesAdvanced = seconds > 0;
     m_placedItems.update(seconds);

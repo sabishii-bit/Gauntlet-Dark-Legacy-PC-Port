@@ -1962,7 +1962,7 @@ f32 Enemies::presentationBlend(const Enemy& enemy, f32 alpha) const {
 
 void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                    const Texture* hitFlash, ItemArchive* weapons, const CameraFrame* camera,
-                   f32 presentationAlpha) {
+                   f32 presentationAlpha, TreeModel::Pass pass) {
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
         if (enemy.state == State::Inactive || !enemy.animator.bound() ||
@@ -2033,7 +2033,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             continue; // gone from sight altogether
         }
         if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
-            body.draw(device, clip, model, lighting, {}, camera);
+            body.draw(device, clip, model, lighting, {}, camera, 1, pass);
         } else {
             TreePose pose;
             if (presentationAlpha >= 0) {
@@ -2041,7 +2041,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             }
             body.draw(device, clip, model, lighting,
                       presentationAlpha >= 0 ? pose.matrices() : enemy.animator.pose().matrices(),
-                      camera, alpha);
+                      camera, alpha, pass);
         }
     }
 }

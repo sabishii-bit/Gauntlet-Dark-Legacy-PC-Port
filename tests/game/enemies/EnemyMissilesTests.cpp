@@ -509,6 +509,13 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     REQUIRE(intent.action == EnemyAction::ReadyToWalk); // the fuse lit
     sense.action = EnemyAction::ReadyToWalk;
     intent = suicide.think(bomber, sense);
+    REQUIRE(bomber.mode == 1);
+    CHECK(bomber.counter == 0);
+    CHECK(intent.pace == 0.0f);
+    CHECK_FALSE(intent.yell);
+    // move_logic18 waits for RUN, not its stationary wind-up.
+    sense.action = EnemyAction::Run;
+    intent = suicide.think(bomber, sense);
     REQUIRE(bomber.mode == 2);
     CHECK(intent.yell); // it cries out as the run starts, once
     intent = suicide.think(bomber, sense);

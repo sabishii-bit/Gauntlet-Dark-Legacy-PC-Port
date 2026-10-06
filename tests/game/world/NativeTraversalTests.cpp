@@ -278,4 +278,86 @@ TEST_CASE("G2 drawbridge 723 opens its lower passage for every class",
     }
 }
 
+TEST_CASE("G4 exit stairway reaches the circular portal platform",
+          "[native-traversal][g4-exit-stairs][assets]") {
+    NativeWalk walk("G4", {-6.5f, -5.90625f, -97.125f});
+    walk.wait(45);
+    REQUIRE(walk.world.triggers().opened(607));
+    walk.walk({15, -94});
+    walk.walk({27, -98});
+    walk.wait(45);
+    for (usize i = 0; i < walk.world.triggers().size(); ++i) {
+        const auto& trigger = walk.world.triggers().trigger(i);
+        if (trigger.target == 607 || trigger.target == 608) {
+            UNSCOPED_INFO("exit trigger " << trigger.instance << " at " << trigger.spot.x << ","
+                                          << trigger.spot.y << "," << trigger.spot.z << " flags "
+                                          << trigger.flags << " floor " << trigger.floor
+                                          << " fired " << trigger.fired);
+        }
+    }
+    REQUIRE(walk.world.triggers().opened(608));
+    walk.walk({15, -94});
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    for (s32 character = 0; character < kClassCount; ++character) {
+        CAPTURE(character);
+        const auto* stats = classes.stats(character == kSumnerClass ? 2 : character);
+        REQUIRE(stats);
+        walk.stand({8, -5.90625f, -99.75f}, character, *stats);
+        CAPTURE(stats->width, stats->collisionY, stats->height);
+        walk.walk({12.2265625f, -99.75f});
+        walk.walk({17.25f, -104.875f});
+        CHECK(walk.party[0].floor.object == 608);
+    }
+}
+
+TEST_CASE("G4 entrance bridge riders can leave either railing and its joints",
+          "[native-traversal][g4-bridge-rails][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const f32 side = GENERATE(-1.0f, 1.0f);
+    CAPTURE(side);
+    NativeWalk walk("G4", {-109.906f, -6.1875f, -62.129f});
+    const Vec2 tangent{0.849f, 0.529f};
+    const Vec2 outward = side * Vec2{0.529f, -0.849f};
+    for (s32 character = 0; character < kClassCount; ++character) {
+        CAPTURE(character);
+        const auto* stats = classes.stats(character == kSumnerClass ? 2 : character);
+        REQUIRE(stats);
+        walk.stand({-109.906f, -6.1875f, -62.129f}, character, *stats);
+        for (const Vec2 centre : {Vec2{-105.684f, -59.527f}, Vec2{-100.566f, -56.344f}}) {
+            walk.walk(centre);
+            bool touchedRail = false;
+            for (s32 frame = 0; frame < 30; ++frame) {
+                walk.step(outward);
+                for (const auto& contact : walk.party[0].actor.wallContacts()) {
+                    touchedRail |= contact.object == 1098;
+                }
+            }
+            for (s32 frame = 0; frame < 30; ++frame) {
+                walk.step(glm::normalize(tangent + outward * 0.5f));
+            }
+            REQUIRE(touchedRail);
+            walk.walk(centre);
+        }
+        walk.walk({-95.391f, -53.121f});
+        walk.walk({-90.883f, -50.262f});
+        walk.walk({-109.906f, -62.129f});
+    }
+}
+
+TEST_CASE("G3 fountain scenario settles on the completion pad and lowers the fire fences",
+          "[native-traversal][g3-fountain][assets]") {
+    // Focused completion fixture, behind animated trap wall G3TRAPW7. The
+    // scenario is not an end-to-end traversal of the fountain puzzle.
+    NativeWalk walk("G3", {-24.5625f, -20, -222.0859375f});
+    REQUIRE(walk.party[0].floor.object == 1593);
+    walk.wait(90);
+    for (const s32 fence : {1313, 1323, 1326, 1335}) {
+        CHECK(walk.world.triggers().opened(fence));
+    }
+}
+
 } // namespace

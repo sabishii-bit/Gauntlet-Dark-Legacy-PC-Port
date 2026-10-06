@@ -66,6 +66,7 @@ struct EnemyView {
     std::optional<f32> collisionHeight = std::nullopt; ///< native centre, else half the height
     bool blockableAttack = false; ///< slow/power attack groups that provoke a critter's BLOCK
     std::optional<Vec3> decoy = std::nullopt; ///< swarm range/bearing, never a collision body
+    std::optional<f32> collisionRadius = std::nullopt; ///< native contact radius, else radius
 };
 
 /** A blow an enemy has landed on a player. */
@@ -294,7 +295,8 @@ public:
                      const WorldLighting& lighting, f32 presentationAlpha = -1) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* hitFlash = nullptr, ItemArchive* weapons = nullptr,
-              const CameraFrame* camera = nullptr, f32 presentationAlpha = -1);
+              const CameraFrame* camera = nullptr, f32 presentationAlpha = -1,
+              TreeModel::Pass pass = TreeModel::Pass::All);
 
     bool alive(s32 id) const;
     bool dying(s32 id) const;

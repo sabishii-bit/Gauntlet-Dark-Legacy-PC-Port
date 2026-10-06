@@ -65,8 +65,12 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         if (breath.has_value()) {
             within = breath->touches(*damage, body, view.radius, 0.5f * view.height);
         } else if (damage->type == AttackDefinition::kBlow) {
-            within = flatDistance(centre, feet) <= reach + view.radius &&
-                     centre.y >= feet.y - reach && centre.y <= feet.y + view.height + reach;
+            // CritterNodePlayerCollide expands Player.effectpos/col_radius/col_height,
+            // not the smaller footprint used to keep the player off walls.
+            const f32 playerRadius = view.collisionRadius.value_or(view.radius);
+            const f32 playerCentre = feet.y + view.collisionHeight.value_or(0.5f * view.height);
+            within = flatDistance(centre, feet) <= reach + playerRadius &&
+                     std::abs(centre.y - playerCentre) <= 0.5f * view.height + reach;
         } else {
             within = flatDistance(centre, feet) <= reach + view.radius &&
                      std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
