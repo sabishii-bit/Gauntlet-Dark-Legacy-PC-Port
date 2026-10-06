@@ -45,9 +45,6 @@ public:
                   s32 number = -1, std::optional<Vec3> position = std::nullopt);
     static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players,
                                 const PowerupSelector* selector = nullptr);
-    /** Stretch the four lanes across the viewport and anchor their bottom to its edge.
-     * Preserve the fitted UI's vertical scale, including in tall resizable windows. */
-    static Mat4 projection(const Mat4& canvasProjection, f32 width, f32 height);
     void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players);
     /** Shows the bosses' keys in the boxes a while (a level opening, a runestone found). */
     void showRelics() { m_relicTicks = kRelicTicks; }

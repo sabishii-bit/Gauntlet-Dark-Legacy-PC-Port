@@ -174,7 +174,7 @@ TEST_CASE("G2 gold pad wakes Death at the native item-contact reach",
     CHECK(death == wakes);
 }
 
-TEST_CASE("gameplay status panels fill wide and tall windows without detached bottom margins",
+TEST_CASE("gameplay status panels retain the fitted card size across window shapes",
           "[game][screens][hud-viewport][assets]") {
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -187,10 +187,14 @@ TEST_CASE("gameplay status panels fill wide and tall windows without detached bo
     PlayOptions options;
     options.welcome = false;
     REQUIRE(scene.open(device, context, world, party, options));
-    for (const Vec2 extent : {Vec2{640, 448}, Vec2{1920, 1080}, Vec2{800, 1200}}) {
+    for (const Vec2 extent :
+         {Vec2{640, 448}, Vec2{1920, 1080}, Vec2{2560, 1080}, Vec2{800, 1200}}) {
         CAPTURE(extent.x, extent.y);
         device.draws.clear();
         const auto projection = makeLetterboxProjection(640, 448, extent.x, extent.y);
+        const auto fitted = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
+        const f32 fittedWidth = std::min(extent.x, extent.y * 640.0f / 448.0f);
+        const f32 fittedHeight = std::min(extent.y, extent.x * 448.0f / 640.0f);
         scene.render(device, projection, 640, 448);
         std::array<bool, 4> found{};
         for (const auto& draw : device.draws) {
@@ -205,12 +209,15 @@ TEST_CASE("gameplay status panels fill wide and tall windows without detached bo
                     continue;
                 }
                 found[lane] = true;
+                CHECK(draw.transform == fitted);
                 const Vec4 bottomLeft = draw.transform * Vec4{x, 384, 0, 1};
                 const Vec4 bottomRight = draw.transform * Vec4{x + 128, 384, 0, 1};
-                CHECK(bottomLeft.x == Approx(-1.0f + 0.5f * static_cast<f32>(lane)));
-                CHECK(bottomRight.x == Approx(-0.5f + 0.5f * static_cast<f32>(lane)));
-                CHECK(bottomLeft.y == Approx(1));
-                CHECK(bottomRight.y == Approx(1));
+                const Vec4 topLeft = draw.transform * Vec4{x, 320, 0, 1};
+                // Cards use one quarter of the fitted canvas, not the widescreen viewport.
+                CHECK((bottomRight.x - bottomLeft.x) * extent.x / 2 == Approx(fittedWidth / 4));
+                CHECK((bottomLeft.y - topLeft.y) * extent.y / 2 == Approx(fittedHeight / 6));
+                CHECK(bottomLeft.x == Approx((fitted * Vec4{x, 384, 0, 1}).x));
+                CHECK(bottomLeft.y == Approx(fittedHeight / extent.y));
             }
         }
         CHECK(std::ranges::all_of(found, [](bool present) { return present; }));

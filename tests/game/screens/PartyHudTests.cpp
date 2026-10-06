@@ -1,7 +1,6 @@
 #include <array>
 #include <format>
 
-#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
@@ -16,31 +15,6 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-
-TEST_CASE("gameplay HUD spans the surface and rests on its bottom without stretching height",
-          "[game][screens][party-hud][hud-viewport]") {
-    for (const Vec2 extent :
-         {Vec2{640, 448}, Vec2{1920, 1080}, Vec2{2560, 1080}, Vec2{800, 1200}}) {
-        CAPTURE(extent.x, extent.y);
-        const Mat4 fitted = makeVirtualScreenTransform(
-            makeLetterboxProjection(640, 448, extent.x, extent.y), 512, 384, 640, 448);
-        const Mat4 hud = PartyHud::projection(fitted, 512, 384);
-        const Vec4 left = hud * Vec4{0, 384, 0, 1};
-        const Vec4 right = hud * Vec4{512, 384, 0, 1};
-        CHECK(left.x == Catch::Approx(-1));
-        CHECK(right.x == Catch::Approx(1));
-        CHECK(left.y == Catch::Approx(1));
-        CHECK(right.y == Catch::Approx(1));
-        CHECK(hud[1].y == fitted[1].y);
-        for (s32 lane = 0; lane < 4; ++lane) {
-            CHECK((hud * Vec4{lane * 128.0f, 384, 0, 1}).x ==
-                  Catch::Approx(-1.0f + 0.5f * static_cast<f32>(lane)));
-        }
-        if (extent == Vec2{640, 448}) {
-            CHECK(hud == fitted);
-        }
-    }
-}
 
 TEST_CASE("level announcement queues gained-level behind the color and character name",
           "[game][screens][party-hud]") {

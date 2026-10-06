@@ -1266,7 +1266,6 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const auto height = static_cast<f32>(config.display.virtualHeight);
     const Mat4 canvasProjection =
         makeVirtualScreenTransform(frameProjection, width, height, frameWidth, frameHeight);
-    const Mat4 hudProjection = PartyHud::projection(canvasProjection, width, height);
     m_canvas.begin(device, canvasProjection);
     if (m_gameOver.active()) {
         m_gameOver.draw(m_canvas, m_messages.text(), width);
@@ -1283,11 +1282,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_names.draw(m_canvas, m_players, clip, canvasProjection, frameBlend);
     }
     if (!cut) {
-        m_canvas.end();
-        m_canvas.begin(device, hudProjection);
         m_hud.drawStatus(m_canvas, m_players);
-        m_canvas.end();
-        m_canvas.begin(device, canvasProjection);
         if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
             m_runeMeter.draw(m_canvas, *m_runeFrame, *m_runeColumn);
         }
@@ -1309,11 +1304,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                     Color::black());
     }
     if (!cut) {
-        m_canvas.end();
-        m_canvas.begin(device, hudProjection);
         m_hud.drawSelectors(m_canvas, m_messages.text(), m_context.strings, m_players);
-        m_canvas.end();
-        m_canvas.begin(device, canvasProjection);
         m_hud.drawHelp(m_canvas, device, m_staticTextures, m_players, clip, canvasProjection, width,
                        height);
     }

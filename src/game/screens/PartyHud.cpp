@@ -96,14 +96,6 @@ bool PartyHud::drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> play
     m_hourglass.draw(canvas, ratio, 1, true);
     return true;
 }
-Mat4 PartyHud::projection(const Mat4& canvasProjection, f32 width, f32 height) {
-    Mat4 result = canvasProjection;
-    result[0].x = 2.0f / width;
-    result[3].x = -1.0f;
-    result[3].y = 1.0f - height * result[1].y;
-    return result;
-}
-
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
     for (s32 player = 0; player < kPlayerCount; ++player) {
         StatusBoxView view = status(player, players, &selector(player));
