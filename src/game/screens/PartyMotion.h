@@ -24,6 +24,7 @@ struct PlayInput {
     bool strafe = false;             ///< the strafe button is held
     bool strongAttack = false;       ///< the slow attack button is held
     bool turbo = false;              ///< the turbo button is held
+    bool defendPressed = false;      ///< one guard gesture per turbo/defend press
     bool combo = false;              ///< the combo button is held: a partner ahead is taken hold of
     bool chargePressed = false;      ///< the charge button went down this frame
     bool attackPressed = false;      ///< the attack button went down this frame

@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AnimationSet.h"
 #include "engine/assets/StringTable.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
@@ -2235,7 +2236,7 @@ TEST_CASE("what the level tells the party is in the string table's language",
 }
 
 TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
-          "[game][screens][assets]") {
+          "[game][screens][assets][native-guard]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -2287,6 +2288,7 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     const PlayButtons buttons = reader.read(physical, config.play, false, 0, 1.0f / 60.0f);
     PlayScene::Inputs strike{};
     strike[0].turbo = buttons.turbo;
+    strike[0].defendPressed = buttons.defendPressed;
     strike[0].attack = buttons.attack;
     strike[0].turboAttackPressed = buttons.turboAttackPressed;
     scene.update(1.0 / 60.0, strike);
@@ -2297,10 +2299,11 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     }
     REQUIRE_FALSE(scene.animator(0)->turboing());
     REQUIRE(scene.turboMeter(0)->held() < 5.0f);
-    // With too little for either, turbo held is only the guard: no attack comes of it.
+    // fn_80088938 only guards on S_DEFEND's edge. A failed turbo chord
+    // with an already-held turbo button still accepts its ordinary attack.
     scene.update(1.0 / 60.0, strike);
-    REQUIRE(scene.animator(0)->guarding());
-    REQUIRE_FALSE(scene.animator(0)->throwing());
+    REQUIRE_FALSE(scene.animator(0)->guarding());
+    REQUIRE(scene.animator(0)->throwing());
     scene.close();
 
     // Two fifths buys the lesser attack; a twentieth, a shove, which runs it down.
@@ -2318,9 +2321,10 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     }
     REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 0.1f);
     REQUIRE(scene.turboMeter(0)->held() > before - TurboMeter::kStrongCost - 0.1f);
-    // Holding turbo by itself is the guard; the charge button is the charge's.
+    // Pressing turbo by itself begins one guard; the charge button is the charge's.
     PlayScene::Inputs holding{};
     holding[0].turbo = true;
+    holding[0].defendPressed = true;
     scene.update(1.0 / 60.0, holding);
     REQUIRE_FALSE(scene.animator(0)->turboing());
     REQUIRE(scene.animator(0)->guarding());
@@ -2346,7 +2350,7 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
 }
 
 TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, a guard blocks",
-          "[game][screens][assets]") {
+          "[game][screens][assets][native-guard]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     test::assetOrSkip("TEXT/english.rom");
@@ -2448,7 +2452,8 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     REQUIRE(scene.barrels().barrel(barrel).health < whole);
     scene.close();
 
-    // On a bed of spikes with the guard up, nothing gets through; let down, it does.
+    // A guard protects while DEFEND2 is active, not forever while turbo is held.
+    // Native input uses S_DEFEND's edge and completes DEFEND1/2/R once.
     member.turbo = 0.0f;
     const std::vector<PartyMember> third{member};
     options.position = Vec3{-36.2f, 26.5f, -125.3f};
@@ -2458,19 +2463,34 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     }
     PlayScene::Inputs guard{};
     guard[0].turbo = true;
+    guard[0].defendPressed = true;
+    scene.update(1.0 / 60.0, guard);
+    guard[0].defendPressed = false;
     for (s32 i = 0; i < 600 && !scene.animator(0)->defending(); ++i) {
         scene.update(1.0 / 60.0, guard);
     }
     REQUIRE(scene.animator(0)->defending());
     const s32 guardedFrom = scene.actor(0)->save().health();
+    scene.hurtPlayer(0, 10.0f, HurtKind::Blow);
+    CHECK(scene.actor(0)->save().health() == guardedFrom);
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "pdata"));
+    const auto* stats = classes.stats(save.character);
+    REQUIRE(stats != nullptr);
+    AnimationSet actions;
+    REQUIRE(actions.load(root / "PLAYERS/WAR/ANIM"));
+    const auto warrior = actions.find("WAR");
+    REQUIRE(warrior);
+    const auto& tree = actions.tree(*warrior);
+    const auto defend = tree.findSequence("DEFEND2");
+    REQUIRE(defend);
+    const f32 duration = std::max(0.25f, 0.2f * armorDefense(*stats, save.progress()));
+    CHECK(scene.animator(0)->player().secondsPerFrame() ==
+          Approx(static_cast<f32>(tree.sequences[*defend].frameRate) / 900.0f * duration));
     for (s32 i = 0; i < 600; ++i) {
         scene.update(1.0 / 60.0, guard);
     }
-    REQUIRE(scene.animator(0)->defending());
-    REQUIRE(scene.actor(0)->save().health() == guardedFrom);
-    for (s32 i = 0; i < 600 && scene.actor(0)->save().health() == guardedFrom; ++i) {
-        scene.update(1.0 / 60.0, still);
-    }
+    REQUIRE_FALSE(scene.animator(0)->defending());
     REQUIRE(scene.actor(0)->save().health() < guardedFrom);
     scene.close();
 }

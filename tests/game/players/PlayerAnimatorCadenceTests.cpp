@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <format>
 
@@ -294,6 +295,90 @@ TEST_CASE("selected combo continuations remain unscaled after their button is re
     animator.update(PlayerMotion::Stand, 1, kStep);
     REQUIRE(animator.action() == Action::ComboAct3);
     CHECK(animator.player().secondsPerFrame() == Approx(45.0f / 900.0f));
+}
+
+TEST_CASE("a fresh guard cancels ordinary attacks but not turbo item combo or magic actions",
+          "[game][players][animation][native-guard][native-guard-cancel]") {
+    struct Request {
+        PlayerDeed deed;
+        Action action;
+        bool cancellable;
+    };
+    // DoPlayerAction 800AC0C4..800AC0F0 dispatches a fresh P_DEFEND1 (119)
+    // as Ready when the current PlayerAttackType is 1..10. In particular,
+    // ATTPWRATHROW and ATTFIREL/R are ordinary category-10 attacks, unlike
+    // ATTPWRB/C, SSHOT, ATTCHOP and ATTBREATHE (11), or combos (12).
+    const std::array requests{Request{PlayerDeed::Attack, Action::Throw, true},
+                              Request{PlayerDeed::Melee, Action::Quick1, true},
+                              Request{PlayerDeed::MeleeLow, Action::LowKick, true},
+                              Request{PlayerDeed::MeleeSlow, Action::SlowStart, true},
+                              Request{PlayerDeed::MeleeSlowLow, Action::Low1, true},
+                              Request{PlayerDeed::StrongAttack, Action::StrongThrow, true},
+                              Request{PlayerDeed::FireLeft, Action::FireLeft, true},
+                              Request{PlayerDeed::FireRight, Action::FireRight, true},
+                              Request{PlayerDeed::Shove, Action::Shove, true},
+                              Request{PlayerDeed::TurboStrong, Action::TurboStrong, false},
+                              Request{PlayerDeed::TurboFull, Action::TurboFull, false},
+                              Request{PlayerDeed::SuperShot, Action::SpecialShot, false},
+                              Request{PlayerDeed::Hammer, Action::Hammer, false},
+                              Request{PlayerDeed::Breathe, Action::Breathe, false},
+                              Request{PlayerDeed::Combo, Action::ComboAct1, false},
+                              Request{PlayerDeed::UsePotion, Action::UsePotion, false},
+                              Request{PlayerDeed::ThrowPotion, Action::ThrowPotion, false},
+                              Request{PlayerDeed::Flinch, Action::HitReact, false},
+                              Request{PlayerDeed::FallBack, Action::FallBack, false}};
+    const auto tree = actionTree();
+    for (const auto& request : requests) {
+        CAPTURE(request.deed, request.action, request.cancellable);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, 1, kStep, request.deed);
+        REQUIRE(animator.action() == request.action);
+        const auto generation = animator.player().generation();
+        animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Defend);
+        CHECK(animator.action() == (request.cancellable ? Action::DefendRaise : request.action));
+        CHECK((animator.player().generation() != generation) == request.cancellable);
+        CHECK_FALSE(animator.released());
+        CHECK_FALSE(animator.meleeStruck());
+        CHECK_FALSE(animator.strongReleased());
+        CHECK_FALSE(animator.superReleased());
+        CHECK(animator.itemReleased() == PlayerDeed::None);
+    }
+}
+
+TEST_CASE("a released guard latches native armor duration only for its blocking phase",
+          "[game][players][animation][player-animation-speed][native-guard]") {
+    const auto tree = actionTree();
+    for (const f32 armor : {0.0f, 1.25f, 2.5f, 5.0f}) {
+        for (const bool speed : {false, true}) {
+            CAPTURE(armor, speed);
+            PlayerAnimator animator;
+            REQUIRE(animator.bind(tree, false));
+            animator.setGuardArmor(armor);
+            animator.setAttackSpeed(false, speed);
+            animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Defend);
+            REQUIRE(animator.action() == Action::DefendRaise);
+            CHECK(animator.player().secondsPerFrame() == Approx(45.0f / 900.0f));
+            for (s32 tick = 0; tick < 60 && animator.action() == Action::DefendRaise; ++tick) {
+                animator.update(PlayerMotion::Stand, 1, kStep);
+            }
+            REQUIRE(animator.action() == Action::Defend);
+            // Native 800AD318: selected DEFEND2 beats Speed's fallback, but
+            // the initial category-1 guard request leaves the raise at rate 1.
+            const f32 duration = std::max(0.25f, 0.2f * armor);
+            CHECK(animator.player().secondsPerFrame() == Approx(45.0f / 900.0f * duration));
+            animator.setGuardArmor(9.0f);
+            animator.update(PlayerMotion::Stand, 1, kStep);
+            REQUIRE(animator.action() == Action::Defend);
+            CHECK(animator.player().secondsPerFrame() == Approx(45.0f / 900.0f * duration));
+            for (s32 tick = 0; tick < 60 && animator.action() == Action::Defend; ++tick) {
+                animator.update(PlayerMotion::Stand, 1, kStep);
+            }
+            REQUIRE(animator.action() == Action::DefendLower);
+            CHECK(animator.player().secondsPerFrame() ==
+                  Approx(45.0f / 900.0f * (speed ? 0.75f : 1.0f)));
+        }
+    }
 }
 
 TEST_CASE("locked strong and item attacks preserve held requests for continuation speed",

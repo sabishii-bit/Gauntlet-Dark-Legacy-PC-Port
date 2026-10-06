@@ -127,6 +127,7 @@ PlayButtons deviceButtons(const Input& input, const PlayBindings& b, bool keyboa
     out.strafe = bound(input, b.strafe, b.padStrafe, keyboard, pad, false);
     out.strongAttack = bound(input, b.strongAttack, b.padStrongAttack, keyboard, pad, false);
     out.turbo = bound(input, b.turbo, b.padTurbo, keyboard, pad, false);
+    out.defendPressed = bound(input, b.turbo, b.padTurbo, keyboard, pad, true);
     out.combo = bound(input, b.combo, b.padCombo, keyboard, pad, false);
     out.chargePressed = bound(input, b.charge, b.padCharge, keyboard, pad, true);
     out.attackPressed = bound(input, b.attack, b.padAttack, keyboard, pad, true);
@@ -142,6 +143,7 @@ PlayButtons deviceButtons(const Input& input, const PlayBindings& b, bool keyboa
         out.attackPressed = false;
         out.strongAttack = false;
         out.turbo = false;
+        out.defendPressed = false;
     }
     out.turboAttackPressed = b.actionChords && out.turbo && out.attackPressed;
     return out;
@@ -151,9 +153,10 @@ void mergeButtons(PlayButtons& to, const PlayButtons& from) {
     constexpr auto kFields = std::to_array<bool PlayButtons::*>(
         {&PlayButtons::attack, &PlayButtons::usePotion, &PlayButtons::throwPotion,
          &PlayButtons::shieldPotion, &PlayButtons::strafe, &PlayButtons::strongAttack,
-         &PlayButtons::turbo, &PlayButtons::combo, &PlayButtons::chargePressed,
-         &PlayButtons::attackPressed, &PlayButtons::turboAttackPressed, &PlayButtons::selectorUp,
-         &PlayButtons::selectorDown, &PlayButtons::selectorLeft, &PlayButtons::selectorRight});
+         &PlayButtons::turbo, &PlayButtons::defendPressed, &PlayButtons::combo,
+         &PlayButtons::chargePressed, &PlayButtons::attackPressed, &PlayButtons::turboAttackPressed,
+         &PlayButtons::selectorUp, &PlayButtons::selectorDown, &PlayButtons::selectorLeft,
+         &PlayButtons::selectorRight});
     for (const auto field : kFields) {
         to.*field = to.*field || from.*field;
     }

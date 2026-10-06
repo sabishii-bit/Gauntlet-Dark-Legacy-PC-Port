@@ -108,6 +108,7 @@ public:
     void setStrafe(StrafeWay way) { m_animator.setStrafe(way); }
     void setMelee(const MeleeSense& sense) { m_animator.setMelee(sense); }
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
+    void setGuardArmor(f32 armor) { m_animator.setGuardArmor(armor); }
     void setShielded(bool shielded) { m_animator.setShielded(shielded); }
     void setPushed(bool pushed) { m_animator.setPushed(pushed); }
     /** Whose combo the body is held or thrown in, and whether the dwarf's ride goes on. */

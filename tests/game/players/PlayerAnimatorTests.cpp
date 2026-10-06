@@ -800,8 +800,38 @@ TEST_CASE("full turbos turn a quarter while Spell Storm locks its facing after f
     }
 }
 
-TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and is let down",
-          "[game][players][animation]") {
+TEST_CASE("a guard press completes its raise block and recovery after the button is released",
+          "[game][players][animation][native-guard]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"DEFEND1", "DEFEND2", "DEFENDR"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.repeats = false;
+        tree.sequences.push_back(sequence);
+    }
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+    REQUIRE(animator.action() == Action::DefendRaise);
+    REQUIRE_FALSE(animator.defending());
+
+    // DoPlayerAction 800AC2A8..800AC2C0: DEFEND1 selects DEFEND2 with
+    // mode 1, then DEFEND2 selects DEFENDR. Releasing does not cancel either.
+    animator.update(PlayerMotion::Stand, kTicks, kStep);
+    REQUIRE(animator.action() == Action::DefendRaise);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Defend, 30) < 30);
+    REQUIRE(animator.defending());
+    animator.update(PlayerMotion::Stand, kTicks, kStep);
+    REQUIRE(animator.action() == Action::Defend);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::DefendLower, 30) < 30);
+    REQUIRE_FALSE(animator.defending());
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 30) < 30);
+    REQUIRE_FALSE(animator.guarding());
+}
+
+TEST_CASE("a guard completes once and remains interruptible by a turbo or charge",
+          "[game][players][animation][native-guard]") {
     TreeInfo tree = classTree();
     const auto add = [&tree](const char* name, s32 frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
@@ -823,14 +853,10 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
     REQUIRE(animator.moveScale() == 0.0f);
     s32 steps = 0;
     while (animator.action() != Action::Defend && steps < 60) {
-        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Defend);
+        animator.update(PlayerMotion::Stand, kTicks, kStep);
         ++steps;
     }
     REQUIRE(animator.defending());
-    for (s32 i = 0; i < 200; ++i) { // held, it stays up
-        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
-        REQUIRE(animator.defending());
-    }
     // A turbo attack cuts into it; afterwards the guard can come up again.
     REQUIRE(animator.canBegin(PlayerDeed::TurboStrong));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::TurboStrong);
@@ -839,12 +865,14 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
     REQUIRE(animator.action() == Action::DefendRaise);
-    // Let go, it is lowered and the stance comes back.
+    // Let go, the complete gesture still plays before the stance comes back.
     animator.update(PlayerMotion::Stand, kTicks, kStep);
-    REQUIRE(animator.action() == Action::DefendLower);
+    REQUIRE(animator.action() == Action::DefendRaise);
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
     REQUIRE_FALSE(animator.guarding());
-    // A charge rushes on rather than standing.
+    // A charge also cuts into the gesture rather than standing.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+    REQUIRE(animator.guarding());
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Shove);
     REQUIRE(animator.shoving());
     REQUIRE(animator.moveScale() == PlayerAnimator::kChargePace);
@@ -854,6 +882,63 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
     REQUIRE(other.bind(plain, false));
     other.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
     REQUIRE_FALSE(other.guarding());
+}
+
+TEST_CASE("ordinary attacks wait for guard recovery but potions can interrupt the gesture",
+          "[game][players][animation][native-guard]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"DEFEND1", "DEFEND2", "DEFENDR", "ATTPWRATHROW"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.repeats = false;
+        tree.sequences.push_back(sequence);
+    }
+    for (const auto deed : {PlayerDeed::Attack, PlayerDeed::StrongAttack, PlayerDeed::UsePotion,
+                            PlayerDeed::ThrowPotion, PlayerDeed::ShieldPotion}) {
+        CAPTURE(deed);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+        animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+        if (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack) {
+            CHECK(animator.action() == Action::DefendRaise);
+            CHECK_FALSE(animator.released());
+            CHECK_FALSE(animator.strongReleased());
+            REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::DefendLower, 30) < 30);
+            animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+            CHECK(animator.action() == Action::DefendLower);
+        } else {
+            CHECK(animator.action() ==
+                  (deed == PlayerDeed::ThrowPotion ? Action::ThrowPotion : Action::UsePotion));
+        }
+    }
+}
+
+TEST_CASE("a fresh defend press restarts any guard phase without treating a hold as a press",
+          "[game][players][animation][native-guard]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"DEFEND1", "DEFEND2", "DEFENDR"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.repeats = false;
+        tree.sequences.push_back(sequence);
+    }
+    for (const auto phase : {Action::DefendRaise, Action::Defend, Action::DefendLower}) {
+        CAPTURE(phase);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+        REQUIRE(stepsUntil(animator, PlayerMotion::Stand, phase, 30) < 30);
+        animator.update(PlayerMotion::Stand, kTicks, kStep);
+        REQUIRE(animator.action() == phase);
+        // 800AC0C4..800AC0F0: a NEW guard request (119 >= P_USE_MAGIC)
+        // resets category-1's dispatch state to READY, before the followup switch.
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+        CHECK(animator.action() == Action::DefendRaise);
+        CHECK(animator.player().frame() == 0.0f);
+    }
 }
 
 TEST_CASE("strong ranged attacks retain quarter movement through release and recovery",

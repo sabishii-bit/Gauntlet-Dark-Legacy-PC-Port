@@ -130,6 +130,7 @@ void PlayerAnimator::unbind() {
     m_itemReleased = PlayerDeed::None;
     m_rapid = false;
     m_speed = false;
+    m_guardArmor = 5.0f;
     m_strafe = StrafeWay::None;
     m_comboClass = -1;
     m_comboRide = false;
@@ -220,9 +221,12 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     // A turbo move cuts a close attack off; nothing else does.
     const bool cutsMelee = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
                            deed == PlayerDeed::Shove || deed == PlayerDeed::Combo;
+    const bool cutsGuard = cutsMelee || deed == PlayerDeed::SuperShot ||
+                           deed == PlayerDeed::Hammer || deed == PlayerDeed::Breathe ||
+                           deed == PlayerDeed::HurlLegend || deed == PlayerDeed::ShootLegend;
     return bound() && m_sequences[index(action)] >= 0 && !entering() && !throwing() &&
            (!meleeing() || cutsMelee) && !conjuring() && !reacting() && !turboing() &&
-           !comboBound() && !dying();
+           (!guarding() || cutsGuard) && !comboBound() && !dying();
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -391,36 +395,22 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
         return;
     }
-    // The guard: up at once when asked for, held for as long as it is, then let down. A
-    // class without the sequences does not guard.
-    // The guard also cuts into the recovery from a quick or stepping swing.
-    const bool recovering =
-        m_current == Action::Quick2Recover || m_current == Action::Quick3Recover ||
-        m_current == Action::Step2Recover || m_current == Action::Step3Recover ||
-        m_current == Action::WalkStrikeRecover;
-    const bool free = !entering() && !throwing() && (!meleeing() || recovering) && !conjuring() &&
-                      !reacting() && !turboing();
+    // S_DEFEND is a press, not a held block. The gesture starts here; decide()
+    // completes its three phases even if the button is released immediately.
+    // DoPlayerAction dispatches a new guard through Ready during attack
+    // categories 1..10, not just recoveries. Strong throws, gauntlets and
+    // shoves qualify even though turboing() also locks their animations;
+    // true turbos, special shots, hammer, breath and combos do not.
+    const bool ordinaryAttack =
+        throwing() || meleeing() || strongThrowing() || m_current == Action::Shove ||
+        (m_current >= Action::FireLeft && m_current <= Action::FireRightRecover);
+    const bool free = !entering() && !conjuring() && !reacting() && (!turboing() || ordinaryAttack);
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
-    if (asked || guarding()) {
-        Decision guard{asked ? Action::Defend : Action::Ready};
-        if (asked && (!guarding() || m_current == Action::DefendLower)) {
-            guard.action =
-                m_sequences[index(Action::DefendRaise)] >= 0 ? Action::DefendRaise : Action::Defend;
-            guard.cut = Cut::Now;
-        } else if (asked) {
-            guard.action = Action::Defend;
-            guard.repeat = m_current == Action::Defend;
-            guard.cut = Cut::WhenDoneIfDifferent;
-        } else if (m_current != Action::DefendLower &&
-                   m_sequences[index(Action::DefendLower)] >= 0) {
-            guard.action = Action::DefendLower;
-            guard.cut = Cut::Now;
-        } else {
-            guard.action = Action::Ready;
-            guard.cut = m_current == Action::DefendLower ? Cut::WhenDone : Cut::Now;
-            guard.transition = readyTransition();
-        }
+    if (asked) {
+        Decision guard{Action::DefendRaise};
+        guard.action = playable(Action::DefendRaise) ? Action::DefendRaise : Action::Defend;
+        guard.cut = Cut::Now;
         play(guard, seconds);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
         if (m_player.transitioning()) {
@@ -435,7 +425,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // speed selection. Native fn_80088938 retains held attack bits even during
     // strong/item attacks, and PlayerMotion selects their requested action again.
     Action lockedSpeedRequest = Action::Ready;
-    if (turboing()) {
+    if (turboing() || guarding()) {
         lockedSpeedRequest = turboActionOf(deed);
         if (deed == PlayerDeed::Attack && playable(Action::Throw)) {
             lockedSpeedRequest = m_strafe != StrafeWay::None && motion != PlayerMotion::Stand
@@ -705,10 +695,18 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::TurboStrong:
     case Action::TurboFull:
     case Action::Shove:
-    case Action::DefendRaise:
-    case Action::Defend:
     case Action::DefendLower:
     case Action::StrongThrowRecover: break; // whatever is asked next, once let go
+    case Action::DefendRaise:
+        // DoPlayerAction 800AC2A8: a press plays DEFEND1 -> DEFEND2 -> DEFENDR.
+        // Both transitions use mode 1, independent of the subsequent input.
+        d.action = Action::Defend;
+        d.cut = Cut::WhenDone;
+        break;
+    case Action::Defend:
+        d.action = playable(Action::DefendLower) ? Action::DefendLower : Action::Ready;
+        d.cut = Cut::WhenDone;
+        break;
     case Action::StrongThrow:
         d.action = Action::StrongThrowRecover; // the weapon leaves as the wind-up ends
         break;
@@ -835,6 +833,11 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     // A potion cuts into standing, walking and running at once, as an attack does.
     // Nothing cuts the pickup's gesture short (P_PICKUP waits for its end).
     const bool picking = m_current == Action::Pick;
+    if (guarding() && (requested == Action::UsePotion || requested == Action::ThrowPotion)) {
+        // Native requests at/after P_USE_MAGIC replace a category-1 guard's
+        // dispatch state with READY before selecting their action.
+        d.action = requested;
+    }
     if ((requested == Action::UsePotion || requested == Action::ThrowPotion) &&
         d.action == requested && !isThrow(m_current) && !conjuring() &&
         m_current != Action::Start && !picking) {
@@ -843,7 +846,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     // An attack cuts into walking and running at once, and from their first halves takes the
     // moving wind-up.
     if (requested == Action::Throw && d.action == Action::Throw && !isThrow(m_current)) {
-        if (m_current != Action::Start && !meleeing() && !strafing() && !picking) {
+        if (m_current != Action::Start && !meleeing() && !strafing() && !picking && !guarding()) {
             d.cut = Cut::IfDifferent;
         }
         if (m_current == Action::Walk1 || m_current == Action::Run1) {
@@ -851,7 +854,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         }
     }
     if (isMelee(requested) && d.action == requested && !meleeing() && !throwing() && !conjuring() &&
-        !reacting() && !turboing() && !entering() && !picking) {
+        !reacting() && !turboing() && !entering() && !picking && !guarding()) {
         d.cut = Cut::IfDifferent;
     }
     // Death is taken hold of at once (P_DEATHGRAB's mode 2).
@@ -1235,7 +1238,15 @@ f32 PlayerAnimator::animationDuration(const Decision& decision) const {
                              request == Action::StrongThrowRecover ||
                              (request >= Action::FireLeft && request <= Action::FireRightRecover);
     constexpr f32 kItemAnimationDuration = 0.75f;
-    return (m_rapid && rapidAction) || m_speed ? kItemAnimationDuration : 1.0f;
+    if (m_rapid && rapidAction) {
+        return kItemAnimationDuration;
+    }
+    if (decision.action == Action::Defend) {
+        // 800AD318..800AD34C: armor determines DEFEND2's duration, before
+        // Speed's fallback. Armor is the scaled stat, not the displayed 0..999.
+        return std::max(0.25f, 0.2f * m_guardArmor);
+    }
+    return m_speed ? kItemAnimationDuration : 1.0f;
 }
 
 void PlayerAnimator::play(const Decision& decision, f32 seconds) {

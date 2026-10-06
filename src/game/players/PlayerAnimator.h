@@ -26,7 +26,7 @@ enum class PlayerDeed : u8 {
     TurboStrong, ///< the lesser turbo attack
     TurboFull,   ///< the greater
     Shove,
-    Defend,       ///< held: the guard comes up and stays up
+    Defend,       ///< one press: raise, block, then lower the guard
     StrongAttack, ///< the slow attack: a strong throw, with nothing in reach
     ShieldPotion, ///< a potion spent on a ring of its magic about the character
     FallBack,     ///< knocked off its feet from in front
@@ -481,6 +481,8 @@ public:
         m_rapid = rapid;
         m_speed = speed;
     }
+    /** Scaled retail armor (0..5), which sets the block phase's duration. */
+    void setGuardArmor(f32 armor) { m_guardArmor = armor; }
     /** Whether the body is in the strong throw or recovering from it. */
     bool strongThrowing() const {
         return m_current == Action::StrongThrow || m_current == Action::StrongThrowRecover;
@@ -583,6 +585,7 @@ private:
     PlayerDeed m_itemReleased = PlayerDeed::None;
     bool m_rapid = false;
     bool m_speed = false;
+    f32 m_guardArmor = 5.0f;
     StrafeWay m_strafe = StrafeWay::None;
     s32 m_comboClass = -1;      ///< the grabber's class, for a body held or thrown in a combo
     bool m_comboRide = false;   ///< the dwarf's ride goes on: COMBOACT2 loops

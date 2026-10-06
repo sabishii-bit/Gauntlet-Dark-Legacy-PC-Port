@@ -791,6 +791,47 @@ TEST_CASE("arrival locks movement turning and buttons until the player animation
     REQUIRE(player.actor.position() != start);
 }
 
+TEST_CASE("holding turbo produces only one guard and its press takes priority over a slow attack",
+          "[game][screens][party-motion][assets][native-guard]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/RED/objects.ngc")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    auto& player = f.players[0];
+    f.players[1].life = PlayerLife::InTower;
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    REQUIRE(player.figure != nullptr);
+    REQUIRE(player.figure->animator().bound());
+    auto& input = f.inputs[3];
+    input.turbo = true;
+    input.defendPressed = true;
+    input.strongAttack = true;
+    f.step();
+    using Action = PlayerAnimator::Action;
+    REQUIRE(player.figure->animator().action() == Action::DefendRaise);
+    input.defendPressed = false;
+    input.strongAttack = false;
+    bool blocked = false;
+    bool lowered = false;
+    for (s32 step = 0; step < 240; ++step) {
+        f.step();
+        const auto action = player.figure->animator().action();
+        blocked = blocked || action == Action::Defend;
+        lowered = lowered || action == Action::DefendLower;
+    }
+    CHECK(blocked);
+    CHECK(lowered);
+    CHECK(player.figure->animator().action() == Action::Ready);
+    CHECK_FALSE(player.figure->animator().guarding());
+    input.defendPressed = true;
+    f.step();
+    CHECK(player.figure->animator().action() == Action::DefendRaise);
+}
+
 TEST_CASE("boss impacts reach retail player animations and lock input through recovery",
           "[game][screens][party-motion][player-impact][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/RED/objects.ngc")
@@ -841,8 +882,9 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
         recovery = Action::GetUpForward;
     }
     SECTION("a raised guard halves the hit and downgrades falling to recoil") {
-        for (s32 i = 0; i < 60; ++i) {
-            player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Defend);
+        player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Defend);
+        for (s32 i = 0; i < 60 && !player.figure->animator().defending(); ++i) {
+            player.figure->animate(0, 2, 1.0f / 30);
         }
         REQUIRE(player.figure->animator().defending());
         remainingHealth = 995;

@@ -295,11 +295,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 deed = PlayerDeed::UsePotion;
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
+            } else if (in.defendPressed) {
+                // fn_80088938 tests S_DEFEND's edge (0x1000), not the held
+                // turbo level. Holding the button must not renew a completed block.
+                deed = PlayerDeed::Defend;
             } else if (in.strongAttack && players[i].figure != nullptr) {
                 deed = events.attackDeed ? events.attackDeed(i, true, move.any(), attackFacing)
                                          : PlayerDeed::StrongAttack;
-            } else if (in.turbo) {
-                deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
             } else if (in.attack) {
                 deed = events.attackDeed ? events.attackDeed(i, false, move.any(), attackFacing)
                                          : PlayerDeed::Attack;

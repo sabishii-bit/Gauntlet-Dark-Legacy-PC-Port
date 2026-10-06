@@ -85,6 +85,45 @@ TEST_CASE("the attack is held by its key or its pad button", "[game][players][co
     REQUIRE_FALSE(readAttackInput(input, rebound, false, 1));
 }
 
+TEST_CASE("the remapped turbo button requests defend only on its own input edge",
+          "[game][players][controls][native-guard]") {
+    Input input;
+    PlayBindings bindings;
+    bindings.turbo = {Key::Q};
+    bindings.padTurbo = {PadButton::RightBumper};
+    input.beginPoll();
+    input.setKey(Key::Q, true);
+    auto buttons = readPlayButtons(input, bindings, true, kNoPad);
+    CHECK(buttons.turbo);
+    CHECK(buttons.defendPressed);
+    CHECK_FALSE(readPlayButtons(input, bindings, false, kNoPad).defendPressed);
+    input.beginPoll();
+    buttons = readPlayButtons(input, bindings, true, kNoPad);
+    CHECK(buttons.turbo);
+    CHECK_FALSE(buttons.defendPressed);
+
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = true;
+    input.setPad(1, pad);
+    CHECK(readPlayButtons(input, bindings, false, 1).defendPressed);
+    CHECK(readPlayButtons(input, bindings, false, kAllPads).defendPressed);
+    CHECK_FALSE(readPlayButtons(input, bindings, false, 0).defendPressed);
+    input.beginPoll();
+    buttons = readPlayButtons(input, bindings, false, 1);
+    CHECK(buttons.turbo);
+    CHECK_FALSE(buttons.defendPressed);
+    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = false;
+    input.setPad(1, pad);
+    input.beginPoll();
+    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = true;
+    pad.buttons[static_cast<usize>(bindings.padUsePotion.front())] = true;
+    input.setPad(1, pad);
+    buttons = readPlayButtons(input, bindings, false, 1);
+    CHECK(buttons.shieldPotion);
+    CHECK_FALSE(buttons.defendPressed);
+}
+
 TEST_CASE("default mouse attack presses holds and releases only for the keyboard owner",
           "[game][players][controls]") {
     Input input;

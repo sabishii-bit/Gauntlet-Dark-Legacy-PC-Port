@@ -34,6 +34,7 @@ struct PlayButtons {
     bool strafe = false;             ///< held
     bool strongAttack = false;       ///< held
     bool turbo = false;              ///< held
+    bool defendPressed = false;      ///< the turbo/defend button went down this poll
     bool combo = false;              ///< held: the two-player combo's button
     bool chargePressed = false;      ///< true only the frame it goes down
     bool attackPressed = false;      ///< likewise

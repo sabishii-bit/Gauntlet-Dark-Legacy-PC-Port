@@ -938,6 +938,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_sumner.update(seconds);
     for (auto& player : m_players) {
         if (player.figure != nullptr) {
+            const auto* stats = m_classes.stats(player.actor.save().character);
+            player.figure->setGuardArmor(
+                stats != nullptr ? armorDefense(*stats, player.actor.save().progress()) : 0.0f);
             player.figure->setCompanionPowerups(*m_device, m_world->powerups(),
                                                 player.actor.save().progress().inventory,
                                                 &m_weapons);
