@@ -299,6 +299,17 @@ TEST_CASE("wall clearance excludes only faces wholly below the caller's volume",
     CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.5f));
     CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f, &contacts, 2.0f).x == 9);
     CHECK(contacts.empty());
+    // An overlap recheck after a successful step uses the same exclusion.
+    // Other callers retain their existing cylinder behavior by default.
+    CHECK(collision.resolveWalls({4.8f, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.5f));
+    CHECK(collision.resolveWalls({4.8f, 0, 0}, 0.5f, 0.2f, 2.8f, &contacts, 2.0f).x ==
+          Approx(4.8f));
+    CHECK(contacts.empty());
+    CHECK(collision.resolveWalls({4.8f, 0, 0}, 0.5f, 0.2f, 2.8f, &contacts, 1.9f).x ==
+          Approx(4.5f));
+    REQUIRE(contacts.size() == 1);
+    CHECK(contacts.front().object == 7);
+    contacts.clear();
 
     // The same moving face blocks again when it rises into the volume. The
     // cutoff is in world space, including when the object also turns.
@@ -308,10 +319,13 @@ TEST_CASE("wall clearance excludes only faces wholly below the caller's volume",
           Approx(4.5f));
     REQUIRE(contacts.size() == 1);
     CHECK(contacts.front().object == 7);
+    CHECK(collision.resolveWalls({4.8f, 0, 0}, 0.5f, 0.2f, 2.8f, nullptr, 2.0f).x == Approx(4.5f));
     const Mat4 turned =
         glm::rotate(glm::translate(Mat4{1}, Vec3{0, 1, 0}), kPi * 0.5f, Vec3{0, 1, 0});
     collision.setObjectTransform(7, turned);
     CHECK(collision.sweepWalls({0, 0, 0}, {0, 0, -9}, 0.5f, 0.2f, 2.8f, nullptr, 2.0f).z ==
+          Approx(-4.5f));
+    CHECK(collision.resolveWalls({0, 0, -4.8f}, 0.5f, 0.2f, 2.8f, nullptr, 2.0f).z ==
           Approx(-4.5f));
 }
 

@@ -83,6 +83,9 @@ public:
     /** How far the character's touch takes items: the class's whole width, as the original
      * counts it, twice the footprint that walls stop. */
     f32 reach() const { return m_radius * 2.0f; }
+    /** Lowest height of the native wall-contact sphere for the given foot height.
+     * Both walking and post-body correction must ignore faces wholly below it. */
+    f32 minimumWallY(f32 footHeight) const;
     bool moving() const { return m_moving; }
     /** Actual wall hits accumulated over this movement tick, including slide corrections. */
     std::span<const WallContact> wallContacts() const { return m_wallContacts; }

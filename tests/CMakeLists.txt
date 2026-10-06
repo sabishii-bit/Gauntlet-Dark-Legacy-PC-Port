@@ -255,6 +255,7 @@ add_executable(tests
     game/screens/TowerCompletionTests.cpp
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
+    game/screens/PlaySceneG4Tests.cpp
     game/screens/MultiplayerJourneyTests.cpp
     game/screens/PartyMotionTests.cpp
     game/screens/PartyCollisionTests.cpp

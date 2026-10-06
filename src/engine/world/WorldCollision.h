@@ -107,10 +107,12 @@ public:
     /**
      * Pushes a vertical cylinder of `radius` standing from `bottom` to `top` out of the walls
      * it overlaps and returns the corrected centre. Sliding along walls falls out of it, so a
-     * mover just steps and then corrects.
+     * mover just steps and then corrects. `minimumY` excludes faces wholly below
+     * the caller's wall volume, as in sweepWalls.
      */
     Vec3 resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
-                      std::vector<WallContact>* contacts = nullptr) const;
+                      std::vector<WallContact>* contacts = nullptr,
+                      std::optional<f32> minimumY = std::nullopt) const;
     /** All surface contacts of a cylinder, including sloped faces and caps.
      * Unlike wall resolution this does not approximate contact at two heights. */
     std::vector<WallContact> surfaceContacts(const Vec3& centre, f32 radius, f32 bottom,

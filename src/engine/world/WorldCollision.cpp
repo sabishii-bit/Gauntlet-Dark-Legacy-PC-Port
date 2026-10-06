@@ -746,58 +746,64 @@ std::vector<WallContact> WorldCollision::surfaceContacts(const Vec3& centre, f32
 }
 
 Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
-                                  std::vector<WallContact>* contacts) const {
+                                  std::vector<WallContact>* contacts,
+                                  std::optional<f32> minimumY) const {
     Vec3 out = centre;
     const f32 reach = radius * 2.0f;
     for (s32 pass = 0; pass < kPasses; ++pass) {
         bool pushed = false;
-        eachTriangle(out.x - reach, out.z - reach, out.x + reach, out.z + reach,
-                     [&](const CollisionTriangle& triangle) {
-                         if ((triangle.objectFlags & kWallQueryFlags) == 0 ||
-                             (triangle.objectFlags & kLiquidSurface) != 0 ||
-                             std::abs(triangle.normal.y) >= kFloorNormalY) {
-                             return; // a floor or a ceiling
-                         }
-                         Vec2 wallNormal{triangle.normal.x, triangle.normal.z};
-                         const f32 normalLength = glm::length(wallNormal);
-                         wallNormal =
-                             normalLength > kEpsilon ? wallNormal / normalLength : Vec2{1.0f, 0.0f};
-                         for (const f32 fraction : kProbeFractions) {
-                             const f32 height = bottom + (top - bottom) * fraction;
-                             const Slice slice = sliceAt(triangle, height);
-                             if (!slice.valid) {
-                                 continue;
-                             }
-                             const Vec2 here{out.x, out.z};
-                             const Vec2 nearest = closestOnSegment(slice.a, slice.b, here);
-                             const Vec2 away = here - nearest;
-                             const f32 distance = glm::length(away);
-                             if (distance >= radius) {
-                                 continue;
-                             }
-                             if (contacts != nullptr &&
-                                 std::ranges::none_of(*contacts, [&](const WallContact& seen) {
-                                     return seen.object == triangle.object;
-                                 })) {
-                                 contacts->push_back(WallContact{
-                                     triangle.object, Vec3{nearest.x, height, nearest.y}});
-                             }
-                             if (contactOnly(triangle.object)) {
-                                 continue;
-                             }
-                             // Push straight away from the wall when in front of it, else out along
-                             // its normal so a mover never ends up behind it.
-                             Vec2 direction = wallNormal;
-                             f32 depth = radius - glm::dot(away, wallNormal);
-                             if (distance > kEpsilon && glm::dot(away, wallNormal) > 0.0f) {
-                                 direction = away / distance;
-                                 depth = radius - distance;
-                             }
-                             out.x += direction.x * depth;
-                             out.z += direction.y * depth;
-                             pushed = true;
-                         }
-                     });
+        eachTriangle(
+            out.x - reach, out.z - reach, out.x + reach, out.z + reach,
+            [&](const CollisionTriangle& triangle) {
+                if ((triangle.objectFlags & kWallQueryFlags) == 0 ||
+                    (triangle.objectFlags & kLiquidSurface) != 0 ||
+                    std::abs(triangle.normal.y) >= kFloorNormalY) {
+                    return; // a floor or a ceiling
+                }
+                if (minimumY && std::ranges::all_of(triangle.vertices, [&](const Vec3& point) {
+                        return point.y < *minimumY;
+                    })) {
+                    return;
+                }
+                Vec2 wallNormal{triangle.normal.x, triangle.normal.z};
+                const f32 normalLength = glm::length(wallNormal);
+                wallNormal = normalLength > kEpsilon ? wallNormal / normalLength : Vec2{1.0f, 0.0f};
+                for (const f32 fraction : kProbeFractions) {
+                    const f32 height = bottom + (top - bottom) * fraction;
+                    const Slice slice = sliceAt(triangle, height);
+                    if (!slice.valid) {
+                        continue;
+                    }
+                    const Vec2 here{out.x, out.z};
+                    const Vec2 nearest = closestOnSegment(slice.a, slice.b, here);
+                    const Vec2 away = here - nearest;
+                    const f32 distance = glm::length(away);
+                    if (distance >= radius) {
+                        continue;
+                    }
+                    if (contacts != nullptr &&
+                        std::ranges::none_of(*contacts, [&](const WallContact& seen) {
+                            return seen.object == triangle.object;
+                        })) {
+                        contacts->push_back(
+                            WallContact{triangle.object, Vec3{nearest.x, height, nearest.y}});
+                    }
+                    if (contactOnly(triangle.object)) {
+                        continue;
+                    }
+                    // Push straight away from the wall when in front of it, else out along
+                    // its normal so a mover never ends up behind it.
+                    Vec2 direction = wallNormal;
+                    f32 depth = radius - glm::dot(away, wallNormal);
+                    if (distance > kEpsilon && glm::dot(away, wallNormal) > 0.0f) {
+                        direction = away / distance;
+                        depth = radius - distance;
+                    }
+                    out.x += direction.x * depth;
+                    out.z += direction.y * depth;
+                    pushed = true;
+                }
+            });
         if (!pushed) {
             break;
         }

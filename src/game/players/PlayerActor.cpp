@@ -78,6 +78,11 @@ void PlayerActor::slide(const Vec3& offset, const WorldCollision* collision) {
     travel(Vec3{offset.x, 0.0f, offset.z}, collision);
 }
 
+f32 PlayerActor::minimumWallY(f32 footHeight) const {
+    constexpr f32 kWallOriginLift = 1.0f;
+    return footHeight + m_followHeight + kWallOriginLift - reach();
+}
+
 void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
     const f32 distance = glm::length(offset);
     if (distance <= 0.0f) {
@@ -94,12 +99,11 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
         // PlayerWallCollide tests a sphere at coly + 1 with the class's full
         // width as its radius. Keep our horizontal sweep, but exclude faces
         // wholly below that volume, such as a lowered lift's deck sides.
-        constexpr f32 kWallOriginLift = 1.0f;
-        const f32 minimumWallY = m_position.y + m_followHeight + kWallOriginLift - reach();
+        const f32 wallMinimum = minimumWallY(m_position.y);
         Vec3 target = m_position + stride;
         target = collision->sweepWalls(m_position, target, m_radius, target.y + kFootClearance,
                                        target.y + m_height - kFootClearance, &m_wallContacts,
-                                       minimumWallY);
+                                       wallMinimum);
         auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
         if (!floor) {
             // Floor contact spans the body's radius, not just a ray under its
@@ -115,7 +119,7 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
             }
             target = collision->sweepWalls(m_position, *edge, m_radius, edge->y + kFootClearance,
                                            edge->y + m_height - kFootClearance, &m_wallContacts,
-                                           minimumWallY);
+                                           wallMinimum);
             const auto support = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
             if (!support) {
                 return;

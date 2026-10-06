@@ -922,7 +922,7 @@ TEST_CASE("standing generators block player movement and release it when destroy
 }
 
 TEST_CASE("the opponent movement recheck preserves player wall clearance",
-          "[level-opponents][collision][tower-wings]") {
+          "[level-opponents][collision][tower-wings][g4-stair-recheck]") {
     const auto stage = test::sampleLevel("player-wall-clearance");
     writeTextFile(stage / "world.json", R"({"objects":[
       {"name":"GROUND","position":[0,0,0],"flags":4},
@@ -932,7 +932,7 @@ TEST_CASE("the opponent movement recheck preserves player wall clearance",
       {"object":0,"normals":[0,1,0,0,1,0],
        "vertices":[-10,0,-10,10,0,-10,10,0,10,-10,0,-10,10,0,10,-10,0,10]},
       {"object":1,"normals":[-1,0,0,-1,0,0],
-       "vertices":[0,-8,-5,0,1.3,-5,0,1.3,5,0,-8,-5,0,1.3,5,0,-8,5]},
+       "vertices":[0,-8,-5,0,1.8,-5,0,1.8,5,0,-8,-5,0,1.8,5,0,-8,5]},
       {"object":2,"normals":[-1,0,0,-1,0,0],
        "vertices":[4,0,-5,4,5,-5,4,5,5,4,0,-5,4,5,5,4,0,5]}]})");
     test::FakeRenderDevice device;
@@ -949,8 +949,9 @@ TEST_CASE("the opponent movement recheck preserves player wall clearance",
     actor.spawn(0, {}, nullptr, {-2, 0, 0}, 0);
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, stage, 1}, players);
-    // Each walking step clears a lowered gate. A post-body recheck must not
-    // move it back to the other side using a different vertical collision span.
+    // The lowered gate intersects the cylinder's low probe, but is wholly below
+    // the native wall volume (Y=2 for this body). A post-body recheck must retain
+    // that face filter as well as the walking query's foot/head clearance.
     for (s32 step = 0; step < 80; ++step) {
         const Vec3 before = actor.position();
         actor.slide({0.05f, 0, 0}, &world.collision());
