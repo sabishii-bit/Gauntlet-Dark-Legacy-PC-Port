@@ -54,7 +54,7 @@ private:
     u32 m_index = 0;
     u64 m_generation = 0;
     f32 m_secondsPerFrame = kDefaultRate * kRateUnit;
-    f32 m_time = 0.0f; ///< seconds into the sequence
+    f64 m_time = 0.0; ///< accumulated seconds; preserve loop boundaries across small steps
     f32 m_frame = 0.0f;
     f32 m_speed = 1.0f;
     f32 m_transitionLength = 0.0f;

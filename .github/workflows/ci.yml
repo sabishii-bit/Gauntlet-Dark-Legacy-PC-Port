@@ -129,3 +129,17 @@ jobs:
             -DGDL_ASSET_DIR="$GDL_ASSET_DIR" -DGDL_UNPACKED_DIR="$GDL_UNPACKED_DIR"
       - name: Build and every test
         run: python scripts/build.py --test
+      - name: Native asset completeness and behavior gate
+        shell: bash
+        run: |
+          preset=$([ "$RUNNER_OS" = "Windows" ] && echo windows-ninja-debug || echo linux-ninja-debug)
+          python scripts/asset_audit.py "$preset" --verify
+      - name: Retain asset audit evidence (metadata only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-asset-audit
+          path: |
+            build/*/asset-audit.json
+            build/*/asset-conformance.xml
+          if-no-files-found: warn

@@ -95,10 +95,13 @@ std::vector<TextureAnimation> readTextureAnimations(std::span<const u8> file) {
     }
     const u32 count = readU32LE(file, 8);
     const u32 at = readU32LE(file, 12);
-    if (count == 0 || at == 0 || at > file.size() ||
-        count > (file.size() - at) / kTextureAnimationSize) {
+    if (count == 0) {
         return out;
     }
+    if (at == 0) {
+        throw FormatError("animation file has a texture animation count but no table");
+    }
+    require(file, at, usize{count} * kTextureAnimationSize, "texture animation table");
     for (u32 i = 0; i < count; ++i) {
         const usize record = at + usize{i} * kTextureAnimationSize;
         TextureAnimation animation;
@@ -125,10 +128,13 @@ std::vector<ParticleTemplateRecord> readParticleTemplates(std::span<const u8> fi
     }
     const u32 count = readU32LE(file, 16);
     const u32 at = readU32LE(file, 20);
-    if (count == 0 || at == 0 || at > file.size() ||
-        count > (file.size() - at) / ParticleTemplateRecord::kSize) {
+    if (count == 0) {
         return out;
     }
+    if (at == 0) {
+        throw FormatError("animation file has a particle count but no table");
+    }
+    require(file, at, usize{count} * ParticleTemplateRecord::kSize, "particle template table");
     for (u32 i = 0; i < count; ++i) {
         out.push_back(readParticleTemplate(file.subspan(
             at + usize{i} * ParticleTemplateRecord::kSize, ParticleTemplateRecord::kSize)));

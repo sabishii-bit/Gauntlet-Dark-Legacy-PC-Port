@@ -105,6 +105,9 @@ add_library(engine STATIC
     assets/StbImageImplementation.cpp
     assets/TextureSet.h
     assets/TextureSet.cpp
+    assets/TextureBindings.cpp
+    assets/TextureBindings.h
+    assets/ObjectMaterial.h
     assets/BitmapFont.h
     assets/BitmapFont.cpp
     assets/SoundSet.h
@@ -155,6 +158,8 @@ add_library(engine STATIC
     world/ParticleField.cpp
     world/TreeParticles.h
     world/TreeParticles.cpp
+    world/AssetAudit.h
+    world/AssetAudit.cpp
     world/WorldCollision.h
     world/WorldCollision.cpp
     world/TreeModel.h

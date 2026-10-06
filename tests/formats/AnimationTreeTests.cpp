@@ -103,6 +103,19 @@ TEST_CASE("animation trees list their nodes with resolved object names", "[forma
     REQUIRE_FALSE(file.find("other").has_value());
 }
 
+TEST_CASE("declared animation and particle tables cannot silently disappear when truncated",
+          "[formats][animation][asset-conformance]") {
+    for (const u32 pointer : {0U, 24U, 0xFFFFFFF0U}) {
+        CAPTURE(pointer);
+        ByteWriter texture;
+        texture.putU16(0).putU16(8).putU32(0).putU32(1).putU32(pointer).putZeros(8);
+        REQUIRE_THROWS_AS(AnimationFile::parse(texture.bytes()), FormatError);
+        ByteWriter particle;
+        particle.putU16(0).putU16(8).putU32(0).putZeros(8).putU32(1).putU32(pointer);
+        REQUIRE_THROWS_AS(AnimationFile::parse(particle.bytes()), FormatError);
+    }
+}
+
 TEST_CASE("animation trees decode each node's keys, plain or compressed", "[formats][animation]") {
     const AnimationFile file = AnimationFile::parse(sampleFile());
     const TreeSequence& sequence = file.trees[0].sequences[0];

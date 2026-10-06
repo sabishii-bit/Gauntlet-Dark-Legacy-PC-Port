@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ModelSet.h"
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -111,6 +112,61 @@ TEST_CASE("damaged archives are rejected", "[formats][archive]") {
     std::vector<u8> truncated = sampleArchive();
     truncated.resize(200);
     REQUIRE_THROWS_AS(ModelArchive::parse(truncated), FormatError);
+}
+
+TEST_CASE("v12 continuation records are six bytes but embedded records retain LOD",
+          "[formats][archive][asset-conformance]") {
+    for (const u32 version : {ModelArchive::kVersion12, ModelArchive::kVersion13}) {
+        CAPTURE(version);
+        constexpr u32 kObjectsAt = 160;
+        constexpr u32 kSubsAt = 224;
+        constexpr u32 kGeometryAt = 240;
+        ByteWriter bytes;
+        bytes.putZeros(64).putU32(version).putU32(1).putZeros(12);
+        bytes.putU32(kObjectsAt).putZeros(12).putZeros(kObjectsAt - 100);
+        bytes.putZeros(12).putU32(3);
+        bytes.putU16(1).putU16(3).putU16(0).putU16(9);
+        bytes.putU32(kSubsAt).putU32(kGeometryAt).putZeros(32);
+        REQUIRE(bytes.size() == kSubsAt);
+        for (const u16 texture : {u16{5}, u16{7}}) {
+            bytes.putU16(1).putU16(texture).putU16(2);
+            if (version == ModelArchive::kVersion13) {
+                bytes.putU16(4);
+            }
+        }
+        bytes.putZeros(kGeometryAt - bytes.size()).putZeros(48);
+        const auto parsed = ModelArchive::parse(bytes.bytes());
+        const auto& subs = parsed.objects()[0].subObjects;
+        REQUIRE(subs.size() == 3);
+        CHECK(subs[0].lodK == 9);
+        CHECK(subs[1].textureIndex == 5);
+        CHECK(subs[2].textureIndex == 7);
+        CHECK(subs[1].lightmapIndex == 2);
+        CHECK(subs[2].lightmapIndex == 2);
+        CHECK(subs[1].lodK == (version == ModelArchive::kVersion13 ? 4 : 0));
+        CHECK(subs[2].geometry.size() == 16);
+    }
+}
+
+TEST_CASE("native L2 podium and Sumner decode every v12 mesh part",
+          "[formats][archive][asset-conformance][assets]") {
+    const auto file = test::assetOrSkip("LEVELS/levelL2/objects.ngc");
+    ModelSet models;
+    REQUIRE(models.load(file.parent_path()));
+    const auto parsed = ModelArchive::parse(readFile(file));
+    REQUIRE(parsed.version() == ModelArchive::kVersion12);
+    for (const auto* name : {"L2NSPODIUM", "L2NSSUMNER"}) {
+        CAPTURE(name);
+        const auto index = models.find(name);
+        REQUIRE(index);
+        const auto& mesh = models.mesh(*index);
+        REQUIRE_FALSE(mesh.vertices.empty());
+        REQUIRE(mesh.parts.size() == parsed.objects()[*index].subObjects.size());
+        for (const auto& part : mesh.parts) {
+            CHECK(part.texture < parsed.bitmaps().size());
+            CHECK(part.lightmap < parsed.bitmaps().size());
+        }
+    }
 }
 
 TEST_CASE("the title archive lists its backdrop and glow textures", "[formats][archive][assets]") {

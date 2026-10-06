@@ -19,6 +19,11 @@ target_link_libraries(gdlunpack PRIVATE gdl::formats gdl::engine)
 target_include_directories(gdlunpack SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 gdl_apply_compiler_options(gdlunpack)
 
-set_target_properties(vqdump gdlunpack PROPERTIES
+find_package(nlohmann_json CONFIG REQUIRED)
+add_executable(assetcheck assetcheck/main.cpp)
+target_link_libraries(assetcheck PRIVATE gdl::engine nlohmann_json::nlohmann_json)
+gdl_apply_compiler_options(assetcheck)
+
+set_target_properties(vqdump gdlunpack assetcheck PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>"
     FOLDER "tools")

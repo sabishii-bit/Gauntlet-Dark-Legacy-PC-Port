@@ -50,6 +50,7 @@ public:
 
     bool loaded() const { return !m_entries.empty(); }
     usize size() const { return m_entries.size(); }
+    const std::filesystem::path& directory() const { return m_directory; }
     const TextureSetEntry& entry(u32 index) const;
     std::optional<u32> find(std::string_view name) const;
 

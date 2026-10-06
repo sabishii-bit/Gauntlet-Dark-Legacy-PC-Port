@@ -5,6 +5,7 @@
 #include <exception>
 #include <string>
 
+#include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
@@ -55,27 +56,11 @@ const Texture* findTexture(std::string_view name, TextureSet& textures, RenderDe
     if (name.empty()) {
         return nullptr;
     }
-    const auto take = [&](TextureSet& set) -> const Texture* {
-        const auto index = set.find(name);
-        if (!index.has_value()) {
-            return nullptr;
-        }
+    if (const auto binding = TextureBindings(textures, lenders).named(name)) {
         try {
-            return &set.texture(device, *index);
+            return &binding->set->texture(device, binding->index);
         } catch (const std::exception& e) {
             log::warn("Particle texture {}: {}", name, e.what());
-            return nullptr;
-        }
-    };
-    if (const Texture* found = take(textures); found != nullptr) {
-        return found;
-    }
-    for (TextureSet* lender : lenders) {
-        if (lender == nullptr) {
-            continue;
-        }
-        if (const Texture* found = take(*lender); found != nullptr) {
-            return found;
         }
     }
     return nullptr;

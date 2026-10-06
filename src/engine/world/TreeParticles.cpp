@@ -2,6 +2,7 @@
 
 #include <exception>
 
+#include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
@@ -23,23 +24,10 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
             descriptor.direction = node.direction;
         }
         const Texture* texture = &device.whiteTexture();
-        auto index = archive.textures.find(descriptor.texture);
-        TextureSet* owner = &archive.textures;
-        if (!index.has_value()) {
-            for (TextureSet* lender : lenders) {
-                if (lender != nullptr) {
-                    index = lender->find(descriptor.texture);
-                    if (index.has_value()) {
-                        owner = lender;
-                        break;
-                    }
-                }
-            }
-        }
-        if (index.has_value()) {
-            const u32 slot = index.value_or(0);
+        const auto binding = TextureBindings(archive.textures, lenders).named(descriptor.texture);
+        if (binding) {
             try {
-                texture = &owner->texture(device, slot);
+                texture = &binding->set->texture(device, binding->index);
             } catch (const std::exception& e) {
                 log::warn("Tree particles: texture {}: {}", descriptor.texture, e.what());
             }
@@ -49,8 +37,9 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
         const Mat4 at =
             i < pose.size() ? root * pose[i] : glm::translate(root, tree.worldPosition(i));
         m_field.start(descriptor, at, texture, static_cast<u32>(i + 1));
-        // Borrowed indices are not slots of the owning archive's animator.
-        m_nodes.push_back({i, owner == &archive.textures ? index : std::nullopt});
+        // An external image can still occupy a local animation destination slot.
+        // Never use a lender's unrelated numeric index as the destination.
+        m_nodes.push_back({i, archive.textures.find(descriptor.texture)});
     }
 }
 

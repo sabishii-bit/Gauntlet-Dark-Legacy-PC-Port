@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <string_view>
 
+#include "engine/assets/ObjectMaterial.h"
+#include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
@@ -51,25 +53,12 @@ TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures, Re
             throw std::runtime_error("mesh refers to a texture outside the set");
         }
         const auto& entry = textures.entry(part.texture);
-        TextureSet* source = &textures;
-        u32 index = part.texture;
-        if (entry.external() && !entry.noPicture) {
-            source = nullptr;
-            for (TextureSet* lender : lenders) {
-                if (lender == nullptr) {
-                    continue;
-                }
-                if (const auto found = lender->find(entry.name);
-                    found && !lender->entry(*found).external()) {
-                    source = lender;
-                    index = *found;
-                    break;
-                }
-            }
-            if (source == nullptr) {
-                throw std::runtime_error("external texture was not lent: " + entry.name);
-            }
+        const auto binding = TextureBindings(textures, lenders).slot(part.texture);
+        if (!binding) {
+            throw std::runtime_error("external texture was not lent: " + entry.name);
         }
+        TextureSet* source = binding->set;
+        const u32 index = binding->index;
         shape.textures.push_back(&source->texture(device, index));
         shape.translucent.push_back(entry.translucent() || source->entry(index).translucent());
         shape.slots.push_back(part.texture);
@@ -108,11 +97,12 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                 node.ancestors.push_back(static_cast<usize>(parent));
             }
             node.offset = tree.worldPosition(i);
-            node.chrome = info.chrome();
-            node.additive = info.additive();
-            node.depthWrite = info.writesDepth();
-            node.depthTest = info.testsDepth();
-            node.facing = CameraFrame::facingOf(info.objectFlags);
+            const auto material = ObjectMaterial::fromFlags(info.objectFlags);
+            node.chrome = material.chrome;
+            node.additive = material.additive;
+            node.depthWrite = material.depthWrite;
+            node.depthTest = material.depthTest;
+            node.facing = material.facing;
             if (!info.object.empty()) {
                 const auto model = models.find(info.object);
                 if (!model.has_value()) {

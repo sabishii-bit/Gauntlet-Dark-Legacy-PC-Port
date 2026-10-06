@@ -93,6 +93,29 @@ TEST_CASE("a sequence's rate is 900 over its frames per second and frames snap t
     REQUIRE(player.frame() == 2.0f);
 }
 
+TEST_CASE("long animation loops end on the same tick under split display updates",
+          "[world][animation][asset-conformance][cadence]") {
+    // Ninety frames is Sumner's standing loop. Single-precision accumulation
+    // used to defer its loop notification until tick 91 even though frame 89 held.
+    for (const s32 frames : {90, 900}) {
+        const TreeSequenceInfo cycle = sequence(frames, 30);
+        for (const s32 subdivisions : {1, 2, 4}) {
+            CAPTURE(frames, subdivisions);
+            AnimationPlayer player;
+            player.start(cycle, 0);
+            const f32 seconds = kStep / static_cast<f32>(subdivisions);
+            for (s32 loop = 0; loop < 5; ++loop) {
+                for (s32 step = 1; step < frames * subdivisions; ++step) {
+                    REQUIRE_FALSE(player.advance(seconds, true));
+                }
+                REQUIRE(player.advance(seconds, true));
+                REQUIRE(player.finished());
+                CHECK(player.frame() == 0.0f);
+            }
+        }
+    }
+}
+
 TEST_CASE("a transition holds the first frame while it blends in", "[world][animation]") {
     const TreeSequenceInfo cycle = sequence(12, 30);
     AnimationPlayer player;

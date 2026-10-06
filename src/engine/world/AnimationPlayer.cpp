@@ -18,7 +18,7 @@ void AnimationPlayer::start(const TreeSequenceInfo& sequence, u32 index, f32 tra
     const f32 rate = sequence.frameRate > 0 ? static_cast<f32>(sequence.frameRate) : kDefaultRate;
     m_secondsPerFrame = rate * kRateUnit / std::max(m_speed, 1e-6f);
     m_frame = frame > static_cast<f32>(sequence.frames) ? 0.0f : frame;
-    m_time = m_frame * m_secondsPerFrame;
+    m_time = static_cast<f64>(m_frame) * m_secondsPerFrame;
     m_transitionLength = std::max(transitionSeconds, 0.0f);
     m_transitionTime = std::clamp(transitionElapsedSeconds, 0.0f, m_transitionLength);
     m_finished = false;
@@ -44,7 +44,8 @@ f32 AnimationPlayer::presentationFrame() const {
     if (m_held) {
         return m_frame;
     }
-    return std::clamp(m_time / m_secondsPerFrame, 0.0f, static_cast<f32>(m_sequence->frames - 1));
+    return static_cast<f32>(
+        std::clamp(m_time / m_secondsPerFrame, 0.0, static_cast<f64>(m_sequence->frames - 1)));
 }
 
 f32 AnimationPlayer::transition() const {
@@ -72,7 +73,7 @@ bool AnimationPlayer::advance(f32 seconds, bool repeat) {
         seconds -= consumed;
         if (m_transitionTime + kTimeSlack >= m_transitionLength) {
             m_transitionTime = m_transitionLength;
-            m_time = m_frame * m_secondsPerFrame;
+            m_time = static_cast<f64>(m_frame) * m_secondsPerFrame;
         }
         if (transitioning() || seconds <= kTimeSlack) {
             return false;
@@ -83,14 +84,14 @@ bool AnimationPlayer::advance(f32 seconds, bool repeat) {
     if (repeat) {
         // Each authored frame owns one complete frame interval, including the last.
         // Rounding the displayed pose must not shorten that interval or discard time.
-        const f32 duration = static_cast<f32>(m_sequence->frames) * m_secondsPerFrame;
+        const f64 duration = static_cast<f64>(m_sequence->frames) * m_secondsPerFrame;
         if (m_time + kTimeSlack >= duration) {
             ++m_generation;
             m_time = m_time < duration ? 0.0f : std::fmod(m_time, duration);
             m_finished = true;
         }
     }
-    f32 t = m_time / m_secondsPerFrame;
+    f32 t = static_cast<f32>(m_time / m_secondsPerFrame);
     const f32 whole = std::floor(0.5f + t);
     if (!m_smooth || std::abs(t - whole) < kSnapWindow || m_secondsPerFrame < kTick) {
         t = whole;

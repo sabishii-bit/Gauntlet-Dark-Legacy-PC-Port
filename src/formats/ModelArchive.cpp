@@ -18,7 +18,8 @@ constexpr usize kObjectRecordSize = 64;
 constexpr usize kBitmapRecordSize = 64;
 constexpr usize kObjectDefSize = 24;
 constexpr usize kBitmapDefSize = 36;
-constexpr usize kSubObjectSize = 8;
+constexpr usize kSubObjectSize12 = 6;
+constexpr usize kSubObjectSize13 = 8;
 constexpr usize kQuadword = 16;
 constexpr usize kNameLength = 16;
 constexpr usize kBitmapNameLength = 30;
@@ -124,14 +125,19 @@ ModelArchive ModelArchive::parse(std::span<const u8> file) {
 
         for (s32 s = 0; s < subObjectCount; ++s) {
             ArchiveSubObject sub;
+            // The embedded first record has a LOD field in both versions. Only
+            // v13 adds that field to the packed continuation table as well.
+            const usize size =
+                s == 0 || archive.m_version == kVersion13 ? kSubObjectSize13 : kSubObjectSize12;
             const usize recordAt =
-                s == 0 ? at + 16
-                       : subObjectsOffset + usize{static_cast<u32>(s - 1)} * kSubObjectSize;
-            require(file, recordAt, kSubObjectSize, "sub-object record");
+                s == 0 ? at + 16 : subObjectsOffset + usize{static_cast<u32>(s - 1)} * size;
+            require(file, recordAt, size, "sub-object record");
             sub.quadwordCount = readU16LE(file, recordAt);
             sub.textureIndex = readU16LE(file, recordAt + 2);
             sub.lightmapIndex = readU16LE(file, recordAt + 4);
-            sub.lodK = static_cast<s16>(readU16LE(file, recordAt + 6));
+            if (size == kSubObjectSize13) {
+                sub.lodK = static_cast<s16>(readU16LE(file, recordAt + 6));
+            }
             object.subObjects.push_back(std::move(sub));
         }
 

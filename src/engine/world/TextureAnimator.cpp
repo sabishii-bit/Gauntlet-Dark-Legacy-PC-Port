@@ -7,6 +7,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/world/TreeModel.h"
@@ -16,12 +17,6 @@ namespace gdl {
 
 namespace {
 
-/** The set holding a texture of this name, and the index there. */
-struct Found {
-    TextureSet* set = nullptr;
-    u32 index = 0;
-};
-
 f32 fadeAlpha(s32 since, s32 duration, bool fadeOut) {
     const f32 fraction =
         duration > 0 ? std::clamp(static_cast<f32>(since) / static_cast<f32>(duration), 0.0f, 1.0f)
@@ -30,24 +25,6 @@ f32 fadeAlpha(s32 since, s32 duration, bool fadeOut) {
     // 255 minus that value. Invert after quantizing, not before (halfway is 128).
     const f32 transparency = fadeOut ? fraction : 1.0f - fraction;
     return static_cast<f32>(255 - static_cast<u8>(transparency * 255.0f)) / 255.0f;
-}
-
-std::optional<Found> findFrame(std::string_view name, TextureSet& textures,
-                               std::span<TextureSet* const> lenders) {
-    if (const auto index = textures.find(name);
-        index && !textures.entry(*index).external() && !textures.entry(*index).noPicture) {
-        return Found{&textures, *index};
-    }
-    for (TextureSet* lender : lenders) {
-        if (lender == nullptr) {
-            continue;
-        }
-        if (const auto index = lender->find(name);
-            index && !lender->entry(*index).external() && !lender->entry(*index).noPicture) {
-            return Found{lender, *index};
-        }
-    }
-    return std::nullopt;
 }
 
 } // namespace
@@ -85,18 +62,18 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
             m_entries.push_back(std::move(entry));
             continue;
         }
-        std::optional<Found> first;
+        std::optional<TextureBinding> first;
         if (animation.source >= 0) {
-            first = Found{&textures, static_cast<u32>(animation.source)};
+            first = TextureBinding{&textures, static_cast<u32>(animation.source)};
         } else {
-            first = findFrame(animation.frameName, textures, lenders);
+            first = TextureBindings(textures, lenders).image(animation.frameName);
         }
         if (!first.has_value()) {
             log::warn("Texture animation {}: its frames ({}) were not found", animation.name,
                       animation.frameName);
             continue;
         }
-        const Found found = *first;
+        const TextureBinding found = *first;
         if (found.index >= found.set->size()) {
             log::warn("Texture animation {}: its frames start past the set", animation.name);
             continue;
@@ -113,6 +90,11 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
                 log::warn("Texture animation {}: frame {}: {}", animation.name, f, e.what());
                 break;
             }
+        }
+        if (entry.frames.size() != static_cast<usize>(entry.period)) {
+            log::warn("Texture animation {} in {}: requested {} frames at {}, resolved {}",
+                      animation.name, textures.directory().string(), entry.period, found.index,
+                      entry.frames.size());
         }
         if (entry.frames.empty()) {
             continue;

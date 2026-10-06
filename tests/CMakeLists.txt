@@ -63,6 +63,9 @@ add_executable(tests
     engine/core/StringsTests.cpp
     engine/assets/PngImageTests.cpp
     engine/assets/TextureSetTests.cpp
+    engine/assets/TextureBindingsTests.cpp
+    engine/assets/ObjectMaterialTests.cpp
+    engine/world/AssetAuditTests.cpp
     engine/assets/NativeAssetsTests.cpp
     engine/assets/NativeShopTests.cpp
     engine/assets/BitmapFontTests.cpp

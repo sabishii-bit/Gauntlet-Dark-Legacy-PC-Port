@@ -5,6 +5,8 @@
 #include <exception>
 #include <ranges>
 
+#include "engine/assets/ObjectMaterial.h"
+#include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
@@ -77,23 +79,12 @@ WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDev
     }
     try {
         const TextureSetEntry& entry = textures.entry(index);
-        if (!entry.external()) {
-            slot.texture = &textures.texture(device, index);
-            slot.translucent = entry.translucent();
+        if (const auto binding = TextureBindings(textures, lenders).slot(index)) {
+            slot.texture = &binding->set->texture(device, binding->index);
+            slot.translucent =
+                binding->set->entry(binding->index).translucent() || entry.translucent();
             slot.usable = true;
             return slot;
-        }
-        // An external texture is another archive's, found by name.
-        for (TextureSet* lender : lenders) {
-            if (lender == nullptr) {
-                continue;
-            }
-            if (const auto lent = lender->find(entry.name); lent.has_value()) {
-                slot.texture = &lender->texture(device, *lent);
-                slot.translucent = lender->entry(*lent).translucent() || entry.translucent();
-                slot.usable = true;
-                return slot;
-            }
         }
         log::warn("World scene: external texture {} ({}) was not lent; drawn white", index,
                   entry.name);
@@ -182,30 +173,27 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
             log::warn("World scene: {}: {}", object.name, e.what());
             continue;
         }
-        const bool chrome = (object.objectFlags & WorldObject::kChrome) != 0;
-        const bool additive = object.additive();
+        const auto material = ObjectMaterial::fromFlags(object.objectFlags);
+        const bool chrome = material.chrome;
+        const bool additive = material.additive;
         const bool prelit = object.prelit() && mesh->prelit;
-        const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
-        const bool depthTest = (object.objectFlags & WorldObject::kNoDepthTest) == 0;
-        const u32 facing = CameraFrame::facingOf(object.objectFlags);
+        const bool depthWrite = material.depthWrite;
+        const bool depthTest = material.depthTest;
+        const u32 facing = material.facing;
         const bool background = std::ranges::find(backgroundObjects, i) != backgroundObjects.end();
-        const bool unit = background || m_placements[i].moving || object.sorted() || facing != 0 ||
+        const bool unit = background || m_placements[i].moving || material.sorted || facing != 0 ||
                           std::ranges::find(controlledObjects, i) != controlledObjects.end();
         Unit placedUnit;
         placedUnit.object = i;
         placedUnit.mesh = mesh;
         placedUnit.chrome = chrome;
-        placedUnit.sorted = object.sorted();
+        placedUnit.sorted = material.sorted;
         placedUnit.background = background;
         placedUnit.depthWrite = depthWrite;
         placedUnit.depthTest = depthTest;
         placedUnit.facing = facing;
         placedUnit.prelit = prelit;
-        if ((object.objectFlags & WorldObject::kSortBehind) != 0) {
-            placedUnit.sortBias = kSortBehindBias;
-        } else if ((object.objectFlags & WorldObject::kSortBack) != 0) {
-            placedUnit.sortBias = kSortBackBias;
-        }
+        placedUnit.sortBias = material.sortBias;
         const Vec3 offset = layout.worldPosition(i);
         bool placed = false;
         for (const MeshPart& part : mesh->parts) {
