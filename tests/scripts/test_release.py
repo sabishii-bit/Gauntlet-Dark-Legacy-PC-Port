@@ -105,6 +105,17 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             validated_assets(self.root, self.tag)
 
+    def test_manual_rebuild_can_select_source_without_bypassing_publication_guard(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
+        inputs = workflow.split("  workflow_dispatch:", 1)[1].split("permissions:", 1)[0]
+        self.assertIn("source_ref:", inputs)
+        self.assertIn("required: false", inputs)
+        installers = workflow.split("  installers:", 1)[1].split("  publish:", 1)[0]
+        self.assertIn("ref: ${{ inputs.source_ref || github.ref }}", installers)
+        publication = workflow.split("  publish:", 1)[1]
+        self.assertIn("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')", publication)
+        self.assertNotIn("inputs.source_ref", publication)
+
     def test_linux_frozen_wizard_checks_real_x11_plugin_as_well_as_offscreen(self):
         with mock.patch("release.devenv.WINDOWS", False), mock.patch(
                 "release.freezer_environment", side_effect=lambda: {}), mock.patch("release.subprocess.run") as run:

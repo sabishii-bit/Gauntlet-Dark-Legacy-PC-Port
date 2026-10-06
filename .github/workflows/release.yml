@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Optional tag or commit to package (manual runs never publish)'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -45,6 +50,8 @@ jobs:
         os: [windows-latest, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
