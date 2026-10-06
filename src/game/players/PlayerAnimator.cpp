@@ -135,6 +135,8 @@ void PlayerAnimator::unbind() {
     m_comboClass = -1;
     m_comboRide = false;
     m_attackSeconds = 0.0f;
+    m_phaseSeconds = 0.0;
+    m_shotFrame = 0.0f;
     m_player.setSpeed(1.0f);
     m_player.stop();
     m_presentationPrevious = TreePose{};
@@ -703,12 +705,21 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         }
         // The wind-up gives way to the release at its end, or at once from its second frame.
         d.action = m_current == Action::Throw ? Action::ThrowRelease : Action::ThrowMovingRelease;
-        d.cut = m_player.frame() >= kReleaseFrame ? Cut::IfDifferent : Cut::WhenDoneIfDifferent;
+        d.cut = m_shotFrame >= kReleaseFrame ? Cut::IfDifferent : Cut::WhenDoneIfDifferent;
+        d.shotBoundary = true;
         break;
-    case Action::ThrowRelease: d.action = Action::ThrowRecover; break;
-    case Action::ThrowMovingRelease: d.action = Action::ThrowMovingRecover; break;
+    case Action::ThrowRelease:
+        d.action = Action::ThrowRecover;
+        d.shotBoundary = true;
+        break;
+    case Action::ThrowMovingRelease:
+        d.action = Action::ThrowMovingRecover;
+        d.shotBoundary = true;
+        break;
     case Action::ThrowRecover:
-    case Action::ThrowMovingRecover: break; // whatever is asked next, once recovered
+    case Action::ThrowMovingRecover:
+        d.shotBoundary = true;
+        break; // whatever is asked next, once recovered
     case Action::UsePotion: d.action = Action::UsePotionRelease; break;
     case Action::ThrowPotion: d.action = Action::ThrowPotionRelease; break;
     case Action::UsePotionRelease:
@@ -840,6 +851,8 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         if (strafing() && requested == firstHalfOf(m_current)) {
             d.action = otherHalfOf(m_current);
         }
+        d.shotBoundary =
+            m_current >= Action::StrafeShootForward1 && m_current <= Action::StrafeShootRight2;
         // AnimAction's walking-strafe cases use mode 2 for an attack: it cuts in
         // immediately. Waiting for the footstep's end loses short button presses.
         // Shooting strafes still finish each half before releasing another weapon.
@@ -1272,10 +1285,26 @@ f32 PlayerAnimator::animationDuration(const Decision& decision) const {
 
 void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     const u32 target = sequenceOf(decision.action);
+    // MBEndFrame (800B6ED8) waits at least 34 ms between native game updates.
+    // InitAnim discards a finished phase's remainder, so polling those phase
+    // transitions at 60 Hz inadvertently increases sustained firing speed.
+    // Retain nominal two-hardware-tick shot boundaries, while still sampling
+    // poses and accepting input interrupts on every update. No carry is kept
+    // when a new phase starts, matching InitAnim rather than speeding the loop.
+    constexpr f64 kShotHz = 30.0;
+    constexpr f64 kTimeSlack = 0.000001;
+    const auto before = std::floor((m_phaseSeconds + kTimeSlack) * kShotHz);
+    m_phaseSeconds += std::max(0.0f, seconds);
+    const bool shotBoundary = std::floor((m_phaseSeconds + kTimeSlack) * kShotHz) > before;
     // InitAnim caches animscale in seqscale at sequence start. Advance the
     // old sequence and any blend using real elapsed time, not a new item's
     // multiplier; CalcAnimInfo's smooth/snap test uses that cached period.
     m_player.advance(seconds, decision.repeat);
+    if (shotBoundary) {
+        // decide() has already tested the previous boundary's frame, just as
+        // DoPlayerAction tests the old frame before calling AnimateTree.
+        m_shotFrame = m_player.frame();
+    }
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;
     bool restart = false;
@@ -1285,7 +1314,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     case Cut::IfDifferent: restart = done || different; break;
     case Cut::Now: restart = true; break;
     }
-    if (!restart) {
+    if (!restart || (decision.shotBoundary && !shotBoundary)) {
         return;
     }
     // action.c emits breath at entry, but hammer and gauntlets at the
@@ -1397,6 +1426,8 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     // Credit only that blend; the target's gameplay frame still starts at zero.
     m_player.start(m_tree->sequences[target], target, decision.transition, decision.startFrame,
                    AnimationPlayer::kTick);
+    m_phaseSeconds = 0.0;
+    m_shotFrame = m_player.frame();
     if (decision.action == Action::Start) {
         m_entered = true;
     }

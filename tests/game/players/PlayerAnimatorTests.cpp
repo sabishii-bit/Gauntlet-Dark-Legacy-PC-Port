@@ -387,7 +387,7 @@ TEST_CASE("a held attack winds up, lets go and recovers, over and over",
     REQUIRE(animator.moveScale() == 1.0f);
 }
 
-TEST_CASE("native class trees retain their quick throw cadence at the authored frame step",
+TEST_CASE("native class trees retain quick throw cadence independently of update rate",
           "[game][players][animation][alpha-fire-cadence][assets]") {
     struct ClassCadence {
         const char* code;
@@ -396,9 +396,9 @@ TEST_CASE("native class trees retain their quick throw cadence at the authored f
     // DoPlayerAction's P_THROWQ cuts the wind-up from frame 2, then finishes
     // THROW1 and THROW1R. CalcAnimInfo rounds rates below 30 and finishes at
     // numframes-0.5; InitAnim starts each new sequence without leftover time.
-    // These periods use the actual class trees with a two-tick update. The
-    // original clock also accepts other tick counts: this is not evidence
-    // that every retail run, or the configurable remake, must update at 30 Hz.
+    // MBEndFrame 800B6ED8 waits at least 34 ms between game updates; pbPulseTime
+    // supplies a 60 Hz clock, not 60 action dispatches per second. Preserve the
+    // nominal two-tick phase boundaries without reducing presentation updates.
     const std::array<ClassCadence, 8> classes{{{"WAR", 13},
                                                {"VAL", 11},
                                                {"WIZ", 10},
@@ -435,9 +435,7 @@ TEST_CASE("native class trees retain their quick throw cadence at the authored f
                         periods[rate] = period;
                     }
                     CHECK(period == periods[rate]);
-                    if (hz == 30) {
-                        CHECK(period == character.frames);
-                    }
+                    CHECK(period * 30 == character.frames * hz);
                 }
                 previous = frame;
                 ++shots;

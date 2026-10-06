@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -56,6 +57,54 @@ TreeInfo actionTree() {
     return tree;
 }
 
+TEST_CASE("native quick and strafing shots retain wall-time cadence with speed items",
+          "[game][players][animation][alpha-fire-cadence][assets]") {
+    for (const auto* code : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
+        const auto path = test::assetOrSkip(std::format("PLAYERS/{}/ANIM/ANIM.PS2", code));
+        AnimationSet actions;
+        REQUIRE(actions.load(path.parent_path()));
+        const auto found = actions.find(code);
+        REQUIRE(found);
+        for (s32 power = 0; power < 4; ++power) {
+            for (s32 mode = 0; mode < 3; ++mode) {
+                std::vector<s32> nativeShots;
+                for (const s32 hz : {30, 60, 120, 240}) {
+                    CAPTURE(code, power, mode, hz);
+                    const f32 seconds = 1.0f / static_cast<f32>(hz);
+                    const s32 ticks = std::max(1, 60 / hz);
+                    PlayerAnimator animator;
+                    REQUIRE(animator.bind(actions.tree(*found), false));
+                    animator.setAttackSpeed((power & 1) != 0, (power & 2) != 0);
+                    const auto motion = mode == 0 ? PlayerMotion::Stand : PlayerMotion::Run;
+                    if (mode == 2) {
+                        animator.setStrafe(StrafeWay::Left);
+                    }
+                    if (mode != 0) {
+                        animator.update(motion, ticks, seconds);
+                    }
+                    animator.update(motion, ticks, seconds, PlayerDeed::Attack);
+                    REQUIRE(animator.action() == (mode == 2   ? Action::StrafeShootLeft1
+                                                  : mode == 1 ? Action::ThrowMoving
+                                                              : Action::Throw));
+                    std::vector<s32> shots;
+                    for (s32 tick = 1; tick <= hz * 5 && shots.size() < 5; ++tick) {
+                        animator.update(motion, ticks, seconds, PlayerDeed::Attack);
+                        if (animator.released()) {
+                            shots.push_back(tick * (240 / hz));
+                        }
+                    }
+                    REQUIRE(shots.size() == 5);
+                    if (hz == 30) {
+                        nativeShots = shots;
+                    } else {
+                        CHECK(shots == nativeShots);
+                    }
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("player actions retain native fractional frames without changing fast sequence snapping",
           "[game][players][animation][player-smooth]") {
     struct Sample {
@@ -103,10 +152,10 @@ TEST_CASE(
     CHECK(animator.player().frame() == 0.0f);
 
     // Native action dispatch examines the old frame before AnimateTree updates
-    // it. At one hardware tick per update this reaches 1.5, then 2, and only
-    // the following dispatch may cut into THROW1. At 30 Hz there is no half
-    // frame, so that authored two-tick cadence is unchanged.
-    for (const f32 frame : {0.5f, 1.0f, 1.5f, 2.0f}) {
+    // it. MBEndFrame caps dispatches below 30 Hz, despite its 60 Hz clock. The
+    // 60 Hz poses remain fractional, but THROW1 starts at the next nominal
+    // native boundary after frame two, not on the intervening visual sample.
+    for (const f32 frame : {0.5f, 1.0f, 1.5f, 2.0f, 2.5f}) {
         CAPTURE(frame);
         animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Attack);
         CHECK(animator.action() == Action::Throw);

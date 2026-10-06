@@ -529,6 +529,7 @@ private:
         Action requested; ///< before follow-up/refinement, for native item-speed eligibility
         Cut cut = Cut::WhenDoneIfDifferent;
         bool repeat = false;
+        bool shotBoundary = false; ///< timed ranged continuation, not an input interrupt
         f32 transition = 0.0f;
         f32 startFrame = 0.0f;
     };
@@ -593,6 +594,8 @@ private:
     bool m_comboRide = false;   ///< the dwarf's ride goes on: COMBOACT2 loops
     bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on
+    f64 m_phaseSeconds = 0.0;   ///< elapsed real time in the current animation phase
+    f32 m_shotFrame = 0.0f;     ///< last native-cadence sample, for the wind-up's old-frame test
     s32 m_stillTicks = 0;       ///< ticks standing still
     s32 m_fidgetTicks = 0;      ///< ticks since the first fidget, 0 before it
     AnimationPlayer m_player;
