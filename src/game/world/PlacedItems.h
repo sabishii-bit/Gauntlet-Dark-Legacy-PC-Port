@@ -18,6 +18,7 @@
 #include "engine/world/ParticleField.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/TreeParticles.h"
 #include "engine/world/TreePose.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -106,6 +107,7 @@ public:
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 transform{1.0f};
         mutable TreeModel model;
+        mutable TreeParticles particles; ///< authored emitters, separate from pickup bursts
         TreePose pose;
         const TreeInfo* figure = nullptr; ///< the tree the model and pose come from
         ItemArchive* archive = nullptr;   ///< where the figure and its textures came from

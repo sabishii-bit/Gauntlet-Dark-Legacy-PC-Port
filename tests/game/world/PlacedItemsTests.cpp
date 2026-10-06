@@ -26,6 +26,55 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("the Cemetery Fire Parchment burns while lying in the level",
+          "[placed-items][fire-parchment][native-assets][assets]") {
+    const s32 rate = GENERATE(30, 60);
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELG/ANIM.PS2").parent_path().parent_path().parent_path();
+    ItemArchive archive;
+    ItemArchive powerups;
+    WorldLayout layout;
+    REQUIRE(archive.load(root / "ITEMS/LEVELG"));
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    REQUIRE(layout.load(root / "LEVELS/LEVELG3"));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive, &powerups};
+    REQUIRE(items.bind(device, layout, nullptr, archives));
+    items.setPlayerCount(1);
+    usize parchment = items.size();
+    for (usize i = 0; i < items.size(); ++i) {
+        if (items.item(i).name == "QUEST_PARCH") {
+            parchment = i;
+            break;
+        }
+    }
+    REQUIRE(parchment < items.size());
+    REQUIRE(items.item(parchment).visible);
+    const auto slot = archive.textures.find("POOLFIRE");
+    REQUIRE(slot);
+    const auto* fire = &archive.textures.texture(device, *slot);
+    const auto hasFire = [&](TreeModel::Pass pass) {
+        device.draws.clear();
+        items.draw(device, Mat4{1}, {}, nullptr, pass);
+        return std::ranges::any_of(device.draws,
+                                   [fire](const auto& draw) { return draw.texture == fire; });
+    };
+    for (s32 tick = 0; tick < rate * 10; ++tick) {
+        items.update(1.0f / static_cast<f32>(rate));
+        if (tick >= rate && tick % rate == 0) {
+            CAPTURE(rate, tick);
+            CHECK_FALSE(hasFire(TreeModel::Pass::DepthWriting));
+            REQUIRE(hasFire(TreeModel::Pass::Effects));
+        }
+    }
+    const std::array collectors{Collector{items.item(parchment).position, 0.1f, 0.1f}};
+    const auto picked = items.collect(device, collectors);
+    REQUIRE(std::ranges::any_of(
+        picked, [parchment](const Pickup& pickup) { return pickup.item == parchment; }));
+    CHECK_FALSE(hasFire(TreeModel::Pass::All));
+}
+
 TEST_CASE("the native Town Center banana shadow keeps its black alpha coverage",
           "[placed-items][alpha-item-shadow][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
@@ -114,6 +163,69 @@ std::filesystem::path pickupPresentationFixture() {
       "itemInstances":[]})");
     test::convertModelFixture(root);
     return root;
+}
+
+TEST_CASE("pickup emitters follow attachments textures and visibility independently of animation",
+          "[placed-items][pickup-particles]") {
+    const auto root = pickupPresentationFixture();
+    writeTextFile(root / "textures.json", R"({"bitmaps":[
+      {"name":"WHITE","file":"white.png","width":2,"height":2},
+      {"name":"FLAME0","file":"white.png","width":2,"height":2},
+      {"name":"FLAME1","file":"white.png","width":2,"height":2}]})");
+    test::convertModelFixture(root);
+    writeTextFile(root / "animations.json", R"({
+      "particles":[{"preset":2,"enables":16929,"texture":"FLAME0",
+                    "particleLife":[0.1,0],"rate":[30,30,30,30]}],
+      "textureAnimations":[{"name":"FLAME","texture":1,"source":1,"frames":2,"rate":1}],
+      "trees":[{"name":"COIN","nodes":[
+        {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]},
+        {"name":"FIRE","particle":0,"parent":0,"position":[0,1,0]}]},
+        {"name":"TREAS_JUNK","nodes":[
+          {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]}]})");
+    WorldLayout layout;
+    ItemArchive archive;
+    REQUIRE(layout.load(root));
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    items.bind(device, layout, nullptr, archives);
+    items.setPlayerCount(1);
+    REQUIRE(items.place(device, "COIN", {7, 0, 0}, nullptr));
+    REQUIRE_FALSE(items.item(0).player.playing()); // a still tree must emit too
+    items.update(1.0f / 30);
+    const auto& field = items.item(0).particles.field();
+    REQUIRE(field.size() == 1);
+    REQUIRE(field.particleCount() > 0);
+    CHECK(Vec3{field.emitter(0).node()[3]} == Vec3{7, 1, 0});
+    const auto* first = field.textureOf(0);
+    items.attach(0, glm::translate(Mat4{1}, Vec3{9, 4, 0}), false);
+    items.update(1.0f / 30);
+    CHECK(Vec3{field.emitter(0).node()[3]} == Vec3{9, 5, 0});
+    CHECK(field.textureOf(0) != first);
+    const auto count = field.particleCount();
+    for (const f32 blend : {0.0f, 0.5f, 1.0f}) {
+        device.draws.clear();
+        items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::Effects, blend);
+        REQUIRE(device.draws.size() == 1);
+        CHECK_FALSE(device.draws[0].state.depthWrite);
+        CHECK(field.particleCount() == count); // drawing never advances the emitter
+    }
+    REQUIRE(items.claim(items.item(0).position, 1, 1) == 0);
+    for (s32 tick = 0; tick < 30; ++tick) {
+        items.update(1.0f / 30);
+    }
+    CHECK(field.particleCount() == 0);
+    device.draws.clear();
+    items.draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty());
+    REQUIRE(items.release(0, {14, 3, 0}, Vec3{0}, nullptr, 0));
+    items.update(1.0f / 30);
+    CHECK(field.particleCount() > 0);
+    CHECK(Vec3{field.emitter(0).node()[3]} == Vec3{14, 4, 0});
+    REQUIRE(items.blast(device, {14, 3, 0}, 4, 100).size() == 1);
+    CHECK(items.item(0).name == "TREAS_JUNK");
+    CHECK(items.item(0).particles.field().size() == 0); // no stale fire on a replacement
 }
 
 TEST_CASE("pickup presentation samples flight and fractional poses without changing collection",

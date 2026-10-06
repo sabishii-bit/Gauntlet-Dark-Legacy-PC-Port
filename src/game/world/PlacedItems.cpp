@@ -329,6 +329,7 @@ bool PlacedItems::replaceFigure(RenderDevice& device, Item& item, std::string_vi
     }
     item.name = std::move(replacement.name);
     item.model = std::move(replacement.model);
+    item.particles = std::move(replacement.particles);
     item.pose = std::move(replacement.pose);
     item.figure = replacement.figure;
     item.archive = replacement.archive;
@@ -452,6 +453,10 @@ bool PlacedItems::makeFigure(RenderDevice& device, Item& item) {
                 item.pose.evaluate(figure, 0, 0.0f);
                 item.model.setFrame(0, 0);
             }
+            // AtreeNodeInit also instantiates type-4 children. QUEST_PARCH's
+            // POOLFIRE is part of the pickup tree, not its collection effect.
+            item.particles.bind(figure, *archive, device, item.transform, item.pose.matrices());
+            item.particles.setLocalScales(item.pose.poses());
             return true;
         }
     }
@@ -703,6 +708,8 @@ void PlacedItems::applyTextureMotion() {
             if (item.figure != nullptr) {
                 motion.animator.apply(item.model, *item.figure, item.player.sequence(),
                                       static_cast<s32>(item.player.frame()));
+                motion.animator.apply(item.particles, *item.figure, item.player.sequence(),
+                                      static_cast<s32>(item.player.frame()));
             }
         }
     }
@@ -799,6 +806,9 @@ void PlacedItems::update(f32 seconds) {
         if (item.thrown) {
             fly(item, seconds);
         }
+        item.particles.setEmitting(item.visible);
+        item.particles.setLocalScales(item.pose.poses());
+        item.particles.step(seconds, item.transform, item.pose.matrices());
     }
     // Sequence-keyed textures (including boss coins) follow the new pose frame,
     // even on a render frame without a whole free-running texture tick.
@@ -872,12 +882,20 @@ void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                         motion.animator.apply(item.model, *item.figure, item.player.sequence(),
                                               visualFrame,
                                               motion.animator.presentationOffset(frameBlend));
+                        motion.animator.apply(item.particles, *item.figure, item.player.sequence(),
+                                              visualFrame,
+                                              motion.animator.presentationOffset(frameBlend));
                     }
                 }
                 item.model.setPresentationFrame(item.player.sequence(), visualFrame);
             }
             item.model.draw(device, clip, transform, lighting, pose->matrices(), camera, alpha,
                             pass);
+            if (pass != TreeModel::Pass::DepthWriting) {
+                const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
+                item.particles.draw(device, clip, frame.right, frame.up,
+                                    m_burstsAdvanced ? frameBlend : -1.0f);
+            }
         }
     }
     if (pass != TreeModel::Pass::DepthWriting) {

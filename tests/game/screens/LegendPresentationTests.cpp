@@ -214,6 +214,26 @@ TEST_CASE("legend flight follows its held pose and reports impact exactly once",
     REQUIRE(fixture.stopped.size() == 1);
 }
 
+TEST_CASE("carried Fire Parchment retains its native fire", "[legend][fire-parchment][assets]") {
+    LegendFixture fixture;
+    REQUIRE(fixture.items.load(test::assetOrSkip("ITEMS/LEVELI5/ANIM.PS2").parent_path()));
+    fixture.presentation.carry(2, 9, 39, fixture.bearer);
+    const auto* held = fixture.find("LEGENDHLD");
+    REQUIRE(held);
+    for (s32 tick = 0; tick < 60; ++tick) {
+        fixture.effects.update(1.0f / 30);
+    }
+    REQUIRE(held->particles.field().particleCount() > 0);
+    const auto slot = fixture.items.textures.find("POOLFIRE");
+    REQUIRE(slot);
+    const auto* fire = &fixture.items.textures.texture(fixture.device, *slot);
+    fixture.effects.draw(fixture.device, Mat4{1}, {});
+    CHECK(std::ranges::any_of(fixture.device.draws,
+                              [fire](const auto& draw) { return draw.texture == fire; }));
+    fixture.presentation.clear();
+    CHECK(fixture.effects.count() == 0);
+}
+
 TEST_CASE("the Plague javelin follows the animated eye rather than a launch-time timer",
           "[game][screens][legend][plague]") {
     LegendFixture fixture;
