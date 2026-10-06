@@ -127,6 +127,49 @@ TEST_CASE("battlefield entrance tower placements keep their stationary archer al
     opponents.close();
 }
 
+TEST_CASE("the live Dragon encounter borrows its death skin from the stage texture context",
+          "[native-assets][combatant-bindings][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("B6");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, {});
+    Bosses& boss = opponents.bosses();
+    REQUIRE(boss.present());
+    REQUIRE(boss.position() != nullptr);
+    const std::array players{EnemyView{0, *boss.position(), 1, 6}};
+    for (s32 step = 0; step < 600 && !boss.view().awake; ++step) {
+        boss.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(boss.view().awake);
+    EnemyHit lethal;
+    lethal.damage = 1000000;
+    REQUIRE(boss.hurt(lethal) > 0);
+    REQUIRE_FALSE(boss.view().alive);
+    const auto first = world.textures().find("LAVA00");
+    REQUIRE(first);
+    const Texture* expected = &world.textures().texture(device, *first);
+    bool seen = false;
+    // The death move's second SFXX cue starts LAVA00 at authored frame 102.
+    for (s32 step = 0; step < 180 && !seen; ++step) {
+        boss.update(2, 1.0f / 30, players);
+        device.draws.clear();
+        boss.draw(device, Mat4{1}, {});
+        seen = std::ranges::any_of(
+            device.draws, [&](const auto& draw) { return draw.state.maskedTexture == expected; });
+    }
+    CHECK(seen);
+    opponents.close(); // release the borrowers before the stage's GPU textures
+}
+
 TEST_CASE("courtyard grunts approach the entrance player", "[courtyard-grunt][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();

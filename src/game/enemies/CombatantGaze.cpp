@@ -32,7 +32,7 @@ void CombatantGaze::aim(TreePose& pose, const TreeInfo& tree, const Mat4& model,
         if (!look.turns() || !pose.posed()) {
             continue;
         }
-        std::optional<u32> node = tree.findNode(look.node);
+        std::optional<u32> node = tree.findNode(look.node, kCombatantNodeNameLength);
         if (node.has_value() && look.parent && tree.nodes[*node].parent >= 0) {
             node = static_cast<u32>(tree.nodes[*node].parent);
         }

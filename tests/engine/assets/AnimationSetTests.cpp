@@ -75,6 +75,26 @@ TEST_CASE("animation sets expose trees, nodes and world offsets", "[assets][anim
     REQUIRE(track->values[5] == 3.0f);
 }
 
+TEST_CASE(
+    "bounded node references preserve retail first-prefix lookup without weakening exact lookup",
+    "[animation][asset-conformance]") {
+    TreeInfo tree;
+    for (const char* name : {"BODY1_TENT_COLLISION", "BODY1_TENT_COLLISION_OTHER", "BODY", ""}) {
+        TreeNodeInfo node;
+        node.name = name;
+        tree.nodes.push_back(node);
+    }
+    CHECK_FALSE(tree.findNode("BODY1_TENT_COLLI"));
+    CHECK(tree.findNode("BODY1_TENT_COLLI", 15) == 0);
+    CHECK(tree.findNode("BODY1_TENT_COLLISION_OTHER") == 1);
+    CHECK(tree.findNode("BODY1_TENT_COLLISION_OTHER", 15) == 0);
+    CHECK(tree.findNode("BODY", 15) == 2);
+    CHECK_FALSE(tree.findNode("BOD", 15));
+    CHECK_FALSE(tree.findNode("body1_tent_colli", 15));
+    CHECK_FALSE(tree.findNode("", 15));
+    CHECK_FALSE(tree.findNode("BODY", 0));
+}
+
 TEST_CASE("an animation set lists the archive's texture animations", "[assets][animation]") {
     const auto dir = test::scratchDirectory("animation-set-texmods");
     writeTextFile(dir / "animations.json", R"({

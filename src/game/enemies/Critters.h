@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 
 #include "game/enemies/Combatant.h"
@@ -37,7 +38,8 @@ public:
     /** The level's harmful surfaces, handed to each great one it stands; borrowed. */
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     void open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
-              const WorldCollision* collision, const EnemyScales& scales, char realm);
+              const WorldCollision* collision, const EnemyScales& scales, char realm,
+              std::span<TextureSet* const> textureLenders = {});
     void close();
 
     /** The level's lookouts, for the kinds that walk a round of them (the generals). */
@@ -146,6 +148,7 @@ private:
     void collect(Combatant& actor);
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;
+    std::vector<TextureSet*> m_textureLenders; ///< stage owners outlive the population
     const WorldCollision* m_collision = nullptr;
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;

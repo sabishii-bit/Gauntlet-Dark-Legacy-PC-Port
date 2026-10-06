@@ -507,12 +507,13 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_enemies.setHazards(&world.hazards());
     m_enemies.setLookouts(LookoutRoute::of(world.layout().locators()));
     const std::string& levelName = world.ref().name;
+    const std::array creatureTextures{&world.textures()};
     m_critters.open(device, resources.root, &world.collision(), scales,
-                    levelName.empty() ? 'G' : levelName.front());
+                    levelName.empty() ? 'G' : levelName.front(), creatureTextures);
     m_critters.setHazards(&world.hazards());
     m_critters.setLookouts(LookoutRoute::of(world.layout().locators()));
     m_bosses.open(device, resources.root, &world.collision(), scales,
-                  levelName.empty() ? 'G' : levelName.front());
+                  levelName.empty() ? 'G' : levelName.front(), creatureTextures);
     // The white skin a hard hit flashes over a great one, the swarm's and the party's own.
     if (const auto white = world.powerups().textures.find(kHitFlashSkin); white.has_value()) {
         try {

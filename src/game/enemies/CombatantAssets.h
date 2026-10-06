@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -44,7 +45,8 @@ struct CombatantAssets {
     CombatantAssets& operator=(CombatantAssets&&) = delete;
     ~CombatantAssets();
     bool load(RenderDevice& device, const std::filesystem::path& root,
-              const CombatantDefinition& family, char realm);
+              const CombatantDefinition& family, char realm,
+              std::span<TextureSet* const> textureLenders = {});
     void clear();
 };
 } // namespace gdl::game

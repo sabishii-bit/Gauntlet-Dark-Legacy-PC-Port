@@ -75,7 +75,8 @@ bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 
             return false;
         }
         part->m_actor.parent = this;
-        part->m_actor.branch = stock.tree->findNode(definition.rootNode());
+        part->m_actor.branch =
+            stock.tree->findNode(definition.rootNode(), kCombatantNodeNameLength);
         part->synchronizeChild();
         m_children.push_back(std::move(part));
     }

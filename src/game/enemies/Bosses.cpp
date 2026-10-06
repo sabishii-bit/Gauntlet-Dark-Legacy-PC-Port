@@ -9,10 +9,12 @@
 namespace gdl::game {
 
 void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
-                  const WorldCollision* collision, const EnemyScales& scales, char realm) {
+                  const WorldCollision* collision, const EnemyScales& scales, char realm,
+                  std::span<TextureSet* const> textureLenders) {
     close();
     m_device = &device;
     m_root = unpackedRoot;
+    m_textureLenders.assign(textureLenders.begin(), textureLenders.end());
     m_collision = collision;
     m_scales = scales;
     m_realm = static_cast<char>(std::toupper(static_cast<unsigned char>(realm)));
@@ -21,6 +23,7 @@ void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoo
 void Bosses::close() {
     m_fighter.clear();
     m_assets.clear();
+    m_textureLenders.clear();
     m_hitFlash = nullptr;
     m_device = nullptr;
     m_collision = nullptr;
@@ -162,7 +165,7 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     }
     if (assets == nullptr) {
         auto loaded = std::make_unique<CombatantAssets>();
-        if (!loaded->load(*m_device, m_root, bossDefinition(name), m_realm)) {
+        if (!loaded->load(*m_device, m_root, bossDefinition(name), m_realm, m_textureLenders)) {
             return false;
         }
         assets = loaded.get();

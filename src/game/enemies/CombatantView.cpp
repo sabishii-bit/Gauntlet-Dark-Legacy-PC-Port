@@ -118,7 +118,8 @@ Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
 }
 
 Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
-    if (node.empty() || !critter.stock->tree->findNode(node).has_value()) {
+    if (node.empty() ||
+        !critter.stock->tree->findNode(node, kCombatantNodeNameLength).has_value()) {
         return glm::translate(modelTransform(critter), critter.definition->originOffset());
     }
     return attachmentTransform(critter, node);
@@ -127,7 +128,8 @@ Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
 Mat4 Combatant::attachmentTransform(const Actor& critter, std::string_view node) {
     const Mat4 model = modelTransform(critter);
     if (!node.empty()) {
-        if (const auto index = critter.stock->tree->findNode(node); index.has_value()) {
+        if (const auto index = critter.stock->tree->findNode(node, kCombatantNodeNameLength);
+            index.has_value()) {
             const std::span<const Mat4> matrices = critter.pose.matrices();
             if (*index < matrices.size()) {
                 return model * matrices[*index];
@@ -139,7 +141,7 @@ Mat4 Combatant::attachmentTransform(const Actor& critter, std::string_view node)
 
 std::optional<Mat4> Combatant::nodeTransform(std::string_view node) const {
     if (present()) {
-        if (const auto index = m_actor.stock->tree->findNode(node)) {
+        if (const auto index = m_actor.stock->tree->findNode(node, kCombatantNodeNameLength)) {
             for (const auto& part : m_children) {
                 s32 ancestor = static_cast<s32>(*index);
                 while (ancestor >= 0) {

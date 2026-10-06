@@ -1,10 +1,12 @@
 #include "game/enemies/CombatantAssets.h"
 
+#include <cmath>
 #include <format>
 #include <set>
 #include <string_view>
 #include <utility>
 
+#include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
@@ -37,7 +39,8 @@ void CombatantAssets::clear() {
     effectLifetimes.clear();
 }
 bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& root,
-                           const CombatantDefinition& family, char realm) {
+                           const CombatantDefinition& family, char realm,
+                           std::span<TextureSet* const> textureLenders) {
     clear();
     definition = family;
     if (definition.name.empty() || !data.load(root / "critter" / (definition.name + ".json"))) {
@@ -90,7 +93,8 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         CritterData part;
         if (!visited.insert(child).second ||
             !part.load(root / "critter" / (definition.name + ".json"), static_cast<usize>(child)) ||
-            part.parentIndex() != 0 || !tree->findNode(part.rootNode()).has_value()) {
+            part.parentIndex() != 0 ||
+            !tree->findNode(part.rootNode(), kCombatantNodeNameLength).has_value()) {
             log::warn("combatant {}: invalid child type {}", definition.name, child);
             clear();
             return false;
@@ -98,7 +102,7 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         child = part.childIndex();
         children.push_back(std::move(part));
     }
-    if (!body.bind(*tree, archive.models, archive.textures, device)) {
+    if (!body.bind(*tree, archive.models, archive.textures, device, textureLenders)) {
         clear();
         return false;
     }
@@ -113,24 +117,56 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         attachment.definition = definition;
         attachment.tree = &archive.trees.tree(*index);
         if (attachment.tree->sequences.empty() ||
-            !attachment.model.bind(*attachment.tree, archive.models, archive.textures, device)) {
+            !attachment.model.bind(*attachment.tree, archive.models, archive.textures, device,
+                                   textureLenders)) {
             clear();
             return false;
         }
         attachments.push_back(std::move(attachment));
     }
-    textures.bind(archive.trees.textureAnimations(), archive.textures, device);
+    textures.bind(archive.trees.textureAnimations(), archive.textures, device, textureLenders);
+    const TextureBindings bindings(archive.textures, textureLenders);
+    const auto bindSkin = [&](const std::string& name, TextureBinding first, f64 count) {
+        // SFXX life is a frame count at 30 Hz, not a texture's animation flag.
+        // A one-frame skin (Yeti's death) is a plain bitmap with frameCount zero.
+        count = std::trunc(count);
+        if (!std::isfinite(count) || count < 1 || first.index >= first.set->size() ||
+            count > static_cast<f64>(first.set->size() - first.index)) {
+            log::warn("combatant {}: invalid skin run {}", data.name(), name);
+            return;
+        }
+        std::vector<const Texture*> frames;
+        for (u32 frame = 0; frame < static_cast<u32>(count); ++frame) {
+            const auto slot = first.index + frame;
+            if (first.set->entry(slot).external() || first.set->entry(slot).noPicture) {
+                log::warn("combatant {}: missing skin frame {}:{}", data.name(), name, frame);
+                return;
+            }
+            frames.push_back(&first.set->texture(device, slot));
+        }
+        skins.emplace(name, std::move(frames));
+    };
     for (const auto& animation : archive.trees.textureAnimations()) {
-        if (!animation.cycles() || animation.source < 0 || skins.contains(animation.name)) {
+        if (!animation.cycles() || animation.frames <= 0 || skins.contains(animation.name)) {
             continue;
         }
-        auto& frames = skins[animation.name];
-        for (s32 frame = 0; frame < animation.frames; ++frame) {
-            const auto slot = static_cast<u32>(animation.source + frame);
-            if (slot >= archive.textures.size()) {
-                break;
-            }
-            frames.push_back(&archive.textures.texture(device, slot));
+        const auto first = animation.source >= 0
+                               ? std::optional{TextureBinding{&archive.textures,
+                                                              static_cast<u32>(animation.source)}}
+                               : bindings.image(animation.frameName);
+        if (first) {
+            bindSkin(animation.name, *first, animation.frames);
+        }
+    }
+    // CritterInitSfx (0x8003FF98) resolves TEXMOD first, then a named bitmap in
+    // the owning model or an already-loaded model. Restrict the latter to the
+    // explicitly borrowed stage context; never search unrelated level archives.
+    for (const auto& effect : data.sounds()) {
+        if ((effect.flags & CombatEffectDefinition::kSkin) == 0 || skins.contains(effect.tree)) {
+            continue;
+        }
+        if (const auto first = bindings.image(effect.tree)) {
+            bindSkin(effect.tree, *first, effect.life * 30.0f);
         }
     }
     const auto loadBroken = [&](const CritterData& partData) {
@@ -147,7 +183,8 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
             node.name = part.node;
             node.object = object;
             replacement.nodes.push_back(node);
-            if (!brokenModels[object].bind(replacement, archive.models, archive.textures, device)) {
+            if (!brokenModels[object].bind(replacement, archive.models, archive.textures, device,
+                                           textureLenders)) {
                 brokenModels.erase(object);
             }
         }
@@ -162,7 +199,7 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     if (data.meter().inWorld) {
         if (const auto found = archive.trees.find(kMeterTree); found.has_value()) {
             meterTree = &archive.trees.tree(*found);
-            if (!meter.bind(*meterTree, archive.models, archive.textures, device)) {
+            if (!meter.bind(*meterTree, archive.models, archive.textures, device, textureLenders)) {
                 meterTree = nullptr;
             } else if (const auto fill = meterTree->findNode(kMeterFill); fill.has_value()) {
                 meterFill = static_cast<s32>(*fill);

@@ -5,6 +5,10 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 namespace gdl::game {
+/** CritterInitMoves/LoadFinish pass a 16-byte field width to AtreeFindNodeIdx,
+ * which compares width minus one. ANIM node names can be longer than the WAD references. */
+inline constexpr usize kCombatantNodeNameLength = 15;
+
 /** When a move may be chosen against its target. */
 struct TargetCriteria {
     f32 minDistance = 0.0f;

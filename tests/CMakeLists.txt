@@ -150,6 +150,7 @@ add_executable(tests
     game/players/ClassDataTests.cpp
     game/players/NativeClassDataTests.cpp
     game/enemies/NativeCritterDataTests.cpp
+    game/enemies/CombatantBindingsTests.cpp
     game/app/AssetRootsTests.cpp
     game/screens/NativeGameplayTests.cpp
     game/players/MagicPerksTests.cpp

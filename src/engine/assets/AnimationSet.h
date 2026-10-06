@@ -143,7 +143,10 @@ struct TreeInfo {
     /** Position of a node relative to the tree root (its own offset plus every ancestor's). */
     Vec3 worldPosition(usize node) const;
     std::optional<u32> findSequence(std::string_view wanted) const;
-    std::optional<u32> findNode(std::string_view wanted) const;
+    /** Exact by default; packed references can explicitly limit the comparison width.
+     * When more than one node shares that prefix, the first authored node wins. */
+    std::optional<u32> findNode(std::string_view wanted,
+                                usize characters = std::string_view::npos) const;
 };
 
 /** The animation trees of one archive. */

@@ -14,7 +14,7 @@ bool Combatant::nodeRemoved(const Actor& actor, usize node) {
         for (usize i = 0; i < actor.hitNodes.size(); ++i) {
             const auto& part = actor.definition->parts()[i];
             if (actor.hitNodes[i].broken && (part.flags & CritterPart::kRemoveChildren) != 0 &&
-                tree.findNode(part.node) == static_cast<u32>(parent)) {
+                tree.findNode(part.node, kCombatantNodeNameLength) == static_cast<u32>(parent)) {
                 return true;
             }
         }
@@ -24,7 +24,7 @@ bool Combatant::nodeRemoved(const Actor& actor, usize node) {
 }
 
 bool Combatant::nodeAvailable(const Actor& actor, std::string_view name) {
-    const auto node = actor.stock->tree->findNode(name);
+    const auto node = actor.stock->tree->findNode(name, kCombatantNodeNameLength);
     if (!node || nodeRemoved(actor, *node)) {
         return false;
     }
@@ -40,7 +40,8 @@ void Combatant::holdBrokenPoses(Actor& actor) {
     for (usize i = 0; i < actor.hitNodes.size(); ++i) {
         const auto& heldPose = actor.hitNodes[i].heldPose;
         if (heldPose) {
-            if (const auto node = actor.stock->tree->findNode(actor.definition->parts()[i].node)) {
+            if (const auto node = actor.stock->tree->findNode(actor.definition->parts()[i].node,
+                                                              kCombatantNodeNameLength)) {
                 actor.pose.setNodePose(*node, *heldPose);
             }
         }
@@ -58,7 +59,7 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
     }
     HitNode& state = actor.hitNodes[at];
     const CritterPart& part = data()->parts()[at];
-    const auto node = actor.stock->tree->findNode(part.node);
+    const auto node = actor.stock->tree->findNode(part.node, kCombatantNodeNameLength);
     if (!node || state.health <= 0 || !nodeAvailable(actor, part.node)) {
         return 0;
     }
@@ -109,7 +110,7 @@ void Combatant::drawNodeState(const Actor& actor, const Texture* flash) {
     for (usize i = 0; i < actor.hitNodes.size(); ++i) {
         const auto& state = actor.hitNodes[i];
         const auto& part = actor.definition->parts()[i];
-        const auto node = actor.stock->tree->findNode(part.node);
+        const auto node = actor.stock->tree->findNode(part.node, kCombatantNodeNameLength);
         if (!node) {
             continue;
         }
@@ -132,7 +133,7 @@ void Combatant::drawBrokenModels(const Actor& actor, RenderDevice& device, const
     }
     for (usize i = 0; i < actor.hitNodes.size(); ++i) {
         const auto& part = actor.definition->parts()[i];
-        const auto node = actor.stock->tree->findNode(part.node);
+        const auto node = actor.stock->tree->findNode(part.node, kCombatantNodeNameLength);
         if (!actor.hitNodes[i].broken || !node || nodeRemoved(actor, *node)) {
             continue;
         }

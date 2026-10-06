@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
@@ -53,7 +54,8 @@ public:
     ~Bosses() = default;
 
     void open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
-              const WorldCollision* collision, const EnemyScales& scales, char realm);
+              const WorldCollision* collision, const EnemyScales& scales, char realm,
+              std::span<TextureSet* const> textureLenders = {});
     void close();
 
     /** Stands the boss of `kind` (`bossNameOf` it) at `position` facing `yaw`, asleep until
@@ -145,6 +147,7 @@ private:
     std::vector<std::unique_ptr<CombatantAssets>> m_assets;
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;
+    std::vector<TextureSet*> m_textureLenders; ///< stage owners outlive this encounter
     const WorldCollision* m_collision = nullptr;
     EnemyScales m_scales;
     char m_realm = 'G';

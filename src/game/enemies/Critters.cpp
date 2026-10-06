@@ -11,10 +11,12 @@ Critters::~Critters() {
     close();
 }
 void Critters::open(RenderDevice& device, const std::filesystem::path& root,
-                    const WorldCollision* collision, const EnemyScales& scales, char realm) {
+                    const WorldCollision* collision, const EnemyScales& scales, char realm,
+                    std::span<TextureSet* const> textureLenders) {
     close();
     m_device = &device;
     m_root = root;
+    m_textureLenders.assign(textureLenders.begin(), textureLenders.end());
     m_collision = collision;
     m_scales = scales;
     m_realm = static_cast<char>(std::toupper(static_cast<unsigned char>(realm)));
@@ -24,6 +26,7 @@ void Critters::close() {
         actor.clear();
     }
     m_stocks.clear();
+    m_textureLenders.clear();
     m_blows.clear();
     m_grabs.clear();
     m_losses.clear();
@@ -48,7 +51,7 @@ CombatantAssets* Critters::stockFor(const CombatantDefinition& definition) {
         return nullptr;
     }
     auto stock = std::make_unique<CombatantAssets>();
-    if (!stock->load(*m_device, m_root, definition, m_realm)) {
+    if (!stock->load(*m_device, m_root, definition, m_realm, m_textureLenders)) {
         return nullptr;
     }
     m_stocks.push_back(std::move(stock));

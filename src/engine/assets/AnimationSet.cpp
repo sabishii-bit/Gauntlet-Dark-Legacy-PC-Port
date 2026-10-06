@@ -117,9 +117,12 @@ std::optional<u32> TreeInfo::findSequence(std::string_view wanted) const {
     return std::nullopt;
 }
 
-std::optional<u32> TreeInfo::findNode(std::string_view wanted) const {
+std::optional<u32> TreeInfo::findNode(std::string_view wanted, usize characters) const {
+    if (wanted.empty() || characters == 0) {
+        return std::nullopt;
+    }
     for (u32 i = 0; i < nodes.size(); ++i) {
-        if (nodes[i].name == wanted) {
+        if (std::string_view(nodes[i].name).substr(0, characters) == wanted.substr(0, characters)) {
             return i;
         }
     }
