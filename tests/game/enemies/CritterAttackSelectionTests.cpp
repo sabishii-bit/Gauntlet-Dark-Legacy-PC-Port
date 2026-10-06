@@ -50,6 +50,67 @@ EnemyView targetAt(f32 z) {
     return view;
 }
 
+TEST_CASE("blindness removes projectile aim without removing attack eligibility",
+          "[game][boss-attacks][legend]") {
+    const auto root = attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100}],"moves":[
+      {"name":"READY","anim":"STEP","type":32},
+      {"name":"SHOT","anim":"STEP","type":128,"damage0":0,"frameStart":1,"frameEnd":1}],
+      "damages":[{"type":1,"damage":10,"maxDistance":1}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    fixture.actor.blind(600);
+    const std::array party{targetAt(20)};
+    bool fired = false;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        fixture.update(2, 1.0f / 30, party);
+        CHECK(fixture.actor.target() == 0); // CritterGetTargetPlayers still sees the player.
+        for (const auto& shot : fixture.actor.takeShots()) {
+            fired = true;
+            CHECK_FALSE(shot.target.has_value()); // CritterMoveSetup suppresses aimed targeting.
+        }
+    }
+    REQUIRE(fired);
+    fixture.actor.blind(0);
+    bool aimed = false;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        fixture.update(2, 1.0f / 30, party);
+        for (const auto& shot : fixture.actor.takeShots()) {
+            aimed |= shot.target.has_value();
+        }
+    }
+    CHECK(aimed);
+}
+
+TEST_CASE("blindness does not clear a move target already committed before the hit",
+          "[game][boss-attacks][legend]") {
+    const auto root = attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100}],"moves":[
+      {"name":"READY","anim":"STEP","type":32},
+      {"name":"SHOT","anim":"STEP","type":128,"damage0":0,"frameStart":15,"frameEnd":15}],
+      "damages":[{"type":1,"damage":10,"maxDistance":1}]})",
+                                  60);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    const std::array party{targetAt(20)};
+    for (s32 frame = 0; frame < 90 && fixture.actor.moveName() != "SHOT"; ++frame) {
+        fixture.update(2, 1.0f / 30, party);
+    }
+    REQUIRE(fixture.actor.moveName() == "SHOT");
+    fixture.actor.blind(600);
+    std::vector<CombatShot> shots;
+    for (s32 frame = 0; frame < 30 && shots.empty(); ++frame) {
+        fixture.update(2, 1.0f / 30, party);
+        shots = fixture.actor.takeShots();
+    }
+    REQUIRE(shots.size() == 1);
+    CHECK(shots.front().target == Vec3{0, 3, 20});
+}
+
 TEST_CASE("ordinary attacks interrupt only when the current move permits their priority",
           "[game][boss-attacks][attack-interruption]") {
     for (const s32 policy : {0, 20, 40, 60, 80, 90}) {

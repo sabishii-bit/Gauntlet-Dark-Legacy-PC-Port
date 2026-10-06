@@ -27,9 +27,10 @@ TEST_CASE("each boss has the legend item of its realm and its own weakness", "[g
     // for a while; the lantern costs the wraith a flat sum; the book a quarter of the lich.
     const LegendWeakness* spider = legendWeaknessOf(37);
     REQUIRE(spider->curbs());
-    REQUIRE(spider->curbLasts == 0.0f);
+    REQUIRE(spider->recoverySeconds == 0.0f);
     REQUIRE(spider->scale == Approx(0.8f));
-    REQUIRE(legendWeaknessOf(39)->curbLasts == Approx(29.0f));
+    REQUIRE(legendWeaknessOf(39)->recoverySeconds == Approx(29.0f));
+    REQUIRE(legendWeaknessOf(38)->recoverySeconds == Approx(29.0f));
     REQUIRE(legendWeaknessOf(40)->damage == 500.0f);
     REQUIRE_FALSE(legendWeaknessOf(40)->healthShare > 0.0f);
     REQUIRE(legendWeaknessOf(41)->realm == 7);

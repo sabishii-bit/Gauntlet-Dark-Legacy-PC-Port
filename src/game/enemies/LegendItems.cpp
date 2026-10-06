@@ -16,15 +16,15 @@ constexpr f32 kTicksPerSecond = 60.0f;
 /** The original's table, boss by boss. */
 constexpr std::array<LegendWeakness, 9> kWeaknesses{{
     // boss, realm, share, damage, frozen, blind, curb, lasts, scale, beheads
-    {34, 2, kTenth, 0.0f, 1200, 0, 0.0f, 0.0f, 1.0f, false},        // the dragon, iced
-    {35, 1, 0.0f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, true},              // the chimera, beheaded
-    {36, 3, kTenth, 0.0f, 0, 1800, 0.0f, 0.0f, 1.0f, false},        // the genie, in the dark
-    {37, 4, kTenth, 0.0f, 0, 0, 0.5f, 0.0f, 0.8f, false},           // the spider, poisoned
-    {38, 11, kTenth, 0.0f, 0, 18000, 0.0f, 0.0f, 1.0f, false},      // the plague fiend, blinded
-    {39, 9, kTenth, 0.0f, 0, 0, 0.5f, kWearSeconds, 1.0f, false},   // the yeti, melted
-    {40, 10, 0.0f, 500.0f, 0, 0, 0.25f, kWearSeconds, 1.0f, false}, // the wraith, shown
-    {41, 7, 0.25f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, false},            // the lich, burned
-    {42, 5, kTenth, 0.0f, 0, 0, 0.1f, kWearSeconds, 1.0f, false},   // the temple's, shaken
+    {34, 2, kTenth, 0.0f, 1200, 0, 0.0f, 0.0f, 1.0f, false},           // the dragon, iced
+    {35, 1, 0.0f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, true},                 // the chimera, beheaded
+    {36, 3, kTenth, 0.0f, 0, 1800, 0.0f, 0.0f, 1.0f, false},           // the genie, in the dark
+    {37, 4, kTenth, 0.0f, 0, 0, 0.5f, 0.0f, 0.8f, false},              // the spider, poisoned
+    {38, 11, kTenth, 0.0f, 0, 18000, 0.0f, kWearSeconds, 1.0f, false}, // restored by world_update
+    {39, 9, kTenth, 0.0f, 0, 0, 0.5f, kWearSeconds, 1.0f, false},      // the yeti, melted
+    {40, 10, 0.0f, 500.0f, 0, 0, 0.25f, kWearSeconds, 1.0f, false},    // the wraith, shown
+    {41, 7, 0.25f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, false},               // the lich, burned
+    {42, 5, kTenth, 0.0f, 0, 0, 0.1f, kWearSeconds, 1.0f, false},      // the temple's, shaken
 }};
 
 /** The chimera, the lich and the temple's boss roar a second after rising; the rest three. */
@@ -128,11 +128,11 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
     if (m_roarDue && !m_roared && bossRoarDone) {
         m_roared = true;
         cues.push_back(LegendCue::Roared);
-        m_wearLeft = m_weakness.curbLasts;
+        m_wearLeft = m_weakness.recoverySeconds;
     }
     // Then its weakness runs its course, where it has one.
     if (m_roared && m_thrown && m_weakness.boss != 34 && m_weakness.boss != 36) {
-        if (m_weakness.curbLasts <= 0.0f) {
+        if (m_weakness.recoverySeconds <= 0.0f) {
             m_stage = Stage::Over;
         } else {
             m_wearLeft -= static_cast<f32>(ticks) / kTicksPerSecond;

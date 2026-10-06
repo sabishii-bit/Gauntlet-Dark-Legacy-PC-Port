@@ -105,6 +105,9 @@ public:
     s32 lookout() const { return m_actor.patrol.lookout(); }
     void freeze(s32 ticks);
     void blind(s32 ticks);
+    /** MBSetObject-style replacement of one mesh from this actor's own archive.
+     * Keeps the animated node/children; an empty object restores the original. */
+    bool replaceNodeModel(RenderDevice& device, std::string_view node, std::string_view object);
     void curb(f32 seconds);
     void resize(f32 scale);
     /** The scale the party's enemy shrinkers hold it at (`EnemyShrink`): drawn and shadowed
@@ -241,12 +244,17 @@ private:
         const CombatEffectDefinition* skin = nullptr;
         f32 skinAge = 0;
         std::vector<HitNode> hitNodes;
+        struct ModelReplacement {
+            usize node = 0;
+            mutable TreeModel model; ///< per-draw appearance cache, not simulation state
+        };
+        std::vector<ModelReplacement> modelReplacements;
         f32 alpha = 1.0f;
         Color tint = Color::white();
         f32 scale = 1.0f;
         f32 shrink = 1.0f;       ///< the enemy shrinkers' scale on top of its own
         s32 frozenTicks = 0;     ///< a legend item's: it stands still this long
-        s32 blindTicks = 0;      ///< and finds no one this long
+        s32 blindTicks = 0;      ///< new moves cannot aim; eligibility and attacks continue
         f32 curbSeconds = 0.0f;  ///< over nought, its curbed attacks are refused
         bool held = false;       ///< keeps to its stance between moves
         bool roarWanted = false; ///< roars as soon as it may

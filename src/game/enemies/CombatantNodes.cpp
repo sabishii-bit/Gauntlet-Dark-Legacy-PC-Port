@@ -1,12 +1,49 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <utility>
 
 #include "engine/core/Types.h"
 
 #include "game/enemies/Combatant.h"
 
 namespace gdl::game {
+bool Combatant::replaceNodeModel(RenderDevice& device, std::string_view node,
+                                 std::string_view object) {
+    if (!present()) {
+        return false;
+    }
+    Actor& actor = m_actor;
+    const auto index = actor.stock->tree->findNode(node, kCombatantNodeNameLength);
+    if (!index) {
+        return false;
+    }
+    if (object.empty()) {
+        std::erase_if(actor.modelReplacements,
+                      [&](const auto& replacement) { return replacement.node == *index; });
+        return true;
+    }
+    if (!actor.stock->archive.models.find(object)) {
+        return false;
+    }
+    TreeInfo tree;
+    TreeNodeInfo mesh;
+    mesh.name = node;
+    mesh.object = object;
+    mesh.objectFlags = actor.stock->tree->nodes[*index].objectFlags;
+    tree.nodes.push_back(mesh);
+    Actor::ModelReplacement replacement;
+    replacement.node = *index;
+    if (!replacement.model.bind(tree, actor.stock->archive.models, actor.stock->archive.textures,
+                                device)) {
+        return false;
+    }
+    std::erase_if(actor.modelReplacements,
+                  [&](const auto& previous) { return previous.node == *index; });
+    actor.modelReplacements.push_back(std::move(replacement));
+    return true;
+}
+
 bool Combatant::nodeRemoved(const Actor& actor, usize node) {
     const auto& tree = *actor.stock->tree;
     s32 parent = tree.nodes[node].parent;
@@ -102,6 +139,9 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
 
 void Combatant::drawNodeState(const Actor& actor, const Texture* flash) {
     auto& body = actor.stock->body;
+    for (const auto& replacement : actor.modelReplacements) {
+        body.setMeshAlpha(replacement.node, 0);
+    }
     for (usize node = 0; node < actor.stock->tree->nodes.size(); ++node) {
         if (nodeRemoved(actor, node)) {
             body.setMeshAlpha(node, 0);
@@ -130,6 +170,23 @@ void Combatant::drawBrokenModels(const Actor& actor, RenderDevice& device, const
                                  const TreePose& pose) {
     if (actor.hidden) {
         return;
+    }
+    for (const auto& replacement : actor.modelReplacements) {
+        if (nodeRemoved(actor, replacement.node)) {
+            continue;
+        }
+        bool flashing = actor.flashTicks > 0;
+        for (usize i = 0; i < actor.hitNodes.size(); ++i) {
+            const auto node = actor.stock->tree->findNode(actor.definition->parts()[i].node,
+                                                          kCombatantNodeNameLength);
+            flashing |= node == replacement.node && actor.hitNodes[i].flashTicks > 0;
+        }
+        replacement.model.resetTextures();
+        replacement.model.setAppearance(flashing && flash != nullptr, actor.tint);
+        const Texture* mask = flashing ? flash : nullptr;
+        replacement.model.setMaskedTexture(frozen != nullptr ? frozen : mask);
+        replacement.model.draw(device, clip, placement * pose.matrices()[replacement.node],
+                               lighting, {}, nullptr, actor.alpha);
     }
     for (usize i = 0; i < actor.hitNodes.size(); ++i) {
         const auto& part = actor.definition->parts()[i];

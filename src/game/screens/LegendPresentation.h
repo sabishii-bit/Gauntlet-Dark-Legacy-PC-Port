@@ -92,6 +92,7 @@ private:
     bool m_gestureOwed = false;
     bool m_released = false;
     f32 m_flightLeft = 0.0f;
+    Vec3 m_flightPosition{0}; ///< Plague's SfxSetHitTarget flight tracks the animated eye
     SoundHandle m_loop = kNoSound;
     const Texture* m_frozenTexture = nullptr;
 };

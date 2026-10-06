@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <set>
 #include <string>
@@ -380,6 +381,137 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     REQUIRE_FALSE(blows.empty());
     bosses.close();
     REQUIRE(bosses.legend().stage() == LegendRite::Stage::None);
+}
+
+TEST_CASE("the Plague javelin harms on impact and blindness ends 29 seconds after its roar",
+          "[game][legend][plague][native-assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'K');
+    REQUIRE(bosses.spawn(38, Vec3{0}, 0, 100));
+    REQUIRE(bosses.bringLegend(0));
+    const auto checkEye = [&](std::string_view expected, std::string_view absent) {
+        device.draws.clear();
+        bosses.draw(device, Mat4{1}, {});
+        const auto actual = device.draws;
+        REQUIRE_FALSE(actual.empty());
+        const auto transform = bosses.nodeTransform("EYEBALL");
+        REQUIRE(transform.has_value());
+        for (const auto name : {expected, absent}) {
+            auto* archive = bosses.archive();
+            REQUIRE(archive != nullptr);
+            REQUIRE(archive->models.find(name).has_value());
+            TreeInfo tree;
+            TreeNodeInfo node;
+            node.object = name;
+            tree.nodes.push_back(node);
+            TreeModel eye;
+            REQUIRE(eye.bind(tree, archive->models, archive->textures, device));
+            device.draws.clear();
+            eye.draw(device, Mat4{1}, *transform);
+            REQUIRE_FALSE(device.draws.empty());
+            for (const auto& draw : device.draws) {
+                const bool drawn = std::ranges::any_of(actual, [&](const auto& candidate) {
+                    return candidate.texture == draw.texture && candidate.vertices == draw.vertices;
+                });
+                CHECK(drawn == (name == expected));
+            }
+        }
+    };
+    checkEye("PBOSSEYEBALL", "PBOSSQEYEBALL");
+    const std::vector<EnemyView> party{playerAt({0, 0, 40})};
+    const f32 originalHealth = bosses.view().health;
+    bosses.landLegend(); // A stale notification before the gesture cannot spend the item.
+    CHECK(bosses.view().health == originalHealth);
+    for (s32 frame = 0; frame < 900 && !bosses.legend().thrown(); ++frame) {
+        bosses.update(kTicks, kStep, party);
+    }
+    REQUIRE(bosses.legend().thrown());
+    CHECK(bosses.view().health == originalHealth);
+    CHECK_FALSE(bosses.blinded());
+    // Release and travel are separate from the gesture request. Even a completed
+    // roar cannot discard the projectile's pending impact.
+    bool roared = false;
+    for (s32 frame = 0; frame < 300 && !roared; ++frame) {
+        bosses.update(kTicks, kStep, party);
+        for (const auto& event : bosses.takeLegendEvents()) {
+            roared |= event.cue == LegendCue::Roared;
+        }
+    }
+    REQUIRE(roared);
+    REQUIRE(bosses.legend().running());
+    CHECK_FALSE(bosses.blinded());
+    bosses.landLegend();
+    CHECK(bosses.blinded());
+    checkEye("PBOSSQEYEBALL", "PBOSSEYEBALL");
+    const f32 struckHealth = bosses.view().health;
+    CHECK(struckHealth < originalHealth);
+    CHECK_FALSE(bosses.legend().darkens());
+    bosses.landLegend();
+    CHECK(bosses.view().health == struckHealth);
+    s32 recoveryFrames = 0;
+    bool attackedBlind = false;
+    bool aimedBlind = false;
+    while (bosses.legend().running() && recoveryFrames < 1000) {
+        bosses.update(kTicks, kStep, party);
+        for (const auto& shot : bosses.takeShots()) {
+            attackedBlind = true;
+            aimedBlind |= shot.target.has_value();
+        }
+        ++recoveryFrames;
+    }
+    CHECK(recoveryFrames == Approx(29 * 30).margin(1));
+    CHECK(attackedBlind);
+    CHECK_FALSE(aimedBlind);
+    CHECK_FALSE(bosses.blinded());
+    checkEye("PBOSSEYEBALL", "PBOSSQEYEBALL");
+    CHECK(bosses.view().health == struckHealth);
+    bosses.landLegend(); // Recovery cannot reapply the javelin.
+    CHECK_FALSE(bosses.blinded());
+    bool aimedAfter = false;
+    for (s32 frame = 0; frame < 600 && !aimedAfter; ++frame) {
+        bosses.update(kTicks, kStep, party);
+        for (const auto& shot : bosses.takeShots()) {
+            aimedAfter |= shot.target.has_value();
+        }
+    }
+    CHECK(aimedAfter);
+}
+
+TEST_CASE("Plague's lingering eye injury does not extend the opening's full-party damage",
+          "[game][legend][plague][native-assets][multiplayer]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    EnemyScales scales;
+    scales.players = 2;
+    bosses.open(device, root, nullptr, scales, 'K');
+    REQUIRE(bosses.spawn(38, Vec3{0}, 0, 100));
+    REQUIRE(bosses.bringLegend(0));
+    const std::vector<EnemyView> party{playerAt({0, 0, 40}), playerAt({1, 0, 40}, 1)};
+    for (s32 frame = 0; frame < 900 && !bosses.legend().thrown(); ++frame) {
+        bosses.update(kTicks, kStep, party);
+    }
+    REQUIRE(bosses.legend().thrown());
+    const f32 initial = bosses.view().health;
+    bosses.landLegend();
+    // Native PBOSS armor is two; opening damage does not yet take the
+    // two-player half share (CritterDamage, states 1..4).
+    CHECK(initial - bosses.view().health == Approx(initial * 0.1f - 2));
+    for (s32 frame = 0; frame < 600 && bosses.legend().darkens(); ++frame) {
+        bosses.update(kTicks, kStep, party);
+    }
+    REQUIRE_FALSE(bosses.legend().darkens());
+    bosses.update(kTicks, kStep, party); // world state 5, still well before recovery
+    REQUIRE(bosses.legend().running());
+    REQUIRE(bosses.blinded());
+    const f32 before = bosses.view().health;
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 100;
+    bosses.hurt(hit);
+    CHECK(before - bosses.view().health == Approx((100 - 2) * 0.5f));
 }
 
 TEST_CASE("the genie selects projectile attacks and launches them from its animated body",

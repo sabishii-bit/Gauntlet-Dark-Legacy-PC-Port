@@ -98,6 +98,13 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
                 target->position = Vec3{(*lion)[3]};
                 target->height = 0;
             }
+        } else if (bosses.view().kind == 38) {
+            // PlayerMotion targets hitnode1, TYPE.lookNode1 in PBOSS.WAD,
+            // rather than the boss's floor-space collision centre.
+            if (const auto eye = bosses.nodeTransform("BODY1_EYEBALL")) {
+                target->position = Vec3{(*eye)[3]};
+                target->height = 0;
+            }
         }
     }
     const LegendPresentation::Update result =

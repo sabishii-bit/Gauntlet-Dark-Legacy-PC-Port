@@ -67,7 +67,7 @@ public:
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
     bool bringLegend(s32 player);
-    /** The axe/lamp/scimitar act on impact; the Savior acts when the casting gesture releases it.
+    /** The axe/lamp/scimitar/javelin act on impact; Savior acts on cast release.
      * Repeated notifications are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_rite; }

@@ -101,9 +101,8 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
     const TargetCriteria& sight = critter.definition->sight();
     const Vec3 origin = targetingOrigin(critter);
     for (const EnemyView& view : players) {
-        if (critter.state != State::Active || critter.blindTicks > 0 || view.hidden ||
-            (!boss && view.invisible) || view.player < 0 ||
-            static_cast<usize>(view.player) >= kPlayerSlots) {
+        if (critter.state != State::Active || view.hidden || (!boss && view.invisible) ||
+            view.player < 0 || static_cast<usize>(view.player) >= kPlayerSlots) {
             continue;
         }
         // Sight measures the player's collision centre against the body's rotated

@@ -35,6 +35,7 @@ void LegendPresentation::clear() {
     m_gestureOwed = false;
     m_released = false;
     m_flightLeft = 0.0f;
+    m_flightPosition = Vec3{0};
     m_frozenTexture = nullptr;
 }
 
@@ -71,6 +72,11 @@ void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
         }
         break;
     case LegendCue::WornOff:
+        // world_update restores PBOSSEYEBALL and clears blindness silently;
+        // it does not take the other items' kill/ALSTP/PDN sound branch.
+        if (m_kind == 38) {
+            break;
+        }
         stopLoop();
         if (LegendShow::flightOf(m_kind) == LegendShow::Flight::AtBoss) {
             playSound(LegendShow::Sound::Landed);
@@ -122,11 +128,12 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     Update result;
     std::erase_if(m_ownedEffects, [this](u32 id) { return !m_effects.playing(id); });
     followTarget(target);
-    if (!bearer.has_value() || m_player < 0 || bearer->player != m_player) {
+    if (m_player < 0) {
         return result;
     }
+    const bool hasBearer = bearer.has_value() && bearer->player == m_player;
     const bool wasReleased = m_released;
-    if (m_gestureOwed) {
+    if (m_gestureOwed && hasBearer) {
         if (!bearer->canGesture) {
             m_gestureOwed = false;
             release(*bearer, target);
@@ -136,13 +143,13 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
             result.gesture = LegendShow::gestureOf(m_kind);
         }
     }
-    if (bearer->released) {
+    if (hasBearer && bearer->released) {
         release(*bearer, target);
     }
     if ((m_kind == 37 || m_kind == 42) && !wasReleased && m_released) {
         result.landed = true;
     }
-    if (m_held != 0) {
+    if (m_held != 0 && hasBearer) {
         if (m_effects.playing(m_held)) {
             m_effects.moveTo(m_held, bearer->holdPoint);
         } else {
@@ -151,14 +158,39 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     }
     if (m_flying != 0 && !m_effects.playing(m_flying)) {
         m_flying = 0;
+        stopLoop();
     }
     if (m_flying != 0 && LegendShow::flightOf(m_kind) == LegendShow::Flight::Flies) {
         m_flightLeft -= seconds;
-        if (m_flightLeft <= 0.0f) {
+        if (m_kind == 38) {
+            // ProcessEffects' 0x40000000 branch recomputes velocity toward
+            // the target node each update; a launch-time travel timer misses
+            // the moving eye during PBOSS's roar.
+            if (target && seconds > 0) {
+                const Vec3 destination = target->position + Vec3{0, target->height * 0.5f, 0};
+                const Vec3 delta = destination - m_flightPosition;
+                const f32 distance = glm::length(delta);
+                const f32 step = LegendShow::kSpeed * seconds;
+                if (distance <= step) {
+                    land(target);
+                    result.landed = true;
+                } else {
+                    m_flightPosition += delta * (step / distance);
+                    m_effects.placeAt(m_flying, glm::translate(Mat4{1}, m_flightPosition),
+                                      delta / distance);
+                }
+            }
+            if (m_flightLeft <= 0 && m_flying != 0) {
+                m_effects.stop(m_flying);
+                m_flying = 0;
+                stopLoop(); // A flight that never reaches its target is not a hit.
+            }
+        } else if (m_flightLeft <= 0.0f) {
             land(target);
             result.landed = true;
         }
-    } else if (m_flying != 0 && LegendShow::flightOf(m_kind) == LegendShow::Flight::WithBearer) {
+    } else if (m_flying != 0 && hasBearer &&
+               LegendShow::flightOf(m_kind) == LegendShow::Flight::WithBearer) {
         const Mat4 root =
             glm::rotate(glm::translate(Mat4{1}, bearer->position),
                         std::atan2(bearer->facing.x, bearer->facing.z), Vec3{0, 1, 0});
@@ -185,8 +217,11 @@ void LegendPresentation::release(const Bearer& bearer, const std::optional<Targe
         const Vec3 from = bearer.position + bearer.facing + Vec3{0.0f, LegendShow::kLift, 0.0f};
         const Vec3 to = target->position + Vec3{0.0f, target->height * 0.5f, 0.0f};
         const f32 distance = glm::length(to - from);
-        m_flightLeft = std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
-        if (distance > 0.0f) {
+        m_flightPosition = from;
+        m_flightLeft = m_kind == 38
+                           ? LegendShow::kFlightSeconds
+                           : std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
+        if (distance > 0.0f && m_kind != 38) {
             setting.velocity = (to - from) * (LegendShow::kSpeed / distance);
         }
         setting.seconds = LegendShow::kFlightSeconds;

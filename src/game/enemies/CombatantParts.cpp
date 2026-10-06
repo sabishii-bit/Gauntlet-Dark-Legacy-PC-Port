@@ -111,7 +111,7 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
         } else if (forced) {
             // CritterMoveSetup asks GetTargetSub in parent-fallback mode. A body can
             // begin its pattern after this frame's independent head roster was pruned.
-            if (actor.target < 0 && actor.blindTicks <= 0) {
+            if (actor.target < 0) {
                 actor.target = m_actor.target;
                 actor.targetDistance = m_actor.targetDistance;
             }

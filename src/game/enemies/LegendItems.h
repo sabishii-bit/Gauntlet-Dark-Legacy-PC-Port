@@ -23,16 +23,16 @@ namespace gdl::game {
  * javelin. The underworld's and the battlefield's bosses have none.
  */
 struct LegendWeakness {
-    s32 boss = -1;          ///< the boss kind, 34 the dragon to 44 the garm
-    s32 realm = 0;          ///< the item, by the realm whose boss this is
-    f32 healthShare = 0.0f; ///< of its health now, taken at once
-    f32 damage = 0.0f;      ///< or this much, taken at once
-    s32 frozenTicks = 0;    ///< it stands frozen this long
-    s32 blindTicks = 0;     ///< it loses its targets and turns at a tenth this long
-    f32 curbSeconds = 0.0f; ///< over nought its curbed attacks are refused, bursts cut to this
-    f32 curbLasts = 0.0f;   ///< seconds the curb lasts, from its roar; for good when nought
-    f32 scale = 1.0f;       ///< how big it stands afterwards
-    bool beheads = false;   ///< the scimitar targets the lion head, not a share of body health
+    s32 boss = -1;              ///< the boss kind, 34 the dragon to 44 the garm
+    s32 realm = 0;              ///< the item, by the realm whose boss this is
+    f32 healthShare = 0.0f;     ///< of its health now, taken at once
+    f32 damage = 0.0f;          ///< or this much, taken at once
+    s32 frozenTicks = 0;        ///< it stands frozen this long
+    s32 blindTicks = 0;         ///< new moves lose aiming and turning slows to a tenth
+    f32 curbSeconds = 0.0f;     ///< over nought its curbed attacks are refused, bursts cut to this
+    f32 recoverySeconds = 0.0f; ///< world-update recovery timer after the roar, zero if none
+    f32 scale = 1.0f;           ///< how big it stands afterwards
+    bool beheads = false;       ///< the scimitar targets the lion head, not a share of body health
 
     bool harms() const { return healthShare > 0.0f || damage > 0.0f; }
     bool curbs() const { return curbSeconds > 0.0f; }

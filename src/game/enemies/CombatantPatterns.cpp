@@ -18,9 +18,6 @@ s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria
     for (const Actor* owner = &critter; owner != nullptr;
          owner = fallback && owner->parent != nullptr ? &owner->parent->m_actor : nullptr) {
         const Actor& source = *owner;
-        if (source.blindTicks > 0) {
-            return -1;
-        }
         const Vec3 home = source.position - source.homePosition;
         if (criteria.maxHomeDistance > 0 &&
             glm::length(Vec2{home.x, home.z}) > criteria.maxHomeDistance) {
@@ -184,7 +181,9 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
         return false;
     }
     critter.target = playerChoice;
-    critter.moveTarget = playerChoice;
+    // Blindness does not remove CritterGetTargetSub's eligibility roster.
+    // CritterMoveSetup alone refuses the selected player for aiming a new move.
+    critter.moveTarget = critter.blindTicks > 0 ? -1 : playerChoice;
     const auto selected = std::ranges::find(critter.targets, playerChoice, &Target::player);
     if (selected != critter.targets.end()) {
         critter.targetDistance = selected->distance;

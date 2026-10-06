@@ -704,8 +704,8 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
                       .has_value());
 }
 
-TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, loses its "
-          "targets blinded, and is curbed of its flagged attacks",
+TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, retains its "
+          "eligibility roster blinded, and is curbed of its flagged attacks",
           "[game][enemies][assets]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
@@ -761,11 +761,11 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.positionOf(*id) != stopped);
-    // Blinded, it finds no one and turns at a tenth; then it sees again.
+    // Blindness affects move aim, not CritterGetTargetPlayers' eligibility roster.
     critters.blind(*id, 60);
     REQUIRE(critters.blinded(*id));
     critters.update(kTicks, kStep, party);
-    REQUIRE(critters.targetOf(*id) == -1);
+    REQUIRE(critters.targetOf(*id) == 0);
     for (s32 i = 0; i < 40; ++i) {
         critters.update(kTicks, kStep, party);
     }

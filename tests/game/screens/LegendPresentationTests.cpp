@@ -138,6 +138,53 @@ TEST_CASE("legend flight follows its held pose and reports impact exactly once",
     REQUIRE(fixture.stopped.size() == 1);
 }
 
+TEST_CASE("the Plague javelin follows the animated eye rather than a launch-time timer",
+          "[game][screens][legend][plague]") {
+    LegendFixture fixture;
+    fixture.load("legend-plague-homing");
+    fixture.show(LegendCue::Brandished, 38);
+    fixture.show(LegendCue::Thrown, 38);
+    fixture.bearer.released = true;
+    REQUIRE_FALSE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    const auto* flight = fixture.find("LEGENDPRJ");
+    REQUIRE(flight != nullptr);
+    CHECK(flight->position == Vec3{0, 2, 1});
+    fixture.effects.update(0.25f);
+    REQUIRE_FALSE(fixture.presentation.update(0.25f, fixture.bearer, fixture.target).landed);
+    CHECK(flight->position == Vec3{5, 2, 1});
+    CHECK(flight->flightDirection == Vec3{1, 0, 0});
+    fixture.target.position = {5, 12, 1};
+    fixture.target.height = 0;
+    fixture.effects.update(0.25f);
+    REQUIRE_FALSE(fixture.presentation.update(0.25f, fixture.bearer, fixture.target).landed);
+    CHECK(flight->position == Vec3{5, 7, 1});
+    CHECK(flight->flightDirection == Vec3{0, 1, 0});
+    SECTION("the projectile survives losing its bearer and lands exactly once") {
+        fixture.effects.update(0.25f);
+        CHECK(fixture.presentation.update(0.25f, std::nullopt, fixture.target).landed);
+        REQUIRE(fixture.find("LEGENDPRJ") == nullptr);
+        REQUIRE(fixture.find("LEGENDFX") != nullptr);
+        CHECK(fixture.find("LEGENDFX")->position == fixture.target.position);
+        CHECK_FALSE(fixture.presentation.update(1, std::nullopt, fixture.target).landed);
+    }
+    SECTION("a lost target expires without reporting an impact") {
+        fixture.effects.update(6);
+        CHECK_FALSE(fixture.presentation.update(6, std::nullopt, std::nullopt).landed);
+        CHECK(fixture.find("LEGENDPRJ") == nullptr);
+        CHECK(fixture.find("LEGENDFX") == nullptr);
+        CHECK(fixture.stopped.size() == 1);
+    }
+}
+
+TEST_CASE("the Plague eye recovers without inventing another relic sound",
+          "[game][screens][legend][plague]") {
+    LegendFixture fixture;
+    fixture.show(LegendCue::Brandished, 38);
+    const auto sounds = fixture.sounds;
+    fixture.show(LegendCue::WornOff, 38);
+    CHECK(fixture.sounds == sounds);
+}
+
 TEST_CASE("the genie lamp's blindness effect rides its root for 28 seconds",
           "[game][screens][legend][genie]") {
     LegendFixture fixture;

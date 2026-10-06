@@ -4,6 +4,7 @@
 #include <memory>
 #include <utility>
 
+#include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
 namespace gdl::game {
@@ -66,10 +67,16 @@ void Bosses::stageLegend(s32 ticks) {
         m_roarAsked && (!canRoar || (moveType == MoveDefinition::kRoar && m_fighter.moveDone()));
     for (const LegendCue cue : m_rite.update(ticks, risen, roarDone)) {
         if (cue == LegendCue::Thrown && m_kind != 34 && m_kind != 35 && m_kind != 36 &&
-            m_kind != 37 && m_kind != 42) {
+            m_kind != 37 && m_kind != 38 && m_kind != 42) {
             strikeWithLegend();
         } else if (cue == LegendCue::WornOff) {
             m_fighter.curb(0.0f);
+            if (m_kind == 38) {
+                // world_update (0x8005674c) clears the initial 18000-tick
+                // blindness 29 seconds after the roar, not five minutes later.
+                m_fighter.blind(0);
+                m_fighter.replaceNodeModel(*m_device, "EYEBALL", {});
+            }
         }
         m_legendEvents.push_back(LegendEvent{cue, m_rite.player(), legendRealm()});
     }
@@ -81,10 +88,11 @@ void Bosses::stageLegend(s32 ticks) {
 }
 
 void Bosses::landLegend() {
-    if (m_kind == 35 || m_kind == 37 || m_kind == 42) {
-        // The scimitar acts on impact; Bellows and Savior act on cast release.
+    if (m_kind == 35 || m_kind == 37 || m_kind == 38 || m_kind == 42) {
+        // Scimitar and javelin act on impact; Bellows and Savior on cast release.
         // The roar controls lighting independently of that notification.
-        if (m_id.has_value() && m_rite.thrown() && !m_legendStruck) {
+        if (m_id.has_value() && m_rite.thrown() && !m_legendStruck &&
+            (m_kind != 38 || m_rite.running())) {
             strikeWithLegend();
             m_legendStruck = true;
         }
@@ -124,6 +132,9 @@ void Bosses::strikeWithLegend() {
     }
     if (weakness->blindTicks > 0) {
         m_fighter.blind(weakness->blindTicks);
+    }
+    if (m_kind == 38 && !m_fighter.replaceNodeModel(*m_device, "EYEBALL", "PBOSSQEYEBALL")) {
+        log::warn("Plague javelin: cannot bind native PBOSSQEYEBALL replacement");
     }
     if (weakness->curbs()) {
         m_fighter.curb(weakness->curbSeconds);
@@ -209,7 +220,9 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
             return;
         }
     }
-    m_fighter.takeFullHarm(m_rite.running());
+    // CritterDamage exempts the opening states 1..4, not state 5 while the
+    // weakness is wearing off. Ordinary party damage scaling resumes after the roar.
+    m_fighter.takeFullHarm(m_rite.stage() == LegendRite::Stage::Carried || m_rite.darkens());
     if (ticks > 0) {
         for (const auto& assets : m_assets) {
             assets->textures.advance(seconds);

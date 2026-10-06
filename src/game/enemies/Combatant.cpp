@@ -234,7 +234,6 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         }
         if (critter.blindTicks > 0) {
             critter.blindTicks = std::max(critter.blindTicks - ticks, 0);
-            critter.target = -1;
         }
     }
     // CritterGolemAI still animates START/DEATH during Stop Time. Follow an
@@ -265,7 +264,8 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     // A fresh roster (including hidden/departed-player filtering) must not redirect
     // an ongoing volley or wind-up. The next move selects from that fresh roster.
     if (move != nullptr && (critter.moveTarget < 0 || critter.moveDone)) {
-        critter.moveTarget = attackTarget(critter, move->target, players, true);
+        critter.moveTarget =
+            critter.blindTicks > 0 ? -1 : attackTarget(critter, move->target, players, true);
     }
     // The move plays; over its harmful frames its part strikes.
     critter.skinAge += seconds;
