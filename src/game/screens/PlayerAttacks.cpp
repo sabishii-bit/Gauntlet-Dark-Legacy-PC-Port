@@ -1287,6 +1287,27 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     std::erase_if(candidates, [](const MissileTarget& target) {
         return target.id >= kSafeRockTargetBase && target.id < kWallTargetBase;
     });
+    // fn_8005B274 also admits type-5/subtype-31 switches, using their authored
+    // collision anchor and ordinary item distance weight, not the mesh centre.
+    const auto& triggers = m_resources->world.triggers();
+    const auto& layout = m_resources->world.layout();
+    for (usize i = 0; i < triggers.size(); ++i) {
+        const auto& trigger = triggers.trigger(i);
+        if (!trigger.enabled || !trigger.shootable) {
+            continue;
+        }
+        const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
+        const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
+        if (info.armor == -1) {
+            continue;
+        }
+        MissileTarget target{kSwitchTargetBase + static_cast<s32>(i), trigger.spot, trigger.radius,
+                             trigger.height};
+        target.acquisition =
+            TargetAssist::itemAcquisition(trigger.placement, info.collisionOffset, info.radius,
+                                          info.height, TargetAssist::kItemDistanceScale);
+        candidates.push_back(target);
+    }
     const f32 range =
         targets.opponents.bosses().view().alive ? TargetAssist::kBossRange : TargetAssist::kRange;
     const auto ordinary =

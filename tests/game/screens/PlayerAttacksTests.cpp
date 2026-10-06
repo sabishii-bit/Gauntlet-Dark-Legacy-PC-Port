@@ -1926,7 +1926,7 @@ TEST_CASE("a thrown weapon stops at a chest and does it no harm",
 }
 
 TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
-          "[game][screens][player-attacks][triggers][assets]") {
+          "[game][screens][player-attacks][triggers][alpha-switch-aim][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELC3/WORLDS.PS2").parent_path().parent_path().parent_path();
     Fixture f;
@@ -1949,6 +1949,24 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
     REQUIRE(required <= 4);
     const bool eligible = GENERATE(false, true);
     f.world.setPlayerCount(eligible ? required : 1);
+    const auto& trigger = triggers.trigger(target);
+    const auto& instance =
+        f.world.layout().itemInstances().at(static_cast<usize>(trigger.instance));
+    const auto& info = f.world.layout().itemInfos().at(static_cast<usize>(instance.info));
+    REQUIRE(info.armor != -1);
+    const auto acquisition =
+        TargetAssist::itemAcquisition(trigger.placement, info.collisionOffset, info.radius,
+                                      info.height, TargetAssist::kItemDistanceScale);
+    bool acquired = false;
+    for (const Vec3 side : {Vec3{0, 0, 4}, Vec3{0, 0, -4}, Vec3{4, 0, 0}, Vec3{-4, 0, 0}}) {
+        auto& actor = f.players[0].actor;
+        actor.place(acquisition.point + side - (actor.followPoint() - actor.position()));
+        const auto aim = f.attacks.aim(actor, -side, f.targets);
+        acquired |= aim && glm::distance(*aim, acquisition.point) < 0.01f;
+    }
+    // PlayerGetTarget's item search explicitly admits type 5, subtype 31.
+    // It must not acquire the same target when the joined party cannot see it.
+    CHECK(acquired == eligible);
     const Vec3 spot = triggers.trigger(target).spot + Vec3{0, 1, 0};
     MissileSpec spec;
     spec.weight = 0;

@@ -155,8 +155,7 @@ private:
     void healHit(s32 owner, u32 flags, f32 credit, const Vec3& at, std::span<PlayerRuntime> players,
                  const Targets& targets);
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
-    /** What a thrown weapon or a burst can strike: the targets and the shootable switches,
-     * which aiming and hand blows leave alone. */
+    /** What a thrown weapon or a burst can strike: the targets and shootable switches. */
     std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
     /** What a swing can reach: what is struck, but not the safe rocks. */
     std::vector<MissileTarget> meleeTargets(const Targets& targets) const;
