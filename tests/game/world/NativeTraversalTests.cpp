@@ -34,8 +34,9 @@ struct NativeWalk {
     Vec3 travelled{0};
     Vec3 landed{0};
     s32 ownershipDiagnostics = 0;
+    f32 seconds = kStep;
 
-    NativeWalk(std::string_view level, Vec3 start) {
+    NativeWalk(std::string_view level, Vec3 start, f32 stepSeconds = kStep) : seconds(stepSeconds) {
         const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
         LevelCatalog catalog;
         REQUIRE(catalog.load(root));
@@ -44,21 +45,25 @@ struct NativeWalk {
         REQUIRE(world.load(device, root, *info));
         world.startTriggers({});
         world.updateTriggers(0, {});
-        party[0].actor.spawn(0, {}, nullptr, start, 0);
+        ClassDataSet classes;
+        REQUIRE(classes.load(root / "PDATA"));
+        const auto* stats = classes.stats(0);
+        REQUIRE(stats != nullptr);
+        party[0].actor.spawn(0, {}, stats, start, 0);
         party[0].actor.settle(world.collision());
         FloorRiding::land(party, 0, party[0].actor.position(), world.collision());
     }
 
     void step(Vec2 direction = Vec2{0}) {
         auto& actor = party[0].actor;
-        world.update(kStep);
+        world.update(seconds);
         FloorRiding::carry(party[0], world.collision());
         carried = actor.position();
         const Vec3 before = actor.position();
         actor.clearWallContacts();
         actor.update(MoveInput{.direction = direction,
                                .magnitude = glm::length(direction) > 0 ? 1.0f : 0.0f},
-                     0, kStep, &world.collision());
+                     0, seconds, &world.collision());
         travelled = actor.position();
         const auto centre =
             world.collision().floorAt(travelled, FloorRiding::kProbeAbove, FloorRiding::kProbeBelow,
@@ -78,17 +83,17 @@ struct NativeWalk {
                           << " footprint " << footprint->object << " at " << footprint->y
                           << " chose " << party[0].floor.object);
         }
-        actor.fall(kStep, world.collision());
+        actor.fall(seconds, world.collision());
         const std::array visitors{TriggerVisitor{.position = actor.position(),
                                                  .radius = actor.radius(),
                                                  .floorObject = party[0].floor.object,
                                                  .height = actor.height()}};
-        world.updateTriggers(kStep, visitors);
+        world.updateTriggers(seconds, visitors);
     }
 
     void walk(Vec2 goal) {
         const auto& actor = party[0].actor;
-        for (s32 frame = 0; frame < 240; ++frame) {
+        for (s32 frame = 0; frame < static_cast<s32>(8.0f / seconds); ++frame) {
             const Vec2 delta = goal - Vec2{actor.position().x, actor.position().z};
             if (glm::length(delta) < 0.3f) {
                 return;
@@ -98,7 +103,7 @@ struct NativeWalk {
         CAPTURE(goal.x, goal.y, actor.position().x, actor.position().y, actor.position().z,
                 party[0].floor.object);
         const Vec3 delta{goal.x - actor.position().x, 0, goal.y - actor.position().z};
-        const Vec3 target = actor.position() + glm::normalize(delta) * (actor.speed() * kStep);
+        const Vec3 target = actor.position() + glm::normalize(delta) * (actor.speed() * seconds);
         const auto direct = world.collision().floorAt(target, 3, 3, actor.radius());
         if (direct) {
             UNSCOPED_INFO("reachable footprint floor " << direct->object << " at " << direct->y);
@@ -134,11 +139,12 @@ struct NativeWalk {
 TEST_CASE("G1 first lift can be boarded from its lower landing and left above",
           "[native-traversal][g1-first-lift][assets]") {
     const f32 offset = GENERATE(-2.0f, 0.0f, 2.0f);
-    CAPTURE(offset);
-    NativeWalk walk("G1", {41, 10, -85 + offset});
+    const s32 hz = GENERATE(30, 60);
+    CAPTURE(offset, hz);
+    NativeWalk walk("G1", {41, 10, -85 + offset}, 1.0f / static_cast<f32>(hz));
     walk.walk({48.4f, -85 + offset});
     REQUIRE(walk.party[0].floor.object == 1083);
-    walk.wait(90);
+    walk.wait(3 * hz);
     REQUIRE(walk.party[0].actor.position().y > 19);
     walk.walk({55, -85 + offset});
     CHECK(walk.party[0].floor.object != 1083);
@@ -149,11 +155,12 @@ TEST_CASE("G1 first lift riders can leave a pressed corner",
     const f32 side = GENERATE(-1.0f, 1.0f);
     const f32 end = GENERATE(-1.0f, 1.0f);
     const s32 delay = GENERATE(0, 75);
-    CAPTURE(side, end, delay);
-    NativeWalk walk("G1", {41, 10, -85});
+    const s32 hz = GENERATE(30, 60);
+    CAPTURE(side, end, delay, hz);
+    NativeWalk walk("G1", {41, 10, -85}, 1.0f / static_cast<f32>(hz));
     walk.walk({48.4f, -85});
-    walk.wait(delay);
-    for (s32 frame = 0; frame < 90; ++frame) {
+    walk.wait(delay * (hz / 30));
+    for (s32 frame = 0; frame < 3 * hz; ++frame) {
         walk.step(glm::normalize(Vec2{side, end}));
     }
     walk.walk({48.4f, -85});
@@ -163,9 +170,10 @@ TEST_CASE("G1 first lift riders can leave a pressed corner",
 TEST_CASE("G1 second lift can descend and recover from its broken fence corner",
           "[native-traversal][g1-second-lift][assets]") {
     const f32 end = GENERATE(-1.0f, 1.0f);
-    CAPTURE(end);
-    NativeWalk walk("G1", {-24.375f, 27.3f, -156.71875f});
-    walk.wait(90);
+    const s32 hz = GENERATE(30, 60);
+    CAPTURE(end, hz);
+    NativeWalk walk("G1", {-24.375f, 27.3f, -156.71875f}, 1.0f / static_cast<f32>(hz));
+    walk.wait(3 * hz);
     REQUIRE(walk.world.triggers().opened(273));
     walk.walk({-24.375f, -152});
     walk.walk({-17.75f, -152});
@@ -179,7 +187,7 @@ TEST_CASE("G1 second lift can descend and recover from its broken fence corner",
         }
     }
     REQUIRE(brokeFence);
-    for (s32 frame = 0; frame < 90; ++frame) {
+    for (s32 frame = 0; frame < 3 * hz; ++frame) {
         walk.step(glm::normalize(Vec2{-1, end}));
         if (end > 0 && frame >= 30 && frame <= 42) {
             UNSCOPED_INFO("entry frame " << frame << " carry(" << walk.carried.x << ","
@@ -199,7 +207,9 @@ TEST_CASE("G1 second lift can descend and recover from its broken fence corner",
     // native fn_80088714 also stops a move against opposing second-wall normals.
     // Round the north end before boarding through the open middle of that edge.
     if (end > 0) {
-        walk.walk({walk.party[0].actor.position().x, -145});
+        // At z=-145, fence 1187 is at x=-22.5625. Keeping the pressed corner's
+        // x coordinate asks the body to overlap it; move inward while backing out.
+        walk.walk({-21, -145});
         walk.walk({-17.75f, -145});
     } else {
         walk.walk({walk.party[0].actor.position().x, -152});
