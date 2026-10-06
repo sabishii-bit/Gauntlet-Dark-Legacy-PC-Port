@@ -33,4 +33,18 @@ TEST_CASE("existing body overlaps allow retreat but not an inward or sideways mo
     CHECK_FALSE(movementTouchesBody({}, {0, 0, 1}, {}, 2, 3));
     CHECK(movementTouchesBody({}, {0, 0, 0.0005f}, {}, 2, 3));
 }
+
+TEST_CASE("body contacts report the native closest point only on accepted hits",
+          "[body-contact][enemies][alpha-contact-target]") {
+    Vec3 point{99};
+    REQUIRE(movementTouchesBody({0, 0, -10}, {0, 0, 10}, {}, 2, 3, &point));
+    CHECK(point == Vec3{0}); // not the first cylinder intersection at z=-2
+    REQUIRE(movementTouchesBody({0, 0, -1}, {0, 0, -1}, {}, 2, 3, &point));
+    CHECK(point == Vec3{0, 0, -1});
+    point = Vec3{99};
+    CHECK_FALSE(movementTouchesBody({0, 0, -1}, {0, 0, -1.5f}, {}, 2, 3, &point));
+    CHECK(point == Vec3{99});
+    REQUIRE(movementTouchesBody({}, {}, {}, 2, 3, &point));
+    CHECK(point == Vec3{0});
+}
 } // namespace

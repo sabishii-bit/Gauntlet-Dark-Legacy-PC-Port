@@ -1292,6 +1292,10 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     auto candidates = acquisitionTargets(targets);
     const f32 range =
         targets.opponents.bosses().view().alive ? TargetAssist::kBossRange : TargetAssist::kRange;
+    if (const auto contact = contactEnemy(actor, targets, facing, range);
+        contact && contact->acquisition) {
+        return contact->acquisition->point;
+    }
     const auto ordinary =
         TargetAssist::select(actor.followPoint(), facing, candidates, range,
                              &m_resources->world.collision(), m_resources->acquisitionCone);
@@ -1350,10 +1354,10 @@ PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Tar
         return PlayerDeed::None;
     }
     const auto target = meleeTarget(actor, targets, facing, actor.reach() + kStepReach);
-    if (!target || target->id < kEnemyTargetBase || target->id >= kSafeRockTargetBase) {
+    if (!target || target->body.id < kEnemyTargetBase || target->body.id >= kSafeRockTargetBase) {
         return PlayerDeed::None;
     }
-    if (target->id >= kBossTargetBase) {
+    if (target->body.id >= kBossTargetBase) {
         // PlayerMotion's boss-family exception permits only the two mobile
         // encounters, DRIDER and LICH, to trigger an unpressed close attack.
         constexpr s32 kSpiderQueen = 37;
@@ -1397,21 +1401,89 @@ std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor
     return nearest;
 }
 
-std::optional<MissileTarget> PlayerAttacks::meleeTarget(const PlayerActor& actor,
-                                                        const Targets& targets, const Vec3& facing,
-                                                        f32 reach) const {
+std::optional<PlayerAttacks::MeleeTarget> PlayerAttacks::meleeTarget(const PlayerActor& actor,
+                                                                     const Targets& targets,
+                                                                     const Vec3& facing,
+                                                                     f32 reach) const {
     if (!m_resources) {
         return std::nullopt;
     }
     const f32 range =
         targets.opponents.bosses().present() ? TargetAssist::kBossRange : TargetAssist::kRange;
+    if (const auto contact = contactEnemy(actor, targets, facing, range)) {
+        const auto acquisition = contact->acquisition;
+        if (!acquisition) {
+            return std::nullopt;
+        }
+        // Keep PlayerGetTarget's 3D surface distance through the swing/step
+        // decision. A valid contact outside melee reach still owns acquisition;
+        // it must not give way to a nearer barrel from the fresh search.
+        const f32 distance =
+            glm::distance(acquisition->point, actor.followPoint()) - contact->radius;
+        if (distance < reach) {
+            return MeleeTarget{*contact, distance};
+        }
+        return std::nullopt;
+    }
     auto target = TargetAssist::ahead(
         actor.position(), actor.height(), facing, acquisitionTargets(targets), reach, range,
         &m_resources->world.collision(), m_resources->acquisitionCone);
     if (!target) {
         target = meleePlayer(actor, targets, reach, facing);
     }
-    return target;
+    if (target) {
+        return MeleeTarget{*target,
+                           TargetAssist::distanceTo(actor.position(), actor.height(), *target)};
+    }
+    return std::nullopt;
+}
+
+std::optional<MissileTarget> PlayerAttacks::contactEnemy(const PlayerActor& actor,
+                                                         const Targets& targets, const Vec3& facing,
+                                                         f32 range) {
+    const Vec3 origin = actor.followPoint();
+    Vec3 from = origin;
+    Vec3 to = origin;
+    for (const PlayerRuntime& player : targets.players) {
+        if (&player.actor == &actor && player.attackStep) {
+            from = player.attackStep->from;
+            to = player.attackStep->to;
+            break;
+        }
+    }
+    // Root/node contact arbitration is separate from the swarm grid. Keep the
+    // existing shared search when a large creature is touching, rather than
+    // inventing swarm-over-critter priority until that query is reconstructed.
+    if (targets.opponents.critters().struckBy(from, to, actor.reach()) ||
+        targets.opponents.bosses().struckBy(from, to, actor.reach())) {
+        return std::nullopt;
+    }
+    const auto& enemies = targets.opponents.enemies();
+    const auto id = enemies.playerContact(from, to, actor.reach(), actor.height() * 0.5f);
+    if (!id) {
+        return std::nullopt;
+    }
+    const auto bodies = enemies.targets();
+    const auto body = std::ranges::find(bodies, *id, &MissileTarget::id);
+    if (body == bodies.end()) {
+        return std::nullopt;
+    }
+    const auto acquisition = body->acquisition;
+    if (!acquisition) {
+        return std::nullopt;
+    }
+    const Vec3 offset = acquisition->point - origin;
+    const f32 distance = glm::length(offset);
+    const f32 surface = distance - body->radius;
+    const f32 facingLength = glm::length(facing);
+    if (surface >= range || facingLength <= 0 ||
+        ((surface > 0 || enemies.kindOf(*id) == kDeathKind) &&
+         (distance <= 0 || glm::dot(offset, facing) < distance * facingLength * kHeldCone))) {
+        return std::nullopt;
+    }
+    MissileTarget selected = *body;
+    selected.id += kEnemyTargetBase;
+    return selected;
 }
 
 MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held, const Targets& targets,
@@ -1431,9 +1503,10 @@ MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held, const 
 }
 
 MeleeSense PlayerAttacks::senseOf(const PlayerActor& actor, bool held,
-                                  const MissileTarget& target) {
+                                  const MeleeTarget& selected) {
     MeleeSense sense;
-    const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), target);
+    const MissileTarget& target = selected.body;
+    const f32 distance = selected.distance;
     const f32 bias = held ? kHeldReach : 0.0f;
     // PlayerMotion uses col_radius (the full PDAT width), not the half-width
     // cylinder used for horizontal movement. Target distance already excludes
@@ -1463,14 +1536,15 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     // PlayerMotion consumes this frame's PlayerGetTarget result when the blow
     // lands, not a new all-bearing query. Desired heading may still point
     // behind the body's yaw during a backward combo.
-    const auto target =
+    const auto selected =
         meleeTarget(actor, targets, players[index].meleeFacing.value_or(actor.facing()),
                     actor.reach() + kStepReach);
     // The swing's sweep brings down the SHOOTFALL scenery within it (combat.c's item query).
     targets.fixtures.shootScenery(actor.position(), actor.reach() + kStepReach);
-    if (!target) {
+    if (!selected) {
         return;
     }
+    const MissileTarget* target = &selected->body;
     f32 damage = PlayerMissiles::kLeastDamage;
     if (const ClassStats* stats = m_resources->classes.stats(actor.save().character)) {
         const StatBlock block = displayStats(*stats, experienceLevel(actor.save().experience()),

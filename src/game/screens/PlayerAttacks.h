@@ -159,9 +159,16 @@ private:
     std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
     /** Shared melee/ranged acquisition geometry; excludes cover without removing its collider. */
     std::vector<MissileTarget> acquisitionTargets(const Targets& targets) const;
-    std::optional<MissileTarget> meleeTarget(const PlayerActor& actor, const Targets& targets,
-                                             const Vec3& facing, f32 reach) const;
-    static MeleeSense senseOf(const PlayerActor& actor, bool held, const MissileTarget& target);
+    /** A same-step swarm contact precedes a fresh weighted acquisition query. */
+    static std::optional<MissileTarget>
+    contactEnemy(const PlayerActor& actor, const Targets& targets, const Vec3& facing, f32 range);
+    struct MeleeTarget {
+        MissileTarget body;
+        f32 distance = 0;
+    };
+    std::optional<MeleeTarget> meleeTarget(const PlayerActor& actor, const Targets& targets,
+                                           const Vec3& facing, f32 reach) const;
+    static MeleeSense senseOf(const PlayerActor& actor, bool held, const MeleeTarget& selected);
     /** Player melee is a forward-cone fallback, never displacing an enemy or item. */
     static std::optional<MissileTarget>
     meleePlayer(const PlayerActor& actor, const Targets& targets, f32 reach, const Vec3& facing);

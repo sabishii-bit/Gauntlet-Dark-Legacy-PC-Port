@@ -6,7 +6,7 @@
 namespace gdl::game {
 
 bool movementTouchesBody(const Vec3& from, const Vec3& to, const Vec3& centre, f32 radius,
-                         f32 halfHeight) {
+                         f32 halfHeight, Vec3* contact) {
     // PointLineColl uses the nearest point on the full 3D finite segment, not a
     // horizontal projection or an analytic first intersection with a cylinder.
     const Vec3 step = to - from;
@@ -26,12 +26,18 @@ bool movementTouchesBody(const Vec3& from, const Vec3& to, const Vec3& centre, f
         // GUNE5D 80346348/80346350: 0.001 and -0.01. Coincident bodies may
         // separate; otherwise only an outward step escapes an existing overlap.
         if (distance < 0.001f) {
-            return length < 0.001f;
+            if (length >= 0.001f) {
+                return false;
+            }
+        } else {
+            const Vec2 direction = length > 0 ? horizontal / length : horizontal;
+            if (glm::dot(direction, inward / distance) < -0.01f) {
+                return false;
+            }
         }
-        const Vec2 direction = length > 0 ? horizontal / length : horizontal;
-        if (glm::dot(direction, inward / distance) < -0.01f) {
-            return false;
-        }
+    }
+    if (contact != nullptr) {
+        *contact = from + fraction * step;
     }
     return true;
 }

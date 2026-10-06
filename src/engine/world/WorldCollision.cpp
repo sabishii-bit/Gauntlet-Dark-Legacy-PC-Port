@@ -23,9 +23,42 @@ using Json = nlohmann::json;
 
 constexpr f32 kEpsilon = 0.001f;
 constexpr f32 kSweepEpsilon = 1.0e-6f;
+// FastWallCollide (8000D308) accepts these inclusive normal-Y bounds;
+// WorldObjCollide bypasses the normal filter for world-object flag 0x40.
+constexpr f32 kRayWallNormalY = 0.866f;
+constexpr u32 kUnfilteredSurface = 0x40;
 constexpr s32 kPasses = 4;
 /** Heights within a cylinder at which walls are checked: about the knees and the chest. */
 constexpr std::array<f32, 2> kProbeFractions{0.25f, 0.75f};
+
+/** A one-sided finite plane crossing followed by the triangle's barycentric bounds. */
+bool crossesFront(const CollisionTriangle& triangle, const Vec3& from, const Vec3& to) {
+    const Vec3& origin = triangle.vertices[0];
+    const f32 start = glm::dot(from - origin, triangle.normal);
+    const f32 end = glm::dot(to - origin, triangle.normal);
+    if (start < 0 || end > 0) {
+        return false;
+    }
+    // TriLineCol (8002109C) tests the starting point for a coplanar segment,
+    // including a stationary contact. Its stored normal, not vertex winding,
+    // determines the blocking side.
+    const f32 fraction = start > end ? start / (start - end) : 0;
+    const Vec3 offset = from + (to - from) * fraction - origin;
+    const Vec3 edge0 = triangle.vertices[1] - origin;
+    const Vec3 edge1 = triangle.vertices[2] - origin;
+    const f32 d00 = glm::dot(edge0, edge0);
+    const f32 d01 = glm::dot(edge0, edge1);
+    const f32 d11 = glm::dot(edge1, edge1);
+    const f32 determinant = d00 * d11 - d01 * d01;
+    if (determinant <= 0) {
+        return false;
+    }
+    const f32 d20 = glm::dot(offset, edge0);
+    const f32 d21 = glm::dot(offset, edge1);
+    const f32 u = (d11 * d20 - d01 * d21) / determinant;
+    const f32 v = (d00 * d21 - d01 * d20) / determinant;
+    return u >= 0 && v >= 0 && u + v <= 1;
+}
 
 /** Whether (x, z) lies inside the triangle's ground-plane projection. */
 bool insideXZ(const CollisionTriangle& triangle, f32 x, f32 z) {
@@ -770,6 +803,43 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
         }
     }
     return out;
+}
+
+bool WorldCollision::wallBetween(const Vec3& from, const Vec3& to) const {
+    const auto blocks = [&](const CollisionTriangle& triangle, f32 normalY) {
+        if (contactOnly(triangle.object) || (triangle.objectFlags & kWallQueryFlags) == 0 ||
+            (triangle.objectFlags & kLiquidSurface) != 0) {
+            return false;
+        }
+        if ((triangle.objectFlags & kUnfilteredSurface) == 0 &&
+            (normalY < -kRayWallNormalY || normalY > kRayWallNormalY)) {
+            return false;
+        }
+        return crossesFront(triangle, from, to);
+    };
+    const f32 minX = std::min(from.x, to.x);
+    const f32 minZ = std::min(from.z, to.z);
+    const f32 maxX = std::max(from.x, to.x);
+    const f32 maxZ = std::max(from.z, to.z);
+    for (const u32 index : candidates(minX, minZ, maxX, maxZ)) {
+        const CollisionTriangle& triangle = m_triangles[index];
+        if (solid(triangle.object) && blocks(triangle, triangle.normal.y)) {
+            return true;
+        }
+    }
+    for (const MovingObject& mover : m_moving) {
+        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !solid(mover.object)) {
+            continue;
+        }
+        for (usize i = 0; i < mover.placed.size(); ++i) {
+            // WorldObjCollide transforms the ray into the object's space before
+            // CTriListCollide filters normals. Rotation must not change that filter.
+            if (blocks(mover.placed[i], mover.local[i].normal.y)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 std::optional<Vec3> WorldCollision::pickSurface(const Vec3& from, const Vec3& to) const {

@@ -34,6 +34,13 @@ struct PlayerRuntime {
     /** This movement step's requested attack direction, which may differ from the
      * body yaw locked by a quick swing. Shared by acquisition and contact. */
     std::optional<Vec3> meleeFacing;
+    struct AttackStep {
+        Vec3 from{0};
+        Vec3 to{0};
+    };
+    /** This invocation's intended collision-centre segment before creature correction,
+     * never a retained target ID. Empty outside motion; queries then test standing contact. */
+    std::optional<AttackStep> attackStep;
     struct Presentation {
         Vec3 position{0};
         f32 yaw = 0;

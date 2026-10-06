@@ -72,6 +72,42 @@ struct Fixture {
     }
 };
 
+TEST_CASE("attack contact segments belong only to the current player's motion invocation",
+          "[party-motion][alpha-contact-target]") {
+    Fixture f;
+    for (auto& player : f.players) {
+        player.attackStep = PlayerRuntime::AttackStep{Vec3{999}, Vec3{999}};
+    }
+    f.inputs[3].attack = true;
+    f.inputs[1].attack = true;
+    s32 queries = 0;
+    f.events.attackDeed = [&](usize i, bool, bool, const Vec3&) {
+        CHECK_FALSE(f.players[i].attackStep);
+        return PlayerDeed::Attack;
+    };
+    f.events.aim = [&](usize i) -> std::optional<Vec3> {
+        ++queries;
+        REQUIRE(f.players[i].attackStep);
+        CHECK(f.players[i].attackStep->from == f.players[i].actor.followPoint());
+        CHECK(f.players[i].attackStep->to == f.players[i].actor.followPoint());
+        if (i == 1) {
+            CHECK_FALSE(f.players[0].attackStep);
+        }
+        return std::nullopt;
+    };
+    f.step();
+    CHECK(queries == 2);
+    for (const auto& player : f.players) {
+        CHECK_FALSE(player.attackStep);
+    }
+    REQUIRE(f.players[0].transport.begin(Vec3{20, 0, 0}));
+    f.players[0].attackStep = PlayerRuntime::AttackStep{Vec3{999}, Vec3{999}};
+    queries = 0;
+    f.step();
+    CHECK(queries == 1);
+    CHECK_FALSE(f.players[0].attackStep);
+}
+
 TEST_CASE("cursor facing survives backward movement and strafe without overriding cutscene holds",
           "[controls][cursor][party-motion]") {
     Fixture f;
@@ -89,6 +125,39 @@ TEST_CASE("cursor facing survives backward movement and strafe without overridin
     f.step(true);
     CHECK(f.players[0].actor.position() == before);
     CHECK(f.players[0].actor.yaw() == yaw);
+}
+
+TEST_CASE("contact segments preserve attempted movement and replace camera replays",
+          "[party-motion][alpha-contact-target]") {
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    auto& player = f.players[0];
+    f.inputs[3].move = {glm::normalize(Vec2{1, 1}), 1};
+    const Vec3 origin = player.actor.followPoint();
+    std::vector<Vec3> attempted;
+    f.events.resolveMovement = [&](usize i, const Vec3& from, const Vec3& to) {
+        REQUIRE(i == 0);
+        REQUIRE(player.attackStep);
+        CHECK(player.attackStep->from == origin);
+        CHECK(player.attackStep->to == to + origin);
+        attempted.push_back(to);
+        return from + (to - from) * 0.5f;
+    };
+    f.events.limitMovement = [&](usize i, const Vec3& from, const Vec3& to) {
+        REQUIRE(i == 0);
+        REQUIRE(attempted.size() == 1);
+        REQUIRE(player.attackStep);
+        CHECK(player.attackStep->to == attempted[0] + origin);
+        CHECK(to == attempted[0] * 0.5f);
+        return Vec3{from.x, to.y, to.z};
+    };
+    f.step();
+    REQUIRE(attempted.size() == 2);
+    CHECK(attempted[0].x > 0);
+    CHECK(attempted[1].x == 0);
+    CHECK(attempted[1].z == Approx(attempted[0].z * 0.5f));
+    CHECK(player.actor.position() == attempted[1] * 0.5f);
+    CHECK_FALSE(player.attackStep);
 }
 
 TEST_CASE("cursor over the player preserves facing and forward movement without aim assist",

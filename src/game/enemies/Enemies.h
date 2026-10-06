@@ -236,6 +236,9 @@ public:
     /** Snapshot of the larger creatures' solid collision nodes and root fallbacks.
      * Refreshed before births and movement; owns the values, not the caller's view. */
     void setCombatantBodies(std::span<const MissileTarget> bodies);
+    /** World bounds used by native contact ties: z cells, then x cells, then
+     * descending enemy slots. Unconfigured/degenerate bounds use one cell. */
+    void setContactGridBounds(const Vec3& minimum, const Vec3& maximum);
 
     /** Loads a kind's archive ahead of need; false when it is not there. */
     bool loadKind(s32 kind);
@@ -282,6 +285,11 @@ public:
     f32 hurt(s32 id, const EnemyHit& hit);
     /** The enemies a missile can strike. */
     std::vector<MissileTarget> targets() const;
+    /** PlayerCollideItems' swarm contact, separate from missile/physical movement reach.
+     * Positions are collision centres; width is the player's full native col_radius.
+     * Returns the contact nearest the step endpoint, not the nearest enemy centre. */
+    std::optional<s32> playerContact(const Vec3& from, const Vec3& to, f32 width,
+                                     f32 halfHeight) const;
     /** The nearest live enemy whose body a blow sweeping from `from` to `to` with `radius`
      * touches. */
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
@@ -489,6 +497,8 @@ private:
     std::vector<s32> m_tagged;
     std::vector<EnemyGeneratorEvent> m_generatorEvents;
     std::vector<EnemyBody> m_combatants;
+    Vec2 m_contactGridOrigin{0};
+    f32 m_contactGridInverseWidth = 0;
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
     std::optional<ViewVolume> m_view;

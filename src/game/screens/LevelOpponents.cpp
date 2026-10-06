@@ -504,6 +504,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     }
     const auto seed = static_cast<u32>(std::hash<std::string>{}(world.ref().name));
     m_enemies.open(device, resources.root, &world.collision(), most, scales, seed);
+    m_enemies.setContactGridBounds(world.layout().minBounds(), world.layout().maxBounds());
     m_enemies.setHazards(&world.hazards());
     m_enemies.setLookouts(LookoutRoute::of(world.layout().locators()));
     const std::string& levelName = world.ref().name;

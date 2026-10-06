@@ -123,6 +123,9 @@ public:
     Vec3 sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom, f32 top,
                     std::vector<WallContact>* contacts = nullptr,
                     std::optional<f32> minimumY = std::nullopt) const;
+    /** Finite wall-query segment, approaching the stored normal's front side.
+     * Uses FastWallCollide's slope filter rather than a horizontal body sweep. */
+    bool wallBetween(const Vec3& from, const Vec3& to) const;
     /** Nearest visible solid surface along a finite picking ray, including moving geometry. */
     std::optional<Vec3> pickSurface(const Vec3& from, const Vec3& to) const;
 

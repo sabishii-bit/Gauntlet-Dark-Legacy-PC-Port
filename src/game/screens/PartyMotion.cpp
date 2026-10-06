@@ -150,6 +150,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         PlayerActor& actor = players[i].actor;
         players[i].cursorAiming = false;
         players[i].meleeFacing.reset();
+        players[i].attackStep.reset();
         actor.clearWallContacts();
         const auto player = static_cast<usize>(actor.player());
         const bool down = players[i].life != PlayerLife::Standing;
@@ -387,6 +388,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].floor = {};
         }
         const Vec3 before = actor.position();
+        const Vec3 attackFrom = actor.followPoint();
         // A knock slides the body on, then what hit it last frame kicks it, turning it to
         // face along the push or against it (PlayerMotion, PlayerKnockback).
         if (!down) {
@@ -422,6 +424,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         actor.update(charging ? chargeInput(actor, move, cameraYaw) : attackMove, cameraYaw,
                      seconds, &collision, pace, strafes);
+        if (!down) {
+            players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
+        }
         if (!down && events.resolveMovement) {
             // A body/fixture push is still movement, not a teleport. Sweep the
             // correction through the same walls and floor edges as the step.
@@ -437,6 +442,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             if (glm::distance(limited, actor.position()) > 1.0e-5f) {
                 actor.place(before);
                 actor.slide(limited - before, &collision);
+                players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
                 if (events.resolveMovement) {
                     actor.slide(events.resolveMovement(i, before, actor.position()) -
                                     actor.position(),
@@ -460,6 +466,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
             if (spot.has_value()) {
                 actor.place(*spot);
+                players[i].attackStep.reset();
                 players[i].knockback.clear();
                 players[i].floor = {};
             }
@@ -561,6 +568,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         subjects.push_back(
             CameraSubject{actor.position(), actor.followPoint(), actor.height() * 0.5f});
+        players[i].attackStep.reset();
     }
     // Every rider hangs on its carrier's node as posed this frame; the camera sees it there.
     PartyCombo::carry(players);

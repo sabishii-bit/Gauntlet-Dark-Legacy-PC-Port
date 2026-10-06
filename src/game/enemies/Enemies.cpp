@@ -32,6 +32,7 @@ constexpr f32 kDeathSkinRate = 15.0f;
 constexpr f32 kOnScreenMargin = 15.0f; ///< past twice its radius, what still counts as in view
 constexpr f32 kBomberScare = 10.0f;    ///< the swarm keeps this far from a lit suicide bomber
 constexpr f32 kCastTicks = 90.0f;      ///< a caster's least wait, times the level's missile rate
+constexpr s32 kContactGridDimension = 64;
 constexpr s32 kScorpionKind = 0;
 constexpr s32 kDogKind = 18;
 constexpr s32 kLeaderWay = 12;
@@ -204,6 +205,8 @@ void Enemies::close() {
     m_tagged.clear();
     m_generatorEvents.clear();
     m_combatants.clear();
+    m_contactGridOrigin = Vec2{0};
+    m_contactGridInverseWidth = 0;
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
@@ -229,6 +232,14 @@ void Enemies::setCombatantBodies(std::span<const MissileTarget> bodies) {
                                     body.radius, 0.5f * body.height});
         }
     }
+}
+
+void Enemies::setContactGridBounds(const Vec3& minimum, const Vec3& maximum) {
+    m_contactGridOrigin = Vec2{minimum.x, minimum.z};
+    // InitDynGrid (80043A04): 803466A4 is 1/64, 803466A8 is double 1.
+    const f32 cellWidth =
+        std::max(maximum.x - minimum.x, maximum.z - minimum.z) / kContactGridDimension;
+    m_contactGridInverseWidth = cellWidth > 0 ? static_cast<f32>(1.0 / cellWidth) : 0;
 }
 
 const Enemies::Stock* Enemies::stockOf(s32 kind) const {
@@ -1870,6 +1881,58 @@ std::vector<EnemyBody> Enemies::movementBodies() const {
         }
     }
     return bodies;
+}
+
+std::optional<s32> Enemies::playerContact(const Vec3& from, const Vec3& to, f32 width,
+                                          f32 halfHeight) const {
+    std::optional<s32> best;
+    f32 bestDistance = 0;
+    s32 bestCell = 0;
+    const auto contactCell = [this](const Vec3& position) {
+        const auto coordinate = [this](f32 value, f32 origin) {
+            return static_cast<s32>(std::clamp((value - origin) * m_contactGridInverseWidth, 0.0f,
+                                               static_cast<f32>(kContactGridDimension - 1)));
+        };
+        return coordinate(position.z, m_contactGridOrigin.y) * kContactGridDimension +
+               coordinate(position.x, m_contactGridOrigin.x);
+    };
+    // NextGridItem scans x inside z; SetupDynGrid head insertion reverses slots
+    // within each cell. Reducing equal-distance contacts by cell gives the same
+    // winner without sorting or changing any physical movement query.
+    for (s32 i = m_most - 1; i >= 0; --i) {
+        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+        if (!alive(i) || enemy.kind == kItKind) {
+            continue;
+        }
+        const Vec3 centre = enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0};
+        const f32 radius = width + enemy.radius;
+        const f32 enemyHalfHeight = enemy.height * 0.5f;
+        const Vec3 away = centre - to;
+        Vec3 contact;
+        if (away.x * away.x + away.z * away.z >= radius * radius ||
+            std::abs(away.y) >= enemyHalfHeight ||
+            !movementTouchesBody(from, to, centre, radius, halfHeight + enemyHalfHeight,
+                                 &contact)) {
+            continue;
+        }
+        const f32 distance = std::hypot(contact.x - to.x, contact.z - to.z);
+        const s32 cell = contactCell(enemy.position);
+        if (!best || distance < bestDistance || (distance == bestDistance && cell < bestCell)) {
+            best = i;
+            bestDistance = distance;
+            bestCell = cell;
+        }
+    }
+    if (best && m_collision != nullptr) {
+        const Enemy& enemy = m_enemies[static_cast<usize>(*best)];
+        const Vec3 centre = enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0};
+        // Reject the selected contact across a wall; do not promote a second
+        // touching enemy after rejection (PlayerCollideItems' FastWallCollide).
+        if (m_collision->wallBetween(from, centre)) {
+            return std::nullopt;
+        }
+    }
+    return best;
 }
 
 std::optional<s32> Enemies::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {

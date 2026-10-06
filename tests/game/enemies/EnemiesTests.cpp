@@ -67,6 +67,143 @@ TEST_CASE("enemy aim snapshots retain the native collision-height anchor",
     CHECK(target.height == enemies.heightOf(*id));
 }
 
+TEST_CASE("stationary player contacts retain native grid tie order",
+          "[enemies][alpha-contact-seed][assets]") {
+    Vec3 minimum{0};
+    Vec3 maximum{128, 0, 64}; // two-unit cells, from the larger horizontal extent
+    Vec3 player{4, 0, 3};
+    Vec3 first{3.5f, 0, 3};
+    Vec3 second{4.5f, 0, 3};
+    s32 expected = 0;
+    SECTION("x increases within a z row before descending pool order") {}
+    SECTION("z row precedes x column") {
+        player = {4, 0, 4};
+        first = {4.5f, 0, 3.5f};
+        second = {3.5f, 0, 4.5f};
+    }
+    SECTION("one cell retains descending pool order") {
+        player = {3, 0, 3};
+        first = {2.75f, 0, 3};
+        second = {3.25f, 0, 3};
+        expected = 1;
+    }
+    SECTION("z extent also determines cell width") {
+        maximum = {64, 0, 128};
+        player = {3, 0, 3};
+        first = {2.75f, 0, 3};
+        second = {3.25f, 0, 3};
+        expected = 1;
+    }
+    SECTION("world minimum offsets the cell boundary") {
+        minimum = {-3, 0, -5};
+        maximum = {125, 0, 59};
+        player = {1, 0, 0};
+        first = {0.5f, 0, 0};
+        second = {1.5f, 0, 0};
+    }
+    SECTION("below-world coordinates share the clamped first cell") {
+        player = {-2, 0, 3};
+        first = {-3.5f, 0, 3};
+        second = {-0.5f, 0, 3};
+        expected = 1;
+    }
+    SECTION("above-world coordinates share the clamped last cell") {
+        player = {129, 0, 3};
+        first = {128.25f, 0, 3};
+        second = {129.75f, 0, 3};
+        expected = 1;
+    }
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 1);
+    enemies.setContactGridBounds(minimum, maximum);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = first;
+    REQUIRE(enemies.spawn(spawn, {}) == 0);
+    spawn.position = second;
+    REQUIRE(enemies.spawn(spawn, {}) == 1);
+    player.y = enemyKind(kGruntKind).collisionHeight;
+    // A stationary segment projects every contact onto the same endpoint. The
+    // winner is therefore the first native grid entry, not the nearest centre.
+    CHECK(enemies.playerContact(player, player, 1.5f, 3) == expected);
+    const auto targets = enemies.targets();
+    REQUIRE(targets.size() == 2);
+    CHECK(targets[0].id == 0);
+    CHECK(targets[1].id == 1);
+}
+
+TEST_CASE("player swarm contact requires strict endpoint overlap and permits retreat",
+          "[enemies][alpha-contact-seed][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const f32 y = enemyKind(kGruntKind).collisionHeight;
+    constexpr f32 kWidth = 1.5f;
+    const f32 radius = kWidth + enemies.radiusOf(*id);
+    const f32 halfHeight = enemies.heightOf(*id) * 0.5f;
+    const auto stationary = [&](const Vec3& at) {
+        return enemies.playerContact(at, at, kWidth, 3);
+    };
+    CHECK(stationary({0, y, 0}) == id);
+    CHECK(stationary({radius - 0.01f, y, 0}) == id);
+    CHECK_FALSE(stationary({radius, y, 0}));
+    CHECK(stationary({0, y + halfHeight - 0.01f, 0}) == id);
+    CHECK_FALSE(stationary({0, y + halfHeight, 0}));
+    CHECK_FALSE(stationary({0, y - halfHeight, 0}));
+    CHECK(enemies.playerContact({-1, y, 0}, {-0.5f, y, 0}, kWidth, 3) == id);
+    CHECK_FALSE(enemies.playerContact({-1, y, 0}, {-1.5f, y, 0}, kWidth, 3));
+    CHECK_FALSE(enemies.playerContact({-10, y, 0}, {10, y, 0}, kWidth, 3));
+}
+
+TEST_CASE("player contact wall rejection follows the actor centres rather than a horizontal slice",
+          "[enemies][alpha-contact-seed][assets]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    CollisionTriangle floor;
+    floor.object = 0;
+    floor.vertices = {Vec3{-10, 0, -10}, Vec3{10, 0, -10}, Vec3{0, 0, 10}};
+    collision.build({floor});
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = {0.5f, 0, 0};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const f32 centreY = enemies.positionOf(*id).y + enemyKind(kGruntKind).collisionHeight;
+    const f32 rise = enemies.heightOf(*id) * 0.25f;
+    REQUIRE(rise > 0);
+    const Vec3 player{-0.5f, centreY + rise, 0};
+    REQUIRE(enemies.playerContact(player, player, 1.5f, 3) == id);
+    f32 wallY = centreY + rise * 0.5f;
+    bool obstructed = true;
+    SECTION("a wall intersecting the sloped segment blocks contact") {}
+    SECTION("a short wall at the starting height does not block a ray passing beneath it") {
+        wallY = player.y;
+        obstructed = false;
+    }
+    CollisionTriangle wall;
+    wall.object = 1;
+    wall.normal = {-1, 0, 0};
+    wall.vertices = {Vec3{0, wallY - rise * 0.1f, -1}, Vec3{0, wallY + rise * 0.1f, -1},
+                     Vec3{0, wallY, 1}};
+    collision.build({floor, wall});
+    const auto contact = enemies.playerContact(player, player, 1.5f, 3);
+    if (obstructed) {
+        CHECK_FALSE(contact);
+    } else {
+        CHECK(contact == id);
+    }
+}
+
 TEST_CASE("enemy rendering separates solid bodies from deferred ghost effects without repeats",
           "[enemies][enemy-render-passes][assets]") {
     const s32 kind = GENERATE(kGruntKind, 20, kDeathKind);

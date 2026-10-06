@@ -111,6 +111,101 @@ std::filesystem::path turboAssets() {
     return root;
 }
 
+TEST_CASE("touching a swarm enemy takes priority over a fresh barrel aim search",
+          "[game][player-attacks][alpha-contact-target]") {
+    Fixture f;
+    const auto root = turboAssets();
+    const auto directory = root / "PLAYERS/WAR/YEL";
+    writeTextFile(directory / "world.json", R"({"objects":[
+      {"name":"BODY","position":[-100,0,0]}],"itemInfos":[
+      {"type":10,"subtype":43,"name":"BARREL","radius":0.5,"height":3,
+       "collisionOffset":[0,1.5,0],"armor":0}],
+      "itemInstances":[{"info":0,"position":[0,0,1.2]}]})");
+    LevelRef level;
+    level.directory = "PLAYERS/WAR/YEL";
+    REQUIRE(f.world.load(f.device, root, level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    REQUIRE(f.fixtures.barrels().size() == 1);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = {2, 0, 1.5f};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const Vec3 enemyPoint = spawn.position + Vec3{0, 3, 0};
+    auto& actor = f.players[0].actor;
+    // The barrel wins a fresh weighted search. PlayerCollideItems supplies a
+    // touching enemy first; PlayerGetTarget accepts its wider 3D dot >= .5.
+    const auto aimed = f.attacks.aim(actor, actor.facing(), f.targets);
+    REQUIRE(aimed);
+    CHECK(*aimed == enemyPoint);
+    CHECK_FALSE(f.attacks.meleeSense(actor, true, f.targets).low);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
+    // Contact is not a lock: looking away rejects it, and a different floor
+    // cannot seed it merely because the horizontal footprints overlap.
+    CHECK_FALSE(f.attacks.aim(actor, {0, 0, -1}, f.targets));
+    actor.place({0, 10, 0});
+    CHECK_FALSE(f.attacks.aim(actor, actor.facing(), f.targets));
+    actor.place({0, 0, 0});
+    f.targets.players = f.players;
+    f.players[0].attackStep = PlayerRuntime::AttackStep{{1.5f, 2.5f, 1.0f}, actor.followPoint()};
+    // Backing away escapes an overlapping contact even if the endpoint still
+    // overlaps. The fresh search is then allowed to select the barrel.
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == Vec3{0, 2.5f, 1.2f});
+    f.players[0].attackStep.reset();
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == enemyPoint);
+    EnemyHit fatalHit{};
+    fatalHit.damage = 100000;
+    enemies.hurt(*id, fatalHit);
+    CHECK_FALSE(enemies.alive(*id));
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == Vec3{0, 2.5f, 1.2f});
+    enemies.close();
+}
+
+TEST_CASE("Death contact requires facing even when inside his radius",
+          "[game][player-attacks][alpha-contact-target]") {
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, test::deathArchive(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto death =
+        enemies.spawn({.kind = kDeathKind, .position = {0, 0, 10}, .placed = true}, {});
+    REQUIRE(death);
+    auto& actor = f.players[0].actor;
+    REQUIRE(enemies.targets().size() == 1); // physical/projectile targets are unaffected
+    actor.place({0, 0, 8});
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == Vec3{0, 3, 10});
+    CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Swing);
+    CHECK_FALSE(f.attacks.aim(actor, {0, 0, -1}, f.targets));
+    actor.place({0, 0.5f, 10.5f}); // inside his radius: unlike a grunt, facing still matters
+    CHECK_FALSE(f.attacks.aim(actor, actor.facing(), f.targets));
+    CHECK(f.attacks.aim(actor, {0, 0, -1}, f.targets) == Vec3{0, 3, 10});
+}
+
+TEST_CASE("contact melee retains the three-dimensional distance on different step heights",
+          "[game][player-attacks][alpha-contact-target]") {
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, turboAssets(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto enemy =
+        enemies.spawn({.kind = kGruntKind, .position = {0, 2.4f, 2.9f}, .placed = true}, {});
+    REQUIRE(enemy);
+    const auto& actor = f.players[0].actor;
+    const Vec3 centre = enemies.positionOf(*enemy) + Vec3{0, 3, 0};
+    REQUIRE(enemies.playerContact(actor.followPoint(), actor.followPoint(), actor.reach(),
+                                  actor.height() * 0.5f) == enemy);
+    REQUIRE(glm::distance(centre, actor.followPoint()) - enemies.radiusOf(*enemy) >
+            actor.reach() + PlayerAttacks::kSwingReach);
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets) == centre);
+    CHECK(f.attacks.meleeSense(actor, false, f.targets).range == MeleeRange::Step);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Swing);
+}
+
 TEST_CASE("weapon modes route player hits through health with shared contact immunity",
           "[game][screens][player-attacks][multiplayer-combat]") {
     const auto mode =

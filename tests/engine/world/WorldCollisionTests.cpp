@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -61,6 +62,97 @@ TEST_CASE("the floor under a point is found within the probe range", "[world][co
     REQUIRE_FALSE(collision.floorAt(Vec3{30.0f, 1.0f, 0.0f}, 2.0f, 3.0f).has_value());
     // Walls are never floors, even straight above their edge.
     REQUIRE(collision.floorAt(Vec3{5.0f, 1.0f, 0.0f}, 2.0f, 3.0f)->y == Approx(0.0f));
+}
+
+TEST_CASE("wall rays follow the finite three-dimensional segment and stored front side",
+          "[world][collision][wall-ray][alpha-contact-seed]") {
+    WorldCollision collision;
+    collision.build(room());
+    CHECK(collision.wallBetween({4, -1, 0}, {6, 3, 0}));
+    CHECK_FALSE(collision.wallBetween({4, 2, 0}, {6, 6, 0}));
+    CHECK_FALSE(collision.wallBetween({4, 1, 0}, {4.9f, 1, 0}));
+    CHECK_FALSE(collision.wallBetween({4, 1, 11}, {6, 1, 11}));
+    CHECK(collision.wallBetween({4, 1, 0}, {5, 1, 0}));
+    CHECK(collision.wallBetween({5, 1, 0}, {6, 1, 0}));
+    CHECK_FALSE(collision.wallBetween({6, 1, 0}, {4, 1, 0}));
+    CHECK_FALSE(collision.wallBetween({5, 1, 0}, {4, 1, 0}));
+    CHECK(collision.wallBetween({5, 1, 0}, {5, 1, 0}));
+    CHECK_FALSE(collision.wallBetween({5, 4, 0}, {5, 4, 0}));
+    // Coplanar movement does not acquire a later intersection along the plane.
+    CHECK_FALSE(collision.wallBetween({5, 4, 0}, {5, 1, 0}));
+    CHECK_FALSE(collision.wallBetween({0, 1, 0}, {0, -1, 0}));
+    // Cursor picking remains two-sided and still includes the floor.
+    CHECK(collision.pickSurface({6, 1, 0}, {4, 1, 0}));
+    CHECK(collision.pickSurface({0, 1, 0}, {0, -1, 0}));
+}
+
+TEST_CASE("wall rays apply the native mask slope window and unfiltered-object exception",
+          "[world][collision][wall-ray][alpha-contact-seed]") {
+    WorldCollision collision;
+    for (const f32 y : std::array{-0.9f, -0.866f, -0.6f, 0.0f, 0.6f, 0.866f, 0.9f}) {
+        CAPTURE(y);
+        const Vec3 normal{-std::sqrt(1 - y * y), y, 0};
+        const Vec3 along = Vec3{normal.y, -normal.x, 0} * 10.0f;
+        auto surface =
+            triangle(-along + Vec3{0, 0, -10}, along + Vec3{0, 0, -10}, {0, 0, 10}, normal);
+        collision.build({surface});
+        CHECK(collision.wallBetween(normal, -normal) == (std::abs(y) <= 0.866f));
+        surface.objectFlags |= 0x40;
+        collision.build({surface});
+        CHECK(collision.wallBetween(normal, -normal));
+        CHECK_FALSE(collision.wallBetween(-normal, normal));
+        surface.objectFlags = 0x40; // bypassing the slope window does not bypass the query mask
+        collision.build({surface});
+        CHECK_FALSE(collision.wallBetween(normal, -normal));
+        surface.objectFlags = WorldCollision::kWallQueryFlags | WorldCollision::kLiquidSurface;
+        collision.build({surface});
+        CHECK_FALSE(collision.wallBetween(normal, -normal));
+    }
+    auto horizontal = triangle({-2, 0, -2}, {2, 0, -2}, {0, 0, 2}, {0, 1, 0});
+    horizontal.objectFlags = 0x42;
+    collision.build({horizontal});
+    CHECK(collision.wallBetween({0, 1, 0}, {0, -1, 0}));
+    CHECK_FALSE(collision.wallBetween({0, -1, 0}, {0, 1, 0}));
+    collision.build({triangle({5, 0, 0}, {5, 1, 0}, {5, 2, 0}, {-1, 0, 0})});
+    CHECK_FALSE(collision.wallBetween({4, 1, 0}, {6, 1, 0}));
+}
+
+TEST_CASE("wall rays follow moving geometry and current solid contact policy",
+          "[world][collision][wall-ray][alpha-contact-seed]") {
+    WorldCollision collision;
+    collision.build(room());
+    collision.setMovingObjects(std::array<s32, 1>{1});
+    collision.setObjectTransform(1, glm::translate(Mat4{1}, Vec3{3, 4, 0}));
+    CHECK_FALSE(collision.wallBetween({4, 1, 0}, {6, 1, 0}));
+    CHECK(collision.wallBetween({7, 5, 0}, {9, 5, 0}));
+    CHECK_FALSE(collision.wallBetween({7, 1, 0}, {9, 1, 0}));
+    collision.setContactOnly(1, true);
+    CHECK_FALSE(collision.wallBetween({7, 5, 0}, {9, 5, 0}));
+    collision.setContactOnly(1, false);
+    CHECK(collision.wallBetween({7, 5, 0}, {9, 5, 0}));
+    collision.setSolid(1, false);
+    CHECK_FALSE(collision.wallBetween({7, 5, 0}, {9, 5, 0}));
+    collision.setSolid(1, true);
+    CHECK(collision.wallBetween({7, 5, 0}, {9, 5, 0}));
+}
+
+TEST_CASE("wall ray slope filtering uses a moving object's authored local normals",
+          "[world][collision][wall-ray][alpha-contact-seed]") {
+    WorldCollision collision;
+    collision.build(room());
+    const Mat4 rotation = glm::rotate(Mat4{1}, kPi * 0.5f, Vec3{0, 0, 1});
+    SECTION("a rotated wall still participates when its world normal points downward") {
+        collision.setMovingObjects(std::array<s32, 1>{1});
+        collision.setObjectTransform(1, rotation);
+        CHECK(collision.wallBetween({-1.5f, 4, 0}, {-1.5f, 6, 0}));
+        CHECK_FALSE(collision.wallBetween({-1.5f, 6, 0}, {-1.5f, 4, 0}));
+    }
+    SECTION("a rotated floor does not become a wall-query surface") {
+        collision.setMovingObjects(std::array<s32, 1>{0});
+        collision.setObjectTransform(0, rotation);
+        CHECK_FALSE(collision.wallBetween({-1, 1, 0}, {1, 1, 0}));
+        CHECK(collision.pickSurface({-1, 1, 0}, {1, 1, 0}));
+    }
 }
 
 TEST_CASE("hazard contact covers caps slopes and the full body height without blocking",
