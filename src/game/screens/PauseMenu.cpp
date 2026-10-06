@@ -309,11 +309,16 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
 bool PauseMenu::musicAudible() const {
     return m_open && m_page == Page::Options && m_settings.page() == SettingsMenu::Page::Audio;
 }
+void PauseMenu::prepare(RenderDevice& device) {
+    if (m_open) {
+        m_fire.prepare(device);
+    }
+}
+
 void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height) {
     if (!m_open) {
         return;
     }
-    m_fire.prepare(device);
     const auto virtualWidth = static_cast<f32>(m_screen.width);
     const auto virtualHeight = static_cast<f32>(m_screen.height);
     m_pointerTransform =

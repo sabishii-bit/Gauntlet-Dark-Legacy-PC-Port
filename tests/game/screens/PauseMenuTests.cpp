@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <array>
+#include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/app/Application.h"
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
@@ -16,6 +18,99 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Exercises the overlay above an already drawn background on the real Vulkan device. */
+class PauseDismissalApplication final : public Application {
+public:
+    PauseDismissalApplication(ApplicationDesc desc, const std::filesystem::path& root)
+        : Application(std::move(desc)) {
+        m_context.config = &m_config;
+        m_context.unpackedRoot = root;
+    }
+    s32 completions() const { return m_completions; }
+
+protected:
+    void onInit() override { REQUIRE(m_menu.open(renderDevice(), m_context, m_party, 0)); }
+    void onUpdate(f64 /*seconds*/) override {
+        // One authored tick per presented frame gives every cutout an upload,
+        // independently of shader compilation or asset-loading time in this probe.
+        MenuInput leave;
+        leave.start = m_framesInMenu == 2 && m_completions == 0;
+        leave.back = m_framesInMenu == 2 && m_completions == 1;
+        if (m_menu.update(1.0 / 60, leave) == PauseOutcome::Resume) {
+            ++m_completions;
+            m_menu.close();
+            if (m_completions == 2) {
+                requestQuit();
+            } else {
+                REQUIRE(m_menu.open(renderDevice(), m_context, m_party, 0));
+                m_framesInMenu = 0;
+            }
+        }
+    }
+    void onRender(RenderDevice& device) override {
+        const Mat4 projection = makeScreenProjection(640, 448);
+        m_menu.prepare(device);
+        m_background.begin(device, projection);
+        m_background.fill(Rect{0, 0, 640, 448}, Color::rgba(40, 70, 40));
+        m_background.end();
+        m_menu.render(device, projection, 640, 448);
+        ++m_framesInMenu;
+    }
+    void onShutdown() override { m_menu.close(); }
+
+private:
+    const GameConfig m_config;
+    GameContext m_context;
+    const std::array<PartyMember, 1> m_party{};
+    PauseMenu m_menu;
+    Canvas m_background;
+    s32 m_framesInMenu = 0;
+    s32 m_completions = 0;
+};
+
+TEST_CASE("Vulkan can render and reopen the pause dismissal over a populated frame",
+          "[gpu][pause][pause-upload-order][assets]") {
+    const auto root = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    ApplicationDesc desc;
+    desc.window.title = "GDL pause dismissal regression";
+    desc.window.width = 640;
+    desc.window.height = 448;
+    desc.assetDirectory = root;
+    desc.maxFrameRate = 60;
+    desc.maxFrames = 120;
+    PauseDismissalApplication app(std::move(desc), root);
+    REQUIRE(app.run() == 0);
+    CHECK(app.completions() == 2);
+}
+
+TEST_CASE("pause dismissal never uploads texture pixels after the background is drawn",
+          "[pause][pause-dismiss][pause-upload-order][assets]") {
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    MenuInput back;
+    back.back = true;
+    REQUIRE(menu.update(0, back) == PauseOutcome::Running);
+    REQUIRE(device.beginFrame());
+    menu.prepare(device);
+    REQUIRE(device.textureUpdates == 1);
+    const auto uploads = device.textureUpdates;
+    Canvas background;
+    background.begin(device, Mat4{1});
+    background.fillScreen(Color::black());
+    background.end();
+    REQUIRE_FALSE(device.draws.empty());
+    menu.render(device, Mat4{1}, 640, 448);
+    CHECK(device.textureUpdates == uploads);
+    device.endFrame();
+}
+
 TEST_CASE("resuming waits for the native acid scroll and blocks all menu input during it",
           "[pause][pause-dismiss][assets]") {
     const bool useStart = GENERATE(false, true);
@@ -51,7 +146,12 @@ TEST_CASE("resuming waits for the native acid scroll and blocks all menu input d
     for (u32 tick = 0; tick < 42; ++tick) {
         CAPTURE(tick);
         device.draws.clear();
+        REQUIRE(device.beginFrame());
+        menu.prepare(device);
+        const auto uploads = device.textureUpdates;
         menu.render(device, projection, 640, 448);
+        CHECK(device.textureUpdates == uploads);
+        device.endFrame();
         const auto& expected = reference.image(*ring + 1 + tick / 2);
         const auto found = std::ranges::find_if(device.draws, [&](const auto& draw) {
             const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
@@ -72,7 +172,10 @@ TEST_CASE("resuming waits for the native acid scroll and blocks all menu input d
     CHECK(menu.update(0, {}) == PauseOutcome::Running);
     // Teardown is also legal before the wipe ends; reopened menus must not retain its borrows.
     REQUIRE(menu.update(0, leave) == PauseOutcome::Running);
+    REQUIRE(device.beginFrame());
+    menu.prepare(device);
     menu.render(device, projection, 640, 448);
+    device.endFrame();
     const auto uploads = device.textureUpdates;
     menu.close();
     REQUIRE(menu.open(device, context, party, 0));

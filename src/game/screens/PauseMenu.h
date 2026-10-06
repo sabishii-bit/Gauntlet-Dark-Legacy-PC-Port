@@ -34,6 +34,8 @@ public:
     /** Whether the music plays on under the menu: only on the Audio page, so that its
      * slider can be heard (options.c 984); every other page ducks it (813). */
     bool musicAudible() const;
+    /** Upload the dismissal mask after beginFrame, before the background's first draw. */
+    void prepare(RenderDevice& device);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
     const OptionMenu& menu() const { return m_menu; }
     bool arrowBound() const { return m_arrow.bound(); }

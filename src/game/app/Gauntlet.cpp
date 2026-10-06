@@ -931,6 +931,9 @@ void Gauntlet::onRender(RenderDevice& device) {
         return;
     }
     if (m_play->scene.isOpen()) {
+        // Texture transfers must precede all drawing, including the world behind
+        // an overlay. The acid dismissal changes the pause parchment each frame.
+        m_pause.prepare(device);
         m_play->scene.render(device, projection, frameWidth, frameHeight, m_pause.isOpen(),
                              presentationAlpha());
         if (m_pause.isOpen()) {
