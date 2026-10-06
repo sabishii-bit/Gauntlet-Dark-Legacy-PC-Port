@@ -20,7 +20,7 @@ target_include_directories(gdlunpack SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 gdl_apply_compiler_options(gdlunpack)
 
 find_package(nlohmann_json CONFIG REQUIRED)
-add_executable(assetcheck assetcheck/main.cpp)
+add_executable(assetcheck assetcheck/main.cpp assetcheck/DataAudit.cpp)
 target_link_libraries(assetcheck PRIVATE gdl::game nlohmann_json::nlohmann_json)
 gdl_apply_compiler_options(assetcheck)
 

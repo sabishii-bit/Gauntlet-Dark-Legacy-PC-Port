@@ -4,6 +4,7 @@
     python scripts/asset_audit.py --verify
     python scripts/asset_audit.py --archive MONSTERS/DEM --lender LEVELS/LEVELB4
     python scripts/asset_audit.py --levels
+    python scripts/asset_audit.py --data
 
 Builds the selected preset. The default scan eagerly decodes the corpus but does
 not invent cross-archive load contexts. --verify additionally runs the native
@@ -11,6 +12,7 @@ behavior regressions and rejects skipped/empty runs. Reports remain under build/
 they are not game inputs or independent evidence of retail parity.
 """
 import argparse
+from collections import Counter
 import json
 import os
 import pathlib
@@ -24,14 +26,24 @@ import devenv
 FILTER = ("[asset-conformance],[generator-lava],[g3-fountain],[g4-ghost-fence],"
           "[particle-attachment],[enemy-render-passes],[native-assets]~[unpacked]")
 
-def require_complete_scan(report: pathlib.Path) -> None:
+DATA_KINDS = {"animation", "sound_bank", "audio_directory", "player_wad",
+              "world_wad", "critter_wad", "shop_wad", "text"}
+
+
+def require_complete_scan(report: pathlib.Path, *, native_data: bool = False) -> None:
     """A successful process must supply current, nonempty machine-readable evidence."""
     result = json.loads(report.read_text(encoding="utf-8"))
     if (not isinstance(result, dict) or result.get("schema") != 1
             or not isinstance(result.get("archives"), list) or not result["archives"]
             or result.get("errors") != 0):
         raise ValueError("Native archive scan was empty, incomplete or reported errors")
-
+    if native_data:
+        if not all(isinstance(archive, dict) and isinstance(archive.get("kind"), str)
+                   for archive in result["archives"]):
+            raise ValueError("Native data scan contains invalid file records")
+        observed = Counter(archive.get("kind") for archive in result["archives"])
+        if set(observed) != DATA_KINDS or dict(observed) != result.get("kinds"):
+            raise ValueError("Native data scan did not cover all required file families")
 
 
 def require_complete_tests(report: pathlib.Path) -> None:
@@ -58,6 +70,7 @@ def main() -> int:
     parser.add_argument("--assets", type=pathlib.Path)
     parser.add_argument("--archive", help="one archive relative to the native root")
     parser.add_argument("--levels", action="store_true", help="strict catalogued level contexts; known retail omissions remain findings")
+    parser.add_argument("--data", action="store_true", help="native animations, WAD, ROM and lazy sound samples")
     parser.add_argument("--lender", action="append", default=[], help="relative lender, in runtime lookup order")
     parser.add_argument("--verify", action="store_true", help="also require non-skipped native behavior tests")
     args = parser.parse_args()
@@ -68,6 +81,8 @@ def main() -> int:
         parser.error("--lender requires --archive; a corpus has no single load context")
     if args.levels and (args.archive or args.verify):
         parser.error("--levels is a separate strict context report, not --archive or --verify")
+    if args.data and (args.archive or args.levels or args.verify):
+        parser.error("--data is a separate report; --verify already includes it")
     if args.verify and args.archive:
         parser.error("--verify requires the full corpus, not a selected archive")
     binary = devenv.ROOT / "build" / presets[args.preset]
@@ -83,11 +98,15 @@ def main() -> int:
             devenv.run(["cmake", "--preset", presets[args.preset],
                        f"-DGDL_ASSET_DIR={assets}"])
         devenv.run([sys.executable, str(devenv.ROOT / "scripts/build.py"), args.preset])
-        report = binary / ("level-asset-audit.json" if args.levels else "asset-audit.json")
+        report_name = ("level-asset-audit.json" if args.levels else
+                       "native-data-audit.json" if args.data else "asset-audit.json")
+        report = binary / report_name
         report.unlink(missing_ok=True)
         command = [str(binary / "bin" / f"assetcheck{build.EXE}"), str(archive), "--report", str(report)]
         if args.levels:
             command += ["--levels"]
+        elif args.data:
+            command += ["--data"]
         elif not args.archive:
             command += ["--recursive", "--decode-only"]
         for lender in lenders:
@@ -96,8 +115,17 @@ def main() -> int:
         print(f"Audit report: {report}")
         if scanned.returncode:
             return scanned.returncode
-        require_complete_scan(report)
+        require_complete_scan(report, native_data=args.data)
         if args.verify:
+            data_report = binary / "native-data-audit.json"
+            data_report.unlink(missing_ok=True)
+            checked_data = subprocess.run(
+                [str(binary / "bin" / f"assetcheck{build.EXE}"), str(assets),
+                 "--data", "--report", str(data_report)], cwd=devenv.ROOT, check=False)
+            print(f"Native data report: {data_report}")
+            if checked_data.returncode:
+                return checked_data.returncode
+            require_complete_scan(data_report, native_data=True)
             tests_report = binary / "asset-conformance.xml"
             tests_report.unlink(missing_ok=True)
             checked = subprocess.run([str(binary / "bin" / f"tests{build.EXE}"), FILTER,

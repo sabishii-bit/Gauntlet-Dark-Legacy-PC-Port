@@ -17,6 +17,7 @@
 #include "engine/io/File.h"
 #include "engine/world/AssetAudit.h"
 
+#include "DataAudit.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelItemArchives.h"
 
@@ -38,11 +39,14 @@ int run(std::span<char*> args) {
         std::puts("assetcheck DIRECTORY [--lender DIRECTORY]... [--recursive --decode-only] "
                   "[--report FILE]\n"
                   "assetcheck GAME_ROOT --levels [--report FILE]\n"
+                  "assetcheck GAME_ROOT --data [--report FILE]\n"
                   "A single archive checks dependencies in the supplied lender order.\n"
                   "Recursive decode-only mode inventories native archives; it does not certify "
                   "bindings.\n"
                   "--levels checks catalogued level geometry using the runtime's item lenders; "
                   "known absent retail particle templates remain explicit findings.\n"
+                  "--data checks all native ANIM, WAD, ROM and VBK files, including standalone "
+                  "player action archives and lazy audio samples.\n"
                   "No assets are changed or exported. Exit 1 means findings; 2 means invalid "
                   "invocation.");
         return args.size() < 2 ? 2 : 0;
@@ -53,6 +57,7 @@ int run(std::span<char*> args) {
     bool recursive = false;
     bool decodeOnly = false;
     bool levels = false;
+    bool data = false;
     for (usize i = 2; i < args.size(); ++i) {
         const std::string_view arg(args[i]);
         if (arg == "--recursive") {
@@ -61,6 +66,8 @@ int run(std::span<char*> args) {
             decodeOnly = true;
         } else if (arg == "--levels") {
             levels = true;
+        } else if (arg == "--data") {
+            data = true;
         } else if ((arg == "--lender" || arg == "--report") && i + 1 < args.size()) {
             const std::filesystem::path value(args[++i]);
             if (arg == "--report") {
@@ -74,11 +81,15 @@ int run(std::span<char*> args) {
         }
     }
     if (!std::filesystem::is_directory(root) || (recursive && !decodeOnly) ||
-        (levels && (recursive || decodeOnly || !lenderPaths.empty()))) {
+        ((levels || data) && (recursive || decodeOnly || !lenderPaths.empty())) ||
+        (levels && data)) {
         std::fputs("Supply an existing directory; recursive mode requires --decode-only; "
-                   "--levels supplies its own contexts and cannot combine other modes.\n",
+                   "--levels and --data cannot combine other modes.\n",
                    stderr);
         return 2;
+    }
+    if (data) {
+        return runDataAudit(root, report);
     }
     std::vector<TextureSet> sets(lenderPaths.size());
     std::vector<TextureSet*> lenders;

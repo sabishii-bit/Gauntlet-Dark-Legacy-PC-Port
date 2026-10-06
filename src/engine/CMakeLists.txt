@@ -160,6 +160,8 @@ add_library(engine STATIC
     world/TreeParticles.cpp
     world/AssetAudit.h
     world/AssetAudit.cpp
+    assets/NativeDataAudit.h
+    assets/NativeDataAudit.cpp
     world/WorldCollision.h
     world/WorldCollision.cpp
     world/TreeModel.h

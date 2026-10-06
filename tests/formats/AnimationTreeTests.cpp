@@ -116,6 +116,22 @@ TEST_CASE("declared animation and particle tables cannot silently disappear when
     }
 }
 
+TEST_CASE("a declared sequence texture range cannot silently become no effects",
+          "[formats][animation][asset-conformance]") {
+    auto bytes = sampleFile();
+    constexpr usize kSequence = kTreeAt + kSequencesAt;
+    bytes[kSequence + 40] = 1; // one effect, but the file has no texture animation table
+    REQUIRE_THROWS_AS(AnimationFile::parse(bytes), FormatError);
+    // A large positive first index must fail without overflowing first + count.
+    bytes[kSequence + 44] = 0xFF;
+    bytes[kSequence + 45] = 0xFF;
+    bytes[kSequence + 46] = 0xFF;
+    bytes[kSequence + 47] = 0x7F;
+    REQUIRE_THROWS_AS(AnimationFile::parse(bytes), FormatError);
+    bytes[kSequence + 40] = 0; // zero count does not dereference the unused first field
+    CHECK(AnimationFile::parse(bytes).trees[0].sequences[0].textureAnimationCount == 0);
+}
+
 TEST_CASE("animation trees decode each node's keys, plain or compressed", "[formats][animation]") {
     const AnimationFile file = AnimationFile::parse(sampleFile());
     const TreeSequence& sequence = file.trees[0].sequences[0];

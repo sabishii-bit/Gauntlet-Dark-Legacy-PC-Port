@@ -240,7 +240,12 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
             const auto texmods = static_cast<s16>(readU16LE(file, at + 40));
             const s32 first = readS32LE(file, at + 44);
             const auto listed = static_cast<s32>(out.textureAnimations.size());
-            if (texmods > 0 && first >= 0 && first + texmods <= listed) {
+            if (texmods > 0) {
+                if (first < 0 || first > listed || texmods > listed - first) {
+                    throw FormatError(std::format(
+                        "animation tree {} sequence {} texture animation range is out of bounds",
+                        tree.name, sequence.name));
+                }
                 sequence.textureAnimationStart = first;
                 sequence.textureAnimationCount = texmods;
             }

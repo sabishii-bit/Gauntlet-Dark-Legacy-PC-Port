@@ -12,6 +12,72 @@ import asset_audit
 
 
 class AssetAuditTests(unittest.TestCase):
+    def test_data_mode_runs_the_separate_scan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory).resolve()
+            binary = root / "build/test-preset"
+            binary.mkdir(parents=True)
+
+            def fake_scan(command, **kwargs):
+                report = pathlib.Path(command[command.index("--report") + 1])
+                self.assertEqual(report, binary / "native-data-audit.json")
+                report.write_text(json.dumps({
+                    "schema": 1, "errors": 0,
+                    "archives": [{"kind": kind} for kind in asset_audit.DATA_KINDS],
+                    "kinds": dict.fromkeys(asset_audit.DATA_KINDS, 1)}), encoding="utf-8")
+                return CompletedProcess(command, 0)
+
+            with mock.patch.object(asset_audit.devenv, "ROOT", root), \
+                    mock.patch.object(asset_audit.build, "build_presets", return_value={"test-preset": "test-preset"}), \
+                    mock.patch.object(asset_audit.devenv, "run"), \
+                    mock.patch.object(asset_audit.subprocess, "run", side_effect=fake_scan) as run, \
+                    mock.patch.object(sys, "argv", ["asset_audit.py", "test-preset", "--assets", str(root), "--data"]):
+                self.assertEqual(asset_audit.main(), 0)
+                self.assertIn("--data", run.call_args.args[0])
+                self.assertNotIn("--recursive", run.call_args.args[0])
+
+    def test_data_scan_requires_each_family_and_consistent_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = pathlib.Path(directory) / "audit.json"
+            complete = {"schema": 1, "errors": 0,
+                        "archives": [{"kind": kind} for kind in sorted(asset_audit.DATA_KINDS)],
+                        "kinds": dict.fromkeys(asset_audit.DATA_KINDS, 1)}
+            report.write_text(json.dumps(complete), encoding="utf-8")
+            asset_audit.require_complete_scan(report, native_data=True)
+            complete["archives"].pop()
+            report.write_text(json.dumps(complete), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                asset_audit.require_complete_scan(report, native_data=True)
+            complete["archives"] = [None]
+            report.write_text(json.dumps(complete), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                asset_audit.require_complete_scan(report, native_data=True)
+
+    def test_verify_requires_data_scan_before_behavior_tests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory).resolve()
+            binary = root / "build/test-preset"
+            binary.mkdir(parents=True)
+            data_report = binary / "native-data-audit.json"
+            data_report.write_text("stale", encoding="utf-8")
+
+            def fake_scan(command, **kwargs):
+                if "--data" in command:
+                    self.assertFalse(data_report.exists())
+                    return CompletedProcess(command, 1)
+                (binary / "asset-audit.json").write_text(
+                    '{"schema":1,"archives":[{}],"errors":0}', encoding="utf-8")
+                return CompletedProcess(command, 0)
+
+            with mock.patch.object(asset_audit.devenv, "ROOT", root), \
+                    mock.patch.object(asset_audit.build, "build_presets", return_value={"test-preset": "test-preset"}), \
+                    mock.patch.object(asset_audit.devenv, "run"), \
+                    mock.patch.object(asset_audit.subprocess, "run", side_effect=fake_scan) as run, \
+                    mock.patch.object(sys, "argv", ["asset_audit.py", "test-preset", "--assets", str(root), "--verify"]):
+                self.assertEqual(asset_audit.main(), 1)
+                self.assertEqual(run.call_count, 2)
+                self.assertIn("--data", run.call_args.args[0])
+
     def test_scan_requires_current_nonempty_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             report = pathlib.Path(directory) / "audit.json"
