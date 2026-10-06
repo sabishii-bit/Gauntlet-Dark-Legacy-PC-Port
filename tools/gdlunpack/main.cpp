@@ -1209,6 +1209,7 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("kind").value(enemy.kind);
         json.key("subtype").value(enemy.subtype);
         json.key("stream").value(enemy.stream);
+        json.key("form").value(enemy.form);
         json.endObject();
     }
     json.endArray();

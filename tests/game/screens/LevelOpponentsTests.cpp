@@ -11,6 +11,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/audio/AudioMixer.h"
+#include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/SampleLevel.h"
@@ -168,6 +169,54 @@ TEST_CASE("the live Dragon encounter borrows its death skin from the stage textu
     }
     CHECK(seen);
     opponents.close(); // release the borrowers before the stage's GPU textures
+}
+
+TEST_CASE("live level rosters select the gargoyle form for statues actors and death rewards",
+          "[native-assets][combatant-bindings][level-opponents][assets]") {
+    const auto root = test::assetOrSkip("WDATA/MOUNT.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    for (const auto* name : {"A1", "B1", "C1", "G1"}) {
+        CAPTURE(name);
+        const auto ref = catalog.byName(name);
+        REQUIRE(ref);
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *ref));
+        REQUIRE(world.level() != nullptr);
+        const auto& roster = world.level()->enemies;
+        const auto entry = std::ranges::find(roster, kGargoyleEnemyKind, &LevelEnemy::kind);
+        REQUIRE(entry != roster.end());
+        REQUIRE_FALSE(entry->form.empty());
+        ItemArchive weapons;
+        EffectTrees effects;
+        LevelSoundscape audio;
+        LevelOpponents opponents;
+        opponents.open({device, world, weapons, effects, audio, root, 1}, {});
+        auto& population = opponents.critters();
+        ItemArchive* statueArchive = population.archiveFor(CombatantKind::Gargoyle);
+        REQUIRE(statueArchive != nullptr);
+        const auto id = population.spawnGargoyle({}, 0);
+        REQUIRE(id);
+        CHECK(population.archiveOf(*id) == statueArchive);
+        const std::string form = population.formOf(*id);
+        const std::string expected = normalizeAssetName(entry->form);
+        CHECK(form == expected);
+        REQUIRE(population.dataOf(*id) != nullptr);
+        CHECK(population.dataOf(*id)->name() == "GAR_" + expected);
+        EnemyHit hit;
+        hit.damage = 1000000;
+        REQUIRE(population.hurt(*id, hit) > 0);
+        bool killed = false;
+        for (const auto& loss : population.takeLosses()) {
+            if (loss.critter == *id && loss.killed) {
+                CHECK(loss.form == expected);
+                killed = true;
+            }
+        }
+        CHECK(killed);
+        opponents.close();
+    }
 }
 
 TEST_CASE("courtyard grunts approach the entrance player", "[courtyard-grunt][assets]") {
@@ -1426,7 +1475,7 @@ TEST_CASE("B1 gargoyle wakes on actual player approach before physical contact",
     CHECK(players[0].actor.position() == approached);
 }
 
-TEST_CASE("B1 gargoyle reveals its eagle piece only after its sack lands and opens",
+TEST_CASE("B1 gargoyle reveals its serpent piece only after its sack lands and opens",
           "[level-opponents][carried][gargoyle-loot][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELB1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -1485,7 +1534,7 @@ TEST_CASE("B1 gargoyle reveals its eagle piece only after its sack lands and ope
     REQUIRE(landed);
     REQUIRE(world.placedItems().size() == originalCount + 1);
     const auto& reward = world.placedItems().item(originalCount);
-    REQUIRE(reward.name == "GARGEAGL");
+    REQUIRE(reward.name == "GARGSERP");
     REQUIRE(reward.takeable());
     const auto landedOn = world.collision().floorAt(reward.position, 2, 10);
     REQUIRE(landedOn.has_value());

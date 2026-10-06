@@ -141,11 +141,12 @@ struct SoundRecord {
 
 /** A realm's data wad: the levels of one world and the records they share. */
 /** One kind of enemy a realm keeps: which, of what class (1 small, 2 medium, 3 large, 4 the
- * medium's second row, 5 a critter, 9 the boss), and its sound stream. */
+ * medium's second row, 5 a critter, 9 the boss), audio alias and model form. */
 struct WorldEnemyRecord {
     s32 kind = -1;
     s32 subtype = 0;
     std::string stream;
+    std::string form; ///< independent eight-byte name; gargoyles use eagl/lion/serp
 };
 
 struct WorldDataFile {

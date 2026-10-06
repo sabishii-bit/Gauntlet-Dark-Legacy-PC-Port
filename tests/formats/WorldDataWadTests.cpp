@@ -188,6 +188,27 @@ TEST_CASE("a wad directory lists its sections with their tags the right way roun
     REQUIRE_THROWS_AS(readWadDirectory(bad, "sample"), FormatError);
 }
 
+TEST_CASE("enemy roster audio and model names occupy separate eight-byte fields",
+          "[formats][wad][asset-conformance]") {
+    // Deliberately omit a zero terminator from the audio alias: it must not eat
+    // the following form. init_next_level reads that second field at +0x10.
+    ByteWriter writer;
+    constexpr u32 kRecord = 16;
+    constexpr u32 kWorld = kRecord + WorldDataFile::kEnemySize;
+    constexpr u32 kDirectory = kWorld + 20;
+    writer.putU32(kDirectory).putU32(2).putZeros(8);
+    writer.putU32(32).putU32(5).putText("ABCDEFGH").putText("serp").putZeros(4);
+    writer.putU32(2).putText("levelB").putZeros(10);
+    writer.putText("YMNE").putU32(kRecord).putU32(1).putU32(1);
+    writer.putText("DLRW").putU32(kWorld).putU32(1).putU32(1);
+    const auto data = WorldDataFile::parse(writer.bytes());
+    REQUIRE(data.enemies.size() == 1);
+    CHECK(data.enemies[0].kind == 32);
+    CHECK(data.enemies[0].subtype == 5);
+    CHECK(data.enemies[0].stream == "ABCDEFGH");
+    CHECK(data.enemies[0].form == "serp");
+}
+
 TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds",
           "[formats][wad][world]") {
     const WorldDataFile data = WorldDataFile::parse(sampleWad());

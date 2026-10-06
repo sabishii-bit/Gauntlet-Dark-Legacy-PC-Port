@@ -14,6 +14,7 @@ namespace {
 constexpr std::string_view kWhat = "world data wad";
 constexpr usize kNameSize = 4;
 constexpr usize kTextSize = 16;
+constexpr usize kEnemyNameSize = 8;
 constexpr usize kFogOffset = 0x70;
 
 s16 readS16(std::span<const u8> bytes, usize at) {
@@ -166,7 +167,8 @@ WorldDataFile WorldDataFile::parse(std::span<const u8> bytes) {
             WorldEnemyRecord enemy;
             enemy.kind = static_cast<s32>(readWadU32(bytes, at, kWhat));
             enemy.subtype = static_cast<s32>(readWadU32(bytes, at + 4, kWhat));
-            enemy.stream = readWadText(bytes, at + 8, kTextSize, kWhat);
+            enemy.stream = readWadText(bytes, at + 8, kEnemyNameSize, kWhat);
+            enemy.form = readWadText(bytes, at + 16, kEnemyNameSize, kWhat);
             out.enemies.push_back(enemy);
         }
     }

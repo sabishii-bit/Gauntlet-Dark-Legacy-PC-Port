@@ -7,6 +7,9 @@ namespace gdl::game {
 CombatantDefinition Gargoyle::definition(std::string_view form) {
     CombatantDefinition out;
     out.name = form.empty() ? "GAR_EAGL" : normalizeAssetName(form);
+    if (!out.name.starts_with("GAR_")) {
+        out.name.insert(0, "GAR_");
+    }
     out.kind = CombatantKind::Gargoyle;
     out.breaksItems = true;
     const auto underscore = out.name.find('_');

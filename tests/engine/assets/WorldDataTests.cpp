@@ -38,7 +38,7 @@ TEST_CASE("level enemy rosters preserve audio aliases separately from model kind
           "[world-data][enemy-feedback]") {
     const auto dir = test::scratchDirectory("world-enemy-audio");
     writeTextFile(dir / "world.json", R"({
-      "enemies": [{"kind":13,"subtype":12,"stream":"EGRUNT"},
+      "enemies": [{"kind":13,"subtype":12,"stream":"EGRUNT","form":"egr"},
                   {"kind":16,"subtype":12}],
       "levels": [{"name":"E1","enemyTypes":[1,0,-1]}]
     })");
@@ -49,9 +49,11 @@ TEST_CASE("level enemy rosters preserve audio aliases separately from model kind
     REQUIRE(level->enemies.size() == 2);
     CHECK(level->enemies[0].kind == 16);
     CHECK(level->enemies[0].stream.empty());
+    CHECK(level->enemies[0].form.empty());
     CHECK(level->enemies[1].kind == 13);
     CHECK(level->enemies[1].subtype == 12);
     CHECK(level->enemies[1].stream == "EGRUNT");
+    CHECK(level->enemies[1].form == "egr");
 }
 
 std::filesystem::path sampleRealm(std::string_view name) {

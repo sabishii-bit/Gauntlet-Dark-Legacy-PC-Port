@@ -507,9 +507,16 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_enemies.setHazards(&world.hazards());
     m_enemies.setLookouts(LookoutRoute::of(world.layout().locators()));
     const std::string& levelName = world.ref().name;
+    const std::span<const LevelEnemy> roster = level != nullptr
+                                                   ? std::span<const LevelEnemy>(level->enemies)
+                                                   : std::span<const LevelEnemy>{};
+    // init_next_level's GAR_%s.WAD comes from ENMY +0x10, not its audio name.
+    const auto gargoyle = std::ranges::find(roster, kGargoyleEnemyKind, &LevelEnemy::kind);
+    const std::string_view gargoyleForm =
+        gargoyle != roster.end() ? std::string_view(gargoyle->form) : std::string_view{};
     const std::array creatureTextures{&world.textures()};
     m_critters.open(device, resources.root, &world.collision(), scales,
-                    levelName.empty() ? 'G' : levelName.front(), creatureTextures);
+                    levelName.empty() ? 'G' : levelName.front(), creatureTextures, gargoyleForm);
     m_critters.setHazards(&world.hazards());
     m_critters.setLookouts(LookoutRoute::of(world.layout().locators()));
     m_bosses.open(device, resources.root, &world.collision(), scales,
@@ -527,9 +534,6 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_critterExperienceOwed.fill(0.0f);
     const auto playerCount = static_cast<s32>(std::ranges::count_if(
         players, [](const PlayerRuntime& player) { return !player.departed; }));
-    const std::span<const LevelEnemy> roster = level != nullptr
-                                                   ? std::span<const LevelEnemy>(level->enemies)
-                                                   : std::span<const LevelEnemy>{};
     const std::array generatorTextures{&world.textures(), &world.items().textures,
                                        &world.realmItems().textures};
     m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, playerCount,

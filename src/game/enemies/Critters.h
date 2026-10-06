@@ -39,7 +39,7 @@ public:
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     void open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
               const WorldCollision* collision, const EnemyScales& scales, char realm,
-              std::span<TextureSet* const> textureLenders = {});
+              std::span<TextureSet* const> textureLenders = {}, std::string_view gargoyleForm = {});
     void close();
 
     /** The level's lookouts, for the kinds that walk a round of them (the generals). */
@@ -144,7 +144,7 @@ private:
     std::optional<s32> spawn(const CombatantDefinition& definition, const Vec3& position, f32 yaw,
                              f32 sight = 0.0f);
     CombatantAssets* stockFor(const CombatantDefinition& definition);
-    static CombatantDefinition definitionOf(CombatantKind kind, std::string_view form);
+    CombatantDefinition definitionOf(CombatantKind kind, std::string_view form) const;
     void collect(Combatant& actor);
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;
@@ -153,7 +153,8 @@ private:
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;
     char m_realm = 'G';
-    LookoutRoute m_lookouts; ///< the level's, borrowed by the generals' rounds
+    std::string m_gargoyleForm; ///< the level roster's form, shared by statues and live actors
+    LookoutRoute m_lookouts;    ///< the level's, borrowed by the generals' rounds
     std::vector<std::unique_ptr<CombatantAssets>> m_stocks;
     std::array<Combatant, kMost> m_critters;
     std::vector<CombatBlow> m_blows;

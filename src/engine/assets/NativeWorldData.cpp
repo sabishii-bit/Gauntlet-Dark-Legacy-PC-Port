@@ -88,7 +88,7 @@ bool WorldData::loadNative(const std::filesystem::path& file) {
             for (const auto index : from.enemyTypes) {
                 if (index >= 0 && static_cast<usize>(index) < source.enemies.size()) {
                     const auto& enemy = source.enemies[static_cast<usize>(index)];
-                    level.enemies.push_back({enemy.kind, enemy.subtype, enemy.stream});
+                    level.enemies.push_back({enemy.kind, enemy.subtype, enemy.stream, enemy.form});
                 }
             }
             level.musicVolume = from.musicVolume;

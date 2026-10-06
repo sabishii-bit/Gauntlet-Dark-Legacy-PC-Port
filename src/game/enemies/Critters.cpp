@@ -12,7 +12,7 @@ Critters::~Critters() {
 }
 void Critters::open(RenderDevice& device, const std::filesystem::path& root,
                     const WorldCollision* collision, const EnemyScales& scales, char realm,
-                    std::span<TextureSet* const> textureLenders) {
+                    std::span<TextureSet* const> textureLenders, std::string_view gargoyleForm) {
     close();
     m_device = &device;
     m_root = root;
@@ -20,6 +20,7 @@ void Critters::open(RenderDevice& device, const std::filesystem::path& root,
     m_collision = collision;
     m_scales = scales;
     m_realm = static_cast<char>(std::toupper(static_cast<unsigned char>(realm)));
+    m_gargoyleForm = gargoyleForm;
 }
 void Critters::close() {
     for (auto& actor : m_critters) {
@@ -27,6 +28,7 @@ void Critters::close() {
     }
     m_stocks.clear();
     m_textureLenders.clear();
+    m_gargoyleForm.clear();
     m_blows.clear();
     m_grabs.clear();
     m_losses.clear();
@@ -57,22 +59,23 @@ CombatantAssets* Critters::stockFor(const CombatantDefinition& definition) {
     m_stocks.push_back(std::move(stock));
     return m_stocks.back().get();
 }
-CombatantDefinition Critters::definitionOf(CombatantKind kind, std::string_view form) {
+CombatantDefinition Critters::definitionOf(CombatantKind kind, std::string_view form) const {
     switch (kind) {
-    case CombatantKind::Golem: return Golem::definition();
+    case CombatantKind::Golem: return Golem::definition(m_realm);
     case CombatantKind::General: return General::definition();
-    case CombatantKind::Gargoyle: return Gargoyle::definition(form);
+    case CombatantKind::Gargoyle:
+        return Gargoyle::definition(form.empty() ? std::string_view(m_gargoyleForm) : form);
     default: return CombatantDefinition{};
     }
 }
 std::optional<s32> Critters::spawnGolem(const Vec3& position, f32 yaw) {
-    return spawn(Golem::definition(), position, yaw);
+    return spawn(Golem::definition(m_realm), position, yaw);
 }
 std::optional<s32> Critters::spawnGeneral(const Vec3& position, f32 yaw, f32 sight) {
     return spawn(General::definition(), position, yaw, sight);
 }
 std::optional<s32> Critters::spawnGargoyle(const Vec3& position, f32 yaw, std::string_view form) {
-    return spawn(Gargoyle::definition(form), position, yaw);
+    return spawn(definitionOf(CombatantKind::Gargoyle, form), position, yaw);
 }
 std::optional<s32> Critters::spawn(CombatantKind kind, const Vec3& position, f32 yaw,
                                    std::string_view form, f32 sight) {

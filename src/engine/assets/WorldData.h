@@ -57,6 +57,10 @@ struct LevelEnemy {
     s32 kind = -1;
     s32 subtype = 0;
     std::string stream; ///< sound-name stem, independent of the model's prefix
+    // ENMY +0x10: gargoyle model/WAD suffix, not an audio alias. Default retained
+    // for roster aggregates that only supply audio (-Wmissing-field-initializers).
+    // NOLINTNEXTLINE(readability-redundant-member-init)
+    std::string form{};
 };
 
 /** How the camera frames a boss fight: how far about the party's line to the boss it may

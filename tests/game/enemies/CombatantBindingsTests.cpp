@@ -21,11 +21,133 @@
 #include "game/enemies/BossDefinition.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/CombatantAssets.h"
+#include "game/enemies/Critters.h"
+#include "game/enemies/EnemyKinds.h"
+#include "game/enemies/Gargoyle.h"
+#include "game/enemies/Golem.h"
 #include "game/world/LevelCatalog.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("every catalogued gargoyle form selects its own native body and move table",
+          "[native-assets][combatant-bindings][assets]") {
+    const auto root = test::assetOrSkip("CRITTER").parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    std::set<std::string> forms;
+    std::set<std::string> missingNodes;
+    usize encounters = 0;
+    for (const auto& realm : catalog.realms()) {
+        WorldData data;
+        REQUIRE(data.load(root / "WDATA" / (realm.file + ".WAD")));
+        for (const auto& level : data.levels()) {
+            REQUIRE(std::ranges::count(level.enemies, kGargoyleEnemyKind, &LevelEnemy::kind) <= 1);
+            for (const auto& enemy : level.enemies) {
+                if (enemy.kind != kGargoyleEnemyKind) {
+                    continue;
+                }
+                CAPTURE(level.name, enemy.form, enemy.stream);
+                REQUIRE_FALSE(enemy.form.empty());
+                forms.insert(enemy.form);
+                test::FakeRenderDevice device;
+                CombatantAssets assets;
+                const auto definition = Gargoyle::definition(enemy.form);
+                REQUIRE(assets.load(device, root, definition, level.name.front()));
+                REQUIRE(assets.data.name() == definition.name);
+                REQUIRE(assets.tree != nullptr);
+                for (const auto& move : assets.data.moves()) {
+                    CAPTURE(move.name, move.anim, move.colnode);
+                    REQUIRE(assets.tree->findSequence(move.anim));
+                    if (!move.colnode.empty() &&
+                        !assets.tree->findNode(move.colnode, kCombatantNodeNameLength)) {
+                        CHECK(move.flags == 0);
+                        missingNodes.insert(definition.name + ":" + move.name + ":" + move.colnode);
+                    }
+                }
+                ++encounters;
+            }
+        }
+    }
+    CHECK(forms == std::set<std::string>{"eagl", "lion", "serp"});
+    CHECK(encounters > 20);
+    // Both native WADs retain the serpent's close-bite node. CritterInitMoves
+    // (0x8003FC4C) stores -1 for this absent node; do not fabricate or borrow a
+    // serpent skeleton to erase the finding. Pin the exact shipped omissions.
+    CHECK(missingNodes ==
+          std::set<std::string>{"GAR_EAGL:BITECLOSE:SERPTORSO", "GAR_LION:BITECLOSE:SERPTORSO"});
+}
+
+TEST_CASE("gargoyle suffixes and explicit archive names select the same family",
+          "[combatant-bindings][asset-conformance]") {
+    for (const auto* name : {"eagl", "lion", "serp"}) {
+        const auto suffix = Gargoyle::definition(name);
+        const auto full = Gargoyle::definition(std::string("gar_") + name);
+        CHECK(suffix.name == full.name);
+        CHECK(suffix.dropForm == full.dropForm);
+        CHECK(suffix.name == "GAR_" + suffix.dropForm);
+        CHECK(suffix.kind == CombatantKind::Gargoyle);
+    }
+    CHECK(Gargoyle::definition().name == "GAR_EAGL");
+}
+
+TEST_CASE("golem family chooses the authored Ice Domain and Underworld tables",
+          "[combatant-bindings][asset-conformance]") {
+    for (const char realm : std::string_view("ABCDEFGHIJKLM")) {
+        const auto definition = Golem::definition(realm);
+        CHECK(definition.name == (realm == 'I' ? "GOLEMI" : realm == 'F' ? "GOLEMF" : "GOLEM"));
+        CHECK(definition.kind == CombatantKind::Golem);
+        CHECK(definition.realmCostume);
+    }
+    CHECK(Golem::definition('i').name == "GOLEMI");
+    CHECK(Golem::definition('f').name == "GOLEMF");
+}
+
+TEST_CASE("native golem spawns and archive lookups share the realm's actual move table",
+          "[native-assets][combatant-bindings][assets]") {
+    const auto root = test::assetOrSkip("CRITTER").parent_path();
+    test::FakeRenderDevice device;
+    Critters population;
+    for (const char realm : std::string_view("GiFb")) {
+        CAPTURE(realm);
+        population.open(device, root, nullptr, {}, realm);
+        ItemArchive* archive = population.archiveFor(CombatantKind::Golem);
+        REQUIRE(archive != nullptr);
+        const auto direct = population.spawnGolem({}, 0);
+        const auto generic = population.spawn(CombatantKind::Golem, {20, 0, 0}, 0);
+        REQUIRE(direct);
+        REQUIRE(generic);
+        const auto* data = population.dataOf(*direct);
+        REQUIRE(data != nullptr);
+        CHECK(data == population.dataOf(*generic));
+        CHECK(data->name() == Golem::definition(realm).name);
+        CHECK(population.archiveOf(*direct) == archive);
+        CHECK(population.archiveOf(*generic) == archive);
+        CHECK(data->folder() == "golem");
+        CHECK(data->tree() == "GOLEM1");
+        const auto attack = data->moveNamed("ATTACK1L");
+        REQUIRE(attack);
+        const auto& first = data->moves()[*attack];
+        if (realm == 'i') {
+            CHECK(first.anim == "ATTACK1");
+            CHECK(first.colnode == "BODY1_L_W");
+            const auto followup = data->moveNamed("ATTACK3B");
+            REQUIRE(followup);
+            const auto* damage = data->damage(data->moves()[*followup].damage0);
+            REQUIRE(damage != nullptr);
+            CHECK(damage->damage == 40);
+        } else {
+            CHECK(first.anim == "ATTACK1L");
+            CHECK(first.colnode == "BALL");
+            CHECK_FALSE(data->moveNamed("ATTACK3B"));
+        }
+        const auto tree = archive->trees.find(data->tree());
+        REQUIRE(tree);
+        REQUIRE(archive->trees.tree(*tree).findSequence(first.anim));
+        REQUIRE(archive->trees.tree(*tree).findNode(first.colnode, kCombatantNodeNameLength));
+    }
+}
 
 TEST_CASE("combatant bitmap skin runs use the native float count and reject incomplete runs",
           "[combatant-bindings][asset-conformance]") {
