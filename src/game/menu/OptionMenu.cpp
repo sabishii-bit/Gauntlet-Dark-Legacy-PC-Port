@@ -379,6 +379,10 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         return;
     }
     const u8 fade = fadeOpacity();
+    // show_optmenu (GC 0x80072AA4) adds the menu and pulse transparencies.
+    // In opacity space this is fade + pulse - 255, not the dimmer of the two.
+    const u8 glowAlpha =
+        clampByte(fade + pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks) - kFullAlpha);
     const Color white = Color::white().withAlpha(fade);
     const Texture* labelSheet = m_definition.parchmentFont && textures.parchment != nullptr
                                     ? textures.parchment
@@ -431,8 +435,7 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             if (static_cast<s32>(i) == m_selection) {
                 TextStyle glow;
                 glow.scale = m_definition.scale;
-                glow.color = m_definition.colors.hi.withAlpha(
-                    std::min(fade, pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks)));
+                glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
                 glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
                 glow.expand = kGlowExpand;
                 const bool hoverAlternate = m_hoverPart == 2 || (m_hoverPart == 0 && alternate);
@@ -447,8 +450,6 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         const bool selected = static_cast<s32>(i) == m_selection;
         const auto drawPart = [&](s32 x, const std::string& part) {
             if (selected) {
-                const u8 pulse = pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks);
-                const auto glowAlpha = static_cast<u8>(std::min<s32>(fade, pulse));
                 TextStyle glow;
                 glow.scale = m_definition.scale;
                 glow.color = m_definition.colors.hi.withAlpha(glowAlpha);

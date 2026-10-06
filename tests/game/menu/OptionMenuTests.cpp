@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 
@@ -327,6 +329,77 @@ TEST_CASE("the glow pulse rises and falls with a hold between", "[game][menu]") 
     REQUIRE(pulseOpacity(85, 40, 5) == 128);
     REQUIRE(pulseOpacity(20, 40, 5) > 128);
     REQUIRE(pulseOpacity(20, 40, 5) < 255);
+}
+
+TEST_CASE("selection glow combines its pulse with the native menu fade",
+          "[game][menu][menu-fade]") {
+    // show_optmenu (GC 0x80072AA4) adds the pulse's transparency to the
+    // menu's transparency before clamping. It does not pick the dimmer opacity.
+    struct Sample {
+        s32 time;
+        s32 closingTime;
+        u8 labelAlpha;
+        u8 glowAlpha;
+    };
+    constexpr std::array kSamples{
+        Sample{0, 0, 0, 0},      Sample{10, 0, 85, 0},    Sample{20, 0, 170, 107},
+        Sample{30, 0, 255, 224}, Sample{40, 0, 255, 255}, Sample{80, 0, 255, 128},
+        Sample{60, 1, 247, 184}, Sample{60, 15, 128, 65}, Sample{60, 29, 9, 0},
+    };
+    for (const auto& sample : kSamples) {
+        for (const s32 ticks : {1, 2}) {
+            for (const s32 row : {0, 1, 2}) {
+                CAPTURE(sample.time, sample.closingTime, ticks, row);
+                Fixture f;
+                auto definition = threeItems();
+                definition.fades = true;
+                if (row == 1) {
+                    definition.items[0].alternate = "BB";
+                    definition.items[0].markedPart = 2;
+                } else if (row == 2) {
+                    definition.items[0].value = "CC";
+                    definition.valueX = 300;
+                }
+                f.menu.open(definition, f.painter, {});
+                for (s32 elapsed = 0; elapsed < sample.time; elapsed += ticks) {
+                    f.menu.update({}, std::min(ticks, sample.time - elapsed));
+                }
+                if (sample.closingTime > 0) {
+                    f.menu.close();
+                    for (s32 elapsed = 1; elapsed < sample.closingTime; elapsed += ticks) {
+                        f.menu.update({}, std::min(ticks, sample.closingTime - elapsed));
+                    }
+                }
+                REQUIRE(f.menu.isOpen());
+                CHECK(f.menu.fadeOpacity() == sample.labelAlpha);
+                test::FakeRenderDevice device;
+                const test::FakeTexture glow{64, 64};
+                MenuTextures textures;
+                textures.font = &f.sheet;
+                textures.glow = &glow;
+                Canvas canvas;
+                canvas.begin(device, Mat4{1});
+                f.menu.draw(canvas, f.painter, textures);
+                canvas.end();
+                bool sawGlow = false;
+                bool sawText = false;
+                for (const test::RecordedDraw& draw : device.draws) {
+                    const bool isGlow = draw.texture == &glow;
+                    const bool isText = draw.texture == &f.sheet;
+                    sawGlow = sawGlow || isGlow;
+                    sawText = sawText || isText;
+                    if (isGlow || isText) {
+                        for (const auto& vertex : draw.vertices) {
+                            CHECK(vertex.color.a ==
+                                  (isGlow ? sample.glowAlpha : sample.labelAlpha));
+                        }
+                    }
+                }
+                CHECK(sawGlow);
+                CHECK(sawText);
+            }
+        }
+    }
 }
 
 TEST_CASE("drawing emits the glow, the labels, the icon and the prompts", "[game][menu]") {
