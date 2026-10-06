@@ -157,8 +157,8 @@ private:
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     /** What a thrown weapon or a burst can strike: the targets and shootable switches. */
     std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
-    /** What a swing can reach: what is struck, but not the safe rocks. */
-    std::vector<MissileTarget> meleeTargets(const Targets& targets) const;
+    /** Shared melee/ranged acquisition geometry; excludes cover without removing its collider. */
+    std::vector<MissileTarget> acquisitionTargets(const Targets& targets) const;
     std::optional<MissileTarget> meleeTarget(const PlayerActor& actor, const Targets& targets,
                                              const Vec3& facing, f32 reach) const;
     static MeleeSense senseOf(const PlayerActor& actor, bool held, const MissileTarget& target);

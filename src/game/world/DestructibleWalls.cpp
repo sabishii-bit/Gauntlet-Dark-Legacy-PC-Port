@@ -41,6 +41,7 @@ void DestructibleWalls::bind(RenderDevice& device, const WorldLayout& layout, Mo
         wall.bounds.acquisition =
             TargetAssist::itemAcquisition(wall.transform, info.collisionOffset, info.radius,
                                           info.height, TargetAssist::kItemDistanceScale);
+        wall.bounds.acquisition->enabled = wall.armor != -1;
         wall.collisionCentre = wall.bounds.acquisition->point;
         TreeInfo tree;
         TreeNodeInfo node;

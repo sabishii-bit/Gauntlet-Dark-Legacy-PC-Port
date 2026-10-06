@@ -61,6 +61,35 @@ TEST_CASE("barrel snapshots retain ordinary and explosive acquisition weights wi
     }
 }
 
+TEST_CASE("invulnerable barrels still stop shots without attracting acquisition",
+          "[game][target-assist][alpha-target-eligibility]") {
+    const auto directory = test::scratchDirectory("invulnerable-barrel-aim");
+    writeTextFile(directory / "world.json",
+                  R"({"objects":[{"name":"ROOT","position":[0,0,0]}],"itemInfos":[
+      {"type":10,"subtype":43,"name":"BARREL","radius":2,"height":6,"armor":-1},
+      {"type":10,"subtype":44,"name":"BARREL","radius":2,"height":6,"armor":0}],
+      "itemInstances":[{"info":0,"position":[0,0,3]},
+                       {"info":1,"position":[0,0,5]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    ItemArchive noArtwork;
+    test::FakeRenderDevice device;
+    Breakables barrels;
+    REQUIRE(barrels.bind(device, layout, noArtwork, nullptr));
+    const std::array targets{barrels.target(0, 0), barrels.target(1, 1)};
+    REQUIRE(targets[1].acquisition);
+    CHECK(TargetAssist::select({0, 3, 0}, {0, 0, 1}, targets, 30) == targets[1].acquisition->point);
+    const auto melee = TargetAssist::ahead({}, 6, {0, 0, 1}, targets, 4, 30);
+    REQUIRE(melee);
+    CHECK(melee->id == 1);
+    // Collision queries must retain the closer, invulnerable body.
+    const auto contact = TargetAssist::around({}, 6, targets, 4);
+    REQUIRE(contact);
+    CHECK(contact->id == 0);
+    CHECK(targets[0].touches({0, 3, 3}, 0));
+    CHECK(barrels.standing(0));
+}
+
 TEST_CASE("Easy targeting widens native acquisition but preserves explicit normal defaults",
           "[game][target-assist][alpha-aim-acquisition]") {
     const Vec3 origin{0, 3, 0};

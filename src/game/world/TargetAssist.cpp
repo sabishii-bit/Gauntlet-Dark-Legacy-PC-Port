@@ -74,6 +74,9 @@ std::optional<MissileTarget> TargetAssist::ahead(const Vec3& feet, f32 height, c
     std::optional<MissileTarget> nearest;
     f32 best = range;
     for (const MissileTarget& target : targets) {
+        if (target.acquisition && !target.acquisition->enabled) {
+            continue;
+        }
         const Vec3 origin{feet.x, feet.y + height * 0.5f, feet.z};
         const Vec3 point =
             target.acquisition ? target.acquisition->point : target.pointNear(origin);
@@ -113,7 +116,8 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
     };
     std::vector<Candidate> candidates;
     for (const MissileTarget& target : targets) {
-        if (target.id < 0 || target.radius <= 0.0f || target.height <= 0.0f) {
+        if (target.id < 0 || target.radius <= 0.0f || target.height <= 0.0f ||
+            (target.acquisition && !target.acquisition->enabled)) {
             continue;
         }
         const Vec3 point =

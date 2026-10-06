@@ -738,6 +738,7 @@ MissileTarget Generators::target(s32 index, s32 id) const {
     result.acquisition =
         TargetAssist::itemAcquisition(generator.placement, generator.collisionOffset,
                                       generator.targetRadius, generator.targetHeight, 1);
+    result.acquisition->enabled = generator.armor != -1;
     return result;
 }
 

@@ -81,6 +81,7 @@ struct MissileTarget {
         f32 radius = 0;
         f32 distanceScale = 1;
         f32 maxHeight = 0;
+        bool enabled = true; ///< automatic selection only; never removes physical contacts
     };
 
     s32 id = -1;

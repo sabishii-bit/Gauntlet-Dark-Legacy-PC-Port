@@ -9,6 +9,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/combat/Damage.h"
 #include "game/world/DestructibleWalls.h"
+#include "game/world/TargetAssist.h"
 
 namespace {
 using namespace gdl;
@@ -134,5 +135,32 @@ TEST_CASE("Temple's five shootable walls load their level meshes and authored su
     CHECK(collision.triangleCount() == before + added);
     walls.draw(device, Mat4{1}, {});
     CHECK(device.draws.size() >= 5);
+}
+
+TEST_CASE("invulnerable walls retain collision but are excluded from assisted acquisition",
+          "[walls][alpha-target-eligibility]") {
+    const auto directory = test::scratchDirectory("invulnerable-wall-aim");
+    writeTextFile(directory / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
+      "itemInfos":[{"type":10,"subtype":42,"hitPoints":25,"armor":-1,
+                    "radius":3,"height":6,"collisionOffset":[0,2,0]}],
+      "itemInstances":[{"info":0,"position":[0,0,3],"name":"WALL",
+       "collision":[{"normal":[0,0,-1],"vertices":[[-3,0,0],[3,0,0],[0,6,0]]}]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    test::FakeRenderDevice device;
+    ModelSet noModels;
+    TextureSet noTextures;
+    WorldCollision collision;
+    DestructibleWalls walls;
+    walls.bind(device, layout, noModels, noTextures, collision);
+    REQUIRE(walls.size() == 1);
+    const auto target = walls.target(0, 6000);
+    CHECK_FALSE(TargetAssist::select({0, 3, 0}, {0, 0, 1}, std::span{&target, 1}, 30));
+    CHECK_FALSE(TargetAssist::ahead({}, 6, {0, 0, 1}, std::span{&target, 1}, 4, 30));
+    CHECK(TargetAssist::around({}, 6, std::span{&target, 1}, 4));
+    CHECK(target.touches({0, 3, 3}, 0.25f));
+    CHECK(collision.solid(walls.wall(0).object));
+    CHECK_FALSE(walls.strike(0, 1000, collision));
+    CHECK(walls.standing(0));
 }
 } // namespace

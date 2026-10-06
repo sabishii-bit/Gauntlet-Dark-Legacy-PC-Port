@@ -1185,18 +1185,26 @@ std::vector<MissileTarget> PlayerAttacks::strikeTargets(const Targets& targets) 
     std::vector<MissileTarget> all = projectileTargets(targets);
     if (m_resources) {
         const LevelTriggers& triggers = m_resources->world.triggers();
+        const auto& layout = m_resources->world.layout();
         for (usize i = 0; i < triggers.size(); ++i) {
             const LevelTrigger& trigger = triggers.trigger(i);
             if (trigger.enabled && trigger.shootable) {
-                all.push_back(MissileTarget{kSwitchTargetBase + static_cast<s32>(i), trigger.spot,
-                                            trigger.radius, trigger.height});
+                const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
+                const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
+                MissileTarget target{kSwitchTargetBase + static_cast<s32>(i), trigger.spot,
+                                     trigger.radius, trigger.height};
+                target.acquisition = TargetAssist::itemAcquisition(
+                    trigger.placement, info.collisionOffset, info.radius, info.height,
+                    TargetAssist::kItemDistanceScale);
+                target.acquisition->enabled = info.armor != -1;
+                all.push_back(target);
             }
         }
     }
     return all;
 }
 
-std::vector<MissileTarget> PlayerAttacks::meleeTargets(const Targets& targets) const {
+std::vector<MissileTarget> PlayerAttacks::acquisitionTargets(const Targets& targets) const {
     std::vector<MissileTarget> reachable = strikeTargets(targets);
     std::erase_if(reachable, [](const MissileTarget& target) {
         return target.id >= kSafeRockTargetBase && target.id < kWallTargetBase;
@@ -1281,33 +1289,7 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     if (!m_resources) {
         return std::nullopt;
     }
-    auto candidates = projectileTargets(targets);
-    // PlayerGetTarget's item probe excludes subtype-41 cover. It still belongs
-    // to the projectile collision list, so a directly aimed shot can hit it.
-    std::erase_if(candidates, [](const MissileTarget& target) {
-        return target.id >= kSafeRockTargetBase && target.id < kWallTargetBase;
-    });
-    // fn_8005B274 also admits type-5/subtype-31 switches, using their authored
-    // collision anchor and ordinary item distance weight, not the mesh centre.
-    const auto& triggers = m_resources->world.triggers();
-    const auto& layout = m_resources->world.layout();
-    for (usize i = 0; i < triggers.size(); ++i) {
-        const auto& trigger = triggers.trigger(i);
-        if (!trigger.enabled || !trigger.shootable) {
-            continue;
-        }
-        const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
-        const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
-        if (info.armor == -1) {
-            continue;
-        }
-        MissileTarget target{kSwitchTargetBase + static_cast<s32>(i), trigger.spot, trigger.radius,
-                             trigger.height};
-        target.acquisition =
-            TargetAssist::itemAcquisition(trigger.placement, info.collisionOffset, info.radius,
-                                          info.height, TargetAssist::kItemDistanceScale);
-        candidates.push_back(target);
-    }
+    auto candidates = acquisitionTargets(targets);
     const f32 range =
         targets.opponents.bosses().view().alive ? TargetAssist::kBossRange : TargetAssist::kRange;
     const auto ordinary =
@@ -1423,9 +1405,9 @@ std::optional<MissileTarget> PlayerAttacks::meleeTarget(const PlayerActor& actor
     }
     const f32 range =
         targets.opponents.bosses().present() ? TargetAssist::kBossRange : TargetAssist::kRange;
-    auto target =
-        TargetAssist::ahead(actor.position(), actor.height(), facing, meleeTargets(targets), reach,
-                            range, &m_resources->world.collision(), m_resources->acquisitionCone);
+    auto target = TargetAssist::ahead(
+        actor.position(), actor.height(), facing, acquisitionTargets(targets), reach, range,
+        &m_resources->world.collision(), m_resources->acquisitionCone);
     if (!target) {
         target = meleePlayer(actor, targets, reach, facing);
     }

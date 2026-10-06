@@ -1996,6 +1996,37 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
     f.fixtures.clear();
 }
 
+TEST_CASE("switch melee and ranged acquisition share the authored anchor and eligibility",
+          "[game][player-attacks][alpha-switch-aim]") {
+    const auto root = turboAssets();
+    const auto directory = root / "PLAYERS/WAR/YEL";
+    writeTextFile(directory / "world.json", R"({"objects":[
+      {"name":"BODY","position":[-100,0,0]}],
+      "itemInfos":[{"type":5,"subtype":31,"radius":1,"height":6,
+                     "collisionOffset":[4,2,0],"armor":0}],
+      "itemInstances":[{"info":0,"position":[0,0,3],"minPlayers":2,
+                        "params":[0,0,8,0,0,0,1,0,0,0,0,0]}]})");
+    Fixture f;
+    LevelRef level;
+    level.directory = "PLAYERS/WAR/YEL";
+    REQUIRE(f.world.load(f.device, root, level));
+    REQUIRE(f.world.triggers().size() == 1);
+    const bool eligible = GENERATE(false, true);
+    f.world.setPlayerCount(eligible ? 2 : 1);
+    auto& actor = f.players[0].actor;
+    actor.place({0, 3 - actor.height() * 0.5f, 0});
+    REQUIRE(actor.followPoint() == Vec3{0, 3, 0});
+    CHECK_FALSE(f.attacks.aim(actor, {0, 0, 1}, f.targets));
+    CHECK(f.attacks.meleeSense(actor, true, f.targets, Vec3{0, 0, 1}).range == MeleeRange::Beyond);
+    const Vec3 toward{4, 0, 3};
+    CHECK(f.attacks.aim(actor, toward, f.targets).has_value() == eligible);
+    CHECK((f.attacks.meleeSense(actor, true, f.targets, toward).range != MeleeRange::Beyond) ==
+          eligible);
+    if (eligible) {
+        CHECK(f.attacks.aim(actor, toward, f.targets) == Vec3{4, 3, 3});
+    }
+}
+
 TEST_CASE("swarm healing credit is capped incoming damage before level and armor adjustments",
           "[player-attacks][healing-magic]") {
     Fixture f;
@@ -2752,12 +2783,36 @@ TEST_CASE("automatic melee selects live generators but never player fallback tar
     generator.height = 6;
     generator.xSize = 2;
     generator.zSize = 2;
+    const bool invulnerable = GENERATE(false, true);
+    generator.armor = invulnerable ? -1 : 0;
     REQUIRE(generators.placeBoss(f.device, generator, f.weapons, enemies, kGruntKind, Mat4{1},
                                  nullptr));
     const auto& box = generators.boxOf(0);
     actor.place(generators.positionOf(0) - Vec3{0, 0, std::max(box.halfAcross, box.halfAlong) + 1});
     REQUIRE(generators.standing(0));
-    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+          (invulnerable ? PlayerDeed::None : PlayerDeed::AutoMelee));
+    CHECK(f.attacks.aim(actor, actor.facing(), f.targets).has_value() == !invulnerable);
+    if (invulnerable) {
+        CHECK_FALSE(generators.strike(0, 10000, 0));
+        const auto body = generators.target(0, 2000);
+        CHECK(body.touches(body.base + Vec3{0, 1, 0}, 0));
+        CHECK(generators.standing(0));
+        const MissileSpec spec;
+        MissileLaunch launch;
+        launch.spec = &spec;
+        launch.owner = actor.player();
+        launch.position = actor.followPoint();
+        launch.velocity = {0, 0, 30};
+        launch.damage = 10000;
+        REQUIRE(f.arsenal.missiles().launch(launch));
+        f.attacks.updateProjectiles(0.3f, f.players, f.targets);
+        CHECK(f.arsenal.missiles().count() == 0);
+        CHECK(generators.healthOf(0) == 500);
+        generators.clear();
+        enemies.close();
+        return;
+    }
     REQUIRE(generators.strike(0, 10000, 0));
     REQUIRE_FALSE(generators.standing(0));
     CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);

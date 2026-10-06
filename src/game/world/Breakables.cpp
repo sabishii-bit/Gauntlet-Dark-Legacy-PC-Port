@@ -95,9 +95,11 @@ MissileTarget Breakables::target(usize index, s32 id) const {
     MissileTarget result{id, barrel.figure.position(), barrel.radius, barrel.height};
     const bool explosive = barrel.kind == BreakableStrike::Kind::Exploding ||
                            barrel.kind == BreakableStrike::Kind::Poison;
-    result.acquisition = TargetAssist::itemAcquisition(
+    auto acquisition = TargetAssist::itemAcquisition(
         barrel.figure.transform(), barrel.collisionOffset, barrel.radius, barrel.height,
         explosive ? TargetAssist::kExplosiveDistanceScale : TargetAssist::kItemDistanceScale);
+    acquisition.enabled = barrel.armor != -1;
+    result.acquisition = acquisition;
     return result;
 }
 
