@@ -231,4 +231,51 @@ TEST_CASE("G2 entrance bridge can be crossed both ways by every class",
     }
 }
 
+TEST_CASE("G2 drawbridge 723 opens its lower passage for every class",
+          "[native-traversal][g2-drawbridge][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const bool opened = GENERATE(false, true);
+    const f32 offset = GENERATE(-1.0f, 0.0f, 1.0f);
+    CAPTURE(opened, offset);
+    // G2ELEV1 is object 723, not entrance bridge 1429. Its rest mesh slopes
+    // from y=.6640625 to -5.4921875. The initial -.602139 roll holds it level;
+    // trigger item 420 at this spot lowers it into the passage beneath floor 1430.
+    NativeWalk walk("G2", opened ? Vec3{3.6328125f, 0.0234375f, 0.9765625f}
+                                 : Vec3{-28, 0.6640625f, -11.6484375f});
+    walk.wait(95);
+    REQUIRE(walk.world.triggers().opened(723) == opened);
+    REQUIRE(walk.world.collision().solid(723));
+    const f32 z = -11.6484375f + offset;
+    for (s32 character = 0; character < kClassCount; ++character) {
+        CAPTURE(character);
+        const auto* stats = classes.stats(character == kSumnerClass ? 2 : character);
+        REQUIRE(stats);
+        walk.stand({-28, 0.6640625f, z}, character, *stats);
+        REQUIRE(walk.party[0].floor.object == 1430);
+        walk.walk({-21, z});
+        REQUIRE(walk.party[0].floor.object == 723);
+        if (opened) {
+            walk.walk({-12, z});
+            CHECK(walk.party[0].floor.object == 1385);
+            CHECK(walk.party[0].actor.position().y < -5);
+        } else {
+            // The upper east lip is enclosed by wall 1623 at x=-14.63. The
+            // switch lowers the bridge UNDER it; the initial pose is no exit.
+            walk.walk({-16, z});
+            for (s32 frame = 0; frame < 60; ++frame) {
+                walk.step({1, 0});
+            }
+            CHECK(walk.party[0].actor.position().x < -14.6f);
+            CHECK(walk.party[0].floor.object == 723);
+            CHECK_FALSE(walk.party[0].actor.wallContacts().empty());
+        }
+        walk.walk({-21, z});
+        REQUIRE(walk.party[0].floor.object == 723);
+        walk.walk({-28, z});
+        CHECK(walk.party[0].floor.object == 1430);
+    }
+}
+
 } // namespace

@@ -29,11 +29,15 @@ TEST_CASE("powerup clocks pause and boss combat spends three seconds per second"
     CHECK_FALSE(inventory.powerups[0].held());
     CHECK(inventory.powerups[2].charge == 3);
 }
-TEST_CASE("turbo pickups refill once while permanent turbo replenishes",
-          "[game][items][powerups]") {
+TEST_CASE("activated turbo refills once while activated permanent turbo replenishes",
+          "[game][items][powerups][turbo-activation]") {
     std::array<PlayerRuntime, 1> players;
     auto& inventory = players[0].actor.save().progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, 1);
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 0);
+    CHECK(inventory.powerupCount() == 1);
+    inventory.powerups[0].on = true;
     PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
     CHECK(inventory.powerupCount() == 0);
@@ -41,9 +45,29 @@ TEST_CASE("turbo pickups refill once while permanent turbo replenishes",
     PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 60);
     inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, -1);
+    CHECK_FALSE(inventory.powerups[0].on);
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 60);
+    inventory.powerups[0].on = true;
     PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
     CHECK(inventory.powerupCount() == 1);
+    REQUIRE(players[0].turbo.spend(40));
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 100);
+}
+
+TEST_CASE("saved enabled Turbo Boost keeps its activation when loaded",
+          "[powerups][turbo-activation][save]") {
+    const auto loaded = CharacterSave::fromJson(R"({"version":1,"name":"OLD","character":0,
+        "classes":{"WAR":{"inventory":{"powerups":[
+            {"strength":1,"kind":9,"charge":0,"flags":524288,"on":true}]}}}})");
+    REQUIRE(loaded.progress().inventory.powerups[0].on);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, loaded, nullptr, Vec3{0}, 0);
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 100);
+    CHECK(players[0].actor.save().progress().inventory.powerupCount() == 0);
 }
 TEST_CASE("Stop Time is shared only by standing players with a working item",
           "[powerups][stop-time]") {

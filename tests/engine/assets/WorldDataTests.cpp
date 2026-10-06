@@ -13,6 +13,27 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
+TEST_CASE("camera limit metadata preserves legacy authored boxes and native world derivation",
+          "[world-data][camera-bounds]") {
+    const auto dir = test::scratchDirectory("world-camera-limits");
+    writeTextFile(dir / "world.json", R"({
+      "levels":[{"name":"S8","cameraIndex":0}],
+      "cameras":[{"limits":0,"boundsMin":[-32,0,-68],"boundsMax":[75,30,26]},
+                 {"limits":1},{"boundsMax":[10,20,30]}]
+    })");
+    WorldData world;
+    REQUIRE(world.load(dir / "world.json"));
+    REQUIRE(world.camera(0));
+    REQUIRE(world.camera(1));
+    REQUIRE(world.camera(2));
+    CHECK_FALSE(world.camera(0)->authoredBounds);
+    // Keep the raw values: only the loaded level can derive the runtime box.
+    CHECK(world.camera(0)->boundsMax == Vec3{75, 30, 26});
+    CHECK(world.camera(1)->authoredBounds);
+    CHECK(world.camera(2)->authoredBounds);
+    CHECK(world.camera(2)->boundsMax == Vec3{10, 20, 30});
+}
+
 TEST_CASE("level enemy rosters preserve audio aliases separately from model kinds",
           "[world-data][enemy-feedback]") {
     const auto dir = test::scratchDirectory("world-enemy-audio");

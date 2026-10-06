@@ -32,8 +32,10 @@ public:
     enum class State : u8 { Closed, SlidingIn, Open, SlidingOut };
     static constexpr s32 kSlide = 128; ///< how far the label rides up
     static constexpr s32 kSlidePerTick = 4;
-    static constexpr s32 kLabelX = 12;    ///< from the box's left
-    static constexpr s32 kLabelRise = 25; ///< its resting height over the box's top
+    // Native TbInfo anchors are x_right=boxLeft+12 and y_top=335. The label
+    // adds another 12 to x and subtracts 25 from y, over the panel at y320.
+    static constexpr s32 kLabelX = 24;    ///< from the box's left
+    static constexpr s32 kLabelRise = 10; ///< its resting height over the box's top
     static constexpr f32 kLabelScale = 0.45f;
 
     SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks);

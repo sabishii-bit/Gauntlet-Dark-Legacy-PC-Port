@@ -22,9 +22,7 @@ constexpr std::string_view kRunesFoundVoice = "S_RUNEFOUND2";
 constexpr s32 kMostRunesCounted = 12;
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
-constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
-constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
-constexpr s32 kGoldLesson = 17;     ///< COLLECTGOLD, for a pile of 25 or more
+constexpr s32 kGoldLesson = 17; ///< COLLECTGOLD, for a pile of 25 or more
 constexpr s32 kGoldLessonAmount = 25;
 constexpr s32 kKeyLessonGates = 8; ///< SAVEKEYS, where there are gates to spend keys on
 constexpr std::array<s32, 3> kPotionLessons{7, 94, 95}; ///< the first of them not yet told
@@ -143,9 +141,6 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
         default: break;
         }
         return std::nullopt;
-    }
-    if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
-        runtime.turbo.add(TurboMeter::kFull);
     }
     // Gold, keys, potions, good food and powerups are picked up with a gesture, out of the
     // tower; bad food is gagged on anywhere.

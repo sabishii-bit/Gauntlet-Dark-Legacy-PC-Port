@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -14,6 +16,44 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("S8 arrival plays the native entrance cue",
+          "[transporters][alpha-transporter-audio][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELS8/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName("S8");
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.sounds = &sounds;
+    context.unpackedRoot = root;
+    context.levels = &catalog;
+    PlayOptions options;
+    options.welcome = false;
+    const std::array party{PartyMember{0, CharacterSave{}}};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    std::array<f32, 3200> samples{};
+    CHECK(sounds.voiceCount() > 0);
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 sample) { return std::abs(sample) > 1e-5f; }));
+    for (s32 frame = 0; frame < 300 && scene.spawning(); ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        mixer.mix(samples);
+        sounds.update();
+    }
+    REQUIRE_FALSE(scene.spawning());
+    // This stage has no intra-level transporter pads: its warp is the secret
+    // journey, distinct from S3's native S_TRANSPORTS3 pad cue.
+    CHECK(scene.transporters().size() == 0);
+    scene.close();
+}
 
 TEST_CASE("the castle transporter moves a player without leaving the level or bouncing back",
           "[transporters][assets]") {

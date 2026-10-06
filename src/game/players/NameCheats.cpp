@@ -95,6 +95,15 @@ bool applyNameCheats(CharacterSave& save) {
     for (const auto& code : kPowerups) {
         if (code.name == save.name) {
             inventory.addPowerup(code.kind, code.flags, code.charge, -1);
+            if (code.kind == powerup::kSpecial && code.flags == powerup::kTurbo) {
+                // Deliberate port UX: PURPLE grants active permanent turbo. Ordinary
+                // Turbo Boost pickups still wait for the native selector activation.
+                for (auto& slot : inventory.powerups) {
+                    if (slot.kind == code.kind && slot.flags == code.flags) {
+                        slot.on = true;
+                    }
+                }
+            }
             recognized = true;
         }
     }

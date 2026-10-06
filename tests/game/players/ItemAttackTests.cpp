@@ -65,8 +65,29 @@ TEST_CASE("breath expands forwards while hammer damage waits for the impact dela
     const auto hammer = *ItemAttack::select(worn);
     CHECK_FALSE(hammer.reaches(Mat4{1}, ahead, 0.09f, 1));
     CHECK(hammer.reaches(Mat4{1}, behind, 0.1f, 1));
-    CHECK(hammer.damageAt(0.1f, 1) == Approx(85.5f));
+    CHECK(hammer.damageAt(0.1f, 1) == Approx(100.5f));
     CHECK(hammer.damageAt(0.8f, 1) == 0);
     CHECK_FALSE(hammer.reaches(Mat4{1}, ahead, 0, 0));
+}
+
+TEST_CASE("hammer expansion measures its active phase after the authored delay",
+          "[game][items][alpha-hammer-phase][alpha-area-height]") {
+    PowerupEffects worn;
+    worn.weapon = powerup::kThunderHammer;
+    const auto hammer = *ItemAttack::select(worn);
+    const MissileTarget near{0, {0, 0, -11}, 0.25f, 2};
+    const MissileTarget rim{1, {0, 0, 14}, 0.25f, 2};
+    CHECK_FALSE(hammer.reaches(Mat4{1}, near, 0.099f, 1));
+    CHECK(hammer.reaches(Mat4{1}, near, 0.1f, 1));
+    CHECK_FALSE(hammer.reaches(Mat4{1}, rim, 0.1f, 1));
+    CHECK(hammer.reaches(Mat4{1}, rim, 0.2f, 1));
+    CHECK(hammer.damageAt(0.7f, 1) > 0);
+    CHECK(hammer.damageAt(0.71f, 1) == 0);
+    CHECK_FALSE(hammer.reaches(Mat4{1}, near, 0.71f, 1));
+    // Item-family collision still tests height; only swarm areas ignore it.
+    CHECK_FALSE(hammer.reaches(Mat4{1}, {2, {0, 40, 5}, 1, 4}, 0.5f, 1));
+    CHECK_FALSE(hammer.reaches(Mat4{1}, {3, {0, -40, 5}, 1, 4}, 0.5f, 1));
+    CHECK(hammer.damageAt(0.1f, 0.12f) == Approx(100.5f));
+    CHECK(hammer.damageAt(0.1f, 0.1f) == 0);
 }
 } // namespace

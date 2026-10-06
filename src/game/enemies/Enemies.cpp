@@ -1357,7 +1357,7 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     const Vec3 step = Vec3{std::sin(intent.heading), 0.0f, std::cos(intent.heading)} *
                       (paceOf(enemy.kind) * intent.pace * static_cast<f32>(ticks));
     move(enemy, slot, ticks, static_cast<f32>(ticks) / static_cast<f32>(kTicksPerSecond), step,
-         players, obstacles);
+         players, obstacles, !retreat.has_value() && enemy.mind.effectiveWay == kSeekWay);
     if (!retreat.has_value() && enemy.mind.effectiveWay == kZigZagWay) {
         // The zig-zagger re-aims after movement has established this step's position
         // and contacts, rather than reacting to the previous update's collision.
@@ -1407,7 +1407,20 @@ Vec3 Enemies::travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const
 }
 
 void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
-                   std::span<const EnemyView> players, std::span<const Obstacle> obstacles) {
+                   std::span<const EnemyView> players, std::span<const Obstacle> obstacles,
+                   bool seeking) {
+    const auto finishSeek = [&](SeekContact contact, s32 side = 1) {
+        if (!seeking) {
+            return;
+        }
+        const SeekResponse response = finishSeekStep(enemy.mind, contact, side);
+        if (response.faceTarget) {
+            enemy.yaw = enemy.mind.heading;
+        }
+        if (response.stopWalking) {
+            enemy.animator.stopWalking();
+        }
+    };
     Vec3 translation = step;
     // Nothing of its own while stunned (the stun running down with the step it stops,
     // do_enemy_move), reacting or swinging (a running attack runs on); a push moves it
@@ -1441,6 +1454,9 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         const Vec3 target = travel(enemy, from, to);
         stoppedByWorld = flatDistance(target, to) > 0.001f && flatDistance(target, from) < kStopped;
         to = target;
+        if (stoppedByWorld) {
+            finishSeek(SeekContact::World);
+        }
     }
     // fn_80046680's movement path tests the actual nearest live player, not the
     // crowd-weighted sight target or the first overlapping member of the roster.
@@ -1505,8 +1521,10 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         enemy.bumpedOther = true;
         enemy.blocked = true;
         enemy.otherSide = turnDirection(from, body->centre);
+        finishSeek(SeekContact::Critter);
         return;
     }
+    std::optional<s32> itemSide;
     for (const Obstacle& box : obstacles) {
         if (box.solid) {
             // Short steps resolve by overlap below, retaining the tangential slide. A long
@@ -1518,6 +1536,7 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
                     if (flatDistance(clipped, to) > 0.001f) {
                         enemy.bumpedWall = true;
                         enemy.blocked = flatDistance(clipped, from) < kStopped;
+                        itemSide = turnDirection(from, box.centre);
                     }
                     to = clipped;
                 }
@@ -1525,6 +1544,7 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             const Vec3 pushed = box.pushOut(to, enemy.radius);
             if (pushed != to) {
                 enemy.bumpedWall = true;
+                itemSide = turnDirection(from, box.centre);
                 to = travel(enemy, to, pushed);
                 if (flatDistance(to, from) < kStopped &&
                     flatDistance(from + translation, from) >= kStopped) {
@@ -1551,12 +1571,14 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             } else {
                 enemy.blocked = true;
                 enemy.otherSide = turnDirection(from, other.position);
+                finishSeek(SeekContact::Enemy, enemy.otherSide);
                 return;
             }
         }
     }
     enemy.position = to;
     rememberFloor(enemy);
+    finishSeek(itemSide ? SeekContact::Item : SeekContact::Clear, itemSide.value_or(1));
     (void)ticks;
 }
 
@@ -1829,7 +1851,12 @@ std::vector<MissileTarget> Enemies::targets() const {
         if (!alive(i) || enemy.kind == kItKind) {
             continue;
         }
-        out.push_back(MissileTarget{i, enemy.position, enemy.radius, enemy.height});
+        MissileTarget target{i, enemy.position, enemy.radius, enemy.height};
+        constexpr f32 kAimHeightLimit = 10;
+        target.acquisition = MissileTarget::Acquisition{
+            enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0}, enemy.radius, 1,
+            kAimHeightLimit};
+        out.push_back(target);
     }
     return out;
 }

@@ -711,7 +711,6 @@ void LevelOpponents::updateStatues(s32 ticks, f32 seconds, std::span<PlayerRunti
     for (const CritterStatues::Placement& risen : m_statues.takeRisen()) {
         if (risen.enemy) {
             m_enemies.spawn(*risen.enemy, {}, m_generators.obstacles());
-            m_resources->audio.playNamed("S_DEATHSHATTER");
             continue;
         }
         const Mat4 stood = itemPlacement(risen.instance.position, risen.instance.rotation);

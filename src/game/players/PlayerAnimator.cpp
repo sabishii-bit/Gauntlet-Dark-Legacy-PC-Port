@@ -419,7 +419,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         } else {
             guard.action = Action::Ready;
             guard.cut = m_current == Action::DefendLower ? Cut::WhenDone : Cut::Now;
-            guard.transition = kStanceBlend;
+            guard.transition = readyTransition();
         }
         play(guard, seconds);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
@@ -860,12 +860,42 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         d.cut = Cut::IfDifferent;
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {
-        d.transition = kStanceBlend;
+        d.transition = readyTransition();
     }
     if (d.action != m_current) {
         d.action = refine(d.action);
     }
     return d;
+}
+
+f32 PlayerAnimator::readyTransition() const {
+    // Only ordinary locomotion and close attacks blend back to the stance.
+    // Reactions, ranged attacks, magic, turbos and combos end directly.
+    if (m_current == Action::Quick2Recover && m_character == kArcherClass) {
+        return 0.0f;
+    }
+    if (meleeing() || strafing()) {
+        return kStanceBlend;
+    }
+    switch (m_current) {
+    case Action::Idle1:
+    case Action::Idle2:
+    case Action::Idle2Loop:
+    case Action::Walk1:
+    case Action::Walk2:
+    case Action::Run1:
+    case Action::Run2:
+    case Action::ShieldReady:
+    case Action::ShieldRun:
+    case Action::Shove:
+    case Action::Pick:
+    case Action::Pushed:
+    case Action::DeathGrabStart:
+    case Action::DeathGrab:
+    case Action::DeathGrabRelease:
+    case Action::Grabbed: return kStanceBlend;
+    default: return 0.0f;
+    }
 }
 
 /** The close attack a deed asks for (AnimAction's requests): a step into what is a pace
@@ -1331,7 +1361,10 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     }
     m_previous = m_pose;
     m_player.setSpeed(1.0f / animationDuration(decision));
-    m_player.start(m_tree->sequences[target], target, decision.transition, decision.startFrame);
+    // InitAnim dates a nonzero blend one base tick before its first sample.
+    // Credit only that blend; the target's gameplay frame still starts at zero.
+    m_player.start(m_tree->sequences[target], target, decision.transition, decision.startFrame,
+                   AnimationPlayer::kTick);
     if (decision.action == Action::Start) {
         m_entered = true;
     }

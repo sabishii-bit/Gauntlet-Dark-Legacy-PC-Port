@@ -174,6 +174,10 @@ TEST_CASE("permanent turbo and super shot cheats use normal gameplay consumers",
     CharacterSave save;
     save.name = "PURPLE";
     REQUIRE(applyNameCheats(save));
+    REQUIRE(save.progress().inventory.powerups[0].working());
+    save.progress().inventory.powerups[0].on = false;
+    REQUIRE(applyNameCheats(save)); // An explicit cheat grant enables its permanent slot again.
+    REQUIRE(save.progress().inventory.powerups[0].working());
     players[0].actor.spawn(3, save, nullptr, {}, 0);
     players[0].life = PlayerLife::Standing;
     for (s32 i = 0; i < 3; ++i) {

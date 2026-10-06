@@ -9,6 +9,7 @@
 
 #include "game/combat/Damage.h"
 #include "game/world/ItemFigure.h"
+#include "game/world/TargetAssist.h"
 
 namespace gdl::game {
 void DestructibleWalls::bind(RenderDevice& device, const WorldLayout& layout, ModelSet& models,
@@ -37,6 +38,10 @@ void DestructibleWalls::bind(RenderDevice& device, const WorldLayout& layout, Mo
         wall.minPlayers = instance.minPlayers;
         wall.object = static_cast<s32>(layout.objects().size() + index);
         wall.transform = itemPlacement(instance.position, instance.rotation);
+        wall.bounds.acquisition =
+            TargetAssist::itemAcquisition(wall.transform, info.collisionOffset, info.radius,
+                                          info.height, TargetAssist::kItemDistanceScale);
+        wall.collisionCentre = wall.bounds.acquisition->point;
         TreeInfo tree;
         TreeNodeInfo node;
         node.name = instance.name.empty() ? info.name : instance.name;

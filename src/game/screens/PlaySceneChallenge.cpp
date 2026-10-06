@@ -89,6 +89,12 @@ bool PlayScene::updateChallenge(f32 seconds) {
 
 void PlayScene::suspendForChallenge() {
     m_audio.suspend();
+    // do_exit80077D38 calls the common warp cue even for the secret portal's
+    // zero-tick departure. Start it after silencing the parent level, whose
+    // sound banks remain alive while the challenge runs.
+    if (m_secretTravel) {
+        m_audio.playNamed(PortalDeparture::kSound, PortalDeparture::kVolume);
+    }
 }
 
 void PlayScene::resumeFromChallenge(std::span<const PartyMember> party) {

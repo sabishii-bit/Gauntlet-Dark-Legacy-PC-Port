@@ -1,4 +1,5 @@
 #include <array>
+#include <format>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -336,8 +337,8 @@ TEST_CASE("locked strong and item attacks preserve held requests for continuatio
     }
 }
 
-TEST_CASE("Speed changes sequence duration without accelerating the stance transition clock",
-          "[game][players][animation][player-animation-speed]") {
+TEST_CASE("stance transitions start with native tick credit without accelerating with Speed",
+          "[game][players][animation][player-animation-speed][player-stance-timing]") {
     const auto tree = actionTree();
     for (const bool speed : {false, true}) {
         CAPTURE(speed);
@@ -351,14 +352,144 @@ TEST_CASE("Speed changes sequence duration without accelerating the stance trans
         }
         REQUIRE(animator.action() == Action::Ready);
         REQUIRE(animator.player().transitioning());
-        // InitAnim's transition deadline is wall-clock time, independent of
-        // animscale. Test the supplied blend interval, not its native initial
-        // one-base-tick credit (a separate transition-start convention).
-        for (s32 tick = 1; tick <= 4; ++tick) {
+        // InitAnim 8000EE80..8000EEAC subtracts one base tick from both start
+        // and deadline, independent of animscale. CalcAnimInfo runs immediately.
+        constexpr f32 kInitialCredit = 1.0f / 30.0f;
+        CHECK(animator.player().transition() == Approx(0.5f));
+        CHECK(animator.player().frame() == 0.0f);
+        for (s32 tick = 1; tick <= 2; ++tick) {
             animator.update(PlayerMotion::Stand, 1, kStep);
             CHECK(animator.player().transition() ==
-                  Approx(static_cast<f32>(tick) * kStep / PlayerAnimator::kStanceBlend));
+                  Approx((kInitialCredit + static_cast<f32>(tick) * kStep) /
+                         PlayerAnimator::kStanceBlend));
+            CHECK(animator.player().frame() == 0.0f);
         }
+        CHECK_FALSE(animator.player().transitioning());
+    }
+}
+
+TEST_CASE("player actions only blend back to stance where the native action table allows it",
+          "[game][players][animation][player-stance-timing]") {
+    struct Request {
+        PlayerDeed deed;
+        bool blend;
+    };
+    // DoPlayerAction 800ACFD8..800AD018 excludes native actions86..147,
+    // HIT_REACT27, SPIKE_HIT129 and KNOCKBACK130 from the Ready blend.
+    const std::array requests{
+        Request{PlayerDeed::Flinch, false},      Request{PlayerDeed::Reel, false},
+        Request{PlayerDeed::Spike, false},       Request{PlayerDeed::TurboStrong, false},
+        Request{PlayerDeed::TurboFull, false},   Request{PlayerDeed::StrongAttack, false},
+        Request{PlayerDeed::Attack, false},      Request{PlayerDeed::UsePotion, false},
+        Request{PlayerDeed::ThrowPotion, false}, Request{PlayerDeed::SuperShot, false},
+        Request{PlayerDeed::Hammer, false},      Request{PlayerDeed::Breathe, false},
+        Request{PlayerDeed::FireLeft, false},    Request{PlayerDeed::FireRight, false},
+        Request{PlayerDeed::Defend, false},      Request{PlayerDeed::Gag, false},
+        Request{PlayerDeed::Shove, true},        Request{PlayerDeed::Pick, true},
+        Request{PlayerDeed::MeleeSlow, true},    Request{PlayerDeed::MeleeLow, true}};
+    const auto tree = actionTree();
+    for (const auto& request : requests) {
+        CAPTURE(request.deed);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, 1, kStep, request.deed);
+        REQUIRE(animator.action() != Action::Ready);
+        for (s32 tick = 0; tick < 240 && animator.action() != Action::Ready; ++tick) {
+            animator.update(PlayerMotion::Stand, 1, kStep);
+        }
+        REQUIRE(animator.action() == Action::Ready);
+        CHECK(animator.player().transitioning() == request.blend);
+        CHECK(animator.player().transition() == Approx(request.blend ? 0.5f : 1.0f));
+    }
+}
+
+TEST_CASE("running changes to walking at a completed native half stride, not immediately",
+          "[game][players][animation][player-locomotion-timing]") {
+    const auto tree = actionTree();
+    for (const bool secondHalf : {false, true}) {
+        CAPTURE(secondHalf);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Run, 1, kStep);
+        if (secondHalf) {
+            for (s32 tick = 0; tick < 60 && animator.action() != Action::Run2; ++tick) {
+                animator.update(PlayerMotion::Run, 1, kStep);
+            }
+        }
+        const auto stride = secondHalf ? Action::Run2 : Action::Run1;
+        REQUIRE(animator.action() == stride);
+        // P_RUN/P_RUN2 keep mode0 for next=P_WALK. CalcAnimInfo's smooth
+        // one-shot end is frames-1+.5, here5.5 * (45/900) = .275 seconds.
+        for (s32 tick = 1; tick <= 16; ++tick) {
+            animator.update(PlayerMotion::Walk, 1, kStep);
+            CHECK(animator.action() == stride);
+            CHECK(animator.footfall() == PlayerAnimator::Foot::None);
+        }
+        animator.update(PlayerMotion::Walk, 1, kStep);
+        CHECK(animator.action() == Action::Walk1);
+        CHECK(animator.footfall() ==
+              (secondHalf ? PlayerAnimator::Foot::Second : PlayerAnimator::Foot::First));
+        CHECK_FALSE(animator.player().transitioning());
+    }
+}
+
+TEST_CASE("Archer alone omits the Ready blend after its second quick recovery",
+          "[game][players][animation][player-stance-timing]") {
+    const auto tree = actionTree();
+    for (const s32 character : {0, 3}) {
+        CAPTURE(character);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.setCharacter(character);
+        animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Melee);
+        for (s32 tick = 0; tick < 60 && animator.action() == Action::Quick1; ++tick) {
+            animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Melee);
+        }
+        REQUIRE(animator.action() == Action::Quick2);
+        for (s32 tick = 0; tick < 60 && animator.action() == Action::Quick2; ++tick) {
+            animator.update(PlayerMotion::Stand, 1, kStep);
+        }
+        REQUIRE(animator.action() == Action::Quick2Recover);
+        for (s32 tick = 0; tick < 60 && animator.action() != Action::Ready; ++tick) {
+            animator.update(PlayerMotion::Stand, 1, kStep);
+        }
+        REQUIRE(animator.action() == Action::Ready);
+        CHECK(animator.player().transitioning() == (character != 3));
+        CHECK(animator.player().transition() == Approx(character == 3 ? 1.0f : 0.5f));
+    }
+}
+
+TEST_CASE("native spike reactions play HITREACT rather than the unused SPIKEHIT sequence",
+          "[game][players][animation][alpha-spike-sequence][assets]") {
+    // The action enum is not the sequence name: main.dol's names[129] at
+    // 80126E6C points to 8011538C (HITREACT), just like names[130].
+    for (const auto* code : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
+        CAPTURE(code);
+        const auto path = test::assetOrSkip(std::format("PLAYERS/{}/ANIM/ANIM.PS2", code));
+        AnimationSet actions;
+        REQUIRE(actions.load(path.parent_path()));
+        const auto found = actions.find(code);
+        REQUIRE(found);
+        const auto& tree = actions.tree(*found);
+        const auto hit = tree.findSequence("HITREACT");
+        REQUIRE(hit);
+        const auto unused = tree.findSequence("SPIKEHIT");
+        if (unused) {
+            REQUIRE(hit != unused);
+        }
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Spike);
+        REQUIRE(animator.action() == Action::SpikeHit);
+        CHECK(animator.player().sequence() == *hit);
+        CHECK_FALSE(animator.player().transitioning());
+        for (s32 step = 0; step < 240 && animator.action() == Action::SpikeHit; ++step) {
+            CAPTURE(step);
+            CHECK_FALSE(animator.released());
+            CHECK_FALSE(animator.meleeStruck());
+            animator.update(PlayerMotion::Stand, 1, kStep);
+        }
+        REQUIRE(animator.action() == Action::Ready);
         CHECK_FALSE(animator.player().transitioning());
     }
 }

@@ -128,6 +128,43 @@ TEST_CASE("an empty sequence is finished at once and a stopped player plays noth
     REQUIRE_FALSE(player.advance(kStep, true));
 }
 
+TEST_CASE("initial transition credit affects only the blend and never advances playback",
+          "[world][animation][transition-credit]") {
+    const auto cycle = sequence(12, 30);
+    for (const f32 speed : {0.5f, 1.0f, 2.0f}) {
+        CAPTURE(speed);
+        AnimationPlayer player;
+        player.setSpeed(speed);
+        player.setSmooth(true);
+        player.start(cycle, 0, 2.0f * kStep, 5.0f, kStep);
+        const auto generation = player.generation();
+        CHECK(player.frame() == 5.0f);
+        CHECK(player.presentationFrame() == Approx(5.0f));
+        CHECK(player.transition() == Approx(0.5f));
+        CHECK_FALSE(player.finished());
+        CHECK_FALSE(player.advance(kStep, false));
+        CHECK_FALSE(player.transitioning());
+        CHECK(player.frame() == 5.0f);
+        CHECK(player.generation() == generation);
+        CHECK_FALSE(player.advance(kStep, false));
+        CHECK(player.frame() == Approx(5.0f + speed));
+    }
+    for (const f32 duration : {0.0f, kStep / 2.0f, kStep}) {
+        CAPTURE(duration);
+        AnimationPlayer player;
+        player.start(cycle, 0, duration, 11.0f, kStep);
+        CHECK_FALSE(player.transitioning());
+        CHECK_FALSE(player.finished());
+        CHECK(player.frame() == 11.0f);
+        CHECK(player.presentationFrame() == Approx(11.0f));
+    }
+    AnimationPlayer player;
+    player.start(cycle, 0, kStep, 0, -kStep);
+    CHECK(player.transition() == 0.0f);
+    player.start(cycle, 0, kStep);
+    CHECK(player.transition() == 0.0f);
+}
+
 TEST_CASE("looping animation owns a full interval for its last frame and keeps overshoot",
           "[world][animation][cadence]") {
     const TreeSequenceInfo cycle = sequence(12, 30);

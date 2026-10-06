@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/SoundSet.h"
+#include "engine/assets/WorldData.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
@@ -184,6 +187,54 @@ TEST_CASE("placed item art falls back per tree without replacing level-specific 
     gates.clear();
     barrels.clear();
     CHECK(realm.loaded());
+}
+
+TEST_CASE("every level with transporter pads resolves its authored sound or native silent slot",
+          "[transporters][alpha-transporter-audio][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELS8/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    usize levels = 0;
+    for (const auto& realm : catalog.realms()) {
+        for (const auto& name : realm.levels) {
+            const auto ref = catalog.byName(name);
+            REQUIRE(ref);
+            WorldLayout layout;
+            REQUIRE(layout.load(test::assetOrSkip(ref->directory + "/WORLDS.PS2").parent_path()));
+            const auto& infos = layout.itemInfos();
+            if (std::ranges::none_of(infos, [](const ItemInfo& info) {
+                    return info.type == LevelTransporters::kItemType;
+                })) {
+                continue;
+            }
+            CAPTURE(name);
+            ++levels;
+            WorldData data;
+            REQUIRE(data.load(root / ref->worldDataFile()));
+            const auto* level = data.level(name);
+            REQUIRE(level);
+            const auto* audio = data.audio(level->audioIndex);
+            REQUIRE(audio);
+            SoundSet bank;
+            REQUIRE(bank.load(root / "audio" / audio->bank));
+            const auto cue = LevelTransporters::soundForRealm(ref->realmId);
+            CAPTURE(audio->bank, cue);
+            if (ref->realmId == 0) {
+                // main.dol 8012406C: realm zero's slot is FFFFFFFF, not a cue.
+                CHECK(cue.empty());
+                continue;
+            }
+            REQUIRE_FALSE(cue.empty());
+            const auto sound = bank.find(cue);
+            REQUIRE(sound);
+            const auto sequence = bank.sequence(*sound);
+            REQUIRE_FALSE(sequence.steps.empty());
+            REQUIRE(sequence.steps.front().clip);
+            CHECK_FALSE(sequence.steps.front().clip->samples.empty());
+        }
+    }
+    CHECK(levels == 7);
 }
 
 TEST_CASE("every catalogued transporter has a partner, a landing floor and animated art",

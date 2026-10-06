@@ -107,6 +107,7 @@ bool WorldData::loadNative(const std::filesystem::path& file) {
             camera.maxPitch = from.maxPitch;
             camera.boundsMin = from.boundsMin;
             camera.boundsMax = from.boundsMax;
+            camera.authoredBounds = from.limits != 0;
             camera.attention = from.attention;
             camera.radiusMin = from.radiusMin;
             camera.radiusMax = from.radiusMax;

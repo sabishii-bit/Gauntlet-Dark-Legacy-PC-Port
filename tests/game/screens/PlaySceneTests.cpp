@@ -174,6 +174,49 @@ TEST_CASE("G2 gold pad wakes Death at the native item-contact reach",
     CHECK(death == wakes);
 }
 
+TEST_CASE("gameplay status panels fill wide and tall windows without detached bottom margins",
+          "[game][screens][hud-viewport][assets]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.unpackedRoot = unpackedRoot();
+    PlayScene scene;
+    const std::array party{PartyMember{3, CharacterSave{}}};
+    PlayOptions options;
+    options.welcome = false;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (const Vec2 extent : {Vec2{640, 448}, Vec2{1920, 1080}, Vec2{800, 1200}}) {
+        CAPTURE(extent.x, extent.y);
+        device.draws.clear();
+        const auto projection = makeLetterboxProjection(640, 448, extent.x, extent.y);
+        scene.render(device, projection, 640, 448);
+        std::array<bool, 4> found{};
+        for (const auto& draw : device.draws) {
+            if (draw.vertices.size() != 6) {
+                continue;
+            }
+            const Vec2 minimum = test::minCorner(draw);
+            const Vec2 maximum = test::maxCorner(draw);
+            for (usize lane = 0; lane < found.size(); ++lane) {
+                const auto x = static_cast<f32>(lane) * 128.0f;
+                if (minimum != Vec2{x, 320} || maximum != Vec2{x + 128, 384}) {
+                    continue;
+                }
+                found[lane] = true;
+                const Vec4 bottomLeft = draw.transform * Vec4{x, 384, 0, 1};
+                const Vec4 bottomRight = draw.transform * Vec4{x + 128, 384, 0, 1};
+                CHECK(bottomLeft.x == Approx(-1.0f + 0.5f * static_cast<f32>(lane)));
+                CHECK(bottomRight.x == Approx(-0.5f + 0.5f * static_cast<f32>(lane)));
+                CHECK(bottomLeft.y == Approx(1));
+                CHECK(bottomRight.y == Approx(1));
+            }
+        }
+        CHECK(std::ranges::all_of(found, [](bool present) { return present; }));
+    }
+}
+
 TEST_CASE("the native compass follows its preference and is hidden behind options",
           "[game][screens][compass][assets]") {
     test::FakeRenderDevice device;
@@ -2045,7 +2088,7 @@ TEST_CASE("spikes make whoever they catch flinch where they stand",
     walking[0].move.magnitude = 1.0f;
     scene.update(1.0 / 60.0, walking);
     REQUIRE(scene.animator(0) != nullptr);
-    // Spikes play their own reaction (SPIKEHIT), not the ordinary flinch.
+    // Spikes select their own logical reaction, using retail's HITREACT sequence.
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::SpikeHit);
     const Vec3 struckAt = scene.actor(0)->position();
     s32 held = 0;

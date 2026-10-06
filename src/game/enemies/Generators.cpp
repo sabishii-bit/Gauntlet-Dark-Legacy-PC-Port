@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 
 #include "game/world/ItemSupport.h"
+#include "game/world/TargetAssist.h"
 
 namespace gdl::game {
 
@@ -233,6 +234,10 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         } else {
             generator.direction = Vec3{0.0f, 0.0f, 1.0f};
         }
+        // SetItem copies the original offset before replacing a rat's info by LOW.
+        generator.collisionOffset = info.collisionOffset;
+        generator.targetRadius = body->radius;
+        generator.targetHeight = body->height;
         generator.clearance = body->height;
         generator.patrolClearance = body->radius;
         generator.viewRadius = kGeneratorViewScale * std::max(info.radius, info.height);
@@ -348,6 +353,9 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.placement[3] = Vec4{generator.position, 1};
     generator.yaw = yaw;
     generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
+    generator.collisionOffset = info.collisionOffset;
+    generator.targetRadius = info.radius;
+    generator.targetHeight = info.height;
     generator.clearance = info.height;
     generator.patrolClearance = info.radius;
     generator.box = generator.bossFigure->obstacle(info);
@@ -710,6 +718,17 @@ s32 Generators::bredOf(s32 id) const {
 const Vec3& Generators::positionOf(s32 id) const {
     return m_generators[static_cast<usize>(id)].position;
 }
+MissileTarget Generators::target(s32 index, s32 id) const {
+    const auto& generator = m_generators.at(static_cast<usize>(index));
+    MissileTarget result{id, generator.position,
+                         std::max(generator.box.halfAcross, generator.box.halfAlong),
+                         generator.box.height};
+    result.acquisition =
+        TargetAssist::itemAcquisition(generator.placement, generator.collisionOffset,
+                                      generator.targetRadius, generator.targetHeight, 1);
+    return result;
+}
+
 const Obstacle& Generators::boxOf(s32 id) const {
     return m_generators[static_cast<usize>(id)].box;
 }

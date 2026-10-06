@@ -67,6 +67,12 @@ void EnemyAnimator::request(Action action) {
     m_requested = action;
 }
 
+void EnemyAnimator::stopWalking() {
+    if (m_requested == Action::Walk || m_requested == Action::Run) {
+        m_requested = Action::Ready;
+    }
+}
+
 u32 EnemyAnimator::sequenceOf(Action action) const {
     const s32 sequence = m_sequences[index(action)];
     return sequence >= 0 ? static_cast<u32>(sequence)

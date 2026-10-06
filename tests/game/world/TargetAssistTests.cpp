@@ -4,12 +4,172 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/io/File.h"
+
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
+#include "game/world/Breakables.h"
 #include "game/world/TargetAssist.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("item aim anchors keep authored offsets while capping only acquisition radii",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    const Mat4 placement = itemPlacement({10, 20, 30}, {0, 0, 1.57079637f});
+    const auto rotated = TargetAssist::itemAcquisition(placement, {1, 2, 3}, 8, 7, 1.2f);
+    CHECK(glm::distance(rotated.point, Vec3{7, 21, 33}) < 0.001f);
+    CHECK(rotated.radius == 5);
+    CHECK(rotated.maxHeight == 14);
+    CHECK(rotated.distanceScale == Approx(1.2f));
+    const auto vertical = TargetAssist::itemAcquisition(placement, {0, 2, 0}, 2, 7, 1);
+    CHECK(vertical.point == Vec3{10, 23, 30});
+    CHECK(vertical.radius == 2);
+    const auto threshold = TargetAssist::itemAcquisition(placement, {0.01f, 2, 0}, 2, 7, 0.9f);
+    CHECK(threshold.point == Vec3{10.01f, 23, 30});
+}
+
+TEST_CASE("barrel snapshots retain ordinary and explosive acquisition weights without resizing",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    const auto directory = test::scratchDirectory("barrel-aim-metadata");
+    writeTextFile(directory / "world.json",
+                  R"({"objects":[{"name":"ROOT","position":[0,0,0]}],"itemInfos":[
+      {"type":10,"subtype":43,"name":"BARREL","radius":8,"height":4,"collisionOffset":[0,2,0]},
+      {"type":10,"subtype":44,"name":"BARREL","radius":8,"height":4,"collisionOffset":[0,2,0]},
+      {"type":10,"subtype":45,"name":"BARREL","radius":8,"height":4,"collisionOffset":[0,2,0]}],
+      "itemInstances":[{"info":0,"position":[0,10,20]},
+                       {"info":1,"position":[30,10,20]},
+                       {"info":2,"position":[60,10,20]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    ItemArchive noArtwork;
+    test::FakeRenderDevice device;
+    Breakables barrels;
+    REQUIRE(barrels.bind(device, layout, noArtwork, nullptr));
+    REQUIRE(barrels.size() == 3);
+    for (usize index = 0; index < barrels.size(); ++index) {
+        const auto target = barrels.target(index, static_cast<s32>(index));
+        REQUIRE(target.acquisition);
+        CHECK(target.radius == 8);
+        CHECK(target.height == 4);
+        CHECK(target.acquisition->point == target.base + Vec3{0, 3, 0});
+        CHECK(target.acquisition->radius == 5);
+        CHECK(target.acquisition->maxHeight == 8);
+        CHECK(target.acquisition->distanceScale == Approx(index == 0 ? 1.2f : 0.9f));
+    }
+}
+
+TEST_CASE("Easy targeting widens native acquisition but preserves explicit normal defaults",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    const Vec3 origin{0, 3, 0};
+    const Vec3 forward{0, 0, 1};
+    MissileTarget target{0, {6, 0, 8}, 1, 6};
+    target.acquisition = MissileTarget::Acquisition{{6, 3, 8}, 1, 1, 10};
+    const std::span targets{&target, 1};
+    CHECK(TargetAssist::select(origin, forward, targets, 30));
+    target.acquisition->point = {8, 3, 6};
+    CHECK_FALSE(TargetAssist::select(origin, forward, targets, 30));
+    CHECK_FALSE(TargetAssist::select(origin, forward, targets, 30, nullptr, 0.707f));
+    // .5 + 9*.5/30=.65: this bearing still misses even on Easy.
+    CHECK_FALSE(TargetAssist::select(origin, forward, targets, 30, nullptr, 0.5f));
+    target.acquisition->point = {6, 3, 6};
+    CHECK_FALSE(TargetAssist::select(origin, forward, targets, 30));
+    CHECK(TargetAssist::select(origin, forward, targets, 30, nullptr, 0.5f));
+    target.acquisition.reset();
+    target.base = {6, 0, 6};
+    target.node = 0;
+    CHECK_FALSE(TargetAssist::select(origin, forward, targets, 30));
+    CHECK(TargetAssist::select(origin, forward, targets, 30, nullptr, 0.5f));
+}
+
+TEST_CASE("native acquisition narrows with distance and rejects another enemy floor",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    constexpr f32 kDot = 0.79f;
+    const Vec3 forward{0, 0, 1};
+    MissileTarget target{0, {0, 0, 10}, 1, 6};
+    target.acquisition =
+        MissileTarget::Acquisition{{10 * std::sqrt(1 - kDot * kDot), 3, 10 * kDot}, 1, 1, 10};
+    // closest_enemy 800445D8: .707 + (distance-radius)*(1-.707)/range.
+    // At range30 this ten-unit target misses; the boss range keeps it.
+    CHECK_FALSE(TargetAssist::select({0, 3, 0}, forward, std::span{&target, 1}, 30));
+    CHECK(TargetAssist::select({0, 3, 0}, forward, std::span{&target, 1}, 200) ==
+          target.acquisition->point);
+    target.acquisition->point = {0, 13, 10};
+    CHECK(TargetAssist::select({0, 3, 0}, forward, std::span{&target, 1}, 30));
+    target.acquisition->point.y += 0.01f;
+    CHECK_FALSE(TargetAssist::select({0, 3, 0}, forward, std::span{&target, 1}, 30));
+    target.acquisition->point = {0, -7.01f, 10};
+    CHECK_FALSE(TargetAssist::select({0, 3, 0}, forward, std::span{&target, 1}, 30));
+    // Acquisition never changes the collider, nor the old unannotated query.
+    CHECK(target.pointNear({0, 3, 0}) == Vec3{0, 3, 10});
+    CHECK(target.touches({0, 3, 10}, 0));
+    target.acquisition.reset();
+    CHECK(TargetAssist::select({0, 3, 0}, forward, std::span{&target, 1}, 30) == Vec3{0, 3, 10});
+}
+
+TEST_CASE("item acquisition weights distance before its radius and cone",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    const Vec3 origin{0, 3, 0};
+    const Vec3 forward{0, 0, 1};
+    std::array targets{MissileTarget{0, {0, 0, 10}, 1, 6}, MissileTarget{1, {1, 0, 9}, 1, 6}};
+    targets[0].acquisition = MissileTarget::Acquisition{{0, 3, 10}, 1, 1, 10};
+    targets[1].acquisition = MissileTarget::Acquisition{{1, 3, 9}, 1, 1.2f, 12};
+    // Ordinary items are weighted1.2 before radius subtraction (fn_8005B274).
+    CHECK(TargetAssist::select(origin, forward, targets, 30) == targets[0].acquisition->point);
+    targets[1].acquisition->distanceScale = 0.9f; // explosive / poison barrels
+    CHECK(TargetAssist::select(origin, forward, targets, 30) == targets[1].acquisition->point);
+    targets[1].acquisition->distanceScale = 1; // generator
+    CHECK(TargetAssist::select(origin, forward, targets, 30) == targets[1].acquisition->point);
+    // The item-height limit is independent of the enemy's ten-unit limit.
+    targets[1].acquisition->point = {1, 15, 9};
+    CHECK(TargetAssist::select(origin, forward, std::span{&targets[1], 1}, 30));
+    targets[1].acquisition->point.y += 0.01f;
+    CHECK_FALSE(TargetAssist::select(origin, forward, std::span{&targets[1], 1}, 30));
+    constexpr f32 kDot = 0.79f;
+    targets[1].acquisition->point = {10 * std::sqrt(1 - kDot * kDot), 3, 10 * kDot};
+    targets[1].acquisition->distanceScale = 1.2f;
+    CHECK_FALSE(TargetAssist::select(origin, forward, std::span{&targets[1], 1}, 30));
+    targets[1].acquisition->distanceScale = 0.9f;
+    CHECK(TargetAssist::select(origin, forward, std::span{&targets[1], 1}, 30));
+}
+
+TEST_CASE("melee acquisition shares item priorities without weighting its physical contact",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    std::array targets{MissileTarget{0, {0, 0, 3.2f}, 1, 6}, MissileTarget{1, {0, 0, 3}, 1, 6}};
+    targets[0].acquisition = MissileTarget::Acquisition{{0, 3, 3.2f}, 1, 1, 10};
+    targets[1].acquisition = MissileTarget::Acquisition{{0, 3, 3}, 1, 1.2f, 12};
+    const auto selected = TargetAssist::ahead({}, 6, {0, 0, 1}, targets, 3, 30);
+    REQUIRE(selected);
+    CHECK(selected->id == 0);
+    const auto contact = TargetAssist::around({}, 6, targets, 3);
+    REQUIRE(contact);
+    CHECK(contact->id == 1); // the nearer physical body, independent of aim weights
+    targets[1].acquisition->distanceScale = 0.9f;
+    const auto explosive = TargetAssist::ahead({}, 6, {0, 0, 1}, targets, 3, 30);
+    REQUIRE(explosive);
+    CHECK(explosive->id == 1);
+    CHECK_FALSE(TargetAssist::ahead({}, 6, {0, 0, 1}, targets, 1, 30));
+    CHECK_FALSE(TargetAssist::ahead({}, 6, {0, 0, -1}, targets, 3, 30));
+}
+
+TEST_CASE("native acquisition points do not replace secret-wall surfaces or visibility",
+          "[game][target-assist][alpha-aim-acquisition]") {
+    const std::array surface{
+        CollisionTriangle{{0, 0, -1}, {Vec3{-5, 0, 8}, Vec3{5, 0, 8}, Vec3{0, 12, 8}}}};
+    MissileTarget wall{0, {0, 0, 8}, 5, 12, surface};
+    wall.acquisition = MissileTarget::Acquisition{{0, 6, 8}, 2, 1.2f, 12};
+    const Vec3 origin{0, 3, 0};
+    CHECK(wall.pointNear(origin) == Vec3{0, 3, 8});
+    CHECK(TargetAssist::select(origin, {0, 0, 1}, std::span{&wall, 1}, 30) == Vec3{0, 6, 8});
+    CHECK(TargetAssist::distanceTo({0, 0, 0}, 6, wall) == Approx(8));
+    WorldCollision collision;
+    collision.build({surface[0]});
+    CHECK(TargetAssist::select(origin, {0, 0, 1}, std::span{&wall, 1}, 30, &collision));
+    collision.build({{{0, 0, -1}, {Vec3{-10, 0, 4}, Vec3{10, 0, 4}, Vec3{0, 20, 4}}}});
+    CHECK_FALSE(TargetAssist::select(origin, {0, 0, 1}, std::span{&wall, 1}, 30, &collision));
+}
 
 TEST_CASE("overlapping enemy centres still select melee without a spurious aim direction",
           "[game][target-assist][melee]") {

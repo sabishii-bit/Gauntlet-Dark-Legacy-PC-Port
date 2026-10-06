@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/world/Chests.h"
+#include "game/world/TargetAssist.h"
 
 namespace gdl::game {
 
@@ -58,6 +59,7 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchi
         barrel->armor = info.armor;
         barrel->radius = info.radius > 0.0f ? info.radius : 1.0f;
         barrel->height = info.height > 0.0f ? info.height : 3.0f;
+        barrel->collisionOffset = info.collisionOffset;
         if (holds) {
             barrel->kind = BreakableStrike::Kind::Holding;
             barrel->contents = paramS16(instance, 0);
@@ -86,6 +88,17 @@ void Breakables::clear() {
     m_barrels.clear();
     m_infos.clear();
     m_seed = kSeedStart;
+}
+
+MissileTarget Breakables::target(usize index, s32 id) const {
+    const auto& barrel = *m_barrels.at(index);
+    MissileTarget result{id, barrel.figure.position(), barrel.radius, barrel.height};
+    const bool explosive = barrel.kind == BreakableStrike::Kind::Exploding ||
+                           barrel.kind == BreakableStrike::Kind::Poison;
+    result.acquisition = TargetAssist::itemAcquisition(
+        barrel.figure.transform(), barrel.collisionOffset, barrel.radius, barrel.height,
+        explosive ? TargetAssist::kExplosiveDistanceScale : TargetAssist::kItemDistanceScale);
+    return result;
 }
 
 void Breakables::syncFloors() {

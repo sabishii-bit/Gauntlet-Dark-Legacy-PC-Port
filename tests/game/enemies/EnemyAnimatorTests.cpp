@@ -6,7 +6,9 @@
 #include "engine/assets/AnimationSet.h"
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
 #include "game/enemies/EnemyAnimator.h"
+#include "game/enemies/EnemyMind.h"
 
 namespace {
 
@@ -62,6 +64,24 @@ s32 stepsUntil(EnemyAnimator& animator, Action ask, Action wanted, s32 limit) {
         ++steps;
     }
     return steps;
+}
+
+TEST_CASE("a collision hold cancels pending walk and run without interrupting other requests",
+          "[enemies][animation][alpha-seek-blocked]") {
+    // fn_8004D030 assigns daction=READY only for WALK/RUN. A low-priority
+    // request(READY) cannot replace those, and must not cancel an attack or hit.
+    const auto tree = gruntTree();
+    for (usize i = 0; i < kEnemyActionCount; ++i) {
+        EnemyAnimator animator;
+        REQUIRE(animator.bind(tree));
+        const auto action = static_cast<Action>(i);
+        CAPTURE(i);
+        animator.request(action);
+        animator.stopWalking();
+        CHECK(animator.requested() ==
+              (action == Action::Walk || action == Action::Run ? Action::Ready : action));
+        CHECK(animator.action() == Action::Start); // no animation step or restart
+    }
 }
 
 TEST_CASE("enemy presentation interpolates without changing attack events and holds across cuts",
@@ -314,6 +334,55 @@ TEST_CASE("throw stages carry fractional retail waits without blocking movement 
     REQUIRE(stepsUntil(animator, Action::Ready, Action::Ready, 30) < 30);
     REQUIRE(stepsUntil(animator, Action::Throw, Action::Throw, 30) < 30);
     CHECK(animator.idleSeconds() == 0.0f);
+}
+
+TEST_CASE("the Province suicide bomber stays still throughout its authored running windup",
+          "[game][enemies][animation][alpha-bomber-start][assets]") {
+    const auto path = test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    AnimationSet actions;
+    REQUIRE(actions.load(path.parent_path()));
+    const auto found = actions.find("GRUS");
+    REQUIRE(found);
+    const auto& tree = actions.tree(*found);
+    const auto windup = tree.findSequence("READYTOWALK");
+    REQUIRE(windup);
+    REQUIRE(tree.findSequence("RUN"));
+    // The authored bomber has no WALK, so action 9 finishes into RUN (4).
+    REQUIRE_FALSE(tree.findSequence("WALK"));
+    EnemyAnimator animator;
+    REQUIRE(animator.bind(tree));
+    MindMemory memory;
+    MindSense sense;
+    sense.target = 0;
+    sense.targetPosition = {0, 0, 12};
+    sense.targetDistance = 12;
+    sense.recognized = true;
+    sense.ticks = kTicks;
+    const auto& mind = enemyMindOf(kSuicideWay);
+    bool sawWindup = false;
+    s32 windupUpdates = 0;
+    for (s32 tick = 0; tick < 180 && animator.action() != Action::Run; ++tick) {
+        sense.action = animator.action();
+        const auto intent = mind.think(memory, sense);
+        CHECK(intent.pace == 0);
+        CHECK_FALSE(intent.yell);
+        if (sense.action == Action::ReadyToWalk) {
+            sawWindup = true;
+            ++windupUpdates;
+            CHECK(animator.player().sequence() == *windup);
+        }
+        animator.request(intent.action);
+        animator.update(kTicks, kStep);
+    }
+    REQUIRE(sawWindup);
+    REQUIRE(windupUpdates > 1);
+    REQUIRE(animator.action() == Action::Run);
+    sense.action = animator.action();
+    const auto run = mind.think(memory, sense);
+    CHECK(run.yell);
+    CHECK(run.pace == 1.5f);
+    CHECK(run.action == Action::Run);
+    CHECK(memory.counter == kTicks);
 }
 
 } // namespace

@@ -200,6 +200,37 @@ TEST_CASE("hurt mode adds forward player melee and aiming only as a world-target
     CHECK(aim->z > 10);
 }
 
+TEST_CASE("attack acquisition samples Easy's wider cone without widening versus-player aim",
+          "[game][player-attacks][alpha-aim-acquisition]") {
+    const auto root = turboAssets();
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = {6, 0, 6};
+    REQUIRE(enemies.spawn(spawn, {}));
+    const auto& actor = f.players[0].actor;
+    CHECK_FALSE(f.attacks.aim(actor, {0, 0, 1}, f.targets)); // default is Normal
+    for (const bool easy : {true, false}) {
+        f.attacks.bind({f.device, f.classes, f.world, f.weapons, f.effects, f.audio, nullptr,
+                        f.arsenal, f.dimmer, &f.shake, &f.mode,
+                        easy ? TargetAssist::kEasyFacingDot : TargetAssist::kFacingDot});
+        CHECK(f.attacks.aim(actor, {0, 0, 1}, f.targets).has_value() == easy);
+    }
+    Fixture versus;
+    versus.attacks.bind({versus.device, versus.classes, versus.world, versus.weapons,
+                         versus.effects, versus.audio, nullptr, versus.arsenal, versus.dimmer,
+                         &versus.shake, &versus.mode, TargetAssist::kEasyFacingDot});
+    std::array<PlayerRuntime, 2> party;
+    party[0].actor.spawn(0, {}, nullptr, {}, 0);
+    party[1].actor.spawn(1, {}, nullptr, {8, 0, 6}, 0);
+    versus.targets.players = party;
+    versus.targets.multiplayer = MultiplayerMode::Hurt;
+    CHECK_FALSE(versus.attacks.aim(party[0].actor, {0, 0, 1}, versus.targets));
+}
+
 TEST_CASE("class turbo areas harm other players only in hurt mode with shared effect cooldown",
           "[game][screens][player-attacks][multiplayer-combat]") {
     const auto root = turboAssets();
@@ -547,8 +578,8 @@ TEST_CASE("weapon throw audio follows the worn amulet or special shot",
     }
 }
 
-TEST_CASE("turbo contacts damage nearby enemies in every direction and reject distant floors",
-          "[game][screens][player-attacks][turbo-contacts]") {
+TEST_CASE("stationary turbo contacts use native horizontal swarm reach across floors",
+          "[game][screens][player-attacks][turbo-contacts][alpha-area-height]") {
     const auto root = turboAssets();
     Fixture f;
     REQUIRE(f.classes.load(root / "pdata"));
@@ -561,8 +592,9 @@ TEST_CASE("turbo contacts damage nearby enemies in every direction and reject di
     auto& enemies = f.opponents.enemies();
     enemies.open(f.device, root, nullptr, 8, scales, 1);
     REQUIRE(enemies.loadKind(kGruntKind));
-    std::array<s32, 4> ids{};
-    const std::array positions{Vec3{0, 0, 5}, Vec3{0, 0, -5}, Vec3{0, 40, 5}, Vec3{0, 0, 50}};
+    std::array<s32, 6> ids{};
+    const std::array positions{Vec3{0, 0, 5},   Vec3{0, 0, -5}, Vec3{0, 40, 5},
+                               Vec3{0, -40, 5}, Vec3{0, 0, 50}, Vec3{0, 40, 50}};
     for (usize i = 0; i < positions.size(); ++i) {
         EnemySpawn spawn;
         spawn.kind = kGruntKind;
@@ -582,8 +614,11 @@ TEST_CASE("turbo contacts damage nearby enemies in every direction and reject di
     }
     CHECK(enemies.healthOf(ids[0]) < before);
     CHECK(enemies.healthOf(ids[1]) == enemies.healthOf(ids[0]));
-    CHECK(enemies.healthOf(ids[2]) == before);
-    CHECK(enemies.healthOf(ids[3]) == before);
+    // ProcessEffects' StartItemGrid/NormalVector2D path has no height gate.
+    CHECK(enemies.healthOf(ids[2]) == enemies.healthOf(ids[0]));
+    CHECK(enemies.healthOf(ids[3]) == enemies.healthOf(ids[0]));
+    CHECK(enemies.healthOf(ids[4]) == before);
+    CHECK(enemies.healthOf(ids[5]) == before);
     CHECK(player.turbo.held() == 60);
     f.attacks.clear();
     f.opponents.close();
@@ -755,7 +790,7 @@ TEST_CASE("a charge throws down the enemy it runs into, once a charge",
 }
 
 TEST_CASE("flying turbo strikes reach short enemies without dealing damage every frame",
-          "[game][screens][player-attacks][turbo-contacts]") {
+          "[game][screens][player-attacks][turbo-contacts][alpha-area-height]") {
     const auto root = turboAssets();
     for (const s32 hz : {30, 60, 120}) {
         CAPTURE(hz);
@@ -776,6 +811,12 @@ TEST_CASE("flying turbo strikes reach short enemies without dealing damage every
         spawn.position = Vec3{0, 0, 20};
         const auto id = enemies.spawn(spawn, {});
         REQUIRE(id);
+        spawn.position.y = 40;
+        const auto above = enemies.spawn(spawn, {});
+        REQUIRE(above);
+        spawn.position.y = -40;
+        const auto below = enemies.spawn(spawn, {});
+        REQUIRE(below);
         const f32 before = enemies.healthOf(*id);
         player.turbo.add(100);
         const f32 seconds = 1.0f / static_cast<f32>(hz);
@@ -789,7 +830,103 @@ TEST_CASE("flying turbo strikes reach short enemies without dealing damage every
             contacts += enemies.healthOf(*id) < prior ? 1 : 0;
         }
         CHECK(enemies.healthOf(*id) < before);
+        CHECK(enemies.healthOf(*above) == before);
+        CHECK(enemies.healthOf(*below) == before);
         CHECK(contacts == 1);
+        f.attacks.clear();
+        f.opponents.close();
+    }
+}
+
+TEST_CASE("native spins retain the shared invisible carrier and reach all nearby bearings",
+          "[game][player-attacks][alpha-spin-contact][assets]") {
+    const auto root = test::assetOrSkip("PDATA/JES.WAD").parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    using Action = PlayerAnimator::Action;
+    for (s32 character = 0; character < kStartingClassCount; ++character) {
+        CAPTURE(classCode(character));
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+        auto& player = f.players[0];
+        player.actor.save().character = character;
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        const auto* stats = f.classes.stats(character);
+        REQUIRE(stats);
+        const auto& row = stats->moveStrikes.at(static_cast<usize>(stats->moves.turboA360));
+        const auto& effect = stats->moveEffects.at(static_cast<usize>(row.effect));
+        CHECK(row.radius == 10);
+        CHECK(row.delay == Approx(0.25f));
+        CHECK(row.arc == -1);
+        REQUIRE(effect.tree == "NULLFX");
+        REQUIRE(player.figure->effects());
+        CHECK_FALSE(player.figure->effects()->trees.find(effect.tree));
+        const auto shared = f.weapons.trees.find(effect.tree);
+        REQUIRE(shared);
+        REQUIRE_FALSE(f.weapons.trees.tree(*shared).sequences.empty());
+        CHECK(f.weapons.trees.tree(*shared).sequences.front().frames == 0);
+
+        const auto step = [&](PlayerDeed deed) {
+            player.figure->setMelee({MeleeRange::Swing, false, 0});
+            player.figure->animate(0, 2, 1.0f / 30, deed);
+            f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+        };
+        step(PlayerDeed::Melee);
+        for (s32 tap = 1; tap < 3; ++tap) {
+            const Action swing = player.figure->animator().action();
+            step(PlayerDeed::None);
+            step(PlayerDeed::Melee);
+            for (s32 frame = 0; frame < 120 && player.figure->animator().action() == swing;
+                 ++frame) {
+                step(PlayerDeed::Melee);
+            }
+            REQUIRE(player.figure->animator().action() != swing);
+        }
+        REQUIRE(player.figure->animator().meleeChain() == 3);
+        step(PlayerDeed::None);
+        step(PlayerDeed::MeleeSlow);
+        for (s32 frame = 0; frame < 120 && player.figure->animator().action() != Action::Spin;
+             ++frame) {
+            step(PlayerDeed::None);
+        }
+        REQUIRE(player.figure->animator().action() == Action::Spin);
+        for (s32 frame = 0; frame < 30 && f.attacks.strikes().count() == 0; ++frame) {
+            step(PlayerDeed::None);
+        }
+        REQUIRE(f.attacks.strikes().count() == 1);
+        CHECK(f.attacks.strikes().strike(0).secondsLeft == Approx(1));
+        CHECK(f.attacks.strikes().strike(0).damageTime == Approx(0.75f));
+
+        EnemyScales scales;
+        scales.health = 100;
+        auto& enemies = f.opponents.enemies();
+        enemies.open(f.device, root, nullptr, 4, scales, 1);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        std::array<s32, 4> ids{};
+        const std::array positions{Vec3{0, 0, 8}, Vec3{0, 0, -8}, Vec3{8, 0, 0}, Vec3{0, 0, 14}};
+        for (usize i = 0; i < ids.size(); ++i) {
+            EnemySpawn spawn;
+            spawn.kind = kGruntKind;
+            spawn.placed = true;
+            spawn.position = positions[i];
+            const auto id = enemies.spawn(spawn, {});
+            REQUIRE(id);
+            ids[i] = *id;
+        }
+        const f32 before = enemies.healthOf(ids.front());
+        f.attacks.updateStrikes(0.2f, f.players, f.targets);
+        CHECK(enemies.healthOf(ids.front()) == before);
+        for (s32 frame = 0; frame < 30; ++frame) {
+            f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+        }
+        CHECK(enemies.healthOf(ids[0]) < before);
+        CHECK(enemies.healthOf(ids[1]) == enemies.healthOf(ids[0]));
+        CHECK(enemies.healthOf(ids[2]) == enemies.healthOf(ids[0]));
+        CHECK(enemies.healthOf(ids[3]) == before);
+        CHECK(f.attacks.strikes().count() == 0);
         f.attacks.clear();
         f.opponents.close();
     }
@@ -1343,6 +1480,59 @@ TEST_CASE("retail item attacks play authored effects and spend one charge on the
     }
 }
 
+TEST_CASE("stationary item attacks use native horizontal swarm reach and retain their cone",
+          "[game][items][alpha-area-height][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    const bool hammer = GENERATE(false, true);
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& inventory = player.actor.save().progress().inventory;
+    inventory.addPowerup(hammer ? powerup::kWeapon : powerup::kSpecial,
+                         hammer ? powerup::kThunderHammer : powerup::kFireBreath, 2, -1);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    std::array<s32, 6> ids{};
+    const std::array positions{Vec3{0, 0, 5},   Vec3{0, 0, -5}, Vec3{0, 40, 5},
+                               Vec3{0, -40, 5}, Vec3{0, 0, 50}, Vec3{0, 40, 50}};
+    for (usize i = 0; i < ids.size(); ++i) {
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.placed = true;
+        spawn.position = positions[i];
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        ids[i] = *id;
+    }
+    const auto deed = hammer ? PlayerDeed::Hammer : PlayerDeed::Breathe;
+    player.figure->animate(0, 2, 1.0f / 30, deed);
+    for (s32 frame = 0; frame < 180 && player.figure->animator().itemReleased() == PlayerDeed::None;
+         ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30);
+    }
+    REQUIRE(player.figure->animator().itemReleased() == deed);
+    f.attacks.useItemAttack(0, f.players);
+    const f32 before = enemies.healthOf(ids[0]);
+    for (s32 frame = 0; frame < 180; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 60, f.players, f.targets);
+    }
+    CHECK(enemies.healthOf(ids[0]) < before);
+    CHECK(enemies.healthOf(ids[1]) == (hammer ? enemies.healthOf(ids[0]) : before));
+    CHECK(enemies.healthOf(ids[2]) == enemies.healthOf(ids[0]));
+    CHECK(enemies.healthOf(ids[3]) == enemies.healthOf(ids[0]));
+    CHECK(enemies.healthOf(ids[4]) == before);
+    CHECK(enemies.healthOf(ids[5]) == before);
+    f.attacks.clear();
+    f.opponents.close();
+}
+
 TEST_CASE("potion magic damages survivors once and drives knockdown through get-up",
           "[game][screens][player-attacks][assets]") {
     const auto root =
@@ -1453,10 +1643,16 @@ TEST_CASE("scene projectile updates present retail world impacts once and preser
 }
 
 TEST_CASE("Temple wall projectile hits remove the mesh and collision through the scene dispatch",
-          "[game][screens][player-attacks][walls][assets]") {
+          "[game][screens][player-attacks][walls][alpha-wall-contact][alpha-wall-fx][assets]") {
+    const auto element = GENERATE(0U, 1U, 2U, 3U, 4U);
+    constexpr std::array<std::string_view, 5> kHits{"HITCOL", "FIREHIT", "HITCOL", "HITCOL",
+                                                    "HITCOL"};
+    constexpr std::array<std::string_view, 5> kDeaths{"HITDIE", "FIREDIE", "ELECDIE", "LIGHTDIE",
+                                                      "ACIDDIE"};
     const auto root =
         test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("audio/COMMON.vbk");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;
@@ -1465,12 +1661,17 @@ TEST_CASE("Temple wall projectile hits remove the mesh and collision through the
     const auto level = catalog.byName("E1");
     REQUIRE(level);
     REQUIRE(f.world.load(f.device, root, *level));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.audio.open(root, &sounds, f.world.audio());
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
     const auto& walls = f.world.walls();
     REQUIRE(walls.size() == 5);
     CHECK(walls.target(0, 0).pointNear({55, 3, -5}) == Vec3{55, 3, -10});
     REQUIRE(walls.wall(0).health == 25);
+    f.fixtures.strikeWall(0, 100, Damage::kGas | element);
+    CHECK(walls.wall(0).health == 25);
+    CHECK(f.effects.count() == 0);
+    CHECK(sounds.voiceCount() == 0);
     MissileSpec spec;
     spec.weight = 0;
     spec.radius = 0.25f;
@@ -1479,21 +1680,88 @@ TEST_CASE("Temple wall projectile hits remove the mesh and collision through the
     launch.velocity = Vec3{0, 0, -20};
     launch.spec = &spec;
     launch.damage = 10;
+    launch.flags = element;
     REQUIRE(f.arsenal.missiles().launch(launch));
     f.attacks.updateProjectiles(0.4f, f.players, f.targets);
     CHECK(walls.wall(0).health == 16);
     CHECK(f.world.collision().solid(walls.wall(0).object));
     CHECK(sounds.voiceCount() == 1);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == kHits[element]);
+    // ItemDamage uses the item's collision centre plus two, not the missile contact.
+    CHECK(f.effects.effect(0).position == Vec3{55, 6.7265625f, -10});
+    CHECK(f.effects.effect(0).scale == Approx(1));
+    CHECK(f.effects.effect(0).tint.a == 159); // MBTreeSetAlpha's transparency 96
+    f.device.draws.clear();
+    walls.draw(f.device, Mat4{1}, f.world.fullLighting());
+    CHECK(std::ranges::any_of(f.device.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &f.device.whiteTexture();
+    }));
+    // ItemDamage's subtype-42 response is one white flash, not cover's tiered mesh.
+    f.world.update(1.0f / 30);
+    f.device.draws.clear();
+    walls.draw(f.device, Mat4{1}, f.world.fullLighting());
+    CHECK(std::ranges::none_of(
+        f.device.draws, [](const auto& draw) { return draw.state.maskedTexture != nullptr; }));
     launch.damage = 17;
     REQUIRE(f.arsenal.missiles().launch(launch));
     f.attacks.updateProjectiles(0.4f, f.players, f.targets);
     CHECK_FALSE(walls.standing(0));
     CHECK_FALSE(f.world.collision().solid(walls.wall(0).object));
     CHECK(sounds.voiceCount() == 2);
-    // The subtype-42 death path has a sound, not an invented barrel explosion.
-    CHECK(f.effects.count() == 0);
+    // Subtype 42 has the common item death effect, not a barrel explosion or tiered mesh.
+    REQUIRE(f.effects.count() == 2);
+    CHECK(f.effects.effect(1).name == kDeaths[element]);
+    CHECK(f.effects.effect(1).position == Vec3{55, 6.7265625f, -10});
+    CHECK(f.effects.effect(1).tint.a == 159);
+    f.fixtures.strikeWall(0, 100, element);
+    CHECK(f.effects.count() == 2);
+    CHECK(sounds.voiceCount() == 2);
+    f.effects.clear();
     f.fixtures.clear();
     f.audio.close();
+}
+
+TEST_CASE("native Temple secret-wall aim uses its authored centre for every base class",
+          "[game][player-attacks][walls][alpha-wall-contact][alpha-aim-acquisition][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    for (s32 character = 0; character < kStartingClassCount; ++character) {
+        CAPTURE(classCode(character));
+        Fixture f;
+        REQUIRE(f.classes.load(root / "PDATA"));
+        LevelCatalog catalog;
+        REQUIRE(catalog.load(root));
+        const auto level = catalog.byName("E1");
+        REQUIRE(level);
+        REQUIRE(f.world.load(f.device, root, *level));
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+        auto& player = f.players[0];
+        CharacterSave save;
+        save.character = character;
+        player.actor.spawn(3, save, f.classes.stats(character), {55, 0, -3},
+                           std::numbers::pi_v<f32>);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        const auto target = f.attacks.aim(player.actor, {0, 0, -1}, f.targets);
+        REQUIRE(target);
+        CHECK(target->x == Approx(55));
+        // fn_8005B274 acquires at item.objgrp.coll_pos, not the nearest mesh point.
+        CHECK(target->y == Approx(4.7265625f));
+        CHECK(target->z == Approx(-10));
+        const auto health = f.world.walls().wall(0).health;
+        f.arsenal.launchWeapon(player.actor, player.figure.get(), {0, 0, -1}, 1, false, target);
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        for (s32 frame = 0; frame < 30 && f.arsenal.missiles().count() != 0; ++frame) {
+            f.attacks.updateProjectiles(1.0f / 60, f.players, f.targets);
+        }
+        CHECK(f.world.walls().wall(0).health < health);
+        f.attacks.clear();
+        f.arsenal.clear();
+        f.fixtures.clear();
+    }
 }
 
 TEST_CASE("arena cover is not an aim target but still intercepts thrown weapons",
@@ -2474,8 +2742,9 @@ TEST_CASE("automatic melee selects live generators but never player fallback tar
     enemies.close();
 }
 
-TEST_CASE("automatic melee tests the chosen target rather than searching past a closer barrel",
+TEST_CASE("automatic melee respects native target weights rather than physical barrel proximity",
           "[game][player-attacks][melee][alpha-auto-melee][assets]") {
+    const f32 enemyGap = GENERATE(1.5f, 2.0f);
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
@@ -2495,6 +2764,9 @@ TEST_CASE("automatic melee tests the chosen target rather than searching past a 
     REQUIRE(barrel);
     REQUIRE(f.fixtures.barrels().standing(*barrel));
     const auto& cask = f.fixtures.barrels().barrel(*barrel);
+    REQUIRE(cask.radius == 1);
+    REQUIRE(cask.height == 3);
+    REQUIRE(cask.collisionOffset == Vec3{0});
     auto& actor = f.players[0].actor;
     actor.place(cask.figure.position() - Vec3{0, 0, cask.radius + 0.5f});
     REQUIRE(f.attacks.meleeSense(actor, true, f.targets).low);
@@ -2505,10 +2777,25 @@ TEST_CASE("automatic melee tests the chosen target rather than searching past a 
     EnemySpawn spawn;
     spawn.kind = kGruntKind;
     spawn.placed = true;
-    spawn.position = actor.position() + Vec3{0, 0, enemyKind(kGruntKind).radius + 1.5f};
+    const EnemyKind& grunt = enemyKind(kGruntKind);
+    spawn.position = actor.position() + Vec3{0, 0, grunt.radius + enemyGap};
     REQUIRE(enemies.spawn(spawn, {}));
-    REQUIRE(f.attacks.meleeSense(actor, true, f.targets).low);
-    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    // fn_8005B274 weights a barrel's 3D collision-anchor distance by 1.2 before
+    // subtracting its radius. closest_enemy has no such penalty. At the original
+    // 1.5-unit enemy gap its score is 1.541381, narrowly beating the barrel's
+    // 1.545584 despite the barrel being physically only half a unit away.
+    const f32 barrelScore =
+        std::hypot(cask.radius + 0.5f, actor.height() * 0.5f - 1) * 1.2f - cask.radius;
+    const f32 enemyScore =
+        std::hypot(grunt.radius + enemyGap, grunt.collisionHeight - actor.height() * 0.5f) -
+        grunt.radius;
+    const bool barrelWins = enemyGap == 2.0f;
+    CAPTURE(enemyGap, barrelScore, enemyScore);
+    CHECK(0.5f < enemyGap);
+    REQUIRE((barrelScore < enemyScore) == barrelWins);
+    CHECK(f.attacks.meleeSense(actor, true, f.targets).low == barrelWins);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+          (barrelWins ? PlayerDeed::None : PlayerDeed::AutoMelee));
     f.fixtures.clear();
     REQUIRE_FALSE(f.attacks.meleeSense(actor, true, f.targets).low);
     CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);

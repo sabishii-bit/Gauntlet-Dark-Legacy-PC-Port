@@ -17,6 +17,9 @@ namespace gdl::game {
 
 namespace {
 
+constexpr Vec3 kCameraBoundsMinInset{8, 0, 8};
+constexpr Vec3 kCameraBoundsMaxInset{-8, 4, -8};
+
 void makeMoltenBallsContactOnly(const WorldLayout& layout, WorldCollision& collision) {
     const auto& objects = layout.objects();
     for (usize i = 0; i < objects.size(); ++i) {
@@ -57,11 +60,11 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         log::info("Level: no world data under {}", directory.string());
         return false;
     }
-    loadLevelData(unpackedRoot);
     if (!m_layout.load(directory) || !m_models.load(directory) || !m_textures.load(directory)) {
         clear();
         return false;
     }
+    loadLevelData(unpackedRoot);
     if (!m_animations.load(directory)) {
         log::warn("Level: no animation data; its textures stand still");
     }
@@ -340,8 +343,14 @@ void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
         m_cameraRange.radiusMin = camera->radiusMin;
         m_cameraRange.radiusMax = camera->radiusMax;
         m_cameraRange.minPitch = camera->minPitch;
-        m_cameraRange.boundsMin = camera->boundsMin;
-        m_cameraRange.boundsMax = camera->boundsMax;
+        // camera_mode_level derives limits from the loaded world's header when
+        // CAMS has no authored limits; its stored box is not used in that mode.
+        m_cameraRange.boundsMin = camera->authoredBounds
+                                      ? camera->boundsMin
+                                      : m_layout.minBounds() + kCameraBoundsMinInset;
+        m_cameraRange.boundsMax = camera->authoredBounds
+                                      ? camera->boundsMax
+                                      : m_layout.maxBounds() + kCameraBoundsMaxInset;
     }
     m_audio = m_worldData.audio(level->audioIndex);
 }

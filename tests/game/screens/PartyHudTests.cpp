@@ -1,6 +1,7 @@
 #include <array>
 #include <format>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
@@ -15,6 +16,31 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("gameplay HUD spans the surface and rests on its bottom without stretching height",
+          "[game][screens][party-hud][hud-viewport]") {
+    for (const Vec2 extent :
+         {Vec2{640, 448}, Vec2{1920, 1080}, Vec2{2560, 1080}, Vec2{800, 1200}}) {
+        CAPTURE(extent.x, extent.y);
+        const Mat4 fitted = makeVirtualScreenTransform(
+            makeLetterboxProjection(640, 448, extent.x, extent.y), 512, 384, 640, 448);
+        const Mat4 hud = PartyHud::projection(fitted, 512, 384);
+        const Vec4 left = hud * Vec4{0, 384, 0, 1};
+        const Vec4 right = hud * Vec4{512, 384, 0, 1};
+        CHECK(left.x == Catch::Approx(-1));
+        CHECK(right.x == Catch::Approx(1));
+        CHECK(left.y == Catch::Approx(1));
+        CHECK(right.y == Catch::Approx(1));
+        CHECK(hud[1].y == fitted[1].y);
+        for (s32 lane = 0; lane < 4; ++lane) {
+            CHECK((hud * Vec4{lane * 128.0f, 384, 0, 1}).x ==
+                  Catch::Approx(-1.0f + 0.5f * static_cast<f32>(lane)));
+        }
+        if (extent == Vec2{640, 448}) {
+            CHECK(hud == fitted);
+        }
+    }
+}
 
 TEST_CASE("level announcement queues gained-level behind the color and character name",
           "[game][screens][party-hud]") {
@@ -370,5 +396,57 @@ TEST_CASE("parent and secret-level hourglasses share pickup totals across visits
     expectSand(secret, secretPlayers, 40, 40);
     parent.clear();
     CHECK(sharedTotal == 40);
+}
+TEST_CASE("native inventory labels remain below crystal counts in every player lane",
+          "[party-hud][selector][inventory-label][assets]") {
+    const auto root = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    TextureSet art;
+    REQUIRE(art.load(root / "STATIC"));
+    BitmapFont font;
+    REQUIRE(font.load(root / "FONTS/font32.fnt", 16));
+    const auto sheet = art.find("FONT32");
+    REQUIRE(sheet);
+    TextPainter text;
+    text.setFont(&font, &art.texture(device, *sheet));
+    StatusBoxPainter boxes;
+    REQUIRE(boxes.load(device, root, &strings));
+    PartyHud hud;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    Canvas canvas;
+    for (s32 lane = 0; lane < 4; ++lane) {
+        CAPTURE(lane);
+        players[0].actor.spawn(lane, {}, nullptr, Vec3{0}, 0);
+        auto& inventory = players[0].actor.save().progress().inventory;
+        inventory.powerups[0] = {30, powerup::kSpecial, 0, powerup::kInvisible, false};
+        hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 32, audio);
+        hud.stepSelector(players[0].actor, {}, 1, audio);
+        REQUIRE(hud.selector(lane).showing());
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        boxes.drawCount(canvas, lane, "SM_CRYSTAL_BLU", 4, 5);
+        canvas.end();
+        REQUIRE_FALSE(device.draws.empty());
+        f32 countBottom = 0;
+        for (const auto& draw : device.draws) {
+            countBottom = std::max(countBottom, test::maxCorner(draw).y);
+        }
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        hud.drawSelectors(canvas, text, &strings, players);
+        canvas.end();
+        REQUIRE(device.draws.size() == 1);
+        CHECK(test::minCorner(device.draws.front()).y > countBottom);
+        test::FakeRenderDevice expected;
+        canvas.begin(expected, Mat4{1});
+        text.draw(canvas, lane * 128 + 24, 310, strings.get("powerup.invisible"),
+                  TextStyle{0.45f, Color::white()});
+        canvas.end();
+        REQUIRE(expected.draws.size() == 1);
+        CHECK(device.draws.front().vertices == expected.draws.front().vertices);
+    }
 }
 } // namespace

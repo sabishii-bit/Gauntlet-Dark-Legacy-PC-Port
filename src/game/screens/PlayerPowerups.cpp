@@ -64,6 +64,7 @@ std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> playe
                 player.turbo.add(TurboMeter::kFull);
                 if (slot.strength >= 0) {
                     slot.strength = 0;
+                    slot.on = false; // Native state3: a later pickup waits for activation again.
                 }
             }
         }

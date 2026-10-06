@@ -5,6 +5,20 @@
 #include <vector>
 
 namespace gdl::game {
+MissileTarget::Acquisition TargetAssist::itemAcquisition(const Mat4& placement,
+                                                         const Vec3& collisionOffset, f32 radius,
+                                                         f32 height, f32 distanceScale) {
+    constexpr f32 kCollisionLift = 1;
+    constexpr f64 kOffsetRotationThreshold = 0.01;
+    constexpr f32 kRadiusInsetLimit = 5;
+    constexpr f32 kHeightScale = 2;
+    const Vec3 offset = collisionOffset + Vec3{0, kCollisionLift, 0};
+    const bool rotateOffset =
+        static_cast<f64>(std::abs(offset.x) + std::abs(offset.z)) >= kOffsetRotationThreshold;
+    const Vec3 point = Vec3{placement[3]} + (rotateOffset ? Mat3{placement} * offset : offset);
+    return {point, std::min(radius, kRadiusInsetLimit), distanceScale, kHeightScale * height};
+}
+
 f32 TargetAssist::distanceTo(const Vec3& feet, f32 height, const MissileTarget& target) {
     const Vec3 middle = feet + Vec3{0, height * 0.5f, 0};
     return target.surface.empty()
@@ -37,6 +51,7 @@ std::optional<MissileTarget> TargetAssist::around(const Vec3& feet, f32 height,
         // Untargetable parts remain hittable at close range.
         MissileTarget sight = target;
         sight.node = -1;
+        sight.acquisition.reset();
         if (!coincident && !select(origin, Vec3{toward.x, 0.0f, toward.z}, std::span{&sight, 1},
                                    kBossRange, collision)
                                 .has_value()) {
@@ -50,31 +65,41 @@ std::optional<MissileTarget> TargetAssist::around(const Vec3& feet, f32 height,
 
 std::optional<MissileTarget> TargetAssist::ahead(const Vec3& feet, f32 height, const Vec3& facing,
                                                  std::span<const MissileTarget> targets, f32 reach,
-                                                 f32 range, const WorldCollision* collision) {
+                                                 f32 range, const WorldCollision* collision,
+                                                 f32 facingDot) {
     const f32 facingLength = std::hypot(facing.x, facing.z);
     if (facingLength < 1e-5f || range <= 0 || reach <= 0) {
         return std::nullopt;
     }
-    std::vector<MissileTarget> candidates;
+    std::optional<MissileTarget> nearest;
+    f32 best = range;
     for (const MissileTarget& target : targets) {
         const Vec3 origin{feet.x, feet.y + height * 0.5f, feet.z};
-        const Vec3 offset = target.pointNear(origin) - origin;
+        const Vec3 point =
+            target.acquisition ? target.acquisition->point : target.pointNear(origin);
+        const Vec3 offset = point - origin;
         const f32 flat = std::hypot(offset.x, offset.z);
-        const f32 distance = distanceTo(feet, height, target);
+        const f32 distance = target.acquisition
+                                 ? glm::length(offset) * target.acquisition->distanceScale -
+                                       target.acquisition->radius
+                                 : distanceTo(feet, height, target);
         // closest_enemy / item targeting tighten the forward cone over the
         // full search range, not over this swing's much shorter reach.
-        const f32 threshold = kFacingDot + distance * (1 - kFacingDot) / range;
+        const f32 threshold = facingDot + distance * (1 - facingDot) / range;
         const f32 dot = (offset.x * facing.x + offset.z * facing.z) / facingLength;
-        if (dot >= flat * threshold) {
-            candidates.push_back(target);
+        if (dot >= flat * threshold && distance < best &&
+            (!target.acquisition || std::abs(offset.y) <= target.acquisition->maxHeight) &&
+            around(feet, height, std::span{&target, 1}, reach, collision)) {
+            nearest = target;
+            best = distance;
         }
     }
-    return around(feet, height, candidates, reach, collision);
+    return nearest;
 }
 
 std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
                                          std::span<const MissileTarget> targets, f32 range,
-                                         const WorldCollision* collision) {
+                                         const WorldCollision* collision, f32 facingDot) {
     const f32 facingLength = std::hypot(facing.x, facing.z);
     if (facingLength < 1e-5f || range <= 0.0f) {
         return std::nullopt;
@@ -91,13 +116,20 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
         if (target.id < 0 || target.radius <= 0.0f || target.height <= 0.0f) {
             continue;
         }
-        const Vec3 point = target.pointNear(origin);
+        const Vec3 point =
+            target.acquisition ? target.acquisition->point : target.pointNear(origin);
         const Vec3 offset = point - origin;
         const f32 flat = std::hypot(offset.x, offset.z);
         const f32 targetRadius = target.surface.empty() ? target.radius : 0.0f;
-        const f32 distance = glm::length(offset) - targetRadius;
+        const f32 distance = target.acquisition
+                                 ? glm::length(offset) * target.acquisition->distanceScale -
+                                       target.acquisition->radius
+                                 : glm::length(offset) - targetRadius;
+        const f32 threshold =
+            target.acquisition ? facingDot + distance * (1 - facingDot) / range : facingDot;
         if (flat < 1e-5f || distance >= range ||
-            (offset.x * facing.x + offset.z * facing.z) / (flat * facingLength) < kFacingDot) {
+            (target.acquisition && std::abs(offset.y) > target.acquisition->maxHeight) ||
+            (offset.x * facing.x + offset.z * facing.z) / (flat * facingLength) < threshold) {
             continue;
         }
         f32 score = distance;
@@ -107,14 +139,14 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
             // broad body is only a fallback when no part can be aimed at.
             const f32 length = glm::length(offset);
             const f32 dot = (offset.x * facing.x + offset.z * facing.z) / (length * facingLength);
-            const f32 threshold =
-                flat / length * (distance * (1 - kFacingDot) / range + kFacingDot);
+            const f32 partThreshold =
+                flat / length * (distance * (1 - facingDot) / range + facingDot);
             if (target.targetScoreScale <= 0 || length > range ||
                 (target.maxTargetDistance > 0 && length > target.maxTargetDistance) ||
-                dot <= threshold) {
+                dot <= partThreshold) {
                 continue;
             }
-            score = distance / (target.targetScoreScale * (dot - threshold));
+            score = distance / (target.targetScoreScale * (dot - partThreshold));
         }
         // Use missile collision geometry up to the target's near surface: its
         // own world geometry must not hide it from selection.

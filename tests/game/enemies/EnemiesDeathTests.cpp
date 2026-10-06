@@ -6,6 +6,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/world/WorldCollision.h"
+
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/enemies/DeathTestSupport.h"
@@ -16,6 +18,90 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Death reverses its seek route after nine world-blocked movement steps",
+          "[death][enemies][alpha-seek-blocked]") {
+    // do_enemy_collide 80045488's blocked00 counts actual stops, including steps
+    // during the hold: five ticks on an ordinary route, reversed after nine stops.
+    const s32 ticks = GENERATE(1, 2);
+    const auto triangle = [](Vec3 a, Vec3 b, Vec3 c, Vec3 normal) {
+        return CollisionTriangle{.normal = normal, .vertices = {a, b, c}};
+    };
+    WorldCollision collision;
+    collision.build({triangle({-40, 0, -40}, {40, 0, 40}, {40, 0, -40}, {0, 1, 0}),
+                     triangle({-40, 0, -40}, {-40, 0, 40}, {40, 0, 40}, {0, 1, 0}),
+                     triangle({-40, 0, 2.25f}, {40, 8, 2.25f}, {40, 0, 2.25f}, {0, 0, -1}),
+                     triangle({-40, 0, 2.25f}, {-40, 8, 2.25f}, {40, 8, 2.25f}, {0, 0, -1}),
+                     triangle({2.25f, 0, -40}, {2.25f, 8, 40}, {2.25f, 0, 40}, {-1, 0, 0}),
+                     triangle({2.25f, 0, -40}, {2.25f, 8, -40}, {2.25f, 8, 40}, {-1, 0, 0})});
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, test::deathArchive(), &collision, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto id = enemies.spawn({.kind = kDeathKind, .tier = 1, .placed = true}, {});
+    REQUIRE(id);
+    const std::array players{EnemyView{.player = 0, .position = {0, 0, 20}}};
+    const f32 seconds = static_cast<f32>(ticks) / 60;
+    for (s32 frame = 0; frame < 240 && !enemies.blockedOf(*id); ++frame) {
+        enemies.update(ticks, seconds, players);
+    }
+    REQUIRE(enemies.blockedOf(*id));
+    REQUIRE(enemies.bumpedWallOf(*id));
+    const Vec3 blocked = enemies.positionOf(*id);
+    CHECK(enemies.memoryOf(*id).deadEnd == 5);
+    CHECK(enemies.memoryOf(*id).collided == 1);
+    CHECK(enemies.memoryOf(*id).route == 1);
+    // Stop Time still resolves contact, but must not count it as an AI step.
+    for (s32 frame = 0; frame < 10; ++frame) {
+        enemies.update(ticks, seconds, players, {}, nullptr, 1, true);
+    }
+    CHECK(enemies.memoryOf(*id).deadEnd == 5);
+    CHECK(enemies.memoryOf(*id).collided == 1);
+    for (s32 stop = 2; stop <= 9; ++stop) {
+        for (s32 tick = 0; tick < 2; tick += ticks) {
+            enemies.update(ticks, seconds, players);
+        }
+        CAPTURE(stop, ticks);
+        REQUIRE(enemies.blockedOf(*id));
+        CHECK(glm::distance(enemies.positionOf(*id), blocked) < 0.001f);
+        CHECK(enemies.memoryOf(*id).collided == (stop == 9 ? 0 : stop));
+        CHECK(enemies.memoryOf(*id).route == (stop == 9 ? -2 : 1));
+    }
+    // The left side is open. The reversed sweep must eventually take it, rather
+    // than searching only the obstructed right side forever.
+    for (s32 frame = 0; frame < 120 && enemies.positionOf(*id).x > -0.1f; ++frame) {
+        enemies.update(ticks, seconds, players);
+    }
+    CHECK(enemies.positionOf(*id).x < -0.1f);
+}
+
+TEST_CASE("Death holds its seek route after hitting another enemy body",
+          "[death][enemies][alpha-seek-blocked]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, test::deathArchive(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto walker = enemies.spawn({.kind = kDeathKind, .tier = 1, .placed = true}, {});
+    REQUIRE(walker);
+    const auto blocker = enemies.spawn({.kind = kDeathKind,
+                                        .tier = 1,
+                                        .position = {0.1f, 0, 0.1f},
+                                        .placed = true,
+                                        .asleep = true},
+                                       {});
+    REQUIRE(blocker);
+    const std::array players{EnemyView{.player = 0, .position = {0, 0, 20}}};
+    enemies.update(2, 1.0f / 30, players);
+    REQUIRE(enemies.blockedOf(*walker));
+    CHECK_FALSE(enemies.bumpedWallOf(*walker));
+    // do_enemy_move 80044664 takes the side away from the body and holds it
+    // for sixty ticks; the body must not be mistaken for a five-tick world stop.
+    CHECK(enemies.memoryOf(*walker).deadEnd == 60);
+    CHECK(enemies.memoryOf(*walker).route == 1);
+    enemies.update(2, 1.0f / 30, players);
+    CHECK(enemies.memoryOf(*walker).deadEnd == 58);
+    CHECK(enemies.positionOf(*walker) == Vec3{0, 0, 0});
+}
 
 TEST_CASE("Enemies traverse the Temple's altar stairs without oscillating between treads",
           "[death][enemies][assets][death-stairs]") {

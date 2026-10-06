@@ -29,6 +29,7 @@ struct MindMemory {
     s32 effectiveWay = -1;    ///< the handler that actually ran, after temporary delegations
     f32 heading = 0.0f;       ///< the way it means to go
     f32 headingBefore = 0.0f; ///< the way it meant to go before that
+    f32 seekHeading = 0.0f;   ///< direct bearing saved before the seek's latest route sweep
     s32 route = 0;            ///< which way round a corner: negative left, positive right
     s32 collided = 0;         ///< bumps since the route was chosen
     s32 stuck = 0;            ///< headings refused in a row
@@ -44,6 +45,17 @@ struct MindMemory {
     bool primed = false;      ///< a mind that starts on a random wait has drawn it
     ZigZag zigZag;
 };
+
+/** The collision outcome of an actual seek movement step, not a route probe. */
+enum class SeekContact : u8 { Clear, World, Enemy, Item, Critter };
+
+struct SeekResponse {
+    bool faceTarget = false;  ///< a doubled route gives up its detour immediately
+    bool stopWalking = false; ///< a newly armed long hold clears the pending walk/run
+};
+
+/** Finish Seek's route bookkeeping after movement resolves its contact. */
+SeekResponse finishSeekStep(MindMemory& memory, SeekContact contact, s32 side = 1);
 
 /** A level's lookouts: the points its patrollers walk between, each naming the one after it
  * (its sentry and event locators, in the order the level lists them, twenty at most). */

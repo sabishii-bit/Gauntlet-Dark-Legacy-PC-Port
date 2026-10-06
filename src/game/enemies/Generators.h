@@ -19,6 +19,7 @@
 
 #include "game/enemies/Enemies.h"
 #include "game/world/ItemFigure.h"
+#include "game/world/PlayerMissiles.h"
 
 namespace gdl::game {
 
@@ -112,6 +113,7 @@ public:
     s32 livingOf(s32 id) const { return m_generators[static_cast<usize>(id)].living; }
     const Vec3& positionOf(s32 id) const;
     const Obstacle& boxOf(s32 id) const;
+    MissileTarget target(s32 index, s32 id) const;
     /** The generator's parameters as a level's record gives them, for tests and tools. */
     static s32 paramOf(const ItemInstance& instance, usize index);
 
@@ -140,6 +142,9 @@ private:
         s32 bred = 0;
         s32 living = 0; ///< retail quota counter, reset when a patrol offspring detaches
         Vec3 position{0.0f, 0.0f, 0.0f};
+        Vec3 collisionOffset{0};
+        f32 targetRadius = 0;
+        f32 targetHeight = 0;
         Mat4 placement{1};
         f32 yaw = 0.0f;
         Vec3 direction{0.0f, 0.0f, 1.0f};

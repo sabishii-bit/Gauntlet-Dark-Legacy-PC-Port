@@ -18,6 +18,7 @@
 #include "game/players/Progression.h"
 #include "game/screens/PartyRecords.h"
 #include "game/screens/PlayerPowerups.h"
+#include "game/world/TargetAssist.h"
 
 namespace gdl::game {
 
@@ -200,7 +201,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                    effectTextures);
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_dimmer, &m_shake,
-                    context.config != nullptr ? &context.config->multiplayer.mode : nullptr});
+                    context.config != nullptr ? &context.config->multiplayer.mode : nullptr,
+                    context.config != nullptr && context.config->difficulty.level == "easy"
+                        ? TargetAssist::kEasyFacingDot
+                        : TargetAssist::kFacingDot});
     m_bossSequence.bind(
         {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
     m_open = true;
@@ -537,8 +541,13 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
  * to see stand. */
 void PlayScene::watchOpponents() {
     const CameraView view = cameraView();
-    m_opponents.watch(ViewVolume::of(viewCamera(), view.horizontalFov, view.aspect),
-                      bossCameraOn() ? m_bossCamera.attention() : m_camera.attention());
+    const WorldCamera camera = viewCamera();
+    Vec3 attention = bossCameraOn() ? m_bossCamera.attention() : m_camera.attention();
+    if (m_switchCutscene.showing()) {
+        // TriggerCamUpdate uses the shot's eye as gCameras[0].attn for placement range.
+        attention = camera.position;
+    }
+    m_opponents.watch(ViewVolume::of(camera, view.horizontalFov, view.aspect), attention);
 }
 
 LevelOpponents::Events PlayScene::opponentEvents() {
@@ -1045,7 +1054,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             }
             m_leaving = true;
             m_departure.begin(*m_device, m_weapons.textures);
-            m_audio.playNamed(PortalDeparture::kSound);
+            m_audio.playNamed(PortalDeparture::kSound, PortalDeparture::kVolume);
         }
     }
     // The camera keeps to those still standing, while anyone is.
@@ -1257,6 +1266,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const auto height = static_cast<f32>(config.display.virtualHeight);
     const Mat4 canvasProjection =
         makeVirtualScreenTransform(frameProjection, width, height, frameWidth, frameHeight);
+    const Mat4 hudProjection = PartyHud::projection(canvasProjection, width, height);
     m_canvas.begin(device, canvasProjection);
     if (m_gameOver.active()) {
         m_gameOver.draw(m_canvas, m_messages.text(), width);
@@ -1273,7 +1283,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_names.draw(m_canvas, m_players, clip, canvasProjection, frameBlend);
     }
     if (!cut) {
+        m_canvas.end();
+        m_canvas.begin(device, hudProjection);
         m_hud.drawStatus(m_canvas, m_players);
+        m_canvas.end();
+        m_canvas.begin(device, canvasProjection);
         if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
             m_runeMeter.draw(m_canvas, *m_runeFrame, *m_runeColumn);
         }
@@ -1295,7 +1309,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                     Color::black());
     }
     if (!cut) {
+        m_canvas.end();
+        m_canvas.begin(device, hudProjection);
         m_hud.drawSelectors(m_canvas, m_messages.text(), m_context.strings, m_players);
+        m_canvas.end();
+        m_canvas.begin(device, canvasProjection);
         m_hud.drawHelp(m_canvas, device, m_staticTextures, m_players, clip, canvasProjection, width,
                        height);
     }

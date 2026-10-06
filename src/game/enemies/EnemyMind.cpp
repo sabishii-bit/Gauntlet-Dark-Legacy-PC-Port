@@ -1,7 +1,9 @@
 #include "game/enemies/EnemyMind.h"
 
 #include <array>
+#include <bit>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 #include "engine/core/Types.h"
@@ -21,6 +23,8 @@ constexpr s32 kLongWaitOther = 50;
 constexpr f32 kWanderTurn = kPi / 2.0f; ///< a quarter turn at a blocked probe or an expired hold
 constexpr s32 kWanderWait = 20;
 constexpr s32 kWanderCycle = 4;
+constexpr s32 kSeekWait = 5;
+constexpr s32 kSeekReverseStops = 9;
 constexpr f32 kProwlTurn = kPi / 4.0f;
 constexpr s32 kProwlWait = 30;
 constexpr f32 kProwlPounce = 8.0f;        ///< a prowler goes for a player this close
@@ -202,6 +206,7 @@ public:
             return intent;
         }
         const f32 face = sense.faceAngle(memory.heading);
+        memory.seekHeading = face;
         f32 heading = face;
         for (s32 k = 0; k <= 8; ++k) {
             const f32 offset =
@@ -493,15 +498,20 @@ public:
         case 1:
             intent.pace = 0.0f;
             intent.action = EnemyAction::Ready;
-            memory.fuse -= sense.ticks;
-            if (sense.target >= 0 && memory.fuse <= 0) {
-                intent.action = EnemyAction::ReadyToWalk; // the fuse lit
-                if (sense.action == EnemyAction::Run || sense.action == EnemyAction::ReadyToWalk) {
-                    memory.mode = 2;
-                    intent.yell = true; // AudioSuicideYell, as the run starts
+            if (sense.target >= 0 && sense.action != EnemyAction::Run) {
+                memory.fuse -= sense.ticks;
+                if (memory.fuse <= 0) {
+                    intent.action = EnemyAction::ReadyToWalk;
                 }
             }
-            break;
+            // move_logic18 8004AC68 waits for RUN, not its wind-up. Movement,
+            // the burn clock and the yell begin together on that same update.
+            if (sense.action != EnemyAction::Run) {
+                break;
+            }
+            memory.mode = 2;
+            intent.yell = true;
+            [[fallthrough]];
         default:
             memory.counter += sense.ticks;
             intent.pace = kSuicidePace;
@@ -914,6 +924,51 @@ void initializeEnemyMind(MindMemory& memory, s32 algorithm, u32 random) {
     sense.random = random;
     resetMind(memory, algorithm, sense);
     memory.effectiveWay = algorithm;
+}
+
+SeekResponse finishSeekStep(MindMemory& memory, SeekContact contact, s32 side) {
+    // blocked00 in do_enemy_collide (80045488), followed by do_enemy_move
+    // (80044664): only a physical stop counts, not a refused heading probe.
+    SeekResponse response;
+    s32 wait = 0;
+    const auto doubled = [](s32 route) {
+        // The target's 32-bit absolute value of INT_MIN remains negative.
+        return route != std::numeric_limits<s32>::min() && std::abs(route) > 2;
+    };
+    switch (contact) {
+    case SeekContact::Clear:
+        if (memory.deadEnd <= 0) {
+            memory.route = 1;
+            memory.collided = 0;
+        }
+        return response;
+    case SeekContact::World:
+        wait = doubled(memory.route) ? kLongWait : kSeekWait;
+        ++memory.collided;
+        if (memory.collided >= kSeekReverseStops) {
+            // Repeated dead ends can exhaust all 32 bits. Preserve the native
+            // wrap without signed multiplication overflow in the host language.
+            memory.route = std::bit_cast<s32>(0U - 2U * std::bit_cast<u32>(memory.route));
+            memory.collided = 0;
+            if (doubled(memory.route)) {
+                memory.heading = memory.seekHeading;
+                response.faceTarget = true;
+            }
+        }
+        break;
+    case SeekContact::Enemy:
+    case SeekContact::Item:
+        memory.route = side;
+        wait = kLongWait;
+        break;
+    case SeekContact::Critter: wait = kWanderWait; break;
+    }
+    if (memory.deadEnd <= 0) {
+        memory.deadEnd = wait;
+        // fn_8004D030 never extends a running hold or cancels attacks/reactions.
+        response.stopWalking = wait >= kLongWait;
+    }
+    return response;
 }
 
 f32 wrapAngle(f32 angle) {

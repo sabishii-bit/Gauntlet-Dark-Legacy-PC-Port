@@ -12,6 +12,7 @@
 #include "engine/core/Types.h"
 #include "engine/world/TreeModel.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
@@ -822,10 +823,28 @@ void LevelFixtures::strikeWall(usize index, f32 power, u32 flags) {
     if (!m_resources) {
         return;
     }
-    const auto health = m_resources->world.strikeWall(index, power, flags);
+    auto& resources = *m_resources;
+    const auto health = resources.world.strikeWall(index, power, flags);
     if (health) {
-        m_resources->audio.playNamed(*health == 0 ? "S_SECRETWALL"
-                                                  : m_resources->world.wallHitSound());
+        const bool destroyed = *health == 0;
+        resources.audio.playNamed(destroyed ? "S_SECRETWALL" : resources.world.wallHitSound());
+        const u32 element = damage::element(flags);
+        std::string_view tree;
+        if (element == 0) {
+            tree = destroyed ? "HITDIE" : "HITCOL";
+        } else {
+            tree = damage::hitEffect(element, destroyed);
+        }
+        if (resources.weapons.loaded() && !tree.empty()) {
+            constexpr f32 kHitLift = 2;
+            EffectTrees::Setting setting;
+            setting.tint.a = 255 - 96; // MBTreeSetAlpha takes transparency.
+            const Vec3 at =
+                resources.world.walls().wall(index).collisionCentre + Vec3{0, kHitLift, 0};
+            // ItemDamage also biases z sorting by -64 * radius; shared effects
+            // retain ordinary sorting here.
+            resources.effects.startSet(resources.device, resources.weapons, tree, at, setting);
+        }
     }
 }
 

@@ -30,12 +30,61 @@
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/TowerAccess.h"
+#include "game/world/TowerCamera.h"
 
 namespace {
 
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("gameplay camera bounds respect native CAMS limits on reopen",
+          "[game][world][camera-bounds][s8-camera][assets]") {
+    const auto root = test::assetOrSkip("WDATA/SECRET.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    // camera_mode_level (0x80026CF0): CAMS +0x24 == 0 derives the box from
+    // worldmin/worldmax with (+8,0,+8)/(-8,+4,-8), not the stored CAMS box.
+    // S8's stored z maximum is 26, behind even its entrance at 29.5625.
+    for (const std::string_view name : {"S8", "S4", "L1", "S8"}) {
+        CAPTURE(name);
+        const auto level = catalog.byName(name);
+        REQUIRE(level);
+        REQUIRE(world.load(device, root, *level));
+        const auto& range = world.cameraRange();
+        if (name == "S4") {
+            // Nonzero limits retain the authored box, not the layout bounds.
+            CHECK(range.boundsMin == Vec3{-10, 0, -38.5f});
+            CHECK(range.boundsMax == Vec3{30, 30, 9});
+            continue;
+        }
+        CHECK(range.boundsMin == world.layout().minBounds() + Vec3{8, 0, 8});
+        CHECK(range.boundsMax == world.layout().maxBounds() + Vec3{-8, 4, -8});
+        if (name == "L1") {
+            // Realm 13 still enters the common gameplay camera mode. The
+            // tower's all-zero CAMS box is not a request for unbounded follow.
+            CHECK(range.boundsMin == Vec3{-173.7890625f, -85.5234375f, -129.7734375f});
+            CHECK(range.boundsMax == Vec3{184.4375f, 42.3125f, 180.609375f});
+            continue;
+        }
+        CHECK(range.boundsMin == Vec3{-54.625f, 0.03125f, -62.046875f});
+        CHECK(range.boundsMax == Vec3{68.8046875f, 8.953125f, 61.3828125f});
+        const auto* start = world.startPoint(0);
+        REQUIRE(start);
+        std::array subjects{
+            CameraSubject{.feet = start->position, .follow = start->position + Vec3{0, 2.5f, 0}}};
+        TowerCamera camera;
+        camera.reset(subjects, world.cameraMarkers(), range, {});
+        CHECK(camera.attention().z == Approx(start->position.z));
+        // Derived limits still clamp; this is not an unrestricted camera.
+        subjects[0].feet.z = 70;
+        subjects[0].follow.z = 70;
+        camera.reset(subjects, world.cameraMarkers(), range, {});
+        CHECK(camera.attention().z == Approx(61.3828125f));
+    }
+}
 
 TEST_CASE("G2 bats swoop and submit their bodies and parented wings for drawing",
           "[game][world][g2-bats][assets]") {

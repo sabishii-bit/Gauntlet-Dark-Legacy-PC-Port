@@ -5,6 +5,7 @@
 
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCollision.h"
 
@@ -18,6 +19,7 @@ public:
     struct Wall {
         TreeModel model;
         Mat4 transform{1};
+        Vec3 collisionCentre{0}; ///< authored item offset, for hit/death feedback
         std::vector<CollisionTriangle> surface;
         MissileTarget bounds;
         s32 health = 0;

@@ -14,6 +14,7 @@ namespace gdl::game {
 /** PlayerMotion's item attack descriptors and ProcessEffects' expanding hit volume.
  * The archive's animation duration supplies the lifetime, not a guessed cooldown. */
 struct ItemAttack {
+    enum class TargetKind : u8 { Item, Swarm };
     PlayerDeed deed = PlayerDeed::None;
     std::string_view tree;
     std::string_view sound;
@@ -28,6 +29,8 @@ struct ItemAttack {
 
     static std::optional<ItemAttack> select(const PowerupEffects& worn);
     f32 damageAt(f32 elapsed, f32 lifetime) const;
-    bool reaches(const Mat4& parent, const MissileTarget& target, f32 elapsed, f32 lifetime) const;
+    /** ProcessEffects' swarm pass is horizontal; item collision also checks height. */
+    bool reaches(const Mat4& parent, const MissileTarget& target, f32 elapsed, f32 lifetime,
+                 TargetKind kind = TargetKind::Item) const;
 };
 } // namespace gdl::game

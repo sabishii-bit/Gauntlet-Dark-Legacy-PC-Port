@@ -4,6 +4,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/Inventory.h"
+#include "game/players/PowerupEffects.h"
 
 namespace {
 
@@ -64,6 +65,30 @@ TEST_CASE("powerups renew the one held, fill a free slot, or push out the weakes
     REQUIRE(inventory.powerup(5, 0x2) != nullptr);
     REQUIRE(inventory == inventory);
     REQUIRE_FALSE(inventory == Inventory{});
+}
+
+TEST_CASE("new Turbo Boost waits for activation while ordinary pickups remain automatic",
+          "[inventory][turbo-activation]") {
+    Inventory inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, 10);
+    CHECK(inventory.powerups[0].held());
+    CHECK_FALSE(inventory.powerups[0].on);
+    inventory.advance(60);
+    CHECK(inventory.powerups[0].strength == 10);
+    inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, 10);
+    CHECK(inventory.powerups[0].strength == 15);
+    CHECK_FALSE(inventory.powerups[0].on);
+    inventory.powerups[0].on = true;
+    inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, 10);
+    CHECK(inventory.powerups[0].on); // Renewal preserves an explicit activation.
+    inventory.addPowerup(powerup::kSpecial, powerup::kInvisible, 0, 10);
+    CHECK(inventory.powerups[1].working());
+    inventory.addPowerup(powerup::kSpecial, powerup::kMikey, 0, 10);
+    CHECK_FALSE(inventory.powerups[2].on);
+    Inventory permanent;
+    permanent.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, -1);
+    CHECK(permanent.powerups[0].held());
+    CHECK_FALSE(permanent.powerups[0].on);
 }
 
 } // namespace

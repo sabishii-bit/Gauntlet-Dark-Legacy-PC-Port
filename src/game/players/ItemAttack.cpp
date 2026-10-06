@@ -5,6 +5,17 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
+namespace {
+f32 activePhase(f32 elapsed, f32 lifetime, f32 delay) {
+    if (elapsed < delay || elapsed >= lifetime) {
+        return 0;
+    }
+    // ProcessEffects divides the remaining lifetime by the post-delay window.
+    const f32 activeTime = lifetime - delay;
+    return activeTime <= 1.0f / 30 ? 1 : (lifetime - elapsed) / activeTime;
+}
+} // namespace
+
 std::optional<ItemAttack> ItemAttack::select(const PowerupEffects& worn) {
     // PlayerMotion's forced-attack priority precedes its close-combat selector.
     constexpr f32 kBreathDot = 0.866f;
@@ -71,27 +82,26 @@ std::optional<ItemAttack> ItemAttack::select(const PowerupEffects& worn) {
 }
 
 f32 ItemAttack::damageAt(f32 elapsed, f32 lifetime) const {
-    if (elapsed < delay || lifetime <= 0 || elapsed >= lifetime) {
-        return 0;
-    }
-    const f32 phase = lifetime <= 1.0f / 30 ? 1 : 1 - elapsed / lifetime;
+    const f32 phase = activePhase(elapsed, lifetime, delay);
     return phase > 0.33f ? damage * 1.5f * (phase - 0.33f) : 0;
 }
 
-bool ItemAttack::reaches(const Mat4& parent, const MissileTarget& target, f32 elapsed,
-                         f32 lifetime) const {
+bool ItemAttack::reaches(const Mat4& parent, const MissileTarget& target, f32 elapsed, f32 lifetime,
+                         TargetKind kind) const {
     if (damageAt(elapsed, lifetime) <= 0) {
         return false;
     }
-    const f32 phase = lifetime <= 1.0f / 30 ? 1 : 1 - elapsed / lifetime;
+    const f32 phase = activePhase(elapsed, lifetime, delay);
     const f32 activeRadius = radius * (1.33f - phase);
-    const Vec3 delta = target.pointNear(Vec3{parent[3]}) - Vec3{parent[3]};
+    const bool swarm = kind == TargetKind::Swarm;
+    const Vec3 point = swarm ? target.base : target.pointNear(Vec3{parent[3]});
+    const Vec3 delta = point - Vec3{parent[3]};
     const f32 distance = std::hypot(delta.x, delta.z);
     const f32 reach = activeRadius + (target.surface.empty() ? target.radius : 0.0f);
-    if (!target.surface.empty() && !target.touches(Vec3{parent[3]}, activeRadius)) {
+    if (!swarm && !target.surface.empty() && !target.touches(Vec3{parent[3]}, activeRadius)) {
         return false;
     }
-    if (distance > reach || std::abs(delta.y) > activeRadius + target.height * 0.5f) {
+    if (distance > reach || (!swarm && std::abs(delta.y) > activeRadius + target.height * 0.5f)) {
         return false;
     }
     if (minDot <= -1) {

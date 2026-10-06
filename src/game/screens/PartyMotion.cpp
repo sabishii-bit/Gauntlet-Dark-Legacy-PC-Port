@@ -18,6 +18,14 @@ constexpr f32 kChargeStick = 0.25f;
 /** A shoved body moving less than this a second shows no push (0.01 a 30 Hz frame,
  * pmotion.c 2042). */
 constexpr f32 kPushedStep = 0.3f;
+f32 turboHeading(f32 current, f32 wanted, f32 seconds, f32 turnScale) {
+    // PlayerMotion (80085450): 900 degrees/second times the action's turn scale,
+    // clamped to the shortest remaining angle, not a fraction of that angle.
+    constexpr f32 kTurnRate = 5.0f * std::numbers::pi_v<f32>;
+    const f32 limit = kTurnRate * seconds * turnScale;
+    const f32 delta = std::remainder(wanted - current, 2.0f * std::numbers::pi_v<f32>);
+    return current + std::clamp(delta, -limit, limit);
+}
 } // namespace
 PlayerDeed PartyMotion::turboDeed(const PlayerRuntime& runtime, const PlayInput& in) {
     if (runtime.figure == nullptr) {
@@ -198,6 +206,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // Webs own the reaction animation and buttons, but allow a slow escape walk.
         const PlayerAnimator* animator =
             players[i].figure != nullptr ? &players[i].figure->animator() : nullptr;
+        const bool steeringTurbo =
+            animator != nullptr && (animator->action() == PlayerAnimator::Action::TurboStrong ||
+                                    animator->action() == PlayerAnimator::Action::TurboFull);
         const bool webbed = players[i].reaction == PlayerDeed::Webbed ||
                             (animator != nullptr && animator->webbed());
         const bool reeling = players[i].reaction != PlayerDeed::None ||
@@ -230,8 +241,15 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                     ? actor.position() + Vec3{std::sin(actor.yaw()), 0, std::cos(actor.yaw())}
                     : *aim;
             move = cursorRelativeMove(move, actor.position(), facing, cameraYaw);
-            if (animator == nullptr || (animator->turnScale() >= 1.0f && !animator->shoving())) {
-                actor.faceToward(facing);
+            if (animator == nullptr || !animator->shoving()) {
+                const f32 turn = animator != nullptr ? animator->turnScale() : 1.0f;
+                if (steeringTurbo) {
+                    const Vec3 offset = facing - actor.position();
+                    actor.turnTo(
+                        turboHeading(actor.yaw(), std::atan2(offset.x, offset.z), seconds, turn));
+                } else if (turn >= 1.0f) {
+                    actor.faceToward(facing);
+                }
             }
         }
         // Movement can aim a new swing even while an existing swing holds body rotation.
@@ -385,12 +403,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (quickStarts) {
             turn = 0.0f;
         }
-        if (move.any() && turn < 1.0f) {
+        if (move.any() && (turn < 1.0f || steeringTurbo)) {
             const f32 wanted = PlayerActor::headingOf(move, cameraYaw);
             const f32 share = 1.0f - std::pow(1.0f - turn, seconds * kTurnFrames);
-            const f32 heading =
-                actor.yaw() +
-                std::remainder(wanted - actor.yaw(), 2.0f * std::numbers::pi_v<f32>) * share;
+            const f32 heading = steeringTurbo
+                                    ? turboHeading(actor.yaw(), wanted, seconds, turn)
+                                    : actor.yaw() + std::remainder(wanted - actor.yaw(),
+                                                                   2.0f * std::numbers::pi_v<f32>) *
+                                                        share;
             attackMove.direction =
                 Vec2{std::sin(heading - cameraYaw), std::cos(heading - cameraYaw)};
         } else if (!move.any() && animator != nullptr && animator->lunging() && !held && !down &&

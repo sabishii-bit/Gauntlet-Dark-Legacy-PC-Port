@@ -273,7 +273,7 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
 }
 
 TEST_CASE("generators retain authored support offsets through platform motion and collision holds",
-          "[game][generators][generator-platform]") {
+          "[game][generators][generator-platform][alpha-aim-acquisition]") {
     const auto root = test::scratchDirectory("generator-platform");
     writeGeneratorArchive(root);
     writeTextFile(root / "world.json", R"({
@@ -304,6 +304,13 @@ TEST_CASE("generators retain authored support offsets through platform motion an
     REQUIRE(generators.count() == 2);
     CHECK(glm::distance(generators.positionOf(0), Vec3{12, -15 + ItemFigure::kFloorLift, 23}) <
           0.001f);
+    const auto before = generators.target(0, 100);
+    REQUIRE(before.acquisition);
+    CHECK(before.acquisition->point == generators.positionOf(0) + Vec3{0, 1, 0});
+    CHECK(before.acquisition->radius == 2);
+    CHECK(before.acquisition->maxHeight == 10);
+    CHECK(before.acquisition->distanceScale == 1);
+    CHECK(before.radius == 3); // the box collider is not its authored acquisition radius
     const Mat4 moved =
         glm::rotate(glm::translate(Mat4{1}, Vec3{30, 10, 40}), 1.57079637f, Vec3{0, 1, 0});
     collision.setSolid(0, false);
@@ -312,6 +319,11 @@ TEST_CASE("generators retain authored support offsets through platform motion an
     const Vec3 expected{moved * Vec4{2, ItemFigure::kFloorLift, 3, 1}};
     CHECK(glm::distance(generators.positionOf(0), expected) < 0.001f);
     CHECK(glm::distance(generators.boxOf(0).centre, expected) < 0.001f);
+    const auto after = generators.target(0, 100);
+    REQUIRE(after.acquisition);
+    CHECK(glm::distance(after.acquisition->point, expected + Vec3{0, 1, 0}) < 0.001f);
+    CHECK(after.radius == before.radius);
+    CHECK(after.height == before.height);
     CHECK(generators.boxOf(0).yaw == Approx(1.57079637f));
     // The collision-flag exception overlaps the same authored floor, but stays fixed.
     CHECK(generators.positionOf(1) == Vec3{15, 5, 23});

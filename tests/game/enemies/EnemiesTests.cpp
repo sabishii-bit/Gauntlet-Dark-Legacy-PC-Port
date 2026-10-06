@@ -42,6 +42,31 @@ std::filesystem::path unpackedRoot() {
     return test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
 }
 
+TEST_CASE("enemy aim snapshots retain the native collision-height anchor",
+          "[enemies][alpha-aim-acquisition][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = {10, 20, 30};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const auto targets = enemies.targets();
+    REQUIRE(targets.size() == 1);
+    const auto& target = targets[0];
+    REQUIRE(target.acquisition);
+    const Vec3 expected =
+        enemies.positionOf(*id) + Vec3{0, enemyKind(kGruntKind).collisionHeight, 0};
+    CHECK(target.acquisition->point == expected);
+    CHECK(target.acquisition->radius == enemies.radiusOf(*id));
+    CHECK(target.acquisition->distanceScale == 1);
+    CHECK(target.acquisition->maxHeight == 10);
+    CHECK(target.base == enemies.positionOf(*id));
+    CHECK(target.height == enemies.heightOf(*id));
+}
+
 TEST_CASE("recycling a brood slot releases its original generator even if replacement fails",
           "[enemies][generator-feedback][assets]") {
     test::FakeRenderDevice device;

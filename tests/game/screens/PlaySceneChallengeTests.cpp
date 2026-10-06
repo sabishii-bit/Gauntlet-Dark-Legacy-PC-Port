@@ -1,8 +1,14 @@
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+
+#include "engine/audio/AudioMixer.h"
+#include "engine/audio/SoundPlayer.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -121,7 +127,7 @@ TEST_CASE("running out of secret-world time returns without unlocking the class"
 }
 
 TEST_CASE("a consumed secret portal stays gone when the party returns to the parent stage",
-          "[secret][assets]") {
+          "[secret][alpha-secret-warp][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELB2/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("LEVELS/LEVELS4/WORLDS.PS2");
@@ -132,7 +138,10 @@ TEST_CASE("a consumed secret portal stays gone when the party returns to the par
     REQUIRE(ref);
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
     GameContext context;
+    context.sounds = &sounds;
     context.levels = &levels;
     context.unpackedRoot = root;
     PlayOptions options;
@@ -141,14 +150,39 @@ TEST_CASE("a consumed secret portal stays gone when the party returns to the par
     const std::array party{PartyMember{0, CharacterSave{}}};
     REQUIRE(scene.open(device, context, world, party, options));
     auto outcome = PlayOutcome::Running;
+    std::array<f32, 3200> samples{};
     for (s32 frame = 0; frame < 240 && outcome == PlayOutcome::Running; ++frame) {
         outcome = scene.update(1.0 / 30, {});
+        mixer.mix(samples);
+        sounds.update();
     }
     REQUIRE(outcome == PlayOutcome::Travel);
     REQUIRE(scene.secretTravel());
     CHECK(scene.destination().name == "S4");
     const usize placed = world.placedItems().size();
+    sounds.stopAll();
+    mixer.mix(samples);
+    sounds.update();
     scene.suspendForChallenge();
+    // do_exit80077D38 still calls fn8009D258 for a zero-tick secret departure.
+    // The parent owns its COMMON bank while the challenge loads; its warp cue
+    // must survive the suspension that silences normal stage ambience.
+    CHECK(sounds.voiceCount() == 1);
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 sample) { return std::abs(sample) > 1e-5f; }));
+    SoundSet common;
+    REQUIRE(common.load(root / "AUDIO/COMMON"));
+    const auto warp = common.find("S_TUNNEL");
+    REQUIRE(warp);
+    CHECK(common.entry(*warp).id == 4);
+    AudioMixer referenceMixer(48000);
+    SoundPlayer reference(referenceMixer);
+    reference.play(common.sequence(*warp), 127.0f / 255.0f);
+    std::array<f32, 3200> expected{};
+    referenceMixer.mix(expected);
+    for (usize i = 0; i < samples.size(); ++i) {
+        CHECK(samples[i] == Catch::Approx(expected[i]).margin(1e-6f));
+    }
     auto returned = scene.party();
     returned[0].save.gold += 100;
     returned[0].save.classUnlock |= 1;

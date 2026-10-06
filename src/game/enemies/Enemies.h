@@ -453,7 +453,8 @@ private:
     };
     Figure bodyOf(const Enemy& enemy);
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
-              std::span<const EnemyView> players, std::span<const Obstacle> obstacles);
+              std::span<const EnemyView> players, std::span<const Obstacle> obstacles,
+              bool seeking = false);
     Vec3 travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const;
     std::optional<FloorHit> stepFloor(const Enemy& enemy, const Vec3& from, const Vec3& to) const;
     bool probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obstacle> obstacles,

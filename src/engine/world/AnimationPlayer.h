@@ -19,9 +19,10 @@ public:
     static constexpr f32 kSnapWindow = 0.125f; ///< nearer a whole frame than this snaps to it
     static constexpr f32 kTick = 1.0f / 30.0f; ///< frames shorter than a tick always snap
 
-    /** Starts `sequence` at `frame`, holding it for `transitionSeconds` first. */
+    /** Starts `sequence` at `frame`, holding it for `transitionSeconds` first.
+     * An elapsed blend credit changes only the blend, never sequence playback. */
     void start(const TreeSequenceInfo& sequence, u32 index, f32 transitionSeconds = 0.0f,
-               f32 frame = 0.0f);
+               f32 frame = 0.0f, f32 transitionElapsedSeconds = 0.0f);
     void stop();
 
     /** Steps by `seconds`; true the step the sequence wraps or reaches its end. A finished

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 #include <catch2/catch_approx.hpp>
@@ -45,6 +46,141 @@ TEST_CASE("the minds are found by the original's way numbers, strangers wanderin
     REQUIRE(wrapAngle(kPi + 0.5f) == Approx(-kPi + 0.5f));
     REQUIRE(wrapAngle(-kPi - 0.5f) == Approx(kPi - 0.5f));
     REQUIRE(wrapAngle(1.0f) == 1.0f);
+}
+
+TEST_CASE("seek collision bookkeeping distinguishes world bodies and clear movement",
+          "[game][enemies][mind][alpha-seek-blocked]") {
+    // blocked00 (80045488) counts stops, not ticks. Its hold uses gFrameTicks,
+    // while successful do_enemy_move (80044664) resets an unheld route.
+    for (const s32 ticks : {1, 2}) {
+        MindMemory memory;
+        initializeEnemyMind(memory, kSeekWay, 0);
+        MindSense sense = senseAhead();
+        sense.ticks = ticks;
+        sense.clear = [](f32) { return false; };
+        const auto& seek = enemyMindOf(kSeekWay);
+        for (s32 stop = 1; stop <= 9; ++stop) {
+            CAPTURE(ticks, stop);
+            const s32 held = memory.deadEnd;
+            seek.think(memory, sense);
+            const auto response = finishSeekStep(memory, SeekContact::World);
+            CHECK(memory.deadEnd == (held <= ticks ? 5 : held - ticks));
+            CHECK(memory.collided == (stop == 9 ? 0 : stop));
+            CHECK(memory.route == (stop == 9 ? -2 : 1));
+            CHECK_FALSE(response.faceTarget);
+            CHECK_FALSE(response.stopWalking);
+        }
+        const s32 hold = memory.deadEnd;
+        finishSeekStep(memory, SeekContact::Clear);
+        CHECK(memory.route == -2);
+        CHECK(memory.deadEnd == hold);
+        memory.deadEnd = 0;
+        memory.collided = 4;
+        finishSeekStep(memory, SeekContact::Clear);
+        CHECK(memory.route == 1);
+        CHECK(memory.collided == 0);
+    }
+
+    SECTION("the second reversal faces the cached direct bearing") {
+        MindMemory memory;
+        memory.route = -2;
+        memory.collided = 8;
+        memory.heading = 0.75f;
+        memory.seekHeading = -0.25f;
+        const auto reversal = finishSeekStep(memory, SeekContact::World);
+        CHECK(memory.route == 4);
+        CHECK(memory.collided == 0);
+        CHECK(memory.heading == -0.25f);
+        CHECK(memory.deadEnd == 5); // selected before the reversal doubles the route
+        CHECK(reversal.faceTarget);
+        CHECK_FALSE(reversal.stopWalking);
+        memory.deadEnd = 0;
+        const auto longHold = finishSeekStep(memory, SeekContact::World);
+        CHECK(memory.deadEnd == 60);
+        CHECK(longHold.stopWalking);
+        CHECK_FALSE(longHold.faceTarget);
+        const auto again = finishSeekStep(memory, SeekContact::World);
+        CHECK(memory.deadEnd == 60);
+        CHECK_FALSE(again.stopWalking);
+    }
+
+    SECTION("enemy and item contacts select their side without refreshing a running hold") {
+        for (const SeekContact contact : {SeekContact::Enemy, SeekContact::Item}) {
+            MindMemory memory;
+            memory.route = 4;
+            memory.collided = 3;
+            const auto first = finishSeekStep(memory, contact, -1);
+            CHECK(memory.route == -1);
+            CHECK(memory.collided == 3);
+            CHECK(memory.deadEnd == 60);
+            CHECK(first.stopWalking);
+            CHECK_FALSE(first.faceTarget);
+            memory.deadEnd = 17;
+            const auto next = finishSeekStep(memory, contact, 1);
+            CHECK(memory.route == 1);
+            CHECK(memory.deadEnd == 17);
+            CHECK_FALSE(next.stopWalking);
+        }
+    }
+
+    SECTION("critter contacts use the generic twenty tick hold without a swarm side") {
+        MindMemory memory;
+        memory.route = -2;
+        const auto result = finishSeekStep(memory, SeekContact::Critter, 1);
+        CHECK(memory.route == -2);
+        CHECK(memory.deadEnd == 20);
+        CHECK_FALSE(result.stopWalking);
+        CHECK_FALSE(result.faceTarget);
+    }
+}
+
+TEST_CASE("seek holds retain the direct bearing saved before the last sweep",
+          "[game][enemies][mind][alpha-seek-blocked]") {
+    MindMemory memory;
+    initializeEnemyMind(memory, kSeekWay, 0);
+    auto sense = senseAhead();
+    sense.clear = [](f32 heading) { return heading > 0.1f; };
+    const auto& seek = enemyMindOf(kSeekWay);
+    const auto turned = seek.think(memory, sense);
+    REQUIRE(turned.heading == Approx(kPi / 8));
+    CHECK(memory.seekHeading == 0);
+    memory.deadEnd = 5;
+    sense.targetPosition = {20, 0, 0};
+    seek.think(memory, sense);
+    CHECK(memory.seekHeading == 0);
+    CHECK(memory.heading == turned.heading);
+    memory.deadEnd = 0;
+    seek.think(memory, sense);
+    CHECK(memory.seekHeading == Approx(kPi / 2));
+}
+
+TEST_CASE("a permanently blocked seek route retains native thirty-two-bit wrap",
+          "[game][enemies][mind][alpha-seek-blocked]") {
+    MindMemory memory;
+    memory.route = 1;
+    // Nine physical stops per reversal, continuing beyond 31 doublings. An
+    // original s32 multiply/abs would have undefined behavior on the host.
+    for (s32 reversal = 1; reversal <= 40; ++reversal) {
+        for (s32 stop = 0; stop < 9; ++stop) {
+            finishSeekStep(memory, SeekContact::World);
+        }
+        if (reversal == 30) {
+            CHECK(memory.route == 0x40000000);
+        } else if (reversal == 31) {
+            CHECK(memory.route == std::numeric_limits<s32>::min());
+        } else if (reversal >= 32) {
+            CHECK(memory.route == 0);
+        }
+        CHECK(memory.collided == 0);
+    }
+    memory.route = std::numeric_limits<s32>::min();
+    memory.collided = 8;
+    memory.deadEnd = 0;
+    const auto wrapped = finishSeekStep(memory, SeekContact::World);
+    CHECK(memory.route == 0);
+    CHECK(memory.deadEnd == 5); // the native signed magnitude comparison sees INT_MIN
+    CHECK_FALSE(wrapped.faceTarget);
+    CHECK_FALSE(wrapped.stopWalking);
 }
 
 TEST_CASE("delegated enemy strategies reset their own state only when the effective way changes",
@@ -1036,6 +1172,52 @@ TEST_CASE("a sense tells the way to its player and which side round is nearer",
     sense.targetPosition = Vec3{10.0f, 0.0f, 5.0f};
     REQUIRE(sense.nearerSide() == 1);
     REQUIRE(sense.clearAlong(0.0f)); // nothing to probe with: all clear
+}
+
+TEST_CASE("a suicide bomber lights its fuse only with a target and waits for RUN before charging",
+          "[game][enemies][mind][alpha-bomber-start]") {
+    const auto& mind = enemyMindOf(kSuicideWay);
+    MindMemory memory;
+    auto sense = senseAhead(12);
+    const auto noticed = mind.think(memory, sense);
+    REQUIRE(memory.mode == 1);
+    REQUIRE(memory.fuse == 60);
+    CHECK(noticed.pace == 0);
+    CHECK_FALSE(noticed.yell);
+
+    sense.target = -1;
+    for (s32 tick = 0; tick < 40; ++tick) {
+        const auto lost = mind.think(memory, sense);
+        CHECK(memory.fuse == 60);
+        CHECK(lost.action == EnemyAction::Ready);
+        CHECK(lost.pace == 0);
+        CHECK_FALSE(lost.yell);
+    }
+    sense.target = 0;
+    for (s32 tick = 0; tick < 29; ++tick) {
+        CHECK(mind.think(memory, sense).action == EnemyAction::Ready);
+    }
+    REQUIRE(memory.fuse == 2);
+    CHECK(mind.think(memory, sense).action == EnemyAction::ReadyToWalk);
+    sense.action = EnemyAction::ReadyToWalk;
+    for (s32 tick = 0; tick < 10; ++tick) {
+        const auto windup = mind.think(memory, sense);
+        CHECK(memory.mode == 1);
+        CHECK(memory.counter == 0);
+        CHECK(windup.action == EnemyAction::ReadyToWalk);
+        CHECK(windup.pace == 0);
+        CHECK_FALSE(windup.yell);
+    }
+    // move_logic18 8004AC68 gates on action 4, then falls through to running
+    // movement and counts this same tick. No extra idle step is inserted.
+    sense.action = EnemyAction::Run;
+    const auto started = mind.think(memory, sense);
+    CHECK(memory.mode == 2);
+    CHECK(memory.counter == 2);
+    CHECK(started.pace == 1.5f);
+    CHECK(started.action == EnemyAction::Run);
+    CHECK(started.yell);
+    CHECK_FALSE(mind.think(memory, sense).yell);
 }
 
 } // namespace

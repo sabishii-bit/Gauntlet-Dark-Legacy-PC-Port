@@ -306,7 +306,7 @@ TEST_CASE("spike hits interrupt an attack with their own animation then release 
     REQUIRE(animator.action() == Action::Throw);
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Spike);
     REQUIRE(animator.action() == Action::SpikeHit);
-    REQUIRE(playingIndex(animator) == 22);
+    REQUIRE(playingIndex(animator) == 20); // native names[129] is HITREACT, not SPIKEHIT
     REQUIRE(animator.reacting());
     REQUIRE(animator.moveScale() == 0);
     REQUIRE_FALSE(animator.released());
@@ -590,15 +590,15 @@ TEST_CASE("a character plays its entrance, settles into its stance and walks in 
     REQUIRE(animator.footfall() == PlayerAnimator::Foot::None);
 
     // Letting go finishes the half cycle (a frame in already), then eases back into the
-    // stance over two ticks.
+    // stance over two ticks, including InitAnim's initial one-tick credit.
     animator.update(PlayerMotion::Stand, kTicks, kStep);
     REQUIRE(animator.action() == Action::Walk1);
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 50) == 10);
     REQUIRE(animator.footfall() == PlayerAnimator::Foot::First); // the stride ends on a step
     REQUIRE(animator.player().transitioning());
-    REQUIRE(playingIndex(animator) == Approx(5.0f)); // the blend starts from the walk
+    REQUIRE(playingIndex(animator) == Approx(2.5f)); // first sample is already halfway blended
     animator.update(PlayerMotion::Stand, kTicks, kStep);
-    REQUIRE(playingIndex(animator) == Approx(2.5f));
+    REQUIRE(playingIndex(animator) == Approx(0.0f));
     animator.update(PlayerMotion::Stand, kTicks, kStep);
     REQUIRE_FALSE(animator.player().transitioning());
     REQUIRE(playingIndex(animator) == 0.0f);

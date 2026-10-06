@@ -12,6 +12,7 @@
 #include "game/world/CameraShake.h"
 #include "game/world/MoveStrikes.h"
 #include "game/world/PlayerArsenal.h"
+#include "game/world/TargetAssist.h"
 namespace gdl::game {
 /** Resolves player attacks against level targets and owns their transient effects.
  * Arsenal owns projectile models; TurboMove owns per-player timelines. This component
@@ -31,6 +32,7 @@ public:
         AmbientDimmer& dimmer;
         CameraShake* shake = nullptr;
         const MultiplayerMode* multiplayer = nullptr;
+        f32 acquisitionCone = TargetAssist::kFacingDot;
     };
     struct Targets {
         LevelOpponents& opponents;
@@ -171,6 +173,8 @@ private:
     void shootPotion(const MissileImpact& impact, std::span<PlayerRuntime> players,
                      const Targets& targets);
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
+    ItemArchive* moveEffectArchive(usize index, std::span<PlayerRuntime> players,
+                                   std::string_view tree);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
     /** One strike of `index`'s class, set going where the character stands, or at `at`. */
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players,

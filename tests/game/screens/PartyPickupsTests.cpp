@@ -20,11 +20,78 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/players/ItemPickup.h"
 #include "game/screens/PartyPickups.h"
+#include "game/screens/PlayerPowerups.h"
 #include "game/world/LevelCatalog.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("a native Turbo Boost pickup is carried until its owner activates the selector",
+          "[pickups][turbo-activation][assets][multiplayer]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    LevelFixtures fixtures;
+    PartyHud hud;
+    LevelSoundscape audio;
+    const ClassDataSet classes;
+    const PartyPickups::Services services{.world = world,
+                                          .fixtures = fixtures,
+                                          .hud = hud,
+                                          .audio = audio,
+                                          .classes = classes,
+                                          .sounds = nullptr,
+                                          .help = {},
+                                          .openMessage = {},
+                                          .challengeCoin = {}};
+    std::array<PlayerRuntime, 2> players;
+    const Vec3 spot{10.7f, 10.2f, -60.5f};
+    players[0].actor.spawn(3, {}, nullptr, spot, 0);
+    players[1].actor.spawn(1, {}, nullptr, spot + Vec3{40, 0, 0}, 0);
+    REQUIRE(world.placeItem(device, "TURBOPUP", spot));
+    const usize item = world.placedItems().size() - 1;
+    PartyPickups pickups;
+    pickups.collect(device, players, services);
+    CHECK_FALSE(world.placedItems().item(item).visible);
+    auto& inventory = players[0].actor.save().progress().inventory;
+    REQUIRE(inventory.powerupCount() == 1);
+    REQUIRE(inventory.powerups[0].flags == powerup::kTurbo);
+    CHECK_FALSE(inventory.powerups[0].on);
+    CHECK(players[0].turbo.held() == 0);
+    CHECK(hud.selector(3).selection() == 0);
+    CHECK_FALSE(hud.selector(3).showing());
+    CHECK(hud.selector(1).selection() == -1);
+    PlayerPowerups::update(players, 60, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 0);
+    REQUIRE(inventory.powerupCount() == 1);
+    hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 32, audio);
+    hud.stepSelector(players[0].actor, {}, 1, audio);
+    REQUIRE(hud.selector(3).showing());
+    CHECK_FALSE(inventory.powerups[0].on); // Opening is not activation.
+    hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 1, audio);
+    REQUIRE(inventory.powerups[0].on);
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 100);
+    CHECK(inventory.powerupCount() == 0);
+    REQUIRE(players[0].turbo.spend(40));
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 60);
+    CHECK_FALSE(inventory.powerups[0].on);
+    REQUIRE(world.placeItem(device, "TURBOPUP", spot));
+    pickups.collect(device, players, services);
+    REQUIRE(inventory.powerupCount() == 1);
+    CHECK_FALSE(inventory.powerups[0].on);
+    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    CHECK(players[0].turbo.held() == 60); // Collecting again must not reuse the old activation.
+    CHECK(inventory.powerupCount() == 1);
+    CHECK(players[1].turbo.held() == 0);
+    CHECK(players[1].actor.save().progress().inventory.powerupCount() == 0);
+}
 
 TEST_CASE("the narrator counts the party's runestones as the original does",
           "[game][screens][pickups]") {

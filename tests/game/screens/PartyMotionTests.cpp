@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -102,6 +103,188 @@ TEST_CASE("cursor over the player preserves facing and forward movement without 
     CHECK(actor.position().x > 0);
     CHECK(actor.position().z == Approx(0).margin(0.0001));
     CHECK(f.players[0].cursorAiming);
+}
+
+TEST_CASE("turbo steering uses the action turn allowance for both cursor and stick input",
+          "[party-motion][alpha-turbo-steering][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    for (const bool full : {false, true}) {
+        for (const bool cursor : {false, true}) {
+            CAPTURE(full, cursor);
+            Fixture f;
+            f.players[1].life = PlayerLife::InTower;
+            auto& player = f.players[0];
+            player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+            REQUIRE(player.figure);
+            f.events.advanceTurbo = [](usize, s32, f32) {};
+            f.events.perform = [](usize, PartyMotion::Action) {};
+            player.figure->animate(0, 2, 1.0f / 30.0f,
+                                   full ? PlayerDeed::TurboFull : PlayerDeed::TurboStrong);
+            REQUIRE(player.figure->animator().turboing());
+            REQUIRE(player.figure->animator().turnScale() == Approx(full ? 0.25f : 1.0f));
+            if (cursor) {
+                f.inputs[3].aimPoint = Vec3{10, 0, 0};
+            } else {
+                f.inputs[3].move = {{1, 0}, 1};
+            }
+            const Vec3 before = player.actor.position();
+            f.step();
+            CHECK(player.actor.position() == before);
+            // PlayerMotion clamps the yaw change to 900 degrees/second times
+            // A4C (.25 full/1 half), not a fraction of the angle still to turn.
+            // Mouse aim consumes that allowance even without a movement key.
+            const f32 limit = glm::radians(900.0f) / 30.0f * (full ? 0.25f : 1.0f);
+            CHECK(player.actor.yaw() == Approx(limit));
+        }
+    }
+}
+
+TEST_CASE("a moving spin passes directly into its class finisher without a planted gap",
+          "[party-motion][alpha-spin-finisher][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    f.events.attackDeed = [](usize, bool, bool, const Vec3&) { return PlayerDeed::MeleeSlow; };
+    f.events.meleeSense = [](usize, bool, const Vec3&) { return MeleeSense{}; };
+    const auto& animator = player.figure->animator();
+    const auto animate = [&](PlayerDeed deed) { player.figure->animate(1, 2, 1.0f / 30.0f, deed); };
+    animate(PlayerDeed::Melee);
+    for (s32 tap = 1; tap < 3; ++tap) {
+        const auto swing = animator.action();
+        animate(PlayerDeed::None);
+        animate(PlayerDeed::Melee);
+        for (s32 tick = 0; tick < 120 && animator.action() == swing; ++tick) {
+            animate(PlayerDeed::Melee);
+        }
+        REQUIRE(animator.action() != swing);
+    }
+    REQUIRE(animator.meleeChain() == 3);
+    const auto swing = animator.action();
+    animate(PlayerDeed::None);
+    animate(PlayerDeed::MeleeSlow);
+    for (s32 tick = 0; tick < 120 && animator.action() == swing; ++tick) {
+        animate(PlayerDeed::None);
+    }
+    REQUIRE(animator.action() == PlayerAnimator::Action::Spin);
+    f.inputs[3].move = {{0, 1}, 1};
+    f.inputs[3].strongAttack = true;
+    for (s32 tick = 0; tick < 120 && animator.action() == PlayerAnimator::Action::Spin; ++tick) {
+        const Vec3 before = player.actor.position();
+        f.step();
+        CHECK(glm::distance(before, player.actor.position()) ==
+              Approx(player.actor.speed() * 0.5f / 30.0f).margin(0.0001f));
+    }
+    REQUIRE(animator.action() == PlayerAnimator::Action::PowerMed);
+    const Vec3 before = player.actor.position();
+    f.step();
+    CHECK(glm::distance(before, player.actor.position()) ==
+          Approx(player.actor.speed() * 0.5f / 30.0f).margin(0.0001f));
+}
+
+TEST_CASE("full turbo turns at a fixed native angular speed without wrapping or overshooting",
+          "[party-motion][alpha-turbo-steering][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    struct Turn {
+        f32 from;
+        f32 to;
+    };
+    const std::array turns{Turn{0, glm::half_pi<f32>()}, Turn{0, 0.03f}, Turn{3.1f, -3.1f},
+                           Turn{-3.1f, 3.1f}};
+    test::FakeRenderDevice device;
+    for (const s32 rate : {30, 60, 120}) {
+        for (const bool cursor : {false, true}) {
+            for (const auto& turn : turns) {
+                CAPTURE(rate, cursor, turn.from, turn.to);
+                Fixture f;
+                f.players[1].life = PlayerLife::InTower;
+                auto& player = f.players[0];
+                player.actor.turnTo(turn.from);
+                player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+                REQUIRE(player.figure);
+                f.events.advanceTurbo = [](usize, s32, f32) {};
+                f.events.perform = [](usize, PartyMotion::Action) {};
+                f.events.select = [](usize, const SelectorInput&, s32) {};
+                player.figure->animate(0, 2, 1.0f / 30.0f, PlayerDeed::TurboFull);
+                const Vec2 toward{std::sin(turn.to), std::cos(turn.to)};
+                if (cursor) {
+                    f.inputs[3].aimPoint = Vec3{toward.x, 0, toward.y} * 10.0f;
+                } else {
+                    f.inputs[3].move = {toward, 1};
+                }
+                const f32 delta = std::remainder(turn.to - turn.from, glm::two_pi<f32>());
+                for (s32 tick = 1; tick <= rate / 30; ++tick) {
+                    PartyMotion::step(f.players, f.inputs, false, 0, 1,
+                                      1.0f / static_cast<f32>(rate), f.collision, f.events);
+                    const f32 limit = glm::radians(900.0f) * 0.25f * static_cast<f32>(tick) /
+                                      static_cast<f32>(rate);
+                    const f32 expected = turn.from + std::clamp(delta, -limit, limit);
+                    CHECK(std::remainder(player.actor.yaw() - expected, glm::two_pi<f32>()) ==
+                          Approx(0.0f).margin(0.000001f));
+                    CHECK(player.actor.position() == Vec3{0});
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("mouse turbo steering respects Spell Storm's native frame eleven rotation lock",
+          "[party-motion][alpha-turbo-steering][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/SOR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    auto& player = f.players[0];
+    auto save = player.actor.save();
+    save.character = 6;
+    player.actor.spawn(3, save, nullptr, Vec3{0}, 0);
+    player.figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(player.figure);
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    player.figure->animate(0, 2, 1.0f / 30.0f, PlayerDeed::TurboFull);
+    const auto& animator = player.figure->animator();
+    REQUIRE(animator.action() == PlayerAnimator::Action::TurboFull);
+    f.inputs[3].aimPoint = Vec3{10, 0, 0};
+    f.inputs[3].move = {{0, 1}, 1};
+    f.step();
+    CHECK(player.actor.yaw() == Approx(glm::radians(900.0f) / 30.0f * 0.25f));
+    for (s32 tick = 0; tick < 90 && animator.player().frame() <= 11.0f; ++tick) {
+        player.figure->animate(0, 2, 1.0f / 30.0f, PlayerDeed::None);
+    }
+    REQUIRE(animator.action() == PlayerAnimator::Action::TurboFull);
+    REQUIRE(animator.player().frame() > 11.0f);
+    REQUIRE(animator.turnScale() == 0.0f);
+    const Vec3 before = player.actor.position();
+    const f32 yaw = player.actor.yaw();
+    f.inputs[3].aimPoint = Vec3{-10, 0, 0};
+    for (s32 tick = 0; tick < 3; ++tick) {
+        f.step();
+        CHECK(player.actor.yaw() == yaw);
+        CHECK(player.actor.position() == before);
+    }
 }
 
 TEST_CASE("cursor-relative forward input runs at full-stick pace without changing strafe controls",

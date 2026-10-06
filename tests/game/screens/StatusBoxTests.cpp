@@ -52,6 +52,12 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     const auto* drawnTexture = dynamic_cast<const test::FakeTexture*>(device.draws[0].texture);
     REQUIRE(drawnTexture != nullptr);
     CHECK(drawnTexture->pixels == hornTexture.pixels);
+    // setup_player_display / mbBlitProject retain the native 128x16 strip at y304.
+    CHECK(hornTexture.width() == 128);
+    CHECK(hornTexture.height() == 16);
+    CHECK(test::minCorner(device.draws[0]) == Vec2{0, 304});
+    CHECK(test::maxCorner(device.draws[0]) == Vec2{128, 320});
+    CHECK(device.draws[0].vertices.front().color == Color::white());
 
     // Keys and potions carried add their icons and counts over the gold and the health.
     view.keys = 3;

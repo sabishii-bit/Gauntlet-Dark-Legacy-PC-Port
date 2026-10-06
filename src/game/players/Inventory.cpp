@@ -74,7 +74,10 @@ void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
             break;
         }
     }
-    const bool immediate = kind != powerup::kSpecial || flags != powerup::kMikey;
+    // Keep ordinary pickups automatic, but preserve the native selector activation
+    // for consumable Turbo Boost and Mikey so collecting them does not waste them.
+    const bool immediate =
+        kind != powerup::kSpecial || (flags != powerup::kMikey && (flags & powerup::kTurbo) == 0);
     powerups[pick] = PowerupSlot{strength, kind, charge, flags, immediate};
 }
 

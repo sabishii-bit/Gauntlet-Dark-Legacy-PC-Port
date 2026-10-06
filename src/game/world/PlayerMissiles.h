@@ -75,6 +75,14 @@ struct MissileLaunch {
 
 /** Something a missile stops against: a cylinder, or an authored triangle surface. */
 struct MissileTarget {
+    /** Authored acquisition geometry, separate from what a missile can collide with. */
+    struct Acquisition {
+        Vec3 point{0};
+        f32 radius = 0;
+        f32 distanceScale = 1;
+        f32 maxHeight = 0;
+    };
+
     s32 id = -1;
     Vec3 base{0.0f, 0.0f, 0.0f};
     f32 radius = 1.0f;
@@ -87,6 +95,7 @@ struct MissileTarget {
     f32 targetScoreScale = 1.0f; ///< for choosing between one creature's live parts
     f32 maxTargetDistance = 0.0f;
     bool potionBottle = false;
+    std::optional<Acquisition> acquisition = std::nullopt;
     Vec3 pointNear(const Vec3& point) const;
     bool touches(const Vec3& point, f32 reach) const;
     bool reachedBy(const StrikeHit& strike) const;

@@ -111,6 +111,7 @@ struct LevelCameraInfo {
     f32 maxPitch = 0.0f;
     Vec3 boundsMin{0.0f, 0.0f, 0.0f};
     Vec3 boundsMax{0.0f, 0.0f, 0.0f};
+    bool authoredBounds = true; ///< CAMS limits: otherwise derive the box from the world bounds
     f32 attention = 0.0f;
     f32 radiusMin = 0.0f;
     f32 radiusMax = 0.0f;

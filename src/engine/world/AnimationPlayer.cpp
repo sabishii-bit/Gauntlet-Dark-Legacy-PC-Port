@@ -11,7 +11,7 @@ constexpr f32 kTimeSlack = 0.000001f;
 }
 
 void AnimationPlayer::start(const TreeSequenceInfo& sequence, u32 index, f32 transitionSeconds,
-                            f32 frame) {
+                            f32 frame, f32 transitionElapsedSeconds) {
     ++m_generation;
     m_sequence = &sequence;
     m_index = index;
@@ -20,7 +20,7 @@ void AnimationPlayer::start(const TreeSequenceInfo& sequence, u32 index, f32 tra
     m_frame = frame > static_cast<f32>(sequence.frames) ? 0.0f : frame;
     m_time = m_frame * m_secondsPerFrame;
     m_transitionLength = std::max(transitionSeconds, 0.0f);
-    m_transitionTime = 0.0f;
+    m_transitionTime = std::clamp(transitionElapsedSeconds, 0.0f, m_transitionLength);
     m_finished = false;
     m_held = false;
 }

@@ -26,6 +26,77 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("the native Town Center banana shadow keeps its black alpha coverage",
+          "[placed-items][alpha-item-shadow][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    const auto level = test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path();
+    WorldLayout layout;
+    REQUIRE(layout.load(level));
+    const auto banana = std::ranges::find_if(
+        layout.itemInfos(), [](const ItemInfo& info) { return info.name == "BANANNA"; });
+    REQUIRE(banana != layout.itemInfos().end());
+    const auto info = static_cast<s32>(banana - layout.itemInfos().begin());
+    REQUIRE(std::ranges::any_of(layout.itemInstances(), [info](const ItemInstance& instance) {
+        return instance.info == info;
+    }));
+
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "POWERUPS"));
+    const auto found = archive.trees.find("BANANNA");
+    REQUIRE(found);
+    const auto& tree = archive.trees.tree(*found);
+    const auto object = archive.models.find("BANANNAGROUP2");
+    REQUIRE(object);
+    const auto& mesh = archive.models.mesh(*object);
+    REQUIRE(mesh.parts.size() == 2);
+    CHECK_FALSE(mesh.prelit);
+    const auto& body = mesh.parts[0];
+    const auto& shadow = mesh.parts[1];
+    REQUIRE(shadow.indices.size() == 6);
+    CHECK(body.texture != shadow.texture);
+    CHECK(body.lightmap == 0);
+    CHECK(shadow.lightmap == 0);
+    CHECK_FALSE(archive.textures.entry(body.texture).translucent());
+    CHECK(archive.textures.entry(shadow.texture).translucent());
+
+    const auto& image = archive.textures.image(shadow.texture);
+    REQUIRE(image.width == 32);
+    REQUIRE(image.height == 32);
+    bool black = true;
+    u8 minimumAlpha = 255;
+    u8 maximumAlpha = 0;
+    for (u32 y = 0; y < image.height; ++y) {
+        for (u32 x = 0; x < image.width; ++x) {
+            const Color texel = image.pixel(x, y);
+            black = black && texel.r == 0 && texel.g == 0 && texel.b == 0;
+            minimumAlpha = std::min(minimumAlpha, texel.a);
+            maximumAlpha = std::max(maximumAlpha, texel.a);
+        }
+    }
+    CHECK(black);
+    CHECK(minimumAlpha == 0);
+    CHECK(maximumAlpha == 146); // native RGB5A3 palette's highest used alpha is 4/7
+
+    test::FakeRenderDevice device;
+    TreeModel model;
+    REQUIRE(model.bind(tree, archive.models, archive.textures, device));
+    model.draw(device, Mat4{1}, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 2);
+    const auto& draw = device.draws[1];
+    REQUIRE(draw.texture == &archive.textures.texture(device, shadow.texture));
+    REQUIRE(draw.vertices.size() == 6);
+    // pbSetDORegs selects the ordinary material for lightmap=0; setPrimAlpha then
+    // uses source-alpha/inverse-source-alpha, not an additive or multiply pass.
+    CHECK(draw.state.blend == BlendMode::Alpha);
+    CHECK(draw.state.alphaTest == DrawState::kTranslucentAlphaTest);
+    CHECK(draw.state.maskedTexture == nullptr);
+    CHECK(draw.state.nextTexture == nullptr);
+    for (const auto& vertex : draw.vertices) {
+        CHECK(vertex.position.y == Approx(0.09375f));
+        CHECK(vertex.color.a == 255);
+    }
+}
+
 std::filesystem::path pickupPresentationFixture() {
     const auto root = test::scratchDirectory("pickup-presentation");
     writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");

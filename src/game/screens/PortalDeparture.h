@@ -15,6 +15,7 @@ class PortalDeparture {
 public:
     static constexpr s32 kTicks = 50;
     static constexpr std::string_view kSound = "S_TUNNEL";
+    static constexpr f32 kVolume = 127.0f / 255.0f;
     static constexpr f32 kSinkPerTick = 0.12f;
     static constexpr f32 kSpinPerSecond = 3.0f * glm::pi<f32>();
     void begin(RenderDevice& device, TextureSet& weapons);

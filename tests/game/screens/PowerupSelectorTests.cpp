@@ -11,6 +11,20 @@ using namespace gdl;
 using namespace gdl::game;
 using State = PowerupSelector::State;
 
+TEST_CASE("the inventory label uses its native anchor rather than the status panel top",
+          "[selector][inventory-label]") {
+    Inventory inventory;
+    inventory.powerups[0] = {30, 9, 0, 4, false};
+    PowerupSelector selector;
+    selector.step(SelectorInput{.up = true}, inventory, 32);
+    selector.step({}, inventory, 1);
+    REQUIRE(selector.showing());
+    // create_player_blits: x_right=boxLeft+12, y_top=335. The label adds
+    // another 12 to x, and subtracts 25 from y after its 128-unit slide finishes.
+    CHECK(PowerupSelector::kLabelX == 24);
+    CHECK(selector.labelY(320) == 310);
+}
+
 SelectorInput press(bool up, bool down, bool left, bool right) {
     return SelectorInput{up, down, left, right};
 }

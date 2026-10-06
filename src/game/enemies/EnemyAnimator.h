@@ -81,6 +81,8 @@ public:
     /** Asks for an action this tick. Attacks and throws are refused while the body idles
      * after a throw. */
     void request(Action action);
+    /** A collision's long hold cancels only a pending walk or run request. */
+    void stopWalking();
     /** Steps `ticks` of the game clock (`seconds` long), answering the tick's requests, which
      * are then forgotten. `contact` says a player is against the body, which some attacks
      * chain on. */

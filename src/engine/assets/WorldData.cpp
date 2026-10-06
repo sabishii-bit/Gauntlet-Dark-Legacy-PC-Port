@@ -90,6 +90,7 @@ LevelCameraInfo parseCamera(const nlohmann::json& json) {
     camera.maxPitch = json.value("maxPitch", 0.0f);
     camera.boundsMin = readVec3(json.value("boundsMin", nlohmann::json{}), camera.boundsMin);
     camera.boundsMax = readVec3(json.value("boundsMax", nlohmann::json{}), camera.boundsMax);
+    camera.authoredBounds = json.value("limits", 1) != 0;
     camera.attention = json.value("attention", 0.0f);
     camera.radiusMin = json.value("radiusMin", 0.0f);
     camera.radiusMax = json.value("radiusMax", 0.0f);

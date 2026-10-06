@@ -278,6 +278,17 @@ ItemArchive* PlayerAttacks::moveEffectsOf(usize index, std::span<PlayerRuntime> 
     return figure != nullptr ? figure->effects() : nullptr;
 }
 
+ItemArchive* PlayerAttacks::moveEffectArchive(usize index, std::span<PlayerRuntime> players,
+                                              std::string_view tree) {
+    // InitCustomEffectSub falls back from class trees to WEAPONS. NULLFX is
+    // invisible, but its shared animation still supplies the damage lifetime.
+    if (auto* archive = moveEffectsOf(index, players);
+        archive != nullptr && archive->trees.find(tree)) {
+        return archive;
+    }
+    return m_resources && m_resources->weapons.trees.find(tree) ? &m_resources->weapons : nullptr;
+}
+
 /** What a character's own blows do, which a strike with a negative amount multiplies. */
 f32 PlayerAttacks::ownDamageOf(usize index, std::span<PlayerRuntime> players) const {
     if (!m_resources.has_value()) {
@@ -310,13 +321,12 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     const PlayerActor& actor = players[index].actor;
     const Vec3 facing = actor.facing();
     const Vec3 base = at.value_or(actor.position());
-    ItemArchive* archive = moveEffectsOf(index, players);
     f32 effectSeconds = 0;
-    if (archive != nullptr && strike.effect >= 0 &&
-        static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
+    if (strike.effect >= 0 && static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
         const MoveEffect& effect = stats->moveEffects[static_cast<usize>(strike.effect)];
-        if (const auto tree = archive->trees.find(effect.tree)) {
-            const auto& sequences = archive->trees.tree(*tree).sequences;
+        if (const auto* archive = moveEffectArchive(index, players, effect.tree)) {
+            const auto& sequences =
+                archive->trees.tree(*archive->trees.find(effect.tree)).sequences;
             // DoPlyrSfx gives the primary tree's authored maxlen to the same effect
             // that carries damage. Animation length is only its untimed fallback.
             if (effect.lifetime > 0) {
@@ -401,8 +411,8 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
             }
             attachment = parent;
         }
-        if (effect.tree.empty() || effect.tree == kNoEffectTree || archive == nullptr ||
-            !archive->trees.find(effect.tree).has_value()) {
+        ItemArchive* archive = moveEffectArchive(index, players, effect.tree);
+        if (effect.tree.empty() || effect.tree == kNoEffectTree || archive == nullptr) {
             if (attachment && attachment->strike != 0) {
                 m_moveAttachments.push_back(*attachment);
             }
@@ -724,7 +734,13 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
         }
         targets.fixtures.shootScenery(hit.centre, hit.radius);
         for (const MissileTarget& target : strikeTargets(targets)) {
-            if (!target.reachedBy(hit)) {
+            MissileTarget contactTarget = target;
+            if (!hit.swept && target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase) {
+                // ProcessEffects' stationary swarm pass uses NormalVector2D;
+                // flying effects and item/node collision retain their height tests.
+                contactTarget.base.y = hit.centre.y;
+            }
+            if (!contactTarget.reachedBy(hit)) {
                 continue;
             }
             auto contact =
@@ -1222,9 +1238,8 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
     }
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (targets.fixtures.barrels().standing(barrel)) {
-            const Breakables::Barrel& cask = targets.fixtures.barrels().barrel(barrel);
-            missileTargets.push_back(MissileTarget{static_cast<s32>(barrel), cask.figure.position(),
-                                                   cask.radius, cask.height});
+            missileTargets.push_back(
+                targets.fixtures.barrels().target(barrel, static_cast<s32>(barrel)));
         }
     }
     for (MissileTarget target : targets.opponents.enemies().targets()) {
@@ -1246,11 +1261,8 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
     }
     for (usize g = 0; g < targets.opponents.generators().count(); ++g) {
         if (targets.opponents.generators().standing(static_cast<s32>(g))) {
-            const Obstacle& box = targets.opponents.generators().boxOf(static_cast<s32>(g));
-            missileTargets.push_back(
-                MissileTarget{static_cast<s32>(g) + kGeneratorTargetBase,
-                              targets.opponents.generators().positionOf(static_cast<s32>(g)),
-                              std::max(box.halfAcross, box.halfAlong), box.height});
+            missileTargets.push_back(targets.opponents.generators().target(
+                static_cast<s32>(g), static_cast<s32>(g) + kGeneratorTargetBase));
         }
     }
     for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
@@ -1277,8 +1289,9 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     });
     const f32 range =
         targets.opponents.bosses().view().alive ? TargetAssist::kBossRange : TargetAssist::kRange;
-    const auto ordinary = TargetAssist::select(actor.followPoint(), facing, candidates, range,
-                                               &m_resources->world.collision());
+    const auto ordinary =
+        TargetAssist::select(actor.followPoint(), facing, candidates, range,
+                             &m_resources->world.collision(), m_resources->acquisitionCone);
     if (ordinary || targets.multiplayer != MultiplayerMode::Hurt) {
         return ordinary;
     }
@@ -1391,7 +1404,7 @@ std::optional<MissileTarget> PlayerAttacks::meleeTarget(const PlayerActor& actor
         targets.opponents.bosses().present() ? TargetAssist::kBossRange : TargetAssist::kRange;
     auto target =
         TargetAssist::ahead(actor.position(), actor.height(), facing, meleeTargets(targets), reach,
-                            range, &m_resources->world.collision());
+                            range, &m_resources->world.collision(), m_resources->acquisitionCone);
     if (!target) {
         target = meleePlayer(actor, targets, reach, facing);
     }

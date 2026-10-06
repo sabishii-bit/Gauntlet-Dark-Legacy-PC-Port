@@ -13,6 +13,7 @@
 
 #include "game/world/ItemFigure.h"
 #include "game/world/ItemSupport.h"
+#include "game/world/PlayerMissiles.h"
 
 namespace gdl::game {
 
@@ -67,6 +68,7 @@ public:
         bool gone = false;
         f32 radius = 1.0f;
         f32 height = 3.0f;
+        Vec3 collisionOffset{0};
         ItemFigure figure;
         Obstacle box;
         ItemSupport support;
@@ -84,6 +86,7 @@ public:
         }
     }
     const Barrel& barrel(usize index) const { return *m_barrels[index]; }
+    MissileTarget target(usize index, s32 id) const;
     void setPlayerCount(s32 players);
 
     /** Whether a barrel still stands to be hit. */

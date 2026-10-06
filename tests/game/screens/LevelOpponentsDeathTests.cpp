@@ -85,6 +85,122 @@ TEST_CASE("Death drains bypass armor without bypassing invulnerability or normal
     CHECK(deaths == (invulnerable ? 0 : 1));
     CHECK(player.hitFlashTicks == 0);
 }
+
+TEST_CASE("placed Death statues wake without the sleeping enemy's shatter cry",
+          "[death][death-statue][death-wake-audio][assets]") {
+    const s32 strength = GENERATE(0, 2);
+    const s32 wake = GENERATE(0, 1, 2);
+    CAPTURE(strength, wake);
+    const auto root =
+        test::assetOrSkip("MONSTERS/DEATH/ANIM.PS2").parent_path().parent_path().parent_path();
+    const auto stage = test::sampleLevel("death-wake-audio");
+    // The G1 placement's sight is 8, independent of its blocking body. Item-statue
+    // conversion (fn_80060114) is not damage_enemy's sleeping-enemy shatter branch.
+    writeTextFile(stage / "world.json",
+                  R"({"objects":[{"name":"FLOOR","position":[0,0,0],"flags":4}],
+      "itemInfos":[{"type":4,"name":"DEATH","radius":1,"height":2}],
+      "itemInstances":[{"info":0,"position":[0,0,0],"params":[)" +
+                      std::to_string(strength) + R"(,0,3,0,0,0,0,65,0,0,0,0]}]})");
+    writeTextFile(stage / "collision.json", R"({"objects":[{"object":0,
+      "normals":[0,1,0],"vertices":[-50,0,-50,50,0,-50,0,0,150]}]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef level;
+    level.name = "G1";
+    REQUIRE(world.load(device, stage, level));
+    REQUIRE(world.collision().floorAt(Vec3{0}, 1, 1));
+    ItemArchive weapons;
+    EffectTrees effects;
+    AudioMixer mixer{48000};
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    audio.open(root, &sound, nullptr);
+    REQUIRE(audio.lengthOf("S_DEATHSHATTER") > 0);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(3, {}, nullptr, {0, 0, 20}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root}, players);
+    REQUIRE(opponents.statues().count() == 1);
+    CHECK_FALSE(opponents.statues().woken(0));
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.help = [](s32, usize) { return true; };
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    REQUIRE(opponents.statues().count() == 1);
+    REQUIRE_FALSE(opponents.statues().woken(0));
+    if (wake == 0) {
+        players[0].actor.place({0, 0, 8}); // sight, still clear of the solid body
+    } else if (wake == 1) {
+        opponents.wakeStatueNear({0, 0, 0}); // an authored trigger
+    } else {
+        opponents.wakeStatue(0); // a blow on the item statue
+    }
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    REQUIRE(opponents.statues().rising(0));
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(opponents.statues().count() == 0);
+    CHECK(opponents.enemies().count() == 1);
+    CHECK(sound.voiceCount() == 0);
+    opponents.close();
+    audio.close();
+}
+
+TEST_CASE("damaging a sleeping Death enemy still plays the native shatter cry once",
+          "[death][death-wake-audio][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/DEATH/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    AudioMixer mixer{48000};
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    audio.open(root, &sound, nullptr);
+    REQUIRE(audio.lengthOf("S_DEATHSHATTER") > 0);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(3, {}, nullptr, {0, 0, 100}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root}, players);
+    // This control has no level: give the live-enemy owner no collision query
+    // rather than the empty world's query, which correctly rejects every birth.
+    opponents.enemies().open(device, root, nullptr, 2, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kDeathKind));
+    EnemySpawn spawn;
+    spawn.kind = kDeathKind;
+    spawn.tier = GENERATE(1, 2);
+    spawn.placed = true;
+    spawn.asleep = true;
+    const auto id = opponents.enemies().spawn(spawn, {});
+    REQUIRE(id);
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 1;
+    opponents.enemies().hurt(*id, hit);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.help = [](s32, usize) { return true; };
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    REQUIRE(sound.voiceCount() == 1);
+    std::array<f32, 48000> samples{};
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 sample) { return sample != 0; }));
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(sound.voiceCount() == 1); // the event was drained, not dispatched again
+    opponents.close();
+    audio.close();
+}
+
 TEST_CASE("Anti Death is exposed by player identity only while the item is active", "[death]") {
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);

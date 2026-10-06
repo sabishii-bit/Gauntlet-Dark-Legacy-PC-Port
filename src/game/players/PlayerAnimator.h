@@ -150,7 +150,7 @@ public:
         GetUpForward,
         SpecialShot, ///< the special shot's wind-up, at whose end the legend item leaves
         SpecialShotRecover,
-        SpikeHit,
+        SpikeHit, ///< native action 129 plays HITREACT, not the unused SPIKEHIT sequence
         Grabbed,
         WebReact,
         Quick1,
@@ -249,7 +249,7 @@ public:
         "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2", "STRAFE_ATKF1", "STRAFE_ATKF2",
         "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
         "STRAFE_ATKR2", "FALLDOWN",     "GETUP",        "FALLFRNT",     "GETUP2",
-        "SSHOT1",       "SSHOTR",       "SPIKEHIT",     "GRABBED",      "WEBREACT",
+        "SSHOT1",       "SSHOTR",       "HITREACT",     "GRABBED",      "WEBREACT",
         "ATTQUICK1",    "ATTQUICK2",    "ATTQUICK3",    "ATTQUICK2R",   "ATTQUICK3R",
         "ATTSTART",     "ATTSLOW1",     "ATTSLOW1R",    "ATTLOWK",      "ATTLOWKR",
         "ATTLOW1",      "ATTLOW2",      "ATTLOWR",      "ATTQ3RIGHT",   "ATTQ2RIGHT",
@@ -535,6 +535,7 @@ private:
         return action >= Action::Throw && action <= Action::ThrowMovingRecover;
     }
     Decision decide(Action requested) const;
+    f32 readyTransition() const;
     f32 meleePace() const;
     Action meleeRequest(PlayerDeed deed, bool moved) const;
     Action chainAfter(Action swing) const;

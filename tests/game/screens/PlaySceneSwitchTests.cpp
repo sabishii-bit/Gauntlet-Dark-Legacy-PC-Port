@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -167,7 +168,26 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
     CHECK(scene.actor(0)->save().health() == health);
     const auto targets = scene.enemies().targets();
     REQUIRE_FALSE(targets.empty());
-    const auto enemyCount = scene.enemies().count();
+    struct HeldEnemy {
+        s32 id;
+        Vec3 position;
+        EnemyAction action;
+        f32 frame;
+        s32 stun;
+    };
+    std::vector<HeldEnemy> enemies;
+    for (const auto& target : targets) {
+        const auto* animation = scene.enemies().animatorOf(target.id);
+        REQUIRE(animation);
+        enemies.push_back({target.id, target.base, animation->action(), animation->player().frame(),
+                           scene.enemies().stunTicksOf(target.id)});
+    }
+    std::vector<std::array<s32, 2>> generatorClocks;
+    for (usize i = 0; i < scene.generators().count(); ++i) {
+        const auto id = static_cast<s32>(i);
+        generatorClocks.push_back(
+            {scene.generators().countdownOf(id), scene.generators().bredOf(id)});
+    }
     const Mat4 wallBefore = world.scene().worldTransform(560);
     PlayScene::Inputs input{};
     input[0].move = MoveInput{Vec2{0, 1}, 1};
@@ -198,7 +218,6 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
         REQUIRE(scene.update(1.0 / 30, input) == PlayOutcome::Running);
         CHECK(scene.actor(0)->position() == held);
         CHECK(scene.actor(0)->save().health() == health);
-        CHECK(scene.enemies().count() == enemyCount);
         CHECK(scene.actor(0)->save().progress().inventory.potions.size() == potions);
         CHECK_FALSE(animator.released());
         CHECK_FALSE(animator.potionUsed());
@@ -216,8 +235,20 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
                                      animator.pose().matrices().end());
         animatedPlayer |= pose != previousPose;
         previousPose = pose;
-        for (const auto& target : targets) {
-            CHECK(scene.enemies().positionOf(target.id) == target.base);
+        // Newly revealed placements can stand during a shot. Existing AI and
+        // generator clocks, rather than the total population, remain held.
+        for (const auto& enemy : enemies) {
+            CHECK(scene.enemies().positionOf(enemy.id) == enemy.position);
+            const auto* animation = scene.enemies().animatorOf(enemy.id);
+            REQUIRE(animation);
+            CHECK(animation->action() == enemy.action);
+            CHECK(animation->player().frame() == enemy.frame);
+            CHECK(scene.enemies().stunTicksOf(enemy.id) == enemy.stun);
+        }
+        for (usize i = 0; i < generatorClocks.size(); ++i) {
+            const auto id = static_cast<s32>(i);
+            CHECK(scene.generators().countdownOf(id) == generatorClocks[i][0]);
+            CHECK(scene.generators().bredOf(id) == generatorClocks[i][1]);
         }
         if (scene.switchCutscene().showing() && !sawShot) {
             sawShot = true;
@@ -268,6 +299,144 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
     scene.harm(0, 10, HurtKind::Blow);
     CHECK(scene.actor(0)->save().health() < health);
     scene.close();
+    CHECK_FALSE(scene.switchCutscene().active());
+}
+
+TEST_CASE("Fields bridge camera reveals its placed general without advancing combat",
+          "[switch-camera][alpha-cutscene-placement][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    GameConfig config;
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.unpackedRoot = root;
+    context.levels = &catalog;
+    PlayOptions options;
+    options.welcome = false;
+    // Start on the first lift's native landing so the later bridge placement
+    // has not already been admitted by the follow camera.
+    options.position = Vec3{40.828125f, 10.0703125f, -88.390625f};
+    const std::array party{PartyMember{0, CharacterSave{}}};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 frame = 0; frame < 240 && scene.spawning(); ++frame) {
+        scene.update(1.0 / 60, {});
+    }
+    REQUIRE_FALSE(scene.spawning());
+    REQUIRE_FALSE(scene.switchCutscene().active());
+
+    constexpr usize kGeneralPlacement = 76;
+    REQUIRE(world.layout().itemInstances().size() > kGeneralPlacement);
+    const auto& instance = world.layout().itemInstances()[kGeneralPlacement];
+    const auto& info = world.layout().itemInfos()[static_cast<usize>(instance.info)];
+    REQUIRE(info.name == "GENERAL");
+    REQUIRE(instance.position == Vec3{14.9296875f, 76.2734375f, -429.234375f});
+    const auto general = [&]() -> std::optional<s32> {
+        for (s32 id = 0; id < Critters::kMost; ++id) {
+            if (scene.critters().alive(id) &&
+                scene.critters().kindOf(id) == CombatantKind::General) {
+                const Vec3 delta = scene.critters().positionOf(id) - instance.position;
+                if (std::hypot(delta.x, delta.z) < 1) {
+                    return id;
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    REQUIRE_FALSE(general());
+    REQUIRE(glm::distance(scene.camera().attention(), instance.position) > 50);
+
+    usize trigger = world.triggers().size();
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        if (world.triggers().trigger(i).instance == 436) {
+            trigger = i;
+        }
+    }
+    REQUIRE(trigger < world.triggers().size());
+    // Activate the authored pad through its normal visitor contract; neither the
+    // bridge camera nor the general is fabricated or moved for this regression.
+    const std::array visitors{TriggerVisitor{.position = world.triggers().trigger(trigger).spot}};
+    world.updateTriggers(1.0f / 60, visitors);
+    scene.update(1.0 / 60, {});
+    REQUIRE(scene.switchCutscene().active());
+    REQUIRE(scene.switchCutscene().target() == 836);
+    for (s32 frame = 0; frame < 60 && !scene.switchCutscene().showing(); ++frame) {
+        scene.update(1.0 / 60, {});
+        if (!scene.switchCutscene().showing()) {
+            CHECK_FALSE(general()); // a shot's lead-in still shows the follow camera
+        }
+    }
+    REQUIRE(scene.switchCutscene().showing());
+    const WorldCamera shot = scene.viewCamera();
+    REQUIRE(shot.position == Vec3{2.3828125f, 96.390625f, -402.234375f});
+    const f32 aspect =
+        static_cast<f32>(config.display.frameWidth) / static_cast<f32>(config.display.frameHeight);
+    REQUIRE(ViewVolume::of(shot, config.horizontalFovRadians(), aspect)
+                .sees(instance.position, 2 * std::max(info.radius, info.height)));
+    REQUIRE(glm::distance(shot.position, instance.position) < 50);
+    std::vector<std::array<s32, 2>> generators;
+    for (usize i = 0; i < scene.generators().count(); ++i) {
+        const auto id = static_cast<s32>(i);
+        generators.push_back({scene.generators().countdownOf(id), scene.generators().bredOf(id)});
+    }
+    scene.update(1.0 / 60, {});
+    const auto id = general();
+    REQUIRE(id);
+    // find_enemy_slot (8004FD00) can reuse offscreen slots for the shot's
+    // newly visible placements. Capture bodies after that placement refresh;
+    // a numeric pool index alone does not identify its previous occupant.
+    const auto swarm = scene.enemies().targets();
+    std::vector<std::array<s32, 2>> swarmState;
+    for (const auto& enemy : swarm) {
+        const auto* animator = scene.enemies().animatorOf(enemy.id);
+        REQUIRE(animator);
+        swarmState.push_back(
+            {static_cast<s32>(animator->action()), scene.enemies().stunTicksOf(enemy.id)});
+    }
+    const Vec3 stood = scene.critters().positionOf(*id);
+    const auto move = scene.critters().moveTypeOf(*id);
+    const auto lookout = scene.critters().lookoutOf(*id);
+    scene.critters().freeze(*id, 1);
+    scene.critters().blind(*id, 1);
+    scene.critters().curb(*id, 1.0f / 600);
+    s32 heldFrames = 0;
+    while (scene.switchCutscene().active() && heldFrames < 600) {
+        scene.update(1.0 / 60, {});
+        ++heldFrames;
+        CHECK(scene.critters().positionOf(*id) == stood);
+        CHECK(scene.critters().moveTypeOf(*id) == move);
+        CHECK(scene.critters().lookoutOf(*id) == lookout);
+        CHECK(scene.critters().frozen(*id));
+        CHECK(scene.critters().blinded(*id));
+        CHECK(scene.critters().curbed(*id));
+        for (usize i = 0; i < swarm.size(); ++i) {
+            const auto& enemy = swarm[i];
+            const Vec3 at = scene.enemies().positionOf(enemy.id);
+            const f32 distance = glm::distance(at, enemy.base);
+            CAPTURE(enemy.id, enemy.base.x, enemy.base.y, enemy.base.z, at.x, at.y, at.z);
+            // Floor carrying still round-trips local coordinates during a cut.
+            CHECK(distance < 0.0001f);
+            const auto* animator = scene.enemies().animatorOf(enemy.id);
+            REQUIRE(animator);
+            CHECK(static_cast<s32>(animator->action()) == swarmState[i][0]);
+            CHECK(scene.enemies().stunTicksOf(enemy.id) == swarmState[i][1]);
+        }
+        for (usize i = 0; i < generators.size(); ++i) {
+            const auto generator = static_cast<s32>(i);
+            CHECK(scene.generators().countdownOf(generator) == generators[i][0]);
+            CHECK(scene.generators().bredOf(generator) == generators[i][1]);
+        }
+    }
+    CHECK(heldFrames > 1);
     CHECK_FALSE(scene.switchCutscene().active());
 }
 } // namespace

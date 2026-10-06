@@ -14,7 +14,8 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-TEST_CASE("Shootable walls own removable geometry, health and party visibility", "[walls]") {
+TEST_CASE("Shootable walls own removable geometry, health and party visibility",
+          "[walls][alpha-wall-fx]") {
     const auto directory = test::scratchDirectory("destructible-walls");
     writeTextFile(directory / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
       "itemInfos":[{"type":10,"subtype":42,"hitPoints":25,"armor":1}],
@@ -68,10 +69,36 @@ TEST_CASE("Shootable walls own removable geometry, health and party visibility",
     walls.setPlayerCount(2, collision);
     CHECK(walls.wall(0).health == 25);
     CHECK(walls.standing(0));
+    CHECK(walls.wall(0).collisionCentre == Vec3{10, 1, 5});
+
+    // AddItemSub adds one before fn_8005A404 rotates the offset. A near-vertical
+    // offset instead keeps world axes even when the item's mesh is tilted.
+    writeTextFile(directory / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
+      "itemInfos":[
+      {"type":10,"subtype":42,"name":"WALL","collisionOffset":[1,2,3],"hitPoints":25},
+      {"type":10,"subtype":42,"name":"WALL","collisionOffset":[0,2,0],"hitPoints":25},
+      {"type":10,"subtype":42,"name":"WALL","collisionOffset":[0.01,2,0],"hitPoints":25}],
+      "itemInstances":[
+      {"info":0,"position":[10,0,5],"rotation":[0,0,1.5707963267948966],
+       "collision":[{"normal":[0,0,1],"vertices":[[-5,0,0],[5,0,0],[0,10,0]]}]},
+      {"info":1,"position":[10,0,5],"rotation":[0,0,1.5707963267948966],
+       "collision":[{"normal":[0,0,1],"vertices":[[-5,0,0],[5,0,0],[0,10,0]]}]},
+      {"info":2,"position":[10,0,5],"rotation":[0,0,1.5707963267948966],
+       "collision":[{"normal":[0,0,1],"vertices":[[-5,0,0],[5,0,0],[0,10,0]]}]}]})");
+    REQUIRE(layout.load(directory));
+    collision.clear();
+    walls.bind(device, layout, models, textures, collision);
+    REQUIRE(walls.size() == 3);
+    CHECK(walls.wall(0).collisionCentre.x == Catch::Approx(7));
+    CHECK(walls.wall(0).collisionCentre.y == Catch::Approx(1));
+    CHECK(walls.wall(0).collisionCentre.z == Catch::Approx(8));
+    CHECK(walls.wall(1).collisionCentre == Vec3{10, 3, 5});
+    // The native comparison promotes the summed float to double; float(.01) is below .01.
+    CHECK(walls.wall(2).collisionCentre == Vec3{10.01f, 3, 5});
 }
 
 TEST_CASE("Temple's five shootable walls load their level meshes and authored surfaces",
-          "[walls][assets]") {
+          "[walls][alpha-aim-acquisition][assets]") {
     const auto directory = test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path();
     test::assetOrSkip("LEVELS/LEVELE1/objects.ngc");
     WorldLayout layout;
@@ -94,6 +121,15 @@ TEST_CASE("Temple's five shootable walls load their level meshes and authored su
         REQUIRE_FALSE(walls.wall(i).surface.empty());
         added += walls.wall(i).surface.size();
         CHECK(walls.standing(i));
+        const auto target = walls.target(i, static_cast<s32>(i));
+        REQUIRE(target.acquisition);
+        const auto instance = static_cast<usize>(walls.wall(i).object) - layout.objects().size();
+        const auto& info =
+            layout.itemInfos().at(static_cast<usize>(layout.itemInstances().at(instance).info));
+        CHECK(target.acquisition->point == walls.wall(i).collisionCentre);
+        CHECK(target.acquisition->radius == std::min(info.radius, 5.0f));
+        CHECK(target.acquisition->distanceScale == Catch::Approx(1.2f));
+        CHECK(target.acquisition->maxHeight == 2 * info.height);
     }
     CHECK(collision.triangleCount() == before + added);
     walls.draw(device, Mat4{1}, {});

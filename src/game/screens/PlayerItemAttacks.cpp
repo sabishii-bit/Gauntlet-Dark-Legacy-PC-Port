@@ -81,8 +81,11 @@ void PlayerAttacks::updateItems(f32 seconds, std::span<PlayerRuntime> players,
         const Mat4 parent = attachmentOf(player, area.attack.head);
         m_resources->effects.placeAt(area.effect, parent);
         for (const auto& target : strikeTargets(targets)) {
+            const auto kind = target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase
+                                  ? ItemAttack::TargetKind::Swarm
+                                  : ItemAttack::TargetKind::Item;
             if (std::ranges::find(area.hit, target.id) == area.hit.end() &&
-                area.attack.reaches(parent, target, area.elapsed, area.lifetime)) {
+                area.attack.reaches(parent, target, area.elapsed, area.lifetime, kind)) {
                 area.hit.push_back(target.id);
                 strikeTarget(target, area.attack.damageAt(area.elapsed, area.lifetime),
                              area.attack.flags, player.actor, players, targets);

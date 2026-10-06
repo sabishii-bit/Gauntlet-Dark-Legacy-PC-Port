@@ -9,6 +9,9 @@ void PlayScene::updateSwitchCutscene(s32 ticks, f32 seconds) {
     // actions finish and the idle pose keeps moving; enemy AI and inventory clocks wait.
     m_world->update(seconds);
     m_world->updateTriggers(seconds, visitors(), true);
+    // World item placement still runs while controls and combat are held.
+    // The shot can reveal a placed enemy that the follow camera has never seen.
+    watchOpponents();
     m_fixtures.syncFloors();
     m_opponents.syncFloors();
     const auto subjects =
