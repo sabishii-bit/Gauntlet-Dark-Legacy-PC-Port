@@ -17,6 +17,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/app/Scenario.h"
 #include "game/enemies/BossDefinition.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
@@ -438,6 +439,150 @@ TEST_CASE("generators alternate successful zig-zag births without turning their 
         REQUIRE_FALSE(enemies.alive(0));
     }
     CHECK(generators.bredOf(0) == 3);
+}
+
+TEST_CASE("generator textures borrow external frames and advance once for the whole archive",
+          "[game][generators][generator-lava]") {
+    const auto root = test::scratchDirectory("generator-texture-cycle");
+    writeGeneratorArchive(root);
+    const auto archivePath = root / "MONSTERS/GRU";
+    writeTextFile(archivePath / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"LAVA","width":2,"height":2,"flags":256}]})");
+    test::convertModelFixture(archivePath);
+    writeTextFile(archivePath / "animations.json", R"({
+        "textureAnimations":[{"name":"LAVA","frameName":"LAVA00","texture":0,
+            "source":-1,"frames":2,"rate":2,"flag":-1}],
+        "trees":[{"name":"GRU1","nodes":[{"name":"BODY","object":"BODY",
+            "position":[0,0,0]}]}]})");
+    const auto lenderPath = root / "LEVEL";
+    std::filesystem::create_directories(lenderPath);
+    writeFile(lenderPath / "skin.png", test::kTinyPng);
+    writeTextFile(lenderPath / "objects.json", R"({"objects":[]})");
+    writeTextFile(lenderPath / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"LAVA00","file":"skin.png","width":2,"height":2},
+        {"index":1,"name":"LAVA01","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(lenderPath);
+    writeTextFile(root / "world.json", R"({
+        "objects":[{"name":"GROUND","position":[0,0,0]}],
+        "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10}],
+        "itemInstances":[{"info":0,"position":[0,0,0],"params":[1,0]},
+                         {"info":0,"position":[20,0,0],"params":[1,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    REQUIRE(textures.load(lenderPath));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    const std::array lenders{&textures};
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, -1, nullptr, lenders));
+    REQUIRE(generators.count() == 2);
+    const auto checkFrame = [&](u32 frame, f32 blend = -1.0f) {
+        device.draws.clear();
+        generators.draw(device, Mat4{1}, {}, blend);
+        REQUIRE(device.draws.size() == 2);
+        for (const auto& draw : device.draws) {
+            CHECK(draw.texture == &textures.texture(device, frame));
+        }
+    };
+    checkFrame(0);
+    generators.update(3, enemies, {});
+    checkFrame(0); // one and a half native frames, even with two generators
+    generators.update(1, enemies, {});
+    checkFrame(1);
+    checkFrame(0, 0.0f); // interpolation samples the preceding half-frame
+    checkFrame(1, 1.0f);
+    checkFrame(1); // drawing cannot advance the animation
+    generators.update(4, enemies, {});
+    checkFrame(0); // wraps after four native frames, without needing a brood
+    CHECK(enemies.count() == 0);
+    generators.clear();
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, -1, nullptr, lenders));
+    checkFrame(0);
+}
+
+TEST_CASE("Mountain demon generators fill their lava surfaces from the native level archive",
+          "[game][generators][generator-lava][assets]") {
+    const std::string name = GENERATE("B4", "B5");
+    CAPTURE(name);
+    const auto root = test::assetOrSkip("LEVELS/LEVEL" + name + "/WORLDS.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::assetOrSkip("MONSTERS/DEM/ANIM.PS2");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName(name);
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto scenario = Scenario::load(
+        test::dataDirectory().parent_path() / "tests/scenarios" /
+        (name == "B4" ? "level-b4-demon-generators.json" : "level-b5-demon-generators.json"));
+    REQUIRE(scenario.tower.position);
+    const Vec3 start = *scenario.tower.position;
+    const auto floor = world.collision().floorAt(start, 0.5f, 0.5f);
+    REQUIRE(floor);
+    CHECK(floor->y == Approx(start.y).margin(0.1f));
+    CHECK(glm::distance(world.collision().resolveWalls(start, 1.0f, start.y + 0.5f, start.y + 4.0f),
+                        start) < 0.1f);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& generators = opponents.generators();
+    auto& enemies = opponents.enemies();
+    constexpr s32 kDemon = 2;
+    usize shown = 0;
+    for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
+        if (generators.kindOf(i) == kDemon && generators.standing(i)) {
+            ++shown;
+        }
+    }
+    REQUIRE(shown > 0);
+    auto* archive = enemies.archive(kDemon);
+    REQUIRE(archive != nullptr);
+    const auto lava = archive->textures.find("LAVA");
+    REQUIRE(lava);
+    REQUIRE(archive->textures.entry(*lava).noPicture);
+    const Texture* empty = &archive->textures.texture(device, *lava);
+    const auto first = world.textures().find("LAVA00");
+    REQUIRE(first);
+    const auto checkFrame = [&](u32 frame, usize expected) {
+        device.draws.clear();
+        generators.draw(device, Mat4{1}, {});
+        REQUIRE_FALSE(device.draws.empty());
+        // LAVA is deliberately empty in DEM; its surface borrows LAVA00..59.
+        CHECK_FALSE(std::ranges::any_of(
+            device.draws, [empty](const auto& draw) { return draw.texture == empty; }));
+        const auto* texture = &world.textures().texture(device, *first + frame);
+        CHECK(std::ranges::count_if(device.draws, [texture](const auto& draw) {
+                  return draw.texture == texture;
+              }) == static_cast<s32>(expected));
+    };
+    checkFrame(0, shown);
+    generators.update(4, enemies, {});
+    checkFrame(1, shown);
+    // Every damage state retains its lava; changing meshes must not reset the clock.
+    for (s32 state = 2; state >= 1; --state) {
+        for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
+            if (generators.kindOf(i) != kDemon || !generators.standing(i)) {
+                continue;
+            }
+            while (generators.stateOf(i) > state) {
+                REQUIRE(generators.strike(i, 1, 0));
+            }
+        }
+        checkFrame(1, shown);
+    }
+    generators.update(236, enemies, {});
+    checkFrame(0, shown); // the native 60-frame animation loops after four seconds
+    opponents.close();
 }
 
 TEST_CASE("Dream generators retain the floor clearance of their portal artwork",

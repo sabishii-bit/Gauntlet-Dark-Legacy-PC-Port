@@ -189,6 +189,8 @@ public:
     /** The level's item archive, lending the torch flames and Sumner; empty when it is not
      * unpacked. */
     ItemArchive& items() { return m_items; }
+    /** Stage textures borrowed by native item/enemy animation slots such as LAVA. */
+    TextureSet& textures() { return m_textures; }
     /** Common realm figures still available when a boss supplies its own item archive. */
     ItemArchive& realmItems() { return m_realmItems; }
     ItemArchive& powerups() { return m_powerups; }

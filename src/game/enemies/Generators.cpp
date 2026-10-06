@@ -89,7 +89,7 @@ const Generators::Bodies* Generators::bodiesOf(s32 kind) const {
 }
 
 bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
-                            ItemArchive* realmItems) {
+                            ItemArchive* realmItems, std::span<TextureSet* const> lenders) {
     if (bodiesOf(kind) != nullptr) {
         return true;
     }
@@ -102,6 +102,7 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
     }
     auto bodies = std::make_unique<Bodies>();
     bodies->kind = kind;
+    bodies->textures.bind(archive->trees.textureAnimations(), archive->textures, device, lenders);
     const EnemyKind& info = enemyKind(kind);
     // The state's object: "GEN_GRU3", tried with the level-one and root suffixes as the
     // original does. Whole is three; nought is the ruin.
@@ -111,8 +112,10 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
         // SPECIAL generators are multi-node authored trees in the realm archive,
         // not a model from one of the four enemy species they produce.
         if (const auto tree = archive->trees.find(base)) {
-            bodies->models[static_cast<usize>(state)].bind(
-                archive->trees.tree(*tree), archive->models, archive->textures, device);
+            bodies->trees[static_cast<usize>(state)] = archive->trees.tree(*tree);
+            bodies->models[static_cast<usize>(state)].bind(bodies->trees[static_cast<usize>(state)],
+                                                           archive->models, archive->textures,
+                                                           device, lenders);
             bodies->models[static_cast<usize>(state)].setFrame(0, 0);
             continue;
         }
@@ -129,7 +132,7 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
             node.object = archive->models.entry(objectIndex).name;
             tree.nodes.push_back(node);
             bodies->models[static_cast<usize>(state)].bind(tree, archive->models, archive->textures,
-                                                           device);
+                                                           device, lenders);
             break;
         }
     }
@@ -139,7 +142,8 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
 
 bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& enemies,
                       const WorldCollision* collision, const GeneratorScales& scales, s32 players,
-                      std::span<const LevelEnemy> roster, s32 realm, ItemArchive* realmItems) {
+                      std::span<const LevelEnemy> roster, s32 realm, ItemArchive* realmItems,
+                      std::span<TextureSet* const> lenders) {
     clear();
     m_collision = collision;
     const auto authored = itemSupportWorld(layout, collision);
@@ -181,7 +185,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
                 enemies.loadKind(species);
             }
         }
-        if (!loadBodies(device, enemies, kind, realmItems)) {
+        if (!loadBodies(device, enemies, kind, realmItems, lenders)) {
             continue;
         }
         Generator generator;
@@ -422,6 +426,11 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     if (ticks <= 0) {
         return;
     }
+    // Texture cycles belong to the archive, not to each placed generator or its
+    // current damage state. Keep them running even when its brood cannot spawn.
+    for (auto& bodies : m_bodies) {
+        bodies->textures.advance(static_cast<f32>(ticks) / 60.0f);
+    }
     // Refresh the entire obstacle roster before any generator attempts a birth.
     for (Generator& generator : m_generators) {
         const bool seen =
@@ -641,7 +650,8 @@ std::vector<Obstacle> Generators::enemyObstacles() const {
     return out;
 }
 
-void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
+void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                      f32 presentationAlpha) {
     for (const Generator& generator : m_generators) {
         if (generator.presence != Generator::Presence::Shown) {
             continue;
@@ -652,15 +662,17 @@ void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
             }
             continue;
         }
-        const Bodies* bodies = bodiesOf(generator.kind);
+        Bodies* bodies = bodiesOf(generator.kind);
         if (bodies == nullptr) {
             continue;
         }
-        const TreeModel& model =
-            bodies->models[static_cast<usize>(std::clamp(generator.state, 0, kStates))];
+        const auto state = static_cast<usize>(std::clamp(generator.state, 0, kStates));
+        TreeModel& model = bodies->models[state];
         if (!model.bound()) {
             continue;
         }
+        bodies->textures.apply(model, bodies->trees[state], 0, 0.0f,
+                               bodies->textures.presentationOffset(presentationAlpha));
         model.draw(device, clip, generator.placement, lighting);
     }
 }

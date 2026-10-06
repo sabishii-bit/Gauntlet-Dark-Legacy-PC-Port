@@ -12,6 +12,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
@@ -67,7 +68,7 @@ public:
     bool bind(RenderDevice& device, const WorldLayout& layout, Enemies& enemies,
               const WorldCollision* collision, const GeneratorScales& scales, s32 players,
               std::span<const LevelEnemy> roster = {}, s32 realm = -1,
-              ItemArchive* realmItems = nullptr);
+              ItemArchive* realmItems = nullptr, std::span<TextureSet* const> lenders = {});
     void clear();
     /** Carries bodies, contact boxes and birth origins with their supporting world nodes. */
     void syncFloors();
@@ -95,7 +96,8 @@ public:
     /** Worm pits allow enemies to walk across, but remain targets and block other births. */
     std::vector<Obstacle> enemyObstacles() const;
 
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 presentationAlpha = -1.0f);
 
     usize count() const { return m_generators.size(); }
     bool standing(s32 id) const;
@@ -120,8 +122,9 @@ public:
 private:
     struct Bodies {
         s32 kind = -1;
-        std::array<TreeInfo, kStates + 1> trees; ///< one node each, the state's object
+        std::array<TreeInfo, kStates + 1> trees; ///< authored tree or single state object
         std::array<TreeModel, kStates + 1> models;
+        TextureAnimator textures;
     };
 
     struct Generator {
@@ -163,8 +166,8 @@ private:
 
     Bodies* bodiesOf(s32 kind);
     const Bodies* bodiesOf(s32 kind) const;
-    bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
-                    ItemArchive* realmItems = nullptr);
+    bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind, ItemArchive* realmItems,
+                    std::span<TextureSet* const> lenders);
     static s32 stateFor(const Generator& generator, bool destroyed);
     void updatePresence(Generator& generator, bool seen) const;
     void applyBroodEvents(Enemies& enemies);

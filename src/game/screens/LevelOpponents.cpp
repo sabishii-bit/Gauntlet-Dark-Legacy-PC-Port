@@ -529,8 +529,11 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     const std::span<const LevelEnemy> roster = level != nullptr
                                                    ? std::span<const LevelEnemy>(level->enemies)
                                                    : std::span<const LevelEnemy>{};
+    const std::array generatorTextures{&world.textures(), &world.items().textures,
+                                       &world.realmItems().textures};
     m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, playerCount,
-                      roster, static_cast<s32>(world.ref().realmId), &world.items());
+                      roster, static_cast<s32>(world.ref().realmId), &world.items(),
+                      generatorTextures);
     // The level's boss, at its boss mark.
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
