@@ -18,7 +18,7 @@ from .disc import CHUNK
 from .install import (check_cancel, host_platform, no_links, payload_inventory,
                       retry_locked, temporary_directory, validate_file_names, validate_metadata)
 from .releases import download_release
-from .versions import alpha_order
+from .versions import version_order
 
 TRANSACTION = ".gdl-update"
 RECEIPTS = {"build-info.json", "installation.json"}
@@ -206,7 +206,7 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
         if (metadata["platform"] != old["platform"] or metadata["executable"] != old["executable"] or
                 (expected_version is not None and metadata["version"] != expected_version)):
             raise ValueError("Downloaded runtime does not match the selected version and platform")
-        if alpha_order(metadata["version"]) <= alpha_order(old["version"]):
+        if version_order(metadata["version"]) <= version_order(old["version"]):
             raise ValueError("An update must be newer than the installed version")
         old_names = sorted(set(old["files"]) | RECEIPTS)
         new_names = sorted(set(metadata["files"]) | RECEIPTS)

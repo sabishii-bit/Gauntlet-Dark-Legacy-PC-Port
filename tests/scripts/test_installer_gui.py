@@ -109,16 +109,16 @@ class WizardTests(unittest.TestCase):
         folder = self.installed_folder()
         personal = folder / "saves/hero.json"
         personal.write_bytes(b"keep my hero")
-        raw = newer_payload(self.root / "next").read_bytes()
+        raw = newer_payload(self.root / "next", "1.0.0").read_bytes()
         system = update.installed_info(folder)[0]["platform"]
         self.window.network = True
         with mock.patch.object(releases, "open_release", side_effect=[
-                io.BytesIO(json.dumps([release_row(system=system, content=raw)]).encode()),
+                io.BytesIO(json.dumps([release_row("1.0.0", system=system, content=raw)]).encode()),
                 io.BytesIO(raw)]):
             self.window.inspect_destination()
             self.wait_for_operation()
             self.assertEqual(self.window.mode, "update")
-            self.assertIn("0.1.0-alpha.10", self.window.start.text())
+            self.assertIn("1.0.0", self.window.start.text())
             self.assertFalse(self.window.image.isEnabled())
             self.assertEqual(self.window.image.text(), "")
             self.assertIn("No disc image is needed", self.window.intro.text())
@@ -126,7 +126,7 @@ class WizardTests(unittest.TestCase):
             self.wait_for_operation()
         self.dialog.assert_not_called()
         self.assertEqual(self.window.mode, "launch")
-        self.assertEqual(update.installed_info(folder)[0]["version"], "0.1.0-alpha.10")
+        self.assertEqual(update.installed_info(folder)[0]["version"], "1.0.0")
         self.assertEqual(personal.read_bytes(), b"keep my hero")
 
     def test_network_failure_still_allows_bundled_update_then_launch(self):

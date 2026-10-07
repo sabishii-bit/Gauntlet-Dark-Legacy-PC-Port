@@ -253,14 +253,18 @@ class InstallerTests(unittest.TestCase):
             install(self.image, self.destination, self.payload)
         self.assertFalse(self.destination.exists())
 
-    def test_version_and_tag_are_alpha_and_identical(self):
+    def test_version_and_tag_are_semver_and_identical(self):
         path = self.root / "VERSION"
         path.write_text("0.1.0-alpha.1\n")
         self.assertEqual(version(self.root), "0.1.0-alpha.1")
         self.assertEqual(validate_tag("v0.1.0-alpha.1", self.root), "v0.1.0-alpha.1")
         with self.assertRaises(ValueError):
             validate_tag("v0.1.0-alpha.2", self.root)
-        for text in ("0.1.0", "v0.1.0-alpha.1", "00.1.0-alpha.1", "0.1.0-alpha.0", "0.1.0-alpha.01"):
+        for text in ("0.1.0", "0.1.0-alpha.0", "1.0.0-beta.2", "1.0.0-rc.1", "1.0.0+build.123"):
+            path.write_text(text)
+            self.assertEqual(version(self.root), text)
+            self.assertEqual(validate_tag("v" + text, self.root), "v" + text)
+        for text in ("v0.1.0-alpha.1", "00.1.0-alpha.1", "0.1.0-alpha.01", "1.0.0+", "1.0"):
             path.write_text(text)
             with self.assertRaises(ValueError):
                 version(self.root)

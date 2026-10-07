@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout, QHBoxLayo
 from .install import Cancelled, install, payload_inventory
 from .releases import check_updates
 from .update import TRANSACTION, apply_update, installed_info, recover_update, update_from_release
-from .versions import alpha_order
+from .versions import version_order
 
 STRINGS = json.loads(Path(__file__).with_name("strings.json").read_text(encoding="utf-8"))
 
@@ -169,7 +169,7 @@ class Wizard(QWidget):
     def offer_update(self):
         version = self.release.version if self.release else self.metadata["version"]
         self.executable = self.folder() / self.installed["executable"]
-        if alpha_order(version) > alpha_order(self.installed["version"]):
+        if version_order(version) > version_order(self.installed["version"]):
             self.mode = "update"
             self.status.setText(STRINGS["available"].format(
                 installed=self.installed["version"], version=version))
@@ -280,7 +280,7 @@ class Wizard(QWidget):
     def completed(self, result):
         if self.operation == "check":
             # Prefer the embedded payload if it is newer than the published runtime.
-            self.release = result if result and alpha_order(result.version) > alpha_order(self.metadata["version"]) else None
+            self.release = result if result and version_order(result.version) > version_order(self.metadata["version"]) else None
             self.offer_update()
             return
         if self.operation == "recover":

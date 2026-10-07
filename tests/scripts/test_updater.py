@@ -16,7 +16,7 @@ import zipfile
 from test_installer import fixture_payload, synthetic_iso
 from installer.install import Cancelled, install, payload_inventory
 from installer import releases, update
-from installer.versions import alpha_order
+from installer.versions import is_prerelease, version_order
 from release import make_payload
 
 
@@ -42,7 +42,7 @@ def newer_payload(root, version="0.1.0-alpha.10"):
 
 def release_row(version="0.1.0-alpha.10", system="windows-x64", content=b"payload"):
     name = releases.runtime_name(version, system)
-    return {"tag_name": "v" + version, "draft": False, "prerelease": True,
+    return {"tag_name": "v" + version, "draft": False, "prerelease": is_prerelease(version),
             "assets": [{"name": name, "state": "uploaded", "size": len(content),
                         "digest": "sha256:" + hashlib.sha256(content).hexdigest(),
                         "browser_download_url": f"https://github.com/{releases.REPOSITORY}/releases/download/v{version}/{name}"}]}
@@ -64,9 +64,30 @@ class ReleaseFeedTests(unittest.TestCase):
         self.assertEqual(releases.select_release(rows, "0.1.0-alpha.2", "windows-x64").version,
                          "0.1.0-alpha.10")
         self.assertIsNone(releases.select_release(rows, "0.1.0-alpha.10", "windows-x64"))
-        self.assertGreater(alpha_order("0.2.0-alpha.1"), alpha_order("0.1.99-alpha.99"))
-        for value in ("0.1.0-alpha.01", "0.1.0-alpha.0", "main", None):
-            self.assertIsNone(alpha_order(value))
+        self.assertGreater(version_order("0.2.0-alpha.1"), version_order("0.1.99-alpha.99"))
+        for value in ("0.1.0-alpha.01", "main", None):
+            self.assertIsNone(version_order(value))
+
+    def test_all_published_release_types_follow_semver_not_publication_order(self):
+        versions = ("1.0.0-alpha.2", "1.0.0-beta.10", "1.0.0-rc.1", "1.0.0", "1.0.1",
+                    "1.1.0-preview.1")
+        for index, version in enumerate(versions):
+            with self.subTest(version=version):
+                rows = [release_row(v) for v in reversed(versions[:index + 1])]
+                result = releases.select_release(rows, "0.1.0-alpha.2", "windows-x64")
+                self.assertEqual(result.version, version)
+                self.assertIsNone(releases.select_release(rows, version, "windows-x64"))
+        draft = release_row("9.0.0")
+        draft["draft"] = True
+        self.assertIsNone(releases.select_release([draft], "1.0.0", "windows-x64"))
+
+    def test_build_metadata_urls_work_but_metadata_only_changes_are_not_upgrades(self):
+        row = release_row("1.0.0+build.1")
+        asset = row["assets"][0]
+        asset["browser_download_url"] = asset["browser_download_url"].replace("+", "%2B")
+        self.assertEqual(releases.select_release([row], "1.0.0-rc.1", "windows-x64").version,
+                         "1.0.0+build.1")
+        self.assertIsNone(releases.select_release([row], "1.0.0+build.0", "windows-x64"))
 
     def test_unverified_or_redirected_release_metadata_is_rejected(self):
         for key, value in (("digest", None), ("size", -1), ("state", "new"),
@@ -153,6 +174,19 @@ class UpdateTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 update.apply_update(self.destination, payload, expected_version=expected)
             self.assertEqual(snapshot(self.destination), self.original)
+
+    def test_installation_can_upgrade_through_beta_rc_stable_and_next_preview(self):
+        versions = ("1.0.0-beta.1", "1.0.0-rc.1", "1.0.0", "1.1.0-preview.1")
+        for index, version in enumerate(versions):
+            with self.subTest(version=version):
+                payload = newer_payload(self.root / f"release-{index}", version)
+                update.apply_update(self.destination, payload, expected_version=version)
+                self.assertEqual(update.installed_info(self.destination)[0]["version"], version)
+                self.assertEqual((self.destination / "saves/hero.json").read_bytes(), b"user-owned")
+        before = snapshot(self.destination)
+        with self.assertRaisesRegex(ValueError, "newer"):
+            update.apply_update(self.destination, newer_payload(self.root / "old-rc", "1.0.0-rc.2"))
+        self.assertEqual(snapshot(self.destination), before)
 
     def test_modified_or_unowned_runtime_is_not_overwritten(self):
         for name in (self.executable.name, "shaders/new.spv"):

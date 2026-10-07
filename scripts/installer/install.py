@@ -14,7 +14,7 @@ import time
 import zipfile
 
 from .disc import CHUNK, DiscImage, safe_component
-from .versions import ALPHA_VERSION
+from .versions import SEMVER
 
 MAX_PAYLOAD = 2 * 1024 * 1024 * 1024
 PAYLOAD_ROOTS = {"gauntlet.exe", "gauntlet", "shaders", "data", "licenses", "lib",
@@ -56,8 +56,8 @@ def validate_metadata(metadata):
     if not isinstance(metadata, dict) or not all(isinstance(metadata.get(key), str)
             for key in ("version", "commit", "platform", "executable")):
         raise ValueError("Invalid release metadata")
-    if not ALPHA_VERSION.fullmatch(metadata["version"]):
-        raise ValueError("Invalid alpha release version")
+    if not SEMVER.fullmatch(metadata["version"]):
+        raise ValueError("Invalid semantic release version")
     expected = metadata.get("files")
     if not isinstance(expected, dict) or len(expected) > 20000:
         raise ValueError("Invalid release file inventory")

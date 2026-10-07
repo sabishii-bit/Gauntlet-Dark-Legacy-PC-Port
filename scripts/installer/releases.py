@@ -1,4 +1,4 @@
-"""Read public, published alpha releases and fetch a verified runtime, never game data.
+"""Read public, published releases and fetch a verified runtime, never game data.
 
 Trust comes from HTTPS to this project's GitHub release account. Asset digests
 detect corruption; they are not an independent publisher signature. Do not use
@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 
 from .install import MAX_PAYLOAD, check_cancel
-from .versions import alpha_order
+from .versions import version_order
 
 REPOSITORY = "sabishii-bit/Gauntlet-Dark-Legacy-PC-Port"
 API = f"https://api.github.com/repos/{REPOSITORY}/releases"
@@ -62,9 +62,9 @@ class Release:
 
 
 def select_release(releases, installed_version, system):
-    current = alpha_order(installed_version)
+    current = version_order(installed_version)
     if current is None:
-        raise ValueError("The installed version is not a supported alpha version")
+        raise ValueError("The installed version is not a valid semantic version")
     if system not in ("windows-x64", "linux-x64"):
         raise ValueError("No updater package exists for this platform")
     newest = None
@@ -72,7 +72,7 @@ def select_release(releases, installed_version, system):
         if not isinstance(release, dict) or release.get("draft") is not False:
             continue
         tag = release.get("tag_name", "")
-        order = alpha_order(tag)
+        order = version_order(tag)
         if order is None or not tag.startswith("v") or order <= current:
             continue
         version = tag[1:]
@@ -88,14 +88,19 @@ def select_release(releases, installed_version, system):
             raise ValueError("Ambiguous release runtime")
         asset = matches[0]
         url = asset.get("browser_download_url")
-        expected_url = f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset['name']}"
+        expected_path = f"/{REPOSITORY}/releases/download/{tag}/{asset['name']}"
+        parsed = urllib.parse.urlsplit(url) if isinstance(url, str) else None
+        # GitHub may escape '+' in tags/asset names containing SemVer build metadata.
+        correct_url = (parsed is not None and parsed.scheme == "https" and
+                       parsed.netloc == "github.com" and not parsed.query and not parsed.fragment and
+                       urllib.parse.unquote(parsed.path) == expected_path)
         digest = asset.get("digest", "")
         size = asset.get("size")
-        if (asset.get("state") != "uploaded" or url != expected_url or
+        if (asset.get("state") != "uploaded" or not correct_url or
                 not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest) or
                 type(size) is not int or not 0 < size <= MAX_PAYLOAD):
             raise ValueError("Release runtime is incomplete or lacks its GitHub SHA-256 digest")
-        if newest is None or order > alpha_order(newest.version):
+        if newest is None or order > version_order(newest.version):
             newest = Release(version, system, url, size, digest[7:])
     return newest
 

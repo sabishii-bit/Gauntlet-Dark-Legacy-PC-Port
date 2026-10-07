@@ -1,10 +1,8 @@
 cmake_minimum_required(VERSION 3.30)
 
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" GDL_VERSION LIMIT_COUNT 1)
-if(NOT GDL_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)-alpha\\.([1-9][0-9]*)$")
-    message(FATAL_ERROR "VERSION must be an alpha semantic version, e.g. 0.1.0-alpha.1")
-endif()
-set(GDL_VERSION_CORE "${CMAKE_MATCH_1}")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/GdlVersion.cmake")
+gdl_version_core("${GDL_VERSION}" GDL_VERSION_CORE)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
 
 project(GauntletDarkLegacy

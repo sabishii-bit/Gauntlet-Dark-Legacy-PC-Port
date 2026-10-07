@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: '3.12'
       # Manual runs produce CI artifacts only, even when a tag is selected.
-      - name: Require a new alpha version before building installers
+      - name: Require a new version before building installers
         if: github.event_name == 'push'
         run: python scripts/publish_release.py --check
         env:
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Check alpha tag against VERSION
+      - name: Check release tag against VERSION
         if: startsWith(github.ref, 'refs/tags/')
         run: python scripts/release.py check-tag "${{ github.ref_name }}"
       - uses: actions/cache@v4
@@ -94,7 +94,7 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish alpha prerelease
+    name: Publish versioned release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: installers
     runs-on: ubuntu-24.04

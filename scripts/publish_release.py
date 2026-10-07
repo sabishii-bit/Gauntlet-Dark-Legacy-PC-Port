@@ -9,18 +9,18 @@ import tempfile
 from release import ROOT, digest, validate_tag
 from installer.install import payload_inventory
 from installer.releases import runtime_name
-from installer.versions import alpha_order
+from installer.versions import is_prerelease, version_order
 
 
 def require_new_version(tag, existing_tags):
     """Published releases and drafts both reserve their version; never reuse or downgrade."""
-    candidate = alpha_order(tag)
+    candidate = version_order(tag)
     if candidate is None:
-        raise ValueError("A release requires an alpha semantic version")
+        raise ValueError("A release requires a semantic version")
     for existing in existing_tags:
         if existing == tag:
             raise ValueError(f"Release {tag} already exists; increment VERSION instead")
-        previous = alpha_order(existing)
+        previous = version_order(existing)
         if previous is not None and candidate <= previous:
             raise ValueError(f"Release {tag} must be newer than existing release {existing}")
 
@@ -75,8 +75,11 @@ def main(argv=None):
         print(f"Eligible new release: {tag}")
         return
     assets = validated_assets(ROOT / "release-assets", tag)
+    prerelease = is_prerelease(tag)
+    heading = ("Prerelease QA build — expect bugs and keep backups of your saves.\n\n"
+               if prerelease else "Keep backups of your saves before updating.\n\n")
     notes = (
-        "Alpha QA build — expect bugs and keep backups of your saves.\n\n"
+        heading +
         "Windows 10/11 x64: download and run the `windows-x64-setup.exe`. "
         "It is unsigned; only use downloads from this project's release page.\n\n"
         "Linux x64: extract the `linux-x64-setup.tar.gz`, then open the executable "
@@ -87,7 +90,7 @@ def main(argv=None):
         "console emulator or asset conversion is required. A Vulkan 1.3 graphics driver is required. "
         "No game assets are included in these downloads.\n\n"
         "For an upgrade, open the installer and select your existing game folder. "
-        "It checks published alpha releases; press Update to download and install the newer runtime. "
+        "It checks all published releases, including prereleases; press Update to download and install the newer runtime. "
         "No disc image is needed again. Close the game first. "
         "Game assets, `saves/` and `config/` are preserved. Fresh installations also retain "
         "a GauntletDarkLegacy-Update executable beside the game for future checks. "
@@ -98,7 +101,7 @@ def main(argv=None):
     with tempfile.TemporaryDirectory(prefix="gdl-release-notes-") as temporary:
         path = Path(temporary) / "notes.txt"
         path.write_text(notes, encoding="utf-8")
-        subprocess.run(["gh", "release", "create", tag, "--verify-tag", "--prerelease",
+        subprocess.run(["gh", "release", "create", tag, "--verify-tag", *(["--prerelease"] if prerelease else []),
                         "--title", f"Gauntlet Dark Legacy {tag}", "--notes-file", str(path),
                         "--generate-notes", *map(str, assets)], cwd=ROOT, check=True)
 

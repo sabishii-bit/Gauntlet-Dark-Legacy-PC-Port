@@ -1,4 +1,4 @@
-"""Build asset-free alpha installers on the target OS, or verify a release tag.
+"""Build asset-free installers on the target OS, or verify a release tag.
 
 Maintainer workflow (from a clean, committed checkout):
   python scripts/setup.py --yes --no-build
@@ -6,10 +6,11 @@ Maintainer workflow (from a clean, committed checkout):
   <venv-python> -m pip install -r scripts/installer/requirements.txt
   <venv-python> scripts/release.py build
 
-Bump VERSION, commit, and push v<VERSION> to publish a GitHub prerelease. A manual
+Bump VERSION, commit, and push v<VERSION> to publish a GitHub release. A manual
 Release workflow run builds downloadable artifacts without publishing a release.
 This also applies to manual runs on tags. Published/draft versions cannot be reused;
-new alpha versions must increase, and release runs share one concurrency lock.
+new versions must increase, and release runs share one concurrency lock.
+SemVer prerelease suffixes mark GitHub prereleases; versions without them are stable.
 No disc image, native assets, extracted media, saves or personal settings are shipped.
 Linux targets x86-64 Ubuntu 24.04+ desktops; Vulkan 1.3 drivers remain prerequisites.
 Windows targets x64 Windows 10/11. Installers are unsigned until signing is configured.
@@ -35,16 +36,15 @@ import devenv
 import package
 from installer.install import payload_inventory, temporary_directory
 from installer.releases import runtime_name
-from installer.versions import ALPHA_VERSION
+from installer.versions import SEMVER
 
 ROOT = devenv.ROOT
-SEMVER = ALPHA_VERSION
 
 
 def version(root=ROOT):
     value = (root / "VERSION").read_text(encoding="utf-8").strip()
     if not SEMVER.fullmatch(value):
-        raise ValueError("VERSION must be an alpha semantic version, e.g. 0.1.0-alpha.1")
+        raise ValueError("VERSION must be a semantic version, e.g. 0.1.0-alpha.1 or 1.0.0")
     return value
 
 

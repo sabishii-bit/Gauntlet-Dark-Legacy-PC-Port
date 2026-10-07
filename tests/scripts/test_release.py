@@ -54,6 +54,17 @@ class ReleaseTests(unittest.TestCase):
         require_new_version("v0.1.0-alpha.10", ["v0.1.0-alpha.9"])
         require_new_version("v0.2.0-alpha.1", ["v0.1.0-alpha.99"])
         require_new_version(self.tag, [])
+        for candidate, existing in (("v1.0.0-beta.1", "v1.0.0-alpha.99"),
+                                    ("v1.0.0-rc.1", "v1.0.0-beta.9"),
+                                    ("v1.0.0", "v1.0.0-rc.1"),
+                                    ("v1.0.1", "v1.0.0"),
+                                    ("v1.1.0-alpha.1", "v1.0.1")):
+            with self.subTest(candidate=candidate):
+                require_new_version(candidate, [existing])
+                with self.assertRaises(ValueError):
+                    require_new_version(existing, [candidate])
+        with self.assertRaises(ValueError):
+            require_new_version("v1.0.0+build.2", ["v1.0.0+build.1"])
 
     def test_manual_and_branch_runs_cannot_publish(self):
         for event, ref in (("workflow_dispatch", "refs/heads/main"),
@@ -101,6 +112,19 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(command[:4], ["gh", "release", "create", self.tag])
             self.assertIn("--verify-tag", command)
             self.assertNotIn("--clobber", command)
+
+    def test_publication_classifies_stable_and_prerelease_from_semver(self):
+        for tag, prerelease in (("v1.0.0-alpha.1", True), ("v1.0.0-beta.1", True),
+                                ("v1.0.0-rc.1", True), ("v1.0.0", False),
+                                ("v1.0.0+build-tag", False)):
+            with self.subTest(tag=tag), mock.patch("publish_release.check_publication", return_value=tag), mock.patch(
+                    "publish_release.validated_assets", return_value=[self.root / "setup.exe"]), mock.patch(
+                    "publish_release.subprocess.run") as publish:
+                publish_main([])
+                command = publish.call_args.args[0]
+                self.assertEqual(command[:4], ["gh", "release", "create", tag])
+                self.assertEqual("--prerelease" in command, prerelease)
+                self.assertNotIn("--clobber", command)
 
     def test_release_workflow_has_no_branch_push_and_serializes_all_versions(self):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
