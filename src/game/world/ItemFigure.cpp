@@ -427,6 +427,9 @@ Obstacle ItemFigure::obstacle(const ItemInfo& info) const {
     box.halfAcross = info.xSize > 0.0f ? info.xSize : info.radius;
     box.halfAlong = info.zSize > 0.0f ? info.zSize : info.radius;
     box.height = info.height;
+    if (info.collisionType == 1 || info.collisionType == 3) {
+        box.enemyItem = Obstacle::ItemQuery{info.collisionType == 1, info.radius};
+    }
     return box;
 }
 

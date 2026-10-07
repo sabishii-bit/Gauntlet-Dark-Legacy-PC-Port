@@ -1083,6 +1083,96 @@ TEST_CASE("generator item clearance uses half the newborn's radius",
     }
 }
 
+TEST_CASE("barrels block occupied birth destinations rather than every crossed exit",
+          "[enemies][enemy-spawn][alpha-item-tracking][assets]") {
+    const bool cylinder = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn birth;
+    birth.algorithm = 12; // One forward exit isolates the item query.
+    birth.generator = 7;
+    birth.clearance = 8;
+    const f32 radius = enemyKind(kGruntKind).radius;
+    const Vec3 landing{0, 0, birth.clearance + radius};
+    Obstacle barrel{.centre = {0, 0, 4},
+                    .halfAcross = 1,
+                    .halfAlong = 1,
+                    .height = 8,
+                    .cylinderRadius = cylinder ? 1.0f : 0.0f,
+                    .enemyItem = Obstacle::ItemQuery{cylinder, 2}};
+    bool blocked = false;
+    SECTION("barrel beside the generator is behind the destination") {}
+    SECTION("barrel occupies the destination") {
+        barrel.centre = landing;
+        blocked = true;
+    }
+    SECTION("overlapping birth moving outward remains an allowed exit") {
+        birth.clearance = 0;
+        barrel.centre = {0, 0, -0.1f};
+        barrel.halfAlong = 2;
+        barrel.cylinderRadius = cylinder ? 2.0f : 0.0f;
+    }
+    SECTION("a cylindrical barrel does not acquire a square corner") {
+        barrel.centre = landing + Vec3{1.4f, 0, 1.4f};
+        barrel.enemyItem->radius = cylinder ? 1.0f : 2.0f;
+        blocked = !cylinder;
+    }
+    SECTION("an overlapping birth heading into the barrel remains blocked") {
+        birth.clearance = 0;
+        barrel.centre = {0, 0, 1};
+        blocked = true;
+    }
+    const auto id = enemies.spawn(birth, {}, std::array{barrel});
+    REQUIRE(id.has_value() == !blocked);
+    if (id) {
+        CHECK(enemies.positionOf(*id).z == Approx(birth.clearance + radius));
+    }
+}
+
+TEST_CASE("G3 maggots pursue a nearby player while separating from a barrel",
+          "[enemies][alpha-item-tracking][assets]") {
+    const bool cylinder = GENERATE(false, true);
+    constexpr s32 kMaggot = 12;
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kMaggot));
+    EnemySpawn birth;
+    birth.kind = kMaggot;
+    birth.algorithm = kProwlWay;
+    birth.placed = true;
+    const auto id = enemies.spawn(birth, {});
+    REQUIRE(id);
+    // Consume SetItem's placement stun before introducing the nearby barrel.
+    const std::array player{playerAt({0, 0, 6})};
+    for (s32 frame = 0; frame < 15; ++frame) {
+        enemies.update(kTicks, kStep, player);
+    }
+    const Vec3 start = enemies.positionOf(*id);
+    const Obstacle barrel{.centre = start - Vec3{0, 0, 2},
+                          .halfAcross = 1,
+                          .halfAlong = 1,
+                          .height = 8,
+                          .cylinderRadius = cylinder ? 1.0f : 0.0f,
+                          .enemyItem = Obstacle::ItemQuery{cylinder, cylinder ? 1.0f : 2.0f}};
+    REQUIRE(barrel.pushOut(start, enemies.radiusOf(*id)) != start);
+    enemies.update(kTicks, kStep, player, std::array{barrel});
+    const Vec3 after = enemies.positionOf(*id);
+    const f32 step = enemyKind(kMaggot).pace * kTicks;
+    // fn_8005F0F4 permits this separating step even while its endpoint overlaps.
+    // It must not take a detour or push the animal abruptly to the barrel's edge.
+    CHECK(after.x == Approx(start.x).margin(0.00001));
+    CHECK(after.z == Approx(start.z + step));
+    CHECK(enemies.algorithmOf(*id) == kProwlWay);
+    for (s32 frame = 0; frame < 40; ++frame) {
+        enemies.update(kTicks, kStep, player, std::array{barrel});
+    }
+    CHECK(enemies.positionOf(*id).z > start.z + 1);
+    CHECK_FALSE(enemies.takeBlows().empty());
+}
+
 TEST_CASE("generator birth walls are tested before settling onto an upper landing",
           "[game][enemies][enemy-collision][alpha-spawn-height][assets]") {
     // check_enemy_pos (8004F9AC) rejects the start-to-offset WallCollide before

@@ -253,6 +253,9 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.box.halfAlong = body->zSize > 0.0f ? body->zSize : body->radius;
         generator.box.height = body->height;
         generator.box.cylinderRadius = body->collisionType == 1 ? body->radius : 0.0f;
+        if (body->collisionType == 1 || body->collisionType == 3) {
+            generator.box.enemyItem = Obstacle::ItemQuery{body->collisionType == 1, body->radius};
+        }
         generator.box.solid = generator.presence == Generator::Presence::Shown;
         bindSupport(generator, info, instance.position, authored ? &*authored : collision);
         generator.countdown = 0;

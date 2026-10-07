@@ -508,12 +508,13 @@ TEST_CASE("a prowler stopped waits, turns an eighth to its own side, and the fou
     stopped.bumpedWall = true;
     std::optional<s32> became;
     for (s32 turn = 1; turn <= 4; ++turn) {
-        // Held after the stop: thirty ticks, fifteen updates of two.
+        // do_enemy_collide / do_enemy_move arm twenty ticks after this movement.
         prowl.think(rat, stopped);
-        CHECK(rat.deadEnd > 0);
+        prowl.afterMove(rat, alone, stopped);
+        CHECK(rat.deadEnd == 20);
         MindIntent intent;
-        for (s32 i = 0; i < 15 && rat.deadEnd > 0; ++i) {
-            intent = prowl.think(rat, alone);
+        for (s32 i = 0; i < 10; ++i) {
+            intent = prowl.think(rat, stopped);
         }
         CHECK(rat.deadEnd <= 0);
         CHECK(intent.heading == Approx(wrapAngle(static_cast<f32>(turn) * kPi / 4.0f)));
@@ -522,12 +523,22 @@ TEST_CASE("a prowler stopped waits, turns an eighth to its own side, and the fou
     }
     REQUIRE(became == kMirroredProwlWay);
     CHECK(rat.counter == 0);
+    CHECK(rat.effectiveWay == kMirroredProwlWay);
+    CHECK(rat.turns == 4);
+    rat.counter = 2;
+    for (s32 step = 0; step < 4; ++step) {
+        mirrored.think(rat, alone);
+        mirrored.afterMove(rat, alone, alone);
+        CHECK(rat.counter == (step < 3 ? 2 : 0));
+        CHECK(rat.turns == 3 - step);
+    }
     // The mirrored way turns the other way, and back again after four.
     MindMemory other;
     mirrored.think(other, stopped);
+    mirrored.afterMove(other, alone, stopped);
     MindIntent intent;
-    for (s32 i = 0; i < 15 && other.deadEnd > 0; ++i) {
-        intent = mirrored.think(other, alone);
+    for (s32 i = 0; i < 10; ++i) {
+        intent = mirrored.think(other, stopped);
     }
     CHECK(intent.heading == Approx(-kPi / 4.0f));
     // A player against it is faced.
@@ -535,6 +546,28 @@ TEST_CASE("a prowler stopped waits, turns an eighth to its own side, and the fou
     touching.contact = 0;
     touching.contactPosition = Vec3{5.0f, 0.0f, 0.0f};
     CHECK(prowl.think(rat, touching).heading == Approx(kPi / 2.0f));
+}
+
+TEST_CASE("prowlers forget old blocked turns after making clear progress",
+          "[enemies][mind][alpha-item-tracking]") {
+    const EnemyMind& prowl = enemyMindOf(kProwlWay);
+    MindMemory rat;
+    MindSense alone;
+    alone.ticks = 2;
+    MindSense stopped = alone;
+    stopped.blocked = true;
+    for (s32 stop = 0; stop < 8; ++stop) {
+        prowl.think(rat, alone);
+        prowl.afterMove(rat, alone, stopped);
+        REQUIRE(rat.deadEnd == 20);
+        for (s32 tick = 0; tick < 10; ++tick) {
+            CHECK_FALSE(prowl.think(rat, stopped).become);
+        }
+        CHECK(rat.counter == 1);
+        // The clear-step branch in do_enemy_move resets count once play expires.
+        prowl.afterMove(rat, alone, alone);
+        CHECK(rat.counter == 0);
+    }
 }
 
 TEST_CASE("the skirmisher waits out its throw before it throws or backs off, is nudged at "

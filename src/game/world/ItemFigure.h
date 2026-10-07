@@ -22,6 +22,11 @@ namespace gdl::game {
 
 /** Something solid a level's item puts in the way: a box or an upright cylinder. */
 struct Obstacle {
+    struct ItemQuery {
+        bool cylindrical = false;
+        f32 radius = 0;
+    };
+
     Vec3 centre{0.0f, 0.0f, 0.0f};
     f32 yaw = 0.0f;
     f32 halfAcross = 0.0f; ///< along its own x
@@ -29,6 +34,9 @@ struct Obstacle {
     f32 height = 0.0f;
     bool solid = true;
     f32 cylinderRadius = 0.0f; ///< positive selects a cylinder instead of the box
+    // Native cylinder/box items use endpoint/retreat tests for enemy births and
+    // route probes. Absent on mesh barriers and synthetic swept-only obstacles.
+    std::optional<ItemQuery> enemyItem = std::nullopt;
 
     /** Where a body of `radius` standing at `position` is pushed to so as not to be in the
      * box; `position` itself when it is clear of it, over it or under it. */

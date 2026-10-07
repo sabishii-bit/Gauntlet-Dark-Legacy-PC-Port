@@ -26,7 +26,7 @@ constexpr s32 kWanderCycle = 4;
 constexpr s32 kSeekWait = 5;
 constexpr s32 kSeekReverseStops = 9;
 constexpr f32 kProwlTurn = kPi / 4.0f;
-constexpr s32 kProwlWait = 30;
+constexpr s32 kProwlWait = 20;
 constexpr f32 kProwlPounce = 8.0f;        ///< a prowler goes for a player this close
 constexpr s32 kProwlTurns = 4;            ///< turns at stops before it turns the other way
 constexpr f32 kLoiterTurn = kPi / 180.0f; ///< a tick: a sixth of a turn a second (do_ai way 11)
@@ -123,7 +123,10 @@ void resetMind(MindMemory& memory, s32 way, const MindSense& sense) {
         memory.collided = 0;
         break;
     case kProwlWay:
-    case kMirroredProwlWay: memory.counter = 0; break;
+    case kMirroredProwlWay:
+        memory.counter = 0;
+        memory.turns = 0;
+        break;
     case kWanderWay:
     case kWanderOtherWay: memory.turns = 0; break;
     case kChaseWay:
@@ -274,19 +277,17 @@ public:
         if (sense.target >= 0 && sense.closeDistance <= kProwlPounce) {
             return enemyMindOf(kSeekWay).think(memory, sense);
         }
-        const bool changed =
-            enterMind(memory, m_mirror == kProwlWay ? kMirroredProwlWay : kProwlWay, sense);
+        enterMind(memory, m_mirror == kProwlWay ? kMirroredProwlWay : kProwlWay, sense);
         MindIntent intent;
-        if (!changed && sense.blocked) {
-            hold(memory, kProwlWait);
-        }
         if (memory.deadEnd > 0) {
             memory.deadEnd -= sense.ticks;
             if (memory.deadEnd <= 0) {
                 memory.heading = wrapAngle(memory.heading + m_turn);
                 if (++memory.counter >= kProwlTurns) {
                     memory.counter = 0;
+                    memory.turns = kProwlTurns; // move_logic02/04's play recovery counter
                     intent.become = m_mirror;
+                    memory.effectiveWay = m_mirror;
                 }
             }
         }
@@ -295,6 +296,21 @@ public:
         }
         intent.heading = memory.heading;
         return intent;
+    }
+
+    void afterMove(MindMemory& memory, [[maybe_unused]] const MindSense& before,
+                   const MindSense& after) const override {
+        // do_enemy_collide and do_enemy_move arm the hold after resolving the step.
+        // A successful step clears old blocked turns (after play's four-step grace
+        // on a mirrored transition); unrelated obstacles must not accumulate turns.
+        if (after.blocked) {
+            hold(memory, kProwlWait);
+        } else if (after.contact < 0) {
+            memory.turns = std::max(memory.turns - 1, 0);
+            if (memory.turns == 0) {
+                memory.counter = 0;
+            }
+        }
     }
 
 private:

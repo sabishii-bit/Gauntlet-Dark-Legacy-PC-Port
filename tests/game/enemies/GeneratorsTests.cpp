@@ -22,6 +22,8 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/screens/LevelOpponents.h"
+#include "game/world/Breakables.h"
+#include "game/world/Chests.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
 
@@ -1753,6 +1755,22 @@ TEST_CASE("all solo G1 generators have a viable native birth and authored initia
     REQUIRE(world.level());
     // camera_mode_level replaces InitEnemies' initial 13-slot limit with CAMS' 25.
     REQUIRE(world.level()->maxEnemies == 25);
+    Breakables barrels;
+    REQUIRE(barrels.bind(device, world.layout(), world.items(), &world.collision(),
+                         &world.realmItems()));
+    barrels.setPlayerCount(1);
+    const auto barrelBodies = barrels.obstacles();
+    REQUIRE_FALSE(barrelBodies.empty());
+    for (const auto& barrel : barrelBodies) {
+        REQUIRE(barrel.enemyItem);
+        CHECK(barrel.enemyItem->cylindrical); // G1 BAROBJ/BAREXP/BARPOI coltype 1
+        CHECK(barrel.enemyItem->radius == 1);
+    }
+    Chests chests;
+    REQUIRE(chests.bind(device, world.layout(), world.items(), &world.collision(),
+                        &world.realmItems()));
+    chests.setPlayerCount(1);
+    const auto chestBodies = chests.obstacles();
     const auto seed = GENERATE(1U, 7U, 41U);
     GeneratorScales scales;
     scales.health = world.level()->tuning.generatorHealth;
@@ -1774,7 +1792,8 @@ TEST_CASE("all solo G1 generators have a viable native birth and authored initia
         // Isolate births without removing neighbours' blocking volumes. Even a
         // downward view activates several expanded visibility spheres; otherwise
         // earlier generators consume the pool and fabricate dead exits.
-        std::vector<Obstacle> neighbours;
+        std::vector<Obstacle> neighbours = barrelBodies;
+        neighbours.insert(neighbours.end(), chestBodies.begin(), chestBodies.end());
         for (s32 other = 0; static_cast<usize>(other) < generators.count(); ++other) {
             if (other != chosen && generators.standing(other)) {
                 neighbours.push_back(generators.boxOf(other));

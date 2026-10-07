@@ -43,6 +43,52 @@ constexpr s32 kRetargetEvery = 8; ///< frames between a mind looking round again
 constexpr f32 kRunFrom = 1.25f;   ///< a pace this much over a walk's runs
 constexpr f32 kStopped = 0.01f;   ///< a step that gets less than this is a dead stop
 
+// fn_8005F0F4 lets an overlapping body leave an item. Cylinders use the radial
+// dot product; boxes only do so when neither local axis is moving farther inside.
+// This belongs to enemy item queries, not the swept walls/projectiles API.
+bool separatingFromItem(const Obstacle& box, const Vec3& from, const Vec3& to, f32 radius) {
+    if (!box.enemyItem) {
+        return false;
+    }
+    const Vec2 start{from.x - box.centre.x, from.z - box.centre.z};
+    const Vec2 step{to.x - from.x, to.z - from.z};
+    if (glm::dot(start, step) <= 0) {
+        return false;
+    }
+    if (box.enemyItem->cylindrical) {
+        return true;
+    }
+    const f32 c = std::cos(box.yaw);
+    const f32 s = std::sin(box.yaw);
+    const Vec2 local{start.x * c - start.y * s, start.x * s + start.y * c};
+    const Vec2 delta{step.x * c - step.y * s, step.x * s + step.y * c};
+    return std::abs(local.x) <= box.halfAcross + radius &&
+           std::abs(local.y) <= box.halfAlong + radius && local.x * delta.x >= 0 &&
+           local.y * delta.y >= 0;
+}
+
+Obstacle enemyItemShape(const Obstacle& box) {
+    Obstacle shape = box;
+    if (shape.enemyItem) {
+        shape.cylinderRadius = shape.enemyItem->cylindrical ? shape.enemyItem->radius : 0;
+    }
+    return shape;
+}
+
+bool itemBlocksEnemy(const Obstacle& box, const Vec3& from, const Vec3& to, f32 radius) {
+    if (!box.enemyItem) {
+        return box.contact(from, to, radius).has_value();
+    }
+    // Native box/cylinder birth and route queries test the destination, not a
+    // swept capsule. Retain the obstacle's vertical envelope for these foot positions.
+    const Vec2 delta{to.x - box.centre.x, to.z - box.centre.z};
+    const f32 reach = box.enemyItem->radius + radius;
+    if (glm::dot(delta, delta) > reach * reach || separatingFromItem(box, from, to, radius)) {
+        return false;
+    }
+    return enemyItemShape(box).contact(to, to, radius).has_value();
+}
+
 /** fn_8004646C asks CritterMoveNodeCol before the swarm grid. Mode 2 uses only
  * solid nodes (and the root fallback), expanding their vertical radius by the
  * mover's radius, not its humanoid height. */
@@ -615,13 +661,12 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                     clear = flatDistance(swept, at) < 0.01f && flatDistance(pushed, at) < 0.01f;
                 }
                 clear = clear && settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
-                clear =
-                    clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
-                        // check_enemy_pos passes half the enemy radius to
-                        // fn_8005EFAC's item sweep. A second full-radius endpoint
-                        // test rejects births beside items that retail permits.
-                        return box.solid && box.contact(spawn.position, at, 0.5f * enemy.radius);
-                    });
+                clear = clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
+                            // check_enemy_pos passes half the enemy radius to
+                            // fn_8005EFAC's item query. A second full-radius endpoint
+                            // test rejects births beside items that retail permits.
+                            return itemBlocksEnemy(box, spawn.position, at, 0.5f * enemy.radius);
+                        });
                 if (!clear) {
                     mask |= 1U << static_cast<u32>(d);
                 } else if (birthPathClear(enemy, birthFrom, birthTo, players, *slot)) {
@@ -1187,7 +1232,8 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
         }
     }
     for (const Obstacle& box : obstacles) {
-        if (box.solid && box.pushOut(at, enemy.radius) != at) {
+        if (box.enemyItem ? itemBlocksEnemy(box, enemy.position, at, enemy.radius + 0.1f)
+                          : box.solid && box.pushOut(at, enemy.radius) != at) {
             return false;
         }
     }
@@ -1380,11 +1426,13 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
                       (paceOf(enemy.kind) * intent.pace * static_cast<f32>(ticks));
     move(enemy, slot, ticks, static_cast<f32>(ticks) / static_cast<f32>(kTicksPerSecond), step,
          players, obstacles, !retreat.has_value() && enemy.mind.effectiveWay == kSeekWay);
-    if (!retreat.has_value() && enemy.mind.effectiveWay == kZigZagWay) {
-        // The zig-zagger re-aims after movement has established this step's position
-        // and contacts, rather than reacting to the previous update's collision.
-        enemyMindOf(algorithm).afterMove(enemy.mind, sensed,
-                                         sense(enemy, slot, ticks, players, obstacles));
+    if (!retreat.has_value() &&
+        (enemy.mind.effectiveWay == kZigZagWay || enemy.mind.effectiveWay == kProwlWay ||
+         enemy.mind.effectiveWay == kMirroredProwlWay)) {
+        // Use the handler that actually moved: a prowler may temporarily seek.
+        // Collision-driven turns and clear-step bookkeeping run after this step.
+        enemyMindOf(enemy.mind.effectiveWay)
+            .afterMove(enemy.mind, sensed, sense(enemy, slot, ticks, players, obstacles));
     }
 }
 
@@ -1549,8 +1597,12 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         return;
     }
     std::optional<s32> itemSide;
-    for (const Obstacle& box : obstacles) {
-        if (box.solid) {
+    for (const Obstacle& obstacle : obstacles) {
+        if (obstacle.solid) {
+            const Obstacle box = enemyItemShape(obstacle);
+            if (separatingFromItem(box, from, to, enemy.radius)) {
+                continue;
+            }
             // Short steps resolve by overlap below, retaining the tangential slide. A long
             // push can skip the body entirely, so clip that path before resolving contact.
             if (flatDistance(from, to) > enemy.radius && box.pushOut(from, enemy.radius) == from &&
