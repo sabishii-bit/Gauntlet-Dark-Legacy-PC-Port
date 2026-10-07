@@ -15,7 +15,7 @@ Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, f32 virtualWidth, f
 /** Textured rectangles in a virtual pixel space, drawn in call order and batched by texture. */
 class Canvas {
 public:
-    void begin(RenderDevice& device, const Mat4& transform);
+    void begin(RenderDevice& device, const Mat4& transform, const DrawState& state = {});
 
     void draw(const Texture& texture, const Rect& area, const Rect& uv, Color color);
     void draw(const Texture& texture, const Rect& area, Color color = Color::white());
@@ -43,6 +43,7 @@ private:
 
     RenderDevice* m_device = nullptr;
     Mat4 m_transform{1.0f};
+    DrawState m_state;
     const Texture* m_texture = nullptr;
     ImmediateBatch m_batch;
 };

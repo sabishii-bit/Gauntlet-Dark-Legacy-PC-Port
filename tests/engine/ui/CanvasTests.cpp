@@ -14,6 +14,23 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
+TEST_CASE("canvas overlay state applies to glyph batches and resets on the next begin",
+          "[ui][canvas][build-label]") {
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1}, {.depthWrite = false, .depthTest = false});
+    canvas.fill({0, 0, 8, 8}, Color::white());
+    canvas.end();
+    REQUIRE(device.draws.size() == 1);
+    CHECK_FALSE(device.draws[0].state.depthTest);
+    CHECK_FALSE(device.draws[0].state.depthWrite);
+    canvas.begin(device, Mat4{1});
+    canvas.fill({0, 0, 8, 8}, Color::white());
+    canvas.end();
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[1].state.depthTest);
+    CHECK(device.draws[1].state.depthWrite);
+}
 TEST_CASE("consecutive draws with one texture share a batch", "[ui][canvas]") {
     test::FakeRenderDevice device;
     const test::FakeTexture a{4, 4};

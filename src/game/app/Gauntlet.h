@@ -16,6 +16,7 @@
 #include "engine/ui/Canvas.h"
 
 #include "game/app/AttractSequencer.h"
+#include "game/app/BuildLabel.h"
 #include "game/app/CommandLine.h"
 #include "game/app/LevelCompletion.h"
 #include "game/app/MusicDuck.h"
@@ -41,7 +42,8 @@ namespace gdl::game {
 /** The game: owns the top-level game flow and drives the engine each frame. */
 class Gauntlet final : public Application {
 public:
-    Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config);
+    Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config,
+             std::string_view version);
 
 protected:
     void onInit() override;
@@ -81,9 +83,11 @@ private:
     s32 playerPressingStart() const;
     GameContext context();
     void applyWindowIcon();
+    void renderScene(RenderDevice& device);
 
     GameOptions m_options;
     GameConfig m_config;
+    BuildLabel m_buildLabel;
     std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
     std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;
     PromptDevices m_promptDevices;

@@ -138,6 +138,9 @@ add_library(engine STATIC
     ui/Canvas.cpp
     ui/TextPainter.h
     ui/TextPainter.cpp
+    ui/SystemFont.h
+    ui/SystemFont.cpp
+    ui/StbTrueTypeImplementation.cpp
     ui/ModelSprite.h
     ui/ModelSprite.cpp
     world/AmbientDimmer.h

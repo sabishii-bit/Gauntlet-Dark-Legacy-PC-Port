@@ -2,6 +2,7 @@ find_package(Catch2 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    game/app/BuildLabelTests.cpp
     game/world/StaticSceneryTests.cpp
     game/config/ControlProfilesTests.cpp
     game/menu/ControlPromptsTests.cpp

@@ -72,7 +72,8 @@ int runGauntlet(std::span<char*> rawArgs) {
     parsed.desc.maxFrameRate = config.display.maxFrameRate;
     parsed.desc.updateRate = config.timing.tickRate;
 
-    gdl::game::Gauntlet game(std::move(parsed.desc), std::move(parsed.options), std::move(config));
+    gdl::game::Gauntlet game(std::move(parsed.desc), std::move(parsed.options), std::move(config),
+                             GDL_VERSION);
     return game.run();
 }
 

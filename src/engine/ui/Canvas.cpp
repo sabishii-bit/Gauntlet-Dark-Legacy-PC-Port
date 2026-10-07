@@ -20,10 +20,11 @@ Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, f32 virtualWidth, f
                       Vec3{frameWidth / virtualWidth, frameHeight / virtualHeight, 1.0f});
 }
 
-void Canvas::begin(RenderDevice& device, const Mat4& transform) {
+void Canvas::begin(RenderDevice& device, const Mat4& transform, const DrawState& state) {
     GDL_VERIFY(m_device == nullptr, "Canvas::begin called twice");
     m_device = &device;
     m_transform = transform;
+    m_state = state;
     m_texture = nullptr;
     m_batch.clear();
 }
@@ -128,7 +129,7 @@ void Canvas::end() {
 
 void Canvas::flush() {
     if (!m_batch.empty() && m_texture != nullptr) {
-        m_device->draw(m_batch, *m_texture, m_transform);
+        m_device->draw(m_batch, *m_texture, m_transform, m_state);
     }
     m_batch.clear();
 }

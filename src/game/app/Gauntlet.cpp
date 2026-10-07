@@ -33,8 +33,10 @@ constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked mem
 
 } // namespace
 
-Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config)
-    : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)) {}
+Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config,
+                   std::string_view version)
+    : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)),
+      m_buildLabel(version) {}
 
 /** Use the original sibling carddemo icon, retaining PNG support for exported fixtures. */
 void Gauntlet::applyWindowIcon() {
@@ -65,6 +67,7 @@ void Gauntlet::onInit() {
     // A saved exclusive resolution may no longer exist after moving displays.
     m_config.display.windowMode = window().windowMode();
     applyWindowIcon();
+    m_buildLabel.load(renderDevice());
     if (!m_strings.load(m_options.dataDirectory / kTextDirectory, m_config.text.language)) {
         log::warn("No text tables under {}; identifiers will show instead of text",
                   (m_options.dataDirectory / kTextDirectory).string());
@@ -875,6 +878,12 @@ void Gauntlet::returnFromChallenge(std::span<const PartyMember> party) {
 }
 
 void Gauntlet::onRender(RenderDevice& device) {
+    renderScene(device);
+    // One final pass covers movies, loading, menus, play, pause and the idle screen.
+    m_buildLabel.render(device, device.framebufferExtent());
+}
+
+void Gauntlet::renderScene(RenderDevice& device) {
     const Extent2D framebuffer = device.framebufferExtent();
     const auto frameWidth = static_cast<f32>(m_config.display.frameWidth);
     const auto frameHeight = static_cast<f32>(m_config.display.frameHeight);
@@ -970,6 +979,7 @@ void Gauntlet::keepParty(std::span<const PartyMember> party) {
 }
 
 void Gauntlet::onShutdown() {
+    m_buildLabel.release();
     m_idleScreen.close();
     m_demo.close();
     keepParty();
