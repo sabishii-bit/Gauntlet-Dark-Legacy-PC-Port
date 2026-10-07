@@ -1045,6 +1045,44 @@ TEST_CASE("generator births cannot cross a wall to an unobstructed destination",
     REQUIRE_FALSE(id.has_value());
 }
 
+TEST_CASE("generator item clearance uses half the newborn's radius",
+          "[game][enemies][enemy-spawn][alpha-birth-item-radius][assets]") {
+    const bool cylinder = GENERATE(false, true);
+    const bool blocked = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn birth;
+    birth.algorithm = 12; // One forward exit isolates the item-clearance boundary.
+    birth.generator = 7;
+    birth.clearance = 8;
+    const f32 radius = enemyKind(kGruntKind).radius;
+    const Vec3 landing{0, 0, birth.clearance + radius};
+    const f32 gap = (blocked ? 0.25f : 0.75f) * radius;
+    const std::array obstacles{Obstacle{.centre = {1 + gap, 0, landing.z},
+                                        .halfAcross = 1,
+                                        .halfAlong = 1,
+                                        .height = 8,
+                                        .cylinderRadius = cylinder ? 1.0f : 0.0f}};
+    // check_enemy_pos passes 0.5 * rad to fn_8005EFAC. Its box/cylinder
+    // footprint expansion keeps that radius; there is no full-radius item veto.
+    REQUIRE(obstacles[0].contact(birth.position, landing, 0.5f * radius).has_value() == blocked);
+    REQUIRE(obstacles[0].pushOut(landing, radius) != landing);
+    const auto id = enemies.spawn(birth, {}, obstacles);
+    CAPTURE(cylinder, blocked, gap);
+    REQUIRE(id.has_value() == !blocked);
+    if (id) {
+        CHECK(enemies.positionOf(*id) == landing);
+    }
+    const auto events = enemies.takeGeneratorEvents();
+    REQUIRE(events.size() == (blocked ? 0 : 1));
+    if (!events.empty()) {
+        CHECK(events[0].kind == EnemyGeneratorEvent::Kind::Born);
+        CHECK(events[0].generator == birth.generator);
+    }
+}
+
 TEST_CASE("generator birth walls are tested before settling onto an upper landing",
           "[game][enemies][enemy-collision][alpha-spawn-height][assets]") {
     // check_enemy_pos (8004F9AC) rejects the start-to-offset WallCollide before

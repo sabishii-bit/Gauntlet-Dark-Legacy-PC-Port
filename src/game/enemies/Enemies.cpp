@@ -617,11 +617,11 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                 clear = clear && settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
                 clear =
                     clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
+                        // check_enemy_pos passes half the enemy radius to
+                        // fn_8005EFAC's item sweep. A second full-radius endpoint
+                        // test rejects births beside items that retail permits.
                         return box.solid && box.contact(spawn.position, at, 0.5f * enemy.radius);
                     });
-                clear = clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
-                            return box.solid && box.pushOut(at, enemy.radius) != at;
-                        });
                 if (!clear) {
                     mask |= 1U << static_cast<u32>(d);
                 } else if (birthPathClear(enemy, birthFrom, birthTo, players, *slot)) {
