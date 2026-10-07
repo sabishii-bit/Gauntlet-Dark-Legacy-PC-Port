@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -8,11 +9,13 @@
 #include "engine/assets/BitmapFont.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/platform/Input.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/config/GameConfig.h"
 #include "game/menu/MenuInput.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/PowerupEffects.h"
@@ -141,9 +144,9 @@ TEST_CASE("mouse menus and a typed name create and save a character without clic
     f.step(press(true));
     f.step({}, NameEntry::kFlashTicks + 1);
     REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
-    clickControl(SelectLane::PointerAction::Right);
+    f.step(press(false, false, false, false, false, false, true));
     CHECK(f.lane.pickedClass() == 1);
-    clickControl(SelectLane::PointerAction::Up);
+    f.step(press(false, false, false, true));
     CHECK(f.lane.pickedColor() == 1);
     clickControl(SelectLane::PointerAction::Select);
     REQUIRE(f.lane.lockedIn());
@@ -369,6 +372,92 @@ TEST_CASE("a class is mouse-selected on its portrait instead of the removed foot
         Vec2{select->area.x + select->area.width / 2, select->area.y + select->area.height / 2};
     f.step(click);
     CHECK(f.lane.lockedIn());
+}
+
+TEST_CASE("keyboard arrows and WASD navigate character selection through menu bindings",
+          "[game][select][input]") {
+    for (const auto& keys : {std::array{Key::Right, Key::Up, Key::Left, Key::Down},
+                             std::array{Key::D, Key::W, Key::A, Key::S}}) {
+        Fixture f("select-keyboard-navigation");
+        f.lane.activate();
+        f.createCharacter();
+        const auto key = [&](Key pressed) {
+            Input input;
+            input.setKey(pressed, true);
+            f.step(readMenuInput(input, MenuBindings{}));
+        };
+        key(keys[0]);
+        CHECK(f.lane.pickedClass() == 1);
+        key(keys[1]);
+        CHECK(f.lane.pickedColor() == 1);
+        key(keys[2]);
+        CHECK(f.lane.pickedClass() == 0);
+        key(keys[3]);
+        CHECK(f.lane.pickedColor() == 0);
+        key(Key::Enter);
+        CHECK(f.lane.lockedIn());
+    }
+}
+
+TEST_CASE("the character wheel matches vertical keys without double stepping or stale input",
+          "[game][select][mouse]") {
+    Fixture f("select-wheel");
+    f.lane.activate();
+    f.createCharacter();
+    MenuInput wheel;
+    wheel.pointer = Vec2{static_cast<f32>(f.lane.x()) + 50, 100};
+    wheel.pointerScroll = 1;
+    f.step(wheel);
+    CHECK(f.lane.pickedColor() == 1);
+    CHECK(f.lane.pickedClass() == 0);
+    wheel.pointerScroll = 0;
+    f.step(wheel);
+    CHECK(f.lane.pickedColor() == 1);
+    wheel.pointerScroll = -1;
+    f.step(wheel);
+    CHECK(f.lane.pickedColor() == 0);
+    wheel.pointerScroll = 1;
+    wheel.up = true;
+    f.step(wheel);
+    CHECK(f.lane.pickedColor() == 1);
+    wheel.up = false;
+    wheel.down = true;
+    f.step(wheel);
+    CHECK(f.lane.pickedColor() == 0);
+    wheel.down = false;
+    wheel.pointer.reset();
+    f.step(wheel);
+    CHECK(f.lane.pickedColor() == 0);
+}
+
+TEST_CASE("character selection has no direction icons or legend in either input mode",
+          "[game][select][prompts]") {
+    Fixture f("select-no-directions");
+    f.lane.activate();
+    f.createCharacter();
+    for (const bool mouse : {false, true}) {
+        MenuInput input;
+        if (mouse) {
+            input.pointer = Vec2{static_cast<f32>(f.lane.x()) + 15, 235};
+            input.pointerPressed = true;
+        }
+        f.step(input);
+        CHECK(f.lane.pickedClass() == 0);
+        CHECK(f.lane.pickedColor() == 0);
+        REQUIRE(f.lane.pointerTargets().size() == 1);
+        CHECK(f.lane.pointerTargets().front().action == SelectLane::PointerAction::Select);
+        test::FakeRenderDevice device;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.lane.drawText(canvas, 0);
+        canvas.end();
+        CHECK_FALSE(device.draws.empty());
+        CHECK_FALSE(std::ranges::any_of(device.draws, [](const auto& draw) {
+            return std::ranges::any_of(draw.vertices, [](const auto& vertex) {
+                return vertex.position.y >= 232 && vertex.position.y < 280;
+            });
+        }));
+    }
 }
 
 TEST_CASE("a lane joins on activation and leaves from the first menu", "[game][select]") {

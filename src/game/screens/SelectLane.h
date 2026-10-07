@@ -86,7 +86,7 @@ public:
 
     enum class Result : u8 { None, Cleared, Leave };
 
-    enum class PointerAction : u8 { Select, Back, Left, Right, Up, Down, Start };
+    enum class PointerAction : u8 { Select, Start };
     /** One visible mouse control in the lane's canvas coordinates. */
     struct PointerTarget {
         Rect area;
@@ -187,7 +187,6 @@ private:
     void drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s32 lineHeight, f32 scale,
                    std::string_view lines, Color color) const;
     MenuInput pointerInput(const MenuInput& input);
-    void drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const;
     void drawStats(Canvas& canvas, s32 time) const;
     void drawNameEntry(Canvas& canvas, s32 time) const;
     void drawState(Canvas& canvas, s32 time) const;

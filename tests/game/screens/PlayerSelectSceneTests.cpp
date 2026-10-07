@@ -87,7 +87,8 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
     const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
     scene.render(device, projection, 640, 448);
-    const auto pointerAt = [&](const Rect& area, bool click = true, bool back = false) {
+    const auto pointerAt = [&](const Rect& area, bool click = true, bool back = false,
+                               f32 scroll = 0) {
         const auto clip =
             transform * Vec4{area.x + area.width / 2, area.y + area.height / 2, 0.5f, 1};
         MenuInput input;
@@ -95,6 +96,7 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
         input.pointerNormalized = true;
         input.pointerPressed = click;
         input.pointerBack = back;
+        input.pointerScroll = scroll;
         PlayerSelectScene::Inputs inputs;
         inputs.fill(input); // every device read carries the same physical pointer
         return scene.step(1, inputs);
@@ -128,6 +130,16 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
     REQUIRE(scene.lane(2).state() == SelectLane::State::ClassPick);
     CHECK(scene.lane(2).save().name == "C");
     CHECK(scene.lane(0).save().name == "MOUSE");
+    pointerAt({270, 90, 20, 20}, false, false, 1);
+    CHECK(scene.lane(2).pickedColor() == 1);
+    CHECK(scene.lane(0).pickedColor() == 0);
+    pointerAt({270, 90, 20, 20}, false, false, -1);
+    CHECK(scene.lane(2).pickedColor() == 0);
+    pointerAt({-40, 90, 20, 20}, false, false, 1);
+    CHECK(scene.lane(0).pickedColor() == 0);
+    CHECK(scene.lane(2).pickedColor() == 0);
+    pointerAt({140, 90, 20, 20}, false, false, 1);
+    CHECK_FALSE(scene.lane(1).active());
     pointerAt({270, 90, 20, 20}, false, true);
     CHECK(scene.lane(2).state() == SelectLane::State::TopMenu);
     CHECK(scene.lane(0).state() == SelectLane::State::ClassPick);

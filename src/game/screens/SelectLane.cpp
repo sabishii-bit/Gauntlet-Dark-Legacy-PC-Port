@@ -27,11 +27,6 @@ constexpr f32 kCaptionScale = 0.8f;
 constexpr f32 kStatScale = 0.5f;
 constexpr f32 kLetterScale = 0.9f;
 constexpr f32 kFlashScale = 0.75f;
-constexpr s32 kPromptIconSize = 19;
-constexpr s32 kPromptGap = 8;
-constexpr s32 kPromptTextDrop = 4;
-constexpr s32 kLegendClassY = 232;
-constexpr s32 kLegendX = 10;
 constexpr s32 kCaptionY = 64;
 constexpr s32 kCaptionStep = 26;
 constexpr s32 kLockedTextY = 142;
@@ -45,7 +40,6 @@ constexpr s32 kStatGlowWidth = 68;
 constexpr s32 kLevelY = 292;
 constexpr s32 kLettersY = 340;
 constexpr s32 kLetterStep = 18;
-constexpr s32 kColorControlX = 76;
 /** Where each lane's first name letter starts, a few pixels into the lane. */
 constexpr std::array<s32, 4> kLetterStartX{8, 10, 10, 7};
 constexpr s32 kNameCenterOffset = 64;
@@ -81,19 +75,10 @@ constexpr std::string_view kShadowSuffix = "SHADW";
 constexpr std::string_view kSumnerPortrait = "S12_SUM";
 constexpr std::string_view kQuestMarkTexture = "SELSCRN_QUESTMARK";
 constexpr std::string_view kStatGlowTexture = "ATT_GLOW";
-constexpr std::string_view kIconUp = "menuUp";
-constexpr std::string_view kIconDown = "menuDown";
-constexpr std::string_view kIconLeft = "menuLeft";
-constexpr std::string_view kIconRight = "menuRight";
 
 bool contains(const Rect& area, const Vec2& point) {
     return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
            point.y < area.y + area.height;
-}
-
-Rect iconArea(s32 x, s32 y) {
-    return {static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(kPromptIconSize),
-            static_cast<f32>(kPromptIconSize)};
 }
 
 /** Opacity from the original's blit alpha, where 0 is opaque and 256 invisible. */
@@ -754,14 +739,6 @@ std::vector<SelectLane::PointerTarget> SelectLane::pointerTargets() const {
         return targets;
     }
     if (m_state == State::ClassPick) {
-        targets.push_back({iconArea(x() + kLegendX, kLegendClassY), PointerAction::Left});
-        targets.push_back(
-            {iconArea(x() + kLegendX + kPromptIconSize, kLegendClassY), PointerAction::Right});
-        if (m_pointerMode) {
-            targets.push_back({iconArea(x() + kColorControlX, kLegendClassY), PointerAction::Up});
-            targets.push_back({iconArea(x() + kColorControlX + kPromptIconSize, kLegendClassY),
-                               PointerAction::Down});
-        }
         if (classKnown(m_pickClass)) {
             // Confirm by clicking the portrait, not an invisible former footer button.
             targets.push_back({{static_cast<f32>(x()), static_cast<f32>(kPortraitY),
@@ -822,40 +799,19 @@ MenuInput SelectLane::pointerInput(const MenuInput& rawInput) {
             input.pointerPressed = false;
             switch (target.action) {
             case PointerAction::Select: input.select = true; break;
-            case PointerAction::Back: input.back = true; break;
-            case PointerAction::Left: input.left = true; break;
-            case PointerAction::Right: input.right = true; break;
-            case PointerAction::Up: input.up = true; break;
-            case PointerAction::Down: input.down = true; break;
             case PointerAction::Start: input.start = true; break;
             }
             break;
         }
     }
-    if ((m_state == State::LoadPick || m_state == State::SavePick) && input.pointerScroll != 0) {
+    if ((m_state == State::ClassPick || m_state == State::LoadPick || m_state == State::SavePick) &&
+        input.pointerScroll != 0 && !input.up && !input.down && !input.left && !input.right) {
+        // The scene confines the pointer to this player's column. Use the same vertical
+        // action as the configured keyboard/pad binding, without fighting a simultaneous key.
         input.up |= input.pointerScroll > 0;
         input.down |= input.pointerScroll < 0;
     }
     return input;
-}
-
-void SelectLane::drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const {
-    if (m_services == nullptr || m_services->smallPainter == nullptr) {
-        return;
-    }
-    if (m_hoverArea == area) {
-        canvas.fill(area, kGlowColor.withAlpha(150));
-    }
-    // These are clickable navigation arrows, not mapped controller buttons.
-    std::string_view arrow = "v";
-    if (icon == kIconLeft) {
-        arrow = "<";
-    } else if (icon == kIconRight) {
-        arrow = ">";
-    } else if (icon == kIconUp) {
-        arrow = "^";
-    }
-    drawControlLabel(canvas, *m_services->smallPainter, area, arrow);
 }
 
 void SelectLane::drawStats(Canvas& canvas, s32 time) const {
@@ -976,28 +932,7 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         drawNameEntry(canvas, time);
         break;
     }
-    case State::ClassPick: {
-        if (m_services->smallPainter != nullptr) {
-            const s32 leftX = x() + kLegendX;
-            const s32 rightX = leftX + kPromptIconSize;
-            for (const auto& [name, iconX] :
-                 {std::pair{kIconLeft, leftX}, std::pair{kIconRight, rightX}}) {
-                drawPointerIcon(canvas, name, iconArea(iconX, kLegendClassY));
-            }
-            if (m_pointerMode) {
-                drawPointerIcon(canvas, kIconUp, iconArea(x() + kColorControlX, kLegendClassY));
-                drawPointerIcon(canvas, kIconDown,
-                                iconArea(x() + kColorControlX + kPromptIconSize, kLegendClassY));
-            } else {
-                TextStyle style;
-                style.scale = kSmallScale;
-                small.draw(canvas, rightX + kPromptIconSize + kPromptGap,
-                           kLegendClassY + kPromptTextDrop, text("select.changeLetter"), style);
-            }
-        }
-        drawStats(canvas, time);
-        break;
-    }
+    case State::ClassPick: drawStats(canvas, time); break;
     case State::LoadConfirm:
         drawLines(canvas, small, kConfirmMenuY - kLineHeight * 6 - 8, kLineHeight, kSmallScale,
                   text("select.unsavedLoad"), Color::white());
