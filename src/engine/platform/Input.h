@@ -154,6 +154,7 @@ struct PadSnapshot {
     std::string guid;
     std::array<bool, static_cast<usize>(PadButton::Count)> buttons{};
     std::array<f32, static_cast<usize>(PadAxis::Count)> axes{};
+    bool rumbleSupported = false; ///< the connected device supports low/high frequency motors
 };
 
 /** The configuration name of a key ("Enter", "A", "F1"), empty for Unknown/Count. */

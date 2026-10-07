@@ -13,7 +13,6 @@ constexpr s32 kDefaults = 102;
 constexpr s32 kBack = 103;
 constexpr s32 kApply = 104;
 constexpr s32 kRumble = 105;
-constexpr s32 kFirstAction = 9;
 constexpr s32 kActionCount = 3;
 constexpr s32 kActionY = 268;
 constexpr s32 kActionGap = 24;
@@ -168,13 +167,16 @@ void ControlSettings::define(MenuDefinition& definition, const TextPainter& pain
             definition.items.push_back(
                 {text("controls." + std::string(action.id)), index, 0, canBind, {}, 0, value});
         }
-        definition.items.push_back({text("controls.rumble"),
-                                    kRumble,
-                                    0,
-                                    true,
-                                    {},
-                                    0,
-                                    text(profile.rumble ? "settings.on" : "settings.off")});
+        if (const auto* pad = m_devices.padDevice(assigned.pad);
+            pad != nullptr && pad->rumbleSupported) {
+            definition.items.push_back({text("controls.rumble"),
+                                        kRumble,
+                                        0,
+                                        true,
+                                        {},
+                                        0,
+                                        text(profile.rumble ? "settings.on" : "settings.off")});
+        }
         definition.items.push_back({"",
                                     kNext,
                                     0,
@@ -203,17 +205,18 @@ void ControlSettings::define(MenuDefinition& definition, const TextPainter& pain
         }
     }
     if (m_player >= 0) {
-        auto& page = definition.items[kFirstAction - 1];
+        const auto firstAction = definition.items.size() - kActionCount;
+        auto& page = definition.items[firstAction - 1];
         const auto pageWidth = painter.measure(page.value, definition.scale);
         const auto pageX = (kCanvasWidth - pageWidth) / 2;
         page.valueColumn = MenuValueColumn{pageX, pageWidth};
-        definition.itemPositions[kFirstAction - 1].x = static_cast<f32>(pageX);
+        definition.itemPositions[firstAction - 1].x = static_cast<f32>(pageX);
         s32 width = kActionGap * (kActionCount - 1);
-        for (usize i = kFirstAction; i < definition.items.size(); ++i) {
+        for (usize i = firstAction; i < definition.items.size(); ++i) {
             width += painter.measure(definition.items[i].text, definition.scale);
         }
         s32 x = (kCanvasWidth - width) / 2;
-        for (usize i = kFirstAction; i < definition.items.size(); ++i) {
+        for (usize i = firstAction; i < definition.items.size(); ++i) {
             definition.itemPositions[i] = Vec2{static_cast<f32>(x), kActionY};
             x += painter.measure(definition.items[i].text, definition.scale) + kActionGap;
         }
@@ -235,9 +238,21 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
             const auto* next = input.devices->padDevice(pad);
             devicesChanged |= (old == nullptr) != (next == nullptr) ||
                               (old != nullptr && next != nullptr &&
-                               (old->guid != next->guid || old->name != next->name));
+                               (old->guid != next->guid || old->name != next->name ||
+                                old->rumbleSupported != next->rumbleSupported));
         }
         m_devices = *input.devices;
+    }
+    if (devicesChanged) {
+        // An optional hardware row may appear/disappear. Preserve the selected
+        // action by identity so a hot-plug cannot turn Apply into Back (or vice versa).
+        const s32 code = menu.definition().items[static_cast<usize>(menu.selection())].code;
+        rebuild(0);
+        const auto& items = menu.definition().items;
+        const auto selected = std::ranges::find(items, code, &MenuItem::code);
+        if (selected != items.end()) {
+            menu.focus(static_cast<usize>(selected - items.begin()));
+        }
     }
     if (m_capture >= 0) {
         m_timeout -= std::max(0, ticks);
@@ -291,9 +306,6 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
         }
         return false;
     }
-    if (devicesChanged) {
-        rebuild(menu.selection());
-    }
     auto mapped = input;
     // Keep the session's original controls alive even after Apply changes its owner.
     if (input.devices != nullptr) {
@@ -312,15 +324,16 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
     mapped.left |= m_devices.wasKeyPressed(Key::Left);
     mapped.right |= m_devices.wasKeyPressed(Key::Right);
     mapped.select |= m_devices.wasKeyPressed(Key::Enter);
-    if (m_player >= 0 && menu.selection() >= kFirstAction && !mapped.back && !mapped.select) {
+    const auto firstAction = static_cast<s32>(menu.definition().items.size()) - kActionCount;
+    if (m_player >= 0 && menu.selection() >= firstAction && !mapped.back && !mapped.select) {
         if (mapped.left || mapped.right) {
-            rebuild(kFirstAction +
-                    (menu.selection() - kFirstAction + (mapped.left ? -1 : 1) + kActionCount) %
+            rebuild(firstAction +
+                    (menu.selection() - firstAction + (mapped.left ? -1 : 1) + kActionCount) %
                         kActionCount);
             return false;
         }
         if (mapped.up || mapped.down) {
-            rebuild(mapped.up ? kFirstAction - 1 : 0);
+            rebuild(mapped.up ? firstAction - 1 : 0);
             return false;
         }
     }
@@ -356,7 +369,7 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
     }
     if (event.code == kNext) {
         m_page = (m_page + (event.direction < 0 ? -1 : 1) + pageCount()) % pageCount();
-        rebuild(kFirstAction - 1);
+        rebuild(firstAction - 1);
     } else if (event.code == kRumble) {
         auto& profile = m_draft.controls[static_cast<usize>(m_player)];
         profile.rumble = !profile.rumble;

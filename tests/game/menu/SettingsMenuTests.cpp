@@ -2,6 +2,7 @@
 #include <cmath>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/StringTable.h"
@@ -59,11 +60,14 @@ struct Fixture {
         menu.update(input, 1);
     }
     void release() { menu.update({}, 1); }
-    void choose(s32 code) {
+    void focus(s32 code) {
         const auto& items = menu.menu().definition().items;
         const auto item = std::ranges::find(items, code, &MenuItem::code);
         REQUIRE(item != items.end());
         menu.menu().focus(static_cast<usize>(item - items.begin()));
+    }
+    void choose(s32 code) {
+        focus(code);
         select();
     }
     void applyControls() {
@@ -1122,6 +1126,7 @@ TEST_CASE("controller default rows expose stick directions and potion gestures b
     pad.connected = true;
     pad.guid = "xinput";
     pad.name = "XInput Controller";
+    pad.rumbleSupported = true;
     physical.setPad(0, pad);
     f.menu.menu().focus(4);
     f.select();
@@ -1148,6 +1153,13 @@ TEST_CASE("controller default rows expose stick directions and potion gestures b
 TEST_CASE("control pages sit above a horizontal action bar and arrows support mouse paging",
           "[settings][controls][mouse]") {
     Fixture f;
+    const bool rumble = GENERATE(false, true);
+    Input physical;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.guid = "layout-pad";
+    pad.rumbleSupported = rumble;
+    physical.setPad(0, pad);
     std::vector<BitmapGlyph> glyphs;
     for (s32 c = ' '; c <= '~'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
@@ -1156,52 +1168,55 @@ TEST_CASE("control pages sit above a horizontal action bar and arrows support mo
     f.menu.menu().focus(4);
     f.select();
     f.select();
+    f.menu.update(readPlayerMenuInput(physical, f.config, 0), 1);
     const auto& menu = f.menu.menu();
     const auto& definition = menu.definition();
-    REQUIRE(definition.items.size() == 12);
-    CHECK(definition.items[8].text.empty());
-    CHECK(definition.items[8].value == "Page 1/4");
-    REQUIRE(definition.items[8].valueColumn);
-    const auto pageColumn = *definition.items[8].valueColumn;
+    const usize page = rumble ? 8 : 7;
+    REQUIRE(definition.items.size() == page + 4);
+    CHECK(definition.items[page].text.empty());
+    CHECK(definition.items[page].value == "Page 1/4");
+    REQUIRE(definition.items[page].valueColumn);
+    const auto pageColumn = *definition.items[page].valueColumn;
     CHECK(std::abs(pageColumn.x * 2 + pageColumn.width - 512) <= 1);
     CHECK(pageColumn.width == f.painter.measure("Page 1/4", definition.scale));
-    CHECK(menu.itemX(8) == pageColumn.x);
-    CHECK(menu.itemArea(8).x < pageColumn.x); // the left arrow is clickable too
+    CHECK(menu.itemX(page) == pageColumn.x);
+    CHECK(menu.itemArea(page).x < pageColumn.x); // the left arrow is clickable too
     CHECK(menu.itemX(0) < pageColumn.x);
     CHECK(pageColumn.x < definition.valueX);
-    CHECK(menu.itemY(8) > menu.itemY(7) + menu.lineHeight());
-    CHECK(definition.items[9].text == "Apply");
-    CHECK(definition.items[10].text == "Restore Defaults");
-    CHECK(definition.items[11].text == "Back");
-    CHECK(menu.itemY(8) < menu.itemY(9));
-    CHECK(menu.itemY(9) == menu.itemY(10));
-    CHECK(menu.itemY(10) == menu.itemY(11));
-    for (usize i = 9; i < 11; ++i) {
+    CHECK(menu.itemY(page) > menu.itemY(page - 1) + menu.lineHeight());
+    CHECK(definition.items[page + 1].text == "Apply");
+    CHECK(definition.items[page + 2].text == "Restore Defaults");
+    CHECK(definition.items[page + 3].text == "Back");
+    CHECK(menu.itemY(page) < menu.itemY(page + 1));
+    CHECK(menu.itemY(page + 1) == menu.itemY(page + 2));
+    CHECK(menu.itemY(page + 2) == menu.itemY(page + 3));
+    for (usize i = page + 1; i < page + 3; ++i) {
         const auto box = menu.itemArea(i);
         CHECK(box.x + box.width < menu.itemArea(i + 1).x);
     }
     MenuInput click;
-    click.pointer = Vec2{static_cast<f32>(pageColumn.x - 8), static_cast<f32>(menu.itemY(8) + 2)};
+    click.pointer =
+        Vec2{static_cast<f32>(pageColumn.x - 8), static_cast<f32>(menu.itemY(page) + 2)};
     click.pointerPressed = true;
     f.menu.update(click, 1);
-    CHECK(menu.definition().items[8].value == "Page 4/4");
+    CHECK(menu.definition().items[page].value == "Page 4/4");
     click.pointer->x = static_cast<f32>(pageColumn.x + pageColumn.width + 8);
     f.menu.update(click, 1);
-    CHECK(menu.definition().items[8].value == "Page 1/4");
+    CHECK(menu.definition().items[page].value == "Page 1/4");
     f.right();
-    CHECK(menu.definition().items[8].value == "Page 2/4");
+    CHECK(menu.definition().items[page].value == "Page 2/4");
     f.down();
-    REQUIRE(menu.selection() == 9);
+    REQUIRE(menu.selection() == page + 1);
     f.right();
-    CHECK(menu.selection() == 10);
+    CHECK(menu.selection() == page + 2);
     f.right();
-    CHECK(menu.selection() == 11);
+    CHECK(menu.selection() == page + 3);
     f.right();
-    CHECK(menu.selection() == 9);
+    CHECK(menu.selection() == page + 1);
     MenuInput up;
     up.up = true;
     f.menu.update(up, 1);
-    CHECK(menu.selection() == 8);
+    CHECK(menu.selection() == page);
 }
 
 TEST_CASE("disabling another player's device stays pending and old navigation survives Apply",
@@ -1229,7 +1244,8 @@ TEST_CASE("disabling another player's device stays pending and old navigation su
     // The newly unassigned owner supplies no mapped input, but the editor keeps its
     // original device route until it closes.
     f.menu.update(readPlayerMenuInput(physical, f.config, 1), 1);
-    CHECK(f.menu.menu().selection() == 10);
+    const auto selected = static_cast<usize>(f.menu.menu().selection());
+    CHECK(f.menu.menu().definition().items[selected].code == 102); // Restore Defaults
 }
 
 TEST_CASE("multiplayer radio choices use retail labels and persist only successful writes",
@@ -1284,10 +1300,17 @@ TEST_CASE("multiplayer radio choices use retail labels and persist only successf
 TEST_CASE("each player's rumble preference is staged applied and reset independently",
           "[settings][controls][rumble]") {
     Fixture f;
+    Input physical;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.guid = "feedback-pad";
+    pad.rumbleSupported = true;
+    physical.setPad(2, pad);
     f.menu.menu().focus(4);
     f.select();
     f.menu.menu().focus(2);
     f.select();
+    f.menu.update(readPlayerMenuInput(physical, f.config, 2), 1);
     const auto toggle = [&] {
         const auto& items = f.menu.menu().definition().items;
         const auto row = std::ranges::find(items, 105, &MenuItem::code);
@@ -1311,4 +1334,102 @@ TEST_CASE("each player's rumble preference is staged applied and reset independe
     CHECK_FALSE(f.config.controls[2].rumble);
     f.applyControls();
     CHECK(f.config.controls[2].rumble);
+}
+
+TEST_CASE("rumble is offered only for the controller assigned in the pending profile",
+          "[settings][controls][rumble][rumble-capability]") {
+    Fixture f;
+    Input physical;
+    PadSnapshot unsupported;
+    unsupported.connected = true;
+    unsupported.guid = "twins";
+    unsupported.name = "XInput Controller";
+    auto capable = unsupported;
+    capable.rumbleSupported = true;
+    physical.setPad(0, unsupported);
+    physical.setPad(2, capable);
+    f.choose(3); // Controls
+    f.choose(2); // Player 3
+    f.menu.update(readPlayerMenuInput(physical, f.config, 2), 1);
+    const auto shown = [&] {
+        return std::ranges::any_of(f.menu.menu().definition().items,
+                                   [](const MenuItem& item) { return item.code == 105; });
+    };
+    REQUIRE(shown()); // Automatic routes Player 3 to the capable controller.
+    f.right();
+    REQUIRE(f.menu.menu().definition().items[0].value == "Mouse and Keyboard");
+    CHECK_FALSE(shown());
+    f.right();
+    REQUIRE(f.menu.menu().definition().items[0].value == "None");
+    CHECK_FALSE(shown());
+    f.right();
+    REQUIRE(f.menu.menu().definition().items[0].value == "XInput Controller 1");
+    CHECK_FALSE(shown()); // A controller name or another controller's motors are insufficient.
+    f.right();
+    REQUIRE(f.menu.menu().definition().items[0].value == "XInput Controller 2");
+    CHECK(shown());
+    CHECK(f.writes == 0);
+    f.applyControls();
+    CHECK(f.config.controls[2].device == "twins");
+    CHECK(f.config.controls[2].occurrence == 1);
+    physical.setPad(2, {});
+    f.menu.update(readPlayerMenuInput(physical, f.config, 2), 1);
+    CHECK(f.menu.menu().definition().items[0].value == "Disconnected");
+    CHECK_FALSE(shown());
+    CHECK(f.config.controls[2].rumble); // Availability never resets a saved preference.
+}
+
+TEST_CASE("rumble hardware changes preserve draft preferences and action bar focus",
+          "[settings][controls][rumble][rumble-capability]") {
+    Fixture f;
+    const s32 player = GENERATE(0, 1, 2, 3);
+    Input physical;
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.guid = "hotplug";
+    pad.rumbleSupported = true;
+    f.choose(3);
+    f.choose(player);
+    const auto update = [&] { f.menu.update(readPlayerMenuInput(physical, f.config, player), 1); };
+    const auto shown = [&] {
+        return std::ranges::any_of(f.menu.menu().definition().items,
+                                   [](const MenuItem& item) { return item.code == 105; });
+    };
+    const auto selectedCode = [&] {
+        return f.menu.menu().definition().items[static_cast<usize>(f.menu.menu().selection())].code;
+    };
+    update();
+    CHECK_FALSE(shown()); // No connected device for Automatic yet.
+    physical.setPad(player, pad);
+    update();
+    REQUIRE(shown());
+    f.choose(105); // Stage Off, not yet saved.
+    REQUIRE(f.config.controls[static_cast<usize>(player)].rumble);
+    pad.rumbleSupported = false;
+    physical.setPad(player, pad);
+    update();
+    CHECK_FALSE(shown());
+    CHECK(selectedCode() == 100); // The removed toggle falls back to the device selector.
+    for (const s32 code : {101, 104, 102, 103}) {
+        f.focus(code);
+        pad.rumbleSupported = true;
+        physical.setPad(player, pad);
+        update();
+        REQUIRE(shown());
+        CHECK(selectedCode() == code);
+        const auto& items = f.menu.menu().definition().items;
+        const auto row = std::ranges::find(items, 105, &MenuItem::code);
+        REQUIRE(row != items.end());
+        CHECK(row->value == "Off");
+        physical.setPad(player, {});
+        update();
+        CHECK_FALSE(shown());
+        CHECK(selectedCode() == code);
+    }
+    CHECK(f.writes == 0);
+    physical.setPad(player, pad);
+    update();
+    f.applyControls();
+    CHECK_FALSE(f.config.controls[static_cast<usize>(player)].rumble);
+    CHECK(f.writes == 1);
 }

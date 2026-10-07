@@ -172,6 +172,8 @@ PadSnapshot Gamepads::snapshot(const Device& device) {
     result.guid = device.guid;
     result.name = text(device.gamepad != nullptr ? SDL_GetGamepadName(device.gamepad)
                                                  : SDL_GetJoystickName(device.joystick));
+    result.rumbleSupported = SDL_GetBooleanProperty(SDL_GetJoystickProperties(device.joystick),
+                                                    SDL_PROP_JOYSTICK_CAP_RUMBLE_BOOLEAN, false);
     if (device.gamepad != nullptr) {
         for (usize i = 0; i < kButtons.size(); ++i) {
             result.buttons[i] = SDL_GetGamepadButton(device.gamepad, kButtons[i]);

@@ -7,6 +7,7 @@
 #include <SDL3/SDL_timer.h>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/platform/Gamepads.h"
@@ -98,6 +99,8 @@ TEST_CASE("one handle supplies mapped input and independently timed controller m
     devices.poll(input, true);
     const auto slots = testSlots(input);
     REQUIRE(slots.size() == 2);
+    CHECK(input.padDevice(slots[0])->rumbleSupported);
+    CHECK(input.padDevice(slots[1])->rumbleSupported);
     REQUIRE(SDL_SetJoystickVirtualButton(second.joystick, SDL_GAMEPAD_BUTTON_SOUTH, true));
     REQUIRE(SDL_SetJoystickVirtualAxis(second.joystick, SDL_GAMEPAD_AXIS_LEFTX, -32768));
     REQUIRE(SDL_SetJoystickVirtualAxis(second.joystick, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 32767));
@@ -184,9 +187,35 @@ TEST_CASE("unmapped joysticks retain numbered buttons and tolerate missing motor
     devices.poll(input, true);
     const auto slots = testSlots(input);
     REQUIRE(slots.size() == 1);
+    CHECK_FALSE(input.padDevice(slots[0])->rumbleSupported);
     CHECK(input.isPadButtonDown(slots[0], PadButton::Button12));
     CHECK(input.isPadButtonDown(slots[0], PadButton::DpadLeft));
     CHECK_FALSE(devices.rumble(slots[0], 65535, 0, 1000));
+}
+
+TEST_CASE("controller snapshots expose motor capability without starting feedback",
+          "[input][rumble][rumble-capability]") {
+    const bool mapped = GENERATE(false, true);
+    const bool feedback = GENERATE(false, true);
+    Gamepads devices;
+    VirtualPad pad(mapped, feedback);
+    Input input;
+    devices.poll(input, true);
+    const auto slots = testSlots(input);
+    REQUIRE(slots.size() == 1);
+    REQUIRE(input.padDevice(slots[0]));
+    CHECK(input.padDevice(slots[0])->rumbleSupported == feedback);
+    CHECK(pad.motors->calls == 0);
+    Input buffered;
+    buffered.accumulate(input);
+    REQUIRE(buffered.padDevice(slots[0]));
+    CHECK(buffered.padDevice(slots[0])->rumbleSupported == feedback);
+    pad.disconnect();
+    input.beginPoll();
+    devices.poll(input, true);
+    CHECK_FALSE(input.padDevice(slots[0]));
+    REQUIRE(input.padSlot(slots[0]));
+    CHECK_FALSE(input.padSlot(slots[0])->rumbleSupported);
 }
 
 TEST_CASE("controller shutdown explicitly stops active motors", "[input][rumble]") {
