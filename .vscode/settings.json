@@ -9,12 +9,18 @@
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
     "editor.formatOnSave": true
   },
+  "[plaintext]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false
+  },
   "files.autoSave": "onFocusChange",
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
   "files.trimTrailingWhitespace": true,
   "problems.autoReveal": true,
   "files.associations": {
+    "VERSION": "plaintext",
     ".clangd": "yaml",
     ".clang-tidy": "yaml",
     ".clang-format": "yaml",

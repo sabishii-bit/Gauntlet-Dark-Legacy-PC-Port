@@ -13,6 +13,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 import lint
 
 
+class EditorSettingsTests(unittest.TestCase):
+    def test_version_is_plain_text_and_not_formatted_on_save(self):
+        path = lint.ROOT / ".vscode/settings.json"
+        # This file uses standalone JSONC comments, without trailing commas.
+        content = "\n".join(line for line in path.read_text(encoding="utf-8").splitlines()
+                            if not line.lstrip().startswith("//"))
+        settings = json.loads(content)
+        self.assertEqual(settings["files.associations"]["VERSION"], "plaintext")
+        for action in ("Save", "Paste", "Type"):
+            self.assertIs(settings["[plaintext]"][f"editor.formatOn{action}"], False)
+        self.assertTrue(settings["[cpp]"]["editor.formatOnSave"])
+
+
 class ShardTests(unittest.TestCase):
     def test_every_unit_belongs_to_exactly_one_shard(self):
         for size in (1, 3, 4, 5, 280, 281):
