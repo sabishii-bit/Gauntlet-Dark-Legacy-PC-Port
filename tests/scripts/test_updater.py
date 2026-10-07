@@ -142,6 +142,10 @@ class ReleaseFeedTests(unittest.TestCase):
 
 class UpdateTests(unittest.TestCase):
     def setUp(self):
+        for module in ("install", "update"):
+            icon = mock.patch(f"installer.{module}.apply_disc_icon")
+            icon.start()
+            self.addCleanup(icon.stop)
         temporary = tempfile.TemporaryDirectory(prefix="gdl update tests ")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -391,6 +395,7 @@ if __name__ == "__main__":
                 os._exit(71)
             return result
         Path.rename = interrupt_after_move
-        update.apply_update(Path(sys.argv[2]), Path(sys.argv[3]))
+        with mock.patch.object(update, "apply_disc_icon"):
+            update.apply_update(Path(sys.argv[2]), Path(sys.argv[3]))
         sys.exit(1)  # the requested interruption must have occurred
     unittest.main()

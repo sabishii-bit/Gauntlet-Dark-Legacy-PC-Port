@@ -14,6 +14,7 @@ import time
 import zipfile
 
 from .disc import CHUNK, DiscImage, safe_component
+from .icon import MAX_TPL_BYTES, decode_first_frame, embed_icon, icon_resources, refresh_shell_icon
 from .versions import SEMVER
 
 MAX_PAYLOAD = 2 * 1024 * 1024 * 1024
@@ -144,6 +145,39 @@ def no_links(path: Path):
                 raise ValueError(f"Choose a directory without links or junctions: {part}")
 
 
+def apply_disc_icon(stage, disc_root, metadata):
+    """Personalize verified staging only, then record its installed-byte digest.
+
+    Keep the release digest as provenance. Updates verify the installed digest
+    before replacing anything, and repeat this step on their new staged binary.
+    Neither public payloads nor the user's native icon file are modified.
+    """
+    if metadata["platform"] != "windows-x64":
+        return
+    icon = disc_root / "carddemo" / "icon.tpl"
+    no_links(icon)
+    with icon.open("rb") as stream:
+        data = stream.read(MAX_TPL_BYTES + 1)
+    group, images = icon_resources(*decode_first_frame(data))
+    executable = stage / metadata["executable"]
+    embed_icon(executable, group, images)
+    digest = hashlib.sha256()
+    with executable.open("r+b") as stream:
+        while block := stream.read(CHUNK):
+            digest.update(block)
+        os.fsync(stream.fileno())
+    metadata["discIcon"] = {
+        "path": "carddemo/icon.tpl", "sha256": hashlib.sha256(data).hexdigest(),
+        "releaseExecutableSha256": metadata["files"][metadata["executable"]],
+    }
+    metadata["files"][metadata["executable"]] = digest.hexdigest()
+    with (stage / "build-info.json").open("w", encoding="utf-8") as stream:
+        json.dump(metadata, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def install(image: Path, destination: Path, payload: Path,
             progress=lambda _done, _total, _name: None, cancel=lambda: False,
             updater=None) -> Path:
@@ -225,6 +259,8 @@ def install(image: Path, destination: Path, payload: Path,
                             copied += size
                             done += size
                             progress(done, total, entry.path.as_posix())
+                check_cancel(cancel)
+                apply_disc_icon(stage, stage, metadata)
                 (stage / "saves").mkdir()
                 (stage / "config").mkdir()
                 if keep_updater:
@@ -258,4 +294,6 @@ def install(image: Path, destination: Path, payload: Path,
             lock.unlink()
             if not existed and not any(destination.iterdir()):
                 destination.rmdir()
-    return destination / metadata["executable"]
+    executable = destination / metadata["executable"]
+    refresh_shell_icon(executable)
+    return executable

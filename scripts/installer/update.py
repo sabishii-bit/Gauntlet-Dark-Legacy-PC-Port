@@ -15,7 +15,8 @@ import tempfile
 import zipfile
 
 from .disc import CHUNK
-from .install import (check_cancel, host_platform, no_links, payload_inventory,
+from .icon import refresh_shell_icon
+from .install import (apply_disc_icon, check_cancel, host_platform, no_links, payload_inventory,
                       retry_locked, temporary_directory, validate_file_names, validate_metadata)
 from .releases import download_release
 from .versions import version_order
@@ -254,6 +255,8 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
                     target.chmod(0o755 if info.filename == metadata["executable"] else 0o644)
             if (stage / "VERSION").read_text(encoding="utf-8").strip() != metadata["version"]:
                 raise ValueError("Update VERSION disagrees with its metadata")
+            check_cancel(cancel)
+            apply_disc_icon(stage, destination, metadata)
             receipt.update({key: metadata[key] for key in ("version", "commit", "platform")})
             atomic_json(stage / "installation.json", receipt)
             journal = {"schema": 1, "phase": "prepared", "old": old_names, "new": new_names}
@@ -285,7 +288,9 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
                 raise
             _recover(destination)  # committed journal: remove backups, not the new installation
         progress(total, total, "Complete")
-    return destination / metadata["executable"]
+    executable = destination / metadata["executable"]
+    refresh_shell_icon(executable)
+    return executable
 
 
 def update_from_release(destination, release, progress=lambda _done, _total, _name: None,

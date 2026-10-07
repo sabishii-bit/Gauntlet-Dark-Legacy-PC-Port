@@ -79,6 +79,11 @@ def fixture_payload(root):
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
+        # These transaction fixtures use placeholder TPL/EXE bytes. Real icon
+        # installation and update round trips live in test_installer_icon.py.
+        icon = mock.patch("installer.install.apply_disc_icon")
+        icon.start()
+        self.addCleanup(icon.stop)
         temporary = tempfile.TemporaryDirectory(prefix="gdl installer tests ")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

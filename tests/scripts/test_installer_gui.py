@@ -24,6 +24,10 @@ class WizardTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        for module in ("install", "update"):
+            icon = mock.patch(f"installer.{module}.apply_disc_icon")
+            icon.start()
+            self.addCleanup(icon.stop)
         temporary = tempfile.TemporaryDirectory(prefix="gdl wizard ")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
