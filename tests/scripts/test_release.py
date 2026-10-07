@@ -2,16 +2,19 @@
 
 from pathlib import Path
 import os
+import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from installer.install import retry_locked
 from publish_release import check_publication, main as publish_main, require_new_version, validated_assets
-from release import check_frozen_installer, digest, installer_notices
+from release import check_frozen_installer, digest, installer_notices, make_payload
+from installer.releases import runtime_name
 
 
 class ReleaseTests(unittest.TestCase):
@@ -23,9 +26,20 @@ class ReleaseTests(unittest.TestCase):
         self.packages = []
         for platform, extension in (("windows-x64", ".exe"), ("linux-x64", ".tar.gz")):
             stem = f"GauntletDarkLegacy-{self.tag[1:]}-{platform}-setup"
-            paths = [self.root / (stem + extension), self.root / (stem + "-licenses.zip")]
+            paths = [self.root / (stem + extension), self.root / (stem + "-licenses.zip"),
+                     self.root / runtime_name(self.tag[1:], platform)]
             for path in paths:
                 path.write_bytes(b"synthetic release")
+            paths[-1].unlink()
+            executable = "gauntlet.exe" if platform == "windows-x64" else "gauntlet"
+            files = []
+            for name, content in {executable: b"runtime", "VERSION": self.tag[1:].encode(),
+                                  "portable.flag": b"", "data/config.json": b"{}"}.items():
+                source = self.root / "inputs" / platform / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_bytes(content)
+                files.append((source, name))
+            make_payload(paths[-1], files, self.tag[1:], "test", platform, executable)
             checksum = self.root / (stem + ".sha256")
             checksum.write_text("".join(f"{digest(path)}  {path.name}\n" for path in paths), encoding="ascii")
             self.packages.append((paths, checksum))
@@ -100,7 +114,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("needs: installers", publication)
 
     def test_both_platforms_are_required(self):
-        self.assertEqual(len(validated_assets(self.root, self.tag)), 6)
+        self.assertEqual(len(validated_assets(self.root, self.tag)), 8)
         self.packages[1][1].unlink()
         with self.assertRaises(FileNotFoundError):
             validated_assets(self.root, self.tag)
@@ -158,6 +172,24 @@ class ReleaseTests(unittest.TestCase):
         checksum = self.packages[0][1]
         checksum.write_text(checksum.read_text(encoding="ascii").splitlines()[0] + "\n", encoding="ascii")
         with self.assertRaisesRegex(ValueError, "Incomplete"):
+            validated_assets(self.root, self.tag)
+
+    def test_update_archive_is_required_and_must_match_its_release(self):
+        paths, checksum = self.packages[0]
+        original_checksum = checksum.read_text(encoding="ascii")
+        checksum.write_text("\n".join(original_checksum.splitlines()[:2]) + "\n", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "Incomplete"):
+            validated_assets(self.root, self.tag)
+        with zipfile.ZipFile(paths[-1]) as archive:
+            contents = {name: archive.read(name) for name in archive.namelist()}
+        metadata = json.loads(contents["build-info.json"])
+        metadata["version"] = "0.1.0-alpha.99"
+        contents["build-info.json"] = json.dumps(metadata).encode()
+        with zipfile.ZipFile(paths[-1], "w") as archive:
+            for name, content in contents.items():
+                archive.writestr(name, content)
+        checksum.write_text("".join(f"{digest(path)}  {path.name}\n" for path in paths), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "disagrees"):
             validated_assets(self.root, self.tag)
 
     def test_windows_transient_file_lock_is_retried(self):

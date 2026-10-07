@@ -17,6 +17,7 @@ def main():
                         help="validate the embedded release without opening a window")
     parser.add_argument("--check-wizard", action="store_true",
                         help="load native GUI libraries and exercise the wizard offscreen")
+    parser.add_argument("--directory", type=Path, help="preselect an existing game or install directory")
     parser.add_argument("--diagnostic-log", type=Path,
                         help="write automated-check failures here (windowed builds have no stderr)")
     args = parser.parse_args()
@@ -39,13 +40,13 @@ def main():
         from PySide6.QtWidgets import QApplication
         from installer.wizard import Wizard
         app = QApplication([])
-        window = Wizard(args.payload)
+        window = Wizard(args.payload, destination=args.directory, network=False)
         window.show()
         app.processEvents()
         window.close()
         return 0
     from installer.wizard import main as wizard_main
-    return wizard_main(args.payload)
+    return wizard_main(args.payload, args.directory)
 
 
 if __name__ == "__main__":

@@ -13,8 +13,8 @@ new alpha versions must increase, and release runs share one concurrency lock.
 No disc image, native assets, extracted media, saves or personal settings are shipped.
 Linux targets x86-64 Ubuntu 24.04+ desktops; Vulkan 1.3 drivers remain prerequisites.
 Windows targets x64 Windows 10/11. Installers are unsigned until signing is configured.
-The wizard installs into a fresh directory; upgrading means a new install and copying
-the old saves/ and config/ folders afterwards. It never deletes an older installation.
+The wizard installs a fresh game or updates a receipt-bearing installation in place.
+Updates replace only inventoried runtime files, preserving disc data, saves and config.
 """
 
 import argparse
@@ -24,7 +24,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import re
 import shutil
 import subprocess
 import sys
@@ -35,9 +34,11 @@ import zipfile
 import devenv
 import package
 from installer.install import payload_inventory, temporary_directory
+from installer.releases import runtime_name
+from installer.versions import ALPHA_VERSION
 
 ROOT = devenv.ROOT
-SEMVER = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-alpha\.[1-9][0-9]*")
+SEMVER = ALPHA_VERSION
 
 
 def version(root=ROOT):
@@ -205,8 +206,9 @@ def build_release(args):
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     final_name = name + (".exe" if devenv.WINDOWS else ".tar.gz")
-    if (output / final_name).exists():
-        raise ValueError(f"Release artifact already exists: {output / final_name}")
+    for artifact in (final_name, runtime_name(release_version, system), f"{name}-licenses.zip", f"{name}.sha256"):
+        if (output / artifact).exists():
+            raise ValueError(f"Release artifact already exists: {output / artifact}")
     # Separate build cache: no disc icon, retail inputs or developer-specific fallback paths.
     binary = ROOT / "build" / f"release-{system}"
     configure = ["cmake", "--preset", devenv.release_preset(), "-B", str(binary),
@@ -263,6 +265,8 @@ def build_release(args):
         subprocess.run(freezer, cwd=ROOT, env=freezer_environment(), check=True)
         frozen = staging / "dist" / (name + (".exe" if devenv.WINDOWS else ""))
         check_frozen_installer(frozen, staging)
+        runtime = output / runtime_name(release_version, system)
+        shutil.copyfile(payload, runtime)
         if devenv.WINDOWS:
             shutil.copyfile(frozen, output / final_name)
         else:
@@ -273,7 +277,7 @@ def build_release(args):
             for source, relative in files:
                 if relative.startswith("licenses/"):
                     archive.write(source, relative)
-        artifacts = (output / final_name, output / f"{name}-licenses.zip")
+        artifacts = (output / final_name, output / f"{name}-licenses.zip", runtime)
         (output / f"{name}.sha256").write_text(
             "".join(f"{digest(path)}  {path.name}\n" for path in artifacts), encoding="ascii")
     print(f"Ready: {output / final_name}")

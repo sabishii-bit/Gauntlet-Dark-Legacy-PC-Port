@@ -3,17 +3,22 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 
-from PySide6.QtCore import QThread, Signal, Qt, QUrl
+from PySide6.QtCore import QThread, QTimer, Signal, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout, QHBoxLayout,
                               QLabel, QLineEdit, QMessageBox, QProgressBar,
                               QPushButton, QVBoxLayout, QWidget)
 
 from .install import Cancelled, install, payload_inventory
+from .releases import check_updates
+from .update import TRANSACTION, apply_update, installed_info, recover_update, update_from_release
+from .versions import alpha_order
 
 STRINGS = json.loads(Path(__file__).with_name("strings.json").read_text(encoding="utf-8"))
 
@@ -41,44 +46,47 @@ class ImagePath(QLineEdit):
             event.acceptProposedAction()
 
 
-class InstallThread(QThread):
+class OperationThread(QThread):
     progress = Signal(int, str)
-    success = Signal(str)
+    success = Signal(object)
     failure = Signal(str, bool)
 
-    def __init__(self, image, destination, payload, parent):
+    def __init__(self, operation, parent):
         super().__init__(parent)
-        self.image, self.destination, self.payload = image, destination, payload
+        self.operation = operation
         self.cancelled = threading.Event()
 
     def run(self):
         try:
-            executable = install(self.image, self.destination, self.payload,
-                                 lambda done, total, name: self.progress.emit(
-                                     int(done * 100 / max(total, 1)), name),
-                                 self.cancelled.is_set)
-            self.success.emit(str(executable))
+            result = self.operation(lambda done, total, name: self.progress.emit(
+                int(done * 100 / max(total, 1)), name), self.cancelled.is_set)
+            self.success.emit(result)
         except Exception as error:
             self.failure.emit(str(error), isinstance(error, Cancelled))
 
 
 class Wizard(QWidget):
-    def __init__(self, payload):
+    def __init__(self, payload, destination=None, network=True):
         super().__init__()
         self.payload = payload
         self.metadata, _ = payload_inventory(payload)
         self.worker = None
         self.executable = None
+        self.mode = "install"
+        self.installed = None
+        self.release = None
+        self.operation = None
+        self.network = network
         self.setWindowTitle(STRINGS["title"] + " " + self.metadata["version"])
         self.setMinimumWidth(620)
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
-        intro = QLabel(STRINGS["intro"])
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
+        self.intro = QLabel(STRINGS["intro"])
+        self.intro.setWordWrap(True)
+        layout.addWidget(self.intro)
         form = QFormLayout()
         self.image = ImagePath()
-        self.destination = QLineEdit(str(installer_directory()))
+        self.destination = QLineEdit(str(destination or installer_directory()))
         self.image_browse = QPushButton(STRINGS["browse"])
         self.folder_browse = QPushButton(STRINGS["browse"])
         for key, edit, button in (("image", self.image, self.image_browse),
@@ -96,19 +104,29 @@ class Wizard(QWidget):
         layout.addWidget(self.progress)
         row = QHBoxLayout()
         self.start = QPushButton(STRINGS["install"])
+        self.check = QPushButton(STRINGS["check_updates"])
+        self.check.setEnabled(False)
         self.open = QPushButton(STRINGS["open"])
         self.open.hide()
         self.cancel = QPushButton(STRINGS["close"])
         row.addStretch()
-        for button in (self.open, self.start, self.cancel):
+        for button in (self.check, self.open, self.start, self.cancel):
             row.addWidget(button)
         layout.addLayout(row)
         self.image_browse.clicked.connect(self.browse_image)
         self.folder_browse.clicked.connect(self.browse_folder)
         self.start.clicked.connect(self.begin)
+        self.check.clicked.connect(self.check_online)
         self.cancel.clicked.connect(self.close)
         self.open.clicked.connect(lambda: QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(self.executable.parent))))
+        self.scan_timer = QTimer(self)
+        self.scan_timer.setSingleShot(True)
+        self.scan_timer.setInterval(400)
+        self.scan_timer.timeout.connect(self.inspect_destination)
+        self.destination.textChanged.connect(lambda: self.scan_timer.start())
+        # No network is required for a fresh installation or the release GUI smoke.
+        QTimer.singleShot(0, self.inspect_destination)
 
     def dragEnterEvent(self, event):
         if not self.busy():
@@ -119,7 +137,82 @@ class Wizard(QWidget):
             self.image.dropEvent(event)
 
     def busy(self):
-        return self.worker is not None and self.worker.isRunning()
+        return self.operation is not None
+
+    def folder(self):
+        return Path(os.path.abspath(self.destination.text().strip().strip('"')))
+
+    def inspect_destination(self):
+        if self.busy():
+            return
+        self.release = None
+        self.installed = None
+        self.executable = None
+        self.open.hide()
+        self.mode = "install"
+        self.status.clear()
+        folder = self.folder()
+        if (folder / TRANSACTION).exists():
+            self.mode = "recover"
+            self.status.setText(STRINGS["recovery_needed"])
+        elif (folder / "installation.json").exists():
+            try:
+                self.installed, _ = installed_info(folder)
+                self.offer_update()
+            except Exception as error:
+                self.mode = "invalid"
+                self.status.setText(str(error))
+        self.refresh_controls()
+        if self.installed and self.network:
+            self.check_online()
+
+    def offer_update(self):
+        version = self.release.version if self.release else self.metadata["version"]
+        self.executable = self.folder() / self.installed["executable"]
+        if alpha_order(version) > alpha_order(self.installed["version"]):
+            self.mode = "update"
+            self.status.setText(STRINGS["available"].format(
+                installed=self.installed["version"], version=version))
+        else:
+            self.mode = "launch"
+            self.status.setText(STRINGS["up_to_date"].format(version=self.installed["version"]))
+        self.open.show()
+
+    def refresh_controls(self):
+        free = not self.busy()
+        self.intro.setText(STRINGS["intro"] if self.mode == "install" else STRINGS["intro_update"])
+        for widget in (self.destination, self.folder_browse):
+            widget.setEnabled(free)
+        for widget in (self.image, self.image_browse):
+            widget.setEnabled(free and self.mode == "install")
+        self.check.setEnabled(free and self.installed is not None and self.network)
+        self.start.setEnabled(free and self.mode != "invalid")
+        self.open.setEnabled(free)
+        if self.mode == "update":
+            version = self.release.version if self.release else self.metadata["version"]
+            self.start.setText(STRINGS["update"].format(version=version))
+        else:
+            self.start.setText(STRINGS.get(self.mode, STRINGS["install"]))
+        self.cancel.setText(STRINGS["cancel"] if self.busy() else STRINGS["close"])
+
+    def run_operation(self, kind, operation):
+        self.scan_timer.stop()
+        self.operation = kind
+        self.progress.setValue(0)
+        self.refresh_controls()
+        self.worker = OperationThread(operation, self)
+        self.worker.progress.connect(self.advanced)
+        self.worker.success.connect(self.completed)
+        self.worker.failure.connect(self.failed)
+        self.worker.finished.connect(self.finished)
+        self.worker.start()
+
+    def check_online(self):
+        if self.busy() or not self.installed:
+            return
+        self.status.setText(STRINGS["checking"])
+        self.run_operation("check", lambda _progress, cancel: check_updates(
+            self.installed["version"], self.installed["platform"], cancel))
 
     def browse_image(self):
         path, _ = QFileDialog.getOpenFileName(self, STRINGS["choose_image"],
@@ -134,7 +227,15 @@ class Wizard(QWidget):
             self.destination.setText(path)
 
     def begin(self):
-        if self.executable:
+        if self.busy():
+            return
+        # A click before the path's debounce fires must not use a previous folder's state.
+        if self.scan_timer.isActive():
+            self.scan_timer.stop()
+            self.inspect_destination()
+            if self.busy():
+                return
+        if self.mode == "launch" and self.executable:
             environment = dict(os.environ)
             if sys.platform.startswith("linux"):
                 if "LD_LIBRARY_PATH_ORIG" in environment:
@@ -149,44 +250,77 @@ class Wizard(QWidget):
             except OSError as error:
                 QMessageBox.critical(self, STRINGS["failed"], str(error))
             return
+        if self.mode == "recover":
+            self.status.setText(STRINGS["recovering"])
+            folder = self.folder()
+            self.run_operation("recover", lambda _progress, _cancel: recover_update(folder))
+            return
+        if self.mode == "update":
+            self.status.setText(STRINGS["updating"])
+            folder, release = self.folder(), self.release
+            self.run_operation("update", lambda progress, cancel:
+                update_from_release(folder, release, progress, cancel) if release else
+                apply_update(folder, self.payload, progress, cancel, self.metadata["version"]))
+            return
+        if self.mode != "install":
+            return
         if not self.image.text().strip() or not self.destination.text().strip():
             self.status.setText(STRINGS["drop"])
             return
         self.status.setText(STRINGS["working"])
-        self.progress.setValue(0)
-        for widget in (self.image, self.destination, self.image_browse, self.folder_browse, self.start):
-            widget.setEnabled(False)
-        self.cancel.setText(STRINGS["cancel"])
-        self.worker = InstallThread(Path(self.image.text().strip().strip('"')),
-                                    Path(self.destination.text().strip().strip('"')),
-                                    self.payload, self)
-        self.worker.progress.connect(self.advanced)
-        self.worker.success.connect(self.completed)
-        self.worker.failure.connect(self.failed)
-        self.worker.finished.connect(self.finished)
-        self.worker.start()
+        image, folder = Path(self.image.text().strip().strip('"')), self.folder()
+        updater = Path(sys.executable) if getattr(sys, "frozen", False) else None
+        self.run_operation("install", lambda progress, cancel:
+            install(image, folder, self.payload, progress, cancel, updater=updater))
 
     def advanced(self, percent, name):
         self.progress.setValue(percent)
         self.status.setText(name)
 
-    def completed(self, executable):
-        self.executable = Path(executable)
-        self.status.setText(STRINGS["complete"].format(version=self.metadata["version"]))
-        self.start.setText(STRINGS["launch"])
+    def completed(self, result):
+        if self.operation == "check":
+            # Prefer the embedded payload if it is newer than the published runtime.
+            self.release = result if result and alpha_order(result.version) > alpha_order(self.metadata["version"]) else None
+            self.offer_update()
+            return
+        if self.operation == "recover":
+            self.installed = result
+            self.offer_update()
+            return
+        self.executable = Path(result)
+        self.installed, _ = installed_info(self.executable.parent)
+        self.status.setText(STRINGS["updated" if self.operation == "update" else "complete"].format(
+            version=self.installed["version"]))
+        self.mode = "launch"
         self.open.show()
+        # Upgrading a pre-updater installation also leaves an easy future entry point.
+        if self.operation == "update" and getattr(sys, "frozen", False):
+            updater = self.executable.parent / ("GauntletDarkLegacy-Update.exe" if os.name == "nt"
+                                                  else "GauntletDarkLegacy-Update")
+            if not updater.exists():
+                try:
+                    with tempfile.TemporaryDirectory(dir=updater.parent, prefix=".gdl-updater-") as temporary:
+                        staged = Path(temporary) / updater.name
+                        shutil.copyfile(sys.executable, staged)
+                        staged.chmod(0o755)
+                        staged.rename(updater)
+                except OSError as error:
+                    self.status.setText(STRINGS["updater_failed"].format(error=error))
 
     def failed(self, message, cancelled):
+        if self.operation == "check":
+            self.offer_update()
+            self.status.setText(STRINGS["offline"].format(error=message))
+            return
         self.status.setText(message)
         if not cancelled:
             QMessageBox.critical(self, STRINGS["failed"], message)
 
     def finished(self):
-        self.cancel.setText(STRINGS["close"])
-        self.start.setEnabled(True)
-        if not self.executable:
-            for widget in (self.image, self.destination, self.image_browse, self.folder_browse):
-                widget.setEnabled(True)
+        self.operation = None
+        if (self.folder() / TRANSACTION).exists():
+            self.mode = "recover"
+        self.refresh_controls()
 
     def closeEvent(self, event):
         if self.busy():
@@ -197,8 +331,8 @@ class Wizard(QWidget):
             event.accept()
 
 
-def main(payload):
+def main(payload, destination=None):
     app = QApplication(sys.argv)
-    window = Wizard(payload)
+    window = Wizard(payload, destination)
     window.show()
     return app.exec()

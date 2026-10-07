@@ -6,16 +6,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from release import ROOT, SEMVER, digest, validate_tag
-
-
-def alpha_order(tag):
-    """Numeric precedence for the alpha-only versions accepted by the build."""
-    value = tag.removeprefix("v")
-    if not SEMVER.fullmatch(value):
-        return None
-    core, alpha = value.split("-alpha.")
-    return (*map(int, core.split(".")), int(alpha))
+from release import ROOT, digest, validate_tag
+from installer.install import payload_inventory
+from installer.releases import runtime_name
+from installer.versions import alpha_order
 
 
 def require_new_version(tag, existing_tags):
@@ -53,7 +47,7 @@ def validated_assets(folder, tag):
     for system, suffix in (("windows-x64", ".exe"), ("linux-x64", ".tar.gz")):
         stem = f"GauntletDarkLegacy-{tag[1:]}-{system}-setup"
         checksum = folder / f"{stem}.sha256"
-        expected = {f"{stem}{suffix}", f"{stem}-licenses.zip"}
+        expected = {f"{stem}{suffix}", f"{stem}-licenses.zip", runtime_name(tag[1:], system)}
         seen = set()
         for line in checksum.read_text(encoding="ascii").splitlines():
             sha, name = line.split("  ", 1)
@@ -63,6 +57,11 @@ def validated_assets(folder, tag):
             assets.append(folder / name)
         if seen != expected:
             raise ValueError(f"Incomplete {system} release")
+        metadata, _ = payload_inventory(folder / runtime_name(tag[1:], system))
+        executable = "gauntlet.exe" if system == "windows-x64" else "gauntlet"
+        if (metadata["version"] != tag[1:] or metadata["platform"] != system or
+                metadata["executable"] != executable):
+            raise ValueError(f"Runtime inventory disagrees with the {system} release")
         assets.append(checksum)
     return assets
 
@@ -87,8 +86,11 @@ def main(argv=None):
         "choose a writable installation folder, and press Install. No Python, compiler, "
         "console emulator or asset conversion is required. A Vulkan 1.3 graphics driver is required. "
         "No game assets are included in these downloads.\n\n"
-        "The installer defaults to its own folder and will not overwrite an existing game. "
-        "For an upgrade, install in a new folder, then copy your old `saves/` and `config/`. "
+        "For an upgrade, open the installer and select your existing game folder. "
+        "It checks published alpha releases; press Update to download and install the newer runtime. "
+        "No disc image is needed again. Close the game first. "
+        "Game assets, `saves/` and `config/` are preserved. Fresh installations also retain "
+        "a GauntletDarkLegacy-Update executable beside the game for future checks. "
         "Settings and saves stay beside the executable. Check `VERSION`, `installation.json` "
         "or `gauntlet --version` when reporting a bug.\n\n"
         "Checksums and third-party licenses accompany both downloads.\n"

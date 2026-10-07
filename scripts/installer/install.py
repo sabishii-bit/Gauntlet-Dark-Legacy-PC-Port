@@ -14,6 +14,7 @@ import time
 import zipfile
 
 from .disc import CHUNK, DiscImage, safe_component
+from .versions import ALPHA_VERSION
 
 MAX_PAYLOAD = 2 * 1024 * 1024 * 1024
 PAYLOAD_ROOTS = {"gauntlet.exe", "gauntlet", "shaders", "data", "licenses", "lib",
@@ -22,6 +23,53 @@ PAYLOAD_ROOTS = {"gauntlet.exe", "gauntlet", "shaders", "data", "licenses", "lib
 
 class Cancelled(Exception):
     """The user stopped extraction before it was committed."""
+
+
+def validate_file_names(paths):
+    """The only files an installation or update may own (never saves or retail data)."""
+    names = set()
+    for name in paths:
+        if not isinstance(name, str) or len(name) > 1024:
+            raise ValueError("Invalid release path")
+        parts = name.split("/")
+        for part in parts:
+            safe_component(part)
+        key = name.casefold()
+        if key in names:
+            raise ValueError("Duplicate release entry")
+        names.add(key)
+        root = parts[0].casefold()
+        if root not in PAYLOAD_ROOTS and not (len(parts) == 1 and root.endswith(".dll")):
+            raise ValueError(f"Unexpected release payload file: {name}")
+        if root in {"gauntlet", "gauntlet.exe", "version", "build-info.json", "portable.flag"} and len(parts) != 1:
+            raise ValueError(f"Unexpected release payload directory: {name}")
+        if root == "data" and not key.endswith(".json"):
+            raise ValueError(f"Non-configuration file in release data: {name}")
+    for name in paths:
+        if any(parent.as_posix().casefold() in names
+               for parent in PurePosixPath(name).parents if parent.parts):
+            raise ValueError("File/directory conflict in release payload")
+    return names
+
+
+def validate_metadata(metadata):
+    if not isinstance(metadata, dict) or not all(isinstance(metadata.get(key), str)
+            for key in ("version", "commit", "platform", "executable")):
+        raise ValueError("Invalid release metadata")
+    if not ALPHA_VERSION.fullmatch(metadata["version"]):
+        raise ValueError("Invalid alpha release version")
+    expected = metadata.get("files")
+    if not isinstance(expected, dict) or len(expected) > 20000:
+        raise ValueError("Invalid release file inventory")
+    names = validate_file_names([*expected, "build-info.json"])
+    if not {"build-info.json", "version", "portable.flag", "data/config.json"} <= names:
+        raise ValueError("Incomplete release payload")
+    executable = metadata["executable"]
+    if executable not in ("gauntlet.exe", "gauntlet") or executable not in expected:
+        raise ValueError("Missing release executable")
+    for digest in expected.values():
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("Invalid release digest")
 
 
 def host_platform():
@@ -71,49 +119,20 @@ def payload_inventory(payload: Path):
         infos = archive.infolist()
         if len(infos) > 20000 or sum(i.file_size for i in infos) > MAX_PAYLOAD:
             raise ValueError("Release payload is too large")
-        names = set()
+        names = validate_file_names([i.filename for i in infos])
         for info in infos:
-            parts = info.filename.split("/")
-            for part in parts:
-                safe_component(part)
-            key = info.filename.casefold()
-            if key in names or info.is_dir() or stat.S_ISLNK(info.external_attr >> 16):
+            if info.is_dir() or stat.S_ISLNK(info.external_attr >> 16):
                 raise ValueError("Duplicate, directory or linked release entry")
-            names.add(key)
-            root = parts[0].casefold()
-            if root not in PAYLOAD_ROOTS and not (len(parts) == 1 and root.endswith(".dll")):
-                raise ValueError(f"Unexpected release payload file: {info.filename}")
-            if root in {"gauntlet", "gauntlet.exe", "version", "build-info.json", "portable.flag"} and len(parts) != 1:
-                raise ValueError(f"Unexpected release payload directory: {info.filename}")
-            if root == "data" and not key.endswith(".json"):
-                raise ValueError(f"Non-configuration file in release data: {info.filename}")
         if not {"build-info.json", "version", "portable.flag", "data/config.json"} <= names:
             raise ValueError("Incomplete release payload")
         metadata_info = archive.getinfo("build-info.json")
         if metadata_info.file_size > 4 * 1024 * 1024:
             raise ValueError("Release metadata is too large")
         metadata = json.loads(archive.read(metadata_info))
-        if not isinstance(metadata, dict) or not all(isinstance(metadata.get(key), str)
-                for key in ("version", "commit", "platform", "executable")):
-            raise ValueError("Invalid release metadata")
-        if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-alpha\.[1-9][0-9]*", metadata["version"]):
-            raise ValueError("Invalid alpha release version")
-        if not isinstance(metadata.get("files"), dict):
-            raise ValueError("Invalid release file inventory")
+        validate_metadata(metadata)
         expected = metadata["files"]
         if set(expected) != {i.filename for i in infos if i.filename != "build-info.json"}:
             raise ValueError("Release file inventory does not match its payload")
-        executable = metadata["executable"]
-        if executable not in ("gauntlet.exe", "gauntlet") or executable not in expected:
-            raise ValueError("Missing release executable")
-        for info in infos:
-            if any(parent.as_posix().casefold() in names
-                   for parent in PurePosixPath(info.filename).parents if parent.parts):
-                raise ValueError("File/directory conflict in release payload")
-            if info.filename != "build-info.json":
-                digest = expected[info.filename]
-                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-                    raise ValueError("Invalid release digest")
         return metadata, tuple(infos)
 
 
@@ -126,7 +145,8 @@ def no_links(path: Path):
 
 
 def install(image: Path, destination: Path, payload: Path,
-            progress=lambda _done, _total, _name: None, cancel=lambda: False) -> Path:
+            progress=lambda _done, _total, _name: None, cancel=lambda: False,
+            updater=None) -> Path:
     """Copy into private staging, then publish only previously absent top-level entries.
 
     Existing saves/settings/installations are never overwritten. Interrupted extraction
@@ -142,6 +162,10 @@ def install(image: Path, destination: Path, payload: Path,
         roots = {e.path.parts[0] for e in disc.entries}
         roots.update(i.filename.split("/")[0] for i in infos)
         roots.update(("saves", "config", "installation.json"))
+        updater_name = "GauntletDarkLegacy-Update.exe" if os.name == "nt" else "GauntletDarkLegacy-Update"
+        keep_updater = updater is not None and Path(updater).resolve() != destination / updater_name
+        if keep_updater:
+            roots.add(updater_name)
         existed = destination.exists()
         if existed and not destination.is_dir():
             raise ValueError("Install destination is not a directory")
@@ -151,6 +175,8 @@ def install(image: Path, destination: Path, payload: Path,
             raise ValueError("Existing installation/files would be overwritten: " +
                              ", ".join(collisions) + ". Choose a fresh directory.")
         total = sum(e.size for e in disc.entries) + sum(i.file_size for i in infos)
+        if keep_updater:
+            total += Path(updater).stat().st_size
         ancestor = destination
         while not ancestor.exists():
             ancestor = ancestor.parent
@@ -201,6 +227,11 @@ def install(image: Path, destination: Path, payload: Path,
                             progress(done, total, entry.path.as_posix())
                 (stage / "saves").mkdir()
                 (stage / "config").mkdir()
+                if keep_updater:
+                    shutil.copyfile(updater, stage / updater_name)
+                    (stage / updater_name).chmod(0o755)
+                    done += (stage / updater_name).stat().st_size
+                    progress(done, total, updater_name)
                 (stage / "installation.json").write_text(json.dumps({
                     "version": metadata["version"], "commit": metadata["commit"],
                     "platform": metadata["platform"], "disc": "GUNE5D",
