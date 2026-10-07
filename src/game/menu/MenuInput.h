@@ -72,6 +72,10 @@ MenuInputSource playerInputSource(const Input& input, const GameConfig& config, 
 MenuInput readPlayerMenuInput(const Input& input, const GameConfig& config, s32 player,
                               bool typing = false);
 MenuInput readSharedMenuInput(const Input& input, const GameConfig& config);
+/** Movie controls: a primary mouse press acts as Start; held buttons do not skip again.
+ * Without a player, use the shared menu bindings; otherwise retain that player's bindings. */
+MenuInput readMovieMenuInput(const Input& input, const GameConfig& config,
+                             std::optional<s32> player = std::nullopt);
 /** Keep a paused menu recoverable when its owner disables or disconnects their device. */
 MenuInput readPauseMenuInput(const Input& input, const GameConfig& config, s32 owner);
 

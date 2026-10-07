@@ -150,6 +150,14 @@ MenuInput readSharedMenuInput(const Input& input, const GameConfig& config) {
     return result;
 }
 
+MenuInput readMovieMenuInput(const Input& input, const GameConfig& config,
+                             std::optional<s32> player) {
+    auto result =
+        player ? readPlayerMenuInput(input, config, *player) : readSharedMenuInput(input, config);
+    result.start |= result.pointerPressed;
+    return result;
+}
+
 MenuInput readPauseMenuInput(const Input& input, const GameConfig& config, s32 owner) {
     const auto source = playerInputSource(input, config, owner);
     return source.keyboard || input.isPadConnected(source.pad)

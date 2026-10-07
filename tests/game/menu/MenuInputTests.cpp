@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/platform/Input.h"
 
+#include "game/config/GameConfig.h"
 #include "game/menu/MenuInput.h"
 
 namespace {
@@ -16,6 +17,92 @@ using gdl::game::MenuBindings;
 using gdl::game::MenuInput;
 using gdl::game::MenuInputSource;
 using gdl::game::readMenuInput;
+
+TEST_CASE("a mouse click skips movies without becoming a global menu confirmation",
+          "[game][menu][movie][mouse]") {
+    const gdl::game::GameConfig config;
+    Input input;
+    // The full client area accepts a movie click, including its letterbox margins.
+    input.setPointer({0.01f, 0.5f, true, true});
+    CHECK(gdl::game::readMovieMenuInput(input, config).start);
+    for (s32 player = 0; player < 4; ++player) {
+        CHECK(gdl::game::readMovieMenuInput(input, config, player).start);
+    }
+    const auto ordinary = gdl::game::readSharedMenuInput(input, config);
+    CHECK(ordinary.pointerPressed);
+    CHECK_FALSE(ordinary.start);
+    CHECK_FALSE(ordinary.select);
+
+    // Holding that click through the next movie or menu must not skip/confirm again.
+    input.beginPoll();
+    CHECK(gdl::game::readMovieMenuInput(input, config).pointerHeld);
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config).start);
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config, 2).start);
+    input.setPointer({0.01f, 0.5f, true, false});
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config).start);
+    input.beginPoll();
+    input.setPointer({0.01f, 0.5f, true, true});
+    CHECK(gdl::game::readMovieMenuInput(input, config).start);
+}
+
+TEST_CASE("movie skips retain short mouse taps but ignore motion scrolling and outside clicks",
+          "[game][menu][movie][mouse]") {
+    const gdl::game::GameConfig config;
+    Input polled;
+    Input simulation;
+    polled.setPointer({0.5f, 0.5f, true, false});
+    polled.latchPointer();
+    simulation.accumulate(polled);
+    polled.beginPoll();
+    simulation.accumulate(polled);
+    CHECK(gdl::game::readMovieMenuInput(simulation, config).start);
+    simulation.beginPoll();
+    CHECK_FALSE(gdl::game::readMovieMenuInput(simulation, config).start);
+
+    polled.setPointer({0.75f, 0.75f, true, false});
+    polled.scrollPointer(1);
+    polled.latchPointerBack();
+    CHECK_FALSE(gdl::game::readMovieMenuInput(polled, config).start);
+    polled.setPointer({1.1f, 0.5f, false, true});
+    polled.latchPointer();
+    CHECK_FALSE(gdl::game::readMovieMenuInput(polled, config).start);
+}
+
+TEST_CASE("movie skipping preserves keyboard controller and per-player remapped bindings",
+          "[game][menu][movie][input]") {
+    gdl::game::GameConfig config;
+    Input input;
+    input.setKey(Key::Enter, true);
+    CHECK(gdl::game::readMovieMenuInput(input, config).start);
+    CHECK(gdl::game::readMovieMenuInput(input, config, 0).start);
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config, 2).start);
+    input.beginPoll();
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config).start);
+
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::Start)] = true;
+    input.setPad(2, pad);
+    CHECK(gdl::game::readMovieMenuInput(input, config).start);
+    CHECK(gdl::game::readMovieMenuInput(input, config, 2).start);
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config, 0).start);
+    input.beginPoll();
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config, 2).start);
+    input.setKey(Key::Space, true);
+    CHECK(gdl::game::readMovieMenuInput(input, config).select);
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config).start);
+
+    auto& profile = config.controls[0];
+    profile.customized = true;
+    profile.menu.start = {Key::F};
+    input.setKey(Key::Enter, false);
+    input.beginPoll();
+    input.setKey(Key::Enter, true);
+    CHECK_FALSE(gdl::game::readMovieMenuInput(input, config, 0).start);
+    input.setKey(Key::F, true);
+    CHECK(gdl::game::readMovieMenuInput(input, config, 0).start);
+    CHECK(gdl::game::readMovieMenuInput(input, config).start);
+}
 
 TEST_CASE("pointer regions isolate player lanes without taking away device commands",
           "[game][menu][mouse][multiplayer]") {

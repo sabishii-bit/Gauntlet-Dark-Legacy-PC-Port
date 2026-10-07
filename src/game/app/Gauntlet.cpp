@@ -304,7 +304,7 @@ void Gauntlet::updateAttract(f64 deltaSeconds) {
 }
 
 void Gauntlet::updateMovie(f64 deltaSeconds) {
-    const MenuInput menu = readSharedMenuInput(input(), m_config);
+    const MenuInput menu = readMovieMenuInput(input(), m_config);
     const bool toTitle = m_options.playMovie.empty() && m_attract.canSkipToTitle() && menu.start;
     const bool playing = !menu.start && !menu.select && m_movie.update(deltaSeconds);
     if (playing) {
@@ -826,7 +826,7 @@ void Gauntlet::updateJourney(f64 deltaSeconds) {
     if (journey.movieStarted) {
         bool skip = false;
         for (const auto& member : journey.party) {
-            const auto menu = readPlayerMenuInput(input(), m_config, member.player);
+            const auto menu = readMovieMenuInput(input(), m_config, member.player);
             skip = skip || menu.start;
         }
         if (!skip && m_movie.update(deltaSeconds)) {
