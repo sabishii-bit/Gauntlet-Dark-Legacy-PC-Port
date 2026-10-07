@@ -551,8 +551,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
             effect->trails.clearTextureBlends();
             const auto textureSlot = effect->particleTextureSlot;
             if (offset && textureSlot) {
+                const usize slot = *textureSlot;
                 for (usize i = 0; i < motion->animator.size(); ++i) {
-                    if (!motion->animator.keyed(i) && motion->animator.slot(i) == *textureSlot) {
+                    if (!motion->animator.keyed(i) && motion->animator.slot(i) == slot) {
                         const auto sample = motion->animator.motion(i, offset);
                         if (sample.frame != nullptr) {
                             effect->trails.setTextureBlend(0, *sample.frame, sample.nextFrame,

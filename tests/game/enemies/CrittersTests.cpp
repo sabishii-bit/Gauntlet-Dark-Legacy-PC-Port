@@ -952,15 +952,16 @@ TEST_CASE("native town golem weapon swings retain their authored contact reach w
                                                               "ATTACK3"};
             for (s32 update = 0; update < updates * 20; ++update) {
                 actor.update(1, 1.0f / static_cast<f32>(updates), std::span{&player, 1});
-                const auto swing = std::ranges::find(kSwings, actor.moveName());
-                if (swing != kSwings.end()) {
-                    ++visits[static_cast<usize>(swing - kSwings.begin())];
+                const usize swing = static_cast<usize>(
+                    std::ranges::find(kSwings, actor.moveName()) - kSwings.begin());
+                if (swing < kSwings.size()) {
+                    ++visits[swing];
                 }
                 for (const auto& blow : actor.takeBlows()) {
-                    if (!blow.gated || swing == kSwings.end()) {
+                    if (!blow.gated || swing == kSwings.size()) {
                         continue;
                     }
-                    ++contacts[static_cast<usize>(swing - kSwings.begin())];
+                    ++contacts[swing];
                     CHECK(blow.player == player.player);
                     CHECK(blow.damage == Approx(actor.moveName().starts_with("ATTACK1") ? 10 : 30));
                 }
@@ -1017,7 +1018,8 @@ TEST_CASE("retail Skorne grabs and Wraith death author a return to initial facin
     for (const std::string name : {"SKORNE1", "SKORNE2", "WRAITH"}) {
         DYNAMIC_SECTION(name) {
             CritterData data;
-            REQUIRE(data.load(test::assetOrSkip("CRITTER/" + name + ".WAD")));
+            const auto asset = test::assetOrSkip("CRITTER/" + name + ".WAD");
+            REQUIRE(data.load(asset));
             const std::string_view wanted = name == "WRAITH" ? "DEATH" : "GRAB";
             const auto move = std::ranges::find(data.moves(), wanted, &MoveDefinition::name);
             REQUIRE(move != data.moves().end());

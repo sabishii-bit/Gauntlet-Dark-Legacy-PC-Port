@@ -216,7 +216,8 @@ TEST_CASE("legend flight follows its held pose and reports impact exactly once",
 
 TEST_CASE("carried Fire Parchment retains its native fire", "[legend][fire-parchment][assets]") {
     LegendFixture fixture;
-    REQUIRE(fixture.items.load(test::assetOrSkip("ITEMS/LEVELI5/ANIM.PS2").parent_path()));
+    const auto asset = test::assetOrSkip("ITEMS/LEVELI5/ANIM.PS2");
+    REQUIRE(fixture.items.load(asset.parent_path()));
     fixture.presentation.carry(2, 9, 39, fixture.bearer);
     const auto* held = fixture.find("LEGENDHLD");
     REQUIRE(held);
