@@ -1,13 +1,16 @@
 #include <array>
+#include <cmath>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/config/ControlProfiles.h"
 #include "game/screens/PlayScene.h"
 
 namespace {
@@ -31,7 +34,10 @@ TEST_CASE("scene damage vibrates the actual input player and pause or close stop
     context.unpackedRoot = root;
     std::vector<std::pair<s32, s32>> vibrations;
     s32 stops = 0;
-    context.vibrate = [&](s32 player, s32 frames) { vibrations.emplace_back(player, frames); };
+    context.vibrate = [&](s32 player, s32 frames, ControlFeedback feedback) {
+        CHECK(feedback == ControlFeedback::Damage);
+        vibrations.emplace_back(player, frames);
+    };
     context.stopVibration = [&] { ++stops; };
     PlayOptions options;
     options.welcome = false;
@@ -62,5 +68,74 @@ TEST_CASE("scene damage vibrates the actual input player and pause or close stop
     CHECK(stops == before + 2);
     scene.close(); // callbacks no longer borrow a potentially destroyed application
     CHECK(stops == before + 2);
+}
+
+TEST_CASE("a real melee animation gives one hit pulse to its attacker's input slot",
+          "[game][screens][assets][rumble][melee-rumble]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    const s32 fps = GENERATE(30, 60, 120);
+    GameConfig config;
+    config.combat.autoMelee = true;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    std::vector<s32> hits;
+    context.vibrate = [&](s32 player, s32 frames, ControlFeedback feedback) {
+        CHECK(feedback == ControlFeedback::MeleeHit);
+        CHECK(frames == 0);
+        hits.push_back(player);
+    };
+    constexpr s32 kPlayer = 3;
+    CharacterSave save;
+    save.autoAttack = true;
+    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    const std::array party{PartyMember{kPlayer, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{18.8f, 0.2f, 0.7f};
+    options.yaw = kPi * 0.5f;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const auto entering = [&] { return scene.spawning() || scene.animator(kPlayer)->entering(); };
+    const f64 step = 1.0 / fps;
+    for (s32 frame = 0; frame < fps * 7 && entering(); ++frame) {
+        scene.update(step, {});
+    }
+    REQUIRE_FALSE(entering());
+    REQUIRE(hits.empty());
+    const auto& actor = *scene.actor(kPlayer);
+    auto& enemies = scene.enemies();
+    REQUIRE(enemies.within(actor.position(), 8).empty());
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.position = actor.position() + Vec3{4.5f, 0, 0};
+    spawn.direction = {-1, 0, 0};
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    const f32 health = enemies.healthOf(*enemy);
+    for (s32 frame = 0; frame < fps * 3 && enemies.healthOf(*enemy) == health; ++frame) {
+        REQUIRE(hits.empty()); // Neither acquiring nor winding up is a hit.
+        const Vec3 toward = enemies.positionOf(*enemy) - actor.position();
+        const f32 heading = std::atan2(toward.x, toward.z) - scene.viewCamera().yaw;
+        PlayScene::Inputs input{};
+        input[kPlayer].move = MoveInput{Vec2{std::sin(heading), std::cos(heading)}, 1};
+        REQUIRE(scene.update(step, input) == PlayOutcome::Running);
+    }
+    REQUIRE(enemies.healthOf(*enemy) < health);
+    REQUIRE(hits == std::vector<s32>{kPlayer});
+    // Finishing the animation without another attack cannot repeat that contact.
+    for (s32 frame = 0; frame < fps; ++frame) {
+        scene.update(step, {});
+    }
+    CHECK(hits == std::vector<s32>{kPlayer});
 }
 } // namespace

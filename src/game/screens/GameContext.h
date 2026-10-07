@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
+#include "game/config/ControlProfiles.h"
 #include "game/config/GameConfig.h"
 #include "game/menu/ControlPrompts.h"
 #include "game/world/LevelCatalog.h"
@@ -35,7 +36,7 @@ struct GameContext {
     std::function<DisplayOptions()> displayOptions;
     /** Applies a temporary Video trial without writing settings. */
     std::function<bool(const GameConfig&)> previewVideo;
-    std::function<void(s32, s32)> vibrate; ///< input player id and native controller frames
+    std::function<void(s32, s32, ControlFeedback)> vibrate; ///< input player id, frames and cue
     std::function<void()> stopVibration;
 };
 

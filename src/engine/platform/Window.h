@@ -52,8 +52,10 @@ public:
 
     virtual const Input& input() const = 0;
 
-    /** Timed motor feedback on a physical input slot; unsupported devices are a no-op. */
-    virtual bool rumble(s32 /*pad*/, u16 /*low*/, u16 /*high*/, u32 /*milliseconds*/) {
+    /** Timed feedback on a physical slot. Lower priorities cannot interrupt active pulses;
+     * unsupported devices are a no-op. */
+    virtual bool rumble(s32 /*pad*/, u16 /*low*/, u16 /*high*/, u32 /*milliseconds*/,
+                        u8 /*priority*/ = 0) {
         return false;
     }
     virtual void stopRumble() {}

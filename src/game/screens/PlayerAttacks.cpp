@@ -1648,6 +1648,9 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
                                       targets.fixtureEvents);
         targets.fixtures.settleBlasts(players, targets.fixtureEvents);
     }
+    if (credit > 0.0f && targets.meleeHit) {
+        targets.meleeHit(actor.player());
+    }
     healHit(actor.player(), flags, credit, point, players, targets);
 }
 

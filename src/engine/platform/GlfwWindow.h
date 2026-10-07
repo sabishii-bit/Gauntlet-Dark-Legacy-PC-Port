@@ -27,8 +27,8 @@ public:
     bool setDisplayMode(WindowMode mode, Extent2D resolution) override;
     void waitWhileMinimized() override;
     const Input& input() const override { return m_input; }
-    bool rumble(s32 pad, u16 low, u16 high, u32 milliseconds) override {
-        return m_gamepads.rumble(pad, low, high, milliseconds);
+    bool rumble(s32 pad, u16 low, u16 high, u32 milliseconds, u8 priority = 0) override {
+        return m_gamepads.rumble(pad, low, high, milliseconds, priority);
     }
     void stopRumble() override { m_gamepads.stop(); }
     void setIcon(std::span<const Image> images) override;

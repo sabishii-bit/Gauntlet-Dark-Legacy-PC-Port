@@ -449,7 +449,12 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
             [this](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
                 hurt(index, damage, kind, true, impact);
             },
-            m_bossSequence.occupiedHand()};
+            m_bossSequence.occupiedHand(),
+            [this](s32 player) {
+                if (m_context.vibrate) {
+                    m_context.vibrate(player, 0, ControlFeedback::MeleeHit);
+                }
+            }};
 }
 
 LevelFixtures::Events PlayScene::fixtureEvents() {

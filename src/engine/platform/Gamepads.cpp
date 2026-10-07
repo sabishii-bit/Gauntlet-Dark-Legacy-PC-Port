@@ -7,6 +7,7 @@
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_timer.h>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -113,6 +114,8 @@ void Gamepads::close(Device& device) {
     device.joystick = nullptr;
     device.gamepad = nullptr;
     device.id = 0;
+    device.rumbleUntil = 0;
+    device.rumblePriority = 0;
 }
 
 void Gamepads::discover() {
@@ -224,17 +227,30 @@ void Gamepads::poll(Input& input, bool focused) {
     }
 }
 
-bool Gamepads::rumble(s32 pad, u16 low, u16 high, u32 milliseconds) {
+bool Gamepads::rumble(s32 pad, u16 low, u16 high, u32 milliseconds, u8 priority) {
     if (!m_ready || !m_focused || pad < 0 || static_cast<usize>(pad) >= m_devices.size()) {
         return false;
     }
-    auto* joystick = m_devices[static_cast<usize>(pad)].joystick;
-    return joystick != nullptr && SDL_JoystickConnected(joystick) &&
-           SDL_RumbleJoystick(joystick, low, high, milliseconds);
+    auto& device = m_devices[static_cast<usize>(pad)];
+    const u64 now = SDL_GetTicks();
+    const bool stopping = milliseconds == 0 || (low == 0 && high == 0);
+    if (!stopping && priority < device.rumblePriority && now < device.rumbleUntil) {
+        return false;
+    }
+    if (device.joystick == nullptr || !SDL_JoystickConnected(device.joystick) ||
+        !SDL_RumbleJoystick(device.joystick, stopping ? 0 : low, stopping ? 0 : high,
+                            stopping ? 0 : milliseconds)) {
+        return false;
+    }
+    device.rumbleUntil = stopping ? 0 : now + milliseconds;
+    device.rumblePriority = stopping ? 0 : priority;
+    return true;
 }
 
 void Gamepads::stop() {
     for (auto& device : m_devices) {
+        device.rumbleUntil = 0;
+        device.rumblePriority = 0;
         if (device.joystick != nullptr) {
             SDL_RumbleJoystick(device.joystick, 0, 0, 0);
         }

@@ -51,6 +51,7 @@ struct Fixture {
     PlayerAttacks attacks;
     MultiplayerMode mode = MultiplayerMode::Normal;
     std::array<PlayerRuntime, 1> players;
+    std::vector<s32> meleeHits;
     PlayerAttacks::Targets targets{opponents, fixtures, {}};
     Fixture() {
         arsenal.bind({device,
@@ -68,6 +69,7 @@ struct Fixture {
         attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer,
                       &shake, &mode});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+        targets.meleeHit = [this](s32 player) { meleeHits.push_back(player); };
     }
 };
 
@@ -2551,7 +2553,7 @@ TEST_CASE("block presentation limits duration and cannot restart during its cool
 }
 
 TEST_CASE("ordinary melee and finishers preserve the weapon element while guard flashes do not",
-          "[game][player-attacks][alpha-elemental-melee][assets]") {
+          "[game][player-attacks][alpha-elemental-melee][assets][melee-rumble]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
@@ -2619,6 +2621,7 @@ TEST_CASE("ordinary melee and finishers preserve the weapon element while guard 
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "BLOCKFX");
     CHECK(contacts == 1);
+    CHECK(f.meleeHits.empty()); // Friendly-player contacts do not report enemy-hit feedback.
     f.effects.clear();
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, party);
     auto& enemies = f.opponents.enemies();
@@ -2636,7 +2639,9 @@ TEST_CASE("ordinary melee and finishers preserve the weapon element while guard 
         spawn.placed = true;
         spawn.position = {0, 0, 2.5f};
         REQUIRE(enemies.spawn(spawn, {}));
+        f.meleeHits.clear();
         f.attacks.melee(0, party, f.targets);
+        CHECK(f.meleeHits == std::vector<s32>{3});
         const auto feedback = enemies.takeFeedback();
         REQUIRE(feedback.size() == 1);
         CHECK(feedback[0].close);
@@ -3163,7 +3168,7 @@ TEST_CASE("automatic melee only permits the native DRIDER and LICH boss exceptio
 }
 
 TEST_CASE("a forward melee contact cannot be stolen by a nearer barrel behind the player",
-          "[game][player-attacks][melee][alpha-auto-melee][assets]") {
+          "[game][player-attacks][melee][alpha-auto-melee][assets][melee-rumble]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
@@ -3212,12 +3217,95 @@ TEST_CASE("a forward melee contact cannot be stolen by a nearer barrel behind th
     f.attacks.melee(0, f.players, f.targets);
     CHECK(enemies.healthOf(*enemy) < enemyHealth);
     CHECK(cask.health == barrelHealth);
+    CHECK(f.meleeHits == std::vector<s32>{3});
     // The body has not turned, but a requested backward combo uses its own
     // heading at contact rather than being hard-wired to the body's facing.
     player.meleeFacing = Vec3{0, 0, -1};
     f.attacks.melee(0, f.players, f.targets);
     CHECK(cask.health < barrelHealth);
+    CHECK(f.meleeHits.size() == 1); // Breaking scenery is not another enemy hit.
     f.opponents.close();
+}
+
+TEST_CASE("melee misses and Death's unmoved response do not report successful hit feedback",
+          "[game][player-attacks][melee-rumble][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, test::deathArchive(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto death =
+        enemies.spawn({.kind = kDeathKind, .position = {0, 0, 3}, .placed = true}, {});
+    REQUIRE(death);
+    const f32 health = enemies.healthOf(*death);
+    REQUIRE(f.attacks.meleeSense(player.actor, true, f.targets).range == MeleeRange::Swing);
+    f.attacks.melee(0, f.players, f.targets);
+    // Ordinary blows age Death's remaining lifetime by one, not the attack's damage.
+    CHECK(enemies.healthOf(*death) == health - 1);
+    const auto responses = enemies.takeDeathEvents();
+    REQUIRE(responses.size() == 1);
+    CHECK(responses.front().kind == DeathEvent::Kind::Unmoved);
+    CHECK(f.meleeHits.empty());
+    player.actor.place({0, 0, -100});
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(f.meleeHits.empty());
+    f.attacks.melee(4, f.players, f.targets);
+    player.figure.reset();
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(f.meleeHits.empty());
+}
+
+TEST_CASE("general and boss melee contacts report the attacker and reject sleeping bosses",
+          "[game][player-attacks][melee-rumble][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::assetOrSkip("CRITTER/LICH.WAD");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    const bool boss = GENERATE(false, true);
+    Fixture f;
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& critters = f.opponents.critters();
+    auto& bosses = f.opponents.bosses();
+    s32 general = -1;
+    if (boss) {
+        bosses.open(f.device, root, nullptr, {}, 'G');
+        REQUIRE(bosses.spawn(37, {}, 0)); // Lich
+    } else {
+        critters.open(f.device, root, nullptr, {}, 'G');
+        const auto spawned = critters.spawnGeneral({}, 0);
+        REQUIRE(spawned);
+        general = *spawned;
+    }
+    const auto bodies = boss ? bosses.targets() : critters.targets();
+    REQUIRE_FALSE(bodies.empty());
+    bool inReach = false;
+    for (const auto& body : bodies) {
+        player.actor.place(body.base - Vec3{0, 0, body.radius + 0.5f});
+        if (f.attacks.meleeSense(player.actor, true, f.targets).range == MeleeRange::Swing) {
+            inReach = true;
+            break;
+        }
+    }
+    REQUIRE(inReach);
+    if (boss) {
+        f.attacks.melee(0, f.players, f.targets);
+        REQUIRE(f.meleeHits.empty());
+        bosses.wake();
+    }
+    const f32 health = boss ? bosses.view().health : critters.healthOf(general);
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK((boss ? bosses.view().health : critters.healthOf(general)) < health);
+    CHECK(f.meleeHits == std::vector<s32>{3});
 }
 
 TEST_CASE("native player width governs melee bands and the anklebiter low threshold",

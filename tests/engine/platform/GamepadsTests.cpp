@@ -145,6 +145,51 @@ TEST_CASE("focus loss stops feedback and never replays it on returning", "[input
     CHECK(pad.motors->low == 0);
 }
 
+TEST_CASE("light hit pulses cannot replace damage feedback or leak priority across stops",
+          "[input][rumble][melee-rumble]") {
+    Gamepads devices;
+    const VirtualPad first;
+    const VirtualPad second;
+    Input input;
+    devices.poll(input, true);
+    const auto slots = testSlots(input);
+    REQUIRE(slots.size() == 2);
+    REQUIRE(devices.rumble(slots[0], 0, 0x8000, 90));
+    REQUIRE(devices.rumble(slots[0], 0xFFFF, 0, 1000, 1));
+    const s32 calls = first.motors->calls;
+    CHECK_FALSE(devices.rumble(slots[0], 0, 0x8000, 90));
+    CHECK(first.motors->calls == calls);
+    CHECK(first.motors->low == 0xFFFF);
+    CHECK(first.motors->high == 0);
+    REQUIRE(devices.rumble(slots[1], 0, 0x8000, 90));
+    CHECK(second.motors->high == 0x8000);
+    SECTION("expiry") {
+        REQUIRE(devices.rumble(slots[0], 0xFFFF, 0, 10, 1));
+        SDL_Delay(40);
+        devices.poll(input, true);
+        CHECK(first.motors->low == 0);
+    }
+    SECTION("pause or scene exit") {
+        devices.stop();
+        CHECK(first.motors->low == 0);
+        CHECK(second.motors->high == 0);
+    }
+    SECTION("focus loss") {
+        devices.poll(input, false);
+        CHECK_FALSE(devices.rumble(slots[0], 0, 0x8000, 90));
+        CHECK(first.motors->low == 0);
+        devices.poll(input, true);
+        CHECK(first.motors->low == 0);
+    }
+    SECTION("explicit zero pulse bypasses priority") {
+        REQUIRE(devices.rumble(slots[0], 0, 0, 0));
+        CHECK(first.motors->low == 0);
+    }
+    REQUIRE(devices.rumble(slots[0], 0, 0x8000, 90));
+    CHECK(first.motors->low == 0);
+    CHECK(first.motors->high == 0x8000);
+}
+
 TEST_CASE("disconnecting one controller neither renumbers nor vibrates the other",
           "[input][rumble]") {
     Gamepads devices;
@@ -154,6 +199,7 @@ TEST_CASE("disconnecting one controller neither renumbers nor vibrates the other
     devices.poll(input, true);
     const auto slots = testSlots(input);
     REQUIRE(slots.size() == 2);
+    REQUIRE(devices.rumble(slots[0], 65535, 0, 1000, 1));
     first.disconnect();
     input.beginPoll();
     devices.poll(input, true);

@@ -80,7 +80,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
          .vibrate =
              [this, &runtime](s32 frames) {
                  if (m_context.vibrate) {
-                     m_context.vibrate(runtime.actor.player(), frames);
+                     m_context.vibrate(runtime.actor.player(), frames, ControlFeedback::Damage);
                  }
              }},
         impact, level != nullptr && level->bossType >= 0,

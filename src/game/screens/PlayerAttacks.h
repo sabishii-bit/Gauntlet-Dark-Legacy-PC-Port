@@ -44,6 +44,9 @@ public:
         std::function<void(usize, f32, HurtKind, const PlayerImpact&)>
             hurt{};            // NOLINT(readability-redundant-member-init)
         s32 occupiedHand = -1; ///< a relic replaces this player's weapon glow
+        /** An accepted melee blow on a creature, identified by its attacker's input slot. */
+        std::function<void(s32)>
+            meleeHit{}; // NOLINT(readability-redundant-member-init): preserve aggregate callers
     };
     void bind(const Resources& resources);
     void clear();

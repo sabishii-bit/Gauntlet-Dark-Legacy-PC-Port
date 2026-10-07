@@ -182,7 +182,7 @@ const MenuBindings& menuBindings(const GameConfig& config, s32 player) {
     return profile.customized ? profile.menu : config.menu;
 }
 std::optional<ControlVibration> controlVibration(const GameConfig& config, const Input& input,
-                                                 s32 player, s32 frames) {
+                                                 s32 player, s32 frames, ControlFeedback feedback) {
     if (player < 0 || static_cast<usize>(player) >= config.controls.size() || frames < 0 ||
         frames > 30 || !config.controls[static_cast<usize>(player)].rumble) {
         return std::nullopt;
@@ -191,10 +191,18 @@ std::optional<ControlVibration> controlVibration(const GameConfig& config, const
     if (!input.isPadConnected(pad)) {
         return std::nullopt;
     }
+    if (feedback == ControlFeedback::MeleeHit) {
+        // Port feedback: a short high-frequency tap, distinct from the damage motor.
+        constexpr u32 kHitMilliseconds = 90;
+        constexpr u16 kHitStrength = 0x8000;
+        return ControlVibration{pad, kHitMilliseconds, 0, kHitStrength, 0};
+    }
     // PlayerControls decrements once per native rendered frame (30 Hz), stopping below
     // zero, not at zero. Keep that inclusive final frame independent of presentation FPS.
     const auto milliseconds = static_cast<u32>(((frames + 1) * 1000 + 29) / 30);
-    return ControlVibration{pad, milliseconds};
+    // GC do_vibe (80031938) starts its binary motor only from damage_player's four
+    // calls (80078b30..80078b7c). Damage has priority over the added melee taps.
+    return ControlVibration{pad, milliseconds, 0xFFFF, 0, 1};
 }
 const PlayBindings& playBindings(const GameConfig& config, s32 player) {
     const auto& profile = config.controls.at(static_cast<usize>(player));

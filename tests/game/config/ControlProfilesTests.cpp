@@ -245,3 +245,36 @@ TEST_CASE("native vibration periods include the final zero countdown independent
         CHECK(controlVibration(config, input, 0, 20)->milliseconds == 700);
     }
 }
+
+TEST_CASE("melee feedback is a short light tap and shares the player's rumble preferences",
+          "[controls][rumble][melee-rumble]") {
+    GameConfig config;
+    Input input;
+    input.setPad(7, pad("controller"));
+    config.controls[3].device = "controller";
+    const auto damage = controlVibration(config, input, 3, 10);
+    REQUIRE(damage);
+    CHECK(damage->low == 0xFFFF);
+    CHECK(damage->high == 0);
+    for (const u32 fps : {30U, 60U, 120U, 0U}) {
+        config.timing.gameplayFrameRate = fps;
+        const auto hit = controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit);
+        REQUIRE(hit);
+        CHECK(hit->pad == 7);
+        CHECK(hit->milliseconds == 90);
+        CHECK(hit->milliseconds < damage->milliseconds);
+        CHECK(hit->low == 0);
+        CHECK(hit->high == 0x8000);
+        CHECK(hit->priority < damage->priority);
+    }
+    config.controls[3].rumble = false;
+    CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit));
+    config.controls[3].rumble = true;
+    config.controls[3].device = "keyboard";
+    CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit));
+    config.controls[3].device = "none";
+    CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit));
+    config.controls[3].device = "controller";
+    input.setPad(7, {});
+    CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit));
+}

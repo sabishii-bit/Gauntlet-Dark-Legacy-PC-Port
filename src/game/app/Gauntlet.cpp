@@ -209,11 +209,10 @@ GameContext Gauntlet::context() {
     context.previewVideo = [this](const GameConfig& config) {
         return applySettings(config, false);
     };
-    context.vibrate = [this](s32 player, s32 frames) {
-        if (const auto request = controlVibration(m_config, input(), player, frames)) {
-            // GameCube PADControlMotor is binary. Its single motor maps to the low-
-            // frequency motor; the PS2-only strength table is not applied on this target.
-            window().rumble(request->pad, 0xFFFF, 0, request->milliseconds);
+    context.vibrate = [this](s32 player, s32 frames, ControlFeedback feedback) {
+        if (const auto request = controlVibration(m_config, input(), player, frames, feedback)) {
+            window().rumble(request->pad, request->low, request->high, request->milliseconds,
+                            request->priority);
         }
     };
     context.stopVibration = [this] { window().stopRumble(); };
