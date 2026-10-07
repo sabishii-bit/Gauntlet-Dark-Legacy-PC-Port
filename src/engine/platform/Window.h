@@ -52,6 +52,12 @@ public:
 
     virtual const Input& input() const = 0;
 
+    /** Timed motor feedback on a physical input slot; unsupported devices are a no-op. */
+    virtual bool rumble(s32 /*pad*/, u16 /*low*/, u16 /*high*/, u32 /*milliseconds*/) {
+        return false;
+    }
+    virtual void stopRumble() {}
+
     /** The window's icon at one or more sizes; the system picks. Ignored where the
      * platform has no window icons. */
     virtual void setIcon(std::span<const Image> images) = 0;

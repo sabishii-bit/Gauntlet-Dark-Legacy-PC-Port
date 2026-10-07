@@ -24,6 +24,13 @@ struct ControlDevice {
     s32 pad = -2;
 };
 std::array<ControlDevice, 4> controlDevices(const GameConfig& config, const Input& input);
+struct ControlVibration {
+    s32 pad = -1;
+    u32 milliseconds = 0;
+};
+/** Resolve damage feedback through the same assignment as gameplay input. */
+std::optional<ControlVibration> controlVibration(const GameConfig& config, const Input& input,
+                                                 s32 player, s32 frames);
 s32 controllerOccurrence(const Input& input, s32 pad);
 const MenuBindings& menuBindings(const GameConfig& config, s32 player);
 const PlayBindings& playBindings(const GameConfig& config, s32 player);

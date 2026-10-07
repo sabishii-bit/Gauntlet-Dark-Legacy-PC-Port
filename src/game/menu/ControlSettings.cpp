@@ -12,7 +12,8 @@ constexpr s32 kNext = 101;
 constexpr s32 kDefaults = 102;
 constexpr s32 kBack = 103;
 constexpr s32 kApply = 104;
-constexpr s32 kFirstAction = 8;
+constexpr s32 kRumble = 105;
+constexpr s32 kFirstAction = 9;
 constexpr s32 kActionCount = 3;
 constexpr s32 kActionY = 268;
 constexpr s32 kActionGap = 24;
@@ -167,6 +168,13 @@ void ControlSettings::define(MenuDefinition& definition, const TextPainter& pain
             definition.items.push_back(
                 {text("controls." + std::string(action.id)), index, 0, canBind, {}, 0, value});
         }
+        definition.items.push_back({text("controls.rumble"),
+                                    kRumble,
+                                    0,
+                                    true,
+                                    {},
+                                    0,
+                                    text(profile.rumble ? "settings.on" : "settings.off")});
         definition.items.push_back({"",
                                     kNext,
                                     0,
@@ -319,7 +327,7 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
     auto event = menu.update(mapped, ticks);
     if ((mapped.left || mapped.right) && !mapped.back && !mapped.select && m_player >= 0) {
         const auto code = menu.definition().items[static_cast<usize>(menu.selection())].code;
-        if (code == kDevice || code == kNext) {
+        if (code == kDevice || code == kNext || code == kRumble) {
             event = {MenuAction::Choice, code, 0, mapped.left ? -1 : 1};
         }
     }
@@ -349,6 +357,11 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
     if (event.code == kNext) {
         m_page = (m_page + (event.direction < 0 ? -1 : 1) + pageCount()) % pageCount();
         rebuild(kFirstAction - 1);
+    } else if (event.code == kRumble) {
+        auto& profile = m_draft.controls[static_cast<usize>(m_player)];
+        profile.rumble = !profile.rumble;
+        m_failed = false;
+        rebuild(menu.selection());
     } else if (event.code == kDevice) {
         auto& profile = m_draft.controls[static_cast<usize>(m_player)];
         const auto devices = choices(m_draft);
@@ -382,6 +395,7 @@ bool ControlSettings::update(const MenuInput& input, s32 ticks, OptionMenu& menu
         auto& profile = m_draft.controls[static_cast<usize>(m_player)];
         profile.play = PlayBindings{};
         profile.menu = MenuBindings{};
+        profile.rumble = true;
         profile.customized = true;
         m_failed = false;
         rebuild(menu.selection());

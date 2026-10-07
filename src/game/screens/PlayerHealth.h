@@ -34,6 +34,7 @@ public:
         std::function<void(std::string_view, f32)> named; ///< a line after the name, its wait
         /** A heavy blow taken unguarded by one who has never blocked. */
         std::function<void()> learnBlock;
+        std::function<void(s32)> vibrate; ///< native controller frames, not simulation ticks
     };
     static constexpr f32 kBlockLessonFrom = 15.0f; ///< over this a blow teaches the guard
     static constexpr u32 kHeavyFlags = 0x10160;    ///< knock-back, knock-down and knock-over

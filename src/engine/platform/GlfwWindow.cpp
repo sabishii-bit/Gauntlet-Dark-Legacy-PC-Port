@@ -98,23 +98,6 @@ constexpr auto kKeyMap = std::to_array<KeyMapping>({
     {GLFW_KEY_F12, Key::F12},
 });
 
-// Triggers are axes; Input derives their virtual buttons after polling.
-constexpr std::array<s32, static_cast<usize>(PadButton::LeftTrigger)> kPadButtonMap{
-    GLFW_GAMEPAD_BUTTON_A,           GLFW_GAMEPAD_BUTTON_B,
-    GLFW_GAMEPAD_BUTTON_X,           GLFW_GAMEPAD_BUTTON_Y,
-    GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,
-    GLFW_GAMEPAD_BUTTON_BACK,        GLFW_GAMEPAD_BUTTON_START,
-    GLFW_GAMEPAD_BUTTON_GUIDE,       GLFW_GAMEPAD_BUTTON_LEFT_THUMB,
-    GLFW_GAMEPAD_BUTTON_RIGHT_THUMB, GLFW_GAMEPAD_BUTTON_DPAD_UP,
-    GLFW_GAMEPAD_BUTTON_DPAD_RIGHT,  GLFW_GAMEPAD_BUTTON_DPAD_DOWN,
-    GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
-};
-
-constexpr std::array<s32, static_cast<usize>(PadAxis::Count)> kPadAxisMap{
-    GLFW_GAMEPAD_AXIS_LEFT_X,  GLFW_GAMEPAD_AXIS_LEFT_Y,       GLFW_GAMEPAD_AXIS_RIGHT_X,
-    GLFW_GAMEPAD_AXIS_RIGHT_Y, GLFW_GAMEPAD_AXIS_LEFT_TRIGGER, GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER,
-};
-
 } // namespace
 
 GlfwWindow::GlfwWindow(const WindowDesc& desc) {
@@ -136,6 +119,12 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     glfwSetWindowUserPointer(m_window, this);
     glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
     glfwSetKeyCallback(m_window, &GlfwWindow::keyCallback);
+    glfwSetWindowFocusCallback(m_window, [](GLFWwindow* window, s32 focused) {
+        if (focused == GLFW_FALSE) {
+            auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
+            self->m_gamepads.stop();
+        }
+    });
     glfwSetMouseButtonCallback(m_window, [](GLFWwindow* window, s32 button, s32 action, s32) {
         if (action == GLFW_PRESS && button >= GLFW_MOUSE_BUTTON_LEFT &&
             button <= GLFW_MOUSE_BUTTON_MIDDLE) {
@@ -165,6 +154,7 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
 }
 
 GlfwWindow::~GlfwWindow() {
+    m_gamepads.stop();
     if (m_window != nullptr) {
         glfwDestroyWindow(m_window);
     }
@@ -181,7 +171,7 @@ void GlfwWindow::pollEvents() {
         glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
     pollKeyboard();
-    pollGamepads();
+    m_gamepads.poll(m_input, glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE);
     f64 x = 0;
     f64 y = 0;
     s32 width = 0;
@@ -237,65 +227,6 @@ void GlfwWindow::keyCallback(GLFWwindow* window, s32 key, s32 /*scancode*/, s32 
             self->m_input.latchKey(mapping.key);
             return;
         }
-    }
-}
-
-void GlfwWindow::pollGamepads() {
-    for (s32 pad = 0; pad < Input::kMaxPads; ++pad) {
-        PadSnapshot snapshot;
-        const s32 joystick = GLFW_JOYSTICK_1 + pad;
-        GLFWgamepadstate state{};
-        if (glfwJoystickIsGamepad(joystick) == GLFW_TRUE &&
-            glfwGetGamepadState(joystick, &state) == GLFW_TRUE) {
-            snapshot.connected = true;
-            const char* name = glfwGetGamepadName(joystick);
-            const char* guid = glfwGetJoystickGUID(joystick);
-            snapshot.name = name != nullptr ? name : "";
-            snapshot.guid = guid != nullptr ? guid : "";
-            for (usize i = 0; i < kPadButtonMap.size(); ++i) {
-                snapshot.buttons[i] = state.buttons[kPadButtonMap[i]] == GLFW_PRESS;
-            }
-            for (usize i = 0; i < snapshot.axes.size(); ++i) {
-                f32 value = state.axes[kPadAxisMap[i]];
-                if (i >= static_cast<usize>(PadAxis::LeftTrigger)) {
-                    value = (value + 1.0f) * 0.5f;
-                }
-                snapshot.axes[i] = value;
-            }
-        }
-        if (!snapshot.connected && glfwJoystickPresent(joystick) == GLFW_TRUE) {
-            snapshot.connected = true;
-            const char* name = glfwGetJoystickName(joystick);
-            const char* guid = glfwGetJoystickGUID(joystick);
-            snapshot.name = name != nullptr ? name : "";
-            snapshot.guid = guid != nullptr ? guid : "";
-            s32 count = 0;
-            const auto* buttonData = glfwGetJoystickButtons(joystick, &count);
-            const std::span buttons(buttonData, static_cast<usize>(count));
-            for (s32 i = 0; i < std::min(count, 32); ++i) {
-                snapshot.buttons[static_cast<usize>(PadButton::Button1) + static_cast<usize>(i)] =
-                    buttons[i] == GLFW_PRESS;
-            }
-            const auto* axisData = glfwGetJoystickAxes(joystick, &count);
-            const std::span axes(axisData, static_cast<usize>(count));
-            if (count >= 2) {
-                snapshot.axes[static_cast<usize>(PadAxis::LeftX)] = axes[0];
-                snapshot.axes[static_cast<usize>(PadAxis::LeftY)] = axes[1];
-            }
-            const auto* hatData = glfwGetJoystickHats(joystick, &count);
-            const std::span hats(hatData, static_cast<usize>(count));
-            if (count > 0) {
-                snapshot.buttons[static_cast<usize>(PadButton::DpadUp)] =
-                    (hats[0] & GLFW_HAT_UP) != 0;
-                snapshot.buttons[static_cast<usize>(PadButton::DpadDown)] =
-                    (hats[0] & GLFW_HAT_DOWN) != 0;
-                snapshot.buttons[static_cast<usize>(PadButton::DpadLeft)] =
-                    (hats[0] & GLFW_HAT_LEFT) != 0;
-                snapshot.buttons[static_cast<usize>(PadButton::DpadRight)] =
-                    (hats[0] & GLFW_HAT_RIGHT) != 0;
-            }
-        }
-        m_input.setPad(pad, snapshot);
     }
 }
 

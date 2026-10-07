@@ -35,6 +35,8 @@ struct GameContext {
     std::function<DisplayOptions()> displayOptions;
     /** Applies a temporary Video trial without writing settings. */
     std::function<bool(const GameConfig&)> previewVideo;
+    std::function<void(s32, s32)> vibrate; ///< input player id and native controller frames
+    std::function<void()> stopVibration;
 };
 
 } // namespace gdl::game

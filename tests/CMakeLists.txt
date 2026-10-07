@@ -1,8 +1,10 @@
 find_package(Catch2 CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
     game/app/BuildLabelTests.cpp
+    game/screens/PlaySceneRumbleTests.cpp
     game/world/StaticSceneryTests.cpp
     game/config/ControlProfilesTests.cpp
     game/menu/ControlPromptsTests.cpp
@@ -44,6 +46,7 @@ add_executable(tests
     engine/io/FileTests.cpp
     engine/io/AssetLocatorTests.cpp
     engine/platform/InputTests.cpp
+    engine/platform/GamepadsTests.cpp
     engine/platform/DisplayTimingTests.cpp
     engine/platform/PathsTests.cpp
     engine/render/RenderTypesTests.cpp
@@ -288,7 +291,7 @@ add_executable(tests
     game/menu/BurnDialogueScrollTests.cpp
     engine/assets/StringTableTests.cpp)
 
-target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain)
+target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(tests PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"

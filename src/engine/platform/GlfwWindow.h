@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Types.h"
+#include "engine/platform/Gamepads.h"
 #include "engine/platform/Window.h"
 
 struct GLFWwindow;
@@ -26,6 +27,10 @@ public:
     bool setDisplayMode(WindowMode mode, Extent2D resolution) override;
     void waitWhileMinimized() override;
     const Input& input() const override { return m_input; }
+    bool rumble(s32 pad, u16 low, u16 high, u32 milliseconds) override {
+        return m_gamepads.rumble(pad, low, high, milliseconds);
+    }
+    void stopRumble() override { m_gamepads.stop(); }
     void setIcon(std::span<const Image> images) override;
 
     std::vector<const char*> requiredVulkanInstanceExtensions() const override;
@@ -34,12 +39,12 @@ public:
 private:
     void pollKeyboard();
     GLFWmonitor* activeMonitor() const;
-    void pollGamepads();
     static void charCallback(GLFWwindow* window, u32 codepoint);
     static void keyCallback(GLFWwindow* window, s32 key, s32 scancode, s32 action, s32 mods);
 
     GLFWwindow* m_window = nullptr;
     Input m_input;
+    Gamepads m_gamepads;
     GLFWmonitor* m_desktopMonitor = nullptr;
     Extent2D m_desktopSize;
     s32 m_desktopRefresh = 60;

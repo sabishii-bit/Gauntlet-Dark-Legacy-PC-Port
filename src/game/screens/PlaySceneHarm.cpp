@@ -76,6 +76,12 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
                  if (m_playSeconds > kBlockLessonAfter) {
                      postHelp(HelpMessages::kLearnBlock, index);
                  }
+             },
+         .vibrate =
+             [this, &runtime](s32 frames) {
+                 if (m_context.vibrate) {
+                     m_context.vibrate(runtime.actor.player(), frames);
+                 }
              }},
         impact, level != nullptr && level->bossType >= 0,
         m_classes.stats(runtime.actor.save().character));

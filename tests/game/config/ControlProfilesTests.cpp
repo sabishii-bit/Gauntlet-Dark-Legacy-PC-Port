@@ -26,11 +26,14 @@ TEST_CASE("player profiles persist independent mouse and controller mappings",
     config.controls[2].menu.start = {Key::F2};
     config.controls[1].device = "test-guid";
     config.controls[1].occurrence = 1;
+    config.controls[1].rumble = false;
     config.controls[1].customized = true;
     config.controls[1].play.padAttack = {PadButton::Button12};
     GameConfig restored;
     restored.mergeJson(config.toJson());
     CHECK(restored.toJson() == config.toJson());
+    CHECK_FALSE(restored.controls[1].rumble);
+    CHECK(restored.controls[0].rumble);
     CHECK(playBindings(restored, 2).attack == std::vector{Key::MouseRight});
     CHECK(playBindings(restored, 0).attack == config.play.attack);
     CHECK(menuBindings(restored, 2).start == std::vector{Key::F2});
@@ -195,3 +198,50 @@ TEST_CASE("legacy implicit movement imports as explicit stick bindings without c
     CHECK(restored.toJson() == config.toJson());
 }
 } // namespace
+TEST_CASE("vibration follows the input player's assigned controller not their party order",
+          "[controls][rumble][multiplayer]") {
+    GameConfig config;
+    Input input;
+    input.setPad(0, pad("alpha"));
+    input.setPad(7, pad("beta"));
+    config.controls[3].device = "alpha";
+    config.controls[2].device = "keyboard";
+    config.controls[1].device = "beta";
+    CHECK_FALSE(controlVibration(config, input, 0, 10));
+    CHECK_FALSE(controlVibration(config, input, 2, 10));
+    REQUIRE(controlVibration(config, input, 1, 10));
+    CHECK(controlVibration(config, input, 1, 10)->pad == 7);
+    REQUIRE(controlVibration(config, input, 3, 30));
+    CHECK(controlVibration(config, input, 3, 30)->pad == 0);
+    CHECK(controlVibration(config, input, 3, 30)->milliseconds == 1034);
+    config.controls[1].rumble = false;
+    CHECK_FALSE(controlVibration(config, input, 1, 10));
+    CHECK(controlVibration(config, input, 3, 10));
+    config.controls[1].rumble = true;
+    input.setPad(7, {});
+    CHECK_FALSE(controlVibration(config, input, 1, 10));
+    config.controls[3].device = "none";
+    CHECK_FALSE(controlVibration(config, input, 3, 10));
+    CHECK_FALSE(controlVibration(config, input, -1, 10));
+    CHECK_FALSE(controlVibration(config, input, 4, 10));
+    CHECK_FALSE(controlVibration(config, input, 0, -1));
+    CHECK_FALSE(controlVibration(config, input, 0, 31));
+}
+
+TEST_CASE("native vibration periods include the final zero countdown independent of FPS",
+          "[controls][rumble]") {
+    GameConfig config;
+    config.mergeJson(R"({"controls":{"players":[{}, {}, {}, {}]}})");
+    CHECK(config.controls[0].rumble);
+    Input input;
+    input.setPad(0, pad("controller"));
+    CHECK(controlVibration(config, input, 0, 10)->milliseconds == 367);
+    CHECK(controlVibration(config, input, 0, 15)->milliseconds == 534);
+    CHECK(controlVibration(config, input, 0, 20)->milliseconds == 700);
+    CHECK(controlVibration(config, input, 0, 30)->milliseconds == 1034);
+    for (const u32 frameRate : {30U, 60U, 120U, 0U}) {
+        config.timing.gameplayFrameRate = frameRate;
+        REQUIRE(controlVibration(config, input, 0, 20));
+        CHECK(controlVibration(config, input, 0, 20)->milliseconds == 700);
+    }
+}

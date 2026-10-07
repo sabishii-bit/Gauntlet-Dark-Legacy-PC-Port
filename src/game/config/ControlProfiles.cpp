@@ -64,6 +64,7 @@ void readControlProfiles(const nlohmann::json& json, GameConfig& config) {
         profile.device = value.value("device", std::string{});
         profile.name = value.value("name", std::string{});
         profile.occurrence = value.value("occurrence", 0);
+        profile.rumble = value.value("rumble", true);
         if (profile.occurrence < 0 || profile.occurrence >= Input::kMaxPads) {
             throw FormatError("invalid controller occurrence");
         }
@@ -110,8 +111,10 @@ void readControlProfiles(const nlohmann::json& json, GameConfig& config) {
 nlohmann::json writeControlProfiles(const GameConfig& config) {
     auto result = nlohmann::json::array();
     for (auto profile : config.controls) {
-        nlohmann::json value{
-            {"device", profile.device}, {"name", profile.name}, {"occurrence", profile.occurrence}};
+        nlohmann::json value{{"device", profile.device},
+                             {"name", profile.name},
+                             {"occurrence", profile.occurrence},
+                             {"rumble", profile.rumble}};
         if (profile.customized) {
             for (const auto actions : kPersistedActions) {
                 for (const auto& action : actions) {
@@ -177,6 +180,21 @@ std::array<ControlDevice, 4> controlDevices(const GameConfig& config, const Inpu
 const MenuBindings& menuBindings(const GameConfig& config, s32 player) {
     const auto& profile = config.controls.at(static_cast<usize>(player));
     return profile.customized ? profile.menu : config.menu;
+}
+std::optional<ControlVibration> controlVibration(const GameConfig& config, const Input& input,
+                                                 s32 player, s32 frames) {
+    if (player < 0 || static_cast<usize>(player) >= config.controls.size() || frames < 0 ||
+        frames > 30 || !config.controls[static_cast<usize>(player)].rumble) {
+        return std::nullopt;
+    }
+    const s32 pad = controlDevices(config, input)[static_cast<usize>(player)].pad;
+    if (!input.isPadConnected(pad)) {
+        return std::nullopt;
+    }
+    // PlayerControls decrements once per native rendered frame (30 Hz), stopping below
+    // zero, not at zero. Keep that inclusive final frame independent of presentation FPS.
+    const auto milliseconds = static_cast<u32>(((frames + 1) * 1000 + 29) / 30);
+    return ControlVibration{pad, milliseconds};
 }
 const PlayBindings& playBindings(const GameConfig& config, s32 player) {
     const auto& profile = config.controls.at(static_cast<usize>(player));

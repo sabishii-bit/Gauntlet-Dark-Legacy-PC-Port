@@ -107,6 +107,22 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     if (damage > 1.0f) {
         runtime.hitFlashTicks = kHitFlashTicks;
     }
+    if (events.vibrate) {
+        const bool braced = runtime.figure != nullptr && (runtime.figure->animator().defending() ||
+                                                          runtime.figure->animator().shoving());
+        const u32 flags = received.effective(damage, braced);
+        // damage_player 80078B18..80078B7C: feedback follows post-armor/guard flags,
+        // including lethal blows; harmless contacts and healing never reach this branch.
+        s32 frames = 10;
+        if ((flags & 0x10040) != 0) {
+            frames = 30;
+        } else if ((flags & 0x120) != 0) {
+            frames = 20;
+        } else if ((flags & 0x90) != 0) {
+            frames = 15;
+        }
+        events.vibrate(frames);
+    }
     // Gas leaves its victim retching a second, Death's touch a frame (damage_player,
     // player.c 3442).
     if ((received.flags & Damage::kGas) != 0) {

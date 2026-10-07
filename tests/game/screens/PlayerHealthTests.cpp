@@ -24,12 +24,14 @@ struct Fixture {
     std::vector<std::string> sounds;
     std::vector<std::string> cries;
     std::vector<std::string> named;
+    std::vector<s32> vibrations;
     PlayerHealth::Events events{
         .block = [](f32, f32) { FAIL("No figure means no guard presentation"); },
         .sound = [this](std::string_view cue) { sounds.emplace_back(cue); },
         .cry = [this](std::string_view cue) { cries.emplace_back(cue); },
         .named = [this](std::string_view cue, f32) { named.emplace_back(cue); },
-        .learnBlock = [this] { ++blockLessons; }};
+        .learnBlock = [this] { ++blockLessons; },
+        .vibrate = [this](s32 frames) { vibrations.push_back(frames); }};
     s32 blockLessons = 0;
     Fixture() {
         player.actor.spawn(3, {}, nullptr, Vec3{0}, 0);
@@ -63,6 +65,7 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
         CHECK(f.sounds.empty());
         CHECK(f.cries.empty());
         CHECK(f.blockLessons == 0);
+        CHECK(f.vibrations.empty());
     };
     checkProtected(grabber);
     checkProtected(partner);
@@ -559,3 +562,42 @@ TEST_CASE("gas leaves its victim retching a second, Death's touch a frame",
 }
 
 } // namespace
+TEST_CASE("damage feedback uses the native hit flags after armor and low-damage downgrades",
+          "[player-health][rumble]") {
+    struct Hit {
+        u32 flags;
+        s32 frames;
+    };
+    constexpr std::array kHits{Hit{0, 10},     Hit{0x10, 15}, Hit{0x80, 15},    Hit{0x20, 20},
+                               Hit{0x100, 20}, Hit{0x40, 30}, Hit{0x10000, 30}, Hit{0x101F0, 30}};
+    for (const auto& hit : kHits) {
+        Fixture f;
+        f.health.hurt(f.player, 10, HurtKind::QuietBlow, true, false, 1, f.events, {hit.flags});
+        REQUIRE(f.vibrations == std::vector<s32>{hit.frames});
+    }
+    Fixture f;
+    f.health.hurt(f.player, 2, HurtKind::Blow, true, false, 1, f.events,
+                  {PlayerImpact::kWhirlwind});
+    CHECK(f.vibrations == std::vector<s32>{10});
+    f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events,
+                  {PlayerImpact::kKnockDown});
+    CHECK(f.player.life == PlayerLife::Dying);
+    CHECK(f.vibrations == std::vector<s32>{10, 20});
+    f.hit(10);
+    CHECK(f.vibrations.size() == 2);
+}
+
+TEST_CASE("harmless contacts healing tower damage and invulnerability do not vibrate",
+          "[player-health][rumble]") {
+    Fixture f;
+    f.hit(0);
+    f.hit(-10);
+    f.hit(10, HurtKind::Blow, true);
+    f.health.hurt(f.player, 0, HurtKind::Blow, true, false, 1, f.events, {PlayerImpact::kStun});
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, {Damage::kMagic});
+    CHECK(f.vibrations.empty());
+    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
+                                                          0, 1);
+    f.hit(50);
+    CHECK(f.vibrations.empty());
+}

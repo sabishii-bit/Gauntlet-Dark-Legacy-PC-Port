@@ -1024,7 +1024,7 @@ TEST_CASE("controller default rows expose stick directions and potion gestures b
     f.right(); // Player 1 skips None.
     REQUIRE(f.menu.menu().definition().items[0].value == "XInput Controller 1");
     CHECK(f.menu.menu().definition().items[1].value == "Left Stick Up");
-    f.menu.menu().focus(7);
+    f.menu.menu().focus(8);
     f.right();
     CHECK(f.menu.menu().definition().items[3].value == "X (hold)");
     CHECK(f.menu.menu().definition().items[4].value == "X (double tap)");
@@ -1051,50 +1051,50 @@ TEST_CASE("control pages sit above a horizontal action bar and arrows support mo
     f.select();
     const auto& menu = f.menu.menu();
     const auto& definition = menu.definition();
-    REQUIRE(definition.items.size() == 11);
-    CHECK(definition.items[7].text.empty());
-    CHECK(definition.items[7].value == "Page 1/4");
-    REQUIRE(definition.items[7].valueColumn);
-    const auto pageColumn = *definition.items[7].valueColumn;
+    REQUIRE(definition.items.size() == 12);
+    CHECK(definition.items[8].text.empty());
+    CHECK(definition.items[8].value == "Page 1/4");
+    REQUIRE(definition.items[8].valueColumn);
+    const auto pageColumn = *definition.items[8].valueColumn;
     CHECK(std::abs(pageColumn.x * 2 + pageColumn.width - 512) <= 1);
     CHECK(pageColumn.width == f.painter.measure("Page 1/4", definition.scale));
-    CHECK(menu.itemX(7) == pageColumn.x);
-    CHECK(menu.itemArea(7).x < pageColumn.x); // the left arrow is clickable too
+    CHECK(menu.itemX(8) == pageColumn.x);
+    CHECK(menu.itemArea(8).x < pageColumn.x); // the left arrow is clickable too
     CHECK(menu.itemX(0) < pageColumn.x);
     CHECK(pageColumn.x < definition.valueX);
-    CHECK(menu.itemY(7) > menu.itemY(6) + menu.lineHeight());
-    CHECK(definition.items[8].text == "Apply");
-    CHECK(definition.items[9].text == "Restore Defaults");
-    CHECK(definition.items[10].text == "Back");
-    CHECK(menu.itemY(7) < menu.itemY(8));
-    CHECK(menu.itemY(8) == menu.itemY(9));
+    CHECK(menu.itemY(8) > menu.itemY(7) + menu.lineHeight());
+    CHECK(definition.items[9].text == "Apply");
+    CHECK(definition.items[10].text == "Restore Defaults");
+    CHECK(definition.items[11].text == "Back");
+    CHECK(menu.itemY(8) < menu.itemY(9));
     CHECK(menu.itemY(9) == menu.itemY(10));
-    for (usize i = 8; i < 10; ++i) {
+    CHECK(menu.itemY(10) == menu.itemY(11));
+    for (usize i = 9; i < 11; ++i) {
         const auto box = menu.itemArea(i);
         CHECK(box.x + box.width < menu.itemArea(i + 1).x);
     }
     MenuInput click;
-    click.pointer = Vec2{static_cast<f32>(pageColumn.x - 8), static_cast<f32>(menu.itemY(7) + 2)};
+    click.pointer = Vec2{static_cast<f32>(pageColumn.x - 8), static_cast<f32>(menu.itemY(8) + 2)};
     click.pointerPressed = true;
     f.menu.update(click, 1);
-    CHECK(menu.definition().items[7].value == "Page 4/4");
+    CHECK(menu.definition().items[8].value == "Page 4/4");
     click.pointer->x = static_cast<f32>(pageColumn.x + pageColumn.width + 8);
     f.menu.update(click, 1);
-    CHECK(menu.definition().items[7].value == "Page 1/4");
+    CHECK(menu.definition().items[8].value == "Page 1/4");
     f.right();
-    CHECK(menu.definition().items[7].value == "Page 2/4");
+    CHECK(menu.definition().items[8].value == "Page 2/4");
     f.down();
-    REQUIRE(menu.selection() == 8);
-    f.right();
-    CHECK(menu.selection() == 9);
+    REQUIRE(menu.selection() == 9);
     f.right();
     CHECK(menu.selection() == 10);
     f.right();
-    CHECK(menu.selection() == 8);
+    CHECK(menu.selection() == 11);
+    f.right();
+    CHECK(menu.selection() == 9);
     MenuInput up;
     up.up = true;
     f.menu.update(up, 1);
-    CHECK(menu.selection() == 7);
+    CHECK(menu.selection() == 8);
 }
 
 TEST_CASE("disabling another player's device stays pending and old navigation survives Apply",
@@ -1122,7 +1122,7 @@ TEST_CASE("disabling another player's device stays pending and old navigation su
     // The newly unassigned owner supplies no mapped input, but the editor keeps its
     // original device route until it closes.
     f.menu.update(readPlayerMenuInput(physical, f.config, 1), 1);
-    CHECK(f.menu.menu().selection() == 9);
+    CHECK(f.menu.menu().selection() == 10);
 }
 
 TEST_CASE("multiplayer radio choices use retail labels and persist only successful writes",
@@ -1174,3 +1174,34 @@ TEST_CASE("multiplayer radio choices use retail labels and persist only successf
     checkLabels();
 }
 } // namespace
+TEST_CASE("each player's rumble preference is staged applied and reset independently",
+          "[settings][controls][rumble]") {
+    Fixture f;
+    f.menu.menu().focus(4);
+    f.select();
+    f.menu.menu().focus(2);
+    f.select();
+    const auto toggle = [&] {
+        const auto& items = f.menu.menu().definition().items;
+        const auto row = std::ranges::find(items, 105, &MenuItem::code);
+        REQUIRE(row != items.end());
+        // Retail menu strings at 80113938/80113974.
+        CHECK(row->text == "Rumble Feature");
+        f.menu.menu().focus(static_cast<usize>(row - items.begin()));
+        f.right();
+    };
+    toggle();
+    CHECK(f.config.controls[2].rumble);
+    f.back();
+    CHECK(f.config.controls[2].rumble);
+    f.select();
+    toggle();
+    f.applyControls();
+    CHECK_FALSE(f.config.controls[2].rumble);
+    CHECK(f.config.controls[0].rumble);
+    f.right(); // Restore Defaults in the action bar
+    f.select();
+    CHECK_FALSE(f.config.controls[2].rumble);
+    f.applyControls();
+    CHECK(f.config.controls[2].rumble);
+}

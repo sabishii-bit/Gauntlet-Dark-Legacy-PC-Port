@@ -47,6 +47,9 @@ constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 } // namespace
 
 void PlayScene::pauseGameplaySounds() {
+    if (m_context.stopVibration) {
+        m_context.stopVibration();
+    }
     m_audio.pauseAmbience();
     m_attacks.stopDeathSounds(m_players);
     m_opponents.stopDeathSound();
@@ -228,6 +231,11 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
+    if (m_context.stopVibration) {
+        m_context.stopVibration();
+    }
+    m_context.stopVibration = {};
+    m_context.vibrate = {};
     m_presentedClip.reset();
     m_previousCamera.reset();
     m_runeMeter.clear();

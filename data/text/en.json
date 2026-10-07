@@ -5,6 +5,7 @@
   "controls.none": "None",
   "controls.disconnected": "Disconnected",
   "controls.device": "Input Device",
+  "controls.rumble": "Rumble Feature",
   "controls.press": "Press input...",
   "controls.cancel": "Escape cancels; release held inputs first",
   "controls.unbound": "Unbound",

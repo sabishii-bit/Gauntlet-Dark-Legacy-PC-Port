@@ -168,7 +168,7 @@ std::optional<PadButton> padButtonFromName(std::string_view name);
  * follows, so a tap shorter than a frame is never lost. */
 class Input {
 public:
-    static constexpr s32 kMaxPads = 16; ///< physical GLFW slots, not the four player lanes
+    static constexpr s32 kMaxPads = 16; ///< physical device slots, not the four player lanes
 
     bool isKeyDown(Key key) const;
     bool wasKeyPressed(Key key) const;

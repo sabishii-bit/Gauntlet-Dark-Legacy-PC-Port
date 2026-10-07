@@ -150,12 +150,13 @@ struct PlayBindings {
 
 /** A physical device assignment and independent bindings. Empty device preserves legacy
  * keyboard/player-one plus pad-slot routing. GUID + occurrence distinguishes identical pads;
- * GLFW supplies no cross-platform persistent per-unit serial number. */
+ * Controllers without a serial number are distinguished by occurrence. */
 struct PlayerControlConfig {
     std::string device; ///< empty: automatic; keyboard; none; otherwise a controller GUID
     std::string name;
     s32 occurrence = 0;
     bool customized = false;
+    bool rumble = true;
     MenuBindings menu;
     PlayBindings play;
 };

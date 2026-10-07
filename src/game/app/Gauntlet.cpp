@@ -209,6 +209,14 @@ GameContext Gauntlet::context() {
     context.previewVideo = [this](const GameConfig& config) {
         return applySettings(config, false);
     };
+    context.vibrate = [this](s32 player, s32 frames) {
+        if (const auto request = controlVibration(m_config, input(), player, frames)) {
+            // GameCube PADControlMotor is binary. Its single motor maps to the low-
+            // frequency motor; the PS2-only strength table is not applied on this target.
+            window().rumble(request->pad, 0xFFFF, 0, request->milliseconds);
+        }
+    };
+    context.stopVibration = [this] { window().stopRumble(); };
     context.previewAudio = [this](const AudioConfig& audio) {
         m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
@@ -220,6 +228,7 @@ GameContext Gauntlet::context() {
 void Gauntlet::onUpdate(f64 deltaSeconds) {
     m_promptDevices.update(input(), m_config);
     if (updateIdle(deltaSeconds)) {
+        window().stopRumble();
         return;
     }
     // Gameplay and editable menus own Escape; only passive screens treat it as quit.
@@ -634,6 +643,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
             }
             throw;
         }
+        window().stopRumble();
         m_config = config;
         m_sounds->setMasterVolume(config.audio.masterVolume);
         m_sounds->setCategoryVolume(SoundCategory::Music, config.audio.musicVolume);
@@ -979,6 +989,7 @@ void Gauntlet::keepParty(std::span<const PartyMember> party) {
 }
 
 void Gauntlet::onShutdown() {
+    window().stopRumble();
     m_buildLabel.release();
     m_idleScreen.close();
     m_demo.close();

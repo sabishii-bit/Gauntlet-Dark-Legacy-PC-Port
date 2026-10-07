@@ -1,4 +1,5 @@
 find_package(glfw3 CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
@@ -39,6 +40,8 @@ add_library(engine STATIC
     platform/DisplayTiming.cpp
     platform/Input.h
     platform/Input.cpp
+    platform/Gamepads.h
+    platform/Gamepads.cpp
     platform/Paths.h
     platform/Paths.cpp
     platform/GlfwWindow.h
@@ -188,6 +191,7 @@ target_link_libraries(engine
     PRIVATE
         gdl::formats
         glfw
+        SDL3::SDL3
         nlohmann_json::nlohmann_json
         Vulkan::Headers
         volk::volk
