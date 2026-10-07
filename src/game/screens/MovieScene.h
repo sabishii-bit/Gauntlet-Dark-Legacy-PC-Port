@@ -22,6 +22,8 @@ public:
     bool open(RenderDevice& device, AudioMixer& mixer, const std::filesystem::path& file);
     void close();
     bool isOpen() const { return m_playback.isOpen(); }
+    /** Movie gain, independent of music/effects; retained across movie changes. */
+    void setVolume(f32 volume);
 
     /** Advances playback; returns false when the movie has finished. */
     bool update(f64 deltaSeconds);
@@ -37,6 +39,7 @@ private:
     std::vector<f32> m_audioScratch;
     ImmediateBatch m_batch;
     bool m_textureDirty = false;
+    f32 m_volume = 1.0f;
 };
 
 } // namespace gdl::game

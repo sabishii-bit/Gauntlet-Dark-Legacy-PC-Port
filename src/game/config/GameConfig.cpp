@@ -171,6 +171,7 @@ void GameConfig::mergeJson(std::string_view json) {
         read(a, "masterVolume", audio.masterVolume);
         read(a, "musicVolume", audio.musicVolume);
         read(a, "effectsVolume", audio.effectsVolume);
+        read(a, "movieVolume", audio.movieVolume);
         read(a, "stereo", audio.stereo);
     }
     if (root.contains("text")) {
@@ -184,6 +185,9 @@ void GameConfig::mergeJson(std::string_view json) {
     if (root.contains("game")) {
         read(root.at("game"), "difficulty", difficulty.level);
         const auto& game = root.at("game");
+        if (game.contains("combat")) {
+            read(game.at("combat"), "autoMelee", combat.autoMelee);
+        }
         if (game.contains("multiplayer")) {
             if (!game.at("multiplayer").is_string()) {
                 throw FormatError("multiplayer mode must be normal, stun or hurt");
@@ -340,11 +344,13 @@ std::string GameConfig::toJson() const {
     root["audio"] = {{"masterVolume", audio.masterVolume},
                      {"musicVolume", audio.musicVolume},
                      {"effectsVolume", audio.effectsVolume},
+                     {"movieVolume", audio.movieVolume},
                      {"stereo", audio.stereo}};
     root["text"] = {{"language", text.language}};
     root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
     root["game"] = {
         {"difficulty", difficulty.level},
+        {"combat", {{"autoMelee", combat.autoMelee}}},
         {"multiplayer", MultiplayerConfig::kNames[static_cast<usize>(multiplayer.mode)]}};
     root["controls"] = {{"explicitMovement", true},
                         {"keyboard",

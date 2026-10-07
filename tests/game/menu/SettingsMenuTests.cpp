@@ -59,6 +59,13 @@ struct Fixture {
         menu.update(input, 1);
     }
     void release() { menu.update({}, 1); }
+    void choose(s32 code) {
+        const auto& items = menu.menu().definition().items;
+        const auto item = std::ranges::find(items, code, &MenuItem::code);
+        REQUIRE(item != items.end());
+        menu.menu().focus(static_cast<usize>(item - items.begin()));
+        select();
+    }
     void applyControls() {
         const auto& items = menu.menu().definition().items;
         const auto apply = std::ranges::find(items, 104, &MenuItem::code);
@@ -96,7 +103,7 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
     REQUIRE(f.menu.page() == SettingsMenu::Page::Audio);
     CHECK(f.writes == 0);
     const auto track = AudioSlider::track(
-        128, static_cast<f32>(f.menu.menu().itemY(0) + f.menu.menu().lineHeight()));
+        160, static_cast<f32>(f.menu.menu().itemY(0) + f.menu.menu().lineHeight()), 0.7f);
     MenuInput drag;
     drag.pointer = Vec2{track.x + track.width * 0.25f, track.y + 1};
     drag.pointerPressed = true;
@@ -111,7 +118,7 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
     drag.pointerHeld = false;
     f.menu.update(drag, 1);
     CHECK(f.writes == 1);
-    const auto stereo = f.menu.menu().itemArea(2);
+    const auto stereo = f.menu.menu().itemArea(3);
     MenuInput mono;
     mono.pointer = Vec2{stereo.x + 1, stereo.y + 1};
     mono.pointerPressed = true;
@@ -166,11 +173,12 @@ TEST_CASE("settings audio changes persist transactionally and stay bounded", "[s
     f.release();
     CHECK(AudioSlider::value(f.config.audio.effectsVolume) == 129);
     f.down();
+    f.down();
     f.menu.update(left, 1);
     CHECK(f.menu.config().audio.stereo); // held alone does not repeat the mode toggle
-    CHECK(f.menu.menu().definition().items[2].markedPart == 2);
+    CHECK(f.menu.menu().definition().items[3].markedPart == 2);
     f.right();
-    CHECK(f.menu.menu().definition().items[2].markedPart == 1);
+    CHECK(f.menu.menu().definition().items[3].markedPart == 1);
     f.release();
     CHECK_FALSE(f.config.audio.stereo);
     f.select();
@@ -178,7 +186,7 @@ TEST_CASE("settings audio changes persist transactionally and stay bounded", "[s
     left.leftHeld = false;
     left.left = true;
     f.menu.update(left, 1);
-    CHECK(f.menu.menu().definition().items[2].markedPart == 2);
+    CHECK(f.menu.menu().definition().items[3].markedPart == 2);
     f.release();
     CHECK(f.config.audio.stereo);
     CHECK(f.config.audio.masterVolume == 1);
@@ -286,7 +294,7 @@ TEST_CASE("difficulty and compass options survive a configuration save", "[setti
     CHECK(f.menu.update(back, 1).action == MenuAction::Back);
 }
 
-TEST_CASE("retail menu scopes exclude title-only and tower-only settings", "[settings]") {
+TEST_CASE("Game Options are available in title tower and level settings", "[settings]") {
     Fixture f;
     const auto open = [&](SettingsMenu::Scope scope) {
         f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, scope);
@@ -297,8 +305,115 @@ TEST_CASE("retail menu scopes exclude title-only and tower-only settings", "[set
         return codes;
     };
     CHECK(open(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
-    CHECK(open(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 2, 4, 3});
-    CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 4, 3});
+    CHECK(open(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 1, 2, 4, 3});
+    CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
+}
+
+TEST_CASE("Combat auto melee changes are shared persisted and reversible from every scope",
+          "[settings][combat-settings]") {
+    for (const auto scope :
+         {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
+        Fixture f;
+        f.menu.open(
+            f.config, &f.strings,
+            [&](const GameConfig& next) {
+                if (f.fail) {
+                    return false;
+                }
+                f.config = next;
+                ++f.writes;
+                return true;
+            },
+            f.painter, {}, MenuDefinition::parchment(), scope);
+        f.choose(1);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+        f.choose(2);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Combat);
+        CHECK(f.menu.menu().definition().title == "Combat");
+        CHECK(f.menu.menu().definition().items[0].text == "Auto Melee");
+        CHECK(f.menu.menu().definition().items[0].value == "Off");
+        f.fail = true;
+        f.right();
+        CHECK_FALSE(f.config.combat.autoMelee);
+        CHECK(f.menu.menu().definition().items[0].value == "Off");
+        f.fail = false;
+        f.select();
+        CHECK(f.config.combat.autoMelee);
+        CHECK(f.menu.menu().definition().items[0].value == "On");
+        CHECK(f.writes == 1);
+        f.back();
+        CHECK(f.menu.page() == SettingsMenu::Page::Game);
+        CHECK(f.menu.menu().selection() == 2);
+        f.select();
+        f.right();
+        CHECK_FALSE(f.config.combat.autoMelee);
+        CHECK(f.writes == 2);
+        f.back();
+        f.back();
+        CHECK(f.menu.page() == SettingsMenu::Page::Root);
+        CHECK(
+            f.menu.menu().definition().items[static_cast<usize>(f.menu.menu().selection())].code ==
+            1);
+    }
+}
+
+TEST_CASE("movie volume supports keys and mouse dragging without touching other volumes",
+          "[settings][movie-volume][mouse]") {
+    Fixture f;
+    AudioConfig preview;
+    f.menu.open(
+        f.config, &f.strings,
+        [&](const GameConfig& next) {
+            if (f.fail) {
+                return false;
+            }
+            f.config = next;
+            ++f.writes;
+            return true;
+        },
+        f.painter, {}, MenuDefinition::parchment(), SettingsMenu::Scope::Level,
+        [&](const AudioConfig& audio) { preview = audio; });
+    f.select();
+    f.menu.menu().focus(2);
+    MenuInput left;
+    left.leftHeld = true;
+    f.menu.update(left, 255);
+    CHECK(f.menu.config().audio.movieVolume == 0);
+    CHECK(preview.movieVolume == 0);
+    CHECK(f.config.audio.movieVolume == 1);
+    f.fail = true;
+    f.back();
+    CHECK(f.menu.page() == SettingsMenu::Page::Audio);
+    CHECK(f.config.audio.movieVolume == 1);
+    f.fail = false;
+    f.release();
+    CHECK(f.config.audio.movieVolume == 0);
+    const auto track = AudioSlider::track(
+        160, static_cast<f32>(f.menu.menu().itemY(2) + f.menu.menu().lineHeight()), 0.7f);
+    MenuInput drag;
+    drag.pointer = Vec2{track.x + track.width / 2, track.y + 1};
+    drag.pointerPressed = true;
+    drag.pointerHeld = true;
+    f.menu.update(drag, 1);
+    CHECK(std::abs(preview.movieVolume - 0.5f) <= 1.0f / 255);
+    CHECK(f.config.audio.movieVolume == 0);
+    drag.pointerPressed = false;
+    drag.pointer->x = track.x + track.width + 100;
+    f.menu.update(drag, 1);
+    CHECK(preview.movieVolume == 1);
+    drag.pointerHeld = false;
+    f.menu.update(drag, 1);
+    CHECK(f.config.audio.movieVolume == 1);
+    CHECK(f.config.audio.musicVolume == AudioConfig{}.musicVolume);
+    CHECK(f.config.audio.effectsVolume == AudioConfig{}.effectsVolume);
+    CHECK(f.config.audio.stereo);
+    CHECK(f.menu.audioSample().empty());
+    for (usize i = 0; i < 3; ++i) {
+        const f32 sliderBottom =
+            static_cast<f32>(f.menu.menu().itemY(i) + f.menu.menu().lineHeight()) + 64 * 0.7f;
+        CHECK(sliderBottom < f.menu.menu().itemY(i + 1));
+    }
+    CHECK(f.menu.menu().itemY(3) + f.menu.menu().lineHeight() < 348);
 }
 
 TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on setting rows",
@@ -372,8 +487,7 @@ TEST_CASE("Video chooses supported resolutions and borderless uses the desktop w
                 },
                 f.painter, {}, {}, SettingsMenu::Scope::Level, {},
                 {{1920, 1080}, {{1280, 720}, {1920, 1080}}});
-    f.down();
-    f.select();
+    f.choose(4);
     REQUIRE(f.menu.menu().definition().title == "Video");
     f.down();
     f.down();
@@ -410,8 +524,7 @@ TEST_CASE("fullscreen replaces a custom window size with an advertised desktop m
                     return true;
                 },
                 f.painter, {}, {}, SettingsMenu::Scope::Level, {}, {{1920, 1080}, {{1920, 1080}}});
-    f.down();
-    f.select();
+    f.choose(4);
     f.down();
     f.down();
     f.down();
@@ -483,8 +596,7 @@ TEST_CASE("custom file frame rates are shown honestly until a supported choice i
             return true;
         },
         f.painter, {}, {}, SettingsMenu::Scope::Level);
-    f.down();
-    f.select();
+    f.choose(4);
     CHECK(f.menu.menu().definition().items[1].value == "24");
     f.down();
     f.right();
@@ -508,11 +620,11 @@ TEST_CASE("audio previews held ticks and persists once on release", "[settings]"
             CHECK(audio.masterVolume == 1);
         });
     f.select();
-    REQUIRE(f.menu.menu().definition().items.size() == 3);
+    REQUIRE(f.menu.menu().definition().items.size() == 4);
     CHECK(f.menu.menu().definition().items[0].text == "Music Volume");
-    CHECK(f.menu.menu().definition().items[0].extraSpacing == 52);
-    CHECK(f.menu.menu().definition().x == 128);
-    CHECK(f.menu.menu().itemY(0) == 108);
+    CHECK(f.menu.menu().definition().items[2].text == "Movie Volume");
+    CHECK(f.menu.menu().definition().x == 160);
+    CHECK(f.menu.menu().itemY(0) == 96);
     f.select();
     CHECK(previews == 0);
     MenuInput hold;
@@ -582,8 +694,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
             return true;
         },
         [&] { return now; });
-    f.down();
-    f.select();
+    f.choose(4);
     f.right();
     CHECK(active.display.vsync);
     f.down();
@@ -670,8 +781,7 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.config.display.ambientOcclusion = true;
     f.config.audio.effectsVolume = 0.25f;
     f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level);
-    f.down();
-    f.select();
+    f.choose(4);
     f.down();
     f.down();
     f.down();
@@ -710,8 +820,7 @@ TEST_CASE("Video rollback preserves a manually resized window", "[settings][grap
                     active = next;
                     return true;
                 });
-    f.down();
-    f.select();
+    f.choose(4);
     CHECK(f.menu.menu().definition().items[3].value == "1152 x 700");
     f.down();
     f.down();
@@ -741,8 +850,7 @@ TEST_CASE("Video font and columns reserve the widest choices before selecting th
     f.painter.setFont(&font, &f.texture);
     f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment(),
                 SettingsMenu::Scope::Level, {}, {{1920, 1080}, {{1280, 896}, {1920, 1080}}});
-    f.down();
-    f.select();
+    f.choose(4);
     const auto initial = f.menu.menu().definition();
     CHECK(initial.scale < 0.7f);
     const auto unchanged = [&] {
@@ -797,8 +905,7 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
             }
             return true;
         });
-    f.down();
-    f.select();
+    f.choose(4);
     for (s32 i = 0; i < 7; ++i) {
         f.down();
     }

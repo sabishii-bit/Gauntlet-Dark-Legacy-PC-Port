@@ -26,6 +26,7 @@
     "masterVolume": 1.0,
     "musicVolume": 0.5019608,
     "effectsVolume": 0.5019608,
+    "movieVolume": 1.0,
     "stereo": true
   },
   "text": {
@@ -37,7 +38,8 @@
   },
   "game": {
     "difficulty": "normal",
-    "multiplayer": "normal"
+    "multiplayer": "normal",
+    "combat": { "autoMelee": false }
   },
   "controls": {
     "explicitMovement": true,

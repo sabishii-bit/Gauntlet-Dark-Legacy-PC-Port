@@ -60,6 +60,9 @@ PartyMotion::Events PlayScene::motionEvents() {
             },
         .automaticMeleeDeed =
             [this](usize i, const Vec3& facing) {
+                if (m_context.config == nullptr || !m_context.config->combat.autoMelee) {
+                    return PlayerDeed::None;
+                }
                 return m_attacks.automaticMeleeDeed(m_players[i].actor, attackTargets(), facing);
             },
         .meleeSense =

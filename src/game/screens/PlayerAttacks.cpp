@@ -1353,8 +1353,18 @@ PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Tar
     if (!m_resources) {
         return PlayerDeed::None;
     }
+    // Contact shields need locomotion to stay active. An unpressed swing must not
+    // lock the wearer into melee before the shield reaches its target.
+    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    if ((worn.armor & (powerup::kFireShield | powerup::kLightningShield)) != 0) {
+        return PlayerDeed::None;
+    }
     const auto target = meleeTarget(actor, targets, facing, actor.reach() + kStepReach);
     if (!target || target->body.id < kEnemyTargetBase || target->body.id >= kSafeRockTargetBase) {
+        return PlayerDeed::None;
+    }
+    if (target->body.id < kGeneratorTargetBase &&
+        targets.opponents.enemies().kindOf(target->body.id - kEnemyTargetBase) == kDeathKind) {
         return PlayerDeed::None;
     }
     if (target->body.id >= kBossTargetBase) {

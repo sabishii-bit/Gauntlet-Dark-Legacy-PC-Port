@@ -275,7 +275,8 @@ TEST_CASE("weapon modes route player hits through health with shared contact imm
                                 .sound = [](std::string_view) {},
                                 .cry = [](std::string_view) {},
                                 .named = [](std::string_view, f32) {},
-                                .learnBlock = [] {}};
+                                .learnBlock = [] {},
+                                .vibrate = [](s32) {}};
     s32 hits = 0;
     f.targets.multiplayer = mode;
     f.targets.players = party;
@@ -2849,6 +2850,12 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
         f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
         CHECK(enemies.healthOf(*id) == full);
         f.players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, shield, 0, 60);
+        auto& player = f.players[0];
+        const auto automatic =
+            f.attacks.automaticMeleeDeed(player.actor, f.targets, player.actor.facing());
+        CHECK(automatic == PlayerDeed::None);
+        player.figure->animate(player.actor.speed(), 2, 1.0f / 30, automatic);
+        CHECK_FALSE(player.figure->animator().meleeing());
         f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
         const f32 once = enemies.healthOf(*id);
         CHECK(once < full);
@@ -2966,6 +2973,45 @@ TEST_CASE("automatic melee requires a forward creature inside the unheld swing b
     CHECK(inventory == before);
     CHECK(f.arsenal.missiles().count() == 0);
     enemies.close();
+}
+
+TEST_CASE("automatic melee leaves both forms of Death alone without removing manual targeting",
+          "[game][player-attacks][combat-settings][auto-melee]") {
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, test::deathArchive(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const s32 tier = GENERATE(1, 2);
+    REQUIRE(enemies.spawn({.kind = kDeathKind, .tier = tier, .position = {0, 0, 2}, .placed = true},
+                          {}));
+    const auto& actor = f.players[0].actor;
+    REQUIRE(f.attacks.aim(actor, actor.facing(), f.targets));
+    REQUIRE(f.attacks.meleeSense(actor, false, f.targets).range == MeleeRange::Swing);
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+    CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Melee);
+}
+
+TEST_CASE("an active elemental shield takes priority over automatic melee even during its cooldown",
+          "[game][player-attacks][combat-settings][auto-melee]") {
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, turboAssets(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    REQUIRE(
+        enemies.spawn({.kind = kGruntKind, .tier = 3, .position = {0, 0, 2}, .placed = true}, {}));
+    auto& actor = f.players[0].actor;
+    auto& inventory = actor.save().progress().inventory;
+    const u32 shield = GENERATE(powerup::kFireShield, powerup::kLightningShield);
+    REQUIRE(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
+            PlayerDeed::AutoMelee);
+    inventory.addPowerup(powerup::kArmor, shield, 0, 60);
+    for (const f32 gap : {0.0f, 0.5f}) {
+        f.players[0].shockGaps = {{1000, gap}};
+        CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
+        CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Melee);
+    }
+    inventory.powerups[0].on = false;
+    CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
 }
 
 TEST_CASE("automatic melee selects live generators but never player fallback targets",

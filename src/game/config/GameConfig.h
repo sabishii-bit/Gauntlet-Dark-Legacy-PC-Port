@@ -46,6 +46,7 @@ struct AudioConfig {
     f32 masterVolume = 1.0f;
     f32 musicVolume = 128.0f / 255.0f;
     f32 effectsVolume = 128.0f / 255.0f;
+    f32 movieVolume = 1.0f;
     bool stereo = true;
 };
 
@@ -67,6 +68,10 @@ struct DifficultyConfig {
 struct MultiplayerConfig {
     static constexpr std::array<std::string_view, 3> kNames{"normal", "stun", "hurt"};
     MultiplayerMode mode = MultiplayerMode::Normal;
+};
+
+struct CombatConfig {
+    bool autoMelee = false; ///< unpressed close attacks while moving; manual attacks are unchanged
 };
 
 /** Where characters are saved: a `saves` folder beside the game when the directory is
@@ -174,6 +179,7 @@ struct GameConfig {
     SaveConfig save;
     DifficultyConfig difficulty;
     MultiplayerConfig multiplayer;
+    CombatConfig combat;
     MenuBindings menu;
     PlayBindings play;
     std::array<PlayerControlConfig, 4> controls;

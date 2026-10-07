@@ -362,6 +362,7 @@ TEST_CASE("pause draws the five native rune seal frames on the menus that reques
     menu.render(device, projection, 640, 448);
     CHECK(std::ranges::none_of(device.draws, isSeal));
     menu.update(1.0 / 60, back);
+    menu.update(1.0 / 60, down); // Game Options is now available from pause as well.
     menu.update(1.0 / 60, down); // Compass, native record 8011EF60, retains the seal.
     menu.update(1.0 / 60, select);
     device.draws.clear();
@@ -597,6 +598,26 @@ TEST_CASE("pause menus route character management and preserve the live party", 
         step(back);
         CHECK(step(back) == PauseOutcome::Running);
         CHECK(menu.update(0.7, {}) == PauseOutcome::Resume);
+    }
+    SECTION("Game Options and Combat can be changed without leaving the live party") {
+        step(select); // Settings
+        step(down);
+        step(select); // Game Options
+        step(down);
+        step(down);
+        step(select); // Combat
+        REQUIRE_FALSE(config.combat.autoMelee);
+        step(select);
+        CHECK(config.combat.autoMelee);
+        CHECK(settingsSaved);
+        step(back); // Game Options
+        step(back); // Settings
+        step(back); // Start menu
+        CHECK(step(back) == PauseOutcome::Running);
+        CHECK(menu.update(0.7, {}) == PauseOutcome::Resume);
+        REQUIRE(menu.party().size() == 1);
+        CHECK(menu.party()[0].player == 2);
+        CHECK(menu.party()[0].save.gold == 123);
     }
     SECTION("character management returns to party selection") {
         step(down);

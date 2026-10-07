@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <filesystem>
 #include <utility>
 
@@ -10,6 +13,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/screens/MovieScene.h"
 
@@ -71,6 +75,55 @@ TEST_CASE("a closed movie scene draws nothing and reports finished", "[game][mov
     REQUIRE_FALSE(scene.isOpen());
     REQUIRE_FALSE(scene.update(0.016));
     scene.close();
+}
+
+TEST_CASE("movie volume controls decoded audio including mute changes and reopening",
+          "[game][movie-volume][assets]") {
+    const auto file = test::assetOrSkip("VQMOVIES/midway.avi");
+    test::FakeRenderDevice device;
+    AudioMixer referenceMixer{48000};
+    AudioMixer adjustedMixer{48000};
+    MovieScene reference;
+    MovieScene adjusted;
+    reference.setVolume(0.25f);
+    adjusted.setVolume(0.125f);
+    REQUIRE(reference.open(device, referenceMixer, file));
+    REQUIRE(adjusted.open(device, adjustedMixer, file));
+    std::array<f32, 3200> full{};
+    std::array<f32, 3200> quiet{};
+    f32 peak = 0;
+    for (s32 frame = 0; frame < 90; ++frame) {
+        if (frame == 30) {
+            adjusted.setVolume(0);
+        } else if (frame == 60) {
+            adjusted.setVolume(0.125f);
+        }
+        REQUIRE(reference.update(1.0 / 30));
+        REQUIRE(adjusted.update(1.0 / 30));
+        referenceMixer.mix(full);
+        adjustedMixer.mix(quiet);
+        f32 error = 0;
+        const f32 ratio = frame >= 30 && frame < 60 ? 0.0f : 0.5f;
+        // Let the shared five-millisecond gain ramp settle after each change.
+        for (usize i = 512; i < full.size(); ++i) {
+            peak = std::max(peak, std::abs(full[i]));
+            error = std::max(error, std::abs(quiet[i] - full[i] * ratio));
+        }
+        CAPTURE(frame);
+        CHECK(error < 0.00001f);
+    }
+    REQUIRE(peak > 0.01f);
+    adjusted.close();
+    adjustedMixer.mix(quiet);
+    adjusted.setVolume(0);
+    REQUIRE(adjusted.open(device, adjustedMixer, file));
+    for (s32 frame = 0; frame < 45; ++frame) {
+        REQUIRE(adjusted.update(1.0 / 30));
+        adjustedMixer.mix(quiet);
+        CHECK(std::ranges::all_of(quiet, [](f32 sample) { return sample == 0; }));
+    }
+    adjusted.close();
+    reference.close();
 }
 
 } // namespace

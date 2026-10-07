@@ -1,5 +1,8 @@
 #include "game/screens/MovieScene.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "engine/core/Types.h"
 
 namespace gdl::game {
@@ -35,6 +38,13 @@ void MovieScene::close() {
     m_textureDirty = false;
 }
 
+void MovieScene::setVolume(f32 volume) {
+    m_volume = std::isfinite(volume) ? std::clamp(volume, 0.0f, 1.0f) : 0.0f;
+    if (m_audio) {
+        m_audio->setVolume(m_volume);
+    }
+}
+
 bool MovieScene::update(f64 deltaSeconds) {
     if (!isOpen()) {
         return false;
@@ -47,6 +57,7 @@ bool MovieScene::update(f64 deltaSeconds) {
     const MovieInfo& info = m_playback.info();
     if (!m_audio && info.hasAudio && info.audioReady && m_mixer != nullptr) {
         m_audio = m_mixer->createStream(AudioStreamDesc{info.audioSampleRate, info.audioChannels});
+        m_audio->setVolume(m_volume);
     }
     if (m_audio) {
         m_audioScratch.clear();

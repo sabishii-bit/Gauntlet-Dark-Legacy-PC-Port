@@ -23,7 +23,8 @@ public:
         Difficulty,
         Multiplayer,
         Graphics,
-        Controls
+        Controls,
+        Combat
     };
     enum class Scope : u8 { Title, Tower, Level };
     using Persist = std::function<bool(const GameConfig&)>;
@@ -49,6 +50,7 @@ private:
     void change(s32 direction);
     bool flushAudio();
     void commit(GameConfig next);
+    f32& audioVolume(usize row);
     std::string text(std::string_view id) const;
     OptionMenu m_menu;
     ControlSettings m_controls;

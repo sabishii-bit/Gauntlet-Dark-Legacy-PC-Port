@@ -2601,12 +2601,13 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
 }
 
 TEST_CASE("walking into a grunt deals automatic melee damage without firing equipped ammunition",
-          "[game][screens][automatic-melee-scene][autoattack][assets]") {
+          "[game][screens][automatic-melee-scene][autoattack][combat-settings][assets]") {
     const bool enabled = GENERATE(true, false);
+    const bool characterEnabled = GENERATE(true, false);
     const u32 weapon = GENERATE(powerup::kSuperShot, powerup::kThunderHammer);
     // Exercise both partial-stick walking and full-stick running through the real scene.
     const f32 magnitude = weapon == powerup::kSuperShot ? 0.5f : 1.0f;
-    CAPTURE(enabled, weapon, magnitude);
+    CAPTURE(enabled, characterEnabled, weapon, magnitude);
     const auto root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     LevelCatalog levels;
@@ -2616,14 +2617,14 @@ TEST_CASE("walking into a grunt deals automatic melee damage without firing equi
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
-    const GameConfig config;
+    GameConfig config;
     GameContext context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AUTO";
-    save.autoAttack = enabled;
+    save.autoAttack = characterEnabled;
     save.progress().inventory.addPowerup(powerup::kWeapon, weapon, 7, -1);
     // Prevent the control case's enemy blows from interrupting its approach. This
     // armour neither reflects damage nor harms anything touching the player.
@@ -2640,6 +2641,9 @@ TEST_CASE("walking into a grunt deals automatic melee damage without firing equi
         REQUIRE(scene.update(1.0 / 60.0, {}) == PlayOutcome::Running);
     }
     REQUIRE_FALSE(awaitingEntrance(scene));
+    // Change the live settings after opening, as the pause menu does: no level reload.
+    REQUIRE_FALSE(config.combat.autoMelee);
+    config.combat.autoMelee = enabled;
     REQUIRE(scene.actor(0) == nullptr);
     REQUIRE(scene.actor(kPlayer));
     REQUIRE(scene.animator(kPlayer));
@@ -2695,8 +2699,8 @@ TEST_CASE("walking into a grunt deals automatic melee damage without firing equi
             mostTravel, melee);
     REQUIRE(mostTravel > 0.25f);
     REQUIRE(closestGap < actor.reach() + 1.0f);
-    CHECK(melee == enabled);
-    CHECK((enemies.healthOf(*enemy) < health) == enabled);
+    CHECK(melee == (enabled && characterEnabled));
+    CHECK((enemies.healthOf(*enemy) < health) == (enabled && characterEnabled));
     const auto* ammunition = actor.save().progress().inventory.powerup(powerup::kWeapon, weapon);
     REQUIRE(ammunition);
     CHECK(ammunition->charge == 7);

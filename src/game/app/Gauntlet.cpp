@@ -220,6 +220,7 @@ GameContext Gauntlet::context() {
     context.previewAudio = [this](const AudioConfig& audio) {
         m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
+        m_movie.setVolume(audio.masterVolume * audio.movieVolume);
         m_audio->mixer().setStereo(audio.stereo);
     };
     return context;
@@ -648,6 +649,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
         m_sounds->setMasterVolume(config.audio.masterVolume);
         m_sounds->setCategoryVolume(SoundCategory::Music, config.audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, config.audio.effectsVolume);
+        m_movie.setVolume(config.audio.masterVolume * config.audio.movieVolume);
         m_audio->mixer().setStereo(config.audio.stereo);
         if (presentationChanged) {
             renderDevice().setPresentation(config.display.vsync, config.display.sampleCount);
@@ -1013,6 +1015,7 @@ void Gauntlet::onShutdown() {
 }
 
 bool Gauntlet::startMovie(std::string_view name) {
+    m_movie.setVolume(m_config.audio.masterVolume * m_config.audio.movieVolume);
     const auto file = m_assets->find(std::format("{}/{}.avi", kMovieDirectory, name));
     if (!file.has_value()) {
         log::warn("Movie '{}' not found under {}", name, m_assets->root().string());

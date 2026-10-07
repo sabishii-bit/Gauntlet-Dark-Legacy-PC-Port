@@ -10,6 +10,9 @@ namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
 constexpr s32 kVideoRows = 8;
+constexpr s32 kAudioSliders = 3;
+constexpr s32 kAudioX = 160;
+constexpr f32 kAudioScale = 0.7f;
 constexpr std::array<u32, 3> kFrameRates{30, 60, 0};
 constexpr std::array<u32, 3> kSampleCounts{1, 2, 4};
 
@@ -94,9 +97,7 @@ void SettingsMenu::rebuild(s32 selection) {
         break;
     case Page::Root: {
         add(text("menu.audio"), 0);
-        if (m_scope == Scope::Title) {
-            add(text("menu.gameOptions"), 1);
-        }
+        add(text("menu.gameOptions"), 1);
         if (m_scope != Scope::Level) {
             add(text("menu.compass"), 2);
         }
@@ -245,20 +246,42 @@ void SettingsMenu::rebuild(s32 selection) {
     }
     case Page::Audio: {
         definition.title = text("menu.audio");
-        definition.x = 128;
-        definition.y = 108;
-        definition.scale = 0.8f;
+        definition.x = kAudioX;
+        definition.y = 96;
+        definition.scale = kAudioScale;
+        definition.cursorScale = kAudioScale;
         definition.selectLabel.clear();
-        definition.items = {{text("settings.music"), 0, 52},
-                            {text("settings.effects"), 1, 52},
-                            {text("settings.mono"), 2, 0, true, text("settings.stereo"),
+        definition.items = {{text("settings.music"), 0},
+                            {text("settings.effects"), 1},
+                            {text("settings.movies"), 2},
+                            {text("settings.mono"), kAudioSliders, 0, true, text("settings.stereo"),
                              m_config.audio.stereo ? 2 : 1}};
+        constexpr s32 kAudioRowStep = 70;
+        for (usize i = 0; i < definition.items.size(); ++i) {
+            definition.itemPositions.emplace_back(kAudioX, definition.y +
+                                                               static_cast<s32>(i) * kAudioRowStep);
+        }
         break;
     }
     case Page::Game:
         definition.title = text("menu.gameOptions");
         add(text("settings.difficulty"), 0);
         add(text("settings.multiplayer"), 1);
+        add(text("settings.combat"), 2);
+        break;
+    case Page::Combat:
+        definition.title = text("settings.combat");
+        definition.x = 96;
+        definition.y = 160;
+        definition.scale = 0.7f;
+        definition.cursorScale = definition.scale;
+        definition.valueX = 344;
+        definition.valueWidth =
+            std::max(m_painter->measure(text("settings.on"), definition.scale),
+                     m_painter->measure(text("settings.off"), definition.scale));
+        add(text("settings.autoMelee"), 0);
+        definition.items.back().value =
+            text(m_config.combat.autoMelee ? "settings.on" : "settings.off");
         break;
     case Page::Difficulty:
         definition.title = text("settings.difficulty");
@@ -317,17 +340,23 @@ void SettingsMenu::commit(GameConfig next) {
     }
     rebuild(m_menu.selection());
 }
+f32& SettingsMenu::audioVolume(usize row) {
+    if (row == 0) {
+        return m_config.audio.musicVolume;
+    }
+    return row == 1 ? m_config.audio.effectsVolume : m_config.audio.movieVolume;
+}
 void SettingsMenu::change(s32 direction) {
     if (m_queryDisplay) {
         m_display = m_queryDisplay();
     }
     const s32 code = m_menu.definition().items[static_cast<usize>(m_menu.selection())].code;
     auto next = m_config;
-    if (m_page == Page::Audio && code < 3) {
-        if (code == 2) {
-            next.audio.stereo = !next.audio.stereo;
+    if (m_page == Page::Audio) {
+        if (code == kAudioSliders) {
+            m_config.audio.stereo = !m_config.audio.stereo;
         } else {
-            auto& volume = code == 0 ? next.audio.musicVolume : next.audio.effectsVolume;
+            auto& volume = audioVolume(static_cast<usize>(code));
             const auto previous = AudioSlider::value(volume);
             volume = static_cast<f32>(std::clamp(previous + direction, 0, 255)) / 255;
             if (code == 1 && AudioSlider::value(volume) == previous && m_audioSampleTicks > 15) {
@@ -335,8 +364,7 @@ void SettingsMenu::change(s32 direction) {
                 m_audioSampleTicks = 0;
             }
         }
-        m_config = std::move(next);
-        m_menu.markItem(2, m_config.audio.stereo ? 2 : 1);
+        m_menu.markItem(kAudioSliders, m_config.audio.stereo ? 2 : 1);
         m_audioDirty = true;
         m_notice.clear();
         if (m_previewAudio) {
@@ -400,6 +428,8 @@ void SettingsMenu::change(s32 direction) {
         next.multiplayer.mode = static_cast<MultiplayerMode>(code);
     } else if (m_page == Page::Compass) {
         next.camera.compass = code == 1;
+    } else if (m_page == Page::Combat) {
+        next.combat.autoMelee = !next.combat.autoMelee;
     } else {
         return;
     }
@@ -446,6 +476,10 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         return {};
     }
     const bool horizontal = input.left || input.right || input.leftHeld || input.rightHeld;
+    if (m_page == Page::Combat && !m_menu.closing() && (input.left || input.right)) {
+        change(input.left ? -1 : 1);
+        return {MenuAction::Moved, 0};
+    }
     if (m_page == Page::Graphics && !m_menu.closing() && (input.left || input.right)) {
         const auto selected = m_menu.selection();
         if (selected >= kVideoRows) {
@@ -457,11 +491,10 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     }
     if (m_page == Page::Audio && !m_menu.closing()) {
         m_audioSampleTicks = std::min(61, m_audioSampleTicks + std::max(0, ticks));
-        constexpr f32 kSliderX = 128;
         if (input.pointer && !input.pointerNormalized) {
-            for (usize i = 0; i < 2; ++i) {
+            for (usize i = 0; i < kAudioSliders; ++i) {
                 const auto area = AudioSlider::track(
-                    kSliderX, static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()));
+                    kAudioX, static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()), kAudioScale);
                 const bool inside =
                     input.pointer->x >= area.x && input.pointer->x <= area.x + area.width &&
                     input.pointer->y >= area.y && input.pointer->y < area.y + area.height;
@@ -475,9 +508,8 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_audioPointer = input.pointer;
             if (m_audioDrag && (input.pointerHeld || input.pointerPressed)) {
                 m_menu.focus(*m_audioDrag);
-                const auto volume = AudioSlider::volumeAt(input.pointer->x, kSliderX);
-                const auto current =
-                    *m_audioDrag == 0 ? m_config.audio.musicVolume : m_config.audio.effectsVolume;
+                const auto volume = AudioSlider::volumeAt(input.pointer->x, kAudioX, kAudioScale);
+                const auto current = audioVolume(*m_audioDrag);
                 change(AudioSlider::value(volume) - AudioSlider::value(current));
                 return {};
             }
@@ -487,7 +519,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (!input.pointerHeld) {
             m_audioDrag.reset();
         }
-        const bool stereo = m_menu.selection() == 2;
+        const bool stereo = m_menu.selection() == kAudioSliders;
         if ((!stereo && horizontal && ticks > 0) || (stereo && (input.left || input.right))) {
             change((input.left || input.leftHeld ? -1 : 1) * (stereo ? 1 : ticks));
             return stereo ? MenuEvent{MenuAction::Moved, 0} : MenuEvent{};
@@ -542,8 +574,13 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (m_page == Page::Root) {
             return {MenuAction::Back, 0};
         }
-        if (m_page == Page::Difficulty || m_page == Page::Multiplayer) {
-            const s32 selection = m_page == Page::Multiplayer ? 1 : 0;
+        if (m_page == Page::Difficulty || m_page == Page::Multiplayer || m_page == Page::Combat) {
+            s32 selection = 0;
+            if (m_page == Page::Multiplayer) {
+                selection = 1;
+            } else if (m_page == Page::Combat) {
+                selection = 2;
+            }
             m_page = Page::Game;
             m_notice.clear();
             rebuild(selection);
@@ -597,8 +634,12 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         } else if (m_page == Page::Game && event.code == 1) {
             m_page = Page::Multiplayer;
             rebuild(static_cast<s32>(m_config.multiplayer.mode));
+        } else if (m_page == Page::Game && event.code == 2) {
+            m_page = Page::Combat;
+            rebuild();
         } else if (m_page == Page::Audio) {
-            if (event.code == 2 && event.part != 0 && m_config.audio.stereo != (event.part == 2)) {
+            if (event.code == kAudioSliders && event.part != 0 &&
+                m_config.audio.stereo != (event.part == 2)) {
                 change(1);
                 flushAudio();
             }
@@ -621,11 +662,13 @@ void SettingsMenu::draw(Canvas& canvas, const TextPainter& painter,
     }
     m_menu.draw(canvas, painter, textures);
     if (m_page == Page::Audio) {
-        const std::array volumes{m_config.audio.musicVolume, m_config.audio.effectsVolume};
+        const std::array volumes{m_config.audio.musicVolume, m_config.audio.effectsVolume,
+                                 m_config.audio.movieVolume};
         for (usize i = 0; i < volumes.size(); ++i) {
-            textures.audioSlider.draw(
-                canvas, 128, static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()), volumes[i],
-                m_menu.selection() == static_cast<s32>(i), m_menu.fadeOpacity());
+            textures.audioSlider.draw(canvas, kAudioX,
+                                      static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()),
+                                      volumes[i], m_menu.selection() == static_cast<s32>(i),
+                                      m_menu.fadeOpacity(), kAudioScale);
         }
     }
     TextStyle style;

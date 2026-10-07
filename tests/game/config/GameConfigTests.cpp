@@ -29,6 +29,27 @@ TEST_CASE("the defaults describe the original's screen and clock", "[game][confi
     REQUIRE(config.menu.padStart.front() == PadButton::Start);
 }
 
+TEST_CASE("combat is opt-in and movie volume persists independently of other audio",
+          "[game][config][combat-settings][movie-volume]") {
+    GameConfig config;
+    CHECK_FALSE(config.combat.autoMelee);
+    CHECK(config.audio.movieVolume == 1.0f);
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    CHECK_FALSE(config.combat.autoMelee);
+    CHECK(config.audio.movieVolume == 1.0f);
+    config.mergeJson(R"({"game":{"difficulty":"hard"},"audio":{"musicVolume":0.25}})");
+    CHECK_FALSE(config.combat.autoMelee); // old settings keep the new feature off
+    CHECK(config.audio.movieVolume == 1.0f);
+    config.mergeJson(R"({"game":{"combat":{"autoMelee":true}},"audio":{"movieVolume":0.125}})");
+    GameConfig restored;
+    restored.mergeJson(config.toJson());
+    CHECK(restored.combat.autoMelee);
+    CHECK(restored.audio.movieVolume == 0.125f);
+    CHECK(restored.audio.musicVolume == 0.25f);
+    CHECK(restored.audio.effectsVolume == AudioConfig{}.effectsVolume);
+    CHECK(restored.difficulty.level == "hard");
+}
+
 TEST_CASE("video window modes and resolution survive settings round trips",
           "[game][config][graphics]") {
     for (const auto mode :
