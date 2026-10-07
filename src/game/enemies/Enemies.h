@@ -427,8 +427,8 @@ private:
     Stock* stockOf(s32 kind);
     const Stock* stockOf(s32 kind) const;
     std::optional<s32> takeSlot(const EnemySpawn& spawn);
-    bool clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
-                 std::span<const Obstacle> obstacles, s32 self) const;
+    bool birthPathClear(const Enemy& enemy, const Vec3& from, const Vec3& to,
+                        std::span<const EnemyView> players, s32 self) const;
     void initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind);
     void rememberFloor(Enemy& enemy) const;
     void touchHazards(Enemy& enemy, s32 slot);

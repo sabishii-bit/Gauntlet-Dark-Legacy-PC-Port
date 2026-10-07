@@ -277,7 +277,13 @@ TEST_CASE("courtyard grunts approach the entrance player", "[courtyard-grunt][as
     for (const s32 id : entranceGrunts) {
         INFO("grunt " << id);
         CHECK(enemies.targetOf(id) == 0);
-        CHECK(glm::distance(enemies.positionOf(id), views[0].position) < 3.5f);
+        const Vec3 separation = enemies.positionOf(id) - views[0].position;
+        const f32 contactRadius =
+            views[0].collisionRadius.value_or(views[0].radius) + enemies.radiusOf(id) + 0.5f;
+        // Contact cancels the approaching step. The feet may stop one native
+        // movement step outside the cylinder, not at an arbitrary 3D distance.
+        const f32 step = 2 * enemies.paceOf(kGruntKind);
+        CHECK(glm::length(Vec2{separation.x, separation.z}) <= contactRadius + step);
     }
     const auto blows = enemies.takeBlows();
     CHECK(std::ranges::count_if(blows, [](const EnemyBlow& blow) {
@@ -1545,6 +1551,17 @@ TEST_CASE("B1 gargoyle reveals its serpent piece only after its sack lands and o
 
 TEST_CASE("Forsaken Province entrance generators breed with the placed enemy roster loaded",
           "[level-opponents][generators][assets]") {
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    Vec3 position{24.375f, 0.0078125f, 2.5f};
+    bool inEncounter = false;
+    SECTION("entrance replenishes the nearby brood") {}
+    SECTION("the native generator encounter reaches and attacks the player") {
+        // The playable level-g1-generators scenario, in front of the first
+        // authored grunt hut, not the lower entrance on the other side of town.
+        position = {100, 10.2f, -72.5f};
+        inEncounter = true;
+    }
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
@@ -1562,7 +1579,7 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     fixtures.setPlayerCount(1);
     LevelOpponents opponents;
     std::array<PlayerRuntime, 1> players;
-    players[0].actor.spawn(0, {}, nullptr, {24.375f, 0.0078125f, 2.5f}, 0);
+    players[0].actor.spawn(0, {}, nullptr, position, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.enemies().count() == static_cast<usize>(world.level()->maxEnemies));
     std::array<bool, 3> special{};
@@ -1580,7 +1597,10 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     CHECK(special == std::array<bool, 3>{true, true, true});
     CHECK(skirmishBomber);
     LevelOpponents::Events events;
-    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    s32 landed = 0;
+    events.hurt = [&](usize, f32 damage, HurtKind, bool, const PlayerImpact&) {
+        landed += damage > 0 ? 1 : 0;
+    };
     events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -1596,9 +1616,33 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     overhead.position = players[0].actor.position() + Vec3{0.0f, 80.0f, 0.0f};
     overhead.forward = Vec3{0.0f, -1.0f, 0.0f};
     overhead.up = Vec3{0.0f, 0.0f, 1.0f};
-    for (s32 frame = 0; frame < 300; ++frame) {
+    const auto births = [&] {
+        s32 count = 0;
+        for (usize g = 0; g < opponents.generators().count(); ++g) {
+            count += opponents.generators().bredOf(static_cast<s32>(g));
+        }
+        return count;
+    };
+    s32 beforeLosses = 0;
+    s32 killed = 0;
+    for (s32 frame = 0; frame < 20 * rate; ++frame) {
         opponents.watch(overhead, players[0].actor.position());
-        opponents.update(2, 1.0f / 30, players, fixtures.obstacles(), events);
+        opponents.update(60 / rate, 1.0f / static_cast<f32>(rate), players, fixtures.obstacles(),
+                         events);
+        REQUIRE(opponents.enemies().count() <= static_cast<usize>(world.level()->maxEnemies));
+        if (frame == 10 * rate) {
+            beforeLosses = births();
+            // Keep the generators, authored fixtures and placements intact. Defeat
+            // only their current offspring and let ordinary quotas/timers refill.
+            for (s32 id = 0; id < world.level()->maxEnemies; ++id) {
+                if (opponents.enemies().alive(id) && opponents.enemies().generatorOf(id) >= 0) {
+                    EnemyHit blow;
+                    blow.damage = 10000;
+                    opponents.enemies().hurt(id, blow);
+                    ++killed;
+                }
+            }
+        }
     }
     s32 bred = 0;
     s32 weakBred = 0;
@@ -1610,7 +1654,14 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
         }
     }
     CHECK(bred > 0);
-    CHECK(weakBred > 0);
+    if (!inEncounter) {
+        CHECK(weakBred > 0);
+    }
+    CHECK(killed > 0);
+    CHECK(bred > beforeLosses);
+    if (inEncounter) {
+        CHECK(landed > 0); // Spawning alone does not prove an encounter reaches the party.
+    }
     CHECK(opponents.enemies().count() <= static_cast<usize>(world.level()->maxEnemies));
     opponents.close();
     fixtures.clear();

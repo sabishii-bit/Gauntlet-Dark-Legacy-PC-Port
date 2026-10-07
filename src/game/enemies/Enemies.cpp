@@ -444,29 +444,37 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
     return best;
 }
 
-bool Enemies::clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
-                      std::span<const Obstacle> obstacles, s32 self) const {
+bool Enemies::birthPathClear(const Enemy& enemy, const Vec3& from, const Vec3& to,
+                             std::span<const EnemyView> players, s32 self) const {
+    // check_enemy_pos (8004F9AC) passes the entire birth segment to the same
+    // directional body queries used by movement. A free endpoint is not enough,
+    // and an existing overlap may separate instead of sealing every exit.
     for (const EnemyView& view : players) {
         // check_enemy_pos's player sweep only considers active players. A fallen
         // party member's last position must not obstruct the generator's exits.
-        if (!view.hidden && flatDistance(view.position, position) < view.radius + enemy.radius &&
-            std::abs(view.position.y - position.y) < view.height) {
+        const Vec3 centre =
+            view.position + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
+        const f32 radius = view.collisionRadius.value_or(view.radius);
+        if (!view.hidden && movementTouchesBody(from, to, centre, radius + enemy.radius,
+                                                0.5f * view.height + enemy.reach)) {
             return false;
         }
+    }
+    const f32 radius = 0.5f * enemy.radius;
+    if (combatantContact(m_combatants, from, to, radius) != nullptr) {
+        return false;
     }
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& other = m_enemies[static_cast<usize>(i)];
         if (i == self || other.state == State::Inactive || other.state == State::Dying) {
             continue;
         }
-        if (flatDistance(other.position, position) < 0.5f * enemy.radius + other.radius &&
-            std::abs(other.position.y - position.y) < other.height) {
+        if (movementTouchesBody(from, to, bodyCentre(other), radius + other.radius,
+                                enemy.reach + other.reach)) {
             return false;
         }
     }
-    return std::ranges::none_of(obstacles, [&](const Obstacle& box) {
-        return box.solid && box.pushOut(position, enemy.radius) != position;
-    });
+    return true;
 }
 
 void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind) {
@@ -591,6 +599,8 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                 f32 yawOffset = 0.0f;
                 const Vec3 offset = octant(v, d, yawOffset);
                 Vec3 at = spawn.position + offset;
+                const Vec3 birthFrom = spawn.position + Vec3{0, kind.collisionHeight, 0};
+                const Vec3 birthTo = birthFrom + offset;
                 bool clear = true;
                 if (m_collision != nullptr) {
                     // check_enemy_pos (0x8004F9AC) checks the path out of the generator
@@ -609,11 +619,12 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                     clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
                         return box.solid && box.contact(spawn.position, at, 0.5f * enemy.radius);
                     });
-                clear = clear && combatantContact(m_combatants, spawn.position, at,
-                                                  0.5f * enemy.radius) == nullptr;
+                clear = clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
+                            return box.solid && box.pushOut(at, enemy.radius) != at;
+                        });
                 if (!clear) {
                     mask |= 1U << static_cast<u32>(d);
-                } else if (clearAt(enemy, at, players, obstacles, *slot)) {
+                } else if (birthPathClear(enemy, birthFrom, birthTo, players, *slot)) {
                     where = at;
                     yaw = wrapAngle(facing + yawOffset);
                     placed = true;
@@ -1492,9 +1503,11 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         const EnemyView& view = *nearest;
         const Vec3 centre =
             view.position + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
+        // fn_80046680 adds Player::col_radius (the authored width), not
+        // the smaller radius used when moving the player against walls.
+        const f32 radius = view.collisionRadius.value_or(view.radius);
         if (movementTouchesBody(from + collisionOffset, to + collisionOffset, centre,
-                                view.radius + enemy.radius + 0.5f,
-                                enemy.reach + 0.5f * view.height)) {
+                                radius + enemy.radius + 0.5f, enemy.reach + 0.5f * view.height)) {
             enemy.contact = view.player;
         }
     }

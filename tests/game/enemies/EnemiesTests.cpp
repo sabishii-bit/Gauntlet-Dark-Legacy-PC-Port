@@ -281,7 +281,8 @@ TEST_CASE("recycling a brood slot releases its original generator even if replac
         fails = true;
         spawn.placed = false;
     }
-    const std::array players{EnemyView{.radius = 100}};
+    // All forward exits approach this body; coincident bodies may separate in retail.
+    const std::array players{EnemyView{.position = {0, 0, 0.5f}, .radius = 100}};
     CHECK(enemies.spawn(spawn, players).has_value() == !fails);
     const auto events = enemies.takeGeneratorEvents();
     REQUIRE(events.size() == (fails ? 1 : 2));
@@ -666,13 +667,138 @@ TEST_CASE("fallen players do not block generator births but invisible standing p
     REQUIRE(enemies.loadKind(kGruntKind));
     const bool hidden = GENERATE(false, true);
     const bool invisible = GENERATE(false, true);
-    auto blocker = playerAt({0, 0, 0}, 3);
+    auto blocker = playerAt({0, 0, 0.5f}, 3);
     blocker.radius = 20; // covers every candidate octant
     blocker.hidden = hidden;
     blocker.invisible = invisible;
     const auto born =
         enemies.spawn({.kind = kGruntKind, .tier = 1, .generator = 7}, std::array{blocker});
     CHECK(born.has_value() == hidden);
+}
+
+TEST_CASE("generator births sweep their exit against player and enemy collision bodies",
+          "[enemies][enemy-spawn][alpha-birth-contacts][assets]") {
+    const bool playerBody = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 3, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    std::vector<EnemyView> players;
+    if (playerBody) {
+        players.push_back(playerAt({0, 0, 4}));
+    } else {
+        EnemySpawn blocker;
+        blocker.placed = true;
+        blocker.asleep = true;
+        blocker.position = {0, 0, 4};
+        REQUIRE(enemies.spawn(blocker, {}));
+        enemies.takeGeneratorEvents();
+    }
+    EnemySpawn birth;
+    birth.algorithm = 12; // generate_enemy's single forward exit isolates this sweep.
+    birth.generator = 7;
+    birth.clearance = 8;
+    // The landing at z9.5 is free, but check_enemy_pos (8004F9AC) sweeps
+    // from the generator through z4 via fn_80046680 / fn_8004646C.
+    CHECK_FALSE(enemies.spawn(birth, players));
+    CHECK(enemies.takeGeneratorEvents().empty());
+    CHECK(enemies.count() == (playerBody ? 0 : 1));
+}
+
+TEST_CASE("generator birth contact uses collision heights and permits separating overlaps",
+          "[enemies][enemy-spawn][alpha-birth-contacts][assets]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn birth;
+    birth.algorithm = 12;
+    birth.generator = 7;
+    auto blocker = playerAt({0, 0, -0.5f});
+    bool allowed = true;
+    SECTION("an overlapping player behind the birth may separate") {}
+    SECTION("an overlapping player ahead blocks the exit") {
+        blocker.position.z = 0.5f;
+        allowed = false;
+    }
+    SECTION("an invisible player still blocks the exit") {
+        blocker.position.z = 0.5f;
+        blocker.invisible = true;
+        allowed = false;
+    }
+    SECTION("a fallen player does not block the exit") {
+        blocker.position.z = 0.5f;
+        blocker.hidden = true;
+    }
+    SECTION("a high collision centre is not inferred from the player's feet") {
+        blocker.position.z = 0.5f;
+        blocker.height = 2;
+        blocker.collisionHeight = 10.0f;
+    }
+    const auto born = enemies.spawn(birth, std::array{blocker});
+    CHECK(born.has_value() == allowed);
+    const auto events = enemies.takeGeneratorEvents();
+    REQUIRE(events.size() == (allowed ? 1 : 0));
+    if (allowed) {
+        CHECK(events[0].kind == EnemyGeneratorEvent::Kind::Born);
+        CHECK(events[0].generator == 7);
+    }
+}
+
+TEST_CASE("swarm melee uses the native player contact radius rather than the wall radius",
+          "[enemies][spear-contact][alpha-player-contact-radius][assets]") {
+    const s32 ticks = GENERATE(1, 2);
+    const bool nativeRadius = GENERATE(false, true);
+    const auto root = unpackedRoot();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(5); // Knight
+    REQUIRE(stats);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, stats, {}, 0);
+    const f32 distance = players[0].actor.reach() + enemyKind(kGruntKind).radius + 0.25f;
+    players[0].actor.spawn(0, {}, stats, {0, 0, distance}, 0);
+    auto party = LevelOpponents::enemyViews(players);
+    REQUIRE(party[0].collisionRadius == stats->width);
+    REQUIRE(party[0].radius < stats->width);
+    if (!nativeRadius) {
+        party[0].collisionRadius.reset();
+    }
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    EnemyScales scales;
+    scales.speed = 0; // Isolate the contact boundary; do not let a missed attack walk closer.
+    enemies.open(device, root, nullptr, 1, scales, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.placed = true}, {});
+    REQUIRE(id);
+    s32 blows = 0;
+    for (s32 tick = 0; tick < 600; tick += ticks) {
+        enemies.update(ticks, static_cast<f32>(ticks) / 60, party);
+        blows += static_cast<s32>(enemies.takeBlows().size());
+    }
+    CAPTURE(ticks, nativeRadius, distance, blows);
+    CHECK((blows > 0) == nativeRadius);
+    CHECK(enemies.positionOf(*id) == Vec3{0});
+}
+
+TEST_CASE("generator clearance honors the native player contact width",
+          "[enemies][enemy-spawn][alpha-player-contact-radius][assets]") {
+    const bool nativeRadius = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    auto player = playerAt({2.5f, 0, 4});
+    player.radius = 0.5f;
+    if (nativeRadius) {
+        player.collisionRadius = 2.0f;
+    }
+    EnemySpawn birth;
+    birth.algorithm = 12;
+    birth.generator = 7;
+    birth.clearance = 8;
+    CHECK(enemies.spawn(birth, std::array{player}).has_value() == !nativeRadius);
 }
 
 TEST_CASE("swarm melee contacts the actual nearest live player independently of roster order",
@@ -886,7 +1012,8 @@ TEST_CASE("a dying enemy releases spawn clearance before its body disappears",
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
     REQUIRE(enemies.loadKind(kGruntKind));
-    const auto blocker = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    const auto blocker =
+        enemies.spawn({.kind = kGruntKind, .tier = 1, .position = {0, 0, 1}, .placed = true}, {});
     REQUIRE(blocker);
     const EnemySpawn birth{.kind = kGruntKind, .tier = 1, .generator = 7};
     CHECK_FALSE(enemies.spawn(birth, {}));
