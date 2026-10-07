@@ -3,10 +3,8 @@
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 
 from PySide6.QtCore import QThread, QTimer, Signal, Qt, QUrl
@@ -17,7 +15,9 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout, QHBoxLayo
 
 from .install import Cancelled, install, payload_inventory
 from .releases import check_updates
-from .update import TRANSACTION, apply_update, installed_info, recover_update, update_from_release
+from . import self_update
+from .update import (TRANSACTION, committed_cleanup_pending, installed_info,
+                     recover_update, update_from_release, update_with_installer)
 from .versions import version_order
 
 STRINGS = json.loads(Path(__file__).with_name("strings.json").read_text(encoding="utf-8"))
@@ -78,6 +78,7 @@ class Wizard(QWidget):
         self.operation = None
         self.check_context = ""
         self.network = network
+        self.installer_pending = False
         self.setWindowTitle(STRINGS["title"])
         self.setMinimumWidth(620)
         self.setAcceptDrops(True)
@@ -127,7 +128,21 @@ class Wizard(QWidget):
         self.scan_timer.timeout.connect(self.inspect_destination)
         self.destination.textChanged.connect(lambda: self.scan_timer.start())
         # No network is required for a fresh installation or the release GUI smoke.
-        QTimer.singleShot(0, self.inspect_destination)
+        QTimer.singleShot(0, self.inspect_startup)
+
+    def inspect_startup(self):
+        # A previous successful update may have retained a CRT image mapped by
+        # its own frozen loader. Retry disposal once, in the worker, on reopening.
+        try:
+            pending = committed_cleanup_pending(self.folder())
+        except (OSError, ValueError):
+            pending = False
+        if pending:
+            self.status.setText(STRINGS["cleaning"])
+            folder = self.folder()
+            self.run_operation("recover", lambda _progress, _cancel: recover_update(folder))
+        else:
+            self.inspect_destination()
 
     def dragEnterEvent(self, event):
         if not self.busy():
@@ -154,7 +169,22 @@ class Wizard(QWidget):
         self.mode = "install"
         self.status.clear()
         folder = self.folder()
-        if (folder / TRANSACTION).exists():
+        try:
+            self.installer_pending = self_update.inspect_pending(folder)
+        except (OSError, ValueError) as error:
+            self.mode = "invalid"
+            self.status.setText(str(error))
+            self.refresh_controls()
+            return
+        if self.installer_pending:
+            self.mode = "launch"
+            self.installed, _ = installed_info(folder)
+            self.executable = folder / self.installed["executable"]
+            self.status.setText(STRINGS["installer_pending"])
+            self.open.show()
+            self.refresh_controls()
+            return
+        if (folder / TRANSACTION).exists() and not committed_cleanup_pending(folder):
             self.mode = "recover"
             self.status.setText(STRINGS["recovery_needed"])
         elif (folder / "installation.json").exists():
@@ -175,24 +205,32 @@ class Wizard(QWidget):
             self.mode = "update"
             self.status.setText(STRINGS["available"].format(
                 installed=self.installed["version"], version=version))
+        elif (self.release and version == self.installed["version"] and getattr(sys, "frozen", False) and
+              version_order(version) > version_order(self.metadata["version"])):
+            self.mode = "installer_update"
+            self.status.setText(STRINGS["installer_available"].format(version=version))
         else:
             self.mode = "launch"
             self.status.setText(STRINGS["up_to_date"].format(version=self.installed["version"]))
+        if committed_cleanup_pending(self.folder()):
+            self.status.setText(self.status.text() + "\n" + STRINGS["cleanup_pending"])
         self.open.show()
 
     def refresh_controls(self):
         free = not self.busy()
         self.intro.setText(STRINGS["intro"] if self.mode == "install" else STRINGS["intro_update"])
         for widget in (self.destination, self.folder_browse):
-            widget.setEnabled(free)
+            widget.setEnabled(free and not self.installer_pending)
         for widget in (self.image, self.image_browse):
             widget.setEnabled(free and self.mode == "install")
-        self.check.setEnabled(free and self.network)
+        self.check.setEnabled(free and self.network and not self.installer_pending)
         self.start.setEnabled(free and self.mode != "invalid")
         self.open.setEnabled(free)
         if self.mode == "update":
             version = self.release.version if self.release else self.metadata["version"]
             self.start.setText(STRINGS["update"].format(version=version))
+        elif self.mode == "installer_update":
+            self.start.setText(STRINGS["update_installer"].format(version=self.release.version))
         else:
             self.start.setText(STRINGS.get(self.mode, STRINGS["install"]))
         self.cancel.setText(STRINGS["cancel"] if self.busy() else STRINGS["close"])
@@ -210,15 +248,19 @@ class Wizard(QWidget):
         self.worker.start()
 
     def check_online(self):
-        if self.busy() or not self.network:
+        if self.busy() or not self.network or self.installer_pending:
             return
         # Re-read the chosen folder even if the user clicks before its debounce.
         # A check without a receipt compares with the bundle; it never turns a
         # fresh/invalid destination into an in-place update target.
         self.inspect_destination(auto_check=False)
+        if self.installer_pending:
+            return
         self.check_context = self.status.text() if self.mode in ("recover", "invalid") else ""
         reference = self.installed or self.metadata
         version, system = reference["version"], reference["platform"]
+        if getattr(sys, "frozen", False) and version_order(self.metadata["version"]) < version_order(version):
+            version = self.metadata["version"]  # The game can be newer than the installer.
         self.status.setText(STRINGS["checking"])
         self.run_operation("check", lambda _progress, cancel: check_updates(
             version, system, cancel))
@@ -264,12 +306,21 @@ class Wizard(QWidget):
             folder = self.folder()
             self.run_operation("recover", lambda _progress, _cancel: recover_update(folder))
             return
+        if self.mode == "installer_update":
+            folder, release, installer = self.folder(), self.release, Path(sys.executable)
+            def update_installer(progress, cancel):
+                self_update.prepare(folder, release, installer, progress, cancel)
+                self_update.mark_ready(folder)
+                return folder / self.installed["executable"]
+            self.run_operation("update", update_installer)
+            return
         if self.mode == "update":
             self.status.setText(STRINGS["updating"])
             folder, release = self.folder(), self.release
+            installer = Path(sys.executable) if getattr(sys, "frozen", False) else None
             self.run_operation("update", lambda progress, cancel:
-                update_from_release(folder, release, progress, cancel) if release else
-                apply_update(folder, self.payload, progress, cancel, self.metadata["version"]))
+                update_from_release(folder, release, progress, cancel, installer=installer) if release else
+                update_with_installer(folder, self.payload, installer, progress, cancel, self.metadata["version"]))
             return
         if self.mode != "install":
             return
@@ -306,21 +357,13 @@ class Wizard(QWidget):
         self.installed, _ = installed_info(self.executable.parent)
         self.status.setText(STRINGS["updated" if self.operation == "update" else "complete"].format(
             version=self.installed["version"]))
+        if committed_cleanup_pending(self.executable.parent):
+            self.status.setText(self.status.text() + "\n" + STRINGS["cleanup_pending"])
+        self.installer_pending = self_update.inspect_pending(self.executable.parent)
+        if self.installer_pending:
+            self.status.setText(self.status.text() + "\n" + STRINGS["installer_pending"])
         self.mode = "launch"
         self.open.show()
-        # Upgrading a pre-updater installation also leaves an easy future entry point.
-        if self.operation == "update" and getattr(sys, "frozen", False):
-            updater = self.executable.parent / ("GauntletDarkLegacy-Update.exe" if os.name == "nt"
-                                                  else "GauntletDarkLegacy-Update")
-            if not updater.exists():
-                try:
-                    with tempfile.TemporaryDirectory(dir=updater.parent, prefix=".gdl-updater-") as temporary:
-                        staged = Path(temporary) / updater.name
-                        shutil.copyfile(sys.executable, staged)
-                        staged.chmod(0o755)
-                        staged.rename(updater)
-                except OSError as error:
-                    self.status.setText(STRINGS["updater_failed"].format(error=error))
 
     def failed(self, message, cancelled):
         if self.operation == "check":
@@ -335,10 +378,13 @@ class Wizard(QWidget):
             QMessageBox.critical(self, STRINGS["failed"], message)
 
     def finished(self):
+        recovered = self.operation == "recover"
         self.operation = None
-        if (self.folder() / TRANSACTION).exists():
+        if (self.folder() / TRANSACTION).exists() and not committed_cleanup_pending(self.folder()):
             self.mode = "recover"
         self.refresh_controls()
+        if recovered and self.network and not (self.folder() / TRANSACTION).exists():
+            self.inspect_destination()
 
     def closeEvent(self, event):
         if self.busy():
@@ -346,6 +392,14 @@ class Wizard(QWidget):
             self.status.setText(STRINGS["cancelling"])
             event.ignore()
         else:
+            if self.installer_pending:
+                try:
+                    self_update.launch_pending(self.folder())
+                    self.installer_pending = False
+                except (OSError, ValueError) as error:
+                    QMessageBox.critical(self, STRINGS["failed"], str(error))
+                    event.ignore()
+                    return
             event.accept()
 
 

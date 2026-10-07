@@ -18,9 +18,23 @@ def main():
     parser.add_argument("--check-wizard", action="store_true",
                         help="load native GUI libraries and exercise the wizard offscreen")
     parser.add_argument("--directory", type=Path, help="preselect an existing game or install directory")
+    parser.add_argument("--finish-installer-update", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--wait-for-process", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--diagnostic-log", type=Path,
                         help="write automated-check failures here (windowed builds have no stderr)")
     args = parser.parse_args()
+    if args.finish_installer_update:
+        from installer.self_update import DIRECTORY, finish_pending, wait_for_process
+        try:
+            wait_for_process(args.wait_for_process or 0)
+            finish_pending(args.finish_installer_update)
+        except Exception:
+            import traceback
+            # Keep the validated transaction for another attempt on reopening.
+            (args.finish_installer_update / DIRECTORY / "error.txt").write_text(
+                traceback.format_exc(), encoding="utf-8")
+            return 1
+        return 0
     if args.check_payload:
         metadata, _ = payload_inventory(args.payload)
         with zipfile.ZipFile(args.payload) as archive:
@@ -52,7 +66,7 @@ def main():
 if __name__ == "__main__":
     # Automated frozen-app checks must fail promptly, not wait on PyInstaller's
     # windowed exception dialog on a headless release runner.
-    if "--check-wizard" in sys.argv or "--check-payload" in sys.argv:
+    if any(option in sys.argv for option in ("--check-wizard", "--check-payload", "--finish-installer-update")):
         try:
             sys.exit(main())
         except Exception:

@@ -290,6 +290,61 @@ class UpdateTests(unittest.TestCase):
         transaction.mkdir()
         self.assertEqual(update.recover_update(self.destination)["version"], "0.1.0-alpha.10")
 
+    def test_locked_backup_after_commit_is_success_and_can_be_cleaned_later(self):
+        original = shutil.rmtree
+        def locked(path, *args, **kwargs):
+            if Path(path).name == "backup":
+                raise PermissionError("mapped runtime image")
+            return original(path, *args, **kwargs)
+        with mock.patch.object(shutil, "rmtree", locked), mock.patch.object(
+                update, "retry_locked", side_effect=lambda operation: operation()):
+            self.assertEqual(update.apply_update(self.destination, self.new), self.executable)
+            self.assertTrue(update.committed_cleanup_pending(self.destination))
+            self.assertEqual(update.installed_info(self.destination)[0]["version"], "0.1.0-alpha.10")
+            self.assertEqual(update.recover_update(self.destination)["version"], "0.1.0-alpha.10")
+            with self.assertRaisesRegex(ValueError, "Close and reopen"):
+                update.apply_update(self.destination, self.new)
+        self.assertEqual(update.recover_update(self.destination)["version"], "0.1.0-alpha.10")
+        self.assertFalse((self.destination / update.TRANSACTION).exists())
+        self.assertEqual((self.destination / "saves/hero.json").read_bytes(), b"user-owned")
+
+    @unittest.skipUnless(os.name == "nt", "Windows mapped-image locking")
+    def test_real_mapped_crt_is_not_moved_when_unchanged_and_defers_cleanup_when_changed(self):
+        import ctypes
+        from ctypes import wintypes
+        source = Path(sys.base_prefix) / "vcruntime140.dll"
+        self.assertTrue(source.is_file(), "The Windows Python fixture must provide its CRT")
+        dll = self.destination / "vcruntime140.dll"
+        dll.write_bytes(source.read_bytes())
+        metadata, _ = update.installed_info(self.destination)
+        metadata["files"][dll.name] = update.file_digest(dll)
+        update.atomic_json(self.destination / "build-info.json", metadata)
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.LoadLibraryW.argtypes = (wintypes.LPCWSTR,)
+        kernel.LoadLibraryW.restype = wintypes.HMODULE
+        kernel.FreeLibrary.argtypes = (wintypes.HMODULE,)
+        kernel.FreeLibrary.restype = wintypes.BOOL
+        handle = kernel.LoadLibraryW(str(dll))
+        self.assertTrue(handle, ctypes.get_last_error())
+        try:
+            for index, changed in enumerate((False, True)):
+                root = self.root / f"mapped-{index}"
+                payload = newer_payload(root, f"1.0.{index}")
+                info, _ = payload_inventory(payload)
+                runtime = root / "inputs" / dll.name
+                runtime.write_bytes(source.read_bytes() + (b"new CRT image" if changed else b""))
+                payload.unlink()
+                make_payload(payload, [(root / "inputs" / name, name) for name in info["files"]] +
+                             [(runtime, dll.name)], info["version"], "mapped-crt", info["platform"], info["executable"])
+                with mock.patch.object(update, "retry_locked", side_effect=lambda operation: operation()):
+                    update.apply_update(self.destination, payload)
+                self.assertEqual(update.committed_cleanup_pending(self.destination), changed)
+                self.assertEqual(dll.read_bytes(), runtime.read_bytes())
+        finally:
+            self.assertTrue(kernel.FreeLibrary(handle))
+        self.assertEqual(update.recover_update(self.destination)["version"], "1.0.1")
+        self.assertFalse((self.destination / update.TRANSACTION).exists())
+
     def test_process_death_at_every_commit_move_is_recoverable(self):
         metadata, _ = update.installed_info(self.destination)
         new, _ = payload_inventory(self.new)

@@ -27,6 +27,11 @@ def runtime_name(version, system):
     return f"GauntletDarkLegacy-{version}-{system}-runtime.zip"
 
 
+def setup_name(version, system):
+    suffix = ".exe" if system == "windows-x64" else ".tar.gz"
+    return f"GauntletDarkLegacy-{version}-{system}-setup{suffix}"
+
+
 def trusted_url(url):
     parsed = urllib.parse.urlsplit(url)
     if (parsed.scheme != "https" or parsed.username or parsed.password or
@@ -59,6 +64,30 @@ class Release:
     url: str
     size: int
     sha256: str
+    installer: "Release | None" = None
+
+
+def release_asset(assets, version, system, name):
+    matches = [asset for asset in assets if isinstance(asset, dict) and asset.get("name") == name]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ValueError("Ambiguous release asset")
+    asset = matches[0]
+    url = asset.get("browser_download_url")
+    expected_path = f"/{REPOSITORY}/releases/download/v{version}/{name}"
+    parsed = urllib.parse.urlsplit(url) if isinstance(url, str) else None
+    # GitHub escapes '+' in tags/asset names containing SemVer build metadata.
+    correct_url = (parsed is not None and parsed.scheme == "https" and
+                   parsed.netloc == "github.com" and not parsed.query and not parsed.fragment and
+                   urllib.parse.unquote(parsed.path) == expected_path)
+    digest = asset.get("digest", "")
+    size = asset.get("size")
+    if (asset.get("state") != "uploaded" or not correct_url or
+            not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest) or
+            type(size) is not int or not 0 < size <= MAX_PAYLOAD):
+        raise ValueError("Release asset is incomplete or lacks its GitHub SHA-256 digest")
+    return Release(version, system, url, size, digest[7:])
 
 
 def select_release(releases, installed_version, system):
@@ -79,29 +108,13 @@ def select_release(releases, installed_version, system):
         assets = release.get("assets", [])
         if not isinstance(assets, list):
             raise ValueError("Invalid GitHub release asset list")
-        matches = [asset for asset in assets if isinstance(asset, dict) and
-                   asset.get("name") == runtime_name(version, system)]
-        # Old releases contain only a setup executable. Never scrape or execute it.
-        if not matches:
+        runtime = release_asset(assets, version, system, runtime_name(version, system))
+        # An installer alone is not an in-place runtime update.
+        if runtime is None:
             continue
-        if len(matches) != 1:
-            raise ValueError("Ambiguous release runtime")
-        asset = matches[0]
-        url = asset.get("browser_download_url")
-        expected_path = f"/{REPOSITORY}/releases/download/{tag}/{asset['name']}"
-        parsed = urllib.parse.urlsplit(url) if isinstance(url, str) else None
-        # GitHub may escape '+' in tags/asset names containing SemVer build metadata.
-        correct_url = (parsed is not None and parsed.scheme == "https" and
-                       parsed.netloc == "github.com" and not parsed.query and not parsed.fragment and
-                       urllib.parse.unquote(parsed.path) == expected_path)
-        digest = asset.get("digest", "")
-        size = asset.get("size")
-        if (asset.get("state") != "uploaded" or not correct_url or
-                not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest) or
-                type(size) is not int or not 0 < size <= MAX_PAYLOAD):
-            raise ValueError("Release runtime is incomplete or lacks its GitHub SHA-256 digest")
         if newest is None or order > version_order(newest.version):
-            newest = Release(version, system, url, size, digest[7:])
+            installer = release_asset(assets, version, system, setup_name(version, system))
+            newest = Release(version, system, runtime.url, runtime.size, runtime.sha256, installer)
     return newest
 
 

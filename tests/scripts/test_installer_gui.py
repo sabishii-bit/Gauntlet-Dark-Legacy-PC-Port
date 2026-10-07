@@ -58,7 +58,7 @@ class WizardTests(unittest.TestCase):
         from PySide6.QtWidgets import QLabel
         from installer.wizard import STRINGS
         self.assertEqual(self.window.status.text(), "")
-        self.assertEqual(self.window.windowTitle(), "Gauntlet Dark Legacy Installer")
+        self.assertEqual(self.window.windowTitle(), "Gauntlet Dark Legacy - Installer")
         self.assertEqual(STRINGS["destination"], "Install directory")
         self.assertEqual(STRINGS["choose_directory"], "Select install directory")
         self.assertNotIn("destination_help", STRINGS)
@@ -270,6 +270,92 @@ class WizardTests(unittest.TestCase):
         self.assertEqual(self.window.mode, "launch")
         self.assertFalse(transaction.exists())
         self.dialog.assert_not_called()
+
+    def test_committed_cleanup_is_launchable_and_retried_on_reopen(self):
+        from installer import update
+        from test_updater import newer_payload
+        import shutil
+        folder = self.installed_folder()
+        remove = shutil.rmtree
+        def locked(path, *args, **kwargs):
+            if Path(path).name == "backup":
+                raise PermissionError("loaded CRT")
+            return remove(path, *args, **kwargs)
+        with mock.patch.object(shutil, "rmtree", locked), mock.patch.object(
+                update, "retry_locked", side_effect=lambda operation: operation()):
+            update.apply_update(folder, newer_payload(self.root / "next"))
+            self.window.inspect_destination()
+            self.assertEqual(self.window.mode, "launch")
+            self.assertIn("update is installed", self.window.status.text())
+            self.assertTrue(self.window.start.isEnabled())
+        self.window.inspect_startup()
+        self.wait_for_operation()
+        self.assertEqual(self.window.mode, "launch")
+        self.assertFalse((folder / update.TRANSACTION).exists())
+        self.dialog.assert_not_called()
+
+    def test_self_update_finishes_on_close_not_as_an_extra_installer_download(self):
+        from installer import releases, self_update, update
+        from test_updater import newer_payload, release_row
+        from test_installer_self_update import setup_package, setup_row
+        from PySide6.QtGui import QCloseEvent
+        folder = self.installed_folder()
+        setup = self.root / ("Installer" + self_update.SUFFIX)
+        setup.write_bytes(b"old installer")
+        raw = newer_payload(self.root / "next", "1.0.0").read_bytes()
+        system = update.installed_info(folder)[0]["platform"]
+        package = setup_package(b"new installer", "1.0.0", system)
+        row = setup_row(release_row("1.0.0", system, raw), package)
+        self.window.network = True
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(
+                sys, "executable", str(setup)), mock.patch.object(releases, "open_release", side_effect=[
+                io.BytesIO(json.dumps([row]).encode()), io.BytesIO(raw), io.BytesIO(package)]):
+            self.window.inspect_destination()
+            self.wait_for_operation()
+            self.window.start.click()
+            self.wait_for_operation()
+        self.assertTrue(self.window.installer_pending)
+        self.assertEqual(setup.read_bytes(), b"old installer")
+        self.assertFalse(self.window.destination.isEnabled())
+        self.assertFalse(self.window.check.isEnabled())
+        self.assertTrue(self.window.start.isEnabled())
+        self.assertIn("Close this window", self.window.status.text())
+        event = QCloseEvent()
+        with mock.patch.object(self_update, "launch_pending") as launch:
+            self.window.closeEvent(event)
+            launch.assert_called_once_with(folder)
+        self.assertTrue(event.isAccepted())
+        self_update.finish_pending(folder)
+        self.assertEqual(setup.read_bytes(), b"new installer")
+        self.dialog.assert_not_called()
+
+    def test_installer_can_catch_up_after_game_already_updated(self):
+        from installer import releases, self_update, update
+        from test_updater import newer_payload, release_row
+        from test_installer_self_update import setup_package, setup_row
+        folder = self.installed_folder()
+        update.apply_update(folder, newer_payload(self.root / "next", "1.0.0"))
+        system = update.installed_info(folder)[0]["platform"]
+        package = setup_package(b"new installer", "1.0.0", system)
+        row = setup_row(release_row("1.0.0", system), package)
+        release = releases.select_release([row], self.window.metadata["version"], system)
+        self.window.network = True
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch(
+                "installer.wizard.check_updates", return_value=release) as check:
+            self.window.inspect_destination()
+            self.wait_for_operation()
+            self.assertEqual(check.call_args.args[0], self.window.metadata["version"])
+            self.assertEqual(self.window.mode, "installer_update")
+            self.assertIn("Update installer", self.window.start.text())
+
+    def test_invalid_cleanup_journal_does_not_crash_wizard(self):
+        from installer import update
+        folder = self.installed_folder()
+        transaction = folder / update.TRANSACTION
+        transaction.mkdir()
+        (transaction / "journal.json").write_text("incomplete")
+        self.window.inspect_destination()
+        self.assertEqual(self.window.mode, "recover")
 
     def test_cancelling_a_check_waits_for_the_worker_and_keeps_installation(self):
         import threading

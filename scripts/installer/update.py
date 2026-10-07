@@ -128,7 +128,19 @@ def atomic_json(path, value):
     os.replace(temporary, path)
 
 
-def _recover(destination):
+def committed_cleanup_pending(destination):
+    """A committed update is installed; retained backups are not a rollback request."""
+    journal = destination / TRANSACTION / "journal.json"
+    if not journal.is_file():
+        return False
+    try:
+        value = read_json(journal)
+    except (OSError, ValueError):
+        return False  # The ordinary recovery path reports the invalid journal.
+    return isinstance(value, dict) and value.get("schema") == 1 and value.get("phase") == "committed"
+
+
+def _recover(destination, defer_cleanup=False):
     transaction = destination / TRANSACTION
     no_links(transaction)
     # Cleanup can be interrupted after deleting the journal but before rmdir.
@@ -171,10 +183,20 @@ def _recover(destination):
         if path.name not in {"stage", "backup", "journal.json", "journal.pending"}:
             raise ValueError("Unexpected recovery file; the update backup was retained")
         no_links(path)
-    for name in ("stage", "backup"):
-        path = transaction / name
-        if path.exists():
-            retry_locked(lambda: shutil.rmtree(path))
+    try:
+        for name in ("stage", "backup"):
+            path = transaction / name
+            if path.exists():
+                retry_locked(lambda: shutil.rmtree(path))
+    except PermissionError:
+        # A frozen Windows updater can itself map a CRT DLL beside the game.
+        # Renaming that DLL into backup succeeds, but deleting the mapped image
+        # does not. The new runtime and receipt are already committed. Retain
+        # the journal and finish disposal on a later launch, after the loader
+        # releases its old mapping; never report this as an uninstalled update.
+        if not defer_cleanup or journal["phase"] != "committed":
+            raise
+        return
     (transaction / "journal.pending").unlink(missing_ok=True)
     (transaction / "journal.json").unlink()
     transaction.rmdir()
@@ -191,7 +213,7 @@ def recover_update(destination):
                 no_links(executable)
                 if executable.is_file():
                     require_game_closed(executable)
-        _recover(destination)
+        _recover(destination, defer_cleanup=True)
     return installed_info(destination)[0]
 
 
@@ -201,7 +223,13 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
     no_links(destination)
     with update_lock(destination):
         if (destination / TRANSACTION).exists():
-            raise ValueError("Recover the interrupted update before installing another version")
+            if committed_cleanup_pending(destination):
+                _recover(destination, defer_cleanup=True)
+                if (destination / TRANSACTION).exists():
+                    raise ValueError("The previous update is installed. Close and reopen the installer "
+                                     "to release its old runtime files before updating again.")
+            else:
+                raise ValueError("Recover the interrupted update before installing another version")
         old, receipt = installed_info(destination)
         metadata, infos = payload_inventory(payload)
         if (metadata["platform"] != old["platform"] or metadata["executable"] != old["executable"] or
@@ -259,6 +287,13 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
             apply_disc_icon(stage, destination, metadata)
             receipt.update({key: metadata[key] for key in ("version", "commit", "platform")})
             atomic_json(stage / "installation.json", receipt)
+            # Do not rename/reinstall byte-identical owned files. In particular,
+            # the installer's bootloader may hold the game's unchanged CRT DLLs
+            # open when it is launched from the installation directory.
+            unchanged = {name for name in old["files"].keys() & metadata["files"].keys()
+                         if old["files"][name] == metadata["files"][name]}
+            old_names = [name for name in old_names if name not in unchanged]
+            new_names = [name for name in new_names if name not in unchanged]
             journal = {"schema": 1, "phase": "prepared", "old": old_names, "new": new_names}
             atomic_json(temporary / "journal.json", journal)
             check_cancel(cancel)
@@ -286,7 +321,7 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
                 # A second failure leaves the complete recovery journal and backups intact.
                 _recover(destination)
                 raise
-            _recover(destination)  # committed journal: remove backups, not the new installation
+            _recover(destination, defer_cleanup=True)
         progress(total, total, "Complete")
     executable = destination / metadata["executable"]
     refresh_shell_icon(executable)
@@ -294,7 +329,28 @@ def apply_update(destination, payload, progress=lambda _done, _total, _name: Non
 
 
 def update_from_release(destination, release, progress=lambda _done, _total, _name: None,
-                        cancel=lambda: False):
+                        cancel=lambda: False, installer=None):
     with tempfile.TemporaryDirectory(prefix="gdl-download-") as temporary:
         payload = download_release(release, Path(temporary) / "runtime.zip", progress, cancel)
-        return apply_update(destination, payload, progress, cancel, release.version)
+        return update_with_installer(destination, payload, installer, progress, cancel,
+                                     release.version, release)
+
+
+def update_with_installer(destination, payload, installer, progress=lambda *_: None,
+                          cancel=lambda: False, expected_version=None, release=None):
+    destination = Path(destination).absolute()
+    if installer is not None:
+        from . import self_update
+        version = expected_version or payload_inventory(payload)[0]["version"]
+        self_update.prepare(destination, release, installer, progress, cancel, bundled_version=version)
+    try:
+        executable = apply_update(destination, payload, progress, cancel, expected_version)
+    except BaseException:
+        if installer is not None:
+            # A runtime commit can succeed even if disposal is interrupted.
+            if not committed_cleanup_pending(destination):
+                self_update.remove_pending(destination)
+        raise
+    if installer is not None:
+        self_update.mark_ready(destination)
+    return executable
