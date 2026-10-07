@@ -174,6 +174,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_rotators.bind(m_layout);
     m_rotators.bindFigures(device, m_layout, items());
     m_worldAnimator.apply(m_scene);
+    m_triggers.placeTargets(m_scene, &m_collision);
     syncCollision();
     m_particles.syncNodes(m_scene);
     if (!m_powerups.load(unpackedRoot / kPowerups)) {

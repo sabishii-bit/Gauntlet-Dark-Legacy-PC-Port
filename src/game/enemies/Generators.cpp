@@ -257,7 +257,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             generator.box.enemyItem = Obstacle::ItemQuery{body->collisionType == 1, body->radius};
         }
         generator.box.solid = generator.presence == Generator::Presence::Shown;
-        bindSupport(generator, info, instance.position, authored ? &*authored : collision);
+        bindSupport(generator, info, instance.position,
+                    itemSupportAt(instance.position, collision, authored ? &*authored : nullptr));
         generator.countdown = 0;
         m_generators.push_back(std::move(generator));
     }
@@ -270,7 +271,7 @@ void Generators::bindSupport(Generator& generator, const ItemInfo& info, const V
     if (collision == nullptr || (info.collisionFlags & 1U) != 0) {
         return;
     }
-    const auto floor = collision->floorAt(authored, 4, 10);
+    const auto floor = collision->floorAt(authored, 4, 10, 1);
     if (!floor) {
         return;
     }

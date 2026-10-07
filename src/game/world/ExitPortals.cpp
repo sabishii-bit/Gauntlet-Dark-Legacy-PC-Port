@@ -67,7 +67,6 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
     clear();
     m_collision = collision;
     const auto authored = itemSupportWorld(layout, collision);
-    const auto* supportWorld = authored ? &*authored : collision;
     ItemArchive& art = itemArchiveForTree(items, kFigure, realmItems);
     const auto tree = art.loaded() ? art.trees.find(kFigure) : std::nullopt;
     if (tree.has_value()) {
@@ -102,8 +101,10 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             }
         }
         portal.transform = itemPlacement(portal.position, instance.rotation);
+        const auto* supportWorld =
+            itemSupportAt(instance.position, collision, authored ? &*authored : nullptr);
         if (supportWorld != nullptr && (info.collisionFlags & 1U) == 0) {
-            if (const auto floor = supportWorld->floorAt(instance.position, 4, 10)) {
+            if (const auto floor = supportWorld->floorAt(instance.position, 4, 10, 1)) {
                 if (const auto transform = supportWorld->objectTransform(floor->object)) {
                     Vec3 position = instance.position;
                     position.y = floor->y + kFloorLift;

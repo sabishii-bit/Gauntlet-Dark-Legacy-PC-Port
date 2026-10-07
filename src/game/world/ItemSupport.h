@@ -10,17 +10,21 @@
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
-/** SetItem/AddItemSub parents floor-placed items to animated world nodes before
- * world animations move them. Query that authored world, not the initial animation pose. */
+/** Rest-pose fallback for items authored at an animated floor's other endpoint. */
 std::optional<WorldCollision> itemSupportWorld(const WorldLayout& layout,
                                                const WorldCollision* collision);
+
+/** AddItemSub's floor probe, preferring the initialized world over the rest-pose fallback. */
+const WorldCollision* itemSupportAt(const Vec3& position, const WorldCollision* current,
+                                    const WorldCollision* authored);
 
 /** The same floor-local placement drives an item's figure and collision during gameplay
  * and camera-only updates. Collision flag 1 deliberately forbids floor placement. */
 class ItemSupport {
 public:
     void bind(const ItemInstance& instance, const ItemInfo& info, const WorldCollision* authored,
-              const ItemFigure& figure, const Obstacle& box);
+              const ItemFigure& figure, const Obstacle& box,
+              const WorldCollision* current = nullptr);
     void sync(const WorldCollision* collision, ItemFigure& figure, Obstacle& box);
     s32 object() const { return m_object; }
 

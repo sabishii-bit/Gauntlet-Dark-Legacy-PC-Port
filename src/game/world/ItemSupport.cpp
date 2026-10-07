@@ -18,14 +18,20 @@ std::optional<WorldCollision> itemSupportWorld(const WorldLayout& layout,
     return result;
 }
 
+const WorldCollision* itemSupportAt(const Vec3& position, const WorldCollision* current,
+                                    const WorldCollision* authored) {
+    return current != nullptr && current->floorAt(position, 4, 10, 1) ? current : authored;
+}
+
 void ItemSupport::bind(const ItemInstance& instance, const ItemInfo& info,
                        const WorldCollision* authored, const ItemFigure& figure,
-                       const Obstacle& box) {
+                       const Obstacle& box, const WorldCollision* current) {
     m_object = -1;
+    authored = itemSupportAt(instance.position, current, authored);
     if (authored == nullptr || (info.collisionFlags & 1U) != 0) {
         return;
     }
-    const auto floor = authored->floorAt(instance.position, 4, 10);
+    const auto floor = authored->floorAt(instance.position, 4, 10, 1);
     if (!floor) {
         return;
     }

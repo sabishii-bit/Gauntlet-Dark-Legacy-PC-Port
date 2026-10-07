@@ -56,8 +56,8 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             log::warn("Gates: no figure {} in the item archive", name);
         }
         gate->box = gate->figure.obstacle(info);
-        gate->support.bind(instance, info, authored ? &*authored : nullptr, gate->figure,
-                           gate->box);
+        gate->support.bind(instance, info, authored ? &*authored : nullptr, gate->figure, gate->box,
+                           collision);
         gate->support.sync(collision, gate->figure, gate->box);
         if (info.collisionType == 4) {
             // Type 7 also includes floor decorations (E1DOORCARPET23). Retail

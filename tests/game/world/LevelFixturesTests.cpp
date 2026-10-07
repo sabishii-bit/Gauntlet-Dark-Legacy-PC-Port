@@ -33,6 +33,68 @@ using Catch::Approx;
 
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 
+TEST_CASE("G3 exit lift and G4 lowered platform carry their chests throughout travel",
+          "[chest-platform][province-riders][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    for (const auto* name : {"G3", "G4"}) {
+        test::FakeRenderDevice device;
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *catalog.byName(name)));
+        Chests chests;
+        REQUIRE(chests.bind(device, world.layout(), world.items(), &world.collision(),
+                            &world.realmItems()));
+        const bool lift = std::string_view{name} == "G3";
+        const s32 object = lift ? 744 : 738;
+        for (const s32 instance :
+             lift ? std::array<s32, 2>{477, 478} : std::array<s32, 2>{45, 429}) {
+            CAPTURE(name, instance);
+            usize index = 0;
+            while (index < chests.size() && chests.chest(index).instance != instance) {
+                ++index;
+            }
+            REQUIRE(index < chests.size());
+            const auto& chest = chests.chest(index);
+            REQUIRE(chest.floor);
+            REQUIRE(chest.floor->object == object);
+            const Vec3 start = chest.figure.position();
+            const auto transform = world.collision().objectTransform(object);
+            REQUIRE(transform);
+            // Before any frame runs, it must already be on the initial (lowered) floor.
+            const auto floor = world.collision().floorAt(start, 0.1f, 0.1f, 1);
+            REQUIRE(floor);
+            CHECK(floor->object == object);
+        }
+        const Vec3 before{(*world.collision().objectTransform(object))[3]};
+        for (usize i = 0; i < world.triggers().size(); ++i) {
+            world.activateTrigger(world.triggers().trigger(i).id, false);
+        }
+        for (s32 frame = 0; frame < 600; ++frame) {
+            world.update(1.0f / 60);
+            world.updateTriggers(1.0f / 60, {});
+            chests.syncFloors(); // Also used while a switch camera pauses ordinary gameplay.
+            for (usize i = 0; i < chests.size(); ++i) {
+                const auto& chest = chests.chest(i);
+                if (chest.floor && chest.floor->object == object) {
+                    const auto transform = world.collision().objectTransform(object);
+                    REQUIRE(transform);
+                    CHECK(glm::distance(chest.figure.position(),
+                                        Vec3{(*transform * chest.floor->local)[3]}) < 0.001f);
+                    CHECK(glm::distance(
+                              chest.box.centre,
+                              chest.figure
+                                  .obstacle(
+                                      world.layout().itemInfos()[static_cast<usize>(chest.info)])
+                                  .centre) < 0.001f);
+                }
+            }
+        }
+        CHECK(glm::distance(before, Vec3{(*world.collision().objectTransform(object))[3]}) > 1);
+    }
+}
+
 TEST_CASE("fixture presentation samples poses and floor placement without changing gameplay",
           "[fixtures][presentation]") {
     const auto root = test::scratchDirectory("fixture-presentation");
@@ -142,13 +204,15 @@ TEST_CASE("Maze traps and fixtures ride their authored floors from the initial a
         CAPTURE(fixture.instance, object);
         const auto current = world.collision().objectTransform(object);
         REQUIRE(current);
-        const Mat4 rest =
-            glm::translate(Mat4{1}, world.layout().worldPosition(static_cast<usize>(object)));
-        const auto floor = authored->floorAt(instance.position, 4, 10);
+        const auto* support = itemSupportAt(instance.position, &world.collision(), &*authored);
+        REQUIRE(support);
+        const auto rest = support->objectTransform(object);
+        REQUIRE(rest);
+        const auto floor = support->floorAt(instance.position, 4, 10, 1);
         REQUIRE(floor);
         const Vec3 position{instance.position.x, floor->y + ItemFigure::kFloorLift,
                             instance.position.z};
-        const Vec3 expected = Vec3{*current * glm::inverse(rest) * Vec4{position, 1}};
+        const Vec3 expected = Vec3{*current * glm::inverse(*rest) * Vec4{position, 1}};
         CHECK(glm::distance(fixture.figure.position(), expected) < 0.001f);
         riders.push_back({&fixture.figure, &fixture.box, object,
                           glm::inverse(*current) * fixture.figure.transform(),
@@ -167,8 +231,8 @@ TEST_CASE("Maze traps and fixtures ride their authored floors from the initial a
         add(gates.gate(i));
     }
     CAPTURE(ridingTraps, ridingBarrels, riders.size());
-    REQUIRE(ridingTraps == 12);
-    CHECK(ridingBarrels == 0); // J4's barrels are not on its animated floors.
+    REQUIRE(ridingTraps == 27);
+    CHECK(ridingBarrels == 1); // Includes fixtures authored at the initial, lowered pose.
     struct PickupRider {
         usize index;
         s32 object;

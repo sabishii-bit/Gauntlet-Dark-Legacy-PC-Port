@@ -76,7 +76,7 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchi
         }
         barrel->box = barrel->figure.obstacle(info);
         barrel->support.bind(instance, info, authored ? &*authored : nullptr, barrel->figure,
-                             barrel->box);
+                             barrel->box, collision);
         barrel->support.sync(collision, barrel->figure, barrel->box);
         m_barrels.push_back(std::move(barrel));
     }

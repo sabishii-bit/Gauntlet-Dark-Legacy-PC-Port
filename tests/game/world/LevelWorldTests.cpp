@@ -363,7 +363,7 @@ TEST_CASE("province pickups stay inside breakable scenery instead of standing on
         }
         const auto& instance = world.layout().itemInstances()[static_cast<usize>(item.instance)];
         const auto support = ground.floorAt(instance.position, PlacedItems::kFloorReachAbove,
-                                            PlacedItems::kFloorReachBelow);
+                                            PlacedItems::kFloorReachBelow, 1);
         const auto lid = world.collision().floorAt(instance.position, PlacedItems::kFloorReachAbove,
                                                    PlacedItems::kFloorReachBelow);
         if (!support || !lid || lid->object < static_cast<s32>(world.layout().objects().size()) ||

@@ -580,6 +580,10 @@ void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnima
             fire(i, true, true, animator, scene, collision);
         }
     }
+    placeTargets(scene, collision);
+}
+
+void LevelTriggers::placeTargets(WorldScene& scene, WorldCollision* collision) {
     for (Target& target : m_targets) {
         if ((target.kind & LevelTrigger::kFades) != 0) {
             target.alpha = fadesAway(target) ? 0.0f : 1.0f;

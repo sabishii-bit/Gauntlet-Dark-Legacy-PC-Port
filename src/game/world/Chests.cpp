@@ -7,6 +7,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/world/ItemSupport.h"
+
 namespace gdl::game {
 
 namespace {
@@ -45,14 +47,7 @@ bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& 
                   const WorldCollision* collision, ItemArchive* realmItems) {
     clear();
     m_collision = collision;
-    std::optional<WorldCollision> restCollision;
-    if (collision != nullptr && collision->movingObjectCount() != 0) {
-        restCollision = *collision;
-        for (usize i = 0; i < layout.objects().size(); ++i) {
-            restCollision->setObjectTransform(static_cast<s32>(i),
-                                              glm::translate(Mat4{1.0f}, layout.worldPosition(i)));
-        }
-    }
+    const auto restCollision = itemSupportWorld(layout, collision);
     m_infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
@@ -77,12 +72,13 @@ bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& 
         if (!chest->figure.place(device, art, name, instance, collision)) {
             log::warn("Chests: no figure {} in the item archive", name);
         }
-        // Items are authored against the unanimated world, not the lift's initial keyframe.
-        if (restCollision) {
+        const auto* support =
+            itemSupportAt(instance.position, collision, restCollision ? &*restCollision : nullptr);
+        if (support != nullptr && (info.collisionFlags & 1U) == 0) {
             constexpr f32 kAbove = 4.0f;
             constexpr f32 kBelow = 10.0f;
-            if (const auto floor = restCollision->floorAt(instance.position, kAbove, kBelow)) {
-                if (const auto placement = restCollision->objectTransform(floor->object)) {
+            if (const auto floor = support->floorAt(instance.position, kAbove, kBelow, 1)) {
+                if (const auto placement = support->objectTransform(floor->object)) {
                     Vec3 position = instance.position;
                     position.y = floor->y + ItemFigure::kFloorLift;
                     chest->floor =

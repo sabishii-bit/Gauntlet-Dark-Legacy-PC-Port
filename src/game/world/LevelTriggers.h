@@ -166,6 +166,8 @@ public:
      * update too, as ProcessItems does; spawning inside one must not disable it. */
     void openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                  WorldScene& scene, WorldCollision* collision);
+    /** Places registered height targets before floor-bound items choose their parents. */
+    void placeTargets(WorldScene& scene, WorldCollision* collision);
     /** Opens at once, as the level starts, the targets of the triggers with these ids (the
      * tower's lifts once the battlefield is entered, items.c 6956: the object is marked
      * activated and its animation put at its last frame); the triggers themselves are left

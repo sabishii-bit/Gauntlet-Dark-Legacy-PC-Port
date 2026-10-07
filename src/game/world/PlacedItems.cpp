@@ -8,6 +8,7 @@
 
 #include "game/players/ItemPickup.h"
 #include "game/world/ItemFigure.h"
+#include "game/world/ItemSupport.h"
 
 namespace gdl::game {
 namespace {
@@ -95,16 +96,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
                        const WorldCollision* collision, std::span<ItemArchive* const> archives) {
     clear();
     m_collision = collision;
-    // Authored pickup positions describe the layout's rest pose. Find their
-    // supporting objects there, then let the current animation pose carry them.
-    std::optional<WorldCollision> restCollision;
-    if (collision != nullptr && collision->movingObjectCount() != 0) {
-        restCollision = *collision;
-        for (usize i = 0; i < layout.objects().size(); ++i) {
-            restCollision->setObjectTransform(static_cast<s32>(i),
-                                              glm::translate(Mat4{1.0f}, layout.worldPosition(i)));
-        }
-    }
+    const auto restCollision = itemSupportWorld(layout, collision);
     m_archives.assign(archives.begin(), archives.end());
     m_infos.clear();
     for (ItemArchive* archive : archives) {
@@ -150,7 +142,12 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         }
         item.position = instance.position;
         item.transform = itemPlacement(item.position, instance.rotation);
-        restOnFloor(item, restCollision ? &*restCollision : collision, kFloorLift);
+        if ((info.collisionFlags & 1U) == 0) {
+            restOnFloor(item,
+                        itemSupportAt(instance.position, collision,
+                                      restCollision ? &*restCollision : nullptr),
+                        kFloorLift);
+        }
         item.visible = item.shownTo(m_players);
         m_items.push_back(std::move(item));
     }
@@ -163,7 +160,7 @@ void PlacedItems::restOnFloor(Item& item, const WorldCollision* collision, f32 l
     if (collision == nullptr) {
         return;
     }
-    const auto floor = collision->floorAt(item.position, kFloorReachAbove, kFloorReachBelow);
+    const auto floor = collision->floorAt(item.position, kFloorReachAbove, kFloorReachBelow, 1);
     if (!floor) {
         return;
     }

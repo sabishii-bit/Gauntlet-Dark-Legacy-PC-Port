@@ -58,8 +58,8 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
                                    : trap->figure.position() + offset;
         trap->figure.gateParticlesOnSequence(true);
         trap->box.solid = false;
-        trap->support.bind(instance, info, authored ? &*authored : nullptr, trap->figure,
-                           trap->box);
+        trap->support.bind(instance, info, authored ? &*authored : nullptr, trap->figure, trap->box,
+                           collision);
         trap->support.sync(collision, trap->figure, trap->box);
         trap->ticksLeft = restTicks(*trap);
         m_traps.push_back(std::move(trap));
