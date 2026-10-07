@@ -127,6 +127,90 @@ TEST_CASE("combatant shots impact items without reflecting or hitting sheltered 
     CHECK(f.projectiles.takeRockHits().empty());
 }
 
+TEST_CASE("reflective armour returns combatant missiles with capped damage and lifetime",
+          "[boss-projectiles][reflective-shield]") {
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 1; // long-lived straight shot
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    shot.damageScale = 10;
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array players{EnemyView{.player = 2, .position = {0, 0, 4}, .reflects = true}};
+    f.step(0.2f, players);
+    const auto contact = f.projectiles.takeHits();
+    REQUIRE(contact.size() == 1);
+    CHECK(contact[0].ricochet);
+    CHECK(contact[0].damage == 0);
+    CHECK(contact[0].player == -1);
+    REQUIRE(f.projectiles.count() == 1);
+    CHECK(f.effects.effect(0).position.z < 2.5f);
+    CHECK(f.effects.effect(0).secondsLeft <= 10);
+    // The returned shot can strike its source without granting the player kill credit.
+    const std::array targets{MissileTarget{.id = 7, .base = {0, 0, -2}, .height = 6}};
+    f.effects.update(0.2f);
+    f.projectiles.update(0.2f, nullptr, players, f.device, f.effects, f.sound, {}, targets);
+    const auto returned = f.projectiles.takeHits();
+    REQUIRE(returned.size() == 1);
+    CHECK(returned[0].target == 7);
+    CHECK(returned[0].player == -1);
+    CHECK(returned[0].damage == 15);
+    CHECK(returned[0].direction.z < 0);
+    CHECK(f.projectiles.count() == 0);
+}
+
+TEST_CASE("reflective armour does not block combatant area traps",
+          "[boss-projectiles][reflective-shield]") {
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 6;
+    shot.origin = {0, 0, 0};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array players{EnemyView{.player = 0, .position = {0, 0, 0}, .reflects = true}};
+    for (s32 frame = 0; frame < 15; ++frame) {
+        f.step(1.0f / 30, players);
+    }
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE_FALSE(hits.empty());
+    CHECK(std::ranges::all_of(hits, [](const CombatantProjectileHit& hit) {
+        return hit.player == 0 && hit.damage > 0 && !hit.ricochet;
+    }));
+}
+
+TEST_CASE("native gargoyle projectile attacks turn back at reflective armour",
+          "[boss-projectiles][reflective-shield][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION", "GAR_SERP");
+    CAPTURE(form);
+    Fixture f;
+    REQUIRE(f.data.load(root / "CRITTER" / (std::string{form} + ".WAD")));
+    REQUIRE(f.archive.load(root / "MONSTERS" / form));
+    // DAMG[0] is an unused template without an SFXX binding. Launch the shot
+    // selected by the actual attack, not every nominal projectile record.
+    const auto move = f.data.moveNamed("FBALL");
+    REQUIRE(move);
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = f.data.moves()[*move].damage0;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.projectiles.count() == 1);
+    const std::array players{EnemyView{.player = 0, .position = {0, 0, 0}, .reflects = true}};
+    // Start in contact to isolate shield handling from the authored aiming bias.
+    bool reflected = false;
+    for (s32 frame = 0; frame < 120 && !reflected && f.projectiles.count() != 0; ++frame) {
+        f.step(1.0f / 30, players);
+        for (const auto& hit : f.projectiles.takeHits()) {
+            CHECK(hit.player == -1);
+            reflected = reflected || hit.ricochet;
+        }
+    }
+    CHECK(reflected);
+}
+
 TEST_CASE("piercing combatant shots stop at surviving cover and pass destroyed cover",
           "[game][boss-projectiles][safe-rocks]") {
     Fixture f;
@@ -1182,7 +1266,8 @@ void checkWebEscape(s32 fps, bool animated) {
                                             .sound = [](std::string_view) {},
                                             .cry = [](std::string_view) {},
                                             .named = [](std::string_view, f32) {},
-                                            .learnBlock = {}};
+                                            .learnBlock = {},
+                                            .vibrate = {}};
     PartyMotion::Events motion;
     motion.perform = [](usize, PartyMotion::Action) {};
     motion.select = [](usize, const SelectorInput&, s32) {};

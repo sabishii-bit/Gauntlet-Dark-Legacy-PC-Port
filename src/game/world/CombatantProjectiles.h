@@ -27,6 +27,9 @@ struct CombatantProjectileHit {
     f32 repeatGap = 0.0f; ///< shared player effect immunity after damage above two
     s32 critter = -1;
     CombatantKind ownerKind = CombatantKind::Unknown;
+    s32 target = -1; ///< a reflected missile's opponent, in the caller's target namespace
+    bool ricochet = false;
+    Vec3 position{0};
 };
 
 /** A world impact, including a rebound that does not end the projectile. */
@@ -47,7 +50,8 @@ public:
                 const WorldCollision* collision = nullptr);
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound,
-                std::span<const MissileStop> items = {});
+                std::span<const MissileStop> items = {},
+                std::span<const MissileTarget> opponents = {});
     void clear(EffectTrees& effects);
     std::vector<CombatantProjectileHit> takeHits();
     std::vector<RockHit> takeRockHits() { return std::exchange(m_rockHits, {}); }
@@ -78,6 +82,7 @@ private:
         bool summonsEnemies = false;
         f32 contactSeconds = 0; ///< sticky contacts advance on the authored 30 Hz game clock
         s32 piercedPlayer = -1; ///< reflecting shots spend their pass-through on first contact
+        bool reflected = false;
     };
     struct ItemImpact {
         f32 fraction = 0;
@@ -102,5 +107,6 @@ private:
     std::vector<Mat4> m_generators;
     std::vector<Mat4> m_summons;
     std::mt19937 m_random;
+    f32 m_ricochetIn = 0;
 };
 } // namespace gdl::game

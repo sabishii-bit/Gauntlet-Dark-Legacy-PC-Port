@@ -317,7 +317,6 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                     events.perform(i, Action::ComboStart);
                 }
             }
-            events.select(i, in.selector, ticks);
             const bool cursorForward =
                 aim && in.move.direction.x == 0.0f && in.move.direction.y > 0.0f;
             if (deed == PlayerDeed::None && move.any() && !in.strafe && (!aim || cursorForward) &&
@@ -326,6 +325,11 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 events.automaticMeleeDeed) {
                 deed = events.automaticMeleeDeed(i, attackFacing);
             }
+        }
+        // mini_inventory_update (8008033C) is a HUD input path, not an attack
+        // action. Damage reactions and a halo hold must not block item toggles.
+        if (!held && !down && !entering && player < inputs.size()) {
+            events.select(i, inputs[player].selector, ticks);
         }
         // A pickup's gesture, or a gag at food gone bad, is made when nothing else is asked
         // (speak_kind, pmotion.c 1722).

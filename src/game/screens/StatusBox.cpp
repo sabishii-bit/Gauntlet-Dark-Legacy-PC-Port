@@ -34,10 +34,10 @@ constexpr s32 kLevelY = 326;
 constexpr f32 kNameScale = 0.667f;
 constexpr std::string_view kStrip = "S3";
 constexpr s32 kCountIconX = 28;
-constexpr s32 kCountIconY = 288;
+constexpr s32 kCountIconY = 264;
 constexpr s32 kCountIconSize = 16;
 constexpr s32 kCountTextX = 48;
-constexpr s32 kCountTextY = 292;
+constexpr s32 kCountTextY = 268;
 constexpr f32 kCountScale = 1.5f;
 
 } // namespace

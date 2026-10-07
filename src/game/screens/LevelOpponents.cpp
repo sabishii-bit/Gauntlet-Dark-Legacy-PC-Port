@@ -1091,7 +1091,8 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
     }
     m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
-                                  m_resources->device, m_resources->effects, shotSound, inTheWay);
+                                  m_resources->device, m_resources->effects, shotSound, inTheWay,
+                                  swarmTargets());
     const auto combatantHits = m_combatantProjectiles.takeRockHits();
     m_rockHits.insert(m_rockHits.end(), combatantHits.begin(), combatantHits.end());
     for (const CombatantWorldHit& hit : m_combatantProjectiles.takeWorldHits()) {
@@ -1134,6 +1135,14 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
     }
     for (const CombatantProjectileHit& hit : m_combatantProjectiles.takeHits()) {
+        if (hit.ricochet) {
+            playAt(kRicochetSound, kQuietSound, hit.position);
+            continue;
+        }
+        if (hit.target >= 0) {
+            strikeSwarm(hit.target, hit.damage, hit.flags, hit.direction, players);
+            continue;
+        }
         for (usize player = 0; player < players.size(); ++player) {
             if (players[player].actor.player() == hit.player &&
                 players[player].life == PlayerLife::Standing && players[player].effectGap <= 0) {

@@ -175,6 +175,44 @@ TEST_CASE("object mesh morphing requires matching topology UVs and materials",
     CHECK_FALSE(TreeModel::compatibleMorph(from, to));
 }
 
+TEST_CASE("prelit tree meshes retain vertex colour while ordinary meshes use scene lighting",
+          "[world][model][alpha-wall-lighting]") {
+    const auto dir = sampleFigure("tree-model-baked-lighting");
+    writeTextFile(dir / "models/000_BODY.obj", "v 0 0 0 0.25 0.5 0.75\nv 1 0 0 0.5 0.25 0.75\n"
+                                               "v 0 1 0 0.75 0.5 0.25\nusemtl tex0\nf 1 2 3\n");
+    test::convertModelFixture(dir);
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    test::FakeRenderDevice device;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    const auto body = models.find("BODY");
+    REQUIRE(body);
+    const auto& mesh = models.mesh(*body);
+    REQUIRE(mesh.prelit);
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    const auto checkColors = [&](bool flash) {
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, Mat4{1}, {});
+        REQUIRE(device.draws.size() == 2);
+        REQUIRE(device.draws[0].vertices.size() == 3);
+        for (usize i = 0; i < 3; ++i) {
+            CHECK(device.draws[0].vertices[i].color ==
+                  (flash ? Color::white() : mesh.vertices[mesh.parts[0].indices[i]].color));
+        }
+        CHECK(device.draws[1].vertices[0].color ==
+              (flash ? Color::white() : WorldLighting{}.shade({0, 0, 1})));
+    };
+    checkColors(false);
+    figure.setAppearance(true);
+    checkColors(true);
+    figure.setAppearance(false);
+    checkColors(false);
+}
+
 TEST_CASE("tree models resolve native external slots only through local named lenders",
           "[world][model][texture-lender]") {
     const auto dir = sampleFigure("tree-model-external");

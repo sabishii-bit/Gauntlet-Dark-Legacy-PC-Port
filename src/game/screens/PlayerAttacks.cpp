@@ -854,6 +854,11 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
     };
     const PlayerActor& actor = runtime.actor;
     const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    // PlayerMotion's speak_done latch survives losing contact (80085450).
+    // PlayerProcessPowerups clears it only when the halo is no longer worn.
+    if ((worn.armor & DeathRules::kProtection) == 0) {
+        runtime.deathHaloHeard = false;
+    }
     if (!allowed || runtime.life != PlayerLife::Standing ||
         (worn.armor & DeathRules::kProtection) == 0) {
         return release();
@@ -906,7 +911,10 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
     if (runtime.deathHeld != slot) {
         release();
         runtime.deathHeld = slot;
-        m_resources->audio.playNamed(kHaloSound, kHaloVolume);
+        if (!runtime.deathHaloHeard) {
+            m_resources->audio.playNamed(kHaloSound, kHaloVolume);
+            runtime.deathHaloHeard = true;
+        }
     }
     const Vec3 at = enemies.positionOf(slot);
     runtime.deathHeldTicks += ticks;

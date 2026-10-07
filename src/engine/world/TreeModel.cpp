@@ -269,8 +269,12 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 const Vec4 placed = placement * Vec4{position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
                 const bool flash = node.maskedTexture != nullptr && m_maskedTexture == nullptr;
-                Color color = additive || m_unlit || flash ? Color::white()
-                                                           : lighting.shade(Vec3{placed}, normal);
+                // Baked RGB belongs to the geometry stream, including level meshes
+                // rendered as destructible items rather than by WorldScene.
+                Color color = shape.mesh->prelit ? v.color : lighting.shade(Vec3{placed}, normal);
+                if (additive || m_unlit || flash) {
+                    color = Color::white();
+                }
                 color.r = static_cast<u8>(static_cast<u32>(color.r) * m_tint.r / 255);
                 color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
                 color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);

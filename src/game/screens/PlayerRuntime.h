@@ -84,6 +84,7 @@ struct PlayerRuntime {
     u32 deathHeldEffect = 0; ///< Death's drain effect on the one holding him
     SoundHandle deathHeldCry = kNoSound;
     SoundHandle deathHeldSuck = kNoSound;
+    bool deathHaloHeard = false; ///< activation cue latched until Anti-Death is unequipped
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     Knockback knockback;                    ///< the pushes of this frame's hits, and the slide
     TurboMeter turbo;

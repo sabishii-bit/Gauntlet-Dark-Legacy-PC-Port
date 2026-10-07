@@ -210,10 +210,12 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
 void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                   std::span<const EnemyView> players, RenderDevice& device,
                                   EffectTrees& effects, const PlaySound& sound,
-                                  std::span<const MissileStop> items) {
+                                  std::span<const MissileStop> items,
+                                  std::span<const MissileTarget> opponents) {
     if (seconds <= 0.0f) {
         return;
     }
+    m_ricochetIn = std::max(0.0f, m_ricochetIn - seconds);
     for (Flying& flying : m_flying) {
         const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
         if (flying.planted) {
@@ -359,10 +361,46 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     }
                 }
             }
+            const MissileTarget* returnedTarget = nullptr;
+            if (!wall && flying.reflected) {
+                for (const MissileTarget& target : opponents) {
+                    const auto at = CombatantProjectile::contact(from, to, radius, target.base,
+                                                                 target.radius, target.height);
+                    if (at && *at < nearest) {
+                        nearest = *at;
+                        returnedTarget = &target;
+                        victim = nullptr;
+                    }
+                }
+            }
             const auto item = hitItems(flying, from, wall ? destination : to, nearest, items);
+            if (!wall && !item && victim != nullptr && victim->reflects) {
+                // ProcessEffects (80094BE0), mode 0: reverse a direct missile,
+                // cap its harm at 15, shorten its life, and enable critter hits.
+                // Planted/sticky/area effects above deliberately do not use this branch.
+                if (m_ricochetIn <= 0) {
+                    CombatantProjectileHit cue;
+                    cue.ricochet = true;
+                    cue.position = glm::mix(from, to, nearest);
+                    m_hits.push_back(cue);
+                    m_ricochetIn = 1;
+                }
+                flying.velocity = -flying.velocity;
+                flying.position = from;
+                flying.reflected = true;
+                flying.rotation.y = std::atan2(flying.velocity.x, flying.velocity.z);
+                const f32 amount = damage.damage * flying.shot.damageScale;
+                if (amount > 15) {
+                    flying.shot.damageScale *= 15 / amount;
+                }
+                effects.shortenLifetime(flying.effect, kBounceTimeLoss, kBounceLifetime);
+                effects.snapPresentation(flying.effect);
+                contacted.push_back(victim->player);
+                continue;
+            }
             // Item impacts are not reflective world contacts (ProcessEffects mode 0).
             // Query only the travelled segment so cover cannot be damaged through a wall.
-            if (wall || item || victim != nullptr) {
+            if (wall || item || victim != nullptr || returnedTarget != nullptr) {
                 if (item) {
                     flying.position = glm::mix(from, wall ? destination : to, item->fraction);
                 } else {
@@ -373,6 +411,17 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         {flying.position, worldObject, liquid && (damage.flags & kReflect) == 0});
                 }
                 summon(flying);
+                if (!wall && !item && returnedTarget != nullptr) {
+                    CombatantProjectileHit hit;
+                    hit.target = returnedTarget->id;
+                    hit.damage = damage.damage * flying.shot.damageScale;
+                    hit.flags = damage.flags;
+                    hit.direction = glm::length(flying.velocity) > 0
+                                        ? glm::normalize(flying.velocity)
+                                        : Vec3{0};
+                    hit.position = flying.position;
+                    m_hits.push_back(hit);
+                }
                 if (item && item->suppressEffect) {
                     // Surviving cover ends the piercing flight. An optional end
                     // visual changes only its presentation, never its damage.
@@ -585,6 +634,7 @@ void CombatantProjectiles::clear(EffectTrees& effects) {
     m_rockHits.clear();
     m_generators.clear();
     m_summons.clear();
+    m_ricochetIn = 0;
 }
 
 std::optional<CombatantProjectiles::ItemImpact>

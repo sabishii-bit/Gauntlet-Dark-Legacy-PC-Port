@@ -2716,6 +2716,14 @@ TEST_CASE("a halo wearer drains Death only while touching the nearest target ahe
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     Fixture f;
+    const auto audioRoot = test::scratchDirectory("halo-contact-audio");
+    const std::array<test::NativeSoundSample, 1> samples{{{24000, std::vector<s16>(240, 4096)}}};
+    test::writeNativeSoundBank(audioRoot / "audio/COMMON", R"({"sounds":[
+        {"name":"S_HALO","sequence":[{"sample":0}]}]})",
+                               samples);
+    AudioMixer mixer(24000);
+    SoundPlayer sounds(mixer);
+    f.audio.open(audioRoot, &sounds, nullptr);
     REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& enemies = f.opponents.enemies();
@@ -2736,6 +2744,8 @@ TEST_CASE("a halo wearer drains Death only while touching the nearest target ahe
     REQUIRE(held.has_value());
     CHECK(*held == enemies.positionOf(*death));
     CHECK(f.players[0].deathHeld == *death);
+    CHECK(f.players[0].deathHaloHeard);
+    CHECK(sounds.voiceCount() == 1);
     CHECK(f.effects.count() == 1); // his drain, about the one holding him
     for (s32 frame = 0; frame < 9; ++frame) {
         REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
@@ -2788,7 +2798,21 @@ TEST_CASE("a halo wearer drains Death only while touching the nearest target ahe
     CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
     CHECK(enemies.healthOf(*death) == beforeRetreatDrain - 1);
     CHECK(f.players[0].deathHeld == -1);
+    CHECK(sounds.voiceCount() == 1); // reacquiring and escaping do not replay activation
+    auto& inventory = actor.save().progress().inventory;
+    const auto halo = std::ranges::find_if(inventory.powerups, [](const PowerupSlot& item) {
+        return item.flags == DeathRules::kProtection;
+    });
+    REQUIRE(halo != inventory.powerups.end());
+    halo->on = false;
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK_FALSE(f.players[0].deathHaloHeard);
+    halo->on = true;
+    actor.place(enemies.positionOf(*death) - Vec3{0, 0, 2});
+    REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK(sounds.voiceCount() == 2); // a new use of the item can announce again
     f.opponents.close();
+    f.audio.close();
 }
 
 TEST_CASE("pausing a halo hold silences its loops without advancing the drain",

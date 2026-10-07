@@ -111,7 +111,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     REQUIRE(test::minCorner(device.draws[0]) == Vec2{0.0f, 304.0f});
     REQUIRE(test::minCorner(device.draws[1]) == Vec2{0.0f, 320.0f});
     REQUIRE(test::maxCorner(device.draws[1]) == Vec2{128.0f, 384.0f});
-    REQUIRE(test::minCorner(device.draws[2]) == Vec2{28.0f, 288.0f});
+    REQUIRE(test::minCorner(device.draws[2]) == Vec2{28.0f, 264.0f});
     REQUIRE(test::minCorner(device.draws[3]).x >= 48.0f);
 
     device.draws.clear();

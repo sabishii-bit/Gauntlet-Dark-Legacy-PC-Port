@@ -823,7 +823,8 @@ TEST_CASE("party motion holds input and consumes reactions without advancing mis
     f.players[0].reaction = PlayerDeed::Flinch;
     f.players[1].life = PlayerLife::Dying;
     f.step();
-    REQUIRE(f.calls.empty());
+    REQUIRE(f.calls == std::vector<std::string>{"select0"});
+    f.calls.clear();
     REQUIRE(f.players[0].actor.position().z == 0);
     REQUIRE(f.players[0].reaction == PlayerDeed::None);
     REQUIRE(f.players[1].life == PlayerLife::InTower);
@@ -843,6 +844,54 @@ TEST_CASE("party motion ignores invalid player ids", "[game][screens][party-moti
     REQUIRE(f.calls.empty());
 }
 
+TEST_CASE("a knocked down player can open and toggle inventory without attacking or moving",
+          "[party-motion][selector][alpha-inventory][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    auto& player = f.players[0];
+    f.players[1].life = PlayerLife::InTower;
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& inventory = player.actor.save().progress().inventory;
+    inventory.powerups[0] = {60, powerup::kArmor, 0, DeathRules::kProtection, true};
+    PowerupSelector selector;
+    f.events.select = [&](usize index, const SelectorInput& input, s32 ticks) {
+        REQUIRE(index == 0);
+        selector.step(input, inventory, ticks);
+    };
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.attackDeed = [](usize, bool, bool, const Vec3&) -> PlayerDeed {
+        FAIL_CHECK("knockdown must still block attacks");
+        return PlayerDeed::None;
+    };
+    player.reaction = PlayerDeed::FallBack;
+    auto& input = f.inputs[3];
+    input.attack = true;
+    input.move = {{0, 1}, 1};
+    input.selector.up = true;
+    f.step();
+    REQUIRE(player.figure->animator().reacting());
+    input.selector = {};
+    for (s32 tick = 0; tick < 20 && !selector.showing(); ++tick) {
+        REQUIRE(player.figure->animator().reacting());
+        f.step();
+    }
+    REQUIRE(selector.showing());
+    REQUIRE(player.figure->animator().reacting());
+    input.selector.up = true;
+    f.step();
+    CHECK_FALSE(inventory.powerups[0].on);
+    CHECK(player.actor.position() == Vec3{0});
+    CHECK(player.figure->animator().reacting());
+    f.step(true);
+    CHECK_FALSE(inventory.powerups[0].on); // cutscene/pause still holds the selector
+}
+
 TEST_CASE("pending web reactions slow movement without swallowing the escape input",
           "[game][party-motion][player-impact][spider]") {
     Fixture f;
@@ -859,7 +908,8 @@ TEST_CASE("pending web reactions slow movement without swallowing the escape inp
         f.players[0].reaction = PlayerDeed::Webbed;
         f.step();
         REQUIRE(f.players[0].actor.position().z == Approx(normalStep * 0.4f * (frame + 1)));
-        REQUIRE(f.calls.empty());
+        REQUIRE(f.calls == std::vector<std::string>{"select0"});
+        f.calls.clear();
     }
     const Vec3 before = f.players[0].actor.position();
     f.players[0].reaction = PlayerDeed::Webbed;
@@ -971,7 +1021,8 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
                                             .sound = [](std::string_view) {},
                                             .cry = [](std::string_view) {},
                                             .named = [](std::string_view, f32) {},
-                                            .learnBlock = {}};
+                                            .learnBlock = {},
+                                            .vibrate = {}};
     LevelOpponents::Events opponents;
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                          const PlayerImpact& impact) {
@@ -1026,6 +1077,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     const f32 along = blow.flags == PlayerImpact::kStun ? 0.0f : blow.direction.z;
     bool gotUp = false;
     for (s32 i = 0; i < 120 && player.figure->animator().reacting(); ++i) {
+        f.calls.clear();
         f.step();
         const Vec3 at = player.actor.position();
         REQUIRE(at.x == 0.0f);
@@ -1035,7 +1087,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
             REQUIRE(at == Vec3(0));
         }
         REQUIRE_FALSE(player.figure->animator().released());
-        REQUIRE(f.calls.empty());
+        REQUIRE(f.calls == std::vector<std::string>{"select0"});
         gotUp = gotUp || player.figure->animator().action() == recovery;
     }
     REQUIRE(gotUp);
@@ -1264,15 +1316,16 @@ TEST_CASE("it transfers on the resolved body contact even when the recipient is 
     CHECK(tagged.size() == 1);
 }
 
-TEST_CASE("a body retches while gas lasts with the stick let go, heeding no button; a pickup's "
-          "gesture waits for nothing else to be asked",
-          "[game][screens][party-motion][pickup]") {
+TEST_CASE(
+    "a body retches while gas lasts with the stick let go, allowing only inventory; a pickup's "
+    "gesture waits for nothing else to be asked",
+    "[game][screens][party-motion][pickup]") {
     Fixture f;
     f.players[0].gagSeconds = 0.5f;
     f.inputs[3].attack = true;
     f.step();
     const auto selected = [&] { return std::ranges::find(f.calls, "select0") != f.calls.end(); };
-    CHECK_FALSE(selected()); // retching: the buttons are not read
+    CHECK(selected()); // retching blocks attacks, not the separate HUD selector
     CHECK(f.players[0].gagSeconds == Approx(0.5f - 1.0f / 30.0f));
     // Moving, it does not retch, and the buttons are read again.
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
@@ -1289,7 +1342,7 @@ TEST_CASE("a body retches while gas lasts with the stick let go, heeding no butt
     CHECK(f.players[0].gesture == PlayerDeed::None);
 }
 
-TEST_CASE("a halo wearer holding Death stands facing him and heeds no button",
+TEST_CASE("a halo wearer holding Death stands facing him but can still toggle inventory",
           "[game][screens][party-motion][death]") {
     Fixture f;
     std::vector<bool> allowed;
@@ -1305,7 +1358,7 @@ TEST_CASE("a halo wearer holding Death stands facing him and heeds no button",
     f.step();
     CHECK(f.players[0].actor.position() == Vec3{0, 0, 0});                  // no step taken
     CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2)); // facing him
-    CHECK(std::ranges::find(f.calls, "select0") == f.calls.end());
+    CHECK(std::ranges::find(f.calls, "select0") != f.calls.end());
     f.step(true);
     CHECK(allowed == std::vector<bool>{true, false}); // held, no hold may be made
 }

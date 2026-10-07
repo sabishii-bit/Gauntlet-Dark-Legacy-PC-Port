@@ -163,4 +163,49 @@ TEST_CASE("invulnerable walls retain collision but are excluded from assisted ac
     CHECK_FALSE(walls.strike(0, 1000, collision));
     CHECK(walls.standing(0));
 }
+
+TEST_CASE("G4 breakaway meshes retain their baked lighting after a hit",
+          "[walls][alpha-wall-lighting][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELG4/WORLDS.PS2").parent_path();
+    WorldLayout layout;
+    ModelSet models;
+    TextureSet textures;
+    WorldCollision collision;
+    test::FakeRenderDevice device;
+    REQUIRE(layout.load(directory));
+    REQUIRE(models.load(directory));
+    REQUIRE(textures.load(directory));
+    REQUIRE(collision.load(directory, layout));
+    DestructibleWalls walls;
+    walls.bind(device, layout, models, textures, collision);
+    REQUIRE(walls.size() == 13);
+    for (usize i = 0; i < walls.size(); ++i) {
+        const auto& wall = walls.wall(i);
+        const auto instance = static_cast<usize>(wall.object) - layout.objects().size();
+        const auto& name = layout.itemInstances().at(instance).name;
+        CAPTURE(name);
+        const auto found = models.find(name);
+        REQUIRE(found);
+        const auto& mesh = models.mesh(*found);
+        REQUIRE(mesh.prelit);
+        const auto checkColors = [&](bool flash) {
+            device.draws.clear();
+            wall.model.draw(device, Mat4{1}, wall.transform, {});
+            REQUIRE(device.draws.size() == mesh.parts.size());
+            for (usize p = 0; p < mesh.parts.size(); ++p) {
+                const auto& part = mesh.parts[p];
+                REQUIRE(device.draws[p].vertices.size() == part.indices.size());
+                for (usize v = 0; v < part.indices.size(); ++v) {
+                    CHECK(device.draws[p].vertices[v].color ==
+                          (flash ? Color::white() : mesh.vertices[part.indices[v]].color));
+                }
+            }
+        };
+        checkColors(false);
+        REQUIRE(walls.strike(i, 1, collision));
+        checkColors(true);
+        walls.update(1.0f / 30);
+        checkColors(false);
+    }
+}
 } // namespace
