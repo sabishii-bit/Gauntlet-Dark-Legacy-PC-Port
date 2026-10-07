@@ -93,7 +93,7 @@ struct LevelInfo {
         mapPoints; ///< glow anchor followed by route dash anchors; negative means unused
     s32 cameraIndex = -1;
     s32 audioIndex = -1;
-    s32 maxEnemies = 25; ///< how many enemies the place keeps about at once
+    s32 maxEnemies = 25; ///< gameplay capacity: the camera overrides the level's initial limit
     s32 bossType = -1;   ///< the kind of its boss, none under nought
     s32 rune = 0;        ///< the runestone it holds, from one; none at nought
     s32 legend = 0;      ///< the realm whose legend item it holds; none at nought
@@ -122,6 +122,7 @@ struct LevelCameraInfo {
     f32 smooth = 0.0f;
     f32 minYaw = 0.0f;
     f32 maxYaw = 0.0f;
+    std::optional<s32> enemyMax; ///< CAMS+0x34; absent in older converted metadata
 };
 
 /** A level's sound bank, music stream and the sounds it plays on entry and on hits. */
@@ -156,6 +157,7 @@ public:
 
 private:
     bool loadNative(const std::filesystem::path& file);
+    void resolveEnemyLimits();
     u32 m_realm = 0;
     std::string m_prefix;
     std::vector<LevelInfo> m_levels;

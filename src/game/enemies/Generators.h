@@ -78,8 +78,12 @@ public:
                    std::string_view tree = "BOSSGEN", bool settled = false);
 
     /** Ordinary broods update inside this view; patrol and always-active posts are exempt.
+     * The normal level camera also limits attention distance; boss cameras omit it.
      * No view means every generator is visible. */
-    void setView(std::optional<ViewVolume> view) { m_view = view; }
+    void setView(std::optional<ViewVolume> view, std::optional<Vec3> attention = std::nullopt) {
+        m_view = view;
+        m_attention = attention;
+    }
     /** Joined participants, including those waiting in the tower but not those who quit. */
     void setPlayerCount(s32 players) { m_players = players; }
     /** Obstacles supplied here are fixtures; the other generators are included internally. */
@@ -169,6 +173,7 @@ private:
     bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind, ItemArchive* realmItems,
                     std::span<TextureSet* const> lenders);
     static s32 stateFor(const Generator& generator, bool destroyed);
+    bool seen(const Generator& generator) const;
     void updatePresence(Generator& generator, bool seen) const;
     void applyBroodEvents(Enemies& enemies);
     static void bindSupport(Generator& generator, const ItemInfo& info, const Vec3& authored,
@@ -177,6 +182,7 @@ private:
     const WorldCollision* m_collision = nullptr;
     std::vector<Generator> m_generators;
     std::optional<ViewVolume> m_view;
+    std::optional<Vec3> m_attention;
     std::vector<std::unique_ptr<Bodies>> m_bodies;
     GeneratorScales m_scales;
     s32 m_players = 1;

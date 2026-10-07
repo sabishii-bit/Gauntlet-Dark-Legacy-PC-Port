@@ -116,7 +116,7 @@ TEST_CASE("patrol generators create one sentry without ordinary brood visibility
     GeneratorScales scales;
     scales.most = GENERATE(0.0f, 1.0f);
     REQUIRE(generators.bind(device, layout, enemies, nullptr, scales, 1));
-    generators.setView(lookingAt({10000, 0, 0}));
+    generators.setView(lookingAt({10000, 0, 0}), Vec3{10000, 0, 0});
     // generate_single (0x80063444), called before generate_now for AI15:
     // no nearby player required, one child, descriptor radius rather than height.
     generators.update(kTicks, enemies, {});
@@ -165,13 +165,125 @@ TEST_CASE("authored always-active generators retain their offscreen update excep
     enemies.open(device, root, nullptr, 4, {}, 1);
     Generators generators;
     REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
-    generators.setView(lookingAt({10000, 0, 0}));
+    generators.setView(lookingAt({10000, 0, 0}), Vec3{10000, 0, 0});
     const std::array party{EnemyView{.position = {0, 0, 30}}};
     generators.update(kTicks, enemies, party);
     REQUIRE(generators.bredOf(0) == 1);
     const s32 countdown = generators.countdownOf(0);
     generators.update(kTicks, enemies, party);
     CHECK(generators.countdownOf(0) == countdown - kTicks);
+}
+
+TEST_CASE("normal camera attention range freezes generator countdowns at the native 3D boundary",
+          "[game][generators][generator-population]") {
+    const auto root = test::scratchDirectory("generator-attention-range");
+    writeGeneratorArchive(root);
+    writeTextFile(root / "world.json", R"({
+      "objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10,
+                    "collisionOffset":[0,4,0]}],
+      "itemInstances":[{"info":0,"position":[0,0,0],
+                        "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    const ViewVolume view = lookingAt({});
+    const std::array party{EnemyView{.position = {0, 0, 30}}};
+    // SetItem adds one unit to the authored collision/attention height.
+    // From (0,5,0) to (30,45,0) is exactly 50; the generator origin is farther.
+    generators.setView(view, Vec3{30, 45, 0});
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    const s32 countdown = generators.countdownOf(0);
+    REQUIRE(countdown > 0);
+    generators.setView(view, Vec3{30, 45.01f, 0});
+    generators.update(countdown + kTicks, enemies, party);
+    CHECK(generators.countdownOf(0) == countdown);
+    CHECK(generators.bredOf(0) == 1);
+    generators.setView(view, Vec3{30, 45, 0});
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.countdownOf(0) == countdown - kTicks);
+
+    // Boss/legacy cameras still use visibility without the extra attention gate.
+    generators.setView(view);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.countdownOf(0) == countdown - 2 * kTicks);
+    generators.setView(lookingAt({10000, 0, 0}), Vec3{10000, 0, 0});
+    generators.clear();
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.bredOf(0) == 1);
+}
+
+TEST_CASE("on-screen generators reclaim a full distant brood without offscreen slot stealing",
+          "[game][generators][generator-population]") {
+    const s32 ticks = GENERATE(1, 2);
+    const bool wideView = GENERATE(false, true);
+    const auto root = test::scratchDirectory("generator-distant-pool");
+    writeGeneratorArchive(root);
+    writeTextFile(root / "world.json", R"({
+      "objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10,
+                    "activeType":65}],
+      "itemInstances":[{"info":0,"position":[200,0,0],
+                        "params":[1,0,7,0,30,0,5,0,0,0,0,0]},
+                       {"info":0,"position":[0,0,0],
+                        "params":[1,0,7,0,30,0,5,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, Enemies::kMost, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    const std::array party{EnemyView{.player = 0, .position = {0, 0, 30}}};
+    // Populate all 25 slots with live brood, not dying bodies or authored placements.
+    for (s32 i = 0; i < Enemies::kMost; ++i) {
+        EnemySpawn spawn;
+        spawn.generator = 0;
+        spawn.position = {200, 0, static_cast<f32>(i) * 10};
+        REQUIRE(enemies.spawn(spawn, party));
+    }
+    REQUIRE(enemies.count() == Enemies::kMost);
+    // While every body counts as visible, neither generator may evict one.
+    generators.setView(lookingAt({}));
+    if (wideView) {
+        ViewVolume overhead;
+        overhead.position = {100, 200, 0};
+        overhead.forward = {0, -1, 0};
+        overhead.up = {0, 0, 1};
+        REQUIRE(overhead.sees({0, 1, 0}, 0));
+        REQUIRE(overhead.sees({200, 1, 0}, 0));
+        // Both huts pass the frustum: only the attention limit stops the distant
+        // always-active one from claiming the near one's replaceable brood slot.
+        generators.setView(overhead, Vec3{0, 1, 0});
+    }
+    generators.update(ticks, enemies, party);
+    CHECK(generators.bredOf(0) == 0);
+    CHECK(generators.bredOf(1) == 0);
+    CHECK(generators.livingOf(0) == Enemies::kMost);
+
+    enemies.setView(lookingAt({}));
+    enemies.update(2, kStep, party);
+    REQUIRE(enemies.inView() == 0);
+    generators.update(ticks, enemies, party);
+    CHECK(enemies.count() == Enemies::kMost);
+    CHECK(generators.bredOf(0) == 0); // Always-active, but offscreen and no free slots.
+    CHECK(generators.bredOf(1) == 1);
+    CHECK(generators.livingOf(0) == Enemies::kMost - 1);
+    CHECK(generators.livingOf(1) == 1);
+    CHECK(generators.countdownOf(1) == 30);
+
+    // A released slot does not bypass the successful birth's ordinary countdown.
+    for (s32 elapsed = 0; elapsed < 30; elapsed += ticks) {
+        generators.update(ticks, enemies, party);
+        CHECK(generators.bredOf(1) == 1);
+    }
+    CHECK(generators.countdownOf(1) == 0);
 }
 
 TEST_CASE("generator durability uses authored armor and whole hit points",
@@ -1639,8 +1751,8 @@ TEST_CASE("all solo G1 generators have a viable native birth and authored initia
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     REQUIRE(world.level());
-    // InitEnemies (0x800510A4) uses WDATA's maxenemies, not the pool's full 25.
-    REQUIRE(world.level()->maxEnemies == 13);
+    // camera_mode_level replaces InitEnemies' initial 13-slot limit with CAMS' 25.
+    REQUIRE(world.level()->maxEnemies == 25);
     const auto seed = GENERATE(1U, 7U, 41U);
     GeneratorScales scales;
     scales.health = world.level()->tuning.generatorHealth;
@@ -1661,7 +1773,7 @@ TEST_CASE("all solo G1 generators have a viable native birth and authored initia
         }
         // Isolate births without removing neighbours' blocking volumes. Even a
         // downward view activates several expanded visibility spheres; otherwise
-        // earlier generators consume the 13-slot pool and fabricate dead exits.
+        // earlier generators consume the pool and fabricate dead exits.
         std::vector<Obstacle> neighbours;
         for (s32 other = 0; static_cast<usize>(other) < generators.count(); ++other) {
             if (other != chosen && generators.standing(other)) {

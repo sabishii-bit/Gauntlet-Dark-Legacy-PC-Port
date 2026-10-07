@@ -97,6 +97,9 @@ LevelCameraInfo parseCamera(const nlohmann::json& json) {
     camera.smooth = json.value("smooth", 0.0f);
     camera.minYaw = json.value("minYaw", 0.0f);
     camera.maxYaw = json.value("maxYaw", 0.0f);
+    if (const auto limit = json.find("enemyMax"); limit != json.end()) {
+        camera.enemyMax = limit->get<s32>();
+    }
     return camera;
 }
 
@@ -182,7 +185,18 @@ bool WorldData::load(const std::filesystem::path& file) {
         m_levels.clear();
         return false;
     }
+    resolveEnemyLimits();
     return !m_levels.empty();
+}
+
+void WorldData::resolveEnemyLimits() {
+    // camera_mode_level replaces InitEnemies' limit before gameplay starts.
+    // Retain the level value only when no camera capacity was supplied.
+    for (auto& level : m_levels) {
+        if (const auto* view = camera(level.cameraIndex); view != nullptr && view->enemyMax) {
+            level.maxEnemies = *view->enemyMax;
+        }
+    }
 }
 
 const LevelInfo* WorldData::level(std::string_view name) const {

@@ -52,6 +52,7 @@ constexpr std::array<s32, 4> kHellAlgorithms{30, 30, 7, 7};
 constexpr s32 kGeneratorKindStrength = 0;
 constexpr std::array<s32, 3> kCasterAlgorithms{28, 29, 30}; ///< dropped once a state crumbles
 constexpr f32 kGeneratorViewScale = 8.0f;
+constexpr f32 kAttentionRangeSquared = 2500.0f; ///< do_items, lbl_80343C50 (50 world units)
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -374,6 +375,8 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
 
 void Generators::clear() {
     m_collision = nullptr;
+    m_view.reset();
+    m_attention.reset();
     m_specialBirth = 0;
     m_generators.clear();
     for (auto& bodies : m_bodies) {
@@ -382,6 +385,24 @@ void Generators::clear() {
         }
     }
     m_bodies.clear();
+}
+
+bool Generators::seen(const Generator& generator) const {
+    if (!m_view) {
+        return true;
+    }
+    // SetItem's collision and attention anchors share the lifted, rotated offset.
+    const Vec3 point =
+        TargetAssist::itemAcquisition(generator.placement, generator.collisionOffset,
+                                      generator.targetRadius, generator.targetHeight, 1)
+            .point;
+    if (!m_view->sees(point, generator.viewRadius)) {
+        return false;
+    }
+    // do_items applies this extra gate in normal/debug camera modes (1/2), not
+    // the legacy camera used by bosses. An expanded sphere alone admits distant huts.
+    return !m_attention ||
+           glm::dot(point - *m_attention, point - *m_attention) <= kAttentionRangeSquared;
 }
 
 void Generators::updatePresence(Generator& generator, bool seen) const {
@@ -433,17 +454,14 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     }
     // Refresh the entire obstacle roster before any generator attempts a birth.
     for (Generator& generator : m_generators) {
-        const bool seen =
-            !m_view.has_value() || m_view->sees(generator.position, generator.viewRadius);
-        updatePresence(generator, seen);
+        updatePresence(generator, seen(generator));
     }
     // uncouple_enemy releases quota before the death animation. A patrol's
     // departure resets the counter, which cannot be reconstructed by a census.
     applyBroodEvents(enemies);
     for (usize g = 0; g < m_generators.size(); ++g) {
         Generator& generator = m_generators[g];
-        const bool seen =
-            !m_view.has_value() || m_view->sees(generator.position, generator.viewRadius);
+        const bool visible = seen(generator);
         if (generator.presence != Generator::Presence::Shown) {
             continue;
         }
@@ -454,7 +472,7 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             continue;
         }
         const bool patrol = generator.algorithm == kPatrolWay;
-        if (!patrol && !seen && !generator.alwaysActive) {
+        if (!patrol && !visible && !generator.alwaysActive) {
             continue;
         }
         // do_items checks the living brood quota before generate_now ticks its timer.
@@ -496,8 +514,8 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.direction = generator.direction;
         spawn.clearance = patrol ? generator.patrolClearance : generator.clearance;
         spawn.patrolBirth = patrol;
-        spawn.priority =
-            seen || patrol ? EnemySpawn::Priority::Offscreen : EnemySpawn::Priority::FreeSlotOnly;
+        spawn.priority = visible || patrol ? EnemySpawn::Priority::Offscreen
+                                           : EnemySpawn::Priority::FreeSlotOnly;
         spawn.generator = static_cast<s32>(g);
         if (generator.algorithm == kZigZagWay) {
             spawn.zigZagSide = (generator.bred & 1) == 0 ? 1 : -1;

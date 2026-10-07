@@ -1581,7 +1581,10 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, {}, nullptr, position, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    REQUIRE(opponents.enemies().count() == static_cast<usize>(world.level()->maxEnemies));
+    // All twenty authored swarm placements fit once CAMS' gameplay limit replaces
+    // LEVL's initial thirteen. Generators can then use the five remaining slots.
+    REQUIRE(world.level()->maxEnemies == 25);
+    REQUIRE(opponents.enemies().count() == 20);
     std::array<bool, 3> special{};
     bool skirmishBomber = false;
     for (s32 id = 0; id < Enemies::kMost; ++id) {
@@ -1666,6 +1669,83 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     opponents.close();
     fixtures.clear();
     effects.clear();
+}
+
+TEST_CASE("G1 generators beyond the normal camera attention range do not consume swarm slots",
+          "[level-opponents][generators][generator-population][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelFixtures fixtures;
+    fixtures.bind({device, world, weapons, effects, audio, 1});
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    const Vec3 focus{100, 10.2f, -72.5f};
+    players[0].actor.spawn(0, {}, nullptr, focus, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1, true}, players);
+    // This camera deliberately includes distant huts in the frustum. do_items
+    // additionally clips their attention distance to 50 in the standard camera.
+    ViewVolume overhead;
+    overhead.position = focus + Vec3{0, 180, 0};
+    overhead.forward = {0, -1, 0};
+    overhead.up = {0, 0, 1};
+    const auto views = LevelOpponents::enemyViews(players);
+    auto& generators = opponents.generators();
+    auto& enemies = opponents.enemies();
+    // Some authored posts deliberately update offscreen; they are not subject
+    // to the ordinary generator dispatcher gate.
+    std::vector<bool> alwaysActive;
+    for (const auto& instance : world.layout().itemInstances()) {
+        if (instance.info >= 0 &&
+            static_cast<usize>(instance.info) < world.layout().itemInfos().size()) {
+            const auto& info = world.layout().itemInfos()[static_cast<usize>(instance.info)];
+            if (info.type == ItemInfo::kGenerator) {
+                alwaysActive.push_back((info.activeType & 0x40U) != 0 ||
+                                       (instance.flags & 1U) != 0);
+            }
+        }
+    }
+    // All G1 generator kinds bind in authored order. Use their records, not a
+    // position match: floor settling deliberately changes a generator's height.
+    REQUIRE(alwaysActive.size() == generators.count());
+    for (s32 frame = 0; frame < 180; ++frame) {
+        opponents.watch(overhead, focus);
+        generators.update(2, enemies, views, fixtures.obstacles());
+        auto obstacles = generators.enemyObstacles();
+        const auto items = fixtures.obstacles();
+        obstacles.insert(obstacles.end(), items.begin(), items.end());
+        enemies.update(2, 1.0f / 30, views, obstacles);
+    }
+    s32 distant = 0;
+    s32 nearbyBirths = 0;
+    for (s32 g = 0; static_cast<usize>(g) < generators.count(); ++g) {
+        if (!generators.standing(g) || generators.algorithmOf(g) == kPatrolWay ||
+            alwaysActive[static_cast<usize>(g)]) {
+            continue;
+        }
+        const auto target = generators.target(g, g);
+        REQUIRE(target.acquisition);
+        const f32 distance = glm::distance(target.acquisition->point, focus);
+        CAPTURE(g, distance, generators.bredOf(g));
+        if (distance > 50) {
+            CHECK(generators.bredOf(g) == 0);
+            if (overhead.sees(generators.positionOf(g), 0)) {
+                ++distant;
+            }
+        } else {
+            nearbyBirths += generators.bredOf(g);
+        }
+    }
+    CHECK(distant > 0);
+    CHECK(nearbyBirths > 0);
+    opponents.close();
+    fixtures.clear();
 }
 
 TEST_CASE("exit settlement credits a last-frame generator kill once without advancing combat",

@@ -7,11 +7,67 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "formats/WorldDataWad.h"
 
 namespace {
 
 using namespace gdl;
 using Catch::Approx;
+
+TEST_CASE("gameplay enemy limits follow the camera record rather than the initialization cap",
+          "[world-data][generator-population]") {
+    const auto dir = test::scratchDirectory("gameplay-enemy-limits");
+    writeTextFile(dir / "world.json", R"({
+      "levels":[{"name":"G1","cameraIndex":0,"maxEnemies":13},
+                {"name":"J4","cameraIndex":1,"maxEnemies":25},
+                {"name":"OLD","cameraIndex":2,"maxEnemies":17},
+                {"name":"NONE","cameraIndex":-1,"maxEnemies":11}],
+      "cameras":[{"enemyMax":25},{"enemyMax":20},{}]
+    })");
+    WorldData world;
+    REQUIRE(world.load(dir / "world.json"));
+    REQUIRE(world.level("G1"));
+    REQUIRE(world.level("J4"));
+    REQUIRE(world.level("OLD"));
+    REQUIRE(world.level("NONE"));
+    CHECK(world.level("G1")->maxEnemies == 25);
+    CHECK(world.level("J4")->maxEnemies == 20);
+    CHECK(world.level("OLD")->maxEnemies == 17);
+    CHECK(world.level("NONE")->maxEnemies == 11);
+}
+
+TEST_CASE("every native realm preserves its gameplay camera enemy capacity",
+          "[world-data][generator-population][assets]") {
+    constexpr std::array kRealms{"BATTLE", "CASTLE", "DESERT", "DREAM",  "FOREST", "HELL",  "ICE",
+                                 "MOUNT",  "SECRET", "SKY",    "TEMPLE", "TEST",   "TOWER", "TOWN"};
+    usize checked = 0;
+    for (const auto* realm : kRealms) {
+        const auto path = test::assetOrSkip(std::string{"WDATA/"} + realm + ".WAD");
+        const auto raw = formats::WorldDataFile::parse(readFile(path));
+        WorldData world;
+        REQUIRE(world.load(path));
+        for (const auto& source : raw.levels) {
+            CAPTURE(realm, source.name, source.maxEnemies, source.cameraIndex);
+            REQUIRE(source.cameraIndex >= 0);
+            REQUIRE(static_cast<usize>(source.cameraIndex) < raw.cameras.size());
+            const auto limit = raw.cameras[static_cast<usize>(source.cameraIndex)].enemyMax;
+            const auto* level = world.level(source.name);
+            REQUIRE(level);
+            // camera_mode_level (80026CF0) overwrites gNumEnemies from CAMS+0x34
+            // after InitEnemies has used LEVL+0x8E. The gameplay limit is not 13 in G1.
+            CHECK(level->maxEnemies == limit);
+            if (source.name == "G1") {
+                CHECK(source.maxEnemies == 13);
+                CHECK(limit == 25);
+            }
+            if (source.name == "J4" || source.name == "J6") {
+                CHECK(limit == 20);
+            }
+            ++checked;
+        }
+    }
+    CHECK(checked == 65);
+}
 
 TEST_CASE("camera limit metadata preserves legacy authored boxes and native world derivation",
           "[world-data][camera-bounds]") {

@@ -675,7 +675,11 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
 
 void LevelOpponents::watch(const ViewVolume& view, const Vec3& attention) {
     m_enemies.setView(view);
-    m_generators.setView(view);
+    // main.c selects the distance-limited normal camera unless a boss is present.
+    const LevelInfo* level = m_resources ? m_resources->world.level() : nullptr;
+    m_generators.setView(view, level != nullptr && level->bossType >= 0
+                                   ? std::nullopt
+                                   : std::optional<Vec3>{attention});
     m_view = view;
     m_attention = attention;
     standPlacements(view, attention);

@@ -114,6 +114,7 @@ bool WorldData::loadNative(const std::filesystem::path& file) {
             camera.smooth = from.smooth;
             camera.minYaw = from.minYaw;
             camera.maxYaw = from.maxYaw;
+            camera.enemyMax = from.enemyMax;
             m_cameras.push_back(camera);
         }
         for (auto& from : source.audio) {
@@ -132,6 +133,7 @@ bool WorldData::loadNative(const std::filesystem::path& file) {
         for (auto& sound : source.sounds) {
             m_sounds.push_back(std::move(sound.name));
         }
+        resolveEnemyLimits();
         return loaded();
     } catch (const std::exception& e) {
         log::warn("Native world data {}: {}", file.string(), e.what());
