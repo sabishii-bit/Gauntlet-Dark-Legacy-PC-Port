@@ -117,6 +117,37 @@ TEST_CASE("level sound lookup preserves bank precedence and rejects corrupt bank
     soundscape.close();
 }
 
+TEST_CASE("crystal scroll voice uses the wizard bank and is owned by the scroll",
+          "[soundscape][tower-crystals]") {
+    const auto root = test::scratchDirectory("crystal-scroll-sound");
+    writeBank(root, "WIZTOWER", {"S_CRYS4MNT"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape sounds;
+    sounds.open(root, &player, nullptr);
+    sounds.speakOverScroll("S_CRYS4MNT");
+    const auto voice = sounds.voice();
+    REQUIRE(voice != kNoSound);
+    REQUIRE(player.isPlaying(voice));
+    std::array<f32, 128> output{};
+    mixer.mix(output);
+    CHECK(output.back() > 0);
+    sounds.stopVoice();
+    CHECK_FALSE(player.isPlaying(voice));
+}
+
+TEST_CASE("native crystal announcement is playable from the tower sound bank",
+          "[tower-crystals][assets]") {
+    const auto root = test::assetOrSkip("AUDIO/WIZTOWER.VBK").parent_path().parent_path();
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape sounds;
+    sounds.open(root, &player, nullptr);
+    sounds.speakOverScroll("S_CRYS4MNT");
+    REQUIRE(sounds.voice() != kNoSound);
+    CHECK(player.isPlaying(sounds.voice()));
+}
+
 /** A bank of one-second lines that play once, so the narrator's queue can be timed. */
 void writeSecondBank(const std::filesystem::path& root, std::string_view bank,
                      std::initializer_list<std::string_view> names) {

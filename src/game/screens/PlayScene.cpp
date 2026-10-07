@@ -274,6 +274,7 @@ void PlayScene::close() {
     m_opponentsAdvanced = false;
     m_projectilesAdvanced = false;
     m_playSeconds = 0.0f;
+    m_towerNoticeSeconds = 0.0f;
     m_hud.clear();   // before the static texture borrowed for selector glow
     m_names.clear(); // before the static sheet its font borrows
     m_staticTextures.releaseTextures();
@@ -933,6 +934,14 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         return PlayOutcome::Running;
     }
     const bool held = m_welcome.hold(ticks);
+    if (!held && m_world->isTower()) {
+        m_towerNoticeSeconds += seconds;
+        if (m_towerNoticeSeconds >= 3.0f &&
+            PartyPickups::announceTowerUnlock(m_players, pickupServices())) {
+            m_towerNoticeSeconds = 0;
+            return PlayOutcome::Running;
+        }
+    }
     if (!held && updateChallenge(seconds)) {
         m_destination = LevelRef::tower(); // the application restores the parent when present
         m_secretTravel = true;

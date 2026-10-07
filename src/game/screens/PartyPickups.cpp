@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/ItemPickup.h"
+#include "game/players/NameCheats.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PickupHud.h"
 
@@ -315,6 +316,43 @@ void PartyPickups::announceUnlock(s32 realm, std::span<PlayerRuntime> players,
     if (static_cast<usize>(realm) < kUnlockVoices.size()) {
         services.audio.speakOverScroll(kUnlockVoices[static_cast<usize>(realm)]);
     }
+}
+
+bool PartyPickups::announceTowerUnlock(std::span<PlayerRuntime> players, const Services& services) {
+    const auto participates = [](const PlayerRuntime& runtime) {
+        const auto& save = runtime.actor.save();
+        const auto* costume = hiddenCostume(save.name);
+        return !runtime.departed && (costume == nullptr || costume->character != save.character ||
+                                     costume->directory != "SUM");
+    };
+    // TowerCheckMessages scans completion2[0..7], excluding the black-crystal entry.
+    // A negative count is the native, persisted "already congratulated" sentinel.
+    for (usize realm = 1; realm < 8; ++realm) {
+        const s32 needed = LevelTriggers::crystalsNeeded(static_cast<s32>(realm));
+        s32 best = 0;
+        for (const auto& runtime : players) {
+            if (participates(runtime)) {
+                const s32 count = runtime.actor.save().progress().crystals[realm];
+                if (best >= 0 && (count < 0 || count > best)) {
+                    best = count;
+                }
+            }
+        }
+        if (best != needed || !services.openMessage || !services.openMessage(kUnlockLevel, realm)) {
+            continue;
+        }
+        services.audio.speakOverScroll(kUnlockVoices[realm]);
+        for (auto& runtime : players) {
+            if (participates(runtime) &&
+                runtime.actor.save().progress().crystals[realm] == needed) {
+                runtime.actor.save().progress().crystals[realm] = -1;
+                const s32 character = runtime.actor.save().character;
+                runtime.entrySave.classes[static_cast<usize>(character)].crystals[realm] = -1;
+            }
+        }
+        return true;
+    }
+    return false;
 }
 
 void PartyPickups::dropKeys(RenderDevice& device, LevelWorld& world, PlayerRuntime& runtime) {

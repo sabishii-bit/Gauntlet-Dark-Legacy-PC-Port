@@ -655,6 +655,9 @@ void LevelSoundscape::updateHourglass(const std::optional<Vec3>& wearer, const A
 void LevelSoundscape::speakOverScroll(std::string_view name) {
     stopVoice();
     m_voice = playNamed(name);
+    if (m_voice == kNoSound) {
+        m_voice = playPromotion(name);
+    }
 }
 
 void LevelSoundscape::opening(const TriggerOpening& event) {

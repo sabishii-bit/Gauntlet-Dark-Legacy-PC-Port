@@ -393,6 +393,7 @@ private:
     std::vector<PointLight> m_lights; ///< this frame's, gathered before it is drawn
     BossSequence m_bossSequence;
     f32 m_playSeconds = 0.0f;
+    f32 m_towerNoticeSeconds = 0.0f;
     SumnerVisit m_sumnerVisit;
     TowerPromotion m_promotion;
     TowerRelics m_towerRelics;

@@ -18,8 +18,10 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/config/GameConfig.h"
 #include "game/players/ItemPickup.h"
 #include "game/screens/PartyPickups.h"
+#include "game/screens/PlayScene.h"
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/LevelCatalog.h"
 
@@ -93,6 +95,68 @@ TEST_CASE("a native Turbo Boost pickup is carried until its owner activates the 
     CHECK(players[1].actor.save().progress().inventory.powerupCount() == 0);
 }
 
+TEST_CASE("tower crystal congratulations survive the in-level notice and acknowledge each class",
+          "[pickups][tower-crystals][multiplayer]") {
+    LevelWorld world;
+    LevelFixtures fixtures;
+    PartyHud hud;
+    LevelSoundscape audio;
+    const ClassDataSet classes;
+    std::array<PlayerRuntime, 2> players;
+    std::vector<usize> pages;
+    bool canOpen = true;
+    PartyPickups::Services services{.world = world,
+                                    .fixtures = fixtures,
+                                    .hud = hud,
+                                    .audio = audio,
+                                    .classes = classes,
+                                    .sounds = nullptr,
+                                    .help = {},
+                                    .openMessage = {},
+                                    .challengeCoin = {}};
+    services.openMessage = [&](std::string_view key, usize page) {
+        CHECK(key == "UNLOCKLEVEL");
+        if (canOpen) {
+            pages.push_back(page);
+        }
+        return canOpen;
+    };
+    constexpr usize kRealm = 2;
+    const s32 needed = LevelTriggers::crystalsNeeded(kRealm);
+    players[0].actor.save().character = 6;
+    auto& complete = players[0].actor.save().progress();
+    complete.crystals[kRealm] = needed;
+    complete.unlocked = 1U << kRealm; // Already displayed the in-level notice.
+    players[1].actor.save().progress().crystals[kRealm] = needed - 1;
+    SECTION("a completed party member suppresses a repeated ceremony") {
+        players[1].actor.save().progress().crystals[kRealm] = -1;
+        CHECK_FALSE(PartyPickups::announceTowerUnlock(players, services));
+        CHECK(pages.empty());
+        return;
+    }
+    SECTION("departed members cannot suppress the returning party") {
+        players[1].actor.save().progress().crystals[kRealm] = -1;
+        players[1].departed = true;
+    }
+    SECTION("a refused scroll does not consume the acknowledgement") {
+        canOpen = false;
+        CHECK_FALSE(PartyPickups::announceTowerUnlock(players, services));
+        CHECK(complete.crystals[kRealm] == needed);
+        canOpen = true;
+    }
+    const s32 otherCount = players[1].actor.save().progress().crystals[kRealm];
+    REQUIRE(PartyPickups::announceTowerUnlock(players, services));
+    CHECK(pages == std::vector<usize>{kRealm});
+    CHECK(complete.crystals[kRealm] == -1);
+    CHECK(players[0].entrySave.classes[6].crystals[kRealm] == -1);
+    CHECK(players[0].actor.save().classes[0].crystals[kRealm] == 0);
+    CHECK(players[1].actor.save().progress().crystals[kRealm] == otherCount);
+    CHECK(CharacterSave::fromJson(players[0].actor.save().toJson()).progress().crystals[kRealm] ==
+          -1);
+    CHECK_FALSE(PartyPickups::announceTowerUnlock(players, services));
+    CHECK(pages.size() == 1);
+}
+
 TEST_CASE("the narrator counts the party's runestones as the original does",
           "[game][screens][pickups]") {
     CHECK(PartyPickups::runeCountVoices(0).empty());
@@ -101,6 +165,44 @@ TEST_CASE("the narrator counts the party's runestones as the original does",
     CHECK(PartyPickups::runeCountVoices(12) ==
           std::vector<std::string>{"S_RUNE12", "S_RUNEFOUND2"});
     CHECK(PartyPickups::runeCountVoices(13).empty()); // AudioNumRunesFound has no thirteenth
+}
+
+TEST_CASE("returning to the tower opens the pending crystal scroll after arrival",
+          "[tower-crystals][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("L1")));
+    GameConfig config;
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.levels = &catalog;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "TEST";
+    save.progress().crystals[2] = 100;
+    save.progress().unlocked = 1U << 2;
+    PlayOptions options;
+    options.welcome = false;
+    const std::array party{PartyMember{0, save}};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.actor(0));
+    for (s32 frame = 0; frame < 1800 && !scene.scroll().active(); ++frame) {
+        REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+        if (scene.spawning()) {
+            REQUIRE(scene.actor(0)->save().progress().crystals[2] == 100);
+        }
+    }
+    REQUIRE(scene.scroll().active());
+    CHECK(scene.actor(0)->save().progress().crystals[2] == -1);
 }
 
 TEST_CASE("the party's pickups are shared, taught, gestured and handed to the scene",
