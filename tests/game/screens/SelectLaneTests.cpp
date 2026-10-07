@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/platform/Input.h"
@@ -692,6 +693,53 @@ TEST_CASE("changing the selected class restores its wallet after browsing withou
     f.step(press(true));
     CHECK(f.lane.save().character == 0);
     CHECK(f.lane.save().gold == 800);
+}
+
+TEST_CASE("loaded Sorceress draws her native stone relief after locking in",
+          "[select][sorceress-plaque][assets]") {
+    const auto root = test::assetOrSkip("SELECT/OBJECTS.NGC").parent_path();
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    REQUIRE(textures.load(root));
+    const auto relief = textures.find("S12_WEAP_SOR");
+    REQUIRE(relief);
+    const auto& image = textures.image(*relief);
+    REQUIRE(image.width > 0);
+    REQUIRE(image.height > 0);
+    CHECK(image.pixel(image.width / 2, image.height / 2).a == 255);
+    const Texture* plaque = &textures.texture(device, *relief);
+    Fixture f("select-sorceress-relief");
+    f.services.selectTexture = [&](std::string_view name) -> const Texture* {
+        const auto index = textures.find(name);
+        return index ? &textures.texture(device, *index) : nullptr;
+    };
+    CharacterSave save;
+    save.name = "SOR";
+    save.character = 6;
+    save.progress().health = 500;
+    REQUIRE(f.slots.write(0, save));
+    f.lane.activate();
+    f.step(press(true));
+    REQUIRE(f.lane.state() == SelectLane::State::LoadPick);
+    f.step(press(true));
+    f.step({}, SelectLane::kOperationStepTicks * 3);
+    f.step({}, SelectLane::kNoticeTicks);
+    REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
+    REQUIRE(f.lane.pickedClass() == 6);
+    f.step(press(true));
+    REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
+    f.step(press(true)); // Done
+    REQUIRE(f.lane.lockedIn());
+    f.step({}, 128);
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.lane.drawImages(canvas);
+    canvas.end();
+    const auto draw = std::ranges::find_if(
+        device.draws, [&](const auto& entry) { return entry.texture == plaque; });
+    REQUIRE(draw != device.draws.end());
+    REQUIRE_FALSE(draw->vertices.empty());
+    CHECK(draw->vertices.front().color.a == 255);
 }
 
 TEST_CASE("loading with nothing saved shows a notice and drawing emits the lane",

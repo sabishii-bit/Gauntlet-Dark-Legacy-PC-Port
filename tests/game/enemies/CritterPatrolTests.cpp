@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
@@ -12,9 +13,11 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/app/Scenario.h"
 #include "game/enemies/CritterPatrol.h"
 #include "game/enemies/Critters.h"
 #include "game/enemies/EnemyMind.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 using namespace gdl;
@@ -259,6 +262,75 @@ TEST_CASE("the castle's generals pace between the two posts each is placed by",
     REQUIRE(back);
     REQUIRE(steps >= 2);
     REQUIRE(critters.patrolling(*id));
+}
+
+TEST_CASE("G4 generals patrol native geometry and acquire players approaching from either side",
+          "[critter-patrol][g4-generals][assets]") {
+    const usize instanceIndex = GENERATE(65U, 84U, 97U, 129U);
+    const bool behind = GENERATE(false, true);
+    CAPTURE(instanceIndex, behind);
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G4")));
+    const auto& instance = world.layout().itemInstances()[instanceIndex];
+    const auto floor = world.collision().floorAt(instance.position, 4, 10, 1);
+    REQUIRE(floor);
+    Critters critters;
+    critters.open(device, root, &world.collision(), EnemyScales{}, 'G');
+    critters.setLookouts(LookoutRoute::of(world.layout().locators()));
+    const f32 sight = instanceIndex <= 84 ? 10.0f : 15.0f;
+    const auto id = critters.spawn(CombatantKind::General,
+                                   Vec3{instance.position.x, floor->y, instance.position.z},
+                                   instance.rotation.y, "", sight);
+    REQUIRE(id);
+    REQUIRE(critters.patrolling(*id));
+    const s32 first = critters.lookoutOf(*id);
+    bool reached = false;
+    for (s32 i = 0; i < 1200 && !reached; ++i) {
+        critters.update(kTicks, kStep, {});
+        reached = critters.lookoutOf(*id) != first;
+    }
+    REQUIRE(reached);
+    const Vec3 spot = critters.positionOf(*id);
+    const f32 yaw = critters.yawOf(*id);
+    const Vec3 direction{std::sin(yaw), 0, std::cos(yaw)};
+    // CritterCalcTargetScore doubles distance behind/aside, not a front-only cone.
+    const Vec3 target = spot + direction * sight * (behind ? -0.3f : 0.6f);
+    for (s32 i = 0; i < 30 && critters.targetOf(*id) < 0; ++i) {
+        critters.update(kTicks, kStep, std::vector{playerAt(target)});
+    }
+    CHECK(critters.targetOf(*id) == 0);
+    CHECK_FALSE(critters.patrolling(*id));
+}
+
+TEST_CASE("G4 General platform scenario starts on the neighboring stationary floor",
+          "[scenario][g4-generals][assets]") {
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-g4-general-platform.json");
+    REQUIRE(scenario.level == "G4");
+    REQUIRE(scenario.tower.position);
+    const auto party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    CHECK_FALSE(party.front().slot);
+    CHECK(party.front().save.character == classIndexOf("KNI").value());
+    CHECK(party.front().save.color == colorIndexOf("GRE").value());
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G4")));
+    const Vec3 start = *scenario.tower.position;
+    const auto floor = world.collision().floorAt(start, 0.1f, 0.1f, 1);
+    REQUIRE(floor);
+    CHECK(floor->object == 1091);
+    CHECK(glm::distance(world.collision().resolveWalls(start, 1.0f, start.y + 0.1f, start.y + 5.0f),
+                        start) < 0.01f);
+    const auto& general = world.layout().itemInstances()[97];
+    CHECK(glm::distance(start, general.position) < 25.0f);
 }
 
 } // namespace
