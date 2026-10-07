@@ -18,6 +18,47 @@ using gdl::game::MenuInput;
 using gdl::game::MenuInputSource;
 using gdl::game::readMenuInput;
 
+TEST_CASE("scroll continuation accepts fresh buttons on assigned devices without bindings",
+          "[game][menu][scroll-input]") {
+    const MenuBindings unbound{};
+    for (usize i = 1; i < static_cast<usize>(Key::Count); ++i) {
+        const auto key = static_cast<Key>(i);
+        CAPTURE(i);
+        Input input;
+        input.setKey(key, true);
+        CHECK(readMenuInput(input, unbound, {true, MenuInputSource::kNoPad}).buttonPressed);
+        CHECK_FALSE(readMenuInput(input, unbound, {false, 3}).buttonPressed);
+        input.beginPoll();
+        CHECK_FALSE(readMenuInput(input, unbound).buttonPressed);
+    }
+    for (usize i = 0; i < static_cast<usize>(PadButton::Count); ++i) {
+        CAPTURE(i);
+        Input input;
+        PadSnapshot pad;
+        pad.connected = true;
+        pad.buttons[i] = true;
+        const auto button = static_cast<PadButton>(i);
+        if (button == PadButton::LeftTrigger || button == PadButton::RightTrigger) {
+            const auto axis =
+                button == PadButton::LeftTrigger ? PadAxis::LeftTrigger : PadAxis::RightTrigger;
+            pad.axes[static_cast<usize>(axis)] = 1;
+        }
+        input.setPad(3, pad);
+        const bool stick = button >= PadButton::LeftStickUp && button <= PadButton::LeftStickLeft;
+        CHECK(readMenuInput(input, unbound, {false, 3}).buttonPressed == !stick);
+        CHECK_FALSE(readMenuInput(input, unbound, {true, 0}).buttonPressed);
+        input.beginPoll();
+        CHECK_FALSE(readMenuInput(input, unbound, {false, 3}).buttonPressed);
+    }
+    Input mouse;
+    mouse.setPointer({0.5f, 0.5f, true, true});
+    CHECK(readMenuInput(mouse, unbound, {true, MenuInputSource::kNoPad}).buttonPressed);
+    CHECK_FALSE(readMenuInput(mouse, unbound, {false, 3}).buttonPressed);
+    mouse.beginPoll();
+    mouse.scrollPointer(1);
+    CHECK_FALSE(readMenuInput(mouse, unbound).buttonPressed);
+}
+
 TEST_CASE("a mouse click skips movies without becoming a global menu confirmation",
           "[game][menu][movie][mouse]") {
     const gdl::game::GameConfig config;

@@ -278,3 +278,37 @@ TEST_CASE("melee feedback is a short light tap and shares the player's rumble pr
     input.setPad(7, {});
     CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit));
 }
+
+TEST_CASE("generator destruction pulses are distinct and respect device and rumble preferences",
+          "[controls][rumble][generator-rumble]") {
+    GameConfig config;
+    Input input;
+    input.setPad(7, pad("controller"));
+    config.controls[3].device = "controller";
+    for (const u32 fps : {30U, 60U, 120U, 0U}) {
+        config.timing.gameplayFrameRate = fps;
+        const auto destroyed =
+            controlVibration(config, input, 3, 0, ControlFeedback::GeneratorDestroyed);
+        const auto melee = controlVibration(config, input, 3, 0, ControlFeedback::MeleeHit);
+        const auto damage = controlVibration(config, input, 3, 10);
+        REQUIRE(destroyed);
+        REQUIRE(melee);
+        REQUIRE(damage);
+        CHECK(destroyed->pad == 7);
+        CHECK(destroyed->milliseconds == 160);
+        CHECK(destroyed->milliseconds > melee->milliseconds);
+        CHECK(destroyed->low > melee->low);
+        CHECK(destroyed->low < damage->low);
+        CHECK(destroyed->priority < damage->priority);
+    }
+    config.controls[3].rumble = false;
+    CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::GeneratorDestroyed));
+    config.controls[3].rumble = true;
+    for (const auto* device : {"keyboard", "none"}) {
+        config.controls[3].device = device;
+        CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::GeneratorDestroyed));
+    }
+    config.controls[3].device = "controller";
+    input.setPad(7, {});
+    CHECK_FALSE(controlVibration(config, input, 3, 0, ControlFeedback::GeneratorDestroyed));
+}

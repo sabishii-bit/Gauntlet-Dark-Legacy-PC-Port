@@ -3287,12 +3287,14 @@ TEST_CASE("melee misses and Death's unmoved response do not report successful hi
     CHECK(f.meleeHits.empty());
 }
 
-TEST_CASE("general and boss melee contacts report the attacker and reject sleeping bosses",
+TEST_CASE("golem gargoyle general and boss melee contacts report the attacker",
           "[game][player-attacks][melee-rumble][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
     test::assetOrSkip("CRITTER/LICH.WAD");
     test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
-    const bool boss = GENERATE(false, true);
+    const s32 kind = GENERATE(3, 7, 8, 37);
+    const bool boss = kind == 37;
+    CAPTURE(kind);
     Fixture f;
     auto& player = f.players[0];
     player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
@@ -3306,7 +3308,7 @@ TEST_CASE("general and boss melee contacts report the attacker and reject sleepi
         REQUIRE(bosses.spawn(37, {}, 0)); // Lich
     } else {
         critters.open(f.device, root, nullptr, {}, 'G');
-        const auto spawned = critters.spawnGeneral({}, 0);
+        const auto spawned = critters.spawn(static_cast<CombatantKind>(kind), {}, 0);
         REQUIRE(spawned);
         general = *spawned;
     }

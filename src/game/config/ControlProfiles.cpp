@@ -197,6 +197,13 @@ std::optional<ControlVibration> controlVibration(const GameConfig& config, const
         constexpr u16 kHitStrength = 0x8000;
         return ControlVibration{pad, kHitMilliseconds, 0, kHitStrength, 0};
     }
+    if (feedback == ControlFeedback::GeneratorDestroyed) {
+        // A heavier confirmation than a melee tap, still subordinate to taking damage.
+        constexpr u32 kDestroyedMilliseconds = 160;
+        constexpr u16 kDestroyedLow = 0x4000;
+        constexpr u16 kDestroyedHigh = 0xA000;
+        return ControlVibration{pad, kDestroyedMilliseconds, kDestroyedLow, kDestroyedHigh, 0};
+    }
     // PlayerControls decrements once per native rendered frame (30 Hz), stopping below
     // zero, not at zero. Keep that inclusive final frame independent of presentation FPS.
     const auto milliseconds = static_cast<u32>(((frames + 1) * 1000 + 29) / 30);

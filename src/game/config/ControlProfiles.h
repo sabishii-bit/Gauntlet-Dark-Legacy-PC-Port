@@ -26,7 +26,7 @@ struct ControlDevice {
     s32 pad = -2;
 };
 std::array<ControlDevice, 4> controlDevices(const GameConfig& config, const Input& input);
-enum class ControlFeedback : u8 { Damage, MeleeHit };
+enum class ControlFeedback : u8 { Damage, MeleeHit, GeneratorDestroyed };
 struct ControlVibration {
     s32 pad = -1;
     u32 milliseconds = 0;
@@ -35,7 +35,7 @@ struct ControlVibration {
     u8 priority = 0;
 };
 /** Resolve feedback through the gameplay device assignment. Frames is the native damage
- * countdown; the port's melee pulse has its own fixed duration. */
+ * countdown; the port's attack pulses have their own fixed durations. */
 std::optional<ControlVibration>
 controlVibration(const GameConfig& config, const Input& input, s32 player, s32 frames,
                  ControlFeedback feedback = ControlFeedback::Damage);

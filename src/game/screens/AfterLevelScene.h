@@ -43,7 +43,7 @@ private:
     void pointerInput(ShopSession::Inputs& inputs, const std::array<bool, 4>& scrolling);
     void pointerTarget(const ShopLane& lane, PointerAction action, const Rect& area, usize row = 0);
     bool pointerHovered(const ShopLane& lane, PointerAction action, usize row = 0) const;
-    void drawContinue(const ShopLane& lane, s32 x, s32 y, s32 size, s32 labelX, s32 labelY);
+    void drawContinue(const ShopLane& lane, s32 y);
     std::string_view text(std::string_view id) const;
     const Texture* texture(std::string_view name);
     void drawLane(const ShopLane& lane);

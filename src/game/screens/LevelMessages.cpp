@@ -86,8 +86,8 @@ void LevelMessages::clear() {
     m_text.setFont(nullptr, nullptr);
 }
 
-bool LevelMessages::open(RenderDevice& device, std::string_view name,
-                         const StringTable* /*strings*/, std::optional<usize> page) {
+bool LevelMessages::open(RenderDevice& device, std::string_view name, const StringTable* strings,
+                         std::optional<usize> page) {
     if (!m_scrollText.loaded()) {
         return false;
     }
@@ -105,7 +105,8 @@ bool LevelMessages::open(RenderDevice& device, std::string_view name,
     }
     return m_scroll.open(
         device, page.has_value() ? std::vector<std::string>{message.pages[*page]} : message.pages,
-        message.scale, {});
+        message.scale,
+        strings != nullptr ? std::string(strings->get("scroll.pressButton")) : std::string{});
 }
 
 LevelMessages::Cues LevelMessages::step(s32 ticks, u32 accepted) {

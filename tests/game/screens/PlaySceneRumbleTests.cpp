@@ -138,4 +138,74 @@ TEST_CASE("a real melee animation gives one hit pulse to its attacker's input sl
     }
     CHECK(hits == std::vector<s32>{kPlayer});
 }
+TEST_CASE("shooting a generator gives its destroying player one pulse rather than one per hit",
+          "[game][screens][assets][rumble][generator-rumble]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    const s32 fps = GENERATE(30, 60);
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    std::vector<s32> hits;
+    context.vibrate = [&](s32 player, s32 frames, ControlFeedback feedback) {
+        CHECK(feedback == ControlFeedback::GeneratorDestroyed);
+        CHECK(frames == 0);
+        hits.push_back(player);
+    };
+    constexpr s32 kPlayer = 3;
+    CharacterSave save;
+    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    const std::array party{PartyMember{kPlayer, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{100.0f, 10.2f, -72.5f};
+    options.yaw = kPi / 2.0f;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const f64 step = 1.0 / fps;
+    for (s32 frame = 0;
+         frame < fps * 7 && (scene.spawning() || scene.animator(kPlayer)->entering()); ++frame) {
+        scene.update(step, {});
+    }
+    REQUIRE_FALSE(scene.spawning());
+    REQUIRE_FALSE(scene.animator(kPlayer)->entering());
+    REQUIRE(hits.empty());
+    s32 generator = -1;
+    for (usize i = 0; i < scene.generators().count(); ++i) {
+        const auto id = static_cast<s32>(i);
+        if (glm::distance(scene.generators().positionOf(id), Vec3{111.25f, 10.13f, -72.5f}) < 1) {
+            generator = id;
+        }
+    }
+    REQUIRE(generator >= 0);
+    REQUIRE(scene.generators().standing(generator));
+    const f32 health = scene.generators().healthOf(generator);
+    bool nonlethal = false;
+    PlayScene::Inputs attack{};
+    attack[kPlayer].attack = true;
+    for (s32 frame = 0; frame < fps * 60 && scene.generators().standing(generator); ++frame) {
+        scene.update(step, attack);
+        if (scene.generators().standing(generator)) {
+            nonlethal |= scene.generators().healthOf(generator) < health;
+            REQUIRE(hits.empty());
+        }
+    }
+    CHECK(nonlethal);
+    REQUIRE_FALSE(scene.generators().standing(generator));
+    // Projectiles resolve after opponents; their reward/feedback queue settles next tick.
+    scene.update(step, {});
+    REQUIRE(hits == std::vector<s32>{kPlayer});
+    for (s32 frame = 0; frame < fps; ++frame) {
+        scene.update(step, {});
+    }
+    CHECK(hits == std::vector<s32>{kPlayer});
+}
 } // namespace

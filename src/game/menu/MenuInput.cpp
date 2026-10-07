@@ -86,6 +86,22 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
     };
     MenuInput out;
     out.devices = &input;
+    if (source.keyboard) {
+        for (usize i = 1; i < static_cast<usize>(Key::Count); ++i) {
+            out.buttonPressed |= input.wasKeyPressed(static_cast<Key>(i));
+        }
+        out.buttonPressed |=
+            input.pointer().inside && (input.wasPointerPressed() || input.wasPointerBackPressed());
+    }
+    const PadRange range = padsOf(source.pad);
+    for (s32 pad = range.first; pad <= range.last; ++pad) {
+        for (usize i = 0; i < static_cast<usize>(PadButton::Count); ++i) {
+            const auto button = static_cast<PadButton>(i);
+            if (button < PadButton::LeftStickUp || button > PadButton::LeftStickLeft) {
+                out.buttonPressed |= input.wasPadButtonPressed(pad, button);
+            }
+        }
+    }
     if (input.pointer().inside) {
         out.pointer = Vec2{input.pointer().x, input.pointer().y};
         out.pointerNormalized = true;
@@ -142,6 +158,7 @@ MenuInput readSharedMenuInput(const Input& input, const GameConfig& config) {
         result.back |= lane.back;
         result.start |= lane.start;
         result.escape |= lane.escape;
+        result.buttonPressed |= lane.buttonPressed;
         result.upHeld |= lane.upHeld;
         result.downHeld |= lane.downHeld;
         result.leftHeld |= lane.leftHeld;

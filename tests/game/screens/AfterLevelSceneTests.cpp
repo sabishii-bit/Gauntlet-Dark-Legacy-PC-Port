@@ -643,7 +643,32 @@ TEST_CASE("mouse continues through tally exit stats inventory and final stats wi
     const std::array<PartyMember, 2> party{{{2, CharacterSave{}}, {0, CharacterSave{}}}};
     AfterLevelScene scene;
     REQUIRE(scene.open(device, context, party, {}, {}, "G1"));
-    const auto render = [&] { scene.render(device, Mat4{1}, 512, 384); };
+    BitmapFont font;
+    REQUIRE(font.load(root / "FONTS/font32.fnt", 16));
+    TextureSet art;
+    REQUIRE(art.load(root / "STATIC"));
+    const auto fontId = art.find("FONT32");
+    REQUIRE(fontId);
+    const auto& pixels = art.image(*fontId).pixels;
+    const auto centeredContinue = [&](s32 y) {
+        test::FakeRenderDevice expected;
+        Canvas canvas;
+        TextPainter painter;
+        painter.setFont(&font, &art.texture(expected, *fontId));
+        canvas.begin(expected, Mat4{1});
+        painter.draw(canvas, -(2 * 128 + 64), y, "Continue", TextStyle{0.5f, Color::white()});
+        canvas.end();
+        REQUIRE_FALSE(expected.draws.empty());
+        CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            return texture != nullptr && texture->pixels == pixels &&
+                   !std::ranges::search(draw.vertices, expected.draws.front().vertices).empty();
+        }));
+    };
+    const auto render = [&] {
+        device.draws.clear();
+        scene.render(device, Mat4{1}, 512, 384);
+    };
     const auto click = [&](f32 y) {
         ShopSession::Inputs inputs{};
         for (auto& input : inputs) {
@@ -654,6 +679,7 @@ TEST_CASE("mouse continues through tally exit stats inventory and final stats wi
     };
     scene.update(10, {});
     render();
+    centeredContinue(92);
     click(96);
     REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Shopping);
     REQUIRE(scene.session().lanes()[1].phase == ShopPhase::Tally);
@@ -662,9 +688,11 @@ TEST_CASE("mouse continues through tally exit stats inventory and final stats wi
     REQUIRE(scene.session().lanes()[0].phase == ShopPhase::AfterStats);
     scene.update(1, {});
     render();
+    centeredContinue(280);
     click(285);
     REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Inventory);
     render();
+    centeredContinue(InventoryPanel::kPromptY);
     click(285);
     REQUIRE(scene.session().lanes()[0].inventory.phase() == InventoryPanel::Phase::Leaving);
     scene.update(1, {});
@@ -677,6 +705,7 @@ TEST_CASE("mouse continues through tally exit stats inventory and final stats wi
     REQUIRE(scene.session().lanes()[0].phase == ShopPhase::FinalStats);
     scene.update(6, {});
     render();
+    centeredContinue(280);
     click(285);
     REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Done);
     REQUIRE(scene.session().lanes()[1].phase == ShopPhase::FinalStats);

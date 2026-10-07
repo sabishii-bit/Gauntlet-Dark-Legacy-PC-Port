@@ -41,17 +41,17 @@ bool AfterLevelScene::pointerHovered(const ShopLane& lane, PointerAction action,
     const auto& hover = m_hoverTargets[static_cast<usize>(lane.member.player)];
     return hover && hover->phase == lane.phase && hover->action == action && hover->row == row;
 }
-void AfterLevelScene::drawContinue(const ShopLane& lane, s32 x, s32 y, s32 size, s32 labelX,
-                                   s32 labelY) {
+void AfterLevelScene::drawContinue(const ShopLane& lane, s32 y) {
     constexpr f32 kScale = 0.5f;
     const auto label = text("shop.continue");
-    line(labelX, labelY, label, kScale,
+    const s32 center = lane.member.player * StatusBoxPainter::kWidth + StatusBoxPainter::kWidth / 2;
+    const s32 width = m_text.measure(label, kScale);
+    const s32 left = center - width / 2; // Same whole-pixel centering as TextPainter.
+    line(-center, y, label, kScale,
          pointerHovered(lane, PointerAction::Continue) ? kPointerHighlight : Color::white(), true);
-    const s32 right = std::max(x + size, labelX + m_text.measure(label, kScale));
-    const s32 bottom = std::max(y + size, labelY + m_text.lineHeight(kScale));
     pointerTarget(lane, PointerAction::Continue,
-                  Rect{static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(right - x),
-                       static_cast<f32>(bottom - y)});
+                  Rect{static_cast<f32>(left), static_cast<f32>(y), static_cast<f32>(width),
+                       static_cast<f32>(m_text.lineHeight(kScale))});
 }
 void AfterLevelScene::line(s32 x, s32 y, std::string_view value, f32 scale, Color color,
                            bool glow) {
@@ -132,7 +132,7 @@ void AfterLevelScene::drawTally(const ShopLane& lane, s32 x) {
              Color::white(), rank == lane.tally.growingRank());
     }
     if (lane.tally.finished()) {
-        drawContinue(lane, x + 16, 89, 20, x + 32, 92);
+        drawContinue(lane, 92);
     }
     line(-(x + 64), 8, text("shop.stats"), 0.45f, Color::black());
 }
@@ -188,7 +188,7 @@ void AfterLevelScene::drawStats(const ShopLane& lane, s32 x) {
         drawMagicLine(lane, x);
     }
     if (lane.statsReady()) {
-        drawContinue(lane, x + 16, 280, 16, x + 40, 280);
+        drawContinue(lane, 280);
     }
 }
 void AfterLevelScene::drawMagicLine(const ShopLane& lane, s32 x) {
@@ -330,9 +330,7 @@ void AfterLevelScene::drawInventory(const ShopLane& lane, s32 x) {
         m_text.draw(m_canvas, count.x, count.y, std::format("/{}", count.m), style);
     }
     if (lane.inventory.showsPrompt()) {
-        drawContinue(lane, x + InventoryPanel::kPromptX, InventoryPanel::kPromptY,
-                     InventoryPanel::kPromptSize, x + InventoryPanel::kPromptLabelX,
-                     InventoryPanel::kPromptY);
+        drawContinue(lane, InventoryPanel::kPromptY);
     }
 }
 void AfterLevelScene::drawLane(const ShopLane& lane) {

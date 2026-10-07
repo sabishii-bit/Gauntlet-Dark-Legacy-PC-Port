@@ -32,9 +32,10 @@ struct MenuInput {
     bool downHeld = false;
     bool leftHeld = false;
     bool rightHeld = false;
-    std::string typed;   ///< printable characters typed into a text field this frame
-    bool erase = false;  ///< Backspace, for a text field
-    bool escape = false; ///< the escape binding: leaves a text field, quits elsewhere
+    std::string typed;          ///< printable characters typed into a text field this frame
+    bool erase = false;         ///< Backspace, for a text field
+    bool escape = false;        ///< the escape binding: leaves a text field, quits elsewhere
+    bool buttonPressed = false; ///< any fresh key/pad button on the assigned devices, not sticks
 
     bool any() const {
         return up || down || left || right || select || back || start || pointerPressed ||

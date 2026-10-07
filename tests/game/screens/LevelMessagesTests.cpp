@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <format>
 
 #include <catch2/catch_test_macros.hpp>
@@ -136,7 +137,7 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
     Fixture f("level-messages-language");
     writeTextFile(f.root / "text/test.json",
                   R"({"scroll.welcome.1": "B", "scroll.welcome.2": "A",
-                      "scroll.pressButton": "{bind:menuSelect}"})");
+                      "scroll.pressButton": "AB"})");
     StringTable strings;
     REQUIRE(strings.load(f.root / "text", "test", "test"));
     f.messages.clear();
@@ -151,6 +152,26 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
     REQUIRE(f.messages.open(f.device, "WELCOME", &strings));
     CHECK_FALSE(resolved);
     REQUIRE(f.messages.scroll().lines() == std::vector<std::string>{"B"});
+    Canvas promptCanvas;
+    promptCanvas.begin(f.device, Mat4{1});
+    f.messages.draw(promptCanvas);
+    promptCanvas.end();
+    const auto font = f.textures.find("FONT32");
+    REQUIRE(font);
+    test::FakeRenderDevice expected;
+    Canvas expectedCanvas;
+    expectedCanvas.begin(expected, Mat4{1});
+    const s32 promptY = static_cast<s32>(f.messages.scroll().area().y) + ScrollBox::kTextInset +
+                        f.messages.text().lineHeight(1) + ScrollBox::kPromptGap;
+    f.messages.text().draw(expectedCanvas, -ScrollBox::kCentreX, promptY, "AB",
+                           TextStyle{ScrollBox::kPromptScale, Color::white()});
+    expectedCanvas.end();
+    REQUIRE_FALSE(expected.draws.empty());
+    CHECK(std::ranges::any_of(f.device.draws, [&](const auto& draw) {
+        return draw.texture == &f.textures.texture(f.device, *font) &&
+               !std::ranges::search(draw.vertices, expected.draws.front().vertices).empty();
+    }));
+    f.device.draws.clear();
     f.messages.clear();
     REQUIRE_FALSE(f.messages.active());
     REQUIRE_FALSE(f.messages.text().ready());
@@ -165,6 +186,30 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
     f.messages.load(f.device, f.textures, f.root, nullptr);
     REQUIRE(f.messages.open(f.device, "WELCOME", nullptr));
     REQUIRE(f.messages.scroll().lines() == std::vector<std::string>{"A"});
+}
+
+TEST_CASE("scroll continuation uses plain device independent localized text",
+          "[game][screens][level-messages]") {
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    CHECK(strings.get("scroll.pressButton") == "Press any button to continue");
+}
+
+TEST_CASE("the native scroll font fits the complete continuation prompt inside its parchment",
+          "[game][screens][level-messages][assets]") {
+    const auto root = test::assetOrSkip("FONTS/font32.fnt").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    LevelMessages messages;
+    messages.load(device, textures, root, &strings);
+    REQUIRE(messages.open(device, "WELCOMEMESSAGE", &strings));
+    const s32 width =
+        messages.text().measure(strings.get("scroll.pressButton"), ScrollBox::kPromptScale);
+    CHECK(width > 0);
+    CHECK(width + ScrollBox::kPromptExtra <= messages.scroll().area().width);
+    CHECK(messages.scroll().area().width <= ScrollBox::kMaxWidth);
 }
 
 TEST_CASE("missing level message resources disable presentation without failing the scene",

@@ -601,7 +601,12 @@ LevelOpponents::Events PlayScene::opponentEvents() {
         .award = [this](s32 player, s32 amount,
                         bool kill) { awardExperience(player, amount, kill); },
         .destroyedGenerator =
-            [this](s32 player) { PartyRecords::destroyedGenerator(m_players, player); },
+            [this](s32 player) {
+                PartyRecords::destroyedGenerator(m_players, player);
+                if (actor(player) != nullptr && m_context.vibrate) {
+                    m_context.vibrate(player, 0, ControlFeedback::GeneratorDestroyed);
+                }
+            },
         .blocksBreath =
             [this](const Vec3& from, const Vec3& to) {
                 return m_fixtures.safeRocks().blocksBreath(from, to);
@@ -730,7 +735,10 @@ u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
     for (const PlayerRuntime& runtime : m_players) {
         const PlayerActor& actor = runtime.actor;
         const auto player = static_cast<usize>(actor.player());
-        if (player < inputs.size() && inputs[player].menu.select) {
+        if (player < inputs.size() &&
+            (inputs[player].menu.buttonPressed || inputs[player].menu.select ||
+             inputs[player].menu.back || inputs[player].menu.start ||
+             inputs[player].menu.pointerPressed || inputs[player].menu.pointerBack)) {
             accepted |= 1U << player;
         }
     }
@@ -1375,8 +1383,8 @@ void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
 
 bool PlayScene::canPause(s32 player) const {
     return m_open && !m_leaving && !m_gameOver.active() && !m_switchCutscene.active() &&
-           !m_promotion.active() && !m_towerRelics.active() && actor(player) != nullptr &&
-           !fallen(player);
+           !m_messages.active() && !m_promotion.active() && !m_towerRelics.active() &&
+           actor(player) != nullptr && !fallen(player);
 }
 
 bool PlayScene::canJoin(s32 player) const {

@@ -281,7 +281,7 @@
   "help.player_class_lc.16": "Hyena",
   "help.newlevel.1": "%s %s is now\na level %d %s!\n",
   "title.pressStart": "Press Start",
-  "scroll.pressButton": "",
+  "scroll.pressButton": "Press any button to continue",
   "title.loading": "Loading...",
   "menu.start": "Start",
   "menu.options": "Options",

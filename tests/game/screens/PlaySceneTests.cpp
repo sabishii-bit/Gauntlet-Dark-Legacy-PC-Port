@@ -978,8 +978,21 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(scroll.active());
     for (usize page = 0; page < scroll.pageCount(); ++page) {
         REQUIRE(scroll.page() == page);
+        REQUIRE_FALSE(scene.canPause(0)); // Start belongs to the scroll, not the pause menu.
         for (s32 i = 0; i < 16; ++i) {
             REQUIRE(scene.update(1.0 / 60.0, inputs) == PlayOutcome::Running);
+        }
+        PlayScene::Inputs unjoined{};
+        unjoined[3].menu.buttonPressed = true;
+        scene.update(1.0 / 60.0, unjoined);
+        REQUIRE(scroll.page() == page);
+        accept = {};
+        switch (page % 5) {
+        case 0: accept[0].menu.buttonPressed = true; break;
+        case 1: accept[0].menu.start = true; break;
+        case 2: accept[0].menu.back = true; break;
+        case 3: accept[0].menu.select = true; break;
+        default: accept[0].menu.pointerPressed = true; break;
         }
         scene.update(1.0 / 60.0, accept);
     }

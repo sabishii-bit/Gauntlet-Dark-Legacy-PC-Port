@@ -39,7 +39,7 @@ void AfterLevelScene::drawFinalStats(const ShopLane& lane, s32 x) {
              Color::white(), true);
     }
     if (lane.finalStatsReady()) {
-        drawContinue(lane, x + 16, 280, 16, x + 40, 280);
+        drawContinue(lane, 280);
     }
 }
 } // namespace gdl::game
