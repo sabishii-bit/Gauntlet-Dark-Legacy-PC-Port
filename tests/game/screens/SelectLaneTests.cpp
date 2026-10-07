@@ -320,6 +320,57 @@ TEST_CASE("select lanes retain actions without drawing mapped button prompts",
     CHECK(actions.empty());
 }
 
+TEST_CASE("select lanes remove footer labels and their invisible mouse targets",
+          "[game][select][prompts][mouse]") {
+    Fixture f("select-no-footer");
+    f.lane.activate();
+    test::FakeTexture helpSheet{64, 64};
+    TextPainter helpPainter;
+    helpPainter.setFont(&f.font, &helpSheet);
+    f.services.smallPainter = &helpPainter;
+    REQUIRE(f.lane.pointerTargets().empty());
+    for (const f32 y : {255.0f, 275.0f}) {
+        MenuInput mouse;
+        mouse.pointer = Vec2{static_cast<f32>(f.lane.x()) + 65, y};
+        mouse.pointerPressed = true;
+        CHECK(f.step(mouse) == SelectLane::Result::None);
+        CHECK(f.lane.state() == SelectLane::State::TopMenu);
+        test::FakeRenderDevice device;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.lane.drawText(canvas, 0);
+        canvas.end();
+        CHECK_FALSE(device.draws.empty());
+        CHECK_FALSE(std::ranges::any_of(device.draws, [&](const auto& draw) {
+            return draw.texture == &helpSheet || draw.texture == &device.whiteTexture();
+        }));
+    }
+    CHECK(f.step(press(false, true)) == SelectLane::Result::Leave);
+}
+
+TEST_CASE("a class is mouse-selected on its portrait instead of the removed footer",
+          "[game][select][mouse]") {
+    Fixture f("select-portrait-confirm");
+    f.lane.activate();
+    f.createCharacter();
+    const auto targets = f.lane.pointerTargets();
+    const auto select = std::ranges::find_if(targets, [](const auto& target) {
+        return target.action == SelectLane::PointerAction::Select;
+    });
+    REQUIRE(select != targets.end());
+    CHECK(select->area.y == 28);
+    CHECK(select->area.bottom() == 162);
+    MenuInput click;
+    click.pointerPressed = true;
+    click.pointer = Vec2{static_cast<f32>(f.lane.x()) + 65, 255};
+    f.step(click);
+    CHECK(f.lane.state() == SelectLane::State::ClassPick);
+    click.pointer =
+        Vec2{select->area.x + select->area.width / 2, select->area.y + select->area.height / 2};
+    f.step(click);
+    CHECK(f.lane.lockedIn());
+}
+
 TEST_CASE("a lane joins on activation and leaves from the first menu", "[game][select]") {
     Fixture f;
     REQUIRE_FALSE(f.lane.active());

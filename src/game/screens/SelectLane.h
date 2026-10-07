@@ -186,8 +186,6 @@ private:
     void drawBlit(Canvas& canvas, const Blit& blit, Rect area) const;
     void drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s32 lineHeight, f32 scale,
                    std::string_view lines, Color color) const;
-    void drawPrompt(Canvas& canvas, std::string_view icon, s32 y, std::string_view label) const;
-    Rect promptArea(s32 y, std::string_view label) const;
     MenuInput pointerInput(const MenuInput& input);
     void drawPointerIcon(Canvas& canvas, std::string_view icon, const Rect& area) const;
     void drawStats(Canvas& canvas, s32 time) const;

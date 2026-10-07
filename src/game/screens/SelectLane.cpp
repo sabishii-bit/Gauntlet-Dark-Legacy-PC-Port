@@ -27,9 +27,6 @@ constexpr f32 kCaptionScale = 0.8f;
 constexpr f32 kStatScale = 0.5f;
 constexpr f32 kLetterScale = 0.9f;
 constexpr f32 kFlashScale = 0.75f;
-constexpr s32 kPromptX = 20;
-constexpr s32 kPromptSelectY = 252;
-constexpr s32 kPromptBackY = 272;
 constexpr s32 kPromptIconSize = 19;
 constexpr s32 kPromptGap = 8;
 constexpr s32 kPromptTextDrop = 4;
@@ -88,8 +85,6 @@ constexpr std::string_view kIconUp = "menuUp";
 constexpr std::string_view kIconDown = "menuDown";
 constexpr std::string_view kIconLeft = "menuLeft";
 constexpr std::string_view kIconRight = "menuRight";
-constexpr std::string_view kIconSelect = "menuSelect";
-constexpr std::string_view kIconBack = "menuBack";
 
 bool contains(const Rect& area, const Vec2& point) {
     return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
@@ -747,22 +742,8 @@ void SelectLane::drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s3
     }
 }
 
-Rect SelectLane::promptArea(s32 y, std::string_view label) const {
-    const auto* painter = m_services != nullptr ? m_services->smallPainter : nullptr;
-    const s32 width = kPromptIconSize + kPromptGap +
-                      (painter != nullptr ? painter->measure(label, kSmallScale) : 0);
-    const s32 height =
-        std::max(kPromptIconSize,
-                 kPromptTextDrop + (painter != nullptr ? painter->lineHeight(kSmallScale) : 0));
-    return {static_cast<f32>(x() + kPromptX), static_cast<f32>(y),
-            static_cast<f32>(std::min(width, kWidth - kPromptX)), static_cast<f32>(height)};
-}
-
 std::vector<SelectLane::PointerTarget> SelectLane::pointerTargets() const {
     std::vector<PointerTarget> targets;
-    const auto prompt = [&](PointerAction action, s32 y, std::string_view label) {
-        targets.push_back({promptArea(y, text(label)), action});
-    };
     if (m_state == State::Inactive) {
         targets.push_back(
             {{static_cast<f32>(x()), 0, static_cast<f32>(kWidth), static_cast<f32>(kPanelHeight)},
@@ -782,7 +763,10 @@ std::vector<SelectLane::PointerTarget> SelectLane::pointerTargets() const {
                                PointerAction::Down});
         }
         if (classKnown(m_pickClass)) {
-            prompt(PointerAction::Select, kPromptSelectY, "select.select");
+            // Confirm by clicking the portrait, not an invisible former footer button.
+            targets.push_back({{static_cast<f32>(x()), static_cast<f32>(kPortraitY),
+                                static_cast<f32>(kWidth), static_cast<f32>(kStatsY - kPortraitY)},
+                               PointerAction::Select});
         }
         return targets;
     }
@@ -807,12 +791,6 @@ std::vector<SelectLane::PointerTarget> SelectLane::pointerTargets() const {
             }
         }
         return targets;
-    }
-    if (m_menu.isOpen()) {
-        prompt(PointerAction::Select, kPromptSelectY, "select.select");
-        if (m_state == State::TopMenu || m_state == State::LoadPick || m_state == State::SavePick) {
-            prompt(PointerAction::Back, kPromptBackY, "select.back");
-        }
     }
     return targets;
 }
@@ -878,22 +856,6 @@ void SelectLane::drawPointerIcon(Canvas& canvas, std::string_view icon, const Re
         arrow = "^";
     }
     drawControlLabel(canvas, *m_services->smallPainter, area, arrow);
-}
-
-void SelectLane::drawPrompt(Canvas& canvas, std::string_view /*icon*/, s32 y,
-                            std::string_view label) const {
-    if (m_services == nullptr || m_services->smallPainter == nullptr) {
-        return;
-    }
-    const s32 iconX = x() + kPromptX;
-    const bool hovered = m_hoverArea == promptArea(y, label);
-    if (hovered) {
-        canvas.fill(promptArea(y, label), kGlowColor.withAlpha(150));
-    }
-    TextStyle style;
-    style.scale = kSmallScale;
-    m_services->smallPainter->draw(canvas, iconX + kPromptIconSize + kPromptGap,
-                                   y + kPromptTextDrop, label, style);
 }
 
 void SelectLane::drawStats(Canvas& canvas, s32 time) const {
@@ -1005,20 +967,16 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         return;
     }
     const TextPainter& small = *m_services->smallPainter;
-    bool showSelect = true;
-    bool showBack = false;
     switch (m_state) {
-    case State::TopMenu: showBack = true; break;
+    case State::TopMenu:
     case State::SaveMenu: break;
     case State::NameEntry: {
-        showSelect = false;
         drawLines(canvas, *m_services->largePainter, kCaptionY, kCaptionStep, kCaptionScale,
                   text("select.enterName"), Color::white());
         drawNameEntry(canvas, time);
         break;
     }
     case State::ClassPick: {
-        showSelect = classKnown(m_pickClass);
         if (m_services->smallPainter != nullptr) {
             const s32 leftX = x() + kLegendX;
             const s32 rightX = leftX + kPromptIconSize;
@@ -1053,12 +1011,10 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
                   Color::white());
         break;
     case State::LoadPick:
-        showBack = true;
         drawLines(canvas, small, kListMenuY - kLineHeight * 2 - 8, kLineHeight, kSmallScale,
                   text("select.chooseLoad"), Color::white());
         break;
     case State::SavePick:
-        showBack = true;
         drawLines(canvas, small, kListMenuY - kLineHeight * 3 - 8, kLineHeight, kSmallScale,
                   text("select.chooseSave"), Color::white());
         break;
@@ -1068,7 +1024,6 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         break;
     case State::Loading:
     case State::Saving: {
-        showSelect = false;
         const bool saving = m_state == State::Saving;
         std::string_view id;
         if (m_step < kOperationSteps) {
@@ -1082,7 +1037,6 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         break;
     }
     case State::LockedIn:
-        showSelect = false;
         if (m_promptStart && !animating()) {
             if (m_hoverArea) {
                 canvas.fill(*m_hoverArea, kGlowColor.withAlpha(150));
@@ -1091,13 +1045,7 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
                       text("select.lockedIn"), Color::white());
         }
         break;
-    case State::Inactive: showSelect = false; break;
-    }
-    if (showSelect) {
-        drawPrompt(canvas, kIconSelect, kPromptSelectY, text("select.select"));
-    }
-    if (showBack) {
-        drawPrompt(canvas, kIconBack, kPromptBackY, text("select.back"));
+    case State::Inactive: break;
     }
     if (m_state == State::SaveMenu) {
         const s32 level = experienceLevel(m_save.experience());
