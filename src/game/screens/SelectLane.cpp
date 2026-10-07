@@ -33,9 +33,7 @@ constexpr s32 kPromptBackY = 272;
 constexpr s32 kPromptIconSize = 19;
 constexpr s32 kPromptGap = 8;
 constexpr s32 kPromptTextDrop = 4;
-constexpr s32 kLegendY = 180;
 constexpr s32 kLegendClassY = 232;
-constexpr s32 kLegendStep = 20;
 constexpr s32 kLegendX = 10;
 constexpr s32 kCaptionY = 64;
 constexpr s32 kCaptionStep = 26;
@@ -1016,25 +1014,6 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
         showSelect = false;
         drawLines(canvas, *m_services->largePainter, kCaptionY, kCaptionStep, kCaptionScale,
                   text("select.enterName"), Color::white());
-        if (m_services->smallPainter != nullptr) {
-            const s32 leftX = x() + kLegendX;
-            const s32 rightX = leftX + kPromptIconSize;
-            TextStyle style;
-            style.scale = kSmallScale;
-            const s32 labelX = rightX + kPromptIconSize + kPromptGap;
-            small.draw(canvas, labelX, kLegendY + kPromptTextDrop, text("select.changeLetter"),
-                       style);
-            small.draw(canvas, labelX, kLegendY + kLegendStep + kPromptTextDrop,
-                       text("select.editLetter"), style);
-            small.draw(canvas, labelX, kLegendY + kLegendStep * 2 + kPromptTextDrop,
-                       text("select.accept"), style);
-            small.draw(canvas, labelX, kLegendY + kLegendStep * 3 + kPromptTextDrop,
-                       text("select.cancel"), style);
-            if (m_services->keyboardLane == m_index) {
-                drawLines(canvas, small, kLegendY + kLegendStep * 4 + kPromptTextDrop, kLineHeight,
-                          kSmallScale, text("select.typeName"), Color::white());
-            }
-        }
         drawNameEntry(canvas, time);
         break;
     }

@@ -197,6 +197,46 @@ TEST_CASE("moving or clicking the mouse never replaces name entry with a charact
     CHECK(f.lane.nameEntry().name() == "WASD");
 }
 
+TEST_CASE("name entry keeps the caption and letters without control help text", "[select][name]") {
+    for (const bool keyboard : {false, true}) {
+        Fixture f("select-name-no-help");
+        test::FakeTexture helpSheet{64, 64};
+        TextPainter helpPainter;
+        helpPainter.setFont(&f.font, &helpSheet);
+        f.services.smallPainter = &helpPainter;
+        f.services.keyboardLane = keyboard ? f.lane.index() : -1;
+        f.lane.activate();
+        f.step(press(true));
+        REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
+        MenuInput typed;
+        typed.typed = "ace";
+        f.step(typed);
+        CHECK(f.lane.nameEntry().name() == "ACE");
+
+        test::FakeRenderDevice device;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.lane.drawText(canvas, 0);
+        canvas.end();
+        CHECK_FALSE(std::ranges::any_of(
+            device.draws, [&](const auto& draw) { return draw.texture == &helpSheet; }));
+        bool caption = false;
+        bool letters = false;
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                caption = caption || (vertex.position.y >= 64 && vertex.position.y < 80);
+                letters = letters || vertex.position.y >= 340;
+            }
+        }
+        CHECK(caption);
+        CHECK(letters);
+        f.step(press(true));
+        f.step({}, NameEntry::kFlashTicks + 1);
+        CHECK(f.lane.state() == SelectLane::State::ClassPick);
+        CHECK(f.lane.save().name == "ACE");
+    }
+}
+
 TEST_CASE("stationary mouse preserves keyboard focus and unavailable load rows stay inert",
           "[select][mouse]") {
     Fixture f("select-mouse-focus");
