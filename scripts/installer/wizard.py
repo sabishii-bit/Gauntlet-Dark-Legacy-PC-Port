@@ -76,8 +76,9 @@ class Wizard(QWidget):
         self.installed = None
         self.release = None
         self.operation = None
+        self.check_context = ""
         self.network = network
-        self.setWindowTitle(STRINGS["title"] + " " + self.metadata["version"])
+        self.setWindowTitle(STRINGS["title"])
         self.setMinimumWidth(620)
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
@@ -105,7 +106,7 @@ class Wizard(QWidget):
         row = QHBoxLayout()
         self.start = QPushButton(STRINGS["install"])
         self.check = QPushButton(STRINGS["check_updates"])
-        self.check.setEnabled(False)
+        self.check.setEnabled(self.network)
         self.open = QPushButton(STRINGS["open"])
         self.open.hide()
         self.cancel = QPushButton(STRINGS["close"])
@@ -142,9 +143,10 @@ class Wizard(QWidget):
     def folder(self):
         return Path(os.path.abspath(self.destination.text().strip().strip('"')))
 
-    def inspect_destination(self):
+    def inspect_destination(self, auto_check=True):
         if self.busy():
             return
+        self.scan_timer.stop()
         self.release = None
         self.installed = None
         self.executable = None
@@ -163,7 +165,7 @@ class Wizard(QWidget):
                 self.mode = "invalid"
                 self.status.setText(str(error))
         self.refresh_controls()
-        if self.installed and self.network:
+        if self.installed and self.network and auto_check:
             self.check_online()
 
     def offer_update(self):
@@ -185,7 +187,7 @@ class Wizard(QWidget):
             widget.setEnabled(free)
         for widget in (self.image, self.image_browse):
             widget.setEnabled(free and self.mode == "install")
-        self.check.setEnabled(free and self.installed is not None and self.network)
+        self.check.setEnabled(free and self.network)
         self.start.setEnabled(free and self.mode != "invalid")
         self.open.setEnabled(free)
         if self.mode == "update":
@@ -208,11 +210,18 @@ class Wizard(QWidget):
         self.worker.start()
 
     def check_online(self):
-        if self.busy() or not self.installed:
+        if self.busy() or not self.network:
             return
+        # Re-read the chosen folder even if the user clicks before its debounce.
+        # A check without a receipt compares with the bundle; it never turns a
+        # fresh/invalid destination into an in-place update target.
+        self.inspect_destination(auto_check=False)
+        self.check_context = self.status.text() if self.mode in ("recover", "invalid") else ""
+        reference = self.installed or self.metadata
+        version, system = reference["version"], reference["platform"]
         self.status.setText(STRINGS["checking"])
         self.run_operation("check", lambda _progress, cancel: check_updates(
-            self.installed["version"], self.installed["platform"], cancel))
+            version, system, cancel))
 
     def browse_image(self):
         path, _ = QFileDialog.getOpenFileName(self, STRINGS["choose_image"],
@@ -279,6 +288,12 @@ class Wizard(QWidget):
 
     def completed(self, result):
         if self.operation == "check":
+            if self.installed is None:
+                message = (STRINGS["bundle_available"].format(
+                    version=result.version, bundled=self.metadata["version"]) if result else
+                    STRINGS["bundle_current"].format(version=self.metadata["version"]))
+                self.status.setText("\n".join(part for part in (self.check_context, message) if part))
+                return
             # Prefer the embedded payload if it is newer than the published runtime.
             self.release = result if result and version_order(result.version) > version_order(self.metadata["version"]) else None
             self.offer_update()
@@ -309,8 +324,11 @@ class Wizard(QWidget):
 
     def failed(self, message, cancelled):
         if self.operation == "check":
-            self.offer_update()
-            self.status.setText(STRINGS["offline"].format(error=message))
+            if self.installed is not None:
+                self.offer_update()
+            key = "offline" if self.installed is not None else "check_failed"
+            notice = STRINGS["check_cancelled"] if cancelled else STRINGS[key].format(error=message)
+            self.status.setText("\n".join(part for part in (self.check_context, notice) if part))
             return
         self.status.setText(message)
         if not cancelled:

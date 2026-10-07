@@ -54,11 +54,89 @@ class WizardTests(unittest.TestCase):
         from PySide6.QtWidgets import QLabel
         from installer.wizard import STRINGS
         self.assertEqual(self.window.status.text(), "")
+        self.assertEqual(self.window.windowTitle(), "Gauntlet Dark Legacy Installer")
+        self.assertEqual(STRINGS["destination"], "Install directory")
+        self.assertEqual(STRINGS["choose_directory"], "Select install directory")
         self.assertNotIn("destination_help", STRINGS)
         self.assertNotIn("ready", STRINGS)
         labels = [label.text() for label in self.window.findChildren(QLabel)]
         self.assertFalse(any("Defaults to the folder" in text or
                              "Ready to install." in text for text in labels))
+
+    def test_check_button_queries_without_an_installation_or_disc(self):
+        from installer import releases
+        from test_updater import release_row
+        folder = self.root / "not installed"
+        self.window.destination.setText(str(folder))
+        self.window.network = True
+        self.window.inspect_destination()
+        self.assertTrue(self.window.check.isEnabled())
+        self.assertEqual(self.window.image.text(), "")
+        with mock.patch.object(releases, "open_release", return_value=io.BytesIO(json.dumps([
+                release_row("1.0.0", system=self.window.metadata["platform"])]).encode())) as opened:
+            self.window.check.click()
+            self.assertFalse(self.window.check.isEnabled())
+            self.wait_for_operation()
+        opened.assert_called_once()
+        self.assertIn("Version 1.0.0 is available", self.window.status.text())
+        self.assertIn("Select your existing install directory", self.window.status.text())
+        self.assertEqual(self.window.mode, "install")
+        self.assertIsNone(self.window.release)
+        self.assertIsNone(self.window.installed)
+        self.assertTrue(self.window.check.isEnabled())
+        self.assertTrue(self.window.image.isEnabled())
+        self.assertFalse(folder.exists())
+        self.dialog.assert_not_called()
+
+    def test_check_without_receipt_can_be_current_or_retry_an_offline_failure(self):
+        self.window.destination.setText(str(self.root / "new game"))
+        self.window.network = True
+        self.window.inspect_destination()
+        with mock.patch("installer.wizard.check_updates", side_effect=[OSError("offline"), None]) as check:
+            self.window.check.click()
+            self.wait_for_operation()
+            self.assertIn("Could not check for updates: offline", self.window.status.text())
+            self.assertTrue(self.window.check.isEnabled())
+            self.window.check.click()
+            self.wait_for_operation()
+        self.assertEqual(check.call_count, 2)
+        self.assertEqual(check.call_args.args[:2],
+                         (self.window.metadata["version"], self.window.metadata["platform"]))
+        self.assertIn("Checked GitHub", self.window.status.text())
+        self.assertIn("bundled version", self.window.status.text())
+        self.assertEqual(self.window.mode, "install")
+        self.dialog.assert_not_called()
+
+    def test_manual_check_rescans_new_path_before_its_debounce(self):
+        folder = self.installed_folder()
+        self.window.inspect_destination()
+        self.assertIsNotNone(self.window.installed)
+        self.window.destination.setText(str(self.root / "new folder"))
+        self.window.network = True
+        self.window.refresh_controls()
+        with mock.patch("installer.wizard.check_updates", return_value=None) as check:
+            self.window.check.click()
+            self.wait_for_operation()
+        check.assert_called_once()
+        self.assertEqual(self.window.mode, "install")
+        self.assertIsNone(self.window.installed)
+        self.assertIsNone(self.window.executable)
+        self.assertTrue((folder / "installation.json").is_file())
+
+    def test_check_keeps_invalid_receipt_error_and_does_not_enable_install(self):
+        folder = self.installed_folder()
+        (folder / "installation.json").write_text("{}")
+        self.window.network = True
+        self.window.inspect_destination()
+        original = self.window.status.text()
+        self.assertEqual(self.window.mode, "invalid")
+        with mock.patch("installer.wizard.check_updates", return_value=None):
+            self.window.check.click()
+            self.wait_for_operation()
+        self.assertIn(original, self.window.status.text())
+        self.assertFalse(self.window.start.isEnabled())
+        self.assertTrue(self.window.check.isEnabled())
+        self.assertEqual(self.window.mode, "invalid")
 
     def test_frozen_default_is_installer_folder_not_bundle_temp(self):
         from installer.wizard import installer_directory
