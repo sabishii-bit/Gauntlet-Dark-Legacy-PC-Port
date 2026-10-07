@@ -5,10 +5,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/ui/SystemFont.h"
 
 #include "FakeRenderDevice.h"
-#include "TestSupport.h"
 #include "game/app/BuildLabel.h"
 
 namespace {
@@ -35,7 +35,7 @@ TEST_CASE("the build label stays at the viewport corner across aspect ratios",
         const Vec4 origin = matrix * Vec4{0, 0, 0, 1};
         CHECK(origin.x == Approx(-1));
         CHECK(origin.y == Approx(-1));
-        const Vec4 margin = matrix * Vec4{6, 6, 0, 1};
+        const Vec4 margin = matrix * Vec4{1, 1, 0, 1};
         const f32 x = (margin.x + 1) * static_cast<f32>(extent.width) / 2;
         const f32 y = (margin.y + 1) * static_cast<f32>(extent.height) / 2;
         CHECK(x == Approx(y).margin(0.001));
@@ -63,8 +63,8 @@ TEST_CASE("the build overlay uses system text, white three-quarter alpha and no 
             CHECK(vertex.color == Color::rgba(255, 255, 255, 191));
         }
         CHECK(draw.vertices.size() == 6);
-        CHECK(test::minCorner(draw).x == Approx(6));
-        CHECK(test::minCorner(draw).y == Approx(6));
+        CHECK(test::minCorner(draw).x == Approx(1));
+        CHECK(test::minCorner(draw).y == Approx(1));
         CHECK(test::maxCorner(draw).y - test::minCorner(draw).y == Approx(12));
         const auto* sheet = dynamic_cast<const test::FakeTexture*>(draw.texture);
         REQUIRE(sheet != nullptr);

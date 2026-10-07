@@ -141,6 +141,8 @@ void Gamepads::discover() {
         }
         device.guid = deviceGuid(device.joystick);
         device.path = text(SDL_GetJoystickPath(device.joystick));
+        // std::array has pointer iterators on libstdc++, checked objects on MSVC.
+        // NOLINTNEXTLINE(readability-qualified-auto): keep both iterator types.
         auto slot = std::ranges::find_if(m_devices, [&](const Device& old) {
             return old.id == 0 && old.guid == device.guid && old.path == device.path;
         });
