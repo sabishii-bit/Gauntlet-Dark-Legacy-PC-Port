@@ -10,7 +10,7 @@ namespace gdl::game {
 namespace {
 constexpr f32 kReferenceHeight = 540.0f;
 constexpr f32 kTextHeight = 12.0f;
-constexpr f32 kMargin = 6.0f;
+constexpr f32 kMargin = 1.0f;
 constexpr Color kTint = Color::rgba(255, 255, 255, 191);
 } // namespace
 
