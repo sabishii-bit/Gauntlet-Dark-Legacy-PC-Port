@@ -1682,9 +1682,10 @@ TEST_CASE("a golem's health hangs over it on its GMETER bar, turned to the camer
 
 TEST_CASE("generals carry a suppressible health meter without changing their native flags",
           "[meter][combat-settings][assets]") {
+    const auto root = unpackedRoot();
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, unpackedRoot(), General::definition(), 'G'));
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
     CHECK_FALSE(assets.data.meter().inWorld);
     REQUIRE(assets.meterTree != nullptr);
     Combatant actor;

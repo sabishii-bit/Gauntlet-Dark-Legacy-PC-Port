@@ -184,12 +184,11 @@ void SettingsMenu::rebuild(s32 selection) {
                    text(m_config.display.bloom ? "settings.on" : "settings.off"), 9);
             choice(text("settings.ambientOcclusion"),
                    text(m_config.display.ambientOcclusion ? "settings.on" : "settings.off"), 10);
-            const auto filter =
-                std::ranges::find(kTextureFiltering, m_config.display.textureFiltering);
-            const auto filterIndex = filter == kTextureFiltering.end()
-                                         ? usize{1}
-                                         : static_cast<usize>(filter - kTextureFiltering.begin());
-            choice(text("settings.textureFiltering"), text(kTextureLabels[filterIndex]), 11);
+            const auto filterIndex = static_cast<usize>(
+                std::ranges::find(kTextureFiltering, m_config.display.textureFiltering) -
+                kTextureFiltering.begin());
+            choice(text("settings.textureFiltering"),
+                   text(kTextureLabels[filterIndex < kTextureLabels.size() ? filterIndex : 1]), 11);
             s32 labelWidth = 0;
             s32 valueWidth = 0;
             for (const auto& item : definition.items) {

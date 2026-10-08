@@ -2800,14 +2800,18 @@ TEST_CASE("a halo wearer drains Death only while touching the nearest target ahe
     CHECK(f.players[0].deathHeld == -1);
     CHECK(sounds.voiceCount() == 1); // reacquiring and escaping do not replay activation
     auto& inventory = actor.save().progress().inventory;
-    const auto halo = std::ranges::find_if(inventory.powerups, [](const PowerupSlot& item) {
-        return item.flags == DeathRules::kProtection;
-    });
-    REQUIRE(halo != inventory.powerups.end());
-    halo->on = false;
+    const auto haloIndex =
+        static_cast<usize>(std::ranges::find_if(inventory.powerups,
+                                                [](const PowerupSlot& item) {
+                                                    return item.flags == DeathRules::kProtection;
+                                                }) -
+                           inventory.powerups.begin());
+    REQUIRE(haloIndex < inventory.powerups.size());
+    auto& halo = inventory.powerups[haloIndex];
+    halo.on = false;
     CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
     CHECK_FALSE(f.players[0].deathHaloHeard);
-    halo->on = true;
+    halo.on = true;
     actor.place(enemies.positionOf(*death) - Vec3{0, 0, 2});
     REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
     CHECK(sounds.voiceCount() == 2); // a new use of the item can announce again
