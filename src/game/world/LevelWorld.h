@@ -261,7 +261,7 @@ public:
         m_walls.draw(device, clip, m_litNow);
         m_triggers.draw(device, clip, m_litNow);
         m_rotators.draw(device, clip, m_litNow);
-        m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::DepthWriting,
+        m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::Opaque,
                            presentationAlpha);
     }
     void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,
@@ -269,7 +269,7 @@ public:
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.drawDeferred(device, clip, frame, presentationAlpha,
                              presentedTextureFrameOffset(presentationAlpha));
-        m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::Effects,
+        m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::Blended,
                            presentationAlpha);
         m_particles.draw(device, clip, frame.right, frame.up,
                          m_particlesAdvanced ? presentationAlpha : -1.0f);

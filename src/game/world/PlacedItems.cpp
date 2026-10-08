@@ -888,14 +888,14 @@ void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
             }
             item.model.draw(device, clip, transform, lighting, pose->matrices(), camera, alpha,
                             pass);
-            if (pass != TreeModel::Pass::DepthWriting) {
+            if (pass != TreeModel::Pass::DepthWriting && pass != TreeModel::Pass::Opaque) {
                 const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
                 item.particles.draw(device, clip, frame.right, frame.up,
                                     m_burstsAdvanced ? frameBlend : -1.0f);
             }
         }
     }
-    if (pass != TreeModel::Pass::DepthWriting) {
+    if (pass != TreeModel::Pass::DepthWriting && pass != TreeModel::Pass::Opaque) {
         const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
         m_bursts.draw(device, clip, frame.right, frame.up, m_burstsAdvanced ? frameBlend : -1.0f);
     }

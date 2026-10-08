@@ -287,6 +287,69 @@ TEST_CASE("tree effects can composite after scenery without redrawing depth-writ
     CHECK(device.draws.size() == 2);
 }
 
+TEST_CASE("pickup passes separate blended mesh parts without changing native depth state",
+          "[world][model][effect-pass][pickup-occlusion]") {
+    const auto dir = sampleFigure("tree-model-pickup-passes");
+    // The fruit and its shadow can be two materials in the very same native node.
+    writeTextFile(dir / "models/000_BODY.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 1 0\n"
+                  "usemtl tex0\nf 1//1 2//1 3//1\nusemtl tex1\nf 1//1 2//1 3//1\n");
+    test::convertModelFixture(dir);
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    TreeInfo tree = trees.tree(0);
+    tree.nodes.resize(2);
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    const auto draw = [&](TreeModel::Pass pass, f32 alpha = 1.0f) {
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, alpha, pass);
+    };
+    draw(TreeModel::Pass::Opaque);
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].texture == &textures.texture(device, 0));
+    CHECK(device.draws[0].state.depthWrite);
+    draw(TreeModel::Pass::Blended);
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].texture == &textures.texture(device, 1));
+    CHECK(device.draws[0].state.depthWrite);
+    CHECK(device.draws[0].state.depthTest);
+    CHECK(device.draws[0].state.blend == BlendMode::Alpha);
+    CHECK_FALSE(device.draws[0].state.usesAlphaToCoverage(4));
+    // Existing actor/cutout passes keep their depth-write partition and MSAA coverage.
+    draw(TreeModel::Pass::DepthWriting);
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[1].state.usesAlphaToCoverage(4));
+    draw(TreeModel::Pass::Effects);
+    CHECK(device.draws.empty());
+    draw(TreeModel::Pass::All);
+    CHECK(device.draws.size() == 2);
+    draw(TreeModel::Pass::Opaque, 0.5f);
+    CHECK(device.draws.empty());
+    draw(TreeModel::Pass::Blended, 0.5f);
+    REQUIRE(device.draws.size() == 2);
+    for (const auto& part : device.draws) {
+        CHECK_FALSE(part.state.depthWrite);
+        CHECK_FALSE(part.state.usesAlphaToCoverage(4));
+    }
+    tree.nodes[1].objectFlags = TreeNodeInfo::kNoDepthWriteFlag | TreeNodeInfo::kAdditiveFlag;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    draw(TreeModel::Pass::Opaque);
+    CHECK(device.draws.empty());
+    draw(TreeModel::Pass::Blended);
+    REQUIRE(device.draws.size() == 2);
+    for (const auto& part : device.draws) {
+        CHECK_FALSE(part.state.depthWrite);
+        CHECK(part.state.depthTest);
+        CHECK(part.state.blend == BlendMode::Additive);
+    }
+}
+
 TEST_CASE("a tree model stands its meshes in the world, lit, opaque parts first",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model");

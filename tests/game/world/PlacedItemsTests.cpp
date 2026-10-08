@@ -18,6 +18,9 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/players/ItemPickup.h"
+#include "game/world/Chests.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 #include "game/world/PlacedItems.h"
 
 namespace {
@@ -25,6 +28,72 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("native pickup gas and fruit shadows composite over an already drawn chest",
+          "[placed-items][pickup-occlusion][assets]") {
+    const auto* name = GENERATE("ACIDICON", "BANANNA", "APPLE", "CHERRY");
+    CAPTURE(name);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("POWERUPS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G2");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    Chests chests;
+    REQUIRE(chests.bind(device, world.layout(), world.items(), &world.collision()));
+    chests.setPlayerCount(1);
+    usize index = 0;
+    while (index < chests.size() &&
+           (!chests.chest(index).shown || chests.chest(index).subtype != Chests::kChest)) {
+        ++index;
+    }
+    REQUIRE(index < chests.size());
+    const auto& chest = chests.chest(index);
+    const std::array visitors{ChestVisitor{chest.figure.position(), 1, 1}};
+    chests.update(0, visitors);
+    chests.update(3, {});
+    REQUIRE(chest.state == Chests::kOpen);
+    REQUIRE(world.placeItem(device, name, chest.figure.position() + Vec3{0, 3, 0}));
+    const auto& item = world.placedItems().item(world.placedItems().size() - 1);
+    REQUIRE(item.figure);
+    world.placedItems().draw(device, Mat4{1}, {}); // apply native flipbook selection
+    device.draws.clear();
+    // The native pickup's own draw identifies its blended submeshes. This includes
+    // fruit shadows sharing a mesh with their opaque food, not just separate nodes.
+    item.model.draw(device, Mat4{1}, item.transform, {}, item.pose.matrices());
+    std::vector<const Texture*> blendedTextures;
+    for (const auto& draw : device.draws) {
+        if (draw.state.alphaTest > 0) {
+            blendedTextures.push_back(draw.texture);
+        }
+    }
+    REQUIRE_FALSE(blendedTextures.empty());
+    device.draws.clear();
+    const WorldCamera camera{.position = chest.figure.position() + Vec3{0, 20, -30}};
+    world.drawOpaque(device, Mat4{1}, camera);
+    const usize chestStart = device.draws.size();
+    chests.draw(device, Mat4{1}, {});
+    const usize chestEnd = device.draws.size();
+    REQUIRE(chestEnd > chestStart);
+    world.drawDeferred(device, Mat4{1}, camera);
+    usize found = 0;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        const auto& draw = device.draws[i];
+        if (std::ranges::find(blendedTextures, draw.texture) == blendedTextures.end()) {
+            continue;
+        }
+        ++found;
+        CHECK(i >= chestEnd);
+        CHECK(draw.state.depthTest);
+        CHECK(draw.state.blend == BlendMode::Alpha);
+        CHECK_FALSE(draw.state.usesAlphaToCoverage(4));
+    }
+    CHECK(found >= blendedTextures.size());
+}
 
 TEST_CASE("the Cemetery Fire Parchment burns while lying in the level",
           "[placed-items][fire-parchment][native-assets][assets]") {

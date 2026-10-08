@@ -1270,6 +1270,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         occlusion.clipToView = camera.view() * glm::inverse(clip);
         device.applyAmbientOcclusion(occlusion);
     }
+    // Floor shadows belong below translucent pickups and scenery, even when those
+    // authored materials write depth. Otherwise a nearer cloud rejects the shadow.
+    drawShadows(device, clip, camera.position, frameBlend, opponentBlend);
     m_world->drawDeferred(device, clip, camera, effectBlend);
     // GHO's native 0xC01880 sorts its additive, non-depth-writing body after scenery.
     // A fence blended over it instead makes even a nearer ghost appear behind the fence.
@@ -1278,7 +1281,6 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     PartyFigures::drawEffects(device, m_players, figureScene(frameBlend), clip, effectCamera);
-    drawShadows(device, clip, camera.position, frameBlend, opponentBlend);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {

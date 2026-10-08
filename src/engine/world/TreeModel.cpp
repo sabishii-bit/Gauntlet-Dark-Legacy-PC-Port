@@ -248,6 +248,10 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             if (blended != translucent) {
                 continue;
             }
+            const bool deferred = blended || !depthWrite;
+            if ((pass == Pass::Opaque && deferred) || (pass == Pass::Blended && !deferred)) {
+                continue;
+            }
             const MeshPart& part = shape.mesh->parts[p];
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
@@ -286,7 +290,9 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             m_batch.end();
             DrawState state;
             state.mipmaps = true;
-            state.alphaToCoverage = true;
+            // This pass explicitly requests colour compositing, not coverage. Native
+            // pickup shadows and gas can write depth while still requiring smooth alpha.
+            state.alphaToCoverage = pass != Pass::Blended;
             state.cullBack = m_cullBack;
             state.blend = additive ? BlendMode::Additive : BlendMode::Alpha;
             const Texture* mask = m_maskedTexture != nullptr ? m_maskedTexture : node.maskedTexture;

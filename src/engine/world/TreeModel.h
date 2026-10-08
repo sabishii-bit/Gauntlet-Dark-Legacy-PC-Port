@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <span>
-#include <utility>
 #include <vector>
 
 #include "engine/assets/AnimationSet.h"
@@ -27,8 +26,9 @@ namespace gdl {
  */
 class TreeModel {
 public:
-    /** Depthless effects composite after scenery; solid parts still occlude actors. */
-    enum class Pass : u8 { All, DepthWriting, Effects };
+    /** DepthWriting/Effects preserve the actor split. Opaque/Blended additionally defer
+     * blended submeshes even when their native material writes depth (pickup shadows). */
+    enum class Pass : u8 { All, DepthWriting, Effects, Opaque, Blended };
     /** World-bound shots must test the already-rendered solid scene, including
      * halo nodes whose authored flags otherwise disable the depth test. */
     enum class Occlusion : u8 { Authored, SolidWorld };
