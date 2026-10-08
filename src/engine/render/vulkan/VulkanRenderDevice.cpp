@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <limits>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
@@ -11,6 +10,7 @@
 #include "engine/platform/Window.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/vulkan/VulkanContext.h"
+#include "engine/render/vulkan/VulkanFrameAcquire.h"
 #include "engine/render/vulkan/VulkanPipeline.h"
 #include "engine/render/vulkan/VulkanPostProcess.h"
 #include "engine/render/vulkan/VulkanSwapchain.h"
@@ -299,10 +299,14 @@ bool VulkanRenderDevice::beginFrame() {
     const VkDevice device = m_context->device();
     FrameResources& frame = m_frames[m_frameIndex];
 
-    GDL_VK_CHECK(
-        vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE, std::numeric_limits<u64>::max()));
-
-    const VkResult acquire = m_swapchain->acquireNextImage(frame.imageAvailable, &m_imageIndex);
+    const VkResult acquire = vk::acquireFrame(
+        [&](u64 timeout) { return vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE, timeout); },
+        [&](u64 timeout) {
+            return m_swapchain->acquireNextImage(frame.imageAvailable, &m_imageIndex, timeout);
+        });
+    if (acquire == VK_TIMEOUT || acquire == VK_NOT_READY) {
+        return false;
+    }
     if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain();
         return false;

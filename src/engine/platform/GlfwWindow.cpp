@@ -13,6 +13,10 @@
 #include <array>
 #include <span>
 
+#ifdef _WIN32
+#include <SDL3/SDL_init.h>
+#endif
+
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 #include "engine/platform/DisplayTiming.h"
@@ -116,6 +120,14 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     m_window = glfwCreateWindow(static_cast<s32>(desc.width), static_cast<s32>(desc.height),
                                 desc.title.c_str(), nullptr, nullptr);
     GDL_VERIFY(m_window != nullptr, "glfwCreateWindow failed");
+#ifdef _WIN32
+    // With no SDL video thread, HID discovery runs a window-filtered PeekMessage loop
+    // alongside GLFW's native pump. Windows then marks an idle game window as hung,
+    // even though it still renders (SDL issue 2998). Register this as SDL's video
+    // thread so GLFW alone dispatches both libraries' window messages. No SDL window
+    // or renderer is created; controller discovery and hotplug remain enabled.
+    GDL_VERIFY(SDL_InitSubSystem(SDL_INIT_VIDEO), "SDL window-event initialization failed");
+#endif
     glfwSetWindowUserPointer(m_window, this);
     glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
     glfwSetKeyCallback(m_window, &GlfwWindow::keyCallback);
@@ -158,6 +170,9 @@ GlfwWindow::~GlfwWindow() {
     if (m_window != nullptr) {
         glfwDestroyWindow(m_window);
     }
+#ifdef _WIN32
+    SDL_QuitSubSystem(SDL_INIT_VIDEO);
+#endif
     if (--glfwReferenceCount() == 0) {
         glfwTerminate();
     }

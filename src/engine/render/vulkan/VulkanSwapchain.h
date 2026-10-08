@@ -22,7 +22,7 @@ public:
     /** Waits for the device to idle and rebuilds at the new size. */
     void recreate(Extent2D windowExtent, bool vsync, u32 sampleCount);
 
-    VkResult acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex);
+    VkResult acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex, u64 timeout);
     VkResult present(VkSemaphore waitSemaphore, u32 imageIndex);
 
     VkFormat colorFormat() const { return m_colorFormat; }

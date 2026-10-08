@@ -47,6 +47,7 @@ add_executable(tests
     engine/io/AssetLocatorTests.cpp
     engine/platform/InputTests.cpp
     engine/platform/GamepadsTests.cpp
+    engine/platform/GlfwWindowTests.cpp
     engine/platform/DisplayTimingTests.cpp
     engine/platform/PathsTests.cpp
     engine/render/RenderTypesTests.cpp
@@ -65,6 +66,7 @@ add_executable(tests
     engine/audio/AudioMixerTests.cpp
     engine/audio/AudioDeviceTests.cpp
     engine/app/ApplicationTests.cpp
+    engine/render/VulkanFrameAcquireTests.cpp
     engine/core/StringsTests.cpp
     engine/assets/PngImageTests.cpp
     engine/assets/TextureSetTests.cpp

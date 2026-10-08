@@ -245,9 +245,10 @@ void VulkanSwapchain::destroyImageResources() {
     m_images.clear();
 }
 
-VkResult VulkanSwapchain::acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex) {
-    return vkAcquireNextImageKHR(m_context.device(), m_swapchain, std::numeric_limits<u64>::max(),
-                                 signalSemaphore, VK_NULL_HANDLE, imageIndex);
+VkResult VulkanSwapchain::acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex,
+                                           u64 timeout) {
+    return vkAcquireNextImageKHR(m_context.device(), m_swapchain, timeout, signalSemaphore,
+                                 VK_NULL_HANDLE, imageIndex);
 }
 
 VkResult VulkanSwapchain::present(VkSemaphore waitSemaphore, u32 imageIndex) {
