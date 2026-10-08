@@ -310,6 +310,7 @@
   "settings.fps": "FPS",
   "settings.antialiasing": "Anti-Aliasing",
   "settings.textureFiltering": "Texture Filtering",
+  "settings.smoothSprites": "Smooth Sprites",
   "settings.trilinear": "Trilinear",
   "settings.anisotropic2": "2x Anisotropic",
   "settings.anisotropic4": "4x Anisotropic",

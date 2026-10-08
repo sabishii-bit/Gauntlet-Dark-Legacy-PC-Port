@@ -1,6 +1,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -17,6 +18,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/app/Scenario.h"
 #include "game/players/ItemPickup.h"
 #include "game/world/Chests.h"
 #include "game/world/LevelCatalog.h"
@@ -31,7 +33,8 @@ using Catch::Approx;
 
 TEST_CASE("native pickup gas and fruit shadows composite over an already drawn chest",
           "[placed-items][pickup-occlusion][assets]") {
-    const auto* name = GENERATE("ACIDICON", "BANANNA", "APPLE", "CHERRY");
+    const auto* name =
+        GENERATE("ACIDICON", "FIREICON", "BREATHEF_ICON", "BANANNA", "APPLE", "CHERRY");
     CAPTURE(name);
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -81,6 +84,7 @@ TEST_CASE("native pickup gas and fruit shadows composite over an already drawn c
     REQUIRE(chestEnd > chestStart);
     world.drawDeferred(device, Mat4{1}, camera);
     usize found = 0;
+    usize smoothed = 0;
     for (usize i = 0; i < device.draws.size(); ++i) {
         const auto& draw = device.draws[i];
         if (std::ranges::find(blendedTextures, draw.texture) == blendedTextures.end()) {
@@ -91,8 +95,68 @@ TEST_CASE("native pickup gas and fruit shadows composite over an already drawn c
         CHECK(draw.state.depthTest);
         CHECK(draw.state.blend == BlendMode::Alpha);
         CHECK_FALSE(draw.state.usesAlphaToCoverage(4));
+        smoothed += draw.state.usesSpriteSmoothing() ? 1 : 0;
     }
     CHECK(found >= blendedTextures.size());
+    // Apples/cherries also have camera-facing CF_HILITE sprites; bananas do not.
+    CHECK((smoothed > 0) == (std::string_view{name} != "BANANNA"));
+    if (!std::string_view{name}.ends_with("ICON")) {
+        for (usize node = 0; node < item.figure->nodes.size(); ++node) {
+            if (item.figure->nodes[node].name == "CF_HILITE") {
+                item.model.setMeshAlpha(node, 0);
+            }
+        }
+        device.draws.clear();
+        item.model.draw(device, Mat4{1}, item.transform, {}, item.pose.matrices(), nullptr, 1,
+                        TreeModel::Pass::Blended);
+        REQUIRE_FALSE(device.draws.empty()); // fruit's flat ground shadow is still drawn
+        for (const auto& draw : device.draws) {
+            CHECK_FALSE(draw.state.usesSpriteSmoothing());
+        }
+    }
+}
+
+TEST_CASE("the sprite filtering scenario starts beside the native G2 Fire Breath pickup",
+          "[placed-items][smooth-sprites][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("POWERUPS/ANIM.PS2");
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-g2-sprite-filtering.json");
+    REQUIRE(scenario.level == "G2");
+    REQUIRE(scenario.tower.items.empty()); // use the retail placement, not an injected item
+    REQUIRE(scenario.tower.position);
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName(scenario.level);
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto start = *scenario.tower.position;
+    world.setPlayerCount(1);
+    REQUIRE(world.collision().floorAt(start, 4, 10, 1));
+    const PlacedItems::Item* breath = nullptr;
+    for (usize index = 0; index < world.placedItems().size(); ++index) {
+        const auto& item = world.placedItems().item(index);
+        if (item.name == "BREATHEF_ICON") {
+            breath = &item;
+            break;
+        }
+    }
+    REQUIRE(breath != nullptr);
+    REQUIRE(breath->takeable());
+    CHECK(breath->position.x == Approx(-49.6328125f));
+    CHECK(breath->position.z == Approx(-182.8125f));
+    CHECK(glm::distance(start, breath->position) > 3);
+    CHECK(glm::distance(start, breath->position) < 6);
+    world.placedItems().draw(device, Mat4{1}, {});
+    device.draws.clear();
+    breath->model.draw(device, Mat4{1}, breath->transform, {}, breath->pose.matrices(), nullptr, 1,
+                       TreeModel::Pass::Blended);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(std::ranges::any_of(device.draws,
+                              [](const auto& draw) { return draw.state.usesSpriteSmoothing(); }));
 }
 
 TEST_CASE("the Cemetery Fire Parchment burns while lying in the level",

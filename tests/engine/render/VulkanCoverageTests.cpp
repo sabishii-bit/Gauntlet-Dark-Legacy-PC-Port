@@ -25,6 +25,13 @@ using namespace gdl;
 constexpr u32 kSize = 8;
 constexpr VkFormat kColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
+struct SpriteInput {
+    std::array<u8, usize{4} * 4 * 4> pixels{};
+    bool smooth = false;
+    f32 uvScale = 1;
+    f32 nextFrame = 0;
+};
+
 struct Target {
     VulkanContext& context;
     VkImage image = VK_NULL_HANDLE;
@@ -118,6 +125,10 @@ struct CoverageDevice {
         GDL_VK_CHECK(vkCreateDescriptorPool(context.device(), &poolInfo, nullptr, &pool));
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.maxLod = 0;
         GDL_VK_CHECK(vkCreateSampler(context.device(), &samplerInfo, nullptr, &sampler));
         VkDescriptorSetAllocateInfo allocate{};
@@ -143,23 +154,36 @@ struct CoverageDevice {
     }
     GDL_NON_COPYABLE_NON_MOVABLE(CoverageDevice);
 
-    std::vector<u8> render(VkSampleCountFlagBits samples, u8 alpha, bool masked) {
+    std::vector<u8> render(VkSampleCountFlagBits samples, u8 alpha, bool masked,
+                           const SpriteInput* sprite = nullptr) {
         const Target color(context, kColorFormat, samples, false);
         const Target resolved(context, kColorFormat, VK_SAMPLE_COUNT_1_BIT, false);
         const Target depth(context, context.depthFormat(), samples, true);
         const std::array<u8, 4> pixel{255, 255, 255, alpha};
         const std::array<u8, 4> skinPixel{255, 255, 255, 64};
-        const VulkanTexture texture(context, pool, imageLayout, TextureDesc{1, 1}, pixel);
-        const VulkanTexture skin(context, pool, imageLayout, TextureDesc{1, 1}, skinPixel);
+        const TextureDesc description = sprite ? TextureDesc{4, 4} : TextureDesc{1, 1};
+        auto nextPixels = sprite ? sprite->pixels : SpriteInput{}.pixels;
+        for (usize i = 0; i < nextPixels.size(); i += 4) {
+            nextPixels[i] = 0;
+            nextPixels[i + 1] = 0;
+            nextPixels[i + 2] = 255;
+        }
+        const VulkanTexture texture(context, pool, imageLayout, description,
+                                    sprite ? std::span<const u8>{sprite->pixels}
+                                           : std::span<const u8>{pixel});
+        const VulkanTexture skin(context, pool, imageLayout, description,
+                                 sprite ? std::span<const u8>{nextPixels}
+                                        : std::span<const u8>{skinPixel});
         const auto shaders = paths::executableDirectory() / "shaders";
         const VulkanPipeline cutout(context, shaders, kColorFormat, context.depthFormat(),
                                     imageLayout, BlendMode::Opaque, samples,
-                                    VulkanPipeline::Effect::None, samplerLayout, true);
+                                    VulkanPipeline::Effect::None, samplerLayout, sprite == nullptr);
         const VulkanPipeline solid(context, shaders, kColorFormat, context.depthFormat(),
                                    imageLayout, BlendMode::Opaque, samples,
                                    VulkanPipeline::Effect::None, samplerLayout);
         ImmediateBatch geometry;
-        geometry.rect({0, 0, kSize, kSize}, 0.75f, Color::rgba(255, 0, 0));
+        geometry.rect({0, 0, kSize, kSize}, 0.75f,
+                      sprite ? Color::rgba(255, 255, 255) : Color::rgba(255, 0, 0));
         geometry.rect({0, 0, kSize, kSize}, 0.25f, Color::rgba(0, 255, 0));
         const auto vertices = geometry.triangles();
         const Buffer vertexBuffer(context, vertices.size_bytes(),
@@ -232,6 +256,16 @@ struct CoverageDevice {
                                     static_cast<u32>(same.size()), same.data(), 0, nullptr);
             constants.scale.z = -1;
         }
+        if (sprite) {
+            constants.scale.x = sprite->uvScale;
+            constants.scale.y = sprite->uvScale;
+            constants.effectData0.x = sprite->smooth ? 1.0f : 0.0f;
+            if (sprite->nextFrame > 0) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cutout.layout(), 0,
+                                        static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
+                constants.scale.z = -sprite->nextFrame;
+            }
+        }
         const auto draw = [&](const VulkanPipeline& pipeline, u32 first) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
             vkCmdPushConstants(cmd, pipeline.layout(),
@@ -240,9 +274,11 @@ struct CoverageDevice {
             vkCmdDraw(cmd, 6, 1, first, 0);
         };
         draw(cutout, 0);
-        constants.params.z = 0;
-        constants.scale.z = -1; // the behind surface is solid regardless of texture alpha
-        draw(solid, 6);
+        if (!sprite) {
+            constants.params.z = 0;
+            constants.scale.z = -1; // the behind surface is solid regardless of texture alpha
+            draw(solid, 6);
+        }
         vkCmdEndRendering(cmd);
         auto* const output = samples == VK_SAMPLE_COUNT_1_BIT ? color.image : resolved.image;
         vk::imageBarrier(
@@ -306,6 +342,71 @@ TEST_CASE("GPU alpha coverage preserves cutout holes and does not multiply edge 
                     }
                 }
             }
+        }
+    }
+}
+
+TEST_CASE("GPU sprite smoothing filters magnification without transparent colour fringes",
+          "[gpu][smooth-sprites]") {
+    CoverageDevice gpu;
+    SpriteInput sprite;
+    for (usize y = 0; y < 4; ++y) {
+        for (usize x = 0; x < 4; ++x) {
+            const usize i = (y * 4 + x) * 4;
+            const bool visible = x > 0 && x < 3 && y > 0 && y < 3;
+            sprite.pixels[i] = visible ? 255 : 0;
+            sprite.pixels[i + 1] = visible ? 0 : 255;
+            sprite.pixels[i + 3] = visible ? 255 : 0;
+        }
+    }
+    SECTION("magnification smooths alpha without bleeding invisible green into red") {
+        const auto original = gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite);
+        sprite.smooth = true;
+        const auto smooth = gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite);
+        CHECK(smooth != original);
+        usize visible = 0;
+        for (usize i = 0; i < smooth.size(); i += 4) {
+            CAPTURE(i);
+            if (smooth[i + 3] == 0) {
+                continue;
+            }
+            ++visible;
+            CHECK(smooth[i] >= 254);
+            CHECK(smooth[i + 1] == 0);
+            CHECK(smooth[i + 2] == 0);
+            CHECK(smooth[i + 3] < 255);
+        }
+        CHECK(visible > 0);
+        CHECK(visible < usize{kSize} * kSize);
+    }
+    SECTION("minification keeps the native filtered sample") {
+        sprite.uvScale = 4;
+        const auto original = gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite);
+        sprite.smooth = true;
+        CHECK(gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite) == original);
+    }
+    SECTION("uniform opaque colours stay unchanged including the clamped edges") {
+        sprite.pixels.fill(255);
+        const auto original = gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite);
+        sprite.smooth = true;
+        CHECK(gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite) == original);
+    }
+    SECTION("interpolated animation frames keep the same coverage") {
+        sprite.smooth = true;
+        const auto single = gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite);
+        sprite.nextFrame = 0.5f;
+        const auto blended = gpu.render(VK_SAMPLE_COUNT_1_BIT, 255, false, &sprite);
+        for (usize i = 0; i < blended.size(); i += 4) {
+            CAPTURE(i);
+            CHECK(blended[i + 3] == single[i + 3]);
+            if (blended[i + 3] == 0) {
+                continue;
+            }
+            CHECK(blended[i] >= 127);
+            CHECK(blended[i] <= 128);
+            CHECK(blended[i + 1] == 0);
+            CHECK(blended[i + 2] >= 127);
+            CHECK(blended[i + 2] <= 128);
         }
     }
 }

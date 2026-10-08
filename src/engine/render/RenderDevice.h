@@ -59,6 +59,7 @@ struct DrawState {
     bool depthTest = true; ///< false accepts every depth, independently of depth writes
     bool mipmaps = false;  ///< world draws opt in; canvas text and movies retain base sampling
     bool alphaToCoverage = false; ///< allow MSAA coverage for depth-writing cutout surfaces
+    bool smoothSprite = false;    ///< opt-in magnification of soft, camera-facing pickup art
     f32 darken = 0.0f;            ///< how much of its colour is taken away: 0 none, 1 all
     f32 colorScale =
         1.0f; ///< RGB combiner scale, clamped before alpha blending; leaves alpha alone
@@ -77,6 +78,11 @@ struct DrawState {
         return samples > 1 && alphaToCoverage && depthTest && depthWrite &&
                blend != BlendMode::Additive && (alphaTest > 0 || maskedTexture != nullptr) &&
                effectiveTextureBlend() == 0;
+    }
+
+    bool usesSpriteSmoothing() const {
+        return smoothSprite && !alphaToCoverage && blend != BlendMode::Opaque &&
+               maskedTexture == nullptr && lightmap == nullptr;
     }
 
     bool operator==(const DrawState&) const = default;
@@ -105,6 +111,8 @@ public:
     virtual u32 presentationSampleCount() const = 0;
 
     virtual void setTextureFiltering(u32 filtering) = 0;
+    /** Enables optional magnification filtering only on draws which explicitly opt in. */
+    virtual void setSmoothSprites(bool enabled) = 0;
 
     /** Uploads packed RGBA8 mip levels, rows top to bottom, largest level first. */
     virtual std::unique_ptr<Texture> createTexture(const TextureDesc& desc,

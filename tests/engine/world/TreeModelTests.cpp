@@ -350,6 +350,43 @@ TEST_CASE("pickup passes separate blended mesh parts without changing native dep
     }
 }
 
+TEST_CASE("only translucent pickup billboards opt in to smooth sprite filtering",
+          "[world][model][smooth-sprites]") {
+    const auto dir = sampleFigure("tree-smooth-sprites");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    auto tree = trees.tree(0);
+    tree.nodes[1].objectFlags = 0x01000000; // native cylindrical billboard
+    tree.nodes[2].objectFlags = 0x04000000; // native full billboard
+    test::FakeRenderDevice device;
+    TreeModel model;
+    REQUIRE(model.bind(tree, models, textures, device));
+    for (const auto pass : {TreeModel::Pass::All, TreeModel::Pass::DepthWriting,
+                            TreeModel::Pass::Opaque, TreeModel::Pass::Blended}) {
+        device.draws.clear();
+        model.draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, 1, pass);
+        REQUIRE_FALSE(device.draws.empty());
+        for (const auto& draw : device.draws) {
+            CHECK(draw.state.usesSpriteSmoothing() == (pass == TreeModel::Pass::Blended));
+        }
+    }
+    model.setMaskedTexture(&device.whiteTexture());
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, 1, TreeModel::Pass::Blended);
+    REQUIRE(device.draws.size() == 1);
+    CHECK_FALSE(device.draws[0].state.usesSpriteSmoothing());
+    tree.nodes[2].objectFlags = 0; // a fixed shadow or an ordinary alpha-tested model
+    REQUIRE(model.bind(tree, models, textures, device));
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, 1, TreeModel::Pass::Blended);
+    REQUIRE(device.draws.size() == 1);
+    CHECK_FALSE(device.draws[0].state.usesSpriteSmoothing());
+}
+
 TEST_CASE("a tree model stands its meshes in the world, lit, opaque parts first",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model");

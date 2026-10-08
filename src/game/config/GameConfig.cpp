@@ -146,6 +146,7 @@ void GameConfig::mergeJson(std::string_view json) {
         read(d, "depthOfField", display.depthOfField);
         read(d, "bloom", display.bloom);
         read(d, "ambientOcclusion", display.ambientOcclusion);
+        read(d, "smoothSprites", display.smoothSprites);
         if (d.contains("textureFiltering")) {
             display.textureFiltering = 1;
             for (const u32 supported : {0U, 1U, 2U, 4U, 8U, 16U}) {
@@ -347,7 +348,8 @@ std::string GameConfig::toJson() const {
                        {"maxFrameRate", display.maxFrameRate},
                        {"depthOfField", display.depthOfField},
                        {"bloom", display.bloom},
-                       {"ambientOcclusion", display.ambientOcclusion}};
+                       {"ambientOcclusion", display.ambientOcclusion},
+                       {"smoothSprites", display.smoothSprites}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};
     root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},

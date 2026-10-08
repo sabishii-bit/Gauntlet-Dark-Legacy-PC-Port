@@ -108,8 +108,8 @@ void VulkanPostProcess::recordBloom(VkCommandBuffer cmd, const VulkanSwapchain& 
         const auto lane = static_cast<s32>(i);
         const auto& source = heat.sources()[i];
         constants.transform[lane] = Vec4{source.center, source.radius};
-        constants.heatDepths[lane] = source.depth;
-        constants.heatTimes[lane] = source.seconds;
+        constants.effectData0[lane] = source.depth;
+        constants.effectData1[lane] = source.seconds;
     }
     recordPass(cmd, swapchain, imageIndex, *m_bloomPipeline, constants);
 }

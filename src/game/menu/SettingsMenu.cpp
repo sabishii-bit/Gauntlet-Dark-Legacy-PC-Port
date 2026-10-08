@@ -10,7 +10,7 @@
 namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
-constexpr s32 kVideoRows = 9;
+constexpr s32 kVideoRows = 10;
 constexpr s32 kAudioSliders = 3;
 constexpr s32 kAudioX = 160;
 constexpr f32 kAudioScale = 0.7f;
@@ -128,7 +128,7 @@ void SettingsMenu::rebuild(s32 selection) {
         constexpr s32 kRight = 448;
         constexpr s32 kColumnGap = 28;
         constexpr s32 kRowTop = 100;
-        constexpr s32 kRowStep = 19;
+        constexpr s32 kRowStep = 18;
         constexpr s32 kActionY = 300;
         constexpr s32 kActionGap = 24;
         if (m_confirmVideo) {
@@ -189,6 +189,8 @@ void SettingsMenu::rebuild(s32 selection) {
                 kTextureFiltering.begin());
             choice(text("settings.textureFiltering"),
                    text(kTextureLabels[filterIndex < kTextureLabels.size() ? filterIndex : 1]), 11);
+            choice(text("settings.smoothSprites"),
+                   text(m_config.display.smoothSprites ? "settings.on" : "settings.off"), 12);
             s32 labelWidth = 0;
             s32 valueWidth = 0;
             for (const auto& item : definition.items) {
@@ -425,6 +427,8 @@ void SettingsMenu::change(s32 direction) {
         } else if (code == 11) {
             next.display.textureFiltering =
                 cycleChoice(kTextureFiltering, next.display.textureFiltering, direction);
+        } else if (code == 12) {
+            next.display.smoothSprites = !next.display.smoothSprites;
         } else if (code == 4) {
             if (m_display.desktop.isZero()) {
                 return;
@@ -580,6 +584,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_config.display.ambientOcclusion = defaults.display.ambientOcclusion;
             m_config.display.sampleCount = defaults.display.sampleCount;
             m_config.display.textureFiltering = defaults.display.textureFiltering;
+            m_config.display.smoothSprites = defaults.display.smoothSprites;
             m_config.display.windowWidth = defaults.display.windowWidth;
             m_config.display.windowHeight = defaults.display.windowHeight;
             m_config.display.windowMode = defaults.display.windowMode;

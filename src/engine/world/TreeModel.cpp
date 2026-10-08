@@ -300,6 +300,8 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 state.blend = BlendMode::Opaque;
             }
             state.maskedTexture = mask;
+            // This explicit pass belongs to world pickups, not actor/world cutouts or UI.
+            state.smoothSprite = pass == Pass::Blended && node.facing != 0 && blended;
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
             state.depthWrite = depthWrite;
             state.depthTest = node.depthTest || occlusion == Occlusion::SolidWorld;

@@ -65,6 +65,7 @@ void Gauntlet::applyWindowIcon() {
 }
 
 void Gauntlet::onInit() {
+    renderDevice().setSmoothSprites(m_config.display.smoothSprites);
     // A saved exclusive resolution may no longer exist after moving displays.
     m_config.display.windowMode = window().windowMode();
     applyWindowIcon();
@@ -660,6 +661,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
             renderDevice().setPresentation(config.display.vsync, config.display.sampleCount);
         }
         renderDevice().setTextureFiltering(config.display.textureFiltering);
+        renderDevice().setSmoothSprites(config.display.smoothSprites);
         if (rateChanged) {
             setMaxFrameRate(m_play->scene.isOpen() || m_demo.isOpen()
                                 ? config.timing.gameplayFrameRate

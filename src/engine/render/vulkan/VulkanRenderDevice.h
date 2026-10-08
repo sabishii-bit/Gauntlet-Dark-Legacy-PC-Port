@@ -40,6 +40,7 @@ public:
     void setTextureFiltering(u32 filtering) override {
         m_desc.textureFiltering = validTextureFiltering(filtering);
     }
+    void setSmoothSprites(bool enabled) override { m_smoothSprites = enabled; }
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
                                            std::span<const u8> rgba8Pixels) override;
     void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override;
@@ -94,6 +95,7 @@ private:
 
     Window& m_window;
     RenderDeviceDesc m_desc;
+    bool m_smoothSprites = false;
     bool m_presentationPending = false;
     std::unique_ptr<VulkanContext> m_context;
     std::unique_ptr<VulkanSwapchain> m_swapchain;

@@ -138,14 +138,14 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
     click(0);
     CHECK(f.menu.config().display.vsync != wasVsync);
     const s32 writesBeforeVideo = f.writes;
-    click(9);
+    click(10);
     REQUIRE(f.menu.menu().definition().items.size() == 2);
     CHECK(f.writes == writesBeforeVideo);
     click(0);
-    REQUIRE(f.menu.menu().definition().items.size() == 12);
+    REQUIRE(f.menu.menu().definition().items.size() == 13);
     CHECK(f.writes == writesBeforeVideo + 1);
     CHECK(f.config.display.vsync != wasVsync);
-    click(11);
+    click(12);
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
 }
 
@@ -446,7 +446,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     REQUIRE(f.menu.menu().definition().items[3].text == "Video");
     f.select();
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
-    REQUIRE(f.menu.menu().definition().items.size() == 12);
+    REQUIRE(f.menu.menu().definition().items.size() == 13);
     CHECK(f.menu.menu().definition().items[0].value == "On");
     CHECK(f.menu.menu().definition().items[1].value == "30");
     CHECK(f.menu.menu().definition().items[2].value == "Off");
@@ -605,6 +605,24 @@ TEST_CASE("graphics page fits parchment and returns to its entry in every menu s
     }
 }
 
+TEST_CASE("the expanded Video page keeps native font rows and its action bar separate",
+          "[settings][graphics][smooth-sprites][assets]") {
+    Fixture f;
+    const auto fontPath = test::assetOrSkip("FONTS/font32.fnt");
+    REQUIRE(f.font.load(fontPath, 16));
+    f.painter.setFont(&f.font, &f.texture);
+    f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment());
+    f.choose(4);
+    const auto& definition = f.menu.menu().definition();
+    REQUIRE(definition.items.size() == 13);
+    REQUIRE(definition.items[9].text == "Smooth Sprites");
+    const s32 height = f.painter.lineHeight(definition.scale);
+    for (s32 row = 0; row < 10; ++row) {
+        CAPTURE(row, height, definition.scale);
+        CHECK(f.menu.menu().itemY(row) + height < f.menu.menu().itemY(row + 1));
+    }
+}
+
 TEST_CASE("custom file frame rates are shown honestly until a supported choice is selected",
           "[settings][graphics]") {
     Fixture f;
@@ -745,6 +763,13 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     CHECK(active.display.textureFiltering == 8);
     f.down();
     REQUIRE(f.menu.menu().selection() == 9);
+    CHECK(f.menu.menu().definition().items[9].text == "Smooth Sprites");
+    CHECK(f.menu.menu().definition().items[9].value == "Off");
+    f.right();
+    CHECK(f.menu.config().display.smoothSprites);
+    CHECK_FALSE(active.display.smoothSprites);
+    f.down();
+    REQUIRE(f.menu.menu().selection() == 10);
     f.select();
     REQUIRE(f.menu.menu().definition().items.size() == 2);
     CHECK(f.menu.menu().selection() == 1); // default to Revert, not Save
@@ -753,6 +778,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     CHECK(active.display.bloom);
     CHECK(active.display.ambientOcclusion);
     CHECK(active.display.textureFiltering == 16);
+    CHECK(active.display.smoothSprites);
     CHECK(f.config.display.vsync);
     CHECK(f.writes == 0);
     CHECK(previews == 1);
@@ -767,6 +793,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(f.config.display.bloom);
         CHECK(f.config.display.ambientOcclusion);
         CHECK(f.config.display.textureFiltering == 16);
+        CHECK(f.config.display.smoothSprites);
         CHECK(f.writes == 1);
         now += 20;
         f.release();
@@ -782,7 +809,8 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(active.display.vsync);
         CHECK(previews == 2);
         CHECK(f.writes == 0);
-        CHECK(f.menu.menu().definition().items.size() == 12);
+        CHECK(f.menu.menu().definition().items.size() == 13);
+        CHECK_FALSE(active.display.smoothSprites);
         CHECK(active.display.textureFiltering == 8);
         CHECK_FALSE(active.display.depthOfField);
         CHECK_FALSE(active.display.ambientOcclusion);
@@ -790,6 +818,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     }
     SECTION("Back cancels the trial") {
         f.back();
+        CHECK_FALSE(active.display.smoothSprites);
         CHECK(active.display.textureFiltering == 8);
         CHECK(active.display.vsync);
         CHECK_FALSE(active.display.bloom);
@@ -797,6 +826,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     }
     SECTION("Closing the owner restores the saved configuration") {
         f.menu.close();
+        CHECK_FALSE(active.display.smoothSprites);
         CHECK(active.display.textureFiltering == 8);
         CHECK(active.display.vsync);
         CHECK_FALSE(active.display.bloom);
@@ -812,6 +842,7 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.config.display.bloom = true;
     f.config.display.ambientOcclusion = true;
     f.config.display.textureFiltering = 16;
+    f.config.display.smoothSprites = true;
     f.config.audio.effectsVolume = 0.25f;
     f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
@@ -822,25 +853,27 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.down();
     f.down();
     f.down();
-    REQUIRE(f.menu.menu().selection() == 9);
-    f.right();
+    f.down();
     REQUIRE(f.menu.menu().selection() == 10);
+    f.right();
+    REQUIRE(f.menu.menu().selection() == 11);
     f.select();
     CHECK(f.menu.config().display.vsync);
     CHECK_FALSE(f.menu.config().display.depthOfField);
     CHECK_FALSE(f.menu.config().display.bloom);
     CHECK_FALSE(f.menu.config().display.ambientOcclusion);
     CHECK(f.menu.config().display.textureFiltering == 8);
+    CHECK_FALSE(f.menu.config().display.smoothSprites);
     CHECK(f.menu.config().audio.effectsVolume == 0.25f);
     CHECK_FALSE(f.config.display.vsync);
     MenuInput up;
     up.up = true;
     f.menu.update(up, 1);
-    CHECK(f.menu.menu().selection() == 8); // last enabled setting: Texture Filtering
+    CHECK(f.menu.menu().selection() == 9); // last enabled setting: Smooth Sprites
     f.down();
     f.right();
     f.right();
-    REQUIRE(f.menu.menu().selection() == 11);
+    REQUIRE(f.menu.menu().selection() == 12);
     f.select();
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK_FALSE(f.menu.config().display.vsync);
@@ -866,7 +899,8 @@ TEST_CASE("Video rollback preserves a manually resized window", "[settings][grap
     f.down();
     f.down();
     f.down();
-    f.down(); // past the post effects and Texture Filtering to Apply
+    f.down();
+    f.down(); // past the post effects, Texture Filtering and Smooth Sprites to Apply
     f.select();
     REQUIRE(active.display.windowMode == WindowMode::Fullscreen);
     f.back();
@@ -943,10 +977,10 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
             return true;
         });
     f.choose(4);
-    for (s32 i = 0; i < 8; ++i) {
+    for (s32 i = 0; i < 9; ++i) {
         f.down();
     }
-    REQUIRE(f.menu.menu().selection() == 9);
+    REQUIRE(f.menu.menu().selection() == 10);
     f.right();
     f.select();
     CHECK(f.menu.config().display.windowMode == WindowMode::Windowed);

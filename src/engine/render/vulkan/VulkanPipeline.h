@@ -36,8 +36,9 @@ public:
         Mat4 transform;
         Vec4 params;
         Vec4 scale;
-        Vec4 heatDepths{0.0f};
-        Vec4 heatTimes{0.0f};
+        // Shader-specific controls: heat depths/times for Bloom, sprite filtering for immediate.
+        Vec4 effectData0{0.0f};
+        Vec4 effectData1{0.0f};
     };
     static constexpr u32 kPushConstantSize = sizeof(PushConstants);
     static_assert(kPushConstantSize <= 128, "Stay within Vulkan's minimum push-constant capacity");

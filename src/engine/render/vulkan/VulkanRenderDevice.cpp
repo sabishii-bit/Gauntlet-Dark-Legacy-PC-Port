@@ -628,7 +628,12 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     const VulkanPipeline::PushConstants constants{
         transform, Vec4{state.uvOffset.x, state.uvOffset.y, state.alphaTest, state.darken},
         Vec4{state.uvScale.x, state.uvScale.y,
-             state.maskedTexture != nullptr ? 1.0f : -textureBlend, state.colorScale}};
+             state.maskedTexture != nullptr ? 1.0f : -textureBlend, state.colorScale},
+        Vec4{m_smoothSprites && state.usesSpriteSmoothing() &&
+                     firstTexture.description().filter == TextureFilter::Linear
+                 ? 1.0f
+                 : 0.0f,
+             0, 0, 0}};
     vkCmdPushConstants(cmd, m_pipeline->layout(),
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        VulkanPipeline::kPushConstantSize, &constants);

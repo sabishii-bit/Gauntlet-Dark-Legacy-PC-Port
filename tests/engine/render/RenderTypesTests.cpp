@@ -135,4 +135,26 @@ TEST_CASE("alpha-to-coverage is limited to opted-in multisampled solid cutouts",
     CHECK_FALSE(state.usesAlphaToCoverage(4));
 }
 
+TEST_CASE("sprite smoothing excludes UI defaults cutouts lightmaps and masked skins",
+          "[render][smooth-sprites]") {
+    test::FakeTexture mask(1, 1);
+    DrawState state;
+    CHECK_FALSE(state.usesSpriteSmoothing());
+    state.smoothSprite = true;
+    CHECK(state.usesSpriteSmoothing());
+    SECTION("coverage cutouts") {
+        state.alphaToCoverage = true;
+    }
+    SECTION("opaque surfaces") {
+        state.blend = BlendMode::Opaque;
+    }
+    SECTION("lightmaps") {
+        state.lightmap = &mask;
+    }
+    SECTION("damage skins") {
+        state.maskedTexture = &mask;
+    }
+    CHECK_FALSE(state.usesSpriteSmoothing());
+}
+
 } // namespace
