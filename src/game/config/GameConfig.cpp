@@ -146,6 +146,14 @@ void GameConfig::mergeJson(std::string_view json) {
         read(d, "depthOfField", display.depthOfField);
         read(d, "bloom", display.bloom);
         read(d, "ambientOcclusion", display.ambientOcclusion);
+        if (d.contains("textureFiltering")) {
+            display.textureFiltering = 1;
+            for (const u32 supported : {0U, 1U, 2U, 4U, 8U, 16U}) {
+                if (d.at("textureFiltering") == supported) {
+                    display.textureFiltering = supported;
+                }
+            }
+        }
         if (d.contains("sampleCount")) {
             const auto& samples = d.at("sampleCount");
             display.sampleCount = 1;
@@ -335,6 +343,7 @@ std::string GameConfig::toJson() const {
                        {"windowMode", windowModeName},
                        {"vsync", display.vsync},
                        {"sampleCount", display.sampleCount},
+                       {"textureFiltering", display.textureFiltering},
                        {"maxFrameRate", display.maxFrameRate},
                        {"depthOfField", display.depthOfField},
                        {"bloom", display.bloom},

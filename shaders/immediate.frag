@@ -1,7 +1,12 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform sampler2D uTexture;
-layout(set = 1, binding = 0) uniform sampler2D uSecondTexture; // white with no second stage
+layout(set = 0, binding = 0) uniform texture2D uImage;
+layout(set = 1, binding = 0) uniform texture2D uSecondImage;
+layout(set = 2, binding = 0) uniform sampler uSampler;
+layout(set = 3, binding = 0) uniform sampler uSecondSampler;
+
+#define uTexture sampler2D(uImage, uSampler)
+#define uSecondTexture sampler2D(uSecondImage, uSecondSampler)
 
 layout(push_constant) uniform PushConstants {
     mat4 transform;

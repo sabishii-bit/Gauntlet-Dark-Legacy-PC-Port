@@ -45,7 +45,7 @@ void check(VkResult result, const char* expression, const char* file, s32 line);
 void imageBarrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect,
                   VkImageLayout oldLayout, VkImageLayout newLayout, VkPipelineStageFlags2 srcStage,
                   VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-                  VkAccessFlags2 dstAccess);
+                  VkAccessFlags2 dstAccess, u32 baseMipLevel = 0, u32 levelCount = 1);
 
 } // namespace gdl::vk
 

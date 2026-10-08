@@ -139,10 +139,13 @@ const Texture& TextureSet::texture(RenderDevice& device, u32 index) {
         const auto wrapOf = [](bool clamp) {
             return clamp ? TextureWrap::ClampToEdge : TextureWrap::Repeat;
         };
-        texture = device.createTexture(
-            TextureDesc{pixels.width, pixels.height, TextureFilter::Linear,
-                        wrapOf(m_entries[index].clampU), wrapOf(m_entries[index].clampV)},
-            pixels.pixels);
+        TextureDesc desc{pixels.width, pixels.height, TextureFilter::Linear,
+                         wrapOf(m_entries[index].clampU), wrapOf(m_entries[index].clampV)};
+        desc.generateMipmaps = !m_entries[index].noPicture;
+        // GameCube files store only the base image despite the legacy mip count in objects.ngc.
+        // pb_texture.c initializes GX textures with mipmapping disabled. Generate our own
+        // chain; reading extra levels here would consume the next bitmap's palette/pixels.
+        texture = device.createTexture(desc, pixels.pixels);
     }
     return *texture;
 }

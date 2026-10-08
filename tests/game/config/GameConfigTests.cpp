@@ -180,6 +180,28 @@ TEST_CASE("graphics settings round-trip with thirty fps presentation defaults",
     CHECK(restored.toJson() == config.toJson());
 }
 
+TEST_CASE("texture filtering persists and invalid choices fall back to trilinear",
+          "[game][config][graphics][mipmaps]") {
+    GameConfig config;
+    CHECK(config.display.textureFiltering == 8);
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    CHECK(config.display.textureFiltering == 8);
+    config.mergeJson(R"({"display":{"vsync":false}})");
+    CHECK(config.display.textureFiltering == 8);
+    for (const u32 quality : {0U, 1U, 2U, 4U, 8U, 16U}) {
+        config.display.textureFiltering = quality;
+        GameConfig restored;
+        restored.mergeJson(config.toJson());
+        CHECK(restored.display.textureFiltering == quality);
+    }
+    for (const auto* value : {"-1", "3", "32", "null", R"("8")", "true", "1.5"}) {
+        CAPTURE(value);
+        config.display.textureFiltering = 8;
+        config.mergeJson(R"({"display":{"textureFiltering":)" + std::string(value) + "}}");
+        CHECK(config.display.textureFiltering == 1);
+    }
+}
+
 TEST_CASE("invalid graphics sample counts fall back to off and invalid rates retain safe values",
           "[game][config][graphics]") {
     for (const auto* value : {"-1", "0", "3", "8", "null", R"("4")", "true", "1.5"}) {

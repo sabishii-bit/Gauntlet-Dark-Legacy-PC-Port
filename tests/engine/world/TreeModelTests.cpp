@@ -826,6 +826,7 @@ TEST_CASE("nodes flagged to face the camera turn its way", "[world][model]") {
     // Without a camera nothing turns.
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws[0].vertices[1].position == Vec3{1.0f, 0.0f, 0.0f});
+    CHECK(device.draws[0].state.mipmaps); // filtering does not depend on a billboard camera
     device.draws.clear();
     // A camera off to +x: the body's z axis swings to point at it, so its x edge lies along -z.
     CameraFrame camera;
@@ -834,6 +835,8 @@ TEST_CASE("nodes flagged to face the camera turn its way", "[world][model]") {
     camera.forward = Vec3{-1.0f, 0.0f, 0.0f};
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, WorldLighting{}, {}, &camera);
     REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].state.mipmaps);
+    CHECK(device.draws[1].state.mipmaps);
     const Vec3 edge = device.draws[0].vertices[1].position;
     REQUIRE(edge.x == Approx(0.0f).margin(1e-5f));
     REQUIRE(edge.z == Approx(-1.0f).margin(1e-5f));

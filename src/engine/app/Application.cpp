@@ -51,6 +51,7 @@ s32 Application::run() {
         RenderDeviceDesc deviceDesc;
         deviceDesc.vsync = m_desc.vsync;
         deviceDesc.sampleCount = m_desc.sampleCount;
+        deviceDesc.textureFiltering = m_desc.textureFiltering;
         deviceDesc.enableValidation = m_desc.enableValidation;
         deviceDesc.shaderDirectory = paths::executableDirectory() / "shaders";
         m_device = createVulkanRenderDevice(*m_window, deviceDesc);

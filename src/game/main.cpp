@@ -69,6 +69,7 @@ int runGauntlet(std::span<char*> rawArgs) {
     parsed.desc.window.mode = config.display.windowMode;
     parsed.desc.vsync = config.display.vsync && !vsyncFromCommandLine;
     parsed.desc.sampleCount = config.display.sampleCount;
+    parsed.desc.textureFiltering = config.display.textureFiltering;
     parsed.desc.maxFrameRate = config.display.maxFrameRate;
     parsed.desc.updateRate = config.timing.tickRate;
 

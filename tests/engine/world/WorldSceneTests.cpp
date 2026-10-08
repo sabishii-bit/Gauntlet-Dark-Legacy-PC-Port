@@ -104,6 +104,9 @@ TEST_CASE("a world scene places every object that has a mesh and draws it in pas
 
     f.scene.draw(f.device, Mat4{1.0f}, Vec3{10.0f, 0.0f, 0.0f});
     REQUIRE(f.device.draws.size() == 8);
+    for (const auto& draw : f.device.draws) {
+        CHECK(draw.state.mipmaps); // baked batches and individually animated scenery
+    }
     // The opaque wall draws first, offset by its parent, then the lightmapped floor (its own
     // batch under the same texture) and the moving blade; the translucent window follows;
     // the sorted units come farthest first; the glowing copy of the wall adds itself last.

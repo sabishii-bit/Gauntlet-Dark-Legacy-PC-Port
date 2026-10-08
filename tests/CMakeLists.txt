@@ -1,5 +1,8 @@
 find_package(Catch2 CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
+find_package(VulkanHeaders CONFIG REQUIRED)
+find_package(volk CONFIG REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
@@ -51,6 +54,7 @@ add_executable(tests
     engine/platform/DisplayTimingTests.cpp
     engine/platform/PathsTests.cpp
     engine/render/RenderTypesTests.cpp
+    engine/render/VulkanTextureTests.cpp
     engine/render/DepthOfFieldTests.cpp
     engine/render/HeatDistortionTests.cpp
     engine/render/ImageTests.cpp
@@ -294,8 +298,10 @@ add_executable(tests
     engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
+target_link_libraries(tests PRIVATE Vulkan::Headers volk::volk GPUOpen::VulkanMemoryAllocator)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(tests PRIVATE
+    VK_NO_PROTOTYPES
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
     GDL_TEST_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
     GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")

@@ -28,6 +28,7 @@ public:
     bool depthOfField = false;
     bool bloom = false;
     bool ambientOcclusion = false;
+    bool mipmaps = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
@@ -39,10 +40,14 @@ protected:
     void onInit() override {
         constexpr std::array<u8, 16> kPixels{255, 0, 0,   255, 0,   255, 0,   255,
                                              0,   0, 255, 255, 255, 255, 255, 255};
-        m_texture = renderDevice().createTexture(TextureDesc{2, 2}, kPixels);
+        TextureDesc textureDesc{2, 2};
+        textureDesc.generateMipmaps = mipmaps;
+        m_texture = renderDevice().createTexture(textureDesc, kPixels);
         REQUIRE(m_texture->width() == 2);
         REQUIRE(m_texture->height() == 2);
-        m_streamed = renderDevice().createTexture(TextureDesc{8, 8}, m_image.pixels);
+        TextureDesc streamDesc{8, 8};
+        streamDesc.generateMipmaps = mipmaps;
+        m_streamed = renderDevice().createTexture(streamDesc, m_image.pixels);
         m_desktop = window().displayOptions().desktop;
     }
 
@@ -103,6 +108,7 @@ protected:
         device.draw(m_batch, *m_streamed, projection);
         // Exercise both the opaque keep-alpha pass and the return to ordinary blending.
         DrawState ice;
+        ice.mipmaps = mipmaps;
         ice.blend = BlendMode::Opaque;
         ice.maskedTexture = m_streamed.get();
         device.draw(m_batch, *m_texture, projection, ice);
@@ -114,6 +120,7 @@ protected:
         device.draw(m_batch, *m_texture, projection, ice);
         device.draw(m_batch, *m_texture, projection); // restore default depth state
         DrawState glow;
+        glow.mipmaps = mipmaps;
         glow.blend = BlendMode::Additive;
         glow.depthWrite = false;
         device.draw(m_batch, *m_texture, projection, glow);
@@ -133,8 +140,16 @@ protected:
         glow.maskedTexture = m_texture.get();
         device.draw(m_batch, *m_texture, projection, glow);
         device.draw(m_batch, *m_texture, projection);
+        if (mipmaps) {
+            for (const u32 quality : {0U, 1U, 2U, 4U, 8U, 16U}) {
+                device.setTextureFiltering(quality);
+                device.draw(m_batch, *m_texture, projection, glow);
+                device.draw(m_batch, *m_texture, projection); // UI remains base-only
+            }
+        }
         if (bloom) {
-            device.addHeatSource({Vec2{0.5f}, Vec2{0.1f}, 0.9f, static_cast<f32>(m_elapsed)});
+            device.addHeatSource(
+                HeatSource{Vec2{0.5f}, Vec2{0.1f}, 0.9f, static_cast<f32>(m_elapsed)});
             CHECK(device.applyBloom());
         }
         if (ambientOcclusion) {
@@ -194,6 +209,30 @@ TEST_CASE("the application brings up a window and GPU and renders frames", "[gpu
     REQUIRE(app.run() == 0);
     REQUIRE(app.renderedFrames() >= 3);
     REQUIRE(app.sawInput());
+}
+
+TEST_CASE("mipmapped draws and uploads survive filtering changes and the post chain",
+          "[gpu][app][mipmaps]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl texture filtering test";
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 8;
+    desc.maxFrameRate = 60;
+    desc.enableValidation = true;
+    SECTION("single sample") {
+        desc.sampleCount = 1;
+    }
+    SECTION("multisampled") {
+        desc.sampleCount = 4;
+    }
+    ProbeApplication app(std::move(desc));
+    app.mipmaps = true;
+    app.depthOfField = true;
+    app.bloom = true;
+    app.ambientOcclusion = true;
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 8);
 }
 
 TEST_CASE("the application renders between fixed-rate simulation updates", "[gpu][app][graphics]") {

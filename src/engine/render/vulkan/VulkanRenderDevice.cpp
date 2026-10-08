@@ -23,16 +23,21 @@ namespace {
 constexpr VkDeviceSize kUploadAlignment = 16;
 
 VkSampler createSampler(VkDevice device, VkFilter filter, VkSamplerAddressMode across,
-                        VkSamplerAddressMode down) {
+                        VkSamplerAddressMode down, u32 filtering, f32 maxAnisotropy) {
     VkSamplerCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     info.magFilter = filter;
     info.minFilter = filter;
-    info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    info.mipmapMode =
+        filter == VK_FILTER_LINEAR ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
     info.addressModeU = across;
     info.addressModeV = down;
     info.addressModeW = across;
-    info.maxLod = VK_LOD_CLAMP_NONE;
+    info.maxLod = filtering == 0 ? 0.0f : VK_LOD_CLAMP_NONE;
+    info.maxAnisotropy = filter == VK_FILTER_LINEAR
+                             ? std::clamp(static_cast<f32>(filtering), 1.0f, maxAnisotropy)
+                             : 1.0f;
+    info.anisotropyEnable = info.maxAnisotropy > 1.0f ? VK_TRUE : VK_FALSE;
     VkSampler sampler = VK_NULL_HANDLE;
     GDL_VK_CHECK(vkCreateSampler(device, &info, nullptr, &sampler));
     return sampler;
@@ -52,9 +57,9 @@ VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& d
     createPresentSemaphores();
 
     constexpr std::array<u8, 4> kWhitePixel{255, 255, 255, 255};
-    m_whiteTexture = std::make_unique<VulkanTexture>(
-        *m_context, descriptorPoolForTexture(), m_textureSetLayout,
-        samplerFor(TextureDesc{1, 1, TextureFilter::Nearest}), TextureDesc{1, 1}, kWhitePixel);
+    m_whiteTexture =
+        std::make_unique<VulkanTexture>(*m_context, descriptorPoolForTexture(), m_textureSetLayout,
+                                        TextureDesc{1, 1, TextureFilter::Nearest}, kWhitePixel);
 
     log::info("Vulkan render device ready ({} frames in flight)", kFramesInFlight);
 }
@@ -62,13 +67,16 @@ VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& d
 void VulkanRenderDevice::createPipelines() {
     m_pipeline = std::make_unique<VulkanPipeline>(
         *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
-        m_textureSetLayout, BlendMode::Alpha, m_swapchain->samples());
+        m_textureSetLayout, BlendMode::Alpha, m_swapchain->samples(), VulkanPipeline::Effect::None,
+        m_samplerSetLayout);
     m_additivePipeline = std::make_unique<VulkanPipeline>(
         *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
-        m_textureSetLayout, BlendMode::Additive, m_swapchain->samples());
+        m_textureSetLayout, BlendMode::Additive, m_swapchain->samples(),
+        VulkanPipeline::Effect::None, m_samplerSetLayout);
     m_opaquePipeline = std::make_unique<VulkanPipeline>(
         *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
-        m_textureSetLayout, BlendMode::Opaque, m_swapchain->samples());
+        m_textureSetLayout, BlendMode::Opaque, m_swapchain->samples(), VulkanPipeline::Effect::None,
+        m_samplerSetLayout);
 }
 
 VulkanRenderDevice::~VulkanRenderDevice() {
@@ -96,6 +104,9 @@ VulkanRenderDevice::~VulkanRenderDevice() {
     m_additivePipeline.reset();
     m_opaquePipeline.reset();
     m_pipeline.reset();
+    vkDestroyDescriptorPool(device, m_samplerPool, nullptr);
+    vkDestroyDescriptorSetLayout(device, m_samplerSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, m_postTextureSetLayout, nullptr);
     for (VkSampler& sampler : m_samplers) {
         if (sampler != VK_NULL_HANDLE) {
             vkDestroySampler(device, sampler, nullptr);
@@ -115,35 +126,72 @@ VulkanRenderDevice::~VulkanRenderDevice() {
 
 void VulkanRenderDevice::createDescriptorResources() {
     const VkDevice device = m_context->device();
-
     VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
     binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     binding.descriptorCount = 1;
     binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = 1;
     layoutInfo.pBindings = &binding;
+    GDL_VK_CHECK(
+        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_postTextureSetLayout));
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     GDL_VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_textureSetLayout));
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    GDL_VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_samplerSetLayout));
 
-    m_poolTexturesLeft = 0;
+    const auto samplerCount = static_cast<u32>(m_samplerSets.size());
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_SAMPLER, samplerCount};
+    VkDescriptorPoolCreateInfo pool{};
+    pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool.maxSets = samplerCount;
+    pool.poolSizeCount = 1;
+    pool.pPoolSizes = &size;
+    GDL_VK_CHECK(vkCreateDescriptorPool(device, &pool, nullptr, &m_samplerPool));
+    std::array<VkDescriptorSetLayout, kSamplersPerMode * kFiltering.size()> layouts{};
+    layouts.fill(m_samplerSetLayout);
+    VkDescriptorSetAllocateInfo sets{};
+    sets.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    sets.descriptorPool = m_samplerPool;
+    sets.descriptorSetCount = samplerCount;
+    sets.pSetLayouts = layouts.data();
+    GDL_VK_CHECK(vkAllocateDescriptorSets(device, &sets, m_samplerSets.data()));
 
-    // One sampler for each filter and each way of wrapping across and down.
     const auto modeOf = [](TextureWrap wrap) {
         return wrap == TextureWrap::ClampToEdge ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
                                                 : VK_SAMPLER_ADDRESS_MODE_REPEAT;
     };
-    for (const TextureFilter filter : {TextureFilter::Linear, TextureFilter::Nearest}) {
-        for (const TextureWrap across : {TextureWrap::Repeat, TextureWrap::ClampToEdge}) {
-            for (const TextureWrap down : {TextureWrap::Repeat, TextureWrap::ClampToEdge}) {
-                m_samplers[samplerIndex(filter, across, down)] = createSampler(
-                    device, filter == TextureFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR,
-                    modeOf(across), modeOf(down));
+    for (usize mode = 0; mode < kFiltering.size(); ++mode) {
+        for (const TextureFilter filter : {TextureFilter::Linear, TextureFilter::Nearest}) {
+            for (const TextureWrap across : {TextureWrap::Repeat, TextureWrap::ClampToEdge}) {
+                for (const TextureWrap down : {TextureWrap::Repeat, TextureWrap::ClampToEdge}) {
+                    const auto index = mode * kSamplersPerMode + samplerIndex(filter, across, down);
+                    m_samplers[index] = createSampler(
+                        device,
+                        filter == TextureFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR,
+                        modeOf(across), modeOf(down), kFiltering[mode], m_context->maxAnisotropy());
+                    const VkDescriptorImageInfo image{m_samplers[index], VK_NULL_HANDLE,
+                                                      VK_IMAGE_LAYOUT_UNDEFINED};
+                    VkWriteDescriptorSet write{};
+                    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    write.dstSet = m_samplerSets[index];
+                    write.descriptorCount = 1;
+                    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                    write.pImageInfo = &image;
+                    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+                }
             }
         }
     }
+}
+
+VkDescriptorSet VulkanRenderDevice::samplerSetFor(const TextureDesc& desc, bool mipmaps) const {
+    const u32 filtering = mipmaps ? validTextureFiltering(m_desc.textureFiltering) : 0;
+    const auto mode =
+        static_cast<usize>(std::ranges::find(kFiltering, filtering) - kFiltering.begin());
+    return m_samplerSets[mode * kSamplersPerMode +
+                         samplerIndex(desc.filter, desc.wrap, desc.wrapDown())];
 }
 
 void VulkanRenderDevice::createFrameResources() {
@@ -454,7 +502,7 @@ bool VulkanRenderDevice::preparePostProcess() {
     }
     if (!m_postProcess) {
         m_postProcess = std::make_unique<VulkanPostProcess>(
-            *m_context, *m_swapchain, m_desc.shaderDirectory, m_textureSetLayout,
+            *m_context, *m_swapchain, m_desc.shaderDirectory, m_postTextureSetLayout,
             m_samplers[samplerIndex(TextureFilter::Linear, TextureWrap::ClampToEdge,
                                     TextureWrap::ClampToEdge)],
             m_samplers[samplerIndex(TextureFilter::Nearest, TextureWrap::ClampToEdge,
@@ -470,6 +518,8 @@ void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgb
     GDL_VERIFY(m_frameOpen && !m_frameHasContent,
                "updateTexture must be called after beginFrame and before the frame's first draw");
     auto& vulkanTexture = dynamic_cast<VulkanTexture&>(texture);
+    GDL_VERIFY(vulkanTexture.mipLevels() == 1 || m_context->canBlitTextureMips(),
+               "Updating a mipmapped texture requires linear blit support");
     const VkDeviceSize bytes = VkDeviceSize{vulkanTexture.width()} * vulkanTexture.height() * 4;
     GDL_VERIFY(rgba8Pixels.size() == bytes,
                "updateTexture pixel data size does not match the texture");
@@ -490,7 +540,8 @@ void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgb
     vk::imageBarrier(cmd, image, VK_IMAGE_ASPECT_COLOR_BIT,
                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                      VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, 0,
+                     vulkanTexture.mipLevels());
 
     VkBufferImageCopy region{};
     region.bufferOffset = offset;
@@ -500,10 +551,7 @@ void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgb
     vkCmdCopyBufferToImage(cmd, frame.uploadBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                            &region);
 
-    vk::imageBarrier(cmd, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                     VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    vulkanTexture.prepareForSampling(cmd, 1);
 }
 
 void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& texture,
@@ -556,9 +604,12 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     } else if (textureBlend > 0.0f) {
         second = state.nextTexture;
     }
-    const std::array<VkDescriptorSet, 2> sets{
-        dynamic_cast<const VulkanTexture&>(texture).descriptorSet(),
-        dynamic_cast<const VulkanTexture&>(*second).descriptorSet()};
+    const auto& firstTexture = dynamic_cast<const VulkanTexture&>(texture);
+    const auto& secondTexture = dynamic_cast<const VulkanTexture&>(*second);
+    const std::array<VkDescriptorSet, 4> sets{
+        firstTexture.descriptorSet(), secondTexture.descriptorSet(),
+        samplerSetFor(firstTexture.description(), state.mipmaps),
+        samplerSetFor(secondTexture.description(), state.mipmaps)};
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0,
                             static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
     const VulkanPipeline::PushConstants constants{
@@ -642,7 +693,7 @@ void VulkanRenderDevice::endFrame() {
 VkDescriptorPool VulkanRenderDevice::descriptorPoolForTexture() {
     if (m_poolTexturesLeft == 0) {
         VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSize.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         poolSize.descriptorCount = kTexturesPerPool;
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -662,7 +713,7 @@ VkDescriptorPool VulkanRenderDevice::descriptorPoolForTexture() {
 std::unique_ptr<Texture> VulkanRenderDevice::createTexture(const TextureDesc& desc,
                                                            std::span<const u8> rgba8Pixels) {
     return std::make_unique<VulkanTexture>(*m_context, descriptorPoolForTexture(),
-                                           m_textureSetLayout, samplerFor(desc), desc, rgba8Pixels);
+                                           m_textureSetLayout, desc, rgba8Pixels);
 }
 
 const Texture& VulkanRenderDevice::whiteTexture() const {

@@ -278,6 +278,21 @@ void VulkanContext::createDevice() {
     features2.pNext = &features13;
 
     VkDeviceCreateInfo createInfo{};
+    VkPhysicalDeviceFeatures supported{};
+    vkGetPhysicalDeviceFeatures(m_physicalDevice, &supported);
+    features2.features.samplerAnisotropy = supported.samplerAnisotropy;
+    m_maxAnisotropy =
+        supported.samplerAnisotropy != VK_FALSE ? m_properties.limits.maxSamplerAnisotropy : 1.0f;
+    VkFormatProperties textureFormat{};
+    vkGetPhysicalDeviceFormatProperties(m_physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &textureFormat);
+    constexpr VkFormatFeatureFlags kMipBlitFeatures =
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    m_canBlitTextureMips =
+        (textureFormat.optimalTilingFeatures & kMipBlitFeatures) == kMipBlitFeatures;
+    if (!m_canBlitTextureMips) {
+        log::warn("RGBA8 linear blits unavailable; using supplied texture mip levels only");
+    }
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.pNext = &features2;
     createInfo.queueCreateInfoCount = 1;

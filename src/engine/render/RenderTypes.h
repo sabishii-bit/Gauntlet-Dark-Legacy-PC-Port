@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <optional>
 
 #include "engine/core/SpecialMembers.h"
@@ -52,12 +53,48 @@ static_assert(sizeof(ImmediateVertex) == 32);
 enum class TextureFilter : u8 { Nearest, Linear };
 enum class TextureWrap : u8 { Repeat, ClampToEdge };
 
+/** Number of levels in a complete chain, including the original image. */
+constexpr u32 textureMipCount(u32 width, u32 height) {
+    u32 count = 1;
+    while (width > 1 || height > 1) {
+        width = std::max(1U, width / 2);
+        height = std::max(1U, height / 2);
+        ++count;
+    }
+    return count;
+}
+
+constexpr Extent2D textureMipExtent(Extent2D size, u32 level) {
+    while (level-- > 0) {
+        size = {std::max(1U, size.width / 2), std::max(1U, size.height / 2)};
+    }
+    return size;
+}
+
+/** Packed RGBA8 byte count; each level immediately follows the preceding one. */
+constexpr u64 textureMipBytes(Extent2D size, u32 levels) {
+    u64 bytes = 0;
+    for (u32 level = 0; level < levels; ++level) {
+        bytes += u64{size.width} * size.height * 4;
+        size = textureMipExtent(size, 1);
+    }
+    return bytes;
+}
+
+/** 0 preserves base-level sampling; 1 is trilinear; 2/4/8/16 request anisotropy. */
+constexpr u32 validTextureFiltering(u32 value) {
+    return value == 0 || value == 1 || value == 2 || value == 4 || value == 8 || value == 16 ? value
+                                                                                             : 1;
+}
+
 struct TextureDesc {
     u32 width = 0;
     u32 height = 0;
     TextureFilter filter = TextureFilter::Linear;
     TextureWrap wrap = TextureWrap::Repeat;          ///< across (u), and down too unless wrapV says
     std::optional<TextureWrap> wrapV = std::nullopt; ///< down (v), when it differs from across
+    u32 mipLevels = 1;            ///< supplied RGBA8 levels, including the base image
+    bool generateMipmaps = false; ///< complete any missing tail after the supplied levels
 
     TextureWrap wrapDown() const { return wrapV.value_or(wrap); }
 };

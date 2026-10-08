@@ -653,6 +653,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
         if (presentationChanged) {
             renderDevice().setPresentation(config.display.vsync, config.display.sampleCount);
         }
+        renderDevice().setTextureFiltering(config.display.textureFiltering);
         if (rateChanged) {
             setMaxFrameRate(m_play->scene.isOpen() || m_demo.isOpen()
                                 ? config.timing.gameplayFrameRate

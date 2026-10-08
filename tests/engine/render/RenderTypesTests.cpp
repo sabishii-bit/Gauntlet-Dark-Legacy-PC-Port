@@ -33,6 +33,27 @@ TEST_CASE("TextureDesc defaults to linear repeat sampling", "[render][types]") {
     constexpr TextureDesc kDesc{};
     STATIC_REQUIRE(kDesc.filter == TextureFilter::Linear);
     STATIC_REQUIRE(kDesc.wrap == TextureWrap::Repeat);
+    STATIC_REQUIRE(kDesc.mipLevels == 1);
+    STATIC_REQUIRE(!kDesc.generateMipmaps);
+    CHECK_FALSE(DrawState{}.mipmaps); // UI and video keep their base-level sampling.
+}
+
+TEST_CASE("mip chains handle thin and non-power-of-two textures", "[render][types][mipmaps]") {
+    STATIC_REQUIRE(textureMipCount(1, 1) == 1);
+    STATIC_REQUIRE(textureMipCount(8, 1) == 4);
+    STATIC_REQUIRE(textureMipCount(1, 8) == 4);
+    STATIC_REQUIRE(textureMipCount(13, 5) == 4);
+    STATIC_REQUIRE(textureMipExtent({13, 5}, 1) == Extent2D{6, 2});
+    STATIC_REQUIRE(textureMipExtent({13, 5}, 2) == Extent2D{3, 1});
+    STATIC_REQUIRE(textureMipExtent({13, 5}, 3) == Extent2D{1, 1});
+    STATIC_REQUIRE(textureMipExtent({1, 8}, 3) == Extent2D{1, 1});
+    STATIC_REQUIRE(textureMipBytes({8, 4}, 2) == (u64{32} + 8) * 4);
+    STATIC_REQUIRE(textureMipBytes({13, 5}, 4) == (u64{65} + 12 + 3 + 1) * 4);
+    for (const u32 value : {0U, 1U, 2U, 4U, 8U, 16U}) {
+        CHECK(validTextureFiltering(value) == value);
+    }
+    CHECK(validTextureFiltering(3) == 1);
+    CHECK(validTextureFiltering(32) == 1);
 }
 
 TEST_CASE("presentation samples fall back to the next supported count without rounding up",

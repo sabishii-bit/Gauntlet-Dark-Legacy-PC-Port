@@ -17,6 +17,7 @@ struct ApplicationDesc {
     std::filesystem::path assetDirectory;
     bool vsync = true;
     u32 sampleCount = 1; ///< requested raster samples; the renderer checks GPU support
+    u32 textureFiltering = 8;
     bool enableValidation = false;
     u64 maxFrames = 0;    ///< quit after this many frames; 0 runs until closed
     u32 maxFrameRate = 0; ///< frames per second, capped by the monitor; 0 uses monitor refresh

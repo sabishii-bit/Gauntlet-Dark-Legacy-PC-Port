@@ -127,15 +127,8 @@ usize pixelDataOffset(u8 format) {
 usize bitmapDataSize(const ArchiveBitmap& bitmap) {
     const u32 bits = bitsPerPixel(bitmap.format);
     const Tile tile = tileFor(bits);
-    usize size = pixelDataOffset(bitmap.format);
-    u32 width = bitmap.width;
-    u32 height = bitmap.height;
-    for (u32 level = 0; level <= bitmap.mipmapCount; ++level) {
-        size += usize{tiledTexelCount(width, height, tile)} * bits / 8;
-        width = std::max(1U, width / 2);
-        height = std::max(1U, height / 2);
-    }
-    return size;
+    return pixelDataOffset(bitmap.format) +
+           usize{tiledTexelCount(bitmap.width, bitmap.height, tile)} * bits / 8;
 }
 
 Image decodeGcTexture(const ArchiveBitmap& bitmap, std::span<const u8> texturesFile) {
@@ -145,7 +138,7 @@ Image decodeGcTexture(const ArchiveBitmap& bitmap, std::span<const u8> texturesF
     const Coding coding = codingFor(bitmap.format);
     const u32 bits = bitsPerPixel(bitmap.format);
     const Tile tile = tileFor(bits);
-    const usize pixelsAt = bitmap.dataOffset + pixelDataOffset(bitmap.format);
+    const usize pixelsAt = usize{bitmap.dataOffset} + pixelDataOffset(bitmap.format);
     const usize pixelBytes = usize{tiledTexelCount(bitmap.width, bitmap.height, tile)} * bits / 8;
     if (pixelsAt > texturesFile.size() || pixelBytes > texturesFile.size() - pixelsAt) {
         throw FormatError("texture pixel data lies outside the textures file");
@@ -155,6 +148,10 @@ Image decodeGcTexture(const ArchiveBitmap& bitmap, std::span<const u8> texturesF
     std::array<Color, kPaletteEntries8> palette{};
     if (coding == Coding::Indexed4 || coding == Coding::Indexed8) {
         const u32 entries = coding == Coding::Indexed4 ? kPaletteEntries4 : kPaletteEntries8;
+        if (bitmap.dataOffset > texturesFile.size() ||
+            usize{entries} * 2 > texturesFile.size() - bitmap.dataOffset) {
+            throw FormatError("texture palette lies outside the textures file");
+        }
         const std::span<const u8> paletteBytes =
             texturesFile.subspan(bitmap.dataOffset, usize{entries} * 2);
         for (u32 i = 0; i < entries; ++i) {

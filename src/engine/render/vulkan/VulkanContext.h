@@ -25,6 +25,8 @@ public:
     VmaAllocator allocator() const { return m_allocator; }
     const VkPhysicalDeviceProperties& properties() const { return m_properties; }
     VkFormat depthFormat() const { return m_depthFormat; }
+    f32 maxAnisotropy() const { return m_maxAnisotropy; }
+    bool canBlitTextureMips() const { return m_canBlitTextureMips; }
 
     /** Begins a one-off command buffer; endOneShotCommands submits it and waits. */
     VkCommandBuffer beginOneShotCommands();
@@ -53,6 +55,8 @@ private:
     VkCommandPool m_uploadPool = VK_NULL_HANDLE;
     VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
     bool m_validationEnabled = false;
+    f32 m_maxAnisotropy = 1.0f;
+    bool m_canBlitTextureMips = false;
 };
 
 } // namespace gdl

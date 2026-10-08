@@ -45,7 +45,7 @@ TEST_CASE("format properties", "[formats][texture]") {
     bitmap.width = 8;
     bitmap.height = 8;
     bitmap.mipmapCount = 1;
-    REQUIRE(bitmapDataSize(bitmap) == 512 + 64 + 32);
+    REQUIRE(bitmapDataSize(bitmap) == 512 + 64); // legacy mip count is not stored in NGC files
 }
 
 TEST_CASE("direct 16-bit textures are tiled four by four", "[formats][texture]") {
@@ -128,6 +128,36 @@ TEST_CASE("truncated pixel data is rejected", "[formats][texture]") {
     bitmap.width = 8;
     bitmap.height = 8;
     REQUIRE_THROWS_AS(decodeGcTexture(bitmap, std::vector<u8>(10, 0)), FormatError);
+}
+
+TEST_CASE("GameCube textures ignore legacy mip metadata and retain base tile padding",
+          "[formats][texture][mipmaps]") {
+    ArchiveBitmap bitmap;
+    bitmap.width = 2;
+    bitmap.height = 1;
+    bitmap.mipmapCount = 3;
+    bitmap.dataOffset = 16;
+    std::vector<u8> data(16, 0);
+    SECTION("direct colour has a padded four by four tile even below that size") {
+        bitmap.format = bitmap_format::kRgb5a3;
+        for (s32 i = 0; i < 16; ++i) {
+            putBigU16(data, 0xFC00);
+        }
+        CHECK(bitmapDataSize(bitmap) == 32);
+        CHECK(decodeGcTexture(bitmap, data).pixel(1, 0) == Color::rgba(255, 0, 0, 255));
+    }
+    SECTION("indexed base image follows its palette without a mip tail") {
+        bitmap.format = bitmap_format::kIndexed8Gc;
+        for (s32 i = 0; i < 256; ++i) {
+            putBigU16(data, i == 3 ? 0x83E0 : 0x8000);
+        }
+        data.insert(data.end(), 32, u8{3});
+        CHECK(bitmapDataSize(bitmap) == 512 + 32);
+        CHECK(decodeGcTexture(bitmap, data).pixel(1, 0) == Color::rgba(0, 255, 0, 255));
+    }
+    CHECK(bitmap.dataOffset + bitmapDataSize(bitmap) == data.size());
+    data.pop_back();
+    REQUIRE_THROWS_AS(decodeGcTexture(bitmap, data), FormatError);
 }
 
 TEST_CASE("the title backdrop and glow frames decode", "[formats][texture][assets]") {

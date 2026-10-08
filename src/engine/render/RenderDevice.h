@@ -23,7 +23,8 @@ struct RenderDeviceDesc {
     bool vsync = true;
     bool enableValidation = false;
     std::filesystem::path shaderDirectory;
-    u32 sampleCount = 1; ///< 1 (off), 2 or 4 samples; unsupported counts fall back safely
+    u32 sampleCount = 1;      ///< 1 (off), 2 or 4 samples; unsupported counts fall back safely
+    u32 textureFiltering = 8; ///< base-level (0), trilinear (1), or 2/4/8/16x anisotropic
 };
 
 /** How a draw combines with what is already in the frame. */
@@ -56,6 +57,7 @@ struct DrawState {
     bool cullBack = false;     ///< triangles facing away are skipped
     bool depthWrite = true;
     bool depthTest = true; ///< false accepts every depth, independently of depth writes
+    bool mipmaps = false;  ///< world draws opt in; canvas text and movies retain base sampling
     f32 darken = 0.0f;     ///< how much of its colour is taken away: 0 none, 1 all
     f32 colorScale =
         1.0f; ///< RGB combiner scale, clamped before alpha blending; leaves alpha alone
@@ -94,7 +96,9 @@ public:
     virtual void setPresentation(bool vsync, u32 sampleCount) = 0;
     virtual u32 presentationSampleCount() const = 0;
 
-    /** Uploads RGBA8 pixels, rows top to bottom. */
+    virtual void setTextureFiltering(u32 filtering) = 0;
+
+    /** Uploads packed RGBA8 mip levels, rows top to bottom, largest level first. */
     virtual std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
                                                    std::span<const u8> rgba8Pixels) = 0;
 

@@ -37,6 +37,9 @@ public:
     Extent2D framebufferExtent() const override;
     void setPresentation(bool vsync, u32 sampleCount) override;
     u32 presentationSampleCount() const override;
+    void setTextureFiltering(u32 filtering) override {
+        m_desc.textureFiltering = validTextureFiltering(filtering);
+    }
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
                                            std::span<const u8> rgba8Pixels) override;
     void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override;
@@ -76,9 +79,7 @@ private:
                (across == TextureWrap::ClampToEdge ? 2U : 0U) +
                (down == TextureWrap::ClampToEdge ? 4U : 0U);
     }
-    VkSampler samplerFor(const TextureDesc& desc) const {
-        return m_samplers[samplerIndex(desc.filter, desc.wrap, desc.wrapDown())];
-    }
+    VkDescriptorSet samplerSetFor(const TextureDesc& desc, bool mipmaps) const;
 
     void createDescriptorResources();
     void createPipelines();
@@ -107,9 +108,15 @@ private:
     VkDescriptorPool descriptorPoolForTexture();
 
     VkDescriptorSetLayout m_textureSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_postTextureSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_samplerSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_samplerPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorPool> m_descriptorPools; ///< each texture keeps its own
     u32 m_poolTexturesLeft = 0;                      ///< sets left in the last pool
-    std::array<VkSampler, 8> m_samplers{};           ///< by samplerIndex(filter, across, down)
+    static constexpr std::array<u32, 6> kFiltering{0, 1, 2, 4, 8, 16};
+    static constexpr usize kSamplersPerMode = 8;
+    std::array<VkSampler, kSamplersPerMode * kFiltering.size()> m_samplers{};
+    std::array<VkDescriptorSet, kSamplersPerMode * kFiltering.size()> m_samplerSets{};
     std::unique_ptr<VulkanTexture> m_whiteTexture;
 
     std::array<FrameResources, kFramesInFlight> m_frames{};

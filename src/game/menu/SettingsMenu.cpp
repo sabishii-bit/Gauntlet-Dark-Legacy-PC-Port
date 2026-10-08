@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 #include <utility>
 
 #include "engine/core/Types.h"
@@ -9,14 +10,18 @@
 namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
-constexpr s32 kVideoRows = 8;
+constexpr s32 kVideoRows = 9;
 constexpr s32 kAudioSliders = 3;
 constexpr s32 kAudioX = 160;
 constexpr f32 kAudioScale = 0.7f;
 constexpr std::array<u32, 3> kFrameRates{30, 60, 0};
 constexpr std::array<u32, 3> kSampleCounts{1, 2, 4};
+constexpr std::array<u32, 6> kTextureFiltering{0, 1, 2, 4, 8, 16};
+constexpr std::array<std::string_view, 6> kTextureLabels{
+    "settings.off",          "settings.trilinear",    "settings.anisotropic2",
+    "settings.anisotropic4", "settings.anisotropic8", "settings.anisotropic16"};
 
-u32 cycleChoice(const std::array<u32, 3>& choices, u32 value, s32 direction) {
+u32 cycleChoice(std::span<const u32> choices, u32 value, s32 direction) {
     for (usize i = 0; i < choices.size(); ++i) {
         if (choices[i] == value) {
             const auto count = static_cast<s32>(choices.size());
@@ -122,8 +127,8 @@ void SettingsMenu::rebuild(s32 selection) {
         constexpr s32 kLeft = 64;
         constexpr s32 kRight = 448;
         constexpr s32 kColumnGap = 28;
-        constexpr s32 kRowTop = 108;
-        constexpr s32 kRowStep = 21;
+        constexpr s32 kRowTop = 100;
+        constexpr s32 kRowStep = 19;
         constexpr s32 kActionY = 300;
         constexpr s32 kActionGap = 24;
         if (m_confirmVideo) {
@@ -179,6 +184,12 @@ void SettingsMenu::rebuild(s32 selection) {
                    text(m_config.display.bloom ? "settings.on" : "settings.off"), 9);
             choice(text("settings.ambientOcclusion"),
                    text(m_config.display.ambientOcclusion ? "settings.on" : "settings.off"), 10);
+            const auto filter =
+                std::ranges::find(kTextureFiltering, m_config.display.textureFiltering);
+            const auto filterIndex = filter == kTextureFiltering.end()
+                                         ? usize{1}
+                                         : static_cast<usize>(filter - kTextureFiltering.begin());
+            choice(text("settings.textureFiltering"), text(kTextureLabels[filterIndex]), 11);
             s32 labelWidth = 0;
             s32 valueWidth = 0;
             for (const auto& item : definition.items) {
@@ -197,6 +208,9 @@ void SettingsMenu::rebuild(s32 selection) {
                                                                 std::to_string(extent.height),
                                                             1));
             };
+            for (const auto id : kTextureLabels) {
+                valueWidth = std::max(valueWidth, m_painter->measure(text(id), 1));
+            }
             for (const auto extent : m_display.resolutions) {
                 measureSize(extent);
             }
@@ -409,6 +423,9 @@ void SettingsMenu::change(s32 direction) {
             next.display.bloom = !next.display.bloom;
         } else if (code == 10) {
             next.display.ambientOcclusion = !next.display.ambientOcclusion;
+        } else if (code == 11) {
+            next.display.textureFiltering =
+                cycleChoice(kTextureFiltering, next.display.textureFiltering, direction);
         } else if (code == 4) {
             if (m_display.desktop.isZero()) {
                 return;
@@ -563,6 +580,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_config.display.bloom = defaults.display.bloom;
             m_config.display.ambientOcclusion = defaults.display.ambientOcclusion;
             m_config.display.sampleCount = defaults.display.sampleCount;
+            m_config.display.textureFiltering = defaults.display.textureFiltering;
             m_config.display.windowWidth = defaults.display.windowWidth;
             m_config.display.windowHeight = defaults.display.windowHeight;
             m_config.display.windowMode = defaults.display.windowMode;

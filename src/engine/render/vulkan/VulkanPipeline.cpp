@@ -17,7 +17,8 @@ namespace gdl {
 VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                                VkFormat colorFormat, VkFormat depthFormat,
                                VkDescriptorSetLayout textureSetLayout, BlendMode blend,
-                               VkSampleCountFlagBits samples, Effect effect)
+                               VkSampleCountFlagBits samples, Effect effect,
+                               VkDescriptorSetLayout samplerSetLayout)
     : m_context(context) {
     const bool postProcess = effect != Effect::None;
     const bool additive = blend == BlendMode::Additive;
@@ -28,11 +29,13 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     pushRange.offset = 0;
     pushRange.size = kPushConstantSize;
 
-    // Set 0 is the texture, set 1 the lightmap; both are one sampled image.
-    const std::array<VkDescriptorSetLayout, 2> setLayouts{textureSetLayout, textureSetLayout};
+    // Images and samplers are independent; filtering changes leave in-flight images alone.
+    // Post effects retain their combined image/sampler sets.
+    const std::array<VkDescriptorSetLayout, 4> setLayouts{textureSetLayout, textureSetLayout,
+                                                          samplerSetLayout, samplerSetLayout};
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
+    layoutInfo.setLayoutCount = postProcess ? 2 : 4;
     layoutInfo.pSetLayouts = setLayouts.data();
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushRange;

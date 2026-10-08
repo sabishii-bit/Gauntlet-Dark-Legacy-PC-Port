@@ -19,11 +19,11 @@ u32 bitsPerPixel(u8 format);
 /** Bytes between the start of a bitmap's data and its first pixel (the palette, if any). */
 usize pixelDataOffset(u8 format);
 
-/** Bytes a bitmap occupies in the textures file: palette plus every mip level. */
+/** GameCube bytes: palette plus the base image. The legacy mip count is not stored pixel data. */
 usize bitmapDataSize(const ArchiveBitmap& bitmap);
 
 /**
- * Decodes the top mip level of a bitmap from the textures.ngc contents into RGBA8.
+ * Decodes the base image from textures.ngc into RGBA8. GameCube files contain no mip levels.
  * Handles the tiled GameCube layouts, the RGB5A3 palettes, and the intensity formats,
  * which become white with the intensity as alpha, as the game's built-in palettes do.
  */

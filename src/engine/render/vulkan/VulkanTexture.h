@@ -15,7 +15,7 @@ class VulkanContext;
 class VulkanTexture final : public Texture {
 public:
     VulkanTexture(VulkanContext& context, VkDescriptorPool descriptorPool,
-                  VkDescriptorSetLayout setLayout, VkSampler sampler, const TextureDesc& desc,
+                  VkDescriptorSetLayout setLayout, const TextureDesc& desc,
                   std::span<const u8> rgba8Pixels);
     ~VulkanTexture() override;
 
@@ -26,12 +26,18 @@ public:
 
     VkImage image() const { return m_image; }
     VkDescriptorSet descriptorSet() const { return m_descriptorSet; }
+    const TextureDesc& description() const { return m_desc; }
+    u32 mipLevels() const { return m_mipLevels; }
+    /** Complete the missing mip tail and transition all levels from transfer to sampling. */
+    void prepareForSampling(VkCommandBuffer cmd, u32 suppliedLevels) const;
 
 private:
     VulkanContext& m_context;
     VkDescriptorPool m_descriptorPool;
     u32 m_width;
     u32 m_height;
+    TextureDesc m_desc;
+    u32 m_mipLevels;
 
     VkImage m_image = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;

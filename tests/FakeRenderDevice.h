@@ -56,6 +56,7 @@ public:
         ++presentationChanges;
     }
     u32 presentationSampleCount() const override { return presentationSamples; }
+    void setTextureFiltering(u32 filtering) override { textureFiltering = filtering; }
 
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
                                            std::span<const u8> rgba8Pixels) override {
@@ -113,6 +114,7 @@ public:
     bool presentationVsync = true;
     u32 presentationSamples = 1;
     u32 presentationChanges = 0;
+    u32 textureFiltering = 1;
 
 private:
     FakeTexture m_white{1, 1};

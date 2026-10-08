@@ -10,6 +10,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "formats/GcTexture.h"
+#include "formats/ModelArchive.h"
 
 namespace {
 
@@ -68,6 +70,8 @@ TEST_CASE("GPU textures are created once and released on demand", "[assets][text
     REQUIRE(&first == &again);
     REQUIRE(first.width() == 2);
     REQUIRE(device.texturesCreated == 1);
+    CHECK(device.lastTextureDesc.generateMipmaps);
+    CHECK(device.lastTextureDesc.mipLevels == 1);
     set.texture(device, 1);
     REQUIRE(device.texturesCreated == 2);
     set.releaseTextures();
@@ -116,6 +120,7 @@ TEST_CASE("a slot the archive keeps no picture for is clear", "[assets][textures
     REQUIRE(clear.pixels == std::vector<u8>{0, 0, 0, 0});
     test::FakeRenderDevice device;
     REQUIRE(set.texture(device, 0).width() == 1);
+    CHECK_FALSE(device.lastTextureDesc.generateMipmaps);
 }
 
 TEST_CASE("a missing or malformed manifest fails to load", "[assets][textures]") {
@@ -137,6 +142,47 @@ TEST_CASE("the native title set names the backdrop tiles", "[assets][textures]")
     REQUIRE(set.find("TITLE00") == 11U);
     REQUIRE(set.entry(0).frames == 10);
     REQUIRE(set.entry(0).halfResolution);
+}
+
+TEST_CASE("native textures generate mips instead of reading legacy metadata as pixels",
+          "[assets][textures][mipmaps]") {
+    u32 legacyMipCounts = 0;
+    for (const auto* name : {"LEVELS/LEVELG1/objects.ngc", "LEVELS/LEVELE1/objects.ngc",
+                             "MONSTERS/PLA/objects.ngc", "TITLE/objects.ngc"}) {
+        const auto objects = test::assetOrSkip(name);
+        const auto archive = formats::ModelArchive::parse(readFile(objects));
+        TextureSet set;
+        REQUIRE(set.load(objects.parent_path()));
+        test::FakeRenderDevice device;
+        for (u32 index = 0; index < set.size(); ++index) {
+            const auto& entry = set.entry(index);
+            if (entry.noPicture || entry.external()) {
+                continue;
+            }
+            CAPTURE(name, index, entry.name);
+            const auto& texture =
+                dynamic_cast<const test::FakeTexture&>(set.texture(device, index));
+            const auto& desc = device.lastTextureDesc;
+            CHECK(desc.generateMipmaps);
+            CHECK(desc.mipLevels == 1);
+            CHECK(texture.pixels == set.image(index).pixels);
+            if (archive.bitmaps()[index].mipmapCount > 0) {
+                ++legacyMipCounts;
+            }
+        }
+    }
+    CHECK(legacyMipCounts > 0);
+}
+
+TEST_CASE("the last Plague acid frame ends exactly at the texture file boundary",
+          "[assets][textures][mipmaps]") {
+    const auto objects = test::assetOrSkip("MONSTERS/PLA/objects.ngc");
+    const auto archive = formats::ModelArchive::parse(readFile(objects));
+    const auto pixels = readFile(test::assetOrSkip("MONSTERS/PLA/textures.ngc"));
+    const auto& bitmap = archive.bitmaps().at(145);
+    REQUIRE(bitmap.mipmapCount == 1);
+    CHECK(bitmap.dataOffset + formats::bitmapDataSize(bitmap) == pixels.size());
+    CHECK_NOTHROW(formats::decodeGcTexture(bitmap, pixels));
 }
 
 } // namespace
