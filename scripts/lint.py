@@ -22,6 +22,8 @@ import subprocess
 import sys
 import time
 
+from lint_cache import CleanCache
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DIAGNOSTIC = re.compile(r"^(.+?):(\d+):(\d+): (warning|error): (.*)$")
 
@@ -94,6 +96,8 @@ def main(argv=None) -> int:
     parser.add_argument("--shard-count", type=int, default=1, help="number of disjoint CI shards")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4,
                         help="maximum concurrent clang-tidy processes")
+    parser.add_argument("--cache-dir", type=pathlib.Path,
+                        help="reuse clean results after hashing clang dependencies (GCC-style commands)")
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("--jobs must be positive")
@@ -107,16 +111,37 @@ def main(argv=None) -> int:
         parser.error("no translation units found; check the paths and compilation database")
     units = select_shard(roster, args.shard_index, args.shard_count)
     started = time.monotonic()
+    cache = None
+    if args.cache_dir:
+        try:
+            cache = CleanCache(ROOT, args.cache_dir, clang_tidy)
+        except (OSError, ValueError) as error:
+            print(f"Lint cache unavailable; checking every unit: {error}", flush=True)
+
+    def check(unit):
+        key = cache.key(unit) if cache else None
+        if key and cache.contains(key):
+            return [], True
+        findings = run_one(clang_tidy, unit)
+        if not findings and key and cache.key(unit) == key:
+            try:
+                cache.remember(key)
+            except OSError:
+                pass  # an unwritable cache must not hide or fail a clean analysis
+        return findings, False
+
     print(f"Lint shard {args.shard_index + 1}/{args.shard_count}: "
           f"{len(units)} of {len(roster)} translation units, {args.jobs} workers", flush=True)
     seen: set[str] = set()
     ordered: list[str] = []
+    hits = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        pending = {pool.submit(run_one, clang_tidy, unit): unit for unit in units}
+        pending = {pool.submit(check, unit): unit for unit in units}
         for done, future in enumerate(concurrent.futures.as_completed(pending), 1):
             unit = pending[future]
             try:
-                findings = future.result()
+                findings, reused = future.result()
+                hits += int(reused)
             except Exception as error:
                 findings = [f"{unit}: clang-tidy could not complete: {error}"]
             label = unit.relative_to(ROOT) if unit.is_relative_to(ROOT) else unit
@@ -130,7 +155,7 @@ def main(argv=None) -> int:
     for finding in sorted(ordered):
         print(finding)
         print()
-    print(f"{len(units)} translation units linted, {len(ordered)} findings "
+    print(f"{len(units)} translation units checked ({hits} cached), {len(ordered)} findings "
           f"in {time.monotonic() - started:.1f}s", flush=True)
     return 1 if ordered else 0
 

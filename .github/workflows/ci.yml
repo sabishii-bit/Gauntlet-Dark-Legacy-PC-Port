@@ -96,8 +96,14 @@ jobs:
         run: |
           python3 scripts/devenv.py -- cmake --preset linux-ninja-debug -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
           python3 scripts/devenv.py -- cmake --build --preset linux-ninja-debug --target compile_commands
+      - name: Cache clean lint results
+        uses: actions/cache@v4
+        with:
+          path: build/lint-cache
+          key: tidy-v1-${{ runner.os }}-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+          restore-keys: tidy-v1-${{ runner.os }}-${{ matrix.shard }}-
       - name: clang-tidy
-        run: python3 scripts/lint.py --shard-index ${{ matrix.shard }} --shard-count ${{ strategy.job-total }}
+        run: python3 scripts/lint.py --shard-index ${{ matrix.shard }} --shard-count ${{ strategy.job-total }} --cache-dir build/lint-cache
 
   # Preserve the single required-check name, and never accept a failed/skipped shard.
   lint:

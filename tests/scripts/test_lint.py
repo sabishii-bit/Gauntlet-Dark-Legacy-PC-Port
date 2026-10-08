@@ -134,7 +134,45 @@ class DriverTests(unittest.TestCase):
                         ["--shard-index", "4", "--shard-count", "4"]):
             with self.subTest(options=options), self.assertRaises(SystemExit) as error:
                 lint.main(options)
-            self.assertEqual(error.exception.code, 2)
+        self.assertEqual(error.exception.code, 2)
+
+    def test_cache_hits_skip_only_the_verified_clean_units(self):
+        cache = mock.Mock()
+        cache.key.side_effect = lambda unit: str(unit)
+        cache.contains.side_effect = lambda key: key == str(self.units[0])
+        with mock.patch.object(lint, "CleanCache", return_value=cache), \
+             mock.patch.object(lint, "run_one", return_value=[]) as run:
+            self.assertEqual(lint.main(["--cache-dir", "build/lint-cache"]), 0)
+        self.assertCountEqual([call.args[1] for call in run.call_args_list], self.units[1:])
+        self.assertEqual(cache.remember.call_count, len(self.units) - 1)
+
+    def test_failures_are_never_cached(self):
+        cache = mock.Mock()
+        cache.key.return_value = "key"
+        cache.contains.return_value = False
+        with mock.patch.object(lint, "CleanCache", return_value=cache), \
+             mock.patch.object(lint, "run_one", return_value=["file:1:2: warning: bad"]):
+            self.assertEqual(lint.main(["--cache-dir", "build/lint-cache"]), 1)
+        cache.remember.assert_not_called()
+
+    def test_unverifiable_dependencies_still_run_lint(self):
+        cache = mock.Mock()
+        cache.key.return_value = None
+        with mock.patch.object(lint, "CleanCache", return_value=cache), \
+             mock.patch.object(lint, "run_one", return_value=[]) as run:
+            self.assertEqual(lint.main(["--cache-dir", "build/lint-cache"]), 0)
+        self.assertEqual(run.call_count, len(self.units))
+        cache.remember.assert_not_called()
+
+    def test_changed_inputs_during_analysis_are_not_cached(self):
+        cache = mock.Mock()
+        cache.key.side_effect = ["before", "after"]
+        cache.contains.return_value = False
+        with mock.patch.object(lint, "translation_units", return_value=self.units[:1]), \
+             mock.patch.object(lint, "CleanCache", return_value=cache), \
+             mock.patch.object(lint, "run_one", return_value=[]):
+            self.assertEqual(lint.main(["--cache-dir", "build/lint-cache"]), 0)
+        cache.remember.assert_not_called()
 
 
 if __name__ == "__main__":
