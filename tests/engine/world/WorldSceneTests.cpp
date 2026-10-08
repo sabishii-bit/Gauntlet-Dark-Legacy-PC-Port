@@ -363,6 +363,7 @@ TEST_CASE("S8 wheat cutouts reject clear texels in both batched and independent 
                 CHECK(draw.state.depthWrite);
                 CHECK(draw.state.depthTest);
                 CHECK(draw.state.alphaTest == WorldScene::kAlphaTest);
+                CHECK(draw.state.usesAlphaToCoverage(4));
             }
         }
         REQUIRE(wheatDraws > 0); // Binary-alpha art remains in the solid pass.
@@ -390,6 +391,7 @@ TEST_CASE("world depth comparison flags survive batching and independent unit dr
         INFO(placement);
         CHECK(draw.state.depthTest == (placement % 3 == 0));
         CHECK(draw.state.depthWrite == (placement % 3 != 2));
+        CHECK(draw.state.usesAlphaToCoverage(4) == (placement % 3 == 0));
     }
 }
 

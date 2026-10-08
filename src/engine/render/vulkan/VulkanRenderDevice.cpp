@@ -77,6 +77,13 @@ void VulkanRenderDevice::createPipelines() {
         *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
         m_textureSetLayout, BlendMode::Opaque, m_swapchain->samples(), VulkanPipeline::Effect::None,
         m_samplerSetLayout);
+    m_coveragePipeline.reset();
+    if (m_swapchain->samples() != VK_SAMPLE_COUNT_1_BIT) {
+        m_coveragePipeline = std::make_unique<VulkanPipeline>(
+            *m_context, m_desc.shaderDirectory, m_swapchain->colorFormat(),
+            m_swapchain->depthFormat(), m_textureSetLayout, BlendMode::Opaque,
+            m_swapchain->samples(), VulkanPipeline::Effect::None, m_samplerSetLayout, true);
+    }
 }
 
 VulkanRenderDevice::~VulkanRenderDevice() {
@@ -103,6 +110,7 @@ VulkanRenderDevice::~VulkanRenderDevice() {
     }
     m_additivePipeline.reset();
     m_opaquePipeline.reset();
+    m_coveragePipeline.reset();
     m_pipeline.reset();
     vkDestroyDescriptorPool(device, m_samplerPool, nullptr);
     vkDestroyDescriptorSetLayout(device, m_samplerSetLayout, nullptr);
@@ -454,6 +462,7 @@ void VulkanRenderDevice::beginRendering() {
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->handle());
     m_boundBlend = BlendMode::Alpha;
+    m_boundCoverage = false;
     const VkDeviceSize zeroOffset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, &zeroOffset);
     m_renderingStarted = true;
@@ -560,9 +569,12 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     if (!m_renderingStarted) {
         beginRendering();
     }
-    if (state.blend != m_boundBlend) {
+    const bool coverage = state.usesAlphaToCoverage(presentationSampleCount());
+    if (state.blend != m_boundBlend || coverage != m_boundCoverage) {
         const VulkanPipeline* pipeline = m_pipeline.get();
-        if (state.blend == BlendMode::Opaque) {
+        if (coverage) {
+            pipeline = m_coveragePipeline.get();
+        } else if (state.blend == BlendMode::Opaque) {
             pipeline = m_opaquePipeline.get();
         } else if (state.blend == BlendMode::Additive) {
             pipeline = m_additivePipeline.get();
@@ -570,6 +582,7 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
         vkCmdBindPipeline(m_frames[m_frameIndex].commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           pipeline->handle());
         m_boundBlend = state.blend;
+        m_boundCoverage = coverage;
     }
     const auto triangles = batch.triangles();
     if (triangles.empty()) {

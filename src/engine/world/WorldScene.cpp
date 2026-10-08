@@ -501,6 +501,7 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
     const Slot& slot = m_slots.at(batch.slot);
     DrawState state;
     state.mipmaps = true;
+    state.alphaToCoverage = true;
     state.blend = batch.additive ? BlendMode::Additive : BlendMode::Alpha;
     state.lightmap = batch.lightmap;
     state.uvOffset = slot.presentedOffset(textureFrameOffset);
@@ -589,6 +590,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         m_scratch.end();
         DrawState state;
         state.mipmaps = true;
+        state.alphaToCoverage = true;
         state.blend = part.additive ? BlendMode::Additive : BlendMode::Alpha;
         state.lightmap = part.lightmap;
         state.uvOffset = slot.presentedOffset(textureFrameOffset);

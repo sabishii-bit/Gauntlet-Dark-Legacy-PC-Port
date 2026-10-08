@@ -286,6 +286,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             m_batch.end();
             DrawState state;
             state.mipmaps = true;
+            state.alphaToCoverage = true;
             state.cullBack = m_cullBack;
             state.blend = additive ? BlendMode::Additive : BlendMode::Alpha;
             const Texture* mask = m_maskedTexture != nullptr ? m_maskedTexture : node.maskedTexture;

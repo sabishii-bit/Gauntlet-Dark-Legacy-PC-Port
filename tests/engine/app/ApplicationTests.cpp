@@ -24,11 +24,13 @@ class ProbeApplication final : public Application {
 public:
     using Application::Application;
     bool changePresentation = false;
+    bool keepVsync = false;
     bool changeWindow = false;
     bool depthOfField = false;
     bool bloom = false;
     bool ambientOcclusion = false;
     bool mipmaps = false;
+    bool alphaCoverage = false;
 
     s32 renderedFrames() const { return m_renderedFrames; }
     bool sawInput() const { return m_sawInput; }
@@ -79,7 +81,8 @@ protected:
         if (changePresentation) {
             constexpr std::array<u32, 4> kSamples{1, 2, 4, 1};
             m_requestedSamples = kSamples[static_cast<usize>(m_renderedFrames) % kSamples.size()];
-            renderDevice().setPresentation(m_renderedFrames % 2 == 0, m_requestedSamples);
+            renderDevice().setPresentation(keepVsync || m_renderedFrames % 2 == 0,
+                                           m_requestedSamples);
         }
     }
 
@@ -119,6 +122,18 @@ protected:
         ice.depthWrite = false;
         device.draw(m_batch, *m_texture, projection, ice);
         device.draw(m_batch, *m_texture, projection); // restore default depth state
+        if (alphaCoverage) {
+            DrawState cutout;
+            cutout.alphaToCoverage = true;
+            cutout.alphaTest = DrawState::kTranslucentAlphaTest;
+            // Switch coverage on/off without a blend-mode change, then exercise masked skins.
+            device.draw(m_batch, *m_texture, projection, cutout);
+            device.draw(m_batch, *m_texture, projection);
+            cutout.maskedTexture = m_streamed.get();
+            cutout.blend = BlendMode::Opaque;
+            device.draw(m_batch, *m_texture, projection, cutout);
+            device.draw(m_batch, *m_texture, projection, ice);
+        }
         DrawState glow;
         glow.mipmaps = mipmaps;
         glow.blend = BlendMode::Additive;
@@ -168,6 +183,13 @@ protected:
             // Switching back must LOAD the postprocessed scene, retain depth, and restore
             // the normal pipeline/vertex stream rather than clearing it for the HUD.
             device.draw(m_batch, *m_texture, projection);
+            if (alphaCoverage) {
+                DrawState cutout;
+                cutout.alphaToCoverage = true;
+                cutout.alphaTest = DrawState::kTranslucentAlphaTest;
+                device.draw(m_batch, *m_texture, projection, cutout);
+                device.draw(m_batch, *m_texture, projection);
+            }
         }
         ++m_renderedFrames;
     }
@@ -250,6 +272,26 @@ TEST_CASE("the application renders between fixed-rate simulation updates", "[gpu
     CHECK(app.elapsed() >= 1.0 / 30);
     CHECK(app.longestUpdate() <= 1.0 / 30);
     CHECK(app.sawInput());
+}
+
+TEST_CASE("alpha coverage survives AA changes and the post chain without affecting the HUD",
+          "[gpu][app][alpha-coverage]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl alpha coverage test";
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 8;
+    desc.maxFrameRate = 60;
+    desc.enableValidation = true;
+    ProbeApplication app(std::move(desc));
+    app.alphaCoverage = true;
+    app.keepVsync = true;
+    app.changePresentation = true;
+    app.depthOfField = true;
+    app.bloom = true;
+    app.ambientOcclusion = true;
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() >= 8);
 }
 
 TEST_CASE("Video mode changes preserve the Vulkan surface and desktop mode",

@@ -18,10 +18,13 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
                                VkFormat colorFormat, VkFormat depthFormat,
                                VkDescriptorSetLayout textureSetLayout, BlendMode blend,
                                VkSampleCountFlagBits samples, Effect effect,
-                               VkDescriptorSetLayout samplerSetLayout)
+                               VkDescriptorSetLayout samplerSetLayout, bool alphaToCoverage)
     : m_context(context) {
     const bool postProcess = effect != Effect::None;
     const bool additive = blend == BlendMode::Additive;
+    const VkBool32 coverage =
+        alphaToCoverage && !postProcess && !additive && samples != VK_SAMPLE_COUNT_1_BIT ? VK_TRUE
+                                                                                         : VK_FALSE;
     const VkDevice device = m_context.device();
 
     VkPushConstantRange pushRange{};
@@ -64,6 +67,11 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stages[1].module = fragmentModule;
     stages[1].pName = "main";
+    const VkSpecializationMapEntry coverageEntry{0, 0, sizeof(coverage)};
+    const VkSpecializationInfo coverageInfo{1, &coverageEntry, sizeof(coverage), &coverage};
+    if (!postProcess) {
+        stages[1].pSpecializationInfo = &coverageInfo;
+    }
 
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
@@ -120,6 +128,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample.rasterizationSamples = samples;
+    multisample.alphaToCoverageEnable = coverage;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -128,7 +137,9 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.blendEnable = blend == BlendMode::Opaque ? VK_FALSE : VK_TRUE;
+    // Coverage already weights the resolved colour; alpha blending again would darken edges.
+    blendAttachment.blendEnable =
+        blend == BlendMode::Opaque || coverage == VK_TRUE ? VK_FALSE : VK_TRUE;
     blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
     blendAttachment.dstColorBlendFactor =
         additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;

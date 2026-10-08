@@ -100,8 +100,10 @@ private:
     std::unique_ptr<VulkanPipeline> m_pipeline;         ///< alpha blended
     std::unique_ptr<VulkanPipeline> m_additivePipeline; ///< the same, adding onto the frame
     std::unique_ptr<VulkanPipeline> m_opaquePipeline;   ///< no framebuffer blending
+    std::unique_ptr<VulkanPipeline> m_coveragePipeline; ///< MSAA coverage instead of alpha blending
     std::unique_ptr<VulkanPostProcess> m_postProcess;
     BlendMode m_boundBlend = BlendMode::Alpha;
+    bool m_boundCoverage = false;
 
     static constexpr u32 kTexturesPerPool = 512;
 

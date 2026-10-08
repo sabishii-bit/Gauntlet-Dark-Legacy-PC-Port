@@ -20,7 +20,8 @@ public:
                    VkFormat colorFormat, VkFormat depthFormat,
                    VkDescriptorSetLayout textureSetLayout, BlendMode blend,
                    VkSampleCountFlagBits samples, Effect effect = Effect::None,
-                   VkDescriptorSetLayout samplerSetLayout = VK_NULL_HANDLE);
+                   VkDescriptorSetLayout samplerSetLayout = VK_NULL_HANDLE,
+                   bool alphaToCoverage = false);
     ~VulkanPipeline();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanPipeline);

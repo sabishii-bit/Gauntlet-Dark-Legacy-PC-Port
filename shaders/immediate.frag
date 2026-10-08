@@ -1,5 +1,7 @@
 #version 450
 
+layout(constant_id = 0) const bool alphaToCoverage = false;
+
 layout(set = 0, binding = 0) uniform texture2D uImage;
 layout(set = 1, binding = 0) uniform texture2D uSecondImage;
 layout(set = 2, binding = 0) uniform sampler uSampler;
@@ -37,7 +39,12 @@ void main() {
         // Keep-alpha alternate-texture mode: the original skin supplies coverage, not colour.
         // The alpha comparison is against K0.a = 2, followed by alternate alpha * vertex alpha.
         bool covered = outColor.a > 2.0 / 255.0;
+        float maskAlpha = outColor.a;
         outColor = texture(uSecondTexture, vUv) * vColor;
+        if (alphaToCoverage) {
+            // Alternate skins change colour, not the original surface's MSAA silhouette.
+            outColor.a = maskAlpha;
+        }
         if (!covered) {
             discard;
         }

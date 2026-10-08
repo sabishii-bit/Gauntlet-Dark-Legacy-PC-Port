@@ -465,12 +465,15 @@ TEST_CASE("alternate skin preserves base coverage and the original opaque or tra
     REQUIRE(device.draws[1].state.maskedTexture == &ice);
     REQUIRE(device.draws[0].state.blend == BlendMode::Opaque);
     REQUIRE(device.draws[0].state.depthWrite);
+    CHECK(device.draws[0].state.usesAlphaToCoverage(4));
     REQUIRE(device.draws[1].state.blend == BlendMode::Alpha);
     REQUIRE(device.draws[1].state.alphaTest == DrawState::kTranslucentAlphaTest);
+    CHECK(device.draws[1].state.usesAlphaToCoverage(4));
     device.draws.clear();
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, {}, {}, nullptr, 0.5f);
     REQUIRE(device.draws[0].state.blend == BlendMode::Alpha);
     REQUIRE_FALSE(device.draws[0].state.depthWrite);
+    CHECK_FALSE(device.draws[0].state.usesAlphaToCoverage(4));
     figure.resetTextures();
     device.draws.clear();
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f});

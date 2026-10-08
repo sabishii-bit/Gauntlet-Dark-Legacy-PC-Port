@@ -99,4 +99,40 @@ TEST_CASE("flipbook blending preserves the second texture stage's existing owner
     CHECK(state.effectiveTextureBlend() == 0.0f);
 }
 
+TEST_CASE("alpha-to-coverage is limited to opted-in multisampled solid cutouts",
+          "[render][types][alpha-coverage]") {
+    test::FakeTexture mask(1, 1);
+    DrawState state;
+    state.alphaTest = DrawState::kTranslucentAlphaTest;
+    CHECK_FALSE(state.usesAlphaToCoverage(4)); // UI defaults retain ordinary alpha blending.
+    state.alphaToCoverage = true;
+    CHECK_FALSE(state.usesAlphaToCoverage(1));
+    CHECK(state.usesAlphaToCoverage(2));
+    CHECK(state.usesAlphaToCoverage(4));
+    SECTION("additive effects") {
+        state.blend = BlendMode::Additive;
+    }
+    SECTION("translucent effects and fading models") {
+        state.depthWrite = false;
+    }
+    SECTION("depthless overlays") {
+        state.depthTest = false;
+    }
+    SECTION("solid textures without an alpha test") {
+        state.alphaTest = 0;
+    }
+    SECTION("interpolated flipbooks") {
+        state.nextTexture = &mask;
+        state.textureBlend = 0.5f;
+    }
+    SECTION("masked skins retain their original coverage") {
+        state.alphaTest = 0;
+        state.maskedTexture = &mask;
+        state.blend = BlendMode::Opaque;
+        CHECK(state.usesAlphaToCoverage(4));
+        state.alphaToCoverage = false;
+    }
+    CHECK_FALSE(state.usesAlphaToCoverage(4));
+}
+
 } // namespace

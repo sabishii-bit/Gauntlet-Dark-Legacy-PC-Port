@@ -58,7 +58,8 @@ struct DrawState {
     bool depthWrite = true;
     bool depthTest = true; ///< false accepts every depth, independently of depth writes
     bool mipmaps = false;  ///< world draws opt in; canvas text and movies retain base sampling
-    f32 darken = 0.0f;     ///< how much of its colour is taken away: 0 none, 1 all
+    bool alphaToCoverage = false; ///< allow MSAA coverage for depth-writing cutout surfaces
+    f32 darken = 0.0f;            ///< how much of its colour is taken away: 0 none, 1 all
     f32 colorScale =
         1.0f; ///< RGB combiner scale, clamped before alpha blending; leaves alpha alone
 
@@ -69,6 +70,13 @@ struct DrawState {
             return 0.0f;
         }
         return std::min(textureBlend, 1.0f);
+    }
+
+    /** Coverage replaces blending only on solid cutouts, never on overlays or soft effects. */
+    bool usesAlphaToCoverage(u32 samples) const {
+        return samples > 1 && alphaToCoverage && depthTest && depthWrite &&
+               blend != BlendMode::Additive && (alphaTest > 0 || maskedTexture != nullptr) &&
+               effectiveTextureBlend() == 0;
     }
 
     bool operator==(const DrawState&) const = default;
