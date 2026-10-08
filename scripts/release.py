@@ -6,7 +6,9 @@ Maintainer workflow (from a clean, committed checkout):
   <venv-python> -m pip install -r scripts/installer/requirements.txt
   <venv-python> scripts/release.py build
 
-Bump VERSION, commit, and push v<VERSION> to publish a GitHub release. A manual
+Bump VERSION, add docs/changelog/<VERSION>.md, commit, and push v<VERSION> to
+publish a GitHub release. Changelogs start with '# <VERSION>' and contain the
+reviewed changes for that release; publication uses them as its notes. A manual
 Release workflow run builds downloadable artifacts without publishing a release.
 This also applies to manual runs on tags. Published/draft versions cannot be reused;
 new versions must increase, and release runs share one concurrency lock.

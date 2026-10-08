@@ -12,7 +12,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from installer.install import retry_locked
-from publish_release import check_publication, main as publish_main, require_new_version, validated_assets
+from publish_release import changelog, check_publication, main as publish_main, require_new_version, validated_assets
 from release import check_frozen_installer, digest, installer_notices, make_payload
 from installer.releases import runtime_name
 
@@ -23,6 +23,13 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.tag = "v0.1.0-alpha.1"
+        patcher = mock.patch("publish_release.ROOT", self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.notes = "# 0.1.0-alpha.1\n\n- A reviewed gameplay fix.\n"
+        self.notes_path = self.root / "docs/changelog/0.1.0-alpha.1.md"
+        self.notes_path.parent.mkdir(parents=True)
+        self.notes_path.write_text(self.notes, encoding="utf-8")
         self.packages = []
         for platform, extension in (("windows-x64", ".exe"), ("linux-x64", ".tar.gz")):
             stem = f"GauntletDarkLegacy-{self.tag[1:]}-{platform}-setup"
@@ -43,6 +50,39 @@ class ReleaseTests(unittest.TestCase):
             checksum = self.root / (stem + ".sha256")
             checksum.write_text("".join(f"{digest(path)}  {path.name}\n" for path in paths), encoding="ascii")
             self.packages.append((paths, checksum))
+
+    def test_changelog_is_required_and_has_the_matching_version(self):
+        self.assertEqual(changelog(self.tag), self.notes.strip())
+        for invalid in ("", "# 0.1.0-alpha.1\n\n", "# 0.1.0-alpha.2\n\nWrong version."):
+            with self.subTest(notes=invalid):
+                self.notes_path.write_text(invalid, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "matching version"):
+                    changelog(self.tag)
+        self.notes_path.unlink()
+        with self.assertRaisesRegex(ValueError, "Missing release changelog"):
+            changelog(self.tag)
+        for tag in ("main", "0.1.0-alpha.1", "v../../outside", "v1.0.0/../../outside"):
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                changelog(tag)
+
+    def test_current_version_has_a_changelog(self):
+        root = Path(__file__).resolve().parents[2]
+        tag = "v" + (root / "VERSION").read_text(encoding="utf-8").strip()
+        with mock.patch("publish_release.ROOT", root):
+            self.assertTrue(changelog(tag).startswith(f"# {tag[1:]}\n"))
+
+    def test_missing_changelog_blocks_preflight_before_remote_operations(self):
+        self.notes_path.unlink()
+        with mock.patch.dict(os.environ, {
+                "GITHUB_EVENT_NAME": "push", "GITHUB_REF": f"refs/tags/{self.tag}",
+                "RELEASE_TAG": self.tag}), mock.patch(
+                "publish_release.validate_tag", return_value=self.tag), mock.patch(
+                "publish_release.subprocess.check_output") as query, mock.patch(
+                "publish_release.subprocess.run") as publish:
+            with self.assertRaisesRegex(ValueError, "Missing release changelog"):
+                publish_main(["--check"])
+            query.assert_not_called()
+            publish.assert_not_called()
 
     def test_version_must_increase_without_reusing_a_published_or_draft_release(self):
         for candidate, existing in (
@@ -106,6 +146,12 @@ class ReleaseTests(unittest.TestCase):
             publish_main(["--check"])
             publish.assert_not_called()
             with mock.patch("publish_release.validated_assets", return_value=[self.root / "setup.exe"]):
+                def inspect_notes(command, **kwargs):
+                    notes = Path(command[command.index("--notes-file") + 1]).read_text(encoding="utf-8")
+                    self.assertTrue(notes.startswith(self.notes.strip()))
+                    self.assertIn("## Installation and updates", notes)
+                    self.assertNotIn("--generate-notes", command)
+                publish.side_effect = inspect_notes
                 publish_main([])
             publish.assert_called_once()
             command = publish.call_args.args[0]
@@ -117,6 +163,8 @@ class ReleaseTests(unittest.TestCase):
         for tag, prerelease in (("v1.0.0-alpha.1", True), ("v1.0.0-beta.1", True),
                                 ("v1.0.0-rc.1", True), ("v1.0.0", False),
                                 ("v1.0.0+build-tag", False)):
+            (self.notes_path.parent / f"{tag[1:]}.md").write_text(
+                f"# {tag[1:]}\n\n- Reviewed changes.\n", encoding="utf-8")
             with self.subTest(tag=tag), mock.patch("publish_release.check_publication", return_value=tag), mock.patch(
                     "publish_release.validated_assets", return_value=[self.root / "setup.exe"]), mock.patch(
                     "publish_release.subprocess.run") as publish:

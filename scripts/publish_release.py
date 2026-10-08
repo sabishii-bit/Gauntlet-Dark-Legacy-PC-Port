@@ -25,6 +25,21 @@ def require_new_version(tag, existing_tags):
             raise ValueError(f"Release {tag} must be newer than existing release {existing}")
 
 
+def changelog(tag):
+    """Every new release must carry reviewed notes for exactly its version."""
+    if not tag.startswith("v") or version_order(tag) is None:
+        raise ValueError("A changelog requires a semantic version tag")
+    path = ROOT / "docs" / "changelog" / f"{tag[1:]}.md"
+    try:
+        notes = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError as error:
+        raise ValueError(f"Missing release changelog: {path}") from error
+    heading, _, body = notes.partition("\n")
+    if heading != f"# {tag[1:]}" or not body.strip():
+        raise ValueError(f"Changelog must have a matching version heading and release notes: {path}")
+    return notes
+
+
 def check_publication():
     """Fail closed before building and again before publishing, without mutating GitHub."""
     if os.environ.get("GITHUB_EVENT_NAME") != "push":
@@ -32,6 +47,7 @@ def check_publication():
     tag = validate_tag(os.environ["RELEASE_TAG"])
     if os.environ.get("GITHUB_REF") != f"refs/tags/{tag}":
         raise ValueError("Publication requires the matching version tag, not a branch")
+    changelog(tag)
     # --paginate includes old versions and drafts. Authentication/network failures abort,
     # rather than being mistaken for proof that the version has not been published.
     existing = subprocess.check_output(
@@ -79,7 +95,7 @@ def main(argv=None):
     heading = ("Prerelease QA build — expect bugs and keep backups of your saves.\n\n"
                if prerelease else "Keep backups of your saves before updating.\n\n")
     notes = (
-        heading +
+        changelog(tag) + "\n\n## Installation and updates\n\n" + heading +
         "Windows 10/11 x64: download and run the `windows-x64-setup.exe`. "
         "It is unsigned; only use downloads from this project's release page.\n\n"
         "Linux x64: extract the `linux-x64-setup.tar.gz`, then open the executable "
@@ -104,7 +120,7 @@ def main(argv=None):
         path.write_text(notes, encoding="utf-8")
         subprocess.run(["gh", "release", "create", tag, "--verify-tag", *(["--prerelease"] if prerelease else []),
                         "--title", f"Gauntlet Dark Legacy {tag}", "--notes-file", str(path),
-                        "--generate-notes", *map(str, assets)], cwd=ROOT, check=True)
+                        *map(str, assets)], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":
