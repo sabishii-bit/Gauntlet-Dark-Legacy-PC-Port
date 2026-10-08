@@ -189,6 +189,9 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         out.yaw = record->follows() ? critter.yaw : 0.0f;
         out.scale = record->scale * critter.scale;
         out.life = record->life;
+        // CritterDoSfxSub maps SFXX 0x800000 to StartFXTree's 0x20000000:
+        // play once even with a positive lifetime (Garm's death body lasts 300s).
+        out.loop = (record->flags & CombatEffectDefinition::kNoLoop) == 0;
         const Vec3 offset = record->offset + (damage != nullptr ? damage->offset : Vec3{0});
         if (damage != nullptr) {
             out.pitchYaw = {damage->pitch, damage->yaw};

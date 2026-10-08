@@ -82,7 +82,8 @@ struct CombatEffectDefinition {
     static constexpr u32 kShakes = 0x2;            ///< shakes the camera
     static constexpr u32 kArenaCue = 0x20;         ///< invokes the current boss arena's callback
     static constexpr u32 kUntilNextMove = 0x40000; ///< removed when its owner's move changes
-    static constexpr u32 kSkin = 0x100; ///< texture sequence applied to the creature itself
+    static constexpr u32 kSkin = 0x100;      ///< texture sequence applied to the creature itself
+    static constexpr u32 kNoLoop = 0x800000; ///< timed effects hold their final pose
 
     std::string tree;        ///< "ATK01FX"; "NULLFX" or empty shows nothing
     std::string soundFormat; ///< "S_GOL%cSWING"

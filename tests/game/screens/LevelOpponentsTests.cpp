@@ -632,6 +632,92 @@ TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual
     opponents.close();
 }
 
+TEST_CASE("Garm's death effects play once at their native cue frames and hold through victory",
+          "[level-opponents][garm][garm-death][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELH4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("CRITTER/GARM.WAD");
+    test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("H4");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, {});
+    auto& boss = opponents.bosses();
+    REQUIRE(boss.present());
+    boss.wake();
+    EnemyHit hit;
+    hit.damage = 1000000;
+    boss.hurt(hit);
+    REQUIRE_FALSE(boss.view().alive);
+
+    s32 frame = 0;
+    s32 victoryFrame = -1;
+    s32 victories = 0;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.spew = [](const CombatSpew&) {};
+    events.fallen = [&](const Vec3&) {
+        victoryFrame = frame;
+        ++victories;
+    };
+    std::array<s32, 2> starts{-1, -1};
+    std::array<u32, 2> ids{};
+    std::array<f32, 2> previousFrames{};
+    constexpr std::array kNames{"GAR1DEATH1", "GAR1DEATH2"};
+    for (frame = 0; frame < 600; ++frame) {
+        opponents.update(2, 1.0f / 30, {}, {}, events);
+        effects.update(1.0f / 30);
+        for (usize i = 0; i < effects.count(); ++i) {
+            const auto& effect = effects.effect(i);
+            for (usize part = 0; part < kNames.size(); ++part) {
+                if (effect.name != kNames[part]) {
+                    continue;
+                }
+                if (starts[part] < 0) {
+                    starts[part] = frame;
+                    ids[part] = effect.id;
+                }
+                REQUIRE(effect.id == ids[part]);
+                REQUIRE_FALSE(effect.repeats);
+                // A wrap is visible even if no new effect instance was created.
+                REQUIRE(effect.player.frame() >= previousFrames[part]);
+                previousFrames[part] = effect.player.frame();
+                CHECK(effect.player.secondsPerFrame() == Catch::Approx(1.0f / 30));
+                if (part == 0 && frame >= 250) {
+                    REQUIRE(effect.player.finished());
+                    CHECK(effect.player.frame() == 240);
+                    CHECK(effect.secondsLeft > 279);
+                }
+            }
+        }
+    }
+    // GARM.DEATH uses a 120/900-second frame period: cues at frames 1 and 30,
+    // then the 90-frame sequence and two-second hold before BossDeath.
+    CHECK(starts[0] >= 0);
+    CHECK(starts[0] <= 4);
+    CHECK(starts[1] - starts[0] == Catch::Approx(116).margin(1));
+    CHECK(victories == 1);
+    CHECK(victoryFrame == Catch::Approx(420).margin(2));
+    CHECK_FALSE(boss.present());
+    CHECK(effects.playing(ids[0]));
+    CHECK_FALSE(effects.playing(ids[1]));
+    CHECK(previousFrames[1] == 403);
+    opponents.close();
+    CHECK_FALSE(effects.playing(ids[0]));
+}
+
 TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",
           "[game][screens][level-opponents][chimera][assets]") {
     const auto root =

@@ -1318,6 +1318,43 @@ TEST_CASE("pattern bosses taunt between attacks without competing with ready pri
     CHECK(count == (wounded ? 0 : 3));
 }
 
+TEST_CASE("timed combatant effects honor each linked record's no-loop flag",
+          "[combatant][garm-death]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+        "descriptors":[{"prefix":"BODY","type":4}],
+        "types":[{"moveCount":2,"maxHealth":100,"radius":4}],
+        "moves":[{"name":"READY","anim":"STEP","type":32},
+                 {"name":"DEATH","anim":"STEP","type":17,"priority":4095,
+                  "sfx":0,"sfxFrame":1,"hold":2}],
+        "sounds":[{"name":"DEATH_BODY","flags":8388608,"life":300,"link":1},
+                  {"name":"DEATH_LOOP","flags":0,"life":300}]
+    })");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 10000;
+    actor.hurt(hit);
+    REQUIRE_FALSE(actor.alive());
+    actor.update(2, 1.0f / 30, {});
+    const auto cues = actor.takeCues();
+    REQUIRE(cues.size() == 2);
+    CHECK(cues[0].tree == "DEATH_BODY");
+    CHECK_FALSE(cues[0].loop);
+    CHECK(cues[0].life == 300);
+    CHECK(cues[1].tree == "DEATH_LOOP");
+    CHECK(cues[1].loop);
+    CHECK(cues[1].life == 300);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.takeCues().empty());
+    }
+    CHECK_FALSE(actor.present());
+}
+
 TEST_CASE("combatants preserve elemental immunity and sub-one damage", "[combatant][damage]") {
     for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
         CAPTURE(definition.name);
