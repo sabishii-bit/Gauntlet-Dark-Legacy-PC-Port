@@ -7,6 +7,7 @@ include(Catch)
 
 add_executable(tests
     game/app/BuildLabelTests.cpp
+    game/app/GameCursorTests.cpp
     game/screens/PlaySceneRumbleTests.cpp
     game/world/StaticSceneryTests.cpp
     game/config/ControlProfilesTests.cpp

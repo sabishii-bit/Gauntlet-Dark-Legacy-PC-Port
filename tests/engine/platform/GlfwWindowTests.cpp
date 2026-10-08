@@ -1,11 +1,30 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include "engine/platform/Window.h"
+
+TEST_CASE("window cursors can be installed, replaced and reset without changing input capture",
+          "[gpu][cursor-window]") {
+    auto window = gdl::createGlfwWindow({"gdl cursor test", 320, 240});
+    CHECK_FALSE(window->setCursor({}, 0, 0));
+    const auto first = gdl::Image::filled(16, 16, gdl::Color::rgba(200, 0, 160, 255));
+    REQUIRE(window->setCursor(first, 2, 3));
+    CHECK_FALSE(window->cursorCaptured());
+    CHECK_FALSE(window->setCursor(first, 16, 0));
+    CHECK_FALSE(window->setCursor(first, 0, 16));
+    CHECK_FALSE(window->setCursor(gdl::Image{16, 16, {1, 2, 3}}, 0, 0));
+    REQUIRE(window->setCursor(gdl::Image::filled(32, 32, gdl::Color::white()), 5, 5));
+    window->pollEvents();
+    CHECK_FALSE(window->cursorCaptured());
+    window->resetCursor();
+    window->resetCursor();
+    REQUIRE(window->setCursor(first, 0, 0)); // destruction owns the final live cursor
+}
+
 #ifdef _WIN32
 #include <chrono>
 #include <thread>
 
-#include <catch2/catch_test_macros.hpp>
 #include <windows.h>
-
-#include "engine/platform/Window.h"
 
 TEST_CASE("controller polling leaves an idle GLFW window responsive to Windows",
           "[gpu][window-responsive]") {

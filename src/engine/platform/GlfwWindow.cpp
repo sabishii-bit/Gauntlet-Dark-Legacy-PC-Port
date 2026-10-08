@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <span>
 
 #ifdef _WIN32
@@ -167,6 +168,7 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
 
 GlfwWindow::~GlfwWindow() {
     m_gamepads.stop();
+    resetCursor();
     if (m_window != nullptr) {
         glfwDestroyWindow(m_window);
     }
@@ -211,6 +213,36 @@ void GlfwWindow::setIcon(std::span<const Image> images) {
                                     pixels.back().data()});
     }
     glfwSetWindowIcon(m_window, static_cast<s32>(handles.size()), handles.data());
+}
+
+bool GlfwWindow::setCursor(const Image& image, u32 hotX, u32 hotY) {
+    if (image.width == 0 || image.height == 0 ||
+        image.width > static_cast<u32>(std::numeric_limits<s32>::max()) ||
+        image.height > static_cast<u32>(std::numeric_limits<s32>::max()) ||
+        image.pixels.size() != u64{image.width} * image.height * 4 || hotX >= image.width ||
+        hotY >= image.height) {
+        return false;
+    }
+    // GLFW accepts straight RGBA and copies the pixels during creation.
+    auto pixels = image.pixels;
+    const GLFWimage bitmap{static_cast<s32>(image.width), static_cast<s32>(image.height),
+                           pixels.data()};
+    GLFWcursor* cursor = glfwCreateCursor(&bitmap, static_cast<s32>(hotX), static_cast<s32>(hotY));
+    if (cursor == nullptr) {
+        return false;
+    }
+    glfwSetCursor(m_window, cursor);
+    glfwDestroyCursor(m_cursor);
+    m_cursor = cursor;
+    return true;
+}
+
+void GlfwWindow::resetCursor() {
+    if (m_cursor != nullptr) {
+        glfwSetCursor(m_window, nullptr);
+        glfwDestroyCursor(m_cursor);
+        m_cursor = nullptr;
+    }
 }
 
 void GlfwWindow::pollKeyboard() {

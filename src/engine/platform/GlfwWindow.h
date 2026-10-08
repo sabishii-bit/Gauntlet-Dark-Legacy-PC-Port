@@ -6,6 +6,7 @@
 
 struct GLFWwindow;
 struct GLFWmonitor;
+struct GLFWcursor;
 
 namespace gdl {
 
@@ -32,6 +33,8 @@ public:
     }
     void stopRumble() override { m_gamepads.stop(); }
     void setIcon(std::span<const Image> images) override;
+    bool setCursor(const Image& image, u32 hotX, u32 hotY) override;
+    void resetCursor() override;
 
     std::vector<const char*> requiredVulkanInstanceExtensions() const override;
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* outSurface) const override;
@@ -43,6 +46,7 @@ private:
     static void keyCallback(GLFWwindow* window, s32 key, s32 scancode, s32 action, s32 mods);
 
     GLFWwindow* m_window = nullptr;
+    GLFWcursor* m_cursor = nullptr;
     Input m_input;
     Gamepads m_gamepads;
     GLFWmonitor* m_desktopMonitor = nullptr;

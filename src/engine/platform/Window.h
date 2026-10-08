@@ -64,6 +64,11 @@ public:
      * platform has no window icons. */
     virtual void setIcon(std::span<const Image> images) = 0;
 
+    /** Client-area pointer with a pixel hotspot. Invalid images or platform failures
+     * leave the current cursor unchanged. The image is copied before returning. */
+    virtual bool setCursor(const Image& image, u32 hotX, u32 hotY) = 0;
+    virtual void resetCursor() = 0;
+
     virtual std::vector<const char*> requiredVulkanInstanceExtensions() const = 0;
     virtual bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* outSurface) const = 0;
 };

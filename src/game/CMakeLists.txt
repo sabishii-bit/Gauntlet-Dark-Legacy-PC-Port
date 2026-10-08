@@ -37,6 +37,7 @@ add_library(game STATIC
     screens/ShopLayout.cpp
     app/Gauntlet.h
     app/Gauntlet.cpp
+    app/GameCursor.cpp
     app/BuildLabel.cpp
     app/LevelCompletion.h
     app/MusicDuck.h

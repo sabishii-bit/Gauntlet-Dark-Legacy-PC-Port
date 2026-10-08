@@ -17,6 +17,7 @@
 #include "engine/render/RenderTypes.h"
 
 #include "formats/TplFile.h"
+#include "game/app/GameCursor.h"
 #include "game/app/Scenario.h"
 #include "game/config/ControlProfiles.h"
 #include "game/menu/MenuInput.h"
@@ -67,6 +68,11 @@ void Gauntlet::onInit() {
     // A saved exclusive resolution may no longer exist after moving displays.
     m_config.display.windowMode = window().windowMode();
     applyWindowIcon();
+    if (const auto cursor = GameCursor::load(m_options.unpackedDirectory)) {
+        if (!window().setCursor(cursor->image, cursor->hotX, cursor->hotY)) {
+            log::warn("Custom mouse cursor unavailable; retaining the system pointer");
+        }
+    }
     m_buildLabel.load(renderDevice());
     if (!m_strings.load(m_options.dataDirectory / kTextDirectory, m_config.text.language)) {
         log::warn("No text tables under {}; identifiers will show instead of text",
