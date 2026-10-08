@@ -189,8 +189,9 @@ TEST_CASE("native world fire templates resolve to heat sources across the level 
 
 TEST_CASE("courtyard native pool fires submit live heat without a synthetic particle preset",
           "[heat][particles][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path();
     WorldLayout layout;
-    REQUIRE(layout.load(test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path()));
+    REQUIRE(layout.load(directory));
     const auto source = std::ranges::find_if(
         layout.particleTemplates(), [](const auto& entry) { return entry.texture == "POOLFIRE"; });
     REQUIRE(source != layout.particleTemplates().end());
