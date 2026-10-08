@@ -2955,6 +2955,43 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
     }
 }
 
+TEST_CASE("fire shield uses the retail one-unit contact band rather than its flame bounds",
+          "[game][player-attacks][fire-shield][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    auto& player = f.players[0];
+    player.actor.spawn(0, {}, f.classes.stats(0), {}, 0);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    player.actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kFireShield, 0,
+                                                        60);
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    EnemyScales scales;
+    scales.health = 100;
+    enemies.open(f.device, root, nullptr, 4, scales, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id =
+        enemies.spawn({.kind = kGruntKind, .tier = 3, .position = {0, 0, 10}, .placed = true}, {});
+    REQUIRE(id);
+    const auto targets = enemies.targets();
+    REQUIRE(targets.size() == 1);
+    const auto& target = targets.front();
+    // PlayerMotion (80081504): targetDistance < col_radius + 1.0,
+    // with the enemy radius already removed by PlayerGetTarget/closest_enemy.
+    const f32 boundary = player.actor.radius() + target.radius + 1.0f;
+    for (const f32 offset : {0.125f, 0.0f, -0.125f}) {
+        CAPTURE(offset, boundary);
+        player.actor.place(target.base - Vec3{0, 0, boundary + offset});
+        const f32 health = enemies.healthOf(*id);
+        f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+        CHECK((enemies.healthOf(*id) < health) == (offset < 0));
+    }
+}
+
 TEST_CASE("melee acquires ahead of the requested heading, within a swing or a step",
           "[game][screens][player-attacks][melee][alpha-auto-melee][assets]") {
     const auto root =

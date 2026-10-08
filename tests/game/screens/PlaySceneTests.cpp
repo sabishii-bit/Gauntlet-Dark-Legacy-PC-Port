@@ -4793,6 +4793,101 @@ TEST_CASE("tower portal columns draw after horizon sheets while retaining wall o
     scene.close();
 }
 
+TEST_CASE("fire shield flames composite after gates and deferred scenery",
+          "[game][screens][fire-shield][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    test::FakeRenderDevice device;
+    ItemArchive weapons;
+    ItemArchive powerups;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    PowerupCompanion flame;
+    flame.choose(device, PowerupCompanion::Kind::FireShield, powerups, &weapons);
+    REQUIRE(flame.shown());
+    std::set<std::vector<u8>> flamePixels;
+    for (s32 tick = 0; tick < 90; ++tick) {
+        flame.update(1.0f / 30, PlayerAnimator::Action::ShieldRun, false, false);
+        device.draws.clear();
+        flame.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr);
+        for (const auto& draw : device.draws) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            REQUIRE(texture);
+            flamePixels.insert(texture->pixels);
+        }
+    }
+    REQUIRE_FALSE(flamePixels.empty());
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kFireShield, 0, 120);
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 tick = 0; tick < 600 && awaitingEntrance(scene); ++tick) {
+        scene.update(1.0 / 30, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    PlayScene::Inputs walking{};
+    walking[0].move = {{0, 1}, 1};
+    for (s32 tick = 0; tick < 5; ++tick) {
+        scene.update(1.0 / 30, walking);
+    }
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::ShieldRun);
+    device.draws.clear();
+    scene.gates().draw(device, Mat4{1}, {});
+    std::set<const Texture*> gates;
+    for (const auto& draw : device.draws) {
+        gates.insert(draw.texture);
+    }
+    REQUIRE_FALSE(gates.empty());
+    const auto camera = CameraFrame::of(scene.viewCamera());
+    device.draws.clear();
+    world.scene().drawDeferred(device, Mat4{1}, camera);
+    std::set<const Texture*> scenery;
+    for (const auto& draw : device.draws) {
+        scenery.insert(draw.texture);
+    }
+    device.draws.clear();
+    scene.render(device, makeScreenProjection(640, 448), 640, 448);
+    std::optional<usize> firstFlame;
+    std::optional<usize> lastGate;
+    std::optional<usize> lastScenery;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        const auto& draw = device.draws[i];
+        const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+        if (texture && flamePixels.contains(texture->pixels)) {
+            if (!firstFlame) {
+                firstFlame = i;
+            }
+            CHECK(draw.state.depthTest);
+            CHECK_FALSE(draw.state.depthWrite);
+        }
+        if (gates.contains(draw.texture)) {
+            lastGate = i;
+        }
+        if (scenery.contains(draw.texture)) {
+            lastScenery = i;
+        }
+    }
+    REQUIRE(firstFlame);
+    REQUIRE(lastGate);
+    REQUIRE(lastScenery);
+    CHECK(*lastGate < *firstFlame);
+    CHECK(*lastScenery < *firstFlame);
+    scene.close();
+}
+
 TEST_CASE("fully unlocked Knight walks both tower wing gates in both directions",
           "[game][screens][tower-wings][assets]") {
     const auto root = unpackedRoot();

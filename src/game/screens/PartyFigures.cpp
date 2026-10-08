@@ -157,7 +157,7 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         const WorldLighting lighting = runtime.glow.apply(world.lighting());
         figure.draw(device, clip, body, lighting, alpha, runtime.move.weaponHidden(), &camera,
                     presentationBlend(runtime, scene.frameBlend),
-                    runtime.actor.player() == scene.occupiedHand);
+                    runtime.actor.player() == scene.occupiedHand, TreeModel::Pass::DepthWriting);
         figure.drawHeadwear(device, world.powerups(), worn, clip, body, lighting, alpha);
         figure.drawGem(device, world.powerups(), runtime.gem.shown(), clip, body, lighting, alpha);
         // Who is it wears the realm's sign on their back (player.c 5885).
@@ -165,6 +165,22 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
             figure.drawMarker(device, world.realmItems(), kItSign, clip, body, lighting, alpha);
         }
         figure.setSkinTexture(nullptr);
+    }
+}
+
+void PartyFigures::drawEffects(RenderDevice& device, std::span<const PlayerRuntime> players,
+                               const Scene& scene, const Mat4& clip, const CameraFrame& camera) {
+    for (const PlayerRuntime& runtime : players) {
+        if (!shown(runtime, scene)) {
+            continue;
+        }
+        const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
+        const Mat4 body = PlayerFigure::bodyPlacement(
+            departurePlacement(runtime, scene.departure, scene.frameBlend), runtime.actor.save(),
+            worn);
+        runtime.figure->drawCompanion(
+            device, clip, body, runtime.glow.apply(scene.world.lighting()), alphaOf(runtime, worn),
+            &camera, presentationBlend(runtime, scene.frameBlend), TreeModel::Pass::Effects);
     }
 }
 

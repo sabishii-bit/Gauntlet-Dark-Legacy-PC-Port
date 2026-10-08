@@ -60,6 +60,9 @@ public:
 
     void draw(RenderDevice& device, std::span<const PlayerRuntime> players, const Scene& scene,
               const Mat4& clip, const CameraFrame& camera) const;
+    /** Non-depth-writing companion parts, after gates and deferred world scenery. */
+    static void drawEffects(RenderDevice& device, std::span<const PlayerRuntime> players,
+                            const Scene& scene, const Mat4& clip, const CameraFrame& camera);
     /** Follows each member's head gem, bursting GETGEMORANGE about them as one appears
      * (StartGemFX, player.c 5633). */
     static void greetGems(RenderDevice& device, std::span<PlayerRuntime> players,

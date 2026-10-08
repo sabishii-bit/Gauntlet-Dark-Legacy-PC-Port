@@ -70,7 +70,8 @@ public:
         m_textures.advance(0);
     }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& at, const WorldLighting& lighting,
-              f32 alpha, const CameraFrame* camera, f32 renderAlpha = -1.0f) const;
+              f32 alpha, const CameraFrame* camera, f32 renderAlpha = -1.0f,
+              TreeModel::Pass pass = TreeModel::Pass::All) const;
     void clear();
 
     Kind kind() const { return m_kind; }

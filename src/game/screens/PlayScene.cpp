@@ -1277,6 +1277,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                &effectCamera, opponentBlend, TreeModel::Pass::Effects);
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera, effectBlend);
+    PartyFigures::drawEffects(device, m_players, figureScene(frameBlend), clip, effectCamera);
     drawShadows(device, clip, camera.position, frameBlend, opponentBlend);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.

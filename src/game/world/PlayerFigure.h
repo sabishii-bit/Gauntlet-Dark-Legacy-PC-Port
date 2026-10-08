@@ -68,8 +68,12 @@ public:
     }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, f32 alpha, bool hideWeapon,
-              const CameraFrame* camera = nullptr, f32 frameBlend = 1.0f,
-              bool handOccupied = false) const;
+              const CameraFrame* camera = nullptr, f32 frameBlend = 1.0f, bool handOccupied = false,
+              TreeModel::Pass companionPass = TreeModel::Pass::All) const;
+    /** Companion effects can composite after scenery without redrawing the body or held gear. */
+    void drawCompanion(RenderDevice& device, const Mat4& clip, const Mat4& body,
+                       const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
+                       f32 frameBlend, TreeModel::Pass pass) const;
     /** Retail head equipment, attached to the posed HEAD object. The level's
      * powerup archive must outlive this figure, like its other borrowed draw resources. */
     void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,

@@ -16,6 +16,28 @@ using Catch::Approx;
 using Kind = PowerupCompanion::Kind;
 using Action = PlayerAnimator::Action;
 
+TEST_CASE("fire shield flames retain world depth testing without writing depth",
+          "[game][world][companion][fire-shield][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive weapons;
+    ItemArchive powerups;
+    REQUIRE(weapons.load(root));
+    PowerupCompanion flame;
+    flame.choose(device, Kind::FireShield, powerups, &weapons);
+    REQUIRE(flame.shown());
+    flame.update(1.0f / 30, Action::ShieldRun, false, false);
+    flame.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, -1, TreeModel::Pass::DepthWriting);
+    CHECK(device.draws.empty());
+    flame.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, -1, TreeModel::Pass::Effects);
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        CHECK(draw.blend() == BlendMode::Alpha);
+        CHECK(draw.state.depthTest);
+        CHECK_FALSE(draw.state.depthWrite);
+    }
+}
+
 TEST_CASE("one powerup companion at a time, in the original's order", "[game][world][companion]") {
     PowerupEffects worn;
     CHECK(PowerupCompanion::choose(worn, false) == Kind::None);
@@ -95,6 +117,18 @@ TEST_CASE("the powerup companions come from their archives and play as asked",
         companion.update(1.0f / 30.0f, Action::Ready, false, false);
         companion.draw(device, Mat4{1.0f}, Mat4{1.0f}, WorldLighting{}, 1.0f, nullptr);
         CHECK_FALSE(device.draws.empty());
+        const usize complete = device.draws.size();
+        device.draws.clear();
+        companion.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, -1, TreeModel::Pass::DepthWriting);
+        for (const auto& draw : device.draws) {
+            CHECK(draw.state.depthWrite);
+        }
+        const usize solid = device.draws.size();
+        companion.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, -1, TreeModel::Pass::Effects);
+        CHECK(device.draws.size() == complete);
+        for (usize i = solid; i < device.draws.size(); ++i) {
+            CHECK_FALSE(device.draws[i].state.depthWrite);
+        }
     }
     // Without the weapon archive the blaze has nothing to show.
     PowerupCompanion blaze;

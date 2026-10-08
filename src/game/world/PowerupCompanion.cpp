@@ -165,7 +165,7 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
 
 void PowerupCompanion::draw(RenderDevice& device, const Mat4& clip, const Mat4& at,
                             const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
-                            f32 renderAlpha) const {
+                            f32 renderAlpha, TreeModel::Pass pass) const {
     if (m_tree != nullptr) {
         const f32 blend = renderAlpha < 0 || m_presentationAdvanced ? renderAlpha : 1.0f;
         f32 frame = m_player.frame();
@@ -182,7 +182,7 @@ void PowerupCompanion::draw(RenderDevice& device, const Mat4& clip, const Mat4& 
         m_model.setPresentationFrame(m_player.sequence(), frame);
         m_textures.apply(m_model, *m_tree, m_player.sequence(), frame,
                          m_textures.presentationOffset(blend));
-        m_model.draw(device, clip, at, lighting, pose->matrices(), camera, alpha);
+        m_model.draw(device, clip, at, lighting, pose->matrices(), camera, alpha, pass);
     }
 }
 

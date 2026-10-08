@@ -506,23 +506,15 @@ void PlayerFigure::applyCostumeTextures(TreeModel& model, f32 frameBlend) const 
 
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon,
-                        const CameraFrame* camera, f32 frameBlend, bool handOccupied) const {
+                        const CameraFrame* camera, f32 frameBlend, bool handOccupied,
+                        TreeModel::Pass companionPass) const {
     preparePresentation(frameBlend);
     applyCostumeTextures(m_model, frameBlend);
     applyCostumeTextures(m_weapon, frameBlend);
     m_model.draw(device, clip, body, lighting, m_visualTransforms, camera, alpha);
     // The earned familiar is its own skin tree (PlayerProcessSkinFX), beside any companion.
     m_familiar.draw(device, clip, body, lighting, alpha, camera, frameBlend);
-    std::optional<Mat4> mount = body;
-    switch (PowerupCompanion::mountOf(m_companion.kind())) {
-    case PowerupCompanion::Mount::Head: mount = visualAttachment(body, "HEAD"); break;
-    case PowerupCompanion::Mount::Back: mount = visualAttachment(body, m_backNode); break;
-    case PowerupCompanion::Mount::Body: break;
-    }
-    if (mount.has_value()) {
-        m_companion.draw(device, clip, *mount, lighting, alpha * m_companionAlpha, camera,
-                         frameBlend);
-    }
+    drawCompanion(device, clip, body, lighting, alpha, camera, frameBlend, companionPass);
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
     if (m_armHeld) {
@@ -553,6 +545,29 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
                               alpha * ghost.alpha());
             }
         }
+    }
+}
+
+void PlayerFigure::drawCompanion(RenderDevice& device, const Mat4& clip, const Mat4& body,
+                                 const WorldLighting& lighting, f32 alpha,
+                                 const CameraFrame* camera, f32 frameBlend,
+                                 TreeModel::Pass pass) const {
+    if (!m_companion.shown()) {
+        return;
+    }
+    const auto mountKind = PowerupCompanion::mountOf(m_companion.kind());
+    if (mountKind != PowerupCompanion::Mount::Body) {
+        preparePresentation(frameBlend);
+    }
+    std::optional<Mat4> mount = body;
+    switch (mountKind) {
+    case PowerupCompanion::Mount::Head: mount = visualAttachment(body, "HEAD"); break;
+    case PowerupCompanion::Mount::Back: mount = visualAttachment(body, m_backNode); break;
+    case PowerupCompanion::Mount::Body: break;
+    }
+    if (mount) {
+        m_companion.draw(device, clip, *mount, lighting, alpha * m_companionAlpha, camera,
+                         frameBlend, pass);
     }
 }
 
