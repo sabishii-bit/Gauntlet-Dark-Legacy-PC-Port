@@ -77,6 +77,9 @@ public:
     /** Continuous scroll sampled relative to the current whole texture frame. Native
      * offset queries remain unchanged; phase includes each axis's rate-divider remainder. */
     void setTextureScroll(u32 slot, const Vec2& offset, const Vec2& phase, const Vec2& velocity);
+    /** Whole authored texture frames elapsed; heat follows this clock plus the same
+     * fractional draw sample as animated materials, never wall-clock time. */
+    void setTextureTime(u32 frame) { m_textureFrame = frame; }
     /** The texture drawn for a slot, or null when the scene never draws it. */
     const Texture* textureOf(u32 slot) const;
     Vec2 textureOffset(u32 slot) const;
@@ -127,6 +130,7 @@ private:
         Vec2 scrollVelocity{0.0f};
         bool translucent = false;
         bool usable = false;
+        bool thermal = false;
 
         const Texture* current() const { return frame != nullptr ? frame : texture; }
         Vec2 presentedOffset(std::optional<f32> frameOffset) const;
@@ -194,6 +198,7 @@ private:
     std::vector<Placement> m_placements;
     WorldLighting m_lighting;
     f32 m_darken = 0.0f;
+    u32 m_textureFrame = 0;
     usize m_placed = 0;
     usize m_triangles = 0;
     mutable std::vector<Mat4> m_world; ///< per object, composed for the frame being drawn

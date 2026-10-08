@@ -4,6 +4,7 @@
 
 #include "game/players/PowerupEffects.h"
 #include "game/screens/PowerupSelector.h"
+#include "game/screens/StatusBox.h"
 
 namespace {
 
@@ -11,7 +12,8 @@ using namespace gdl;
 using namespace gdl::game;
 using State = PowerupSelector::State;
 
-TEST_CASE("the inventory label rests above the fitted turbo strip", "[selector][inventory-label]") {
+TEST_CASE("the inventory label rests immediately above the runestones",
+          "[selector][inventory-label]") {
     Inventory inventory;
     inventory.powerups[0] = {30, 9, 0, 4, false};
     PowerupSelector selector;
@@ -19,8 +21,11 @@ TEST_CASE("the inventory label rests above the fitted turbo strip", "[selector][
     selector.step({}, inventory, 1);
     REQUIRE(selector.showing());
     CHECK(PowerupSelector::kLabelX == 24);
-    CHECK(selector.labelY(320) == 289);
-    CHECK(selector.labelY(320) + 32 * PowerupSelector::kLabelScale < 304);
+    CHECK(selector.labelY(StatusBoxPainter::kY) == 291);
+    const f32 bottom =
+        static_cast<f32>(selector.labelY(StatusBoxPainter::kY)) + 32 * PowerupSelector::kLabelScale;
+    CHECK(bottom < StatusBoxPainter::kRuneY);
+    CHECK(StatusBoxPainter::kRuneY - bottom < 1.0f);
 }
 
 SelectorInput press(bool up, bool down, bool left, bool right) {

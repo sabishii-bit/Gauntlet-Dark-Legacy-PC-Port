@@ -414,10 +414,11 @@ TEST_CASE("native inventory labels remain below crystal counts in every player l
         canvas.end();
         REQUIRE(device.draws.size() == 1);
         CHECK(test::minCorner(device.draws.front()).y > countBottom);
-        CHECK(test::maxCorner(device.draws.front()).y <= StatusBoxPainter::kBarY);
+        CHECK(test::maxCorner(device.draws.front()).y < StatusBoxPainter::kRuneY);
+        CHECK(StatusBoxPainter::kRuneY - test::maxCorner(device.draws.front()).y < 1.0f);
         test::FakeRenderDevice expected;
         canvas.begin(expected, Mat4{1});
-        text.draw(canvas, lane * 128 + 24, 289, strings.get("powerup.invisible"),
+        text.draw(canvas, lane * 128 + 24, 291, strings.get("powerup.invisible"),
                   TextStyle{0.45f, Color::white()});
         canvas.end();
         REQUIRE(expected.draws.size() == 1);

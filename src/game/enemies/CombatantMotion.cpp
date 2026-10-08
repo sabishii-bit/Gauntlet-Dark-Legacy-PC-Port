@@ -22,6 +22,40 @@ constexpr f32 kBlindTurnShare = 0.1f;
 constexpr f32 kSupportReach = 0.1f;
 constexpr u32 kReturnFacing = 0x20;
 constexpr u32 kNodeMovement = 0x100;
+
+Vec3 travelWorld(const WorldCollision& collision, const Vec3& from, const Vec3& wanted,
+                 f32 radius) {
+    const Vec3 offset{wanted.x - from.x, 0, wanted.z - from.z};
+    const f32 stepLength = std::max(kFootClearance, 0.5f * radius);
+    const auto steps = std::max(1, static_cast<s32>(std::ceil(glm::length(offset) / stepLength)));
+    const Vec3 stride = offset / static_cast<f32>(steps);
+    Vec3 position = from;
+    for (s32 i = 0; i < steps; ++i) {
+        const Vec3 next =
+            collision.sweepWalls(position, position + stride, radius, position.y + kFootClearance,
+                                 position.y + kWallProbeHeight);
+        const Vec3 delta = next - position;
+        const f32 distance = glm::length(Vec2{delta.x, delta.z});
+        if (distance <= 0) {
+            break;
+        }
+        // CritterCollideWorld (0x80035408) checks support a wall radius beyond
+        // the destination before committing movement. A floor ray at the centre
+        // alone lets a charge step onto a ship's sloping hull and off the deck.
+        const f32 reach = radius + distance;
+        const Vec3 ahead = position + delta * (reach / distance);
+        const auto lead = collision.floorAt(ahead, kStepUp, kDrop);
+        if (!lead || std::abs(lead->y - position.y) > 2.0f * reach) {
+            break;
+        }
+        const auto floor = collision.floorAt(next, kStepUp, kDrop);
+        if (!floor) {
+            break;
+        }
+        position = {next.x, floor->y, next.z};
+    }
+    return position;
+}
 } // namespace
 void Combatant::rememberFloor() {
     Actor& actor = m_actor;
@@ -195,14 +229,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         return true;
     }
     if (m_collision != nullptr) {
-        const f32 wallRadius = critter.definition->wallRadius();
-        to = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance,
-                                       to.y + kWallProbeHeight);
-        const auto floor = m_collision->floorAt(to, kStepUp, kDrop);
-        if (!floor.has_value()) {
-            return false;
-        }
-        to.y = floor->y;
+        to = travelWorld(*m_collision, critter.position, to, critter.definition->wallRadius());
     }
     if (blockedByItems(critter, to)) {
         return false;

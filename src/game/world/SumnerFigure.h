@@ -45,7 +45,10 @@ public:
     /** Cuts to one of kSequences at once; the idle cycle resumes after it. */
     void play(s32 index);
     void update(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    /** Marks fixed updates that hold his animation as well as those that advance it. */
+    void capturePresentation() { m_presentationAdvanced = false; }
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 frameBlend = -1.0f) const;
 
     const Vec3& position() const { return m_position; }
     f32 yaw() const { return m_yaw; }
@@ -63,13 +66,16 @@ public:
 private:
     u32 sequenceFor(s32 index) const;
 
-    TreeModel m_model;
+    mutable TreeModel m_model;
     const TreeInfo* m_tree = nullptr;
     std::array<s32, kSequences.size()> m_sequences{-1, -1, -1, -1, -1, -1, -1};
     s32 m_index = 0;
     bool m_cutIn = false; ///< the next change starts at once rather than at the end
     AnimationPlayer m_player;
     TreePose m_pose;
+    f32 m_previousFrame = 0;
+    u64 m_previousGeneration = 0;
+    bool m_presentationAdvanced = false;
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     f32 m_yaw = 0.0f;
     Mat4 m_transform{1.0f};

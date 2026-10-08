@@ -259,6 +259,7 @@ void TextureAnimator::step(u32 ticks) {
 }
 
 void TextureAnimator::apply(WorldScene& scene) const {
+    scene.setTextureTime(m_frame);
     // Separate U and V records may address the same texture (Temple rain).
     // Compose this frame's records, not the previous frame's offset.
     struct Scroll {

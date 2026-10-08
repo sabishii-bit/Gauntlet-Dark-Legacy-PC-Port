@@ -48,7 +48,10 @@ void LevelTransporters::bind(RenderDevice& device, const WorldLayout& layout, It
         pad.position = instance.position;
         pad.radius = info.radius;
         pad.height = info.height;
-        pad.transform = itemPlacement(pad.position, instance.rotation);
+        // TRANS includes a floor-level textured skirt. Keep the ordinary fixture
+        // clearance on its artwork, without raising the contact or landing anchor.
+        pad.transform =
+            itemPlacement(pad.position + Vec3{0, ItemFigure::kFloorLift, 0}, instance.rotation);
         if (m_tree != nullptr && pad.model.bind(*m_tree, art.models, art.textures, device)) {
             pad.pose.rest(*m_tree);
             if (const auto sequence = m_tree->findSequence("ACTIVE")) {

@@ -767,6 +767,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_towerRelics.capturePresentation();
     m_arrival.capturePresentation();
     m_transporters.capturePresentation();
+    m_sumner.capturePresentation();
     m_promotion.capturePresentation();
     m_bossSequence.capturePresentation();
     m_opponentsAdvanced = false;
@@ -1246,7 +1247,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const CameraFrame companionCamera = CameraFrame::of(camera);
     m_world->drawOpaque(device, clip, camera, effectBlend);
     m_towerRelics.draw(device, clip, m_world->lighting(), camera, effectBlend);
-    m_sumner.draw(device, clip, m_world->lighting());
+    m_sumner.draw(device, clip, m_world->lighting(), effectBlend);
     m_figures.draw(device, m_players, figureScene(frameBlend), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting(), &companionCamera,
                    TreeModel::Pass::DepthWriting);

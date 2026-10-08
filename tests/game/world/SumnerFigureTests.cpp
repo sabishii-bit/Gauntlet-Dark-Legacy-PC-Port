@@ -6,10 +6,12 @@
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 #include "engine/world/WorldLighting.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/SumnerFigure.h"
 
 namespace {
@@ -19,6 +21,78 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+TEST_CASE("Sumner samples between ticks without advancing gestures or blending across cuts",
+          "[game][world][sumner-interpolation]") {
+    const auto dir = test::scratchDirectory("sumner-interpolation");
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"GWIZ","nodes":[
+        {"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":4,"frameRate":30,"repeats":true,
+        "tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[0,3]}]},
+        {"name":"WELCOME","frames":4,"frameRate":30,"repeats":false,
+        "tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[10,13]}]}]}]})");
+    test::convertModelFixture(dir);
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+        "locators":[{"type":"event","delay":0,"position":[0,0,0],"rotation":[0,0,0]}]})");
+    WorldLayout layout;
+    ItemArchive items;
+    test::FakeRenderDevice device;
+    REQUIRE(layout.load(dir));
+    REQUIRE(items.load(dir));
+    SumnerFigure sumner;
+    REQUIRE(sumner.load(device, items, layout));
+    const auto heightAt = [&](f32 blend) {
+        device.draws.clear();
+        sumner.draw(device, Mat4{1}, {}, blend);
+        REQUIRE(device.draws.size() == 1);
+        REQUIRE(device.draws.front().vertices.size() == 3);
+        return device.draws.front().vertices.front().position.y;
+    };
+
+    sumner.capturePresentation();
+    sumner.update(kStep * 0.5f);
+    CHECK(heightAt(0) == Approx(0));
+    CHECK(heightAt(0.5f) == Approx(0.25f));
+    CHECK(heightAt(1) == Approx(0.5f));
+    CHECK(heightAt(0.5f) == Approx(0.25f)); // drawing never consumes the interval
+    CHECK(sumner.sequence() == 0);
+    CHECK(sumner.index() == 0);
+    // A held simulation update cannot replay the previous interpolation interval.
+    sumner.capturePresentation();
+    CHECK(heightAt(0) == Approx(0.5f));
+    CHECK(heightAt(1) == Approx(0.5f));
+    const f32 paused = heightAt(-1);
+    CHECK(heightAt(-1) == paused); // options select the fixed simulation pose
+
+    sumner.update(kStep * 2.5f);
+    CHECK(heightAt(1) == Approx(3));
+    sumner.update(kStep);
+    CHECK(heightAt(0) == Approx(0)); // loop generation never blends end back to start
+    CHECK(heightAt(0.5f) == Approx(0));
+    sumner.play(SumnerFigure::kWelcomeIndex);
+    sumner.update(kStep);
+    CHECK(sumner.playing(SumnerFigure::kWelcomeIndex));
+    CHECK(heightAt(0) == Approx(10)); // gesture cuts do not smear between sequences
+    CHECK(heightAt(0.5f) == Approx(10));
+    sumner.update(kStep * 0.5f);
+    CHECK(heightAt(0.5f) == Approx(10.25f));
+    sumner.update(kStep * 4);
+    CHECK(sumner.sequence() == 0);
+    CHECK(heightAt(0.5f) == Approx(0));
+    sumner.clear();
+    device.draws.clear();
+    sumner.draw(device, Mat4{1}, {}, 0.5f);
+    CHECK(device.draws.empty());
+    REQUIRE(sumner.load(device, items, layout));
+    CHECK(heightAt(0.5f) == Approx(0));
+}
 
 TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on request",
           "[game][world][assets]") {

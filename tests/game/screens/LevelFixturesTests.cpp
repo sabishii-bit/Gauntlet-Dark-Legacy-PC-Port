@@ -477,6 +477,7 @@ TEST_CASE("Courtyard tentacles damage a knight at the edge of their sweep only d
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     REQUIRE(f.world.load(f.device, root, *catalog.byName("A1")));
+    f.world.activateTrigger(2, true);
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
     ClassDataSet classes;

@@ -2,6 +2,7 @@
 #include <array>
 #include <filesystem>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -16,6 +17,7 @@
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/ExitPortals.h"
+#include "game/world/ItemFigure.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTransporters.h"
 #include "game/world/LevelWorld.h"
@@ -145,6 +147,11 @@ TEST_CASE("placed item art falls back per tree without replacing level-specific 
     pads.animate(1.0f / 30);
     CHECK(pads.pad(0).animation.frame() > 0);
     pads.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(pads.pad(0).position == Vec3{0, 0, 0});
+    CHECK(device.draws[0].vertices[0].position.y == ItemFigure::kFloorLift);
+    CHECK(device.draws[0].state.depthTest);
+    CHECK(device.draws[0].state.depthWrite);
     ExitPortals exits;
     REQUIRE(exits.bind(device, layout, own, catalog, nullptr, &realm));
     REQUIRE(exits.size() == 2);
@@ -287,5 +294,42 @@ TEST_CASE("every catalogued transporter has a partner, a landing floor and anima
     }
     CHECK(levels == 7);
     CHECK(count == 36);
+}
+
+TEST_CASE("Castle transporters clear their supporting ground without bypassing world depth",
+          "[transporters][assets][transporter-clearance]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName("A1");
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    LevelTransporters pads;
+    pads.bind(device, world.layout(), world.items(), 1, &world.realmItems());
+    REQUIRE(pads.size() > 0);
+    const auto& instances = world.layout().itemInstances();
+    for (usize i = 0; i < pads.size(); ++i) {
+        const auto& pad = pads.pad(i);
+        CAPTURE(i, pad.id);
+        REQUIRE(pad.instance >= 0);
+        CHECK(pad.position == instances[static_cast<usize>(pad.instance)].position);
+        const auto floor = world.collision().floorAt(pad.position, 4, 10);
+        REQUIRE(floor);
+        // A1's authored pad anchors can already be 0.125 above collision ground;
+        // preserve that placement rather than snapping the artwork to collision.
+        CHECK(pad.position.y >= floor->y);
+        CHECK(pad.transform[3].y == Catch::Approx(pad.position.y + ItemFigure::kFloorLift));
+        CHECK(pad.transform[3].y > floor->y);
+    }
+    device.draws.clear();
+    pads.draw(device, Mat4{1}, world.lighting());
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        CHECK(draw.state.depthTest); // nearer walls still win; farther geometry stays behind
+        CHECK(draw.state.depthWrite);
+    }
 }
 } // namespace

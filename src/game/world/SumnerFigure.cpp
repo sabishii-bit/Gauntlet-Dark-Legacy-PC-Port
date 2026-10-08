@@ -1,6 +1,7 @@
 #include "game/world/SumnerFigure.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -48,6 +49,8 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
     const u32 first = sequenceFor(0);
     m_player.start(m_tree->sequences[first], first);
     m_pose.evaluate(*m_tree, first, 0.0f);
+    m_previousFrame = m_player.presentationFrame();
+    m_previousGeneration = m_player.generation();
     return true;
 }
 
@@ -58,6 +61,10 @@ void SumnerFigure::clear() {
     m_index = 0;
     m_cutIn = false;
     m_player.stop();
+    m_pose = {};
+    m_previousFrame = 0;
+    m_previousGeneration = 0;
+    m_presentationAdvanced = false;
 }
 
 /** The sequence an index asks for, the stance standing in for any the tree lacks. */
@@ -81,9 +88,12 @@ void SumnerFigure::play(s32 index) {
 }
 
 void SumnerFigure::update(f32 seconds) {
+    m_presentationAdvanced = seconds > 0 && loaded();
     if (!loaded()) {
         return;
     }
+    m_previousFrame = m_player.presentationFrame();
+    m_previousGeneration = m_player.generation();
     // The original plays the asked-for sequence once the current one has ended (at once for
     // the gesture) and, whenever one ends or changes, asks for the next of the cycle.
     m_player.advance(seconds, m_tree->sequences[m_player.sequence()].repeats);
@@ -102,12 +112,25 @@ void SumnerFigure::update(f32 seconds) {
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
 }
 
-void SumnerFigure::draw(RenderDevice& device, const Mat4& clip,
-                        const WorldLighting& lighting) const {
+void SumnerFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                        f32 frameBlend) const {
     if (!loaded()) {
         return;
     }
-    m_model.draw(device, clip, m_transform, lighting, m_pose.matrices());
+    TreePose visualPose;
+    const TreePose* pose = &m_pose;
+    f32 frame = m_player.frame();
+    const f32 blend = frameBlend < 0 || m_presentationAdvanced ? frameBlend : 1.0f;
+    if (blend >= 0 && m_player.playing()) {
+        frame = m_previousGeneration == m_player.generation()
+                    ? std::lerp(m_previousFrame, m_player.presentationFrame(),
+                                std::clamp(blend, 0.0f, 1.0f))
+                    : m_player.presentationFrame();
+        visualPose.evaluate(*m_tree, m_player.sequence(), frame, false, true);
+        pose = &visualPose;
+    }
+    m_model.setPresentationFrame(m_player.sequence(), frame);
+    m_model.draw(device, clip, m_transform, lighting, pose->matrices());
 }
 
 } // namespace gdl::game

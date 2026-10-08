@@ -335,6 +335,7 @@ TEST_CASE("Combat auto melee changes are shared persisted and reversible from ev
         REQUIRE(f.menu.page() == SettingsMenu::Page::Combat);
         CHECK(f.menu.menu().definition().title == "Combat");
         CHECK(f.menu.menu().definition().items[0].text == "Auto Melee");
+        CHECK(f.menu.menu().definition().items[2].text == "Auto-Use Item");
         CHECK(f.menu.menu().definition().items[0].value == "Off");
         f.fail = true;
         f.right();

@@ -32,10 +32,9 @@ public:
     enum class State : u8 { Closed, SlidingIn, Open, SlidingOut };
     static constexpr s32 kSlide = 128; ///< how far the label rides up
     static constexpr s32 kSlidePerTick = 4;
-    // Keep the label above the port's fitted turbo strip (y304..320), not
-    // over it. Retail's TbInfo text baseline is not the painter's top edge.
+    // The label's last glyph row sits just above the runestone row at y306.
     static constexpr s32 kLabelX = 24;    ///< from the box's left
-    static constexpr s32 kLabelRise = 31; ///< label sits immediately above the turbo strip
+    static constexpr s32 kLabelRise = 29; ///< measured from the status box's top
     static constexpr f32 kLabelScale = 0.45f;
 
     SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks);

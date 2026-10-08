@@ -9,6 +9,8 @@
 #include "engine/assets/TextureBindings.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/render/HeatDistortion.h"
+#include "engine/world/ThermalMaterial.h"
 
 namespace gdl {
 
@@ -65,6 +67,30 @@ Vec2 chromeUv(const Vec3& normal) {
     return Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)};
 }
 
+/** One placed flame, not the union of every fire sharing its animated texture. */
+void submitHeat(RenderDevice& device, const ImmediateBatch& geometry, const Mat4& clip,
+                const CameraFrame& camera, f32 seconds) {
+    if (geometry.empty()) {
+        return;
+    }
+    Vec3 lowest = geometry.triangles().front().position;
+    Vec3 highest = lowest;
+    bool visible = false;
+    for (const ImmediateVertex& vertex : geometry.triangles()) {
+        lowest = glm::min(lowest, vertex.position);
+        highest = glm::max(highest, vertex.position);
+        visible = visible || vertex.color.a != 0;
+    }
+    constexpr f32 kMaximumRadius = 8.0f;
+    const f32 radius = std::min(glm::length(highest - lowest) * 0.5f, kMaximumRadius);
+    if (!visible || radius <= 0.0f) {
+        return;
+    }
+    const Vec3 center = (lowest + highest) * 0.5f + Vec3{0, radius * 0.5f, 0};
+    device.addHeatSource(
+        HeatSource::project(clip, center, camera.right, camera.up, radius, seconds));
+}
+
 } // namespace
 
 WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDevice& device,
@@ -83,6 +109,7 @@ WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDev
             slot.texture = &binding->set->texture(device, binding->index);
             slot.translucent =
                 binding->set->entry(binding->index).translucent() || entry.translucent();
+            slot.thermal = ThermalMaterial::surface(entry.name);
             slot.usable = true;
             return slot;
         }
@@ -181,7 +208,11 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool depthTest = material.depthTest;
         const u32 facing = material.facing;
         const bool background = std::ranges::find(backgroundObjects, i) != backgroundObjects.end();
-        const bool unit = background || m_placements[i].moving || material.sorted || facing != 0 ||
+        const bool thermal = std::ranges::any_of(mesh->parts, [&](const MeshPart& part) {
+            return slotFor(part.texture, textures, device, lenders).thermal;
+        });
+        const bool unit = thermal || background || m_placements[i].moving || material.sorted ||
+                          facing != 0 ||
                           std::ranges::find(controlledObjects, i) != controlledObjects.end();
         Unit placedUnit;
         placedUnit.object = i;
@@ -285,6 +316,7 @@ void WorldScene::clear() {
     m_order.clear();
     m_placed = 0;
     m_triangles = 0;
+    m_textureFrame = 0;
 }
 
 bool WorldScene::moving(usize object) const {
@@ -570,6 +602,13 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
             part.additive || !unit.depthWrite ? textureFrameOffset : std::nullopt;
         const Texture* texture = slot.presentedTexture(state, cycleOffset);
         device.draw(m_scratch, *texture, clip, state);
+        if (slot.thermal && unit.depthTest && !unit.background) {
+            constexpr f32 kTextureFramesPerSecond = 30.0f;
+            const f32 seconds =
+                (static_cast<f32>(m_textureFrame) + textureFrameOffset.value_or(0)) /
+                kTextureFramesPerSecond;
+            submitHeat(device, m_scratch, clip, camera, seconds);
+        }
     }
 }
 

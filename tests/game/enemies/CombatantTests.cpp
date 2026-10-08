@@ -6,6 +6,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
@@ -23,6 +24,7 @@
 #include "game/enemies/Golem.h"
 #include "game/enemies/HeadedBodyFixture.h"
 #include "game/world/HazardSurfaces.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 using namespace gdl;
@@ -251,6 +253,116 @@ TEST_CASE("a walking general retains its new position on a moving floor",
     CHECK(actor.position().x == Approx(walked.x));
     CHECK(actor.position().z == Approx(walked.z));
     CHECK(actor.position().y == Approx(-10));
+}
+
+TEST_CASE("a charging general checks the floor ahead before stepping off a deck",
+          "[combatant][critter-traversal]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":3.5,"wallRadius":2,
+                "originOffset":[0,3,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"CHARGE","anim":"STEP","type":134,"speed":15,
+                "priority":20,"target":{"minDistance":10}}]})");
+    std::vector<CollisionTriangle> triangles;
+    const auto plane = [&](f32 start, f32 end, f32 height) {
+        CollisionTriangle first;
+        first.vertices = {Vec3{-20, height, start}, Vec3{20, height, end}, Vec3{20, height, start}};
+        CollisionTriangle second;
+        second.vertices = {Vec3{-20, height, start}, Vec3{-20, height, end}, Vec3{20, height, end}};
+        triangles.push_back(first);
+        triangles.push_back(second);
+    };
+    plane(-20, 5, 0);
+    std::optional<f32> stepHeight;
+    SECTION("empty space beyond the deck") {}
+    SECTION("lower hull surface is too far down") {
+        plane(5, 30, -5.5f);
+    }
+    SECTION("ordinary descending steps remain traversable") {
+        plane(5, 30, -1);
+        stepHeight = -1.0f;
+    }
+    SECTION("ordinary ascending steps remain traversable") {
+        plane(5, 30, 1);
+        stepHeight = 1.0f;
+    }
+    WorldCollision collision;
+    collision.build(triangles);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, &collision, {}, 'G'));
+    const std::array players{EnemyView{.player = 0, .position = Vec3{0, 0, 25}}};
+    bool charged = false;
+    for (s32 tick = 0; tick < 120; ++tick) {
+        actor.update(1, 1.0f / 60, players);
+        charged = charged || actor.moveName() == "CHARGE";
+        if (!stepHeight) {
+            REQUIRE(actor.position().y == Approx(0));
+            REQUIRE(actor.position().z <= 3.001f);
+        }
+    }
+    REQUIRE(charged);
+    CHECK(actor.position().z > 1);
+    if (stepHeight) {
+        CHECK(actor.position().z > 6);
+        CHECK(actor.position().y == Approx(*stepHeight));
+    }
+}
+
+TEST_CASE("Sky Dominion generals retain forward support during charges and melee knockback",
+          "[combatant][critter-traversal][assets]") {
+    const usize instanceIndex = GENERATE(119U, 189U);
+    const s32 octant = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
+    CAPTURE(instanceIndex, octant);
+    const auto root = test::assetOrSkip("CRITTER/GENERAL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("K1")));
+    const auto& instance = world.layout().itemInstances()[instanceIndex];
+    REQUIRE(world.layout().itemInfos()[static_cast<usize>(instance.info)].name == "GENERAL");
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'K'));
+    const f32 yaw = static_cast<f32>(octant) * glm::quarter_pi<f32>();
+    const Vec3 direction{std::sin(yaw), 0, std::cos(yaw)};
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, instance.position, yaw, &world.collision(), {}, 'K'));
+    const Vec3 start = actor.position();
+    bool charged = false;
+    f32 travelled = 0;
+    for (s32 frame = 0; frame < 300; ++frame) {
+        const Vec3 before = actor.position();
+        const std::array players{EnemyView{.player = 0, .position = before + direction * 20.0f}};
+        if (frame == 150) {
+            // The same world check must constrain a shove as well as locomotion.
+            EnemyHit hit;
+            hit.damage = 3;
+            hit.flags = EnemyHit::kKnockBack;
+            hit.direction = glm::normalize(direction + Vec3{0, 1, 0});
+            hit.where = before;
+            actor.hurt(hit);
+        }
+        actor.update(2, 1.0f / 30, players);
+        charged = charged || actor.moveName() == "CHARGE";
+        const Vec3 delta = actor.position() - before;
+        const f32 distance = glm::length(Vec2{delta.x, delta.z});
+        travelled += distance;
+        if (distance > 0.001f) {
+            const Vec3 ahead = actor.position() +
+                               Vec3{delta.x, 0, delta.z} * (assets.data.wallRadius() / distance);
+            const auto support = world.collision().floorAt(ahead, 2, 6);
+            CAPTURE(frame, actor.position().x, actor.position().y, actor.position().z);
+            REQUIRE(support);
+        }
+    }
+    CHECK(charged);
+    CHECK(travelled > 0.5f);
+    CHECK(glm::distance(actor.position(), start) > 0.1f);
 }
 
 TEST_CASE("ordinary combatants rank four player slots by facing and recent hit grace",

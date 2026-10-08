@@ -1221,6 +1221,9 @@ TEST_CASE("Courtyard tentacles retain authored height and hit the rotated offset
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
+    // The crossing starts ten units below its authored position. Raise it as
+    // the approach trigger does before putting a walker in the tentacle lane.
+    world.activateTrigger(2, true);
     Traps traps;
     REQUIRE(traps.bind(device, world.layout(), world.items(), &world.collision(), 1, 1, 1,
                        &world.realmItems()));
@@ -1280,6 +1283,79 @@ TEST_CASE("Courtyard tentacles retain authored height and hit the rotated offset
     }
     CHECK(hit[0]);
     CHECK(hit[1]);
+}
+
+TEST_CASE("Courtyard tentacles' rendered strikes overlap their native shore contact lanes",
+          "[fixtures][courtyard-tentacles][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("A1")));
+    world.activateTrigger(2, true);
+    Traps traps;
+    REQUIRE(traps.bind(device, world.layout(), world.items(), &world.collision(), 1, 1, 1,
+                       &world.realmItems()));
+    traps.setPlayerCount(2);
+    std::vector<TrapVictim> party;
+    std::vector<usize> tentacles;
+    for (usize i = 0; i < traps.size(); ++i) {
+        const auto& trap = traps.trap(i);
+        if (trap.subtype != Traps::kBlades) {
+            continue;
+        }
+        ItemFigure figure;
+        const auto& instance = world.layout().itemInstances()[static_cast<usize>(trap.instance)];
+        REQUIRE(figure.place(device, world.items(), "TENTACLE", instance, nullptr));
+        // Pick a real visible strike vertex above a walking surface, rather than
+        // choosing a point from the collision box we are trying to validate.
+        // The two-player placement faces the opposite shore; only the one-player
+        // tentacle sweeps the moving crossing itself.
+        figure.play(2, false);
+        figure.update(6.0f / 30);
+        std::optional<Vec3> standingInSweep;
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, {});
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                const Vec3 point = Vec3{draw.transform * Vec4{vertex.position, 1}};
+                const auto floor = world.collision().floorAt(point, 2, 6);
+                if (floor && floor->y > trap.figure.position().y && point.y >= floor->y &&
+                    point.y <= floor->y + 5 &&
+                    (trap.minPlayers != 1 ||
+                     world.layout().objects()[static_cast<usize>(floor->object)].name ==
+                         "A1ELEV666")) {
+                    standingInSweep = Vec3{point.x, floor->y, point.z};
+                    break;
+                }
+            }
+            if (standingInSweep) {
+                break;
+            }
+        }
+        CAPTURE(trap.instance, trap.minPlayers);
+        REQUIRE(standingInSweep);
+        CAPTURE(standingInSweep->x, standingInSweep->y, standingInSweep->z);
+        REQUIRE(standingInSweep->y > trap.figure.position().y);
+        party.push_back({*standingInSweep + Vec3{0, 2.5f, 0}, 1.5f, 2.5f});
+        tentacles.push_back(i);
+    }
+    REQUIRE(tentacles.size() == 2);
+    std::array<bool, 2> struck{};
+    for (s32 frame = 0; frame < 600; ++frame) {
+        for (const auto& hit : traps.update(2, 1.0f / 30, party)) {
+            if (hit.victim < tentacles.size() && hit.trap == tentacles[hit.victim]) {
+                CHECK(traps.trap(hit.trap).action == 2);
+                CHECK(hit.damage > 0);
+                CHECK((hit.impact.flags & PlayerImpact::kKnockDown) != 0);
+                struck[hit.victim] = true;
+            }
+        }
+    }
+    CHECK(struck[0]);
+    CHECK(struck[1]);
 }
 
 TEST_CASE("C1 trapped chest bomb faces the camera throughout its fuse",

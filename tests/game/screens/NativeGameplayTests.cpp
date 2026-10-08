@@ -120,6 +120,11 @@ TEST_CASE("native tower gameplay loads player tuning and responds to movement an
 
 TEST_CASE("native Courtyard tentacle knocks down the knight on the water-side sweep edge",
           "[game][screens][native-gameplay][courtyard-tentacles][assets]") {
+    f64 step = 1.0 / 30;
+    SECTION("30 Hz update") {}
+    SECTION("60 Hz update") {
+        step = 1.0 / 60;
+    }
     const auto root = nativeRoot();
     const AssetLocator assets(root);
     ClassDataSet classes;
@@ -155,29 +160,70 @@ TEST_CASE("native Courtyard tentacle knocks down the knight on the water-side sw
         if (item.info >= 0 && item.minPlayers == 1 &&
             world.layout().itemInfos()[static_cast<usize>(item.info)].name == "TENTACLE") {
             const Vec3 local{-4, 0, -1.0f - stats->width * 0.75f};
-            Vec3 point = Vec3{itemPlacement(item.position, item.rotation) * Vec4{local, 1}};
-            const auto floor = world.collision().floorAt(point, 5, 5);
-            REQUIRE(floor);
-            REQUIRE(world.layout().objects()[static_cast<usize>(floor->object)].name ==
-                    "A1ELEV666");
-            point.y = floor->y;
-            options.position = point;
+            options.position = Vec3{itemPlacement(item.position, item.rotation) * Vec4{local, 1}};
         }
     }
     REQUIRE(options.position);
+    REQUIRE_FALSE(world.collision().floorAt(*options.position, 5, 5));
+    usize approach = 0;
+    while (approach < world.triggers().size() && world.triggers().trigger(approach).id != 2) {
+        ++approach;
+    }
+    REQUIRE(approach < world.triggers().size());
+    const auto& crossing = world.triggers().trigger(approach);
+    REQUIRE(world.layout().objects()[static_cast<usize>(crossing.target)].name == "A1ELEV666");
+    // Exercise the real approach trigger through PlayScene, not a forced open.
+    // The visual scenario starts here too, before the initially submerged crossing.
+    PlayOptions arrival;
+    arrival.position = crossing.spot;
+    arrival.welcome = false;
     PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, arrival));
+    scene.enemies().close();
+    scene.generators().clear();
+    scene.critters().close();
+    for (s32 frame = 0;
+         frame < 1200 && !(crossing.fired && world.triggers().settled(crossing.target)); ++frame) {
+        REQUIRE(scene.update(step, {}) == PlayOutcome::Running);
+    }
+    REQUIRE(crossing.fired);
+    REQUIRE(world.triggers().settled(crossing.target));
+    const auto floor = world.collision().floorAt(*options.position, 5, 5);
+    REQUIRE(floor);
+    REQUIRE(world.layout().objects()[static_cast<usize>(floor->object)].name == "A1ELEV666");
+    options.position->y = floor->y;
+    scene.close();
     REQUIRE(scene.open(device, context, world, party, options));
     REQUIRE(scene.actor(0));
     REQUIRE(scene.animator(0));
+    // Only the tentacle can supply the hit; a nearby grunt must not make this
+    // regression pass while the actual trap misses.
+    scene.enemies().close();
+    scene.generators().clear();
+    scene.critters().close();
+    usize tentacle = 0;
+    while (tentacle < scene.traps().size() &&
+           (scene.traps().trap(tentacle).subtype != Traps::kBlades ||
+            !scene.traps().trap(tentacle).shown)) {
+        ++tentacle;
+    }
+    REQUIRE(tentacle < scene.traps().size());
     bool knockedDown = false;
-    for (s32 frame = 0; frame < 600 && !knockedDown; ++frame) {
-        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+    bool damagedByStrike = false;
+    for (s32 frame = 0; frame < 1200 && !knockedDown; ++frame) {
+        const auto before = scene.actor(0)->save().health();
+        REQUIRE(scene.update(step, {}) == PlayOutcome::Running);
+        if (scene.actor(0)->save().health() < before - 1) {
+            CHECK(scene.traps().trap(tentacle).action == 2);
+            damagedByStrike = true;
+        }
         const auto action = scene.animator(0)->action();
         knockedDown = action == PlayerAnimator::Action::FallBack ||
                       action == PlayerAnimator::Action::FallForward;
     }
+    CHECK(damagedByStrike);
     CHECK(knockedDown);
-    CHECK(scene.actor(0)->position().y == Catch::Approx(options.position->y - 10));
+    CHECK(scene.actor(0)->position().y == Catch::Approx(options.position->y));
     CHECK(scene.actor(0)->save().health() < 9990);
     scene.close();
 }

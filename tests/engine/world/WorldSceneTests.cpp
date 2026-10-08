@@ -11,6 +11,7 @@
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/io/File.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
@@ -46,6 +47,100 @@ struct Fixture {
                            background);
     }
 };
+
+TEST_CASE("placed flame surfaces produce separate depth-tested heat sources",
+          "[world][scene][heat-surfaces]") {
+    Fixture f("world-scene-heat-surfaces");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"FLAME","position":[-4,0,0],"next":1,"child":-1},
+      {"name":"FLAME","position":[4,0,0],"next":2,"child":-1},
+      {"name":"WALL","position":[0,0,0],"next":-1,"child":-1}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    REQUIRE(f.scene.unitCount() == 2);  // same material must not combine distant flames
+    REQUIRE(f.scene.batchCount() == 1); // stone stays batched and does not emit heat
+    Mat4 clip = glm::scale(Mat4{1}, Vec3{0.1f});
+    clip[3].z = 0.5f;
+    REQUIRE(f.device.beginFrame());
+    f.scene.draw(f.device, clip, CameraFrame{});
+    const auto sources = f.device.heat.sources();
+    REQUIRE(sources[0].radius.x > 0);
+    REQUIRE(sources[1].radius.x > 0);
+    CHECK(sources[2].radius == Vec2{0});
+    CHECK(sources[0].center.x == Approx(0.325f));
+    CHECK(sources[1].center.x == Approx(0.725f));
+    CHECK(sources[0].radius.x < 0.05f);
+    CHECK(sources[0].center.y > 0.525f); // distortion rises just above the flame
+    CHECK(sources[0].depth == Approx(0.5f));
+    REQUIRE(f.device.draws.size() == 3);
+    for (const auto& draw : f.device.draws) {
+        CHECK(draw.state.depthTest); // walls in front still occlude both flame and heat
+    }
+
+    REQUIRE(f.scene.setObjectVisible(0, false));
+    f.scene.setObjectAlpha(1, 0);
+    REQUIRE(f.device.beginFrame());
+    f.scene.draw(f.device, clip, CameraFrame{});
+    CHECK(f.device.heat.sources()[0].radius == Vec2{0});
+
+    // Authored depthless scenery and explicitly selected backdrops must not
+    // generate a foreground shimmer, nor may an unresolved white placeholder.
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"FLAME","position":[-4,0,0],"next":1,"child":-1,"objectFlags":64},
+      {"name":"FLAME","position":[4,0,0],"next":-1,"child":-1}]})");
+    REQUIRE(f.layout.load(f.directory));
+    const std::array<usize, 1> background{1};
+    REQUIRE(f.build({}, background));
+    REQUIRE(f.device.beginFrame());
+    f.scene.draw(f.device, clip, CameraFrame{});
+    CHECK(f.device.heat.sources()[0].radius == Vec2{0});
+    REQUIRE(f.scene.build(f.layout, f.models, f.textures, f.device));
+    REQUIRE(f.device.beginFrame());
+    f.scene.draw(f.device, clip, CameraFrame{});
+    CHECK(f.device.heat.sources()[0].radius == Vec2{0});
+}
+
+TEST_CASE("flame heat follows animated scenery and its interpolated texture clock",
+          "[world][scene][heat-surfaces][interpolation]") {
+    Fixture f("world-scene-heat-clock");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"FLAME","position":[0,0,0],"next":-1,"child":-1,"flags":4096}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    TextureAnimator animator;
+    animator.bind({}, f.textures, f.device);
+    animator.advance(1.0f / 30.0f);
+    animator.apply(f.scene);
+    f.scene.capturePresentation();
+    f.scene.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{2, 0, 0}));
+    const Mat4 native = f.scene.worldTransform(0);
+    Mat4 clip = glm::scale(Mat4{1}, Vec3{0.1f});
+    clip[3].z = 0.5f;
+    const auto sample = [&](f32 alpha) {
+        REQUIRE(f.device.beginFrame());
+        f.scene.draw(f.device, clip, CameraFrame{}, alpha, animator.presentationOffset(alpha));
+        return f.device.heat.sources()[0];
+    };
+    CHECK(sample(0).center.x == Approx(0.525f));
+    const HeatSource half = sample(0.5f);
+    CHECK(half.center.x == Approx(0.575f));
+    CHECK(half.seconds == Approx(1.0f / 60.0f));
+    CHECK(sample(1).center.x == Approx(0.625f));
+    CHECK(sample(1).seconds == Approx(1.0f / 30.0f));
+    CHECK(sample(0.5f).center == half.center);
+    CHECK(sample(0.5f).seconds == half.seconds);
+    CHECK(animator.frame() == 1);
+    CHECK(f.scene.worldTransform(0) == native);
+    animator.advance(0);
+    f.scene.capturePresentation();
+    for (const f32 alpha : {-1.0f, 0.0f, 0.5f, 1.0f}) {
+        CHECK(sample(alpha).center.x == Approx(0.625f));
+        CHECK(sample(alpha).seconds == Approx(1.0f / 30.0f));
+    }
+    f.scene.clear();
+    REQUIRE(f.build());
+    CHECK(sample(-1).seconds == 0); // another level does not inherit the previous clock
+}
 
 TEST_CASE("controlled static geometry hides only its own mesh without moving or fading",
           "[world][scene][boss-effects]") {

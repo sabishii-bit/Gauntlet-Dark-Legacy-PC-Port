@@ -10,22 +10,17 @@
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/render/HeatDistortion.h"
+#include "engine/world/ThermalMaterial.h"
 #include "engine/world/WorldScene.h"
 
 namespace gdl {
 
 namespace {
 
-// Explicit native thermal textures: tower/forest torches, mountain embers, dragon breath.
-// This is an opt-in port effect, not an inference that every additive sprite is hot.
-bool thermalTexture(std::string_view name) {
-    return name == "P_TORCH" || name == "EMBER_SPARK2" || name == "DRAGONBREATH" ||
-           name == "FBALLX";
-}
-
 void submitHeat(RenderDevice& device, const ParticleEmitter& emitter, const Mat4& clip,
                 const Vec3& right, const Vec3& up, f32 frameOffset, f32 seconds) {
-    if (!thermalTexture(emitter.descriptor().texture) || !emitter.descriptor().depthTest) {
+    if (!ThermalMaterial::particle(emitter.descriptor().texture) ||
+        !emitter.descriptor().depthTest) {
         return;
     }
     Vec3 center{0.0f};

@@ -1213,6 +1213,48 @@ TEST_CASE("G3 maggots pursue a nearby player while separating from a barrel",
     CHECK_FALSE(enemies.takeBlows().empty());
 }
 
+TEST_CASE("Courtyard rats roam outside eight while grunts pursue and both attack nearby players",
+          "[enemies][courtyard-tracking][assets]") {
+    const s32 namedKind = GENERATE(kRatKind, kGruntKind);
+    const auto root = unpackedRoot();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("A1")));
+    REQUIRE(world.level());
+    const s32 kind = levelKindOf(world.level()->enemies, namedKind, 1);
+    CAPTURE(kind);
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kind));
+    EnemySpawn spawn;
+    spawn.kind = kind;
+    spawn.algorithm = namedKind == kRatKind ? kProwlWay : kSeekWay;
+    spawn.direction = {0, 0, -1};
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const std::array distant{playerAt({0, 0, 20})};
+    for (s32 frame = 0; frame < 45; ++frame) {
+        enemies.update(kTicks, kStep, distant);
+    }
+    const Vec3 wandered = enemies.positionOf(*id);
+    // move_logic02/04 use the weighted eight-unit threshold, not sight range.
+    // Walking away outside that threshold is authored roaming, not failed targeting.
+    if (namedKind == kRatKind) {
+        CHECK(wandered.z < -1);
+    } else {
+        CHECK(wandered.z > 1);
+    }
+    const std::array nearby{playerAt(wandered + Vec3{0, 0, 6})};
+    for (s32 frame = 0; frame < 240; ++frame) {
+        enemies.update(kTicks, kStep, nearby);
+    }
+    CHECK(enemies.positionOf(*id).z > wandered.z + 1);
+    CHECK_FALSE(enemies.takeBlows().empty());
+}
+
 TEST_CASE("generator birth walls are tested before settling onto an upper landing",
           "[game][enemies][enemy-collision][alpha-spawn-height][assets]") {
     // check_enemy_pos (8004F9AC) rejects the start-to-offset WallCollide before
