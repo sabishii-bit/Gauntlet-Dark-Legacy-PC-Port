@@ -24,16 +24,17 @@ TEST_CASE("Death reverses its seek route after nine world-blocked movement steps
     // do_enemy_collide 80045488's blocked00 counts actual stops, including steps
     // during the hold: five ticks on an ordinary route, reversed after nine stops.
     const s32 ticks = GENERATE(1, 2);
+    const f32 radius = enemyKind(kDeathKind).radius;
     const auto triangle = [](Vec3 a, Vec3 b, Vec3 c, Vec3 normal) {
         return CollisionTriangle{.normal = normal, .vertices = {a, b, c}};
     };
     WorldCollision collision;
     collision.build({triangle({-40, 0, -40}, {40, 0, 40}, {40, 0, -40}, {0, 1, 0}),
                      triangle({-40, 0, -40}, {-40, 0, 40}, {40, 0, 40}, {0, 1, 0}),
-                     triangle({-40, 0, 2.25f}, {40, 8, 2.25f}, {40, 0, 2.25f}, {0, 0, -1}),
-                     triangle({-40, 0, 2.25f}, {-40, 8, 2.25f}, {40, 8, 2.25f}, {0, 0, -1}),
-                     triangle({2.25f, 0, -40}, {2.25f, 8, 40}, {2.25f, 0, 40}, {-1, 0, 0}),
-                     triangle({2.25f, 0, -40}, {2.25f, 8, -40}, {2.25f, 8, 40}, {-1, 0, 0})});
+                     triangle({-40, 0, radius}, {40, 8, radius}, {40, 0, radius}, {0, 0, -1}),
+                     triangle({-40, 0, radius}, {-40, 8, radius}, {40, 8, radius}, {0, 0, -1}),
+                     triangle({radius, 0, -40}, {radius, 8, 40}, {radius, 0, 40}, {-1, 0, 0}),
+                     triangle({radius, 0, -40}, {radius, 8, -40}, {radius, 8, 40}, {-1, 0, 0})});
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, test::deathArchive(), &collision, 1, {}, 1);

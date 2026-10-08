@@ -1,0 +1,20 @@
+{
+  "screen": "tower",
+  "level": "B1",
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 99,
+      "health": 10400,
+      "turbo": 100,
+      "keys": 9,
+      "potions": [1, 2, 3, 4]
+    }
+  ],
+  "position": [-14.828125, 57.1328125, 27.90625],
+  "yaw": -1.5707963,
+  "welcome": false
+}

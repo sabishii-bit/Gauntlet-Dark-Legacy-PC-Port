@@ -19,6 +19,8 @@
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/enemies/Combatant.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/players/ClassData.h"
 #include "game/players/Progression.h"
@@ -297,6 +299,77 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
     CHECK(f.effects.count() == 4);
     CHECK(helpCount == 1);
     f.fixtures.clear();
+}
+
+TEST_CASE("Cavern fire vents leave the floor open to its trolls and scorpions",
+          "[game][screens][level-fixtures][vent-crossing][assets]") {
+    const auto root = test::assetOrSkip("WDATA/MOUNT.WAD").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("B1");
+    REQUIRE(level);
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    const auto boxes = f.fixtures.obstacles();
+    REQUIRE(f.fixtures.traps().size() == 12);
+    for (usize i = 0; i < f.fixtures.traps().size(); ++i) {
+        CAPTURE(i);
+        const auto& trap = f.fixtures.traps().trap(i);
+        REQUIRE(trap.subtype == 1);
+        CHECK_FALSE(trap.box.solid);
+        for (const auto& box : boxes) {
+            CHECK_FALSE(box.touchedBy(trap.figure.position(), 1, 0));
+        }
+    }
+    REQUIRE(f.world.level() != nullptr);
+    const auto& roster = f.world.level()->enemies;
+    // Open floor at three elevations, plus the narrow passage beyond the first
+    // bridge/stairs: vent 9 lies between B1WALL#1 and B1FENCE01 by the breakable wall.
+    for (const usize vent : {usize{4}, usize{7}, usize{9}, usize{11}}) {
+        const Vec3 centre = f.fixtures.traps().trap(vent).figure.position();
+        for (const Vec3 axis : {Vec3{1, 0, 0}, Vec3{0, 0, 1}, Vec3{-1, 0, 0}, Vec3{0, 0, -1}}) {
+            if (vent == 9 && axis.z != 0) {
+                continue;
+            }
+            Vec3 start = centre - axis * 4.0f;
+            Vec3 end = centre + axis * 4.0f;
+            const auto support = f.world.collision().floorAt(start, 4, 10);
+            const auto destination = f.world.collision().floorAt(end, 4, 10);
+            REQUIRE(support);
+            REQUIRE(destination);
+            start.y = support->y;
+            end.y = destination->y;
+            usize crossed = 0;
+            for (const auto& entry : roster) {
+                if (entry.subtype != kSmallClass && entry.subtype != kMediumClass) {
+                    continue;
+                }
+                CAPTURE(vent, entry.kind, axis.x, axis.z);
+                Enemies enemies;
+                enemies.open(f.device, root, &f.world.collision(), 4, {}, 1);
+                REQUIRE(enemies.loadKind(entry.kind));
+                EnemySpawn spawn;
+                spawn.kind = entry.kind;
+                spawn.placed = true;
+                spawn.algorithm = kSeekWay;
+                spawn.sight = 100;
+                spawn.position = start;
+                spawn.direction = axis;
+                const auto id = enemies.spawn(spawn, {});
+                REQUIRE(id);
+                const std::array party{EnemyView{.player = 0, .position = end}};
+                for (s32 frame = 0; frame < 240; ++frame) {
+                    enemies.update(2, 1.0f / 30, party, boxes);
+                }
+                const Vec3 last = enemies.positionOf(*id);
+                CHECK(glm::dot(last - centre, axis) > 0.25f);
+                ++crossed;
+            }
+            CHECK(crossed == 2);
+        }
+    }
 }
 
 TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific items",
@@ -1614,7 +1687,8 @@ TEST_CASE("Castle light traps zap on contact, not activation or cooldown frames"
                                                 .sound = [](std::string_view) {},
                                                 .cry = [](std::string_view) {},
                                                 .named = [](std::string_view, f32) {},
-                                                .learnBlock = [] {}};
+                                                .learnBlock = [] {},
+                                                .vibrate = {}};
         usize hits = 0;
         f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
                             const PlayerImpact& impact) {
@@ -1700,7 +1774,8 @@ TEST_CASE("native trap properties reach player damage and reactions",
                                                     .sound = [](std::string_view) {},
                                                     .cry = [](std::string_view) {},
                                                     .named = [](std::string_view, f32) {},
-                                                    .learnBlock = [] {}};
+                                                    .learnBlock = [] {},
+                                                    .vibrate = {}};
             usize hits = 0;
             f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
                                 const PlayerImpact& impact) {

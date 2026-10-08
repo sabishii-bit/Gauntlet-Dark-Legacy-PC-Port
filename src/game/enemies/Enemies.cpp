@@ -21,7 +21,7 @@ constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr f32 kStepUp = 1.5f;
 constexpr f32 kDrop = 3.0f;
 constexpr f32 kFootClearance = 0.1f;
-// do_enemy_collide probes walls two units above coll_pos, independently of body height.
+// Height of the horizontal wall slice above the supported feet.
 constexpr f32 kWallHeight = 2.0f;
 constexpr f32 kSpawnDrop = 6.0f;       ///< a spawn finds its floor within this
 constexpr s32 kFarRecycleCost = 10000; ///< an unseen enemy is that much cheaper to reuse
@@ -1225,8 +1225,9 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
             return false;
         }
         const f32 wallY = std::max(at.y, floor->y) + kWallHeight;
-        const Vec3 pushed = m_collision->sweepWalls(enemy.position, at,
-                                                    enemy.radius * kWallRadiusScale, wallY, wallY);
+        // Use the physical body for both route planning and travel; the enlarged
+        // preliminary retail wall query is not a permanent collision cylinder.
+        const Vec3 pushed = m_collision->sweepWalls(enemy.position, at, enemy.radius, wallY, wallY);
         if (flatDistance(pushed, at) > 0.01f) {
             return false;
         }
@@ -1464,8 +1465,11 @@ Vec3 Enemies::travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const
             break;
         }
         const f32 wallY = std::max(position.y, support->y) + kWallHeight;
-        Vec3 next = m_collision->sweepWalls(position, wanted, enemy.radius * kWallRadiusScale,
-                                            wallY, wallY);
+        // do_enemy_collide initially probes at 1.5 * rad, but fn_80045C30 resolves
+        // the supported step with rad. Applying the enlarged radius to every pass
+        // of our multi-wall sweep wedges bodies between nearby walls (B1's first
+        // vent passage). Sweep the authored body, retaining solid-wall clipping.
+        Vec3 next = m_collision->sweepWalls(position, wanted, enemy.radius, wallY, wallY);
         const auto floor = stepFloor(enemy, position, next);
         if (!floor) {
             break;

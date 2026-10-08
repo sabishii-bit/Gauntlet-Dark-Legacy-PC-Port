@@ -199,7 +199,6 @@ class Enemies {
 public:
     static constexpr s32 kMost = 25;
     static constexpr f32 kBaseSight = 30.0f;
-    static constexpr f32 kWallRadiusScale = 1.5f; ///< the body keeps this much off walls
     static constexpr f32 kMostPush = 40.0f;
     static constexpr f32 kPushDecay = 0.8f;
     static constexpr f32 kBlowGrowth = 1.5f;      ///< a power blow's share over an ordinary one

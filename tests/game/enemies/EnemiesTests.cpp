@@ -454,6 +454,46 @@ TEST_CASE("wandering bodies turn before their feet reach the wall detected ahead
     }
 }
 
+TEST_CASE("enemy wall clearance admits a body's width but not an undersized passage",
+          "[enemies][wall-clearance][assets]") {
+    const bool fits = GENERATE(false, true);
+    const f32 halfWidth = fits ? 1.75f : 1.25f;
+    const Vec3 left{-1, 0, 0};
+    const Vec3 right{1, 0, 0};
+    const Vec3 front{0, 0, -1};
+    WorldCollision collision;
+    collision.build({
+        triangle({-20, 0, -20}, {20, 0, -20}, {20, 0, 30}, {0, 1, 0}),
+        triangle({-20, 0, -20}, {20, 0, 30}, {-20, 0, 30}, {0, 1, 0}),
+        triangle({-halfWidth, 0, 0}, {-halfWidth, 8, 20}, {-halfWidth, 0, 20}, right),
+        triangle({-halfWidth, 0, 0}, {-halfWidth, 8, 0}, {-halfWidth, 8, 20}, right),
+        triangle({halfWidth, 0, 0}, {halfWidth, 0, 20}, {halfWidth, 8, 20}, left),
+        triangle({halfWidth, 0, 0}, {halfWidth, 8, 20}, {halfWidth, 8, 0}, left),
+        triangle({-20, 0, 0}, {-halfWidth, 8, 0}, {-halfWidth, 0, 0}, front),
+        triangle({-20, 0, 0}, {-20, 8, 0}, {-halfWidth, 8, 0}, front),
+        triangle({halfWidth, 0, 0}, {20, 8, 0}, {20, 0, 0}, front),
+        triangle({halfWidth, 0, 0}, {halfWidth, 8, 0}, {20, 8, 0}, front),
+    });
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn(
+        {.kind = kGruntKind, .algorithm = kSeekWay, .position = Vec3{0, 0, -5}, .placed = true},
+        {});
+    REQUIRE(id);
+    REQUIRE(enemies.radiusOf(*id) == Approx(1.5f));
+    const std::array party{playerAt({0, 0, 12})};
+    for (s32 frame = 0; frame < 240; ++frame) {
+        enemies.update(kTicks, kStep, party);
+    }
+    if (fits) {
+        CHECK(enemies.positionOf(*id).z > 6);
+    } else {
+        CHECK(enemies.positionOf(*id).z < 0);
+    }
+}
+
 TEST_CASE("dog broods use only the two native birth directions while leader broods use one",
           "[enemies][brood-directions][assets]") {
     test::FakeRenderDevice device;
