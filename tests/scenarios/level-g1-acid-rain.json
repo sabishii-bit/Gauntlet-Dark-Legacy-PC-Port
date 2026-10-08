@@ -1,0 +1,18 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "party": [
+    {
+      "player": 0,
+      "class": "SOR",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 30,
+      "health": 2000,
+      "turbo": 60
+    }
+  ],
+  "position": [100.0, 10.2, -72.5],
+  "yaw": 1.57,
+  "welcome": false
+}

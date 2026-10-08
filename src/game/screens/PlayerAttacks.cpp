@@ -762,8 +762,18 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
             } else {
                 contact->remaining = gap;
             }
+            Vec3 effectPoint = target.base;
+            if (target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase) {
+                const s32 kind = targets.opponents.enemies().kindOf(target.id - kEnemyTargetBase);
+                if (kind >= 0 && kind < kEnemyKindCount) {
+                    // ProcessEffects starts the impact at OBJGRP.attn_pos, not
+                    // the collision cylinder's floor. Acid Raid's rain hangs
+                    // below its cloud and otherwise disappears inside the body.
+                    effectPoint.y += enemyKind(kind).attentionHeight;
+                }
+            }
             strikeTarget(target, hit.damage, row.damageType, owner, players, targets);
-            presentStrikeHit(source->actor, row, target.base, players);
+            presentStrikeHit(source->actor, row, effectPoint, players);
         }
     }
     targets.fixtures.settleBlasts(players, targets.fixtureEvents);

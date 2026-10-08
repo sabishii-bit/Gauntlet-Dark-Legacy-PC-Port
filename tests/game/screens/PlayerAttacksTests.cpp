@@ -1389,6 +1389,45 @@ TEST_CASE("Sorceress power attacks draw the SFXX row's colour rather than costum
     CHECK(visible > 0);
 }
 
+TEST_CASE("Acid Raid places its rain at a struck enemy's attention point",
+          "[game][player-attacks][acid-rain][assets]") {
+    const auto root = test::assetOrSkip("PDATA/SOR.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    auto& player = f.players[0];
+    player.actor.save().character = 6;
+    player.actor.save().color = GENERATE(0, 1, 2, 3);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 6};
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    player.turbo.add(60);
+    bool rained = false;
+    for (s32 tick = 0; tick < 90; ++tick) {
+        player.figure->animate(0, 2, 1.0f / 30,
+                               tick == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+        f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+        for (usize i = 0; i < f.effects.count(); ++i) {
+            const auto& effect = f.effects.effect(i);
+            if (effect.name == "SOR_PWRB2") {
+                rained = true;
+                CHECK(effect.position.y == Approx(enemyKind(kGruntKind).attentionHeight));
+            }
+        }
+        f.effects.update(1.0f / 30);
+    }
+    CHECK(rained);
+}
+
 TEST_CASE("Spell Storm launches three knights after birth and plays its three decoys once",
           "[game][screens][player-attacks][alpha-effects][assets]") {
     const auto root = test::assetOrSkip("PDATA/SOR.WAD").parent_path().parent_path();

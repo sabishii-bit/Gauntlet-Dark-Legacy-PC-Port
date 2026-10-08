@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/core/Types.h"
@@ -22,6 +24,40 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Acid Raid draws its native cloud and animated rain", "[effects][acid-rain][assets]") {
+    const auto* costume = GENERATE("YEL", "BLU", "RED", "GRE");
+    CAPTURE(costume);
+    const auto root =
+        test::assetOrSkip(std::string{"PLAYERS/SOR/SFX"} + costume + "/ANIM.PS2").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, archive, "SOR_PWRB2", Vec3{0}));
+    WorldLighting lighting;
+    lighting.ambient = Vec3{1};
+    lighting.lightColor = Vec3{0};
+    const auto rain = archive.textures.find("TE2SORRAINTEX01");
+    REQUIRE(rain);
+    for (s32 step = 0; step < 15; ++step) {
+        CAPTURE(step);
+        effects.update(1.0f / 30);
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, lighting);
+        REQUIRE(device.draws.size() == 2);
+        CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+            return draw.texture ==
+                   &archive.textures.texture(device, *rain + (((step + 1) / 2) % 7));
+        }));
+        for (const auto& draw : device.draws) {
+            REQUIRE(draw.texture != nullptr);
+            CHECK(draw.texture != &device.whiteTexture());
+        }
+    }
+    effects.update(1.6f);
+    CHECK(effects.count() == 0);
+}
 
 std::filesystem::path presentationFixture() {
     const auto root = test::scratchDirectory("effect-presentation");
