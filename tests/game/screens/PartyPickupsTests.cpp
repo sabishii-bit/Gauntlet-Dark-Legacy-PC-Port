@@ -95,6 +95,51 @@ TEST_CASE("a native Turbo Boost pickup is carried until its owner activates the 
     CHECK(players[1].actor.save().progress().inventory.powerupCount() == 0);
 }
 
+TEST_CASE("world pickups honor auto use and remain available in the selector",
+          "[pickups][combat-settings][assets]") {
+    const bool activate = GENERATE(false, true);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    LevelFixtures fixtures;
+    PartyHud hud;
+    LevelSoundscape audio;
+    const ClassDataSet classes;
+    PartyPickups::Services services{.world = world,
+                                    .fixtures = fixtures,
+                                    .hud = hud,
+                                    .audio = audio,
+                                    .classes = classes,
+                                    .sounds = nullptr,
+                                    .help = {},
+                                    .openMessage = {},
+                                    .challengeCoin = {}};
+    services.autoActivateItems = activate;
+    std::array<PlayerRuntime, 1> players;
+    const Vec3 spot{10.7f, 10.2f, -60.5f};
+    players[0].actor.spawn(3, {}, nullptr, spot, 0);
+    const auto& records = world.layout().itemInfos();
+    const auto found = std::ranges::find_if(records, [](const auto& record) {
+        return record.type == 1 && record.subtype == static_cast<s32>(ItemKind::WeaponPowerup);
+    });
+    REQUIRE(found != records.end());
+    REQUIRE(world.placeItem(device, found->name, spot));
+    PartyPickups pickups;
+    pickups.collect(device, players, services);
+    auto& inventory = players[0].actor.save().progress().inventory;
+    REQUIRE(inventory.powerupCount() == 1);
+    CHECK(inventory.powerups[0].on == activate);
+    CHECK(hud.selector(3).selection() == 0);
+    hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 32, audio);
+    hud.stepSelector(players[0].actor, {}, 1, audio);
+    hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 1, audio);
+    CHECK(inventory.powerups[0].on == !activate);
+}
+
 TEST_CASE("tower crystal congratulations survive the in-level notice and acknowledge each class",
           "[pickups][tower-crystals][multiplayer]") {
     LevelWorld world;

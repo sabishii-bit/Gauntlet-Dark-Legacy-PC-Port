@@ -102,7 +102,7 @@ public:
                      const WorldLighting& lighting, f32 presentationAlpha = -1) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr,
-              f32 presentationAlpha = -1) const;
+              f32 presentationAlpha = -1, bool healthBars = true) const;
 
     usize count() const;
     bool alive(s32 id) const;

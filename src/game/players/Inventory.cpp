@@ -40,7 +40,7 @@ s32 Inventory::addPotions(s32 kind, s32 count) {
     return taken;
 }
 
-void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
+void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength, bool activate) {
     for (PowerupSlot& slot : powerups) {
         if (slot.kind != kind || slot.flags != flags) {
             continue;
@@ -78,7 +78,7 @@ void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
     // for consumable Turbo Boost and Mikey so collecting them does not waste them.
     const bool immediate =
         kind != powerup::kSpecial || (flags != powerup::kMikey && (flags & powerup::kTurbo) == 0);
-    powerups[pick] = PowerupSlot{strength, kind, charge, flags, immediate};
+    powerups[pick] = PowerupSlot{strength, kind, charge, flags, activate && immediate};
 }
 
 const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {

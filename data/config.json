@@ -39,7 +39,7 @@
   "game": {
     "difficulty": "normal",
     "multiplayer": "normal",
-    "combat": { "autoMelee": false }
+    "combat": { "autoMelee": false, "enemyHealthBars": true, "autoActivateItems": true }
   },
   "controls": {
     "explicitMovement": true,

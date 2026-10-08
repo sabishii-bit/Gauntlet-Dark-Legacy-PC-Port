@@ -19,7 +19,7 @@ TEST_CASE("the inventory label rests above the fitted turbo strip", "[selector][
     selector.step({}, inventory, 1);
     REQUIRE(selector.showing());
     CHECK(PowerupSelector::kLabelX == 24);
-    CHECK(selector.labelY(320) == 288);
+    CHECK(selector.labelY(320) == 289);
     CHECK(selector.labelY(320) + 32 * PowerupSelector::kLabelScale < 304);
 }
 

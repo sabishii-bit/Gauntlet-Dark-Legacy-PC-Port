@@ -72,6 +72,7 @@ s32 mostHealth(s32 level);
  * at `powerupTime` times their strength, a runestone unless held, a legend item, a gargoyle
  * piece up to what the statues want, and a scroll to read (nothing kept).
  */
-ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime = 1.0f);
+ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime = 1.0f,
+                    bool activatePowerups = true);
 
 } // namespace gdl::game

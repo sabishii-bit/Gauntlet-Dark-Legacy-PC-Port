@@ -115,7 +115,8 @@ s32 mostHealth(s32 level) {
     return std::min(kHealthPerLevel * (level - 1) + kBaseHealth, kHealthLimit);
 }
 
-ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime) {
+ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime,
+                    bool activatePowerups) {
     Inventory& inventory = save.progress().inventory;
     Relics& relics = save.progress().relics;
     if (offer.kind < 0 || offer.kind > static_cast<s32>(ItemKind::GargoyleKey)) {
@@ -172,7 +173,7 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
     case ItemKind::MagicPowerup:
     case ItemKind::SpecialPowerup: {
         inventory.addPowerup(offer.kind, offer.flags, static_cast<f32>(offer.amount),
-                             offer.strength * powerupTime);
+                             offer.strength * powerupTime, activatePowerups);
         ItemTaking taking = taken(0, "SPECIALS", powerupSound(offer.kind, offer.flags));
         taking.message = powerupMessage(offer.kind, offer.flags);
         return taking;

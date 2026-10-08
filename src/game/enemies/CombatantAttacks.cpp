@@ -63,7 +63,11 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         const Vec3 body = feet + Vec3{0.0f, 0.5f * view.height, 0.0f};
         bool within = false;
         if (breath.has_value()) {
-            within = breath->touches(*damage, body, view.radius, 0.5f * view.height);
+            const Vec3 contactCentre =
+                feet + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
+            within =
+                breath->touches(*damage, contactCentre, view.collisionRadius.value_or(view.radius),
+                                0.5f * view.height);
         } else if (damage->type == AttackDefinition::kBlow) {
             // CritterNodePlayerCollide expands Player.effectpos/col_radius/col_height,
             // not the smaller footprint used to keep the player off walls.

@@ -25,6 +25,7 @@
 #include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
+#include "game/enemies/General.h"
 #include "game/enemies/Golem.h"
 #include "game/players/ClassData.h"
 #include "game/world/PlacedItems.h"
@@ -913,6 +914,50 @@ TEST_CASE("critter blows use the player's contact cylinder independently of its 
     CHECK((blows > 0) == expected);
 }
 
+TEST_CASE("breath uses the native damage cylinder rather than the smaller wall footprint",
+          "[breath][breath-contact]") {
+    const auto root = targetedCritter();
+    writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100}],
+      "moves":[{"name":"READY","anim":"READY","type":32},
+        {"name":"BREATH","anim":"ROARATK","type":131,"colnode":"BODY",
+         "frameStart":0,"frameEnd":25,"damage0":0}],
+      "damages":[{"type":4,"radius":0.5,"maxDistance":20,"damage":10}]})");
+    EnemyView player = playerAt({0, -3, 8});
+    player.radius = 0.75f;
+    player.collisionRadius = 1.5f;
+    player.collisionHeight = 3;
+    bool expected = true;
+    SECTION("the native contact radius catches the edge of the plume") {
+        player.position.x = 1.75f;
+    }
+    SECTION("the plume misses beyond the expanded contact radius") {
+        player.position.x = 2.1f;
+        expected = false;
+    }
+    SECTION("collision height places the centre independently of model height") {
+        player.position.y = -7;
+        player.collisionHeight = 7;
+    }
+    SECTION("players above the plume are not hit") {
+        player.position.y = 1;
+        expected = false;
+    }
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("DJINN", {}, 0));
+    usize contacts = 0;
+    for (s32 tick = 0; tick < 30; ++tick) {
+        fixture.update(kTicks, kStep, std::span{&player, 1});
+        for (const auto& blow : fixture.actor.takeBlows()) {
+            CHECK(blow.breath);
+            contacts++;
+        }
+    }
+    CHECK((contacts > 0) == expected);
+}
+
 TEST_CASE("native town golem weapon swings retain their authored contact reach without a stomp",
           "[game][enemies][golem-contact][assets]") {
     const auto root = unpackedRoot();
@@ -1633,6 +1678,34 @@ TEST_CASE("a golem's health hangs over it on its GMETER bar, turned to the camer
     golem.hurt(hit);
     CHECK_FALSE(golem.meterPose(&eye).has_value());
     golem.clear();
+}
+
+TEST_CASE("generals carry a suppressible health meter without changing their native flags",
+          "[meter][combat-settings][assets]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, unpackedRoot(), General::definition(), 'G'));
+    CHECK_FALSE(assets.data.meter().inWorld);
+    REQUIRE(assets.meterTree != nullptr);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
+    const auto pose = actor.meterPose(nullptr);
+    REQUIRE(pose.has_value());
+    CHECK(pose->first[3].y > assets.data.floorOffset());
+    actor.draw(device, Mat4{1}, {}, nullptr, nullptr, nullptr, -1, false);
+    const auto bodyDraws = device.draws.size();
+    device.draws.clear();
+    actor.draw(device, Mat4{1}, {});
+    CHECK(device.draws.size() > bodyDraws);
+    EnemyHit hit;
+    hit.damage = actor.maxHealth() * 0.5f;
+    hit.player = 0;
+    actor.hurt(hit);
+    const auto hurt = actor.meterPose(nullptr);
+    REQUIRE(hurt.has_value());
+    REQUIRE(assets.meterFill >= 0);
+    CHECK(glm::length(Vec3{hurt->second[static_cast<usize>(assets.meterFill)][0]}) ==
+          Approx(actor.health() / actor.maxHealth()));
 }
 
 } // namespace

@@ -340,4 +340,26 @@ TEST_CASE("the eagle gargoyle breathes fire on a player near and throws its fire
     REQUIRE(near.takeShots().empty());
 }
 
+TEST_CASE("all gargoyle forms land their breath on a player ahead", "[gargoyle-breath][assets]") {
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION", "GAR_SERP");
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(form), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
+    const std::vector<EnemyView> players{playerAt({0, 0, assets.data.originOffset().z + 12})};
+    bool breathed = false;
+    usize hits = 0;
+    for (s32 i = 0; i < 1800; ++i) {
+        actor.update(2, 1.0f / 30, players);
+        breathed |= actor.moveName() == "BREATH";
+        for (const auto& blow : actor.takeBlows()) {
+            hits += blow.breath ? 1 : 0;
+        }
+    }
+    INFO(form);
+    CHECK(breathed);
+    CHECK(hits > 0);
+}
 } // namespace

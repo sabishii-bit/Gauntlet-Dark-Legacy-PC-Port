@@ -48,6 +48,7 @@ public:
         std::function<bool(s32, usize)> help;                     ///< a lesson for a member
         std::function<bool(std::string_view, usize)> openMessage; ///< a scroll page
         std::function<void(usize)> challengeCoin;                 ///< a coin of the challenge
+        bool autoActivateItems = true;
     };
 
     /** Takes what the party stands on (an open chest's contents from beside it). */

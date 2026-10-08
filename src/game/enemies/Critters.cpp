@@ -373,10 +373,11 @@ void Critters::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& e
 }
 
 void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                    const Texture* frozenTexture, const CameraFrame* camera,
-                    f32 presentationAlpha) const {
+                    const Texture* frozenTexture, const CameraFrame* camera, f32 presentationAlpha,
+                    bool healthBars) const {
     for (const auto& actor : m_critters) {
-        actor.draw(device, clip, lighting, frozenTexture, camera, m_hitFlash, presentationAlpha);
+        actor.draw(device, clip, lighting, frozenTexture, camera, m_hitFlash, presentationAlpha,
+                   healthBars);
     }
 }
 } // namespace gdl::game

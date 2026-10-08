@@ -72,6 +72,8 @@ struct MultiplayerConfig {
 
 struct CombatConfig {
     bool autoMelee = false; ///< unpressed close attacks while moving; manual attacks are unchanged
+    bool enemyHealthBars = true;   ///< floating meters on golems, gargoyles and generals
+    bool autoActivateItems = true; ///< newly collected powerups start enabled
 };
 
 /** Where characters are saved: a `saves` folder beside the game when the directory is

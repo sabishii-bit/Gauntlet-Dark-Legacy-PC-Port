@@ -885,7 +885,7 @@ bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
             continue;
         }
         if (blow.breath) {
-            const Vec3 centre = player.actor.position() + Vec3{0, player.actor.height() * 0.5f, 0};
+            const Vec3 centre = player.actor.followPoint();
             if (events.blocksBreath && events.blocksBreath(blow.origin, centre)) {
                 continue;
             }

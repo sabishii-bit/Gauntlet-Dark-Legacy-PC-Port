@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -37,6 +38,8 @@ struct CombatantAssets {
     /** The GMETER bar over the body, when its type hangs one (CritterAddHealthMeter). */
     const TreeInfo* meterTree = nullptr;
     TreeModel meter;
+    std::unique_ptr<ItemArchive>
+        meterArchive;   ///< shared meter artwork for families without their own
     s32 meterFill = -1; ///< RED_FILLE, stretched across by the health left
     CombatantAssets() = default;
     CombatantAssets(const CombatantAssets&) = delete;

@@ -401,7 +401,9 @@ PartyPickups::Services PlayScene::pickupServices() {
             .help = [this](s32 id, usize index) { return postHelp(id, index); },
             .openMessage = [this](std::string_view name,
                                   usize page) { return openMessage(name, page); },
-            .challengeCoin = [this](usize item) { collectChallengeCoin(item); }};
+            .challengeCoin = [this](usize item) { collectChallengeCoin(item); },
+            .autoActivateItems =
+                m_context.config == nullptr || m_context.config->combat.autoActivateItems};
 }
 
 Vec3 PlayScene::presenceOf(usize index) const {
@@ -1256,7 +1258,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
                                &effectCamera, opponentBlend, TreeModel::Pass::DepthWriting);
     m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera,
-                                opponentBlend);
+                                opponentBlend, m_context.config->combat.enemyHealthBars);
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()

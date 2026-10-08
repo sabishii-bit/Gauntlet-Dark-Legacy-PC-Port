@@ -49,7 +49,7 @@ struct Inventory {
 
     /** Takes a powerup: one already held of the same kind and flags gains its charge and
      * half its strength (or becomes for good); else it fills a free slot, or the weakest. */
-    void addPowerup(s32 kind, u32 flags, f32 charge, f32 strength);
+    void addPowerup(s32 kind, u32 flags, f32 charge, f32 strength, bool activate = true);
     /** The powerup of `kind` with any of `mask` that is held and switched on, or null. */
     const PowerupSlot* powerup(s32 kind, u32 mask) const;
     usize powerupCount() const;

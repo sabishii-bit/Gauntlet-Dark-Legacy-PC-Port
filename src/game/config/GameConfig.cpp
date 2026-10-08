@@ -187,6 +187,8 @@ void GameConfig::mergeJson(std::string_view json) {
         const auto& game = root.at("game");
         if (game.contains("combat")) {
             read(game.at("combat"), "autoMelee", combat.autoMelee);
+            read(game.at("combat"), "enemyHealthBars", combat.enemyHealthBars);
+            read(game.at("combat"), "autoActivateItems", combat.autoActivateItems);
         }
         if (game.contains("multiplayer")) {
             if (!game.at("multiplayer").is_string()) {
@@ -350,7 +352,10 @@ std::string GameConfig::toJson() const {
     root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
     root["game"] = {
         {"difficulty", difficulty.level},
-        {"combat", {{"autoMelee", combat.autoMelee}}},
+        {"combat",
+         {{"autoMelee", combat.autoMelee},
+          {"enemyHealthBars", combat.enemyHealthBars},
+          {"autoActivateItems", combat.autoActivateItems}}},
         {"multiplayer", MultiplayerConfig::kNames[static_cast<usize>(multiplayer.mode)]}};
     root["controls"] = {{"explicitMovement", true},
                         {"keyboard",

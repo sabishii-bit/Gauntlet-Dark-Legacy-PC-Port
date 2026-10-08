@@ -72,6 +72,8 @@
   "settings.movies": "Movie Volume",
   "settings.combat": "Combat",
   "settings.autoMelee": "Auto Melee",
+  "settings.enemyHealthBars": "Enemy Healthbars",
+  "settings.autoActivateItems": "Auto-use Pickups",
   "settings.mono": "Mono",
   "settings.stereo": "Stereo",
   "settings.multiplayer": "Multiplayer Mode",

@@ -35,7 +35,7 @@ public:
     // Keep the label above the port's fitted turbo strip (y304..320), not
     // over it. Retail's TbInfo text baseline is not the painter's top edge.
     static constexpr s32 kLabelX = 24;    ///< from the box's left
-    static constexpr s32 kLabelRise = 32; ///< room for FONT32 at .45 scale above the meter
+    static constexpr s32 kLabelRise = 31; ///< label sits immediately above the turbo strip
     static constexpr f32 kLabelScale = 0.45f;
 
     SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks);

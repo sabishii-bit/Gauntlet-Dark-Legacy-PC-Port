@@ -6,6 +6,7 @@ CombatantDefinition General::definition() {
     out.kind = CombatantKind::General;
     out.realmCostume = true;
     out.patrols = true;
+    out.healthBar = true;
     return out;
 }
 } // namespace gdl::game

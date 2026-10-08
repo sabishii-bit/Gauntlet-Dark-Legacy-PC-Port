@@ -114,6 +114,27 @@ TEST_CASE("powerups go into their slots at the class's share of their strength",
     REQUIRE(takeItem(save, ItemOffer{44, 0, 0, 0.0f}).outcome == Outcome::NotCarried);
 }
 
+TEST_CASE("auto use applies to new pickups and preserves an existing slot's choice",
+          "[items][combat-settings]") {
+    for (const auto kind : {ItemKind::WeaponPowerup, ItemKind::ArmorPowerup, ItemKind::SpeedPowerup,
+                            ItemKind::MagicPowerup, ItemKind::SpecialPowerup}) {
+        for (const bool activate : {false, true}) {
+            CharacterSave save;
+            const auto item = offer(kind, 10, 0x8000, 30);
+            REQUIRE(takeItem(save, item, 1, activate).took());
+            auto& inventory = save.progress().inventory;
+            auto& slot = inventory.powerups[0];
+            REQUIRE(slot.held());
+            CHECK(slot.on == activate);
+            inventory.advance(1);
+            CHECK(slot.strength == (activate ? 29 : 30));
+            REQUIRE(takeItem(save, item, 1, !activate).took());
+            CHECK(slot.on == activate);
+            CHECK(inventory.powerupCount() == 1);
+        }
+    }
+}
+
 TEST_CASE("a runestone is kept once, a legend item by its realm, and gargoyle pieces are "
           "counted up to what the statues want",
           "[game][players][items]") {

@@ -26,6 +26,7 @@ CombatantAssets::~CombatantAssets() {
 void CombatantAssets::clear() {
     children.clear();
     meter.clear();
+    meterArchive.reset();
     meterTree = nullptr;
     meterFill = -1;
     shadow.clear();
@@ -196,10 +197,17 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     if (data.shadowed()) {
         shadow.bind(device, archive, kShadowObject);
     }
-    if (data.meter().inWorld) {
-        if (const auto found = archive.trees.find(kMeterTree); found.has_value()) {
-            meterTree = &archive.trees.tree(*found);
-            if (!meter.bind(*meterTree, archive.models, archive.textures, device, textureLenders)) {
+    if (data.meter().inWorld || definition.healthBar) {
+        ItemArchive* source = &archive;
+        if (definition.healthBar && !archive.trees.find(kMeterTree)) {
+            meterArchive = std::make_unique<ItemArchive>();
+            if (meterArchive->load(root / "MONSTERS/GOLEM/LEVELG")) {
+                source = meterArchive.get();
+            }
+        }
+        if (const auto found = source->trees.find(kMeterTree); found.has_value()) {
+            meterTree = &source->trees.tree(*found);
+            if (!meter.bind(*meterTree, source->models, source->textures, device, textureLenders)) {
                 meterTree = nullptr;
             } else if (const auto fill = meterTree->findNode(kMeterFill); fill.has_value()) {
                 meterFill = static_cast<s32>(*fill);

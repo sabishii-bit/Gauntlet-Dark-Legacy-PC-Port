@@ -260,7 +260,7 @@ Combatant::meterPose(const CameraFrame* camera, f32 presentationAlpha) const {
 
 void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const Texture* frozenTexture, const CameraFrame* camera,
-                     const Texture* hitFlash, f32 presentationAlpha) const {
+                     const Texture* hitFlash, f32 presentationAlpha, bool healthBars) const {
     const Actor& critter = m_actor;
     if (critter.state == State::Inactive || critter.stock == nullptr || critter.hidden) {
         return;
@@ -368,7 +368,7 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
         drawBrokenModels(part->m_actor, device, clip, lighting, brokenFrozen, hitFlash, shownModel,
                          pose);
     }
-    if (const auto meter = meterPose(camera, presentationAlpha)) {
+    if (const auto meter = healthBars ? meterPose(camera, presentationAlpha) : std::nullopt) {
         critter.stock->meter.draw(device, clip, meter->first, lighting, meter->second, nullptr,
                                   critter.alpha);
     }

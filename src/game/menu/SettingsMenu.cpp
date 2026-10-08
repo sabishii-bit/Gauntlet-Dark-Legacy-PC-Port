@@ -282,6 +282,12 @@ void SettingsMenu::rebuild(s32 selection) {
         add(text("settings.autoMelee"), 0);
         definition.items.back().value =
             text(m_config.combat.autoMelee ? "settings.on" : "settings.off");
+        add(text("settings.enemyHealthBars"), 1);
+        definition.items.back().value =
+            text(m_config.combat.enemyHealthBars ? "settings.on" : "settings.off");
+        add(text("settings.autoActivateItems"), 2);
+        definition.items.back().value =
+            text(m_config.combat.autoActivateItems ? "settings.on" : "settings.off");
         break;
     case Page::Difficulty:
         definition.title = text("settings.difficulty");
@@ -429,7 +435,12 @@ void SettingsMenu::change(s32 direction) {
     } else if (m_page == Page::Compass) {
         next.camera.compass = code == 1;
     } else if (m_page == Page::Combat) {
-        next.combat.autoMelee = !next.combat.autoMelee;
+        switch (code) {
+        case 0: next.combat.autoMelee = !next.combat.autoMelee; break;
+        case 1: next.combat.enemyHealthBars = !next.combat.enemyHealthBars; break;
+        case 2: next.combat.autoActivateItems = !next.combat.autoActivateItems; break;
+        default: return;
+        }
     } else {
         return;
     }

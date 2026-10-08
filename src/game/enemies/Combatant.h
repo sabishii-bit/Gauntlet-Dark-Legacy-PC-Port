@@ -157,7 +157,8 @@ public:
     /** Its body, and the bar over it when its type hangs one, turned to `camera`. */
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr,
-              const Texture* hitFlash = nullptr, f32 presentationAlpha = -1) const;
+              const Texture* hitFlash = nullptr, f32 presentationAlpha = -1,
+              bool healthBars = true) const;
     /** The GMETER bar's placement and its nodes' matrices, while it hangs over the body. */
     std::optional<std::pair<Mat4, std::vector<Mat4>>> meterPose(const CameraFrame* camera,
                                                                 f32 presentationAlpha = -1) const;

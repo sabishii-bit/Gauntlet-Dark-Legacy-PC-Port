@@ -132,7 +132,7 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
     const ClassStats* stats = services.classes.stats(actor.save().character);
     const ItemTaking taking = takeItem(
         actor.save(), ItemOffer{pickup.subtype, pickup.amount, pickup.flags, pickup.strength},
-        stats != nullptr ? stats->powerupTime : 1.0f);
+        stats != nullptr ? stats->powerupTime : 1.0f, services.autoActivateItems);
     if (!taking.took()) {
         switch (taking.outcome) {
         case ItemTaking::Outcome::KeysFull: help(HelpMessages::kKeysFull); break;
