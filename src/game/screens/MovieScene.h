@@ -20,6 +20,8 @@ class MovieScene {
 public:
     /** Opens the movie and creates its GPU and audio resources; false if it cannot be played. */
     bool open(RenderDevice& device, AudioMixer& mixer, const std::filesystem::path& file);
+    /** Optional audio output for headless presentation tests or a disabled sound device. */
+    bool open(RenderDevice& device, AudioMixer* mixer, const std::filesystem::path& file);
     void close();
     bool isOpen() const { return m_playback.isOpen(); }
     /** Movie gain, independent of music/effects; retained across movie changes. */

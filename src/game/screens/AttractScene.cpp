@@ -8,6 +8,8 @@
 #include "engine/math/Math.h"
 #include "engine/render/AmbientOcclusion.h"
 
+#include "game/menu/OptionMenu.h"
+
 namespace gdl::game {
 namespace {
 constexpr f32 kRailSpeed = 12.0f;
@@ -131,13 +133,9 @@ bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
                 continue;
             }
             m_world.setPlayerCount(1);
-            m_audio.open(context.unpackedRoot, context.sounds, m_world.audio(),
-                         m_world.ref().name.empty() ? 'L' : m_world.ref().name.front(),
-                         m_world.level() != nullptr && m_world.level()->bossType >= 0);
-            m_audio.bindAmbience(m_world.layout(), &m_world.scene());
-            // ItemVisible uses two players for attract flybys, not one camera ear.
-            m_audio.setPlayerCount(2);
-            m_audio.startMusic(context.assets, info->musicVolume);
+            // init_attract_mode clears sAudioOverride for flybys; sndFxPaused then
+            // silences both the level music and effects. Do not change shared mixer
+            // volumes: title music and movies resume normally on the next screen.
             m_textures.load(context.unpackedRoot / "STATIC");
             if (m_font.load(context.unpackedRoot / "fonts/font32.json", 16)) {
                 if (const auto font = m_textures.find("FONT32"); font.has_value()) {
@@ -158,7 +156,6 @@ bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
 }
 
 void AttractScene::close() {
-    m_audio.close();
     m_world.clear();
     m_text = {};
     m_glow = nullptr;
@@ -178,11 +175,6 @@ AttractOutcome AttractScene::update(f64 seconds, const MenuInput& input) {
     m_world.capturePresentation();
     m_rail.update(static_cast<f32>(seconds));
     m_world.update(static_cast<f32>(seconds));
-    const Vec3 eye = m_rail.camera().position;
-    const AmbientEar ear{eye, m_rail.camera().right()};
-    m_audio.updateAmbience(std::span<const Vec3>(&eye, 1), ear,
-                           m_world.level() != nullptr ? m_world.level()->soundVolume : 1.0f, false,
-                           &m_world.scene());
     return m_rail.finished() || m_elapsed >= kMaxSeconds ? AttractOutcome::Finished
                                                          : AttractOutcome::Running;
 }
@@ -206,5 +198,18 @@ void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 widt
     if (m_context.config != nullptr && m_context.config->display.bloom) {
         device.applyBloom();
     }
+    // do_flyby draws the same centered prompt as the title, at (-256, 320)
+    // in the 512x384 menu space. Keep it out of the world's post-processing.
+    m_canvas.begin(device, makeVirtualScreenTransform(projection, 512, 384, width, height));
+    const std::string_view label =
+        m_context.strings != nullptr ? m_context.strings->get("title.pressStart") : "Press Start";
+    TextStyle glow;
+    glow.color =
+        Color::rgba(130, 0, 234).withAlpha(pulseOpacity(static_cast<s32>(m_elapsed * 60.0), 40, 5));
+    glow.texture = m_glow;
+    glow.expand = OptionMenu::kGlowExpand;
+    m_text.draw(m_canvas, -256, 320, label, glow);
+    m_text.draw(m_canvas, -256, 320, label, TextStyle{});
+    m_canvas.end();
 }
 } // namespace gdl::game

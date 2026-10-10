@@ -244,6 +244,8 @@ public:
     bool kindLoaded(s32 kind) const;
     const ItemArchive* archiveOf(s32 kind) const;
     ItemArchive* archive(s32 kind);
+    /** Already-loaded arrow/bomb/bolt model; never loads assets or starts a shot. */
+    const TreeModel* projectileModel(s32 kind, s32 slot) const;
     /** The prefix a kind's bodies are named by ("GRU") and the tree of a tier ("GRU1"). */
     const TreeInfo* treeOf(s32 kind, s32 tier) const;
 
@@ -308,6 +310,32 @@ public:
 
     bool alive(s32 id) const;
     bool dying(s32 id) const;
+    /** Read-only lifetime/health observation. Pool slots can be recycled without
+     * an intervening empty frame; instance is never reused by this owner, even
+     * across close/open. Does not expose AI mutation or consume feedback queues. */
+    struct Observation {
+        u64 instance = 0;
+        f32 health = 0;
+        f32 fullHealth = 0;
+        bool asleep = false;
+        bool hitFlash = false;
+    };
+    std::optional<Observation> observe(s32 id) const;
+    /** Resource selection, independent of a live enemy slot. */
+    struct Appearance {
+        s32 kind = 0;
+        s32 tier = 1;
+        s32 variant = 0;
+        bool asleep = false;
+    };
+    const TreeInfo* appearanceTree(const Appearance& appearance);
+    /** Draw only an externally posed body using already-loaded resources. Does
+     * not create a collision body, run AI, emit rewards or advance animation.
+     * Death skins, shadows and one-shot effects are not part of this base pass. */
+    void drawPose(RenderDevice& device, const Mat4& clip, const Mat4& placement,
+                  const WorldLighting& lighting, const Appearance& appearance, const TreePose& pose,
+                  u32 sequence, f32 frame, f32 textureFrame, const Texture* hitFlash,
+                  const CameraFrame* camera, TreeModel::Pass pass = TreeModel::Pass::All);
     usize count() const; ///< live, dying included
     s32 kindOf(s32 id) const;
     s32 tierOf(s32 id) const;
@@ -361,6 +389,7 @@ private:
     };
 
     struct Enemy {
+        u64 instance = 0;
         State state = State::Inactive;
         s32 kind = 0;
         s32 tier = 1;
@@ -462,6 +491,7 @@ private:
         TextureAnimator* textures = nullptr;
     };
     Figure bodyOf(const Enemy& enemy);
+    Figure bodyOf(const Appearance& appearance);
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
               std::span<const EnemyView> players, std::span<const Obstacle> obstacles,
               bool seeking = false);
@@ -487,6 +517,7 @@ private:
     EnemyScales m_scales;
     std::vector<std::unique_ptr<Stock>> m_stocks;
     std::array<Enemy, kMost> m_enemies;
+    u64 m_nextInstance = 1;
     std::vector<EnemyBlow> m_blows;
     std::vector<EnemyLoss> m_losses;
     std::vector<EnemyBurst> m_bursts;

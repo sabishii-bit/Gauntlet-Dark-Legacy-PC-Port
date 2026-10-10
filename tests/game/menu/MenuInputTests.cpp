@@ -86,6 +86,53 @@ TEST_CASE("a mouse click skips movies without becoming a global menu confirmatio
     CHECK(gdl::game::readMovieMenuInput(input, config).start);
 }
 
+TEST_CASE("online movie mouse votes belong only to the keyboard player",
+          "[game][menu][movie-skip][mouse]") {
+    const gdl::game::GameConfig config;
+    Input input;
+    input.setPointer({0.5f, 0.5f, true, true});
+    CHECK(gdl::game::readOnlineMovieSkipInput(input, config, 0));
+    for (s32 player = 1; player < 4; ++player) {
+        CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, player));
+        // Offline's shared movie click remains unchanged.
+        CHECK(gdl::game::readMovieMenuInput(input, config, player).start);
+    }
+    input.beginPoll();
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 0));
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::Start)] = true;
+    input.setPad(2, pad);
+    CHECK(gdl::game::readOnlineMovieSkipInput(input, config, 2));
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 0));
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 1));
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 3));
+}
+
+TEST_CASE("online movie votes follow a reassigned keyboard and remapped action",
+          "[game][menu][movie-skip][input]") {
+    gdl::game::GameConfig config;
+    config.controls[0].device = "none";
+    config.controls[2].device = "keyboard";
+    config.controls[2].customized = true;
+    config.controls[2].menu.start = {Key::F2};
+    config.controls[2].menu.select = {Key::F3};
+    Input input;
+    input.setPointer({0.5f, 0.5f, true, true});
+    CHECK(gdl::game::readOnlineMovieSkipInput(input, config, 2));
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 0));
+    input.beginPoll();
+    input.setKey(Key::Enter, true);
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 2));
+    input.setKey(Key::F3, true);
+    CHECK(gdl::game::readOnlineMovieSkipInput(input, config, 2));
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 0));
+    input.beginPoll();
+    CHECK_FALSE(gdl::game::readOnlineMovieSkipInput(input, config, 2));
+    input.setKey(Key::F2, true);
+    CHECK(gdl::game::readOnlineMovieSkipInput(input, config, 2));
+}
+
 TEST_CASE("movie skips retain short mouse taps but ignore motion scrolling and outside clicks",
           "[game][menu][movie][mouse]") {
     const gdl::game::GameConfig config;

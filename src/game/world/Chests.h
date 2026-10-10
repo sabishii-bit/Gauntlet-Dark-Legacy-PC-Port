@@ -116,7 +116,7 @@ public:
      * within ten units. Returns the number of newly revealed chests for the cue. */
     usize updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& powerups, f32 seconds,
                      std::span<const ChestVisitor> party, ItemArchive* realmItems = nullptr);
-    /** The boxes of the chests in sight, which nothing walks through. */
+    /** Blocking boxes; open pickup chests are passable until their contents are taken. */
     std::vector<Obstacle> obstacles() const;
     /** Magic on a shut chest (fn_8005C1DC): what is in it becomes `record` and it rocks for
      * three ticks a point of `power`. The subtype the original writes lands in the record

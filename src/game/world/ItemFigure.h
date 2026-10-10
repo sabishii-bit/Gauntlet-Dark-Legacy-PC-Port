@@ -98,6 +98,23 @@ public:
     f32 yaw() const { return m_yaw; }
     /** How the figure is placed in the world. */
     const Mat4& transform() const { return m_transform; }
+    /** Read-only draw cursors. Empty states can retain a different pose and
+     * texture cursor from the sequence controlling visible object meshes. */
+    struct Presentation {
+        const TreeInfo* tree = nullptr;
+        const ItemArchive* archive = nullptr;
+        u32 poseSequence = 0;
+        f32 poseFrame = 0;
+        u64 poseGeneration = 0;
+        u32 meshSequence = 0;
+        f32 meshFrame = 0;
+        u32 textureSequence = 0;
+        f32 textureFrame = 0;
+        f32 textureClock = 0;
+        u32 continuity = 1;
+        bool drawable = false;
+    };
+    Presentation presentation() const;
     /** Moves the entire figure with an authored attachment, retaining its animation. */
     void placeAt(const Mat4& placement);
     /** Rocks the figure where it stands: pitched by `pitch` and turned `yaw` off its facing. */
@@ -111,6 +128,11 @@ private:
     void refreshTextures();
 
     const TreeInfo* m_tree = nullptr;
+    const ItemArchive* m_archive = nullptr;
+    u32 m_poseSequence = 0;
+    f32 m_poseFrame = 0;
+    u64 m_poseGeneration = 0;
+    u32 m_continuity = 1;
     std::unique_ptr<TreeInfo> m_staticTree;
     mutable TreeModel m_model;
     TreePose m_pose;

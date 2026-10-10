@@ -1,0 +1,18 @@
+{
+  "screen": "tower",
+  "welcome": false,
+  "party": [
+    {
+      "player": 0,
+      "class": "ARC",
+      "color": "BLU",
+      "name": "TEST",
+      "level": 99,
+      "promotedLevel": 99,
+      "health": 9999,
+      "powerups": [
+        {"kind": 9, "flags": 128, "strength": 600, "active": true}
+      ]
+    }
+  ]
+}

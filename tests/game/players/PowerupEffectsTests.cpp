@@ -83,6 +83,15 @@ TEST_CASE("a powerup is named by the first of the original's list whose flags it
     REQUIRE(powerupTextId(3, 0) == "powerup.unknown");
 }
 
+TEST_CASE("Gold and Silver invulnerability retain distinct inventory names",
+          "[game][players][powerups]") {
+    // The native Gold pickup carries both the ordinary and Gold invulnerability bits.
+    CHECK(powerupTextId(powerup::kArmor, 0x110000) == "powerup.goldInvulnerable");
+    CHECK(powerupTextId(powerup::kArmor, 0x100000) == "powerup.goldInvulnerable");
+    CHECK(powerupTextId(powerup::kArmor, 0x10000) == "powerup.invulnerable");
+    CHECK(powerupTextId(powerup::kSpecial, 0x100000) == "powerup.mikey");
+}
+
 TEST_CASE("keys are spent and potions taken out one at a time", "[game][players][inventory]") {
     Inventory inventory;
     REQUIRE_FALSE(inventory.spendKey());

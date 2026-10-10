@@ -37,7 +37,7 @@ constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked mem
 Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config,
                    std::string_view version)
     : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)),
-      m_buildLabel(version) {}
+      m_buildLabel(version), m_version(version) {}
 
 /** Use the original sibling carddemo icon, retaining PNG support for exported fixtures. */
 void Gauntlet::applyWindowIcon() {
@@ -87,6 +87,27 @@ void Gauntlet::onInit() {
     m_sounds->setCategoryVolume(SoundCategory::Effects, m_config.audio.effectsVolume);
     m_assets = std::make_unique<AssetLocator>(assetDirectory());
     m_smokeTest.init(renderDevice());
+
+    if (!m_options.netplayTest.empty()) {
+        m_online = std::make_unique<OnlineRun>();
+        try {
+            const auto scenario = Scenario::load(m_options.scenario);
+            const auto game = context();
+            const auto level = scenario.level.empty() ? std::optional{LevelRef::tower()}
+                                                      : m_levels.byName(scenario.level);
+            if (scenario.afterLevel || scenario.ending || !level ||
+                !m_online->open(renderDevice(), game, m_options.netplayTest, m_options.netplayRoom,
+                                m_version, m_options.netplayContent, scenario.partyMembers(),
+                                *level, scenario.tower, m_options.netplayAutoStart)) {
+                log::error("Online scene test could not start");
+                requestQuit();
+            }
+        } catch (const std::exception& error) {
+            log::error("Online scene test: {}", error.what());
+            requestQuit();
+        }
+        return;
+    }
 
     if (m_options.previewScreensaver) {
         m_idleWatch.update(IdleWatch::kWaitSeconds, input(), true);
@@ -203,6 +224,7 @@ GameContext Gauntlet::context() {
         return m_promptDevices.label(input(), m_config, player, action);
     };
     context.sounds = m_sounds.get();
+    context.movieMixer = &m_audio->mixer();
     context.assets = m_assets.get();
     context.tower = &m_play->world;
     context.stopTimeTotal = &m_stopTimeTotal;
@@ -223,6 +245,14 @@ GameContext Gauntlet::context() {
         }
     };
     context.stopVibration = [this] { window().stopRumble(); };
+    // QA scenarios must not grant permanent unlocks to the player's real installation.
+    if (m_options.scenario.empty()) {
+        context.unlockClasses = [this](u16 mask) {
+            if (m_saves.opened() || m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
+                m_saves.unlockClasses(mask);
+            }
+        };
+    }
     context.previewAudio = [this](const AudioConfig& audio) {
         m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
@@ -234,6 +264,16 @@ GameContext Gauntlet::context() {
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
     m_promptDevices.update(input(), m_config);
+    if (m_online) {
+        const auto menu = readSharedMenuInput(input(), m_config);
+        if (menu.escape) {
+            requestQuit();
+            return;
+        }
+        m_online->update(readPlayInputs(deltaSeconds), menu);
+        m_sounds->update();
+        return;
+    }
     if (updateIdle(deltaSeconds)) {
         window().stopRumble();
         return;
@@ -298,9 +338,7 @@ bool Gauntlet::updateIdle(f64 deltaSeconds) {
     if (wasOpen) {
         m_idleScreen.close();
         m_audio->mixer().setPaused(false);
-        for (auto& controls : m_controls) {
-            controls.reset();
-        }
+        resetPlayInput();
         if (m_options.previewScreensaver) {
             requestQuit();
         }
@@ -421,9 +459,7 @@ bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> pa
         }
     }
     if (m_play->scene.open(renderDevice(), context(), m_play->world, party, options)) {
-        for (auto& controls : m_controls) {
-            controls.reset();
-        }
+        resetPlayInput();
         log::info("Entering {} ({})", level.name, level.title);
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
         return true;
@@ -439,9 +475,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
         return startLevel(LevelRef::tower(), party, options);
     }
     if (m_play->scene.open(renderDevice(), context(), m_play->world, party, options)) {
-        for (auto& controls : m_controls) {
-            controls.reset();
-        }
+        resetPlayInput();
         log::info("Every player is ready; entering the tower");
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
         return true;
@@ -458,15 +492,20 @@ bool Gauntlet::joinTower(const PlayerSelectScene::Inputs& joining) {
     }
     m_select.join(joining);
     m_play->scene.close();
-    for (auto& controls : m_controls) {
-        controls.reset();
-    }
+    resetPlayInput();
     for (usize player = 0; player < joining.size(); ++player) {
         if (joining[player].start) {
             log::info("Player {} comes to join the party", player + 1);
         }
     }
     return true;
+}
+
+void Gauntlet::resetPlayInput() {
+    for (auto& controls : m_controls) {
+        controls.reset();
+    }
+    m_sessionInputs.beginEpoch();
 }
 
 void Gauntlet::updateTower(f64 deltaSeconds) {
@@ -494,45 +533,13 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         if (!m_play->scene.leaving() && ((menu.start && !menu.select) || menu.escape) &&
             m_pause.open(renderDevice(), context(), m_play->scene.party(), player)) {
             m_play->scene.pauseGameplaySounds();
-            for (auto& controls : m_controls) {
-                controls.reset();
-            }
+            resetPlayInput();
             return;
         }
     }
-    PlayScene::Inputs inputs;
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        const MenuInputSource source = playerInputSource(input(), m_config, player);
-        const auto& bindings = playBindings(m_config, player);
-        PlayInput& in = inputs[static_cast<usize>(player)];
-        in.move = readMoveInput(input(), bindings, source.keyboard, source.pad);
-        if (m_cursorInput[static_cast<usize>(player)].update(input(), bindings, source.keyboard,
-                                                             source.pad)) {
-            if (const auto* actor = m_play->scene.actor(player)) {
-                in.aimPoint = m_play->scene.cursorAim(
-                    Vec2{input().pointer().x, input().pointer().y}, actor->position());
-            }
-        }
-        const PlayButtons buttons = m_controls[static_cast<usize>(player)].read(
-            input(), bindings, source.keyboard, source.pad, static_cast<f32>(deltaSeconds));
-        in.attack = buttons.attack;
-        in.usePotion = buttons.usePotion;
-        in.throwPotion = buttons.throwPotion;
-        in.shieldPotion = buttons.shieldPotion;
-        in.strafe = buttons.strafe;
-        in.strongAttack = buttons.strongAttack;
-        in.turbo = buttons.turbo;
-        in.defendPressed = buttons.defendPressed;
-        in.combo = buttons.combo;
-        in.chargePressed = buttons.chargePressed;
-        in.attackPressed = buttons.attackPressed;
-        in.turboAttackPressed = buttons.turboAttackPressed;
-        in.selector = SelectorInput{buttons.selectorUp, buttons.selectorDown, buttons.selectorLeft,
-                                    buttons.selectorRight};
-        in.menu = readPlayerMenuInput(input(), m_config, player);
-    }
+    const auto inputs = readPlayInputs(deltaSeconds);
     const bool wasLeaving = m_play->scene.leaving();
-    const PlayOutcome outcome = m_play->scene.update(deltaSeconds, inputs);
+    const PlayOutcome outcome = m_play->scene.update(deltaSeconds, m_sessionInputs.advance(inputs));
     // Exit speech begins with the sinking spin, once for the party, and must
     // survive closing PlayScene before the tally. Temple/Underworld and the
     // boss wizard's departure have their own speeches.
@@ -667,9 +674,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
                                 ? config.timing.gameplayFrameRate
                                 : config.display.maxFrameRate);
         }
-        for (auto& controls : m_controls) {
-            controls.reset();
-        }
+        resetPlayInput();
         return true;
     } catch (const std::exception& e) {
         log::warn("Could not save settings: {}", e.what());
@@ -687,9 +692,7 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
     auto party = m_pause.party();
     m_pause.close();
     m_audio->mixer().setPaused(false);
-    for (auto& controls : m_controls) {
-        controls.reset();
-    }
+    resetPlayInput();
     if (outcome == PauseOutcome::Resume) {
         return;
     }
@@ -892,15 +895,51 @@ void Gauntlet::returnFromChallenge(std::span<const PartyMember> party) {
     m_play = std::move(m_parent);
     m_play->scene.resumeFromChallenge(party);
     log::info("Returning from secret challenge to {}", m_play->world.ref().name);
-    for (auto& controls : m_controls) {
-        controls.reset();
-    }
+    resetPlayInput();
 }
 
 void Gauntlet::onRender(RenderDevice& device) {
     renderScene(device);
     // One final pass covers movies, loading, menus, play, pause and the idle screen.
     m_buildLabel.render(device, device.framebufferExtent());
+}
+
+PlayScene::Inputs Gauntlet::readPlayInputs(f64 deltaSeconds) {
+    PlayScene::Inputs inputs;
+    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
+        const MenuInputSource source = playerInputSource(input(), m_config, player);
+        const auto& bindings = playBindings(m_config, player);
+        PlayInput& in = inputs[static_cast<usize>(player)];
+        in.move = readMoveInput(input(), bindings, source.keyboard, source.pad);
+        if (m_cursorInput[static_cast<usize>(player)].update(input(), bindings, source.keyboard,
+                                                             source.pad)) {
+            const Vec2 cursor{input().pointer().x, input().pointer().y};
+            if (m_online) {
+                in.aimPoint = m_online->cursorAim(player, cursor);
+            } else if (const auto* actor = m_play->scene.actor(player)) {
+                in.aimPoint = m_play->scene.cursorAim(cursor, actor->position());
+            }
+        }
+        const PlayButtons buttons = m_controls[static_cast<usize>(player)].read(
+            input(), bindings, source.keyboard, source.pad, static_cast<f32>(deltaSeconds));
+        in.attack = buttons.attack;
+        in.usePotion = buttons.usePotion;
+        in.throwPotion = buttons.throwPotion;
+        in.shieldPotion = buttons.shieldPotion;
+        in.strafe = buttons.strafe;
+        in.strongAttack = buttons.strongAttack;
+        in.turbo = buttons.turbo;
+        in.defendPressed = buttons.defendPressed;
+        in.combo = buttons.combo;
+        in.chargePressed = buttons.chargePressed;
+        in.attackPressed = buttons.attackPressed;
+        in.turboAttackPressed = buttons.turboAttackPressed;
+        in.selector = SelectorInput{buttons.selectorUp, buttons.selectorDown, buttons.selectorLeft,
+                                    buttons.selectorRight};
+        in.menu = readPlayerMenuInput(input(), m_config, player);
+        in.movieSkipPressed = readOnlineMovieSkipInput(input(), m_config, player);
+    }
+    return inputs;
 }
 
 void Gauntlet::renderScene(RenderDevice& device) {
@@ -910,6 +949,11 @@ void Gauntlet::renderScene(RenderDevice& device) {
     const Mat4 projection =
         makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
                                 static_cast<f32>(framebuffer.height));
+    if (m_online) {
+        m_online->render(device, projection, frameWidth, frameHeight, clock().deltaSeconds(),
+                         presentationAlpha());
+        return;
+    }
     if (m_idleScreen.isOpen()) {
         m_idleScreen.render(device, projection, frameWidth, frameHeight,
                             glm::radians(m_config.camera.horizontalFovDegrees),
@@ -942,7 +986,7 @@ void Gauntlet::renderScene(RenderDevice& device) {
         if (m_levelLoading.active()) {
             m_levelLoading.draw(m_canvas, device);
         } else {
-            m_loadingPicture.draw(m_canvas, width);
+            m_loadingPicture.draw(m_canvas, width, height, TransitionScreen::Area::FullScreen);
         }
         m_canvas.end();
         m_journey->shown = true;
@@ -1000,6 +1044,7 @@ void Gauntlet::keepParty(std::span<const PartyMember> party) {
 
 void Gauntlet::onShutdown() {
     window().stopRumble();
+    m_online.reset();
     m_buildLabel.release();
     m_idleScreen.close();
     m_demo.close();

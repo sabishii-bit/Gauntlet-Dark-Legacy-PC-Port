@@ -3,6 +3,7 @@
 #include <array>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -106,6 +107,8 @@ public:
     bool load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
               const StringTable* strings);
     void release();
+    /** Warm the finite gameplay-card roster during client loading, not packet playback. */
+    void preloadStatus();
     void setControlLabels(const ControlLabels& labels) { m_controlLabels = labels; }
     bool loaded() const { return m_device != nullptr; }
     /** The small capitals the boxes' levels are written in, which the help messages share. */
@@ -124,10 +127,14 @@ public:
     /** Draws a pickup count above slot `slot`: the STATIC `icon`, then "count/total". */
     void drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count, s32 total);
     void setCountTextures(TextureSet* textures) { m_countTextures = textures; }
+    /** Resolves only the caller's fixed artwork roster before rendering begins. */
+    void preloadPickups(std::span<const std::string_view> cards,
+                        std::span<const std::string_view> counts);
     /** The quantity alone: one decimal for time, whole usable charges otherwise. */
     static std::string usageAmount(const PowerupSlot& slot);
 
 private:
+    const Texture* countTexture(std::string_view icon);
     const Texture* selectTexture(std::string_view name);
     const Texture* staticTexture(std::string_view name);
     std::string_view text(std::string_view id) const;

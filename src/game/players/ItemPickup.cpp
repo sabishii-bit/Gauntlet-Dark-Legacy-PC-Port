@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 #include "engine/core/Types.h"
 
+#include "game/combat/Damage.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 
 namespace gdl::game {
@@ -154,7 +157,19 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
         if (offer.amount >= 0 && health >= most) {
             return refused(ItemTaking::Outcome::HealthFull, offer.amount);
         }
-        save.progress().health = std::clamp(health + offer.amount, 1, most);
+        if (offer.amount < 0) {
+            // do_got_it sends poisoned food through damage_player with the gas flag.
+            // In particular, Gold Invulnerability converts it to ten-percent healing;
+            // unlike ordinary food healing, that may exceed the level's food cap.
+            const auto worn = PowerupEffects::of(inventory);
+            const auto damage =
+                Damage::modify(-static_cast<f32>(offer.amount), Damage::kGas, worn.armor, 0, false);
+            save.progress().health =
+                std::clamp(static_cast<s32>(std::lround(static_cast<f32>(health) - damage.amount)),
+                           1, kHealthLimit);
+        } else {
+            save.progress().health = std::clamp(health + offer.amount, 1, most);
+        }
         ItemTaking taking = taken(offer.amount, foodCard(offer.amount), {});
         taking.ate = offer.amount >= 0;
         taking.hurt = offer.amount < 0;

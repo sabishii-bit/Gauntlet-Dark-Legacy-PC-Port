@@ -14,6 +14,9 @@ constexpr f32 kMovieDepth = 0.5f;
 } // namespace
 
 bool MovieScene::open(RenderDevice& device, AudioMixer& mixer, const std::filesystem::path& file) {
+    return open(device, &mixer, file);
+}
+bool MovieScene::open(RenderDevice& device, AudioMixer* mixer, const std::filesystem::path& file) {
     close();
     if (!m_playback.open(file)) {
         return false;
@@ -21,7 +24,7 @@ bool MovieScene::open(RenderDevice& device, AudioMixer& mixer, const std::filesy
     const MovieInfo& info = m_playback.info();
     m_texture = device.createTexture(TextureDesc{info.width, info.height, TextureFilter::Linear},
                                      m_playback.frame().pixels);
-    m_mixer = &mixer;
+    m_mixer = mixer;
     m_textureDirty = false;
     return true;
 }
@@ -59,9 +62,9 @@ bool MovieScene::update(f64 deltaSeconds) {
         m_audio = m_mixer->createStream(AudioStreamDesc{info.audioSampleRate, info.audioChannels});
         m_audio->setVolume(m_volume);
     }
+    m_audioScratch.clear();
+    m_playback.takeAudio(m_audioScratch);
     if (m_audio) {
-        m_audioScratch.clear();
-        m_playback.takeAudio(m_audioScratch);
         if (!m_audioScratch.empty()) {
             m_audio->push(m_audioScratch);
         }

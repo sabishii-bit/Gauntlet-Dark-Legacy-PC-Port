@@ -20,7 +20,7 @@ struct CharacterSave {
     std::string name;
     s32 character = 0; ///< class index
     s32 color = 0;
-    u16 classUnlock = 0; ///< one bit per unlockable class, from the ninth
+    u16 classUnlock = 0; ///< legacy reward history, imported into the shared unlock profile
     s32 gold = 0;        ///< the selected class's live wallet
     s32 levelTotal = 0;
     bool autoAttack = true;    ///< native control_autoattack belongs to the name, not the class
@@ -79,9 +79,16 @@ public:
     /** Writes a slot; false (with a warning) when the file cannot be written. */
     bool write(usize index, const CharacterSave& save);
 
+    /** Installation-wide class availability, independent of the character being selected.
+     * Opening/refreshing imports old saves without rewriting them. */
+    u16 classUnlocks() const { return m_classUnlocks; }
+    /** Monotonically merges and atomically persists rewards, even without a character slot. */
+    bool unlockClasses(u16 mask);
+
 private:
     std::filesystem::path m_directory;
     std::vector<SaveSlotInfo> m_slots;
+    u16 m_classUnlocks = 0;
 };
 
 } // namespace gdl::game

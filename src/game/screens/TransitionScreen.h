@@ -24,6 +24,7 @@ public:
     static constexpr f32 kViewHeight = 320.0f;   ///< of the 384 rows: the rest is the boxes'
 
     enum class Phase : u8 { Off, ComingUp, Covering, Clearing };
+    enum class Area : u8 { AboveStatus, FullScreen };
 
     /** Finds the picture in the unpacked static archive; false (with a warning) without it,
      * in which case the screen covers the view in black. */
@@ -45,7 +46,10 @@ public:
     f32 opacity() const { return m_opacity; }
 
     /** Draws the picture over a view `width` across, on the canvas's virtual screen. */
-    void draw(Canvas& canvas, f32 width, f32 height = 384.0f) const;
+    void draw(Canvas& canvas, f32 width, f32 height = 384.0f, Area area = Area::AboveStatus) const;
+    /** Draw an authoritative opacity without running a local transition clock. */
+    void drawOpacity(Canvas& canvas, f32 width, f32 height, f32 opacity,
+                     Area area = Area::AboveStatus) const;
 
 private:
     TextureSet m_textures;

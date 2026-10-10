@@ -41,13 +41,15 @@ public:
     void prepare(RenderDevice& device);
 
     void draw(Canvas& canvas) const;
+    /** The same filtered mask composition, usable for preloaded presentation frames. */
+    static Image composite(const Image& scroll, const Image& mask);
 
     /** Alpha of the composited scroll at a texel, for tests. */
     u8 compositeAlpha(u32 x, u32 y) const { return m_composite.pixel(x, y).a; }
 
 private:
     void cutOut(s32 frame);
-    f32 maskAlpha(const Image& mask, u32 x, u32 y) const;
+    static f32 maskAlpha(const Image& source, const Image& mask, u32 x, u32 y);
 
     bool m_active = false;
     Rect m_area;
@@ -56,8 +58,6 @@ private:
     std::unique_ptr<Texture> m_texture;
     std::vector<const Image*> m_masks;
     std::vector<const Texture*> m_ring;
-    u32 m_maskWidth = 0;
-    u32 m_maskHeight = 0;
     s32 m_timer = 0;
     s32 m_cutFrame = -1;
     s32 m_uploadedFrame = -1;

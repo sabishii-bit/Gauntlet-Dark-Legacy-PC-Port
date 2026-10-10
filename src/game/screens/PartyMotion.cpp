@@ -223,8 +223,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // A halo wearer holding Death stands facing him, heeding no button (PlayerMotion,
         // pmotion.c 1621).
         std::optional<Vec3> deathHeld;
-        if (events.grabDeath) {
-            deathHeld = events.grabDeath(i, ticks, !held && !down && !reeling && !entering);
+        const bool mayGrabDeath = !held && !down && !reeling && !entering;
+        if (mayGrabDeath && events.deathContact) {
+            deathHeld = events.deathContact(i);
         }
         MoveInput move =
             !held && !down && !immobilized && !entering && !deathHeld && player < inputs.size()
@@ -473,6 +474,17 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 players[i].attackStep.reset();
                 players[i].knockback.clear();
                 players[i].floor = {};
+            }
+        }
+        // Catching a retreating Death creates contact during this step. Damage must
+        // see the resolved bodies before Death moves again, not last frame's gap.
+        // Recheck existing holds too: floor motion or a shove can separate them.
+        if (events.grabDeath) {
+            deathHeld = events.grabDeath(i, ticks, mayGrabDeath);
+            if (deathHeld) {
+                deed = PlayerDeed::DeathGrab;
+            } else if (deed == PlayerDeed::DeathGrab) {
+                deed = PlayerDeed::None;
             }
         }
         // Stationary normal attacks face the assisted target. The stick, strafe,

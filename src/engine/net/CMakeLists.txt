@@ -1,0 +1,15 @@
+find_package(GameNetworkingSockets CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+
+add_library(engine_net STATIC GnsTransport.cpp)
+add_library(gdl::engine_net ALIAS engine_net)
+target_link_libraries(engine_net PUBLIC gdl::engine_base)
+target_link_libraries(engine_net PRIVATE protobuf::libprotobuf)
+# vcpkg's Linux triplet is static; Windows is shared. Keep that choice private.
+if(TARGET GameNetworkingSockets::GameNetworkingSockets)
+    target_link_libraries(engine_net PRIVATE GameNetworkingSockets::GameNetworkingSockets)
+else()
+    target_link_libraries(engine_net PRIVATE GameNetworkingSockets::GameNetworkingSockets_s)
+endif()
+gdl_apply_compiler_options(engine_net)
+set_target_properties(engine_net PROPERTIES FOLDER "engine")

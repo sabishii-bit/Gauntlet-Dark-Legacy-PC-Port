@@ -707,6 +707,7 @@ TEST_CASE("a locked chest wants a key, opens, and gives up what it held",
     REQUIRE(events[0].kind == ChestEvent::Kind::Unlocked);
     REQUIRE(events[0].chest == 0);
     REQUIRE(chests.chest(0).state == Chests::kOpening);
+    CHECK(chests.obstacles().size() == 2);
     events = chests.update(1.0f / 30.0f, party);
     REQUIRE(events.size() == 1);
     REQUIRE(events[0].kind == ChestEvent::Kind::Opened);
@@ -717,6 +718,8 @@ TEST_CASE("a locked chest wants a key, opens, and gives up what it held",
     // What came out lies in it, reached by touching it; emptied, the chest goes.
     REQUIRE(chests.holdingTouchedBy(party[0]) == -1);
     chests.hold(0, 7);
+    // ItemTouch returns nonblocking while an opened chest still holds its pickup.
+    CHECK(chests.obstacles().size() == 1);
     REQUIRE(chests.holdingTouchedBy(party[0]) == 0);
     REQUIRE(chests.holdingTouchedBy(ChestVisitor{Vec3{10.0f, 0.0f, 0.0f}, 0.75f, 0}) == -1);
     chests.remove(0);
@@ -734,6 +737,7 @@ TEST_CASE("a locked chest wants a key, opens, and gives up what it held",
     REQUIRE(events[0].contents == -1);
     REQUIRE(chests.update(1.0f, {}).empty());
     REQUIRE_FALSE(chests.chest(1).gone);
+    CHECK(chests.obstacles().size() == 1); // gold retains its touch collection obstacle
     const std::array otherVisitor{ChestVisitor{Vec3{100, 0, 0}, 0.75f, 0}, party[0]};
     events = chests.update(0, otherVisitor);
     REQUIRE(events.size() == 1);

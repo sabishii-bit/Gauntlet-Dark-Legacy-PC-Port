@@ -91,6 +91,8 @@ public:
     /** Opt-in visual mesh morphing for authored vertex-animation runs. Incompatible
      * adjacent topology/material/UV frames remain discrete. */
     void setPresentationFrame(u32 sequence, f32 frame);
+    /** Selects one node's object run without disturbing independently posed siblings. */
+    void setMeshPresentationFrame(usize index, u32 sequence, f32 frame);
     static bool compatibleMorph(const Mesh& from, const Mesh& to);
     /** Overrides object-animation frames for just one independently animated branch. */
     void setSubtreeFrame(usize root, u32 sequence, s32 frame);
@@ -149,6 +151,7 @@ private:
     static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device,
                            std::span<TextureSet* const> lenders);
     static void selectFrame(Node& node, u32 sequence, s32 frame);
+    static void selectPresentationFrame(Node& node, u32 sequence, f32 frame);
     /** Grows the bounds around `shape` at `offset`. */
     void include(const Shape& shape, const Vec3& offset, bool& first);
 

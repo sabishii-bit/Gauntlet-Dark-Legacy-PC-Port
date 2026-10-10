@@ -8,10 +8,19 @@ namespace gdl::game {
 /** A completed level's gains, not lifetime totals. Gold/experience are already awarded:
  * the tally is presentation only and must never award them a second time. */
 struct LevelResults {
+    /** Start of a continuous run, retained across a stage's direct boss entrance.
+     * Kills counts completed segments; currency/experience remain original baselines. */
+    struct Checkpoint {
+        s32 gold = 0;
+        s32 experience = 0;
+        s32 kills = 0;
+    };
     s32 player = 0;
     std::array<s32, 3> totals{}; ///< gold, kills (including generators), experience
     static LevelResults between(s32 player, const CharacterSave& entry, const CharacterSave& exit,
                                 s32 kills);
+    static LevelResults since(s32 player, const Checkpoint& entry, const CharacterSave& exit,
+                              s32 kills);
 };
 /** Three piles grow in descending height order, with gold, experience, kills as tie order. */
 class LevelTally {

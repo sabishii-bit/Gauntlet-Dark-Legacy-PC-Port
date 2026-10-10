@@ -416,10 +416,14 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
     if (m_resources.has_value()) {
         // Retain the walking query's vertical span AND native low-face filter.
         // A taller correction volume would undo a valid step onto lowered scenery.
+        // PlayerMotion's animated-wall branch (80088714) projects displacement;
+        // it does not expel a stationary body from a cart that moved into it.
+        // Walking and body corrections already sweep against animated walls.
+        // Keep the static-wall overlap correction without repeating a moving-wall push.
         resolved = m_resources->world.collision().resolveWalls(
             resolved, player.radius(), resolved.y + PlayerActor::kFootClearance,
             resolved.y + player.height() - PlayerActor::kFootClearance, nullptr,
-            player.minimumWallY(resolved.y));
+            player.minimumWallY(resolved.y), WorldCollision::WallPush::StaticOnly);
         const Vec3 checked =
             BodyCollision::resolve(from, resolved, player.radius(), player.height(), bodies);
         if (glm::distance(checked, resolved) > 1e-4f) {
@@ -506,6 +510,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     const auto seed = static_cast<u32>(std::hash<std::string>{}(world.ref().name));
     m_enemies.open(device, resources.root, &world.collision(), most, scales, seed);
     m_enemies.setContactGridBounds(world.layout().minBounds(), world.layout().maxBounds());
+    m_statues.setContactGridBounds(world.layout().minBounds(), world.layout().maxBounds());
     m_enemies.setHazards(&world.hazards());
     m_enemies.setLookouts(LookoutRoute::of(world.layout().locators()));
     const std::string& levelName = world.ref().name;
@@ -593,6 +598,12 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         const bool great =
             *kind == kGolemEnemyKind || *kind == kGeneralEnemyKind || *kind == kGargoyleEnemyKind;
         if (great) {
+            // Statues preload their family's assets below. A General may wait offscreen
+            // for most of the level, but its resources must also be part of the fixed
+            // presentation catalog before the first online snapshot is published.
+            if (*kind == kGeneralEnemyKind) {
+                m_critters.archiveFor(CombatantKind::General);
+            }
             // fn_8005D04C: each claims the pickup lying nearest it, to carry until slain.
             placement.carried = world.claimItem(instance.position, kCarryReach, kCarryRise);
             // A golem or gargoyle stands as a statue until woken (SetItem, items.c 6798).
@@ -1146,7 +1157,10 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         for (usize player = 0; player < players.size(); ++player) {
             if (players[player].actor.player() == hit.player &&
                 players[player].life == PlayerLife::Standing && players[player].effectGap <= 0) {
-                events.hurt(player, hit.damage, HurtKind::Pierce, true, {hit.flags, hit.direction});
+                // ProcessEffects (80094BE0) calls damage_player with mode 1
+                // for both missiles and lingering contact effects. Mode 3's
+                // piercing-trap groan does not belong to these attacks.
+                events.hurt(player, hit.damage, HurtKind::Blow, true, {hit.flags, hit.direction});
                 players[player].effectGap = hit.repeatGap;
                 if (hit.ownerKind == CombatantKind::Boss) {
                     m_bosses.damagedPlayer(hit.player, hit.damage, hit.critter);

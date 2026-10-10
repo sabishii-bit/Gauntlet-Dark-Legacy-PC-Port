@@ -227,4 +227,29 @@ TEST_CASE("missing level message resources disable presentation without failing 
     REQUIRE_FALSE(f.messages.active());
 }
 
+TEST_CASE("replica scroll preloads do not open pages and reject absent burn artwork",
+          "[netplay][level-messages]") {
+    Fixture f("level-messages-replica");
+    REQUIRE(f.messages.preloadReplica(f.device, nullptr));
+    CHECK_FALSE(f.messages.active());
+    CHECK_FALSE(f.messages.look());
+    CHECK(f.messages.accepts({0, 0, -1, 255}));
+    CHECK(f.messages.accepts({0, 1, -1, 0}));
+    CHECK_FALSE(f.messages.accepts({0, 2, -1, 0}));
+    CHECK_FALSE(f.messages.accepts({1, 0, -1, 0})); // Native empty message.
+    CHECK_FALSE(f.messages.accepts({0, 0, 0, 0}));  // No masks or ring in these assets.
+    Canvas canvas;
+    const auto allocated = f.device.texturesCreated;
+    canvas.begin(f.device, Mat4{1});
+    f.messages.drawReplica(canvas, {0, 1, -1, 255});
+    canvas.end();
+    CHECK_FALSE(f.device.draws.empty());
+    CHECK_FALSE(f.messages.active());
+    CHECK(f.device.texturesCreated == allocated);
+    CHECK(f.device.textureUpdates == 0);
+    f.messages.clear();
+    CHECK_FALSE(f.messages.accepts({0, 1, -1, 255}));
+    CHECK_FALSE(f.messages.preloadReplica(f.device, nullptr));
+}
+
 } // namespace

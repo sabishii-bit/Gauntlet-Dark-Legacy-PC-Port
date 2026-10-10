@@ -3,7 +3,51 @@
 # characters as they stand in a level), world (the levels the game plays in and their
 # cameras), menu (widgets), screens (full screens and what they receive), app (the driver and
 # attract flow). A module only includes those below it.
+# netplay contains transport-independent commands/timelines and bounded selected-character
+# data from players; screens adapts them to gameplay, and app owns the input boundary.
+find_package(lz4 CONFIG REQUIRED)
+if(GDL_ENABLE_NETPLAY)
+    add_subdirectory(netplay)
+endif()
 add_library(game STATIC
+    netplay/SnapshotBlock.cpp
+    netplay/InputCommand.cpp
+    netplay/InputTimeline.cpp
+    netplay/MatchSession.cpp
+    netplay/ClientClock.cpp
+    netplay/OnlineSession.cpp
+    netplay/CharacterProfile.cpp
+    netplay/PartyCheckpoint.cpp
+    netplay/PartyBootstrap.cpp
+    screens/MatchInputs.cpp
+    screens/OnlineParty.cpp
+    screens/OnlinePlay.cpp
+    screens/OnlineLevelEntry.cpp
+    app/OnlineRun.cpp
+    screens/PlayReplication.cpp
+    screens/ReplicaView.cpp
+    screens/ReplicaStage.cpp
+    screens/StageResources.cpp
+    netplay/MotionSnapshot.cpp
+    netplay/SnapshotPlayback.cpp
+    netplay/CombatSnapshot.cpp
+    netplay/HudSnapshot.cpp
+    screens/ReplicaHud.cpp
+    netplay/FighterSnapshot.cpp
+    screens/ReplicaFighters.cpp
+    netplay/CombatReplica.cpp
+    netplay/CombatPlayback.cpp
+    netplay/ReplicaPose.cpp
+    screens/ReplicaActors.cpp
+    screens/ReplicaCompanions.cpp
+    screens/ReplicaProjectiles.cpp
+    screens/PlayerProjectileResources.cpp
+    screens/PlaySceneReplication.cpp
+    screens/ReplicaPickups.cpp
+    screens/ReplicaFixtures.cpp
+    screens/CombatCapture.cpp
+    screens/PlayInput.h
+    screens/SessionInputs.cpp
     world/StaticScenery.cpp
     enemies/DeathRules.cpp
     enemies/EnemiesDeath.cpp
@@ -158,6 +202,7 @@ add_library(game STATIC
     enemies/CombatantAttacks.cpp
     enemies/CombatantGrabs.cpp
     enemies/CombatantView.cpp
+    enemies/CombatantVisual.cpp
     enemies/Golem.cpp
     enemies/General.cpp
     enemies/Gargoyle.cpp
@@ -322,7 +367,12 @@ add_library(gdl::game ALIAS game)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 
-target_link_libraries(game PUBLIC gdl::engine PRIVATE gdl::formats nlohmann_json::nlohmann_json)
+target_link_libraries(game PUBLIC gdl::engine PRIVATE gdl::formats nlohmann_json::nlohmann_json lz4::lz4)
+if(GDL_ENABLE_NETPLAY)
+    target_link_libraries(game PRIVATE gdl::room_service gdl::engine_net)
+endif()
+set_source_files_properties(app/OnlineRun.cpp PROPERTIES
+    COMPILE_DEFINITIONS GDL_ENABLE_NETPLAY=$<BOOL:${GDL_ENABLE_NETPLAY}>)
 gdl_apply_compiler_options(game)
 set_target_properties(game PROPERTIES FOLDER "game")
 

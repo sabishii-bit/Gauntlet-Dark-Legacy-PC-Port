@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -59,6 +60,12 @@ struct HelpReader {
  */
 class HelpMessages {
 public:
+    struct Look {
+        s32 id = 0;
+        s32 player = -1;
+        s32 number = -1;
+        HelpSpeaker speaker;
+    };
     static constexpr s32 kUseMagicOnDeath = 0; ///< nothing but magic harms him
     static constexpr s32 kDoorNeedsKey = 1;
     static constexpr s32 kChestNeedsKey = 2;
@@ -147,6 +154,11 @@ public:
     s32 player() const { return m_player; }
     s32 id() const { return m_id; }
     const std::vector<std::string>& lines() const { return m_lines; }
+    std::optional<Look> look() const;
+    /** Resolves display text only; does not post, change seen flags, or start a timer. */
+    std::vector<std::string> linesFor(const Look& look) const;
+    static void drawLines(Canvas& canvas, const TextPainter& text, const Texture* scroll,
+                          const Vec2& head, std::span<const std::string> lines, s32 player);
 
     /** Draws it centred over `head`, a point of the virtual screen, kept on the screen. */
     void draw(Canvas& canvas, const TextPainter& text, const Texture* scroll,
@@ -155,6 +167,8 @@ public:
     Rect areaFor(const TextPainter& text, const Vec2& head) const;
 
 private:
+    static Rect areaForLines(const TextPainter& text, const Vec2& head,
+                             std::span<const std::string> lines);
     /** The line naming `player`: their colour and class, or Pojo when carried (message.c
      * 767); empty when the strings lack the names. */
     std::string speakerLine(s32 id, s32 player, HelpSpeaker speaker) const;
@@ -165,6 +179,8 @@ private:
     s32 m_id = -1;
     s32 m_priority = 0;
     s32 m_player = 0;
+    s32 m_number = -1;
+    HelpSpeaker m_speaker;
     s32 m_ticksLeft = 0;
     s32 m_pauseLeft = 0;
     usize m_posted = 0;

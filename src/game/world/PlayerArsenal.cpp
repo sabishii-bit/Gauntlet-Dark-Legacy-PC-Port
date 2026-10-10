@@ -282,39 +282,44 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     // Companion shots do not hit players or detonate collectible potions.
     launch.owner = actor.player();
     launch.breaksPotions = false;
-    const f32 scale = PlayerFigure::bodyScale(actor.save(), worn);
-    launch.position = Vec3{actor.transform() * Vec4{stats->familiarShotOffset * scale, 1}};
+    const Mat4 placement = PlayerFigure::bodyPlacement(actor.transform(), actor.save(), worn);
+    launch.position = Vec3{placement * Vec4{stats->familiarShotOffset, 1}};
     launch.direction = actor.facing();
     launch.speed = 35;
     launch.spec = m_resources->bossEncounter ? &kBossShot : &kLevelShot;
     launch.wallSound = MissileWallSound::Silent;
     // CalcTargetDir normalizes horizontal displacement, uses a 50-unit/second
     // flight estimate, then StartFX scales the direction by 35.
-    const Vec3 aim = target.value_or(launch.position + actor.facing() * 21.0f);
-    const Vec3 delta = aim - launch.position;
-    const f32 distance = std::hypot(delta.x, delta.z);
-    const f32 inverse = distance > 0.001f ? 1.0f / distance : 1.0f;
-    const f32 drop = m_resources->bossEncounter ? 0.0f : -0.5f;
-    launch.velocity = Vec3{delta.x * inverse,
-                           0.02f * (0.5f * launch.spec->weight * distance * 0.02f +
-                                    (delta.y + drop) * 50.0f * inverse),
-                           delta.z * inverse} *
-                      launch.speed;
+    const auto launchShot = [&] {
+        const Vec3 aim = target.value_or(launch.position + actor.facing() * 21.0f);
+        const Vec3 delta = aim - launch.position;
+        const f32 distance = std::hypot(delta.x, delta.z);
+        const f32 inverse = distance > 0.001f ? 1.0f / distance : 1.0f;
+        const f32 drop = m_resources->bossEncounter ? 0.0f : -0.5f;
+        launch.velocity = Vec3{delta.x * inverse,
+                               0.02f * (0.5f * launch.spec->weight * distance * 0.02f +
+                                        (delta.y + drop) * 50.0f * inverse),
+                               delta.z * inverse} *
+                          launch.speed;
+        m_missiles.launch(launch);
+    };
     // Both companions share the release and aim, but retain independent damage and visuals.
     if (familiar) {
         launch.damage = 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
         launch.model = &body->familiarMissile();
         launch.archive = body->effects();
         launch.tree = "FAMILIAR_SPIT";
-        m_missiles.launch(launch);
+        launchShot();
     }
     if (phoenix) {
+        launch.position =
+            Vec3{body->phoenixAttachment(placement) * Vec4{stats->familiarShotOffset, 1}};
         launch.damage = kPhoenixDamage;
         launch.flags = kPhoenixDamageFlags;
         launch.model = &m_phoenixShot;
         launch.archive = &m_resources->weapons;
         launch.tree = "PHOENIX_FBALL";
-        m_missiles.launch(launch);
+        launchShot();
     }
 }
 

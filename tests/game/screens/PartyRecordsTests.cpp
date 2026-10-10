@@ -200,4 +200,42 @@ TEST_CASE("Sumner's name on a different class does not exempt it from checkpoint
     CHECK(party[0].save.gold == 0);
 }
 
+TEST_CASE("direct boss travel retains the original tally checkpoint without awarding twice",
+          "[party-records][shop][linked-results]") {
+    auto players = twoPlayers(); // player ids 2 and 3, not vector indices
+    players[0].entrySave.gold = 100;
+    players[0].actor.save().gold = 350;
+    PartyRecords::award(players, 2, 500, true, nullptr);
+    PartyRecords::award(players, 3, 200, true, nullptr);
+    auto party = PartyRecords::members(players);
+    REQUIRE(party[0].resultsCheckpoint);
+    REQUIRE(party[1].resultsCheckpoint);
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].entrySave = party[i].save;
+        players[i].resultsCheckpoint = party[i].resultsCheckpoint;
+        players[i].levelKills = 0;
+    }
+    // A boss stage loss must subtract from net run gold, not clamp each stage to zero.
+    players[0].actor.save().gold -= 50;
+    PartyRecords::award(players, 2, 750, true, nullptr);
+    PartyRecords::award(players, 3, 400, true, nullptr);
+    const auto before = players[0].actor.save().toJson();
+    const auto results = PartyRecords::results(players);
+    REQUIRE(results.size() == 2);
+    CHECK(results[0].player == 2);
+    CHECK(results[0].totals == std::array<s32, 3>{200, 2, 1250});
+    CHECK(results[1].player == 3);
+    CHECK(results[1].totals == std::array<s32, 3>{0, 2, 600});
+    CHECK(PartyRecords::results(players)[0].totals == results[0].totals);
+    CHECK(players[0].actor.save().toJson() == before);
+    CHECK(PartyRecords::members(players)[0].resultsCheckpoint->kills == 2);
+    // The fallen/departed never gain a tally, and abandoning clears transient history.
+    players[1].life = PlayerLife::InTower;
+    REQUIRE(PartyRecords::results(players).size() == 1);
+    CHECK_FALSE(PartyRecords::members(players)[1].resultsCheckpoint);
+    party = PartyRecords::abandoned(players, PartyRecords::members(players));
+    CHECK_FALSE(party[0].resultsCheckpoint);
+    CHECK_FALSE(party[1].resultsCheckpoint);
+}
+
 } // namespace

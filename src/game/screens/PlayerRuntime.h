@@ -12,6 +12,7 @@
 #include "game/players/ExitWait.h"
 #include "game/players/HeadGem.h"
 #include "game/players/Knockback.h"
+#include "game/players/LevelResults.h"
 #include "game/players/MeleeStreak.h"
 #include "game/players/MikeyDecoy.h"
 #include "game/players/PlayerActor.h"
@@ -56,7 +57,8 @@ struct PlayerRuntime {
     std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
     std::optional<usize> slot;            ///< persistent save slot, not the input player id
     CharacterSave entrySave;              ///< restored when a fallen character leaves the level
-    s32 levelKills = 0;                   ///< creatures and generators credited during this level
+    std::optional<LevelResults::Checkpoint> resultsCheckpoint; ///< prior linked stages, not saved
+    s32 levelKills = 0; ///< creatures and generators credited during this level
     PlayerLife life = PlayerLife::Standing;
     bool towerPrompt = false; ///< fallen outside the tower, asked to wait there or quit
     bool departed = false;    ///< quit the game from that prompt: out of the party
@@ -80,7 +82,7 @@ struct PlayerRuntime {
     };
     std::vector<ShockGap> shockGaps;
     s32 deathHeld = -1;      ///< the Death a halo holds, by enemy slot; none when -1
-    s32 deathHeldTicks = 0;  ///< ticks toward the next 30 Hz frame of the hold
+    s32 deathDrainTicks = 0; ///< ticks until the next drain; separation cannot reset its cadence
     u32 deathHeldEffect = 0; ///< Death's drain effect on the one holding him
     SoundHandle deathHeldCry = kNoSound;
     SoundHandle deathHeldSuck = kNoSound;

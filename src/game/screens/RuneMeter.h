@@ -25,6 +25,8 @@ public:
     bool visible() const { return m_visible; }
     f32 fill() const { return m_fill; }
     void draw(Canvas& canvas, const Texture& frame, const Texture& fillTexture) const;
+    static void drawFill(Canvas& canvas, const Texture& frame, const Texture& fillTexture,
+                         f32 fill);
     static bool eligible(s32 rune, s32 realm, std::span<const PartyMember> party);
     static f32 closeness(f32 distance, f32 worldDiagonal);
     struct Column {

@@ -24,7 +24,8 @@ PartyMotion::Events PlayScene::motionEvents() {
         .perform = [this](usize i, PartyMotion::Action action) { perform(i, action); },
         .select =
             [this](usize i, const SelectorInput& input, s32 elapsed) {
-                m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio);
+                m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio,
+                                   m_world->ref().isSecret());
             },
         .advanceTurbo =
             [this](usize i, s32 elapsed, f32 duration) {
@@ -69,6 +70,8 @@ PartyMotion::Events PlayScene::motionEvents() {
             [this](usize i, bool held, const Vec3& facing) {
                 return m_attacks.meleeSense(m_players[i].actor, held, attackTargets(), facing);
             },
+        .deathContact =
+            [this](usize i) { return m_attacks.deathContact(i, m_players, attackTargets()); },
         .grabDeath =
             [this](usize i, s32 ticks, bool allowed) {
                 return m_attacks.grabDeath(i, ticks, allowed, m_players, attackTargets());

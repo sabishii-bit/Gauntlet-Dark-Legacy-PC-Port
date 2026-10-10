@@ -64,12 +64,15 @@ public:
         bool unlit = false;
         bool depthWrite = true;
         Color tint = Color::white();
+        f32 alpha = 1.0f;        ///< constant opacity, multiplied by any end-of-life fade
         f32 playbackRate = 1.0f; ///< animation speed, independent of motion and particle clocks
         std::optional<Light> light;
     };
 
     /** One effect playing. */
     struct Effect {
+        u64 instance = 0;
+        u32 continuity = 1;
         std::string name;
         u32 id = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
@@ -100,6 +103,7 @@ public:
         bool unlit = false;
         bool depthWrite = true;
         Color tint = Color::white();
+        f32 alpha = 1.0f;
         f32 playbackRate = 1.0f;
         std::optional<Light> light;
         f32 lived = 0.0f;                    ///< seconds since it started
@@ -116,6 +120,7 @@ public:
         bool presentationCaptured = false;
         mutable TreePose presentationPose; ///< visual-only sample, never emitter or contact input
         Mat4 transform() const;
+        f32 opacity() const;
     };
 
     /** Starts `tree` of `archive` (which must outlive the effect) at `position`; false, with
@@ -132,6 +137,7 @@ public:
     void finish(u32 id);
     /** Ordered fallback texture sets. Set before starting effects; owners must outlive clear(). */
     void setTextureLenders(std::span<TextureSet* const> lenders);
+    std::span<TextureSet* const> textureLenders() const { return m_lenders; }
     /** Removes time from the remaining lifetime and caps it, without restarting animation. */
     void shortenLifetime(u32 id, f32 secondsLost, f32 maximum);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
@@ -165,6 +171,7 @@ public:
 
     usize count() const { return m_effects.size(); }
     const Effect& effect(usize index) const { return *m_effects[index]; }
+    f32 textureFrame(const Effect& effect) const;
 
 private:
     static bool bindVisuals(Effect& effect);
@@ -181,6 +188,7 @@ private:
     std::vector<TextureSet*> m_lenders;
     bool m_presentationAdvanced = false;
     u32 m_nextId = 1;
+    u64 m_nextInstance = 1; ///< independent of resettable local effect handles
 };
 
 } // namespace gdl::game

@@ -49,8 +49,10 @@ Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 blend) {
 void PlacedItems::attach(usize index, const Mat4& transform, bool contained) {
     if (index < m_items.size()) {
         Item& item = m_items[index];
-        if (item.contained != contained) {
+        if (item.contained != contained ||
+            glm::distance(item.position, Vec3{transform[3]}) > kPresentationCutDistance) {
             item.presentationCaptured = false;
+            ++item.continuity;
         }
         item.floor.reset();
         item.transform = transform;
@@ -186,7 +188,11 @@ void PlacedItems::syncFloors() {
             item.floor.reset();
             continue;
         }
-        item.transform = *placement * item.floor->local;
+        const Mat4 next = *placement * item.floor->local;
+        if (glm::distance(item.position, Vec3{next[3]}) > kPresentationCutDistance) {
+            ++item.continuity;
+        }
+        item.transform = next;
         item.position = Vec3{item.transform[3]};
     }
 }
@@ -220,6 +226,7 @@ void PlacedItems::setPlayerCount(s32 players) {
         item.visible = !item.taken && !item.carried && item.shownTo(players);
         if (item.visible != wasVisible) {
             item.presentationCaptured = false;
+            ++item.continuity;
         }
     }
 }
@@ -558,6 +565,7 @@ bool PlacedItems::release(usize index, const Vec3& position, const Vec3& velocit
     }
     Item& item = m_items[index];
     item.carried = false;
+    ++item.continuity;
     item.presentationCaptured = false;
     item.floor.reset();
     item.visible = !item.taken && item.shownTo(m_players);
@@ -778,6 +786,7 @@ void PlacedItems::capturePresentation() {
 void PlacedItems::snapPresentation() {
     for (Item& item : m_items) {
         item.presentationCaptured = false;
+        ++item.continuity;
     }
 }
 
@@ -847,6 +856,15 @@ void PlacedItems::update(f32 seconds) {
     if (m_effects.empty()) {
         m_bursts.prune();
     }
+}
+
+f32 PlacedItems::textureFrame(const Item& item) const {
+    for (const auto& motion : m_motions) {
+        if (motion.archive == item.archive) {
+            return static_cast<f32>(motion.animator.frame());
+        }
+    }
+    return 0;
 }
 
 void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,

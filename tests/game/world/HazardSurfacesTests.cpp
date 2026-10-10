@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <vector>
 
@@ -13,6 +15,8 @@
 #include "TestSupport.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerImpact.h"
+#include "game/screens/LevelOpponents.h"
+#include "game/screens/PartyMotion.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/world/HazardSurfaces.h"
 #include "game/world/LevelCatalog.h"
@@ -189,7 +193,8 @@ TEST_CASE("Nightmare turbines retain harmful contacts", "[turbine-hazards][asset
                                                               .sound = [](std::string_view) {},
                                                               .cry = [](std::string_view) {},
                                                               .named = [](std::string_view, f32) {},
-                                                              .learnBlock = [] {}};
+                                                              .learnBlock = [] {},
+                                                              .vibrate = {}};
                             health.hurt(player, harm->harm.damage, HurtKind::Blow, true, false,
                                         1.0f, events, PlayerImpact{harm->harm.impact, harm->away});
                             CHECK(player.actor.save().health() == 995);
@@ -200,6 +205,99 @@ TEST_CASE("Nightmare turbines retain harmful contacts", "[turbine-hazards][asset
         }
         INFO("wall hits=" << blocked << "; final-position reprobe misses=" << missed);
         CHECK(blocked > 0);
+    }
+}
+
+TEST_CASE("native trolleys and minecarts knock players down without dragging them along",
+          "[game][world][hazards][moving-hazards][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    struct Crossing {
+        const char* level;
+        Vec3 position;
+    };
+    // Authored G2RAIL1's northern bend and I1MINECART#1's upper straight.
+    for (const Crossing crossing : {Crossing{"G2", {-35.4368f, 1.265625f, -190.734f}},
+                                    Crossing{"I1", {51.953125f, 40.953125f, -270.25f}}}) {
+        CAPTURE(crossing.level);
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *catalog.byName(crossing.level)));
+        world.startTriggers({});
+        ItemArchive weapons;
+        EffectTrees effects;
+        LevelSoundscape audio;
+        std::array<PlayerRuntime, 1> players;
+        std::array<PlayInput, 1> inputs;
+        auto& runtime = players[0];
+        auto& actor = runtime.actor;
+        actor.spawn(0, {}, nullptr, crossing.position, 0);
+        actor.save().progress().health = 1000;
+        runtime.figure = PlayerFigure::load(device, root, actor.save(), false);
+        REQUIRE(runtime.figure);
+        LevelOpponents opponents;
+        opponents.open({device, world, weapons, effects, audio, root, 1, true}, players);
+        PartyMotion::Events events;
+        events.perform = [](usize, PartyMotion::Action) {};
+        events.select = [](usize, const SelectorInput&, s32) {};
+        events.advanceTurbo = [](usize, s32, f32) {};
+        events.resolveMovement = [&](usize, const Vec3& from, const Vec3& to) {
+            return opponents.resolveMovement(actor, from, to);
+        };
+        const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
+                                                .sound = [](std::string_view) {},
+                                                .cry = [](std::string_view) {},
+                                                .named = [](std::string_view, f32) {},
+                                                .learnBlock = [] {},
+                                                .vibrate = {}};
+        PlayerHealth health;
+        s32 hits = 0;
+        s32 overlapping = 0;
+        s32 recovering = 0;
+        f32 mostTravel = 0;
+        for (s32 frame = 0; frame < 270; ++frame) {
+            world.update(1.0f / 30);
+            // Exercise the actual post-opponent wall check, not just the low-level
+            // hazard sampler. An incoming cart must not move an idle body itself.
+            if (world.hazards().touching(world.collision(), crossing.position, actor.radius(),
+                                         actor.height())) {
+                ++overlapping;
+                const Vec3 rechecked =
+                    opponents.resolveMovement(actor, crossing.position, crossing.position);
+                CAPTURE(frame, rechecked.x, rechecked.y, rechecked.z);
+                CHECK(rechecked == crossing.position);
+            }
+            PartyMotion::step(players, inputs, false, 0, 2, 1.0f / 30, world.collision(), events);
+            mostTravel = std::max(mostTravel, glm::distance(actor.position(), crossing.position));
+            runtime.surfaceGap = std::max(runtime.surfaceGap - 1.0f / 30, 0.0f);
+            if (runtime.figure->animator().reacting()) {
+                ++recovering;
+                CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(runtime));
+            }
+            if (runtime.surfaceGap > 0 || !PlayerHealth::canTakeSurfaceDamage(runtime)) {
+                continue;
+            }
+            const auto touch =
+                world.hazards().touching(world.collision(), actor.position(), actor.radius(),
+                                         actor.height(), actor.wallContacts());
+            if (!touch) {
+                continue;
+            }
+            runtime.surfaceGap = 1;
+            REQUIRE(touch->harm.impact == PlayerImpact::kKnockDown);
+            const s32 before = actor.save().health();
+            health.hurt(runtime, touch->harm.damage, HurtKind::Blow, true, false, 1, healthEvents,
+                        {touch->harm.impact, touch->away});
+            hits += actor.save().health() < before ? 1 : 0;
+        }
+        CHECK(overlapping > 0);
+        CHECK(recovering > 0);
+        CHECK(hits == 1);
+        CHECK(actor.save().health() == 985);
+        CHECK(mostTravel < 5); // Ordinary knockback, not G2's former 27-unit cart ride.
+        opponents.close();
     }
 }
 

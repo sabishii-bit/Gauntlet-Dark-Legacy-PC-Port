@@ -92,6 +92,35 @@ TEST_CASE("Stop Time is shared only by standing players with a working item",
     CHECK_FALSE(PlayerPowerups::timeStopped(players));
 }
 
+TEST_CASE("coin challenges disable Stop Time without consuming any participant's inventory",
+          "[powerups][stop-time][secret]") {
+    std::array<PlayerRuntime, 3> players;
+    players[1].life = PlayerLife::Dying;
+    players[2].life = PlayerLife::InTower;
+    for (auto& player : players) {
+        auto& inventory = player.actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 45);
+        inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
+    }
+    REQUIRE(PlayerPowerups::timeStopped(players));
+    PlayerPowerups::restrictToChallenge(players);
+    CHECK_FALSE(PlayerPowerups::timeStopped(players));
+    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    for (auto& player : players) {
+        auto& inventory = player.actor.save().progress().inventory;
+        CHECK(inventory.powerupCount() == 2);
+        CHECK_FALSE(inventory.powerups[0].on);
+        CHECK(inventory.powerups[0].strength == 45);
+        CHECK(inventory.powerups[1].on);
+    }
+    // It remains usable after returning to ordinary play, not silently discarded.
+    auto& carried = players[0].actor.save().progress().inventory;
+    carried.powerups[0].on = true;
+    CHECK(PlayerPowerups::timeStopped(players));
+    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    CHECK(carried.powerups[0].strength == 43);
+}
+
 TEST_CASE("the shrinkers counted are the standing players with a working slot switched on, and "
           "the scale they leave is two thirds a wearer outside a boss's arena",
           "[powerups][shrink]") {

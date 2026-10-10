@@ -77,6 +77,8 @@ MenuInput readSharedMenuInput(const Input& input, const GameConfig& config);
  * Without a player, use the shared menu bindings; otherwise retain that player's bindings. */
 MenuInput readMovieMenuInput(const Input& input, const GameConfig& config,
                              std::optional<s32> player = std::nullopt);
+/** Online votes belong to one player: a shared mouse cannot vote for controller seats. */
+bool readOnlineMovieSkipInput(const Input& input, const GameConfig& config, s32 player);
 /** Keep a paused menu recoverable when its owner disables or disconnects their device. */
 MenuInput readPauseMenuInput(const Input& input, const GameConfig& config, s32 owner);
 

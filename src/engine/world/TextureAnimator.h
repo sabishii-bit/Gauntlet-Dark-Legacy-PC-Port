@@ -64,6 +64,8 @@ public:
 
     /** Where an animation stands. */
     TextureMotion motion(usize index, std::optional<f32> frameOffset = {}) const;
+    /** A preloaded cycle frame, without advancing or clamping an invalid identity. */
+    const Texture* cycleFrame(usize index, usize frame) const;
     /** Where the animation numbered `info` in what was bound stands at sequence frame
      * `frame`; nothing when it was not bound. */
     std::optional<TextureMotion> motionAt(s32 info, f32 frame) const;

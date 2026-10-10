@@ -6,6 +6,37 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    game/netplay/InputCommandTests.cpp
+    game/netplay/InputTimelineTests.cpp
+    game/netplay/MatchSessionTests.cpp
+    game/netplay/ClientClockTests.cpp
+    game/netplay/OnlineSessionTests.cpp
+    game/netplay/CharacterProfileTests.cpp
+    game/netplay/PartyCheckpointTests.cpp
+    game/netplay/PartyBootstrapTests.cpp
+    game/netplay/OnlinePartyTests.cpp
+    game/netplay/OnlinePlayTests.cpp
+    game/netplay/PlayReplicationTests.cpp
+    game/netplay/PlayerProjectileResourcesTests.cpp
+    game/netplay/EnemyProjectileResourcesTests.cpp
+    game/netplay/StageProjectileResourcesTests.cpp
+    game/netplay/ReplicaStageTests.cpp
+    game/netplay/ReplicaViewTests.cpp
+    game/netplay/WorldReplicationTests.cpp
+    game/netplay/SnapshotBlockTests.cpp
+    game/netplay/MotionSnapshotTests.cpp
+    game/netplay/CombatSnapshotTests.cpp
+    game/netplay/CombatCaptureTests.cpp
+    game/netplay/CombatPlaybackTests.cpp
+    game/netplay/ReplicaActorsTests.cpp
+    game/netplay/ReplicaCompanionsTests.cpp
+    game/netplay/ReplicaHudTests.cpp
+    game/netplay/ReplicaProjectilesTests.cpp
+    game/netplay/ReplicaPickupsTests.cpp
+    game/netplay/ReplicaFixturesTests.cpp
+    game/netplay/ReplicaFightersTests.cpp
+    game/netplay/SessionInputsTests.cpp
+    game/netplay/NetplayMotionTests.cpp
     game/app/BuildLabelTests.cpp
     game/app/GameCursorTests.cpp
     game/screens/PlaySceneRumbleTests.cpp

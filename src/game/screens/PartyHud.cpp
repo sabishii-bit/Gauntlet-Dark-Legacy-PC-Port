@@ -86,15 +86,24 @@ void PartyHud::stepHourglass(f32 seconds, std::span<const PlayerRuntime> players
 }
 
 bool PartyHud::drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> players) const {
+    const auto look = hourglassLook(players);
+    if (!look) {
+        return false;
+    }
+    m_hourglass.draw(canvas, *look);
+    return true;
+}
+
+std::optional<ChallengeHud::Look>
+PartyHud::hourglassLook(std::span<const PlayerRuntime> players) const {
     const auto* slot = stopTimeOf(players);
     if (slot == nullptr) {
-        return false;
+        return std::nullopt;
     }
     // The shared timer uses a signed ratio: two permanent (-1) durations are full,
     // whereas a permanent wearer with another player's finite total is over-empty.
     const f32 ratio = stopTimeTotal() != 0 ? slot->strength / stopTimeTotal() : 0;
-    m_hourglass.draw(canvas, ratio, 1, true);
-    return true;
+    return m_hourglass.look(ratio, 1, true);
 }
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
     for (s32 player = 0; player < kPlayerCount; ++player) {
@@ -155,9 +164,9 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
 }
 
 void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks,
-                            LevelSoundscape& audio) {
+                            LevelSoundscape& audio, bool challenge) {
     const auto slot = static_cast<usize>(std::clamp(actor.player(), 0, kPlayerCount - 1));
-    switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks)) {
+    switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks, challenge)) {
     case SelectorCue::Opened:
     case SelectorCue::Closed: audio.playNamed(kMenuMoveSound); break;
     case SelectorCue::Moved: audio.playNamed(kSelectorMoveSound); break;
@@ -238,20 +247,28 @@ void PartyHud::drawSelectors(Canvas& canvas, const TextPainter& text, const Stri
         }
         const PowerupSlot& slot =
             actor.save().progress().inventory.powerups[static_cast<usize>(chosen)];
-        const std::string_view label = strings->get(powerupTextId(slot.kind, slot.flags));
-        const s32 x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
-        const s32 y = selector.labelY(StatusBoxPainter::kY);
-        TextStyle style;
-        style.scale = PowerupSelector::kLabelScale;
-        if (slot.on && m_glowSheet != nullptr) {
-            TextStyle glow = style;
-            glow.texture = m_glowSheet;
-            glow.color = ScrollBox::kGlowColor;
-            glow.expand = OptionMenu::kGlowExpand;
-            text.draw(canvas, x, y, label, glow);
-        }
-        text.draw(canvas, x, y, label, style);
+        drawSelector(canvas, text, strings, m_glowSheet, actor.player(), slot,
+                     selector.labelY(StatusBoxPainter::kY));
     }
+}
+
+void PartyHud::drawSelector(Canvas& canvas, const TextPainter& text, const StringTable* strings,
+                            const Texture* glowSheet, s32 player, const PowerupSlot& slot, s32 y) {
+    if (!text.ready() || strings == nullptr || player < 0 || player >= kPlayerCount) {
+        return;
+    }
+    const std::string_view label = strings->get(powerupTextId(slot.kind, slot.flags));
+    const s32 x = player * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
+    TextStyle style;
+    style.scale = PowerupSelector::kLabelScale;
+    if (slot.on && glowSheet != nullptr) {
+        TextStyle glow = style;
+        glow.texture = glowSheet;
+        glow.color = ScrollBox::kGlowColor;
+        glow.expand = OptionMenu::kGlowExpand;
+        text.draw(canvas, x, y, label, glow);
+    }
+    text.draw(canvas, x, y, label, style);
 }
 
 void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
@@ -261,15 +278,8 @@ void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textur
         return;
     }
     Vec2 head{width * 0.5f, height * 0.5f};
-    if (m_helpPosition) {
-        head = PartyNames::screenOf(clip, *m_helpPosition, canvasProjection).value_or(head);
-    }
-    for (const PlayerRuntime& runtime : players) {
-        const PlayerActor& actor = runtime.actor;
-        if (actor.player() != m_help.player()) {
-            continue;
-        }
-        head = PartyNames::screenOf(clip, actor.attentionPoint(), canvasProjection).value_or(head);
+    if (const auto anchor = helpAnchor(players)) {
+        head = PartyNames::screenOf(clip, *anchor, canvasProjection).value_or(head);
     }
     const auto sheet = textures.loaded() ? textures.find(kScrollTexture) : std::nullopt;
     const Texture* scroll = nullptr;
@@ -281,5 +291,14 @@ void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textur
         }
     }
     m_help.draw(canvas, m_boxes.smallCaps(), scroll, head); // the strings' own font
+}
+
+std::optional<Vec3> PartyHud::helpAnchor(std::span<const PlayerRuntime> players) const {
+    for (const auto& runtime : players) {
+        if (runtime.actor.player() == m_help.player()) {
+            return runtime.actor.attentionPoint();
+        }
+    }
+    return m_helpPosition;
 }
 } // namespace gdl::game

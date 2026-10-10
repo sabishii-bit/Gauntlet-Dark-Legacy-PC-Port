@@ -5,11 +5,27 @@
 
 #include "game/players/ItemPickup.h"
 #include "game/screens/PlayScene.h"
+#include "game/screens/PlayerPowerups.h"
 
 namespace gdl::game {
 
+std::optional<ChallengeHud::Look> PlayScene::hourglassLook() const {
+    if (const auto stopTime = m_hud.hourglassLook(m_players)) {
+        return stopTime;
+    }
+    if (m_challenge.state() == SecretChallenge::State::Inactive) {
+        return std::nullopt;
+    }
+    return m_challengeHud.look(m_challenge.remaining(), m_challenge.duration(),
+                               !spawning() && !m_messages.active());
+}
+
 void PlayScene::beginChallenge() {
-    if (!m_world->ref().isSecret() || m_context.levels == nullptr) {
+    if (!m_world->ref().isSecret()) {
+        return;
+    }
+    PlayerPowerups::restrictToChallenge(m_players);
+    if (m_context.levels == nullptr) {
         return;
     }
     s32 index = -1;
@@ -64,11 +80,17 @@ void PlayScene::collectChallengeCoin(usize item) {
     if (!won) {
         return;
     }
+    if (m_context.unlockClasses) {
+        m_context.unlockClasses(m_challenge.rewardMask());
+    }
     openMessage("ALLCOINS", 0);
     m_audio.speakOverScroll("S_SECRETCHAR");
 }
 
 bool PlayScene::updateChallenge(f32 seconds) {
+    if (m_world->ref().isSecret()) {
+        PlayerPowerups::restrictToChallenge(m_players);
+    }
     for (const s32 second : m_challenge.step(seconds)) {
         if (second == 0) {
             m_audio.playNamed("S_SECRETCLOCKEN");

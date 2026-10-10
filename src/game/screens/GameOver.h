@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include "engine/assets/MessageTable.h"
 #include "engine/core/Types.h"
 #include "engine/ui/TextPainter.h"
 
@@ -35,6 +36,9 @@ public:
     bool finished() const { return m_active && m_ticks >= kDurationTicks; }
     usize letters() const;
     void draw(Canvas& canvas, const TextPainter& text, f32 width) const;
+    static std::string_view captionFor(const MessageTable& messages, const StringTable* strings);
+    static void drawCaption(Canvas& canvas, const TextPainter& text, f32 width,
+                            std::string_view caption, usize letters);
 
 private:
     std::string m_caption;

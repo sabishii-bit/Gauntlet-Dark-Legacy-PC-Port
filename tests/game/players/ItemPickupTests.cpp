@@ -7,6 +7,7 @@
 
 #include "game/players/ItemPickup.h"
 #include "game/players/PickupVoices.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 
 namespace {
@@ -67,7 +68,7 @@ TEST_CASE("potions are kept by kind until nine are carried", "[game][players][it
     REQUIRE(save.progress().inventory.nextPotion() == 1);
 }
 
-TEST_CASE("food heals up to the level's most, is left at full health, and bad food always bites",
+TEST_CASE("food heals up to the level's most, is left at full health, and unprotected poison hurts",
           "[game][players][items]") {
     REQUIRE(mostHealth(1) == 500);
     REQUIRE(mostHealth(10) == 1400);
@@ -95,6 +96,46 @@ TEST_CASE("food heals up to the level's most, is left at full health, and bad fo
     REQUIRE(save.health() == 1); // to the last point, not past it
     save.progress().health = 499;
     REQUIRE(takeItem(save, offer(ItemKind::Food, 25)).card == "FRUIT");
+}
+
+TEST_CASE("poison food passes through active armor including Gold Invulnerability healing",
+          "[game][players][items][poison-food]") {
+    CharacterSave save;
+    save.progress().health = 300;
+    auto& inventory = save.progress().inventory;
+    SECTION("gold heals ten percent of poison damage") {
+        inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable, 0, 30);
+        const auto taking = takeItem(save, offer(ItemKind::Food, -100));
+        CHECK(save.health() == 310);
+        CHECK(taking.took());
+        // The food still uses its authored poison card and voice (do_got_it).
+        CHECK(taking.card == "BADMEAT");
+        CHECK(taking.hurt);
+        CHECK(taking.message == 28);
+    }
+    SECTION("gold healing can exceed the ordinary food health cap") {
+        inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable, 0, 30);
+        save.progress().health = mostHealth(1);
+        CHECK(takeItem(save, offer(ItemKind::Food, -50)).took());
+        CHECK(save.health() == mostHealth(1) + 5);
+    }
+    SECTION("silver and gas protection prevent poison damage") {
+        for (const u32 armor : {powerup::kInvulnerable, 0x2000U}) {
+            inventory = {};
+            inventory.addPowerup(powerup::kArmor, armor, 0, 30);
+            CHECK(takeItem(save, offer(ItemKind::Food, -100)).took());
+            CHECK(save.health() == 300);
+        }
+    }
+    SECTION("inactive and expired gold do not protect") {
+        inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable, 0, 30, false);
+        takeItem(save, offer(ItemKind::Food, -100));
+        CHECK(save.health() == 200);
+        inventory.powerups[0].on = true;
+        inventory.advance(31);
+        takeItem(save, offer(ItemKind::Food, -100));
+        CHECK(save.health() == 100);
+    }
 }
 
 TEST_CASE("powerups go into their slots at the class's share of their strength",

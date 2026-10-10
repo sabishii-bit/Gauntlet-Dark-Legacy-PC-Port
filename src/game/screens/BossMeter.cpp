@@ -111,10 +111,22 @@ std::array<s32, BossMeter::kMostPieces> BossMeter::fillWidths() const {
 }
 
 void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
-    if (!showing()) {
+    draw(canvas, device, look());
+}
+
+void BossMeter::preload(RenderDevice& device) const {
+    for (s32 piece = 0; piece < m_pieces; ++piece) {
+        if (m_backed) {
+            textureOf(m_textures, device, m_name, kBackground, piece);
+        }
+        textureOf(m_textures, device, m_name, kFill, piece);
+    }
+}
+
+void BossMeter::draw(Canvas& canvas, RenderDevice& device, const Look& look) const {
+    if (!bound() || !look.visible) {
         return;
     }
-    const std::array<s32, kMostPieces> widths = fillWidths();
     const Color plain = Color::rgba(255, 255, 255, kAlpha);
     for (s32 piece = 0; piece < m_pieces; ++piece) {
         const auto x = static_cast<f32>(m_left + piece * kPieceWidth);
@@ -123,10 +135,10 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
                 canvas.draw(*back,
                             Rect{x, static_cast<f32>(kY), static_cast<f32>(kPieceWidth),
                                  static_cast<f32>(back->height())},
-                            m_frozen ? kFrozenTint : plain);
+                            look.frozen ? kFrozenTint : plain);
             }
         }
-        const s32 width = widths[static_cast<usize>(piece)];
+        const s32 width = std::clamp(look.widths[static_cast<usize>(piece)], 0, kPieceWidth);
         if (width <= 0) {
             continue;
         }

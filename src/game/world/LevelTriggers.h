@@ -143,6 +143,9 @@ public:
     void clear();
     usize size() const { return m_triggers.size(); }
     const LevelTrigger& trigger(usize index) const { return m_triggers[index]; }
+    const ItemFigure* figure(usize index) const {
+        return index < m_figures.size() ? m_figures[index].get() : nullptr;
+    }
     /** Joined participants, including the fallen. Whole-party contact still counts only the
      * standing visitors. Without an explicit count, isolated callers use their visitors. */
     void setPlayerCount(s32 players);

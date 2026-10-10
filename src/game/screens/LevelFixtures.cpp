@@ -532,9 +532,10 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         case ChestEvent::Kind::Opened:
             if (event.explodes) {
                 detonateChest(event.chest, event.visitor, players, events);
-            } else if (event.contents >= 0) {
-                // Already visible on the opening lid's attachment; now collectible.
-            } else if (m_chests.chest(event.chest).subtype != Chests::kGoldChest) {
+            } else if (m_chests.chest(event.chest).held < 0 &&
+                       m_chests.chest(event.chest).subtype != Chests::kGoldChest) {
+                // Native item_update checks the live pickup link, not the authored
+                // contents record. A released Death leaves no pickup in the chest.
                 m_chests.remove(event.chest);
             }
             break;

@@ -152,6 +152,8 @@ public:
 
     /** One weapon in flight. */
     struct Missile {
+        u64 instance = 0;
+        u32 continuity = 1;
         s32 owner = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Vec3 velocity{0.0f, 0.0f, 0.0f};
@@ -219,6 +221,7 @@ public:
     static Mat4 transformOf(const Missile& missile, f32 frameBlend = 1.0f);
 
 private:
+    u64 m_nextInstance = 1; ///< never reset by clear; network identities cannot be recycled
     std::vector<Missile> m_missiles;
     std::vector<MissileImpact> m_impacts;
     f32 m_ricochetIn = 0;

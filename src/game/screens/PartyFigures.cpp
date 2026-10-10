@@ -63,14 +63,19 @@ f32 PartyFigures::presentationBlend(const PlayerRuntime& runtime, f32 frameBlend
                : 1.0f;
 }
 
-Mat4 PartyFigures::presentationBody(const PlayerRuntime& runtime, f32 frameBlend) {
+bool PartyFigures::presentationContinuous(const PlayerRuntime& runtime) {
     const PlayerActor& actor = runtime.actor;
     // A relocation is not movement to draw through. Ordinary motion per fixed tick is
     // much smaller than the body's collision diameter, including on moving platforms.
     const Vec3 displacement = actor.position() - runtime.previous.position;
     const f32 diameter = actor.radius() * 2;
-    if (!runtime.previous.continuous || runtime.transport.active() ||
-        glm::dot(displacement, displacement) > diameter * diameter) {
+    return runtime.previous.continuous && !runtime.transport.active() &&
+           glm::dot(displacement, displacement) <= diameter * diameter;
+}
+
+Mat4 PartyFigures::presentationBody(const PlayerRuntime& runtime, f32 frameBlend) {
+    const PlayerActor& actor = runtime.actor;
+    if (!presentationContinuous(runtime)) {
         return actor.transform();
     }
     const f32 t = std::clamp(frameBlend, 0.0f, 1.0f);
@@ -178,7 +183,7 @@ void PartyFigures::drawEffects(RenderDevice& device, std::span<const PlayerRunti
         const Mat4 body = PlayerFigure::bodyPlacement(
             departurePlacement(runtime, scene.departure, scene.frameBlend), runtime.actor.save(),
             worn);
-        runtime.figure->drawCompanion(
+        runtime.figure->drawCompanions(
             device, clip, body, runtime.glow.apply(scene.world.lighting()), alphaOf(runtime, worn),
             &camera, presentationBlend(runtime, scene.frameBlend), TreeModel::Pass::Effects);
     }

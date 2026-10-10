@@ -24,6 +24,18 @@ bool PlayerPowerups::timeStopped(std::span<const PlayerRuntime> players) {
     });
 }
 
+void PlayerPowerups::restrictToChallenge(std::span<PlayerRuntime> players) {
+    // activate_player discards Stop Time on zone entry. The port keeps carried
+    // powerups between zones, but that must not enable it during timed coin hunts.
+    for (auto& player : players) {
+        for (auto& slot : player.actor.save().progress().inventory.powerups) {
+            if (!powerupAllowedInChallenge(slot.kind, slot.flags)) {
+                slot.on = false;
+            }
+        }
+    }
+}
+
 s32 PlayerPowerups::enemyShrinkers(std::span<const PlayerRuntime> players) {
     return static_cast<s32>(std::ranges::count_if(players, [](const PlayerRuntime& player) {
         return wearsSpecial(player, powerup::kEnemyShrink);

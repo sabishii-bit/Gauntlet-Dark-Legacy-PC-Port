@@ -21,6 +21,12 @@ public:
         bool stopVoice = false;
         bool burnSound = false;
     };
+    struct Look {
+        u32 message = 0;
+        u32 page = 0; ///< Absolute page in the trusted message table, including single-page opens.
+        s32 burnFrame = -1;
+        u8 promptAlpha = 0;
+    };
 
     LevelMessages() = default;
     ~LevelMessages() = default;
@@ -45,6 +51,10 @@ public:
     const ScrollBox& scroll() const { return m_scroll; }
     const TextPainter& text() const { return m_text; }
     const MessageTable& strings() const { return m_scrollText; }
+    std::optional<Look> look() const;
+    bool preloadReplica(RenderDevice& device, const StringTable* strings);
+    bool accepts(const Look& look) const;
+    void drawReplica(Canvas& canvas, const Look& look) const;
 
 private:
     BitmapFont m_font32;
@@ -52,6 +62,10 @@ private:
     TextPainter m_text;
     MessageTable m_scrollText;
     ScrollBox m_scroll; ///< references our painter, so this owner must not move
+    std::optional<u32> m_message;
+    u32 m_firstPage = 0;
+    std::string m_replicaPrompt;
+    std::vector<std::vector<ScrollBox::PageLayout>> m_replicaPages;
 };
 
 } // namespace gdl::game

@@ -1,0 +1,16 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "welcome": false,
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "HOST",
+      "level": 60,
+      "keys": 9,
+      "potions": [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    }
+  ]
+}

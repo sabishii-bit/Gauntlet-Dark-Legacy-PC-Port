@@ -70,6 +70,28 @@ bool StatusBoxPainter::load(RenderDevice& device, const std::filesystem::path& u
     return true;
 }
 
+void StatusBoxPainter::preloadStatus() {
+    for (const auto* name : {"S3", "BK_RUNE_STONE_02", "S4", "S4_FRAME", "COIN", "HEART",
+                             "KEY_ICON", "TRBO_FULL_NEW", "TRBO_GLINT", "TURBO_GLOW_NEW"}) {
+        staticTexture(name);
+    }
+    for (const auto name : kPotionIcons) {
+        staticTexture(name);
+    }
+    for (s32 character = 0; character < kClassCount; ++character) {
+        selectTexture(std::format("S4_{}", classCode(character)));
+    }
+    for (s32 frame = 1; frame <= TurboMeter::kGleamFrames; ++frame) {
+        staticTexture(std::format("TRBO_GLEEM{}", frame));
+    }
+    for (const auto name : kRelicColours) {
+        staticTexture(std::format("SM_KEY_{}", name));
+        for (s32 rune = 1; rune <= kRunesInColour; ++rune) {
+            staticTexture(std::format("SM_RUNE_{}_{:02}", name, rune));
+        }
+    }
+}
+
 void StatusBoxPainter::release() {
     m_controlLabels = {};
     m_countTextures = nullptr;
@@ -371,6 +393,20 @@ void StatusBoxPainter::drawCount(Canvas& canvas, s32 slot, std::string_view icon
         return;
     }
     const s32 left = slot * kWidth;
+    if (const Texture* mark = countTexture(icon)) {
+        canvas.draw(*mark,
+                    Rect{static_cast<f32>(left + kCountIconX), static_cast<f32>(kCountIconY),
+                         static_cast<f32>(kCountIconSize), static_cast<f32>(kCountIconSize)});
+    }
+    if (m_smallCaps.ready()) {
+        TextStyle style;
+        style.scale = kCountScale;
+        m_smallCaps.draw(canvas, left + kCountTextX, kCountTextY,
+                         std::format("{}/{}", count, total), style);
+    }
+}
+
+const Texture* StatusBoxPainter::countTexture(std::string_view icon) {
     const Texture* mark = staticTexture(icon);
     if (mark == nullptr && m_countTextures != nullptr && m_device != nullptr) {
         if (const auto index = m_countTextures->find(icon)) {
@@ -381,16 +417,16 @@ void StatusBoxPainter::drawCount(Canvas& canvas, s32 slot, std::string_view icon
             }
         }
     }
-    if (mark != nullptr) {
-        canvas.draw(*mark,
-                    Rect{static_cast<f32>(left + kCountIconX), static_cast<f32>(kCountIconY),
-                         static_cast<f32>(kCountIconSize), static_cast<f32>(kCountIconSize)});
+    return mark;
+}
+
+void StatusBoxPainter::preloadPickups(std::span<const std::string_view> cards,
+                                      std::span<const std::string_view> counts) {
+    for (const auto card : cards) {
+        staticTexture(card);
     }
-    if (m_smallCaps.ready()) {
-        TextStyle style;
-        style.scale = kCountScale;
-        m_smallCaps.draw(canvas, left + kCountTextX, kCountTextY,
-                         std::format("{}/{}", count, total), style);
+    for (const auto count : counts) {
+        countTexture(count);
     }
 }
 

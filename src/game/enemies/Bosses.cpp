@@ -42,6 +42,22 @@ void Bosses::close() {
     m_legendEvents.clear();
 }
 
+std::vector<CombatantAssets*> Bosses::resources() {
+    std::vector<CombatantAssets*> result;
+    result.reserve(m_assets.size());
+    for (auto& stock : m_assets) {
+        result.push_back(stock.get());
+    }
+    return result;
+}
+std::vector<const CombatantAssets*> Bosses::resources() const {
+    std::vector<const CombatantAssets*> result;
+    result.reserve(m_assets.size());
+    for (const auto& stock : m_assets) {
+        result.push_back(stock.get());
+    }
+    return result;
+}
 bool Bosses::bringLegend(s32 player) {
     const LegendWeakness* weakness = legendWeaknessOf(m_kind);
     if (!m_id.has_value() || weakness == nullptr || m_rite.stage() != LegendRite::Stage::None) {
@@ -159,13 +175,10 @@ bool Bosses::curbed() const {
     return m_id.has_value() && m_fighter.curbed();
 }
 
-bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
+CombatantAssets* Bosses::preload(s32 kind) {
     const std::string_view name = bossNameOf(kind);
-    if (name.empty() || m_id.has_value()) {
-        return false;
-    }
-    if (m_device == nullptr) {
-        return false;
+    if (name.empty() || m_device == nullptr) {
+        return nullptr;
     }
     CombatantAssets* assets = nullptr;
     for (auto& loaded : m_assets) {
@@ -177,17 +190,31 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     if (assets == nullptr) {
         auto loaded = std::make_unique<CombatantAssets>();
         if (!loaded->load(*m_device, m_root, bossDefinition(name), m_realm, m_textureLenders)) {
-            return false;
+            return nullptr;
         }
         assets = loaded.get();
         m_assets.push_back(std::move(loaded));
+    }
+    // Keep the javelin's alternate eye in the load-time resource roster.
+    if (kind == 38) {
+        assets->prepareReplacement(*m_device, "EYEBALL", "PBOSSQEYEBALL");
+    }
+    return assets;
+}
+bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
+    if (m_id.has_value()) {
+        return false;
+    }
+    auto* assets = preload(kind);
+    if (assets == nullptr) {
+        return false;
     }
     if (!m_fighter.spawn(*assets, kTargetId, position, yaw, m_collision, m_scales, m_realm)) {
         return false;
     }
     m_id = kTargetId;
     m_kind = kind;
-    m_name = name;
+    m_name = bossNameOf(kind);
     m_awake = false;
     const CritterData* data = m_fighter.data();
     m_wakeDistance = wakeDistance;

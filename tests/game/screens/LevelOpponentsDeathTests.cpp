@@ -86,6 +86,49 @@ TEST_CASE("Death drains bypass armor without bypassing invulnerability or normal
     CHECK(player.hitFlashTicks == 0);
 }
 
+TEST_CASE("Death proximity queries use the level bounds and only standing party members",
+          "[death][death-statue][statue-query][level-opponents]") {
+    const s32 strength = GENERATE(0, 2);
+    const auto stage = test::sampleLevel("death-query-bounds");
+    writeTextFile(stage / "world.json", R"({"bounds":{"min":[-320,-20,-320],
+      "max":[320,20,320]},"objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":4,"name":"DEATH","radius":1,"height":2}],
+      "itemInstances":[{"info":0,"position":[5,0,5],"params":[)" +
+                                            std::to_string(strength) +
+                                            R"(,0,3,0,0,0,240,65,0,0,0,0]}]})");
+    writeTextFile(stage / "collision.json", R"({"objects":[]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef level;
+    level.name = "G1";
+    REQUIRE(world.load(device, stage, level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{35, 0, 5}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{25, 0, 5}, 0);
+    players[1].life = PlayerLife::Dying;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, test::deathArchive()}, players);
+    REQUIRE(opponents.statues().count() == 1);
+    REQUIRE(opponents.statues().placement(0).sight == 30);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK_FALSE(opponents.statues().woken(0));
+    CHECK(opponents.enemies().count() == 0);
+    players[1].life = PlayerLife::Standing;
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(opponents.statues().woken(0));
+    CHECK(opponents.statues().rising(0));
+}
+
 TEST_CASE("placed Death statues wake without the sleeping enemy's shatter cry",
           "[death][death-statue][death-wake-audio][assets]") {
     const s32 strength = GENERATE(0, 2);

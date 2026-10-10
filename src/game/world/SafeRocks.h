@@ -46,6 +46,15 @@ public:
     void setPlayerCount(s32 players);
     usize size() const { return m_rocks.size(); }
     const Rock& rock(usize index) const { return *m_rocks[index]; }
+    struct BodyResource {
+        usize index = 0;
+        s32 tier = 0;
+        const TreeModel* model = nullptr;
+        const TextureAnimator* textures = nullptr;
+    };
+    /** Loaded cover tiers and their shared texture clock, without advancing eruptions. */
+    std::vector<BodyResource> bodyResources() const;
+    f32 textureClock() const { return static_cast<f32>(m_textures.frame()); }
     bool standing(usize index) const;
     /** Armour reduces damage, with a minimum of one. True only on the destroying blow. */
     bool strike(usize index, f32 power);

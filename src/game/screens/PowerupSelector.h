@@ -37,7 +37,8 @@ public:
     static constexpr s32 kLabelRise = 29; ///< measured from the status box's top
     static constexpr f32 kLabelScale = 0.45f;
 
-    SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks);
+    SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks,
+                     bool challenge = false);
     /** Remember the acquired slot without opening or restarting the selector. */
     void focus(const Inventory& inventory, s32 kind, u32 flags);
     /** Active finite usage: selection first, then acquisitions newest first. */

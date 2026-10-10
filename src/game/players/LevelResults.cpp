@@ -5,9 +5,13 @@
 namespace gdl::game {
 LevelResults LevelResults::between(s32 player, const CharacterSave& entry,
                                    const CharacterSave& exit, s32 kills) {
+    return since(player, {entry.gold, entry.experience(), 0}, exit, kills);
+}
+LevelResults LevelResults::since(s32 player, const Checkpoint& entry, const CharacterSave& exit,
+                                 s32 kills) {
     return {player,
-            {std::max(0, exit.gold - entry.gold), std::max(0, kills),
-             std::max(0, exit.experience() - entry.experience())}};
+            {std::max(0, exit.gold - entry.gold), std::max(0, entry.kills + kills),
+             std::max(0, exit.experience() - entry.experience)}};
 }
 void LevelTally::start(const LevelResults& results, const std::array<s32, 3>& maxima) {
     m_results = results;

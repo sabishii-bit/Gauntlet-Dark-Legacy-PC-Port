@@ -169,24 +169,34 @@ void TreeModel::setSubtreeFrame(usize root, u32 sequence, s32 frame) {
 }
 
 void TreeModel::setPresentationFrame(u32 sequence, f32 frame) {
+    for (Node& node : m_nodes) {
+        selectPresentationFrame(node, sequence, frame);
+    }
+}
+void TreeModel::setMeshPresentationFrame(usize index, u32 sequence, f32 frame) {
+    for (Node& node : m_nodes) {
+        if (node.index == index) {
+            selectPresentationFrame(node, sequence, frame);
+        }
+    }
+}
+void TreeModel::selectPresentationFrame(Node& node, u32 sequence, f32 frame) {
     const auto whole = static_cast<s32>(std::floor(std::max(frame, 0.0f)));
     const f32 fraction = std::clamp(frame - static_cast<f32>(whole), 0.0f, 1.0f);
-    setFrame(sequence, whole);
-    for (Node& node : m_nodes) {
-        if (sequence >= node.runs.size() || fraction <= 0.0f) {
-            continue;
-        }
-        const auto& run = node.runs[sequence];
-        const s32 at = (run.reverseLength > 0 ? run.reverseLength - whole - 1 : whole) - run.start;
-        const s32 next = at + (run.reverseLength > 0 ? -1 : 1);
-        if (at < 0 || next < 0 || at >= static_cast<s32>(run.shapes.size()) ||
-            next >= static_cast<s32>(run.shapes.size()) ||
-            !run.morphs[static_cast<usize>(std::min(at, next))]) {
-            continue;
-        }
-        node.nextMesh = run.shapes[static_cast<usize>(next)].mesh;
-        node.meshBlend = fraction;
+    selectFrame(node, sequence, whole);
+    if (sequence >= node.runs.size() || fraction <= 0.0f) {
+        return;
     }
+    const auto& run = node.runs[sequence];
+    const s32 at = (run.reverseLength > 0 ? run.reverseLength - whole - 1 : whole) - run.start;
+    const s32 next = at + (run.reverseLength > 0 ? -1 : 1);
+    if (at < 0 || next < 0 || at >= static_cast<s32>(run.shapes.size()) ||
+        next >= static_cast<s32>(run.shapes.size()) ||
+        !run.morphs[static_cast<usize>(std::min(at, next))]) {
+        return;
+    }
+    node.nextMesh = run.shapes[static_cast<usize>(next)].mesh;
+    node.meshBlend = fraction;
 }
 
 void TreeModel::selectFrame(Node& node, u32 sequence, s32 frame) {

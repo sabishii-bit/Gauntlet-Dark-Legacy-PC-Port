@@ -56,6 +56,12 @@ bool PlayerHealth::canBeDamaged(const PlayerRuntime& runtime) {
            (runtime.figure == nullptr || !runtime.figure->animator().damageProtected());
 }
 
+bool PlayerHealth::canTakeSurfaceDamage(const PlayerRuntime& runtime) {
+    return canBeDamaged(runtime) && !runtime.capture.active() &&
+           runtime.reaction == PlayerDeed::None &&
+           (runtime.figure == nullptr || !runtime.figure->animator().reacting());
+}
+
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
                         bool inTower, f32 damageScale, const Events& events,
                         const PlayerImpact& impact, bool bossEncounter, const ClassStats* stats) {

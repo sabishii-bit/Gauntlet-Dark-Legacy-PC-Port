@@ -213,6 +213,36 @@ TEST_CASE("contact-only walls retain contacts without blocking and leave other w
     CHECK_FALSE(collision.contactOnly(1));
 }
 
+TEST_CASE("animated wall pushout is optional without losing contacts or sweep blocking",
+          "[world][collision][moving-hazards]") {
+    auto triangles = room();
+    for (auto& face : triangles) {
+        if (face.object == 1) {
+            face.objectFlags |= 0x1000;
+        }
+    }
+    WorldCollision collision;
+    collision.build(std::move(triangles));
+    const Vec3 at{4.8f, 0, 0};
+    std::vector<WallContact> contacts;
+    CHECK(collision.resolveWalls(at, .5f, .2f, 2.8f, &contacts, std::nullopt,
+                                 WorldCollision::WallPush::StaticOnly) == at);
+    REQUIRE(contacts.size() == 1);
+    CHECK(contacts.front().object == 1);
+    CHECK(collision.surfaceContacts(at, .5f, .2f, 2.8f).size() == 1);
+    CHECK_FALSE(collision.contactOnly(1));
+    // Ordinary movement/weapon/AI queries retain their solid-wall response.
+    CHECK(collision.sweepWalls({4, 0, 0}, {6, 0, 0}, .5f, .2f, 2.8f).x == Approx(4.5f));
+    CHECK(collision.resolveWalls(at, .5f, .2f, 2.8f).x == Approx(4.5f));
+    CHECK(collision.floorAt({0, 1, 0}, 1, 2)->y == 0);
+    // The same option must not allow an entity push to penetrate a static wall.
+    collision.build(room());
+    CHECK(collision
+              .resolveWalls(at, .5f, .2f, 2.8f, nullptr, std::nullopt,
+                            WorldCollision::WallPush::StaticOnly)
+              .x == Approx(4.5f));
+}
+
 TEST_CASE("a cylinder is pushed out of walls but left alone elsewhere", "[world][collision]") {
     WorldCollision collision;
     collision.build(room());

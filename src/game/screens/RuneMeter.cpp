@@ -80,9 +80,14 @@ void RuneMeter::draw(Canvas& canvas, const Texture& frame, const Texture& fillTe
     if (!m_visible) {
         return;
     }
+    drawFill(canvas, frame, fillTexture, m_fill);
+}
+
+void RuneMeter::drawFill(Canvas& canvas, const Texture& frame, const Texture& fillTexture,
+                         f32 fill) {
     canvas.draw(frame,
                 {392, -1, static_cast<f32>(frame.width()), static_cast<f32>(frame.height())});
-    const auto shape = column(m_fill, static_cast<f32>(fillTexture.width()));
+    const auto shape = column(fill, static_cast<f32>(fillTexture.width()));
     canvas.draw(fillTexture, shape.area, shape.uv, Color::white());
 }
 

@@ -5,7 +5,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/audio/AudioMixer.h"
+#include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -146,18 +149,25 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const AssetLocator assets(root);
     GameContext context;
     context.config = &config;
     context.strings = &strings;
     context.levels = &levels;
     context.unpackedRoot = root;
+    context.sounds = &sounds;
+    context.assets = &assets;
     AttractScene scene;
     REQUIRE(scene.openNext(device, context));
     REQUIRE((scene.world().level()->selectionFlags & 2U) != 0);
+    CHECK(sounds.voiceCount() == 0);
     const auto initial = scene.rail().camera().position;
     MenuInput start;
     start.start = true;
     REQUIRE(scene.update(0.5, start) == AttractOutcome::Running);
+    CHECK(sounds.voiceCount() == 0);
     REQUIRE(scene.rail().camera().position != initial);
     scene.render(device, Mat4{1.0f}, 640, 480, 0.0f);
     REQUIRE_FALSE(device.draws.empty());
@@ -173,8 +183,16 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     CHECK(device.ambientOcclusionDrawOffsets.front() > 0);
     CHECK(device.ambientOcclusionDrawOffsets.front() < device.bloomDrawOffsets.front());
     CHECK(device.bloomDrawOffsets.front() > 0);
-    // The attract-mode button prompt was removed; bloom finishes the world image.
-    CHECK(device.bloomDrawOffsets.front() == device.draws.size());
+    // The native glowing "Press Start" stays legible after the world post-processing.
+    REQUIRE(device.draws.size() == device.bloomDrawOffsets.front() + 2);
+    const auto& prompt = device.draws.back();
+    CHECK(prompt.transform == makeVirtualScreenTransform(Mat4{1}, 512, 384, 640, 480));
+    REQUIRE(prompt.vertices.size() == 60); // Ten letters, excluding the space.
+    for (const auto& vertex : prompt.vertices) {
+        CHECK(vertex.position.y >= 320);
+        CHECK(vertex.position.y <= 352);
+        CHECK(vertex.color == Color::white());
+    }
     config.display.bloom = false;
     config.display.ambientOcclusion = false;
     REQUIRE_FALSE(device.draws.empty());
@@ -190,6 +208,9 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     REQUIRE(scene.openNext(device, context));
     REQUIRE(scene.world().ref().name != first);
     REQUIRE(scene.update(60.0, {}) == AttractOutcome::Finished);
+    CHECK(sounds.voiceCount() == 0);
+    CHECK(sounds.categoryVolume(SoundCategory::Music) == 1);
+    CHECK(sounds.categoryVolume(SoundCategory::Effects) == 1);
     scene.close();
 }
 } // namespace

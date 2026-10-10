@@ -9,6 +9,7 @@
 
 #include "game/players/ItemPickup.h"
 #include "game/players/NameCheats.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PickupHud.h"
 
@@ -130,9 +131,12 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
     const bool secretCoin =
         pickup.subtype == static_cast<s32>(ItemKind::Gold) && world.ref().isSecret();
     const ClassStats* stats = services.classes.stats(actor.save().character);
+    const bool activate =
+        services.autoActivateItems &&
+        (!world.ref().isSecret() || powerupAllowedInChallenge(pickup.subtype, pickup.flags));
     const ItemTaking taking = takeItem(
         actor.save(), ItemOffer{pickup.subtype, pickup.amount, pickup.flags, pickup.strength},
-        stats != nullptr ? stats->powerupTime : 1.0f, services.autoActivateItems);
+        stats != nullptr ? stats->powerupTime : 1.0f, activate);
     if (!taking.took()) {
         switch (taking.outcome) {
         case ItemTaking::Outcome::KeysFull: help(HelpMessages::kKeysFull); break;

@@ -12,6 +12,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/world/SceneGeometry.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldLighting.h"
 
@@ -92,6 +93,12 @@ public:
      * Returns false for baked geometry or an absent object. */
     bool setObjectVisible(usize object, bool visible);
     bool objectVisible(usize object) const;
+
+    SceneGeometry geometry() const;
+    bool acceptsGeometry(const SceneGeometry& state) const;
+    /** Atomic visual restore on a separately owned renderer. Does not run level
+     * events or modify the WorldCollision used by the authoritative simulation. */
+    bool applyGeometry(const SceneGeometry& state);
 
     /** Draws the still opaque geometry, the moving objects, the still translucent geometry,
      * then the sorted objects farthest from the camera first (those flagged to face it
@@ -175,8 +182,11 @@ private:
     };
     struct Placement {
         Mat4 local{1.0f};    ///< relative to the parent
+        Mat4 initial{1.0f};  ///< loaded layout, before trigger placement
         Mat4 previous{1.0f}; ///< last fixed-update snapshot, presentation only
         s32 parent = -1;
+        s32 unit = -1;
+        u32 continuity = 1;
         bool moving = false;
     };
 
@@ -199,6 +209,7 @@ private:
     WorldLighting m_lighting;
     f32 m_darken = 0.0f;
     u32 m_textureFrame = 0;
+    u64 m_layoutSignature = 0;
     usize m_placed = 0;
     usize m_triangles = 0;
     mutable std::vector<Mat4> m_world; ///< per object, composed for the frame being drawn

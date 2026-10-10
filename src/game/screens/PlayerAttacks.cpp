@@ -841,37 +841,17 @@ void PlayerAttacks::stopDeathSounds(std::span<PlayerRuntime> players) {
     }
 }
 
-/** The halo holds Death only while the bodies touch and he remains the target ahead.
- * Each 30 Hz frame draws one point: health back, or experience from his black form.
- * Ranged target acquisition alone never grants a remote drain. */
-std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowed,
-                                             std::span<PlayerRuntime> players,
-                                             const Targets& targets) {
+std::optional<s32> PlayerAttacks::deathContactSlot(usize index,
+                                                   std::span<const PlayerRuntime> players,
+                                                   const Targets& targets) const {
     if (!m_resources.has_value() || index >= players.size()) {
         return std::nullopt;
     }
-    PlayerRuntime& runtime = players[index];
-    const auto release = [&]() -> std::optional<Vec3> {
-        runtime.deathHeld = -1;
-        runtime.deathHeldTicks = 0;
-        m_resources->effects.stop(runtime.deathHeldEffect);
-        runtime.deathHeldEffect = 0;
-        m_resources->audio.stop(runtime.deathHeldSuck);
-        runtime.deathHeldSuck = kNoSound;
-        m_resources->audio.stop(runtime.deathHeldCry);
-        runtime.deathHeldCry = kNoSound;
-        return std::nullopt;
-    };
+    const PlayerRuntime& runtime = players[index];
     const PlayerActor& actor = runtime.actor;
     const auto worn = PowerupEffects::of(actor.save().progress().inventory);
-    // PlayerMotion's speak_done latch survives losing contact (80085450).
-    // PlayerProcessPowerups clears it only when the halo is no longer worn.
-    if ((worn.armor & DeathRules::kProtection) == 0) {
-        runtime.deathHaloHeard = false;
-    }
-    if (!allowed || runtime.life != PlayerLife::Standing ||
-        (worn.armor & DeathRules::kProtection) == 0) {
-        return release();
+    if (runtime.life != PlayerLife::Standing || (worn.armor & DeathRules::kProtection) == 0) {
+        return std::nullopt;
     }
     const Vec3 facing = actor.facing();
     const f32 facingLength = std::hypot(facing.x, facing.z);
@@ -902,13 +882,13 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
             nearest = target;
         }
     }
-    Enemies& enemies = targets.opponents.enemies();
+    const Enemies& enemies = targets.opponents.enemies();
     if (!nearest || nearest->id < kEnemyTargetBase || nearest->id >= kGeneratorTargetBase) {
-        return release();
+        return std::nullopt;
     }
     const s32 slot = nearest->id - kEnemyTargetBase;
     if (enemies.kindOf(slot) != kDeathKind || !enemies.alive(slot) || enemies.dying(slot)) {
-        return release();
+        return std::nullopt;
     }
     const Vec3 separation = nearest->base - actor.position();
     constexpr f32 kContactTolerance = 0.001f;
@@ -916,8 +896,56 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
             actor.radius() + nearest->radius + kContactTolerance ||
         nearest->base.y > actor.position().y + actor.height() ||
         nearest->base.y + nearest->height < actor.position().y) {
+        return std::nullopt;
+    }
+    return slot;
+}
+
+std::optional<Vec3> PlayerAttacks::deathContact(usize index, std::span<const PlayerRuntime> players,
+                                                const Targets& targets) const {
+    if (const auto slot = deathContactSlot(index, players, targets)) {
+        return targets.opponents.enemies().positionOf(*slot);
+    }
+    return std::nullopt;
+}
+
+/** The halo holds Death only while the bodies touch and he remains the target ahead.
+ * Each 30 Hz frame draws one point: health back, or experience from his black form.
+ * Ranged target acquisition alone never grants a remote drain. */
+std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowed,
+                                             std::span<PlayerRuntime> players,
+                                             const Targets& targets) {
+    if (!m_resources.has_value() || index >= players.size()) {
+        return std::nullopt;
+    }
+    PlayerRuntime& runtime = players[index];
+    runtime.deathDrainTicks -= std::max(ticks, 0);
+    const auto release = [&]() -> std::optional<Vec3> {
+        runtime.deathHeld = -1;
+        m_resources->effects.stop(runtime.deathHeldEffect);
+        runtime.deathHeldEffect = 0;
+        m_resources->audio.stop(runtime.deathHeldSuck);
+        runtime.deathHeldSuck = kNoSound;
+        m_resources->audio.stop(runtime.deathHeldCry);
+        runtime.deathHeldCry = kNoSound;
+        return std::nullopt;
+    };
+    const PlayerActor& actor = runtime.actor;
+    // PlayerMotion's speak_done latch survives losing contact (80085450).
+    // PlayerProcessPowerups clears it only when the halo is no longer worn.
+    if ((PowerupEffects::of(actor.save().progress().inventory).armor & DeathRules::kProtection) ==
+        0) {
+        runtime.deathHaloHeard = false;
+    }
+    const auto contact = allowed ? deathContactSlot(index, players, targets) : std::nullopt;
+    if (!contact) {
+        // Never bank damage while apart. Keep a pending cooldown, though, so
+        // briefly losing contact cannot restart the 30 Hz damage cadence.
+        runtime.deathDrainTicks = std::max(runtime.deathDrainTicks, 0);
         return release();
     }
+    const s32 slot = *contact;
+    Enemies& enemies = targets.opponents.enemies();
     if (runtime.deathHeld != slot) {
         release();
         runtime.deathHeld = slot;
@@ -927,10 +955,11 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
         }
     }
     const Vec3 at = enemies.positionOf(slot);
-    runtime.deathHeldTicks += ticks;
-    while (runtime.deathHeldTicks >= kTicksPerFrame && enemies.alive(slot) &&
-           !enemies.dying(slot)) {
-        runtime.deathHeldTicks -= kTicksPerFrame;
+    // First contact drains immediately, as PlayerMotion does, including a
+    // one-tick contact at 60 Hz. Accumulating two touching ticks before the
+    // first point loses every short contact with a retreating Death.
+    while (runtime.deathDrainTicks < 0 && enemies.alive(slot) && !enemies.dying(slot)) {
+        runtime.deathDrainTicks += kTicksPerFrame;
         targets.opponents.strikeEnemy(slot, 0.0f, 0, at - actor.position(), actor.player(),
                                       players);
     }
@@ -1120,8 +1149,18 @@ void PlayerAttacks::showBlock(usize index, f32 taken, f32 left, std::span<Player
         m_resources->weapons.trees.find(kBlockEffect).has_value()) {
         EffectTrees::Setting setting;
         setting.seconds = shown;
-        m_resources->effects.startSet(m_resources->device, m_resources->weapons, kBlockEffect,
-                                      players[index].actor.followPoint(), setting);
+        // StartBlockFX (8009233C): the player's color, transparency 0x40,
+        // unlit and parented to the player node rather than left at the impact point.
+        setting.tint = LegendShow::chargeTint(players[index].actor.save().color);
+        setting.alpha = 191.0f / 255.0f;
+        setting.unlit = true;
+        const u32 effect =
+            m_resources->effects.startSet(m_resources->device, m_resources->weapons, kBlockEffect,
+                                          players[index].actor.position(), setting);
+        if (effect != 0) {
+            m_moveAttachments.push_back({index, effect, 0, Mat4{1}, true});
+            updateMoveAttachments(players);
+        }
     }
 }
 

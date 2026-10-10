@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -34,12 +35,22 @@ public:
     void clear() { m_pieces.clear(); }
     usize size() const { return m_pieces.size(); }
     const Mat4& transform(usize index) const { return m_pieces[index]->transform; }
+    struct Presentation {
+        usize index = 0;
+        const ItemArchive* archive = nullptr;
+        std::string_view object;
+        Mat4 placement{1};
+    };
+    /** Append-only identities and trusted artwork for already-created debris. */
+    std::vector<Presentation> presentation() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
     struct Piece {
         TreeModel model;
         Mat4 transform{1.0f};
+        const ItemArchive* archive = nullptr;
+        std::string object;
     };
     std::vector<std::unique_ptr<Piece>> m_pieces;
 };

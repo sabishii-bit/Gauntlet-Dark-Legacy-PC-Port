@@ -67,6 +67,10 @@
 
 namespace gdl::game {
 
+class ProjectileResources;
+class PickupResources;
+class FixtureResources;
+
 /** An item dropped into the level by one of its item records' names. */
 struct DroppedItem {
     std::string name;
@@ -144,6 +148,15 @@ public:
                 bool optionsOpen = false, f32 frameBlend = -1.0f);
 
     usize actorCount() const { return m_players.size(); }
+    /** Read-only end-of-tick observation; callers must not retain the span across open/close. */
+    std::span<const PlayerRuntime> participants() const { return m_players; }
+    const LevelWorld* world() const { return m_world; }
+    CameraView cameraView() const;
+    /** Same hard-cut rule used by local rendering and remote snapshot capture. */
+    bool cameraContinuous() const;
+    u32 simulationTickRate() const {
+        return m_context.config != nullptr ? m_context.config->timing.tickRate : 60;
+    }
     /** The character driven by `player`, or null when that player is not in the party. */
     const PlayerActor* actor(s32 player) const;
     /** The body animation of `player`'s character, or null without a figure for it. */
@@ -168,21 +181,35 @@ public:
     bool exitFlameOn() const { return m_audio.exitFlameOn(); }
     Intro intro() const { return m_welcome.intro(); }
     const ScrollBox& scroll() const { return m_messages.scroll(); }
+    std::optional<LevelMessages::Look> scrollLook() const { return m_messages.look(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
+    /** Load-time replication registry for this party's weapon/effect meshes.
+     * Does not start attacks or emit audio/particles; scene assets must outlive it. */
+    bool bindPlayerProjectiles(ProjectileResources& resources);
+    /** Bind the currently loaded scene's players, swarm and stage/fighter effects.
+     * Future spawned families must be preloaded before this fixed catalog is made. */
+    bool bindSceneProjectiles(ProjectileResources& resources);
+    /** Online loading only: preload later encounters, then atomically bind the
+     * same native catalogs as ReplicaStage. Call before PlayReplication::bind. */
+    bool bindReplicationResources(ProjectileResources& projectiles, PickupResources& pickups,
+                                  FixtureResources& fixtures);
     const ExitPortals& portals() const { return m_portals; }
     const LevelTransporters& transporters() const { return m_transporters; }
+    const PortalDeparture& departure() const { return m_departure; }
     const SwitchCutscene& switchCutscene() const { return m_switchCutscene; }
     const Chests& chests() const { return m_fixtures.chests(); }
     const LockedGates& gates() const { return m_fixtures.gates(); }
     const Traps& traps() const { return m_fixtures.traps(); }
     const Breakables& barrels() const { return m_fixtures.barrels(); }
     const SafeRocks& safeRocks() const { return m_fixtures.safeRocks(); }
+    const Rubble& rubble() const { return m_fixtures.rubble(); }
     const Enemies& enemies() const { return m_opponents.enemies(); }
     Enemies& enemies() { return m_opponents.enemies(); }
     const Generators& generators() const { return m_opponents.generators(); }
     Generators& generators() { return m_opponents.generators(); }
     const Critters& critters() const { return m_opponents.critters(); }
+    const CritterStatues& statues() const { return m_opponents.statues(); }
     Critters& critters() { return m_opponents.critters(); }
     const EnemyMissiles& enemyMissiles() const { return m_opponents.missiles(); }
     const Bosses& bosses() const { return m_opponents.bosses(); }
@@ -202,6 +229,9 @@ public:
                    : std::nullopt;
     }
     const HelpMessages& help() const { return m_hud.help(); }
+    const PartyHud& hud() const { return m_hud; }
+    bool cinematicBars() const;
+    bool hudVisible() const { return !m_gameOver.active() && !cinematicBars(); }
     const MoveStrikes& strikes() const { return m_attacks.strikes(); }
     const AmbientDimmer& dimmer() const { return m_dimmer; }
     /** Gives `player`'s character experience won in play, which also feeds its turbo meter
@@ -240,6 +270,7 @@ public:
     const LevelRef& destination() const { return m_destination; }
     bool secretTravel() const { return m_secretTravel; }
     const SecretChallenge& challenge() const { return m_challenge; }
+    std::optional<ChallengeHud::Look> hourglassLook() const;
     /** Pause the parent stage while the party visits a secret challenge. */
     void suspendForChallenge();
     /** Return progress to the preserved stage without replacing its entry checkpoint. */
@@ -268,6 +299,7 @@ public:
     /** Whether the party is still materialising: held under the level's title until the start
      * camera has ridden in, or for the effect's life when there is no start camera. */
     bool spawning() const { return m_arrival.active(); }
+    const LevelArrivalPresentation& arrival() const { return m_arrival; }
     usize spawnEffectCount() const { return m_arrival.effectCount(); }
     /** The folder a character's figure came from, when it loaded. */
     std::optional<std::filesystem::path> figureDirectory(s32 player) const;
@@ -346,7 +378,6 @@ private:
     Vec3 limitStep(usize index, const Vec3& before, const Vec3& after) const;
     void updateSumnerVisit(f32 seconds);
     void updateHints(const Inputs& inputs, s32 ticks);
-    CameraView cameraView() const;
 
     RenderDevice* m_device = nullptr;
     GameContext m_context;

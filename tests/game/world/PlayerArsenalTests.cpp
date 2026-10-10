@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
@@ -421,19 +423,25 @@ TEST_CASE("a ranged volley fires the player's weapon and both earned and Phoenix
     test::assetOrSkip("PLAYERS/WAR/YEL/ANIM.PS2");
     test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
     test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
-    for (const s32 level : {30, 80}) {
+    const s32 character = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    for (const s32 level : {30, 80, 99}) {
+        CAPTURE(character);
         CAPTURE(level);
         Fixture f;
         f.arsenal.clear();
         REQUIRE(f.classes.load(root / "pdata"));
         REQUIRE(f.weapons.load(root / "WEAPONS"));
+        f.actor.save().character = character;
+        f.actor.turnTo(0.7f);
         f.actor.save().progress().experience = levelExperience(level);
         auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
         REQUIRE(figure);
         REQUIRE(figure->familiarTier() == (level < 80 ? 1 : 2));
         REQUIRE(figure->familiarMissile().bound());
+        const std::array<TextureSet*, 1> lenders{&f.weapons.textures};
         f.arsenal.bind(
-            {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+            {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}},
+            lenders);
         auto& inventory = f.actor.save().progress().inventory;
         inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 60);
         const Vec3 aim{10, 5, 40};
@@ -451,7 +459,19 @@ TEST_CASE("a ranged volley fires the player's weapon and both earned and Phoenix
         CHECK(phoenix.flags == 0x11);
         CHECK(familiar.owner == f.actor.player());
         CHECK(phoenix.owner == f.actor.player());
-        CHECK(familiar.velocity == phoenix.velocity);
+        const auto* stats = f.classes.stats(character);
+        REQUIRE(stats);
+        const f32 scale = PlayerFigure::bodyScale(f.actor.save(), {});
+        CHECK(glm::distance(familiar.position, phoenix.position) ==
+              Approx(2.0f * std::abs(stats->familiarShotOffset.x) * scale));
+        CHECK(glm::distance(familiar.position, phoenix.position) > 0.1f);
+        CHECK(familiar.age == phoenix.age);
+        for (const auto* shot : {&familiar, &phoenix}) {
+            const Vec3 toTarget = aim - shot->position;
+            CHECK(glm::dot(glm::normalize(Vec2{shot->velocity.x, shot->velocity.z}),
+                           glm::normalize(Vec2{toTarget.x, toTarget.z})) == Approx(1));
+            CHECK(std::hypot(shot->velocity.x, shot->velocity.z) == Approx(35));
+        }
         REQUIRE(familiar.effect != 0);
         REQUIRE(phoenix.effect != 0);
         CHECK(familiar.effect != phoenix.effect);

@@ -74,6 +74,30 @@ std::filesystem::path presentationFixture() {
     return root;
 }
 
+TEST_CASE("effect opacity combines an explicit alpha with the timed fade",
+          "[effects][effect-opacity]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(presentationFixture()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 1;
+    setting.fadeSeconds = 0.5f;
+    setting.alpha = 0.75f;
+    REQUIRE(effects.startSet(device, archive, "MOVING", {}, setting) != 0);
+    CHECK(effects.effect(0).opacity() == Catch::Approx(0.75f));
+    effects.update(0.75f);
+    CHECK(effects.effect(0).opacity() == Catch::Approx(0.375f));
+    effects.update(0.26f);
+    CHECK(effects.count() == 0);
+    for (const f32 alpha : {-1.0f, 2.0f}) {
+        effects.clear();
+        setting.alpha = alpha;
+        REQUIRE(effects.startSet(device, archive, "MOVING", {}, setting) != 0);
+        CHECK(effects.effect(0).opacity() == std::clamp(alpha, 0.0f, 1.0f));
+    }
+}
+
 TEST_CASE("explicit effect morph clocks hold only the birth and preserve the flight time",
           "[effects][alpha-effects]") {
     ItemArchive archive;

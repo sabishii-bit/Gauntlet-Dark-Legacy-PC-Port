@@ -48,6 +48,86 @@ struct Fixture {
     }
 };
 
+TEST_CASE("geometry checkpoints restore hierarchy and visibility without retaining stale overrides",
+          "[world][scene][geometry-replica]") {
+    Fixture f("world-scene-replica");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"GROUP","position":[10,0,0],"next":2,"child":1,"flags":4096},
+      {"name":"WINDOW","position":[0,5,0],"next":-1,"child":-1},
+      {"name":"WALL","position":[20,0,0],"next":-1,"child":-1}]})");
+    REQUIRE(f.layout.load(f.directory));
+    const std::array<usize, 1> controlled{2};
+    REQUIRE(f.build(controlled));
+    auto replica = f.scene;
+    const auto initial = f.scene.geometry();
+    REQUIRE(initial.valid());
+    REQUIRE(initial.objects.size() == 2); // includes the meshless moving parent
+    REQUIRE(replica.acceptsGeometry(initial));
+    const Mat4 moved =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{10, 12, 0}), kHalfPi, Vec3{0, 0, 1});
+    f.scene.setObjectTransform(0, moved);
+    f.scene.setObjectAlpha(1, 0.25f);
+    REQUIRE(f.scene.setObjectVisible(2, false));
+    f.scene.setDarken(0.5f);
+    const auto changed = f.scene.geometry();
+    REQUIRE(changed.objects.size() == 3);
+    REQUIRE(replica.applyGeometry(changed));
+    CHECK(replica.worldTransform(1) == f.scene.worldTransform(1));
+    CHECK(replica.objectAlpha(1) == 0.25f);
+    CHECK_FALSE(replica.objectVisible(2));
+    CHECK(replica.geometry().darken == 0.5f);
+    const auto textures = f.device.texturesCreated;
+    REQUIRE(replica.applyGeometry(initial));
+    CHECK(replica.objectVisible(2));
+    CHECK(replica.objectAlpha(1) == 1);
+    CHECK(replica.geometry().darken == 0);
+    CHECK(replica.worldTransform(1)[3] == Vec4(10, 5, 0, 1));
+    CHECK(f.device.texturesCreated == textures);
+    CHECK_FALSE(f.scene.objectVisible(2)); // independent renderer, not host mutation
+
+    auto invalid = changed;
+    SECTION("missing moving parent") {
+        invalid.objects.erase(invalid.objects.begin());
+    }
+    SECTION("wrong layout") {
+        ++invalid.layout;
+    }
+    SECTION("wrong object count") {
+        ++invalid.objectCount;
+    }
+    SECTION("moving static geometry") {
+        invalid.objects.back().local[3].y += 1;
+    }
+    SECTION("meshless visibility") {
+        invalid.objects.front().visible = false;
+    }
+    SECTION("invalid trailing record") {
+        invalid.objects.back().alpha = -1;
+    }
+    CHECK_FALSE(replica.applyGeometry(invalid));
+    CHECK(replica.worldTransform(1)[3] == Vec4(10, 5, 0, 1));
+    CHECK(replica.objectAlpha(1) == 1);
+    CHECK(replica.objectVisible(2));
+    CHECK(replica.geometry().darken == 0);
+}
+
+TEST_CASE("geometry cuts carry a discontinuity distinct from ordinary platform updates",
+          "[world][scene][geometry-replica]") {
+    Fixture f("world-scene-replica-cuts");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"WALL","position":[0,0,0],"next":-1,"child":-1,"flags":4096}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    REQUIRE(f.scene.geometry().objects.size() == 1);
+    const Mat4 moved = glm::translate(Mat4{1}, Vec3{0, 5, 0});
+    f.scene.setObjectTransform(0, moved);
+    CHECK(f.scene.geometry().objects[0].continuity == 1);
+    f.scene.setObjectTransform(0, moved, true);
+    CHECK(f.scene.geometry().objects[0].continuity == 1);
+    f.scene.setObjectTransform(0, Mat4{1}, true);
+    CHECK(f.scene.geometry().objects[0].continuity == 2);
+}
+
 TEST_CASE("placed flame surfaces produce separate depth-tested heat sources",
           "[world][scene][heat-surfaces]") {
     Fixture f("world-scene-heat-surfaces");

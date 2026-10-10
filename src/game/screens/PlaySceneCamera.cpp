@@ -15,6 +15,11 @@ bool PlayScene::scriptedCamera() const {
            m_welcome.camera().has_value() || m_promotion.active() || relicCeremonyOn();
 }
 
+bool PlayScene::cameraContinuous() const {
+    return m_previousCamera.has_value() && !scriptedCamera() &&
+           m_previousBossCamera == bossCameraOn();
+}
+
 WorldCamera PlayScene::viewCamera() const {
     if (const auto& camera = m_switchCutscene.camera();
         m_switchCutscene.showing() && camera.has_value()) {

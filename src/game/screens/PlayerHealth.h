@@ -41,6 +41,9 @@ public:
     /** Action/partner protection shared by incoming damage and combatant contact checks.
      * Does not hide a player from targeting or replace armor's damage modifiers. */
     static bool canBeDamaged(const PlayerRuntime& runtime);
+    /** PlayerMotion_FloorFX skips hurt/recovery states (native motion state >= 31).
+     * This is surface-hazard protection, not invulnerability to ordinary attacks. */
+    static bool canTakeSurfaceDamage(const PlayerRuntime& runtime);
     void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
               f32 damageScale, const Events& events, const PlayerImpact& impact = {},
               bool bossEncounter = false, const ClassStats* stats = nullptr);

@@ -79,6 +79,9 @@ public:
     void glowWeapons(std::span<PlayerRuntime> players, s32 occupiedHand = -1);
     void updateStrikes(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    /** Queries touching Death without advancing damage, sounds or the held state. */
+    std::optional<Vec3> deathContact(usize index, std::span<const PlayerRuntime> players,
+                                     const Targets& targets) const;
     /** A halo wearer whose nearest thing ahead is Death holds him, drawing a point off him a
      * frame; where he is while held, else nothing (and the hold let go). `allowed` false
      * lets any hold go. */
@@ -121,6 +124,8 @@ public:
     usize shieldCount() const { return m_shields.size(); }
 
 private:
+    std::optional<s32> deathContactSlot(usize index, std::span<const PlayerRuntime> players,
+                                        const Targets& targets) const;
     void beginPotion(const MissileImpact& impact);
     void updatePotions(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateItems(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);

@@ -61,6 +61,8 @@ public:
     /** Stands the boss of `kind` (`bossNameOf` it) at `position` facing `yaw`, asleep until
      * the party comes within `wakeDistance` (its table's threshold when nought). */
     bool spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance = 0.0f);
+    /** Load render assets without creating a fighter or beginning an encounter. */
+    CombatantAssets* preload(s32 kind);
 
     /** The realm of the legend item that weakens this boss, or nought. */
     s32 legendRealm() const { return legendRealmOf(m_kind); }
@@ -114,6 +116,9 @@ public:
     void setHitFlash(const Texture* texture) { m_hitFlash = texture; }
 
     bool present() const { return m_id.has_value(); }
+    const Combatant& fighter() const { return m_fighter; }
+    std::vector<CombatantAssets*> resources();
+    std::vector<const CombatantAssets*> resources() const;
     BossView view() const;
     /** How its meter is laid out, or null without a boss. */
     const HealthMeterDefinition* meter() const;

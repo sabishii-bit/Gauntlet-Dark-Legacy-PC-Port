@@ -44,13 +44,30 @@ usize GameOver::letters() const {
 }
 
 void GameOver::draw(Canvas& canvas, const TextPainter& text, f32 width) const {
-    if (!m_active || letters() == 0) {
+    drawCaption(canvas, text, width, m_caption, m_active ? letters() : 0);
+}
+
+std::string_view GameOver::captionFor(const MessageTable& messages, const StringTable* strings) {
+    if (strings != nullptr && strings->has(kTextId)) {
+        return strings->get(kTextId);
+    }
+    if (const auto message = messages.find(kMessage)) {
+        const auto& pages = messages.message(*message).pages;
+        if (!pages.empty()) {
+            return pages.front();
+        }
+    }
+    return {};
+}
+
+void GameOver::drawCaption(Canvas& canvas, const TextPainter& text, f32 width,
+                           std::string_view caption, usize letters) {
+    if (letters == 0) {
         return;
     }
     // The full line is centred before its stored text is truncated for the reveal.
-    const s32 x = text.leftEdge(-static_cast<s32>(width / 2), m_caption, kTextScale);
-    text.draw(canvas, x, kTextY, std::string_view{m_caption}.substr(0, letters()),
-              TextStyle{kTextScale, Color::white()});
+    const s32 x = text.leftEdge(-static_cast<s32>(width / 2), caption, kTextScale);
+    text.draw(canvas, x, kTextY, caption.substr(0, letters), TextStyle{kTextScale, Color::white()});
 }
 
 } // namespace gdl::game

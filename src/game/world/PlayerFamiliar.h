@@ -10,6 +10,8 @@
 #include "engine/world/TreePose.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/world/CompanionVisual.h"
+
 namespace gdl::game {
 /** The familiar a character earns at thirty and eighty, animated from its class archive. */
 class PlayerFamiliar {
@@ -30,8 +32,9 @@ public:
     }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, f32 alpha, const CameraFrame* camera = nullptr,
-              f32 renderAlpha = 1.0f) const;
+              f32 renderAlpha = 1.0f, TreeModel::Pass pass = TreeModel::Pass::All) const;
     s32 tier() const { return m_tree != nullptr ? m_tier : 0; }
+    std::optional<CompanionVisual> visual(const Mat4& body, f32 alpha) const;
 
 private:
     bool bindTree(RenderDevice& device, ItemArchive& archive, std::string_view name,

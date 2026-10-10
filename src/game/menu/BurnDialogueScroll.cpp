@@ -33,8 +33,6 @@ bool BurnDialogueScroll::start(RenderDevice& device, const Rect& area, const Ima
     m_composite = scroll;
     m_masks = std::move(masks);
     m_ring = std::move(ring);
-    m_maskWidth = m_masks[0]->width;
-    m_maskHeight = m_masks[0]->height;
     m_texture = device.createTexture(TextureDesc{m_source.width, m_source.height,
                                                  TextureFilter::Linear, TextureWrap::ClampToEdge},
                                      m_source.pixels);
@@ -71,21 +69,21 @@ void BurnDialogueScroll::step(s32 ticks) {
 }
 
 /** The mask's alpha under a scroll texel, filtered as a blit stretched over the scroll is. */
-f32 BurnDialogueScroll::maskAlpha(const Image& mask, u32 x, u32 y) const {
-    const auto maxU = static_cast<f32>(m_maskWidth - 1);
-    const auto maxV = static_cast<f32>(m_maskHeight - 1);
-    const f32 u = std::clamp((static_cast<f32>(x) + 0.5f) * static_cast<f32>(m_maskWidth) /
-                                     static_cast<f32>(m_source.width) -
+f32 BurnDialogueScroll::maskAlpha(const Image& source, const Image& mask, u32 x, u32 y) {
+    const auto maxU = static_cast<f32>(mask.width - 1);
+    const auto maxV = static_cast<f32>(mask.height - 1);
+    const f32 u = std::clamp((static_cast<f32>(x) + 0.5f) * static_cast<f32>(mask.width) /
+                                     static_cast<f32>(source.width) -
                                  0.5f,
                              0.0f, maxU);
-    const f32 v = std::clamp((static_cast<f32>(y) + 0.5f) * static_cast<f32>(m_maskHeight) /
-                                     static_cast<f32>(m_source.height) -
+    const f32 v = std::clamp((static_cast<f32>(y) + 0.5f) * static_cast<f32>(mask.height) /
+                                     static_cast<f32>(source.height) -
                                  0.5f,
                              0.0f, maxV);
     const auto x0 = static_cast<u32>(u);
     const auto y0 = static_cast<u32>(v);
-    const u32 x1 = std::min(x0 + 1, m_maskWidth - 1);
-    const u32 y1 = std::min(y0 + 1, m_maskHeight - 1);
+    const u32 x1 = std::min(x0 + 1, mask.width - 1);
+    const u32 y1 = std::min(y0 + 1, mask.height - 1);
     const f32 fx = u - static_cast<f32>(x0);
     const f32 fy = v - static_cast<f32>(y0);
     const f32 top = lerp(mask.pixel(x0, y0).a, mask.pixel(x1, y0).a, fx);
@@ -97,16 +95,25 @@ f32 BurnDialogueScroll::maskAlpha(const Image& mask, u32 x, u32 y) const {
 void BurnDialogueScroll::cutOut(s32 frame) {
     const Image& mask =
         *m_masks[static_cast<usize>(std::min<s32>(frame, static_cast<s32>(m_masks.size()) - 1))];
-    for (u32 y = 0; y < m_source.height; ++y) {
-        for (u32 x = 0; x < m_source.width; ++x) {
-            Color color = m_source.pixel(x, y);
-            if (maskAlpha(mask, x, y) == 0.0f) {
+    m_composite = composite(m_source, mask);
+    m_cutFrame = frame;
+}
+
+Image BurnDialogueScroll::composite(const Image& scroll, const Image& mask) {
+    Image result = scroll;
+    if (mask.width == 0 || mask.height == 0 || mask.pixels.empty()) {
+        return result;
+    }
+    for (u32 y = 0; y < scroll.height; ++y) {
+        for (u32 x = 0; x < scroll.width; ++x) {
+            Color color = scroll.pixel(x, y);
+            if (maskAlpha(scroll, mask, x, y) == 0.0f) {
                 color.a = 0;
             }
-            m_composite.setPixel(x, y, color);
+            result.setPixel(x, y, color);
         }
     }
-    m_cutFrame = frame;
+    return result;
 }
 
 void BurnDialogueScroll::prepare(RenderDevice& device) {

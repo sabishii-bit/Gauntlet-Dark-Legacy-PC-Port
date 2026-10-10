@@ -11,7 +11,6 @@
 
 #include "game/menu/MenuInput.h"
 #include "game/screens/GameContext.h"
-#include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
 
 namespace gdl::game {
@@ -42,7 +41,7 @@ private:
 
 enum class AttractOutcome : u8 { Running, Finished, Title };
 
-/** Read-only level demonstrations with their own world and audio, never a saved party. */
+/** Silent level demonstrations with their own world, never a saved party. */
 class AttractScene {
 public:
     bool openNext(RenderDevice& device, const GameContext& context);
@@ -56,7 +55,6 @@ public:
 
 private:
     LevelWorld m_world;
-    LevelSoundscape m_audio;
     AttractCamera m_rail;
     GameContext m_context;
     BitmapFont m_font;

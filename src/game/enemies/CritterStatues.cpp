@@ -1,11 +1,17 @@
 #include "game/enemies/CritterStatues.h"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 #include "engine/core/Types.h"
 
 namespace gdl::game {
+namespace {
+constexpr s32 kContactGridDimension = 64;
+constexpr f32 kItemQueryPadding = 15.0f;
+} // namespace
 std::string_view CritterStatues::treeOf(CombatantKind kind) {
     switch (kind) {
     case CombatantKind::Golem: return kGolemTree;
@@ -26,7 +32,7 @@ bool CritterStatues::add(RenderDevice& device, ItemArchive& archive, const Place
     if (placement.enemy && placement.enemy->kind == kDeathKind) {
         tree = placement.enemy->tier == 2 ? "DEATHSTATUE2" : "DEATHSTATUE1";
     }
-    if (tree.empty()) {
+    if (tree.empty() || m_nextInstance == std::numeric_limits<u64>::max()) {
         return false;
     }
     auto statue = std::make_unique<Statue>();
@@ -35,6 +41,8 @@ bool CritterStatues::add(RenderDevice& device, ItemArchive& archive, const Place
         return false;
     }
     statue->figure.play(kIdleSequence, true);
+    statue->instance = m_nextInstance++;
+    statue->archive = &archive;
     m_statues.push_back(std::move(statue));
     return true;
 }
@@ -42,6 +50,32 @@ bool CritterStatues::add(RenderDevice& device, ItemArchive& archive, const Place
 void CritterStatues::clear() {
     m_statues.clear();
     m_risen.clear();
+    m_contactGridOrigin = Vec2{0};
+    m_contactGridInverseWidth = 0;
+}
+
+void CritterStatues::setContactGridBounds(const Vec3& minimum, const Vec3& maximum) {
+    m_contactGridOrigin = Vec2{minimum.x, minimum.z};
+    const f32 cellWidth =
+        std::max(maximum.x - minimum.x, maximum.z - minimum.z) / kContactGridDimension;
+    m_contactGridInverseWidth = cellWidth > 0 ? static_cast<f32>(1.0 / cellWidth) : 0;
+}
+
+s32 CritterStatues::contactCell(f32 coordinate, f32 origin) const {
+    return static_cast<s32>(std::clamp((coordinate - origin) * m_contactGridInverseWidth, 0.0f,
+                                       static_cast<f32>(kContactGridDimension - 1)));
+}
+
+bool CritterStatues::inContactGrid(const Vec3& statue, const Vec3& player, f32 radius) const {
+    // StartEnemyGrid (80043490) visits whole cells, not a second sight circle.
+    // InitDynGrid (80043A04) receives a 15-unit item margin in every realm.
+    const f32 pad = radius > 0 ? kItemQueryPadding + radius : -radius;
+    const s32 x = contactCell(statue.x, m_contactGridOrigin.x);
+    const s32 z = contactCell(statue.z, m_contactGridOrigin.y);
+    return x >= contactCell(player.x - pad, m_contactGridOrigin.x) &&
+           x <= contactCell(player.x + pad, m_contactGridOrigin.x) &&
+           z >= contactCell(player.z - pad, m_contactGridOrigin.y) &&
+           z <= contactCell(player.z + pad, m_contactGridOrigin.y);
 }
 
 void CritterStatues::wake(usize index) {
@@ -76,6 +110,9 @@ Obstacle CritterStatues::obstacleOf(const Statue& statue) {
 Vec3 CritterStatues::touch(const Vec3& position, f32 radius, f32 height) {
     Vec3 stood = position;
     for (auto& statue : m_statues) {
+        if (!inContactGrid(statue->figure.position(), position, radius)) {
+            continue;
+        }
         const Obstacle cylinder = obstacleOf(*statue);
         // The wake probe uses placement sight, independently of the solid body's radius.
         if (statue->placement.sight >= 0.0f) {

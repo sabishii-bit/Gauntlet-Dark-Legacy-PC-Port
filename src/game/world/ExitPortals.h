@@ -62,6 +62,7 @@ public:
         f32 alpha = 1.0f;  ///< tower route reveal; does not change progression eligibility
         std::optional<Vec3> departurePosition;
         s32 minPlayers = 1;
+        const ItemArchive* archive = nullptr; ///< borrowed source of the ordinary/off figure
         ItemFigure icon;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 transform{1.0f};

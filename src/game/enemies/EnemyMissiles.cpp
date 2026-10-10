@@ -268,6 +268,9 @@ EnemyMissileKind EnemyMissiles::thrown(const EnemyMissileKind& kind) const {
 
 bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunch& launch,
                            const WorldCollision* collision, std::span<const Obstacle> items) {
+    if (m_nextInstance == 0) {
+        return false;
+    }
     const f32 speed = kind.speed * std::max(launch.speedScale, 0.01f);
     const f32 error =
         launch.aimError *
@@ -291,6 +294,7 @@ bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunc
         return false;
     }
     EnemyMissile missile;
+    missile.instance = m_nextInstance++;
     missile.kind = thrown(kind);
     missile.scale = m_shrink;
     missile.position = from;
@@ -305,7 +309,11 @@ bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunc
 
 void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim,
                            f32 speedScale, const TreeModel* model, s32 shooter) {
+    if (m_nextInstance == 0) {
+        return;
+    }
     EnemyMissile missile;
+    missile.instance = m_nextInstance++;
     missile.kind = thrown(kind);
     missile.scale = m_shrink;
     missile.position = from;
@@ -597,6 +605,7 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                     ricochet.position = glm::mix(from, to, first);
                     m_hits.push_back(ricochet);
                 }
+                ++missile.continuity;
                 missile.velocity = -missile.velocity;
                 missile.position = from;
                 missile.reflected = true;
@@ -667,34 +676,38 @@ std::vector<EnemyMissileHit> EnemyMissiles::takeHits() {
     return std::exchange(m_hits, {});
 }
 
+Mat4 EnemyMissiles::transformOf(const EnemyMissile& missile) {
+    // Pointed the way it flies, spinning as its kind does.
+    const f32 yaw = std::atan2(missile.velocity.x, missile.velocity.z);
+    const f32 pitch =
+        -std::atan2(missile.velocity.y, flatDistance(Vec3{0.0f, 0.0f, 0.0f}, missile.velocity));
+    Mat4 model = glm::translate(Mat4{1.0f}, missile.position);
+    model = glm::rotate(model, yaw, Vec3{0.0f, 1.0f, 0.0f});
+    model = glm::rotate(model, pitch, Vec3{1.0f, 0.0f, 0.0f});
+    model = glm::rotate(model, missile.turned.y, Vec3{0.0f, 1.0f, 0.0f});
+    model = glm::rotate(model, missile.turned.x, Vec3{1.0f, 0.0f, 0.0f});
+    if (missile.kind.pierces() && missile.lived < kGrowth) {
+        const f32 grown = kSmallest + (1.0f - kSmallest) * missile.lived / kGrowth;
+        model = glm::scale(model, Vec3{grown});
+    }
+    if (missile.scale != 1.0f) {
+        model = glm::scale(model, Vec3{missile.scale});
+    }
+    return model;
+}
+
 void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                          const CameraFrame* camera) const {
     for (const EnemyMissile& missile : m_missiles) {
         if (missile.model == nullptr || !missile.model->bound()) {
             continue;
         }
-        // Pointed the way it flies, spinning as its kind does.
-        const f32 yaw = std::atan2(missile.velocity.x, missile.velocity.z);
-        const f32 pitch =
-            -std::atan2(missile.velocity.y, flatDistance(Vec3{0.0f, 0.0f, 0.0f}, missile.velocity));
-        Mat4 model = glm::translate(Mat4{1.0f}, missile.position);
-        model = glm::rotate(model, yaw, Vec3{0.0f, 1.0f, 0.0f});
-        model = glm::rotate(model, pitch, Vec3{1.0f, 0.0f, 0.0f});
-        model = glm::rotate(model, missile.turned.y, Vec3{0.0f, 1.0f, 0.0f});
-        model = glm::rotate(model, missile.turned.x, Vec3{1.0f, 0.0f, 0.0f});
-        if (missile.kind.pierces() && missile.lived < kGrowth) {
-            const f32 grown = kSmallest + (1.0f - kSmallest) * missile.lived / kGrowth;
-            model = glm::scale(model, Vec3{grown});
-        }
-        if (missile.scale != 1.0f) {
-            model = glm::scale(model, Vec3{missile.scale});
-        }
         // SOR_FBALL's CFXO_H halo authors no depth test. Missiles draw after
         // the opaque scene here, so that flag would paint it through walls.
         // Constrain only this world-bound draw; keep its blend/depth-write
         // settings and the shared model's authored policy intact.
-        missile.model->draw(device, clip, model, lighting, {}, camera, 1.0f, TreeModel::Pass::All,
-                            TreeModel::Occlusion::SolidWorld);
+        missile.model->draw(device, clip, transformOf(missile), lighting, {}, camera, 1.0f,
+                            TreeModel::Pass::All, TreeModel::Occlusion::SolidWorld);
     }
 }
 

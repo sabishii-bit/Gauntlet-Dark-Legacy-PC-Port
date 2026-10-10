@@ -46,10 +46,24 @@ public:
                      f32 frameBlend = -1.0f) const;
     void drawTitle(Canvas& canvas, const TextPainter& text, std::string_view title,
                    f32 width) const;
+    f32 titleScale() const { return active() ? m_titleSlide : 0; }
+    static void drawTitleAt(Canvas& canvas, const TextPainter& text, std::string_view title,
+                            f32 width, f32 scale);
 
     bool active() const { return m_camera.active() || m_ticks > 0; }
     const StartCamera& camera() const { return m_camera; }
     usize effectCount() const { return m_spawns.size(); }
+    struct EffectPresentation {
+        Vec3 position{0};
+        const ItemArchive* archive = nullptr;
+        const TreeInfo* tree = nullptr;
+        u32 sequence = 0;
+        f32 frame = 0;
+        u64 generation = 0;
+        f32 textureClock = 0;
+    };
+    /** Read-only native cursors; absent after the materialisation ends. */
+    std::optional<EffectPresentation> effectPresentation(usize index) const;
     bool takeTitleLanded() { return std::exchange(m_titleLanded, false); }
 
 private:
@@ -65,6 +79,7 @@ private:
         bool presentationAdvanced = false;
     };
     std::vector<Spawn> m_spawns;
+    const ItemArchive* m_archive = nullptr;
     TextureAnimator m_textures;
     s32 m_ticks = 0;
     StartCamera m_camera;

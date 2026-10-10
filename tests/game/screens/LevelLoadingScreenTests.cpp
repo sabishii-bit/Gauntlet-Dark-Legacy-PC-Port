@@ -116,6 +116,7 @@ TEST_CASE("loading pictures retain complete native HUD tops through crossfades a
         return dynamic_cast<const test::FakeTexture&>(set.texture(device, *index));
     };
     const auto& strip = texture(artwork, "S3");
+    const auto& activeStrip = texture(artwork, "BK_RUNE_STONE_02");
     const auto& glint = texture(artwork, "TRBO_GLINT");
     const auto& meter = texture(artwork, "TRBO_FULL_NEW");
     std::array<const test::FakeTexture*, 4> preview{};
@@ -155,11 +156,13 @@ TEST_CASE("loading pictures retain complete native HUD tops through crossfades a
                         ++previews;
                     }
                 }
-                if (matches(draw, strip)) {
+                if (matches(draw, strip) || matches(draw, activeStrip)) {
                     CHECK(previews == preview.size());
                     const Vec2 corner = test::minCorner(draw);
                     const auto slot = static_cast<usize>(corner.x / StatusBoxPainter::kWidth);
                     REQUIRE(slot < strips.size());
+                    // Selected characters retain their horned strip even when fallen.
+                    CHECK(matches(draw, slot == 1 || slot == 2 ? activeStrip : strip));
                     strips[slot] = true;
                     CHECK(corner.y == StatusBoxPainter::kBarY);
                     CHECK(test::maxCorner(draw).y == StatusBoxPainter::kY);

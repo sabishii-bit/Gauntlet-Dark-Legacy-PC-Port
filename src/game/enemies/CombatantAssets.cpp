@@ -35,9 +35,33 @@ void CombatantAssets::clear() {
     body.clear();
     attachments.clear();
     brokenModels.clear();
+    replacementModels.clear();
     tree = nullptr;
     archive.clear();
     effectLifetimes.clear();
+}
+const TreeModel* CombatantAssets::prepareReplacement(RenderDevice& device, std::string_view node,
+                                                     std::string_view object) {
+    const auto index =
+        tree != nullptr ? tree->findNode(node, kCombatantNodeNameLength) : std::nullopt;
+    if (!index || !archive.models.find(object)) {
+        return nullptr;
+    }
+    const auto key = std::pair{std::string(node), std::string(object)};
+    if (const auto found = replacementModels.find(key); found != replacementModels.end()) {
+        return &found->second;
+    }
+    TreeInfo replacement;
+    TreeNodeInfo mesh;
+    mesh.name = node;
+    mesh.object = object;
+    mesh.objectFlags = tree->nodes[*index].objectFlags;
+    replacement.nodes.push_back(mesh);
+    TreeModel model;
+    if (!model.bind(replacement, archive.models, archive.textures, device)) {
+        return nullptr;
+    }
+    return &replacementModels.emplace(key, std::move(model)).first->second;
 }
 bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& root,
                            const CombatantDefinition& family, char realm,

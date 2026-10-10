@@ -23,21 +23,13 @@ bool Combatant::replaceNodeModel(RenderDevice& device, std::string_view node,
                       [&](const auto& replacement) { return replacement.node == *index; });
         return true;
     }
-    if (!actor.stock->archive.models.find(object)) {
-        return false;
-    }
-    TreeInfo tree;
-    TreeNodeInfo mesh;
-    mesh.name = node;
-    mesh.object = object;
-    mesh.objectFlags = actor.stock->tree->nodes[*index].objectFlags;
-    tree.nodes.push_back(mesh);
     Actor::ModelReplacement replacement;
     replacement.node = *index;
-    if (!replacement.model.bind(tree, actor.stock->archive.models, actor.stock->archive.textures,
-                                device)) {
+    replacement.resource = actor.stock->prepareReplacement(device, node, object);
+    if (replacement.resource == nullptr) {
         return false;
     }
+    replacement.model = *replacement.resource;
     std::erase_if(actor.modelReplacements,
                   [&](const auto& previous) { return previous.node == *index; });
     actor.modelReplacements.push_back(std::move(replacement));

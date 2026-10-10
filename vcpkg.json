@@ -4,10 +4,25 @@
   "version-string": "0.1.0",
   "description": "C++26 / Vulkan reconstruction of the Gauntlet Dark Legacy engine.",
   "builtin-baseline": "1577f17ee57f42a0ef6d75bbb82cb37d0b76d7e8",
+  "features": {
+    "netplay": {
+      "description": "Headless netplay transport and network tests",
+      "dependencies": [
+        "gamenetworkingsockets",
+        "protobuf",
+        {
+          "name": "cpp-httplib",
+          "default-features": false,
+          "features": [ "openssl" ]
+        }
+      ]
+    }
+  },
   "dependencies": [
     "catch2",
     "glfw3",
     "glm",
+    "lz4",
     "miniaudio",
     "nlohmann-json",
     {

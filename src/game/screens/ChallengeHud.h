@@ -11,6 +11,10 @@ namespace gdl::game {
 /** Cropped hourglass sand, with a free-running falling-sand sprite. */
 class ChallengeHud {
 public:
+    struct Look {
+        f32 elapsed = 1;
+        s32 fallingFrame = -1; ///< -1 hides the falling grains without changing the fill.
+    };
     struct Sand {
         Rect upper;
         Rect upperUv;
@@ -21,9 +25,13 @@ public:
     void clear();
     void step(f32 seconds);
     void draw(Canvas& canvas, f32 remaining, f32 duration, bool running) const;
+    Look look(f32 remaining, f32 duration, bool running) const;
+    bool accepts(const Look& look) const;
+    void draw(Canvas& canvas, const Look& look) const;
     static Sand sand(f32 remaining, f32 duration);
 
 private:
+    static Sand sandAt(f32 elapsed);
     const Texture* m_frame = nullptr;
     const Texture* m_sand = nullptr;
     TextureAnimator m_falling;

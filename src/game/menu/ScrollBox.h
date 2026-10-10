@@ -51,7 +51,16 @@ public:
     static constexpr Color kGlowColor = Color::rgba(130, 0, 234);
     static constexpr Color kTextColor = Color::rgba(22, 12, 3); ///< ink on the parchment
 
-    void setArt(ScrollBoxArt art) { m_art = std::move(art); }
+    struct PageLayout {
+        std::vector<std::string> lines;
+        Rect area;
+        s32 textTop = 0;
+        s32 promptY = 0;
+    };
+    void setArt(ScrollBoxArt art) {
+        m_burnFrames.clear();
+        m_art = std::move(art);
+    }
     void setText(const TextPainter* text) { m_text = text; }
 
     /** Unrolls over `pages`, drawn at `scale`, with `prompt` under each; false without text
@@ -67,9 +76,18 @@ public:
     usize page() const { return m_page; }
     usize pageCount() const { return m_pages.size(); }
     /** The scroll's rectangle for the current page. */
-    const Rect& area() const { return m_area; }
+    const Rect& area() const { return m_layout.area; }
     /** The lines of the current page. */
-    const std::vector<std::string>& lines() const { return m_lines; }
+    const std::vector<std::string>& lines() const { return m_layout.lines; }
+    u8 promptAlpha() const;
+    s32 burnFrame() const { return burning() ? m_fire.frame() : -1; }
+
+    /** Display-only paths; never step dismissal or allocate/upload while drawing. */
+    bool preloadBurn(RenderDevice& device);
+    bool acceptsFrame(s32 frame) const;
+    PageLayout layout(std::string_view page, f32 scale, std::string_view prompt) const;
+    void drawPage(Canvas& canvas, const PageLayout& page, f32 scale, std::string_view prompt,
+                  u8 promptAlpha, s32 burnFrame) const;
 
     /** Uploads the burn frame when the scroll is burning; call after beginFrame. */
     void prepare(RenderDevice& device);
@@ -81,22 +99,22 @@ public:
 private:
     void showPage(usize page);
     void finish();
+    void drawWords(Canvas& canvas, const PageLayout& page, f32 scale, std::string_view prompt,
+                   u8 alpha) const;
 
     ScrollBoxArt m_art;
     const TextPainter* m_text = nullptr;
     RenderDevice* m_device = nullptr;
     std::vector<std::string> m_pages;
-    std::vector<std::string> m_lines;
+    PageLayout m_layout;
     std::string m_prompt;
     f32 m_scale = 1.0f;
     usize m_page = 0;
-    Rect m_area;
-    s32 m_textTop = 0;
-    s32 m_promptY = 0;
     s32 m_hold = 0;
     s32 m_time = 0;
     bool m_active = false;
     BurnDialogueScroll m_fire;
+    std::vector<std::unique_ptr<Texture>> m_burnFrames;
 };
 
 } // namespace gdl::game

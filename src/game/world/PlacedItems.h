@@ -126,6 +126,7 @@ public:
         f32 previousAlpha = 1.0f;
         u64 previousGeneration = 0;
         bool presentationCaptured = false;
+        u32 continuity = 1; ///< changes on visual cuts; scoped to this level's item lifetime
         mutable TreePose presentationPose;
 
         /** Whether a party of `players` sees it. */
@@ -157,6 +158,9 @@ public:
     void clear();
     usize size() const { return m_items.size(); }
     const Item& item(usize index) const { return m_items[index]; }
+    /** Trusted presentation resources; archive order is part of the level's asset identity. */
+    std::span<ItemArchive* const> archives() const { return m_archives; }
+    f32 textureFrame(const Item& item) const;
     /** Follow a container's animated socket without floor snapping. */
     void attach(usize index, const Mat4& transform, bool contained);
     /** Item number `index` is gone, as what lay in a chest blown apart is. */

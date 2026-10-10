@@ -16,6 +16,7 @@
 #include "game/players/NameCheats.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/screens/CinematicBars.h"
 #include "game/screens/PartyRecords.h"
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/TargetAssist.h"
@@ -29,8 +30,6 @@ constexpr std::string_view kWeaponsArchive = "WEAPONS";
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
 constexpr std::string_view kTempleLight = "L1XPLIGHTRAY01";
-constexpr f32 kCutBarTop = 48.0f / 384.0f;    ///< the cut's black bars, as the original's trigger
-constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of the height
 
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
@@ -327,6 +326,11 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         runtime.life =
             member.fallen && !m_world->isTower() ? PlayerLife::InTower : PlayerLife::Standing;
         runtime.entrySave = save;
+        // PlayerSaveState preserves save_backup for the two Skorne approaches.
+        // Keep tally history separate from the per-stage death/abort checkpoint.
+        if (!m_world->isTower()) {
+            runtime.resultsCheckpoint = member.resultsCheckpoint;
+        }
         runtime.turbo.add(member.turbo);
         runtime.helpHeard = member.helpHeard;
         std::ranges::sort(runtime.helpHeard);
@@ -644,17 +648,7 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
 }
 
 void PlayScene::startGameOver() {
-    std::string_view caption;
-    if (const auto message = m_hud.strings().find(GameOver::kMessage)) {
-        const auto& pages = m_hud.strings().message(*message).pages;
-        if (!pages.empty()) {
-            caption = pages.front();
-        }
-    }
-    if (m_context.strings != nullptr && m_context.strings->has(GameOver::kTextId)) {
-        caption = m_context.strings->get(GameOver::kTextId);
-    }
-    m_gameOver.begin(caption);
+    m_gameOver.begin(GameOver::captionFor(m_hud.strings(), m_context.strings));
     m_audio.stopCues();
     log::info("The game is being quit; game over");
 }
@@ -689,7 +683,13 @@ std::vector<LevelResults> PlayScene::levelResults() const {
 }
 
 std::vector<PartyMember> PlayScene::party() const {
-    return PartyRecords::members(m_players);
+    auto party = PartyRecords::members(m_players);
+    if (m_world != nullptr && m_world->isTower()) {
+        for (auto& member : party) {
+            member.resultsCheckpoint.reset();
+        }
+    }
+    return party;
 }
 
 std::vector<PartyMember> PlayScene::abandonedParty(std::span<const PartyMember> party) const {
@@ -1223,6 +1223,11 @@ void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& 
     m_opponents.bosses().drawShadow(device, clip, eye, m_world->lighting(), opponentBlend);
 }
 
+bool PlayScene::cinematicBars() const {
+    return m_welcome.cutting() || (m_promotion.active() && !spawning()) || relicCeremonyOn() ||
+           m_switchCutscene.showing();
+}
+
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                        f32 frameHeight, bool optionsOpen, f32 frameBlend) {
     if (!m_open || m_world == nullptr || m_context.config == nullptr) {
@@ -1237,10 +1242,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const f32 projectileBlend = m_projectilesAdvanced ? effectBlend : -1.0f;
     frameBlend = optionsOpen || frameBlend < 0 ? 1.0f : std::clamp(frameBlend, 0.0f, 1.0f);
     const WorldCamera currentCamera = viewCamera();
-    const WorldCamera camera =
-        m_previousCamera && !scriptedCamera() && m_previousBossCamera == bossCameraOn()
-            ? currentCamera.interpolate(*m_previousCamera, frameBlend)
-            : currentCamera;
+    const WorldCamera camera = cameraContinuous() && m_previousCamera
+                                   ? currentCamera.interpolate(*m_previousCamera, frameBlend)
+                                   : currentCamera;
     const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
                                            frameProjection);
     m_presentedClip = clip;
@@ -1333,8 +1337,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
-    const bool cut = m_welcome.cutting() || (m_promotion.active() && !spawning()) ||
-                     relicCeremonyOn() || m_switchCutscene.showing();
+    const bool cut = cinematicBars();
     m_transition.draw(m_canvas, width, height); // over the view, under the boxes
     // Rendering can precede the first simulation tick, before PartyNames has observed the hold.
     if (!spawning()) {
@@ -1358,9 +1361,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);
     }
     if (cut) {
-        m_canvas.fillHorizontalBand(0.0f, height * kCutBarTop, Color::black());
-        m_canvas.fillHorizontalBand(height * (1.0f - kCutBarBottom), height * kCutBarBottom,
-                                    Color::black());
+        drawCinematicBars(m_canvas, height);
     }
     if (!cut) {
         m_hud.drawSelectors(m_canvas, m_messages.text(), m_context.strings, m_players);

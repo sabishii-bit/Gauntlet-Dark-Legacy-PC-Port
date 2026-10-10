@@ -10,6 +10,22 @@ namespace gdl::game {
 Critters::~Critters() {
     close();
 }
+std::vector<CombatantAssets*> Critters::resources() {
+    std::vector<CombatantAssets*> result;
+    result.reserve(m_stocks.size());
+    for (auto& stock : m_stocks) {
+        result.push_back(stock.get());
+    }
+    return result;
+}
+std::vector<const CombatantAssets*> Critters::resources() const {
+    std::vector<const CombatantAssets*> result;
+    result.reserve(m_stocks.size());
+    for (const auto& stock : m_stocks) {
+        result.push_back(stock.get());
+    }
+    return result;
+}
 void Critters::open(RenderDevice& device, const std::filesystem::path& root,
                     const WorldCollision* collision, const EnemyScales& scales, char realm,
                     std::span<TextureSet* const> textureLenders, std::string_view gargoyleForm) {

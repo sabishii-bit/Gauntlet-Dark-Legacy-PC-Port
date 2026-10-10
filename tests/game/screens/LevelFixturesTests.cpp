@@ -1052,6 +1052,61 @@ TEST_CASE("a tent wall stops the swarm's missiles only while it is raised",
     f.fixtures.clear();
 }
 
+TEST_CASE("Death leaves no pickup tether and his chest retires when its opening finishes",
+          "[game][screens][level-fixtures][death-chest][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const auto& infos = f.world.layout().itemInfos();
+    const auto& chests = f.fixtures.chests();
+    usize index = 0;
+    while (index < chests.size()) {
+        const auto& chest = chests.chest(index);
+        if (chest.shown && chest.contents >= 0 &&
+            infos[static_cast<usize>(chest.contents)].name == "DEATH") {
+            break;
+        }
+        ++index;
+    }
+    REQUIRE(index < chests.size());
+    const auto& chest = chests.chest(index);
+    f.players[0].actor.place(chest.box.centre);
+    f.players[0].actor.save().progress().inventory.keys = 9;
+    s32 released = 0;
+    f.events.releaseEnemy = [&](s32 record, const Vec3&, s32) {
+        CHECK(record == chest.contents);
+        ++released;
+        return true;
+    };
+    const auto party = std::span{f.players}.first(1);
+    const auto blocked = [&] {
+        return std::ranges::any_of(f.fixtures.obstacles(), [&](const Obstacle& obstacle) {
+            return obstacle.centre == chest.box.centre;
+        });
+    };
+    REQUIRE(blocked());
+    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    REQUIRE(released == 1);
+    REQUIRE(chest.state == Chests::kOpening);
+    CHECK_FALSE(chest.gone);
+    CHECK(chest.held == -1);
+    for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, party, f.events);
+    }
+    REQUIRE(chest.state == Chests::kOpen);
+    CHECK(chest.gone);
+    CHECK_FALSE(blocked());
+    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    CHECK(released == 1);
+    f.fixtures.clear();
+}
+
 TEST_CASE("magic turns Death in a chest into the level's apple and rocks the chest",
           "[game][screens][level-fixtures][death-chest][assets]") {
     const auto root =

@@ -38,8 +38,9 @@ public:
     void stepHourglass(f32 seconds, std::span<const PlayerRuntime> players);
     /** Stop Time uses the secret-level timer's artwork and takes precedence while worn. */
     bool drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> players) const;
+    std::optional<ChallengeHud::Look> hourglassLook(std::span<const PlayerRuntime> players) const;
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks,
-                      LevelSoundscape& audio);
+                      LevelSoundscape& audio, bool challenge = false);
     void focusPickup(const PlayerActor& actor, s32 kind, u32 flags);
     bool postHelp(s32 id, usize index, std::span<PlayerRuntime> players, LevelSoundscape& audio,
                   s32 number = -1, std::optional<Vec3> position = std::nullopt);
@@ -52,6 +53,8 @@ public:
     bool relicsShown() const { return m_relicTicks > 0; }
     void drawSelectors(Canvas& canvas, const TextPainter& text, const StringTable* strings,
                        std::span<const PlayerRuntime> players) const;
+    static void drawSelector(Canvas& canvas, const TextPainter& text, const StringTable* strings,
+                             const Texture* glow, s32 player, const PowerupSlot& slot, s32 y);
     void drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
                   std::span<const PlayerRuntime> players, const Mat4& clip,
                   const Mat4& canvasProjection, f32 width, f32 height) const;
@@ -62,6 +65,7 @@ public:
     const PickupHud& pickups() const { return m_pickups; }
     HelpMessages& help() { return m_help; }
     const HelpMessages& help() const { return m_help; }
+    std::optional<Vec3> helpAnchor(std::span<const PlayerRuntime> players) const;
     const MessageTable& strings() const { return m_strings; }
 
 private:

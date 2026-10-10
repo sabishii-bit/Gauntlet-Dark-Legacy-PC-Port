@@ -20,6 +20,7 @@
 #include "game/enemies/CombatantAssets.h"
 #include "game/enemies/CombatantGaze.h"
 #include "game/enemies/CombatantProjectile.h"
+#include "game/enemies/CombatantVisual.h"
 #include "game/enemies/CritterArea.h"
 #include "game/enemies/CritterPatrol.h"
 #include "game/enemies/Enemies.h"
@@ -120,6 +121,10 @@ public:
     void takeFullHarm(bool full) { m_fullHarm = full; }
     void roar();
     bool present() const { return m_actor.state != State::Inactive; }
+    /** Never reused by this pool slot, including across clear(). */
+    u64 incarnation() const { return m_incarnation; }
+    std::vector<CombatantVisual> visuals(const CameraFrame* camera = nullptr,
+                                         bool healthBars = true) const;
     bool alive() const { return m_actor.state == State::Active; }
     bool dying() const { return m_actor.state == State::Dying; }
     s32 id() const { return m_id; }
@@ -247,6 +252,7 @@ private:
         std::vector<HitNode> hitNodes;
         struct ModelReplacement {
             usize node = 0;
+            const TreeModel* resource = nullptr;
             mutable TreeModel model; ///< per-draw appearance cache, not simulation state
         };
         std::vector<ModelReplacement> modelReplacements;
@@ -393,6 +399,7 @@ private:
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
 
     Actor m_actor;
+    u64 m_incarnation = 0;
     std::vector<std::unique_ptr<Combatant>> m_children;
     s32 m_id = -1;
     const WorldCollision* m_collision = nullptr;

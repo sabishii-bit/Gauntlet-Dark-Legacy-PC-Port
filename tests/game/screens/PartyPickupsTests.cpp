@@ -140,6 +140,56 @@ TEST_CASE("world pickups honor auto use and remain available in the selector",
     CHECK(inventory.powerups[0].on == !activate);
 }
 
+TEST_CASE("Stop Time pickups honor the coin-stage restriction without being consumed",
+          "[pickups][secret][stop-time][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    const bool secret = GENERATE(false, true);
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    // Retail coin stages have no Stop Time pickup. Treat the native town layout
+    // as a modded coin stage to test the collection path with real pickup data.
+    auto level = *levels.byName("G1");
+    if (secret) {
+        level.realmId = LevelRef::kSecretRealm;
+    }
+    LevelWorld world;
+    REQUIRE(world.load(device, root, level));
+    LevelFixtures fixtures;
+    PartyHud hud;
+    LevelSoundscape audio;
+    const ClassDataSet classes;
+    const PartyPickups::Services services{.world = world,
+                                          .fixtures = fixtures,
+                                          .hud = hud,
+                                          .audio = audio,
+                                          .classes = classes,
+                                          .help = {},
+                                          .openMessage = {},
+                                          .challengeCoin = {},
+                                          .autoActivateItems = true};
+    std::array<PlayerRuntime, 1> players;
+    const Vec3 spot{1000, 1000, 1000}; // Isolate this pickup from the stage's authored coins.
+    players[0].actor.spawn(3, {}, nullptr, spot, 0);
+    const auto& records = world.layout().itemInfos();
+    const auto found = std::ranges::find_if(records, [](const auto& record) {
+        return record.type == 1 && record.subtype == powerup::kSpecial &&
+               (record.properties & powerup::kStopTime) != 0;
+    });
+    REQUIRE(found != records.end());
+    REQUIRE(world.placeItem(device, found->name, spot));
+    PartyPickups pickups;
+    pickups.collect(device, players, services);
+    auto& inventory = players[0].actor.save().progress().inventory;
+    REQUIRE(inventory.powerupCount() == 1);
+    CHECK(inventory.powerups[0].on == !world.ref().isSecret());
+    CHECK(inventory.powerups[0].held());
+    CHECK(hud.selector(3).selection() == 0);
+    const f32 duration = inventory.powerups[0].strength;
+    PlayerPowerups::update(players, 1, PlayerPowerups::Clock::Level);
+    CHECK(inventory.powerups[0].strength == (world.ref().isSecret() ? duration : duration - 1));
+}
+
 TEST_CASE("tower crystal congratulations survive the in-level notice and acknowledge each class",
           "[pickups][tower-crystals][multiplayer]") {
     LevelWorld world;

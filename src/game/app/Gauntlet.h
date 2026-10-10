@@ -20,6 +20,7 @@
 #include "game/app/CommandLine.h"
 #include "game/app/LevelCompletion.h"
 #include "game/app/MusicDuck.h"
+#include "game/app/OnlineRun.h"
 #include "game/config/GameConfig.h"
 #include "game/players/CursorAim.h"
 #include "game/players/PlayerControls.h"
@@ -33,6 +34,7 @@
 #include "game/screens/PauseMenu.h"
 #include "game/screens/PlayScene.h"
 #include "game/screens/PlayerSelectScene.h"
+#include "game/screens/SessionInputs.h"
 #include "game/screens/SmokeTestScene.h"
 #include "game/screens/TitleScene.h"
 #include "game/world/LevelWorld.h"
@@ -61,6 +63,8 @@ private:
     void updateTitle(f64 deltaSeconds);
     void updateSelect(f64 deltaSeconds);
     void updateTower(f64 deltaSeconds);
+    PlayScene::Inputs readPlayInputs(f64 deltaSeconds);
+    void resetPlayInput();
     void updatePause(f64 deltaSeconds);
     bool saveSettings(const GameConfig& config);
     bool applySettings(const GameConfig& config, bool persist);
@@ -88,7 +92,10 @@ private:
     GameOptions m_options;
     GameConfig m_config;
     BuildLabel m_buildLabel;
+    std::string m_version;
+    std::unique_ptr<OnlineRun> m_online;
     std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
+    SessionInputs m_sessionInputs;
     std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;
     PromptDevices m_promptDevices;
     StringTable m_strings;

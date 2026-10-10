@@ -163,6 +163,22 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
 }
 
+std::optional<CompanionVisual> PowerupCompanion::visual(const Mat4& at, f32 alpha) const {
+    if (m_tree == nullptr) {
+        return std::nullopt;
+    }
+    return CompanionVisual{m_tree,
+                           &m_model,
+                           &m_textures,
+                           static_cast<u32>(m_kind),
+                           at,
+                           m_player.sequence(),
+                           m_player.generation(),
+                           m_player.presentationFrame(),
+                           static_cast<f32>(m_textures.frame()) +
+                               m_textures.presentationOffset(1).value_or(0),
+                           alpha};
+}
 void PowerupCompanion::draw(RenderDevice& device, const Mat4& clip, const Mat4& at,
                             const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
                             f32 renderAlpha, TreeModel::Pass pass) const {

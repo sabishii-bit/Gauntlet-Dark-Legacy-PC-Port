@@ -92,6 +92,8 @@ struct EnemyMissileLaunch {
 
 /** One of the swarm's missiles in flight. */
 struct EnemyMissile {
+    u64 instance = 0;
+    u32 continuity = 1;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 velocity{0.0f, 0.0f, 0.0f};
     Vec3 turned{0.0f, 0.0f, 0.0f};
@@ -244,6 +246,7 @@ public:
     std::vector<PickupBlastReach> takePickupBlasts() { return std::exchange(m_pickupBlasts, {}); }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
+    static Mat4 transformOf(const EnemyMissile& missile);
     /** The lobs' red lights and their bursts'. */
     void lights(std::vector<PointLight>& out) const;
     void clear();
@@ -281,6 +284,7 @@ private:
                     const SceneryBlast& scenery);
 
     std::vector<EnemyMissile> m_missiles;
+    u64 m_nextInstance = 1;
     std::vector<Burst> m_bursts;
     std::vector<EnemyMissileHit> m_hits;
     std::vector<RockHit> m_rockHits;

@@ -1703,7 +1703,7 @@ TEST_CASE("portal departure finishes a teammate's death and accepts that player'
 }
 
 TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
-          "[game][screens][assets][portal-travel]") {
+          "[game][screens][assets][portal-travel][linked-results]") {
     const std::string stage = GENERATE(std::string{"E1"}, std::string{"F1"});
     const std::string arena = stage == "E1" ? "E2" : "F2";
     const auto root = unpackedRoot();
@@ -1734,6 +1734,11 @@ TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
     REQUIRE(scene.open(device, context, world, party, options));
     REQUIRE(scene.portals().size() == 1);
     REQUIRE(scene.portals().portal(0).destination->name == arena);
+    // Award an observable stage gain before entering its real exit portal.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+    auto& stageSave = const_cast<PlayerActor*>(scene.actor(0))->save();
+    stageSave.gold += 250;
+    stageSave.progress().experience += 500;
     bool heardFlame = false;
     s32 departing = 0;
     PlayOutcome outcome = PlayOutcome::Running;
@@ -1754,6 +1759,34 @@ TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
     REQUIRE(scene.destination().name == arena);
     REQUIRE(scene.destination().index == 1);
     REQUIRE_FALSE(scene.destination().isTower()); // no after-level tally/shop interlude
+    const auto stageResults = scene.levelResults();
+    REQUIRE(stageResults.size() == 1);
+    auto travelers = scene.party();
+    REQUIRE(travelers.front().resultsCheckpoint);
+    scene.close();
+    REQUIRE(world.load(device, root, *levels.byName(arena)));
+    REQUIRE(scene.open(device, context, world, travelers));
+    // Native boss scene creation must not replace the preceding stage's baseline.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+    auto& bossSave = const_cast<PlayerActor*>(scene.actor(0))->save();
+    bossSave.gold += 175;
+    bossSave.progress().experience += 900;
+    const auto bossResults = scene.levelResults();
+    REQUIRE(bossResults.size() == 1);
+    CHECK(bossResults.front().totals[0] == stageResults.front().totals[0] + 175);
+    CHECK(bossResults.front().totals[1] == stageResults.front().totals[1]);
+    CHECK(bossResults.front().totals[2] == stageResults.front().totals[2] + 900);
+    travelers = scene.party();
+    scene.close();
+    REQUIRE(world.load(device, root));
+    REQUIRE(scene.open(device, context, world, travelers));
+    travelers = scene.party();
+    REQUIRE_FALSE(travelers.front().resultsCheckpoint);
+    scene.close();
+    REQUIRE(world.load(device, root, *levels.byName(stage)));
+    REQUIRE(scene.open(device, context, world, travelers));
+    CHECK(scene.levelResults().front().totals == std::array<s32, 3>{0, 0, 0});
+    scene.close();
 }
 
 TEST_CASE("in the fields a key opens a chest, which gives up what it held",
@@ -4181,6 +4214,74 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     scene.close();
 }
 
+TEST_CASE("Archer attack releases her arrow and both companion shots through the scene",
+          "[game][screens][phoenix][companion-volley][assets]") {
+    const auto root = unpackedRoot();
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.character = 3;
+    save.color = 1;
+    save.progress().experience = levelExperience(99);
+    save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 600);
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    const std::vector party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 frame = 0; frame < 400 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / 60.0, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    PlayScene::Inputs attack{};
+    attack[0].attack = true;
+    for (s32 frame = 0; frame < 90 && scene.missiles().count() < 3; ++frame) {
+        scene.update(1.0 / 60.0, attack);
+    }
+    REQUIRE(scene.missiles().count() == 3);
+    const auto& visuals = scene.missiles().visuals();
+    REQUIRE(visuals.count() == 3);
+    for (usize index = 0; index < visuals.count(); ++index) {
+        const auto& effect = visuals.effect(index);
+        CAPTURE(effect.name, effect.position.x, effect.position.y, effect.position.z);
+        REQUIRE(effect.tree);
+        device.draws.clear();
+        effect.model.draw(device, Mat4{1}, effect.transform(), {}, effect.pose.matrices());
+        CHECK_FALSE(device.draws.empty());
+        bool visible = false;
+        for (const auto& draw : device.draws) {
+            CHECK(draw.texture != &device.whiteTexture());
+            for (usize vertex = 0; vertex + 2 < draw.vertices.size(); vertex += 3) {
+                const auto& a = draw.vertices[vertex];
+                const auto& b = draw.vertices[vertex + 1];
+                const auto& c = draw.vertices[vertex + 2];
+                visible |=
+                    a.color.a > 0 && glm::length(glm::cross(b.position - a.position,
+                                                            c.position - a.position)) > 0.001f;
+            }
+        }
+        CHECK(visible);
+    }
+    CHECK(visuals.effect(1).name == "FAMILIAR_SPIT");
+    CHECK(visuals.effect(2).name == "PHOENIX_FBALL");
+    const auto& familiar = scene.missiles().missile(1);
+    const auto& phoenix = scene.missiles().missile(2);
+    // Counting three objects alone missed the identical origins/trajectories: Phoenix
+    // concealed the earned familiar's projectile. Their simultaneous shots stay apart.
+    CHECK(familiar.age == phoenix.age);
+    CHECK(glm::distance(familiar.position, phoenix.position) > 2.5f);
+    CHECK_FALSE(familiar.breaksPotions);
+    CHECK_FALSE(phoenix.breaksPotions);
+    CHECK(familiar.damage == Approx(9.9f));
+    CHECK(phoenix.damage == 10);
+    scene.close();
+}
+
 TEST_CASE("holding the attack throws the character's weapon again and again",
           "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();
@@ -4888,12 +4989,20 @@ TEST_CASE("fire shield flames composite after gates and deferred scenery",
     scene.close();
 }
 
-TEST_CASE("fully unlocked Knight walks both tower wing gates in both directions",
+TEST_CASE("fully unlocked character walks both tower wing gates in both directions",
           "[game][screens][tower-wings][assets]") {
     const auto root = unpackedRoot();
     test::assetOrSkip("PLAYERS/KNI/GRE/ANIM.PS2");
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/tower-fully-unlocked.json");
+    auto party = scenario.partyMembers();
+    // This is a traversal test, not the unacknowledged crystal-unlock scroll.
+    // Bank the scenario's completed realms with TowerCheckMessages' sentinel.
+    for (auto& member : party) {
+        for (usize realm = 1; realm < 8; ++realm) {
+            member.save.progress().crystals[realm] = -1;
+        }
+    }
     const auto gate = GENERATE(usize{1997}, usize{2031});
     test::FakeRenderDevice device;
     LevelWorld tower;
@@ -4928,13 +5037,16 @@ TEST_CASE("fully unlocked Knight walks both tower wing gates in both directions"
     options.welcome = false;
     options.position = start;
     PlayScene scene;
-    REQUIRE(scene.open(device, context, tower, scenario.partyMembers(), options));
+    REQUIRE(scene.open(device, context, tower, party, options));
     REQUIRE(tower.triggers().opened(static_cast<s32>(gate)));
     for (s32 tick = 0; tick < 180; ++tick) {
         scene.update(1.0 / 30, {});
     }
     // Run actual gameplay input, including the opponent/body post-collision check;
     // testing PlayerActor alone missed the second check's different probe height.
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    REQUIRE_FALSE(scene.scrollLook());
+    REQUIRE(scene.canPause(0));
     for (const f32 sign : {1.0f, -1.0f}) {
         for (s32 tick = 0;
              tick < 90 && glm::dot(scene.actor(0)->position() - center, direction) * sign < 6;

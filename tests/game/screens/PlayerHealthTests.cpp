@@ -105,6 +105,56 @@ TEST_CASE("stun shots react without health loss and magic never harms a player",
     CHECK(f.player.reaction == PlayerDeed::None);
 }
 
+TEST_CASE("surface hazards wait for hit recovery without granting general invulnerability",
+          "[player-health][moving-hazards][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    for (const auto deed :
+         {PlayerDeed::Flinch, PlayerDeed::Spike, PlayerDeed::Reel, PlayerDeed::FallBack,
+          PlayerDeed::FallForward, PlayerDeed::Webbed, PlayerDeed::Whirled}) {
+        CAPTURE(static_cast<s32>(deed));
+        Fixture f;
+        f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+        REQUIRE(f.player.figure);
+        CHECK(PlayerHealth::canTakeSurfaceDamage(f.player));
+        // A second hazard in the same tick must also respect a queued reaction.
+        f.player.reaction = deed;
+        CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(f.player));
+        f.player.figure->animate(0, 2, 1.0f / 30, deed);
+        f.player.reaction = PlayerDeed::None;
+        REQUIRE(f.player.figure->animator().reacting());
+        for (s32 frame = 0; frame < 300 && f.player.figure->animator().reacting(); ++frame) {
+            CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(f.player));
+            CHECK(PlayerHealth::canBeDamaged(f.player));
+            f.player.figure->animate(0, 2, 1.0f / 30);
+        }
+        REQUIRE_FALSE(f.player.figure->animator().reacting());
+        CHECK(PlayerHealth::canTakeSurfaceDamage(f.player));
+        // Recovery gates are per player, not a shared hazard cooldown.
+        const Fixture other;
+        CHECK(PlayerHealth::canTakeSurfaceDamage(other.player));
+    }
+}
+
+TEST_CASE("surface hazards exclude captured and inactive players",
+          "[player-health][moving-hazards]") {
+    Fixture f;
+    f.player.capture.attach(0, false, Mat4{1}, f.player.actor);
+    CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(f.player));
+    f.player.capture.release({1, 1, 0}, 10);
+    CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(f.player));
+    f.player.capture.clear();
+    CHECK(PlayerHealth::canTakeSurfaceDamage(f.player));
+    f.player.life = PlayerLife::Dying;
+    CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(f.player));
+    f.player.life = PlayerLife::InTower;
+    CHECK_FALSE(PlayerHealth::canTakeSurfaceDamage(f.player));
+}
+
 TEST_CASE("turbo animation blocks boss knockdown throughout the move but not afterward",
           "[player-health][attack-invulnerability][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")

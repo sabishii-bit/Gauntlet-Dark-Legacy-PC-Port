@@ -9,6 +9,10 @@
 
 namespace gdl::game {
 
+bool powerupAllowedInChallenge(s32 kind, u32 flags) {
+    return kind != powerup::kSpecial || (flags & powerup::kStopTime) == 0;
+}
+
 namespace {
 
 struct PowerupName {
@@ -17,8 +21,8 @@ struct PowerupName {
     std::string_view text;
 };
 
-/** The original's list, in its order: the first entry whose flags a powerup carries names it;
- * an entry without flags is its kind's general name. */
+/** The first entry whose flags a powerup carries names it; an entry without flags is its
+ * kind's general name. Gold precedes Silver to distinguish their shared invulnerability bit. */
 constexpr std::array<PowerupName, 74> kNames{{
     {9, 0x00000001, "powerup.levitation"},
     {9, 0x00000002, "powerup.xray"},
@@ -53,11 +57,11 @@ constexpr std::array<PowerupName, 74> kNames{{
     {6, 0x00000800, "powerup.immuneAcid"},
     {6, 0x00001000, "powerup.immuneMagic"},
     {6, 0x00002000, "powerup.immuneGas"},
+    {6, 0x00100000, "powerup.goldInvulnerable"},
     {6, 0x00010000, "powerup.invulnerable"},
     {6, 0x00020000, "powerup.reflectiveArmor"},
     {6, 0x00040000, "powerup.knockbackArmor"},
     {6, 0x00080000, "powerup.antiDeath"},
-    {6, 0x00100000, "powerup.goldInvulnerable"},
     {6, 0x00200000, "powerup.fireArmor"},
     {6, 0x00400000, "powerup.elecArmor"},
     {6, 0x00800000, "powerup.armorProtect"},

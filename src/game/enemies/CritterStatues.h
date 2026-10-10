@@ -63,7 +63,14 @@ public:
     bool add(RenderDevice& device, ItemArchive& archive, const Placement& placement,
              const WorldCollision* collision);
     void clear();
+    /** Bounds for the native 64-cell-wide item query preceding proximity waking.
+     * Unconfigured/degenerate bounds leave the query in one cell. */
+    void setContactGridBounds(const Vec3& minimum, const Vec3& maximum);
     usize count() const { return m_statues.size(); }
+    /** Stable presentation identity, independent of the compacted collision list. */
+    u64 instanceOf(usize index) const { return m_statues[index]->instance; }
+    const ItemFigure& figure(usize index) const { return m_statues[index]->figure; }
+    ItemArchive& archive(usize index) const { return *m_statues[index]->archive; }
     const Placement& placement(usize index) const { return m_statues[index]->placement; }
     const Vec3& positionOf(usize index) const { return m_statues[index]->figure.position(); }
     bool woken(usize index) const { return m_statues[index]->woken; }
@@ -87,6 +94,8 @@ public:
 
 private:
     struct Statue {
+        u64 instance = 0;
+        ItemArchive* archive = nullptr;
         Placement placement;
         ItemFigure figure;
         bool woken = false;
@@ -94,7 +103,12 @@ private:
         s32 ticksLeft = 0;
     };
     static Obstacle obstacleOf(const Statue& statue);
+    s32 contactCell(f32 coordinate, f32 origin) const;
+    bool inContactGrid(const Vec3& statue, const Vec3& player, f32 radius) const;
     std::vector<std::unique_ptr<Statue>> m_statues;
     std::vector<Placement> m_risen;
+    Vec2 m_contactGridOrigin{0};
+    f32 m_contactGridInverseWidth = 0;
+    u64 m_nextInstance = 1; ///< not reset by clear; old snapshots cannot reuse a statue's ID
 };
 } // namespace gdl::game

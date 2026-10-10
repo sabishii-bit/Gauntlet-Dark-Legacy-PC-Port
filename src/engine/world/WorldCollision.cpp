@@ -746,8 +746,8 @@ std::vector<WallContact> WorldCollision::surfaceContacts(const Vec3& centre, f32
 }
 
 Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
-                                  std::vector<WallContact>* contacts,
-                                  std::optional<f32> minimumY) const {
+                                  std::vector<WallContact>* contacts, std::optional<f32> minimumY,
+                                  WallPush push) const {
     Vec3 out = centre;
     const f32 reach = radius * 2.0f;
     for (s32 pass = 0; pass < kPasses; ++pass) {
@@ -788,7 +788,8 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
                         contacts->push_back(
                             WallContact{triangle.object, Vec3{nearest.x, height, nearest.y}});
                     }
-                    if (contactOnly(triangle.object)) {
+                    if (contactOnly(triangle.object) ||
+                        (push == WallPush::StaticOnly && (triangle.objectFlags & 0x1000U) != 0)) {
                         continue;
                     }
                     // Push straight away from the wall when in front of it, else out along

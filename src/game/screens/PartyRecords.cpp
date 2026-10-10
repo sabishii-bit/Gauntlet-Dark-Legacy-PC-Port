@@ -100,6 +100,11 @@ std::vector<PartyMember> PartyRecords::members(std::span<const PlayerRuntime> pl
                            down ? restoredSave(runtime) : runtime.actor.save(), runtime.slot, down};
         member.save.helpSeen = runtime.actor.save().helpSeen;
         member.helpHeard = runtime.helpHeard;
+        if (!down) {
+            member.resultsCheckpoint = runtime.resultsCheckpoint.value_or(LevelResults::Checkpoint{
+                runtime.entrySave.gold, runtime.entrySave.experience(), 0});
+            member.resultsCheckpoint->kills += runtime.levelKills;
+        }
         members.push_back(std::move(member));
     }
     return members;
@@ -117,6 +122,7 @@ std::vector<PartyMember> PartyRecords::abandoned(std::span<const PlayerRuntime> 
             member.save = restoredSave(runtime);
             member.save.helpSeen = std::move(taught);
             member.fallen = false;
+            member.resultsCheckpoint.reset();
         }
     }
     return members;
@@ -126,8 +132,10 @@ std::vector<LevelResults> PartyRecords::results(std::span<const PlayerRuntime> p
     std::vector<LevelResults> results;
     for (const PlayerRuntime& runtime : players) {
         if (!runtime.departed && runtime.life == PlayerLife::Standing) {
-            results.push_back(LevelResults::between(runtime.actor.player(), runtime.entrySave,
-                                                    runtime.actor.save(), runtime.levelKills));
+            const auto checkpoint = runtime.resultsCheckpoint.value_or(LevelResults::Checkpoint{
+                runtime.entrySave.gold, runtime.entrySave.experience(), 0});
+            results.push_back(LevelResults::since(runtime.actor.player(), checkpoint,
+                                                  runtime.actor.save(), runtime.levelKills));
         }
     }
     return results;

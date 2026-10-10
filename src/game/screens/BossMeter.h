@@ -24,6 +24,11 @@ namespace gdl::game {
  */
 class BossMeter {
 public:
+    struct Look {
+        bool visible = false;
+        bool frozen = false;
+        std::array<s32, 2> widths{};
+    };
     static constexpr s32 kY = 8;
     static constexpr s32 kPieceWidth = 256;
     static constexpr s32 kMostPieces = 2;
@@ -44,8 +49,12 @@ public:
     bool showing() const { return bound() && m_alive; }
     /** How wide each strip's fill is drawn, in pixels of the virtual screen. */
     std::array<s32, kMostPieces> fillWidths() const;
+    Look look() const { return {showing(), m_frozen, fillWidths()}; }
+    void preload(RenderDevice& device) const;
 
     void draw(Canvas& canvas, RenderDevice& device) const;
+    /** Draws an authoritative appearance without advancing local easing or health. */
+    void draw(Canvas& canvas, RenderDevice& device, const Look& look) const;
 
 private:
     TextureSet* m_textures = nullptr;

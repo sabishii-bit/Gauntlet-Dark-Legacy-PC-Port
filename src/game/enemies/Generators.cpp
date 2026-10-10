@@ -699,6 +699,37 @@ void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
     }
 }
 
+std::vector<Generators::BodyResource> Generators::bodyResources() const {
+    std::vector<BodyResource> result;
+    for (const auto& bodies : m_bodies) {
+        for (s32 state = 0; state <= kStates; ++state) {
+            const auto index = static_cast<usize>(state);
+            if (bodies->models[index].bound()) {
+                result.push_back({bodies->kind, state, &bodies->trees[index],
+                                  &bodies->models[index], &bodies->textures});
+            }
+        }
+    }
+    std::ranges::sort(result, {},
+                      [](const auto& entry) { return std::pair{entry.kind, entry.state}; });
+    return result;
+}
+
+std::vector<Generators::Presentation> Generators::presentation() const {
+    std::vector<Presentation> result;
+    for (usize index = 0; index < m_generators.size(); ++index) {
+        if (!bodyShown(static_cast<s32>(index))) {
+            continue;
+        }
+        const auto& generator = m_generators[index];
+        const auto* bodies = bodiesOf(generator.kind);
+        result.push_back({index, generator.kind, generator.state, generator.placement,
+                          bodies != nullptr ? static_cast<f32>(bodies->textures.frame()) : 0,
+                          generator.bossFigure.get()});
+    }
+    return result;
+}
+
 bool Generators::standing(s32 id) const {
     return id >= 0 && static_cast<usize>(id) < m_generators.size() &&
            m_generators[static_cast<usize>(id)].state > 0 &&

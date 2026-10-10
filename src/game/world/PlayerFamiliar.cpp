@@ -57,9 +57,25 @@ void PlayerFamiliar::update(f32 seconds, bool attack) {
     m_textures.advance(seconds);
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
 }
+std::optional<CompanionVisual> PlayerFamiliar::visual(const Mat4& body, f32 alpha) const {
+    if (m_tree == nullptr) {
+        return std::nullopt;
+    }
+    return CompanionVisual{m_tree,
+                           &m_model,
+                           &m_textures,
+                           static_cast<u32>(m_tier),
+                           glm::translate(body, m_offset),
+                           m_player.sequence(),
+                           m_player.generation(),
+                           m_player.presentationFrame(),
+                           static_cast<f32>(m_textures.frame()) +
+                               m_textures.presentationOffset(1).value_or(0),
+                           alpha};
+}
 void PlayerFamiliar::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                           const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
-                          f32 renderAlpha) const {
+                          f32 renderAlpha, TreeModel::Pass pass) const {
     if (m_tree != nullptr) {
         const f32 blend = renderAlpha < 0 || m_presentationAdvanced ? renderAlpha : 1.0f;
         f32 frame = blend >= 0 ? m_player.presentationFrame() : m_player.frame();
@@ -74,7 +90,7 @@ void PlayerFamiliar::draw(RenderDevice& device, const Mat4& clip, const Mat4& bo
         m_textures.apply(m_model, *m_tree, m_player.sequence(), frame,
                          m_textures.presentationOffset(blend));
         m_model.draw(device, clip, glm::translate(body, m_offset), lighting, m_drawPose.matrices(),
-                     camera, alpha);
+                     camera, alpha, pass);
     }
 }
 } // namespace gdl::game

@@ -73,12 +73,19 @@ void TransitionScreen::update(f32 seconds) {
     }
 }
 
-void TransitionScreen::draw(Canvas& canvas, f32 width, f32 height) const {
-    if (!showing() || m_opacity <= 0.0f) {
+void TransitionScreen::draw(Canvas& canvas, f32 width, f32 height, Area area) const {
+    drawOpacity(canvas, width, height, showing() ? m_opacity : 0, area);
+}
+
+void TransitionScreen::drawOpacity(Canvas& canvas, f32 width, f32 height, f32 opacity,
+                                   Area area) const {
+    if (!(opacity > 0.0f)) {
         return;
     }
-    const Rect view{0.0f, 0.0f, width, kViewHeight};
-    const auto alpha = static_cast<u8>(std::clamp(m_opacity * kFullAlpha, 0.0f, kFullAlpha));
+    // TransitionBlitShow selects 512x320 with live status boxes or 512x384 when
+    // covering the whole screen. Menu loading has no live HUD beneath the picture.
+    const Rect view{0.0f, 0.0f, width, area == Area::FullScreen ? height : kViewHeight};
+    const auto alpha = static_cast<u8>(std::clamp(opacity * kFullAlpha, 0.0f, kFullAlpha));
     if (m_picture != nullptr) {
         canvas.draw(*m_picture, view, Color::white().withAlpha(alpha));
     } else {

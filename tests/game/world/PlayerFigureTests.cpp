@@ -473,12 +473,13 @@ TEST_CASE(
 }
 
 TEST_CASE("Phoenix does not suppress the earned familiar's attack animation",
-          "[game][figure][phoenix][assets]") {
+          "[game][figure][phoenix][familiar-occlusion][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     test::FakeRenderDevice device;
     ItemArchive powerups;
     REQUIRE(powerups.load(root / "POWERUPS"));
     CharacterSave save;
+    save.character = *classIndexOf(GENERATE(std::string_view{"WAR"}, std::string_view{"ARC"}));
     save.progress().experience = levelExperience(GENERATE(30, 80));
     auto ordinary = PlayerFigure::load(device, root, save, false);
     auto withPhoenix = PlayerFigure::load(device, root, save, false);
@@ -511,6 +512,14 @@ TEST_CASE("Phoenix does not suppress the earned familiar's attack animation",
                                            reference[draw].vertices[vertex].position;
             }
         }
+        const usize allDraws = device.draws.size();
+        device.draws.clear();
+        withPhoenix->draw(device, Mat4{1}, Mat4{1}, {}, 1, true, nullptr, 1, false,
+                          TreeModel::Pass::DepthWriting);
+        withPhoenix->drawCompanions(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, 1,
+                                    TreeModel::Pass::Effects);
+        // The actual two-pass render path still draws both companions exactly once.
+        CHECK(device.draws.size() == allDraws);
     }
     CHECK(releases > 1);
     CHECK(samePose);

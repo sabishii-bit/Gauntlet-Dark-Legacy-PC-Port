@@ -220,6 +220,12 @@ TextureMotion TextureAnimator::motion(usize index, std::optional<f32> frameOffse
     return motion;
 }
 
+const Texture* TextureAnimator::cycleFrame(usize index, usize frame) const {
+    return index < m_entries.size() && frame < m_entries[index].frames.size()
+               ? m_entries[index].frames[frame]
+               : nullptr;
+}
+
 void TextureAnimator::advance(f32 seconds) {
     constexpr f32 kFrameRate = 30.0f;
     m_advance = std::max(seconds, 0.0f) * kFrameRate;

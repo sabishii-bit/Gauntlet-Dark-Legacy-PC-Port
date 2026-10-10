@@ -100,10 +100,12 @@ Vec3 PlayerMissiles::launchVelocity(const Vec3& direction, f32 speed, f32 reach,
 }
 
 bool PlayerMissiles::launch(const MissileLaunch& launch) {
-    if (launch.spec == nullptr || launch.speed <= 0.0f || launch.reach <= 0.0f) {
+    if (m_nextInstance == 0 || launch.spec == nullptr || launch.speed <= 0.0f ||
+        launch.reach <= 0.0f) {
         return false;
     }
     Missile missile;
+    missile.instance = m_nextInstance++;
     missile.owner = launch.owner;
     missile.position = launch.position;
     missile.velocity = launch.velocity.value_or(
@@ -206,6 +208,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                     auto contact = std::ranges::find(missile.playerContacts, player.player,
                                                      &Missile::PlayerContact::player);
                     if (player.reflective) {
+                        ++missile.continuity;
                         missile.presentationCaptured = false;
                         missile.velocity = -missile.velocity;
                         missile.position += missile.velocity * step;
@@ -309,6 +312,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                     object = contacts.front().object;
                 }
                 if (missile.potion == 0 && (missile.flags & powerup::kReflect) != 0) {
+                    ++missile.continuity;
                     missile.presentationCaptured = false;
                     const Vec3 normal =
                         wall ? glm::normalize(pushed - missile.position) : floor->normal;

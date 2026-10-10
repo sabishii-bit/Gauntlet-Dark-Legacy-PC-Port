@@ -32,6 +32,32 @@ SelectorInput press(bool up, bool down, bool left, bool right) {
     return SelectorInput{up, down, left, right};
 }
 
+TEST_CASE("the challenge selector keeps Stop Time carried but refuses to activate it",
+          "[selector][stop-time][secret]") {
+    Inventory inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 45);
+    inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
+    PowerupSelector selector;
+    selector.focus(inventory, powerup::kSpecial, powerup::kStopTime);
+    selector.step(SelectorInput{.up = true}, inventory, 32, true);
+    selector.step({}, inventory, 1, true);
+    REQUIRE(selector.showing());
+    CHECK(selector.step(SelectorInput{.up = true}, inventory, 1, true) == SelectorCue::Switched);
+    REQUIRE_FALSE(inventory.powerups[0].on); // Switching off is always safe.
+    CHECK(selector.step(SelectorInput{.up = true}, inventory, 1, true) == SelectorCue::None);
+    CHECK_FALSE(inventory.powerups[0].on);
+    CHECK(inventory.powerups[0].strength == 45);
+    CHECK(selector.step(SelectorInput{.right = true}, inventory, 1, true) == SelectorCue::Moved);
+    CHECK(selector.selection() == 1);
+    CHECK(selector.step(SelectorInput{.up = true}, inventory, 1, true) == SelectorCue::Switched);
+    CHECK_FALSE(inventory.powerups[1].on);
+    CHECK(selector.step(SelectorInput{.up = true}, inventory, 1, true) == SelectorCue::Switched);
+    CHECK(inventory.powerups[1].on);
+    selector.focus(inventory, powerup::kSpecial, powerup::kStopTime);
+    CHECK(selector.step(SelectorInput{.up = true}, inventory, 1, false) == SelectorCue::Switched);
+    CHECK(inventory.powerups[0].on);
+}
+
 TEST_CASE("the selector opens on a carried powerup, goes round them, and switches them",
           "[game][screens][selector]") {
     Inventory inventory;

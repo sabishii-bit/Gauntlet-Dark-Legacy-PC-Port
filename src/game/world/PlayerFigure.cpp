@@ -134,6 +134,12 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
                 const std::array<TextureSet*, 1> lenders{&figure->m_familiarTextures};
                 figure->m_familiar.bind(device, *archive, save.progress().appearanceLevel(),
                                         stats->familiarOffset, lenders);
+                if (figure->m_familiar.bound()) {
+                    // Native PlayerMotion emits either familiar spit or Phoenix fire from
+                    // the same PDAT origin. Keep both here, with Phoenix across the body
+                    // instead of concealing the earned familiar and its projectile.
+                    figure->m_phoenixSide = -2.0f * stats->familiarShotOffset.x;
+                }
                 if (const auto shot = archive->trees.find("FAMILIAR_SPIT")) {
                     figure->bindModel(figure->m_familiarMissile, archive->trees.tree(*shot),
                                       *archive, device);
@@ -331,6 +337,7 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
         m_backNode = firstChildOf(child);
     }
     const TreeInfo& actions = m_actions.tree(*tree);
+    m_actionTree = &actions;
     m_classNodeOfNode.clear();
     for (const TreeNodeInfo& node : m_costume->nodes) {
         const auto match = actions.findNode(node.name);
@@ -512,9 +519,7 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     applyCostumeTextures(m_model, frameBlend);
     applyCostumeTextures(m_weapon, frameBlend);
     m_model.draw(device, clip, body, lighting, m_visualTransforms, camera, alpha);
-    // The earned familiar is its own skin tree (PlayerProcessSkinFX), beside any companion.
-    m_familiar.draw(device, clip, body, lighting, alpha, camera, frameBlend);
-    drawCompanion(device, clip, body, lighting, alpha, camera, frameBlend, companionPass);
+    drawCompanions(device, clip, body, lighting, alpha, camera, frameBlend, companionPass);
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
     if (m_armHeld) {
@@ -548,10 +553,68 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     }
 }
 
-void PlayerFigure::drawCompanion(RenderDevice& device, const Mat4& clip, const Mat4& body,
-                                 const WorldLighting& lighting, f32 alpha,
-                                 const CameraFrame* camera, f32 frameBlend,
-                                 TreeModel::Pass pass) const {
+void PlayerFigure::drawPose(RenderDevice& device, const Mat4& clip, const Mat4& body,
+                            const WorldLighting& lighting, const TreePose& pose,
+                            PlayerAnimator::Action action, f32 textureFrame,
+                            const Texture* hitFlash, const CameraFrame* camera,
+                            TreeModel::Pass pass) const {
+    if (m_costume == nullptr || !pose.posed()) {
+        return;
+    }
+    const auto matrices = pose.matrices();
+    std::vector<Mat4> transforms(m_costume->nodes.size());
+    for (usize node = 0; node < transforms.size(); ++node) {
+        const s32 source = m_classNodeOfNode[node];
+        transforms[node] = source >= 0 && static_cast<usize>(source) < matrices.size()
+                               ? matrices[static_cast<usize>(source)]
+                               : glm::translate(Mat4{1}, m_costume->worldPosition(node));
+    }
+    // Absolute display texture clock relative to this figure's bind. Does not
+    // advance either the local texture clock or the gameplay animator.
+    const f32 offset = textureFrame - static_cast<f32>(m_costumeTextures.frame());
+    m_costumeTextures.apply(m_model, offset);
+    m_costumeTextures.apply(m_weapon, offset);
+    m_model.setMaskedTexture(hitFlash);
+    m_model.setAppearance(hitFlash != nullptr);
+    m_model.draw(device, clip, body, lighting, transforms, camera, 1, pass);
+    const bool thrown = action == PlayerAnimator::Action::ThrowRecover ||
+                        action == PlayerAnimator::Action::ThrowMovingRecover ||
+                        action == PlayerAnimator::Action::StrongThrowRecover;
+    if (heldWeaponBound() && (!thrown || m_staysInHand)) {
+        m_weapon.draw(device, clip, body * transforms[static_cast<usize>(m_handNode)], lighting, {},
+                      camera, 1, pass);
+    }
+    m_model.setMaskedTexture(nullptr);
+    m_model.setAppearance(false);
+}
+
+std::array<std::optional<CompanionVisual>, 2> PlayerFigure::companionVisuals(const Mat4& body,
+                                                                             f32 alpha) const {
+    std::array<std::optional<CompanionVisual>, 2> result;
+    result[0] = m_familiar.visual(body, alpha);
+    if (!m_companion.shown()) {
+        return result;
+    }
+    preparePresentation(1);
+    std::optional<Mat4> mount = phoenixActive() ? phoenixAttachment(body) : body;
+    switch (PowerupCompanion::mountOf(m_companion.kind())) {
+    case PowerupCompanion::Mount::Head: mount = visualAttachment(body, "HEAD"); break;
+    case PowerupCompanion::Mount::Back: mount = visualAttachment(body, m_backNode); break;
+    case PowerupCompanion::Mount::Body: break;
+    }
+    if (mount) {
+        result[1] = m_companion.visual(*mount, alpha * m_companionAlpha);
+    }
+    return result;
+}
+void PlayerFigure::drawCompanions(RenderDevice& device, const Mat4& clip, const Mat4& body,
+                                  const WorldLighting& lighting, f32 alpha,
+                                  const CameraFrame* camera, f32 frameBlend,
+                                  TreeModel::Pass pass) const {
+    // Earned familiars have their own materials too. In particular, the Archer's
+    // butterfly does not write depth; drawing it before deferred scenery lets
+    // even background geometry paint over it. Keep its authored state and defer it.
+    m_familiar.draw(device, clip, body, lighting, alpha, camera, frameBlend, pass);
     if (!m_companion.shown()) {
         return;
     }
@@ -559,7 +622,7 @@ void PlayerFigure::drawCompanion(RenderDevice& device, const Mat4& clip, const M
     if (mountKind != PowerupCompanion::Mount::Body) {
         preparePresentation(frameBlend);
     }
-    std::optional<Mat4> mount = body;
+    std::optional<Mat4> mount = phoenixActive() ? phoenixAttachment(body) : body;
     switch (mountKind) {
     case PowerupCompanion::Mount::Head: mount = visualAttachment(body, "HEAD"); break;
     case PowerupCompanion::Mount::Back: mount = visualAttachment(body, m_backNode); break;

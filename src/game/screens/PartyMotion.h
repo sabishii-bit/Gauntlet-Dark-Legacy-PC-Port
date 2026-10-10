@@ -6,32 +6,11 @@
 
 #include "engine/core/Types.h"
 
-#include "game/menu/MenuInput.h"
+#include "game/screens/PlayInput.h"
 #include "game/screens/PlayerRuntime.h"
-#include "game/screens/PowerupSelector.h"
 #include "game/world/TowerCamera.h"
 
 namespace gdl::game {
-/** One player's input for a frame of play. */
-struct PlayInput {
-    MoveInput move;
-    std::optional<Vec3> aimPoint; ///< mouse aiming, absent for retail controller movement
-    MenuInput menu;
-    bool attack = false; ///< the attack button is held
-    bool usePotion = false;
-    bool throwPotion = false;
-    bool shieldPotion = false;       ///< the shield potion button is held
-    bool strafe = false;             ///< the strafe button is held
-    bool strongAttack = false;       ///< the slow attack button is held
-    bool turbo = false;              ///< the turbo button is held
-    bool defendPressed = false;      ///< one guard gesture per turbo/defend press
-    bool combo = false;              ///< the combo button is held: a partner ahead is taken hold of
-    bool chargePressed = false;      ///< the charge button went down this frame
-    bool attackPressed = false;      ///< the attack button went down this frame
-    bool turboAttackPressed = false; ///< resolved same-device chord, not two merged buttons
-    SelectorInput selector;          ///< this frame's presses for the powerup selector
-};
-
 /** Advances player input, locomotion and animation, independently of scene/world orchestration.
  * Events are delivered synchronously at their animation phase, before each camera snapshot.
  * Callbacks must not resize or replace the supplied party. No scene or callbacks are retained. */
@@ -69,8 +48,10 @@ public:
         std::function<PlayerDeed(usize, const Vec3&)> automaticMeleeDeed;
         /** Where the nearest thing to strike lies, an attack button held or not. */
         std::function<MeleeSense(usize, bool, const Vec3&)> meleeSense;
+        /** Pure contact query before movement; a current hold suppresses attack input. */
+        std::function<std::optional<Vec3>(usize)> deathContact;
         /** Where the Death a halo wearer holds stands, when one is held this step (ticks, and
-         * whether a hold may be made at all). */
+         * whether a hold may be made at all). Applied once, after resolved movement. */
         std::function<std::optional<Vec3>(usize, s32, bool)> grabDeath;
         /** Dynamic creature collision, before the camera limit and action events. */
         std::function<Vec3(usize, const Vec3&, const Vec3&)> resolveMovement;

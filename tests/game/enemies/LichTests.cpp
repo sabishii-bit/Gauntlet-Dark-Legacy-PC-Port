@@ -48,6 +48,56 @@ TEST_CASE("Lich fissure snapshots the body's facing when detached", "[lich][asse
     REQUIRE(seen);
 }
 
+TEST_CASE("Lich cracks damage players ahead after the axe activation but not behind",
+          "[lich][lich-cracks][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("LICH", {}, 0));
+    std::array<EnemyView, 3> players;
+    for (s32 i = 0; i < 3; ++i) {
+        players[static_cast<usize>(i)].player = i;
+        players[static_cast<usize>(i)].height = 6;
+        players[static_cast<usize>(i)].radius = 1;
+    }
+    bool crack = false;
+    bool seen = false;
+    s32 lingeringHits = 0;
+    Mat4 origin{1};
+    for (s32 frame = 0; frame < 9000; ++frame) {
+        if (!crack) {
+            origin = *fixture.actor.rootTransform();
+            players[0].position = Vec3{origin * Vec4{0, 0, 20, 1}};
+        }
+        players[1].position = Vec3{origin * Vec4{0, 0, 14, 1}};
+        players[2].position = Vec3{origin * Vec4{0, 0, -14, 1}};
+        players[1].hidden = players[2].hidden = !crack;
+        fixture.update(2, 1.0f / 30, players);
+        for (const auto& cue : fixture.actor.takeCues()) {
+            seen = seen || cue.tree == "A13";
+        }
+        if (fixture.actor.moveName() == "CRACK") {
+            crack = true;
+        } else if (crack) {
+            break;
+        }
+        for (const auto& blow : fixture.actor.takeBlows()) {
+            if (crack && blow.area) {
+                CHECK(blow.player != 2);
+                if (blow.player == 1 && blow.damage > 0) {
+                    ++lingeringHits;
+                }
+            }
+        }
+        fixture.actor.takeShots();
+    }
+    REQUIRE(crack);
+    REQUIRE(seen);
+    CHECK(lingeringHits > 1);
+}
+
 TEST_CASE("Lich chain spin reaches nearby players around its body", "[lich][assets]") {
     const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
     test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
@@ -285,8 +335,9 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
     opponents.bosses().hurt(phase);
     LevelOpponents::Events events;
     s32 hits = 0;
-    events.hurt = [&](usize, f32 damage, HurtKind, bool, const PlayerImpact& impact) {
+    events.hurt = [&](usize, f32 damage, HurtKind kind, bool, const PlayerImpact& impact) {
         if ((impact.flags & PlayerImpact::kSticky) != 0) {
+            CHECK(kind == HurtKind::Blow); // ProcessEffects mode 1, not the spike-trap groan.
             CHECK(damage > 0);
             CHECK(impact.reaction(damage, 0, false) == PlayerDeed::Webbed);
             ++hits;

@@ -4,6 +4,8 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -32,6 +34,9 @@ struct CombatantAssets {
     };
     std::vector<Attachment> attachments;
     std::map<std::string, TreeModel> brokenModels; ///< PREFIX + D + node name replacements
+    std::map<std::pair<std::string, std::string>, TreeModel> replacementModels;
+    const TreeModel* prepareReplacement(RenderDevice& device, std::string_view node,
+                                        std::string_view object);
     TextureAnimator textures;
     std::map<std::string, std::vector<const Texture*>, std::less<>> skins;
     BlobShadow shadow; ///< SHADOW1L1 of its archive, when its type lies one

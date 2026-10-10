@@ -69,7 +69,8 @@ s32 PowerupSelector::usageSlot(const Inventory& inventory) const {
     return -1;
 }
 
-SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& inventory, s32 ticks) {
+SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& inventory, s32 ticks,
+                                  bool challenge) {
     SelectorCue cue = SelectorCue::None;
     const auto held = [&](s32 slot) {
         return slot >= 0 && static_cast<usize>(slot) < inventory.powerups.size() &&
@@ -85,8 +86,10 @@ SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& invento
             m_selection = inventory.nextHeld(m_selection, 1);
         } else if (input.up) {
             PowerupSlot& slot = inventory.powerups[static_cast<usize>(m_selection)];
-            slot.on = !slot.on;
-            cue = SelectorCue::Switched;
+            if (slot.on || !challenge || powerupAllowedInChallenge(slot.kind, slot.flags)) {
+                slot.on = !slot.on;
+                cue = SelectorCue::Switched;
+            }
         }
         if (m_selection < 0 || input.down) {
             m_state = State::SlidingOut;

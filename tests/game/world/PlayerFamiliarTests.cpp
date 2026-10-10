@@ -189,4 +189,52 @@ TEST_CASE("the green knight familiar renders fractional poses without advancing 
         CHECK(interpolated);
     }
 }
+TEST_CASE("familiars keep native depth states but nonwriting parts wait until after scenery",
+          "[familiar][familiar-occlusion][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    TextureSet shared;
+    REQUIRE(shared.load(root / "WEAPONS"));
+    const std::array<TextureSet*, 1> lenders{&shared};
+    for (const auto* cls : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
+        for (const auto* color : {"YEL", "BLU", "RED", "GRE"}) {
+            ItemArchive archive;
+            REQUIRE(archive.load(root / "PLAYERS" / cls / std::format("SFX{}", color)));
+            for (const s32 level : {30, 80}) {
+                CAPTURE(cls, color, level);
+                PlayerFamiliar familiar;
+                REQUIRE(familiar.bind(device, archive, level, Vec3{0}, lenders));
+                for (const bool attacking : {false, true}) {
+                    familiar.update(1.0f / 30, attacking);
+                    device.draws.clear();
+                    familiar.draw(device, Mat4{1}, Mat4{1}, {}, 1);
+                    const auto all = device.draws;
+                    REQUIRE_FALSE(all.empty());
+                    usize total = 0;
+                    for (const auto pass :
+                         {TreeModel::Pass::DepthWriting, TreeModel::Pass::Effects}) {
+                        device.draws.clear();
+                        familiar.draw(device, Mat4{1}, Mat4{1}, {}, 1, nullptr, 1, pass);
+                        const bool writing = pass == TreeModel::Pass::DepthWriting;
+                        CHECK(device.draws.size() == static_cast<usize>(std::ranges::count_if(
+                                                         all, [writing](const auto& draw) {
+                                                             return draw.state.depthWrite ==
+                                                                    writing;
+                                                         })));
+                        for (const auto& draw : device.draws) {
+                            CHECK(draw.state.depthWrite == writing);
+                            CHECK(draw.state.depthTest); // foreground geometry must still hide it
+                        }
+                        if (std::string_view(cls) == "ARC" && !writing) {
+                            CHECK_FALSE(device.draws.empty());
+                        }
+                        total += device.draws.size();
+                    }
+                    CHECK(total == all.size());
+                }
+            }
+        }
+    }
+}
+
 } // namespace

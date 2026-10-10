@@ -102,8 +102,7 @@ void PlayScene::updateHazardSurfaces(f32 seconds) {
     for (usize i = 0; i < m_players.size(); ++i) {
         PlayerRuntime& runtime = m_players[i];
         runtime.surfaceGap = std::max(runtime.surfaceGap - seconds, 0.0f);
-        if (runtime.life != PlayerLife::Standing || runtime.capture.held() ||
-            runtime.surfaceGap > 0.0f) {
+        if (runtime.surfaceGap > 0.0f || !PlayerHealth::canTakeSurfaceDamage(runtime)) {
             continue;
         }
         const PlayerActor& actor = runtime.actor;

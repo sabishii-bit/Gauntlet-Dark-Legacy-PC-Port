@@ -13,11 +13,62 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/players/ClassData.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/PlayScene.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("coin stages retain Stop Time but reject entry activation and selector toggles",
+          "[secret][stop-time][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELS4/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto ref = levels.byName(GENERATE("S1", "S4", "S9"));
+    REQUIRE(ref);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    GameContext context;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    std::array party{PartyMember{0, CharacterSave{}}, PartyMember{2, CharacterSave{}}};
+    for (auto& member : party) {
+        member.save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 45);
+    }
+    PlayOptions options;
+    options.position = world.startPoint(0)->position;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const auto checkCarried = [&] {
+        for (const auto& member : scene.party()) {
+            const auto& slot = member.save.progress().inventory.powerups[0];
+            CHECK(slot.held());
+            CHECK_FALSE(slot.on);
+            CHECK(slot.strength == 45);
+        }
+    };
+    checkCarried(); // Before the entrance animation or first gameplay update.
+    const f32 startTime = scene.challenge().remaining();
+    for (s32 frame = 0; frame < 240 && scene.spawning(); ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        CHECK(scene.challenge().remaining() == startTime);
+    }
+    REQUIRE_FALSE(scene.spawning());
+    PlayScene::Inputs input;
+    input[0].selector.up = true;
+    input[2].selector.up = true;
+    REQUIRE(scene.update(1.0 / 30, input) == PlayOutcome::Running);
+    for (s32 frame = 0; frame < 30; ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+    }
+    REQUIRE(scene.update(1.0 / 30, input) == PlayOutcome::Running);
+    checkCarried();
+    CHECK(scene.challenge().remaining() < startTime);
+    scene.close();
+}
 
 TEST_CASE("the secret coin hunt awards both participants and waits for its scroll",
           "[secret][assets]") {
@@ -38,6 +89,14 @@ TEST_CASE("the secret coin hunt awards both participants and waits for its scrol
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
+    SaveSlots unlocks;
+    const auto unlockDirectory = test::scratchDirectory("secret-shared-unlock");
+    REQUIRE(unlocks.open(unlockDirectory, 2));
+    s32 rewards = 0;
+    context.unlockClasses = [&](u16 mask) {
+        ++rewards;
+        REQUIRE(unlocks.unlockClasses(mask));
+    };
     PlayScene scene;
     const std::array party{PartyMember{0, CharacterSave{}}, PartyMember{2, CharacterSave{}}};
     PlayOptions options;
@@ -71,6 +130,11 @@ TEST_CASE("the secret coin hunt awards both participants and waits for its scrol
         CHECK(card.texture == "COINHUD");
     }
     const s32 reward = SecretChallenge::classFor(levelIndex);
+    CHECK(rewards == 1);
+    SaveSlots restarted;
+    REQUIRE(restarted.open(unlockDirectory, 2));
+    CHECK(classUnlocked(reward, restarted.classUnlocks()));
+    CHECK_FALSE(restarted.anySaved());
     for (const auto& member : scene.party()) {
         CHECK(classUnlocked(reward, member.save.classUnlock));
         const auto restored = CharacterSave::fromJson(member.save.toJson());
@@ -93,6 +157,7 @@ TEST_CASE("the secret coin hunt awards both participants and waits for its scrol
     }
     CHECK(outcome == PlayOutcome::Travel);
     CHECK(scene.secretTravel());
+    CHECK(rewards == 1);
     scene.close();
 }
 

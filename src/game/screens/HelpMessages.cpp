@@ -221,6 +221,8 @@ f32 HelpMessages::voiceWait(s32 id, VoiceLead lead) {
 void HelpMessages::clear() {
     m_lines.clear();
     m_id = -1;
+    m_number = -1;
+    m_speaker = {};
     m_priority = 0;
     m_ticksLeft = 0;
     m_pauseLeft = 0;
@@ -282,27 +284,7 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player, std::span<const He
     if (!wanted || !message.has_value()) {
         return nullptr;
     }
-    const MessageInfo& info = m_strings->message(*message);
-    // The strings keep a message's lines as its pages.
-    std::vector<std::string> lines;
-    for (usize page = 0; page < info.pages.size(); ++page) {
-        if (spec->line >= 0 && page != static_cast<usize>(spec->line)) {
-            continue;
-        }
-        for (std::string& line : ScrollBox::splitLines(info.pages[page])) {
-            // A number the message asks for ("LEVEL %d") is filled in.
-            if (const auto at = line.find("%d"); at != std::string::npos && number >= 0) {
-                line.replace(at, 2, std::to_string(number));
-            }
-            // So is the colour and class of the one a message names.
-            if (line == kNamesSlot && speaker.character >= 0) {
-                if (std::string named = speakerLine(id, player, speaker); !named.empty()) {
-                    line = std::move(named);
-                }
-            }
-            lines.push_back(std::move(line));
-        }
-    }
+    auto lines = linesFor({id, player, number, speaker});
     if (lines.empty()) {
         return nullptr;
     }
@@ -321,8 +303,48 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player, std::span<const He
     m_id = id;
     m_priority = spec->priority;
     m_player = player;
+    m_number = number;
+    m_speaker = speaker;
     m_ticksLeft = static_cast<s32>(m_lines.size()) * kTicksPerLine + kTicksOver;
     return spec;
+}
+
+std::optional<HelpMessages::Look> HelpMessages::look() const {
+    return showing() ? std::optional{Look{m_id, m_player, m_number, m_speaker}} : std::nullopt;
+}
+
+std::vector<std::string> HelpMessages::linesFor(const Look& look) const {
+    const auto* spec = specOf(look.id);
+    if (spec == nullptr || m_strings == nullptr) {
+        return {};
+    }
+    const auto message = m_strings->find(spec->text);
+    if (!message) {
+        return {};
+    }
+    const MessageInfo& info = m_strings->message(*message);
+    // The strings keep a message's lines as its pages.
+    std::vector<std::string> lines;
+    for (usize page = 0; page < info.pages.size(); ++page) {
+        if (spec->line >= 0 && page != static_cast<usize>(spec->line)) {
+            continue;
+        }
+        for (std::string& line : ScrollBox::splitLines(info.pages[page])) {
+            // A number the message asks for ("LEVEL %d") is filled in.
+            if (const auto at = line.find("%d"); at != std::string::npos && look.number >= 0) {
+                line.replace(at, 2, std::to_string(look.number));
+            }
+            // So is the colour and class of the one a message names.
+            if (line == kNamesSlot && look.speaker.character >= 0) {
+                if (std::string named = speakerLine(look.id, look.player, look.speaker);
+                    !named.empty()) {
+                    line = std::move(named);
+                }
+            }
+            lines.push_back(std::move(line));
+        }
+    }
+    return lines;
 }
 
 void HelpMessages::update(s32 ticks) {
@@ -340,13 +362,18 @@ void HelpMessages::update(s32 ticks) {
 }
 
 Rect HelpMessages::areaFor(const TextPainter& text, const Vec2& head) const {
+    return areaForLines(text, head, m_lines);
+}
+
+Rect HelpMessages::areaForLines(const TextPainter& text, const Vec2& head,
+                                std::span<const std::string> lines) {
     s32 widest = 0;
-    for (const std::string& line : m_lines) {
+    for (const std::string& line : lines) {
         widest = std::max(widest, text.measure(line));
     }
     const auto width = static_cast<f32>(widest + kMarginAcross);
     const auto height =
-        static_cast<f32>(static_cast<s32>(m_lines.size()) * text.lineHeight() + kMarginDown);
+        static_cast<f32>(static_cast<s32>(lines.size()) * text.lineHeight() + kMarginDown);
     const f32 left =
         std::clamp(head.x - width * 0.5f, 0.0f, std::max(static_cast<f32>(kWidest) - width, 0.0f));
     const f32 top = std::clamp(head.y - static_cast<f32>(kAboveHead) - height * 0.5f, 2.0f,
@@ -359,15 +386,23 @@ void HelpMessages::draw(Canvas& canvas, const TextPainter& text, const Texture* 
     if (!showing() || !text.ready()) {
         return;
     }
-    const Rect area = areaFor(text, head);
+    drawLines(canvas, text, scroll, head, m_lines, m_player);
+}
+
+void HelpMessages::drawLines(Canvas& canvas, const TextPainter& text, const Texture* scroll,
+                             const Vec2& head, std::span<const std::string> lines, s32 player) {
+    if (lines.empty() || !text.ready()) {
+        return;
+    }
+    const Rect area = areaForLines(text, head, lines);
     if (scroll != nullptr) {
         canvas.draw(*scroll, area, Color::white().withAlpha(kScrollAlpha));
     }
     TextStyle style;
-    style.color = inkOf(m_player);
+    style.color = inkOf(player);
     const auto centre = static_cast<s32>(area.x + area.width * 0.5f);
     s32 y = static_cast<s32>(area.y) + kMarginDown / 2;
-    for (const std::string& line : m_lines) {
+    for (const std::string& line : lines) {
         text.draw(canvas, -centre, y, line, style);
         y += text.lineHeight();
     }

@@ -1041,6 +1041,67 @@ TEST_CASE("Lich's shipped hand trap aligns to the floor and morphs for five seco
     REQUIRE(f.effects.count() == 0);
 }
 
+TEST_CASE("Lich hand contacts drain fractional health below armor and stop after escaping",
+          "[boss-projectiles][lich][lich-hands][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    const s32 level = GENERATE(1, 99);
+    const s32 rate = GENERATE(30, 60);
+    Fixture f;
+    REQUIRE(f.data.load(root / "CRITTER/LICH.WAD"));
+    REQUIRE(f.archive.load(root / "MONSTERS/LICH"));
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const ClassStats* stats = classes.stats(2); // Wizard, with low starting armor.
+    REQUIRE(stats != nullptr);
+    PlayerRuntime player;
+    CharacterSave save;
+    save.character = 2;
+    save.progress().experience = levelExperience(level);
+    save.progress().health = 1000;
+    player.actor.spawn(0, save, stats, Vec3{0}, 0);
+    PlayerHealth health;
+    std::vector<std::string> cries;
+    const PlayerHealth::Events events{.block = [](f32, f32) {},
+                                      .sound = [](std::string_view) {},
+                                      .cry = [&](std::string_view cue) { cries.emplace_back(cue); },
+                                      .named = [](std::string_view, f32) {},
+                                      .learnBlock = {},
+                                      .vibrate = {}};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 17;
+    shot.origin = {0, 3, 0};
+    REQUIRE(f.data.damage(17)->damage == 1);
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    std::array<EnemyView, 1> players{{{0, {0, 0, 0}, 1, 6}}};
+    s32 hits = 0;
+    for (s32 frame = 0; frame < rate; ++frame) {
+        f.step(1.0f / static_cast<f32>(rate), players);
+        for (const auto& hit : f.projectiles.takeHits()) {
+            ++hits;
+            health.hurt(player, hit.damage, HurtKind::Blow, true, false, 1, events,
+                        {hit.flags, hit.direction}, true, stats);
+        }
+    }
+    REQUIRE(hits >= 29);
+    REQUIRE(hits <= 30);
+    const f32 harm = std::max(0.0f, 1.0f - armorDefense(*stats, save.progress()));
+    CHECK(player.actor.save().health() + player.healthFraction ==
+          Approx(1000.0f - static_cast<f32>(hits) * harm));
+    CHECK(player.reaction == PlayerDeed::Webbed);
+    if (level == 1) {
+        CHECK(player.actor.save().health() < 1000);
+    } else {
+        // ModifyDamage absorbs this one-point hit; it is not Death's armor-bypassing drain.
+        CHECK(player.actor.save().health() == 1000);
+    }
+    CHECK(std::ranges::find(cries, "DIE1") == cries.end());
+    players[0].position.x = 20;
+    f.step(1, players);
+    CHECK(f.projectiles.takeHits().empty());
+}
+
 TEST_CASE("summoning shots invoke one callback on contact or expiration, never on clear",
           "[boss-projectiles][garm]") {
     Fixture f;

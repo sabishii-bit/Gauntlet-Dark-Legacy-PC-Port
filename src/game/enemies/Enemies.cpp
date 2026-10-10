@@ -399,6 +399,16 @@ ItemArchive* Enemies::archive(s32 kind) {
     return stock != nullptr ? &stock->archive : nullptr;
 }
 
+const TreeModel* Enemies::projectileModel(s32 kind, s32 slot) const {
+    const auto* stock = stockOf(kind);
+    if (stock == nullptr || slot < 0 || slot > 2) {
+        return nullptr;
+    }
+    const std::array models{&stock->arrow, &stock->bomb, &stock->fireball};
+    const auto* model = models[static_cast<usize>(slot)];
+    return model->bound() ? model : nullptr;
+}
+
 const TreeInfo* Enemies::treeOf(s32 kind, s32 tier) const {
     const Stock* stock = stockOf(kind);
     if (stock == nullptr) {
@@ -578,6 +588,9 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
 
 std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const EnemyView> players,
                                   std::span<const Obstacle> obstacles) {
+    if (m_nextInstance == std::numeric_limits<u64>::max()) {
+        return std::nullopt; // Never recycle a network identity after exhaustion.
+    }
     const Stock* stock = stockOf(spawn.kind);
     if (stock == nullptr) {
         return std::nullopt;
@@ -699,6 +712,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     if (enemy.generator >= 0) {
         m_generatorEvents.push_back({enemy.generator, EnemyGeneratorEvent::Kind::Born});
     }
+    enemy.instance = m_nextInstance++;
     return slot;
 }
 
@@ -1885,30 +1899,62 @@ std::vector<EnemyCue> Enemies::takeCues() {
 }
 
 Enemies::Figure Enemies::bodyOf(const Enemy& enemy) {
-    Stock* stock = stockOf(enemy.kind);
+    return bodyOf(Appearance{enemy.kind, enemy.tier, enemy.variant, enemy.state == State::Asleep});
+}
+
+Enemies::Figure Enemies::bodyOf(const Appearance& appearance) {
+    if (appearance.tier < 1 || appearance.tier > 3) {
+        return {};
+    }
+    Stock* stock = stockOf(appearance.kind);
     if (stock == nullptr || !stock->unseen.sequences.empty()) {
         return {};
     }
-    if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
-        const usize index = enemy.tier == 2 ? 1 : 0;
+    if (appearance.kind == kDeathKind && appearance.asleep) {
+        const usize index = appearance.tier == 2 ? 1 : 0;
         TreeModel& statue = stock->deathStatues[index];
         if (statue.bound()) {
             return {&statue, stock->deathStatueTrees[index], &stock->textures};
         }
     }
-    if (enemy.variant != 0) {
-        const auto v = static_cast<usize>(enemy.variant - kArcherStrength);
+    if (appearance.variant != 0) {
+        const auto v = static_cast<usize>(appearance.variant - kArcherStrength);
         if (v < stock->variantBodies.size() && stock->variantBodies[v].bound()) {
             return {&stock->variantBodies[v], stock->variantTrees[v], &stock->textures};
         }
     }
-    s32 tier = enemy.tier;
+    s32 tier = appearance.tier;
     while (tier > 1 && stock->trees[static_cast<usize>(tier - 1)] == nullptr) {
         --tier;
     }
     const auto index = static_cast<usize>(tier - 1);
     TreeModel& body = stock->bodies[index];
     return body.bound() ? Figure{&body, stock->trees[index], &stock->textures} : Figure{};
+}
+
+const TreeInfo* Enemies::appearanceTree(const Appearance& appearance) {
+    return bodyOf(appearance).tree;
+}
+
+void Enemies::drawPose(RenderDevice& device, const Mat4& clip, const Mat4& placement,
+                       const WorldLighting& lighting, const Appearance& appearance,
+                       const TreePose& pose, u32 sequence, f32 frame, f32 textureFrame,
+                       const Texture* hitFlash, const CameraFrame* camera, TreeModel::Pass pass) {
+    const Figure found = bodyOf(appearance);
+    if (found.model == nullptr || found.tree == nullptr || found.textures == nullptr) {
+        return;
+    }
+    const bool statue = appearance.kind == kDeathKind && appearance.asleep;
+    auto& body = *found.model;
+    found.textures->apply(body, *found.tree, statue ? 0 : sequence, statue ? 0 : frame,
+                          textureFrame - static_cast<f32>(found.textures->frame()));
+    body.setAppearance(hitFlash != nullptr);
+    body.setMaskedTexture(hitFlash);
+    body.setPresentationFrame(statue ? 0 : sequence, statue ? 0 : frame);
+    body.draw(device, clip, placement, lighting, statue ? std::span<const Mat4>{} : pose.matrices(),
+              camera, 1, pass);
+    body.setAppearance(false);
+    body.setMaskedTexture(nullptr);
 }
 
 std::vector<EnemyBurst> Enemies::takeBursts() {
@@ -2217,6 +2263,18 @@ bool Enemies::alive(s32 id) const {
 
 bool Enemies::dying(s32 id) const {
     return id >= 0 && id < m_most && m_enemies[static_cast<usize>(id)].state == State::Dying;
+}
+
+std::optional<Enemies::Observation> Enemies::observe(s32 id) const {
+    if (id < 0 || id >= m_most) {
+        return std::nullopt;
+    }
+    const auto& enemy = m_enemies[static_cast<usize>(id)];
+    if (enemy.state == State::Inactive) {
+        return std::nullopt;
+    }
+    return Observation{enemy.instance, enemy.health, enemy.fullHealth, enemy.state == State::Asleep,
+                       enemy.flashSeconds > 0};
 }
 
 usize Enemies::count() const {

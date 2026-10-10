@@ -63,6 +63,9 @@ bool Combatant::raisesArenaRocks() const {
 }
 bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                       const WorldCollision* collision, const EnemyScales& scales, char realm) {
+    if (m_incarnation == std::numeric_limits<u64>::max()) {
+        return false;
+    }
     m_children.clear();
     if (!spawnActor(stock, stock.data, id, position, yaw, collision, scales, realm)) {
         return false;
@@ -80,6 +83,7 @@ bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 
         part->synchronizeChild();
         m_children.push_back(std::move(part));
     }
+    ++m_incarnation;
     return true;
 }
 

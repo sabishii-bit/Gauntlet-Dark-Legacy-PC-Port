@@ -69,6 +69,49 @@ jobs:
         env:
           CXX: g++-14
 
+  netplay:
+    name: Netplay transport (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    env:
+      CXX: g++-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\vcpkg\archives
+            ~/.cache/vcpkg/archives
+          key: netplay-vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            netplay-vcpkg-${{ runner.os }}-
+            vcpkg-${{ runner.os }}-
+      - name: Tools
+        run: python scripts/setup.py --yes --no-build
+      - name: Room admission, ICE and impaired UDP (no assets or display)
+        run: python scripts/netplay_test.py --build --room-runs 3
+      - name: Networking lint tools
+        if: runner.os == 'Linux'
+        run: python scripts/setup.py --yes --tooling --no-build
+      - name: Networking lint
+        if: runner.os == 'Linux'
+        run: python scripts/lint.py src/engine/net src/game/netplay/RoomClient.cpp src/game/netplay/RoomSession.cpp tools/netplaycheck
+      - name: Retain network diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: netplay-${{ runner.os }}
+          path: build/netplay/network-test-*/**/*.log
+          if-no-files-found: warn
+
   lint-shards:
     name: Lint shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04

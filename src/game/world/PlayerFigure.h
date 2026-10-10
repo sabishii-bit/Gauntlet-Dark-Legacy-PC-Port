@@ -70,10 +70,18 @@ public:
               const WorldLighting& lighting, f32 alpha, bool hideWeapon,
               const CameraFrame* camera = nullptr, f32 frameBlend = 1.0f, bool handOccupied = false,
               TreeModel::Pass companionPass = TreeModel::Pass::All) const;
+    /** Base costume and ordinary held weapon at an externally sampled class pose.
+     * No animator/companion updates, gameplay attachments, trails or release events.
+     * Powerups, familiars and transient effects require their own replicated state. */
+    void drawPose(RenderDevice& device, const Mat4& clip, const Mat4& body,
+                  const WorldLighting& lighting, const TreePose& pose,
+                  PlayerAnimator::Action action, f32 textureFrame, const Texture* hitFlash,
+                  const CameraFrame* camera, TreeModel::Pass pass = TreeModel::Pass::All) const;
+    const TreeInfo* actionTree() const { return m_actionTree; }
     /** Companion effects can composite after scenery without redrawing the body or held gear. */
-    void drawCompanion(RenderDevice& device, const Mat4& clip, const Mat4& body,
-                       const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
-                       f32 frameBlend, TreeModel::Pass pass) const;
+    void drawCompanions(RenderDevice& device, const Mat4& clip, const Mat4& body,
+                        const WorldLighting& lighting, f32 alpha, const CameraFrame* camera,
+                        f32 frameBlend, TreeModel::Pass pass) const;
     /** Retail head equipment, attached to the posed HEAD object. The level's
      * powerup archive must outlive this figure, like its other borrowed draw resources. */
     void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,
@@ -106,7 +114,15 @@ public:
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
     s32 familiarTier() const { return m_familiar.tier(); }
     bool phoenixActive() const { return m_companion.kind() == PowerupCompanion::Kind::Phoenix; }
+    /** Phoenix uses the opposite perch when an earned familiar occupies the native one.
+     * Both its model and projectile use this same, body-scaled attachment. */
+    Mat4 phoenixAttachment(const Mat4& body) const {
+        return glm::translate(body, Vec3{m_phoenixSide, 0, 0});
+    }
     const PowerupCompanion& companion() const { return m_companion; }
+    /** Slot zero is earned, slot one is a timed powerup; both can be visible. */
+    std::array<std::optional<CompanionVisual>, 2> companionVisuals(const Mat4& body,
+                                                                   f32 alpha) const;
     bool familiarReleased() const { return m_familiarReleased; }
     const TreeModel& familiarMissile() const { return m_familiarMissile; }
     const std::filesystem::path& directory() const { return m_directory; }
@@ -163,6 +179,7 @@ private:
     ItemArchive m_costumeArchive;
     TextureAnimator m_costumeTextures;
     AnimationSet m_actions;
+    const TreeInfo* m_actionTree = nullptr;
     mutable TreeModel m_model;
     PlayerAnimator m_animator;
     u64 m_animationRevision = 0;
@@ -206,6 +223,7 @@ private:
     std::optional<u32> m_throwSound;
     std::filesystem::path m_effectDirectory;
     bool m_staysInHand = false;
+    f32 m_phoenixSide = 0;
 };
 
 } // namespace gdl::game

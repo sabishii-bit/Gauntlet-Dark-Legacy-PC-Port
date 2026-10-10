@@ -198,4 +198,45 @@ TEST_CASE("a gargoyle wakes on approach and plays its eighty-five-frame ACTIVE s
     REQUIRE(risen[0].form == "GAR_EAGL");
 }
 
+TEST_CASE("statue sight is bounded by the native item query cells without becoming a fixed cap",
+          "[game][enemies][critter-statues][statue-query]") {
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(statueArchive()));
+    CritterStatues statues;
+    // InitDynGrid: max X/Z extent / 64 = ten-unit cells, with a nonzero origin.
+    statues.setContactGridBounds(Vec3{-320, -20, -320}, Vec3{320, 20, 320});
+    REQUIRE(statues.add(device, archive, golemAt(Vec3{5, 0, 5}, 30), nullptr));
+    // Player cell 35 queries down to cell 33: the statue in cell 32 is not visited,
+    // although it is inside the authored sight circle (distance 30, reach 31).
+    CHECK(statues.touch(Vec3{35, 0, 5}, 1) == Vec3{35, 0, 5});
+    CHECK_FALSE(statues.woken(0));
+    // Whole-cell rounding permits this 20-unit separation. A fixed 16-unit cap
+    // would incorrectly delay the wake, as would rounding instead of truncation.
+    CHECK(statues.touch(Vec3{25, 0, 5}, 1) == Vec3{25, 0, 5});
+    CHECK(statues.woken(0));
+
+    REQUIRE(statues.add(device, archive, golemAt(Vec3{5, 0, 5}, 30), nullptr));
+    CHECK(statues.touch(Vec3{5, 0, 35}, 1) == Vec3{5, 0, 35});
+    CHECK_FALSE(statues.woken(1));
+    CHECK(statues.touch(Vec3{5, 0, 25}, 1) == Vec3{5, 0, 25});
+    CHECK(statues.woken(1));
+
+    // The rectangle is only the broad phase: its diagonal still needs sight.
+    REQUIRE(statues.add(device, archive, golemAt(Vec3{5, 0, 5}, 10), nullptr));
+    statues.touch(Vec3{15, 0, 15}, 1);
+    CHECK_FALSE(statues.woken(2));
+    statues.touch(Vec3{15, 0, 5}, 1);
+    CHECK(statues.woken(2));
+
+    // Trigger/weapon wake events are independent of the player's query cells.
+    REQUIRE(statues.add(device, archive, golemAt(Vec3{105, 0, 105}, -1), nullptr));
+    statues.wake(3);
+    CHECK(statues.woken(3));
+    statues.clear();
+    REQUIRE(statues.add(device, archive, golemAt(Vec3{5, 0, 5}, 30), nullptr));
+    statues.touch(Vec3{35, 0, 5}, 1);
+    CHECK(statues.woken(0)); // a new level cannot inherit the old grid
+}
+
 } // namespace

@@ -182,6 +182,11 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_yaw = std::atan2(m_transform[2].x, m_transform[2].z);
     m_placement = m_transform;
     m_tree = nullptr;
+    m_archive = &items;
+    m_poseSequence = 0;
+    m_poseFrame = 0;
+    m_poseGeneration = 0;
+    ++m_continuity;
     m_staticTree.reset();
     m_index = -1;
     m_player.stop();
@@ -262,6 +267,9 @@ void ItemFigure::tilt(f32 pitch, f32 yaw) {
 }
 
 void ItemFigure::placeAt(const Mat4& placement) {
+    if (glm::distance(Vec3{m_transform[3]}, Vec3{placement[3]}) > kPresentationCutDistance) {
+        ++m_continuity;
+    }
     m_transform = placement;
     m_placement = placement;
     m_position = Vec3{placement[3]};
@@ -283,6 +291,9 @@ void ItemFigure::play(s32 index, bool loop) {
     m_holdPose = hadPose && sequence.frames == 0 && sequence.tracks.empty();
     if (!m_holdPose) {
         m_pose.evaluate(*m_tree, static_cast<u32>(index), 0.0f);
+        m_poseSequence = static_cast<u32>(index);
+        m_poseFrame = 0;
+        m_poseGeneration = m_player.generation();
     }
     m_model.setFrame(static_cast<u32>(index), 0);
     m_particles.setLocalScales(m_pose.poses());
@@ -305,6 +316,9 @@ void ItemFigure::update(f32 seconds) {
     m_player.advance(seconds, m_loop);
     if (!m_holdPose && m_player.playing()) {
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        m_poseSequence = m_player.sequence();
+        m_poseFrame = m_player.frame();
+        m_poseGeneration = m_player.generation();
     }
     m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
     m_textures.advance(seconds);
@@ -328,6 +342,21 @@ void ItemFigure::refreshTextures() {
     }
     m_textures.apply(m_model, *m_tree, m_textureSequence, m_textureFrame);
     m_textures.apply(m_particles, *m_tree, m_textureSequence, m_textureFrame);
+}
+
+ItemFigure::Presentation ItemFigure::presentation() const {
+    return {m_tree,
+            m_archive,
+            m_poseSequence,
+            m_poseFrame,
+            m_poseGeneration,
+            m_player.sequence(),
+            m_player.frame(),
+            m_textureSequence,
+            static_cast<f32>(m_textureFrame),
+            static_cast<f32>(m_textures.frame()),
+            m_continuity,
+            m_tree != nullptr && m_model.bound()};
 }
 
 bool ItemFigure::finished() const {

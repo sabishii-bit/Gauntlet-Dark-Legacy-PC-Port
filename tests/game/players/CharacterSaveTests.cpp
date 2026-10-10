@@ -276,4 +276,73 @@ TEST_CASE("a character keeps the help it has been shown, in order", "[game][play
     REQUIRE(CharacterSave::fromJson(sampleSave().toJson()).helpSeen.empty());
 }
 
+TEST_CASE("legacy class rewards migrate without loading or rewriting a character",
+          "[save][global-unlocks]") {
+    const auto dir = test::scratchDirectory("class-unlock-migration");
+    CharacterSave first;
+    first.name = "FIRST";
+    first.classUnlock = 1;
+    CharacterSave second;
+    second.name = "SECOND";
+    second.classUnlock = 0x100;
+    writeTextFile(dir / "slot1.json", first.toJson());
+    writeTextFile(dir / "slot3.json", second.toJson());
+    writeTextFile(dir / "slot2.json", "broken character");
+    SaveSlots slots;
+    REQUIRE(slots.open(dir, 3));
+    CHECK(slots.classUnlocks() == 0x101);
+    CHECK(readTextFile(dir / "slot1.json") == first.toJson());
+    CHECK(readTextFile(dir / "slot3.json") == second.toJson());
+    CHECK(readTextFile(dir / "slot2.json") == "broken character");
+    // Overwriting the original owners cannot remove installation-wide availability.
+    CharacterSave fresh;
+    fresh.name = "NEW";
+    REQUIRE(slots.write(0, fresh));
+    REQUIRE(slots.write(2, fresh));
+    SaveSlots restarted;
+    REQUIRE(restarted.open(dir, 3));
+    CHECK(restarted.classUnlocks() == 0x101);
+    CharacterSave loaded;
+    REQUIRE(restarted.load(0, loaded));
+    CHECK(loaded.classUnlock == 0); // the character is not the authority
+    CHECK(loaded.experience() == 0);
+}
+
+TEST_CASE("shared unlock rewards persist without a slot and older writers retain new rewards",
+          "[save][global-unlocks]") {
+    const auto dir = test::scratchDirectory("class-unlock-shared-writers");
+    SaveSlots live;
+    SaveSlots select;
+    REQUIRE(live.open(dir, 2));
+    REQUIRE(select.open(dir, 2));
+    REQUIRE(live.unlockClasses(1));
+    REQUIRE(select.unlockClasses(0x100));
+    REQUIRE(live.unlockClasses(2));
+    select.refresh();
+    CHECK(select.classUnlocks() == 0x103);
+    CHECK_FALSE(select.anySaved());
+    SaveSlots restarted;
+    REQUIRE(restarted.open(dir, 2));
+    CHECK(restarted.classUnlocks() == 0x103);
+    REQUIRE(restarted.unlockClasses(0));
+    CHECK(restarted.classUnlocks() == 0x103);
+    REQUIRE(restarted.open(test::scratchDirectory("class-unlock-other-install"), 2));
+    CHECK(restarted.classUnlocks() == 0);
+}
+
+TEST_CASE("unreadable and future unlock profiles are preserved instead of overwritten",
+          "[save][global-unlocks]") {
+    const auto dir = test::scratchDirectory("class-unlock-invalid");
+    for (const auto* text :
+         {"broken", R"({"version":2,"classUnlock":1})", R"({"version":1,"classUnlock":-1})",
+          R"({"version":1,"classUnlock":0.5})"}) {
+        writeTextFile(dir / "unlocks.json", text);
+        SaveSlots slots;
+        REQUIRE(slots.open(dir, 1));
+        CHECK_FALSE(slots.unlockClasses(2));
+        CHECK(slots.classUnlocks() == 2); // usable for this session even on write failure
+        CHECK(readTextFile(dir / "unlocks.json") == text);
+    }
+}
+
 } // namespace

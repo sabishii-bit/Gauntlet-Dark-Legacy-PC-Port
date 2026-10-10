@@ -14,6 +14,7 @@
 #include "game/players/Inventory.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
+#include "game/world/CompanionVisual.h"
 
 namespace gdl::game {
 
@@ -76,6 +77,7 @@ public:
 
     Kind kind() const { return m_kind; }
     bool shown() const { return m_tree != nullptr; }
+    std::optional<CompanionVisual> visual(const Mat4& at, f32 alpha) const;
     s32 sequence() const { return m_tree != nullptr ? static_cast<s32>(m_player.sequence()) : -1; }
 
 private:

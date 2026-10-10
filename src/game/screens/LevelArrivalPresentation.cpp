@@ -19,6 +19,7 @@ constexpr f32 kTitleSlideEnd = 2.0f;
 
 void LevelArrivalPresentation::clear() {
     m_spawns.clear();
+    m_archive = nullptr;
     m_textures.clear();
     m_ticks = 0;
     m_camera.stop();
@@ -31,6 +32,7 @@ void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
                                      const std::optional<WorldCamera>& marker,
                                      StartCamera::Mode mode, std::optional<Vec3> cameraFocus) {
     clear();
+    m_archive = &weapons;
     m_ticks = kSpawnTicks;
     m_titleSlide = kTitleSlideStart;
     if (marker.has_value()) {
@@ -108,6 +110,23 @@ void LevelArrivalPresentation::advance(s32 ticks, bool skip, const Vec3& followP
     m_titleLanded = m_titleLanded || (sliding && m_titleSlide == kTitleSlideEnd);
 }
 
+std::optional<LevelArrivalPresentation::EffectPresentation>
+LevelArrivalPresentation::effectPresentation(usize index) const {
+    if (m_ticks <= 0 || index >= m_spawns.size()) {
+        return std::nullopt;
+    }
+    const auto& spawn = m_spawns[index];
+    // drawEffects samples this continuous cursor, not the snapped gameplay pose.
+    return EffectPresentation{spawn.position,
+                              m_archive,
+                              spawn.tree,
+                              spawn.player.sequence(),
+                              spawn.player.presentationFrame(),
+                              spawn.player.generation(),
+                              static_cast<f32>(m_textures.frame()) +
+                                  m_textures.presentationOffset(1).value_or(0)};
+}
+
 void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& clip,
                                            const WorldLighting& lighting, f32 frameBlend) const {
     if (m_ticks <= 0) {
@@ -136,12 +155,17 @@ void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& cli
 
 void LevelArrivalPresentation::drawTitle(Canvas& canvas, const TextPainter& text,
                                          std::string_view title, f32 width) const {
-    if (!active() || title.empty() || !text.ready()) {
+    drawTitleAt(canvas, text, title, width, titleScale());
+}
+
+void LevelArrivalPresentation::drawTitleAt(Canvas& canvas, const TextPainter& text,
+                                           std::string_view title, f32 width, f32 scale) {
+    if (!(scale > 0) || !std::isfinite(scale) || title.empty() || !text.ready()) {
         return;
     }
     TextStyle style;
-    style.scale = m_titleSlide;
-    const s32 y = kTitleY - static_cast<s32>(static_cast<f32>(kTitleLift) * m_titleSlide);
+    style.scale = std::min(scale, kTitleSlideEnd);
+    const s32 y = kTitleY - static_cast<s32>(static_cast<f32>(kTitleLift) * style.scale);
     text.draw(canvas, -static_cast<s32>(width / 2.0f), y, title, style);
 }
 

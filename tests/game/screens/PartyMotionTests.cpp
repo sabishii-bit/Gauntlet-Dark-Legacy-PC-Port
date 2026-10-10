@@ -49,6 +49,7 @@ struct Fixture {
         .attackDeed = {},
         .automaticMeleeDeed = {},
         .meleeSense = {},
+        .deathContact = {},
         .grabDeath = {},
         .resolveMovement = {},
         .startPoint = {},
@@ -1346,12 +1347,15 @@ TEST_CASE("a halo wearer holding Death stands facing him but can still toggle in
           "[game][screens][party-motion][death]") {
     Fixture f;
     std::vector<bool> allowed;
+    f.events.deathContact = [](usize i) -> std::optional<Vec3> {
+        return i == 0 ? std::optional{Vec3{10, 0, 0}} : std::nullopt;
+    };
     f.events.grabDeath = [&](usize i, s32, bool may) -> std::optional<Vec3> {
         if (i != 0) {
             return std::nullopt;
         }
         allowed.push_back(may);
-        return Vec3{10, 0, 0};
+        return may ? std::optional{Vec3{10, 0, 0}} : std::nullopt;
     };
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
     f.inputs[3].attack = true;
@@ -1361,6 +1365,36 @@ TEST_CASE("a halo wearer holding Death stands facing him but can still toggle in
     CHECK(std::ranges::find(f.calls, "select0") != f.calls.end());
     f.step(true);
     CHECK(allowed == std::vector<bool>{true, false}); // held, no hold may be made
+}
+
+TEST_CASE("Death contact is queried before input and drained only after movement is resolved",
+          "[game][screens][party-motion][death]") {
+    Fixture f;
+    f.inputs[3].move = {{0, 1}, 1};
+    s32 drains = 0;
+    f.events.deathContact = [&](usize i) -> std::optional<Vec3> {
+        if (i == 0) {
+            CHECK(drains == 0);
+            CHECK(f.players[i].actor.position() == Vec3{0});
+        }
+        return std::nullopt;
+    };
+    f.events.resolveMovement = [](usize i, const Vec3&, const Vec3& to) {
+        return i == 0 ? Vec3{0, 0, 0.1f} : to;
+    };
+    f.events.grabDeath = [&](usize i, s32 ticks, bool allowed) -> std::optional<Vec3> {
+        if (i == 0) {
+            ++drains;
+            CHECK(ticks == 2);
+            CHECK(allowed);
+            CHECK(f.players[i].actor.position() == Vec3{0, 0, 0.1f});
+            return Vec3{1, 0, 1};
+        }
+        return std::nullopt;
+    };
+    f.step();
+    CHECK(drains == 1);
+    CHECK(f.players[0].actor.yaw() == Approx(std::atan2(1.0f, 0.9f)));
 }
 
 TEST_CASE("a member walking into another is stopped and shoves them along",

@@ -74,6 +74,13 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     REQUIRE(f.animator.counter(0) == 1);
     REQUIRE(f.animator.frame() == 0);
 
+    CHECK(f.animator.cycleFrame(0, 0) == &f.lender.texture(f.device, 1));
+    CHECK(f.animator.cycleFrame(0, 1) == &f.lender.texture(f.device, 2));
+    CHECK(f.animator.cycleFrame(0, 2) == nullptr);
+    CHECK(f.animator.cycleFrame(2, 0) == nullptr); // Scrolls have no cycle frames.
+    CHECK(f.animator.cycleFrame(3, 0) == nullptr);
+    CHECK(f.animator.counter(0) == 1); // Sampling another frame cannot advance the clock.
+
     f.animator.apply(f.scene);
     REQUIRE(f.scene.textureOf(3) == &f.lender.texture(f.device, 2));
     REQUIRE(f.scene.textureOf(0) == &f.textures.texture(f.device, 1));
@@ -117,6 +124,7 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     f.animator.clear();
     REQUIRE(f.animator.size() == 0);
     REQUIRE(f.animator.frame() == 0);
+    CHECK(f.animator.cycleFrame(0, 0) == nullptr);
 }
 
 TEST_CASE("an external animation frame name resolves to its owning lender",

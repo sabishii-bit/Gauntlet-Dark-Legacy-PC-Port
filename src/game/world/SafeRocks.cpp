@@ -108,6 +108,19 @@ void SafeRocks::clear() {
     m_textures.clear();
 }
 
+std::vector<SafeRocks::BodyResource> SafeRocks::bodyResources() const {
+    std::vector<BodyResource> result;
+    for (usize index = 0; index < m_rocks.size(); ++index) {
+        for (s32 tier = 0; tier <= kWhole; ++tier) {
+            const auto& model = m_rocks[index]->models[static_cast<usize>(tier)];
+            if (model.bound()) {
+                result.push_back({index, tier, &model, &m_textures});
+            }
+        }
+    }
+    return result;
+}
+
 void SafeRocks::setPlayerCount(s32 players) {
     for (const auto& rock : m_rocks) {
         rock->shown = shownToParty(rock->minPlayers, players);

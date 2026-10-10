@@ -21,8 +21,9 @@ namespace gdl::game {
 struct GameContext {
     const GameConfig* config = nullptr;
     const StringTable* strings = nullptr;
-    ControlLabels controlLabels;   ///< live bindings for a player; -1 denotes a shared prompt
-    SoundPlayer* sounds = nullptr; ///< optional; screens run silently without one
+    ControlLabels controlLabels;      ///< live bindings for a player; -1 denotes a shared prompt
+    SoundPlayer* sounds = nullptr;    ///< optional; screens run silently without one
+    AudioMixer* movieMixer = nullptr; ///< optional movie audio, independent of effects/music gain
     const AssetLocator* assets = nullptr; ///< the game's files as shipped, for its streams
     LevelWorld* tower = nullptr;          ///< the level in play, shared by the screens: the hub
                                           ///< tower until the party travels
@@ -38,6 +39,8 @@ struct GameContext {
     std::function<bool(const GameConfig&)> previewVideo;
     std::function<void(s32, s32, ControlFeedback)> vibrate; ///< input player id, frames and cue
     std::function<void()> stopVibration;
+    /** A completed secret challenge grants shared class availability, even before saving. */
+    std::function<void(u16)> unlockClasses;
 };
 
 } // namespace gdl::game

@@ -1,8 +1,10 @@
 #include "engine/world/WorldScene.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <ranges>
 
 #include "engine/assets/ObjectMaterial.h"
@@ -143,6 +145,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
     for (usize i = 0; i < objects.size(); ++i) {
         Placement& placement = m_placements[i];
         placement.local = glm::translate(Mat4{1.0f}, objects[i].position);
+        placement.initial = placement.local;
         placement.previous = placement.local;
         placement.parent = objects[i].parent;
         for (auto at = static_cast<s32>(i); at >= 0; at = objects[static_cast<usize>(at)].parent) {
@@ -275,6 +278,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         if (placed) {
             ++m_placed;
             if (unit) {
+                m_placements[i].unit = static_cast<s32>(m_units.size());
                 m_units.push_back(std::move(placedUnit));
             }
         }
@@ -297,6 +301,30 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
     m_worldValid.assign(objects.size(), 0);
     m_presentedWorld.assign(objects.size(), Mat4{1.0f});
     m_presentedValid.assign(objects.size(), 0);
+    // Stable across machines/pointer values. The build/assets handshake must still
+    // authenticate the resource set; this catches a wrong level/order at restore.
+    m_layoutSignature = 14695981039346656037ULL;
+    const auto hashWord = [&](u32 word) {
+        for (u32 shift = 0; shift < 32; shift += 8) {
+            m_layoutSignature =
+                (m_layoutSignature ^ static_cast<u8>(word >> shift)) * 1099511628211ULL;
+        }
+    };
+    hashWord(static_cast<u32>(objects.size()));
+    for (usize i = 0; i < objects.size(); ++i) {
+        hashWord(static_cast<u32>(objects[i].name.size()));
+        for (const char value : objects[i].name) {
+            hashWord(static_cast<u8>(value));
+        }
+        hashWord(static_cast<u32>(objects[i].parent));
+        hashWord(objects[i].objectFlags);
+        hashWord(objects[i].flags);
+        for (s32 axis = 0; axis < 3; ++axis) {
+            hashWord(std::bit_cast<u32>(objects[i].position[axis]));
+        }
+        hashWord(m_placements[i].moving ? 1U : 0U);
+        hashWord(static_cast<u32>(m_placements[i].unit));
+    }
     if (!built()) {
         log::warn("World scene: no placed object has a mesh");
         return false;
@@ -317,6 +345,7 @@ void WorldScene::clear() {
     m_placed = 0;
     m_triangles = 0;
     m_textureFrame = 0;
+    m_layoutSignature = 0;
 }
 
 bool WorldScene::moving(usize object) const {
@@ -331,6 +360,12 @@ void WorldScene::capturePresentation() {
 
 void WorldScene::setObjectTransform(usize object, const Mat4& local, bool presentationCut) {
     if (moving(object)) {
+        auto& placement = m_placements[object];
+        if (presentationCut && placement.local != local && placement.continuity != 0) {
+            placement.continuity = placement.continuity == std::numeric_limits<u32>::max()
+                                       ? 0
+                                       : placement.continuity + 1;
+        }
         m_placements[object].local = local;
         if (presentationCut) {
             m_placements[object].previous = local;
@@ -348,21 +383,79 @@ const Mat4& WorldScene::worldTransform(usize object) const {
 }
 
 WorldScene::Unit* WorldScene::unitOf(usize object) {
-    for (Unit& unit : m_units) {
-        if (unit.object == object) {
-            return &unit;
-        }
-    }
-    return nullptr;
+    const s32 index = object < m_placements.size() ? m_placements[object].unit : -1;
+    return index >= 0 ? &m_units[static_cast<usize>(index)] : nullptr;
 }
 
 const WorldScene::Unit* WorldScene::unitOf(usize object) const {
-    for (const Unit& unit : m_units) {
-        if (unit.object == object) {
-            return &unit;
+    const s32 index = object < m_placements.size() ? m_placements[object].unit : -1;
+    return index >= 0 ? &m_units[static_cast<usize>(index)] : nullptr;
+}
+
+SceneGeometry WorldScene::geometry() const {
+    SceneGeometry result;
+    result.layout = m_layoutSignature;
+    result.objectCount = static_cast<u32>(m_placements.size());
+    result.darken = m_darken;
+    for (usize i = 0; i < m_placements.size(); ++i) {
+        const auto& placement = m_placements[i];
+        const auto* unit = unitOf(i);
+        if (placement.moving || (unit != nullptr && (unit->alpha != 1 || !unit->visible))) {
+            result.objects.push_back({static_cast<u32>(i), placement.continuity, placement.local,
+                                      unit != nullptr ? unit->alpha : 1,
+                                      unit == nullptr || unit->visible});
         }
     }
-    return nullptr;
+    return result;
+}
+bool WorldScene::acceptsGeometry(const SceneGeometry& state) const {
+    if (!state.valid() || state.layout != m_layoutSignature ||
+        state.objectCount != m_placements.size()) {
+        return false;
+    }
+    usize cursor = 0;
+    for (usize i = 0; i < m_placements.size(); ++i) {
+        const auto& placement = m_placements[i];
+        const auto* object = cursor < state.objects.size() && state.objects[cursor].index == i
+                                 ? &state.objects[cursor++]
+                                 : nullptr;
+        if (object == nullptr) {
+            if (placement.moving) {
+                return false; // a missing moving parent must not silently use local geometry
+            }
+            continue;
+        }
+        const auto* unit = unitOf(i);
+        if ((!placement.moving &&
+             (unit == nullptr || object->local != placement.initial || object->continuity != 1)) ||
+            (unit == nullptr && (!object->visible || object->alpha != 1))) {
+            return false;
+        }
+    }
+    return true;
+}
+bool WorldScene::applyGeometry(const SceneGeometry& state) {
+    if (!acceptsGeometry(state)) {
+        return false;
+    }
+    for (auto& unit : m_units) {
+        unit.visible = true;
+        unit.alpha = 1;
+    }
+    for (const auto& object : state.objects) {
+        auto& placement = m_placements[object.index];
+        placement.local = object.local;
+        placement.previous = object.local;
+        placement.continuity = object.continuity;
+        if (auto* unit = unitOf(object.index)) {
+            unit->alpha = object.alpha;
+            unit->visible = object.visible;
+        }
+    }
+    m_darken = state.darken;
+    std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
+    std::fill(m_presentedValid.begin(), m_presentedValid.end(), u8{0});
+    return true;
 }
 
 void WorldScene::setObjectAlpha(usize object, f32 alpha) {

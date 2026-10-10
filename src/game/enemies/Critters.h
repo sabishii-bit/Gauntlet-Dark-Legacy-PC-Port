@@ -105,6 +105,9 @@ public:
               f32 presentationAlpha = -1, bool healthBars = true) const;
 
     usize count() const;
+    std::span<const Combatant> fighters() const { return m_critters; }
+    std::vector<CombatantAssets*> resources();
+    std::vector<const CombatantAssets*> resources() const;
     bool alive(s32 id) const;
     bool dying(s32 id) const;
     CombatantKind kindOf(s32 id) const;

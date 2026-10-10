@@ -152,4 +152,32 @@ TEST_CASE("transition margins follow the picture fade without covering the statu
     CHECK(device.draws.empty());
 }
 
+TEST_CASE("menu transitions cover the complete screen instead of leaving a black HUD strip",
+          "[game][screens][transition][assets]") {
+    const auto root = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    TransitionScreen screen;
+    REQUIRE(screen.load(device, root));
+    screen.cover();
+    Canvas canvas;
+    for (const f32 width : {512.0f, 1920.0f}) {
+        device.draws.clear();
+        canvas.begin(device, makeLetterboxProjection(512, 384, width, 1080));
+        screen.draw(canvas, 512, 384, TransitionScreen::Area::FullScreen);
+        canvas.end();
+        REQUIRE_FALSE(device.draws.empty());
+        CHECK(device.draws.front().texture != nullptr);
+        CHECK(test::minCorner(device.draws.front()) == Vec2{0, 0});
+        CHECK(test::maxCorner(device.draws.front()) == Vec2{512, 384});
+        CHECK(device.draws.front().vertices.front().color.a == 255);
+    }
+    // The ordinary gameplay fade must still leave live status boxes exposed.
+    device.draws.clear();
+    canvas.begin(device, makeScreenProjection(512, 384));
+    screen.draw(canvas, 512);
+    canvas.end();
+    REQUIRE(device.draws.size() == 1);
+    CHECK(test::maxCorner(device.draws.front()) == Vec2{512, 320});
+}
+
 } // namespace

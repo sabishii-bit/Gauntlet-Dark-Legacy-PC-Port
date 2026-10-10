@@ -60,7 +60,9 @@ int runGauntlet(std::span<char*> rawArgs) {
     gdl::game::GameConfig config;
     config.loadFile(parsed.options.dataDirectory / "config.json");
     const std::filesystem::path userSettings = gdl::game::GameConfig::userSettingsPath();
-    if (std::filesystem::exists(userSettings)) {
+    // The paired-window harness supplies an isolated configuration. Neither
+    // window should inherit fullscreen mode or another installation's devices.
+    if (parsed.options.netplayTest.empty() && std::filesystem::exists(userSettings)) {
         config.loadFile(userSettings);
     }
     const bool vsyncFromCommandLine = !parsed.desc.vsync;

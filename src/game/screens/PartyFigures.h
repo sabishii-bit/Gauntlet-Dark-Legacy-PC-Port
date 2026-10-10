@@ -46,6 +46,7 @@ public:
     void clear();
     /** Snapshot before a fixed simulation step; render interpolation never moves actors. */
     static void snapshot(std::span<PlayerRuntime> players);
+    static bool presentationContinuous(const PlayerRuntime& runtime);
     static Mat4 presentationBody(const PlayerRuntime& runtime, f32 frameBlend);
     static f32 presentationBlend(const PlayerRuntime& runtime, f32 frameBlend);
     const Texture* hitFlash() const { return m_hitFlash; }

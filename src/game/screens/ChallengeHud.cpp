@@ -59,6 +59,10 @@ void ChallengeHud::step(f32 seconds) {
 
 ChallengeHud::Sand ChallengeHud::sand(f32 remaining, f32 duration) {
     const f32 elapsed = duration > 0 ? std::clamp(1 - remaining / duration, 0.0f, 1.0f) : 1;
+    return sandAt(elapsed);
+}
+
+ChallengeHud::Sand ChallengeHud::sandAt(f32 elapsed) {
     const f32 upperTravel = std::round(kUpperTravel * elapsed);
     const f32 lowerTravel = std::round(kLowerTravel * elapsed);
     const f32 upperUv = (kUpperTop + kUpperHeight * elapsed) / kSize;
@@ -70,17 +74,34 @@ ChallengeHud::Sand ChallengeHud::sand(f32 remaining, f32 duration) {
 }
 
 void ChallengeHud::draw(Canvas& canvas, f32 remaining, f32 duration, bool running) const {
-    if (m_frame == nullptr || m_sand == nullptr) {
+    draw(canvas, look(remaining, duration, running));
+}
+
+ChallengeHud::Look ChallengeHud::look(f32 remaining, f32 duration, bool running) const {
+    return {duration > 0 ? std::clamp(1 - remaining / duration, 0.0f, 1.0f) : 1,
+            running && m_falling.size() != 0 && m_falling.motion(0).frame != nullptr
+                ? m_falling.counter(0)
+                : -1};
+}
+
+bool ChallengeHud::accepts(const Look& look) const {
+    return m_frame != nullptr && m_sand != nullptr && std::isfinite(look.elapsed) &&
+           look.elapsed >= 0 && look.elapsed <= 1 &&
+           (look.fallingFrame == -1 ||
+            (look.fallingFrame >= 0 &&
+             m_falling.cycleFrame(0, static_cast<usize>(look.fallingFrame)) != nullptr));
+}
+
+void ChallengeHud::draw(Canvas& canvas, const Look& look) const {
+    if (!accepts(look)) {
         return;
     }
     canvas.draw(*m_frame, {1, 1, kSize, kSize});
-    if (running && m_falling.size() != 0) {
-        if (const auto* frame = m_falling.motion(0).frame) {
-            constexpr Rect kFalling{63, 58, 8, 32};
-            canvas.draw(*frame, kFalling);
-        }
+    if (look.fallingFrame >= 0) {
+        constexpr Rect kFalling{63, 58, 8, 32};
+        canvas.draw(*m_falling.cycleFrame(0, static_cast<usize>(look.fallingFrame)), kFalling);
     }
-    const auto shape = sand(remaining, duration);
+    const auto shape = sandAt(look.elapsed);
     canvas.draw(*m_sand, shape.upper, shape.upperUv, Color::white());
     canvas.draw(*m_sand, shape.lower, shape.lowerUv, Color::white());
 }

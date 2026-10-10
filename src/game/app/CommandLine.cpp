@@ -1,5 +1,6 @@
 #include "game/app/CommandLine.h"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 #include <system_error>
@@ -67,6 +68,21 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
             result.options.scenario = args[++i];
         } else if (arg == "--no-vsync") {
             desc.vsync = false;
+        } else if (arg == "--netplay-auto-start") {
+            result.options.netplayAutoStart = true;
+        } else if (arg == "--netplay-test" || arg == "--netplay-room" ||
+                   arg == "--netplay-content") {
+            if (!hasValue || args[i + 1].empty()) {
+                return fail(std::move(desc), std::format("{} requires a value", arg));
+            }
+            const auto value = args[++i];
+            if (arg == "--netplay-test") {
+                result.options.netplayTest = value;
+            } else if (arg == "--netplay-room") {
+                result.options.netplayRoom = value;
+            } else {
+                result.options.netplayContent = value;
+            }
         } else if (arg == "--validation") {
             desc.enableValidation = true;
         } else if (arg == "--no-validation") {
@@ -94,6 +110,39 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
         }
     }
 
+    const auto& online = result.options;
+    if (!online.netplayTest.empty() || !online.netplayRoom.empty() ||
+        !online.netplayContent.empty() || online.netplayAutoStart) {
+        // This entry point deliberately cannot expose the unfinished flow to an
+        // Internet room. The public room-code UI/relay has its own admission work.
+        constexpr std::string_view kLoopback = "http://127.0.0.1:";
+        if (!online.netplayTest.starts_with(kLoopback)) {
+            return fail(std::move(desc),
+                        "--netplay-test requires an http://127.0.0.1:<port> coordinator");
+        }
+        const auto portText = std::string_view(online.netplayTest).substr(kLoopback.size());
+        u32 port = 0;
+        const auto [end, error] =
+            std::from_chars(portText.data(), portText.data() + portText.size(), port);
+        if (error != std::errc{} || end != portText.data() + portText.size() || port == 0 ||
+            port > 65535 || online.scenario.empty() || online.startAtTitle || online.startAtDemo ||
+            online.previewScreensaver || !online.playMovie.empty() ||
+            online.netplayContent.size() != 64 ||
+            !std::ranges::all_of(
+                online.netplayContent,
+                [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }) ||
+            (!online.netplayRoom.empty() &&
+             (online.netplayRoom.size() != 8 ||
+              !std::ranges::all_of(online.netplayRoom, [](char c) {
+                  return std::string_view("ABCDEFGHJKLMNPQRSTUVWXYZ23456789").contains(c);
+              })))) {
+            return fail(std::move(desc),
+                        "Online test requires a loopback port, a scenario, a SHA-256 content "
+                        "identity and an optional eight-character room code");
+        }
+        desc.window.title = online.netplayRoom.empty() ? "Gauntlet Dark Legacy - Netplay Host"
+                                                       : "Gauntlet Dark Legacy - Netplay Guest";
+    }
     result.action = CommandLineAction::Run;
     return result;
 }
@@ -107,6 +156,10 @@ const char* usageText() {
            "  --demo             preview a level flyby without the title wait\n"
            "  --screensaver      preview the idle weapons; any input exits\n"
            "  --scenario <file>  open the tower straight into the start the file describes\n"
+           "  --netplay-test <url>  experimental loopback scene test (requires --scenario)\n"
+           "  --netplay-room <code> join a test room instead of creating one\n"
+           "  --netplay-content <sha256> asset identity supplied by the test launcher\n"
+           "  --netplay-auto-start start the paired-window test once both machines are ready\n"
            "  --no-vsync         present as fast as possible\n"
            "  --validation       force the Vulkan validation layer on\n"
            "  --no-validation    force it off (default on in Debug builds)\n"

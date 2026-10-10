@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/CharacterSave.h"
+#include "game/players/LevelResults.h"
 
 namespace gdl::game {
 
@@ -21,6 +22,7 @@ struct PartyMember {
     // Explicit default for aggregate callers that omit transient history.
     // NOLINTNEXTLINE(readability-redundant-member-init)
     std::vector<s32> helpHeard{}; ///< the help it has had since it was loaded; not saved
+    std::optional<LevelResults::Checkpoint> resultsCheckpoint = std::nullopt;
 };
 
 /** Writes every member that has a slot back into it; how many were written. */

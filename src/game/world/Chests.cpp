@@ -362,7 +362,11 @@ void Chests::remove(usize chest) {
 std::vector<Obstacle> Chests::obstacles() const {
     std::vector<Obstacle> boxes;
     for (const std::unique_ptr<Chest>& chest : m_chests) {
-        if (chest->shown && !chest->gone) {
+        // ItemTouch (8005D730) leaves an open pickup chest passable even when a
+        // full-health player cannot take its food. Gold uses its own touch path.
+        const bool holdsPickup =
+            chest->state == kOpen && chest->held >= 0 && chest->subtype != kGoldChest;
+        if (chest->shown && !chest->gone && !holdsPickup) {
             boxes.push_back(chest->box);
         }
     }

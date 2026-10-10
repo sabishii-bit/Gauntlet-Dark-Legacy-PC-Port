@@ -25,6 +25,7 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr s32 kSaveFormatVersion = 1;
+constexpr u16 kClassUnlockMask = (1U << (kClassCount - kStartingClassCount)) - 1;
 
 /** What is carried; only the powerup slots that hold something are written. */
 Json inventoryJson(const Inventory& inventory) {
@@ -260,6 +261,9 @@ bool SaveSlots::open(const std::filesystem::path& directory, usize count) {
         m_slots.clear();
         return false;
     }
+    if (m_directory != directory) {
+        m_classUnlocks = 0;
+    }
     m_directory = directory;
     m_slots.assign(count, SaveSlotInfo{});
     refresh();
@@ -271,6 +275,7 @@ std::filesystem::path SaveSlots::path(usize index) const {
 }
 
 void SaveSlots::refresh() {
+    u16 imported = 0;
     for (usize i = 0; i < m_slots.size(); ++i) {
         SaveSlotInfo& info = m_slots[i];
         info = SaveSlotInfo{};
@@ -287,9 +292,45 @@ void SaveSlots::refresh() {
             info.name = save.name;
             info.character = save.character;
             info.color = save.color;
+            imported |= save.classUnlock;
         } catch (const std::exception& e) {
             log::warn("Saves: {}: {}", file.string(), e.what());
         }
+    }
+    unlockClasses(imported);
+}
+
+bool SaveSlots::unlockClasses(u16 mask) {
+    m_classUnlocks |= mask & kClassUnlockMask;
+    if (!opened()) {
+        return false;
+    }
+    const auto file = m_directory / "unlocks.json";
+    try {
+        u16 stored = 0;
+        if (std::filesystem::exists(file)) {
+            const auto root = Json::parse(readTextFile(file));
+            if (!root.is_object() || root.value("version", 0) != 1 ||
+                !root.contains("classUnlock") || !root.at("classUnlock").is_number_integer()) {
+                throw FormatError("unsupported unlock profile");
+            }
+            const auto value = root.at("classUnlock").get<s64>();
+            if (value < 0 || value > kClassUnlockMask) {
+                throw FormatError("invalid class unlock mask");
+            }
+            stored = static_cast<u16>(value);
+        }
+        // Character selection and live gameplay own separate SaveSlots instances.
+        // Re-read before writing so an older instance cannot discard another's reward.
+        m_classUnlocks |= stored;
+        if (m_classUnlocks != stored) {
+            replaceTextFile(file, Json{{"version", 1}, {"classUnlock", m_classUnlocks}}.dump(2));
+        }
+        return true;
+    } catch (const std::exception& e) {
+        // Retain earned bits in memory, but never replace corrupt or newer-format data.
+        log::warn("Unlocks: {}: {}", file.string(), e.what());
+        return false;
     }
 }
 
@@ -326,6 +367,7 @@ bool SaveSlots::write(usize index, const CharacterSave& save) {
     info.name = save.name;
     info.character = save.character;
     info.color = save.color;
+    unlockClasses(save.classUnlock);
     return true;
 }
 

@@ -21,10 +21,21 @@ bool Rubble::leave(RenderDevice& device, std::span<ItemArchive* const> archives,
             return false;
         }
         piece->transform = transform;
+        piece->archive = archive;
+        piece->object = object;
         m_pieces.push_back(std::move(piece));
         return true;
     }
     return false;
+}
+
+std::vector<Rubble::Presentation> Rubble::presentation() const {
+    std::vector<Presentation> result;
+    for (usize index = 0; index < m_pieces.size(); ++index) {
+        const auto& piece = *m_pieces[index];
+        result.push_back({index, piece.archive, piece.object, piece.transform});
+    }
+    return result;
 }
 
 void Rubble::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {

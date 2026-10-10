@@ -55,6 +55,20 @@ Mat4 EffectTrees::Effect::transform() const {
     return glm::scale(basis, Vec3{scale * shrink} * stretch);
 }
 
+f32 EffectTrees::Effect::opacity() const {
+    return alpha *
+           (fadeSeconds > 0 ? std::clamp(secondsLeftOf(*this) / fadeSeconds, 0.0f, 1.0f) : 1);
+}
+
+f32 EffectTrees::textureFrame(const Effect& effect) const {
+    for (const auto& motion : m_motions) {
+        if (motion->archive == effect.archive && motion->lenders == effect.lenders) {
+            return static_cast<f32>(motion->animator.frame());
+        }
+    }
+    return 0;
+}
+
 void EffectTrees::placeAt(u32 id, const Mat4& attachment, std::optional<Vec3> flightDirection) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         if (effect->id == id) {
@@ -73,6 +87,7 @@ void EffectTrees::redirect(u32 id, const Vec3& position, const Vec3& velocity) {
             effect->velocity = velocity;
             effect->yaw = std::atan2(velocity.x, velocity.z);
             effect->presentationCaptured = false; // contact redirects are cuts, not curves
+            ++effect->continuity;
             if (effect->flightDirection) {
                 effect->flightDirection = velocity;
             }
@@ -203,7 +218,11 @@ void EffectTrees::attachTrail(u32 id, const ParticleDescriptor& descriptor,
 u32 EffectTrees::startParticles(RenderDevice& device, ItemArchive& archive,
                                 const ParticleDescriptor& descriptor, u32 textureSlot,
                                 const Mat4& attachment) {
+    if (m_nextInstance == 0) {
+        return 0;
+    }
     auto effect = std::make_unique<Effect>();
+    effect->instance = m_nextInstance++;
     effect->id = m_nextId++;
     effect->name = descriptor.texture;
     effect->attachment = attachment;
@@ -229,12 +248,16 @@ u32 EffectTrees::startParticles(RenderDevice& device, ItemArchive& archive,
 u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                           const Vec3& position, const Setting& setting,
                           std::span<TextureSet* const> textureLenders) {
+    if (m_nextInstance == 0) {
+        return 0;
+    }
     const auto index = archive.loaded() ? archive.trees.find(tree) : std::nullopt;
     if (!index.has_value()) {
         log::warn("Effects: no tree {} to play", tree);
         return 0;
     }
     auto effect = std::make_unique<Effect>();
+    effect->instance = m_nextInstance++;
     effect->tree = &archive.trees.tree(*index);
     effect->name = std::string(tree);
     effect->id = m_nextId++;
@@ -246,6 +269,7 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->unlit = setting.unlit;
     effect->depthWrite = setting.depthWrite;
     effect->tint = setting.tint;
+    effect->alpha = std::clamp(setting.alpha, 0.0f, 1.0f);
     effect->playbackRate = setting.playbackRate;
     effect->light = setting.light;
     effect->velocity = setting.velocity;
@@ -356,6 +380,7 @@ void EffectTrees::capturePresentation() {
 void EffectTrees::snapPresentation(u32 id) {
     for (const auto& effect : m_effects) {
         if (effect->id == id) {
+            ++effect->continuity;
             effect->presentationCaptured = false;
             return;
         }
@@ -523,10 +548,7 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                 }
             }
             // Its last moments fade it out (ProcessEffects' fxfade).
-            const f32 alpha =
-                effect->fadeSeconds > 0.0f
-                    ? std::clamp(secondsLeftOf(*effect) / effect->fadeSeconds, 0.0f, 1.0f)
-                    : 1.0f;
+            const f32 alpha = effect->opacity();
             if (camera != nullptr) {
                 // Traverse facing parents before their children, as for any
                 // other local transform. Facing only the final mesh loses

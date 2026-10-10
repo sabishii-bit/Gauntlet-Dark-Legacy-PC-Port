@@ -27,8 +27,10 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
+#include "game/screens/PartyMotion.h"
 #include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
+#include "game/world/BodyCollision.h"
 #include "game/world/Chests.h"
 #include "game/world/SafeRocks.h"
 namespace {
@@ -2591,6 +2593,54 @@ TEST_CASE("block presentation limits duration and cannot restart during its cool
     REQUIRE(f.players[0].blockLeft == 1);
 }
 
+TEST_CASE("player guard flashes carry the player's color and follow the body until expiry",
+          "[game][player-attacks][player-block][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    const s32 color = GENERATE(0, 1, 2, 3);
+    constexpr std::array<Color, 4> kExpected{Color::rgba(255, 255, 0), Color::rgba(0, 0, 255),
+                                             Color::rgba(255, 0, 0), Color::rgba(0, 255, 0)};
+    Fixture f;
+    auto& player = f.players[0];
+    player.actor.save().color = color;
+    player.actor.place({12, 3, 20});
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.attacks.showBlock(0, 10, 50, f.players);
+    REQUIRE(f.effects.count() == 1);
+    const auto& effect = f.effects.effect(0);
+    CHECK(effect.name == "BLOCKFX");
+    CHECK(effect.tint.r == kExpected[static_cast<usize>(color)].r);
+    CHECK(effect.tint.g == kExpected[static_cast<usize>(color)].g);
+    CHECK(effect.tint.b == kExpected[static_cast<usize>(color)].b);
+    CHECK(effect.unlit);
+    CHECK(effect.opacity() == Approx(191.0f / 255.0f));
+    REQUIRE(effect.attachment);
+    CHECK(effect.position == player.actor.position());
+    f.effects.update(0.2f);
+    player.actor.place({15, 4, 22});
+    f.attacks.updateStrikes(0.2f, f.players, f.targets);
+    CHECK(effect.position == player.actor.position());
+    CHECK(effect.opacity() == Approx(191.0f / 255.0f));
+    f.attacks.showBlock(0, 10, 50, f.players);
+    CHECK(f.effects.count() == 1); // Cooldown must not create a second flash.
+    f.device.draws.clear();
+    f.effects.draw(f.device, Mat4{1}, WorldLighting{});
+    REQUIRE_FALSE(f.device.draws.empty());
+    for (const auto& draw : f.device.draws) {
+        for (const auto& vertex : draw.vertices) {
+            CHECK(vertex.color.r == kExpected[static_cast<usize>(color)].r);
+            CHECK(vertex.color.g == kExpected[static_cast<usize>(color)].g);
+            CHECK(vertex.color.b == kExpected[static_cast<usize>(color)].b);
+            CHECK(vertex.color.a == 191);
+        }
+    }
+    CHECK(f.attacks.strikes().count() == 0); // Presentation is not a retaliatory hitbox.
+    f.effects.update(0.31f);
+    CHECK(f.effects.count() == 0);
+    f.attacks.updateStrikes(0, f.players, f.targets); // Retired attachments are safe to remove.
+}
+
 TEST_CASE("ordinary melee and finishers preserve the weapon element while guard flashes do not",
           "[game][player-attacks][alpha-elemental-melee][assets][melee-rumble]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
@@ -2779,6 +2829,11 @@ TEST_CASE("a halo wearer drains Death only while touching the nearest target ahe
     CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
     actor.save().progress().inventory.addPowerup(powerup::kArmor, DeathRules::kProtection, 0, 60);
     const f32 full = enemies.healthOf(*death);
+    REQUIRE(f.attacks.deathContact(0, f.players, f.targets));
+    CHECK(enemies.healthOf(*death) == full);
+    CHECK(f.players[0].deathHeld == -1);
+    CHECK_FALSE(f.players[0].deathHaloHeard);
+    CHECK(sounds.voiceCount() == 0);
     const auto held = f.attacks.grabDeath(0, 2, true, f.players, f.targets);
     REQUIRE(held.has_value());
     CHECK(*held == enemies.positionOf(*death));
@@ -2858,6 +2913,97 @@ TEST_CASE("a halo wearer drains Death only while touching the nearest target ahe
     f.audio.close();
 }
 
+TEST_CASE("a halo wearer can catch and drain a retreating Death during resolved movement",
+          "[game][player-attacks][party-motion][death][death-pursuit][assets]") {
+    const s32 tier = GENERATE(1, 2);
+    const s32 ticks = GENERATE(1, 2);
+    const f32 seconds = static_cast<f32>(ticks) / 60;
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    Fixture f;
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    WorldCollision floor;
+    CollisionTriangle first;
+    first.vertices = {Vec3{-500, 0, -500}, Vec3{500, 0, -500}, Vec3{500, 0, 500}};
+    first.normal = Vec3{0, 1, 0};
+    first.object = 0;
+    CollisionTriangle second = first;
+    second.vertices = {Vec3{-500, 0, -500}, Vec3{500, 0, 500}, Vec3{-500, 0, 500}};
+    floor.build({first, second});
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, test::deathArchive(), &floor, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto death = enemies.spawn(
+        {.kind = kDeathKind, .tier = tier, .position = {0, 0, 3}, .placed = true}, {});
+    REQUIRE(death);
+    auto& actor = f.players[0].actor;
+    ClassStats stats;
+    stats.speedMin = 1000;
+    actor.spawn(3, {}, &stats, Vec3{0}, 0);
+    actor.save().progress().inventory.addPowerup(powerup::kArmor, DeathRules::kProtection, 0, 60);
+    // A placed Death initially stands stunned. Begin the chase only after he is
+    // already retreating, otherwise the test can drain him during that startup.
+    for (s32 frame = 0; frame < 30; ++frame) {
+        enemies.update(2, 1.0f / 30, LevelOpponents::enemyViews(f.players));
+    }
+    const Vec3 start = enemies.positionOf(*death);
+    actor.place(start - Vec3{0, 0, 3});
+    SECTION("movement without an animation model") {}
+    SECTION("native player grab and release animations") {
+        f.players[0].figure = PlayerFigure::load(f.device, root, actor.save(), false);
+        REQUIRE(f.players[0].figure);
+    }
+    std::array<PlayInput, 4> inputs;
+    inputs[3].move = {{0, 1}, 1};
+    PartyMotion::Events events{};
+    events.perform = [](usize, PartyMotion::Action) {};
+    events.select = [](usize, const SelectorInput&, s32) {};
+    events.advanceTurbo = [](usize, s32, f32) {};
+    events.deathContact = [&](usize index) {
+        return f.attacks.deathContact(index, f.players, f.targets);
+    };
+    events.grabDeath = [&](usize index, s32 elapsed, bool allowed) {
+        return f.attacks.grabDeath(index, elapsed, allowed, f.players, f.targets);
+    };
+    events.resolveMovement = [&](usize, const Vec3& from, const Vec3& to) {
+        return BodyCollision::resolve(from, to, actor.radius(), actor.height(), enemies.targets());
+    };
+    const f32 full = enemies.healthOf(*death);
+    f32 nearestContact = 1000;
+    for (s32 elapsed = 0; elapsed < 120; elapsed += ticks) {
+        const f32 before = enemies.healthOf(*death);
+        PartyMotion::step(f.players, inputs, false, 0, ticks, seconds, floor, events);
+        nearestContact =
+            std::min(nearestContact, glm::distance(actor.position(), enemies.positionOf(*death)));
+        CHECK(before - enemies.healthOf(*death) <= 1);
+        enemies.update(ticks, seconds, LevelOpponents::enemyViews(f.players));
+    }
+    CHECK(enemies.positionOf(*death).z > start.z + 2);
+    CHECK(actor.position().z > start.z);
+    CAPTURE(tier, ticks, nearestContact, actor.position().y, actor.radius(),
+            enemies.targets()[0].radius, f.players[0].deathHeld, f.players[0].deathDrainTicks);
+    CHECK(nearestContact == Approx(actor.radius() + enemies.targets()[0].radius));
+    CHECK(enemies.healthOf(*death) < full);
+    CHECK(full - enemies.healthOf(*death) <= 60); // at most thirty points per second
+    const auto returns = enemies.takeDeathEvents();
+    CHECK(std::ranges::count_if(returns, [](const DeathEvent& event) {
+              return event.kind == DeathEvent::Kind::Return;
+          }) == static_cast<s32>(full - enemies.healthOf(*death)));
+    // Let him escape: keeping him ahead cannot continue draining at a distance.
+    inputs[3].move = {};
+    const f32 caughtHealth = enemies.healthOf(*death);
+    for (s32 elapsed = 0; elapsed < 30; elapsed += ticks) {
+        PartyMotion::step(f.players, inputs, false, 0, ticks, seconds, floor, events);
+        enemies.update(ticks, seconds, LevelOpponents::enemyViews(f.players));
+    }
+    CHECK(enemies.healthOf(*death) == caughtHealth);
+    CHECK(f.players[0].deathHeld == -1);
+    f.opponents.close();
+}
+
 TEST_CASE("pausing a halo hold silences its loops without advancing the drain",
           "[game][screens][player-attacks][death][pause]") {
     const auto root = test::scratchDirectory("halo-pause-audio");
@@ -2873,7 +3019,7 @@ TEST_CASE("pausing a halo hold silences its loops without advancing the drain",
     f.audio.open(root, &sounds, nullptr);
     auto& player = f.players[0];
     player.deathHeld = 1;
-    player.deathHeldTicks = 1;
+    player.deathDrainTicks = 1;
     player.deathHeldCry = f.audio.playNamed("S_DEATHDIE");
     player.deathHeldSuck = f.audio.playNamed("S_DEATHSUCK");
     const auto cry = player.deathHeldCry;
@@ -2886,7 +3032,7 @@ TEST_CASE("pausing a halo hold silences its loops without advancing the drain",
     CHECK(player.deathHeldCry == kNoSound);
     CHECK(player.deathHeldSuck == kNoSound);
     CHECK(player.deathHeld == 1);
-    CHECK(player.deathHeldTicks == 1);
+    CHECK(player.deathDrainTicks == 1);
     f.audio.close();
 }
 

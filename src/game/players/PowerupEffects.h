@@ -107,4 +107,7 @@ struct PowerupEffects {
  * original's list whose flags it carries, else its kind's general name. */
 std::string_view powerupTextId(s32 kind, u32 flags);
 
+/** Coin stages cannot use Stop Time. Keep the carried item for the return journey. */
+bool powerupAllowedInChallenge(s32 kind, u32 flags);
+
 } // namespace gdl::game

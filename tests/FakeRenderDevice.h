@@ -68,8 +68,10 @@ public:
         return texture;
     }
 
-    void updateTexture(Texture& /*texture*/, std::span<const u8> /*rgba8Pixels*/) override {
+    void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override {
         ++textureUpdates;
+        auto& image = dynamic_cast<FakeTexture&>(texture);
+        image.pixels.assign(rgba8Pixels.begin(), rgba8Pixels.end());
     }
 
     const Texture& whiteTexture() const override { return m_white; }

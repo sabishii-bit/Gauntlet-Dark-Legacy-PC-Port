@@ -104,15 +104,19 @@ public:
     /** Highest solid or liquid surface for a weapon; liquids never support walking bodies. */
     std::optional<FloorHit> projectileFloorAt(const Vec3& position, f32 above, f32 below) const;
 
+    enum class WallPush : u8 { All, StaticOnly };
+
     /**
      * Pushes a vertical cylinder of `radius` standing from `bottom` to `top` out of the walls
      * it overlaps and returns the corrected centre. Sliding along walls falls out of it, so a
      * mover just steps and then corrects. `minimumY` excludes faces wholly below
-     * the caller's wall volume, as in sweepWalls.
+     * the caller's wall volume, as in sweepWalls. StaticOnly retains animated-wall contacts
+     * without overlap pushout. Movement against those walls is still blocked by sweepWalls.
      */
     Vec3 resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
                       std::vector<WallContact>* contacts = nullptr,
-                      std::optional<f32> minimumY = std::nullopt) const;
+                      std::optional<f32> minimumY = std::nullopt,
+                      WallPush push = WallPush::All) const;
     /** All surface contacts of a cylinder, including sloped faces and caps.
      * Unlike wall resolution this does not approximate contact at two heights. */
     std::vector<WallContact> surfaceContacts(const Vec3& centre, f32 radius, f32 bottom,

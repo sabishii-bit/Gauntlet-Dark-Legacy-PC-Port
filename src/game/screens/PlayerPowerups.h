@@ -25,6 +25,8 @@ public:
                                              Clock clock);
     /** One standing bearer affects the level; hidden bodies still carry their items. */
     static bool timeStopped(std::span<const PlayerRuntime> players);
+    /** Disable challenge-ineligible items for every participant without consuming them. */
+    static void restrictToChallenge(std::span<PlayerRuntime> players);
     /** How many standing players wear a working enemy shrinker (SetPlayerVars' state 1). */
     static s32 enemyShrinkers(std::span<const PlayerRuntime> players);
     /** The scale the swarm and the great ones are held at by the shrinkers worn. */

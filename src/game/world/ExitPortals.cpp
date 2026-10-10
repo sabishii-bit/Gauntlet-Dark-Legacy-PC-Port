@@ -54,6 +54,7 @@ void ExitPortals::shut(RenderDevice& device, Portal& portal, ItemArchive& items,
         node.object = tree.name;
         tree.nodes.push_back(node);
         if (portal.model.bind(tree, archive->models, archive->textures, device)) {
+            portal.archive = archive;
             return;
         }
     }
@@ -123,6 +124,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             shut(device, portal, items, realmItems);
         } else if (m_tree != nullptr &&
                    portal.model.bind(*m_tree, art.models, art.textures, device)) {
+            portal.archive = &art;
             portal.pose.rest(*m_tree);
         }
         m_portals.push_back(std::move(portal));

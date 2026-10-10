@@ -175,6 +175,12 @@ MenuInput readMovieMenuInput(const Input& input, const GameConfig& config,
     return result;
 }
 
+bool readOnlineMovieSkipInput(const Input& input, const GameConfig& config, s32 player) {
+    const auto menu = readPlayerMenuInput(input, config, player);
+    return menu.start || menu.select ||
+           (playerInputSource(input, config, player).keyboard && menu.pointerPressed);
+}
+
 MenuInput readPauseMenuInput(const Input& input, const GameConfig& config, s32 owner) {
     const auto source = playerInputSource(input, config, owner);
     return source.keyboard || input.isPadConnected(source.pad)

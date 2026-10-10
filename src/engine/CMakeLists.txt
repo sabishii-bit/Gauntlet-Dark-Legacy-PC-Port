@@ -22,6 +22,7 @@ gdl_apply_compiler_options(engine_base)
 set_target_properties(engine_base PROPERTIES FOLDER "engine")
 
 add_library(engine STATIC
+    world/SceneGeometry.cpp
     assets/ShopCatalog.h
     assets/ShopCatalog.cpp
     core/Types.h
@@ -219,3 +220,7 @@ set_target_properties(engine PROPERTIES FOLDER "engine")
 
 get_target_property(_engine_sources engine SOURCES)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${_engine_sources})
+
+if(GDL_ENABLE_NETPLAY)
+    add_subdirectory(net)
+endif()

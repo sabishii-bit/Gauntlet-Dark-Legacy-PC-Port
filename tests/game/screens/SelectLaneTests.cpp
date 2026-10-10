@@ -883,4 +883,30 @@ TEST_CASE("save slot ownership keeps large slot ids distinct from low slots", "[
     }
 }
 
+TEST_CASE("new characters in every lane use shared unlocks without loading their owner",
+          "[select][global-unlocks]") {
+    Fixture f("select-global-unlocks");
+    REQUIRE(f.slots.unlockClasses(0x101)); // first bonus class and Sumner
+    for (s32 player = 0; player < 4; ++player) {
+        f.lane.reset(player, &f.services);
+        f.lane.activate();
+        f.createCharacter();
+        CHECK(f.lane.save().classUnlock == 0);
+        for (s32 i = 0; i < kStartingClassCount; ++i) {
+            f.step(press(false, false, false, false, false, false, true));
+        }
+        REQUIRE(f.lane.pickedClass() == kStartingClassCount);
+        f.step(press(true));
+        CHECK(f.lane.lockedIn());
+        CHECK(f.lane.save().character == kStartingClassCount);
+    }
+    f.lane.reset(0, &f.services);
+    f.lane.activate();
+    f.createCharacter();
+    f.step(press(false, false, false, false, false, true)); // wrap left to Sumner
+    REQUIRE(f.lane.pickedClass() == kSumnerClass);
+    f.step(press(true));
+    CHECK(f.lane.lockedIn());
+}
+
 } // namespace

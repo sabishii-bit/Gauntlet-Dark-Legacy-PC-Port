@@ -107,6 +107,24 @@ public:
     bool standing(s32 id) const;
     /** Whether the generator has a body to show in its state. */
     bool bodyShown(s32 id) const;
+    /** Loaded art and visible draw records only; neither API runs brood logic. */
+    struct BodyResource {
+        s32 kind = 0;
+        s32 state = 0;
+        const TreeInfo* tree = nullptr;
+        const TreeModel* model = nullptr;
+        const TextureAnimator* textures = nullptr;
+    };
+    struct Presentation {
+        usize index = 0;
+        s32 kind = 0;
+        s32 state = 0;
+        Mat4 placement{1};
+        f32 textureClock = 0;
+        const ItemFigure* bossFigure = nullptr;
+    };
+    std::vector<BodyResource> bodyResources() const;
+    std::vector<Presentation> presentation() const;
     s32 stateOf(s32 id) const;
     f32 healthOf(s32 id) const;
     s32 kindOf(s32 id) const;

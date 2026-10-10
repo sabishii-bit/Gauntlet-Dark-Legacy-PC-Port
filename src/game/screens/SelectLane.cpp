@@ -174,7 +174,9 @@ std::string SelectLane::text(std::string_view id) const {
 }
 
 bool SelectLane::classKnown(s32 classIndex) const {
-    return classUnlocked(classIndex, m_save.classUnlock);
+    return classUnlocked(classIndex, m_services != nullptr && m_services->slots != nullptr
+                                         ? m_services->slots->classUnlocks()
+                                         : 0);
 }
 
 s32 SelectLane::wrapClass(s32 classIndex, s32 step) const {
