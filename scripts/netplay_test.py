@@ -77,6 +77,7 @@ def build(directory: pathlib.Path, jobs: int = 2) -> None:
                        for name in ("buildtrees", "packages"))
     devenv.run(["cmake", "--preset", devenv.release_preset(), "-B", str(directory),
                 "-DGDL_ENABLE_NETPLAY=ON", "-DGDL_BUILD_TESTS=ON", "-DVCPKG_MANIFEST_FEATURES=",
+                "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
                 f"-DVCPKG_INSTALL_OPTIONS={options}"])
     devenv.run(["cmake", "--build", str(directory), "--target", "netplaycheck", "netplaytests", "compile_commands",
                 "--parallel", str(jobs)])

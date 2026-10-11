@@ -21,7 +21,8 @@ TEST_CASE("native compatibility hashes paths and bytes rather than timestamps",
     std::filesystem::rename(b / "test.wad", b / "other.wad");
     writeTextFile(b / "other.wad", "abc");
     CHECK(assetDigest(a) != assetDigest(b));
-    std::stop_source stop;
+    // MSVC's supported STL exposes request_stop as non-const; libstdc++ makes it const.
+    std::stop_source stop; // NOLINT(misc-const-correctness): required by the MSVC STL API
     stop.request_stop();
     CHECK_THROWS(assetDigest(a, stop.get_token()));
     const auto empty = test::scratchDirectory("asset-digest-empty");

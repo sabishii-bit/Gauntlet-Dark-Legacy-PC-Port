@@ -37,7 +37,8 @@ std::string assetDigest(const std::filesystem::path& root, const std::stop_token
     std::map<std::string, std::filesystem::path> files;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
         check(stop);
-        bool linked = entry.is_symlink();
+        bool linked = entry.is_symlink(); // NOLINT(misc-const-correctness): Windows also tests
+                                          // reparse-point attributes
 #ifdef _WIN32
         const auto attributes = GetFileAttributesW(entry.path().c_str());
         if (attributes == INVALID_FILE_ATTRIBUTES) {

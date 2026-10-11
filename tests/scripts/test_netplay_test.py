@@ -61,6 +61,20 @@ class TransportHarnessTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             netplay_test.wait_invitation(child, self.root / "invite.txt", self.log)
 
+    def test_ci_lints_the_networking_configuration_shipped_in_releases(self):
+        root = pathlib.Path(__file__).resolve().parents[2]
+        workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        lint = workflow.split("  lint-shards:", 1)[1].split("  lint:", 1)[0]
+        self.assertIn("-DGDL_ENABLE_NETPLAY=ON", lint)
+        self.assertIn("--target compile_commands", lint)
+
+    def test_transport_build_does_not_add_gcc_module_flags_to_lint_inputs(self):
+        with mock.patch.object(netplay_test.devenv, "run") as run:
+            netplay_test.build(self.root)
+        configure = run.call_args_list[0].args[0]
+        self.assertIn("-DCMAKE_CXX_SCAN_FOR_MODULES=OFF", configure)
+        self.assertIn("-DGDL_ENABLE_NETPLAY=ON", configure)
+
 
 if __name__ == "__main__":
     unittest.main()

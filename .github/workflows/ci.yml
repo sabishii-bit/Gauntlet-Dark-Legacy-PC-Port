@@ -150,7 +150,7 @@ jobs:
       # to build-only module maps. Shaders are loaded at runtime, not included in C++.
       - name: Configure lint inputs
         run: |
-          python3 scripts/devenv.py -- cmake --preset linux-ninja-debug -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+          python3 scripts/devenv.py -- cmake --preset linux-ninja-debug -DCMAKE_CXX_SCAN_FOR_MODULES=OFF -DGDL_ENABLE_NETPLAY=ON
           python3 scripts/devenv.py -- cmake --build --preset linux-ninja-debug --target compile_commands
       - name: Cache clean lint results
         uses: actions/cache@v4
