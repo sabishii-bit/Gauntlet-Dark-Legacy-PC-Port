@@ -12,9 +12,11 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/CursorAim.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/screens/PartyMotion.h"
+#include "game/screens/SessionInputs.h"
 
 namespace {
 using namespace gdl;
@@ -112,7 +114,7 @@ TEST_CASE("attack contact segments belong only to the current player's motion in
 TEST_CASE("cursor facing survives backward movement and strafe without overriding cutscene holds",
           "[controls][cursor][party-motion]") {
     Fixture f;
-    f.inputs[3].aimPoint = Vec3{10, 0, 0};
+    f.inputs[3].aimDirection = Vec3{1, 0, 0};
     f.inputs[3].move = {{0, -1}, 1};
     f.step();
     CHECK(f.players[0].actor.position().x < 0);
@@ -122,10 +124,59 @@ TEST_CASE("cursor facing survives backward movement and strafe without overridin
     CHECK(f.players[0].actor.position().z < 0);
     const Vec3 before = f.players[0].actor.position();
     const f32 yaw = f.players[0].actor.yaw();
-    f.inputs[3].aimPoint = Vec3{-10, 0, 0};
+    f.inputs[3].aimDirection = Vec3{-1, 0, 0};
     f.step(true);
     CHECK(f.players[0].actor.position() == before);
     CHECK(f.players[0].actor.yaw() == yaw);
+}
+
+TEST_CASE("delayed guest mouse directions cannot reverse forward and strafe movement",
+          "[netplay][controls][cursor][party-motion]") {
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    auto& actor = f.players[0].actor;
+    const Vec3 displayed{0};
+    WorldCamera camera;
+    camera.position = {0, 20, -20};
+    camera.pitch = glm::quarter_pi<f32>();
+    const Mat4 clip = WorldCamera::projection(glm::radians(60.0f), 16.0f / 9) * camera.view();
+    const Vec4 projected = clip * Vec4{displayed + Vec3{0, 0, 15}, 1};
+    PlayInput input;
+    input.aimDirection =
+        cursorAimDirection((Vec2{projected} / projected.w + Vec2{1}) * 0.5f, clip, displayed);
+    REQUIRE(input.aimDirection);
+    CHECK(input.aimDirection->z == Approx(1));
+    Vec3 expected{0, 0, 1};
+    input.move = {{0, 1}, 1};
+    SECTION("forward") {}
+    SECTION("backward") {
+        input.move.direction = {0, -1};
+        expected = {0, 0, -1};
+    }
+    SECTION("left strafe") {
+        input.move.direction = {-1, 0};
+        expected = {-1, 0, 0};
+    }
+    SECTION("right strafe") {
+        input.move.direction = {1, 0};
+        expected = {1, 0, 0};
+    }
+    const auto wire = InputPacket::encode(std::array{SessionInputs::command(input, 1, 0, 1, 3)});
+    REQUIRE(wire);
+    const auto decoded = InputPacket::decode(*wire);
+    REQUIRE(decoded);
+    f.inputs[3] = SessionInputs::playInput(decoded->front());
+    // The host has advanced beyond the old one-unit aim point, and also sideways.
+    // Reusing that world point would turn the character back toward the stale snapshot.
+    actor.place({7, 0, 10});
+    for (s32 tick = 0; tick < 30; ++tick) {
+        const Vec3 before = actor.position();
+        f.step();
+        const Vec3 step = actor.position() - before;
+        CHECK(glm::dot(step, expected) > 0);
+        CHECK(glm::length(glm::cross(step, expected)) < 0.0001f);
+        CHECK(actor.yaw() == Approx(0).margin(0.0001f));
+    }
 }
 
 TEST_CASE("contact segments preserve attempted movement and replace camera replays",
@@ -166,7 +217,7 @@ TEST_CASE("cursor over the player preserves facing and forward movement without 
     Fixture f;
     auto& actor = f.players[0].actor;
     actor.faceToward({10, 0, 0});
-    f.inputs[3].aimPoint = actor.position();
+    f.inputs[3].aimDirection = Vec3{0};
     f.inputs[3].move = {{0, 1}, 1};
     f.step();
     CHECK(actor.yaw() == Approx(glm::half_pi<f32>()));
@@ -198,7 +249,7 @@ TEST_CASE("turbo steering uses the action turn allowance for both cursor and sti
             REQUIRE(player.figure->animator().turboing());
             REQUIRE(player.figure->animator().turnScale() == Approx(full ? 0.25f : 1.0f));
             if (cursor) {
-                f.inputs[3].aimPoint = Vec3{10, 0, 0};
+                f.inputs[3].aimDirection = Vec3{1, 0, 0};
             } else {
                 f.inputs[3].move = {{1, 0}, 1};
             }
@@ -341,7 +392,7 @@ TEST_CASE("full turbo turns at a fixed native angular speed without wrapping or 
                 player.figure->animate(0, 2, 1.0f / 30.0f, PlayerDeed::TurboFull);
                 const Vec2 toward{std::sin(turn.to), std::cos(turn.to)};
                 if (cursor) {
-                    f.inputs[3].aimPoint = Vec3{toward.x, 0, toward.y} * 10.0f;
+                    f.inputs[3].aimDirection = Vec3{toward.x, 0, toward.y};
                 } else {
                     f.inputs[3].move = {toward, 1};
                 }
@@ -382,7 +433,7 @@ TEST_CASE("mouse turbo steering respects Spell Storm's native frame eleven rotat
     player.figure->animate(0, 2, 1.0f / 30.0f, PlayerDeed::TurboFull);
     const auto& animator = player.figure->animator();
     REQUIRE(animator.action() == PlayerAnimator::Action::TurboFull);
-    f.inputs[3].aimPoint = Vec3{10, 0, 0};
+    f.inputs[3].aimDirection = Vec3{1, 0, 0};
     f.inputs[3].move = {{0, 1}, 1};
     f.step();
     CHECK(player.actor.yaw() == Approx(glm::radians(900.0f) / 30.0f * 0.25f));
@@ -394,7 +445,7 @@ TEST_CASE("mouse turbo steering respects Spell Storm's native frame eleven rotat
     REQUIRE(animator.turnScale() == 0.0f);
     const Vec3 before = player.actor.position();
     const f32 yaw = player.actor.yaw();
-    f.inputs[3].aimPoint = Vec3{-10, 0, 0};
+    f.inputs[3].aimDirection = Vec3{-1, 0, 0};
     for (s32 tick = 0; tick < 3; ++tick) {
         f.step();
         CHECK(player.actor.yaw() == yaw);
@@ -422,11 +473,11 @@ TEST_CASE("cursor-relative forward input runs at full-stick pace without changin
     auto& input = f.inputs[3];
     input.move = readMoveInput(keyboard, PlayBindings{}, true, kNoPad);
     REQUIRE(input.move.magnitude == 1.0f);
-    input.aimPoint = Vec3{80, 0, 0};
+    input.aimDirection = Vec3{1, 0, 0};
     bool shouldRun = true;
     SECTION("W runs toward the cursor") {}
     SECTION("a full stick still runs") {
-        input.aimPoint.reset();
+        input.aimDirection.reset();
     }
     SECTION("the explicit strafe modifier retains the forward strafe") {
         input.strafe = true;
@@ -461,8 +512,8 @@ TEST_CASE("cursor-relative forward input runs at full-stick pace without changin
     f.step();
     CHECK(glm::distance(before, player.actor.position()) ==
           Approx(player.actor.speed() * pace / 30.0f).margin(0.0001f));
-    if (input.aimPoint) {
-        const Vec3 toward = *input.aimPoint - before;
+    if (input.aimDirection) {
+        const Vec3 toward = *input.aimDirection;
         CHECK(player.actor.yaw() == Approx(std::atan2(toward.x, toward.z)));
     } else {
         CHECK(player.actor.yaw() == yaw);
@@ -667,10 +718,10 @@ TEST_CASE("automatic melee uses unpressed walking contacts and the sparse player
         eligible = false;
     }
     SECTION("cursor-forward run") {
-        input.aimPoint = Vec3{0, 0, 80};
+        input.aimDirection = Vec3{0, 0, 1};
     }
     SECTION("cursor sidestep") {
-        input.aimPoint = Vec3{0, 0, 80};
+        input.aimDirection = Vec3{0, 0, 1};
         input.move.direction = {1, 0};
         eligible = false;
     }

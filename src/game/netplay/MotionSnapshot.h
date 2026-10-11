@@ -32,9 +32,9 @@ struct MotionSnapshot {
     u64 tick = 0;
     u32 cameraContinuity = 0;
     WorldCamera camera;
+    // Host reference projection retained in the packet format for diagnostics and
+    // compatibility. Replica rendering uses local FoV/window settings, not these values.
     f32 horizontalFov = 1.0471976f;
-    // Replicas must fit this logical viewport to their own window, rather than
-    // crop players out by recomputing the host's camera for a different aspect.
     f32 aspect = 640.0f / 448.0f;
     std::array<std::optional<SeatMotion>, InputCommand::kSeats> players;
 

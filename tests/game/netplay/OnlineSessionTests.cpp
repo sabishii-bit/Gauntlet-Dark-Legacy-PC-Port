@@ -22,14 +22,9 @@ struct Service final : RoomService {
     Update next;
     std::vector<std::pair<u64, bool>> readiness;
     std::vector<u64> starts;
-    std::vector<PeerTransport::Signal> signals;
     bool accepts = true;
     usize leaves = 0;
     Update poll() override { return std::exchange(next, {}); }
-    bool send(PeerTransport::Signal signal) override {
-        signals.push_back(std::move(signal));
-        return accepts;
-    }
     bool ready(u64 revision, bool value) override {
         if (accepts) {
             readiness.emplace_back(revision, value);
@@ -58,8 +53,6 @@ struct Wire final : PeerTransport {
     std::vector<Sent> sent;
     std::vector<Connection> closed;
     std::map<Connection, std::string> peers;
-    std::vector<Signal> signals;
-    usize signalCount = 0;
     usize configureCount = 0;
     bool configurePeer(std::string peer, bool isHost) override {
         identity = std::move(peer);
@@ -84,11 +77,6 @@ struct Wire final : PeerTransport {
         const auto found = peers.find(connection);
         return found == peers.end() ? std::nullopt : std::optional{found->second};
     }
-    std::vector<Signal> takeSignals() override { return std::exchange(signals, {}); }
-    bool receiveSignal(const Signal& /*signal*/) override {
-        ++signalCount;
-        return working;
-    }
     SendResult send(Connection connection, std::span<const u8> bytes,
                     Delivery /*delivery*/) override {
         if (result == SendResult::Sent) {
@@ -108,7 +96,7 @@ struct Wire final : PeerTransport {
     }
 };
 RoomSnapshot room() {
-    return {"ABCDEFGH", kHost, 1, false, {{kHost, {0}, false}, {kGuest, {1}, false}}, {}};
+    return {"ABCDEFGH", kHost, 1, false, {{kHost, {0}, false}, {kGuest, {1}, false}}};
 }
 std::vector<u8> partyPacket(u8 kind, u8 seat = 0) {
     std::vector<u8> bytes{'G', 'D', 'P', 'S', 1, kind, seat, 0};
@@ -223,6 +211,18 @@ TEST_CASE("online room readiness waits for authenticated links and server confir
     CHECK(host.session.phase() == Phase::Active);
     REQUIRE(host.session.match().prepare(7));
     CHECK(host.session.match().context().owners == MatchOwners{1, 2, 0, 0});
+    CHECK(host.wire.configureCount == 1);
+}
+
+TEST_CASE("room admission configures identity once without reconfiguring its provider",
+          "[netplay][online-session]") {
+    Client host;
+    host.service.next = {room(), kHost, {}, false};
+    host.session.update(0);
+    CHECK(host.wire.identity == kHost);
+    CHECK(host.wire.configureCount == 1);
+    host.publish(room());
+    CHECK(host.wire.identity == kHost);
     CHECK(host.wire.configureCount == 1);
 }
 
@@ -566,20 +566,6 @@ TEST_CASE("online leave is asynchronous idempotent and bounded even without a se
     host.session.update(0);
     CHECK(host.session.phase() == Phase::Closed);
     CHECK(host.session.failure() == Failure::None);
-}
-
-TEST_CASE("online room UI never retains signaling credentials or routes unadmitted signals",
-          "[netplay][online-session]") {
-    Client host;
-    auto snapshot = room();
-    snapshot.signals = {{kGuest, {1}}, {kOther, {2}}};
-    host.wire.signals = snapshot.signals;
-    host.publish(snapshot);
-    REQUIRE(host.session.room());
-    CHECK(host.session.room()->signals.empty());
-    CHECK(host.wire.signalCount == 1);
-    REQUIRE(host.service.signals.size() == 1);
-    CHECK(host.service.signals.front().peer == kGuest);
 }
 
 TEST_CASE("unknown and duplicate online connections never gain control of an admitted seat",

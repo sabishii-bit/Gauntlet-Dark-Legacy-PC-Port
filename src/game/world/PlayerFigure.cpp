@@ -365,7 +365,8 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
          m_animator.itemReleased() == PlayerDeed::FireLeft ||
          m_animator.itemReleased() == PlayerDeed::FireRight);
     // Swings and throws animate Pojo; ranged releases animate both firing familiars.
-    const bool swung = m_animator.meleeStruck() || m_animator.released();
+    const bool swung = m_animator.meleeStruck() || m_animator.released() ||
+                       m_animator.strongReleased() || m_animator.superReleased();
     m_companion.update(seconds, m_animator.action(), swung, phoenix && m_familiarPending);
     m_familiar.update(seconds, m_familiarPending);
     const std::span<const Mat4> matrices = m_animator.pose().matrices();
@@ -391,7 +392,8 @@ void PlayerFigure::updateTrail(const Mat4& body, s32 ticks) {
                           action == PlayerAnimator::Action::PowerMed;
     const auto hand = static_cast<usize>(std::max(m_handNode, 0));
     const Mat4 wrist = hand < m_transforms.size() ? m_transforms[hand] : Mat4{1.0f};
-    m_trail.step(ticks, body * wrist, swinging && heldWeaponBound() && !m_handItemHeld);
+    m_trail.step(ticks, body * wrist,
+                 swinging && heldWeaponBound() && !m_handItemHeld && !pojoActive());
 }
 
 void PlayerFigure::setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
@@ -400,7 +402,7 @@ void PlayerFigure::setCompanionPowerups(RenderDevice& device, ItemArchive& power
     m_companion.choose(device,
                        PowerupCompanion::choose(PowerupEffects::of(inventory), shieldRunning),
                        powerups, weapons);
-    m_companionAlpha = PowerupCompanion::fadeOf(inventory);
+    m_companionAlpha = inventory.permanentPojo ? 1.0f : PowerupCompanion::fadeOf(inventory);
 }
 
 ItemArchive* PlayerFigure::effects() {
@@ -516,6 +518,12 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
                         const CameraFrame* camera, f32 frameBlend, bool handOccupied,
                         TreeModel::Pass companionPass) const {
     preparePresentation(frameBlend);
+    // PlayerProcessPowerups hides the original costume subtree while POJO is
+    // attached to its root. That includes its held weapon, arm items and trails.
+    if (pojoActive()) {
+        drawCompanions(device, clip, body, lighting, alpha, camera, frameBlend, companionPass);
+        return;
+    }
     applyCostumeTextures(m_model, frameBlend);
     applyCostumeTextures(m_weapon, frameBlend);
     m_model.draw(device, clip, body, lighting, m_visualTransforms, camera, alpha);
@@ -637,6 +645,9 @@ void PlayerFigure::drawCompanions(RenderDevice& device, const Mat4& clip, const 
 void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
                                 const PowerupEffects& worn, const Mat4& clip, const Mat4& body,
                                 const WorldLighting& lighting, f32 alpha) {
+    if (pojoActive()) {
+        return;
+    }
     // SetPlayerPowerups chooses one head object, in this precedence order.
     std::string_view object;
     if ((worn.special & powerup::kSkorneHorns) != 0) {
@@ -661,6 +672,9 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
 void PlayerFigure::drawGem(RenderDevice& device, ItemArchive& powerups, std::string_view object,
                            const Mat4& clip, const Mat4& body, const WorldLighting& lighting,
                            f32 alpha) {
+    if (pojoActive()) {
+        return;
+    }
     const auto head = visualAttachment(body, "HEAD");
     if (object.empty() || !head || !powerups.loaded()) {
         return;

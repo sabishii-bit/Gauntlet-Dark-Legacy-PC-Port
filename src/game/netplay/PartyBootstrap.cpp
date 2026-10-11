@@ -116,11 +116,10 @@ bool PartyBootstrap::receive(PacketTransport::Connection connection, std::span<c
     if (!opened() || connection == 0 || !validPacket(bytes)) {
         return false;
     }
-    const auto found = std::ranges::find(m_links, connection);
-    if (found == m_links.end()) {
+    const auto peer = static_cast<u8>(std::ranges::find(m_links, connection) - m_links.begin());
+    if (peer == m_links.size()) {
         return false;
     }
-    const auto peer = static_cast<u8>(found - m_links.begin());
     const auto kind = static_cast<Kind>(bytes[5]);
     if (kind == Kind::Profile) {
         const u8 seat = bytes[6];

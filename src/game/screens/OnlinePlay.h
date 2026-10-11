@@ -41,11 +41,15 @@ public:
               const PlayOptions& options = {});
     void close();
     Phase update(const SessionInputs::Frame& devices);
-    bool pause();
-    bool resume(); // host authority only
+    /** Local menu input capture. A device pauses only its own character; -1 captures all
+     * local devices. The shared simulation and other machines are never paused. */
+    bool pause(s32 device = -1);
+    bool resume(s32 device = -1);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height, f64 seconds,
                 f32 frameBlend);
-    Phase phase() const { return m_phase; }
+    Phase phase() const {
+        return m_phase == Phase::Playing && m_pausedDevices != 0 ? Phase::Paused : m_phase;
+    }
     Failure failure() const { return m_failure; }
     PlayReplication::Result outcome() const { return m_outcome; }
     const PlayScene* hostScene() const;
@@ -80,5 +84,6 @@ private:
     Failure m_failure = Failure::None;
     PlayReplication::Result m_outcome = PlayReplication::Result::Held;
     u64 m_epoch = 0;
+    u32 m_pausedDevices = 0;
 };
 } // namespace gdl::game

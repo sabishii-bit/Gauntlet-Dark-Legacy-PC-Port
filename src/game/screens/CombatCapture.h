@@ -6,6 +6,7 @@
 
 namespace gdl::game {
 class PortalDeparture;
+class LevelWorld;
 
 /** Capture after an authoritative simulation tick. Does not drain enemy feedback,
  * invoke damage/AI, alter character saves or advance animation. motion must be
@@ -15,7 +16,8 @@ public:
     static std::optional<CombatSnapshot> capture(const MotionSnapshot& motion,
                                                  std::span<const PlayerRuntime> players,
                                                  const Enemies& enemies,
-                                                 const PortalDeparture* departure = nullptr);
+                                                 const PortalDeparture* departure = nullptr,
+                                                 const LevelWorld* world = nullptr);
 };
 
 } // namespace gdl::game

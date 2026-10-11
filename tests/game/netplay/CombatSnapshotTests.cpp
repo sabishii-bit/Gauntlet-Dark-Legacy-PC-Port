@@ -75,7 +75,7 @@ TEST_CASE("combat payload round trips every seat mask and maximum enemy roster",
         CHECK(bytes.size() <= CombatPacket::kMaxBytes);
         CHECK(bytes[0] == 'G');
         CHECK(bytes[3] == 'B');
-        CHECK(bytes[4] == 16);
+        CHECK(bytes[4] == 18);
         CHECK(bytes[6] == 128);
         const auto decoded = CombatPacket::decode(bytes);
         REQUIRE(decoded);
@@ -110,7 +110,7 @@ TEST_CASE("combat codecs reject incomplete nonfinite inconsistent and unbounded 
         writeWord(bytes, offset, 0x7FC00000);
         CHECK_FALSE(CombatPacket::decode(bytes));
     }
-    for (const u32 flags : {3U, 16U, 0x80000000U}) {
+    for (const u32 flags : {3U, 64U, 0x80000000U}) {
         bytes = valid;
         writeWord(bytes, kPlayer + 4, flags);
         CHECK_FALSE(CombatPacket::decode(bytes));
@@ -136,6 +136,44 @@ TEST_CASE("combat codecs reject incomplete nonfinite inconsistent and unbounded 
     CHECK_FALSE(CombatPacket::encode(state(0, CombatSnapshot::kMaxEnemies + 1)));
 }
 
+TEST_CASE("player shadow contacts round trip and reject invalid floor normals and hidden owners",
+          "[netplay][combat-snapshot][replica-shadows]") {
+    auto source = state(0, 0);
+    source.players[0]->shadow = PlayerShadowState{{3, -5, 9}, {0.6f, 0.8f, 0}, 0.75f};
+    const auto bytes = encode(source);
+    const auto decoded = CombatPacket::decode(bytes);
+    REQUIRE(decoded);
+    REQUIRE(decoded->players[0]->shadow);
+    CHECK(decoded->players[0]->shadow->ground == Vec3{3, -5, 9});
+    CHECK(decoded->players[0]->shadow->normal == Vec3{0.6f, 0.8f, 0});
+    CHECK(decoded->players[0]->shadow->alpha == 0.75f);
+    CHECK(encode(*decoded) == bytes);
+    constexpr usize kShadow = CombatPacket::kHeaderBytes + MotionPacket::kMaxBytes +
+                              CombatPacket::kPlayerBytes - CombatPacket::kShadowBytes;
+    for (usize field = 0; field < 7; ++field) {
+        auto corrupt = bytes;
+        writeWord(corrupt, kShadow + field * 4, 0x7FC00000);
+        CHECK_FALSE(CombatPacket::decode(corrupt));
+    }
+    for (const Vec3 normal : {Vec3{0}, Vec3{0, -1, 0}, Vec3{2, 1, 0}, Vec3{1, 0, 0}}) {
+        auto bad = source;
+        bad.players[0]->shadow->normal = normal;
+        CHECK_FALSE(CombatPacket::encode(bad));
+    }
+    auto bad = source;
+    bad.players[0]->life = ReplicaPlayerLife::InTower;
+    CHECK_FALSE(CombatPacket::encode(bad));
+    bad = source;
+    bad.players[0]->portalPhase = 1.0f;
+    CHECK_FALSE(CombatPacket::encode(bad));
+    bad = source;
+    bad.players[0]->shadow->alpha = 1.1f;
+    CHECK_FALSE(CombatPacket::encode(bad));
+    auto absent = encode(state(0, 0));
+    writeWord(absent, kShadow, 1);
+    CHECK_FALSE(CombatPacket::decode(absent));
+}
+
 TEST_CASE("companion checkpoints preserve both slots and reject malformed or ownerless meshes",
           "[netplay][combat-snapshot][replica-companions]") {
     auto source = state(5, 0);
@@ -156,7 +194,7 @@ TEST_CASE("companion checkpoints preserve both slots and reject malformed or own
         REQUIRE(decoded);
         CHECK(encode(*decoded) == bytes);
     }
-    constexpr usize kFirst = CombatPacket::kHeaderBytes + MotionPacket::kMaxBytes + 32;
+    constexpr usize kFirst = CombatPacket::kHeaderBytes + MotionPacket::kMaxBytes + 36;
     const auto valid = encode(source);
     for (const auto [offset, value] :
          std::array<std::pair<usize, u32>, 10>{{{kFirst, 3},
@@ -183,6 +221,39 @@ TEST_CASE("companion checkpoints preserve both slots and reject malformed or own
     // An absent slot is canonical zero padding, not a second hidden payload.
     writeWord(absent, kFirst + 4, 1);
     CHECK_FALSE(CombatPacket::decode(absent));
+}
+
+TEST_CASE("portal phase round trips independently of collision positions and rejects bad wire data",
+          "[netplay][combat-snapshot][online-departure]") {
+    auto source = state(5, 0);
+    for (usize seat = 0; seat < source.players.size(); ++seat) {
+        source.players[seat]->portalPhase = static_cast<f32>(seat) / 3;
+    }
+    const auto bytes = encode(source);
+    const auto decoded = CombatPacket::decode(bytes);
+    REQUIRE(decoded);
+    CHECK(encode(*decoded) == bytes);
+    for (usize seat = 0; seat < source.players.size(); ++seat) {
+        CHECK(decoded->players[seat]->portalPhase == source.players[seat]->portalPhase);
+        CHECK(decoded->motion.players[seat]->position == source.motion.players[seat]->position);
+    }
+    constexpr usize kPlayer = CombatPacket::kHeaderBytes + MotionPacket::kMaxBytes;
+    for (const u32 value : {0x7FC00000U, 0x7F800000U, 0xBF800000U, 0x3F800001U}) {
+        auto invalid = bytes;
+        writeWord(invalid, kPlayer + 32, value);
+        CHECK_FALSE(CombatPacket::decode(invalid));
+    }
+    for (const auto life : {ReplicaPlayerLife::Dying, ReplicaPlayerLife::InTower}) {
+        auto invalid = source;
+        invalid.players[0]->life = life;
+        CHECK_FALSE(CombatPacket::encode(invalid));
+    }
+    auto absent = encode(state(5, 0));
+    writeWord(absent, kPlayer + 32, 0x3F000000U);
+    CHECK_FALSE(CombatPacket::decode(absent)); // no hidden phase behind a cleared presence flag
+    auto oldVersion = bytes;
+    oldVersion[4] = 16;
+    CHECK_FALSE(CombatPacket::decode(oldVersion));
 }
 
 TEST_CASE("pickup records preserve affine placements and reject malformed rosters",

@@ -98,7 +98,8 @@ void Gauntlet::onInit() {
             if (scenario.afterLevel || scenario.ending || !level ||
                 !m_online->open(renderDevice(), game, m_options.netplayTest, m_options.netplayRoom,
                                 m_version, m_options.netplayContent, scenario.partyMembers(),
-                                *level, scenario.tower, m_options.netplayAutoStart)) {
+                                *level, scenario.tower, m_options.netplayAutoStart,
+                                m_options.netplayInvite)) {
                 log::error("Online scene test could not start");
                 requestQuit();
             }
@@ -264,6 +265,11 @@ GameContext Gauntlet::context() {
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
     m_promptDevices.update(input(), m_config);
+    if (m_netplay) {
+        updateNetplay(deltaSeconds);
+        m_sounds->update();
+        return;
+    }
     if (m_online) {
         const auto menu = readSharedMenuInput(input(), m_config);
         if (menu.escape) {
@@ -310,9 +316,9 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     m_fpsAccumulator += deltaSeconds;
     if (m_fpsAccumulator >= kFpsReportInterval) {
         log::trace("{:.1f} fps",
-                   static_cast<f64>(clock().frameIndex() - m_fpsLastFrame) / m_fpsAccumulator);
+                   static_cast<f64>(renderedFrames() - m_fpsLastFrame) / m_fpsAccumulator);
         m_fpsAccumulator = 0.0;
-        m_fpsLastFrame = clock().frameIndex();
+        m_fpsLastFrame = renderedFrames();
     }
 }
 
@@ -379,6 +385,16 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
     if (outcome == TitleOutcome::Running) {
         return;
     }
+    if (outcome == TitleOutcome::Netplay) {
+        m_netplay = std::make_unique<NetplayNavigation>();
+        m_netplay->view.available = OnlineRun::available();
+        if (!OnlineRun::available()) {
+            m_netplay->notice = "Netplay is not included in this build.";
+            m_netplay->view.status = m_netplay->notice;
+        }
+        m_netplay->menu.show(renderDevice(), m_netplay->view);
+        return;
+    }
     if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart())) {
         m_title.releaseMusic();
         m_title.close();
@@ -397,7 +413,7 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
 s32 Gauntlet::playerPressingStart() const {
     for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const MenuInput menu = readPlayerMenuInput(input(), m_config, player);
-        if (menu.start || menu.select) {
+        if (menu.start || menu.select || menu.escape) {
             return player;
         }
     }
@@ -423,6 +439,15 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     }
     std::vector<PartyMember> party = m_select.party();
     m_select.close();
+    if (m_netplay && m_online) {
+        if (outcome == SelectOutcome::Done && !m_online->select(party)) {
+            m_netplay->notice =
+                std::format("Choose exactly {} local character(s).", m_netplay->view.localPlayers);
+        }
+        m_netplay->overlay = true;
+        resetPlayInput();
+        return;
+    }
     if (m_journey.has_value()) {
         if (outcome == SelectOutcome::Done) {
             m_journey->party = std::move(party);
@@ -915,9 +940,9 @@ PlayScene::Inputs Gauntlet::readPlayInputs(f64 deltaSeconds) {
                                                              source.pad)) {
             const Vec2 cursor{input().pointer().x, input().pointer().y};
             if (m_online) {
-                in.aimPoint = m_online->cursorAim(player, cursor);
+                in.aimDirection = m_online->cursorAim(player, cursor);
             } else if (const auto* actor = m_play->scene.actor(player)) {
-                in.aimPoint = m_play->scene.cursorAim(cursor, actor->position());
+                in.aimDirection = m_play->scene.cursorAim(cursor, actor->position());
             }
         }
         const PlayButtons buttons = m_controls[static_cast<usize>(player)].read(
@@ -949,8 +974,24 @@ void Gauntlet::renderScene(RenderDevice& device) {
     const Mat4 projection =
         makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
                                 static_cast<f32>(framebuffer.height));
+    if (m_netplay) {
+        if (m_select.isOpen()) {
+            m_select.render(device, projection, frameWidth, frameHeight);
+        } else {
+            if (m_online && m_online->playing()) {
+                m_online->render(device, projection, frameWidth, frameHeight, renderDeltaSeconds(),
+                                 presentationAlpha());
+            } else {
+                m_title.render(device, projection, frameWidth, frameHeight);
+            }
+            if (m_netplay->overlay) {
+                m_netplay->menu.render(device, projection, frameWidth, frameHeight);
+            }
+        }
+        return;
+    }
     if (m_online) {
-        m_online->render(device, projection, frameWidth, frameHeight, clock().deltaSeconds(),
+        m_online->render(device, projection, frameWidth, frameHeight, renderDeltaSeconds(),
                          presentationAlpha());
         return;
     }
@@ -1043,6 +1084,7 @@ void Gauntlet::keepParty(std::span<const PartyMember> party) {
 }
 
 void Gauntlet::onShutdown() {
+    m_netplay.reset();
     window().stopRumble();
     m_online.reset();
     m_buildLabel.release();

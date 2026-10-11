@@ -302,17 +302,19 @@ void VulkanRenderDevice::destroyPresentSemaphores() {
     m_renderFinished.clear();
 }
 
-void VulkanRenderDevice::recreateSwapchain() {
-    const Extent2D size = m_window.framebufferSize();
+bool VulkanRenderDevice::recreateSwapchain() {
+    const Extent2D size = m_windowSize ? *m_windowSize : m_window.framebufferSize();
     if (size.isZero()) {
-        return;
+        return false;
     }
     const auto oldSamples = m_swapchain->samples();
     const auto oldColor = m_swapchain->colorFormat();
     const auto oldDepth = m_swapchain->depthFormat();
     m_context->waitIdle();
     m_postProcess.reset();
-    m_swapchain->recreate(size, m_desc.vsync, m_desc.sampleCount);
+    if (!m_swapchain->recreate(size, m_desc.vsync, m_desc.sampleCount)) {
+        return false;
+    }
     if (oldSamples != m_swapchain->samples() || oldColor != m_swapchain->colorFormat() ||
         oldDepth != m_swapchain->depthFormat()) {
         createPipelines();
@@ -320,6 +322,7 @@ void VulkanRenderDevice::recreateSwapchain() {
     destroyPresentSemaphores();
     createPresentSemaphores();
     m_presentationPending = false;
+    return true;
 }
 
 void VulkanRenderDevice::setPresentation(bool vsync, u32 sampleCount) {
@@ -344,12 +347,14 @@ bool VulkanRenderDevice::beginFrame() {
     m_heat = {};
     GDL_ASSERT(!m_frameOpen, "beginFrame called twice without endFrame");
 
-    const Extent2D windowSize = m_window.framebufferSize();
+    const Extent2D windowSize = m_windowSize ? *m_windowSize : m_window.framebufferSize();
     if (windowSize.isZero()) {
         return false;
     }
     if (m_presentationPending || windowSize != framebufferExtent()) {
-        recreateSwapchain();
+        if (!recreateSwapchain()) {
+            return false;
+        }
     }
 
     const VkDevice device = m_context->device();
@@ -621,8 +626,11 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     const auto& secondTexture = dynamic_cast<const VulkanTexture&>(*second);
     const std::array<VkDescriptorSet, 4> sets{
         firstTexture.descriptorSet(), secondTexture.descriptorSet(),
-        samplerSetFor(firstTexture.description(), state.mipmaps),
-        samplerSetFor(secondTexture.description(), state.mipmaps)};
+        samplerSetFor(state.samplerDescription(firstTexture.description()), state.mipmaps),
+        samplerSetFor(state.lightmap != nullptr
+                          ? secondTexture.description()
+                          : state.samplerDescription(secondTexture.description()),
+                      state.mipmaps)};
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0,
                             static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
     const VulkanPipeline::PushConstants constants{

@@ -26,10 +26,9 @@ TEST_CASE("name codes grant the retail permanent powerup rows", "[game][cheats][
         f32 charge;
         u32 flags;
     };
-    constexpr std::array<Expected, 15> kRows{{
+    constexpr std::array<Expected, 14> kRows{{
         {"INVULN", 6, 0, 65536},
         {"SSHOTS", 5, -1, 1048576},
-        {"EGG911", 9, 0, 1024},
         {"1ANGEL", 9, 0, 1},
         {"1ANGEL", 6, 0, 524288},
         {"DELTA1", 9, 0, 768},

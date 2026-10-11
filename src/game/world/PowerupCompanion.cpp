@@ -121,8 +121,33 @@ void PowerupCompanion::choose(RenderDevice& device, Kind kind, ItemArchive& powe
         return;
     }
     m_tree = &tree;
+    configureModel(m_model, tree, archive->models);
     m_textures.bind(archive->trees.textureAnimations(), archive->textures, device);
     play(kReady);
+    // Cutscenes can draw immediately after binding, before gameplay advances.
+    update(0, Action::Ready, false, false);
+}
+
+void PowerupCompanion::configureModel(TreeModel& model, const TreeInfo& tree, ModelSet& models) {
+    if (tree.name != "POJO") {
+        return;
+    }
+    // The feather atlas has clear top texels but opaque ones along its bottom.
+    // Repeating its 0..1 wing UVs filters the opposite edge into a square border.
+    // Generated mip levels also bleed the packed feather regions into clear tips.
+    // Keep their native base-level bilinear sampling and clamp only the wings;
+    // Pojo's leg/body skins intentionally tile past 1.
+    for (const auto& node : tree.nodes) {
+        if (!node.object.starts_with("POJOBODY1_L_#") &&
+            !node.object.starts_with("POJOBODY1_R_#")) {
+            continue;
+        }
+        if (const auto index = models.find(node.object)) {
+            for (const auto& part : models.mesh(*index).parts) {
+                model.setTextureSampling(part.texture, true, false);
+            }
+        }
+    }
 }
 
 void PowerupCompanion::play(s32 sequence) {
@@ -152,7 +177,10 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
     // A loop gives way at once; a one-shot plays through before a loop takes over, another
     // one-shot cutting in, and held at its end while it is still asked for (Pojo's death).
     const bool busy = !loops(current) && !m_player.finished();
-    if (wanted != current && (!busy || !loops(wanted))) {
+    // Releases are edges, not held actions. A second shot must restart ATTACK even
+    // while the previous shot's one-shot is playing; held HIT/DEATH must not restart.
+    const bool restart = m_kind == Kind::Pojo && swung;
+    if (restart || (wanted != current && (!busy || !loops(wanted)))) {
         play(wanted);
     }
     m_player.advance(seconds, loops(static_cast<s32>(m_player.sequence())));
@@ -161,6 +189,18 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
     m_model.setFrame(m_player.sequence(), frame);
     m_textures.advance(seconds);
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
+}
+
+std::optional<Mat4> PowerupCompanion::attachment(const Mat4& at, std::string_view object) const {
+    if (m_tree != nullptr) {
+        const auto matrices = m_pose.matrices();
+        for (usize node = 0; node < m_tree->nodes.size() && node < matrices.size(); ++node) {
+            if (m_tree->nodes[node].object == object) {
+                return at * matrices[node];
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<CompanionVisual> PowerupCompanion::visual(const Mat4& at, f32 alpha) const {

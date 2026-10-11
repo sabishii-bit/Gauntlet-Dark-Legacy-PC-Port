@@ -18,6 +18,8 @@
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
+#include "game/players/NameCheats.h"
+
 namespace gdl::game {
 
 namespace {
@@ -249,6 +251,7 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     // The top-level wallet remains authoritative for the selected class, including
     // legacy saves that never recorded balances for the other classes.
     save.progress().gold = save.gold;
+    restoreNameForm(save);
     return save;
 }
 

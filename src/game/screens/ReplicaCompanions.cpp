@@ -32,6 +32,7 @@ bool CompanionResources::bindPowerups(RenderDevice& device, ItemArchive& powerup
             return false;
         }
         resource.textures.bind(archive->trees.textureAnimations(), archive->textures, device);
+        PowerupCompanion::configureModel(resource.model, *resource.tree, archive->models);
     }
     m_powerups = std::move(ready);
     return true;

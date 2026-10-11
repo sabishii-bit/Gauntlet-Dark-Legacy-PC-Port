@@ -105,7 +105,7 @@ InputCommand SessionInputs::command(const PlayInput& input, u64 epoch, u64 tick,
     result.seat = seat;
     result.direction = input.move.direction;
     result.magnitude = input.move.magnitude;
-    result.aimPoint = input.aimPoint;
+    result.aimDirection = input.aimDirection;
     result.heldButtons = pack(input, kPlayHeld) | pack(input.menu, kMenuHeld);
     result.pressedButtons = pack(input, kPlayPress) | pack(input.selector, kSelectorPress) |
                             pack(input.menu, kMenuPress);
@@ -120,7 +120,7 @@ InputCommand SessionInputs::command(const PlayInput& input, u64 epoch, u64 tick,
 PlayInput SessionInputs::playInput(const InputCommand& command) {
     PlayInput result;
     result.move = {command.direction, command.magnitude};
-    result.aimPoint = command.aimPoint;
+    result.aimDirection = command.aimDirection;
     unpack(result, command.heldButtons, kPlayHeld);
     unpack(result, command.pressedButtons, kPlayPress);
     unpack(result.selector, command.pressedButtons, kSelectorPress);

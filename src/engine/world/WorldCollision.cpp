@@ -31,19 +31,10 @@ constexpr s32 kPasses = 4;
 /** Heights within a cylinder at which walls are checked: about the knees and the chest. */
 constexpr std::array<f32, 2> kProbeFractions{0.25f, 0.75f};
 
-/** A one-sided finite plane crossing followed by the triangle's barycentric bounds. */
-bool crossesFront(const CollisionTriangle& triangle, const Vec3& from, const Vec3& to) {
+/** Barycentric bounds of a point projected onto the triangle's plane. */
+bool insideFace(const CollisionTriangle& triangle, const Vec3& point) {
     const Vec3& origin = triangle.vertices[0];
-    const f32 start = glm::dot(from - origin, triangle.normal);
-    const f32 end = glm::dot(to - origin, triangle.normal);
-    if (start < 0 || end > 0) {
-        return false;
-    }
-    // TriLineCol (8002109C) tests the starting point for a coplanar segment,
-    // including a stationary contact. Its stored normal, not vertex winding,
-    // determines the blocking side.
-    const f32 fraction = start > end ? start / (start - end) : 0;
-    const Vec3 offset = from + (to - from) * fraction - origin;
+    const Vec3 offset = point - origin;
     const Vec3 edge0 = triangle.vertices[1] - origin;
     const Vec3 edge1 = triangle.vertices[2] - origin;
     const f32 d00 = glm::dot(edge0, edge0);
@@ -58,6 +49,80 @@ bool crossesFront(const CollisionTriangle& triangle, const Vec3& from, const Vec
     const f32 u = (d11 * d20 - d01 * d21) / determinant;
     const f32 v = (d00 * d21 - d01 * d20) / determinant;
     return u >= 0 && v >= 0 && u + v <= 1;
+}
+
+/** A one-sided finite plane crossing followed by the triangle's barycentric bounds. */
+bool crossesFront(const CollisionTriangle& triangle, const Vec3& from, const Vec3& to) {
+    const Vec3& origin = triangle.vertices[0];
+    const f32 start = glm::dot(from - origin, triangle.normal);
+    const f32 end = glm::dot(to - origin, triangle.normal);
+    if (start < 0 || end > 0) {
+        return false;
+    }
+    // TriLineCol (8002109C) tests the starting point for a coplanar segment,
+    // including a stationary contact. Its stored normal, not vertex winding,
+    // determines the blocking side.
+    const f32 fraction = start > end ? start / (start - end) : 0;
+    return insideFace(triangle, from + (to - from) * fraction);
+}
+
+/** Squared distance of two finite 3D segments, including stationary endpoints. */
+f32 segmentDistanceSquared(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& d) {
+    const Vec3 u = b - a;
+    const Vec3 v = d - c;
+    const Vec3 offset = a - c;
+    const f32 uu = glm::dot(u, u);
+    const f32 vv = glm::dot(v, v);
+    const f32 uv = glm::dot(u, v);
+    const f32 ur = glm::dot(u, offset);
+    const f32 vr = glm::dot(v, offset);
+    f32 s = 0;
+    f32 t = 0;
+    if (uu <= kSweepEpsilon) {
+        t = vv > kSweepEpsilon ? std::clamp(vr / vv, 0.0f, 1.0f) : 0;
+    } else if (vv <= kSweepEpsilon) {
+        s = std::clamp(-ur / uu, 0.0f, 1.0f);
+    } else {
+        const f32 determinant = uu * vv - uv * uv;
+        if (determinant > kSweepEpsilon) {
+            s = std::clamp((uv * vr - vv * ur) / determinant, 0.0f, 1.0f);
+        }
+        t = (uv * s + vr) / vv;
+        if (t < 0) {
+            t = 0;
+            s = std::clamp(-ur / uu, 0.0f, 1.0f);
+        } else if (t > 1) {
+            t = 1;
+            s = std::clamp((uv - ur) / uu, 0.0f, 1.0f);
+        }
+    }
+    const Vec3 distance = offset + s * u - t * v;
+    return glm::dot(distance, distance);
+}
+
+/** BTriLineCol (800213E0): front-side, non-separating sphere/triangle sweep. */
+bool sweepsFront(const CollisionTriangle& triangle, const Vec3& from, const Vec3& to, f32 radius) {
+    const Vec3& origin = triangle.vertices[0];
+    const f32 start = glm::dot(from - origin, triangle.normal);
+    const f32 end = glm::dot(to - origin, triangle.normal);
+    if (start < 0 || end > start || end > radius) {
+        return false;
+    }
+    if (crossesFront(triangle, from, to)) {
+        return true;
+    }
+    if ((start <= radius && insideFace(triangle, from - start * triangle.normal)) ||
+        (std::abs(end) <= radius && insideFace(triangle, to - end * triangle.normal))) {
+        return true;
+    }
+    for (usize i = 0; i < triangle.vertices.size(); ++i) {
+        if (segmentDistanceSquared(from, to, triangle.vertices[i],
+                                   triangle.vertices[(i + 1) % triangle.vertices.size()]) <=
+            radius * radius) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** Whether (x, z) lies inside the triangle's ground-plane projection. */
@@ -813,6 +878,11 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
 }
 
 bool WorldCollision::wallBetween(const Vec3& from, const Vec3& to) const {
+    return wallBetween(from, to, 0);
+}
+
+bool WorldCollision::wallBetween(const Vec3& from, const Vec3& to, f32 radius) const {
+    radius = std::max(0.0f, radius);
     const auto blocks = [&](const CollisionTriangle& triangle, f32 normalY) {
         if (contactOnly(triangle.object) || (triangle.objectFlags & kWallQueryFlags) == 0 ||
             (triangle.objectFlags & kLiquidSurface) != 0) {
@@ -822,12 +892,13 @@ bool WorldCollision::wallBetween(const Vec3& from, const Vec3& to) const {
             (normalY < -kRayWallNormalY || normalY > kRayWallNormalY)) {
             return false;
         }
-        return crossesFront(triangle, from, to);
+        return radius > 0 ? sweepsFront(triangle, from, to, radius)
+                          : crossesFront(triangle, from, to);
     };
-    const f32 minX = std::min(from.x, to.x);
-    const f32 minZ = std::min(from.z, to.z);
-    const f32 maxX = std::max(from.x, to.x);
-    const f32 maxZ = std::max(from.z, to.z);
+    const f32 minX = std::min(from.x, to.x) - radius;
+    const f32 minZ = std::min(from.z, to.z) - radius;
+    const f32 maxX = std::max(from.x, to.x) + radius;
+    const f32 maxZ = std::max(from.z, to.z) + radius;
     for (const u32 index : candidates(minX, minZ, maxX, maxZ)) {
         const CollisionTriangle& triangle = m_triangles[index];
         if (solid(triangle.object) && blocks(triangle, triangle.normal.y)) {

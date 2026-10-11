@@ -12,10 +12,10 @@ bool identity(const std::string& peer) {
            });
 }
 bool roster(RoomSnapshot& room) {
-    if (room.revision == 0 || room.code.size() != 8 || room.members.empty() ||
-        room.members.size() > 4 || !std::ranges::all_of(room.code, [](char c) {
-            return (c >= 'A' && c <= 'Z') || (c >= '2' && c <= '9');
-        })) {
+    if (!room.settings.valid() || room.revision == 0 || room.code.size() != 8 ||
+        room.members.empty() || room.members.size() > 4 ||
+        !std::ranges::all_of(
+            room.code, [](char c) { return (c >= 'A' && c <= 'Z') || (c >= '2' && c <= '9'); })) {
         return false;
     }
     std::set<std::string> peers;
@@ -35,7 +35,7 @@ bool roster(RoomSnapshot& room) {
     }
     // A stable order independent of JSON member ordering and opaque peer IDs.
     std::ranges::sort(room.members, {}, [](const auto& member) { return member.seats.front(); });
-    return peers.contains(room.host);
+    return peers.contains(room.host) && std::ranges::count(used, true) <= room.settings.maxPlayers;
 }
 const RoomMember* member(const RoomSnapshot& room, const std::string& peer) {
     const auto found = std::ranges::find(room.members, peer, &RoomMember::peer);
@@ -129,7 +129,7 @@ bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
             fail(Failure::Admission);
             return false;
         }
-        const bool changed = !sameRoster(room, *m_room);
+        const bool changed = !sameRoster(room, *m_room) || room.settings != m_room->settings;
         if ((changed && room.revision == m_room->revision) ||
             (m_room->started && (changed || room.revision != m_room->revision))) {
             fail(Failure::RosterChanged);
@@ -159,12 +159,10 @@ bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
     if (m_phase == Phase::Starting && !room.started &&
         !std::ranges::all_of(room.members, [](const auto& row) { return row.ready; })) {
         // Ready/unready does not change membership revision. A guest can unready
-        // just before the host's start request reaches the service (HTTP 409).
+        // just before the host's start request reaches the room authority.
         m_phase = Phase::Lobby;
         m_wait = 0;
     }
-    auto signals = std::move(room.signals);
-    room.signals.clear(); // Never retain ICE credentials in UI-facing snapshots.
     const bool starting = room.started && (!m_room || !m_room->started);
     m_room = std::move(room);
     const auto peers = allowed();
@@ -181,11 +179,6 @@ bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
         if (!m_connecting) {
             fail(Failure::Transport);
             return false;
-        }
-    }
-    for (const auto& signal : signals) {
-        if (std::ranges::find(peers, signal.peer) != peers.end()) {
-            m_transport.receiveSignal(signal); // Stale cleanup signals are harmless.
         }
     }
     if (starting) {
@@ -242,7 +235,7 @@ void OnlineSession::event(const PacketTransport::Event& event) {
     }
     if (PartyBootstrap::recognizes(event.bytes)) {
         if (!m_party.opened()) {
-            // The peer's reliable party can overtake our HTTP start response.
+            // The peer's reliable party can overtake our room start update.
             // One profile per seat plus its seal is the entire bounded exchange.
             if (m_earlyParty.size() >= InputCommand::kSeats + 1 ||
                 !PartyBootstrap::validPacket(event.bytes)) {
@@ -256,7 +249,7 @@ void OnlineSession::event(const PacketTransport::Event& event) {
         return;
     }
     if (m_match.phase() == MatchSession::Phase::Offline) {
-        // Reliable Prepare can outrun the guest's HTTP start response. Retain
+        // Reliable Prepare can outrun the guest's room start update. Retain
         // exactly one validated control, never arbitrary early gameplay packets.
         const auto control = MatchControlPacket::decode(event.bytes);
         if (!m_host && control && control->kind == MatchControlKind::Prepare &&
@@ -356,12 +349,6 @@ void OnlineSession::update(f64 seconds) {
         event(item);
         if (m_phase == Phase::Failed) {
             return;
-        }
-    }
-    for (auto& signal : m_transport.takeSignals()) {
-        const auto peers = allowed();
-        if (std::ranges::find(peers, signal.peer) != peers.end()) {
-            m_service.send(std::move(signal)); // Bounded/best effort; ICE retries.
         }
     }
     openMatch();

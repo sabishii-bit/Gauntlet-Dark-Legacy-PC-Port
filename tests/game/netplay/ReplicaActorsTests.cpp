@@ -1,3 +1,5 @@
+#include <set>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -206,7 +208,8 @@ TEST_CASE("received knight poses match authored bodies without advancing a local
     CombatPlayback playback;
     REQUIRE(actors.begin(1));
     REQUIRE(playback.begin(1, 1));
-    REQUIRE(actors.setPlayer(0, 7, std::move(visual)));
+    const bool assigned = actors.setPlayer(0, 7, std::move(visual));
+    REQUIRE(assigned);
     const auto camera = CameraFrame::at({0, 20, 30});
     bool changed = false;
     std::vector<test::RecordedDraw> previous;
@@ -214,7 +217,11 @@ TEST_CASE("received knight poses match authored bodies without advancing a local
         player.figure->animate(1, 2, 1.0f / 30);
         auto where = motion(tick);
         where.players[0] = SeatMotion{7, 1, player.actor.position(), player.actor.yaw()};
-        const auto snapshot = capture(where, players, resources);
+        auto snapshot = capture(where, players, resources);
+        if (tick % 2 == 0) {
+            snapshot.players[0]->shadow =
+                PlayerShadowState{{2, static_cast<f32>(tick) * 0.25f, 3}, {0.6f, 0.8f, 0}, 0.5f};
+        }
         REQUIRE(actors.show(deliver(playback, snapshot), resources));
         REQUIRE(actors.visiblePlayers() == 1);
         device.draws.clear();
@@ -238,6 +245,22 @@ TEST_CASE("received knight poses match authored bodies without advancing a local
         CHECK(shown->animator().player().frame() == frame);
         CHECK_FALSE(shown->animator().released());
         CHECK_FALSE(shown->familiarReleased());
+        device.draws.clear();
+        actors.drawShadows(device, Mat4{1}, {}, camera.position);
+        if (const auto& shadow = snapshot.players[0]->shadow) {
+            const auto actual = device.draws;
+            REQUIRE_FALSE(actual.empty());
+            CHECK_FALSE(actual.front().state.depthWrite);
+            CHECK(actual.front().state.depthTest);
+            device.draws.clear();
+            player.figure->drawShadow(device, Mat4{1}, camera.position, shadow->ground,
+                                      shadow->normal, {}, shadow->alpha);
+            sameGeometry(actual, device.draws);
+            CHECK(actual.front().vertices.front().color ==
+                  device.draws.front().vertices.front().color);
+        } else {
+            CHECK(device.draws.empty());
+        }
     }
     CHECK(changed);
     auto changedSeat = *playback.latest();
@@ -245,6 +268,9 @@ TEST_CASE("received knight poses match authored bodies without advancing a local
     changedSeat.motion.players[0]->grant += 1;
     REQUIRE(actors.show(changedSeat, resources));
     CHECK(actors.visiblePlayers() == 0);
+    device.draws.clear();
+    actors.drawShadows(device, Mat4{1}, {}, camera.position);
+    CHECK(device.draws.empty());
     changedSeat.motion.tick += 1;
     changedSeat.motion.players[0]->grant = 7;
     changedSeat.players[0]->life = ReplicaPlayerLife::InTower;
@@ -304,5 +330,141 @@ TEST_CASE("displaying a remote throw hides its held weapon but cannot release a 
     }
     CHECK(sawRelease);
     CHECK(sawRecover);
+}
+
+TEST_CASE("remote Pojo replaces the character rather than overlapping its body and weapon",
+          "[netplay][replica-actors][pojo][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    ItemArchive weapons;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    Enemies resources;
+    std::array<PlayerRuntime, 1> players;
+    auto& player = players[0];
+    CharacterSave save;
+    save.character = 5;
+    player.actor.spawn(0, save, nullptr, {0, 0, 0}, 0);
+    player.figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(player.figure);
+    ReplicaActors actors;
+    CombatPlayback playback;
+    REQUIRE(actors.begin(1));
+    REQUIRE(playback.begin(1, 1));
+    REQUIRE(actors.setPlayer(0, 1, PlayerFigure::load(device, root, save, false)));
+    REQUIRE(actors.bindCompanions(device, powerups, &weapons));
+    auto& inventory = player.actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
+    const auto camera = CameraFrame::at({0, 20, 30});
+    for (u64 tick = 0; tick < 2; ++tick) {
+        inventory.powerups[0].on = tick == 0;
+        player.figure->setCompanionPowerups(device, powerups, inventory, &weapons);
+        player.figure->animate(0, 2, 1.0f / 30);
+        auto where = motion(tick);
+        where.players[0] = SeatMotion{1, 1, {}, 0};
+        const auto snapshot = capture(where, players, resources);
+        CHECK(snapshot.players[0]->companions[1].has_value() == (tick == 0));
+        REQUIRE(actors.show(deliver(playback, snapshot), resources));
+        device.draws.clear();
+        player.figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, &camera, 1);
+        const auto expected = device.draws;
+        REQUIRE_FALSE(expected.empty());
+        device.draws.clear();
+        actors.draw(device, resources, Mat4{1}, {}, camera, static_cast<f32>(tick + 1), nullptr);
+        sameGeometry(device.draws, expected);
+    }
+}
+
+TEST_CASE("both portal passengers render the host sinking spin and every lightning skin frame",
+          "[netplay][replica-actors][online-departure][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    TextureSet weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    PortalDeparture departure;
+    ReplicaActors actors;
+    CombatPlayback playback;
+    Enemies resources;
+    REQUIRE(actors.begin(1));
+    REQUIRE(playback.begin(1, 1));
+    actors.loadPortalSkin(device, weapons);
+    std::array<PlayerRuntime, 2> players;
+    for (usize index = 0; index < players.size(); ++index) {
+        auto& player = players[index];
+        CharacterSave save;
+        save.character = 5;
+        save.color = static_cast<s32>(index * 3);
+        player.actor.spawn(static_cast<s32>(index * 2), save, nullptr,
+                           {static_cast<f32>(index * 4), 2, 3}, 0.7f);
+        player.figure = PlayerFigure::load(device, root, save, false);
+        REQUIRE(player.figure);
+        for (s32 tick = 0; tick < 120; ++tick) {
+            player.figure->animate(0, 1, 1.0f / 60);
+        }
+        player.hitFlashTicks = 2; // the departure skin must take precedence
+        REQUIRE(actors.setPlayer(static_cast<u8>(index * 2), 1,
+                                 PlayerFigure::load(device, root, save, false)));
+    }
+    const auto camera = CameraFrame::at({0, 20, 30});
+    departure.begin(device, weapons);
+    const auto textureCount = device.texturesCreated;
+    std::set<const Texture*> skins;
+    for (u64 tick = 0; tick <= static_cast<u64>(PortalDeparture::kTicks); ++tick) {
+        auto where = motion(tick);
+        for (const auto& player : players) {
+            where.players[static_cast<usize>(player.actor.player())] =
+                SeatMotion{1, 1, player.actor.position(), player.actor.yaw()};
+        }
+        const auto snapshot = CombatCapture::capture(where, players, resources, &departure);
+        REQUIRE(snapshot);
+        REQUIRE(actors.show(deliver(playback, *snapshot), resources));
+        device.draws.clear();
+        actors.draw(device, resources, Mat4{1}, {}, camera, 0, &device.whiteTexture());
+        if (departure.finished()) {
+            CHECK(actors.visiblePlayers() == 0);
+            CHECK(device.draws.empty());
+        } else {
+            CHECK(actors.visiblePlayers() == 2);
+            const auto received = device.draws;
+            device.draws.clear();
+            for (const auto& player : players) {
+                player.figure->setSkinTexture(departure.skin());
+                player.figure->draw(device, Mat4{1}, departure.transform(player.actor.transform()),
+                                    {}, 1, false, &camera);
+                player.figure->setSkinTexture(nullptr);
+            }
+            sameGeometry(received, device.draws);
+            for (usize draw = 0; draw < received.size(); ++draw) {
+                CHECK(received[draw].state.maskedTexture == device.draws[draw].state.maskedTexture);
+            }
+            REQUIRE(departure.skin() != nullptr);
+            skins.insert(departure.skin());
+        }
+        CHECK(device.texturesCreated == textureCount); // packets/rendering never load assets
+        departure.update(1);
+    }
+    CHECK(skins.size() == 10);
+    // A new scene/pause epoch cannot inherit a hidden body or old portal skin.
+    REQUIRE(actors.begin(2));
+    REQUIRE(playback.begin(1, 2));
+    departure.clear();
+    auto where = motion();
+    where.epoch = 2;
+    for (auto& player : players) {
+        player.hitFlashTicks = 0;
+        where.players[static_cast<usize>(player.actor.player())] =
+            SeatMotion{1, 1, player.actor.position(), player.actor.yaw()};
+    }
+    const auto snapshot = CombatCapture::capture(where, players, resources, &departure);
+    REQUIRE(snapshot);
+    REQUIRE(actors.show(deliver(playback, *snapshot), resources));
+    CHECK(actors.visiblePlayers() == 2);
+    device.draws.clear();
+    actors.draw(device, resources, Mat4{1}, {}, camera, 0, &device.whiteTexture());
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        CHECK(draw.state.maskedTexture == nullptr);
+    }
 }
 } // namespace

@@ -85,16 +85,36 @@ struct RuntimePair {
 };
 
 TEST_CASE("an online tower portal loads the same stage and retained party on both machines",
-          "[netplay][online-play][online-travel][assets]") {
+          "[netplay][online-play][online-travel][online-departure][assets]") {
     RuntimePair pair;
     PlayOptions options;
     options.position = Vec3{45.1f, -6.5f, -112.7f};
     pair.open(LevelRef::tower(), options);
     const auto before = pair.host.hostScene()->party();
     const auto initialEpoch = pair.wire.host.context().epoch;
+    std::set<u8> departingSeats;
+    bool finishedDeparture = false;
     for (s32 tick = 0; tick < 3600; ++tick) {
         pair.step();
         pair.draw();
+        if (const auto* shown = pair.guest.shown();
+            shown != nullptr && shown->motion.epoch == initialEpoch) {
+            for (usize seat = 0; seat < shown->players.size(); ++seat) {
+                if (shown->players[seat] && shown->players[seat]->portalPhase) {
+                    const auto phase = *shown->players[seat]->portalPhase;
+                    if (phase > 0 && phase < 1) {
+                        departingSeats.insert(static_cast<u8>(seat));
+                        CHECK(pair.guest.replica()->actors().visiblePlayers() == before.size());
+                        CHECK(std::ranges::any_of(pair.guestDevice.draws, [](const auto& draw) {
+                            return draw.state.maskedTexture != nullptr;
+                        }));
+                    } else if (phase == 1) {
+                        finishedDeparture = true;
+                        CHECK(pair.guest.replica()->actors().visiblePlayers() == 0);
+                    }
+                }
+            }
+        }
         if (pair.wire.host.context().epoch > initialEpoch &&
             pair.host.phase() == OnlinePlay::Phase::Playing &&
             pair.guest.phase() == OnlinePlay::Phase::Playing) {
@@ -102,6 +122,8 @@ TEST_CASE("an online tower portal loads the same stage and retained party on bot
         }
     }
     REQUIRE(pair.wire.host.context().epoch > initialEpoch);
+    CHECK(departingSeats.size() == before.size());
+    CHECK(finishedDeparture);
     REQUIRE(pair.host.phase() == OnlinePlay::Phase::Playing);
     REQUIRE(pair.guest.phase() == OnlinePlay::Phase::Playing);
     CHECK(pair.host.hostScene()->world()->ref().name == "G1");
@@ -146,12 +168,52 @@ TEST_CASE("G1 plays through arrival and accepts remote movement and attacks",
         pair.draw();
     }
     REQUIRE(pair.host.shown());
+    REQUIRE(pair.guest.shown());
+    for (usize seat = 0; seat < InputCommand::kSeats; ++seat) {
+        const auto& state = pair.guest.shown()->players[seat];
+        REQUIRE(state);
+        REQUIRE(state->shadow);
+        REQUIRE(pair.host.shown()->players[seat]->shadow);
+        const auto* figure = pair.guest.replica()->actors().playerFigure(static_cast<u8>(seat));
+        REQUIRE(figure);
+        REQUIRE(figure->hasShadow());
+        const auto& camera = pair.guest.shown()->motion.camera;
+        const Mat4 clip =
+            camera.clipTransform(pair.config.horizontalFovRadians(), 1280, 720, Mat4{1});
+        const auto& shadow = *state->shadow;
+        const auto rendered = pair.guestDevice.draws;
+        pair.guestDevice.draws.clear();
+        figure->drawShadow(pair.guestDevice, clip, camera.position, shadow.ground, shadow.normal,
+                           pair.host.hostScene()->world()->lighting(), shadow.alpha);
+        REQUIRE_FALSE(pair.guestDevice.draws.empty());
+        for (const auto& expected : pair.guestDevice.draws) {
+            CHECK_FALSE(expected.state.depthWrite);
+            CHECK(expected.state.depthTest);
+            CHECK(std::ranges::any_of(rendered, [&](const auto& actual) {
+                return actual.texture == expected.texture &&
+                       actual.transform == expected.transform &&
+                       actual.vertices.size() == expected.vertices.size() &&
+                       actual.vertices.front().position == expected.vertices.front().position &&
+                       actual.vertices.front().color == expected.vertices.front().color &&
+                       !actual.state.depthWrite && actual.state.depthTest;
+            }));
+        }
+        pair.guestDevice.draws = rendered;
+    }
     const auto before = pair.host.shown()->motion.players[2]->position;
     SessionInputs::Frame guest;
-    guest[0].move = {{1, 0}, 1}; // guest device 0 owns room seat 2, not host seat 0
+    // Guest device 0 owns room seat 2. W follows the transmitted world direction,
+    // regardless of the host camera or the guest's older interpolated position.
+    guest[0].move = {{0, 1}, 1};
+    guest[0].aimDirection = Vec3{1, 0, 0};
     for (s32 tick = 0; tick < 45; ++tick) {
         pair.step({}, guest);
         pair.draw();
+        if (tick > 10) {
+            const auto* actor = pair.host.hostScene()->actor(2);
+            REQUIRE(actor);
+            CHECK(glm::distance(actor->facing(), Vec3{1, 0, 0}) < 0.001f);
+        }
     }
     CHECK(glm::distance(pair.host.shown()->motion.players[2]->position, before) > 0.05f);
     guest[0].move = {};
@@ -217,16 +279,13 @@ TEST_CASE("the guest renders every native golden arrival circle",
         pair.step();
         pair.draw();
     }
-    const auto frozen = pair.guest.shown()->projectiles;
+    const auto before = pair.wire.host.tick();
     for (s32 tick = 0; tick < 30; ++tick) {
         pair.step();
         pair.draw();
     }
-    REQUIRE(pair.guest.shown()->projectiles.size() == frozen.size());
-    for (usize i = 0; i < frozen.size(); ++i) {
-        CHECK(pair.guest.shown()->projectiles[i].animation.frame == frozen[i].animation.frame);
-    }
-    REQUIRE(pair.host.resume());
+    CHECK(pair.wire.host.tick() > before);
+    REQUIRE(pair.guest.resume());
     for (s32 tick = 0; tick < 150; ++tick) {
         pair.step();
         pair.draw();
@@ -321,7 +380,7 @@ TEST_CASE("entry movies keep playing until all four local and remote players vot
     for (s32 tick = 0; tick < 10; ++tick) {
         pair.step();
     }
-    REQUIRE(pair.host.resume());
+    REQUIRE(pair.guest.resume());
     for (s32 tick = 0; tick < 60; ++tick) {
         pair.step();
         pair.draw();
@@ -511,7 +570,7 @@ TEST_CASE("online linked boss entrances carry stage rewards and private local sa
     for (s32 tick = 0; tick < 10; ++tick) {
         pair.step();
     }
-    REQUIRE(pair.host.resume());
+    REQUIRE(pair.guest.resume());
     for (s32 tick = 0; tick < 90; ++tick) {
         pair.step();
         pair.draw();
@@ -594,7 +653,7 @@ TEST_CASE("the online scene owner drives four native actors while the guest only
     for (s32 tick = 0; tick < 10; ++tick) {
         pair.step();
     }
-    REQUIRE(pair.host.phase() == OnlinePlay::Phase::Paused);
+    REQUIRE(pair.host.phase() == OnlinePlay::Phase::Playing);
     REQUIRE(pair.guest.phase() == OnlinePlay::Phase::Paused);
     const auto pausedTick = pair.wire.host.tick();
     const auto oldEpoch = pair.wire.host.context().epoch;
@@ -602,9 +661,9 @@ TEST_CASE("the online scene owner drives four native actors while the guest only
         pair.step(hostInputs, guestInputs);
         pair.draw();
     }
-    CHECK(pair.wire.host.tick() == pausedTick);
-    CHECK_FALSE(pair.guest.resume());
-    REQUIRE(pair.host.resume());
+    CHECK(pair.wire.host.tick() > pausedTick);
+    REQUIRE(pair.guest.resume());
+    CHECK_FALSE(pair.host.resume());
     for (s32 tick = 0; tick < 30; ++tick) {
         pair.step();
         pair.draw();
@@ -612,7 +671,7 @@ TEST_CASE("the online scene owner drives four native actors while the guest only
     REQUIRE(pair.host.phase() == OnlinePlay::Phase::Playing);
     REQUIRE(pair.guest.phase() == OnlinePlay::Phase::Playing);
     REQUIRE(pair.guest.shown());
-    CHECK(pair.guest.shown()->motion.epoch > oldEpoch);
+    CHECK(pair.guest.shown()->motion.epoch == oldEpoch);
     CHECK(pair.guestDevice.texturesCreated == created);
     pair.wire.guestSession.leave();
     CHECK(pair.guest.update({}) == OnlinePlay::Phase::Failed);
@@ -623,6 +682,49 @@ TEST_CASE("the online scene owner drives four native actors while the guest only
     const auto stoppedTick = pair.wire.host.tick();
     pair.host.update(hostInputs);
     CHECK(pair.wire.host.tick() == stoppedTick);
+}
+
+TEST_CASE("online pause captures only the owning device and never stops other seats",
+          "[netplay][online-play][online-pause][assets]") {
+    RuntimePair pair;
+    pair.open();
+    for (s32 tick = 0; tick < 200; ++tick) {
+        pair.step();
+    }
+    REQUIRE_FALSE(pair.host.pause(0)); // unassigned physical slot, not room seat zero
+    REQUIRE_FALSE(pair.guest.pause(1));
+    REQUIRE(pair.host.pause(1));  // room seat zero
+    REQUIRE(pair.guest.pause(2)); // room seat three
+    const auto epoch = pair.wire.host.context().epoch;
+    const auto before = pair.wire.host.tick();
+    SessionInputs::Frame controls;
+    for (auto& input : controls) {
+        input.attack = true;
+    }
+    std::set<s32> shooters;
+    for (s32 tick = 0; tick < 180; ++tick) {
+        pair.step(controls, controls);
+        pair.draw();
+        const auto& missiles = pair.host.hostScene()->missiles();
+        for (usize i = 0; i < missiles.count(); ++i) {
+            shooters.insert(missiles.missile(i).owner);
+        }
+    }
+    CHECK(pair.wire.host.tick() >= before + 175);
+    CHECK(pair.wire.host.context().epoch == epoch);
+    CHECK(pair.wire.host.phase() == MatchSession::Phase::Running);
+    CHECK(pair.wire.guest.phase() == MatchSession::Phase::Running);
+    CHECK(shooters == std::set<s32>{1, 2});
+    REQUIRE(pair.host.resume(1));
+    REQUIRE(pair.guest.resume(2));
+    for (s32 tick = 0; tick < 180; ++tick) {
+        pair.step(controls, controls);
+        const auto& missiles = pair.host.hostScene()->missiles();
+        for (usize i = 0; i < missiles.count(); ++i) {
+            shooters.insert(missiles.missile(i).owner);
+        }
+    }
+    CHECK(shooters == std::set<s32>{0, 1, 2, 3});
 }
 
 TEST_CASE("a failed guest native load cannot release the host simulation barrier",

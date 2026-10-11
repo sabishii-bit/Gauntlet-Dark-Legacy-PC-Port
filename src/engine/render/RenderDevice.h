@@ -56,8 +56,9 @@ struct DrawState {
     f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all
     bool cullBack = false;     ///< triangles facing away are skipped
     bool depthWrite = true;
-    bool depthTest = true; ///< false accepts every depth, independently of depth writes
-    bool mipmaps = false;  ///< world draws opt in; canvas text and movies retain base sampling
+    bool depthTest = true;     ///< false accepts every depth, independently of depth writes
+    bool mipmaps = false;      ///< world draws opt in; canvas text and movies retain base sampling
+    bool clampTexture = false; ///< material override; does not alter the shared texture
     bool alphaToCoverage = false; ///< allow MSAA coverage for depth-writing cutout surfaces
     bool smoothSprite = false;    ///< opt-in magnification of soft, camera-facing pickup art
     f32 darken = 0.0f;            ///< how much of its colour is taken away: 0 none, 1 all
@@ -86,6 +87,14 @@ struct DrawState {
     }
 
     bool operator==(const DrawState&) const = default;
+
+    TextureDesc samplerDescription(TextureDesc texture) const {
+        if (clampTexture) {
+            texture.wrap = TextureWrap::ClampToEdge;
+            texture.wrapV = TextureWrap::ClampToEdge;
+        }
+        return texture;
+    }
 };
 
 /** The GPU interface the engine draws through. */
@@ -104,6 +113,9 @@ public:
 
     virtual void setClearColor(const Vec4& rgba) = 0;
     virtual Extent2D framebufferExtent() const = 0;
+    /** Supplies a main-thread window-size snapshot for a render worker. Direct devices
+     * may continue querying their window when no override has been supplied. */
+    virtual void setFramebufferSize(Extent2D /*extent*/) {}
 
     /** Applies presentation changes at the next drawable beginFrame, including after
      * restoration from a minimized window. Safe to request while a frame is open. */

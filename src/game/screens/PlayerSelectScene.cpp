@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 
 #include "game/config/ControlProfiles.h"
+#include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
 
 namespace gdl::game {
@@ -242,6 +243,7 @@ void PlayerSelectScene::loadSounds(const std::filesystem::path& unpackedRoot) {
         !m_selectSounds.load(unpackedRoot / kSelectSounds)) {
         log::warn("Player select: unpacked sound banks not found under {}", unpackedRoot.string());
     }
+    m_narratorSounds.load(unpackedRoot / "audio/VOICE1");
 }
 
 /** The tower hub stands behind the lanes, seen from its entrance camera. */
@@ -339,18 +341,21 @@ void PlayerSelectScene::playSound(SelectSound sound, const SelectLane& lane) {
     }
 }
 
-/** After his welcome Sumner names the costume and class ("red warrior"); he has no such
- * line for himself. */
+/** The greeting uses AudioWithName's trailing name: S_POJO1 while transformed,
+ * otherwise the selected costume and class. Both follow the welcome in the same queue. */
 void PlayerSelectScene::greetCharacter(SoundHandle greeting, const CharacterSave& save) {
     m_greeting = greeting;
+    const bool pojo = PickupVoices::carriesPojo(save);
     const std::string line =
-        std::format("S_{}{}1S", colorCode(save.color), classCode(save.character));
-    const auto index = m_selectSounds.find(line);
+        pojo ? "S_POJO1"
+             : std::format("S_{}{}1S", colorCode(save.color), classCode(save.character));
+    SoundSet& bank = pojo ? m_narratorSounds : m_selectSounds;
+    const auto index = bank.find(line);
     if (!index.has_value()) {
         return;
     }
-    const auto name = m_context.sounds->playAfter(greeting, m_selectSounds.sequence(*index), 1.0f,
-                                                  SoundCategory::Effects);
+    const auto name =
+        m_context.sounds->playAfter(greeting, bank.sequence(*index), 1.0f, SoundCategory::Effects);
     if (name != kNoSound) {
         m_greeting = name;
         m_soundHandles.push_back(name);
@@ -358,7 +363,7 @@ void PlayerSelectScene::greetCharacter(SoundHandle greeting, const CharacterSave
 }
 
 void PlayerSelectScene::stopSounds() {
-    // Pending sequences borrow both banks. Cancel only this screen's audio before the
+    // Pending sequences borrow the banks. Cancel only this screen's audio before the
     // banks reload or die, then detach the output so a later close is harmless.
     if (m_context.sounds != nullptr) {
         m_context.sounds->stop(m_music);

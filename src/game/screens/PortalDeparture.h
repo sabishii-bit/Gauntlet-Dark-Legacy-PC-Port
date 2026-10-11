@@ -19,13 +19,19 @@ public:
     static constexpr f32 kSinkPerTick = 0.12f;
     static constexpr f32 kSpinPerSecond = 3.0f * glm::pi<f32>();
     void begin(RenderDevice& device, TextureSet& weapons);
+    /** Preload presentation resources without starting a departure. */
+    void loadSkin(RenderDevice& device, TextureSet& weapons);
     void clear();
     void update(s32 ticks);
     bool started() const { return m_started; }
     bool finished() const { return m_started && m_ticks >= kTicks; }
+    f32 phase() const { return static_cast<f32>(m_ticks) / kTicks; }
     Vec3 displacement() const { return {0, -static_cast<f32>(m_ticks) * kSinkPerTick, 0}; }
     Mat4 transform(const Mat4& body) const;
     const Texture* skin() const;
+    /** Sample the committed departure without advancing gameplay or playing cues. */
+    static Mat4 transformAt(const Mat4& body, f32 phase);
+    const Texture* skinAt(f32 phase) const;
 
 private:
     std::array<const Texture*, 10> m_frames{};

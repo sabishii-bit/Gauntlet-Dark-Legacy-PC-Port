@@ -113,7 +113,7 @@ bool LevelMessages::open(RenderDevice& device, std::string_view name, const Stri
         message.scale,
         strings != nullptr ? std::string(strings->get("scroll.pressButton")) : std::string{});
     if (opened) {
-        m_message = *found;
+        m_message = found;
         m_firstPage = static_cast<u32>(page.value_or(0));
     }
     return opened;

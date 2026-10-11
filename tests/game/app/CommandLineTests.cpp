@@ -33,21 +33,22 @@ TEST_CASE("no arguments keeps the defaults", "[game][commandline]") {
     REQUIRE(result.desc.maxFrames == 0);
     REQUIRE(result.desc.window.title == "test");
 }
-TEST_CASE("playable netplay probes require a loopback coordinator and an explicit asset identity",
+TEST_CASE("playable netplay probes require a connection scope and an explicit asset identity",
           "[game][commandline][netplay]") {
     const std::string digest(64, 'a');
     const std::array<std::string_view, 9> args{
-        "--scenario",          "test.json", "--netplay-test", "http://127.0.0.1:45678",
-        "--netplay-content",   digest,      "--netplay-room", "ABCDEFGH",
-        "--netplay-auto-start"};
+        "--scenario",     "test.json",  "--netplay-test",      "local", "--netplay-content", digest,
+        "--netplay-room", "invite.txt", "--netplay-auto-start"};
     const auto parsed = parseCommandLine(args, defaults());
     REQUIRE(parsed.action == CommandLineAction::Run);
     CHECK(parsed.options.netplayTest == args[3]);
     CHECK(parsed.options.netplayContent == digest);
-    CHECK(parsed.options.netplayRoom == "ABCDEFGH");
+    CHECK(parsed.options.netplayRoom == "invite.txt");
     CHECK(parsed.options.netplayAutoStart);
     CHECK(parsed.desc.window.title == "Gauntlet Dark Legacy - Netplay Guest");
-    CHECK(parseCommandLine(std::span{args}.first(6), defaults()).desc.window.title ==
+    auto host = args;
+    host[6] = "--netplay-invite";
+    CHECK(parseCommandLine(host, defaults()).desc.window.title ==
           "Gauntlet Dark Legacy - Netplay Host");
     for (const auto* endpoint : {"https://example.com", "http://127.0.0.1.evil:1234",
                                  "http://127.0.0.1:0", "http://127.0.0.1:65536",
@@ -60,8 +61,8 @@ TEST_CASE("playable netplay probes require a loopback coordinator and an explici
     bad[5] = "not a digest";
     CHECK(parseCommandLine(bad, defaults()).action == CommandLineAction::Fail);
     bad = args;
-    bad[7] = "../ROOMS";
-    CHECK(parseCommandLine(bad, defaults()).action == CommandLineAction::Fail);
+    bad[3] = "internet";
+    CHECK(parseCommandLine(bad, defaults()).action == CommandLineAction::Run);
     CHECK(parseCommandLine(std::array<std::string_view, 1>{"--netplay-auto-start"}, defaults())
               .action == CommandLineAction::Fail);
     CHECK(parseCommandLine(std::span{args}.subspan(2), defaults()).action ==
@@ -69,13 +70,15 @@ TEST_CASE("playable netplay probes require a loopback coordinator and an explici
     auto mixed = std::vector<std::string_view>(args.begin(), args.end());
     mixed.emplace_back("--title");
     CHECK(parseCommandLine(mixed, defaults()).action == CommandLineAction::Fail);
-    for (const auto* flag : {"--netplay-test", "--netplay-room", "--netplay-content"}) {
+    for (const auto* flag :
+         {"--netplay-test", "--netplay-room", "--netplay-content", "--netplay-invite"}) {
         CHECK(parseCommandLine(std::array<std::string_view, 2>{flag, ""}, defaults()).action ==
               CommandLineAction::Fail);
     }
-    bad = args;
-    bad[7] = "IIIIIIII";
-    CHECK(parseCommandLine(bad, defaults()).action == CommandLineAction::Fail);
+    CHECK(parseCommandLine(std::span{args}.first(6), defaults()).action == CommandLineAction::Fail);
+    mixed = std::vector<std::string_view>(args.begin(), args.end());
+    mixed.insert(mixed.end(), {"--netplay-invite", "out.txt"});
+    CHECK(parseCommandLine(mixed, defaults()).action == CommandLineAction::Fail);
 }
 
 TEST_CASE("version can be queried without assets or a graphics device", "[game][commandline]") {

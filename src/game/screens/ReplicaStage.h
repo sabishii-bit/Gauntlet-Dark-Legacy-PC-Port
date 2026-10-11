@@ -23,7 +23,7 @@ public:
     void clear();
     bool show(const CombatSnapshot& snapshot);
     void draw(RenderDevice& device, const Mat4& frameProjection, f32 width, f32 height,
-              f32 textureFrame);
+              f32 textureFrame, const GameConfig& video = {});
     const ReplicaView* view() const;
     const LevelWorld* world() const;
 

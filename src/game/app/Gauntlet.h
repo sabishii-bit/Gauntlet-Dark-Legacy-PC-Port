@@ -1,9 +1,11 @@
 #pragma once
 #include <array>
+#include <future>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "engine/app/Application.h"
@@ -62,6 +64,9 @@ private:
     bool updateIdle(f64 deltaSeconds);
     void updateTitle(f64 deltaSeconds);
     void updateSelect(f64 deltaSeconds);
+    void updateNetplay(f64 deltaSeconds);
+    void connectNetplay();
+    void leaveNetplay();
     void updateTower(f64 deltaSeconds);
     PlayScene::Inputs readPlayInputs(f64 deltaSeconds);
     void resetPlayInput();
@@ -94,6 +99,19 @@ private:
     BuildLabel m_buildLabel;
     std::string m_version;
     std::unique_ptr<OnlineRun> m_online;
+    struct NetplayNavigation {
+        NetplayMenu menu;
+        NetplayMenu::View view;
+        NetplayMenu::Page previous = NetplayMenu::Page::Choose;
+        bool overlay = true;
+        s32 pauseOwner = 0;
+        std::string pendingInvitation;
+        std::string digest;
+        std::string notice;
+        std::future<std::string> digestResult;
+        std::jthread digestWorker;
+    };
+    std::unique_ptr<NetplayNavigation> m_netplay;
     std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
     SessionInputs m_sessionInputs;
     std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;

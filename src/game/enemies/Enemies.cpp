@@ -20,10 +20,9 @@ namespace {
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr f32 kStepUp = 1.5f;
 constexpr f32 kDrop = 3.0f;
-constexpr f32 kFootClearance = 0.1f;
 // Height of the horizontal wall slice above the supported feet.
 constexpr f32 kWallHeight = 2.0f;
-constexpr f32 kSpawnDrop = 6.0f;       ///< a spawn finds its floor within this
+constexpr f32 kSpawnDrop = 6.0f;       ///< maximum landing distance from the birth collision centre
 constexpr s32 kFarRecycleCost = 10000; ///< an unseen enemy is that much cheaper to reuse
 constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
@@ -663,17 +662,20 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                 bool clear = true;
                 if (m_collision != nullptr) {
                     // check_enemy_pos (0x8004F9AC) checks the path out of the generator
-                    // BEFORE FloorCollide selects a landing. Raising this sweep to the
-                    // selected floor lets G2's library births skip a low wall and appear
-                    // on the ramp overhead. Keep the existing body query at birth height.
-                    const f32 bottom = at.y + kFootClearance;
-                    const f32 top = at.y + enemy.height - kFootClearance;
-                    const Vec3 swept =
-                        m_collision->sweepWalls(spawn.position, at, enemy.radius, bottom, top);
-                    const Vec3 pushed = m_collision->resolveWalls(at, enemy.radius, bottom, top);
-                    clear = flatDistance(swept, at) < 0.01f && flatDistance(pushed, at) < 0.01f;
+                    // BEFORE choosing a floor, using EnemyWallCollide's sphere at
+                    // coll_offset, not the movement solver's two horizontal samples.
+                    clear = !m_collision->wallBetween(birthFrom, birthTo, enemy.radius);
+                    if (clear) {
+                        // FloorCollide(pos, .1, 4, -10) also starts at that centre.
+                        // Probing +/-6 from the feet can miss a raised deck and choose
+                        // the ground below it, or admit an excessively deep drop.
+                        const auto floor = m_collision->floorAt(birthTo, 4, 10, 0.1f);
+                        clear = floor && std::abs(floor->y - birthFrom.y) <= kSpawnDrop;
+                        if (clear) {
+                            at.y = floor->y;
+                        }
+                    }
                 }
-                clear = clear && settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
                 clear = clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
                             // check_enemy_pos passes half the enemy radius to
                             // fn_8005EFAC's item query. A second full-radius endpoint

@@ -289,8 +289,8 @@ ItemArchive* PlayerAttacks::moveEffectArchive(usize index, std::span<PlayerRunti
     return m_resources && m_resources->weapons.trees.find(tree) ? &m_resources->weapons : nullptr;
 }
 
-/** What a character's own blows do, which a strike with a negative amount multiplies. */
-f32 PlayerAttacks::ownDamageOf(usize index, std::span<PlayerRuntime> players) const {
+/** Base melee damage, also used by the authored effect-strike multipliers. */
+f32 PlayerAttacks::meleeDamageOf(usize index, std::span<PlayerRuntime> players) const {
     if (!m_resources.has_value()) {
         return PlayerMissiles::kLeastDamage;
     }
@@ -301,8 +301,10 @@ f32 PlayerAttacks::ownDamageOf(usize index, std::span<PlayerRuntime> players) co
     }
     const StatBlock block =
         displayStats(*stats, experienceLevel(save.experience()), save.progress());
-    return PlayerMissiles::damageFor(MissileSpec::byMagic(save.character) ? block.magic()
-                                                                          : block.strength());
+    // PlyrSfxDoDamageSub (80089B30) scales negative DAMG amounts by Player+0x104
+    // (stat_damage), not +0x114 (stat_missile_dmg). Even caster effects use Strength;
+    // their ordinary projectiles use Magic separately in PlayerArsenal.
+    return PlayerMissiles::damageFor(block.strength());
 }
 
 /** One strike of a move: its effects show and sound where the character stands, the meter
@@ -344,13 +346,13 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     }
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
-    if (strike.harms() && MoveStrikes::damageOf(strike, ownDamageOf(index, players)) > 0) {
+    const f32 meleeDamage = meleeDamageOf(index, players);
+    if (strike.harms() && MoveStrikes::damageOf(strike, meleeDamage) > 0) {
         MoveStrike volume = strike;
         if (strike.effect >= 0 && static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
             volume.offset += stats->moveEffects[static_cast<usize>(strike.effect)].offset;
         }
-        id = m_strikes.start(volume, actor.player(), base, facing, ownDamageOf(index, players),
-                             effectSeconds);
+        id = m_strikes.start(volume, actor.player(), base, facing, meleeDamage, effectSeconds);
         m_strikeSources.push_back(StrikeSource{id,
                                                index,
                                                strikeIndex,
@@ -1225,6 +1227,23 @@ void PlayerAttacks::cry(usize index, std::string_view which, std::span<PlayerRun
     if (body == nullptr || m_resources->sounds == nullptr) {
         return;
     }
+    const bool pain = which.starts_with("PAIN");
+    const bool poison = which == "POISON";
+    const bool pojo =
+        (PowerupEffects::of(players[index].actor.save().progress().inventory).special &
+         powerup::kPojo) != 0;
+    if (pojo && (pain || poison || which == "DIE1" || which == "DIE2")) {
+        // GUNE5D AudioPlayerPain/Poison use COMMON 96, SeverePain/Dies use 98.
+        // The latter is named POJOPOISON, including when it is the death cry.
+        const std::string_view name = poison || which == "DIE2" ? "S_POJOPOISON" : "S_POJOPAIN";
+        const f32 volume = poison ? LevelSoundscape::kBarkVolume : LevelSoundscape::kPainVolume;
+        if (pain || poison) {
+            m_resources->audio.barkNamed(name, volume);
+        } else {
+            m_resources->audio.playNamed(name, volume);
+        }
+        return;
+    }
     const std::string_view voice =
         classCode(players[index].actor.save().character % kStartingClassCount);
     const std::string name = std::format("S_{}{}", voice, which);
@@ -1615,12 +1634,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         return;
     }
     const MissileTarget* target = &selected->body;
-    f32 damage = PlayerMissiles::kLeastDamage;
-    if (const ClassStats* stats = m_resources->classes.stats(actor.save().character)) {
-        const StatBlock block = displayStats(*stats, experienceLevel(actor.save().experience()),
-                                             actor.save().progress());
-        damage = PlayerMissiles::damageFor(block.strength());
-    }
+    f32 damage = meleeDamageOf(index, players);
     const auto worn = PowerupEffects::of(actor.save().progress().inventory);
     u32 flags = worn.weapon;
     if (worn.grown()) {
@@ -1724,7 +1738,8 @@ void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players, s32 occupiedHa
                 runtime.capture.body().value_or(runtime.actor.transform()), save, worn);
             hand = runtime.figure->handAttachment(body);
         }
-        const u32 element = hand.has_value() && runtime.actor.player() != occupiedHand
+        const u32 element = hand.has_value() && runtime.actor.player() != occupiedHand &&
+                                    (worn.special & powerup::kPojo) == 0
                                 ? WeaponGlow::elementOf(worn)
                                 : 0;
         Vec3 offset{0.0f};

@@ -20,6 +20,7 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/config/GameConfig.h"
 #include "game/players/ItemPickup.h"
+#include "game/players/NameCheats.h"
 #include "game/screens/PartyPickups.h"
 #include "game/screens/PlayScene.h"
 #include "game/screens/PlayerPowerups.h"
@@ -298,6 +299,80 @@ TEST_CASE("returning to the tower opens the pending crystal scroll after arrival
     }
     REQUIRE(scene.scroll().active());
     CHECK(scene.actor(0)->save().progress().crystals[2] == -1);
+}
+
+TEST_CASE("collecting the last orange crystal congratulates a new character only once",
+          "[pickups][tower-crystals][assets]") {
+    const auto* name = GENERATE("TEST", "EGG911");
+    const s32 otherClassCrystals = GENERATE(0, 15, -1);
+    CAPTURE(name, otherClassCrystals);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("L1")));
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.sounds = &sounds;
+    context.levels = &catalog;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = name;
+    applyNameCheats(save);
+    save.classes[1].crystals[1] = otherClassCrystals;
+    save.progress().crystals[1] = 14;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{19.3f, -2.0f, -62.0f}; // One of the native orange crystals.
+    PlayScene scene;
+    const std::array party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 frame = 0; frame < 600 && !scene.scroll().active(); ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+    }
+    REQUIRE(scene.scroll().active());
+    CHECK(std::ranges::any_of(scene.scroll().lines(), [](const std::string& line) {
+        return line.find("Congratulations") != std::string::npos;
+    }));
+    const SoundHandle voice = scene.voice();
+    REQUIRE(voice != kNoSound);
+    REQUIRE(sounds.isPlaying(voice));
+    PlayScene::Inputs accept;
+    accept[0].menu.select = true;
+    for (s32 frame = 0; frame < 300 && scene.scroll().active(); ++frame) {
+        REQUIRE(scene.update(1.0 / 30, frame % 20 == 19 ? accept : PlayScene::Inputs{}) ==
+                PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(scene.scroll().active());
+    CHECK_FALSE(sounds.isPlaying(voice));
+    // Wait beyond the Tower's three-second check, without dismissing a second message.
+    for (s32 frame = 0; frame < 240; ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+    }
+    CHECK_FALSE(scene.scroll().active());
+    CHECK(scene.voice() == kNoSound);
+    CHECK(scene.actor(0)->save().progress().crystals[1] == -1);
+    CHECK(scene.actor(0)->save().classes[1].crystals[1] == otherClassCrystals);
+    CHECK(scene.participants()[0].entrySave.progress().crystals[1] == -1);
+    // Reload the acknowledged character into a new visit; other classes stay independent.
+    save = CharacterSave::fromJson(scene.actor(0)->save().toJson());
+    scene.close();
+    const std::array returning{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, returning, options));
+    for (s32 frame = 0; frame < 240; ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+    }
+    CHECK_FALSE(scene.scroll().active());
+    CHECK(scene.voice() == kNoSound);
+    CHECK(scene.actor(0)->save().classes[1].crystals[1] == otherClassCrystals);
 }
 
 TEST_CASE("the party's pickups are shared, taught, gestured and handed to the scene",

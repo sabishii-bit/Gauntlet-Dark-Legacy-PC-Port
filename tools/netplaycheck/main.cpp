@@ -11,7 +11,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "engine/net/GnsTransport.h"
+#include "engine/io/File.h"
+#include "engine/net/SessionTransport.h"
 
 #include "game/netplay/InputCommand.h"
 #include "game/netplay/InputTimeline.h"
@@ -59,7 +60,7 @@ void waitForNextPoll() {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 
-void host(GnsTransport& transport, usize clients) {
+void host(SessionTransport& transport, usize clients) {
     struct Client {
         u8 seat = 0;
         u8 ordered = 0;
@@ -69,9 +70,7 @@ void host(GnsTransport& transport, usize clients) {
         bool acknowledged = false;
         bool closed = false;
     };
-    const auto port = transport.listenLoopback();
-    require(port.has_value(), "Could not bind loopback listener");
-    report({{"event", "listening"}, {"port", *port}});
+    report({{"event", "listening"}});
     InputTimeline timeline;
     std::map<Connection, Client> peers;
     const auto deadline = Clock::now() + std::chrono::seconds(25);
@@ -144,9 +143,8 @@ void host(GnsTransport& transport, usize clients) {
     throw std::runtime_error("Host timed out waiting for clients");
 }
 
-void client(GnsTransport& transport, u16 port) {
-    const auto connection = transport.connectLoopback(port);
-    require(connection.has_value(), "Could not connect to loopback host");
+void client(SessionTransport& transport) {
+    std::optional<Connection> connection;
     std::optional<u8> seat;
     u64 tick = 0;
     u8 echoed = 0;
@@ -158,7 +156,13 @@ void client(GnsTransport& transport, u16 port) {
     const auto deadline = nextTick + std::chrono::seconds(20);
     while (Clock::now() < deadline) {
         for (const auto& event : transport.poll()) {
-            require(event.connection == *connection, "Unexpected connection identity");
+            if (event.type == EventType::Connected) {
+                require(!connection, "Unexpected second host");
+                connection = event.connection;
+                continue;
+            }
+            require(connection && event.connection == *connection,
+                    "Unexpected connection identity");
             require(event.type != EventType::Disconnected, "Host disconnected: " + event.reason);
             if (event.type != EventType::Message) {
                 continue;
@@ -177,6 +181,7 @@ void client(GnsTransport& transport, u16 port) {
                     report({{"event", "statistics"},
                             {"ping_ms", stats->pingMs},
                             {"queued_bytes", stats->pendingBytes},
+                            {"relayed", stats->relayed},
                             {"queue_us", stats->queueMicroseconds}});
                 }
                 sendControl(transport, *connection, Control::Acknowledge);
@@ -230,59 +235,56 @@ void client(GnsTransport& transport, u16 port) {
     throw std::runtime_error("Client timed out waiting for host");
 }
 
+void ready(SessionTransport& transport) {
+    const auto deadline = Clock::now() + std::chrono::seconds(25);
+    while (transport.phase() == SessionTransport::Phase::Opening && Clock::now() < deadline) {
+        waitForNextPoll();
+    }
+    require(transport.phase() == SessionTransport::Phase::Ready,
+            "Network setup failed: " + transport.error());
+}
 void selfTest() {
     std::string error;
-    require(!GnsTransport::create({-1, 0}, error) && !error.empty(), "Invalid profile accepted");
+    require(!openSessionTransport({true, "bad invitation"}, error), "Malformed invite accepted");
     for (s32 cycle = 0; cycle < 2; ++cycle) {
-        auto transport = GnsTransport::create({}, error);
-        require(transport != nullptr, error);
-        require(!GnsTransport::create({}, error), "Second transport stole process runtime");
-        const auto port = transport->listenLoopback();
-        require(port.has_value(), "Listener failed after initialization");
-        require(!transport->listenLoopback(), "Second listener leaked the first");
-        require(!transport->connectLoopback(0), "Invalid port accepted");
-        require(transport->send(1, {}, Delivery::Reliable) == PacketTransport::SendResult::Invalid,
-                "Empty packet accepted");
-        const std::vector<u8> large(PacketTransport::kMaxPacketBytes + 1);
-        require(transport->send(1, large, Delivery::Reliable) ==
-                    PacketTransport::SendResult::Invalid,
-                "Oversized packet accepted");
-        require(!transport->statistics(1), "Unknown connection returned statistics");
-        transport->close(1);
-
-        const auto source = transport->connectLoopback(*port);
-        require(source.has_value(), "Self-connect failed");
-        usize connected = 0;
+        auto host = openSessionTransport({true, {}}, error);
+        require(host != nullptr, error);
+        ready(*host);
+        auto guest = openSessionTransport({true, host->invitation()}, error);
+        require(guest != nullptr, error);
+        ready(*guest);
+        Connection id = 0;
         const auto deadline = Clock::now() + std::chrono::seconds(5);
-        while (connected < 2 && Clock::now() < deadline) {
-            for (const auto& event : transport->poll()) {
-                require(event.type == EventType::Connected, "Self-connect failed during handshake");
-                ++connected;
+        while (id == 0 && Clock::now() < deadline) {
+            for (const auto& event : guest->poll()) {
+                if (event.type == EventType::Connected) {
+                    id = event.connection;
+                }
             }
             waitForNextPoll();
         }
-        require(connected == 2, "Self-connect timed out");
+        require(id != 0, "Guest never became connected");
+        require(guest->send(id, {}, Delivery::Reliable) == PacketTransport::SendResult::Invalid,
+                "Empty packet accepted");
+        const std::vector<u8> large(PacketTransport::kMaxPacketBytes + 2);
+        require(guest->send(id, large, Delivery::Reliable) == PacketTransport::SendResult::Invalid,
+                "Oversized packet accepted");
         const std::array<u8, PacketTransport::kMaxPacketBytes> bytes{};
         bool congested = false;
         for (usize attempt = 0; attempt < 4096 && !congested; ++attempt) {
-            const auto result = transport->send(*source, bytes, Delivery::Reliable);
+            const auto result = guest->send(id, bytes, Delivery::Reliable);
             require(result == PacketTransport::SendResult::Sent ||
                         result == PacketTransport::SendResult::Congested,
-                    "Unexpected result while filling send queue");
+                    "Invalid pressure result");
             congested = result == PacketTransport::SendResult::Congested;
         }
-        require(congested, "Send queue did not apply backpressure");
-        require(transport->poll().size() <=
-                    PacketTransport::kReceiveBudget + PacketTransport::kMaxConnections * 2,
-                "Receive poll exceeded its work budget");
-        transport->close(*source);
-        require(!transport->statistics(*source), "Closed connection survived teardown");
-        require(transport->send(*source, bytes, Delivery::Reliable) ==
+        require(congested, "Reliable send queue did not apply backpressure");
+        require(host->poll().size() <= PacketTransport::kReceiveBudget, "Receive budget exceeded");
+        guest->close(id);
+        require(!guest->statistics(id), "Closed connection remains live");
+        require(guest->send(id, bytes, Delivery::Reliable) ==
                     PacketTransport::SendResult::Disconnected,
-                "Stale connection accepted a packet");
-        const auto replacement = transport->connectLoopback(*port);
-        require(replacement.has_value() && *replacement != *source,
-                "Connection identity was reused");
+                "Closed connection accepts messages");
     }
     report({{"event", "passed"}, {"role", "self-test"}});
 }
@@ -296,21 +298,29 @@ int main(int argc, char** argv) {
             selfTest();
             return 0;
         }
-        require(argc == 5, "Usage: netplaycheck self-test | host CLIENTS LAG_MS LOSS_PERCENT | "
-                           "client PORT LAG_MS LOSS_PERCENT");
+        require(argc == 4 || argc == 5,
+                "Usage: netplaycheck self-test | host INVITE_FILE CLIENTS [internet] | "
+                "client INVITE_FILE unused [internet]");
         const std::string role = arguments[1];
-        const s32 value = std::stoi(arguments[2]);
         require(role == "host" || role == "client", "Unknown role");
-        require(role == "host" ? value >= 1 && value <= 3 : value > 0 && value <= 65535,
-                "Invalid client count or port");
+        const bool local = argc != 5;
+        if (!local) {
+            require(std::string(arguments[4]) == "internet", "Unknown scope");
+        }
+        const std::filesystem::path ticketPath = arguments[2];
+        const auto invite = role == "host" ? std::string{} : readTextFile(ticketPath);
         std::string error;
-        auto transport =
-            GnsTransport::create({std::stoi(arguments[3]), std::stof(arguments[4])}, error);
+        auto transport = openSessionTransport({local, invite}, error);
         require(transport != nullptr, error);
+        ready(*transport);
         if (role == "host") {
-            host(*transport, static_cast<usize>(value));
+            const auto clients = std::stoi(arguments[3]);
+            require(clients >= 1 && clients <= 3, "Invalid client count");
+            require(!std::filesystem::exists(ticketPath), "Invitation output already exists");
+            replaceTextFile(ticketPath, transport->invitation());
+            host(*transport, static_cast<usize>(clients));
         } else {
-            client(*transport, static_cast<u16>(value));
+            client(*transport);
         }
         return 0;
     } catch (const std::exception& error) {

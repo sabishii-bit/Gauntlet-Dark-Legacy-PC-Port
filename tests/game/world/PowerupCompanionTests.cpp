@@ -16,6 +16,38 @@ using Catch::Approx;
 using Kind = PowerupCompanion::Kind;
 using Action = PlayerAnimator::Action;
 
+TEST_CASE("successive Pojo shots restart their one-shot without restarting held actions",
+          "[pojo][companion][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    PowerupCompanion pojo;
+    pojo.choose(device, Kind::Pojo, powerups, nullptr);
+    REQUIRE(pojo.shown());
+    pojo.update(1.0f / 60, Action::Ready, true, false);
+    const auto first = pojo.visual(Mat4{1}, 1);
+    REQUIRE(first);
+    REQUIRE(first->sequence == PowerupCompanion::kAttack);
+    pojo.update(3.0f / 60, Action::Ready, false, false);
+    const auto playing = pojo.visual(Mat4{1}, 1);
+    REQUIRE(playing);
+    CHECK(playing->generation == first->generation);
+    CHECK(playing->frame > first->frame);
+    pojo.update(1.0f / 60, Action::Ready, true, false);
+    const auto second = pojo.visual(Mat4{1}, 1);
+    REQUIRE(second);
+    CHECK(second->sequence == first->sequence);
+    CHECK(second->generation > first->generation);
+    CHECK(second->frame == Approx(first->frame));
+    pojo.update(1.0f / 60, Action::Death, false, false);
+    const auto death = pojo.visual(Mat4{1}, 1);
+    REQUIRE(death);
+    pojo.update(1.0f / 60, Action::Death, false, false);
+    CHECK(pojo.visual(Mat4{1}, 1)->generation == death->generation);
+    CHECK(pojo.visual(Mat4{1}, 1)->frame > death->frame);
+}
+
 TEST_CASE("fire shield flames retain world depth testing without writing depth",
           "[game][world][companion][fire-shield][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path();

@@ -7,8 +7,9 @@
 
 namespace gdl::game {
 /** Horizontal facing from the player's screen position toward the cursor; never picks scenery.
- * Returns the player position inside the cursor dead zone, preserving the current facing. */
-std::optional<Vec3> cursorAimPoint(Vec2 cursor, const Mat4& clip, const Vec3& position);
+ * Returns a unit world direction, or zero inside the cursor dead zone to retain facing.
+ * A direction stays valid when simulation advances beyond the displayed player position. */
+std::optional<Vec3> cursorAimDirection(Vec2 cursor, const Mat4& clip, const Vec3& position);
 /** Transform forward/back/strafe input from the cursor-facing basis into camera input space. */
 MoveInput cursorRelativeMove(MoveInput move, const Vec3& position, const Vec3& aim, f32 cameraYaw);
 /** Automatic profiles retain controller aiming until keyboard/mouse activity takes over. */

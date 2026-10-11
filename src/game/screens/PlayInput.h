@@ -11,7 +11,8 @@ namespace gdl::game {
 /** One player's input for a simulation update. Local UI fields are never serialized. */
 struct PlayInput {
     MoveInput move;
-    std::optional<Vec3> aimPoint; ///< mouse aiming, absent for retail controller movement
+    std::optional<Vec3>
+        aimDirection; ///< horizontal world facing; zero retains yaw, absent for a stick
     MenuInput menu;
     bool movieSkipPressed = false; ///< assigned-device online vote; never a gameplay datagram
     bool attack = false;           ///< the attack button is held

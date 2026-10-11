@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Launch two playable game windows connected through a private local room.
+"""Launch two playable game windows connected through iroh.
 
     python scripts/netplay_scene.py
     python scripts/netplay_scene.py --scenario level-g1 --build
     python scripts/netplay_scene.py --seconds 45
 
 The host runs gameplay; the guest renders its checkpoints and sends input. This
-supports tower portals and direct boss entrances, not Internet play or the
-post-level results/shop flow.
+supports tower portals and direct boss entrances, but not the post-level
+results/shop flow. Add --internet to enable public relay connectivity.
 The host accepts keyboard/controller input; the guest uses keyboard/mouse only
 so one controller cannot drive both windows. Click a window to steer its player.
 Start/Enter pauses either window; only the host resumes. Escape closes the run.
@@ -27,11 +27,9 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 import devenv
-import netplay_rooms
 import netplay_test
 import scenario
 
@@ -96,11 +94,16 @@ def test_scenario(source: dict, guest: bool) -> dict:
     return result
 
 
-def test_config(source: dict, guest: bool, fps: int) -> dict:
+def test_config(source: dict, guest: bool, fps: int, mixed_video: bool = False) -> dict:
     result = copy.deepcopy(source)
     result["display"].update(windowWidth=800, windowHeight=560, windowMode="windowed",
                              vsync=True, maxFrameRate=fps, sampleCount=1)
     result["timing"].update(tickRate=60, gameplayFrameRate=fps)
+    if mixed_video and guest:
+        result["display"].update(windowWidth=960, windowHeight=540, maxFrameRate=60,
+                                 bloom=True, ambientOcclusion=True, depthOfField=True,
+                                 sampleCount=4)
+        result["camera"]["horizontalFovDegrees"] = 80
     result["controls"]["players"] = [
         {"device": "keyboard" if guest else "", "rumble": not guest},
         *[{"device": "none"} for _ in range(3)],
@@ -115,7 +118,7 @@ def build(directory: pathlib.Path, jobs: int) -> None:
     options = ";".join(f"--x-{name}-root={(directory / ('vcpkg-' + name)).as_posix()}"
                        for name in ("buildtrees", "packages"))
     devenv.run(["cmake", "--preset", devenv.release_preset(), "-B", str(directory),
-                "-DGDL_ENABLE_NETPLAY=ON", "-DGDL_BUILD_TESTS=OFF",
+                "-DGDL_ENABLE_NETPLAY=ON", "-DGDL_BUILD_TESTS=OFF", "-DVCPKG_MANIFEST_FEATURES=",
                 f"-DVCPKG_INSTALL_OPTIONS={options}"])
     devenv.run(["cmake", "--build", str(directory), "--target", "gauntlet",
                 "--parallel", str(jobs)])
@@ -162,28 +165,14 @@ def advancing(first: tuple[int, int] | None, latest: tuple[int, int] | None) -> 
     return first is not None and latest is not None and latest > first
 
 
-def wait_room(process: subprocess.Popen, path: pathlib.Path) -> str:
-    deadline = time.monotonic() + 45
-    while time.monotonic() < deadline:
-        match = re.search(r"Online run: Test room ([A-HJ-NP-Z2-9]{8}) -", healthy(process, path))
-        if match:
-            return match[1]
-        time.sleep(0.1)
-    raise RuntimeError(f"Room creation timed out: {path}")
-
-
 def run(executable: pathlib.Path, assets: pathlib.Path, directory: pathlib.Path,
         source: dict, content: str, fps: int, seconds: int, validation: bool,
-        expected_level: str = "") -> None:
+        expected_level: str = "", mixed_video: bool = False, internet: bool = False) -> None:
     defaults = json.loads((ROOT / "data/config.json").read_text(encoding="utf-8"))
     with contextlib.ExitStack() as stack:
-        server = netplay_rooms.make_server()
-        worker = threading.Thread(target=server.serve_forever, daemon=True)
-        worker.start()
-        stack.callback(worker.join, 3)
-        stack.callback(server.server_close)
-        stack.callback(server.shutdown)
-        endpoint = f"http://127.0.0.1:{server.server_port}"
+        endpoint = "internet" if internet else "local"
+        invitation = directory / "invitation.txt"
+        stack.callback(invitation.unlink, missing_ok=True)
 
         def launch(guest: bool, code: str = ""):
             role = "guest" if guest else "host"
@@ -193,7 +182,7 @@ def run(executable: pathlib.Path, assets: pathlib.Path, directory: pathlib.Path,
             data.mkdir()
             shutil.copytree(ROOT / "data/text", data / "text")
             (data / "config.json").write_text(
-                json.dumps(test_config(defaults, guest, fps)), encoding="utf-8")
+                json.dumps(test_config(defaults, guest, fps, mixed_video)), encoding="utf-8")
             selection = local / "scenario.json"
             selection.write_text(json.dumps(test_scenario(source, guest)), encoding="utf-8")
             path = local / "game.log"
@@ -203,6 +192,8 @@ def run(executable: pathlib.Path, assets: pathlib.Path, directory: pathlib.Path,
                        "--netplay-content", content, "--netplay-auto-start"]
             if code:
                 command.extend(["--netplay-room", code])
+            else:
+                command.extend(["--netplay-invite", str(invitation)])
             if validation:
                 command.append("--validation")
             process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL,
@@ -214,9 +205,9 @@ def run(executable: pathlib.Path, assets: pathlib.Path, directory: pathlib.Path,
             return process, path
 
         host = launch(False)
-        code = wait_room(*host)
-        guest = launch(True, code)
-        print(f"Local room {code}. Waiting for both stages to load...", flush=True)
+        netplay_test.wait_invitation(host[0], invitation, host[1])
+        guest = launch(True, str(invitation))
+        print("Invitation ready. Waiting for the guest to connect and both stages to load...", flush=True)
         deadline = time.monotonic() + 90
         while True:
             texts = [healthy(*child) for child in (host, guest)]
@@ -258,6 +249,9 @@ def main(argv=None) -> int:
     parser.add_argument("--fps", type=int, choices=(30, 60), default=30)
     parser.add_argument("--seconds", type=int, default=0, help="stop after N playable seconds (0: manual)")
     parser.add_argument("--validation", action="store_true")
+    parser.add_argument("--mixed-video", action="store_true",
+                        help="guest uses 16:9, 80-degree FoV, 60 FPS, 4x AA and all post effects")
+    parser.add_argument("--internet", action="store_true", help="enable iroh's public relays")
     parser.add_argument("--expect-level", default="",
                         help="require both windows to enter this level before timing the test")
     args = parser.parse_args(argv)
@@ -281,7 +275,7 @@ def main(argv=None) -> int:
         logs = pathlib.Path(tempfile.mkdtemp(prefix="scene-", dir=directory))
         print(f"Test files: {logs}", flush=True)
         run(executable, assets, logs, source, content, args.fps, args.seconds, args.validation,
-            expected_level)
+            expected_level, args.mixed_video, args.internet)
         return 0
     except (OSError, ValueError, RuntimeError) as error:
         print(f"Netplay scene test failed: {error}", file=sys.stderr)

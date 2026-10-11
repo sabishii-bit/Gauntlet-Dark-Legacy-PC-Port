@@ -7,6 +7,8 @@
 
 #include "engine/io/ByteReader.h"
 
+#include "game/players/NameCheats.h"
+
 namespace gdl::game {
 namespace {
 bool bounded(f32 value, f32 low, f32 high) {
@@ -82,7 +84,11 @@ std::optional<CharacterProfile> CharacterProfile::capture(const CharacterSave& s
     const auto duplicate = std::ranges::unique(profile.helpSeen);
     profile.helpSeen.erase(duplicate.begin(), duplicate.end());
     profile.progress.gold = save.gold;
-    return profile.valid() ? std::optional{std::move(profile)} : std::nullopt;
+    if (!profile.valid()) {
+        return std::nullopt;
+    }
+    restoreNameForm(profile.progress.inventory, profile.name);
+    return profile;
 }
 CharacterSave CharacterProfile::gameplayCopy() const {
     CharacterSave result;
@@ -95,6 +101,7 @@ CharacterSave CharacterProfile::gameplayCopy() const {
         result.autoAttack = autoAttack;
         result.progress() = progress;
         result.helpSeen = helpSeen;
+        restoreNameForm(result);
     }
     return result;
 }
@@ -273,6 +280,10 @@ std::optional<CharacterProfile> CharacterProfilePacket::decode(std::span<const u
             }
         }
     }
-    return profile.valid() ? std::optional{std::move(profile)} : std::nullopt;
+    if (!profile.valid()) {
+        return std::nullopt;
+    }
+    restoreNameForm(profile.progress.inventory, profile.name);
+    return profile;
 }
 } // namespace gdl::game

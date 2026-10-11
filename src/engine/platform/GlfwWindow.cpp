@@ -23,6 +23,13 @@
 #include "engine/platform/DisplayTiming.h"
 
 namespace gdl {
+std::string GlfwWindow::clipboardText() const {
+    const auto* text = glfwGetClipboardString(m_window);
+    return text != nullptr ? text : "";
+}
+void GlfwWindow::setClipboardText(const std::string& text) {
+    glfwSetClipboardString(m_window, text.c_str());
+}
 
 namespace {
 

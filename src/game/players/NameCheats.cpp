@@ -34,10 +34,9 @@ struct PowerupCode {
 
 // GUNE5D Cheats (801209E4): the powerup rows use duration -1. ALLFUL and
 // 10000K are count assignments handled below; both rows of 1ANGEL must run.
-constexpr std::array<PowerupCode, 15> kPowerups{{
+constexpr std::array<PowerupCode, 14> kPowerups{{
     {"INVULN", powerup::kArmor, 0, powerup::kInvulnerable},
     {"SSHOTS", powerup::kWeapon, -1, powerup::kSuperShot},
-    {"EGG911", powerup::kSpecial, 0, powerup::kPojo},
     {"1ANGEL", powerup::kSpecial, 0, powerup::kLevitation},
     {"1ANGEL", powerup::kArmor, 0, 0x80000},
     {"DELTA1", powerup::kSpecial, 0, powerup::kGrowth | powerup::kEnemyShrink},
@@ -71,7 +70,35 @@ const HiddenCostume* hiddenCostume(std::string_view name) {
     return nullptr;
 }
 
+void restoreNameForm(CharacterSave& save) {
+    for (auto& progress : save.classes) {
+        restoreNameForm(progress.inventory, save.name);
+    }
+}
+
+void restoreNameForm(Inventory& inventory, std::string_view name) {
+    // Deliberate port behavior: EGG911 is a permanent transformation, not retail's
+    // PlayerAddPowerup(-1) slot. Keep all eleven slots available and migrate saves
+    // from builds which put the cheat in the selector, even if it was switched off.
+    inventory.permanentPojo = name == "EGG911";
+    if (!inventory.permanentPojo) {
+        return;
+    }
+    for (auto& slot : inventory.powerups) {
+        if (slot.kind == powerup::kSpecial && (slot.flags & powerup::kPojo) != 0) {
+            slot.flags &= ~powerup::kPojo;
+            if (slot.flags == 0) {
+                slot = {};
+            }
+        }
+    }
+}
+
 bool applyNameCheats(CharacterSave& save) {
+    restoreNameForm(save);
+    if (save.name == "EGG911") {
+        return true;
+    }
     if (const auto* costume = hiddenCostume(save.name)) {
         save.selectClass(costume->character);
         save.color = costume->color;

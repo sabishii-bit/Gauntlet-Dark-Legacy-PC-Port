@@ -14,7 +14,7 @@ VulkanSwapchain::VulkanSwapchain(VulkanContext& context, Extent2D windowExtent, 
                                  u32 sampleCount)
     : m_context(context), m_vsync(vsync), m_requestedSamples(sampleCount),
       m_depthFormat(context.depthFormat()) {
-    create(windowExtent, VK_NULL_HANDLE);
+    GDL_VERIFY(create(windowExtent, VK_NULL_HANDLE), "Initial swapchain extent must be non-zero");
 }
 
 VulkanSwapchain::~VulkanSwapchain() {
@@ -24,25 +24,45 @@ VulkanSwapchain::~VulkanSwapchain() {
     }
 }
 
-void VulkanSwapchain::recreate(Extent2D windowExtent, bool vsync, u32 sampleCount) {
+bool VulkanSwapchain::recreate(Extent2D windowExtent, bool vsync, u32 sampleCount) {
     m_context.waitIdle();
     m_vsync = vsync;
     m_requestedSamples = sampleCount;
     const VkSwapchainKHR old = m_swapchain;
-    destroyImageResources();
-    create(windowExtent, old);
+    if (!create(windowExtent, old)) {
+        return false;
+    }
     if (old != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(m_context.device(), old, nullptr);
     }
+    return true;
 }
 
-void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain) {
+bool VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain) {
     const VkPhysicalDevice physicalDevice = m_context.physicalDevice();
     const VkSurfaceKHR surface = m_context.surface();
     const VkDevice device = m_context.device();
 
     VkSurfaceCapabilitiesKHR capabilities{};
     GDL_VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities));
+
+    VkExtent2D extent = capabilities.currentExtent;
+    if (extent.width == std::numeric_limits<u32>::max()) {
+        extent.width = std::clamp(windowExtent.width, capabilities.minImageExtent.width,
+                                  capabilities.maxImageExtent.width);
+        extent.height = std::clamp(windowExtent.height, capabilities.minImageExtent.height,
+                                   capabilities.maxImageExtent.height);
+    }
+    // The window can minimize after the application records its size. Keep the
+    // old attachments/semaphores alive and retry on a later frame instead of
+    // constructing zero-sized images on the presentation worker.
+    if (extent.width == 0 || extent.height == 0) {
+        return false;
+    }
+    if (oldSwapchain != VK_NULL_HANDLE) {
+        destroyImageResources();
+    }
+    m_extent = extent;
 
     u32 formatCount = 0;
     GDL_VK_CHECK(
@@ -112,16 +132,6 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
             presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
         }
     }
-
-    if (capabilities.currentExtent.width != std::numeric_limits<u32>::max()) {
-        m_extent = capabilities.currentExtent;
-    } else {
-        m_extent.width = std::clamp(windowExtent.width, capabilities.minImageExtent.width,
-                                    capabilities.maxImageExtent.width);
-        m_extent.height = std::clamp(windowExtent.height, capabilities.minImageExtent.height,
-                                     capabilities.maxImageExtent.height);
-    }
-    GDL_VERIFY(m_extent.width > 0 && m_extent.height > 0, "Swapchain extent must be non-zero");
 
     u32 imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0) {
@@ -216,6 +226,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
               m_extent.height, actualCount, static_cast<s32>(m_colorFormat),
               presentMode == VK_PRESENT_MODE_FIFO_KHR ? "vsync" : "no vsync",
               static_cast<u32>(m_samples));
+    return true;
 }
 
 void VulkanSwapchain::destroyImageResources() {

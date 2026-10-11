@@ -83,6 +83,21 @@ class PlayableSceneTests(unittest.TestCase):
             self.assertTrue(all(p["device"] == "none" for p in config["controls"]["players"][1:]))
         self.assertEqual(defaults, original)
 
+    def test_mixed_video_changes_only_guest_presentation_not_session_timing(self):
+        defaults = json.loads((netplay_scene.ROOT / "data/config.json").read_text(encoding="utf-8"))
+        host = netplay_scene.test_config(defaults, False, 30, True)
+        guest = netplay_scene.test_config(defaults, True, 30, True)
+        self.assertEqual(host, netplay_scene.test_config(defaults, False, 30))
+        self.assertEqual(host["timing"], guest["timing"])
+        self.assertEqual(guest["display"]["maxFrameRate"], 60)
+        self.assertEqual(guest["display"]["sampleCount"], 4)
+        self.assertEqual(guest["display"]["windowWidth"], 960)
+        self.assertEqual(guest["display"]["windowHeight"], 540)
+        self.assertEqual(guest["camera"]["horizontalFovDegrees"], 80)
+        for effect in ("bloom", "ambientOcclusion", "depthOfField"):
+            self.assertTrue(guest["display"][effect])
+            self.assertFalse(host["display"][effect])
+
     def test_runtime_errors_and_crashes_are_not_successful_visual_checks(self):
         log = self.root / "game.log"
         child = mock.Mock()

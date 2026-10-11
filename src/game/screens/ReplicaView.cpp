@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/render/AmbientOcclusion.h"
+#include "engine/render/DepthOfField.h"
 #include "engine/ui/Canvas.h"
 
 #include "game/players/CursorAim.h"
+#include "game/players/PlayerActor.h"
 
 namespace gdl::game {
 bool ReplicaView::begin(const MatchContext& context, const LevelWorld& world, Enemies& enemies,
@@ -42,6 +45,7 @@ bool ReplicaView::resume(const MatchContext& context) {
 }
 void ReplicaView::clear() {
     m_presentedClip.reset();
+    m_presentedPlayers.fill(std::nullopt);
     m_context = {};
     m_world = nullptr;
     m_enemies = nullptr;
@@ -49,6 +53,7 @@ void ReplicaView::clear() {
     m_pickupResources = nullptr;
     m_fixtureResources = nullptr;
     m_actors.clear();
+    m_playerHeights.fill(PlayerActor::kDefaultHeight);
     m_projectiles.clear();
     m_pickups.clear();
     m_fixtures.clear();
@@ -59,14 +64,24 @@ void ReplicaView::clear() {
     m_shown.reset();
     m_resuming = false;
 }
-bool ReplicaView::setPlayer(u8 seat, std::unique_ptr<PlayerFigure> figure, f32 scale) {
-    return m_world != nullptr && !m_shown && seat < m_context.owners.size() &&
-           m_context.owners[seat] != 0 &&
-           m_actors.setPlayer(seat, m_context.grants[seat], std::move(figure), scale);
+bool ReplicaView::setPlayer(u8 seat, std::unique_ptr<PlayerFigure> figure, f32 scale,
+                            const ClassStats* stats) {
+    const bool accepted =
+        m_world != nullptr && !m_shown && seat < m_context.owners.size() &&
+        m_context.owners[seat] != 0 &&
+        m_actors.setPlayer(seat, m_context.grants[seat], std::move(figure), scale);
+    if (accepted) {
+        m_playerHeights[seat] =
+            stats != nullptr && stats->height > 0 ? stats->height : PlayerActor::kDefaultHeight;
+    }
+    return accepted;
 }
 bool ReplicaView::bindCompanions(RenderDevice& device, ItemArchive& powerups,
                                  ItemArchive* weapons) {
     return m_world != nullptr && !m_shown && m_actors.bindCompanions(device, powerups, weapons);
+}
+void ReplicaView::loadPortalSkin(RenderDevice& device, TextureSet& weapons) {
+    m_actors.loadPortalSkin(device, weapons);
 }
 bool ReplicaView::loadHud(RenderDevice& device, const std::filesystem::path& root,
                           const StringTable* strings, const HudResources& resources) {
@@ -149,7 +164,7 @@ std::string_view ReplicaView::rejection(const CombatSnapshot& snapshot) const {
     return resourceRejection(snapshot);
 }
 bool ReplicaView::show(const CombatSnapshot& snapshot) {
-    if (!rejection(snapshot).empty()) {
+    if (!snapshot.geometry || !rejection(snapshot).empty()) {
         return false;
     }
     // All resource/epoch/sequence checks happen before any renderer is changed.
@@ -171,23 +186,19 @@ bool ReplicaView::show(const CombatSnapshot& snapshot) {
     m_shown = snapshot;
     return true;
 }
-std::optional<Rect> ReplicaView::viewport(f32 width, f32 height, f32 hostAspect) {
-    if (!std::isfinite(width) || !std::isfinite(height) || !std::isfinite(hostAspect) ||
-        width <= 0 || height <= 0 || width > 65536 || height > 65536 || hostAspect < 0.25f ||
-        hostAspect > 8) {
+std::optional<Rect> ReplicaView::viewport(f32 width, f32 height) {
+    if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0 ||
+        width > 65536 || height > 65536) {
         return std::nullopt;
     }
-    const f32 w = std::min(width, height * hostAspect);
-    const f32 h = w / hostAspect;
-    return Rect{(width - w) * 0.5f, (height - h) * 0.5f, w, h};
+    return Rect{0, 0, width, height};
 }
 void ReplicaView::draw(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                        f32 frameHeight, f32 textureFrame, const Texture* hitFlash,
-                       const Texture* frozen) {
+                       const Texture* frozen, const GameConfig& video) {
     Canvas canvas;
     canvas.begin(device, frameProjection);
-    const auto area =
-        m_shown ? viewport(frameWidth, frameHeight, m_shown->motion.aspect) : std::nullopt;
+    const auto area = m_shown ? viewport(frameWidth, frameHeight) : std::nullopt;
     if (!area || !m_shown || !std::isfinite(textureFrame) || textureFrame < 0) {
         m_presentedClip.reset();
         canvas.fillScreen(Color::black());
@@ -196,10 +207,15 @@ void ReplicaView::draw(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     const auto& motion = m_shown->motion;
     const auto& camera = motion.camera;
-    const Mat4 clip = frameProjection * glm::translate(Mat4{1}, Vec3{area->x, area->y, 0}) *
-                      WorldCamera::frameMapping(area->width, area->height) *
-                      WorldCamera::projection(motion.horizontalFov, motion.aspect) * camera.view();
+    // Camera motion is shared gameplay state; projection and post-processing belong
+    // to this display. A wider local window must not inherit the host's side masks.
+    const Mat4 clip = camera.clipTransform(video.horizontalFovRadians(), frameWidth, frameHeight,
+                                           frameProjection);
     m_presentedClip = clip;
+    for (usize seat = 0; seat < motion.players.size(); ++seat) {
+        const auto& player = motion.players[seat];
+        m_presentedPlayers[seat] = player ? std::optional{player->position} : std::nullopt;
+    }
     const auto frame = CameraFrame::of(camera);
     // Draw only host-controlled pickups; never tick the local world's item physics.
     m_geometry.drawOpaque(device, clip, frame);
@@ -213,6 +229,12 @@ void ReplicaView::draw(RenderDevice& device, const Mat4& frameProjection, f32 fr
                        TreeModel::Pass::Opaque);
     m_fighters.draw(device, m_fighterResources, clip, m_world->lighting(), hitFlash, frozen,
                     TreeModel::Pass::DepthWriting);
+    if (video.display.ambientOcclusion) {
+        AmbientOcclusion occlusion;
+        occlusion.clipToView = camera.view() * glm::inverse(clip);
+        device.applyAmbientOcclusion(occlusion);
+    }
+    m_actors.drawShadows(device, clip, m_world->lighting(), camera.position);
     m_geometry.drawDeferred(device, clip, frame);
     m_fixtures.draw(device, *m_fixtureResources, clip, m_world->lighting(), frame,
                     TreeModel::Pass::Blended);
@@ -224,22 +246,38 @@ void ReplicaView::draw(RenderDevice& device, const Mat4& frameProjection, f32 fr
                        TreeModel::Pass::Blended);
     m_fighters.draw(device, m_fighterResources, clip, m_world->lighting(), hitFlash, frozen,
                     TreeModel::Pass::Effects);
-    canvas.maskOutside(*area);
     canvas.end();
+    if (video.display.bloom) {
+        device.applyBloom();
+    }
+    if (video.display.depthOfField) {
+        DepthOfField blur;
+        const Mat4 view = camera.view();
+        blur.clipToView = view * glm::inverse(clip);
+        for (usize seat = 0; seat < motion.players.size(); ++seat) {
+            const auto& player = motion.players[seat];
+            const auto& state = m_shown->players[seat];
+            if (player && state && state->life == ReplicaPlayerLife::Standing) {
+                const f32 distance = (view * Vec4{player->position, 1}).z;
+                blur.focusEnd = std::max(blur.focusEnd, distance + m_playerHeights[seat] * 3);
+            }
+        }
+        blur.transition = std::max(20.0f, blur.focusEnd);
+        device.applyDepthOfField(blur);
+    }
     if (m_shown->hud) {
-        // Same native 512x384 card layout, confined to the host's aspect-correct viewport.
-        const Mat4 overlay = frameProjection * glm::translate(Mat4{1}, Vec3{area->x, area->y, 0}) *
-                             glm::scale(Mat4{1}, Vec3{area->width / 512, area->height / 384, 1});
+        const Mat4 overlay =
+            makeVirtualScreenTransform(frameProjection, 512, 384, frameWidth, frameHeight);
         canvas.begin(device, overlay);
         m_hud.draw(canvas, *m_shown->hud, glm::inverse(overlay) * clip);
         canvas.end();
     }
 }
 std::optional<Vec3> ReplicaView::cursorAim(u8 seat, Vec2 cursor) const {
-    if (!m_shown || !m_presentedClip || seat >= m_shown->motion.players.size()) {
+    if (!m_shown || !m_presentedClip || seat >= m_presentedPlayers.size()) {
         return std::nullopt;
     }
-    const auto& player = m_shown->motion.players[seat];
-    return player ? cursorAimPoint(cursor, *m_presentedClip, player->position) : std::nullopt;
+    const auto& player = m_presentedPlayers[seat];
+    return player ? cursorAimDirection(cursor, *m_presentedClip, *player) : std::nullopt;
 }
 } // namespace gdl::game

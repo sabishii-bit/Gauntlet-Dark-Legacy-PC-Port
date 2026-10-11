@@ -1742,6 +1742,82 @@ TEST_CASE("Temple generators can breed at every native collision placement",
     CHECK(checked > 0);
 }
 
+TEST_CASE("Ghost Town generators retain viable exits beside props and select native landing floors",
+          "[game][generators][generator-terrain][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G2");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level());
+    Breakables barrels;
+    REQUIRE(barrels.bind(device, world.layout(), world.items(), &world.collision(),
+                         &world.realmItems()));
+    barrels.setPlayerCount(1);
+    Chests chests;
+    REQUIRE(chests.bind(device, world.layout(), world.items(), &world.collision(),
+                        &world.realmItems()));
+    chests.setPlayerCount(1);
+    const auto barrelBodies = barrels.obstacles();
+    const auto chestBodies = chests.obstacles();
+    const auto seed = GENERATE(1U, 7U, 10U, 15U);
+    usize checked = 0;
+    for (s32 chosen = 0;; ++chosen) {
+        Enemies enemies;
+        enemies.open(device, root, &world.collision(), world.level()->maxEnemies, {}, seed);
+        Generators generators;
+        REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), {}, 1,
+                                world.level()->enemies, 5, &world.items()));
+        if (static_cast<usize>(chosen) >= generators.count()) {
+            break;
+        }
+        if (!generators.standing(chosen)) {
+            continue;
+        }
+        // Isolate the brood quota, retaining every neighbouring item's collision.
+        std::vector<Obstacle> neighbours = barrelBodies;
+        neighbours.insert(neighbours.end(), chestBodies.begin(), chestBodies.end());
+        for (s32 other = 0; static_cast<usize>(other) < generators.count(); ++other) {
+            if (other != chosen && generators.standing(other)) {
+                neighbours.push_back(generators.boxOf(other));
+                REQUIRE(generators.strike(other, 100000, -1));
+            }
+        }
+        const Vec3 at = generators.positionOf(chosen);
+        CAPTURE(seed, chosen, at.x, at.y, at.z);
+        ViewVolume view;
+        view.position = at + Vec3{0, 20, 0};
+        view.forward = {0, -1, 0};
+        view.up = {0, 0, 1};
+        generators.setView(view);
+        const std::array party{EnemyView{.position = at + Vec3{0, 0, 20}}};
+        generators.update(kTicks, enemies, party, neighbours);
+        REQUIRE(generators.bredOf(chosen) == 1);
+        usize born = 0;
+        for (s32 id = 0; id < world.level()->maxEnemies; ++id) {
+            if (!enemies.alive(id) || enemies.generatorOf(id) != chosen) {
+                continue;
+            }
+            ++born;
+            const auto& kind = enemyKind(enemies.kindOf(id));
+            const Vec3 position = enemies.positionOf(id);
+            const Vec3 from = at + Vec3{0, kind.collisionHeight, 0};
+            const Vec3 candidate{position.x, from.y, position.z};
+            CHECK_FALSE(world.collision().wallBetween(from, candidate, kind.radius));
+            const auto floor = world.collision().floorAt(candidate, 4, 10, 0.1f);
+            REQUIRE(floor);
+            CHECK(position.y == Approx(floor->y));
+            CHECK(std::abs(position.y - from.y) <= 6);
+        }
+        CHECK(born == 1);
+        ++checked;
+    }
+    CHECK(checked == 50);
+}
+
 TEST_CASE("all solo G1 generators have a viable native birth and authored initial wait",
           "[game][generators][alpha-g1-birth-census][assets]") {
     const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
@@ -1863,9 +1939,15 @@ TEST_CASE("Desert C1 births retain the roster and a clear path from each authore
         const Vec3 to = enemies.positionOf(i);
         CAPTURE(i, from.x, from.y, from.z, to.x, to.y, to.z);
         CHECK((enemies.kindOf(i) == 7 || enemies.kindOf(i) == 6));
-        const Vec3 stopped = world.collision().sweepWalls(
-            from, to, enemies.radiusOf(i), to.y + 0.1f, to.y + enemies.heightOf(i) - 0.1f);
-        CHECK(glm::distance(stopped, to) < 0.01f);
+        // check_enemy_pos uses a sphere at the initial collision centre, not a
+        // cylinder lifted to the selected landing (which falsely clips C1's pits).
+        const Vec3 centre = from + Vec3{0, enemyKind(enemies.kindOf(i)).collisionHeight, 0};
+        const Vec3 candidate{to.x, centre.y, to.z};
+        CHECK_FALSE(world.collision().wallBetween(centre, candidate, enemies.radiusOf(i)));
+        const auto floor = world.collision().floorAt(candidate, 4, 10, 0.1f);
+        REQUIRE(floor);
+        CHECK(to.y == Approx(floor->y));
+        CHECK(std::abs(to.y - centre.y) <= 6);
     }
     // These snake pits are not the worm-generator exception.
     CHECK(generators.enemyObstacles().size() == generators.obstacles().size());

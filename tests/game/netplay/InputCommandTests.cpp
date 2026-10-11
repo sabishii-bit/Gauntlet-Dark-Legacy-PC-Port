@@ -19,7 +19,7 @@ InputCommand sample() {
     result.seat = 2;
     result.direction = {0, 1};
     result.magnitude = 0.5f;
-    result.aimPoint = Vec3{2, -3, 4};
+    result.aimDirection = Vec3{1, 0, 0};
     result.heldButtons = static_cast<u32>(CommandHeld::Attack);
     result.pressedButtons = static_cast<u32>(CommandPress::UsePotion);
     return result;
@@ -31,19 +31,19 @@ TEST_CASE("input packets have a fixed endian and version independent of C++ layo
     const auto encoded = InputPacket::encode(commands);
     REQUIRE(encoded);
     const std::vector<u8> expected{
-        0x47, 0x44, 0x4c, 0x49, 1,    0,    1,    0,    // header
-        1,    0,    0,    0,    0,    0,    0,    0,    // epoch
-        0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // tick
-        4,    3,    2,    1,    2,    1,    0,    0,    // grant, seat, aim, reserved
-        0,    0,    0,    0,    0,    0,    0x80, 0x3f, 0, 0, 0,    0x3f, // direction, magnitude
-        0,    0,    0,    0x40, 0,    0,    0x40, 0xc0, 0, 0, 0x80, 0x40, // aim
-        1,    0,    0,    0,    1,    0,    0,    0};                     // held, pressed
+        0x47, 0x44, 0x4c, 0x49, 2,    0,    1,    0,                   // header
+        1,    0,    0,    0,    0,    0,    0,    0,                   // epoch
+        0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11,                // tick
+        4,    3,    2,    1,    2,    1,    0,    0,                   // grant, seat, aim, reserved
+        0,    0,    0,    0,    0,    0,    0x80, 0x3f, 0, 0, 0, 0x3f, // direction, magnitude
+        0,    0,    0x80, 0x3f, 0,    0,    0,    0,    0, 0, 0, 0,    // aim
+        1,    0,    0,    0,    1,    0,    0,    0};                  // held, pressed
     CHECK(*encoded == expected);
     const auto decoded = InputPacket::decode(expected);
     REQUIRE(decoded);
     REQUIRE(decoded->size() == 1);
     CHECK(decoded->front().tick == commands[0].tick);
-    CHECK(decoded->front().aimPoint == commands[0].aimPoint);
+    CHECK(decoded->front().aimDirection == commands[0].aimDirection);
     CHECK(decoded->front().grant == commands[0].grant);
     CHECK(InputPacket::encode(*decoded) == encoded);
 }
@@ -68,6 +68,9 @@ TEST_CASE("input packets reject truncation trailing bytes and unsupported protoc
     auto missingAim = *bytes;
     missingAim[29] = 0;
     CHECK_FALSE(InputPacket::decode(missingAim)); // aim payload must be absent too
+    auto legacy = *bytes;
+    legacy[4] = 1; // absolute aim points must never be interpreted as directions
+    CHECK_FALSE(InputPacket::decode(legacy));
 }
 
 TEST_CASE("input validation rejects impossible movement and nonfinite cursor targets",
@@ -92,11 +95,18 @@ TEST_CASE("input validation rejects impossible movement and nonfinite cursor tar
                           std::numeric_limits<f32>::quiet_NaN()}) {
         for (s32 component = 0; component < 3; ++component) {
             auto command = good;
-            (*command.aimPoint)[component] = bad;
+            (*command.aimDirection)[component] = bad;
             rejects(command);
         }
     }
     auto command = good;
+    for (const Vec3 bad : {Vec3{0.5f, 0, 0}, Vec3{1, 0, 1}, Vec3{0, 1, 0}}) {
+        command.aimDirection = bad;
+        rejects(command);
+    }
+    command.aimDirection = Vec3{0};
+    CHECK(command.valid());
+    command = good;
     command.epoch = 0;
     rejects(command);
     command = good;
@@ -118,7 +128,7 @@ TEST_CASE("redundant input batches stay bounded and fail atomically", "[netplay]
     for (usize i = 0; i < batch.size(); ++i) {
         batch[i].seat = static_cast<u8>(i % InputCommand::kSeats);
         batch[i].tick = i / InputCommand::kSeats;
-        batch[i].aimPoint.reset();
+        batch[i].aimDirection.reset();
     }
     const auto encoded = InputPacket::encode(batch);
     REQUIRE(encoded);

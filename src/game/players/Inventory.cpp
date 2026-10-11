@@ -41,6 +41,12 @@ s32 Inventory::addPotions(s32 kind, s32 count) {
 }
 
 void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength, bool activate) {
+    if (permanentPojo && kind == powerup::kSpecial && (flags & powerup::kPojo) != 0) {
+        flags &= ~powerup::kPojo;
+        if (flags == 0) {
+            return;
+        }
+    }
     for (PowerupSlot& slot : powerups) {
         if (slot.kind != kind || slot.flags != flags) {
             continue;

@@ -37,6 +37,14 @@ struct CompanionState {
     bool valid(usize slot) const;
 };
 
+/** Host floor contact for the costume's shadow, not guest-side physics. */
+struct PlayerShadowState {
+    Vec3 ground{0};
+    Vec3 normal{0, 1, 0};
+    f32 alpha = 1;
+    bool valid() const;
+};
+
 struct PlayerCombatState {
     f32 health = 0;
     ReplicaPlayerLife life = ReplicaPlayerLife::Standing;
@@ -44,6 +52,10 @@ struct PlayerCombatState {
     bool damageable = false;
     CombatAnimation animation;
     std::array<std::optional<CompanionState>, 2> companions{};
+    /** Present only for departing survivors: 0 starts the effect, 1 hides the body.
+     * Separate from motion: the collision anchor does not sink with the artwork. */
+    std::optional<f32> portalPhase = std::nullopt;
+    std::optional<PlayerShadowState> shadow = std::nullopt;
 };
 
 struct EnemyCombatState {
@@ -164,7 +176,8 @@ class CombatPacket {
 public:
     static constexpr usize kHeaderBytes = 36;
     static constexpr usize kCompanionBytes = 84;
-    static constexpr usize kPlayerBytes = 32 + 2 * kCompanionBytes;
+    static constexpr usize kShadowBytes = 28;
+    static constexpr usize kPlayerBytes = 36 + 2 * kCompanionBytes + kShadowBytes;
     static constexpr usize kEnemyBytes = 72;
     static constexpr usize kProjectileBytes = 148;
     static constexpr usize kPickupBytes = 96;

@@ -73,6 +73,8 @@ bool ReplicaStage::Assets::load(RenderDevice& device, const std::filesystem::pat
         return false;
     }
     std::array<PlayerFigure*, InputCommand::kSeats> figures{};
+    ClassDataSet classes;
+    classes.load(root / "pdata");
     for (usize seat = 0; seat < party.size(); ++seat) {
         const auto& profile = party[seat];
         if (!profile) {
@@ -83,7 +85,8 @@ bool ReplicaStage::Assets::load(RenderDevice& device, const std::filesystem::pat
             return false;
         }
         figures[seat] = figure.get();
-        if (!view.setPlayer(static_cast<u8>(seat), std::move(figure))) {
+        if (!view.setPlayer(static_cast<u8>(seat), std::move(figure), 1,
+                            classes.stats(profile->gameplayCopy().character))) {
             return false;
         }
     }
@@ -99,6 +102,7 @@ bool ReplicaStage::Assets::load(RenderDevice& device, const std::filesystem::pat
         !view.bindCompanions(device, world.powerups(), &weapons)) {
         return false;
     }
+    view.loadPortalSkin(device, weapons.textures);
     std::vector<HealthMeterReading> meters;
     if (boss != nullptr) {
         const auto append = [&](const CritterData& data) {
@@ -161,9 +165,10 @@ bool ReplicaStage::show(const CombatSnapshot& snapshot) {
     return m_assets != nullptr && m_assets->view.show(snapshot);
 }
 void ReplicaStage::draw(RenderDevice& device, const Mat4& frameProjection, f32 width, f32 height,
-                        f32 textureFrame) {
+                        f32 textureFrame, const GameConfig& video) {
     if (m_assets != nullptr) {
-        m_assets->view.draw(device, frameProjection, width, height, textureFrame, m_assets->flash);
+        m_assets->view.draw(device, frameProjection, width, height, textureFrame, m_assets->flash,
+                            nullptr, video);
     }
 }
 const ReplicaView* ReplicaStage::view() const {

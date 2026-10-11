@@ -90,6 +90,7 @@ struct PlayerRuntime {
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     Knockback knockback;                    ///< the pushes of this frame's hits, and the slide
     TurboMeter turbo;
+    bool pojoTurbo = false;     ///< this update requests breath from the meter, not an item charge
     std::vector<s32> helpHeard; ///< since the character was loaded, distinct from saved help
     TurboMove move;
     std::vector<usize> rammed; ///< barrels already hit by the current charge

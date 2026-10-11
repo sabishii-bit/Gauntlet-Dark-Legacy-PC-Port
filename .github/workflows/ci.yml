@@ -96,14 +96,27 @@ jobs:
             vcpkg-${{ runner.os }}-
       - name: Tools
         run: python scripts/setup.py --yes --no-build
-      - name: Room admission, ICE and impaired UDP (no assets or display)
-        run: python scripts/netplay_test.py --build --room-runs 3
+      - name: Rust networking toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component clippy --component rustfmt
+      - name: Iroh transport processes (no assets or display)
+        run: python scripts/netplay_test.py --build --runs 3
+        env:
+          RUSTUP_TOOLCHAIN: "1.98.0"
+      - name: Iroh adapter tests
+        run: |
+          cargo fmt --manifest-path src/engine/net/iroh/Cargo.toml --check
+          cargo clippy --release --locked --manifest-path src/engine/net/iroh/Cargo.toml --all-targets --jobs 2 -- -D warnings
+          cargo test --release --locked --manifest-path src/engine/net/iroh/Cargo.toml --jobs 2
+        env:
+          RUSTUP_TOOLCHAIN: "1.98.0"
+          CARGO_HOME: ${{ github.workspace }}/build/cargo-home
+          CARGO_TARGET_DIR: ${{ github.workspace }}/build/netplay/src/engine/net/cargo
       - name: Networking lint tools
         if: runner.os == 'Linux'
         run: python scripts/setup.py --yes --tooling --no-build
       - name: Networking lint
         if: runner.os == 'Linux'
-        run: python scripts/lint.py src/engine/net src/game/netplay/RoomClient.cpp src/game/netplay/RoomSession.cpp tools/netplaycheck
+        run: python scripts/lint.py src/engine/net src/game/netplay/HostedRoom.cpp tools/netplaycheck
       - name: Retain network diagnostics
         if: always()
         uses: actions/upload-artifact@v4

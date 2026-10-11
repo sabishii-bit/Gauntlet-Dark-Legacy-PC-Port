@@ -1,8 +1,21 @@
 #pragma once
 
-#include "engine/net/PeerTransport.h"
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
+struct RoomSettings {
+    u8 maxPlayers = 4;
+    u8 difficulty = 1;   ///< easy, normal, hard
+    u8 friendlyFire = 0; ///< normal, stun, hurt
+    bool valid() const {
+        return maxPlayers >= 1 && maxPlayers <= 4 && difficulty <= 2 && friendlyFire <= 2;
+    }
+    bool operator==(const RoomSettings&) const = default;
+};
 struct RoomMember {
     std::string peer;
     std::vector<u8> seats;
@@ -15,7 +28,7 @@ struct RoomSnapshot {
     u64 revision = 0;
     bool started = false;
     std::vector<RoomMember> members;
-    std::vector<PeerTransport::Signal> signals;
+    RoomSettings settings{}; // default rules for existing room-service adapters
 };
 
 /** Nonblocking room mailbox. Implementations own credentials/network workers;
@@ -30,7 +43,6 @@ public:
     };
     virtual ~RoomService() = default;
     virtual Update poll() = 0;
-    virtual bool send(PeerTransport::Signal signal) = 0;
     virtual bool ready(u64 revision, bool value = true) = 0;
     virtual bool start(u64 revision) = 0;
     virtual void leave() = 0;

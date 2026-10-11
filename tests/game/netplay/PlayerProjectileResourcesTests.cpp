@@ -125,6 +125,15 @@ TEST_CASE("native player projectile catalogs cover every costume class and futur
         arsenal.launchSuperShot(actor, figure.get());
         REQUIRE(arsenal.missiles().count() == 1);
         inspect();
+        actor.save().progress().inventory = {};
+        actor.save().progress().inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
+        arsenal.launchWeapon(actor, figure.get(), actor.facing(), 1, false);
+        REQUIRE(arsenal.missiles().count() == 1);
+        inspect();
+        actor.save().progress().inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 5, 60);
+        arsenal.launchSuperShot(actor, figure.get());
+        REQUIRE(arsenal.missiles().count() == 1);
+        inspect();
         for (const bool left : {false, true}) {
             actor.save().progress().inventory = {};
             actor.save().progress().inventory.addPowerup(

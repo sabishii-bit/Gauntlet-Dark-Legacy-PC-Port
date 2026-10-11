@@ -60,6 +60,44 @@ TEST_CASE("static fixture terminal frames remain exactly in range at every sampl
         CHECK(shown->fixtures[0].textureFrame == 29);
     }
 }
+
+TEST_CASE(
+    "player shadows follow the snapshot clock on slopes and moving floors without crossing cuts",
+    "[netplay][combat-playback][replica-shadows]") {
+    CombatPlayback playback;
+    REQUIRE(playback.begin(1, 1));
+    auto first = state(10);
+    first.players[0]->shadow = PlayerShadowState{{0, 3, 0}, {0, 1, 0}, 1};
+    auto last = first;
+    last.motion.tick = 14;
+    last.motion.players[0]->position = {8, 7, 0};
+    last.players[0]->shadow = PlayerShadowState{{8, 7, 0}, {0.6f, 0.8f, 0}, 0.5f};
+    bool continuous = true;
+    SECTION("moving floor interpolates with the body") {}
+    SECTION("teleport cuts do not smear a shadow between floors") {
+        ++last.motion.players[0]->continuity;
+        continuous = false;
+    }
+    SECTION("a new seat owner does not inherit the previous shadow") {
+        ++last.motion.players[0]->grant;
+        continuous = false;
+    }
+    SECTION("leaving a floor retains the last contact until its checkpoint") {
+        last.players[0]->shadow.reset();
+        continuous = false;
+    }
+    receive(playback, first);
+    receive(playback, last);
+    const auto shown = playback.sample(12);
+    REQUIRE(shown);
+    REQUIRE(shown->players[0]->shadow);
+    const auto& shadow = *shown->players[0]->shadow;
+    CHECK(shadow.ground == (continuous ? Vec3{4, 5, 0} : Vec3{0, 3, 0}));
+    CHECK(shadow.alpha == Approx(continuous ? 0.75f : 1));
+    CHECK(glm::length(shadow.normal) == Approx(1));
+    CHECK(shown->valid());
+    CHECK(CombatPacket::encode(*playback.sample(14)) == CombatPacket::encode(last));
+}
 TEST_CASE("combat playback samples camera and actor poses on one delayed clock",
           "[netplay][combat-playback]") {
     CombatPlayback playback;
@@ -94,6 +132,62 @@ TEST_CASE("combat playback samples camera and actor poses on one delayed clock",
     CHECK(CombatPacket::encode(*playback.sample(10000)) == CombatPacket::encode(last));
     CHECK(playback.sample(14)->players[0]->health == 900);
     CHECK(playback.sample(14)->players[0]->hitFlash);
+}
+
+TEST_CASE("portal playback interpolates only a committed departure on the shared clock",
+          "[netplay][combat-playback][online-departure]") {
+    auto first = state(10);
+    first.players[0]->portalPhase = 0.2f;
+    auto last = first;
+    last.motion.tick = 20;
+    last.players[0]->portalPhase = 0.4f;
+    SECTION("continuous departure at different render rates") {
+        CombatPlayback playback;
+        REQUIRE(playback.begin(1, 1));
+        receive(playback, first);
+        receive(playback, last);
+        for (const s32 fps : {30, 60, 144}) {
+            for (s32 frame = 0; frame <= fps / 6; ++frame) {
+                const f64 time = 10 + static_cast<f64>(frame) * 60 / fps;
+                const auto tick = static_cast<u64>(time);
+                const auto sample =
+                    playback.sample(tick, static_cast<f32>(time - static_cast<f64>(tick)));
+                REQUIRE(sample);
+                REQUIRE(sample->players[0]->portalPhase);
+                CHECK(*sample->players[0]->portalPhase == Approx(time * 0.02));
+                CHECK(sample->motion.players[0]->position == first.motion.players[0]->position);
+            }
+        }
+        CHECK(playback.sample(100)->players[0]->portalPhase == 0.4f); // no autonomous countdown
+        REQUIRE(playback.begin(1, 2));
+        CHECK_FALSE(playback.sample(10));
+    }
+    SECTION("not before commitment") {
+        first.players[0]->portalPhase.reset();
+    }
+    SECTION("not through a seat replacement") {
+        ++last.motion.players[0]->grant;
+    }
+    SECTION("not through a relocation") {
+        ++last.motion.players[0]->continuity;
+    }
+    SECTION("not backwards into a new departure") {
+        last.players[0]->portalPhase = 0.0f;
+    }
+    SECTION("not into a death") {
+        last.players[0]->life = ReplicaPlayerLife::Dying;
+        last.players[0]->portalPhase.reset();
+    }
+    if (!first.players[0]->portalPhase || last.players[0]->portalPhase != 0.4f ||
+        last.motion.players[0]->grant != 1 || last.motion.players[0]->continuity != 1) {
+        CombatPlayback playback;
+        REQUIRE(playback.begin(1, 1));
+        receive(playback, first);
+        receive(playback, last);
+        REQUIRE(playback.sample(15));
+        CHECK(playback.sample(15)->players[0]->portalPhase == first.players[0]->portalPhase);
+        CHECK(playback.sample(20)->players[0]->portalPhase == last.players[0]->portalPhase);
+    }
 }
 
 TEST_CASE(

@@ -39,6 +39,7 @@ public:
 
     void clear() {
         m_nodes.clear();
+        m_textureSampling.clear();
         resetTextures();
         setAppearance(false);
         m_cullBack = true;
@@ -55,6 +56,8 @@ public:
     void setTextureFrame(u32 slot, const Texture* frame, const Texture* next = nullptr,
                          f32 blend = 0.0f);
     void setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale = Vec2{1.0f, 1.0f});
+    /** Material sampling overrides, retained across texture animation resets. */
+    void setTextureSampling(u32 slot, bool clamp, bool mipmaps);
     /** Texture-node changes apply only to that node's subtree. UV transforms affect
      * every material there, while frame substitutions still name a texture slot. */
     void setNodeTextureFrame(usize root, u32 slot, const Texture* frame,
@@ -168,6 +171,12 @@ private:
     bool m_cullBack = true;
     Color m_tint = Color::white();
     std::vector<TextureFrame> m_frames;
+    struct TextureSampling {
+        u32 slot;
+        bool clamp;
+        bool mipmaps;
+    };
+    std::vector<TextureSampling> m_textureSampling;
     /** A slot's coordinates slid and stretched. */
     struct Slide {
         u32 slot = 0;

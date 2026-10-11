@@ -114,6 +114,7 @@ f32 longerOf(f32 found, f32 left) {
 
 PowerupEffects PowerupEffects::of(const Inventory& inventory) {
     PowerupEffects effects;
+    effects.special = inventory.permanentPojo ? powerup::kPojo : 0;
     f32 elementTime = -1;
     for (const PowerupSlot& slot : inventory.powerups) {
         if (!slot.working()) {

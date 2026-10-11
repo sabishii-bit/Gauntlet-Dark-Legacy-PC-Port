@@ -121,6 +121,7 @@ private:
     Mat4 m_pointerTransform{1};
     SoundSet m_commonSounds;
     SoundSet m_selectSounds;
+    SoundSet m_narratorSounds;
     SoundHandle m_music = kNoSound;
     SoundHandle m_greeting = kNoSound;
     std::vector<SoundHandle> m_soundHandles;

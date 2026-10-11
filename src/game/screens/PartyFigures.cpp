@@ -213,24 +213,31 @@ void PartyFigures::greetGems(RenderDevice& device, std::span<PlayerRuntime> play
 
 void PartyFigures::drawShadows(RenderDevice& device, std::span<const PlayerRuntime> players,
                                const Scene& scene, const Mat4& clip, const Vec3& eye) {
-    if (!scene.world.ref().playerShadows()) {
-        return;
-    }
     for (const PlayerRuntime& runtime : players) {
-        if (!shown(runtime, scene)) {
-            continue;
-        }
-        // It lies on the floor under the body, even while the body is thrown or sinks
-        // (PlayerMotion keeps its height at the floor, not the feet).
-        const Vec3 feet{departurePlacement(runtime, scene.departure, scene.frameBlend)[3]};
-        if (const auto floor = scene.world.collision().floorAt(feet, kShadowReach, kShadowDrop)) {
-            const PowerupEffects worn =
-                PowerupEffects::of(runtime.actor.save().progress().inventory);
-            runtime.figure->drawShadow(device, clip, eye, Vec3{feet.x, floor->y, feet.z},
-                                       floor->normal, scene.world.lighting(),
-                                       alphaOf(runtime, worn));
+        if (const auto shadow = shadowOf(runtime, scene.world, scene.departure, scene.frameBlend)) {
+            runtime.figure->drawShadow(device, clip, eye, shadow->ground, shadow->normal,
+                                       scene.world.lighting(), shadow->alpha);
         }
     }
+}
+
+std::optional<PartyFigures::Shadow> PartyFigures::shadowOf(const PlayerRuntime& runtime,
+                                                           const LevelWorld& world,
+                                                           const PortalDeparture& departure,
+                                                           f32 frameBlend) {
+    if (!world.ref().playerShadows() || runtime.figure == nullptr ||
+        runtime.life == PlayerLife::InTower ||
+        (runtime.life == PlayerLife::Standing && departure.finished())) {
+        return std::nullopt;
+    }
+    // Probe the actual host floor, including moving platforms and slopes, even while
+    // the body is thrown or sinking. A guest's unloaded trigger state cannot supply it.
+    const Vec3 feet{departurePlacement(runtime, departure, frameBlend)[3]};
+    if (const auto floor = world.collision().floorAt(feet, kShadowReach, kShadowDrop)) {
+        const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
+        return Shadow{{feet.x, floor->y, feet.z}, floor->normal, alphaOf(runtime, worn)};
+    }
+    return std::nullopt;
 }
 
 void PartyFigures::addLanterns(std::vector<PointLight>& lights,

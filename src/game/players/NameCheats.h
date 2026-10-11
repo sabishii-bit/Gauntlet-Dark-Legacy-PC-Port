@@ -22,8 +22,14 @@ std::span<const HiddenCostume> hiddenCostumes();
 const HiddenCostume* hiddenCostume(std::string_view name);
 
 /** Apply the six-character name codes when a character is selected or enters a level.
- * Codes are case-sensitive; powerups use ordinary inventory slots and can be toggled.
+ * Codes are case-sensitive; EGG911 selects a permanent form outside the item inventory.
+ * Other powerups use ordinary inventory slots and can be toggled.
  * Returns whether a code was recognized, without changing an ordinary character. */
 bool applyNameCheats(CharacterSave& save);
+
+/** Rebuild the name-selected form, including migration of old EGG911 item slots.
+ * Does not grant supplies, gold or other cheats; safe when reading a saved character. */
+void restoreNameForm(CharacterSave& save);
+void restoreNameForm(Inventory& inventory, std::string_view name);
 
 } // namespace gdl::game

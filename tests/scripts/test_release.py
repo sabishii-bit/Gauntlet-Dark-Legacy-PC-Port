@@ -12,8 +12,8 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from installer.install import retry_locked
-from publish_release import changelog, check_publication, main as publish_main, require_new_version, validated_assets
-from release import check_frozen_installer, digest, installer_notices, make_payload
+from publish_release import changelog, check_publication, main as publish_main, publication_is_prerelease, require_new_version, validated_assets
+from release import check_frozen_installer, digest, installer_notices, make_payload, networking_notices
 from installer.releases import runtime_name
 
 
@@ -185,6 +185,28 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')", publication)
         self.assertIn("needs: installers", publication)
 
+    def test_alpha_version_can_be_published_as_full_latest_release(self):
+        policy = self.notes_path.with_suffix(".release.json")
+        policy.write_text(json.dumps({"version": self.tag[1:], "prerelease": False}), encoding="utf-8")
+        with mock.patch("publish_release.check_publication", return_value=self.tag), mock.patch(
+                "publish_release.validated_assets", return_value=[self.root / "setup.exe"]), mock.patch(
+                "publish_release.subprocess.run") as publish:
+            publish_main([])
+        command = publish.call_args.args[0]
+        self.assertEqual(command[:4], ["gh", "release", "create", self.tag])
+        self.assertIn("--latest", command)
+        self.assertNotIn("--prerelease", command)
+
+    def test_release_policy_rejects_stale_versions_and_non_boolean_flags(self):
+        policy = self.notes_path.with_suffix(".release.json")
+        for value in ({"version": "0.0.0", "prerelease": False},
+                      {"version": self.tag[1:], "prerelease": "false"},
+                      {"version": self.tag[1:], "prerelease": 0}, []):
+            with self.subTest(value=value):
+                policy.write_text(json.dumps(value), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    publication_is_prerelease(self.tag)
+
     def test_both_platforms_are_required(self):
         self.assertEqual(len(validated_assets(self.root, self.tag)), 8)
         self.packages[1][1].unlink()
@@ -299,6 +321,25 @@ class ReleaseTests(unittest.TestCase):
         with mock.patch("release.importlib.metadata.distribution", return_value=mock.Mock(files=[])):
             with self.assertRaisesRegex(ValueError, "PyInstaller"):
                 installer_notices(self.root)
+
+
+    def test_networking_notices_require_locked_target_graph_and_nonempty_output(self):
+        for windows, target in ((True, "x86_64-pc-windows-msvc"),
+                                (False, "x86_64-unknown-linux-gnu")):
+            with self.subTest(windows=windows), mock.patch("release.devenv.WINDOWS", windows), mock.patch(
+                    "release.devenv.environment", return_value={}), mock.patch(
+                    "release.subprocess.run") as run:
+                def generate(command, **kwargs):
+                    self.assertIn("--locked", command)
+                    self.assertIn("--fail", command)
+                    self.assertEqual(command[command.index("--target") + 1], target)
+                    Path(command[command.index("--output-file") + 1]).write_text("Notice\n" * 200)
+                run.side_effect = generate
+                self.assertEqual(networking_notices(self.root), [(self.root / "rust.txt", "licenses/rust.txt")])
+                (self.root / "rust.txt").unlink()
+                run.side_effect = None
+                with self.assertRaisesRegex(ValueError, "Missing networking"):
+                    networking_notices(self.root)
 
 
 if __name__ == "__main__":

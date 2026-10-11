@@ -48,7 +48,8 @@ enum class CommandPress : u32 {
 
 /** One seat's logical controls at an authoritative simulation tick, not a rendered frame.
  * Epochs separate level/pause contexts; grants separate occupants of the same seat.
- * aimPoint is a facing request only, never an authoritative position or hit target. */
+ * aimDirection is horizontal world facing, never an authoritative position or hit target.
+ * Zero retains current facing; absence selects ordinary camera-relative stick movement. */
 struct InputCommand {
     static constexpr usize kSeats = 4;
     static constexpr u32 kHeldMask = (1U << 10U) - 1U;
@@ -59,7 +60,7 @@ struct InputCommand {
     u8 seat = 0;
     Vec2 direction{0};
     f32 magnitude = 0;
-    std::optional<Vec3> aimPoint;
+    std::optional<Vec3> aimDirection;
     u32 heldButtons = 0;
     u32 pressedButtons = 0;
 
@@ -76,7 +77,7 @@ struct InputCommand {
  * The transport must authenticate the sender separately; a packet cannot name its peer. */
 class InputPacket {
 public:
-    static constexpr u16 kVersion = 1;
+    static constexpr u16 kVersion = 2;
     static constexpr usize kMaxCommands = 16;
     static constexpr usize kHeaderBytes = 8;
     static constexpr usize kCommandBytes = 56;

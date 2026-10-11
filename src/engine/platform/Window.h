@@ -59,6 +59,8 @@ public:
         return false;
     }
     virtual void stopRumble() {}
+    virtual std::string clipboardText() const { return {}; }
+    virtual void setClipboardText(const std::string& /*text*/) {}
 
     /** The window's icon at one or more sizes; the system picks. Ignored where the
      * platform has no window icons. */

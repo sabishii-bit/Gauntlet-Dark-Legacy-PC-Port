@@ -12,7 +12,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # Shared value types, byte I/O and codecs sit below both the native readers and runtime.
 add_library(engine_base STATIC
     core/Log.cpp core/Assert.cpp core/Clock.cpp core/Strings.cpp
-    io/File.cpp io/AssetLocator.cpp render/Image.cpp codec/DspAdpcm.cpp)
+    io/File.cpp io/AssetLocator.cpp io/Sha256.cpp render/Image.cpp codec/DspAdpcm.cpp)
 add_library(gdl::engine_base ALIAS engine_base)
 target_include_directories(engine_base PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(engine_base PUBLIC glm::glm)
@@ -54,6 +54,8 @@ add_library(engine STATIC
     render/ImmediateBatch.h
     render/ImmediateBatch.cpp
     render/RenderDevice.h
+    render/ThreadedRenderDevice.h
+    render/ThreadedRenderDevice.cpp
     render/DepthOfField.h
     render/DepthOfField.cpp
     render/AmbientOcclusion.h

@@ -6,10 +6,10 @@
 # netplay contains transport-independent commands/timelines and bounded selected-character
 # data from players; screens adapts them to gameplay, and app owns the input boundary.
 find_package(lz4 CONFIG REQUIRED)
-if(GDL_ENABLE_NETPLAY)
-    add_subdirectory(netplay)
-endif()
 add_library(game STATIC
+    netplay/AssetDigest.cpp
+    screens/NetplayMenu.cpp
+    netplay/HostedRoom.cpp
     netplay/SnapshotBlock.cpp
     netplay/InputCommand.cpp
     netplay/InputTimeline.cpp
@@ -81,6 +81,7 @@ add_library(game STATIC
     screens/ShopLayout.cpp
     app/Gauntlet.h
     app/Gauntlet.cpp
+    app/GauntletNetplay.cpp
     app/GameCursor.cpp
     app/BuildLabel.cpp
     app/LevelCompletion.h
@@ -369,7 +370,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 target_link_libraries(game PUBLIC gdl::engine PRIVATE gdl::formats nlohmann_json::nlohmann_json lz4::lz4)
 if(GDL_ENABLE_NETPLAY)
-    target_link_libraries(game PRIVATE gdl::room_service gdl::engine_net)
+    target_link_libraries(game PRIVATE gdl::engine_net)
 endif()
 set_source_files_properties(app/OnlineRun.cpp PROPERTIES
     COMPILE_DEFINITIONS GDL_ENABLE_NETPLAY=$<BOOL:${GDL_ENABLE_NETPLAY}>)

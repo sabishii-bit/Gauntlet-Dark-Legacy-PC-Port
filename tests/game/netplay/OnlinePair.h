@@ -8,7 +8,7 @@
 
 namespace gdl::test {
 /** In-memory authenticated transport for native gameplay tests. The separate
- * process harness covers the same OnlineSession with real HTTP and ICE. */
+ * process harness covers the same OnlineSession over the real provider adapter. */
 struct OnlinePair {
     struct Service final : game::RoomService {
         game::RoomSnapshot& room;
@@ -17,7 +17,6 @@ struct OnlinePair {
         Service(game::RoomSnapshot& snapshot, std::string identity)
             : room(snapshot), peer(std::move(identity)) {}
         Update poll() override { return {room, peer, {}, closed}; }
-        bool send(PeerTransport::Signal /*signal*/) override { return true; }
         bool ready(u64 revision, bool value) override {
             if (revision != room.revision || room.started) {
                 return false;
@@ -65,8 +64,6 @@ struct OnlinePair {
         std::optional<std::string> peer(Connection connection) const override {
             return connection == (host ? 1U : 99U) ? std::optional{remoteIdentity} : std::nullopt;
         }
-        std::vector<Signal> takeSignals() override { return {}; }
-        bool receiveSignal(const Signal& /*signal*/) override { return true; }
         SendResult send(Connection connection, std::span<const u8> bytes,
                         Delivery /*delivery*/) override {
             REQUIRE(connection == (host ? 1U : 99U));
@@ -86,8 +83,7 @@ struct OnlinePair {
         std::string(32, 'a'),
         1,
         false,
-        {{std::string(32, 'a'), {0}, false}, {std::string(32, 'b'), {1}, false}},
-        {}};
+        {{std::string(32, 'a'), {0}, false}, {std::string(32, 'b'), {1}, false}}};
     Service hostService{room, std::string(32, 'a')};
     Service guestService{room, std::string(32, 'b')};
     Wire hostWire;

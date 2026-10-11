@@ -2641,6 +2641,133 @@ TEST_CASE("player guard flashes carry the player's color and follow the body unt
     f.attacks.updateStrikes(0, f.players, f.targets); // Retired attachments are safe to remove.
 }
 
+TEST_CASE("native melee and ranged attacks use independent Strength and Magic attributes",
+          "[game][player-attacks][melee-scaling][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WIZ.WAD").parent_path().parent_path();
+    const s32 character = GENERATE(0, 2, 6, 10, 14);
+    const s32 boost = GENERATE(0, 1, 2);
+    const bool heavy = GENERATE(false, true);
+    CAPTURE(character, boost, heavy);
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    const auto* stats = f.classes.stats(character);
+    REQUIRE(stats);
+    std::array<PlayerRuntime, 2> party;
+    CharacterSave save;
+    save.character = character;
+    save.progress().fightAdd = boost == 1 ? 200.0f : 0.0f;
+    save.progress().magicAdd = boost == 2 ? 200.0f : 0.0f;
+    party[0].actor.spawn(0, save, stats, Vec3{0}, 0);
+    party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 2.5f}, 0);
+    party[0].figure = PlayerFigure::load(f.device, root, save, false);
+    REQUIRE(party[0].figure);
+    const StatBlock block = displayStats(*stats, 1, save.progress());
+    REQUIRE(block.strength() != block.magic());
+    // PlayerProcessPowerups derives stat_damage from att_fight for every class;
+    // only stat_missile_dmg switches to att_magic for families 2 and 6.
+    const f32 melee = 5.0f + 0.015f * static_cast<f32>(block.strength());
+    const s32 rangedStat = character == 0 ? block.strength() : block.magic();
+    const f32 ranged = 5.0f + 0.015f * static_cast<f32>(rangedStat);
+    f.targets.multiplayer = MultiplayerMode::Hurt;
+    f.targets.players = party;
+    s32 contacts = 0;
+    f.targets.hurt = [&](usize index, f32 amount, HurtKind, const PlayerImpact&) {
+        CHECK(index == 1);
+        CHECK(amount == Approx(melee * (heavy ? 2.0f : 1.0f)));
+        ++contacts;
+    };
+    auto& figure = *party[0].figure;
+    for (s32 frame = 0; frame < 180 && contacts == 0; ++frame) {
+        const auto deed = heavy ? PlayerDeed::MeleeSlow : PlayerDeed::Melee;
+        figure.animate(0, 2, 1.0f / 30, frame == 0 ? deed : PlayerDeed::None);
+        if (figure.animator().meleeStruck()) {
+            f.attacks.melee(0, party, f.targets);
+        }
+    }
+    REQUIRE(contacts == 1);
+    f.arsenal.launchWeapon(party[0].actor, &figure, {0, 0, 1}, 1, false);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    CHECK(f.arsenal.missiles().missile(0).damage == Approx(ranged));
+}
+
+TEST_CASE("native power-swing and turbo effect multipliers use melee damage even for casters",
+          "[game][player-attacks][melee-scaling][assets]") {
+    const auto root = test::assetOrSkip("PDATA/WIZ.WAD").parent_path().parent_path();
+    const s32 character = GENERATE(0, 2, 6, 10, 14);
+    const s32 boost = GENERATE(0, 1, 2);
+    const s32 move = GENERATE(0, 1, 2, 3, 4);
+    CAPTURE(character, boost, move);
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    const auto* stats = f.classes.stats(character);
+    REQUIRE(stats);
+    auto& player = f.players[0];
+    auto& save = player.actor.save();
+    save.character = character;
+    save.progress().fightAdd = boost == 1 ? 200.0f : 0.0f;
+    save.progress().magicAdd = boost == 2 ? 200.0f : 0.0f;
+    player.figure = PlayerFigure::load(f.device, root, save, false);
+    REQUIRE(player.figure);
+    player.turbo.add(100);
+    const StatBlock block = displayStats(*stats, 1, save.progress());
+    const f32 melee = 5.0f + 0.015f * static_cast<f32>(block.strength());
+    const std::array<s32, 5> rows{stats->moves.turboAClose, stats->moves.turboAStep,
+                                  stats->moves.turboAThrow, stats->moves.turboB,
+                                  stats->moves.turboC1};
+    auto expectedRows = stats->strikesOf(rows[static_cast<usize>(move)]);
+    if (move == 4) {
+        const auto second = stats->strikesOf(stats->moves.turboC2);
+        expectedRows.insert(expectedRows.end(), second.begin(), second.end());
+    }
+    std::erase_if(expectedRows, [&](s32 row) {
+        const auto& strike = stats->moveStrikes[static_cast<usize>(row)];
+        return !strike.harms() || strike.amount == 0;
+    });
+    std::stable_sort(expectedRows.begin(), expectedRows.end(), [&](s32 a, s32 b) {
+        return stats->moveStrikes[static_cast<usize>(a)].startFrame <
+               stats->moveStrikes[static_cast<usize>(b)].startFrame;
+    });
+    const auto step = [&](PlayerDeed deed) {
+        player.figure->animate(0, 2, 1.0f / 30, deed);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+    };
+    if (move >= 2) {
+        const std::array<PlayerDeed, 3> deeds{PlayerDeed::StrongAttack, PlayerDeed::TurboStrong,
+                                              PlayerDeed::TurboFull};
+        step(deeds[static_cast<usize>(move - 2)]);
+    } else {
+        step(PlayerDeed::Melee);
+        if (move == 1) {
+            const auto first = player.figure->animator().action();
+            step(PlayerDeed::None);
+            step(PlayerDeed::Melee);
+            for (s32 frame = 0; frame < 180 && player.figure->animator().action() == first;
+                 ++frame) {
+                step(PlayerDeed::Melee);
+            }
+            REQUIRE(player.figure->animator().meleeChain() == 2);
+        }
+        step(PlayerDeed::None);
+        step(PlayerDeed::MeleeSlow);
+    }
+    // Keep the launched volumes so every native DAMG row can be checked, including
+    // fixed positive amounts that must not acquire a stat multiplier.
+    for (s32 frame = 0; frame < 240; ++frame) {
+        step(PlayerDeed::None);
+    }
+    REQUIRE(f.attacks.strikes().count() == expectedRows.size());
+    for (usize i = 0; i < expectedRows.size(); ++i) {
+        const auto& row = stats->moveStrikes[static_cast<usize>(expectedRows[i])];
+        CAPTURE(expectedRows[i], row.amount);
+        // PlyrSfxDoDamageSub 80089B30 loads Player+0x104 (stat_damage), not
+        // Player+0x114 (stat_missile_dmg), before multiplying a negative amount.
+        const f32 expected = row.amount < 0 ? -row.amount * melee : row.amount;
+        CHECK(f.attacks.strikes().strike(i).damage == Approx(expected));
+    }
+}
+
 TEST_CASE("ordinary melee and finishers preserve the weapon element while guard flashes do not",
           "[game][player-attacks][alpha-elemental-melee][assets][melee-rumble]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")

@@ -492,7 +492,7 @@ TEST_CASE("local devices map to frozen global seats without UI pointers",
     local[0].menu.typed = "PRIVATE";
     local[0].menu.pointer = Vec2{1};
     local[1].move = {{-1, 0}, 1};
-    local[1].aimPoint = Vec3{10, 2, 5};
+    local[1].aimDirection = Vec3{0.6f, 0, 0.8f};
     REQUIRE(MatchInputs::sample(guest, local));
     REQUIRE(MatchInputs::sample(host, local));
     CHECK_FALSE(MatchInputs::sample(host, local));
@@ -501,7 +501,7 @@ TEST_CASE("local devices map to frozen global seats without UI pointers",
     REQUIRE(frame);
     CHECK((*frame)[0].throwPotion);
     CHECK((*frame)[2].move.direction == Vec2{-1, 0});
-    CHECK((*frame)[2].aimPoint == local[1].aimPoint);
+    CHECK((*frame)[2].aimDirection == local[1].aimDirection);
     CHECK((*frame)[1].move.magnitude == 0);
     for (u8 tick = 1; tick <= guest.context().inputLead; ++tick) {
         frame = MatchInputs::advance(host);
@@ -509,7 +509,7 @@ TEST_CASE("local devices map to frozen global seats without UI pointers",
     }
     CHECK((*frame)[1].throwPotion);
     CHECK((*frame)[3].move.direction == Vec2{-1, 0});
-    CHECK((*frame)[3].aimPoint == local[1].aimPoint);
+    CHECK((*frame)[3].aimDirection == local[1].aimDirection);
     for (const auto& input : *frame) {
         CHECK(input.menu.devices == nullptr);
         CHECK(input.menu.typed.empty());

@@ -29,8 +29,10 @@ u64 readU64(ByteReader& reader) {
     return low | (static_cast<u64>(reader.readU32()) << 32U);
 }
 
-bool finiteCoordinate(f32 value) {
-    return std::isfinite(value) && std::abs(value) <= 1'000'000.0f;
+bool validAim(const Vec3& aim) {
+    const f32 length = glm::dot(aim, aim);
+    return std::isfinite(aim.x) && std::isfinite(aim.z) && aim.y == 0 &&
+           (length == 0 || (length >= 0.99999f && length <= 1.00001f));
 }
 } // namespace
 
@@ -40,9 +42,7 @@ bool InputCommand::valid() const {
            std::isfinite(direction.y) && std::isfinite(magnitude) && magnitude >= 0 &&
            magnitude <= 1 && lengthSquared <= 1.00001f &&
            (magnitude == 0 || lengthSquared >= 0.99999f) && (heldButtons & ~kHeldMask) == 0 &&
-           (pressedButtons & ~kPressMask) == 0 &&
-           (!aimPoint || (finiteCoordinate(aimPoint->x) && finiteCoordinate(aimPoint->y) &&
-                          finiteCoordinate(aimPoint->z)));
+           (pressedButtons & ~kPressMask) == 0 && (!aimDirection || validAim(*aimDirection));
 }
 
 std::optional<std::vector<u8>> InputPacket::encode(std::span<const InputCommand> commands) {
@@ -62,10 +62,10 @@ std::optional<std::vector<u8>> InputPacket::encode(std::span<const InputCommand>
         writeU64(bytes, command.tick);
         writeU32(bytes, command.grant);
         bytes.push_back(command.seat);
-        bytes.push_back(command.aimPoint ? 1 : 0);
+        bytes.push_back(command.aimDirection ? 1 : 0);
         bytes.push_back(0);
         bytes.push_back(0);
-        const Vec3 aim = command.aimPoint.value_or(Vec3{0});
+        const Vec3 aim = command.aimDirection.value_or(Vec3{0});
         for (const f32 value :
              {command.direction.x, command.direction.y, command.magnitude, aim.x, aim.y, aim.z}) {
             writeU32(bytes, std::bit_cast<u32>(value));
@@ -109,7 +109,7 @@ std::optional<std::vector<InputCommand>> InputPacket::decode(std::span<const u8>
         aim.y = std::bit_cast<f32>(reader.readU32());
         aim.z = std::bit_cast<f32>(reader.readU32());
         if (aimPresent != 0) {
-            command.aimPoint = aim;
+            command.aimDirection = aim;
         } else if (aim != Vec3{0}) {
             return std::nullopt;
         }

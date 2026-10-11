@@ -67,7 +67,7 @@ TEST_CASE("title mouse click opens options and right click leaves them",
     scene.step(1, click);
     REQUIRE(scene.menuOpen());
     CHECK_FALSE(scene.optionsOpen());
-    // The title's Options line is centered at x=256 below Start's y=304 line.
+    // Start / Options occupy two rows, with Options at y=336.
     const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
     const auto clip = transform * Vec4{256, 344, 0.5f, 1};
     click.pointer = (Vec2{clip} + Vec2{1}) / 2.0f;
@@ -108,6 +108,9 @@ TEST_CASE("the title menu renders and plays music directly from the retail tree"
     REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
     REQUIRE(scene.menuOpen());
     REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.startMenuOpen());
+    REQUIRE_FALSE(scene.loading());
+    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
     REQUIRE(scene.loading());
     REQUIRE(scene.step(TitleScene::kLoadingTicks, MenuInput{}) == TitleOutcome::StartGame);
     scene.close();
@@ -136,7 +139,8 @@ TEST_CASE("the glow fades in and the screen times out when idle", "[game][title]
     REQUIRE(scene.glowOpacity() == 0);
 }
 
-TEST_CASE("start opens the menu and choosing start leads into the game", "[game][title][assets]") {
+TEST_CASE("Start opens Local and Netplay and Local leads into story mode",
+          "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
@@ -152,6 +156,14 @@ TEST_CASE("start opens the menu and choosing start leads into the game", "[game]
     REQUIRE_FALSE(scene.menuOpen());
 
     scene.step(1, press(true));
+    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.startMenuOpen());
+    REQUIRE_FALSE(scene.loading());
+    scene.step(1, press(false, false, false, true));
+    REQUIRE(scene.menuOpen());
+    REQUIRE_FALSE(scene.startMenuOpen());
+    scene.step(1, press(false, true));
+    REQUIRE(scene.startMenuOpen());
     REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
     REQUIRE(scene.loading());
     REQUIRE_FALSE(scene.menuOpen());
@@ -348,4 +360,52 @@ TEST_CASE("title options persist edits without beginning a game",
     CHECK_FALSE(scene.burning());
 }
 
+TEST_CASE("the title offers netplay without beginning offline character selection",
+          "[game][title][assets]") {
+    test::FakeRenderDevice device;
+    const Fixture fixture;
+    const auto context = fixture.context(nullptr);
+    TitleScene scene;
+    REQUIRE(scene.open(device, context));
+    scene.step(1, press(true));
+    scene.step(1, press(false, true));
+    REQUIRE(scene.startMenuOpen());
+    scene.step(1, press(false, false, true));
+    CHECK(scene.step(1, press(false, true)) == TitleOutcome::Netplay);
+    CHECK_FALSE(scene.loading());
+}
+
+TEST_CASE("mouse follows Start to Local or Netplay and back preserves title navigation",
+          "[game][title][mouse][assets]") {
+    test::FakeRenderDevice device;
+    const Fixture fixture;
+    const auto context = fixture.context(nullptr);
+    TitleScene scene;
+    REQUIRE(scene.open(device, context));
+    scene.render(device, makeScreenProjection(512, 384), 512, 384);
+    MenuInput click;
+    click.pointer = Vec2{256, 312};
+    click.pointerPressed = true;
+    scene.step(1, click); // Press Start
+    REQUIRE(scene.menuOpen());
+    CHECK_FALSE(scene.startMenuOpen());
+    scene.step(1, click); // Start
+    REQUIRE(scene.startMenuOpen());
+    CHECK_FALSE(scene.loading());
+    MenuInput back;
+    back.pointerBack = true;
+    scene.step(1, back);
+    REQUIRE(scene.menuOpen());
+    CHECK_FALSE(scene.startMenuOpen());
+    scene.step(1, click);
+    REQUIRE(scene.startMenuOpen());
+    click.pointer = Vec2{256, 344};
+    CHECK(scene.step(1, click) == TitleOutcome::Netplay);
+    CHECK_FALSE(scene.loading());
+    // Leaving the netplay overlay returns to this page, not offline character selection.
+    scene.step(1, back);
+    CHECK_FALSE(scene.startMenuOpen());
+    scene.step(1, back);
+    CHECK_FALSE(scene.menuOpen());
+}
 } // namespace

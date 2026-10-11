@@ -33,6 +33,7 @@ public:
         s32 pingMs = -1;
         s32 pendingBytes = 0;
         s64 queueMicroseconds = 0;
+        bool relayed = false;
     };
 
     virtual ~PacketTransport() = default;

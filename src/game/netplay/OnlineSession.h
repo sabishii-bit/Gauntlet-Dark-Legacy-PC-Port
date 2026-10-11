@@ -2,6 +2,8 @@
 
 #include <map>
 
+#include "engine/net/PeerTransport.h"
+
 #include "game/netplay/MatchSession.h"
 #include "game/netplay/PartyBootstrap.h"
 #include "game/netplay/RoomService.h"

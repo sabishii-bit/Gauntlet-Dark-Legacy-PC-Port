@@ -12,6 +12,7 @@
 #include "engine/core/Types.h"
 #include "engine/platform/DisplayTiming.h"
 #include "engine/platform/Paths.h"
+#include "engine/render/ThreadedRenderDevice.h"
 
 namespace gdl {
 namespace {
@@ -55,6 +56,10 @@ s32 Application::run() {
         deviceDesc.enableValidation = m_desc.enableValidation;
         deviceDesc.shaderDirectory = paths::executableDirectory() / "shaders";
         m_device = createVulkanRenderDevice(*m_window, deviceDesc);
+        if (m_desc.threadedPresentation) {
+            m_device = std::make_unique<ThreadedRenderDevice>(std::move(m_device),
+                                                              m_window->framebufferSize());
+        }
 
         checkAssetDirectory();
         onInit();
@@ -62,6 +67,9 @@ s32 Application::run() {
         FramePacer framePacer;
         const bool measureFrames = frameTimingEnabled();
         FrameTimingTotals timingTotals;
+        UpdateClock presentationClock;
+        bool renderDue = true;
+        f64 renderElapsed = 0;
 
         while (!m_window->shouldClose() && !m_quitRequested) {
             const auto frameStart = std::chrono::steady_clock::now();
@@ -76,6 +84,7 @@ s32 Application::run() {
             };
             m_window->pollEvents();
             m_clock.tick();
+            renderElapsed += m_clock.deltaSeconds();
             measure(FrameTimingPhase::Poll);
             if (m_desc.updateRate == 0) {
                 onUpdate(m_clock.deltaSeconds());
@@ -91,26 +100,40 @@ s32 Application::run() {
             }
             measure(FrameTimingPhase::Update);
 
-            const bool drawable = m_device->beginFrame();
+            const u32 refreshRate = m_window->refreshRate();
+            const u32 frameRate = displayFrameRate(m_desc.maxFrameRate, refreshRate);
+            if (m_desc.threadedPresentation) {
+                m_device->setFramebufferSize(m_window->framebufferSize());
+                renderDue =
+                    presentationClock.advance(m_clock.deltaSeconds(), frameRate) > 0 || renderDue;
+            }
+            const bool drawable =
+                (!m_desc.threadedPresentation || renderDue) && m_device->beginFrame();
             measure(FrameTimingPhase::Acquire);
             if (drawable) {
+                m_renderDelta = renderElapsed;
                 onRender(*m_device);
                 measure(FrameTimingPhase::Render);
                 m_device->endFrame();
-            } else {
+                renderElapsed = 0;
+                renderDue = false;
+                ++m_renderedFrames;
+            } else if (!m_desc.threadedPresentation) {
                 m_window->waitWhileMinimized();
             }
             measure(FrameTimingPhase::Present);
 
-            const u32 refreshRate = m_window->refreshRate();
             measure(FrameTimingPhase::Refresh);
-            const u32 frameRate = displayFrameRate(m_desc.maxFrameRate, refreshRate);
             if (frameRate != lastFrameRate) {
                 log::info("Presentation cap: {} fps on a {} Hz display", frameRate, refreshRate);
                 lastFrameRate = frameRate;
             }
             const auto frameFinished = std::chrono::steady_clock::now();
-            const auto deadline = framePacer.deadline(frameStart, frameFinished, frameRate);
+            // Rendering at 30 Hz must not batch 60 Hz online input/network ticks in pairs.
+            // A busy or minimized renderer still polls and services the session normally.
+            const u32 loopRate =
+                m_desc.threadedPresentation ? std::max(frameRate, m_desc.updateRate) : frameRate;
+            const auto deadline = framePacer.deadline(frameStart, frameFinished, loopRate);
             std::this_thread::sleep_until(deadline);
             if (measureFrames) {
                 const auto wake = std::chrono::steady_clock::now();
@@ -126,7 +149,7 @@ s32 Application::run() {
                 }
             }
 
-            if (m_desc.maxFrames != 0 && m_clock.frameIndex() >= m_desc.maxFrames) {
+            if (m_desc.maxFrames != 0 && m_renderedFrames >= m_desc.maxFrames) {
                 log::info("Reached the requested frame limit ({} frames)", m_desc.maxFrames);
                 requestQuit();
             }

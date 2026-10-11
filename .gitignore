@@ -7,6 +7,7 @@ build/
 out/
 vcpkg_installed/
 compile_commands.json
+src/engine/net/iroh/target/
 __pycache__/
 *.py[cod]
 

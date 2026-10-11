@@ -29,7 +29,6 @@ set_target_properties(vqdump gdlunpack assetcheck PROPERTIES
     FOLDER "tools")
 
 if(GDL_ENABLE_NETPLAY)
-    find_package(lz4 CONFIG REQUIRED)
     find_package(Threads REQUIRED)
     # Deliberately independent of gdl::game/engine: no window, renderer or assets.
     add_executable(netplaycheck netplaycheck/main.cpp
@@ -39,28 +38,5 @@ if(GDL_ENABLE_NETPLAY)
         Threads::Threads)
     gdl_apply_compiler_options(netplaycheck)
     set_target_properties(netplaycheck PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>" FOLDER "tools")
-    add_executable(roomcheck netplaycheck/RoomCheck.cpp netplaycheck/SessionCheck.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/SnapshotBlock.cpp
-        ${CMAKE_SOURCE_DIR}/src/engine/world/SceneGeometry.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/MatchSession.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/ClientClock.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/OnlineSession.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/CharacterProfile.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/PartyCheckpoint.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/PartyBootstrap.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/MotionSnapshot.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/SnapshotPlayback.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/CombatSnapshot.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/HudSnapshot.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/FighterSnapshot.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/CombatReplica.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/CombatPlayback.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/InputCommand.cpp
-        ${CMAKE_SOURCE_DIR}/src/game/netplay/InputTimeline.cpp)
-    target_link_libraries(roomcheck PRIVATE gdl::engine_net gdl::room_service
-        nlohmann_json::nlohmann_json Threads::Threads lz4::lz4)
-    gdl_apply_compiler_options(roomcheck)
-    set_target_properties(roomcheck PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>" FOLDER "tools")
 endif()

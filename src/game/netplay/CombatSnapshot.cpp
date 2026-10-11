@@ -8,7 +8,7 @@
 namespace gdl::game {
 namespace {
 constexpr u32 kMagic = fourcc("GDLB");
-constexpr u32 kVersion = 16;
+constexpr u32 kVersion = 18;
 void word(std::vector<u8>& bytes, u32 value) {
     for (u32 shift = 0; shift < 32; shift += 8) {
         bytes.push_back(static_cast<u8>(value >> shift));
@@ -101,6 +101,14 @@ bool CompanionState::valid(usize slot) const {
            bounded(alpha, 0, 1);
 }
 
+bool PlayerShadowState::valid() const {
+    const f32 length = glm::dot(normal, normal);
+    return bounded(ground.x, -1'000'000, 1'000'000) && bounded(ground.y, -1'000'000, 1'000'000) &&
+           bounded(ground.z, -1'000'000, 1'000'000) && bounded(normal.x, -1, 1) &&
+           bounded(normal.y, 0.5f, 1) && bounded(normal.z, -1, 1) &&
+           bounded(length, 0.999f, 1.001f) && bounded(alpha, 0, 1);
+}
+
 bool CombatSnapshot::valid() const {
     if (!motion.valid() || enemies.size() > kMaxEnemies || projectiles.size() > kMaxProjectiles ||
         pickups.size() > kMaxPickups || fixtures.size() > kMaxFixtures ||
@@ -119,6 +127,15 @@ bool CombatSnapshot::valid() const {
             return false;
         }
         if (player) {
+            if (player->shadow &&
+                (!player->shadow->valid() || player->life == ReplicaPlayerLife::InTower ||
+                 (player->portalPhase && *player->portalPhase >= 1))) {
+                return false;
+            }
+            if (player->portalPhase && (player->life != ReplicaPlayerLife::Standing ||
+                                        !bounded(*player->portalPhase, 0, 1))) {
+                return false;
+            }
             for (usize slot = 0; slot < player->companions.size(); ++slot) {
                 const auto& companion = player->companions[slot];
                 if (companion &&
@@ -204,8 +221,10 @@ std::optional<std::vector<u8>> CombatPacket::encode(const CombatSnapshot& snapsh
         if (player) {
             real(bytes, player->health);
             word(bytes, static_cast<u32>(player->life) | (player->hitFlash ? 4U : 0U) |
-                            (player->damageable ? 8U : 0U));
+                            (player->damageable ? 8U : 0U) | (player->portalPhase ? 16U : 0U) |
+                            (player->shadow ? 32U : 0U));
             animation(bytes, player->animation);
+            real(bytes, player->portalPhase.value_or(0));
             for (const auto& companion : player->companions) {
                 if (!companion) {
                     bytes.insert(bytes.end(), kCompanionBytes, 0);
@@ -220,6 +239,16 @@ std::optional<std::vector<u8>> CombatPacket::encode(const CombatSnapshot& snapsh
                 animation(bytes, companion->animation);
                 real(bytes, companion->textureClock);
                 real(bytes, companion->alpha);
+            }
+            if (player->shadow) {
+                const auto& shadow = *player->shadow;
+                for (const f32 value :
+                     {shadow.ground.x, shadow.ground.y, shadow.ground.z, shadow.normal.x,
+                      shadow.normal.y, shadow.normal.z, shadow.alpha}) {
+                    real(bytes, value);
+                }
+            } else {
+                bytes.insert(bytes.end(), kShadowBytes, 0);
             }
         }
     }
@@ -361,13 +390,19 @@ std::optional<CombatSnapshot> CombatPacket::decode(std::span<const u8> bytes) {
             PlayerCombatState player;
             player.health = real(data);
             const u32 flags = data.readU32();
-            if ((flags & ~15U) != 0) {
+            if ((flags & ~63U) != 0) {
                 return std::nullopt;
             }
             player.life = static_cast<ReplicaPlayerLife>(flags & 3U);
             player.hitFlash = (flags & 4U) != 0;
             player.damageable = (flags & 8U) != 0;
             player.animation = animation(data);
+            const f32 portalPhase = real(data);
+            if ((flags & 16U) != 0) {
+                player.portalPhase = portalPhase;
+            } else if (portalPhase != 0) {
+                return std::nullopt;
+            }
             for (auto& companion : player.companions) {
                 CompanionState value;
                 value.form = data.readU32();
@@ -388,6 +423,19 @@ std::optional<CombatSnapshot> CombatPacket::decode(std::span<const u8> bytes) {
                 value.textureClock = real(data);
                 value.alpha = real(data);
                 companion = value;
+            }
+            if ((flags & 32U) != 0) {
+                PlayerShadowState shadow;
+                shadow.ground = {real(data), real(data), real(data)};
+                shadow.normal = {real(data), real(data), real(data)};
+                shadow.alpha = real(data);
+                player.shadow = shadow;
+            } else {
+                for (usize i = 0; i < kShadowBytes / 4; ++i) {
+                    if (data.readU32() != 0) {
+                        return std::nullopt;
+                    }
+                }
             }
             result.players[seat] = player;
         }

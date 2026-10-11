@@ -12,7 +12,9 @@ reviewed changes for that release; publication uses them as its notes. A manual
 Release workflow run builds downloadable artifacts without publishing a release.
 This also applies to manual runs on tags. Published/draft versions cannot be reused;
 new versions must increase, and release runs share one concurrency lock.
-SemVer prerelease suffixes mark GitHub prereleases; versions without them are stable.
+SemVer prerelease suffixes mark GitHub prereleases by default. An optional
+docs/changelog/<VERSION>.release.json with matching "version" and boolean
+"prerelease" fields can override GitHub status without changing the build version.
 No disc image, native assets, extracted media, saves or personal settings are shipped.
 Linux targets x86-64 Ubuntu 24.04+ desktops; Vulkan 1.3 drivers remain prerequisites.
 Windows targets x64 Windows 10/11. Installers are unsigned until signing is configured.
@@ -163,6 +165,7 @@ def licenses(binary, staging):
     if not copyrights:
         raise ValueError(f"Missing vcpkg license inventory: {share}")
     files.extend((path, f"licenses/vcpkg/{path.parent.name}.txt") for path in copyrights)
+    files.extend(networking_notices(staging))
     files.extend(installer_notices(staging))
     python_notices = [Path(sys.base_prefix) / "LICENSE.txt",
                       Path(f"/usr/share/doc/python{sys.version_info.major}.{sys.version_info.minor}/copyright")]
@@ -184,13 +187,28 @@ def licenses(binary, staging):
         "Qt sources: https://download.qt.io/official_releases/qt/\n"
         "PySide/Shiboken sources: https://download.qt.io/official_releases/QtForPython/\n"
         "PyInstaller sources: https://github.com/pyinstaller/pyinstaller\n"
-        "Game dependencies: see licenses/vcpkg. Windows includes the Microsoft Visual C++ "
+        "Game dependencies: see licenses/vcpkg and licenses/rust.txt. Windows includes the Microsoft Visual C++ "
         "redistributable CRT, not a system DLL harvest. No Microsoft development tools are included.\n"
         "Linux includes libstdc++/libgcc under GPLv3 plus the GCC Runtime Library Exception; "
         "see licenses/gcc. System graphics, audio and windowing libraries are not bundled.\n"
         "Game assets are supplied solely by the player and remain unchanged.\n", encoding="utf-8")
     files.append((notice, "licenses/THIRD-PARTY.txt"))
     return files
+
+
+def networking_notices(staging):
+    """Generate the linked Rust dependency notices from the locked native-target graph."""
+    environment = dict(devenv.environment())
+    environment["CARGO_HOME"] = str(ROOT / "build/cargo-home")
+    target = "x86_64-pc-windows-msvc" if devenv.WINDOWS else "x86_64-unknown-linux-gnu"
+    notice = staging / "rust.txt"
+    subprocess.run(["cargo-about", "generate", "--locked", "--fail", "--target", target,
+                    "--manifest-path", str(ROOT / "src/engine/net/iroh/Cargo.toml"),
+                    str(ROOT / "scripts/installer/rust-licenses.hbs"),
+                    "--output-file", str(notice)], env=environment, cwd=ROOT, check=True)
+    if not notice.is_file() or notice.stat().st_size < 1000:
+        raise ValueError("Missing networking dependency notices")
+    return [(notice, "licenses/rust.txt")]
 
 
 def build_release(args):
@@ -214,6 +232,7 @@ def build_release(args):
     # Separate build cache: no disc icon, retail inputs or developer-specific fallback paths.
     binary = ROOT / "build" / f"release-{system}"
     configure = ["cmake", "--preset", devenv.release_preset(), "-B", str(binary),
+                 "-DGDL_ENABLE_NETPLAY=ON",
                  "-DGDL_EMBED_DISC_ICON=OFF", "-DGDL_ENABLE_VULKAN_VALIDATION=OFF",
                  "-DGDL_ASSET_DIR=", "-DGDL_UNPACKED_DIR=", f"-DGDL_DATA_DIR={ROOT / 'data'}",
                  "-DGDL_TEST_DISCOVERY_FILTER=~[gpu]~[assets]~[unpacked]"]

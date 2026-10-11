@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.30)
 
-# Select optional vcpkg dependencies before project() loads its toolchain.
-option(GDL_ENABLE_NETPLAY "Build the experimental networking transport and harness" OFF)
-if(GDL_ENABLE_NETPLAY)
-    list(APPEND VCPKG_MANIFEST_FEATURES netplay)
-endif()
+option(GDL_ENABLE_NETPLAY "Build the experimental networking transport and harness (requires Rust)" OFF)
 
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" GDL_VERSION LIMIT_COUNT 1)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/GdlVersion.cmake")

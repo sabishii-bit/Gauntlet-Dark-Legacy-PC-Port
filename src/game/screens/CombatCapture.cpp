@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "game/screens/PartyFigures.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/PortalDeparture.h"
 
@@ -27,7 +28,8 @@ ReplicaPlayerLife life(PlayerLife value) {
 std::optional<CombatSnapshot> CombatCapture::capture(const MotionSnapshot& motion,
                                                      std::span<const PlayerRuntime> players,
                                                      const Enemies& enemies,
-                                                     const PortalDeparture* departure) {
+                                                     const PortalDeparture* departure,
+                                                     const LevelWorld* world) {
     if (!motion.valid() || players.size() > InputCommand::kSeats) {
         return std::nullopt;
     }
@@ -58,6 +60,17 @@ std::optional<CombatSnapshot> CombatCapture::capture(const MotionSnapshot& motio
                            : 0;
         state.hitFlash = runtime.hitFlashTicks > 0;
         state.damageable = PlayerHealth::canBeDamaged(runtime);
+        if (world != nullptr) {
+            const PortalDeparture stationary;
+            if (const auto shadow =
+                    PartyFigures::shadowOf(runtime, *world, departure ? *departure : stationary)) {
+                state.shadow = PlayerShadowState{shadow->ground, glm::normalize(shadow->normal),
+                                                 shadow->alpha};
+            }
+        }
+        if (runtime.life == PlayerLife::Standing && departure != nullptr && departure->started()) {
+            state.portalPhase = departure->phase();
+        }
         if (runtime.figure) {
             const auto& animator = runtime.figure->animator();
             state.animation = animation(animator.player(), static_cast<u32>(animator.action()));

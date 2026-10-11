@@ -35,6 +35,7 @@ public:
     void endFrame() override;
     void setClearColor(const Vec4& rgba) override { m_clearColor = rgba; }
     Extent2D framebufferExtent() const override;
+    void setFramebufferSize(Extent2D extent) override { m_windowSize = extent; }
     void setPresentation(bool vsync, u32 sampleCount) override;
     u32 presentationSampleCount() const override;
     void setTextureFiltering(u32 filtering) override {
@@ -89,11 +90,12 @@ private:
     void destroyPresentSemaphores();
     void destroyUploadBuffer(FrameResources& frame);
     void reserveUploadBuffer(FrameResources& frame, VkDeviceSize bytes);
-    void recreateSwapchain();
+    bool recreateSwapchain();
     void beginRendering();
     bool preparePostProcess();
 
     Window& m_window;
+    std::optional<Extent2D> m_windowSize;
     RenderDeviceDesc m_desc;
     bool m_smoothSprites = false;
     bool m_presentationPending = false;

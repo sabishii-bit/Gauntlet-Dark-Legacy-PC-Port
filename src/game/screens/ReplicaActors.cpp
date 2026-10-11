@@ -21,6 +21,7 @@ bool ReplicaActors::begin(u64 epoch) {
     for (auto& player : m_players) {
         player.shown = false;
         player.continuity = 0;
+        player.portalPhase.reset();
         player.pose.bind(player.figure ? player.figure->actionTree() : nullptr);
     }
     return true;
@@ -29,6 +30,7 @@ void ReplicaActors::clear() {
     m_epoch = 0;
     m_tick.reset();
     m_players = {};
+    m_portalSkin.clear();
     m_enemies.clear();
 }
 bool ReplicaActors::setPlayer(u8 seat, u32 grant, std::unique_ptr<PlayerFigure> figure, f32 scale) {
@@ -73,12 +75,16 @@ bool ReplicaActors::companionsReady(const CombatSnapshot& snapshot) const {
         }
         const auto& companions = player->companions;
         for (usize slot = 0; slot < companions.size(); ++slot) {
-            if (companions[slot] && !m_players[seat].resources.accepts(slot, *companions[slot])) {
+            const auto& companion = companions[slot];
+            if (companion && !m_players[seat].resources.accepts(slot, *companion)) {
                 return false;
             }
         }
     }
     return true;
+}
+void ReplicaActors::loadPortalSkin(RenderDevice& device, TextureSet& weapons) {
+    m_portalSkin.loadSkin(device, weapons);
 }
 bool ReplicaActors::show(const CombatSnapshot& snapshot, Enemies& resources) {
     if (m_epoch == 0 || snapshot.motion.epoch != m_epoch || !snapshot.valid() ||
@@ -94,6 +100,7 @@ bool ReplicaActors::show(const CombatSnapshot& snapshot, Enemies& resources) {
         player.companions = {};
         if (!state || !motion || !player.figure || player.grant != motion->grant ||
             state->life == ReplicaPlayerLife::InTower ||
+            (state->portalPhase && *state->portalPhase >= 1) ||
             state->animation.action >= PlayerAnimator::kActionCount) {
             player.pose.bind(player.figure ? player.figure->actionTree() : nullptr);
             player.continuity = 0;
@@ -106,7 +113,12 @@ bool ReplicaActors::show(const CombatSnapshot& snapshot, Enemies& resources) {
         player.shown = player.pose.show(state->animation);
         player.action = static_cast<PlayerAnimator::Action>(state->animation.action);
         player.hitFlash = state->hitFlash;
+        player.portalPhase = state->portalPhase;
+        player.shadow = state->shadow;
         player.placement = placement(motion->position, motion->yaw, player.scale);
+        if (player.portalPhase) {
+            player.placement = PortalDeparture::transformAt(player.placement, *player.portalPhase);
+        }
         player.companions = state->companions;
     }
     std::erase_if(m_enemies, [&](const auto& row) {
@@ -140,9 +152,17 @@ void ReplicaActors::draw(RenderDevice& device, Enemies& resources, const Mat4& c
     }
     for (const auto& player : m_players) {
         if (player.shown && player.figure) {
-            player.figure->drawPose(device, clip, player.placement, lighting, player.pose.pose(),
-                                    player.action, textureFrame,
-                                    player.hitFlash ? hitFlash : nullptr, &camera, pass);
+            // Portal skin outranks a pending hit flash, just as on the host.
+            const Texture* skin = player.hitFlash ? hitFlash : nullptr;
+            if (player.portalPhase) {
+                skin = m_portalSkin.skinAt(*player.portalPhase);
+            }
+            const auto& form = player.companions[1];
+            if (!form || form->form != static_cast<u32>(PowerupCompanion::Kind::Pojo)) {
+                player.figure->drawPose(device, clip, player.placement, lighting,
+                                        player.pose.pose(), player.action, textureFrame, skin,
+                                        &camera, pass);
+            }
             for (usize slot = 0; slot < player.companions.size(); ++slot) {
                 if (const auto& companion = player.companions[slot]) {
                     player.resources.draw(device, slot, *companion, clip, lighting, camera, pass);
@@ -158,6 +178,17 @@ void ReplicaActors::draw(RenderDevice& device, Enemies& resources, const Mat4& c
         }
     }
 }
+void ReplicaActors::drawShadows(RenderDevice& device, const Mat4& clip,
+                                const WorldLighting& lighting, const Vec3& eye) const {
+    for (const auto& player : m_players) {
+        if (player.shown && player.shadow) {
+            const auto& shadow = *player.shadow;
+            player.figure->drawShadow(device, clip, eye, shadow.ground, shadow.normal, lighting,
+                                      shadow.alpha);
+        }
+    }
+}
+
 usize ReplicaActors::visiblePlayers() const {
     return static_cast<usize>(
         std::ranges::count_if(m_players, [](const auto& player) { return player.shown; }));

@@ -22,6 +22,7 @@ struct ApplicationDesc {
     u64 maxFrames = 0;    ///< quit after this many frames; 0 runs until closed
     u32 maxFrameRate = 0; ///< frames per second, capped by the monitor; 0 uses monitor refresh
     u32 updateRate = 0;   ///< whole simulation ticks per second; 0 updates on every render
+    bool threadedPresentation = false; ///< keep online ticks independent of GPU/present waits
 };
 
 /** Owns the window, the render device and the frame loop. Subclass and override the hooks. */
@@ -47,6 +48,8 @@ protected:
         return m_desc.updateRate == 0 ? m_window->input() : m_updateInput;
     }
     const FrameClock& clock() const { return m_clock; }
+    f64 renderDeltaSeconds() const { return m_renderDelta; }
+    u64 renderedFrames() const { return m_renderedFrames; }
     f32 presentationAlpha() const {
         return m_desc.updateRate == 0 ? 1.0f : m_updateClock.fraction(m_desc.updateRate);
     }
@@ -66,6 +69,8 @@ private:
     FrameClock m_clock;
     UpdateClock m_updateClock;
     Input m_updateInput;
+    f64 m_renderDelta = 0;
+    u64 m_renderedFrames = 0;
     bool m_quitRequested = false;
 };
 

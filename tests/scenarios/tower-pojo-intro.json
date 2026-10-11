@@ -1,0 +1,14 @@
+{
+  "screen": "tower",
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "EGG911",
+      "level": 20,
+      "health": 2000,
+      "turbo": 100
+    }
+  ]
+}

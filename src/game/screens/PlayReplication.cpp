@@ -97,7 +97,7 @@ std::optional<CombatSnapshot> PlayReplication::capture(u64 tick,
                        std::remainder(runtime.actor.yaw(), kTwoPi)};
     }
     auto state = CombatCapture::capture(motion, m_scene->participants(), m_scene->enemies(),
-                                        &m_scene->departure());
+                                        &m_scene->departure(), m_scene->world());
     if (!state ||
         !ProjectileCapture::append(*state, resources, m_scene->missiles(), m_scene->enemyMissiles(),
                                    &m_scene->effects(), &m_scene->arrival())) {

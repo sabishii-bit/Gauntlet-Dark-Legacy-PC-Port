@@ -300,6 +300,12 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             m_batch.end();
             DrawState state;
             state.mipmaps = true;
+            const auto sampling =
+                std::ranges::find(m_textureSampling, shape.slots[p], &TextureSampling::slot);
+            if (sampling != m_textureSampling.end()) {
+                state.clampTexture = sampling->clamp;
+                state.mipmaps = sampling->mipmaps;
+            }
             // This pass explicitly requests colour compositing, not coverage. Native
             // pickup shadows and gas can write depth while still requiring smooth alpha.
             state.alphaToCoverage = pass != Pass::Blended;
@@ -352,6 +358,11 @@ void TreeModel::setTextureFrame(u32 slot, const Texture* frame, const Texture* n
     if (frame != nullptr) {
         m_frames.push_back({slot, frame, next, blend});
     }
+}
+
+void TreeModel::setTextureSampling(u32 slot, bool clamp, bool mipmaps) {
+    std::erase_if(m_textureSampling, [slot](const auto& entry) { return entry.slot == slot; });
+    m_textureSampling.push_back({slot, clamp, mipmaps});
 }
 
 void TreeModel::setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale) {

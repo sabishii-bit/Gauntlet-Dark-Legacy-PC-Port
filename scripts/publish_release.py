@@ -1,6 +1,7 @@
 """CI-only publication of both verified installers; never overwrite an existing release."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -48,6 +49,7 @@ def check_publication():
     if os.environ.get("GITHUB_REF") != f"refs/tags/{tag}":
         raise ValueError("Publication requires the matching version tag, not a branch")
     changelog(tag)
+    publication_is_prerelease(tag)
     # --paginate includes old versions and drafts. Authentication/network failures abort,
     # rather than being mistaken for proof that the version has not been published.
     existing = subprocess.check_output(
@@ -55,6 +57,18 @@ def check_publication():
         cwd=ROOT, text=True).splitlines()
     require_new_version(tag, existing)
     return tag
+
+
+def publication_is_prerelease(tag):
+    """An optional version-bound policy separates GitHub status from the build version."""
+    path = ROOT / "docs" / "changelog" / f"{tag[1:]}.release.json"
+    if not path.exists():
+        return is_prerelease(tag)
+    policy = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(policy, dict) or set(policy) != {"version", "prerelease"}
+            or policy["version"] != tag[1:] or type(policy["prerelease"]) is not bool):
+        raise ValueError(f"Invalid version-bound release policy: {path}")
+    return policy["prerelease"]
 
 
 def validated_assets(folder, tag):
@@ -91,7 +105,7 @@ def main(argv=None):
         print(f"Eligible new release: {tag}")
         return
     assets = validated_assets(ROOT / "release-assets", tag)
-    prerelease = is_prerelease(tag)
+    prerelease = publication_is_prerelease(tag)
     heading = ("Prerelease QA build — expect bugs and keep backups of your saves.\n\n"
                if prerelease else "Keep backups of your saves before updating.\n\n")
     notes = (
@@ -118,7 +132,7 @@ def main(argv=None):
     with tempfile.TemporaryDirectory(prefix="gdl-release-notes-") as temporary:
         path = Path(temporary) / "notes.txt"
         path.write_text(notes, encoding="utf-8")
-        subprocess.run(["gh", "release", "create", tag, "--verify-tag", *(["--prerelease"] if prerelease else []),
+        subprocess.run(["gh", "release", "create", tag, "--verify-tag", *(["--prerelease"] if prerelease else ["--latest"]),
                         "--title", f"Gauntlet Dark Legacy {tag}", "--notes-file", str(path),
                         *map(str, assets)], cwd=ROOT, check=True)
 

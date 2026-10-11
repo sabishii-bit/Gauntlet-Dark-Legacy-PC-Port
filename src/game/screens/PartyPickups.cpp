@@ -106,7 +106,9 @@ void PartyPickups::collect(RenderDevice& device, std::span<PlayerRuntime> player
                 services.hud.pickups().addCard(players[pickup.collector].actor.player(),
                                                PickupHud::kCrystalCard);
             }
-            if (enough && !alreadyEnough) {
+            // TowerCheckMessages owns both the scroll and its persisted acknowledgement
+            // in the tower. The immediate pickup notice is only for collections elsewhere.
+            if (enough && !alreadyEnough && !world.isTower()) {
                 announceUnlock(pickup.realm, players, services);
             }
         }
@@ -349,9 +351,13 @@ bool PartyPickups::announceTowerUnlock(std::span<PlayerRuntime> players, const S
         for (auto& runtime : players) {
             if (participates(runtime) &&
                 runtime.actor.save().progress().crystals[realm] == needed) {
-                runtime.actor.save().progress().crystals[realm] = -1;
+                auto& progress = runtime.actor.save().progress();
+                progress.crystals[realm] = -1;
+                progress.unlocked |= 1U << static_cast<u32>(realm);
                 const s32 character = runtime.actor.save().character;
-                runtime.entrySave.classes[static_cast<usize>(character)].crystals[realm] = -1;
+                auto& entry = runtime.entrySave.classes[static_cast<usize>(character)];
+                entry.crystals[realm] = -1;
+                entry.unlocked |= 1U << static_cast<u32>(realm);
             }
         }
         return true;

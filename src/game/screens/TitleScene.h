@@ -26,7 +26,7 @@
 
 namespace gdl::game {
 
-enum class TitleOutcome : u8 { Running, TimedOut, StartGame };
+enum class TitleOutcome : u8 { Running, TimedOut, StartGame, Netplay };
 
 /**
  * The title screen: the logo backdrop with its animated glow, "Press Start", and the Start /
@@ -55,6 +55,7 @@ public:
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
 
     bool menuOpen() const { return m_titleMenu.isOpen(); }
+    bool startMenuOpen() const { return menuOpen() && m_startMenu; }
     bool optionsOpen() const { return m_optionsMenu.isOpen(); }
     bool loading() const { return m_loadingTimer > 0; }
     bool burning() const { return m_fire.active(); }
@@ -76,7 +77,7 @@ private:
     void loadFireFrames(RenderDevice& device);
     const Texture* staticTexture(std::string_view name, u32 frame = 0);
     void drawGlowText(s32 x, s32 y, std::string_view label);
-    void openTitleMenu();
+    void openTitleMenu(bool startMenu = false);
     void openOptionsMenu();
     void closeOptionsMenu();
     void startMusic();
@@ -84,6 +85,7 @@ private:
     std::string_view text(std::string_view id) const;
 
     bool m_open = false;
+    bool m_startMenu = false;
     RenderDevice* m_device = nullptr;
     GameContext m_context;
     MenuScreen m_screen;

@@ -20,7 +20,7 @@ public:
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanSwapchain);
 
     /** Waits for the device to idle and rebuilds at the new size. */
-    void recreate(Extent2D windowExtent, bool vsync, u32 sampleCount);
+    bool recreate(Extent2D windowExtent, bool vsync, u32 sampleCount);
 
     VkResult acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex, u64 timeout);
     VkResult present(VkSemaphore waitSemaphore, u32 imageIndex);
@@ -39,7 +39,7 @@ public:
     bool supportsPostProcess() const { return m_supportsPostProcess; }
 
 private:
-    void create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain);
+    bool create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain);
     void destroyImageResources();
 
     VulkanContext& m_context;

@@ -20,9 +20,10 @@ struct GameOptions {
     bool startAtDemo = false;                ///< open a level flyby without waiting at the title
     bool previewScreensaver = false;         ///< show the idle weapons and quit on input
     std::filesystem::path scenario;          ///< a described start to open straight into
-    std::string netplayTest;       ///< loopback room service for the playable development harness
-    std::string netplayRoom;       ///< empty creates a room; otherwise join this code
-    std::string netplayContent;    ///< launcher's SHA-256 of the native asset tree
+    std::string netplayTest; ///< local or internet transport for the playable test harness
+    std::string netplayRoom; ///< empty hosts; otherwise private invitation file to join
+    std::filesystem::path netplayInvite; ///< host writes its private invitation here
+    std::string netplayContent;          ///< launcher's SHA-256 of the native asset tree
     bool netplayAutoStart = false; ///< paired-window harness: start when both machines are ready
 };
 

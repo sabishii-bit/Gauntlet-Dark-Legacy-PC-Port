@@ -14,28 +14,27 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-TEST_CASE("replica viewport preserves the host shared camera across display shapes",
+TEST_CASE("replica viewport uses the local display without host aspect masks",
           "[netplay][replica-view]") {
-    const auto wide = ReplicaView::viewport(1920, 1080, 4.0f / 3);
+    const auto wide = ReplicaView::viewport(1920, 1080);
     REQUIRE(wide);
-    CHECK(wide->x == Approx(240));
+    CHECK(wide->x == 0);
     CHECK(wide->y == 0);
-    CHECK(wide->width == Approx(1440));
+    CHECK(wide->width == Approx(1920));
     CHECK(wide->height == Approx(1080));
-    const auto narrow = ReplicaView::viewport(800, 600, 16.0f / 9);
+    const auto narrow = ReplicaView::viewport(800, 600);
     REQUIRE(narrow);
     CHECK(narrow->x == 0);
-    CHECK(narrow->y == Approx(75));
+    CHECK(narrow->y == 0);
     CHECK(narrow->width == Approx(800));
-    CHECK(narrow->height == Approx(450));
-    CHECK(ReplicaView::viewport(640, 448, 640.0f / 448) == Rect{0, 0, 640, 448});
+    CHECK(narrow->height == Approx(600));
+    CHECK(ReplicaView::viewport(640, 448) == Rect{0, 0, 640, 448});
     for (const f32 bad : {0.0f, -1.0f, std::numeric_limits<f32>::infinity(),
                           std::numeric_limits<f32>::quiet_NaN()}) {
-        CHECK_FALSE(ReplicaView::viewport(bad, 600, 1));
-        CHECK_FALSE(ReplicaView::viewport(800, bad, 1));
-        CHECK_FALSE(ReplicaView::viewport(800, 600, bad));
+        CHECK_FALSE(ReplicaView::viewport(bad, 600));
+        CHECK_FALSE(ReplicaView::viewport(800, bad));
     }
-    CHECK_FALSE(ReplicaView::viewport(800, 600, 9));
+    CHECK_FALSE(ReplicaView::viewport(65537, 600));
 }
 
 TEST_CASE("replica view stays blank until an entire trusted sample can be drawn",
@@ -116,7 +115,18 @@ TEST_CASE("replica view stays blank until an entire trusted sample can be drawn"
     REQUIRE(captured->hud);
     CHECK_FALSE(view.show(*captured)); // HUD artwork is also loaded before snapshot admission.
     REQUIRE(view.loadHud(device, root, nullptr));
-    SECTION("first gameplay sample") {}
+    GameConfig video;
+    video.camera.horizontalFovDegrees = 85;
+    SECTION("first gameplay sample with post-processing off") {}
+    SECTION("guest enables its own full post-processing chain") {
+        video.display.bloom = true;
+        video.display.ambientOcclusion = true;
+        video.display.depthOfField = true;
+    }
+    SECTION("host projection changes do not change local presentation") {
+        captured->motion.aspect = 21.0f / 9;
+        captured->motion.horizontalFov = glm::radians(45.0f);
+    }
     SECTION("two quick pauses before the first gameplay sample arrives") {
         context.transition = MatchTransition::Resume;
         ++context.epoch;
@@ -219,15 +229,14 @@ TEST_CASE("replica view stays blank until an entire trusted sample can be drawn"
     REQUIRE(CombatPacket::encode(*view.shown()) == image);
 
     device.draws.clear();
-    view.draw(device, projection, 1920, 1080, 0);
+    view.draw(device, projection, 1920, 1080, 0, nullptr, nullptr, video);
     REQUIRE(device.draws.size() > 2);
-    const Mat4 expected = projection * glm::translate(Mat4{1}, Vec3{240, 0, 0}) *
-                          WorldCamera::frameMapping(1440, 1080) *
-                          WorldCamera::projection(motion.horizontalFov, motion.aspect) *
-                          motion.camera.view();
+    const Mat4 expected =
+        motion.camera.clipTransform(video.horizontalFovRadians(), 1920, 1080, projection);
     for (const Vec2 cursor : {Vec2{0.2f, 0.3f}, Vec2{0.8f, 0.7f}}) {
         const auto target = view.cursorAim(0, cursor);
-        const auto expectedTarget = cursorAimPoint(cursor, expected, motion.players[0]->position);
+        const auto expectedTarget =
+            cursorAimDirection(cursor, expected, motion.players[0]->position);
         REQUIRE(target);
         REQUIRE(expectedTarget);
         CHECK(glm::distance(*target, *expectedTarget) < 0.0001f);
@@ -235,16 +244,43 @@ TEST_CASE("replica view stays blank until an entire trusted sample can be drawn"
     CHECK_FALSE(view.cursorAim(1, {0.5f, 0.5f}));
     CHECK_FALSE(view.cursorAim(255, {0.5f, 0.5f}));
     CHECK_FALSE(view.cursorAim(0, {-1, 0}));
+    // Networking may accept the next sample before the next render. Mouse aiming
+    // must use both the camera and the player position from the picture on screen.
+    const Vec2 pointer{0.8f, 0.7f};
+    const auto displayedAim = view.cursorAim(0, pointer);
+    auto pending = *captured;
+    pending.motion.players[0]->position += Vec3{15, 0, 20};
+    pending.motion.camera.position += Vec3{7, 0, 0};
+    REQUIRE(view.show(pending));
+    CHECK(view.cursorAim(0, pointer) == displayedAim);
+    REQUIRE(view.show(*captured));
     for (s32 column = 0; column < 4; ++column) {
         for (s32 row = 0; row < 4; ++row) {
             CHECK(device.draws.front().transform[column][row] ==
                   Approx(expected[column][row]).margin(0.0001f));
         }
     }
-    CHECK(device.draws.back().state.depthTest); // Native Canvas HUD state, after the side masks.
-    const Mat4 hudProjection = projection * glm::translate(Mat4{1}, Vec3{240, 0, 0}) *
-                               glm::scale(Mat4{1}, Vec3{1440.0f / 512, 1080.0f / 384, 1});
+    CHECK(device.draws.back().state.depthTest);
+    const Mat4 hudProjection = makeVirtualScreenTransform(projection, 512, 384, 1920, 1080);
     CHECK(device.draws.back().transform == hudProjection);
+    if (video.display.bloom) {
+        REQUIRE(device.bloomDrawOffsets.size() == 1);
+        REQUIRE(device.ambientOcclusionDrawOffsets.size() == 1);
+        REQUIRE(device.depthOfFieldDrawOffsets.size() == 1);
+        CHECK(device.ambientOcclusionDrawOffsets[0] < device.bloomDrawOffsets[0]);
+        CHECK(device.bloomDrawOffsets[0] == device.depthOfFieldDrawOffsets[0]);
+        CHECK(device.depthOfFieldDrawOffsets[0] < device.draws.size());
+        const Mat4 clipToView = motion.camera.view() * glm::inverse(expected);
+        CHECK(device.ambientOcclusionSettings[0].clipToView == clipToView);
+        CHECK(device.depthOfFieldSettings[0].clipToView == clipToView);
+        const f32 distance = (motion.camera.view() * Vec4{motion.players[0]->position, 1}).z;
+        CHECK(device.depthOfFieldSettings[0].focusEnd == Approx(std::max(20.0f, distance + 15)));
+    } else {
+        CHECK(device.bloomDrawOffsets.empty());
+        CHECK(device.ambientOcclusionDrawOffsets.empty());
+        CHECK(device.depthOfFieldDrawOffsets.empty());
+    }
+    CHECK(CombatPacket::encode(*view.shown()) == image); // Video choices cannot change simulation.
     CHECK(device.texturesCreated == textureCount);
     CHECK(enemies.count() == 0);
     CHECK(enemies.takeBlows().empty());

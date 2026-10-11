@@ -137,6 +137,7 @@ private:
         u32 effect = 0;
         f32 elapsed = 0;
         f32 lifetime = 1;
+        bool pojoTurbo = false;
         std::vector<s32> hit;
     };
     std::vector<ItemArea> m_items;
@@ -190,7 +191,7 @@ private:
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     ItemArchive* moveEffectArchive(usize index, std::span<PlayerRuntime> players,
                                    std::string_view tree);
-    f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
+    f32 meleeDamageOf(usize index, std::span<PlayerRuntime> players) const;
     /** One strike of `index`'s class, set going where the character stands, or at `at`. */
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players,
                     std::optional<Vec3> at = std::nullopt);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -73,6 +74,14 @@ public:
                              ItemArchive& powerups, f32 seconds, EffectTrees& effects);
     static void drawShadows(RenderDevice& device, std::span<const PlayerRuntime> players,
                             const Scene& scene, const Mat4& clip, const Vec3& eye);
+    struct Shadow {
+        Vec3 ground;
+        Vec3 normal;
+        f32 alpha;
+    };
+    /** Shared by local drawing and network capture. Collision stays authoritative. */
+    static std::optional<Shadow> shadowOf(const PlayerRuntime& runtime, const LevelWorld& world,
+                                          const PortalDeparture& departure, f32 frameBlend = 1);
     /** Adds the lanterns the standing carry when `level` is dark (player.c 2499). */
     static void addLanterns(std::vector<PointLight>& lights, std::span<const PlayerRuntime> players,
                             const LevelInfo* level);

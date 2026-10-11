@@ -126,6 +126,7 @@ void OnlinePlay::close() {
     m_failure = Failure::None;
     m_outcome = PlayReplication::Result::Held;
     m_epoch = 0;
+    m_pausedDevices = 0;
 }
 OnlinePlay::Phase OnlinePlay::fail(Failure reason) {
     quiet();
@@ -318,6 +319,12 @@ OnlinePlay::Phase OnlinePlay::update(const SessionInputs::Frame& devices) {
     if (m_session == nullptr) {
         return m_phase;
     }
+    auto gameplay = devices;
+    for (usize device = 0; device < gameplay.size(); ++device) {
+        if ((m_pausedDevices & (1U << device)) != 0) {
+            gameplay[device] = {};
+        }
+    }
     m_session->update(1.0 / 60);
     if (m_phase == Phase::Failed) {
         return m_phase;
@@ -330,7 +337,7 @@ OnlinePlay::Phase OnlinePlay::update(const SessionInputs::Frame& devices) {
     if (match.phase() == MatchSession::Phase::Loading && match.context().epoch != m_epoch) {
         quiet();
         m_phase = Phase::Loading;
-        if (!load(devices)) {
+        if (!load(gameplay)) {
             return m_phase;
         }
     }
@@ -347,13 +354,13 @@ OnlinePlay::Phase OnlinePlay::update(const SessionInputs::Frame& devices) {
     if (m_epoch == 0 || m_epoch != match.context().epoch) {
         return fail(Failure::Scene);
     }
-    const auto local = m_selection->inputs(*m_session, devices);
+    const auto local = m_selection->inputs(*m_session, gameplay);
     if (!local) {
         return fail(Failure::Input);
     }
     m_phase = Phase::Playing;
     if (!match.host()) {
-        return MatchInputs::sample(match, *local) ? m_phase : fail(Failure::Input);
+        return MatchInputs::sample(match, *local) ? phase() : fail(Failure::Input);
     }
     if (m_entry.phase() != OnlineLevelEntry::Phase::Closed) {
         m_entry.close();
@@ -370,19 +377,31 @@ OnlinePlay::Phase OnlinePlay::update(const SessionInputs::Frame& devices) {
         quiet();
         m_phase = Phase::Finished;
     }
-    return m_phase;
+    return phase();
 }
-bool OnlinePlay::pause() {
-    return m_session != nullptr && m_phase == Phase::Playing && m_session->match().requestPause();
-}
-bool OnlinePlay::resume() {
-    if (m_session == nullptr || !m_session->host() ||
-        m_session->match().phase() != MatchSession::Phase::Paused ||
-        !m_session->match().prepare(m_session->match().context().scene, MatchTransition::Resume)) {
+bool OnlinePlay::pause(s32 device) {
+    if (m_session == nullptr || m_phase != Phase::Playing || device < -1 ||
+        device >= static_cast<s32>(InputCommand::kSeats)) {
         return false;
     }
-    m_phase = Phase::Loading;
-    return true;
+    u32 mask = 0;
+    for (const auto seat : m_session->seats()) {
+        if (const auto local = m_selection->device(*m_session, seat);
+            local && (device == -1 || *local == device)) {
+            mask |= 1U << static_cast<u32>(*local);
+        }
+    }
+    m_pausedDevices |= mask;
+    return mask != 0;
+}
+bool OnlinePlay::resume(s32 device) {
+    if (device < -1 || device >= static_cast<s32>(InputCommand::kSeats)) {
+        return false;
+    }
+    const u32 mask = device == -1 ? m_pausedDevices : (1U << static_cast<u32>(device));
+    const bool captured = (m_pausedDevices & mask) != 0;
+    m_pausedDevices &= ~mask;
+    return captured;
 }
 void OnlinePlay::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height,
                         f64 seconds, f32 frameBlend) {
@@ -434,7 +453,9 @@ void OnlinePlay::render(RenderDevice& device, const Mat4& projection, f32 width,
     // Native texture sequences use game frames, not monitor frames.
     const f32 textureFrame =
         static_cast<f32>(m_clock.tick()) / 2 + static_cast<f32>(m_clock.fraction()) / 2;
-    m_replica.draw(device, projection, width, height, textureFrame);
+    static const GameConfig kDefaultVideo;
+    m_replica.draw(device, projection, width, height, textureFrame,
+                   m_context.config != nullptr ? *m_context.config : kDefaultVideo);
 }
 const PlayScene* OnlinePlay::hostScene() const {
     return m_host ? &m_host->scene : nullptr;

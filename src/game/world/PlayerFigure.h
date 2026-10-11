@@ -114,6 +114,7 @@ public:
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
     s32 familiarTier() const { return m_familiar.tier(); }
     bool phoenixActive() const { return m_companion.kind() == PowerupCompanion::Kind::Phoenix; }
+    bool pojoActive() const { return m_companion.kind() == PowerupCompanion::Kind::Pojo; }
     /** Phoenix uses the opposite perch when an earned familiar occupies the native one.
      * Both its model and projectile use this same, body-scaled attachment. */
     Mat4 phoenixAttachment(const Mat4& body) const {

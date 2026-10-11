@@ -19,7 +19,7 @@ InputCommand commandFor(const InputTimeline& timeline, u8 seat = 0) {
     command.magnitude = 1;
     command.heldButtons = InputCommand::kHeldMask;
     command.pressedButtons = InputCommand::kPressMask;
-    command.aimPoint = Vec3{10, 1, 0};
+    command.aimDirection = Vec3{1, 0, 0};
     return command;
 }
 
@@ -80,14 +80,14 @@ TEST_CASE("lost inputs repeat held state briefly but never potions selectors or 
         CHECK(frame[0].magnitude == 1);
         CHECK(frame[0].heldButtons == InputCommand::kHeldMask);
         CHECK(frame[0].pressedButtons == 0);
-        CHECK(frame[0].aimPoint == Vec3{10, 1, 0});
+        CHECK(frame[0].aimDirection == Vec3{1, 0, 0});
     }
     for (s32 i = 0; i < 20; ++i) {
         const auto frame = timeline.advance();
         CHECK(frame[0].magnitude == 0);
         CHECK(frame[0].heldButtons == 0);
         CHECK(frame[0].pressedButtons == 0);
-        CHECK_FALSE(frame[0].aimPoint);
+        CHECK_FALSE(frame[0].aimDirection);
     }
 }
 

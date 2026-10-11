@@ -39,6 +39,8 @@ constexpr s32 kGlowHideThreshold = 8;
 constexpr s32 kLoadingFadeSlope = 2;
 constexpr s32 kMenuStart = 11;
 constexpr s32 kMenuOptions = 12;
+constexpr s32 kMenuNetplay = 13;
+constexpr s32 kMenuLocal = 14;
 constexpr s32 kTitleMenuY = 304;
 constexpr Rect kOptionsBurnArea{290.0f, 142.0f, 224.0f, 172.0f};
 constexpr Color kGlowColor = Color::rgba(130, 0, 234);
@@ -103,6 +105,7 @@ void TitleScene::close() {
     }
     m_music = kNoSound;
     m_titleMenu.close();
+    m_startMenu = false;
     m_optionsMenu.close();
     m_optionsMenu = SettingsMenu{};
     m_fire.reset();
@@ -323,13 +326,22 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
     if (m_titleMenu.isOpen()) {
         const MenuEvent event = m_titleMenu.update(input, ticks);
         if (event.action == MenuAction::Choice && event.code == kMenuStart) {
+            playMenuSound(kSoundSelect);
+            openTitleMenu(true);
+        } else if (event.action == MenuAction::Choice && event.code == kMenuLocal) {
             m_titleMenu.close();
             m_loadingTimer = kLoadingTicks;
+        } else if (event.action == MenuAction::Choice && event.code == kMenuNetplay) {
+            return TitleOutcome::Netplay;
         } else if (event.action == MenuAction::Choice && event.code == kMenuOptions) {
             playMenuSound(kSoundSelect);
             openOptionsMenu();
         } else if (event.action == MenuAction::Back) {
-            m_titleMenu.close();
+            if (m_startMenu) {
+                openTitleMenu();
+            } else {
+                m_titleMenu.close();
+            }
         } else if (event.action == MenuAction::Moved) {
             playMenuSound(kSoundMove);
         }
@@ -351,12 +363,18 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
     return m_idle <= 0 ? TitleOutcome::TimedOut : TitleOutcome::Running;
 }
 
-void TitleScene::openTitleMenu() {
+void TitleScene::openTitleMenu(bool startMenu) {
+    m_startMenu = startMenu;
     MenuDefinition menu;
     menu.x = kTextCenterX;
     menu.y = kTitleMenuY;
-    menu.items = {{std::string(text("menu.start")), kMenuStart},
-                  {std::string(text("menu.options")), kMenuOptions}};
+    if (startMenu) {
+        menu.items = {{std::string(text("menu.local")), kMenuLocal},
+                      {std::string(text("menu.netplay")), kMenuNetplay}};
+    } else {
+        menu.items = {{std::string(text("menu.start")), kMenuStart},
+                      {std::string(text("menu.options")), kMenuOptions}};
+    }
     menu.startSelects = true;
     m_titleMenu.open(menu, m_text, m_screen);
 }

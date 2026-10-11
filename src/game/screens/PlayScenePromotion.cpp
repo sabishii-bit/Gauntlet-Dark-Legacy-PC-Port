@@ -43,7 +43,9 @@ void PlayScene::updatePromotion(s32 ticks, f32 seconds) {
                                                    m_context.sounds->isPlaying(m_promotionVoice));
     if (cue.voice) {
         SoundHandle name = kNoSound;
-        if (runtime.figure != nullptr) {
+        if (PickupVoices::carriesPojo(save)) {
+            name = m_audio.narrate(LevelSoundscape::kPojoName);
+        } else if (runtime.figure != nullptr) {
             name = m_audio.playFrom(runtime.figure->voice(),
                                     PickupVoices::nameOf(save.character, save.color));
         }
@@ -53,6 +55,8 @@ void PlayScene::updatePromotion(s32 ticks, f32 seconds) {
         save.progress().promotedLevel = entry->level;
         if (auto figure = PlayerFigure::load(*m_device, m_context.unpackedRoot, save, false);
             figure != nullptr) {
+            figure->setCompanionPowerups(*m_device, m_world->powerups(), save.progress().inventory,
+                                         &m_weapons);
             m_promotionFigures.push_back(std::move(runtime.figure));
             runtime.figure = std::move(figure);
         }

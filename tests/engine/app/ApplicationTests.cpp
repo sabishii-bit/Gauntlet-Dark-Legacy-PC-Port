@@ -274,6 +274,30 @@ TEST_CASE("the application renders between fixed-rate simulation updates", "[gpu
     CHECK(app.sawInput());
 }
 
+TEST_CASE("online presentation runs below the simulation rate with the full post chain",
+          "[gpu][app][threaded-render]") {
+    ApplicationDesc desc;
+    desc.window.title = "gdl independent presentation test";
+    desc.window.width = 320;
+    desc.window.height = 240;
+    desc.maxFrames = 18;
+    desc.maxFrameRate = 30;
+    desc.updateRate = 60;
+    desc.threadedPresentation = true;
+    desc.sampleCount = 4;
+    desc.enableValidation = true;
+    ProbeApplication app(std::move(desc));
+    app.depthOfField = true;
+    app.bloom = true;
+    app.ambientOcclusion = true;
+    app.mipmaps = true;
+    app.changeWindow = true;
+    REQUIRE(app.run() == 0);
+    CHECK(app.renderedFrames() == 18);
+    CHECK(app.updates() > app.renderedFrames());
+    CHECK(app.longestUpdate() <= 1.0 / 60);
+}
+
 TEST_CASE("alpha coverage survives AA changes and the post chain without affecting the HUD",
           "[gpu][app][alpha-coverage]") {
     ApplicationDesc desc;

@@ -286,6 +286,8 @@
   "scroll.pressButton": "Press any button to continue",
   "title.loading": "Loading...",
   "menu.start": "Start",
+  "menu.local": "Local",
+  "menu.netplay": "Netplay",
   "menu.options": "Options",
   "menu.audio": "Audio",
   "menu.gameOptions": "Game Options",

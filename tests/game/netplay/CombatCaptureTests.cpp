@@ -8,6 +8,7 @@
 #include "game/netplay/CombatReplica.h"
 #include "game/screens/CombatCapture.h"
 #include "game/screens/PlayerHealth.h"
+#include "game/screens/PortalDeparture.h"
 
 namespace {
 using namespace gdl;
@@ -188,6 +189,40 @@ TEST_CASE("combat capture rejects mismatched motion and duplicate seats",
     CHECK_FALSE(CombatCapture::capture(motion, std::span(players).first(1), enemies));
     players[1].actor.spawn(0, {}, nullptr, {0, 0, 0}, 0);
     CHECK_FALSE(CombatCapture::capture(motion, players, enemies));
+}
+
+TEST_CASE("portal departure captures all survivors but leaves dying teammates on the floor",
+          "[netplay][combat-capture][online-departure]") {
+    test::FakeRenderDevice device;
+    TextureSet empty;
+    PortalDeparture departure;
+    const Enemies enemies;
+    std::array<PlayerRuntime, 4> players;
+    for (s32 seat = 0; seat < 4; ++seat) {
+        players[static_cast<usize>(seat)].actor.spawn(seat, {}, nullptr,
+                                                      {2.0f * static_cast<f32>(seat), 3, 4}, 0);
+    }
+    players[2].life = PlayerLife::Dying;
+    players[3].life = PlayerLife::InTower;
+    auto snapshot = CombatCapture::capture(motionFor(players), players, enemies, &departure);
+    REQUIRE(snapshot);
+    CHECK_FALSE(snapshot->players[0]->portalPhase);
+    departure.begin(device, empty);
+    for (s32 tick = 0; tick <= PortalDeparture::kTicks; ++tick) {
+        snapshot = CombatCapture::capture(motionFor(players, static_cast<u64>(tick)), players,
+                                          enemies, &departure);
+        REQUIRE(snapshot);
+        CHECK(snapshot->players[0]->portalPhase == departure.phase());
+        CHECK(snapshot->players[1]->portalPhase == departure.phase());
+        CHECK(snapshot->motion.players[0]->position.y == 3);
+        CHECK_FALSE(snapshot->players[2]->portalPhase);
+        CHECK_FALSE(snapshot->players[3]->portalPhase);
+        departure.update(1);
+    }
+    departure.clear();
+    snapshot = CombatCapture::capture(motionFor(players), players, enemies, &departure);
+    REQUIRE(snapshot);
+    CHECK_FALSE(snapshot->players[0]->portalPhase);
 }
 
 TEST_CASE("combat capture preserves authored turbo phase without advancing animation",

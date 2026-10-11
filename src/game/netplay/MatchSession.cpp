@@ -639,6 +639,7 @@ bool MatchSession::publish(const CombatSnapshot& state) {
     if (!packets) {
         return false;
     }
+    const auto& encoded = *packets;
     for (u8 peer = 1; peer <= 4; ++peer) {
         if (m_links[peer] != 0) {
             auto& delivery = m_states[peer];
@@ -646,9 +647,9 @@ bool MatchSession::publish(const CombatSnapshot& state) {
                 // Finish the fragments already in flight. Replacing a partly sent
                 // checkpoint every capture can starve the receiver forever under
                 // congestion. Keep only one newer replacement, never a FIFO.
-                delivery.latest = *packets;
+                delivery.latest = encoded;
             } else {
-                delivery = {*packets, 0, {}};
+                delivery = {encoded, 0, {}};
             }
         }
     }

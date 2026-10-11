@@ -50,18 +50,18 @@ TEST_CASE("screen-direction aim keeps the player's height and has a stable centr
     camera.pitch = glm::quarter_pi<f32>();
     const auto clip = WorldCamera::projection(glm::radians(60.0f), 1.5f) * camera.view();
     const Vec3 position{0};
-    auto point = cursorAimPoint({0.5f, 0.5f}, clip, position);
+    auto point = cursorAimDirection({0.5f, 0.5f}, clip, position);
     REQUIRE(point);
     CHECK(point->y == Approx(0).margin(0.001));
     CHECK(point->z == Approx(0).margin(0.001));
     CHECK(glm::distance(*point, position) == Approx(0).margin(0.001));
-    point = cursorAimPoint({0.501f, 0.5f}, clip, position);
+    point = cursorAimDirection({0.501f, 0.5f}, clip, position);
     REQUIRE(point);
     CHECK(*point == position);
-    CHECK_FALSE(cursorAimPoint({-0.1f, 0.5f}, clip, position));
-    CHECK_FALSE(cursorAimPoint({0.5f, 0.5f}, Mat4{0}, position));
-    CHECK_FALSE(cursorAimPoint({std::numeric_limits<f32>::quiet_NaN(), 0.5f}, clip, position));
-    CHECK_FALSE(cursorAimPoint({0.5f, 0.5f}, clip, camera.position - camera.forward()));
+    CHECK_FALSE(cursorAimDirection({-0.1f, 0.5f}, clip, position));
+    CHECK_FALSE(cursorAimDirection({0.5f, 0.5f}, Mat4{0}, position));
+    CHECK_FALSE(cursorAimDirection({std::numeric_limits<f32>::quiet_NaN(), 0.5f}, clip, position));
+    CHECK_FALSE(cursorAimDirection({0.5f, 0.5f}, clip, camera.position - camera.forward()));
 }
 TEST_CASE("a controller does not acquire mouse facing from a stationary menu cursor",
           "[controls][cursor]") {
@@ -97,11 +97,10 @@ TEST_CASE("screen direction follows the displayed player through camera and view
                      {Vec3{3, 0, 4}, Vec3{-3, 0, 4}, Vec3{3, 0, -4}, Vec3{-3, 0, -4}}) {
                     const Vec4 projected = clip * Vec4{position + offset, 1};
                     const Vec2 pointer = (Vec2{projected} / projected.w + Vec2{1}) * 0.5f;
-                    const auto aim = cursorAimPoint(pointer, clip, position);
+                    const auto aim = cursorAimDirection(pointer, clip, position);
                     REQUIRE(aim);
-                    CHECK(aim->y == position.y);
-                    CHECK(glm::distance(*aim - position, glm::normalize(offset)) ==
-                          Approx(0).margin(0.0001));
+                    CHECK(aim->y == 0);
+                    CHECK(glm::distance(*aim, glm::normalize(offset)) == Approx(0).margin(0.0001));
                 }
             }
         }
@@ -117,7 +116,7 @@ TEST_CASE("mouse direction remains forward above the horizon instead of picking 
     const auto clip = camera.clipTransform(glm::radians(60.0f), 640, 448,
                                            makeLetterboxProjection(640, 448, 1920, 1080));
     for (const f32 y : {0.4f, 0.2f, 0.0f}) {
-        const auto aim = cursorAimPoint({0.5f, y}, clip, position);
+        const auto aim = cursorAimDirection({0.5f, y}, clip, position);
         REQUIRE(aim);
         CHECK(aim->x == Approx(0).margin(0.0001));
         CHECK(aim->y == position.y);

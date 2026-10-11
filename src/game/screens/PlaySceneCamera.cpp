@@ -6,7 +6,7 @@
 namespace gdl::game {
 std::optional<Vec3> PlayScene::cursorAim(Vec2 cursor, const Vec3& position) const {
     return m_world != nullptr && m_presentedClip
-               ? cursorAimPoint(cursor, *m_presentedClip, position)
+               ? cursorAimDirection(cursor, *m_presentedClip, position)
                : std::nullopt;
 }
 

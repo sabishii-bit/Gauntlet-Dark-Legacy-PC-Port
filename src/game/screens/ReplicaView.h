@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/config/GameConfig.h"
 #include "game/netplay/MatchSession.h"
 #include "game/screens/ReplicaActors.h"
 #include "game/screens/ReplicaFighters.h"
@@ -27,8 +28,10 @@ public:
      * arrives. Travel must instead release old registries before begin(). */
     bool resume(const MatchContext& context);
     void clear();
-    bool setPlayer(u8 seat, std::unique_ptr<PlayerFigure> figure, f32 scale = 1);
+    bool setPlayer(u8 seat, std::unique_ptr<PlayerFigure> figure, f32 scale = 1,
+                   const ClassStats* stats = nullptr);
     bool bindCompanions(RenderDevice& device, ItemArchive& powerups, ItemArchive* weapons);
+    void loadPortalSkin(RenderDevice& device, TextureSet& weapons);
     bool loadHud(RenderDevice& device, const std::filesystem::path& root,
                  const StringTable* strings, const HudResources& resources = {});
     /** Takes a presentation sample, including fractional animation/motion. Missing
@@ -37,8 +40,9 @@ public:
     /** Empty when a sample passes preflight; static diagnostic, no mutation or loading. */
     std::string_view rejection(const CombatSnapshot& snapshot) const;
     void draw(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight,
-              f32 textureFrame, const Texture* hitFlash = nullptr, const Texture* frozen = nullptr);
-    static std::optional<Rect> viewport(f32 width, f32 height, f32 hostAspect);
+              f32 textureFrame, const Texture* hitFlash = nullptr, const Texture* frozen = nullptr,
+              const GameConfig& video = {});
+    static std::optional<Rect> viewport(f32 width, f32 height);
     const CombatSnapshot* shown() const { return m_shown ? &*m_shown : nullptr; }
     const ReplicaActors& actors() const { return m_actors; }
     usize projectileCount() const { return m_projectiles.count(); }
@@ -46,6 +50,7 @@ public:
     usize fixtureCount() const { return m_fixtures.count(); }
     usize fighterMeshCount() const { return m_fighters.count(); }
     const WorldScene& geometry() const { return m_geometry; }
+    /** Facing direction from the last displayed camera and player, not a newer snapshot. */
     std::optional<Vec3> cursorAim(u8 seat, Vec2 cursor) const;
 
 private:
@@ -57,6 +62,7 @@ private:
     PickupResources* m_pickupResources = nullptr;
     FixtureResources* m_fixtureResources = nullptr;
     ReplicaActors m_actors;
+    std::array<f32, InputCommand::kSeats> m_playerHeights{};
     ReplicaProjectiles m_projectiles;
     ReplicaPickups m_pickups;
     ReplicaFixtures m_fixtures;
@@ -67,5 +73,6 @@ private:
     std::optional<CombatSnapshot> m_shown;
     bool m_resuming = false;
     std::optional<Mat4> m_presentedClip;
+    std::array<std::optional<Vec3>, InputCommand::kSeats> m_presentedPlayers;
 };
 } // namespace gdl::game

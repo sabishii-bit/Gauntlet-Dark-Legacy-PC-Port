@@ -134,6 +134,17 @@ std::optional<CombatSnapshot> CombatPlayback::sample(u64 tick, f32 fraction) con
                 start->grant == end->grant && start->continuity == end->continuity) {
                 auto player = *from;
                 player.animation = between(from->animation, to->animation, t);
+                if (from->shadow && to->shadow &&
+                    glm::distance(from->shadow->ground, to->shadow->ground) <= 32) {
+                    player.shadow->ground = glm::mix(from->shadow->ground, to->shadow->ground, t);
+                    player.shadow->normal =
+                        glm::normalize(glm::mix(from->shadow->normal, to->shadow->normal, t));
+                    player.shadow->alpha = std::lerp(from->shadow->alpha, to->shadow->alpha, t);
+                }
+                if (from->portalPhase && to->portalPhase &&
+                    *to->portalPhase >= *from->portalPhase) {
+                    player.portalPhase = std::lerp(*from->portalPhase, *to->portalPhase, t);
+                }
                 for (usize slot = 0; slot < player.companions.size(); ++slot) {
                     auto& current = player.companions[slot];
                     const auto& next = to->companions[slot];

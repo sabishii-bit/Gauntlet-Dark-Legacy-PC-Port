@@ -54,8 +54,8 @@ public:
     /** Takes what the party stands on (an open chest's contents from beside it). */
     void collect(RenderDevice& device, std::span<PlayerRuntime> players, const Services& services);
 
-    /** TowerCheckMessages acknowledges completed crystal sets on returning to the tower,
-     * independently of the port's immediate pickup notice. Returns true if a scroll opened. */
+    /** TowerCheckMessages acknowledges crystal sets collected here or before returning to
+     * the tower. Pickups elsewhere retain their immediate notice. True if a scroll opened. */
     static bool announceTowerUnlock(std::span<PlayerRuntime> players, const Services& services);
 
     /** What the narrator says of the party's runestones, in order (AudioNumRunesFound): the

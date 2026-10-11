@@ -6,6 +6,7 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    game/netplay/HostedRoomTests.cpp
     game/netplay/InputCommandTests.cpp
     game/netplay/InputTimelineTests.cpp
     game/netplay/MatchSessionTests.cpp
@@ -92,6 +93,7 @@ add_executable(tests
     engine/render/HeatDistortionTests.cpp
     engine/render/ImageTests.cpp
     engine/render/ImmediateBatchTests.cpp
+    engine/render/ThreadedRenderDeviceTests.cpp
     engine/render/DebugTexturesTests.cpp
     engine/codec/LzssTests.cpp
     engine/codec/AviReaderTests.cpp
@@ -159,6 +161,8 @@ add_executable(tests
     game/enemies/SpiderQueenTests.cpp
     game/enemies/LichTests.cpp
     game/world/PlayerArsenalTests.cpp
+    game/world/PojoTests.cpp
+    game/world/PojoVoiceTests.cpp
     game/world/LevelSoundscapeTests.cpp
     game/world/VoiceQueueTests.cpp
     game/menu/HintMenuTests.cpp
@@ -331,6 +335,54 @@ add_executable(tests
     engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
+# Focused character-form, inventory and progression regressions with native gameplay checks.
+add_executable(playerformtests game/world/PojoTests.cpp game/world/PojoVoiceTests.cpp game/players/NameCheatsTests.cpp
+    game/players/InventoryTests.cpp game/players/CharacterSaveTests.cpp
+    game/world/PlayerFigureTests.cpp game/world/PlayerArsenalTests.cpp
+    game/screens/PlayerAttacksTests.cpp
+    game/screens/PartyPickupsTests.cpp game/screens/PlaySceneTests.cpp
+    game/netplay/CharacterProfileTests.cpp game/netplay/PlayerProjectileResourcesTests.cpp
+    game/world/PowerupCompanionTests.cpp fixtures/NativeModelFixture.cpp
+    fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
+target_link_libraries(playerformtests PRIVATE gdl::game Catch2::Catch2WithMain)
+target_include_directories(playerformtests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(playerformtests PRIVATE
+    GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
+gdl_apply_compiler_options(playerformtests)
+set_target_properties(playerformtests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
+if(GDL_ENABLE_NETPLAY)
+    target_link_libraries(tests PRIVATE gdl::engine_net)
+    target_sources(tests PRIVATE engine/net/SessionTransportTests.cpp)
+    # Fast, asset-free native adapter and room checks, separate from GPU fixtures.
+    add_executable(netplaytests engine/net/SessionTransportTests.cpp
+        engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp game/screens/NetplayMenuTests.cpp
+        game/netplay/HostedRoomTests.cpp game/netplay/OnlineSessionTests.cpp
+        game/app/CommandLineTests.cpp)
+    target_link_libraries(netplaytests PRIVATE gdl::game gdl::engine_net Catch2::Catch2WithMain)
+    target_include_directories(netplaytests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    gdl_apply_compiler_options(netplaytests)
+    set_target_properties(netplaytests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
+    # Focused native gameplay regressions without rebuilding unrelated test suites.
+    add_executable(netplayplaytests game/netplay/OnlinePlayTests.cpp game/netplay/OnlinePartyTests.cpp
+        game/netplay/OnlineRunTests.cpp
+        game/screens/TitleSceneTests.cpp
+        game/netplay/ReplicaViewTests.cpp game/netplay/ReplicaActorsTests.cpp
+        game/netplay/CombatCaptureTests.cpp game/netplay/CombatSnapshotTests.cpp
+        game/netplay/CombatPlaybackTests.cpp game/netplay/InputCommandTests.cpp
+        game/netplay/InputTimelineTests.cpp game/netplay/SessionInputsTests.cpp
+        game/netplay/MatchSessionTests.cpp game/players/CursorAimTests.cpp
+        game/screens/PartyMotionTests.cpp game/screens/PartyFiguresTests.cpp
+        fixtures/NativeModelFixture.cpp fixtures/ReferenceObj.cpp)
+    target_link_libraries(netplayplaytests PRIVATE gdl::game Catch2::Catch2WithMain)
+    target_include_directories(netplayplaytests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(netplayplaytests PRIVATE
+        GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
+        GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
+    gdl_apply_compiler_options(netplayplaytests)
+    set_target_properties(netplayplaytests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
+endif()
+target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp
+    game/screens/NetplayMenuTests.cpp)
 target_link_libraries(tests PRIVATE Vulkan::Headers volk::volk GPUOpen::VulkanMemoryAllocator)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(tests PRIVATE

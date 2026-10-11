@@ -34,7 +34,11 @@ PlayerDeed PartyMotion::turboDeed(const PlayerRuntime& runtime, const PlayInput&
     const TurboMeter& meter = runtime.turbo;
     PlayerDeed deed = PlayerDeed::None;
     if (in.turboAttackPressed) {
-        if (meter.held() >= TurboMeter::kFullCost) {
+        const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
+        if ((worn.special & powerup::kPojo) != 0 && meter.held() >= TurboMeter::kStrongCost) {
+            // PlayerMotion case 21: Pojo uses ATTBREATHE at 40, even with a full bar.
+            deed = PlayerDeed::Breathe;
+        } else if (meter.held() >= TurboMeter::kFullCost) {
             deed = PlayerDeed::TurboFull;
         } else if (meter.held() >= TurboMeter::kStrongCost) {
             deed = PlayerDeed::TurboStrong;
@@ -233,15 +237,15 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 : MoveInput{};
         const auto aim =
             !held && !down && !reeling && !entering && !deathHeld && player < inputs.size()
-                ? inputs[player].aimPoint
+                ? inputs[player].aimDirection
                 : std::nullopt;
         if (aim) {
             players[i].cursorAiming = true;
-            const Vec3 toward = *aim - actor.position();
+            const Vec3 toward = *aim;
             const Vec3 facing =
                 std::hypot(toward.x, toward.z) < 0.01f
                     ? actor.position() + Vec3{std::sin(actor.yaw()), 0, std::cos(actor.yaw())}
-                    : *aim;
+                    : actor.position() + toward;
             move = cursorRelativeMove(move, actor.position(), facing, cameraYaw);
             if (animator == nullptr || !animator->shoving()) {
                 const f32 turn = animator != nullptr ? animator->turnScale() : 1.0f;
@@ -264,6 +268,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         players[i].meleeFacing = attackFacing;
         // What the buttons ask: a potion first, when one is carried, then the attack.
         PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
+        players[i].pojoTurbo = false;
         if (!down && players[i].reaction != PlayerDeed::None) {
             deed = players[i].reaction;
         }
@@ -291,6 +296,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
             if (const PlayerDeed turbo = turboDeed(players[i], in); turbo != PlayerDeed::None) {
                 deed = turbo;
+                players[i].pojoTurbo = turbo == PlayerDeed::Breathe;
             } else if (in.shieldPotion && carrying) {
                 deed = PlayerDeed::ShieldPotion;
             } else if (in.usePotion && carrying) {

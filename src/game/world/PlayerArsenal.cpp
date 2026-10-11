@@ -125,6 +125,8 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
         }
     }
     const CharacterSave& save = actor.save();
+    const auto worn = PowerupEffects::of(save.progress().inventory);
+    const bool pojo = (worn.special & powerup::kPojo) != 0;
     const ClassStats* stats = m_resources->classes.stats(save.character);
     s32 stat = 0;
     Vec3 hand{0.0f, 0.0f, 0.0f};
@@ -133,6 +135,11 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
             displayStats(*stats, experienceLevel(save.experience()), save.progress());
         stat = MissileSpec::byMagic(save.character) ? block.magic() : block.strength();
         hand = stats->weaponOffset;
+    }
+    // PlayerStartMissile's Pojo offset (GUNE5D 8011A1A8), relative to effectpos.
+    // Its projectile still uses the underlying class's damage and flight tuning.
+    if (pojo) {
+        hand = Vec3{0, -0.5f, -1.25f};
     }
     const Vec3 side{facing.z, 0.0f, -facing.x};
     MissileLaunch launch;
@@ -145,15 +152,16 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
                       facing * (hand.z + PlayerMissiles::kMuzzle);
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat) * scale;
-    launch.flags = PowerupEffects::of(save.progress().inventory).weapon & ~powerup::kSuperShot;
+    launch.flags = worn.weapon & ~powerup::kSuperShot;
     launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.playerHitGap = PlayerMissiles::hitGap(&m_resources->weapons, launch.spec->impactTree);
-    launch.model = &figure.missile();
-    launch.archive = figure.missileArchive();
-    launch.tree = figure.missileTree();
+    // FamiliarSpit[4] is WEAPONS/PHOENIX_FBALL, not the earned familiar's shot.
+    launch.model = pojo ? &m_phoenixShot : &figure.missile();
+    launch.archive = pojo ? &m_resources->weapons : figure.missileArchive();
+    launch.tree = pojo ? "PHOENIX_FBALL" : figure.missileTree();
     launch.streak = weaponStreak(actor);
-    launch.textureLender = &m_resources->weapons.textures;
+    launch.textureLender = pojo ? nullptr : &m_resources->weapons.textures;
     // An elemental weapon's throw carries the element's WEAP_TW effect of the costume
     // colour's effects (PlayerStartMissile, combat.c 1030); the wizards and sorceresses
     // throw that effect alone, their weapon unseen.
@@ -199,6 +207,8 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
         launch.wallSound = MissileWallSound::Silent;
     }
     const u32 weapon = PowerupEffects::of(save.progress().inventory).weapon;
+    // GUNE5D PlayerMotion -> AudioPlayerEatSFX (8009F638) also follows this
+    // weapon/class dispatch for Pojo. S_POJOTURBO belongs to breath, not shots.
     constexpr std::array<std::string_view, 5> kElementThrows{"", "S_AMULETFIRE", "S_AMULETLIGHTNI",
                                                              "S_AMULETLIGHT", "S_AMULETACID"};
     constexpr u32 kSpecialThrows =
@@ -241,6 +251,10 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
         m_resources->multiplayer != nullptr ? *m_resources->multiplayer : MultiplayerMode::Normal;
     launch.owner = actor.player();
     launch.position = actor.followPoint() + actor.facing() * PlayerMissiles::kMuzzle;
+    const bool pojo = (worn.special & powerup::kPojo) != 0;
+    if (pojo) {
+        launch.position += Vec3{0, -0.5f, 0} - actor.facing() * 1.25f;
+    }
     launch.direction = actor.facing();
     // ModifyPlayerDpos bypasses target correction for the Super Shot damage flag.
     launch.speed = PlayerMissiles::speedFor(stat);
@@ -248,9 +262,9 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     launch.flags = worn.weapon | powerup::kSuperShot | 0x20U;
     launch.spec = &MissileSpec::superShot();
     launch.playerHitGap = PlayerMissiles::hitGap(&m_resources->weapons, launch.spec->impactTree);
-    launch.model = &m_superShot;
+    launch.model = pojo ? &m_phoenixShot : &m_superShot;
     launch.archive = &m_resources->weapons;
-    launch.tree = "SUPERARROW";
+    launch.tree = pojo ? "PHOENIX_FBALL" : "SUPERARROW";
     launch.streak = weaponStreak(actor, true);
     for (const auto& direction : PlayerMissiles::spread(launch.direction, worn.shots())) {
         launch.velocity = direction * launch.speed;

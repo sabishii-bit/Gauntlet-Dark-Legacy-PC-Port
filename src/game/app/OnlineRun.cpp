@@ -4,13 +4,14 @@
 #include <format>
 
 #include "engine/core/Log.h"
+#include "engine/io/File.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/SystemFont.h"
 
 #if GDL_ENABLE_NETPLAY
-#include "engine/net/GnsTransport.h"
+#include "engine/net/SessionTransport.h"
 
-#include "game/netplay/RoomSession.h"
+#include "game/netplay/HostedRoom.h"
 #include "game/screens/OnlinePlay.h"
 #endif
 
@@ -19,14 +20,20 @@ struct OnlineRun::Impl {
 #if GDL_ENABLE_NETPLAY
     RenderDevice* device = nullptr;
     GameContext context;
+    GameConfig config;
     LevelRef initial;
     PlayOptions options;
-    std::unique_ptr<RoomSession> service;
-    std::unique_ptr<GnsTransport> transport;
+    std::unique_ptr<SessionTransport> transport;
+    std::unique_ptr<HostedRoom> service;
     std::unique_ptr<OnlineSession> session;
+    std::filesystem::path invitationOutput;
+    bool invitationWritten = false;
     OnlineParty selection;
     OnlinePlay play;
     bool autoStart = false;
+    bool interactive = false;
+    bool selected = false;
+    u8 localPlayers = 1;
     bool finished = false;
     bool reportedCheckpoint = false;
     u64 reportedEpoch = 0;
@@ -34,6 +41,9 @@ struct OnlineRun::Impl {
 #endif
 };
 OnlineRun::OnlineRun() = default;
+bool OnlineRun::available() {
+    return GDL_ENABLE_NETPLAY != 0;
+}
 OnlineRun::~OnlineRun() {
     close();
 }
@@ -66,48 +76,187 @@ void OnlineRun::status(RenderDevice& device, std::string message) {
 bool OnlineRun::open(RenderDevice& device, const GameContext& context, const std::string& endpoint,
                      const std::string& code, const std::string& build, const std::string& content,
                      std::span<const PartyMember> local, const LevelRef& initial,
-                     const PlayOptions& options, bool autoStart) {
+                     const PlayOptions& options, bool autoStart,
+                     const std::filesystem::path& invitationOutput) {
     close();
 #if GDL_ENABLE_NETPLAY
     if (local.empty() || local.size() > InputCommand::kSeats) {
         status(device, "Online test requires one to four local characters.");
         return false;
     }
-    auto next = std::make_unique<Impl>();
-    next->device = &device;
-    next->context = context;
-    next->initial = initial;
-    next->options = options;
-    next->autoStart = autoStart;
-    std::string error;
-    next->transport = GnsTransport::create({}, error);
-    if (!next->transport) {
-        status(device, "Network startup failed: " + error);
+    if (!invitationOutput.empty() && std::filesystem::exists(invitationOutput)) {
+        status(device, "Invitation output already exists; choose a new file.");
         return false;
     }
-    next->service = std::make_unique<RoomSession>(endpoint, code, static_cast<u8>(local.size()),
-                                                  build, content);
-    next->session = std::make_unique<OnlineSession>(*next->service, *next->transport, code.empty(),
-                                                    static_cast<u8>(local.size()));
-    if (!next->selection.select(*next->session, local)) {
-        status(device, "Online character selection was rejected.");
+    std::string invitation;
+    if (!code.empty()) {
+        FileStream file(code);
+        if (file.size() == 0 || file.size() > 2048) {
+            status(device, "Invalid invitation file.");
+            return false;
+        }
+        const auto bytes = file.readExact(static_cast<usize>(file.size()));
+        invitation.assign(bytes.begin(), bytes.end());
+    }
+    if (!connect(device, context, endpoint == "local", invitation, build, content,
+                 static_cast<u8>(local.size()))) {
         return false;
     }
-    m_impl = std::move(next);
-    status(device, "Connecting to the test room...");
-    return true;
+    m_impl->initial = initial;
+    m_impl->options = options;
+    m_impl->autoStart = autoStart;
+    m_impl->invitationOutput = invitationOutput;
+    return select(local);
 #else
-    (void)context;
     (void)endpoint;
     (void)code;
-    (void)build;
-    (void)content;
     (void)local;
     (void)initial;
     (void)options;
     (void)autoStart;
+    (void)invitationOutput;
+    return connect(device, context, false, {}, build, content, 1);
+#endif
+}
+bool OnlineRun::connect(RenderDevice& device, const GameContext& context, bool localOnly,
+                        const std::string& invitation, const std::string& build,
+                        const std::string& content, u8 localPlayers) {
+    close();
+#if GDL_ENABLE_NETPLAY
+    if (localPlayers == 0 || localPlayers > InputCommand::kSeats) {
+        status(device, "Choose one to four local players.");
+        return false;
+    }
+    auto next = std::make_unique<Impl>();
+    next->device = &device;
+    next->context = context;
+    next->config = context.config != nullptr ? *context.config : GameConfig{};
+    next->context.config = &next->config;
+    next->initial = LevelRef::tower();
+    next->options.welcome = false;
+    next->localPlayers = localPlayers;
+    std::string error;
+    next->transport = openSessionTransport({localOnly, invitation}, error);
+    if (!next->transport) {
+        status(device, "Network startup failed: " + error);
+        return false;
+    }
+    next->service = std::make_unique<HostedRoom>(*next->transport, invitation.empty(), localPlayers,
+                                                 build, content);
+    next->session = std::make_unique<OnlineSession>(*next->service, next->service->transport(),
+                                                    invitation.empty(), localPlayers);
+    m_impl = std::move(next);
+    status(device, "Connecting...");
+    return true;
+#else
+    (void)context;
+    (void)localOnly;
+    (void)invitation;
+    (void)build;
+    (void)content;
+    (void)localPlayers;
     status(device, "This build does not include the experimental netplay runtime.");
     return false;
+#endif
+}
+bool OnlineRun::openLobby(RenderDevice& device, const GameContext& context,
+                          const std::string& invitation, const std::string& build,
+                          const std::string& content, u8 localPlayers, bool localOnly) {
+    if (!connect(device, context, localOnly, invitation, build, content, localPlayers)) {
+        return false;
+    }
+#if GDL_ENABLE_NETPLAY
+    m_impl->interactive = true;
+#endif
+    return true;
+}
+bool OnlineRun::select(std::span<const PartyMember> local) {
+#if GDL_ENABLE_NETPLAY
+    if (m_impl && local.size() == m_impl->localPlayers &&
+        m_impl->selection.select(*m_impl->session, local)) {
+        m_impl->selected = true;
+        return true;
+    }
+#else
+    (void)local;
+#endif
+    return false;
+}
+bool OnlineRun::ready(bool value) {
+#if GDL_ENABLE_NETPLAY
+    return m_impl && m_impl->session->ready(value);
+#else
+    (void)value;
+    return false;
+#endif
+}
+bool OnlineRun::start() {
+#if GDL_ENABLE_NETPLAY
+    return m_impl && m_impl->session->start();
+#else
+    return false;
+#endif
+}
+bool OnlineRun::settings(const RoomSettings& value) {
+#if GDL_ENABLE_NETPLAY
+    return m_impl && m_impl->service->settings(value);
+#else
+    (void)value;
+    return false;
+#endif
+}
+NetplayMenu::View OnlineRun::lobby() const {
+    NetplayMenu::View view;
+    view.status = m_status;
+#if GDL_ENABLE_NETPLAY
+    if (m_impl) {
+        const auto& run = *m_impl;
+        view.page = run.session->host() ? NetplayMenu::Page::Host : NetplayMenu::Page::Guest;
+        view.localPlayers = run.localPlayers;
+        view.selected = run.selected;
+        view.connected = run.session->phase() == OnlineSession::Phase::Lobby;
+        if (run.session->host() && run.transport->phase() == SessionTransport::Phase::Ready) {
+            view.invitation = run.transport->invitation();
+        }
+        if (const auto* room = run.session->room()) {
+            view.settings = room->settings;
+            bool allReady = true;
+            for (const auto& member : room->members) {
+                view.players += member.seats.size();
+                allReady &= member.ready;
+                if (std::ranges::equal(member.seats, run.session->seats())) {
+                    view.ready = member.ready;
+                }
+            }
+            view.canStart =
+                run.session->host() && view.connected && allReady && run.session->connected();
+        }
+    }
+#endif
+    return view;
+}
+bool OnlineRun::playing() const {
+#if GDL_ENABLE_NETPLAY
+    return m_impl && (m_impl->play.phase() == OnlinePlay::Phase::Loading ||
+                      m_impl->play.phase() == OnlinePlay::Phase::Playing ||
+                      m_impl->play.phase() == OnlinePlay::Phase::Paused);
+#else
+    return false;
+#endif
+}
+bool OnlineRun::pause(s32 device) {
+#if GDL_ENABLE_NETPLAY
+    return m_impl && m_impl->play.pause(device);
+#else
+    (void)device;
+    return false;
+#endif
+}
+void OnlineRun::resume() {
+#if GDL_ENABLE_NETPLAY
+    if (m_impl) {
+        m_impl->play.resume();
+    }
 #endif
 }
 void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& menu) {
@@ -117,6 +266,28 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
 #if GDL_ENABLE_NETPLAY
     auto& run = *m_impl;
     auto& session = *run.session;
+    if (run.transport->phase() == SessionTransport::Phase::Opening) {
+        return; // Connection setup has its own deadline, before room admission begins.
+    }
+    if (run.transport->phase() == SessionTransport::Phase::Failed) {
+        status(*run.device, "Connection failed: " + run.transport->error());
+        session.leave();
+        return;
+    }
+    if (!run.finished && session.host() && !run.invitationWritten &&
+        !run.invitationOutput.empty()) {
+        try {
+            replaceTextFile(run.invitationOutput, run.transport->invitation());
+            // This harness file is private. Never include the invitation in logs.
+            log::info("Online invitation ready");
+            run.invitationWritten = true;
+        } catch (const std::exception&) {
+            status(*run.device, "Connection failed: unable to save the invitation file.");
+            session.leave();
+            run.finished = true;
+            return;
+        }
+    }
     if (run.finished) {
         session.update(1.0 / 60);
         return;
@@ -132,19 +303,28 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
                     return member.seats ==
                            std::vector<u8>(session.seats().begin(), session.seats().end());
                 });
-                if (own != room->members.end() && !own->ready) {
+                if (!run.interactive && own != room->members.end() && !own->ready) {
                     session.ready();
                 }
-                status(*run.device,
-                       std::format("Test room {} - {} machine(s). {}", room->code,
-                                   room->members.size(),
-                                   session.host() ? "Press Start to begin." : "Waiting for host."));
-                if (session.host() && room->members.size() > 1 &&
+                if (run.interactive) {
+                    status(*run.device,
+                           run.selected ? "Ready when you are. Online progress is not saved yet."
+                                        : "Select your characters, then mark yourself ready.");
+                } else {
+                    status(*run.device, std::format("Test room {} - {} machine(s). {}", room->code,
+                                                    room->members.size(),
+                                                    session.host() ? "Press Start to begin."
+                                                                   : "Waiting for host."));
+                }
+                if (!run.interactive && session.host() && room->members.size() > 1 &&
                     (run.autoStart || menu.start || menu.select)) {
                     session.start();
                 }
             }
         } else if (session.phase() == OnlineSession::Phase::Active) {
+            const auto rules = session.room()->settings;
+            run.config.difficulty.level = DifficultyConfig::kNames[rules.difficulty];
+            run.config.multiplayer.mode = static_cast<MultiplayerMode>(rules.friendlyFire);
             if (!run.play.open(*run.device, run.context, session, run.selection, run.initial,
                                run.options)) {
                 status(*run.device, "Online scene setup failed. Escape exits.");
@@ -154,7 +334,7 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
             }
         }
     } else {
-        if (menu.start) {
+        if (!run.interactive && menu.start) {
             if (run.play.phase() == OnlinePlay::Phase::Paused) {
                 run.play.resume();
             } else {
@@ -191,11 +371,12 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
                     run.reportedCheckpoint = true;
                 }
             }
-            status(*run.device,
-                   "Online scene test - Start pauses; Escape exits. No saves are written.");
+            status(*run.device, run.interactive ? ""
+                                                : "Online scene test - Start opens a local menu; "
+                                                  "Escape exits. No saves are written.");
             break;
         case OnlinePlay::Phase::Paused:
-            status(*run.device, "Online test paused - the host can press Start to resume.");
+            status(*run.device, "Local menu open - the game continues for everyone.");
             break;
         case OnlinePlay::Phase::Finished:
             // Do not fall through into local post-level menus or reset guest progress.

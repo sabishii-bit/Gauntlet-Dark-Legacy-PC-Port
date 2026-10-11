@@ -184,6 +184,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
         runtime.figure = PlayerFigure::load(device, m_context.unpackedRoot, runtime.actor.save());
+        if (runtime.figure != nullptr) {
+            runtime.figure->setCompanionPowerups(
+                device, world.powerups(), runtime.actor.save().progress().inventory, &m_weapons);
+        }
         subjects.push_back(CameraSubject{runtime.actor.position(), runtime.actor.followPoint(),
                                          runtime.actor.height() * 0.5f});
     }

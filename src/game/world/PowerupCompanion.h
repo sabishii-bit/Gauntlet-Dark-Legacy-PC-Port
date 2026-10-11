@@ -52,6 +52,8 @@ public:
     static Kind choose(const PowerupEffects& worn, bool shieldRunning);
     static std::string_view treeOf(Kind kind);
     static Mount mountOf(Kind kind);
+    /** Shared material setup for local and replicated companion models. */
+    static void configureModel(TreeModel& model, const TreeInfo& tree, ModelSet& models);
     /** Whether the kind's tree is the weapon archive's (FW_SHLD_ACTIVE); else the powerups'. */
     static bool fromWeapons(Kind kind) { return kind == Kind::FireShield; }
     /** Pojo's sequence for what the body is doing (player.c 5812): the run for moving, the
@@ -78,6 +80,7 @@ public:
     Kind kind() const { return m_kind; }
     bool shown() const { return m_tree != nullptr; }
     std::optional<CompanionVisual> visual(const Mat4& at, f32 alpha) const;
+    std::optional<Mat4> attachment(const Mat4& at, std::string_view object) const;
     s32 sequence() const { return m_tree != nullptr ? static_cast<s32>(m_player.sequence()) : -1; }
 
 private:

@@ -74,6 +74,9 @@ int runGauntlet(std::span<char*> rawArgs) {
     parsed.desc.textureFiltering = config.display.textureFiltering;
     parsed.desc.maxFrameRate = config.display.maxFrameRate;
     parsed.desc.updateRate = config.timing.tickRate;
+    // Rooms can also be entered from the title. Keep the render worker alive across that
+    // transition; offline-only builds retain their existing loop.
+    parsed.desc.threadedPresentation = gdl::game::OnlineRun::available();
 
     gdl::game::Gauntlet game(std::move(parsed.desc), std::move(parsed.options), std::move(config),
                              GDL_VERSION);

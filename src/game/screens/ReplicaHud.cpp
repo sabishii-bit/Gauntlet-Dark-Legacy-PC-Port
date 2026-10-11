@@ -101,24 +101,25 @@ std::optional<HudSnapshot> HudCapture::capture(std::span<const PlayerRuntime> pl
         result.players[static_cast<usize>(id)] = std::move(player);
     }
     for (const auto& card : hud.pickups().cards()) {
-        const auto found = std::ranges::find(kCards, card.texture);
-        if (found == kCards.end() || card.player < 0) {
+        const auto index =
+            static_cast<usize>(std::ranges::find(kCards, card.texture) - kCards.begin());
+        if (index == kCards.size() || card.player < 0) {
             return std::nullopt;
         }
-        result.cards.push_back({static_cast<u32>(card.player),
-                                static_cast<HudCardKind>(found - kCards.begin()), card.y});
+        result.cards.push_back(
+            {static_cast<u32>(card.player), static_cast<HudCardKind>(index), card.y});
     }
     for (usize seat = 0; seat < result.counts.size(); ++seat) {
         const auto& count = hud.pickups().count(static_cast<s32>(seat));
         if (!count.showing()) {
             continue;
         }
-        const auto found = std::ranges::find(kCounts, count.icon);
-        if (found == kCounts.end()) {
+        const auto index =
+            static_cast<usize>(std::ranges::find(kCounts, count.icon) - kCounts.begin());
+        if (index == kCounts.size()) {
             return std::nullopt;
         }
-        result.counts[seat] =
-            HudCount{static_cast<HudCountKind>(found - kCounts.begin()), count.count, count.total};
+        result.counts[seat] = HudCount{static_cast<HudCountKind>(index), count.count, count.total};
     }
     if (bosses != nullptr) {
         for (usize i = 0; i < bosses->count(); ++i) {

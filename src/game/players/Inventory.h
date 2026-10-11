@@ -35,6 +35,8 @@ struct Inventory {
     s32 keys = 0;
     std::vector<s32> potions; ///< the kind of each
     std::array<PowerupSlot, kPowerupSlots> powerups{};
+    /** Name-selected Pojo form, rebuilt from the save name; never a selectable item. */
+    bool permanentPojo = false;
 
     /** Takes what keys there is room for; returns how many. */
     s32 addKeys(s32 count);

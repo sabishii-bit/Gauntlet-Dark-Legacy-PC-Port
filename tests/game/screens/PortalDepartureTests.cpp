@@ -44,17 +44,42 @@ TEST_CASE("portal departure uses the animated lightning skin, not spawn flames",
     TextureSet textures;
     REQUIRE(textures.load(path.parent_path()));
     PortalDeparture departure;
+    departure.loadSkin(device, textures);
+    CHECK_FALSE(departure.started());
+    CHECK(departure.skin() == nullptr);
     departure.begin(device, textures);
     const auto first = textures.find("DTH_LIGHT00");
     const auto last = textures.find("DTH_LIGHT00+9");
     REQUIRE(first);
     REQUIRE(last);
     CHECK(departure.skin() == &textures.texture(device, *first));
-    departure.update(45);
+    for (s32 tick = 0; tick < 45; ++tick) {
+        CHECK(departure.phase() == Approx(static_cast<f32>(tick) / PortalDeparture::kTicks));
+        const auto frame = tick / 5;
+        const auto index =
+            textures.find(frame == 0 ? "DTH_LIGHT00" : "DTH_LIGHT00+" + std::to_string(frame));
+        REQUIRE(index);
+        CHECK(departure.skin() == &textures.texture(device, *index));
+        departure.update(1);
+    }
     CHECK(departure.skin() == &textures.texture(device, *last));
     departure.update(5);
     CHECK(departure.skin() == nullptr);
     departure.clear();
+}
+
+TEST_CASE("fractional portal presentation samples the same authored spin without advancing time",
+          "[portal-departure][online-departure]") {
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{10, 7, 2});
+    for (s32 frame = 0; frame < 100; ++frame) {
+        const f32 ticks = static_cast<f32>(frame) * 0.5f;
+        const auto shown = PortalDeparture::transformAt(body, ticks / PortalDeparture::kTicks);
+        CHECK(shown[3].y == Approx(7 - ticks * PortalDeparture::kSinkPerTick));
+        CHECK(shown[0].x ==
+              Approx(std::cos(PortalDeparture::kSpinPerSecond * ticks / 60)).margin(0.00001f));
+        CHECK(shown[3].x == 10);
+        CHECK(shown[3].z == 2);
+    }
 }
 
 TEST_CASE("transport uses the tunnel one-shot rather than the looping portal flame",

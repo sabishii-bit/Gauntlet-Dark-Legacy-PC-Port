@@ -20,6 +20,7 @@ concurrency:
 
 env:
   VCPKG_DISABLE_METRICS: 1
+  RUSTUP_TOOLCHAIN: '1.98.0'
 
 jobs:
   preflight:
@@ -67,6 +68,10 @@ jobs:
           restore-keys: vcpkg-${{ runner.os }}-
       - name: Build tools
         run: python scripts/setup.py --yes --no-build
+      - name: Networking toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Networking license tool
+        run: cargo install cargo-about --version 0.9.2 --locked --features cli --jobs 2
       - name: Installer tools
         run: python -m pip install -r scripts/installer/requirements.txt
       - name: Linux wizard runtime libraries

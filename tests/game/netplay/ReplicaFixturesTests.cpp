@@ -119,8 +119,9 @@ struct Fixture {
                 {"info":4,"name":"CHEST","position":[50,0,0]}]})");
         }
         test::convertModelFixture(root);
-        REQUIRE(
-            archive.load(native ? test::assetOrSkip("ITEMS/LEVELG/ANIM.PS2").parent_path() : root));
+        const auto archiveRoot =
+            native ? test::assetOrSkip("ITEMS/LEVELG/ANIM.PS2").parent_path() : root;
+        REQUIRE(archive.load(archiveRoot));
         REQUIRE(layout.load(root));
         CHECK(chests.bind(device, layout, archive, nullptr) == !hazards);
         CHECK(gates.bind(device, layout, archive, nullptr) == !hazards);

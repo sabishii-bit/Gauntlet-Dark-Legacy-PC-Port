@@ -15,7 +15,7 @@ TEST_CASE("every network action maps independently to the existing gameplay inpu
     command.grant = 1;
     command.direction = {0.6f, 0.8f};
     command.magnitude = 0.75f;
-    command.aimPoint = Vec3{7, 8, 9};
+    command.aimDirection = Vec3{0.6f, 0, 0.8f};
     for (u32 bit = 1; bit <= InputCommand::kPressMask; bit <<= 1U) {
         command.pressedButtons = bit;
         const auto play = SessionInputs::playInput(command);
@@ -24,7 +24,7 @@ TEST_CASE("every network action maps independently to the existing gameplay inpu
         CHECK(result.heldButtons == 0);
         CHECK(result.direction == command.direction);
         CHECK(result.magnitude == command.magnitude);
-        CHECK(result.aimPoint == command.aimPoint);
+        CHECK(result.aimDirection == command.aimDirection);
     }
     command.pressedButtons = 0;
     for (u32 bit = 1; bit <= InputCommand::kHeldMask; bit <<= 1U) {

@@ -4,7 +4,7 @@
 #include <cmath>
 
 namespace gdl::game {
-std::optional<Vec3> cursorAimPoint(Vec2 cursor, const Mat4& clip, const Vec3& position) {
+std::optional<Vec3> cursorAimDirection(Vec2 cursor, const Mat4& clip, const Vec3& position) {
     constexpr f32 kCursorDeadZone = 0.004f; // NDC: two thousandths of the window extent
     constexpr f32 kProjectionEpsilon = 1.0e-6f;
     if (!std::isfinite(cursor.x) || !std::isfinite(cursor.y) || cursor.x < 0 || cursor.x > 1 ||
@@ -27,7 +27,7 @@ std::optional<Vec3> cursorAimPoint(Vec2 cursor, const Mat4& clip, const Vec3& po
         return {};
     }
     if (glm::length(delta) < kCursorDeadZone) {
-        return position;
+        return Vec3{0};
     }
     const Vec2 direction{(delta.x * z.y - z.x * delta.y) / determinant,
                          (x.x * delta.y - delta.x * x.y) / determinant};
@@ -35,7 +35,7 @@ std::optional<Vec3> cursorAimPoint(Vec2 cursor, const Mat4& clip, const Vec3& po
     if (!std::isfinite(length) || length < kProjectionEpsilon) {
         return {};
     }
-    return position + Vec3{direction.x / length, 0, direction.y / length};
+    return Vec3{direction.x / length, 0, direction.y / length};
 }
 MoveInput cursorRelativeMove(MoveInput move, const Vec3& position, const Vec3& aim, f32 cameraYaw) {
     const Vec3 toward = aim - position;

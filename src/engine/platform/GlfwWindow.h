@@ -32,6 +32,8 @@ public:
         return m_gamepads.rumble(pad, low, high, milliseconds, priority);
     }
     void stopRumble() override { m_gamepads.stop(); }
+    std::string clipboardText() const override;
+    void setClipboardText(const std::string& text) override;
     void setIcon(std::span<const Image> images) override;
     bool setCursor(const Image& image, u32 hotX, u32 hotY) override;
     void resetCursor() override;

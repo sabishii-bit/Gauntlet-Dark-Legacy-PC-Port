@@ -86,6 +86,53 @@ TEST_CASE("wall rays follow the finite three-dimensional segment and stored fron
     CHECK(collision.pickSurface({0, 1, 0}, {0, -1, 0}));
 }
 
+TEST_CASE("enemy wall spheres catch faces edges and corners without blocking escape",
+          "[world][collision][generator-terrain]") {
+    WorldCollision collision;
+    collision.build(room());
+    // Stop short of the face with the centre, but overlap it with the sphere.
+    CHECK_FALSE(collision.wallBetween({3, 1, 0}, {4.5f, 1, 0}));
+    CHECK(collision.wallBetween({3, 1, 0}, {4.5f, 1, 0}, 0.6f));
+    CHECK_FALSE(collision.wallBetween({3, 1, 0}, {4.5f, 1, 0}, 0.4f));
+    // The swept centre clears the top and side edges; the body does not.
+    CHECK(collision.wallBetween({3, 4, 0}, {7, 4, 0}, 1.1f));
+    CHECK_FALSE(collision.wallBetween({3, 4, 0}, {7, 4, 0}, 0.9f));
+    CHECK(collision.wallBetween({3, 1, 11}, {7, 1, 11}, 1.1f));
+    CHECK_FALSE(collision.wallBetween({3, 1, 11}, {7, 1, 11}, 0.9f));
+    CHECK(collision.wallBetween({3, 4, 11}, {7, 4, 11}, 1.5f));
+    CHECK_FALSE(collision.wallBetween({3, 4, 11}, {7, 4, 11}, 1.4f));
+    CHECK_FALSE(collision.wallBetween({7, 1, 0}, {3, 1, 0}, 2));
+    CHECK_FALSE(collision.wallBetween({4.5f, 1, 0}, {3, 1, 0}, 1));
+    CHECK(collision.wallBetween({4.5f, 1, 0}, {4.5f, 1, 0}, 1));
+    CHECK(collision.wallBetween({4.5f, 1, -12}, {4.5f, 1, 12}, 1));
+    // A horizontal floor is not an EnemyWallCollide surface.
+    CHECK_FALSE(collision.wallBetween({0, 1, 0}, {1, 1, 0}, 2));
+    collision.setSolid(1, false);
+    CHECK_FALSE(collision.wallBetween({3, 1, 0}, {7, 1, 0}, 1));
+    collision.setSolid(1, true);
+    collision.setContactOnly(1, true);
+    CHECK_FALSE(collision.wallBetween({3, 1, 0}, {7, 1, 0}, 1));
+}
+
+TEST_CASE("enemy birth wall spheres include slopes and thin walls between cylinder samples",
+          "[world][collision][generator-terrain]") {
+    WorldCollision collision;
+    // A thin ledge at the collision centre misses the old knee/chest samples.
+    collision.build({triangle({-10, 2.8f, 4}, {10, 2.8f, 4}, {0, 3.2f, 4}, {0, 0, -1})});
+    const Vec3 from{0, 0, 0};
+    const Vec3 to{0, 0, 8};
+    CHECK(collision.sweepWalls(from, to, 1.5f, 0.1f, 5.9f) == to);
+    CHECK(collision.wallBetween(from + Vec3{0, 3, 0}, to + Vec3{0, 3, 0}, 1.5f));
+    const Vec3 normal{0, 0.6f, -0.8f};
+    collision.build({triangle({-10, -5, -3.75f}, {10, -5, -3.75f}, {0, 5, 3.75f}, normal)});
+    CHECK(collision.wallBetween(normal * 2.0f, normal * 0.5f, 1));
+    const std::array moving{0};
+    collision.setMovingObjects(moving);
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{20, 4, 0}));
+    CHECK_FALSE(collision.wallBetween(normal * 2.0f, normal * 0.5f, 1));
+    CHECK(collision.wallBetween(Vec3{20, 4, 0} + normal * 2.0f, Vec3{20, 4, 0} + normal * 0.5f, 1));
+}
+
 TEST_CASE("wall rays apply the native mask slope window and unfiltered-object exception",
           "[world][collision][wall-ray][alpha-contact-seed]") {
     WorldCollision collision;

@@ -1317,6 +1317,72 @@ TEST_CASE("generator birth walls are tested before settling onto an upper landin
     enemies.close();
 }
 
+TEST_CASE("generator landings probe from the native collision centre rather than the feet",
+          "[game][enemies][enemy-collision][generator-terrain][assets]") {
+    f32 floorY = 0;
+    bool allowed = true;
+    SECTION("a deck seven units above the base is the landing, not the ground underneath") {
+        floorY = 7;
+    }
+    SECTION("a drop three units below a humanoid generator is allowed") {
+        floorY = -3;
+    }
+    SECTION("a drop past six units from the collision centre is refused") {
+        floorY = -3.1f;
+        allowed = false;
+    }
+    SECTION("a floor above the four-unit upward probe is refused") {
+        floorY = 7.2f;
+        allowed = false;
+    }
+    std::vector<CollisionTriangle> geometry{
+        triangle({-20, floorY, 5}, {20, floorY, 5}, {20, floorY, 20}, {0, 1, 0}),
+        triangle({-20, floorY, 5}, {20, floorY, 20}, {-20, floorY, 20}, {0, 1, 0})};
+    if (floorY == 7) {
+        geometry.push_back(triangle({-20, 0, 5}, {20, 0, 5}, {20, 0, 20}, {0, 1, 0}));
+        geometry.push_back(triangle({-20, 0, 5}, {20, 0, 20}, {-20, 0, 20}, {0, 1, 0}));
+    }
+    WorldCollision collision;
+    collision.build(geometry);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = 12; // One forward exit; no alternate direction can hide a refusal.
+    spawn.generator = 0;
+    spawn.clearance = 8;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value() == allowed);
+    if (id) {
+        CHECK(enemies.positionOf(*id).y == Approx(floorY));
+    }
+}
+
+TEST_CASE("generator birth rejects a thin obstruction between the old movement probes",
+          "[game][enemies][enemy-collision][generator-terrain][assets]") {
+    WorldCollision collision;
+    auto geometry = yard();
+    geometry.push_back(triangle({-10, 2.8f, 4}, {10, 2.8f, 4}, {0, 3.2f, 4}, {0, 0, -1}));
+    collision.build(geometry);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = 12;
+    spawn.generator = 0;
+    spawn.clearance = 8;
+    CHECK_FALSE(enemies.spawn(spawn, {}));
+    CHECK(enemies.takeGeneratorEvents().empty());
+    CHECK(enemies.count() == 0);
+    // Rejecting the obstructed direction must not poison another viable exit.
+    spawn.direction = {0, 0, -1};
+    REQUIRE(enemies.spawn(spawn, {}));
+    CHECK(enemies.positionOf(0).z < 0);
+    CHECK(enemies.takeGeneratorEvents().size() == 1);
+}
+
 TEST_CASE("a newly released Death cannot be pushed through a wall by an item body",
           "[game][enemies][enemy-collision][assets]") {
     test::FakeRenderDevice device;
