@@ -1,6 +1,10 @@
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/BitmapFont.h"
 #include "engine/core/Types.h"
+#include "engine/ui/TextPainter.h"
 
 #include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
@@ -20,12 +24,40 @@ TEST_CASE("the inventory label rests immediately above the runestones",
     selector.step(SelectorInput{.up = true}, inventory, 32);
     selector.step({}, inventory, 1);
     REQUIRE(selector.showing());
-    CHECK(PowerupSelector::kLabelX == 24);
     CHECK(selector.labelY(StatusBoxPainter::kY) == 291);
     const f32 bottom =
         static_cast<f32>(selector.labelY(StatusBoxPainter::kY)) + 32 * PowerupSelector::kLabelScale;
     CHECK(bottom < StatusBoxPainter::kRuneY);
     CHECK(StatusBoxPainter::kRuneY - bottom < 1.0f);
+}
+
+TEST_CASE("inventory labels shrink only once they would leave the player's box",
+          "[selector][inventory-label]") {
+    constexpr s32 budget = PowerupSelector::kLabelBudget;
+    TextPainter text;
+    CHECK(PowerupSelector::labelScale(text, {}) == PowerupSelector::kLabelScale);
+
+    // Cells of ten at the selector's scale advance four pixels, so twenty-seven
+    // of them fill the budget exactly and one more has to shrink.
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 code = 'A'; code <= 'Z'; ++code) {
+        glyphs.push_back(BitmapGlyph{code, 10, 0, 0});
+    }
+    const BitmapFont font = BitmapFont::fromGlyphs(32, 4, std::move(glyphs));
+    text.setFont(&font, nullptr);
+    const std::string fits(27, 'A');
+    const std::string over(28, 'A');
+    const std::string longer(80, 'A');
+    REQUIRE(text.measure(fits, PowerupSelector::kLabelScale) == budget);
+    REQUIRE(text.measure(over, PowerupSelector::kLabelScale) > budget);
+    CHECK(PowerupSelector::labelScale(text, "POJO") == PowerupSelector::kLabelScale);
+    CHECK(PowerupSelector::labelScale(text, fits) == PowerupSelector::kLabelScale);
+    const f32 shrunk = PowerupSelector::labelScale(text, over);
+    CHECK(shrunk < PowerupSelector::kLabelScale);
+    CHECK(text.measure(over, shrunk) <= budget);
+    const f32 further = PowerupSelector::labelScale(text, longer);
+    CHECK(further < shrunk);
+    CHECK(text.measure(longer, further) <= budget);
 }
 
 SelectorInput press(bool up, bool down, bool left, bool right) {

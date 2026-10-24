@@ -10,6 +10,26 @@
 
 namespace gdl::game {
 
+f32 PowerupSelector::labelScale(const TextPainter& text, std::string_view label) {
+    const s32 full = text.measure(label, kLabelScale);
+    if (full <= kLabelBudget) {
+        return kLabelScale;
+    }
+    // Glyph advances are truncated to whole pixels, so a single proportion can
+    // still stick out. The lower bound of this search is always a size that fits.
+    f32 low = 0;
+    f32 high = kLabelScale;
+    for (s32 attempt = 0; attempt < 16; ++attempt) {
+        const f32 mid = (low + high) * 0.5f;
+        if (text.measure(label, mid) <= kLabelBudget) {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    return low;
+}
+
 void PowerupSelector::close() {
     m_state = State::Closed;
     m_selection = -1;

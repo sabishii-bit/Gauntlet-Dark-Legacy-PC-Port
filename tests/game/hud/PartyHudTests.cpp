@@ -1,6 +1,7 @@
 #include <array>
 #include <format>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
@@ -416,13 +417,33 @@ TEST_CASE("native inventory labels remain below crystal counts in every player l
         CHECK(test::minCorner(device.draws.front()).y > countBottom);
         CHECK(test::maxCorner(device.draws.front()).y < StatusBoxPainter::kRuneY);
         CHECK(StatusBoxPainter::kRuneY - test::maxCorner(device.draws.front()).y < 1.0f);
+        const std::string_view label = strings.get("powerup.invisible");
+        const f32 scale = PowerupSelector::labelScale(text, label);
+        const s32 top = hud.selector(lane).labelY(StatusBoxPainter::kY);
+        const s32 fitted =
+            top + text.lineHeight(PowerupSelector::kLabelScale) - text.lineHeight(scale);
+        const s32 center = -(lane * StatusBoxPainter::kWidth + StatusBoxPainter::kWidth / 2);
         test::FakeRenderDevice expected;
         canvas.begin(expected, Mat4{1});
-        text.draw(canvas, lane * 128 + 24, 291, strings.get("powerup.invisible"),
-                  TextStyle{0.45f, Color::white()});
+        text.draw(canvas, center, fitted, label, TextStyle{scale, Color::white()});
         canvas.end();
         REQUIRE(expected.draws.size() == 1);
         CHECK(device.draws.front().vertices == expected.draws.front().vertices);
+        // Labels stay inside their lane, centered within glyph rounding.
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        PartyHud::drawSelector(canvas, text, &strings, nullptr, lane,
+                               PowerupSlot{30, powerup::kSpecial, 0, powerup::kEnemyShrink, false},
+                               top);
+        canvas.end();
+        REQUIRE(device.draws.size() == 1);
+        const f32 laneLeft = static_cast<f32>(lane * StatusBoxPainter::kWidth);
+        const f32 laneRight = laneLeft + static_cast<f32>(StatusBoxPainter::kWidth);
+        const Vec2 low = test::minCorner(device.draws.front());
+        const Vec2 high = test::maxCorner(device.draws.front());
+        CHECK(low.x >= laneLeft);
+        CHECK(high.x <= laneRight);
+        CHECK(low.x - laneLeft == Catch::Approx(laneRight - high.x).margin(2.5f));
     }
 }
 

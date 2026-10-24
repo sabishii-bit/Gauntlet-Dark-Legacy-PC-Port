@@ -262,17 +262,22 @@ void PartyHud::drawSelector(Canvas& canvas, const TextPainter& text, const Strin
         return;
     }
     const std::string_view label = strings->get(powerupTextId(slot.kind, slot.flags));
-    const s32 x = player * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
+    // A negative x centers the line on the middle of this player's box. A line
+    // that would pass the box shrinks, and keeps the same bottom, just above the
+    // runestones.
+    const f32 scale = PowerupSelector::labelScale(text, label);
+    const s32 x = -((player * StatusBoxPainter::kWidth) + (StatusBoxPainter::kWidth / 2));
+    const s32 fitted = y + text.lineHeight(PowerupSelector::kLabelScale) - text.lineHeight(scale);
     TextStyle style;
-    style.scale = PowerupSelector::kLabelScale;
+    style.scale = scale;
     if (slot.on && glowSheet != nullptr) {
         TextStyle glow = style;
         glow.texture = glowSheet;
         glow.color = ScrollBox::kGlowColor;
         glow.expand = OptionMenu::kGlowExpand;
-        text.draw(canvas, x, y, label, glow);
+        text.draw(canvas, x, fitted, label, glow);
     }
-    text.draw(canvas, x, y, label, style);
+    text.draw(canvas, x, fitted, label, style);
 }
 
 void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
