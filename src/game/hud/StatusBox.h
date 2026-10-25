@@ -128,8 +128,15 @@ public:
     /** The runestones held (`SM_RUNE_<colour>_0<n>`) and, when `keys`, the bosses' keys
      * (`SM_KEY_<colour>`) along the top of slot `slot`'s box. */
     void drawRelics(Canvas& canvas, s32 slot, u16 runes, std::optional<u16> keys);
-    /** Draws a pickup count above slot `slot`: the STATIC `icon`, then "count/total". */
-    void drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count, s32 total);
+    /** One pickup count to draw: the STATIC `icon`, then "count/total". */
+    struct CountEntry {
+        std::string_view icon;
+        s32 count = 0;
+        s32 total = 0;
+    };
+    /** Draws `entries` over slot `slot`, each centered, the first with its icon's top at `y` and
+     * the rest stacked above it. */
+    void drawCounts(Canvas& canvas, s32 slot, std::span<const CountEntry> entries, s32 y);
     void setCountTextures(TextureSet* textures) { m_countTextures = textures; }
     /** Resolves only the caller's fixed artwork roster before rendering begins. */
     void preloadPickups(std::span<const std::string_view> cards,

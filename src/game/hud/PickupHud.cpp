@@ -6,6 +6,30 @@
 
 namespace gdl::game {
 
+namespace {
+
+template <class Counts> auto rowOf(Counts& all, s32 player) {
+    return std::span(all).subspan(static_cast<usize>(player) * PickupHud::kCountsPerPlayer,
+                                  PickupHud::kCountsPerPlayer);
+}
+
+/** The count that `icon` takes: its own while showing, else a free one, else the oldest. */
+PickupCount& spotFor(std::span<PickupCount> row, std::string_view icon) {
+    for (PickupCount& held : row) {
+        if (held.showing() && held.icon == icon) {
+            return held;
+        }
+    }
+    for (PickupCount& held : row) {
+        if (!held.showing()) {
+            return held;
+        }
+    }
+    return *std::ranges::min_element(row, {}, &PickupCount::secondsLeft);
+}
+
+} // namespace
+
 std::string_view PickupHud::crystalIcon(s32 realm) {
     if (realm <= 0 || static_cast<usize>(realm) >= kCrystalIcons.size()) {
         return {};
@@ -28,7 +52,7 @@ void PickupHud::showCount(s32 player, std::string_view icon, s32 count, s32 tota
     if (player < 0 || static_cast<usize>(player) >= kSlots) {
         return;
     }
-    PickupCount& shown = m_counts[static_cast<usize>(player)];
+    PickupCount& shown = spotFor(rowOf(m_counts, player), icon);
     shown.icon = std::string(icon);
     // A record under nought is one already congratulated: the HUD shows it full
     // (towerBossStatus returns the total for it, and the drawing clamps again).
@@ -82,27 +106,39 @@ void PickupHud::clear() {
 void PickupHud::clearPlayer(s32 player) {
     std::erase_if(m_cards, [player](const PickupCard& card) { return card.player == player; });
     if (player >= 0 && static_cast<usize>(player) < kSlots) {
-        m_counts[static_cast<usize>(player)] = PickupCount{};
+        for (PickupCount& held : rowOf(m_counts, player)) {
+            held = PickupCount{};
+        }
     }
 }
 
-const PickupCount& PickupHud::count(s32 player) const {
-    static const PickupCount kNone;
+std::span<const PickupCount> PickupHud::counts(s32 player) const {
     if (player < 0 || static_cast<usize>(player) >= kSlots) {
-        return kNone;
+        return {};
     }
-    return m_counts[static_cast<usize>(player)];
+    return rowOf(m_counts, player);
 }
 
-void PickupHud::draw(Canvas& canvas, StatusBoxPainter& boxes) const {
+s32 PickupHud::countRowY(std::optional<s32> labelTop) {
+    return labelTop ? *labelTop - kCountLabelGap - kCountHeight : kCountRestY;
+}
+
+void PickupHud::draw(Canvas& canvas, StatusBoxPainter& boxes,
+                     const std::array<std::optional<s32>, kSlots>& labelTops) const {
     for (const PickupCard& card : m_cards) {
         boxes.drawCard(canvas, card.player, card.texture, card.y);
     }
     for (usize slot = 0; slot < kSlots; ++slot) {
-        const PickupCount& shown = m_counts[slot];
-        if (shown.showing()) {
-            boxes.drawCount(canvas, static_cast<s32>(slot), shown.icon, shown.count, shown.total);
+        std::array<StatusBoxPainter::CountEntry, kCountsPerPlayer> row;
+        usize shown = 0;
+        for (const PickupCount& held : counts(static_cast<s32>(slot))) {
+            if (held.showing()) {
+                row.at(shown++) = {.icon = held.icon, .count = held.count, .total = held.total};
+            }
         }
+        boxes.drawCounts(canvas, static_cast<s32>(slot),
+                         std::span<const StatusBoxPainter::CountEntry>(row).first(shown),
+                         countRowY(labelTops.at(slot)));
     }
 }
 

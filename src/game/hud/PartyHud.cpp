@@ -114,7 +114,14 @@ void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players
         view.keysShown = relicsShown();
         m_boxes.draw(canvas, player, view, true);
     }
-    m_sim.pickups.draw(canvas, m_boxes);
+    std::array<std::optional<s32>, PickupHud::kSlots> labelTops{};
+    for (s32 player = 0; player < kPlayerCount; ++player) {
+        if (selector(player).showing()) {
+            labelTops.at(static_cast<usize>(player)) =
+                selector(player).labelY(StatusBoxPainter::kY);
+        }
+    }
+    m_sim.pickups.draw(canvas, m_boxes, labelTops);
 }
 bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
                         LevelSoundscape& audio, s32 number, std::optional<Vec3> position) {

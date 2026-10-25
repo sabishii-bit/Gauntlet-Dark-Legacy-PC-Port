@@ -402,7 +402,9 @@ TEST_CASE("native inventory labels remain below crystal counts in every player l
         REQUIRE(hud.selector(lane).showing());
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        boxes.drawCount(canvas, lane, "SM_CRYSTAL_BLU", 4, 5);
+        const std::array<StatusBoxPainter::CountEntry, 1> entries{{{"SM_CRYSTAL_BLU", 4, 5}}};
+        boxes.drawCounts(canvas, lane, entries,
+                         PickupHud::countRowY(hud.selector(lane).labelY(StatusBoxPainter::kY)));
         canvas.end();
         REQUIRE_FALSE(device.draws.empty());
         f32 countBottom = 0;
@@ -562,10 +564,10 @@ TEST_CASE("party HUD rewind restores notices selectors shared sand and external 
             CHECK(corrected.hud.selector(id).slide() == expected.hud.selector(id).slide());
             CHECK(corrected.hud.selector(id).usageSlot(player.actor.save().progress().inventory) ==
                   expected.hud.selector(id).usageSlot(reference.actor.save().progress().inventory));
-            CHECK(corrected.hud.pickups().count(id).secondsLeft ==
-                  expected.hud.pickups().count(id).secondsLeft);
-            CHECK(corrected.hud.pickups().count(id).count ==
-                  expected.hud.pickups().count(id).count);
+            CHECK(corrected.hud.pickups().counts(id)[0].secondsLeft ==
+                  expected.hud.pickups().counts(id)[0].secondsLeft);
+            CHECK(corrected.hud.pickups().counts(id)[0].count ==
+                  expected.hud.pickups().counts(id)[0].count);
         }
         at += delay;
     }

@@ -33,11 +33,10 @@ constexpr s32 kNameY = 339;
 constexpr s32 kLevelY = 326;
 constexpr f32 kNameScale = 0.667f;
 constexpr std::string_view kStrip = "S3";
-constexpr s32 kCountIconX = 28;
-constexpr s32 kCountIconY = 264;
 constexpr s32 kCountIconSize = 16;
-constexpr s32 kCountTextX = 48;
-constexpr s32 kCountTextY = 268;
+constexpr s32 kCountTextDy = 4;
+constexpr s32 kCountIconGap = 4;
+constexpr s32 kCountRowGap = 4;
 constexpr f32 kCountScale = 1.5f;
 
 } // namespace
@@ -395,22 +394,33 @@ void StatusBoxPainter::drawCard(Canvas& canvas, s32 slot, std::string_view card,
     }
 }
 
-void StatusBoxPainter::drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count,
-                                 s32 total) {
+void StatusBoxPainter::drawCounts(Canvas& canvas, s32 slot, std::span<const CountEntry> entries,
+                                  s32 y) {
     if (!loaded()) {
         return;
     }
-    const s32 left = slot * kWidth;
-    if (const Texture* mark = countTexture(icon)) {
-        canvas.draw(*mark,
-                    Rect{static_cast<f32>(left + kCountIconX), static_cast<f32>(kCountIconY),
-                         static_cast<f32>(kCountIconSize), static_cast<f32>(kCountIconSize)});
-    }
-    if (m_smallCaps.ready()) {
-        TextStyle style;
-        style.scale = kCountScale;
-        m_smallCaps.draw(canvas, left + kCountTextX, kCountTextY,
-                         std::format("{}/{}", count, total), style);
+    TextStyle style;
+    style.scale = kCountScale;
+    s32 line = 0;
+    for (const CountEntry& entry : entries) {
+        const std::string text = std::format("{}/{}", entry.count, entry.total);
+        const s32 textWidth = m_smallCaps.ready() ? m_smallCaps.measure(text, kCountScale) : 0;
+        const s32 width = kCountIconSize + kCountIconGap + textWidth;
+        const s32 x = (slot * kWidth) + ((kWidth - width) / 2);
+        const s32 top = y - (line++ * (kCountIconSize + kCountRowGap));
+        if (const Texture* mark = countTexture(entry.icon)) {
+            const Rect where{
+                .x = static_cast<f32>(x),
+                .y = static_cast<f32>(top),
+                .width = static_cast<f32>(kCountIconSize),
+                .height = static_cast<f32>(kCountIconSize),
+            };
+            canvas.draw(*mark, where);
+        }
+        if (m_smallCaps.ready()) {
+            m_smallCaps.draw(canvas, x + kCountIconSize + kCountIconGap, top + kCountTextDy, text,
+                             style);
+        }
     }
 }
 

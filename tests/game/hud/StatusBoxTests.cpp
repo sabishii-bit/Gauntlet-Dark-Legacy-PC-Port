@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -105,14 +106,16 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
     painter.drawCard(canvas, 0, "CRYSTAL", 304);
-    painter.drawCount(canvas, 0, "SM_CRYSTAL_ORA", 3, 15);
+    const std::array<StatusBoxPainter::CountEntry, 1> entries{{{"SM_CRYSTAL_ORA", 3, 15}}};
+    painter.drawCounts(canvas, 0, entries, 288);
     canvas.end();
     REQUIRE(device.draws.size() >= 4); // the strip, the card, the icon, the digits
     REQUIRE(test::minCorner(device.draws[0]) == Vec2{0.0f, 304.0f});
     REQUIRE(test::minCorner(device.draws[1]) == Vec2{0.0f, 320.0f});
     REQUIRE(test::maxCorner(device.draws[1]) == Vec2{128.0f, 384.0f});
-    REQUIRE(test::minCorner(device.draws[2]) == Vec2{28.0f, 264.0f});
-    REQUIRE(test::minCorner(device.draws[3]).x >= 48.0f);
+    REQUIRE(test::minCorner(device.draws[2]).y == 288.0f);
+    REQUIRE(test::minCorner(device.draws[2]).x > 0.0f);
+    REQUIRE(test::minCorner(device.draws[3]).x >= test::minCorner(device.draws[2]).x + 20.0f);
 
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});

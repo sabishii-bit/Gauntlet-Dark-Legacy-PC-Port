@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -27,8 +29,8 @@ struct PickupCard {
     s32 holdTicks = 0;
 };
 
-/** The count shown above a player's box after a collection: what they have of what they
- * need, beside an icon, for a while. */
+/** A count shown above a player's box after a collection: what they have of what they
+ * need, beside an icon, for a while. A player's counts stack above one another. */
 struct PickupCount {
     template <class Visitor>
     friend void visitNativeState(Visitor& visitor, const PickupCount& value) {
@@ -57,6 +59,11 @@ public:
     static constexpr s32 kCardEndY = 400;   ///< fallen past this it is gone
     static constexpr s32 kCardHoldTicks = 90;
     static constexpr f32 kCountSeconds = 3.0f;
+    static constexpr usize kCountsPerPlayer = 3;
+    static constexpr s32 kCountRestY =
+        288; ///< the bottom count's top with no label up, over the runestones
+    static constexpr s32 kCountLabelGap = 4;
+    static constexpr s32 kCountHeight = 16;
     static constexpr std::string_view kCrystalCard = "CRYSTAL";
     /** The ticker's icon for each realm's crystal, by realm. */
     static constexpr std::array<std::string_view, 9> kCrystalIcons{"",
@@ -74,7 +81,8 @@ public:
 
     /** Starts a card for `player`; ignored when every card is in use. */
     void addCard(s32 player, std::string_view texture);
-    /** Shows `player` `count` of `total` beside `icon` for the ticker's time. */
+    /** Shows `player` `count` of `total` beside `icon` for the ticker's time. An icon already
+     * up is updated in place; otherwise it joins the stack, replacing the oldest when full. */
     void showCount(s32 player, std::string_view icon, s32 count, s32 total);
     /** Moves the cards `ticks` on and the tickers `seconds`. */
     void step(s32 ticks, f32 seconds);
@@ -83,10 +91,17 @@ public:
     void clearPlayer(s32 player);
 
     const std::vector<PickupCard>& cards() const { return m_cards; }
-    const PickupCount& count(s32 player) const;
+    /** The counts held for `player`, showing or not; empty for no such player. */
+    std::span<const PickupCount> counts(s32 player) const;
 
-    /** Draws the cards over the boxes and the tickers above them. */
-    void draw(Canvas& canvas, StatusBoxPainter& boxes) const;
+    /** The bottom count's top given where the selector label's top is: at rest with no label,
+     * and just above the label while one is up. */
+    static s32 countRowY(std::optional<s32> labelTop);
+
+    /** Draws the cards over the boxes and the tickers above them; `labelTops` holds the
+     * top of each player's selector label while it is up, which the stack keeps clear of. */
+    void draw(Canvas& canvas, StatusBoxPainter& boxes,
+              const std::array<std::optional<s32>, kSlots>& labelTops) const;
 
 private:
     template <class Visitor>
@@ -95,7 +110,7 @@ private:
         visitor.values(cards, counts);
     }
     std::vector<PickupCard> m_cards;
-    std::array<PickupCount, kSlots> m_counts{};
+    std::array<PickupCount, kSlots * kCountsPerPlayer> m_counts{};
 };
 
 } // namespace gdl::game

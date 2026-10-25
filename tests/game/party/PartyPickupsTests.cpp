@@ -905,15 +905,15 @@ TEST_CASE("golden idol pieces reward every living participant once and show pers
         CHECK(players[2].actor.save().progress().relics.gargoylePieces[piece] == 6);
         CHECK(players[3].actor.save().progress().relics.gargoylePieces[piece] == 7);
         for (usize i = 0; i < 2; ++i) {
-            const auto& count = hud.pickups().count(slots[i]);
+            const auto& count = hud.pickups().counts(slots[i])[0];
             CHECK(count.showing());
             CHECK(count.icon == kIcons[piece]);
             CHECK(count.count == (i == 0 ? total : 5 + collected));
             CHECK(count.total == total);
             CHECK(count.secondsLeft == PickupHud::kCountSeconds);
         }
-        CHECK_FALSE(hud.pickups().count(slots[2]).showing());
-        CHECK_FALSE(hud.pickups().count(slots[3]).showing());
+        CHECK_FALSE(hud.pickups().counts(slots[2])[0].showing());
+        CHECK_FALSE(hud.pickups().counts(slots[3])[0].showing());
     }
     REQUIRE(hud.pickups().cards().size() == 2);
     for (const auto& card : hud.pickups().cards()) {

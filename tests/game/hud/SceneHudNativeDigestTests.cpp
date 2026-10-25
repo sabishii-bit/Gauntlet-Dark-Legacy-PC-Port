@@ -221,7 +221,7 @@ TEST_CASE("native HUD values include help lifetime and nonvisible acquisition hi
     pickups.showCount(0, "SM_CRYSTAL_ORA", 3, 15);
     const auto unstepped = pickups;
     pickups.step(0, 1.0f / 120);
-    CHECK(pickups.count(0).count == unstepped.count(0).count);
+    CHECK(pickups.counts(0)[0].count == unstepped.counts(0)[0].count);
     CHECK(valueDigest(pickups) != valueDigest(unstepped));
 }
 

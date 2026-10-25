@@ -1155,9 +1155,9 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(scene.pickups().cards().size() == 1);
     REQUIRE(scene.pickups().cards()[0].player == 0);
     REQUIRE(scene.pickups().cards()[0].texture == PickupHud::kCrystalCard);
-    REQUIRE(scene.pickups().count(0).showing());
-    REQUIRE(scene.pickups().count(0).count == actor->save().progress().crystals[1]);
-    REQUIRE(scene.pickups().count(0).total == 15);
+    REQUIRE(scene.pickups().counts(0)[0].showing());
+    REQUIRE(scene.pickups().counts(0)[0].count == actor->save().progress().crystals[1]);
+    REQUIRE(scene.pickups().counts(0)[0].total == 15);
     // And a fresh party can be made to skip the welcome, or an old one to get it.
     scene.close();
     options.welcome = true;

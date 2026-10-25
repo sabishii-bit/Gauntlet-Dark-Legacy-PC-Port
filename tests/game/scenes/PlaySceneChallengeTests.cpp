@@ -157,9 +157,9 @@ TEST_CASE("the secret coin hunt persists earned unlocks for regular and unsaved 
         CHECK(classUnlocked(reward, member.save.classUnlock));
         const auto restored = CharacterSave::fromJson(member.save.toJson());
         CHECK(classUnlocked(reward, restored.classUnlock));
-        CHECK(scene.pickups().count(member.player).count ==
-              scene.pickups().count(member.player).total);
-        CHECK(scene.pickups().count(member.player).icon ==
+        CHECK(scene.pickups().counts(member.player)[0].count ==
+              scene.pickups().counts(member.player)[0].total);
+        CHECK(scene.pickups().counts(member.player)[0].icon ==
               (reward == kSumnerClass ? "16_SUM" : std::format("16_{}COIN", classCode(reward))));
     }
     for (s32 frame = 0; frame < 120; ++frame) {
