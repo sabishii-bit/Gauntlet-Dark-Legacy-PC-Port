@@ -441,9 +441,9 @@ TEST_CASE("player low health announcements take precedence over cries, not the b
         REQUIRE(f.named.size() == 1);
         last.push_back(f.named.front());
     }
-    CHECK(std::ranges::count(last, "S_LIFEFORCE") > 0);
-    CHECK(std::ranges::count(last, "S_ABOUT") > 0);
-    CHECK(std::ranges::count(last, "S_LIFEFORCE") + std::ranges::count(last, "S_ABOUT") == 40);
+    CHECK(std::ranges::count(last, std::string_view("S_LIFEFORCE")) > 0);
+    CHECK(std::ranges::count(last, std::string_view("S_ABOUT")) > 0);
+    CHECK(std::ranges::count(last, std::string_view("S_LIFEFORCE")) + std::ranges::count(last, std::string_view("S_ABOUT")) == 40);
     REQUIRE(f.cries == std::vector<std::string>(40, "POISON"));
     f.cries.clear();
     // A blow that crosses a mark is still heard landing, and its harm still counts to a cry.
@@ -533,7 +533,7 @@ TEST_CASE("gas cloud pulses choke between accumulated pain cries, not with the s
     }
     CHECK(std::ranges::count_if(f.cries, [](const auto& cry) { return cry.starts_with("PAIN"); }) ==
           2);
-    CHECK(std::ranges::count(f.cries, "POISON") == 4);
+    CHECK(std::ranges::count(f.cries, std::string_view("POISON")) == 4);
     CHECK(f.cries.size() == 6);
     CHECK(f.sounds.empty()); // No physical impact sound accompanies a gas cloud.
     CHECK(f.player.painOwed == 0);

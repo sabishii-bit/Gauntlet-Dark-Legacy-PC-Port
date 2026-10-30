@@ -1985,7 +1985,7 @@ TEST_CASE("a step carries a swing to what is a pace away", "[game][players][anim
 TEST_CASE("power swings pace the classes as they did, and the low one borrows the close one's",
           "[game][players][animation][melee]") {
     TreeInfo tree = meleeTree();
-    const auto lowFirst = std::ranges::find(tree.sequences, "ATTPWRALOW", &TreeSequenceInfo::name);
+    const auto lowFirst = std::ranges::find(tree.sequences, std::string_view("ATTPWRALOW"), &TreeSequenceInfo::name);
     REQUIRE(lowFirst != tree.sequences.end());
     tree.sequences.erase(lowFirst, lowFirst + 2); // ATTPWRALOW and ATTPWRALOWR, as the knight
     struct Case {

@@ -9,11 +9,12 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+const f32 cursorScale = 1.0f;
 
 TEST_CASE("marker cursor rejects absent or malformed pictures", "[cursor]") {
-    CHECK_FALSE(GameCursor::fromMarker({}));
-    CHECK_FALSE(GameCursor::fromMarker(Image{8, 8, {1, 2, 3}}));
-    CHECK_FALSE(GameCursor::fromMarker(Image::filled(8, 8, Color::rgba(90, 20, 240, 0))));
+    CHECK_FALSE(GameCursor::fromMarker({}, cursorScale));
+    CHECK_FALSE(GameCursor::fromMarker(Image{8, 8, {1, 2, 3}}, cursorScale));
+    CHECK_FALSE(GameCursor::fromMarker(Image::filled(8, 8, Color::rgba(90, 20, 240, 0)), cursorScale));
     CHECK_FALSE(GameCursor::load(test::scratchDirectory("cursor-no-assets")));
 }
 
@@ -26,7 +27,7 @@ TEST_CASE("marker reduction trims padding, points up-left and does not bleed hid
             marker.setPixel(x, y, Color::rgba(0, 200, 80, 255));
         }
     }
-    const auto cursor = GameCursor::fromMarker(marker);
+    const auto cursor = GameCursor::fromMarker(marker, cursorScale);
     REQUIRE(cursor);
     CHECK(cursor->image.width == GameCursor::kSize);
     CHECK(cursor->image.height == GameCursor::kSize);
@@ -60,7 +61,7 @@ TEST_CASE("marker reduction trims padding, points up-left and does not bleed hid
             padded.setPixel(x + 10, y + 14, marker.pixel(x, y));
         }
     }
-    const auto other = GameCursor::fromMarker(padded);
+    const auto other = GameCursor::fromMarker(padded, cursorScale);
     REQUIRE(other);
     CHECK(other->hotX == cursor->hotX);
     CHECK(other->hotY == cursor->hotY);
@@ -77,7 +78,7 @@ TEST_CASE("the desktop pointer decodes MARKER_LEFT directly from the native STAT
     const auto source = textures.image(*marker);
     const auto cursor = GameCursor::load(root);
     REQUIRE(cursor);
-    const auto expected = GameCursor::fromMarker(source);
+    const auto expected = GameCursor::fromMarker(source, cursorScale);
     REQUIRE(expected);
     CHECK(cursor->image.pixels == expected->image.pixels);
     CHECK(cursor->image.width == 40);

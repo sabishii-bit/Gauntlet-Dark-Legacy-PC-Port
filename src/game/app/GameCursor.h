@@ -14,9 +14,9 @@ struct GameCursor {
     u32 hotX = 0;
     u32 hotY = 0;
 
-    static std::optional<GameCursor> load(const std::filesystem::path& assetRoot);
+    static std::optional<GameCursor> load(const std::filesystem::path& assetRoot, const f32 cursorScale = 1.0f);
     /** Crop visible art, turn its pointed right end up-left, and antialias its reduction. */
-    static std::optional<GameCursor> fromMarker(const Image& marker);
+    static std::optional<GameCursor> fromMarker(const Image& marker, const f32 cursorScale);
 };
 
 } // namespace gdl::game

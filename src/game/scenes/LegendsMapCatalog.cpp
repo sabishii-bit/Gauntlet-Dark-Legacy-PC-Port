@@ -100,10 +100,10 @@ std::vector<LegendsMapEntry> legendsMaps(LegendsPlatform platform,
                         return entries;
                     }
                 }
-            } catch (const std::filesystem::filesystem_error& error) {
+            } catch (const std::filesystem::filesystem_error& fsError) {
                 // An unavailable extraction must not hide another valid configured root.
                 log::trace("Legends maps: {} is not readable: {}", paths::utf8(ancestor),
-                           error.what());
+                           fsError.what());
             }
             const auto parent = ancestor.parent_path();
             if (parent == ancestor) {

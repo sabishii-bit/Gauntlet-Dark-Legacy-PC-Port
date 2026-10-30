@@ -10,12 +10,12 @@
 
 namespace gdl::game {
 
-std::optional<GameCursor> GameCursor::load(const std::filesystem::path& assetRoot) {
+std::optional<GameCursor> GameCursor::load(const std::filesystem::path& assetRoot, const f32 cursorScale) {
     try {
         TextureSet textures;
         if (textures.load(assetRoot / "STATIC")) {
             if (const auto marker = textures.find("MARKER_LEFT")) {
-                return fromMarker(textures.image(*marker));
+                return fromMarker(textures.image(*marker), cursorScale);
             }
         }
     } catch (const std::exception& error) {
@@ -24,13 +24,16 @@ std::optional<GameCursor> GameCursor::load(const std::filesystem::path& assetRoo
     return std::nullopt;
 }
 
-std::optional<GameCursor> GameCursor::fromMarker(const Image& marker) {
+std::optional<GameCursor> GameCursor::fromMarker(const Image& marker, const f32 cursorScale) {
     if (marker.width == 0 || marker.height == 0 ||
         marker.width > static_cast<u32>(std::numeric_limits<s32>::max()) ||
         marker.height > static_cast<u32>(std::numeric_limits<s32>::max()) ||
         marker.pixels.size() != u64{marker.width} * marker.height * 4) {
         return std::nullopt;
     }
+
+    const f32 calcCursorScale = kSize * cursorScale;
+
     u32 left = marker.width;
     u32 top = marker.height;
     u32 right = 0;
@@ -55,8 +58,8 @@ std::optional<GameCursor> GameCursor::fromMarker(const Image& marker) {
     // right end up-left, leaving its wider ornament behind the click hotspot.
     constexpr f32 kDiagonal = 0.70710678118f;
     constexpr f32 kMargin = 1.0f;
-    const f32 scale = (static_cast<f32>(kSize) - 2 * kMargin) / ((width + height) * kDiagonal);
-    constexpr f32 kCenter = static_cast<f32>(kSize) * 0.5f;
+    const f32 scale = (static_cast<f32>(calcCursorScale) - 2 * kMargin) / ((width + height) * kDiagonal);
+    const f32 kCenter = static_cast<f32>(calcCursorScale) * 0.5f;
     const auto forward = [&](const Vec2& point) {
         const Vec2 delta = (point - center) * (scale * kDiagonal);
         return Vec2{kCenter - delta.x + delta.y, kCenter - delta.x - delta.y};
@@ -73,17 +76,15 @@ std::optional<GameCursor> GameCursor::fromMarker(const Image& marker) {
     }
     const Vec2 tip = forward({static_cast<f32>(right) + 0.5f, static_cast<f32>(tipY) + 0.5f});
     GameCursor cursor;
-    cursor.image = Image::filled(kSize, kSize, Color::rgba(0, 0, 0, 0));
-    cursor.hotX =
-        static_cast<u32>(std::clamp(std::floor(tip.x), 0.0f, static_cast<f32>(kSize - 1)));
-    cursor.hotY =
-        static_cast<u32>(std::clamp(std::floor(tip.y), 0.0f, static_cast<f32>(kSize - 1)));
+    cursor.image = Image::filled(calcCursorScale, calcCursorScale, Color::rgba(0, 0, 0, 0));
+    cursor.hotX = static_cast<u32>(std::clamp(std::floor(tip.x), 0.0f, static_cast<f32>(calcCursorScale - 1)));
+    cursor.hotY = static_cast<u32>(std::clamp(std::floor(tip.y), 0.0f, static_cast<f32>(calcCursorScale - 1)));
     // Area samples keep the fine outline readable at pointer size. Accumulate
     // premultiplied colour so hidden RGB in transparent texels cannot make a halo;
     // the OS receives straight RGBA after filtering.
     constexpr s32 kSamples = 4;
-    for (u32 y = 0; y < kSize; ++y) {
-        for (u32 x = 0; x < kSize; ++x) {
+    for (u32 y = 0; y < calcCursorScale; ++y) {
+        for (u32 x = 0; x < calcCursorScale; ++x) {
             Vec4 sum{0};
             for (s32 sy = 0; sy < kSamples; ++sy) {
                 for (s32 sx = 0; sx < kSamples; ++sx) {

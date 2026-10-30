@@ -965,7 +965,7 @@ TEST_CASE("boss projectiles report water hits but rebounds do not play impact so
     CHECK(hits.front().object == 73);
     CHECK(hits.front().splash == !reflects);
     CHECK(hits.front().instance != 0);
-    CHECK(std::ranges::find(f.sounds, "S_HIT") == f.sounds.end());
+    CHECK(std::ranges::find(f.sounds, std::string_view("S_HIT")) == f.sounds.end());
     CHECK(f.projectiles.count() == (reflects ? 1 : 0));
     CHECK(f.projectiles.takeWorldHits().empty());
     f.projectiles.clear(f.effects);
@@ -1097,7 +1097,7 @@ TEST_CASE("Lich hand contacts drain fractional health below armor and stop after
         // ModifyDamage absorbs this one-point hit; it is not Death's armor-bypassing drain.
         CHECK(player.actor.save().health() == 1000);
     }
-    CHECK(std::ranges::find(cries, "DIE1") == cries.end());
+    CHECK(std::ranges::find(cries, std::string_view("DIE1")) == cries.end());
     players[0].position.x = 20;
     f.step(1, players);
     CHECK(f.projectiles.takeHits().empty());

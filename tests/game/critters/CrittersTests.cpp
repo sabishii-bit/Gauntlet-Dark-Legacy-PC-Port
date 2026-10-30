@@ -638,7 +638,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     // wherever the players stand (CritterDoSfx plays a death's through sndFxPlay3D).
     critters.update(kTicks, kStep, party);
     const std::vector<CombatCue> dying = critters.takeCues();
-    const auto cry = std::ranges::find(dying, "S_GOLGKILLCLOSE", &CombatCue::sound);
+    const auto cry = std::ranges::find(dying, std::string_view("S_GOLGKILLCLOSE"), &CombatCue::sound);
     REQUIRE(cry != dying.end());
     REQUIRE_FALSE(cry->attenuated);
     s32 gone = 0;
@@ -1300,7 +1300,7 @@ TEST_CASE("the Lich's emergence gravel attaches at his ground root",
     REQUIRE(critters.moveName() == "START");
     fixture.update(kTicks, kStep, {});
     const auto cues = critters.takeCues();
-    const auto gravel = std::ranges::find(cues, "GENFX", &CombatCue::tree);
+    const auto gravel = std::ranges::find(cues, std::string_view("GENFX"), &CombatCue::tree);
     REQUIRE(gravel != cues.end());
     REQUIRE(gravel->follows);
     REQUIRE(gravel->node.has_value());

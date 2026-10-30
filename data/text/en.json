@@ -89,6 +89,7 @@
   "settings.hide": "Hide",
   "settings.show": "Show",
   "settings.difficulty": "Difficulty",
+  "settings.cursorScale": "Cursor Scale",
   "settings.expandedShop": "Expanded Shop",
   "settings.autoSave": "Auto-Save",
   "settings.aggressorMode": "Aggressor Mode",

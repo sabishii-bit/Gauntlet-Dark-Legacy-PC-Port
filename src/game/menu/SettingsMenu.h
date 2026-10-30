@@ -73,6 +73,7 @@ private:
     DisplayOptions m_display;
     std::function<DisplayOptions()> m_queryDisplay;
     std::vector<Extent2D> resolutions() const;
+    static std::array<f32, 13> cursorScales();
     /** The display the Video page shows: the one chosen, else the one the window is on. */
     s32 shownMonitor() const;
     std::optional<usize> m_audioDrag;

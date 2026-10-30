@@ -163,7 +163,7 @@ TEST_CASE("Plague Fiend safe rocks cycle their native boss-owned texture frames"
     REQUIRE(items.load(itemRoot));
     REQUIRE(boss.load(bossRoot));
     const auto& animations = items.trees.textureAnimations();
-    const auto animation = std::ranges::find(animations, "BLOB_BOSS", &TextureAnimationInfo::name);
+    const auto animation = std::ranges::find(animations, std::string_view("BLOB_BOSS"), &TextureAnimationInfo::name);
     REQUIRE(animation != animations.end());
     REQUIRE(animation->freeRunning());
     REQUIRE(animation->source == TextureAnimationInfo::kByName);

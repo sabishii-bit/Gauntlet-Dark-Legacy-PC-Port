@@ -174,6 +174,7 @@ void GameConfig::mergeJson(std::string_view json) {
             }
         }
         readFrameRate(d, "maxFrameRate", display.maxFrameRate);
+        read(d, "cursorScale", display.cursorScale);
     }
     if (root.contains("timing")) {
         const Json& t = root.at("timing");
@@ -369,7 +370,8 @@ std::string GameConfig::toJson() const {
                        {"bloom", display.bloom},
                        {"ambientOcclusion", display.ambientOcclusion},
                        {"smoothSprites", display.smoothSprites},
-                       {"authoredSilhouettes", display.authoredSilhouettes}};
+                       {"authoredSilhouettes", display.authoredSilhouettes},
+                       {"cursorScale", display.cursorScale}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};
     root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},

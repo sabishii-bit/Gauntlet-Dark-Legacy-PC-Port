@@ -73,7 +73,7 @@ void Gauntlet::onInit() {
     // A saved exclusive resolution may no longer exist after moving displays.
     m_config.display.windowMode = window().windowMode();
     applyWindowIcon();
-    if (const auto cursor = GameCursor::load(m_options.unpackedDirectory)) {
+    if (const auto cursor = GameCursor::load(m_options.unpackedDirectory, m_config.display.cursorScale)) {
         if (!window().setCursor(cursor->image, cursor->hotX, cursor->hotY)) {
             log::warn("Custom mouse cursor unavailable; retaining the system pointer");
         }
@@ -789,6 +789,14 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
             }
             m_strings = std::move(next);
         }
+        if (config.display.cursorScale != m_config.display.cursorScale) {
+            if (const auto cursor = GameCursor::load(m_options.unpackedDirectory, config.display.cursorScale)) {
+                if (!window().setCursor(cursor->image, cursor->hotX, cursor->hotY)) {
+                    log::warn("Custom mouse cursor unavailable; retaining the system pointer");
+                }
+            }
+        }
+
         const bool presentationChanged = config.display.vsync != m_config.display.vsync ||
                                          config.display.sampleCount != m_config.display.sampleCount;
         const bool rateChanged =

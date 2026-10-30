@@ -159,7 +159,7 @@ TEST_CASE("Installed N64 Tower runes and shards draw from their native relic arc
     const auto config = formats::decodeLegendsN64Tower(readFile(root / "_program/Tower.bin"));
     const auto runeImages = texturePixels(root, config.runestones);
     const auto shardImages = texturePixels(root, config.shards);
-    const auto beam = std::ranges::find(map.objects, "CATH_BEAM", &formats::LegendsMapObject::name);
+    const auto beam = std::ranges::find(map.objects, std::string_view("CATH_BEAM"), &formats::LegendsMapObject::name);
     REQUIRE(beam != map.objects.end());
     const usize beamIndex = static_cast<usize>(beam - map.objects.begin());
     test::FakeRenderDevice device;
@@ -208,8 +208,8 @@ TEST_CASE("Native obelisk grants are shared and a spent obelisk remains a visibl
     const auto obeliskSequences = formats::decodeLegendsN64Sequences(
         readFile(root / "items/c/obelisk/seq.wad"), obeliskModels);
     const auto& trees = obeliskSequences.animation.trees;
-    const auto ready = std::ranges::find(trees, "TRAP:OBRD", &formats::TreeDefinition::name);
-    const auto spent = std::ranges::find(trees, "TRAP:OBDN", &formats::TreeDefinition::name);
+    const auto ready = std::ranges::find(trees, std::string_view("TRAP:OBRD"), &formats::TreeDefinition::name);
+    const auto spent = std::ranges::find(trees, std::string_view("TRAP:OBDN"), &formats::TreeDefinition::name);
     REQUIRE(ready != trees.end());
     REQUIRE(spent != trees.end());
     REQUIRE(ready->nodes.size() == 1);

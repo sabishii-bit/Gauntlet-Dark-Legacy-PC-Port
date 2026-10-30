@@ -1294,7 +1294,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     options.position = lectern + Vec3{2.0f, 0.0f, 2.0f};
     REQUIRE(scene.open(device, context, world, party, options));
     const auto& objects = world.layout().objects();
-    const auto window = std::ranges::find(objects, "L1XPLIGHTRAY01", &WorldObject::name);
+    const auto window = std::ranges::find(objects, std::string_view("L1XPLIGHTRAY01"), &WorldObject::name);
     REQUIRE(window != objects.end());
     const auto windowIndex = static_cast<usize>(window - objects.begin());
     REQUIRE(world.objectAlpha(windowIndex) == 0.0f);

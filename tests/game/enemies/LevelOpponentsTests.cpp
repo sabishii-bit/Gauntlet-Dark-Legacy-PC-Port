@@ -2891,7 +2891,7 @@ TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     const auto& objects = world.layout().objects();
-    const auto mound = std::ranges::find(objects, "G5BIGDIRT", &WorldObject::name);
+    const auto mound = std::ranges::find(objects, std::string_view("G5BIGDIRT"), &WorldObject::name);
     REQUIRE(mound != objects.end());
     const auto index = static_cast<usize>(std::distance(objects.begin(), mound));
     REQUIRE_FALSE(world.scene().moving(index));
@@ -3324,7 +3324,7 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
     for (const std::string_view tree : {"POISONEXP1", "POISONEXP2", "POISONEXP3", "SUICIDEEXP"}) {
         CHECK(std::ranges::find(seen, tree) != seen.end());
     }
-    CHECK(std::ranges::find(seen, "EXPLOSION") == seen.end());
+    CHECK(std::ranges::find(seen, std::string_view("EXPLOSION")) == seen.end());
     // Gassed every half second while the cloud harms: more than once, never as a blow.
     CHECK(hurts.size() >= 3);
     CHECK(std::ranges::all_of(hurts, [](HurtKind kind) { return kind == HurtKind::Gas; }));

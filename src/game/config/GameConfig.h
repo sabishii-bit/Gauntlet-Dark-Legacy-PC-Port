@@ -40,6 +40,8 @@ struct DisplayConfig {
     u32 maxFrameRate = 30;    ///< menu presentation cap; 0 follows the monitor, even without V-Sync
     /** Compare against the live client size, which can differ after a manual resize. */
     bool matchesWindow(WindowMode mode, Extent2D size) const;
+    f32 cursorScale = 1.0f;
+
 };
 
 struct TimingConfig {

@@ -11,9 +11,11 @@
 
 namespace gdl::game {
 namespace {
+constexpr int kCursorScaleSteps = 13;
 constexpr s32 kGraphicsCode = 4;
 constexpr s32 kLanguageCode = 5;
 constexpr s32 kAggressorModeCode = 6;
+constexpr s32 kCursorScale = 7;
 constexpr s32 kDisplayCode = 13;
 constexpr s32 kRendererCode = 14;
 constexpr s32 kVideoRows = 12;
@@ -111,6 +113,15 @@ std::vector<Extent2D> SettingsMenu::resolutions() const {
     });
     return result;
 }
+
+std::array<f32, kCursorScaleSteps> SettingsMenu::cursorScales() {
+    std::array<f32, kCursorScaleSteps> result{.05, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3 };
+    //for (f32 i = 0; i < kCursorScaleSteps; ++i) {
+    //    result[static_cast<int>(i)] = ((3.0f / static_cast<f32>(kCursorScaleSteps)) * (i + 1.0f));
+    //}
+    return result;
+}
+
 void SettingsMenu::rebuild(s32 selection) {
     if (m_queryDisplay) {
         m_display = m_queryDisplay();
@@ -165,6 +176,7 @@ void SettingsMenu::rebuild(s32 selection) {
             const auto choice = [&](std::string label, std::string value, s32 code) {
                 rows.value(std::move(label), code, std::move(value));
             };
+            choice(text("settings.cursorScale"), std::to_string(m_config.display.cursorScale), kCursorScale);
             // The renderer is chosen from the title alone, the one drawing a level not being
             // swappable under it; the choice takes effect when the game is next started.
             const bool openGl = m_config.display.renderer == GraphicsApi::OpenGl;
@@ -318,8 +330,7 @@ void SettingsMenu::rebuild(s32 selection) {
         add(text("settings.combat"), 2);
         rows.toggle(text("settings.expandedShop"), 3, m_config.game.expandedShop);
         rows.toggle(text("settings.autoSave"), 4, m_config.game.autoSave);
-        rows.toggle(text("settings.aggressorMode"), kAggressorModeCode,
-                    m_config.game.aggressorMode);
+        rows.toggle(text("settings.aggressorMode"), kAggressorModeCode, m_config.game.aggressorMode);
         rows.value(text("settings.language"), kLanguageCode, languageName());
         break;
     case Page::Combat:
@@ -358,8 +369,7 @@ void SettingsMenu::rebuild(s32 selection) {
     }
     // A page written again (a row toggled, a key captured) keeps its window where it was;
     // another page, or another player's controls, starts at the top.
-    const s32 windowKey =
-        static_cast<s32>(m_page) * 8 + (m_page == Page::Controls ? m_controls.player() + 1 : 0);
+    const s32 windowKey = static_cast<s32>(m_page) * 8 + (m_page == Page::Controls ? m_controls.player() + 1 : 0);
     const s32 scroll = m_menu.isOpen() && windowKey == m_windowKey ? m_menu.scroll() : 0;
     m_windowKey = windowKey;
     m_menu.open(definition, *m_painter, m_screen, selection, scroll);
@@ -477,6 +487,18 @@ void SettingsMenu::change(s32 direction) {
                 next.display.windowWidth = m_display.desktop.width;
                 next.display.windowHeight = m_display.desktop.height;
             }
+        } else if (code == kCursorScale) {
+            auto &cursorScale = next.display.cursorScale;
+            // const auto previous = AudioSlider::value(cursorScale);
+            // cursorScale = static_cast<f32>(std::clamp(previous + direction, 0, 3));
+
+            const auto choices = cursorScales();
+            if (choices.empty()) { return; }
+            const auto it = std::ranges::find(choices, next.display.cursorScale);
+            const auto count = static_cast<s32>(choices.size());
+            const auto index = it == choices.end() ? 0 : static_cast<s32>(it - choices.begin());
+            const auto size = choices[static_cast<usize>((index + direction + count) % count)];
+            next.display.cursorScale = size;
         }
         m_config = std::move(next);
         m_notice.clear();
@@ -661,6 +683,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_config.display.windowMode = defaults.display.windowMode;
             m_config.display.maxFrameRate = defaults.display.maxFrameRate;
             m_config.timing.gameplayFrameRate = defaults.timing.gameplayFrameRate;
+            m_config.display.cursorScale = defaults.display.cursorScale;
             rebuild(kVideoRows + 1);
         } else if (event.direction != 0) {
             change(event.direction);

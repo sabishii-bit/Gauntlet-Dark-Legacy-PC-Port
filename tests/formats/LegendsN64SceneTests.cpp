@@ -766,12 +766,12 @@ TEST_CASE("N64 Castle tentacle archives follow native ordinals rather than direc
         REQUIRE(archives.size() > 4);
         CHECK(archives[3] == "items/castle/tent");
         CHECK(archives[4] == "items/c/redbar");
-        CHECK(std::ranges::count(archives, "items/castle/tent") == 1);
+        CHECK(std::ranges::count(archives, std::string_view("items/castle/tent")) == 1);
     }
     for (const auto* level : {"castle3", "castle4", "castle5"}) {
         CAPTURE(level);
         const auto archives = legendsN64FixtureArchives(level);
-        CHECK(std::ranges::find(archives, "items/castle/tent") == archives.end());
+        CHECK(std::ranges::find(archives, std::string_view("items/castle/tent")) == archives.end());
     }
 }
 

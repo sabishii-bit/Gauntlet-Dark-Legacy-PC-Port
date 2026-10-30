@@ -201,7 +201,7 @@ TEST_CASE("Native barrel break animation decodes every accumulated vertex frame"
         return warning.starts_with("CONTAINER:CBRA:");
     }));
     const auto tree =
-        std::ranges::find(decoded.animation.trees, "CONTAINER:CBRA", &TreeDefinition::name);
+        std::ranges::find(decoded.animation.trees, std::string_view("CONTAINER:CBRA"), &TreeDefinition::name);
     REQUIRE(tree != decoded.animation.trees.end());
     REQUIRE(tree->nodes.front().objectFrames.size() == 1);
     CHECK(tree->nodes.front().objectFrames.front().frames == 23);

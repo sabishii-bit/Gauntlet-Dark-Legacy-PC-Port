@@ -1399,7 +1399,7 @@ TEST_CASE(
     f.players[0].gagSeconds = 0.5f;
     f.inputs[3].attack = true;
     f.step();
-    const auto selected = [&] { return std::ranges::find(f.calls, "select0") != f.calls.end(); };
+    const auto selected = [&] { return std::ranges::find(f.calls, std::string_view("select0")) != f.calls.end(); };
     CHECK(selected()); // retching blocks attacks, not the separate HUD selector
     CHECK(f.players[0].gagSeconds == Approx(0.5f - 1.0f / 30.0f));
     // Moving, it does not retch, and the buttons are read again.
@@ -1436,7 +1436,7 @@ TEST_CASE("a halo wearer holding Death stands facing him but can still toggle in
     f.step();
     CHECK(f.players[0].actor.position() == Vec3{0, 0, 0});                  // no step taken
     CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2)); // facing him
-    CHECK(std::ranges::find(f.calls, "select0") != f.calls.end());
+    CHECK(std::ranges::find(f.calls, std::string_view("select0")) != f.calls.end());
     f.step(true);
     CHECK(allowed == std::vector<bool>{true, false}); // held, no hold may be made
 }
