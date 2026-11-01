@@ -287,7 +287,7 @@ TEST_CASE(
     changed([](auto& slot) { slot.hurtPending = 4; });
     changed([](auto& slot) { slot.contact = 1; });
     changed([](auto& slot) { slot.burnGap = 0.25f; });
-    changed([](auto& slot) { slot.element = 2; });
+    changed([](auto& slot) { slot.affinity = 2; });
     changed([](auto& slot) { slot.floor = Enemies::BodyState::Floor{2, {1, 3, 4}}; });
     changed([](auto& slot) { slot.deathSkin = "DEATHALT"; });
 

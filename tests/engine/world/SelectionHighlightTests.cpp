@@ -80,9 +80,8 @@ TEST_CASE("a selection highlight draws a part's rim pushed out and wound the oth
           Approx(2.0f * SelectionHighlight::rimReach(perspective, Vec3{0.0f, 0.0f, -10.0f})));
 }
 
-
 TEST_CASE("a highlight can mark a part out in other colours and another rim width",
-          "[world][selection][aggression]") {
+          "[world][selection]") {
     Mesh mesh;
     mesh.vertices = {
         {.position = {0.0f, 0.0f, 10.0f}, .normal = {0.0f, 0.0f, -1.0f}, .uv = {0, 0}},

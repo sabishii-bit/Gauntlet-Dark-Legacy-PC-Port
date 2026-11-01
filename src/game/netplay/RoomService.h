@@ -12,10 +12,10 @@ struct RoomSettings {
     u8 difficulty = 1;   ///< easy, normal, hard
     u8 friendlyFire = 0; ///< normal, stun, hurt
     u8 camera = 0;       ///< shared (the classic one camera for the party), solo (one each)
-    u8 aggressor = 0;    ///< off, on: Aggressor Mode's meter, swarm and generator guard
+    u8 mechanics = 0;    ///< the mechanics the room switches on, a bit each in catalog order
     bool valid() const {
         return maxPlayers >= 1 && maxPlayers <= 4 && difficulty <= 2 && friendlyFire <= 2 &&
-               camera <= 1 && aggressor <= 1;
+               camera <= 1;
     }
     bool operator==(const RoomSettings&) const = default;
 };

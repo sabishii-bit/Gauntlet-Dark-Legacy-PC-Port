@@ -38,7 +38,7 @@ using namespace gdl::game;
 using Catch::Approx;
 
 TEST_CASE("runtime potion drops retain native definitions without authored pickup records",
-          "[placed-items][aggressor-drops][assets]") {
+          "[placed-items][bag-drops][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     WorldLayout layout;
     SECTION("an imported empty roster receives the four immutable definitions") {}

@@ -46,6 +46,7 @@ public:
     bool select(std::span<const PartyMember> local);
     bool ready(bool value);
     bool start();
+    /** The host's: sets the room's rules; false for a mechanic this build does not offer. */
     bool settings(const RoomSettings& value);
     NetplayMenu::View lobby() const;
     bool playing() const;

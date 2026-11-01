@@ -309,10 +309,11 @@ TEST_CASE("native watchdog profiling retains the exact unprofiled state digest",
     // The owners and their order are what peers agree on: a change bumps PlayScene.native and
     // updates tests/scripts/test_scene_digest_roster.py with this list.
     const std::vector<std::string_view> roster{
-        "resources", "control", "players",       "world",   "fixtures",      "console-objects",
-        "opponents", "attacks", "arsenal",       "effects", "portals",       "transporters",
-        "departure", "arrival", "sumner",        "hud",     "messages",      "sumner-visit",
-        "promotion", "relics",  "boss-sequence", "audio",   "challenge-hud", "camera-speech"};
+        "resources",    "control", "players",       "world",   "fixtures",      "console-objects",
+        "opponents",    "attacks", "arsenal",       "effects", "portals",       "transporters",
+        "departure",    "arrival", "sumner",        "hud",     "messages",      "sumner-visit",
+        "promotion",    "relics",  "boss-sequence", "audio",   "challenge-hud", "mechanics",
+        "camera-speech"};
     std::vector<std::string_view> owners;
     owners.reserve(profile.samples.size());
     for (const auto& sample : profile.samples) {

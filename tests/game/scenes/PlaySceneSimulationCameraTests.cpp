@@ -82,7 +82,7 @@ void sameNative(CameraFixture& left, CameraFixture& right) {
     // This is the available native-owner observation, not a claim that its
     // explicitly unobserved owners have become a complete scene checkpoint.
     CHECK_FALSE(first.complete);
-    REQUIRE(first.subsystems.size() == 7);
+    REQUIRE(first.subsystems.size() == 8);
     REQUIRE(second.subsystems.size() == first.subsystems.size());
     CHECK(first.unobserved == second.unobserved);
     for (usize index = 0; index < first.subsystems.size(); ++index) {

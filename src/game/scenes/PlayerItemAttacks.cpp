@@ -203,7 +203,7 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
                                         target.base, false, players);
         countCritterBlow(targets, players, owner.player(), source, critters, critter, stood);
     } else if (target.id >= kGeneratorTargetBase) {
-        if (mechanicsOf(targets).generatorTakes(source)) {
+        if (blowRulesOf(targets).generatorTakes(source)) {
             const s32 hut = target.id - kGeneratorTargetBase;
             const Generators& huts = targets.opponents.generators();
             const bool stood = huts.standing(hut);

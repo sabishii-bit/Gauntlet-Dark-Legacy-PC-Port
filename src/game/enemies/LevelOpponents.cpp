@@ -17,7 +17,6 @@
 #include "game/combat/DamageTypes.h"
 #include "game/effects/CritterCueEmission.h"
 #include "game/effects/DynamicLights.h"
-#include "game/effects/ElementAuraShow.h"
 #include "game/effects/EnemyFeedbackEmission.h"
 #include "game/effects/EnemyMissileEmission.h"
 #include "game/enemies/OpponentPlacements.h"
@@ -81,7 +80,7 @@ void LevelOpponents::appendFollowupValues(NativeStateDigest& digest, const Simul
     const auto& [clouds, deathShots, carried, bags, bagSeed, barrelRams, rockHits, hitStreak,
                  lessons, critterEffects, moveEffects, cueEffects, deathEffects, deathContact,
                  deathSound, yells, yellClocks, hearers, shrink, critterExperienceOwed,
-                 generatorRewards, unseen, borrowedRoster, aggression] = values;
+                 generatorRewards, unseen, borrowedRoster] = values;
     const auto rows = [&digest]<usize N>(const auto& list) {
         digest.wide(list.size());
         for (const auto& row : list) {
@@ -120,7 +119,6 @@ void LevelOpponents::appendFollowupValues(NativeStateDigest& digest, const Simul
     rows.template operator()<3>(generatorRewards);
     digest.value(unseen);
     rows.template operator()<4>(borrowedRoster);
-    digest.value(aggression);
 }
 
 bool LevelOpponents::appendNativeFollowupDigest(NativeStateDigest& digest) const {
@@ -129,7 +127,7 @@ bool LevelOpponents::appendNativeFollowupDigest(NativeStateDigest& digest) const
 }
 
 bool LevelOpponents::appendNativeDigest(NativeStateDigest& digest) const {
-    digest.string("LevelOpponents.native.2");
+    digest.string("LevelOpponents.native.3");
     return m_generators.appendNativeDigest(digest) && m_enemyMissiles.appendNativeDigest(digest) &&
            m_combatantProjectiles.appendNativeDigest(digest) &&
            m_enemies.appendNativeDigest(digest) && m_placements.appendNativeDigest(digest) &&
@@ -144,7 +142,7 @@ bool LevelOpponents::appendLocalDigest(NativeStateDigest& digest,
         digest.invalidate();
         return false;
     }
-    digest.string("LevelOpponents.native.2");
+    digest.string("LevelOpponents.native.3");
     return m_generators.appendLocalDigest(digest, saved.m_generators) &&
            m_enemyMissiles.appendLocalDigest(digest, saved.m_missiles) &&
            m_combatantProjectiles.appendLocalDigest(digest, saved.m_projectiles) &&
@@ -618,8 +616,6 @@ void LevelOpponents::close() {
     m_sim.unseen = {};
     m_levelNow.reset();
     clearDeaths();
-    m_auras.clear();
-    m_auras.release();
     if (m_resources.has_value()) {
         m_combatantProjectiles.clear(m_resources->effects);
         for (const Bag& bag : m_sim.bags) {
@@ -1323,14 +1319,10 @@ void LevelOpponents::advanceCritters(s32 ticks, f32 seconds, std::span<const Ene
     }
 }
 
-s32 LevelOpponents::longestRun(std::span<const PlayerRuntime> players) {
-    s32 longest = 0;
-    for (const PlayerRuntime& runtime : players) {
-        if (!runtime.departed && runtime.streak.running()) {
-            longest = std::max(longest, runtime.streak.count());
-        }
-    }
-    return longest;
+void LevelOpponents::setMechanics(MechanicsFacade* mechanics) {
+    m_mechanics = mechanics;
+    m_enemies.setRules({.swarm = mechanics, .births = mechanics, .appearance = mechanics});
+    m_generators.setRules(mechanics);
 }
 
 void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
@@ -1361,13 +1353,18 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
         updateImportedActors(seconds, living, timeStopped);
     }
-    // The swarm answers the party's longest run of close blows, held still with time, when
-    // the mechanics have it; otherwise it only cools.
-    if (!timeStopped) {
-        const MechanicsFacade& mechanics =
-            m_mechanics != nullptr ? *m_mechanics : MechanicsFacade::standard();
-        m_sim.aggression.step(seconds, mechanics.swarmAggravated() ? longestRun(players) : 0);
+    // The mechanics may answer the party's runs of close blows, held still with time.
+    if (!timeStopped && m_mechanics != nullptr && !m_mechanics->empty()) {
+        std::vector<SeatRun> runs;
+        runs.reserve(players.size());
+        for (const PlayerRuntime& runtime : players) {
+            runs.push_back({.count = runtime.streak.count(),
+                            .running = runtime.streak.running(),
+                            .departed = runtime.departed});
+        }
+        m_mechanics->step({.seconds = seconds, .runs = runs});
     }
+    const SwarmTuning tuning = m_mechanics != nullptr ? m_mechanics->tuning() : SwarmTuning{};
     // fn_8004646C checks the live critter pool before ordinary enemy bodies,
     // both for route probes and check_enemy_pos's generator-birth clearance.
     auto combatants = m_critters.targets(true);
@@ -1376,7 +1373,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_enemies.setCombatantBodies(combatants);
     auto inTheWay = OpponentSimulation{m_generators, m_enemies, m_enemyMissiles}.advance(
         {ticks, seconds, views, fixtures, stops, m_critters.targets(true), m_bosses.targets(),
-         &m_resources->world.collision(), missileSpeed, timeStopped, m_sim.aggression},
+         &m_resources->world.collision(), missileSpeed, timeStopped, tuning},
         events.blastScenery, [this] { playBirths(); });
     m_importedActors.syncLive(m_enemies);
     landEnemyMissiles(players, events);
@@ -1708,10 +1705,16 @@ bool LevelOpponents::awardEnemyLosses(const Events& events, const FeedbackPublis
             m_sim.cueEffects.push_back(effect);
         }
     }
+    BagThrow drops{*this};
     for (const EnemyLoss& loss : m_enemies.takeLosses()) {
         events.award(loss.player, loss.experience, loss.killed);
-        if (loss.killed && loss.element != 0) {
-            dropElementalPotion(loss);
+        if (m_mechanics != nullptr) {
+            m_mechanics->fell({.kind = loss.kind,
+                               .affinity = loss.affinity,
+                               .player = loss.player,
+                               .position = loss.position,
+                               .killed = loss.killed},
+                              drops);
         }
     }
     for (const GeneratorReward& reward : m_sim.generatorRewards) {
@@ -2163,31 +2166,28 @@ void LevelOpponents::throwBag(Bag bag) {
     }
 }
 
-void LevelOpponents::dropElementalPotion(const EnemyLoss& loss) {
-    if (!m_resources.has_value()) {
+void LevelOpponents::BagThrow::leave(std::string_view item, const Vec3& at) {
+    if (!m_owner.m_resources.has_value()) {
         return;
     }
-    // It leaves the potion of its element in a bag, and no more: a burst would fill the
-    // screen and read as a potion's.
     Bag bag;
-    bag.position = loss.position;
-    bag.name = "POT_" + std::string{damage::colourOf(static_cast<u32>(loss.element))};
-    throwBag(std::move(bag));
+    bag.position = at;
+    bag.name = std::string{item};
+    m_owner.throwBag(std::move(bag));
 }
 
-void LevelOpponents::drawElementals(RenderDevice& device, const Mat4& clip,
-                                    const CameraFrame& camera, f32 seconds) {
-    std::vector<ElementAuraShow::Body> bodies;
+std::vector<SwarmBodyView> LevelOpponents::swarmBodies() const {
+    std::vector<SwarmBodyView> bodies;
     for (s32 id = 0; id < m_enemies.most(); ++id) {
-        const s32 element = m_enemies.elementOf(id);
-        if (element == 0 || !m_enemies.alive(id)) {
-            continue;
+        if (m_enemies.alive(id)) {
+            bodies.push_back({.instance = m_enemies.instanceOf(id),
+                              .affinity = m_enemies.affinityOf(id),
+                              .feet = m_enemies.positionOf(id),
+                              .radius = m_enemies.radiusOf(id),
+                              .height = m_enemies.heightOf(id)});
         }
-        bodies.push_back({m_enemies.instanceOf(id), element, m_enemies.positionOf(id),
-                          m_enemies.radiusOf(id), m_enemies.heightOf(id)});
     }
-    m_auras.step(bodies, seconds);
-    m_auras.draw(device, clip, camera, &m_resources->weapons);
+    return bodies;
 }
 
 void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,

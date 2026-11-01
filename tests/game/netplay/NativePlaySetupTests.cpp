@@ -5,14 +5,29 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "FakeMechanic.h"
+#include "game/mechanics/MechanicCatalog.h"
 #include "game/netplay/NativePlaySetup.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+/** A build offering one mechanic as a room's rule, and one it keeps to a machine. */
+const MechanicCatalog& offered() {
+    static const MechanicCatalog catalog = [] {
+        MechanicCatalog mechanics;
+        REQUIRE(mechanics.add(test::FakeMechanic::descriptor("rage")));
+        REQUIRE(mechanics.add(test::FakeMechanic::descriptor("local", false)));
+        return mechanics;
+    }();
+    return catalog;
+}
+
 NativePlaySetup::Contract contract() {
-    return {12, true, false, true, false, "native-build-1", "native-assets-1", "resolved-data-1"};
+    return {
+        12,        true, false, true, false, "native-build-1", "native-assets-1", "resolved-data-1",
+        &offered()};
 }
 CharacterSave source() {
     CharacterSave save;
@@ -86,7 +101,7 @@ TEST_CASE("native setup freezes agreed gameplay but preserves local output prefe
     first.combat.autoActivateItems = true;
     first.game.expandedShop = false;
     first.combat.autoAim = true;
-    first.game.aggressorMode = true;
+    first.game.mechanics["rage"] = true;
     GameConfig second = first;
     second.timing.tickRate = 240;
     second.timing.gameplayFrameRate = 144;
@@ -100,7 +115,7 @@ TEST_CASE("native setup freezes agreed gameplay but preserves local output prefe
     second.combat.autoActivateItems = false;
     second.game.expandedShop = true;
     second.combat.autoAim = false;
-    second.game.aggressorMode = true;
+    second.game.mechanics["local"] = true;
     second.game.autoSave = true;
     second.controls[0].device = "local-device";
     second.save.directory = "private-save-directory";
@@ -119,13 +134,18 @@ TEST_CASE("native setup freezes agreed gameplay but preserves local output prefe
     CHECK_FALSE(a->config().combat.autoActivateItems);
     CHECK(a->config().game.expandedShop);
     CHECK(a->config().combat.autoAim == contract().autoAim);
-    CHECK_FALSE(a->config().game.aggressorMode); // the room's rule, not either machine's
+    // The room's rules switch the mechanics, not either machine: one kept to a machine is off.
+    for (const auto* setup : {a.get(), b.get()}) {
+        CHECK_FALSE(MechanicCatalog::enabled(setup->config().game, "rage"));
+        CHECK_FALSE(MechanicCatalog::enabled(setup->config().game, "local"));
+    }
     CHECK(b->config().combat.autoAim == contract().autoAim);
-    const auto aggressive =
-        NativePlaySetup::create(first, {4, 2, 2, 0, 1}, party(), {}, contract());
-    REQUIRE(aggressive);
-    CHECK(aggressive->config().game.aggressorMode);
-    CHECK(aggressive->digest() != a->digest());
+    const auto raging = NativePlaySetup::create(first, {4, 2, 2, 0, 1}, party(), {}, contract());
+    REQUIRE(raging);
+    CHECK(MechanicCatalog::enabled(raging->config().game, "rage"));
+    CHECK(raging->digest() != a->digest());
+    // A rule the build does not offer is no room's to set.
+    CHECK_FALSE(NativePlaySetup::create(first, {4, 2, 2, 0, 0b10}, party(), {}, contract()));
     CHECK(b->config().timing.gameplayFrameRate == 144);
     CHECK(b->config().display.windowWidth == 1920);
     CHECK_FALSE(b->config().display.vsync);
@@ -210,8 +230,8 @@ TEST_CASE("native setup digest distinguishes every agreed contract field",
     SECTION("camera rule") {
         room.camera = 1;
     }
-    SECTION("aggressor mode") {
-        room.aggressor = 1;
+    SECTION("a mechanic's rule") {
+        room.mechanics = 1;
     }
     SECTION("text language") {
         config.text.language = "fr";

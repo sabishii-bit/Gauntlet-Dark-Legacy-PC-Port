@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "game/config/GameConfig.h"
+#include "game/mechanics/MechanicCatalog.h"
 #include "game/netplay/RoomService.h"
 #include "game/rollback/PartyCheckpoint.h"
 #include "game/scenes/PlayScene.h"
@@ -35,6 +36,7 @@ public:
         std::string build;   ///< executable/simulation compatibility identifier
         std::string content; ///< native asset tree identifier
         std::string data;    ///< resolved gameplay/text data identifier
+        const MechanicCatalog* mechanics = nullptr; ///< what the room's rule bits name
     };
 
     /** Returns null for invalid or oversized input; never truncates it. The
@@ -42,7 +44,8 @@ public:
      * The copied local language is hashed too: different resolved text is not
      * silently declared equivalent. Identifiers and names are bounded printable
      * ASCII. Position/yaw must be finite; validating the trusted scene ID and
-     * authored item names remains the scene loader's job. */
+     * authored item names remains the scene loader's job. The room switches the
+     * mechanics: a rule bit the contract's catalog does not offer is refused. */
     static std::unique_ptr<NativePlaySetup>
     create(const GameConfig& local, const RoomSettings& room, const MatchParty& profiles,
            const PlayOptions& options, const Contract& contract);

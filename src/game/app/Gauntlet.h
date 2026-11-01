@@ -19,19 +19,22 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
 
+#include "expansions/shared/scenes/LegendsMapCatalog.h"
+#include "expansions/shared/scenes/LegendsPreview.h"
 #include "game/app/AttractSequencer.h"
 #include "game/app/BuildLabel.h"
 #include "game/app/CommandLine.h"
-#include "game/console/ConsoleCommands.h"
-#include "game/console/DevConsole.h"
 #include "game/app/LevelCompletion.h"
 #include "game/app/LevelDebugOverlay.h"
 #include "game/app/OnlineRun.h"
 #include "game/audio/MusicDuck.h"
 #include "game/camera/FreeCamera.h"
 #include "game/config/GameConfig.h"
+#include "game/console/ConsoleCommands.h"
+#include "game/console/DevConsole.h"
 #include "game/hud/AutoSaveIcon.h"
 #include "game/level/LevelWorld.h"
+#include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/PauseMenu.h"
 #include "game/players/CursorAim.h"
 #include "game/players/NoclipMotion.h"
@@ -41,8 +44,6 @@
 #include "game/scenes/AttractScene.h"
 #include "game/scenes/GameContext.h"
 #include "game/scenes/IdleScreen.h"
-#include "expansions/shared/scenes/LegendsMapCatalog.h"
-#include "expansions/shared/scenes/LegendsPreview.h"
 #include "game/scenes/LevelLoadingScreen.h"
 #include "game/scenes/MovieScene.h"
 #include "game/scenes/PlayScene.h"
@@ -59,8 +60,9 @@ struct LegendsAdviceState;
 /** The game: owns the top-level game flow and drives the engine each frame. */
 class Gauntlet final : public Application {
 public:
-    Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config,
-             std::string_view version);
+    /** `mechanics` are those the build carries, laid over every level. */
+    Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config, std::string_view version,
+             MechanicCatalog mechanics = {});
 
 protected:
     void onInit() override;
@@ -230,7 +232,10 @@ private:
     SessionInputs m_sessionInputs;
     std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;
     PromptDevices m_promptDevices;
+    /** Loads `table` in `language` from the game's text, then each mechanic's over it. */
+    bool loadText(StringTable& table, std::string_view language) const;
     StringTable m_strings;
+    MechanicCatalog m_mechanics;
     std::unique_ptr<AudioDevice> m_audio;
     std::unique_ptr<SoundPlayer> m_sounds;
     std::unique_ptr<SoundPlayer> m_legendsSounds;

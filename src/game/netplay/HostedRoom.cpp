@@ -114,7 +114,7 @@ void HostedRoom::changed(bool membership) {
         bytes.push_back(m_room.settings.difficulty);
         bytes.push_back(m_room.settings.friendlyFire);
         bytes.push_back(m_room.settings.camera);
-        bytes.push_back(m_room.settings.aggressor);
+        bytes.push_back(m_room.settings.mechanics);
         bytes.push_back(static_cast<u8>(m_room.members.size()));
         for (const auto& member : m_room.members) {
             string(bytes, member.peer);

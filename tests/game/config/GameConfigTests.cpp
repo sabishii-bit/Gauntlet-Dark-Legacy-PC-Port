@@ -94,17 +94,21 @@ TEST_CASE("combat is opt-in and movie volume persists independently of other aud
     CHECK(restored.difficulty.level == "hard");
 }
 
-TEST_CASE("Aggressor Mode is off until switched on and survives a round trip",
-          "[game][config][streak]") {
+TEST_CASE("every mechanic is off until switched on, and its switch survives a round trip",
+          "[game][config][mechanics]") {
     GameConfig config;
-    CHECK_FALSE(config.game.aggressorMode);
+    CHECK(config.game.mechanics.empty());
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
-    CHECK_FALSE(config.game.aggressorMode);
-    config.mergeJson(R"({"game":{"aggressorMode":true}})");
-    CHECK(config.game.aggressorMode);
+    CHECK(config.game.mechanics.empty());
+    config.mergeJson(R"({"game":{"mechanics":{"rage":true,"calm":false}}})");
+    REQUIRE(config.game.mechanics.size() == 2);
+    CHECK(config.game.mechanics.at("rage"));
+    CHECK_FALSE(config.game.mechanics.at("calm"));
     GameConfig restored;
     restored.mergeJson(config.toJson());
-    CHECK(restored.game.aggressorMode);
+    CHECK(restored.game.mechanics == config.game.mechanics);
+    CHECK_THROWS_AS(restored.mergeJson(R"({"game":{"mechanics":{"rage":1}}})"), FormatError);
+    CHECK_THROWS_AS(restored.mergeJson(R"({"game":{"mechanics":["rage"]}})"), FormatError);
 }
 
 TEST_CASE("video window modes and resolution survive settings round trips",

@@ -35,14 +35,26 @@ namespace {
 
 constexpr std::string_view kMovieDirectory = "VQMOVIES";
 constexpr std::string_view kTextDirectory = "text";
+constexpr std::string_view kModDirectory = "mods";             ///< data/mods/<mechanic id>/text
 constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked memory-card icon
 
 } // namespace
 
 Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config,
-                   std::string_view version)
+                   std::string_view version, MechanicCatalog mechanics)
     : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)),
-      m_buildLabel(version), m_version(version) {}
+      m_buildLabel(version), m_version(version), m_mechanics(std::move(mechanics)) {}
+
+bool Gauntlet::loadText(StringTable& table, std::string_view language) const {
+    if (!table.load(m_options.dataDirectory / kTextDirectory, language)) {
+        return false;
+    }
+    // A mechanic's own text keeps ids of its own, so none of it can replace the game's.
+    for (const MechanicDescriptor& mechanic : m_mechanics.all()) {
+        table.layer(m_options.dataDirectory / kModDirectory / mechanic.id / kTextDirectory);
+    }
+    return true;
+}
 
 /** Use the original sibling carddemo icon, retaining PNG support for exported fixtures. */
 void Gauntlet::applyWindowIcon() {
@@ -83,7 +95,7 @@ void Gauntlet::onInit() {
     m_buildLabel.load(renderDevice());
     setUpConsole();
     m_autoSaveIcon.load(renderDevice(), m_options.unpackedDirectory);
-    if (!m_strings.load(m_options.dataDirectory / kTextDirectory, m_config.text.language)) {
+    if (!loadText(m_strings, m_config.text.language)) {
         log::warn("No text tables under {}; identifiers will show instead of text",
                   paths::utf8(m_options.dataDirectory / kTextDirectory));
     }
@@ -243,6 +255,7 @@ GameContext Gauntlet::context() {
         m_levels.load(m_options.unpackedDirectory);
     }
     context.levels = &m_levels;
+    context.mechanics = &m_mechanics;
     context.unpackedRoot = m_options.unpackedDirectory;
     context.saveSettings = [this](const GameConfig& config) { return saveSettings(config); };
     context.displayOptions = [this] { return window().displayOptions(); };
@@ -813,7 +826,7 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
         // while a level's own messages change with the next level loaded.
         if (config.text.language != m_config.text.language) {
             StringTable next;
-            if (!next.load(m_options.dataDirectory / kTextDirectory, config.text.language)) {
+            if (!loadText(next, config.text.language)) {
                 log::warn("No text tables for language '{}'", config.text.language);
                 return false;
             }

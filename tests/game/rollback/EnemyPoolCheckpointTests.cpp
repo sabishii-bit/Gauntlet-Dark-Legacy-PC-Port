@@ -105,7 +105,7 @@ Enemies::Checkpoint varied() {
         body.tier = static_cast<s32>(index % 3) + 1;
         body.algorithm = static_cast<s32>(index % 32); // the ways stop at 31
         body.variant = 5;
-        body.element = static_cast<s32>(index % 5);
+        body.affinity = static_cast<s32>(index % 5);
         body.generator = 7;
         body.bred = true;
         body.birth = Enemies::Birth::Patrol;

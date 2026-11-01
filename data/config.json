@@ -42,7 +42,7 @@
   "game": {
     "expandedShop": false,
     "autoSave": false,
-    "aggressorMode": false,
+    "mechanics": {},
     "difficulty": "normal",
     "multiplayer": "normal",
     "soloCamera": false,

@@ -85,8 +85,9 @@ void exerciseLobby(RenderDevice& hostDevice, RenderDevice& guestDevice,
     second.save.color = 1;
     REQUIRE(host.select(std::array{first}));
     REQUIRE(guest.select(std::array{second}));
-    REQUIRE(host.settings({2, 2, 1, 1, 1}));
-    pump([&] { return guest.lobby().settings == RoomSettings{2, 2, 1, 1, 1}; });
+    CHECK_FALSE(host.settings({2, 2, 1, 1, 1})); // a mechanic this build does not offer
+    REQUIRE(host.settings({2, 2, 1, 1, 0}));
+    pump([&] { return guest.lobby().settings == RoomSettings{2, 2, 1, 1, 0}; });
     REQUIRE(host.ready(true));
     REQUIRE(guest.ready(true));
     pump([&] { return host.lobby().canStart; });

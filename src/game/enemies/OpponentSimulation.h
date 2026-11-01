@@ -8,6 +8,7 @@
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
 #include "game/enemies/PlacedEnemies.h"
+#include "game/mechanics/SwarmRules.h"
 
 namespace gdl::game {
 
@@ -35,7 +36,7 @@ public:
         const WorldCollision* collision = nullptr;
         f32 missileSpeed = 1;
         bool timeStopped = false;
-        SwarmAggression aggression; ///< the swarm's answer to the party's run of blows
+        SwarmTuning tuning; ///< how the mechanics tune the swarm this step
     };
 
     /** Call after native player/fixture motion, before processing opponent

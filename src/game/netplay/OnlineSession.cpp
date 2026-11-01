@@ -102,7 +102,7 @@ std::string roomDigest(const RoomSnapshot& room) {
     word(bytes, static_cast<u32>(room.revision >> 32));
     bytes.insert(bytes.end(), {room.settings.maxPlayers, room.settings.difficulty,
                                room.settings.friendlyFire, room.settings.camera,
-                               room.settings.aggressor, static_cast<u8>(room.members.size())});
+                               room.settings.mechanics, static_cast<u8>(room.members.size())});
     for (const auto& row : room.members) {
         string(bytes, row.peer);
         bytes.push_back(static_cast<u8>(row.seats.size()));

@@ -18,7 +18,6 @@
 #include "game/critters/CritterStatues.h"
 #include "game/critters/Critters.h"
 #include "game/effects/EffectTrees.h"
-#include "game/effects/ElementAuraShow.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
@@ -90,23 +89,17 @@ public:
     const PlacedEnemies& placements() const { return m_placements; }
     /** Original load-time tuning, unaffected by later changes to game options. */
     f32 difficultyGain() const { return m_resources ? m_resources->difficultyGain : 1.0f; }
-    /** The additive mechanics' answers, borrowed; the standard ones when null. */
-    void setMechanics(const MechanicsFacade* mechanics) { m_mechanics = mechanics; }
+    /** The additive mechanics, borrowed until close and handed on to the swarm and its
+     * generators; the original's rules when null. */
+    void setMechanics(MechanicsFacade* mechanics);
     /** The party size the generators breed for instead of the players present, or none. */
     void setPartyCount(std::optional<s32> count) { m_partyCountOverride = count; }
-    /** The swarm's answer to the party's run of close blows, as of the last update. */
-    const SwarmAggression& aggression() const { return m_sim.aggression; }
-    /** Draws the show on the elemental ones, `seconds` of presentation on from the last
-     * frame; it is never simulation state. */
-    void drawElementals(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                        f32 seconds);
+    /** The living swarm, for presentation drawn over it. */
+    std::vector<SwarmBodyView> swarmBodies() const;
     /** Imported boss mesh effects share their parent's presented hierarchy;
      * ordinary levels retain their existing effect interpolation unchanged. */
     std::vector<EffectTrees::DrawAttachment> presentedBossEffects(f32 alpha) const;
-    usize elementalAuras() const { return m_auras.auras(); }
     usize bagCount() const { return m_sim.bags.size(); }
-    /** The longest run of close blows under way among the players still in the party. */
-    static s32 longestRun(std::span<const PlayerRuntime> players);
     /** Recorder attachment preflight, never a gameplay decision or mixer poll.
      * Paused/silent legacy Death contact has no logical birth to carry across. */
     bool hasLegacyAudio() const {
@@ -298,8 +291,16 @@ private:
     void releaseBag(const Bag& bag);
     /** Sends a bag up where it lies, to open where it lands. */
     void throwBag(Bag bag);
-    /** An elemental one slain leaves its element's potion in a bag. */
-    void dropElementalPotion(const EnemyLoss& loss);
+    /** Leaves what the mechanics drop for a fallen body the way a great one's carried
+     * pickup is thrown. */
+    class BagThrow final : public BagDrops {
+    public:
+        explicit BagThrow(LevelOpponents& owner) : m_owner(owner) {}
+        void leave(std::string_view item, const Vec3& at) override;
+
+    private:
+        LevelOpponents& m_owner;
+    };
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
      * carried nothing (CritterDropItem), with the lesson its kind teaches. */
     void dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,
@@ -312,9 +313,8 @@ private:
     void updateImportedActors(f32 seconds, std::span<const EnemyView> views, bool timeStopped);
     std::optional<LevelInfo> m_levelNow; ///< the level's record with the borrowed roster
     Enemies m_enemies;
-    const MechanicsFacade* m_mechanics = nullptr; ///< never simulation state
-    std::optional<s32> m_partyCountOverride;      ///< the scene's, applied each count
-    ElementAuraShow m_auras; ///< the show on the elemental ones; never simulation state
+    MechanicsFacade* m_mechanics = nullptr;  ///< borrowed until close; never simulation state
+    std::optional<s32> m_partyCountOverride; ///< the scene's, applied each count
     Generators m_generators;
     std::vector<std::pair<u32, s32>> m_importedGenerators;
     struct ImportedGeneratorSound {
@@ -414,7 +414,6 @@ private:
         std::vector<GeneratorReward> generatorRewards;
         std::array<bool, 4> unseen{};
         std::vector<LevelEnemy> borrowedRoster;
-        SwarmAggression aggression; ///< the swarm's answer to the party's run of close blows
         bool operator==(const Simulation&) const = default;
     };
 

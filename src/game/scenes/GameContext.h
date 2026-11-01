@@ -16,6 +16,7 @@
 #include "game/hud/ControlPrompts.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
+#include "game/mechanics/MechanicCatalog.h"
 
 namespace gdl::game {
 
@@ -31,6 +32,7 @@ struct GameContext {
     LevelWorld* tower = nullptr;          ///< the level in play, shared by the screens: the hub
                                           ///< tower until the party travels
     const LevelCatalog* levels = nullptr; ///< where exit portals lead; without it they are dead
+    const MechanicCatalog* mechanics = nullptr; ///< what the build lays over play; none without
     f32* stopTimeTotal = nullptr; ///< optional application-owned timer total shared across visits
     std::filesystem::path unpackedRoot;
     /** Applies and persists a settings edit; false leaves the active configuration unchanged. */

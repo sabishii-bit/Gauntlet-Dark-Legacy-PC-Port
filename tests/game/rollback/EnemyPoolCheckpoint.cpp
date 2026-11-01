@@ -298,7 +298,7 @@ template <class IO, class T> bool mind(IO& io, T& value) {
 
 template <class IO, class T> bool body(IO& io, T& value, usize& nodesLeft) {
     return io(value.instance, value.state, value.kind, value.tier, value.algorithm, value.variant,
-              value.element, value.generator, value.bred, value.birth, value.health,
+              value.affinity, value.generator, value.bred, value.birth, value.health,
               value.fullHealth, value.sight, value.radius, value.height, value.reach,
               value.position, value.birthPosition, value.presentationPosition,
               value.presentationYaw, value.presentationState) &&
@@ -324,7 +324,7 @@ template <class IO, class T> bool event(IO& io, T& value) {
                   value.direction, value.ward);
     } else if constexpr (std::is_same_v<Value, EnemyLoss>) {
         return io(value.enemy, value.kind, value.tier, value.player, value.experience, value.killed,
-                  value.position, value.element);
+                  value.position, value.affinity);
     } else if constexpr (std::is_same_v<Value, EnemyBurst>) {
         return io(value.position, value.damage, value.enemy, value.kind, value.silencesYell,
                   value.instance);

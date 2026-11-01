@@ -1,5 +1,6 @@
 # Everything except main() lives in a library so the tests can link it.
-# Modules by subject, lowest first: config (settings), combat (damage rules), characters
+# Modules by subject, lowest first: config (settings), combat (damage rules), mechanics (the
+# seam additive gameplay mechanics answer through, and the catalog of them), characters
 # (class data, saves, inventory, progression), players (a character's body and controls),
 # camera, audio (what a level sounds like), effects, level (the levels and what stands in
 # them), party (the party in a level, frame by frame), enemies (the swarm and the level's
@@ -203,8 +204,6 @@ add_library(game STATIC
     enemies/EnemyMissiles.cpp
     enemies/Enemies.cpp
     enemies/Generators.cpp
-    enemies/SwarmAggression.h
-    enemies/SwarmAggression.cpp
     critters/CritterData.cpp
     enemies/NativeCritterData.cpp
     critters/CritterMovement.cpp
@@ -277,10 +276,6 @@ add_library(game STATIC
     party/PlayerFamiliar.cpp
     party/MikeyFigure.cpp
     effects/WeaponGlow.cpp
-    effects/ElementAura.h
-    effects/ElementAura.cpp
-    effects/ElementAuraShow.h
-    effects/ElementAuraShow.cpp
     camera/CameraMovementLimit.cpp
     level/SkorneArena.cpp
     level/FallingPiece.cpp
@@ -340,12 +335,20 @@ add_library(game STATIC
     scenes/SelectLane.cpp
     hud/StatusBox.h
     hud/StatusBox.cpp
-    hud/StreakMeter.h
-    hud/StreakMeter.cpp
     hud/CompanionArrows.h
     hud/CompanionArrows.cpp
+    mechanics/BirthRules.h
+    mechanics/BlowRules.h
+    mechanics/FallRules.h
+    mechanics/GameplayMechanic.h
+    mechanics/MechanicCatalog.h
+    mechanics/MechanicCatalog.cpp
     mechanics/MechanicsFacade.h
     mechanics/MechanicsFacade.cpp
+    mechanics/Overlays.h
+    mechanics/RunRules.h
+    mechanics/SwarmAppearance.h
+    mechanics/SwarmRules.h
     hud/PowerupSelector.h
     hud/PowerupSelector.cpp
     hud/HelpMessages.h
@@ -405,7 +408,6 @@ add_library(game STATIC
     effects/HeadGem.cpp
     effects/BodyGlow.cpp
     players/MeleeStreak.cpp
-    players/StreakGrades.h
     players/ExitWait.cpp
     party/PowerupCompanion.cpp
     effects/WeaponTrail.cpp
@@ -453,7 +455,7 @@ set_target_properties(game PROPERTIES FOLDER "game")
 
 add_executable(gauntlet main.cpp)
 
-target_link_libraries(gauntlet PRIVATE gdl::game)
+target_link_libraries(gauntlet PRIVATE gdl::game gdl::mods)
 gdl_use_utf8_code_page(gauntlet)
 
 # On Windows the executable carries the memory-card icon from the disc, which gdlunpack

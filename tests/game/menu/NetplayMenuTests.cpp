@@ -50,9 +50,10 @@ TEST_CASE("the game settings page lets the host set the rules and a guest read t
     view.page = NetplayMenu::Page::Settings;
     view.host = true;
     view.connected = true;
-    view.settings.aggressor = 1;
+    view.rules = {"Rage Mode", "Calm Mode"};
+    view.settings.mechanics = 0b10;
     menu.show(device, view);
-    REQUIRE(menu.rows() == 5);
+    REQUIRE(menu.rows() == 6);
     MenuInput confirm;
     confirm.select = true;
     MenuInput down;
@@ -66,10 +67,14 @@ TEST_CASE("the game settings page lets the host set the rules and a guest read t
     CHECK(menu.update(right).action == NetplayMenu::Action::FriendlyFire);
     menu.update(down);
     CHECK(menu.update(right).action == NetplayMenu::Action::Camera);
-    menu.update(down);
-    const auto aggressor = menu.update(right);
-    CHECK(aggressor.action == NetplayMenu::Action::Aggressor);
-    CHECK(aggressor.direction == 1);
+    // A row each for the mechanics the build offers a room, by bit.
+    for (const u8 rule : {0, 1}) {
+        menu.update(down);
+        const auto event = menu.update(right);
+        CHECK(event.action == NetplayMenu::Action::Rule);
+        CHECK(event.direction == 1);
+        CHECK(event.rule == rule);
+    }
     menu.update(down);
     CHECK(menu.update(confirm).action == NetplayMenu::Action::Back);
     // A guest reads the rules: every row but Back is greyed, so the cursor rests on Back.

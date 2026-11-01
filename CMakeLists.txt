@@ -55,6 +55,7 @@ add_subdirectory(src/engine)
 add_subdirectory(src/formats)
 add_subdirectory(src/expansions)
 add_subdirectory(src/game)
+add_subdirectory(src/mods)
 add_subdirectory(tools)
 
 if(GDL_BUILD_TESTS)

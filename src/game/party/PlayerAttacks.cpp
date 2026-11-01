@@ -28,6 +28,7 @@
 #include "game/level/Chests.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/PartyDamage.h"
+#include "game/party/PlayerPowerups.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/ComboMove.h"
 #include "game/players/ItemPickup.h"
@@ -181,18 +182,24 @@ void PlayerAttacks::clear() {
     m_sim.deathSounds.fill(std::nullopt);
     m_resources.reset();
 }
-/** What a charge runs into is struck, once each charge. */
 namespace {
 
-/** Does for `player`'s run what the mechanics say a blow of `source` with `outcome` does;
- * `telling` is the original's reading of it, for its own count. */
-void applyRunEffect(const MechanicsFacade& mechanics, std::span<PlayerRuntime> players, s32 player,
-                    BlowSource source, BlowOutcome outcome, bool telling) {
+/** Does for `player`'s run what the rules say a blow of `source` with `outcome` on `target`
+ * does; `telling` is the original's reading of it, for its own count. */
+void applyRunEffect(const BlowRules& rules, std::span<PlayerRuntime> players, s32 player,
+                    BlowSource source, BlowOutcome outcome, BlowTarget target, bool telling) {
     for (PlayerRuntime& runtime : players) {
         if (runtime.actor.player() != player) {
             continue;
         }
-        switch (mechanics.runEffect(source, outcome, runtime, players)) {
+        const PowerupEffects worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
+        const BlowReport blow{.source = source,
+                              .outcome = outcome,
+                              .target = target,
+                              .timeStopped = PlayerPowerups::timeStopped(players),
+                              .invulnerable = worn.invulnerable(),
+                              .invisible = worn.invisible()};
+        switch (rules.runEffect(blow).value_or(originalRunEffect(blow))) {
         case RunEffect::Nothing: break;
         case RunEffect::Count: runtime.streak.record(false); break;
         case RunEffect::CountAsOriginal: runtime.streak.record(telling); break;
@@ -211,35 +218,39 @@ void PlayerAttacks::countEnemyBlow(const Targets& targets, std::span<PlayerRunti
         return;
     }
     const bool alive = enemies.alive(id);
-    applyRunEffect(mechanicsOf(targets), players, player, source,
-                   stood && !alive ? BlowOutcome::Killed : BlowOutcome::Hurt, !stood || !alive);
+    applyRunEffect(blowRulesOf(targets), players, player, source,
+                   stood && !alive ? BlowOutcome::Killed : BlowOutcome::Hurt, BlowTarget::Enemy,
+                   !stood || !alive);
 }
 
 void PlayerAttacks::countCritterBlow(const Targets& targets, std::span<PlayerRuntime> players,
                                      s32 player, BlowSource source, const Critters& critters,
                                      s32 id, bool stood) {
     const bool down = !critters.alive(id) || critters.dying(id);
-    applyRunEffect(mechanicsOf(targets), players, player, source,
-                   stood && down ? BlowOutcome::Killed : BlowOutcome::Hurt, !stood || down);
+    applyRunEffect(blowRulesOf(targets), players, player, source,
+                   stood && down ? BlowOutcome::Killed : BlowOutcome::Hurt, BlowTarget::Critter,
+                   !stood || down);
 }
 
 void PlayerAttacks::countBossBlow(const Targets& targets, std::span<PlayerRuntime> players,
                                   s32 player, BlowSource source, const BossView& before,
                                   const Bosses& bosses) {
     const bool alive = bosses.view().alive;
-    applyRunEffect(mechanicsOf(targets), players, player, source,
+    applyRunEffect(blowRulesOf(targets), players, player, source,
                    before.alive && !alive ? BlowOutcome::Killed : BlowOutcome::Hurt,
-                   !before.alive || !before.awake || !alive);
+                   BlowTarget::Boss, !before.alive || !before.awake || !alive);
 }
 
 void PlayerAttacks::countGeneratorBlow(const Targets& targets, std::span<PlayerRuntime> players,
                                        s32 player, BlowSource source, const Generators& huts,
                                        s32 id, bool stood) {
     const bool destroyed = stood && !huts.standing(id);
-    applyRunEffect(mechanicsOf(targets), players, player, source,
-                   destroyed ? BlowOutcome::Destroyed : BlowOutcome::Hurt, destroyed);
+    applyRunEffect(blowRulesOf(targets), players, player, source,
+                   destroyed ? BlowOutcome::Destroyed : BlowOutcome::Hurt, BlowTarget::Generator,
+                   destroyed);
 }
 
+/** What a charge runs into is struck, once each charge. */
 void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
                                const Targets& targets) {
     if (!m_resources.has_value() || index >= players.size()) {
@@ -423,7 +434,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
         if (generators.standing(id) &&
             generators.boxOf(id).touchedBy(actor.position(), actor.radius(), kRamReach)) {
             once(static_cast<usize>(kGeneratorTargetBase) + g, true, [&] {
-                if (mechanicsOf(targets).generatorTakes(BlowSource::Charge)) {
+                if (blowRulesOf(targets).generatorTakes(BlowSource::Charge)) {
                     targets.opponents.strikeGenerator(id, blow, actor.player(), players);
                 }
             });
@@ -1417,7 +1428,7 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             healHit(actor.player(), shield.flags, credit, struck, players, targets);
         }
         for (const s32 id : targets.opponents.generators().within(at, shield.radius)) {
-            if (fresh(kGenerator, id) && mechanicsOf(targets).generatorTakes(BlowSource::Potion)) {
+            if (fresh(kGenerator, id) && blowRulesOf(targets).generatorTakes(BlowSource::Potion)) {
                 targets.opponents.strikeGenerator(id, shield.damage, actor.player());
             }
         }
@@ -2561,7 +2572,7 @@ bool PlayerAttacks::dispatchProjectileImpact(
         const s32 hut = impact.target - kGeneratorTargetBase;
         const Generators& huts = targets.opponents.generators();
         const bool stood = huts.standing(hut);
-        if (mechanicsOf(targets).generatorTakes(source)) {
+        if (blowRulesOf(targets).generatorTakes(source)) {
             if (!targets.opponents.strikeGenerator(hut, impact.damage, impact.owner, players,
                                                    generators)) {
                 return false;
@@ -2791,7 +2802,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                                  stood);
                 healHit(byPlayer, flags, credit, target.base, players, targets);
             } else if (target.id >= kGeneratorTargetBase) {
-                if (mechanicsOf(targets).generatorTakes(BlowSource::Potion)) {
+                if (blowRulesOf(targets).generatorTakes(BlowSource::Potion)) {
                     targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power,
                                                       byPlayer, players);
                 }

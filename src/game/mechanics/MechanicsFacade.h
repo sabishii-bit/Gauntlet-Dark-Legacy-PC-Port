@@ -1,86 +1,88 @@
 #pragma once
 
-#include <span>
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <vector>
 
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
+
+#include "game/config/GameConfig.h"
+#include "game/mechanics/GameplayMechanic.h"
+#include "game/mechanics/MechanicCatalog.h"
 
 namespace gdl::game {
 
-struct PlayerRuntime;
-
-/** What landed a blow, as the base game knows it. */
-enum class BlowSource : u8 {
-    Swing,     ///< a melee swing
-    Shot,      ///< a thrown or fired weapon
-    SuperShot, ///< the super shot
-    Potion,    ///< a potion's burst, cast or thrown, or its shield's ring
-    Turbo,     ///< a turbo move's strike, the thunder hammer among them
-    Charge,    ///< a charge or combo body blow
-    Breath,    ///< a breath worn as a powerup
-    Shield,    ///< a fire or lightning shield's touch
-};
-
-/** What a blow did to what it landed on. */
-enum class BlowOutcome : u8 {
-    Hurt,      ///< it stands, or was not standing to take it
-    Killed,    ///< the blow felled it
-    Destroyed, ///< a generator, to rubble
-};
-
-/** What a blow does for the striker's run of close blows (`MeleeStreak`). */
-enum class RunEffect : u8 {
-    Nothing,
-    Count,           ///< counts one
-    CountAsOriginal, ///< counts as the original's swing did: one, or three when telling
-};
-
 /**
- * The one place the base game asks about the mechanics laid over it. Each hook puts a named
- * question here instead of knowing any mechanic, so another additive mechanic answers the
- * same questions without another hook. Settings only, never simulation state: a mechanic's
- * own state lives with the system that steps it.
+ * The one place the base game asks about the mechanics laid over it: a level's instance of
+ * every mechanic the build carries, answering each facet for them all. With no mechanic it
+ * answers as the original does, so a hook never needs to ask whether one is there.
  *
- * Aggressor Mode: the style meter over a run of close blows, counted in kills and generators
- * destroyed alone, none of them under time stop, invulnerability or invisibility, the run
- * surviving less quiet the higher its grade; the swarm aggravated by the run; and the
- * generators harmed by swings and shots alone.
+ * Answers fold in catalog order: the first mechanic with something to say about a blow, a
+ * run's quiet or a birth decides it; any may keep a blow from a generator; tunings and body
+ * scales multiply; the first marked look rims the swarm and every tint is laid on.
  */
-class MechanicsFacade {
+class MechanicsFacade final : public BlowRules,
+                              public RunRules,
+                              public SwarmRules,
+                              public BirthRules,
+                              public FallRules,
+                              public SwarmAppearance {
 public:
-    struct Settings {
-        bool aggressorMode = false;
-        bool operator==(const Settings&) const = default;
-    };
-
     MechanicsFacade() = default;
-    explicit MechanicsFacade(const Settings& settings) : m_settings(settings) {}
+    ~MechanicsFacade() override;
+    GDL_NON_COPYABLE_NON_MOVABLE(MechanicsFacade);
 
-    /** The answers of the standard settings (the mode off), for a hook handed no facade. */
+    /** The original's answers, for a hook handed no facade. */
     static const MechanicsFacade& standard();
 
-    void configure(const Settings& settings) { m_settings = settings; }
-    const Settings& settings() const { return m_settings; }
-    bool aggressorMode() const { return m_settings.aggressorMode; }
+    /** Builds one of every mechanic in `catalog` for `level`; none for a null catalog. */
+    void open(const MechanicCatalog* catalog, const MechanicLevel& level);
+    /** Lets every mechanic's presentation go and drops them. */
+    void close();
+    /** Switches each mechanic as `options` say, off when unsaid. */
+    void configure(const GameOptionsConfig& options);
+    bool empty() const { return m_members.empty(); }
+    /** This level's instance of the mechanic `id`, or null. */
+    const GameplayMechanic* find(std::string_view id) const;
 
-    /** What a blow of `source` with `outcome`, landed by `striker`, does for their run. In
-     * Aggressor Mode a kill or a generator destroyed counts one and nothing else does, none
-     * of it under time stop, invulnerability or invisibility; out of the mode the original's
-     * rule stands, swings alone, as the original counted them. */
-    RunEffect runEffect(BlowSource source, BlowOutcome outcome, const PlayerRuntime& striker,
-                        std::span<const PlayerRuntime> players) const;
-    /** The quiet a run of `count` survives, in seconds: in Aggressor Mode a step shorter each
-     * grade, three seconds at D down to one at S; out of it the original's two. */
-    f32 quietWindow(s32 count) const;
-    /** Whether a blow of `source` harms a generator at all: in Aggressor Mode swings and
-     * shots alone. */
-    bool generatorTakes(BlowSource source) const;
-    /** Whether the swarm answers the party's run of close blows. */
-    bool swarmAggravated() const { return m_settings.aggressorMode; }
-    /** Whether the run's meter is drawn. */
-    bool meterShown() const { return m_settings.aggressorMode; }
+    std::optional<RunEffect> runEffect(const BlowReport& blow) const override;
+    bool generatorTakes(BlowSource source) const override;
+    std::optional<f32> quietWindow(s32 count) const override;
+    void step(const SwarmStep& step) override;
+    SwarmTuning tuning() const override;
+    BodyTraits traitsFor(const BirthRequest& birth, Mt19937& random) const override;
+    void fell(const BodyFall& fall, BagDrops& drops) override;
+    SwarmLook look(u32 frame) const override;
+    f32 bodyScale(s32 affinity) const override;
+    void drawWorld(const WorldOverlayView& view);
+    void drawHud(const HudOverlayView& view);
+
+    class LocalSnapshot {
+        friend class MechanicsFacade;
+        const MechanicsFacade* m_owner = nullptr;
+        std::weak_ptr<const u8> m_binding;
+        std::vector<std::unique_ptr<MechanicState>> m_states;
+        std::vector<u8> m_enabled;
+    };
+    void saveLocal(LocalSnapshot& saved) const;
+    bool canRestoreLocal(const LocalSnapshot& saved) const;
+    bool restoreLocal(const LocalSnapshot& saved);
+    bool appendNativeDigest(NativeStateDigest& digest) const;
+    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
 
 private:
-    Settings m_settings;
+    struct Member {
+        const MechanicDescriptor* descriptor = nullptr;
+        std::unique_ptr<GameplayMechanic> mechanic;
+        bool enabled = false;
+    };
+    bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
+
+    std::vector<Member> m_members;
+    std::shared_ptr<const u8> m_binding = std::make_shared<const u8>(0);
 };
 
 } // namespace gdl::game

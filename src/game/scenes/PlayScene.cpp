@@ -69,6 +69,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                      std::span<const PartyMember> party, const PlayOptions& options) {
     close();
     m_context = context;
+    m_mechanics.open(context.mechanics, {.tower = world.isTower()});
     syncMechanics();
     m_sim.partyCountOverride = options.partyCount;
     m_device = &device;
@@ -324,7 +325,8 @@ void PlayScene::close() {
     m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
     m_bossSequence.clear();
-    m_effects.clear(); // and before the archive whose trees they play
+    m_effects.clear();   // and before the archive whose trees they play
+    m_mechanics.close(); // before the opponents they rule and the archives they draw from
     m_opponents.close();
     m_sim.opponentsAdvanced = false;
     m_sim.projectilesAdvanced = false;
@@ -332,9 +334,6 @@ void PlayScene::close() {
     m_sim.towerNoticeSeconds = 0.0f;
     m_hud.clear();   // before the static texture borrowed for selector glow
     m_names.clear(); // before the static sheet its font borrows
-    m_streakMeter.clear();
-    m_streakFrame.reset();
-    m_auraFrame.reset();
     m_glowSheet = nullptr;
     m_localSeats = 0xF;
     m_seats.setViewSeat(-1);
@@ -473,12 +472,11 @@ s32 PlayScene::partyCount(s32 present) const {
                : present;
 }
 
-/** The additive mechanics follow the settings as they stand, so switching Aggressor Mode off
- * in the menu takes the meter down and calms the swarm on the next tick, and switching it on
- * brings them back; online every peer reads the same agreed rules. */
+/** The mechanics follow the settings as they stand, so one switched in the menu answers from
+ * the next tick; online every peer reads the same agreed rules. */
 void PlayScene::syncMechanics() {
-    m_mechanics.configure(
-        {.aggressorMode = m_context.config != nullptr && m_context.config->game.aggressorMode});
+    m_mechanics.configure(m_context.config != nullptr ? m_context.config->game
+                                                      : GameOptionsConfig{});
 }
 
 /** A run of close blows is praised once it pauses (player.c 2553), unless the boss's wizard
@@ -489,8 +487,9 @@ void PlayScene::praiseStreaks(f32 seconds) {
         // The record follows the run as it grows, so the meter can announce it live.
         s32& best = runtime.actor.save().progress().lifetime.bestStreak;
         best = std::max(best, runtime.streak.count());
-        const std::string_view praise =
-            runtime.streak.step(seconds, m_mechanics.quietWindow(runtime.streak.count()));
+        const f32 quiet =
+            m_mechanics.quietWindow(runtime.streak.count()).value_or(MeleeStreak::kOriginalQuiet);
+        const std::string_view praise = runtime.streak.step(seconds, quiet);
         if (!praise.empty() && !wizard && m_audio.narrationRoom(MeleeStreak::kWait)) {
             const auto audioScope =
                 m_audio.soundScope({34, 0, 1, static_cast<u8>(runtime.actor.player())}, 2);
@@ -499,15 +498,8 @@ void PlayScene::praiseStreaks(f32 seconds) {
     }
 }
 
-void PlayScene::drawStreakMeter() {
-    // Frames, not ticks, drive the meter: it is presentation, never replayed.
-    const auto now = std::chrono::steady_clock::now();
-    f32 seconds = 0.0f;
-    if (m_streakFrame.has_value()) {
-        seconds = std::chrono::duration<f32>(now - *m_streakFrame).count();
-    }
-    m_streakFrame = now;
-    std::array<StreakView, kPlayerCount> views{};
+void PlayScene::drawMechanicsHud() {
+    std::array<SeatRunView, kPlayerCount> runs{};
     usize watched = 0;
     for (const PlayerRuntime& runtime : m_players) {
         const s32 seat = runtime.actor.player();
@@ -516,15 +508,17 @@ void PlayScene::drawStreakMeter() {
             runtime.departed) {
             continue;
         }
-        views[watched++] = {.player = seat,
-                            .count = runtime.streak.count(),
-                            .quiet = runtime.streak.quiet(),
-                            .running = runtime.streak.running(),
-                            .record = runtime.actor.save().progress().lifetime.bestStreak};
+        runs[watched++] = {.player = seat,
+                           .count = runtime.streak.count(),
+                           .quiet = runtime.streak.quiet(),
+                           .running = runtime.streak.running(),
+                           .record = runtime.actor.save().progress().lifetime.bestStreak};
     }
-    m_streakMeter.observe(std::span(views).first(watched));
-    m_streakMeter.animate(seconds);
-    m_streakMeter.draw(m_canvas, m_messages.text(), m_glowSheet, m_context.strings);
+    m_mechanics.drawHud({.canvas = m_canvas,
+                         .text = m_messages.text(),
+                         .glow = m_glowSheet,
+                         .strings = m_context.strings,
+                         .runs = std::span(runs).first(watched)});
 }
 
 PartyPickups::Services PlayScene::pickupServices() {
@@ -2100,14 +2094,16 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // A fence blended over it instead makes even a nearer ghost appear behind the fence.
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
                                &effectCamera, opponentBlend, TreeModel::Pass::Effects);
-    // The elemental show runs on frames, not ticks: presentation, never replayed.
-    const auto auraNow = std::chrono::steady_clock::now();
-    const f32 auraSeconds =
-        m_auraFrame.has_value() && !optionsOpen
-            ? std::min(std::chrono::duration<f32>(auraNow - *m_auraFrame).count(), 0.1f)
-            : 0.0f;
-    m_auraFrame = auraNow;
-    m_opponents.drawElementals(device, clip, effectCamera, auraSeconds);
+    if (!m_mechanics.empty()) {
+        // Their shows run on frames, not ticks: presentation, never replayed.
+        const std::vector<SwarmBodyView> swarm = m_opponents.swarmBodies();
+        m_mechanics.drawWorld({.device = device,
+                               .clip = clip,
+                               .camera = effectCamera,
+                               .paused = optionsOpen,
+                               .bodies = swarm,
+                               .weapons = &m_weapons});
+    }
     m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     PartyFigures::drawEffects(device, m_players, figureScene(frameBlend), clip, effectCamera);
@@ -2232,9 +2228,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_opponents.meter().draw(m_canvas, device);
         m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,
                                              height);
-        if (m_mechanics.meterShown()) {
-            drawStreakMeter();
-        }
+        drawMechanicsHud();
     }
     if (const LevelInfo* level = m_world->level(); level != nullptr) {
         m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);

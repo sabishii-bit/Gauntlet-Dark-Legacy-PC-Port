@@ -203,7 +203,19 @@ void GameConfig::mergeJson(std::string_view json) {
     if (root.contains("game")) {
         read(root.at("game"), "expandedShop", game.expandedShop);
         read(root.at("game"), "autoSave", game.autoSave);
-        read(root.at("game"), "aggressorMode", game.aggressorMode);
+        if (root.at("game").contains("mechanics")) {
+            const Json& mechanics = root.at("game").at("mechanics");
+            if (!mechanics.is_object()) {
+                throw FormatError("game.mechanics must name each mechanic true or false");
+            }
+            game.mechanics.clear();
+            for (const auto& [id, on] : mechanics.items()) {
+                if (!on.is_boolean()) {
+                    throw FormatError("game.mechanics must name each mechanic true or false");
+                }
+                game.mechanics[id] = on.get<bool>();
+            }
+        }
         read(root.at("game"), "difficulty", difficulty.level);
         const auto& options = root.at("game");
         if (options.contains("combat")) {
@@ -381,10 +393,14 @@ std::string GameConfig::toJson() const {
                      {"stereo", audio.stereo}};
     root["text"] = {{"language", text.language}};
     root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
+    Json mechanics = Json::object();
+    for (const auto& [id, on] : game.mechanics) {
+        mechanics[id] = on;
+    }
     root["game"] = {
         {"expandedShop", game.expandedShop},
         {"autoSave", game.autoSave},
-        {"aggressorMode", game.aggressorMode},
+        {"mechanics", std::move(mechanics)},
         {"difficulty", difficulty.level},
         {"combat",
          {{"autoMelee", combat.autoMelee},

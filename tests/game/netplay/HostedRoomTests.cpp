@@ -4,12 +4,15 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "FakeMechanic.h"
+#include "game/mechanics/MechanicCatalog.h"
 #include "game/netplay/HostedRoom.h"
 #include "game/netplay/NativePlaySetup.h"
 #include "game/netplay/OnlineSession.h"
@@ -19,6 +22,17 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+/** A build offering three mechanics as a room's rules. */
+const MechanicCatalog& offered() {
+    static const MechanicCatalog catalog = [] {
+        MechanicCatalog mechanics;
+        for (const std::string_view id : {"alpha", "beta", "gamma"}) {
+            REQUIRE(mechanics.add(test::FakeMechanic::descriptor(id)));
+        }
+        return mechanics;
+    }();
+    return catalog;
+}
 struct Wire final : PacketTransport {
     Wire* remote = nullptr;
     std::vector<Event> incoming;
@@ -95,7 +109,8 @@ struct Pair {
                                                          agreed.rules.autoAim,
                                                          agreed.identity.build,
                                                          agreed.identity.content,
-                                                         agreed.identity.data};
+                                                         agreed.identity.data,
+                                                         &offered()};
                 const auto setup = NativePlaySetup::create(GameConfig{}, session->room()->settings,
                                                            *session->party(), {}, contract);
                 REQUIRE(setup);
@@ -272,10 +287,9 @@ TEST_CASE("room rules are host owned replicated and invalidate every ready vote"
     REQUIRE(pair.guest.ready());
     pair.pump();
     const auto revision = pair.host.room()->revision;
-    const RoomSettings changed{3, 2, 1, 1, 1}; // solo cameras and Aggressor Mode travel too
+    const RoomSettings changed{3, 2, 1, 1, 0b101}; // solo cameras and the rule bits travel too
     CHECK_FALSE(pair.guestRoom.settings(changed));
     CHECK_FALSE(pair.hostRoom.settings({3, 2, 1, 2}));    // no third camera rule
-    CHECK_FALSE(pair.hostRoom.settings({3, 2, 1, 1, 2})); // Aggressor Mode is on or off
     CHECK_FALSE(pair.hostRoom.settings({1, 2, 1}));       // already two joined
     CHECK_FALSE(pair.hostRoom.settings({4, 3, 0}));
     REQUIRE(pair.hostRoom.settings(changed));
@@ -469,7 +483,8 @@ struct Trio {
                                                          agreed.rules.autoAim,
                                                          agreed.identity.build,
                                                          agreed.identity.content,
-                                                         agreed.identity.data};
+                                                         agreed.identity.data,
+                                                         &offered()};
                 const auto setup = NativePlaySetup::create(GameConfig{}, session->room()->settings,
                                                            *session->party(), {}, contract);
                 REQUIRE(setup);

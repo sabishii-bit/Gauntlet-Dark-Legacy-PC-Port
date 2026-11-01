@@ -35,6 +35,22 @@ bool StringTable::load(const std::filesystem::path& directory, std::string_view 
     return any;
 }
 
+bool StringTable::layer(const std::filesystem::path& directory, std::string_view fallback) {
+    const auto present = [&](std::string_view language) {
+        std::error_code error;
+        return !language.empty() && std::filesystem::is_regular_file(
+                                        directory / (std::string(language) + ".json"), error);
+    };
+    bool any = false;
+    if (fallback != m_language && present(fallback)) {
+        any = merge(directory / (std::string(fallback) + ".json"));
+    }
+    if (present(m_language)) {
+        any = merge(directory / (m_language + ".json")) || any;
+    }
+    return any;
+}
+
 std::vector<StringTable::Language> StringTable::available(const std::filesystem::path& directory) {
     std::vector<Language> languages;
     std::error_code error;

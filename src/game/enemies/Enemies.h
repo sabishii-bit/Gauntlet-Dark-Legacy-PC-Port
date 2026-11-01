@@ -29,9 +29,11 @@
 #include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
-#include "game/enemies/SwarmAggression.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/ItemFigure.h"
+#include "game/mechanics/BirthRules.h"
+#include "game/mechanics/SwarmAppearance.h"
+#include "game/mechanics/SwarmRules.h"
 #include "game/party/PlayerMissiles.h"
 
 namespace gdl::game {
@@ -100,7 +102,7 @@ struct EnemyLoss {
     s32 experience = 0;
     bool killed = false;
     Vec3 position{0.0f, 0.0f, 0.0f};
-    s32 element = 0; ///< an elemental one's element, 0 for a plain body
+    s32 affinity = 0; ///< the element it was attuned to (`BodyTraits::affinity`), 0 none
     bool operator==(const EnemyLoss&) const = default;
 };
 
@@ -158,7 +160,7 @@ struct EnemySpawn {
     bool asleep = false;             ///< a placement of no strength waits to be woken
     f32 throwInterval = 1.0f;        ///< seconds, before the level's missile-rate scale
     Priority priority = Priority::Offscreen; ///< replacement permission, independent of strength
-    f32 elementalChance = 0.0f; ///< the odds a swarm birth is an elemental one (Aggressor Mode)
+    bool frenzied = false; ///< bred past its generator's brood under a frenzy (`SwarmTuning`)
     /** A placement's own sight radius, before the level's scale (the float after its strength
      * and way, SetItem items.c 5569); nought for the kind's thirty. */
     f32 sight = 0.0f;
@@ -238,8 +240,8 @@ s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored);
  */
 class Enemies {
 public:
-    /** The pool: the original's twenty-five and room past it for a frenzied swarm; a level
-     * opens with its own cap, `widenPool` lifts it to the whole. */
+    /** The pool: the original's twenty-five and room past it for a swarm the mechanics let
+     * fill the whole pool; a level opens with its own cap, `widenPool` lifts it to the whole. */
     static constexpr s32 kMost = 64;
     static constexpr f32 kBaseSight = 30.0f;
     static constexpr f32 kMostPush = 40.0f;
@@ -270,12 +272,14 @@ public:
     }
     /** What the party's cameras take in together, under solo cameras. */
     void setViews(const std::optional<ViewSet>& views) { m_simulation.view = views; }
-    /** The swarm's aggression for the coming step, births and drawing: quicker, tougher,
-     * and past the bravery line red with an aura. Set before each step; not kept. */
-    void setAggression(const SwarmAggression& aggression) { m_aggression = aggression; }
-    const SwarmAggression& aggression() const { return m_aggression; }
-    /** The bodies the last draw marked with the rage's aura, for the log. */
-    s32 auraBodies() const { return m_auraBodies; }
+    /** The mechanics' rules over the swarm: how it is tuned, what it is born as and how it
+     * shows. Borrowed until close; the original's where null. */
+    struct Rules {
+        const SwarmRules* swarm = nullptr;
+        const BirthRules* births = nullptr;
+        const SwarmAppearance* appearance = nullptr;
+    };
+    void setRules(const Rules& rules) { m_rules = rules; }
     /** The scale the party's enemy shrinkers hold the swarm at (`EnemyShrink`): shown and
      * shadowed at it, taking double and dealing half while under one. */
     void setShrink(f32 scale) { m_simulation.shrink = scale; }
@@ -436,10 +440,10 @@ public:
                   f32 alpha = 1, const Texture* deathSkin = nullptr, bool dying = false);
     usize count() const; ///< live, dying included
     s32 most() const { return m_simulation.most; } ///< the slots in play, the level's cap
-    /** Lifts the cap to the whole pool while the swarm is frenzied. */
+    /** Lifts the cap to the whole pool, while the tuning asks for it (`SwarmTuning`). */
     void widenPool() { m_simulation.most = kMost; }
     /** Brings the cap back toward the level's own, as far as the bodies past it allow: the
-     * frenzy over, the swarm thins back to what the level allows as its extras fall. */
+     * swarm thins back to what the level allows as its extras fall. */
     void narrowPool();
     s32 levelCap() const { return m_levelCap; }
     s32 kindOf(s32 id) const;
@@ -461,14 +465,13 @@ public:
     s32 algorithmOf(s32 id) const;
     s32 pushCountOf(s32 id) const;
     s32 variantOf(s32 id) const;   ///< the strength it was placed at, four and over for a variant
-    s32 elementOf(s32 id) const;   ///< an elemental one's element, 0 for a plain body
-    u64 instanceOf(s32 id) const;  ///< the lifetime the slot holds, 0 when none
-    /** Aggressor Mode's elemental one: born to a frenzied hut by chance, three and a half
-     * times as tough and half again as big, immune to its own element, dealing it. */
-    static constexpr f32 kElementalHealth = 3.5f;
-    static constexpr f32 kElementalSize = 1.5f;
+    /** The element it is attuned to (`BodyTraits::affinity`), 0 none: immune to it and
+     * dealing it. */
+    s32 affinityOf(s32 id) const;
+    u64 instanceOf(s32 id) const; ///< the lifetime the slot holds, 0 when none
     struct BodyState;
-    static f32 sizeOf(const BodyState& body);
+    /** How much larger than its kind a body shows (`SwarmAppearance::bodyScale`). */
+    f32 drawScale(const BodyState& body) const;
     f32 sightOf(s32 id) const;     ///< how far it sees, at the level's scale
     s32 stunTicksOf(s32 id) const; ///< ticks it still stands still after appearing
     /** How solid it shows: one, or less while a veiling kind fades. */
@@ -500,7 +503,7 @@ public:
         s32 tier = 1;
         s32 algorithm = 0;
         s32 variant = 0; ///< the strength placed at: 4 an archer, 5 a bomber, 6 a suicide
-        s32 element = 0; ///< Aggressor Mode's elemental one: 1 fire, 2 electric, 3 light, 4 acid
+        s32 affinity = 0; ///< the element it is attuned to (`BodyTraits::affinity`), 0 none
         s32 generator = -1;
         bool bred = false; ///< a generator bred it
         Birth birth = Birth::Brood;
@@ -698,8 +701,8 @@ private:
     };
     Figure bodyOf(const Enemy& enemy);
     Figure bodyOf(const Appearance& appearance);
-    SwarmAggression m_aggression;                    ///< this step's, from the simulation
-    s32 m_auraBodies = 0;                            ///< of the last draw, for the log
+    SwarmTuning tuning() const; ///< the mechanics' tuning as it stands, never kept
+    Rules m_rules;              ///< borrowed until close; never simulation state
     s32 m_highlightedId = -1;                        ///< the developer console's selection
     const SelectionHighlight* m_highlight = nullptr; ///< how it is marked out, while drawn
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,

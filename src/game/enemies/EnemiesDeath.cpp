@@ -67,8 +67,8 @@ void Enemies::hurtDeath(Enemy& enemy, s32 slot, const EnemyHit& hit) {
         m_simulation.deathEvents.push_back(
             {DeathEvent::Kind::Killed, slot, hit.player, form, 0, enemy.position, enemy.instance});
         if (hit.player >= 0) {
-            m_simulation.losses.push_back(
-                {slot, enemy.kind, enemy.tier, hit.player, 0, true, enemy.position, enemy.element});
+            m_simulation.losses.push_back({slot, enemy.kind, enemy.tier, hit.player, 0, true,
+                                           enemy.position, enemy.affinity});
         }
         enemy.state = State::Dying;
         enemy.killed = true;

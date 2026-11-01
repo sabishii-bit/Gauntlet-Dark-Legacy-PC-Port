@@ -395,6 +395,20 @@ class NativeRunnerTests(unittest.TestCase):
         self.assertTrue((self.directory / "run-2.log").is_file())
 
     @patch("native_determinism.subprocess.run")
+    def test_both_processes_switch_on_the_same_mechanics(self, run):
+        run.side_effect = self.emit
+        result = self.run_pair(mechanics=["aggressor", "calm-mode"])
+        self.assertEqual(result["status"], "observed-equal")
+        for call in run.call_args_list:
+            command = call.args[0]
+            switched = [command[i + 1] for i, flag in enumerate(command) if flag == "--mechanic"]
+            self.assertEqual(switched, ["aggressor", "calm-mode"])
+
+    def test_a_mechanic_must_be_named_as_the_catalog_names_it(self):
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            main(["--probe", str(self.probe), "--mechanic", "Not A Name"])
+
+    @patch("native_determinism.subprocess.run")
     def test_failure_timeout_and_missing_report_do_not_start_second_process(self, run):
         for result in (SimpleNamespace(returncode=4), SimpleNamespace(returncode=0),
                        subprocess.TimeoutExpired("nativeprobe", 7)):

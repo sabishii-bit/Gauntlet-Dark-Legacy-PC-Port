@@ -8,7 +8,7 @@
 namespace gdl::game {
 
 bool MeleeStreak::Checkpoint::valid() const {
-    return count >= 0 && std::isfinite(quiet) && quiet >= 0 && quiet <= kQuiet &&
+    return count >= 0 && std::isfinite(quiet) && quiet >= 0 && quiet <= kLongestQuiet &&
            (running ? count > 0 : count == 0 && quiet == 0);
 }
 
@@ -33,7 +33,7 @@ std::string_view MeleeStreak::step(f32 seconds, f32 quiet) {
         return {};
     }
     m_quiet += seconds;
-    if (m_quiet <= std::clamp(quiet, 0.0f, kQuiet)) {
+    if (m_quiet <= std::clamp(quiet, 0.0f, kLongestQuiet)) {
         return {};
     }
     std::string_view praise;

@@ -222,11 +222,12 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, bool l
     next->session = std::make_unique<OnlineSession>(*next->service, next->service->transport(),
                                                     invitation.empty(), localPlayers);
     if (invitation.empty()) {
-        // The host's room opens on the camera rule it was last hosted with and the host's
-        // own Aggressor Mode setting; both are the room's to change.
+        // The host's room opens on the camera rule it was last hosted with and the
+        // mechanics the host plays with; all of them are the room's to change.
         RoomSettings seeded;
         seeded.camera = next->config.multiplayer.soloCamera ? 1 : 0;
-        seeded.aggressor = next->config.game.aggressorMode ? 1 : 0;
+        seeded.mechanics =
+            context.mechanics != nullptr ? context.mechanics->roomBits(next->config.game) : 0;
         next->service->settings(seeded);
     }
     m_impl = std::move(next);
@@ -283,7 +284,12 @@ bool OnlineRun::start() {
 }
 bool OnlineRun::settings(const RoomSettings& value) {
 #if GDL_ENABLE_NETPLAY
-    return m_impl && m_impl->service->settings(value);
+    if (!m_impl) {
+        return false;
+    }
+    const auto* offered = m_impl->context.mechanics;
+    const u8 rules = offered != nullptr ? offered->knownRoomBits() : 0;
+    return (value.mechanics & ~rules) == 0 && m_impl->service->settings(value);
 #else
     (void)value;
     return false;
@@ -310,6 +316,11 @@ NetplayMenu::View OnlineRun::lobby() const {
             run.session->phase() == OnlineSession::Phase::Lobby && run.nativeConfigured;
         if (run.session->host() && run.transport->phase() == SessionTransport::Phase::Ready) {
             view.invitation = run.transport->invitation();
+        }
+        if (run.context.mechanics != nullptr && run.context.strings != nullptr) {
+            for (const MechanicDescriptor* rule : run.context.mechanics->roomRules()) {
+                view.rules.emplace_back(run.context.strings->get(rule->label));
+            }
         }
         if (const auto* room = run.session->room()) {
             view.settings = room->settings;
@@ -477,7 +488,8 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
                 run.nativeSetup = NativePlaySetup::create(
                     run.config, session.room()->settings, *profiles, run.options,
                     {rules.scene, rules.autoMelee, rules.autoActivateItems, rules.expandedShop,
-                     rules.autoAim, identity.build, identity.content, identity.data});
+                     rules.autoAim, identity.build, identity.content, identity.data,
+                     run.context.mechanics});
             }
             if (!run.nativeSetup || !session.confirmNativeSetup(run.nativeSetup->digest())) {
                 status(*run.device, "Online party setup disagrees. Escape exits.");
@@ -527,7 +539,7 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
             run.config.difficulty.level = DifficultyConfig::kNames[rules.difficulty];
             run.config.multiplayer.mode = static_cast<MultiplayerMode>(rules.friendlyFire);
             run.config.multiplayer.soloCamera = rules.camera == 1;
-            run.config.game.aggressorMode = rules.aggressor == 1;
+            applyRoomRules(run.context.mechanics, rules.mechanics, run.config.game);
             const bool opened = run.identityInputs &&
                                 NativeOnlineIdentity::numericMatches(*run.identityInputs) &&
                                 run.nativePlay.open(*run.device, run.context, session,

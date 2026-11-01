@@ -56,11 +56,11 @@ public:
         /** An accepted melee blow on a creature, identified by its attacker's input slot. */
         std::function<void(s32)>
             meleeHit{}; // NOLINT(readability-redundant-member-init): preserve aggregate callers
-        /** The additive mechanics' answers; the standard ones when null. */
-        const MechanicsFacade* mechanics = nullptr;
+        /** The additive mechanics' rules about blows; the original's when null. */
+        const BlowRules* blows = nullptr;
     };
-    static const MechanicsFacade& mechanicsOf(const Targets& targets) {
-        return targets.mechanics != nullptr ? *targets.mechanics : MechanicsFacade::standard();
+    static const BlowRules& blowRulesOf(const Targets& targets) {
+        return targets.blows != nullptr ? *targets.blows : MechanicsFacade::standard();
     }
     void bind(const Resources& resources);
     void clear();

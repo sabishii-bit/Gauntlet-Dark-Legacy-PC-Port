@@ -19,9 +19,9 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/enemies/Enemies.h"
-#include "game/enemies/SwarmAggression.h"
 #include "game/level/ImportedGenerators.h"
 #include "game/level/ItemFigure.h"
+#include "game/mechanics/SwarmRules.h"
 #include "game/party/PlayerMissiles.h"
 
 namespace gdl::game {
@@ -125,12 +125,10 @@ public:
     }
     /** Joined participants, including those waiting in the tower but not those who quit. */
     void setPlayerCount(s32 players) { m_sim.players = players; }
-    /** The swarm's aggression for the coming update: how much sooner the broods breed and
-     * how many more they keep out. Set before each update; not kept across them. */
-    void setAggression(const SwarmAggression& aggression) { m_aggression = aggression; }
-    /** Of the last update: the huts in the frenzy, and the births they all tried. */
-    s32 frenziedHuts() const { return m_frenziedHuts; }
-    s32 birthsTried() const { return m_birthsTried; }
+    /** The mechanics' tuning of the broods, borrowed until close; the original's when null:
+     * how much sooner they breed, how many more they keep out, and whether a hut near the
+     * party breeds past its brood. Read afresh each update, never kept. */
+    void setRules(const SwarmRules* swarm) { m_swarm = swarm; }
     /** Obstacles supplied here are fixtures; the other generators are included internally. */
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {}, bool timeStopped = false);
@@ -316,9 +314,7 @@ private:
                     std::span<TextureSet* const> lenders);
     s32 stateFor(const Generator& generator, bool destroyed) const;
     void appendImportedHealth(NativeStateDigest& digest) const;
-    SwarmAggression m_aggression; ///< this update's, from the simulation
-    s32 m_frenziedHuts = 0;       ///< of the last update, for the log
-    s32 m_birthsTried = 0;
+    const SwarmRules* m_swarm = nullptr; ///< borrowed until close; never simulation state
     s32 m_highlightedId = -1;                        ///< the developer console's selection
     const SelectionHighlight* m_highlight = nullptr; ///< how it is marked out, while drawn
     bool seen(const Generator& generator) const;

@@ -45,8 +45,8 @@ void NetplayMenu::show(RenderDevice& device, const View& view) {
     m_view = view;
     m_rows.clear();
     const auto row = [&](std::string label, Action action, bool enabled = true,
-                         bool adjustable = false) {
-        m_rows.push_back({std::move(label), action, enabled, adjustable, {}});
+                         bool adjustable = false, u8 rule = 0) {
+        m_rows.push_back({std::move(label), action, enabled, adjustable, {}, rule});
     };
     std::string title = "Netplay";
     switch (view.page) {
@@ -83,7 +83,7 @@ void NetplayMenu::show(RenderDevice& device, const View& view) {
         static constexpr std::array<const char*, 3> kDifficulty{"Easy", "Normal", "Hard"};
         static constexpr std::array<const char*, 3> kDamage{"Off", "Stun", "Damage"};
         static constexpr std::array<const char*, 2> kCamera{"Shared", "Solo"};
-        static constexpr std::array<const char*, 2> kAggressor{"Off", "On"};
+        static constexpr std::array<const char*, 2> kSwitch{"Off", "On"};
         const bool sets = view.host && view.connected;
         row(std::format("Difficulty    < {} >", kDifficulty[view.settings.difficulty]),
             Action::Difficulty, sets, true);
@@ -91,8 +91,11 @@ void NetplayMenu::show(RenderDevice& device, const View& view) {
             Action::FriendlyFire, sets, true);
         row(std::format("Camera    < {} >", kCamera[view.settings.camera & 1U]), Action::Camera,
             sets, true);
-        row(std::format("Aggressor Mode    < {} >", kAggressor[view.settings.aggressor & 1U]),
-            Action::Aggressor, sets, true);
+        for (usize bit = 0; bit < view.rules.size() && bit < 8; ++bit) {
+            const u32 on = (static_cast<u32>(view.settings.mechanics) >> bit) & 1U;
+            row(std::format("{}    < {} >", view.rules[bit], kSwitch[on]), Action::Rule, sets, true,
+                static_cast<u8>(bit));
+        }
         row("Back", Action::Back);
         break;
     }
@@ -160,7 +163,7 @@ NetplayMenu::Event NetplayMenu::update(const MenuInput& raw) {
                 input.pointer->y < area.bottom()) {
                 m_selection = i;
                 if (input.pointerPressed) {
-                    return {m_rows[i].action, 1};
+                    return {m_rows[i].action, 1, m_rows[i].rule};
                 }
             }
         }
@@ -178,7 +181,7 @@ NetplayMenu::Event NetplayMenu::update(const MenuInput& raw) {
     const auto& row = m_rows[m_selection];
     if (row.enabled &&
         (input.select || input.start || (row.adjustable && (input.left || input.right)))) {
-        return {row.action, input.left ? -1 : 1};
+        return {row.action, input.left ? -1 : 1, row.rule};
     }
     return {};
 }

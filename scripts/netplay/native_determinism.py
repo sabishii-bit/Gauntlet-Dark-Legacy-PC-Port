@@ -2,6 +2,7 @@
 """Compare bounded native PlayScene observations from two independent processes.
 
     python scripts/netplay/native_determinism.py --ticks 600 --render-every 0 1
+    python scripts/netplay/native_determinism.py --mechanic aggressor --workload combat
     python scripts/netplay/native_determinism.py --compare first.jsonl second.jsonl
 
 Runs are sequential, headless, and use the existing nativeprobe executable;
@@ -447,7 +448,7 @@ def compare_reports(left, right, expected_left=None, expected_right=None):
 
 
 def run_pair(probe, output, *, ticks, players, stage, workload, render_every,
-             timeout, assets=None, data=None):
+             timeout, assets=None, data=None, mechanics=()):
     """Run two independent probes sequentially; never reuse an existing report."""
     probe, output = pathlib.Path(probe).resolve(), pathlib.Path(output).resolve()
     if len(render_every) != 2:
@@ -466,6 +467,8 @@ def run_pair(probe, output, *, ticks, players, stage, workload, render_every,
         for flag, path in (("assets", assets), ("data", data)):
             if path is not None:
                 command.extend([f"--{flag}", str(pathlib.Path(path).resolve())])
+        for mechanic in mechanics:
+            command.extend(["--mechanic", mechanic])
         with log.open("x", encoding="utf-8") as stream:
             result = subprocess.run(command, cwd=devenv.ROOT, stdin=subprocess.DEVNULL,
                                     stdout=stream, stderr=subprocess.STDOUT, timeout=timeout,
@@ -494,6 +497,8 @@ def main(argv=None):
     parser.add_argument("--ticks", type=int)
     parser.add_argument("--players", type=int)
     parser.add_argument("--workload", choices=("idle", "combat"))
+    parser.add_argument("--mechanic", action="append", metavar="ID",
+                        help="Switch on a mechanic the build carries, by id (repeatable)")
     parser.add_argument("--render-every", type=int, nargs=2, metavar=("FIRST", "SECOND"),
                         help="Draw every K simulation ticks (0 disables rendering; default: 0 1)")
     parser.add_argument("--timeout", type=float, help="Per-process timeout seconds (default: 300)")
@@ -510,10 +515,12 @@ def main(argv=None):
             cadence = [0, 1] if args.render_every is None else args.render_every
             timeout = 300 if args.timeout is None else args.timeout
             stage = "G1" if args.stage is None else args.stage
+            mechanics = args.mechanic or []
             if (not _integer(ticks, 1, MAX_TICKS) or not _integer(players, 1, 4) or
                     any(not _integer(value, 0, MAX_RENDER_EVERY) for value in cadence) or
-                    not math.isfinite(timeout) or timeout <= 0 or not _name(stage)):
-                parser.error("Invalid ticks, players, render cadence, timeout, or stage")
+                    not math.isfinite(timeout) or timeout <= 0 or not _name(stage) or
+                    not all(re.fullmatch(r"[a-z0-9-]{1,32}", mechanic) for mechanic in mechanics)):
+                parser.error("Invalid ticks, players, render cadence, timeout, stage or mechanic")
             directory = (args.build_dir or devenv.ROOT / "build" / devenv.release_preset()).resolve()
             probe = (args.probe or directory / "bin" /
                      ("nativeprobe.exe" if devenv.WINDOWS else "nativeprobe")).resolve()
@@ -527,7 +534,8 @@ def main(argv=None):
             print(f"Reports: {output}", flush=True)
             result = run_pair(probe, output, ticks=ticks, players=players, stage=stage,
                               workload=args.workload or "idle", render_every=cadence,
-                              timeout=timeout, assets=args.assets, data=args.data)
+                              timeout=timeout, assets=args.assets, data=args.data,
+                              mechanics=mechanics)
         print(json.dumps(result, indent=2, allow_nan=False))
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:

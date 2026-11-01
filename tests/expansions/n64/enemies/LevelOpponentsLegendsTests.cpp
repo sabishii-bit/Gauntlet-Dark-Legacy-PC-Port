@@ -8,6 +8,7 @@
 
 #include "engine/io/File.h"
 
+#include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/critters/LegendsCritters.h"
@@ -19,6 +20,8 @@
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/ImportedLevel.h"
+#include "game/mechanics/MechanicCatalog.h"
+#include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerPowerups.h"
 
 namespace {
@@ -153,8 +156,8 @@ TEST_CASE("Native Town suicide barrels release damaging poison instead of the fi
     opponents.close();
 }
 
-TEST_CASE("Aggressor elemental bags release collectible potions on imported levels",
-          "[legends][aggressor-drops][level-opponents][assets]") {
+TEST_CASE("potions the mechanics leave in bags release collectible on imported levels",
+          "[legends][bag-drops][level-opponents][mechanics][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/n64/extracted/levels/mount2";
     if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
@@ -189,19 +192,28 @@ TEST_CASE("Aggressor elemental bags release collectible potions on imported leve
     std::array<PlayerRuntime, 1> players;
     const Vec3 position = map.starts.front().position;
     players[0].actor.spawn(0, {}, nullptr, position + Vec3{20, 0, 0}, 0);
+    // A mechanic gives a birth an affinity and has it leave that potion when slain.
+    constexpr s32 kAffinity = 3;
+    MechanicCatalog offered;
+    REQUIRE(offered.add(test::FakeMechanic::descriptor("fake")));
+    MechanicsFacade mechanics;
+    mechanics.open(&offered, {});
+    test::FakeMechanic& fake = *test::FakeMechanic::made().back();
+    fake.answers.traits = {.affinity = kAffinity};
+    fake.answers.drop = "POT_" + std::string{damage::colourOf(static_cast<u32>(kAffinity))};
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.setMechanics(&mechanics);
     REQUIRE(opponents.enemies().loadKind(kGruntKind));
     EnemySpawn spawn;
     spawn.kind = kGruntKind;
     spawn.placed = true;
     spawn.position = position;
-    spawn.elementalChance = 1;
+    spawn.frenzied = true;
     const auto id = opponents.enemies().spawn(spawn, {});
     REQUIRE(id);
-    const auto element = opponents.enemies().elementOf(*id);
-    REQUIRE(element >= 1);
-    REQUIRE(element <= 4);
+    const auto element = opponents.enemies().affinityOf(*id);
+    REQUIRE(element == kAffinity);
     opponents.strikeEnemy(*id, 1.0e6f, static_cast<u32>(element % 4 + 1), Vec3{0, 0, 1}, 0,
                           players);
     REQUIRE_FALSE(opponents.enemies().alive(*id));

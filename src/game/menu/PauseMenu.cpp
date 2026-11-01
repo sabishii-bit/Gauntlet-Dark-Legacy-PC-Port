@@ -306,6 +306,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     }
     if (event.code == 3) {
         m_page = Page::Options;
+        m_settings.setMechanics(m_context.mechanics);
         m_settings.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
                         m_context.strings, m_context.saveSettings, m_text, m_screen, backdrop(),
                         m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level,

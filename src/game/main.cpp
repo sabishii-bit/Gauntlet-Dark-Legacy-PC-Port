@@ -36,6 +36,7 @@
 #include "game/app/Gauntlet.h"
 #include "game/app/NativeOnlineIdentity.h"
 #include "game/config/GameConfig.h"
+#include "game/mechanics/MechanicCatalog.h"
 
 #ifndef GDL_DEFAULT_ASSET_DIR
 #define GDL_DEFAULT_ASSET_DIR ""
@@ -128,8 +129,12 @@ int runGauntlet(std::span<const std::string> rawArgs) {
     // transition; offline-only builds retain their existing loop.
     parsed.desc.threadedPresentation = gdl::game::OnlineRun::available();
 
+    // Every mechanic the build's mods carry, offered in the settings and to online rooms.
+    gdl::game::MechanicCatalog mechanics;
+    gdl::game::registerCompiledMechanics(mechanics);
+
     gdl::game::Gauntlet game(std::move(parsed.desc), std::move(parsed.options), std::move(config),
-                             GDL_VERSION);
+                             GDL_VERSION, std::move(mechanics));
     return game.run();
 }
 

@@ -33,7 +33,7 @@ public:
         Difficulty,
         FriendlyFire,
         Camera,
-        Aggressor,
+        Rule, ///< one of the mechanics the room may switch on, `Event::rule`
         Resume,
         SaveCompletedProgress,
         ReturnTitle,
@@ -43,6 +43,7 @@ public:
     struct View {
         Page page = Page::Choose;
         RoomSettings settings;
+        std::vector<std::string> rules; ///< the mechanics a room may switch on, in bit order
         bool host = false; ///< this machine hosts the room, so it sets the game's rules
         u8 localPlayers = 1;
         usize players = 0;
@@ -59,6 +60,7 @@ public:
     struct Event {
         Action action = Action::None;
         s32 direction = 0;
+        u8 rule = 0; ///< the room rule's bit, for Action::Rule
     };
     void show(RenderDevice& device, const View& view);
     Event update(const MenuInput& raw);
@@ -75,6 +77,7 @@ private:
         bool enabled = true;
         bool adjustable = false;
         std::unique_ptr<Texture> texture;
+        u8 rule = 0;
     };
     View m_view;
     std::vector<Row> m_rows;

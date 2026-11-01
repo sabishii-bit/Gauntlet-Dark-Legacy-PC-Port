@@ -26,6 +26,7 @@
 
 #include "FakeRenderDevice.h"
 #include "game/app/NativeOnlineIdentity.h"
+#include "game/mechanics/MechanicCatalog.h"
 #include "game/netplay/AssetDigest.h"
 #include "game/rollback/InputCommand.h"
 #include "game/rollback/NativeProbeLink.h"
@@ -58,6 +59,7 @@ struct Options {
     std::filesystem::path ticket;
     u32 inputDelay = 0;
     test::NativeProbeImpairment impairment;
+    std::vector<std::string> mechanics; ///< switched on, by id, from the build's own
 };
 
 void require(bool condition, std::string_view reason) {
@@ -136,6 +138,8 @@ Options parse(std::span<char*> args) {
             result.impairment.outageMs = number(value);
         } else if (key == "--input-outage-peer") {
             result.impairment.outagePeer = number(value);
+        } else if (key == "--mechanic") {
+            result.mechanics.emplace_back(value);
         } else {
             throw std::runtime_error("Unknown option: " + std::string(key));
         }
@@ -365,6 +369,12 @@ std::vector<InputCommand> journal(const Options& options, u32 tick) {
 void run(const Options& options) {
     GameConfig config;
     config.timing.tickRate = 60;
+    MechanicCatalog mechanics;
+    registerCompiledMechanics(mechanics);
+    for (const std::string& id : options.mechanics) {
+        require(mechanics.find(id) != nullptr, "This build carries no mechanic " + id);
+        config.game.mechanics[id] = true;
+    }
     LevelCatalog levels;
     StringTable strings;
     require(levels.load(options.assets), "Native level catalog missing");
@@ -386,6 +396,7 @@ void run(const Options& options) {
     GameContext context;
     context.config = &config;
     context.levels = &levels;
+    context.mechanics = &mechanics;
     context.strings = &strings;
     context.unpackedRoot = options.assets;
     f32 stopTimeTotal = 0;
@@ -697,7 +708,7 @@ int main(int argc, char** argv) {
             std::cout
                 << "nativeprobe --report path.jsonl [--stage G1|tower|...] [--ticks 600] "
                    "[--players 1..4] [--render-every 0..60] [--workload idle|combat] "
-                   "[--assets path] [--data path] [--perturb-tick tick] "
+                   "[--assets path] [--data path] [--perturb-tick tick] [--mechanic id]... "
                    "[--timings timings.json --timing-warmup ticks] "
                    "[--enemy-roundtrip 0|1 (offline, with timings)] "
                    "[--network-role host|guest --network-peer 1..4 --ticket path "

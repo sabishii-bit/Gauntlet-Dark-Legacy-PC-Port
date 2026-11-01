@@ -18,6 +18,7 @@
 #include "engine/io/File.h"
 #include "engine/world/SampleLevel.h"
 
+#include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
@@ -31,7 +32,6 @@
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
 #include "game/level/SafeRocks.h"
-#include "game/mechanics/MechanicsFacade.h"
 #include "game/party/BodyCollision.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerAttacks.h"
@@ -2285,16 +2285,16 @@ TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
     const f32 bossHealth = bosses.view().health;
     const f32 golemHealth = critters.healthOf(*golem);
     const f32 generatorHealth = generators.healthOf(0);
-    // Aggressor Mode guards the generators from a turbo strike; the original's rule, the
+    // A mechanic may guard the generators from a turbo strike; the original's rule, the
     // standard, lets it through.
-    const MechanicsFacade aggressor{{.aggressorMode = true}};
-    const MechanicsFacade original{{.aggressorMode = false}};
+    test::FakeMechanic guard;
+    guard.answers.generatorTakes = false;
     bool guarded = true;
-    SECTION("Aggressor Mode guards the generators") {
-        f.targets.mechanics = &aggressor;
+    SECTION("a mechanic guards the generators") {
+        f.targets.blows = &guard;
     }
     SECTION("the original's rule lets the strike through") {
-        f.targets.mechanics = &original;
+        f.targets.blows = nullptr;
         guarded = false;
     }
     player.turbo.add(100);
@@ -2311,7 +2311,7 @@ TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
     } else {
         CHECK(generators.healthOf(0) < generatorHealth);
     }
-    f.targets.mechanics = nullptr;
+    f.targets.blows = nullptr;
     f.attacks.clear();
     f.opponents.close();
 }
@@ -5322,8 +5322,6 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     // The original's reading of the run: a swing that only hurts counts one.
-    const MechanicsFacade original{{.aggressorMode = false}};
-    f.targets.mechanics = &original;
     auto& enemies = f.opponents.enemies();
     // Keep the real level's sound roster, but place this melee fixture's actors
     // without a floor constraint so its geometry does not steer the contact.
@@ -6009,13 +6007,14 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-TEST_CASE("a shot that only hurts does nothing for the run; a shot that kills counts one",
-          "[game][screens][player-attacks][streak][assets]") {
+TEST_CASE("a shot tells the rules what it did to the swarm, and they may count it",
+          "[game][screens][player-attacks][streak][mechanics][assets]") {
     const auto root =
         test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     Fixture f;
-    const MechanicsFacade aggressor{{.aggressorMode = true}};
-    f.targets.mechanics = &aggressor;
+    test::FakeMechanic rules;
+    rules.answers.runEffect = RunEffect::Count;
+    f.targets.blows = &rules;
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     EnemyScales scales;
     bool kills = false;
@@ -6036,10 +6035,7 @@ TEST_CASE("a shot that only hurts does nothing for the run; a shot that kills co
     const auto enemy = enemies.spawn(spawn, {});
     REQUIRE(enemy);
     const f32 whole = enemies.healthOf(*enemy);
-    // A run under way, two of its three quiet seconds gone.
-    f.players[0].streak.record(false);
-    REQUIRE(f.players[0].streak.step(2.0f).empty());
-    REQUIRE(f.players[0].streak.quiet() == 2.0f);
+    f.players[0].streak.record(false); // a run under way
     MissileLaunch shot;
     shot.owner = 3;
     shot.position = Vec3{0, 1, 0};
@@ -6051,22 +6047,26 @@ TEST_CASE("a shot that only hurts does nothing for the run; a shot that kills co
         f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
     }
     REQUIRE(enemies.healthOf(*enemy) < whole);
+    CHECK(enemies.alive(*enemy) != kills);
+    // Only a blow on something taller than the short is told at all (hht > 2).
     const bool tall = enemies.heightOf(*enemy) > PlayerAttacks::kLowEnemy;
-    if (kills) {
-        CHECK_FALSE(enemies.alive(*enemy));
-        CHECK(f.players[0].streak.count() == (tall ? 2 : 1));
-        CHECK(f.players[0].streak.quiet() == (tall ? 0.0f : 2.0f));
-    } else {
-        CHECK(enemies.alive(*enemy));
-        CHECK(f.players[0].streak.count() == 1);
-        CHECK(f.players[0].streak.quiet() == 2.0f); // a hurt gives nothing back
+    REQUIRE(rules.blowsAsked.size() == (tall ? 1U : 0U));
+    if (tall) {
+        const BlowReport& blow = rules.blowsAsked.front();
+        CHECK(blow.source == BlowSource::Shot);
+        CHECK(blow.target == BlowTarget::Enemy);
+        CHECK(blow.outcome == (kills ? BlowOutcome::Killed : BlowOutcome::Hurt));
+        CHECK_FALSE(blow.timeStopped);
+        CHECK_FALSE(blow.invulnerable);
+        CHECK_FALSE(blow.invisible);
     }
+    CHECK(f.players[0].streak.count() == (tall ? 2 : 1));
     f.attacks.clear();
     f.opponents.close();
 }
 
-TEST_CASE("a turbo strike that kills counts one toward the run of close blows",
-          "[game][screens][player-attacks][streak][assets]") {
+TEST_CASE("a turbo strike tells the rules of the body it fells",
+          "[game][screens][player-attacks][streak][mechanics][assets]") {
     const auto root = turboAssets();
     writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
       "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
@@ -6075,8 +6075,9 @@ TEST_CASE("a turbo strike that kills counts one toward the run of close blows",
        "speedMin":30,"speedMax":30,"maxTime":6,"amount":70,"flags":64,
        "effect":0,"hitEffect":0,"damageType":0}]})");
     Fixture f;
-    const MechanicsFacade aggressor{{.aggressorMode = true}};
-    f.targets.mechanics = &aggressor;
+    test::FakeMechanic rules;
+    rules.answers.runEffect = RunEffect::Count;
+    f.targets.blows = &rules;
     REQUIRE(f.classes.load(root / "pdata"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     EnemyScales scales;
@@ -6103,8 +6104,13 @@ TEST_CASE("a turbo strike that kills counts one toward the run of close blows",
     }
     REQUIRE(enemies.healthOf(*enemy) < whole);
     CHECK_FALSE(enemies.alive(*enemy));
-    CHECK(f.players[0].streak.count() ==
-          (enemies.heightOf(*enemy) > PlayerAttacks::kLowEnemy ? 1 : 0));
+    const bool tall = enemies.heightOf(*enemy) > PlayerAttacks::kLowEnemy;
+    REQUIRE(rules.blowsAsked.size() == (tall ? 1U : 0U));
+    if (tall) {
+        CHECK(rules.blowsAsked.front().source == BlowSource::Turbo);
+        CHECK(rules.blowsAsked.front().outcome == BlowOutcome::Killed);
+    }
+    CHECK(f.players[0].streak.count() == (tall ? 1 : 0));
     f.attacks.clear();
     f.opponents.close();
 }

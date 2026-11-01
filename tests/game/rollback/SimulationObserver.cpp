@@ -66,7 +66,7 @@ SimulationObservation SimulationObserver::observe() {
         "Application travel/shop/secret-parent ownership, persistence/unlock callbacks, config "
         "and input-source state outside the sampled scene scalars",
     };
-    result.subsystems.reserve(7);
+    result.subsystems.reserve(8);
 
     const auto combat = [&]() -> Subsystem {
         if (!m_scene.m_open) {
@@ -151,15 +151,18 @@ SimulationObservation SimulationObserver::observe() {
             return unavailable("party_combat",
                                "canonical combat field walker refused its record or byte bounds");
         }
-        // Local composite schema 2 adds the actual native cloud/Death follow-up
-        // values. They are not part of the replay adapter's restore contract.
+        // Local composite schema 3: the opponents' native follow-up values are their own
+        // subsystem below, so either can change without hiding the other.
         CanonicalDigestSink digest;
-        digest.push_back(2);
+        digest.push_back(3);
         digest.append(*body);
-        digest.append(m_scene.opponentFollowupDigest());
         return observed("party_combat", digest.finish(), {});
     };
     result.subsystems.push_back(combat());
+    // The native cloud/Death follow-up values; not part of the replay adapter's restore contract.
+    result.subsystems.push_back(
+        m_scene.m_open ? observed("opponent_followup", m_scene.opponentFollowupDigest(), {})
+                       : unavailable("opponent_followup", "scene is closed"));
 
     if (m_scene.m_open) {
         result.subsystems.push_back(captured<GeneratorCheckpoint>(

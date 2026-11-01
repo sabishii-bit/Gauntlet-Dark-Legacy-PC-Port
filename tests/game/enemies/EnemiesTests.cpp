@@ -16,8 +16,8 @@
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
 
+#include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
-#include "game/enemies/SwarmAggression.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/app/Scenario.h"
@@ -3860,8 +3860,8 @@ TEST_CASE("a shrunk swarm takes the low swing, as PlayerMotion judges a scaled-d
     CHECK_FALSE(lowOf(*big));
 }
 
-
-TEST_CASE("an aggravated swarm is born tougher and walks quicker", "[enemies][streak][aggression][assets]") {
+TEST_CASE("the mechanics' tuning paces the swarm and toughens its births",
+          "[enemies][mechanics][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 2, {}, 1);
@@ -3875,23 +3875,23 @@ TEST_CASE("an aggravated swarm is born tougher and walks quicker", "[enemies][st
     REQUIRE(calm.has_value());
     const auto calmBody = enemies.observe(*calm);
     REQUIRE(calmBody.has_value());
-    SwarmAggression hot;
-    hot.heat = 1.0f;
-    hot.surge = 0.5f;
-    enemies.setAggression(hot);
-    CHECK(enemies.paceOf(kGruntKind) == Approx(calmPace * hot.speedScale()));
+    test::FakeMechanic rules;
+    rules.answers.tuning = {.speedScale = 1.6f, .healthScale = 2.4f};
+    enemies.setRules({.swarm = &rules, .births = &rules, .appearance = &rules});
+    CHECK(enemies.paceOf(kGruntKind) == Approx(calmPace * 1.6f));
     spawn.position = {40, 0, 0};
     const auto tough = enemies.spawn(spawn, {});
     REQUIRE(tough.has_value());
     const auto toughBody = enemies.observe(*tough);
     REQUIRE(toughBody.has_value());
-    CHECK(toughBody->fullHealth == Approx(calmBody->fullHealth * hot.healthScale()));
-    CHECK(toughBody->health == Approx(calmBody->health * hot.healthScale()));
-    // The one born calm keeps the health it was born with.
+    CHECK(toughBody->fullHealth == Approx(calmBody->fullHealth * 2.4f));
+    CHECK(toughBody->health == Approx(calmBody->health * 2.4f));
+    // The one born before keeps the health it was born with.
     CHECK(enemies.observe(*calm)->fullHealth == calmBody->fullHealth);
-    enemies.setAggression({});
+    rules.answers.tuning = {};
     CHECK(enemies.paceOf(kGruntKind) == Approx(calmPace));
-    // The level's cap holds until a frenzy widens the pool to the whole.
+    enemies.setRules({});
+    // The level's cap holds until the pool widens to the whole.
     CHECK(enemies.most() == 2);
     spawn.position = {80, 0, 0};
     CHECK_FALSE(enemies.spawn(spawn, {}).has_value());
@@ -3900,7 +3900,7 @@ TEST_CASE("an aggravated swarm is born tougher and walks quicker", "[enemies][st
     const auto extra = enemies.spawn(spawn, {});
     REQUIRE(extra.has_value());
     CHECK(enemies.count() == 3);
-    // The frenzy over, the pool narrows to the body past the cap and no further.
+    // Narrowed again, the pool keeps the body past the cap and no more.
     CHECK(enemies.levelCap() == 2);
     enemies.narrowPool();
     CHECK(enemies.most() == *extra + 1);
@@ -3915,8 +3915,8 @@ TEST_CASE("an aggravated swarm is born tougher and walks quicker", "[enemies][st
     CHECK(idle.levelCap() == 2);
 }
 
-TEST_CASE("elemental demon missiles replace rather than combine their native fire element",
-          "[enemies][aggression][elemental-missiles][assets]") {
+TEST_CASE("a demon's missiles take its affinity in place of their native fire element",
+          "[enemies][affinity][missiles][assets]") {
     const s32 element = GENERATE(0, 2, 4);
     test::FakeRenderDevice device;
     Enemies enemies;
@@ -3932,7 +3932,7 @@ TEST_CASE("elemental demon missiles replace rather than combine their native fir
     REQUIRE(id);
     auto state = enemies.checkpoint();
     REQUIRE(state);
-    state->enemies[static_cast<usize>(*id)].element = element;
+    state->enemies[static_cast<usize>(*id)].affinity = element;
     REQUIRE(enemies.restore(*state));
     EnemyMissiles missiles;
     const std::array party{playerAt(Vec3{0, 0, 20})};
@@ -3944,19 +3944,23 @@ TEST_CASE("elemental demon missiles replace rather than combine their native fir
     CHECK((missiles.missile(0).kind.flags & 0xFU) == expected);
 }
 
-TEST_CASE("an elemental one is born tougher and bigger, shrugs off its own element and leaves it "
-          "in its loss",
-          "[enemies][streak][aggression][elemental][assets]") {
+TEST_CASE("a birth the mechanics mark takes their traits, shrugs off its own affinity and leaves "
+          "it in its loss",
+          "[enemies][mechanics][affinity][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 4, {}, 1);
     REQUIRE(enemies.loadKind(kGruntKind));
+    test::FakeMechanic rules;
+    rules.answers.traits = {.affinity = 3, .healthScale = 3.5f, .sizeScale = 1.5f};
+    rules.answers.scale = 1.5f;
+    enemies.setRules({.swarm = &rules, .births = &rules, .appearance = &rules});
     EnemySpawn spawn;
     spawn.placed = true;
     spawn.position = {0, 0, 0};
     const auto plain = enemies.spawn(spawn, {});
     REQUIRE(plain.has_value());
-    CHECK(enemies.elementOf(*plain) == 0);
+    CHECK(enemies.affinityOf(*plain) == 0);
     const auto plainBody = enemies.observe(*plain);
     REQUIRE(plainBody.has_value());
     const auto measure = [&](s32 id) {
@@ -3967,22 +3971,21 @@ TEST_CASE("an elemental one is born tougher and bigger, shrugs off its own eleme
         return std::pair{body->radius, body->height};
     };
     const auto [plainRadius, plainHeight] = measure(*plain);
-    // Certain odds: the next is elemental, of one of the four elements.
+    // A birth the frenzy brings: the rules give it their traits.
     spawn.position = {40, 0, 0};
-    spawn.elementalChance = 1.0f;
+    spawn.frenzied = true;
     const auto elemental = enemies.spawn(spawn, {});
     REQUIRE(elemental.has_value());
-    const s32 element = enemies.elementOf(*elemental);
-    CHECK(element >= 1);
-    CHECK(element <= 4);
+    const s32 element = enemies.affinityOf(*elemental);
+    CHECK(element == 3);
     const auto body = enemies.observe(*elemental);
     REQUIRE(body.has_value());
-    CHECK(body->fullHealth == Approx(plainBody->fullHealth * Enemies::kElementalHealth));
-    CHECK(body->health == Approx(plainBody->health * Enemies::kElementalHealth));
-    CHECK(body->scale == Approx(Enemies::kElementalSize));
+    CHECK(body->fullHealth == Approx(plainBody->fullHealth * 3.5f));
+    CHECK(body->health == Approx(plainBody->health * 3.5f));
+    CHECK(body->scale == Approx(1.5f));
     const auto [radius, height] = measure(*elemental);
-    CHECK(radius == Approx(plainRadius * Enemies::kElementalSize));
-    CHECK(height == Approx(plainHeight * Enemies::kElementalSize));
+    CHECK(radius == Approx(plainRadius * 1.5f));
+    CHECK(height == Approx(plainHeight * 1.5f));
     CHECK(enemies.instanceOf(*elemental) != 0);
     // Its own element does nothing to it; another hurts it.
     EnemyHit own;
@@ -3998,20 +4001,21 @@ TEST_CASE("an elemental one is born tougher and bigger, shrugs off its own eleme
     CHECK(enemies.hurt(*elemental, other) > 0.0f);
     CHECK(enemies.healthOf(*elemental) < body->health);
     (void)enemies.takeLosses();
-    // Slain, its loss names its element.
+    // Slain, its loss names its affinity.
     other.damage = 1.0e6f;
     enemies.hurt(*elemental, other);
     CHECK_FALSE(enemies.alive(*elemental));
     const auto losses = enemies.takeLosses();
     REQUIRE(losses.size() == 1);
     CHECK(losses[0].killed);
-    CHECK(losses[0].element == element);
-    // No odds, no elemental one.
+    CHECK(losses[0].affinity == element);
+    // A birth the rules leave alone is plain.
     spawn.position = {80, 0, 0};
-    spawn.elementalChance = 0.0f;
+    spawn.frenzied = false;
     const auto third = enemies.spawn(spawn, {});
     REQUIRE(third.has_value());
-    CHECK(enemies.elementOf(*third) == 0);
+    CHECK(enemies.affinityOf(*third) == 0);
+    enemies.setRules({});
 }
 
 /** resolvedWayOf as it stands, every name spelt as its value, for the sweep below. */

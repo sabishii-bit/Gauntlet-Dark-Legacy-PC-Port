@@ -22,10 +22,19 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-constexpr std::array<std::string_view, 7> kNames{"party_combat",        "opponent_generators",
-                                                 "opponent_swarm",      "opponent_missiles",
-                                                 "opponent_placements", "stage",
-                                                 "scene_control"};
+constexpr std::array<std::string_view, 8> kNames{
+    "party_combat",   "opponent_followup", "opponent_generators",
+    "opponent_swarm", "opponent_missiles", "opponent_placements",
+    "stage",          "scene_control"};
+
+/** The subsystem of `observation` called `name`. */
+const SimulationObservation::Subsystem& named(const SimulationObservation& observation,
+                                              std::string_view name) {
+    const auto found =
+        std::ranges::find(observation.subsystems, name, &SimulationObservation::Subsystem::name);
+    REQUIRE(found != observation.subsystems.end());
+    return *found;
+}
 
 void checkSchema(const SimulationObservation& observation) {
     CHECK_FALSE(observation.complete);
@@ -114,13 +123,15 @@ TEST_CASE("unbound scene observation reports binding failures without gating nat
     REQUIRE(fixture->scene.update(1.0 / 60, {}) == PlayOutcome::Running);
     const auto observation = fixture->observer.observe();
     checkSchema(observation);
-    CHECK_FALSE(observation.subsystems[0].digest);
-    CHECK(observation.subsystems[0].unavailable.find("catalog") != std::string::npos);
-    CHECK_FALSE(observation.subsystems[5].digest);
-    CHECK(observation.subsystems[5].unavailable.find("bound") != std::string::npos);
-    for (const usize index : {1U, 2U, 3U, 4U, 6U}) {
-        CAPTURE(index, observation.subsystems[index].unavailable);
-        CHECK(observation.subsystems[index].digest);
+    CHECK_FALSE(named(observation, "party_combat").digest);
+    CHECK(named(observation, "party_combat").unavailable.find("catalog") != std::string::npos);
+    CHECK_FALSE(named(observation, "stage").digest);
+    CHECK(named(observation, "stage").unavailable.find("bound") != std::string::npos);
+    for (const std::string_view name :
+         {"opponent_followup", "opponent_generators", "opponent_swarm", "opponent_missiles",
+          "opponent_placements", "scene_control"}) {
+        CAPTURE(name, named(observation, name).unavailable);
+        CHECK(named(observation, name).digest);
     }
 }
 
@@ -156,12 +167,12 @@ TEST_CASE("diagnostic bindings expire when a scene closes or reopens",
           "[simulation-observation][assets]") {
     auto fixture = std::make_unique<Fixture>("G1");
     fixture->bind();
-    REQUIRE(fixture->observer.observe().subsystems[0].digest);
+    REQUIRE(named(fixture->observer.observe(), "party_combat").digest);
     const std::array party{PartyMember{0, fixture->scene.actor(0)->save()}};
     fixture->scene.close();
     const auto closed = fixture->observer.observe();
-    CHECK_FALSE(closed.subsystems[0].digest);
-    CHECK_FALSE(closed.subsystems[5].digest);
+    CHECK_FALSE(named(closed, "party_combat").digest);
+    CHECK_FALSE(named(closed, "stage").digest);
     CHECK_FALSE(fixture->observer.bind());
 
     GameContext context;
@@ -172,8 +183,8 @@ TEST_CASE("diagnostic bindings expire when a scene closes or reopens",
     options.welcome = false;
     REQUIRE(fixture->scene.open(fixture->device, context, fixture->world, party, options));
     const auto unbound = fixture->observer.observe();
-    CHECK_FALSE(unbound.subsystems[0].digest);
-    CHECK_FALSE(unbound.subsystems[5].digest);
+    CHECK_FALSE(named(unbound, "party_combat").digest);
+    CHECK_FALSE(named(unbound, "stage").digest);
     REQUIRE(fixture->scene.nativeAgreementDigest());
     fixture->bind();
     const auto rebound = fixture->observer.observe();
@@ -217,14 +228,14 @@ TEST_CASE("native startup tower and time-stop ticks have read-only subsystem obs
     auto& actor = const_cast<PlayerActor&>(*fixture->scene.actor(0));
     ++actor.save().progress().gold;
     const auto changedParty = fixture->observer.observe();
-    REQUIRE(changedParty.subsystems[0].digest);
-    CHECK(changedParty.subsystems[0].digest != before.subsystems[0].digest);
-    CHECK(changedParty.subsystems[5].digest == before.subsystems[5].digest);
+    REQUIRE(named(changedParty, "party_combat").digest);
+    CHECK(named(changedParty, "party_combat").digest != named(before, "party_combat").digest);
+    CHECK(named(changedParty, "stage").digest == named(before, "stage").digest);
     fixture->world.setAmbientOffset(0.125f);
     const auto changedWorld = fixture->observer.observe();
-    REQUIRE(changedWorld.subsystems[5].digest);
-    CHECK(changedWorld.subsystems[5].digest != changedParty.subsystems[5].digest);
-    CHECK(changedWorld.subsystems[0].digest == changedParty.subsystems[0].digest);
+    REQUIRE(named(changedWorld, "stage").digest);
+    CHECK(named(changedWorld, "stage").digest != named(changedParty, "stage").digest);
+    CHECK(named(changedWorld, "party_combat").digest == named(changedParty, "party_combat").digest);
 }
 
 TEST_CASE("Ghost Town native gas transitions remain observable without replay admission",
@@ -306,20 +317,20 @@ TEST_CASE("native observation includes silent logical narration and hold timing"
     REQUIRE_FALSE(audio.narrationTiming().empty());
     const auto queued = fixture->observer.observe();
     checkSchema(queued);
-    CHECK(queued.subsystems[6].digest != before.subsystems[6].digest);
-    CHECK(queued.subsystems[0].digest == before.subsystems[0].digest);
-    CHECK(queued.subsystems[5].digest == before.subsystems[5].digest);
+    CHECK(named(queued, "scene_control").digest != named(before, "scene_control").digest);
+    CHECK(named(queued, "party_combat").digest == named(before, "party_combat").digest);
+    CHECK(named(queued, "stage").digest == named(before, "stage").digest);
     CHECK(fixture->observer.observe() == queued);
 
     audio.holdNarration(true);
     const auto held = fixture->observer.observe();
-    CHECK(held.subsystems[6].digest != queued.subsystems[6].digest);
+    CHECK(named(held, "scene_control").digest != named(queued, "scene_control").digest);
     audio.holdNarration(false);
     CHECK(fixture->observer.observe() == queued);
     audio.updateNarration(1.0f / 60);
     const auto advanced = fixture->observer.observe();
-    CHECK(advanced.subsystems[6].digest != queued.subsystems[6].digest);
-    CHECK(advanced.subsystems[0].digest == queued.subsystems[0].digest);
-    CHECK(advanced.subsystems[5].digest == queued.subsystems[5].digest);
+    CHECK(named(advanced, "scene_control").digest != named(queued, "scene_control").digest);
+    CHECK(named(advanced, "party_combat").digest == named(queued, "party_combat").digest);
+    CHECK(named(advanced, "stage").digest == named(queued, "stage").digest);
     CHECK(fixture->device.draws.empty());
 }

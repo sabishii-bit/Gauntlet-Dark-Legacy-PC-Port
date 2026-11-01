@@ -2,6 +2,8 @@
 
 #include <array>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -95,7 +97,9 @@ struct CombatConfig {
 struct GameOptionsConfig {
     bool expandedShop = false;
     bool autoSave = false;
-    bool aggressorMode = false;
+    /** The additive mechanics switched on or off, by `MechanicDescriptor::id`; one unsaid is
+     * off. Kept whole, so a build without a mechanic still keeps a player's choice for it. */
+    std::map<std::string, bool, std::less<>> mechanics;
 };
 
 /** Where characters are saved: a `saves` folder beside the game when the directory is

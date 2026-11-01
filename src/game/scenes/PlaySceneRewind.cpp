@@ -41,6 +41,7 @@ struct PlayScene::LocalSnapshot::Data {
     BossSequence::LocalSnapshot bossSequence;
     LevelSoundscape::LocalSnapshot audio;
     ChallengeHud::LocalSnapshot challengeHud;
+    MechanicsFacade::LocalSnapshot mechanics;
     TowerCamera::State camera;
     TransitionScreen::State transition;
     SpeechTiming relicSpeech;
@@ -97,13 +98,13 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
                                       fixtures, spawned, opponents, attacks, arsenal, effects,
                                       portals, transporters, departure, arrival, sumner, hud,
                                       messages, sumnerVisit, promotion, relics, bossSequence, audio,
-                                      challengeHud, camera, transition, relicSpeech,
+                                      challengeHud, mechanics, camera, transition, relicSpeech,
                                       promotionSpeech, relicCue, promotionCue, previousCamera,
                                       seatCameras, previousSeatView, previousBossCamera,
                                       namesHeld] = *data;
     }
     measured("control", [&] {
-        digest.string("PlayScene.native.8");
+        digest.string("PlayScene.native.9");
         digest.value(m_world->ref());
         digest.value(simulationTickRate());
         digest.value(data ? data->state : m_sim);
@@ -169,6 +170,7 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
     child("boss-sequence", m_bossSequence, &Data::bossSequence);
     child("audio", m_audio, &Data::audio);
     child("challenge-hud", m_challengeHud, &Data::challengeHud);
+    child("mechanics", m_mechanics, &Data::mechanics);
     measured("camera-speech", [&] {
         digest.values(data ? data->camera : m_camera.localState(),
                       data ? data->transition : m_transition.state(),
@@ -240,6 +242,7 @@ bool PlayScene::saveLocal(LocalSnapshot& saved) const {
     m_bossSequence.saveLocal(data.bossSequence);
     m_audio.saveLocal(data.audio);
     m_challengeHud.saveLocal(data.challengeHud);
+    m_mechanics.saveLocal(data.mechanics);
     data.camera = m_camera.localState();
     data.transition = m_transition.state();
     data.previousCamera = m_previousCamera;
@@ -278,7 +281,9 @@ bool PlayScene::canRestoreLocal(const LocalSnapshot& saved) const {
            m_sumnerVisit.canRestoreLocal(data.sumnerVisit) &&
            m_ceremonies.canRestoreLocal(data.promotion, data.relics) &&
            m_bossSequence.canRestoreLocal(data.bossSequence) &&
-           m_audio.canRestoreLocal(data.audio) && m_challengeHud.canRestoreLocal(data.challengeHud);
+           m_audio.canRestoreLocal(data.audio) &&
+           m_challengeHud.canRestoreLocal(data.challengeHud) &&
+           m_mechanics.canRestoreLocal(data.mechanics);
 }
 
 bool PlayScene::matchesLocalControl(const LocalSnapshot& saved) const {
@@ -315,6 +320,7 @@ bool PlayScene::restoreLocal(const LocalSnapshot& saved) {
     m_bossSequence.restoreLocal(data.bossSequence);
     m_audio.restoreLocal(data.audio);
     m_challengeHud.restoreLocal(data.challengeHud);
+    m_mechanics.restoreLocal(data.mechanics);
     m_sim = data.state;
     for (usize i = 0; i < m_players.size(); ++i) {
         const auto& player = data.players[i];

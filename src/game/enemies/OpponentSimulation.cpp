@@ -26,13 +26,11 @@ std::vector<MissileStop> OpponentSimulation::advance(const Frame& frame,
         m_placements->activate(
             [&](const auto& row) { m_enemies.spawn(row.spawn, {}, m_generators.obstacles()); });
     }
-    if (frame.aggression.frenzied()) {
-        m_enemies.widenPool(); // a frenzied swarm fills the whole pool, past the level's cap
+    if (frame.tuning.wholePool) {
+        m_enemies.widenPool(); // the mechanics let the swarm fill the whole pool
     } else {
-        m_enemies.narrowPool(); // and thins back to the level's cap once the frenzy is over
+        m_enemies.narrowPool(); // and it thins back to the level's cap once they no longer do
     }
-    m_generators.setAggression(frame.aggression);
-    m_enemies.setAggression(frame.aggression);
     m_generators.update(frame.ticks, m_enemies, frame.players, frame.fixtures, frame.timeStopped);
     auto boxes = m_generators.enemyObstacles();
     boxes.insert(boxes.end(), frame.fixtures.begin(), frame.fixtures.end());

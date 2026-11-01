@@ -10,9 +10,11 @@
 #include "engine/io/File.h"
 #include "engine/ui/TextPainter.h"
 
+#include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/ControlProfiles.h"
+#include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/SettingsMenu.h"
 #include "game/menu/SettingsRows.h"
 
@@ -28,9 +30,10 @@ struct Fixture {
     SettingsMenu menu;
     bool fail = false;
     s32 writes = 0;
-    Fixture() {
+    explicit Fixture(const MechanicCatalog* mechanics = nullptr) {
         painter.setFont(&font, &texture);
         strings.load(test::dataDirectory() / "text", "en");
+        menu.setMechanics(mechanics);
         menu.open(config, &strings,
                   [this](const GameConfig& next) {
                       if (fail) {
@@ -86,7 +89,7 @@ TEST_CASE("Game Options exposes optional shop stock and autosaving", "[settings]
     Fixture f;
     f.choose(1);
     REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
-    REQUIRE(f.menu.menu().definition().items.size() == 7);
+    REQUIRE(f.menu.menu().definition().items.size() == 6);
     CHECK(f.menu.menu().definition().items.front().text == "Difficulty");
     CHECK(f.menu.menu().definition().items.back().text == "Language");
     CHECK(f.menu.menu().definition().items.back().value == "English");
@@ -98,16 +101,35 @@ TEST_CASE("Game Options exposes optional shop stock and autosaving", "[settings]
     f.right();
     CHECK(f.config.game.autoSave);
     f.release();
-    CHECK_FALSE(f.config.game.aggressorMode);
-    CHECK(f.menu.menu().definition().items[5].text == "Aggressor Mode");
-    f.focus(6);
-    f.right();
-    CHECK(f.config.game.aggressorMode);
-    f.release();
     f.fail = true;
     f.right();
-    CHECK(f.config.game.aggressorMode);
-    CHECK(f.writes == 3);
+    CHECK(f.config.game.autoSave);
+    CHECK(f.writes == 2);
+}
+
+TEST_CASE("Game Options switches each mechanic the build carries, after its own switches",
+          "[settings][mechanics]") {
+    MechanicCatalog mechanics;
+    REQUIRE(mechanics.add(test::FakeMechanic::descriptor("rage")));
+    REQUIRE(mechanics.add(test::FakeMechanic::descriptor("calm", false)));
+    Fixture f(&mechanics);
+    f.choose(1);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    const auto& items = f.menu.menu().definition().items;
+    REQUIRE(items.size() == 8);
+    CHECK(items[5].text == "calm"); // by id, each named by its own text
+    CHECK(items[6].text == "rage");
+    CHECK(items.back().text == "Language");
+    CHECK_FALSE(MechanicCatalog::enabled(f.config.game, "rage"));
+    f.focus(items[6].code);
+    f.right();
+    CHECK(MechanicCatalog::enabled(f.config.game, "rage"));
+    CHECK_FALSE(MechanicCatalog::enabled(f.config.game, "calm"));
+    f.release();
+    f.focus(f.menu.menu().definition().items[6].code);
+    f.right();
+    CHECK_FALSE(MechanicCatalog::enabled(f.config.game, "rage"));
+    CHECK(f.writes == 2);
 }
 
 TEST_CASE("mouse operates settings pages sliders and graphics without keyboard confirmation",

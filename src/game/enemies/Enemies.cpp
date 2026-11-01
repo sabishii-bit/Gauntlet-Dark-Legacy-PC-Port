@@ -104,9 +104,6 @@ constexpr s32 kDogKind = 18;
 constexpr s32 kLeaderWay = 12;
 constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
-constexpr Color kAuraRim = Color::rgba(235, 25, 25); ///< an enraged swarm's rim
-constexpr Color kAuraWash = Color::rgba(170, 0, 0);  ///< and the wash over its faces
-constexpr f32 kAuraBeat = 0.12f; ///< radians a tick: the aura beats about once a second
 
 constexpr f32 kCheckpointMagnitude = 1'000'000;
 constexpr s32 kCheckpointCounter = 100'000'000;
@@ -375,7 +372,7 @@ s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
 bool Enemies::BodyState::valid() const {
     if (state > State::Dying || presentationState > State::Dying || birth > Birth::Patrol ||
         !checkpointKind(kind) || tier < 1 || tier > 3 || algorithm < 0 || algorithm > 31 ||
-        !checkpointCounter(variant, 0) || element < 0 || element > 4 ||
+        !checkpointCounter(variant, 0) || affinity < 0 || affinity > 4 ||
         !checkpointCounter(generator, -1) || !checkpointPoint(position) ||
         !checkpointPoint(birthPosition) || !checkpointPoint(presentationPosition) ||
         !checkpointPoint(push) || !checkpointPoint(hurtDirection) || !checkpointMind(mind) ||
@@ -1138,7 +1135,11 @@ const TreeInfo* Enemies::treeOf(s32 kind, s32 tier) const {
 }
 
 f32 Enemies::paceOf(s32 kind) const {
-    return enemyKind(kind).pace * m_simulation.scales.speed * m_aggression.speedScale();
+    return enemyKind(kind).pace * m_simulation.scales.speed * tuning().speedScale;
+}
+
+SwarmTuning Enemies::tuning() const {
+    return m_rules.swarm != nullptr ? m_rules.swarm->tuning() : SwarmTuning{};
 }
 
 Vec3 Enemies::bodyCentre(const Enemy& enemy) {
@@ -1277,11 +1278,10 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     // 5564; do_enemy_move zeroes its step): not the variants, nor one that sleeps first.
     enemy.stunTicks =
         spawn.placed && !spawn.asleep && spawn.tier < kArcherStrength ? kPlacedStun : 0;
-    // Death alone is not scaled by the level nor born tougher to an aggravated swarm; the
-    // swarm has a third of its kind's health a tier, and hits softer as it loses its kind's
-    // full share.
+    // Death alone is not scaled by the level nor by the mechanics' tuning; the swarm has a
+    // third of its kind's health a tier, and hits softer as it loses its kind's full share.
     const f32 scale =
-        spawn.kind != kDeathKind ? m_simulation.scales.health * m_aggression.healthScale() : 1.0f;
+        spawn.kind != kDeathKind ? m_simulation.scales.health * tuning().healthScale : 1.0f;
     enemy.fullHealth = kind.health * scale;
     enemy.health =
         spawn.kind < kSwarmKindCount ? kind.healthAtTier(enemy.tier) * scale : enemy.fullHealth;
@@ -1314,17 +1314,20 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     detachGenerator(enemy);
     const EnemyKind& kind = enemyKind(spawn.kind);
     initialise(enemy, spawn, kind);
-    // Aggressor Mode's elemental one, by the chance the birth carries: three and a half
-    // times as tough, half again as big, of one of the four elements.
-    enemy.element = 0;
-    if (spawn.kind < kSwarmKindCount && spawn.elementalChance > 0.0f &&
-        static_cast<f32>(m_simulation.random() % 10000U) < spawn.elementalChance * 10000.0f) {
-        enemy.element = 1 + static_cast<s32>(m_simulation.random() % 4U);
-        enemy.fullHealth *= kElementalHealth;
-        enemy.health *= kElementalHealth;
-        enemy.radius *= kElementalSize;
-        enemy.height *= kElementalSize;
-        enemy.reach *= kElementalSize;
+    // What the mechanics give the birth beyond its kind, drawing on the pool's own stream
+    // only when they must.
+    const BodyTraits traits =
+        m_rules.births != nullptr
+            ? m_rules.births->traitsFor({.kind = spawn.kind, .frenzied = spawn.frenzied},
+                                        m_simulation.random)
+            : BodyTraits{};
+    enemy.affinity = traits.affinity;
+    if (traits != BodyTraits{}) {
+        enemy.fullHealth *= traits.healthScale;
+        enemy.health *= traits.healthScale;
+        enemy.radius *= traits.sizeScale;
+        enemy.height *= traits.sizeScale;
+        enemy.reach *= traits.sizeScale;
     }
     const TreeInfo* tree = treeOf(spawn.kind, enemy.tier);
     // A strength past the known variants (retail's unshipped F) keeps its tier's tree.
@@ -1687,9 +1690,9 @@ void Enemies::step(f32 seconds, std::span<const EnemyView> players,
         if (enemy.animator.entering()) {
             enemy.animator.request(EnemyAction::Walk);
         }
-        // An aggravated swarm swings quicker, so its blow lands sooner.
+        // A swarm the mechanics hurry swings quicker, so its blow lands sooner.
         const f32 swingSeconds =
-            enemy.animator.swinging() ? kMotionSeconds * m_aggression.attackPace() : kMotionSeconds;
+            enemy.animator.swinging() ? kMotionSeconds * tuning().attackPace : kMotionSeconds;
         enemy.animator.updateCaptured(kMotionTicks, swingSeconds, enemy.contact >= 0);
         if (enemy.kind == kVeilingKind) {
             veil(enemy, kMotionTicks);
@@ -1888,7 +1891,7 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         blow.kind = enemy.kind;
         blow.tier = enemy.tier;
         blow.damage = fightOf(enemy);
-        blow.flags |= static_cast<u32>(enemy.element); // an elemental one's blow is of its element
+        blow.flags |= static_cast<u32>(enemy.affinity); // an attuned one's blow is of its element
         blow.power = enemy.animator.powerStruck();
         // Shrunk, it deals half, as a low blow, and its power blow is no more (fn_8004DF58).
         if (EnemyShrink::shrunk(m_simulation.shrink)) {
@@ -2487,9 +2490,9 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
     if (enemy.kind == kItKind) {
         return 0; // nothing harms IT (damage_enemy)
     }
-    if (enemy.element != 0 &&
-        (hit.flags & damage::kElementMask) == static_cast<u32>(enemy.element)) {
-        return 0; // an elemental one shrugs off its own element
+    if (enemy.affinity != 0 &&
+        (hit.flags & damage::kElementMask) == static_cast<u32>(enemy.affinity)) {
+        return 0; // an attuned one shrugs off its own element
     }
     const EnemyKind& kind = enemyKind(enemy.kind);
     f32 amount = hit.damage;
@@ -2578,7 +2581,7 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
         loss.killed = killed;
         loss.experience = killed ? kind.experienceKill : kind.experienceHit;
         loss.position = bodyCentre(enemy);
-        loss.element = enemy.element;
+        loss.affinity = enemy.affinity;
         m_simulation.losses.push_back(loss);
     }
     return credited;
@@ -2666,9 +2669,9 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
     const s32 which = enemy.variant == kBomberStrength ? EnemyMissileKind::kBomb
                                                        : missileSlotOfWay(enemy.algorithm);
     EnemyMissileKind what = enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());
-    if (enemy.element != 0) {
+    if (enemy.affinity != 0) {
         // The low nibble is an element identifier, not independent elemental bits.
-        what.flags = (what.flags & ~damage::kElementMask) | static_cast<u32>(enemy.element);
+        what.flags = (what.flags & ~damage::kElementMask) | static_cast<u32>(enemy.affinity);
     }
     // The trees are the kind's <PREFIX>_ARROW, _BOMB and _FBALL (InitEnemyMissiles); a kind
     // with no tree for the slot lets nothing go, and nothing goes at a player more than an
@@ -3044,20 +3047,16 @@ std::optional<Enemies::Presentation> Enemies::presentation(s32 id) const {
 void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                    const Texture* hitFlash, ItemArchive* weapons, const CameraFrame* camera,
                    f32 presentationAlpha, TreeModel::Pass pass) {
-    // As the run nears S the swarm darkens to red and an aura, beating with the ticks,
-    // marks each body out the way the console's selection is, in its red.
-    const f32 aura = m_aggression.aura();
-    std::optional<SelectionHighlight> rage;
-    if (aura > 0.0f) {
-        const f32 beat = 0.5f + 0.5f * std::sin(static_cast<f32>(m_simulation.frame) * kAuraBeat);
-        const f32 strength = aura * (0.6f + 0.4f * beat);
-        rage.emplace(camera != nullptr ? camera->position : Vec3{0.0f},
-                     kAuraRim.withAlpha(static_cast<u8>(std::lround(255.0f * strength))),
-                     kAuraWash.withAlpha(static_cast<u8>(std::lround(90.0f * strength))),
-                     SelectionHighlight::kRimWidth * (1.0f + 0.6f * aura * beat));
+    // How the mechanics show the living swarm: a tint, and perhaps a rim marking each body out
+    // the way the console's selection is.
+    const SwarmLook look =
+        m_rules.appearance != nullptr ? m_rules.appearance->look(m_simulation.frame) : SwarmLook{};
+    std::optional<SelectionHighlight> swarmMark;
+    if (look.marked) {
+        swarmMark.emplace(camera != nullptr ? camera->position : Vec3{0.0f}, look.rim, look.wash,
+                          look.rimWidth);
     }
-    const Color tint = m_aggression.tint();
-    m_auraBodies = 0;
+    const Color tint = look.tint;
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
         // IT has already transferred its tag; it has no corpse to display in
@@ -3124,7 +3123,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         }
         const Mat4 model = glm::scale(
             portable::rotate(glm::translate(Mat4{1.0f}, position), yaw, Vec3{0.0f, 1.0f, 0.0f}),
-            Vec3{m_simulation.shrink * sizeOf(enemy)});
+            Vec3{m_simulation.shrink * drawScale(enemy)});
         f32 alpha = enemy.kind == kDeathKind && enemy.killed
                         ? std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds)
                         : 1.0f;
@@ -3133,9 +3132,8 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             continue; // gone from sight altogether
         }
         const SelectionHighlight* mark = i == m_highlightedId ? m_highlight : nullptr;
-        if (mark == nullptr && rage.has_value() && !enemy.killed && enemy.kind != kDeathKind) {
-            mark = &*rage;
-            ++m_auraBodies;
+        if (mark == nullptr && swarmMark.has_value() && !enemy.killed && enemy.kind != kDeathKind) {
+            mark = &*swarmMark;
         }
         body.setHighlight(mark);
         if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
@@ -3178,7 +3176,7 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
         const f32 shown = 1.0f - enemy.veil / kVeiled;
         if (shown > 0.0f) {
             stock->shadows[tier].draw(device, clip, eye, ground, normal, lighting, shown,
-                                      m_simulation.shrink * sizeOf(enemy));
+                                      m_simulation.shrink * drawScale(enemy));
         }
     }
 }
@@ -3205,7 +3203,7 @@ std::optional<Enemies::Observation> Enemies::observe(s32 id) const {
     }
     Observation result{enemy.instance, enemy.health, enemy.fullHealth, enemy.state == State::Asleep,
                        enemy.flashSeconds > 0};
-    result.scale = m_simulation.shrink * sizeOf(enemy);
+    result.scale = m_simulation.shrink * drawScale(enemy);
     result.alpha = opacityOf(id);
     if (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind)) {
         result.alpha = 0; // the explosion or transferred tag replaces the body immediately
@@ -3288,11 +3286,11 @@ s32 Enemies::stunTicksOf(s32 id) const {
 s32 Enemies::variantOf(s32 id) const {
     return m_simulation.enemies[static_cast<usize>(id)].variant;
 }
-f32 Enemies::sizeOf(const BodyState& body) {
-    return body.element != 0 ? kElementalSize : 1.0f;
+f32 Enemies::drawScale(const BodyState& body) const {
+    return m_rules.appearance != nullptr ? m_rules.appearance->bodyScale(body.affinity) : 1.0f;
 }
-s32 Enemies::elementOf(s32 id) const {
-    return m_simulation.enemies[static_cast<usize>(id)].element;
+s32 Enemies::affinityOf(s32 id) const {
+    return m_simulation.enemies[static_cast<usize>(id)].affinity;
 }
 u64 Enemies::instanceOf(s32 id) const {
     return id >= 0 && id < m_simulation.most ? m_simulation.enemies[static_cast<usize>(id)].instance

@@ -285,7 +285,7 @@ TEST_CASE("native production bootstrap agrees full setup before opening any matc
         CHECK(network->setups[peer]->config().combat.autoMelee);
         CHECK_FALSE(network->setups[peer]->config().combat.autoActivateItems);
         CHECK(network->setups[peer]->config().game.expandedShop);
-        CHECK_FALSE(network->setups[peer]->config().game.aggressorMode);
+        CHECK(network->setups[peer]->config().game.mechanics.empty());
         CHECK(network->clients[peer]->session.match().nativeInputs());
         CHECK(network->clients[peer]->session.match().phase() == MatchSession::Phase::Lobby);
         for (const auto& sent : network->clients[peer]->wire.sent) {

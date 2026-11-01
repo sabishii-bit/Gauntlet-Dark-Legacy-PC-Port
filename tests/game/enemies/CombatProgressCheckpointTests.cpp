@@ -75,9 +75,9 @@ TEST_CASE("melee praise restores its exact count and fractional quiet timer",
     MeleeStreak replay;
     REQUIRE(replay.restore(saved));
     CHECK(replay.checkpoint() == saved);
-    CHECK(native.step(1.5f).empty());
-    CHECK(replay.step(1.5f).empty());
-    CHECK(native.step(0.26f) == MeleeStreak::kBraveryVoice); // past the three seconds
+    CHECK(native.step(0.5f).empty());
+    CHECK(replay.step(0.5f).empty());
+    CHECK(native.step(0.26f) == MeleeStreak::kBraveryVoice); // past the original's two seconds
     CHECK(replay.step(0.26f) == MeleeStreak::kBraveryVoice);
     CHECK(replay.checkpoint() == native.checkpoint());
     CHECK(replay.step(4).empty());
@@ -90,7 +90,7 @@ TEST_CASE("melee praise restores its exact count and fractional quiet timer",
         bad.count = -1;
     }
     SECTION("already expired timer") {
-        bad.quiet = MeleeStreak::kQuiet + 1;
+        bad.quiet = MeleeStreak::kLongestQuiet + 1;
     }
     SECTION("inconsistent stopped timer") {
         bad.running = false;

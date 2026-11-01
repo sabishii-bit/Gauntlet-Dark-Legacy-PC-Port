@@ -340,8 +340,6 @@ add_executable(tests
     game/party/PlayerFamiliarTests.cpp
     game/party/MikeyFigureTests.cpp
     game/effects/WeaponGlowTests.cpp
-    game/effects/ElementAuraTests.cpp
-    game/effects/ElementAuraShowTests.cpp
     game/camera/CameraMovementLimitTests.cpp
     game/camera/FreeCameraTests.cpp
     game/players/NoclipMotionTests.cpp
@@ -531,7 +529,6 @@ add_executable(tests
     game/enemies/EnemyMissilesTests.cpp
     game/enemies/EnemiesTests.cpp
     game/enemies/GeneratorsTests.cpp
-    game/enemies/SwarmAggressionTests.cpp
     game/critters/CrittersTests.cpp
     game/critters/CombatantTests.cpp
     game/critters/CombatantCheckpointTests.cpp
@@ -567,7 +564,6 @@ add_executable(tests
     game/camera/BossCameraTests.cpp
     game/camera/StartCameraTests.cpp
     game/hud/StatusBoxTests.cpp
-    game/hud/StreakMeterTests.cpp
     game/hud/CompanionArrowsTests.cpp
     game/mechanics/MechanicsFacadeTests.cpp
     game/hud/PickupHudTests.cpp
@@ -621,6 +617,10 @@ add_executable(tests
     engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE game_diagnostics gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
+# Each mod's tests sit in tests/mods/<folder> and join the suite with the mod itself.
+file(GLOB GDL_MOD_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mods/*/*.cpp")
+target_sources(tests PRIVATE ${GDL_MOD_TESTS})
+target_link_libraries(tests PRIVATE gdl::mods)
 # Focused native gameplay/presentation checks without unrelated GPU or full-suite builds.
 add_executable(gameplayregressions
     game/enemies/EnemiesTests.cpp game/critters/CombatantTests.cpp engine/world/TreeModelTests.cpp
@@ -791,7 +791,7 @@ if(GDL_ENABLE_NETPLAY)
     # Actual gameplay, independent-process determinism observations; no replicas.
     add_executable(nativeprobe game/rollback/NativeSimulationProbe.cpp game/rollback/NativeProbeLink.cpp
         game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp)
-    target_link_libraries(nativeprobe PRIVATE game_diagnostics gdl::game gdl::engine_net)
+    target_link_libraries(nativeprobe PRIVATE game_diagnostics gdl::game gdl::mods gdl::engine_net)
     target_include_directories(nativeprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(nativeprobe PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")

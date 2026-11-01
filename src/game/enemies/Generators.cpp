@@ -1127,11 +1127,10 @@ void Generators::applyBroodEvents(Enemies& enemies) {
 void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                         std::span<const Obstacle> obstacles, bool timeStopped) {
     syncFloors();
-    m_frenziedHuts = 0;
-    m_birthsTried = 0;
     if (ticks <= 0) {
         return;
     }
+    const SwarmTuning tuning = m_swarm != nullptr ? m_swarm->tuning() : SwarmTuning{};
     // How near the party stands to a spot, for the frenzy's reach.
     const auto nearestPlayer = [players](const Vec3& position) {
         f32 nearest = std::numeric_limits<f32>::max();
@@ -1173,13 +1172,11 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         // do_items checks the living brood quota before generate_now ticks its timer.
         // A full brood freezes the remaining wait; a death frees a slot, not a free birth.
         // Patrol generators instead keep one sentry, with no ordinary quota or wait.
-        // An aggravated swarm's broods run past their quota for a while; a frenzied swarm's
-        // generators near the party breed past any quota at all.
-        const auto quota =
-            static_cast<s32>(static_cast<f32>(generator.most) * m_aggression.broodScale());
-        const bool frenzied = m_aggression.frenzied() &&
-                              nearestPlayer(generator.position) <= SwarmAggression::kFrenzyReach;
-        m_frenziedHuts += frenzied ? 1 : 0;
+        // The mechanics may let a brood run past its quota, and a generator near the party
+        // breed past any quota at all.
+        const auto quota = static_cast<s32>(static_cast<f32>(generator.most) * tuning.broodScale);
+        const bool frenzied =
+            tuning.frenzyReach > 0.0f && nearestPlayer(generator.position) <= tuning.frenzyReach;
         if (patrol ? generator.living > 0
                    : generator.most <= 0 || (!frenzied && generator.living >= quota)) {
             continue;
@@ -1234,7 +1231,7 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
                          : visible || patrol ? EnemySpawn::Priority::Offscreen
                                              : EnemySpawn::Priority::FreeSlotOnly;
         spawn.generator = static_cast<s32>(g);
-        spawn.elementalChance = frenzied ? m_aggression.elementalChance() : 0.0f;
+        spawn.frenzied = frenzied;
         if (generator.algorithm == kZigZagWay) {
             spawn.zigZagSide = (generator.bred & 1) == 0 ? 1 : -1;
         }
@@ -1244,7 +1241,6 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
                 birthObstacles.push_back(m_sim.generators[other].box);
             }
         }
-        ++m_birthsTried;
         const auto child = enemies.spawn(spawn, players, birthObstacles);
         // Recycled slots release their previous generator even when birth fails.
         applyBroodEvents(enemies);
@@ -1256,10 +1252,10 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             continue;
         }
         // The next takes longer, the countdown stretched by a share that grows a birth at a
-        // time and wraps, and cut by the swarm's aggression.
+        // time and wraps, and cut by the mechanics' breeding pace.
         generator.countdown =
             static_cast<s32>(kCountdownScale * static_cast<f32>(generator.interval) *
-                             (1.0f + generator.ratio) / m_aggression.breedingPace());
+                             (1.0f + generator.ratio) / tuning.breedingPace);
         generator.ratio += 1.0f / (2.0f * static_cast<f32>(generator.most));
         if (generator.ratio > 1.0f) {
             generator.ratio = 0.0f;

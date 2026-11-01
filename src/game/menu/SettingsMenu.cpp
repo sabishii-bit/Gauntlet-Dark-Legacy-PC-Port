@@ -17,7 +17,7 @@ namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
 constexpr s32 kLanguageCode = 5;
-constexpr s32 kAggressorModeCode = 6;
+constexpr s32 kFirstMechanicCode = 16; ///< the Game page's mechanics, one code each in order
 constexpr s32 kDisplayCode = 13;
 constexpr s32 kRendererCode = 14;
 constexpr s32 kAudioSliders = 3;
@@ -94,10 +94,9 @@ template <class Config> struct Switch {
     std::string_view label;
     bool Config::*field = nullptr;
 };
-constexpr std::array<Switch<GameOptionsConfig>, 3> kGameSwitches{
+constexpr std::array<Switch<GameOptionsConfig>, 2> kGameSwitches{
     {{3, "settings.expandedShop", &GameOptionsConfig::expandedShop},
-     {4, "settings.autoSave", &GameOptionsConfig::autoSave},
-     {kAggressorModeCode, "settings.aggressorMode", &GameOptionsConfig::aggressorMode}}};
+     {4, "settings.autoSave", &GameOptionsConfig::autoSave}}};
 constexpr std::array<Switch<CombatConfig>, 4> kCombatSwitches{
     {{0, "settings.autoMelee", &CombatConfig::autoMelee},
      {1, "settings.enemyHealthBars", &CombatConfig::enemyHealthBars},
@@ -379,6 +378,13 @@ void restoreRow(const VideoRow& row, GameConfig& config, const GameConfig& defau
 std::string SettingsMenu::text(std::string_view id) const {
     return std::string(m_strings != nullptr ? m_strings->get(id) : id);
 }
+const MechanicDescriptor* SettingsMenu::mechanicOf(s32 code) const {
+    if (m_mechanics == nullptr || code < kFirstMechanicCode) {
+        return nullptr;
+    }
+    const auto index = static_cast<usize>(code - kFirstMechanicCode);
+    return index < m_mechanics->all().size() ? &m_mechanics->all()[index] : nullptr;
+}
 std::vector<StringTable::Language> SettingsMenu::languages() const {
     return m_strings != nullptr ? m_strings->languages() : std::vector<StringTable::Language>{};
 }
@@ -596,6 +602,13 @@ void SettingsMenu::rebuild(s32 selection) {
         for (const auto& entry : kGameSwitches) {
             rows.toggle(text(entry.label), entry.code, m_config.game.*entry.field);
         }
+        if (m_mechanics != nullptr) {
+            s32 code = kFirstMechanicCode;
+            for (const MechanicDescriptor& mechanic : m_mechanics->all()) {
+                rows.toggle(text(mechanic.label), code++,
+                            MechanicCatalog::enabled(m_config.game, mechanic.id));
+            }
+        }
         rows.value(text("settings.language"), kLanguageCode, languageName());
         break;
     case Page::Combat:
@@ -720,6 +733,9 @@ void SettingsMenu::change(s32 direction) {
             if (next.text.language == m_config.text.language) {
                 return;
             }
+        } else if (const MechanicDescriptor* mechanic = mechanicOf(code)) {
+            next.game.mechanics[std::string{mechanic->id}] =
+                !MechanicCatalog::enabled(next.game, mechanic->id);
         } else if (!flipSwitch(kGameSwitches, code, next.game)) {
             return;
         }

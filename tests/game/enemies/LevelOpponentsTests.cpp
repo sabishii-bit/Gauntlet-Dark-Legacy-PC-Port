@@ -23,6 +23,7 @@
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldLighting.h"
 
+#include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
@@ -37,12 +38,13 @@
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/LevelOpponents.h"
-#include "game/enemies/SwarmAggression.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/SafeRocks.h"
+#include "game/mechanics/MechanicCatalog.h"
+#include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/TargetAssist.h"
@@ -3926,10 +3928,10 @@ TEST_CASE("the vermin generator's alpha-textured skull pile is blended by its al
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-using Catch::Approx;
 
-TEST_CASE("the swarm's aggression follows the party's longest run of close blows",
-          "[level-opponents][streak][aggression][assets]") {
+TEST_CASE("the level's opponents answer to its mechanics: the runs go in, the tuning and the "
+          "drops come out",
+          "[level-opponents][mechanics][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELH1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -3945,8 +3947,12 @@ TEST_CASE("the swarm's aggression follows the party's longest run of close blows
     players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    const MechanicsFacade aggressor{{.aggressorMode = true}};
-    opponents.setMechanics(&aggressor);
+    MechanicCatalog offered;
+    REQUIRE(offered.add(test::FakeMechanic::descriptor("fake")));
+    MechanicsFacade mechanics;
+    mechanics.open(&offered, {});
+    test::FakeMechanic& fake = *test::FakeMechanic::made().back();
+    opponents.setMechanics(&mechanics);
     LevelOpponents::Events events;
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
@@ -3961,34 +3967,27 @@ TEST_CASE("the swarm's aggression follows the party's longest run of close blows
     events.shake = [] {};
     events.help = [](s32, usize) { return false; };
     events.destroyedGenerator = [](s32) {};
-    CHECK(LevelOpponents::longestRun(players) == 0);
-    REQUIRE(opponents.enemies().most() < Enemies::kMost);
-    // The longest run under way counts, a departed player's not at all.
-    for (s32 kill = 0; kill < SwarmAggression::kFullRun; ++kill) {
-        players[1].streak.record(false);
-    }
-    players[0].streak.record(false);
-    CHECK(LevelOpponents::longestRun(players) == SwarmAggression::kFullRun);
+    // Every seat's run reaches the mechanics each step, a departed one's marked so.
+    players[1].streak.record(false);
     players[1].departed = true;
-    CHECK(LevelOpponents::longestRun(players) == 1);
-    players[1].departed = false;
-    for (s32 frame = 0; frame < 120; ++frame) {
-        opponents.update(1, 1.0f / 60, players, {}, events);
-    }
-    CHECK(opponents.aggression().heat == Approx(1.0f).margin(0.02f));
-    CHECK(opponents.aggression().surge == 0.0f); // at S exactly, nothing past it yet
-    CHECK(opponents.enemies().aggression() == opponents.aggression());
-    CHECK(opponents.enemies().most() == Enemies::kMost); // the frenzy opened the whole pool
-    // The run over, the swarm is itself again on the next tick.
-    players[1].streak.step(MeleeStreak::kQuiet + 0.5f);
-    players[0].streak.step(MeleeStreak::kQuiet + 0.5f);
-    CHECK(LevelOpponents::longestRun(players) == 0);
     opponents.update(1, 1.0f / 60, players, {}, events);
-    CHECK(opponents.aggression().heat == 0.0f);
-    CHECK(opponents.aggression().surge == 0.0f);
-    CHECK(opponents.enemies().aggression() == opponents.aggression());
-    // The pool thins back to the level's cap as the extras past it fall; while any still
-    // stands there, the slots up to it stay in play.
+    CHECK(fake.steps == 1);
+    CHECK(fake.seconds == 1.0f / 60);
+    REQUIRE(fake.runsStepped.size() == 2);
+    CHECK(fake.runsStepped[0].count == 0);
+    CHECK_FALSE(fake.runsStepped[0].running);
+    CHECK(fake.runsStepped[1].count == 1);
+    CHECK(fake.runsStepped[1].running);
+    CHECK(fake.runsStepped[1].departed);
+    players[1].departed = false;
+    // Their tuning may open the whole pool; it thins back to the level's cap once they no
+    // longer do, the slots up to any body still standing past it kept in play.
+    REQUIRE(opponents.enemies().most() < Enemies::kMost);
+    fake.answers.tuning.wholePool = true;
+    opponents.update(1, 1.0f / 60, players, {}, events);
+    CHECK(opponents.enemies().most() == Enemies::kMost);
+    fake.answers.tuning.wholePool = false;
+    opponents.update(1, 1.0f / 60, players, {}, events);
     const Enemies& enemies = opponents.enemies();
     s32 standing = enemies.levelCap();
     for (s32 id = enemies.levelCap(); id < Enemies::kMost; ++id) {
@@ -3996,88 +3995,40 @@ TEST_CASE("the swarm's aggression follows the party's longest run of close blows
             standing = id + 1;
         }
     }
-    CHECK(enemies.levelCap() < Enemies::kMost);
     CHECK(enemies.most() == standing);
-    opponents.close();
-}
-
-} // namespace
-
-namespace {
-using namespace gdl;
-using namespace gdl::game;
-
-TEST_CASE("the level shows each elemental one its aura while it lives",
-          "[level-opponents][streak][aggression][elemental][assets]") {
-    const auto root =
-        test::assetOrSkip("LEVELS/LEVELH1/WORLDS.PS2").parent_path().parent_path().parent_path();
-    test::FakeRenderDevice device;
-    LevelCatalog catalog;
-    REQUIRE(catalog.load(root));
-    LevelWorld world;
-    REQUIRE(world.load(device, root, *catalog.byName("H1")));
-    ItemArchive weapons; // unloaded: the aura is the remake's own
-    EffectTrees effects;
-    LevelSoundscape audio;
-    std::array<PlayerRuntime, 1> players;
-    players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
-    LevelOpponents opponents;
-    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    LevelOpponents::Events events;
-    events.settleBlasts = [] {};
-    events.advanceLegend = [](f32) {};
-    events.advanceVictory = [](s32, f32) {};
-    events.levels = [] {};
-    events.award = [](s32, s32, bool) {};
-    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
-    events.fallen = [](const Vec3&) {};
-    events.spew = [](const CombatSpew&) {};
-    events.legend = [](const LegendEvent&) {};
-    events.shake = [] {};
-    events.help = [](s32, usize) { return false; };
-    events.destroyedGenerator = [](s32) {};
+    // A birth they mark stands among the living swarm the overlays are shown, and slain it
+    // leaves what they say in a bag.
+    fake.answers.traits = {.affinity = 2};
+    fake.answers.drop = "POT_RED";
     REQUIRE(opponents.enemies().loadKind(kGruntKind));
     EnemySpawn spawn;
     spawn.kind = kGruntKind;
     spawn.placed = true;
     REQUIRE(world.startPoint(0));
     spawn.position = world.startPoint(0)->position; // standing room, as the party's
-    spawn.elementalChance = 1.0f;
+    spawn.frenzied = true;
     spawn.priority = EnemySpawn::Priority::Visible; // the level's own swarm fills the pool
     const auto id = opponents.enemies().spawn(spawn, {});
     REQUIRE(id.has_value());
-    const s32 element = opponents.enemies().elementOf(*id);
-    REQUIRE(element != 0);
-    CHECK(opponents.elementalAuras() == 0);
-    opponents.update(1, 1.0f / 60, players, {}, events);
-    // The show follows the body frame by frame: presentation, never simulation state.
-    const CameraFrame camera = CameraFrame::at(spawn.position + Vec3{0.0f, 10.0f, -30.0f});
-    for (s32 frame = 0; frame < 30; ++frame) {
-        opponents.update(1, 1.0f / 30, players, {}, events);
-        device.draws.clear();
-        opponents.drawElementals(device, Mat4{1}, camera, 1.0f / 30);
-    }
-    CHECK(opponents.elementalAuras() == 1);
-    REQUIRE_FALSE(device.draws.empty());
-    u8 mostOpaque = 0;
-    for (const auto& draw : device.draws) {
-        CHECK_FALSE(draw.state.depthWrite);
-        for (const ImmediateVertex& vertex : draw.vertices) {
-            mostOpaque = std::max(mostOpaque, vertex.color.a);
-        }
-    }
-    CHECK(mostOpaque >= 200); // opaque enough for the alpha test: colours are 0 to 255
-    // Slain by another element, it leaves its mark behind and its potion in a bag.
+    REQUIRE(opponents.enemies().affinityOf(*id) == 2);
+    const auto swarm = opponents.swarmBodies();
+    const auto marked =
+        std::ranges::find(swarm, opponents.enemies().instanceOf(*id), &SwarmBodyView::instance);
+    REQUIRE(marked != swarm.end());
+    CHECK(marked->affinity == 2);
     const usize bags = opponents.bagCount();
-    opponents.strikeEnemy(*id, 1.0e6f, static_cast<u32>(element % 4 + 1), Vec3{0, 0, 1}, 0,
-                          players);
+    fake.fallsSeen.clear();
+    opponents.strikeEnemy(*id, 1.0e6f, 3, Vec3{0, 0, 1}, 0, players);
     REQUIRE_FALSE(opponents.enemies().alive(*id));
     opponents.update(1, 1.0f / 60, players, {}, events);
-    opponents.drawElementals(device, Mat4{1}, camera, 1.0f / 30);
-    CHECK(opponents.elementalAuras() == 0);
+    const auto fall = std::ranges::find(fake.fallsSeen, 2, &BodyFall::affinity);
+    REQUIRE(fall != fake.fallsSeen.end());
+    CHECK(fall->killed);
+    CHECK(fall->player == 0);
+    CHECK(fall->kind == kGruntKind);
     CHECK(opponents.bagCount() >= bags); // the bag's artwork is optional; the reward is not
     opponents.close();
+    mechanics.close();
 }
 
 } // namespace

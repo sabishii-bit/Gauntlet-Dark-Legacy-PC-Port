@@ -17,14 +17,14 @@ TEST_CASE("a run of close blows earns the narrator's praise once it pauses",
         streak.record(false);
         CHECK(streak.step(0.5f).empty());
     }
-    CHECK(streak.step(3.1f).empty());
+    CHECK(streak.step(2.1f).empty());
     CHECK(streak.count() == 0);
-    // Thirty are heroic, but only once three seconds have passed without another.
+    // Thirty are heroic, but only once two seconds have passed without another.
     for (s32 i = 0; i < 30; ++i) {
         streak.record(false);
     }
     CHECK(streak.step(1.5f).empty());
-    CHECK(streak.step(1.4f).empty());
+    CHECK(streak.step(0.4f).empty());
     CHECK(streak.step(0.2f) == MeleeStreak::kHeroicVoice);
     CHECK(streak.count() == 0);
     // Kills count three: fifteen of them are bravery.
@@ -32,8 +32,8 @@ TEST_CASE("a run of close blows earns the narrator's praise once it pauses",
         streak.record(true);
     }
     CHECK(streak.count() == 45);
-    CHECK(streak.step(3.5f) == MeleeStreak::kBraveryVoice);
-    CHECK(streak.step(3.5f).empty());
+    CHECK(streak.step(2.5f) == MeleeStreak::kBraveryVoice);
+    CHECK(streak.step(2.5f).empty());
 }
 
 TEST_CASE("a run survives only the quiet it is given, at most the longest",
@@ -47,14 +47,14 @@ TEST_CASE("a run survives only the quiet it is given, at most the longest",
     CHECK(streak.count() == 0);
     // A window past the longest is the longest.
     streak.record(false);
-    CHECK(streak.step(MeleeStreak::kQuiet + 0.05f, 10.0f).empty());
+    CHECK(streak.step(MeleeStreak::kLongestQuiet + 0.05f, 10.0f).empty());
     CHECK_FALSE(streak.running());
-    // The original's two, and the longest by default.
-    streak.record(false);
-    CHECK(streak.step(2.05f, MeleeStreak::kOriginalQuiet).empty());
-    CHECK_FALSE(streak.running());
+    // The original's two by default, and the longest when rules grant it.
     streak.record(false);
     CHECK(streak.step(2.05f).empty());
+    CHECK_FALSE(streak.running());
+    streak.record(false);
+    CHECK(streak.step(2.05f, MeleeStreak::kLongestQuiet).empty());
     CHECK(streak.running());
 }
 

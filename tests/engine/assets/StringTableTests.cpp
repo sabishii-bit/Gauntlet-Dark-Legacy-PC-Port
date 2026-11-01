@@ -53,6 +53,24 @@ TEST_CASE("a missing language falls back and a missing directory fails", "[asset
     REQUIRE_FALSE(table.loaded());
 }
 
+TEST_CASE("another directory's tables lay over the loaded ones in the table's language",
+          "[assets][text]") {
+    const auto dir = sampleTables();
+    const auto extra = test::scratchDirectory("string-tables-extra");
+    writeTextFile(extra / "en.json", R"({"mod.name": "Rage", "menu.back": "Retreat"})");
+    writeTextFile(extra / "fr.json", R"({"mod.name": "Rage!"})");
+    StringTable table;
+    REQUIRE(table.load(dir, "fr"));
+    REQUIRE(table.layer(extra));
+    CHECK(table.get("mod.name") == "Rage!");       // the table's language over its fallback
+    CHECK(table.get("menu.back") == "Retreat");    // an id laid again replaces the loaded one
+    CHECK(table.get("menu.start") == "Commencer"); // the rest as loaded
+    CHECK(table.language() == "fr");
+    // A directory holding neither table lays nothing.
+    CHECK_FALSE(table.layer(test::scratchDirectory("string-tables-none")));
+    CHECK(table.get("mod.name") == "Rage!");
+}
+
 TEST_CASE("the shipped English table names the title screen text", "[assets][text]") {
     const std::filesystem::path dir = test::dataDirectory() / "text";
     if (!std::filesystem::exists(dir / "en.json")) {

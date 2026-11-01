@@ -56,8 +56,9 @@ std::unique_ptr<NativePlaySetup> NativePlaySetup::create(const GameConfig& local
                                                          const MatchParty& profiles,
                                                          const PlayOptions& options,
                                                          const Contract& contract) {
-    if (!room.valid() || contract.scene == 0 || contract.scene > 65535 ||
-        !text(contract.build, kMaxIdentifierBytes) ||
+    const u8 knownRules = contract.mechanics != nullptr ? contract.mechanics->knownRoomBits() : 0;
+    if (!room.valid() || (room.mechanics & ~knownRules) != 0 || contract.scene == 0 ||
+        contract.scene > 65535 || !text(contract.build, kMaxIdentifierBytes) ||
         !text(contract.content, kMaxIdentifierBytes) || !text(contract.data, kMaxIdentifierBytes) ||
         !text(local.text.language, kMaxLanguageBytes) || options.items.size() > kMaxDroppedItems ||
         (options.position && !finite(*options.position)) ||
@@ -88,7 +89,7 @@ std::unique_ptr<NativePlaySetup> NativePlaySetup::create(const GameConfig& local
     result->m_config.difficulty.level = DifficultyConfig::kNames[room.difficulty];
     result->m_config.multiplayer.mode = static_cast<MultiplayerMode>(room.friendlyFire);
     result->m_config.multiplayer.soloCamera = room.camera == 1;
-    result->m_config.game.aggressorMode = room.aggressor == 1;
+    applyRoomRules(contract.mechanics, room.mechanics, result->m_config.game);
     result->m_config.combat.autoMelee = contract.autoMelee;
     result->m_config.combat.autoActivateItems = contract.autoActivateItems;
     result->m_config.game.expandedShop = contract.expandedShop;
@@ -108,7 +109,7 @@ std::unique_ptr<NativePlaySetup> NativePlaySetup::create(const GameConfig& local
     digest.word(room.difficulty);
     digest.word(room.friendlyFire);
     digest.word(room.camera);
-    digest.word(room.aggressor);
+    digest.word(room.mechanics);
     digest.word(kTickRate);
     digest.boolean(contract.autoMelee);
     digest.boolean(contract.autoActivateItems);

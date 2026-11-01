@@ -14,8 +14,8 @@
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 
+#include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
-#include "game/enemies/SwarmAggression.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/app/Scenario.h"
@@ -2122,9 +2122,10 @@ TEST_CASE("Desert C1 births retain the roster and a clear path from each authore
     CHECK(generators.enemyObstacles().size() == generators.obstacles().size());
 }
 
-TEST_CASE("an aggravated swarm's generators breed sooner and keep a larger brood out",
-          "[game][generators][streak][aggression]") {
-    const auto root = test::scratchDirectory("generator-aggression");
+TEST_CASE("the mechanics' tuning breeds sooner, keeps a larger brood out and, near the party, "
+          "breeds past any quota",
+          "[game][generators][mechanics]") {
+    const auto root = test::scratchDirectory("generator-mechanics");
     writeGeneratorArchive(root);
     writeTextFile(root / "world.json", R"({
       "objects":[{"name":"GROUND","position":[0,0,0]}],
@@ -2156,14 +2157,15 @@ TEST_CASE("an aggravated swarm's generators breed sooner and keep a larger brood
     generators.update(kTicks, enemies, party); // counts the brood, then holds to the quota
     REQUIRE(generators.livingOf(0) == most);
     CHECK(generators.bredOf(0) == 0);
-    SwarmAggression hot;
-    hot.heat = 1.0f; // full heat, no rage yet: twice the quota, no frenzy
-    generators.setAggression(hot);
+    test::FakeMechanic rules;
+    generators.setRules(&rules);
+    constexpr f32 kPace = 2.6f;
+    rules.answers.tuning = {.breedingPace = kPace, .broodScale = 2.5f}; // no frenzy
     generators.update(kTicks, enemies, party);
-    CHECK(generators.bredOf(0) == 1); // the quota is eight now
+    CHECK(generators.bredOf(0) == 1); // the quota is ten now
     const auto expected = [&](f32 ratio) {
         return static_cast<s32>(Generators::kCountdownScale * static_cast<f32>(interval) *
-                                (1.0f + ratio) / hot.breedingPace());
+                                (1.0f + ratio) / kPace);
     };
     CHECK(generators.countdownOf(0) == expected(0.0f));
     CHECK(generators.countdownOf(0) < static_cast<s32>(Generators::kCountdownScale) * interval);
@@ -2171,13 +2173,13 @@ TEST_CASE("an aggravated swarm's generators breed sooner and keep a larger brood
     generators.update(kTicks, enemies, party);
     CHECK(generators.bredOf(0) == 2);
     CHECK(generators.countdownOf(0) == expected(1.0f / (2.0f * static_cast<f32>(most))));
-    // Calm again, the brood past its quota breeds no more until it thins.
-    generators.setAggression({});
+    // Untuned again, the brood past its quota breeds no more until it thins.
+    rules.answers.tuning = {};
     generators.update(generators.countdownOf(0) + kTicks, enemies, party);
     generators.update(kTicks, enemies, party);
     CHECK(generators.bredOf(0) == 2);
-    // Held at the bravery line the swarm is frenzied: a generator near the party breeds
-    // past any quota, one far from it keeps to its quota.
+    // A frenzy reaching the party: a generator near it breeds past any quota, one far from it
+    // keeps to its quota.
     for (s32 i = 0; i < 4; ++i) {
         EnemySpawn spawn;
         spawn.generator = 0;
@@ -2186,24 +2188,14 @@ TEST_CASE("an aggravated swarm's generators breed sooner and keep a larger brood
     }
     generators.update(kTicks, enemies, party);
     REQUIRE(generators.livingOf(0) == 10);
-    CHECK(generators.frenziedHuts() == 0);
-    CHECK(generators.birthsTried() == 0);
-    SwarmAggression frenzied;
-    frenzied.heat = 1.0f;
-    frenzied.run = SwarmAggression::kFullRun; // a run under way: the frenzy
-    REQUIRE(frenzied.frenzied());
-    REQUIRE(static_cast<s32>(static_cast<f32>(most) * frenzied.broodScale()) == 10);
-    generators.setAggression(frenzied);
+    constexpr f32 kReach = 60.0f;
+    rules.answers.tuning = {.breedingPace = kPace, .broodScale = 2.5f, .frenzyReach = kReach};
+    REQUIRE(static_cast<s32>(static_cast<f32>(most) * 2.5f) == 10);
     // The frenzy lifts the quota alone: the waits are the rank's.
     generators.update(generators.countdownOf(0), enemies, party);
     generators.update(kTicks, enemies, party);
     CHECK(generators.bredOf(0) == 3);
-    CHECK(generators.countdownOf(0) ==
-          static_cast<s32>(Generators::kCountdownScale * static_cast<f32>(interval) *
-                           (1.0f + 2.0f / (2.0f * static_cast<f32>(most))) /
-                           frenzied.breedingPace()));
-    CHECK(generators.frenziedHuts() == 1); // for the spike tracer's line
-    CHECK(generators.birthsTried() == 1);
+    CHECK(generators.countdownOf(0) == expected(2.0f / (2.0f * static_cast<f32>(most))));
     // A grunt hut has three exits, and three children stand in them: two seconds of
     // walking toward the party clears them.
     for (s32 frame = 0; frame < 60; ++frame) {
@@ -2222,10 +2214,11 @@ TEST_CASE("an aggravated swarm's generators breed sooner and keep a larger brood
     CHECK(enemies.count() == static_cast<usize>(Enemies::kMost));
     // A hut far from the party keeps to its quota, frenzy or no.
     const std::array farParty{EnemyView{.player = 0, .position = {0, 0, 200}}};
-    REQUIRE(glm::distance(farParty[0].position, Vec3{0}) > SwarmAggression::kFrenzyReach);
+    REQUIRE(glm::distance(farParty[0].position, Vec3{0}) > kReach);
     generators.update(generators.countdownOf(0) + kTicks, enemies, farParty);
     generators.update(kTicks, enemies, farParty);
     CHECK(generators.bredOf(0) == 4);
+    generators.setRules(nullptr);
 }
 
 } // namespace

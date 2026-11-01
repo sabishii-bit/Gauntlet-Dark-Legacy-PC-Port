@@ -31,6 +31,10 @@ public:
      * loads. */
     bool load(const std::filesystem::path& directory, std::string_view language,
               std::string_view fallback = "en");
+    /** Lays the tables in `directory` over what is loaded: `<fallback>.json`, then the one
+     * in this table's language, each where it exists; false when neither does. Their ids
+     * replace any the table holds already. */
+    bool layer(const std::filesystem::path& directory, std::string_view fallback = "en");
 
     bool loaded() const { return !m_entries.empty(); }
     usize size() const { return m_entries.size(); }

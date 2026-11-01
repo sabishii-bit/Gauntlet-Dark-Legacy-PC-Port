@@ -189,7 +189,7 @@ void Gauntlet::updateNetplay(f64 deltaSeconds) {
     case Action::Difficulty:
     case Action::FriendlyFire:
     case Action::Camera:
-    case Action::Aggressor: {
+    case Action::Rule: {
         auto rules = ui.view.settings;
         if (event.action == Action::Capacity) {
             rules.maxPlayers = cycle(rules.maxPlayers, 4, 1);
@@ -203,8 +203,8 @@ void Gauntlet::updateNetplay(f64 deltaSeconds) {
         if (event.action == Action::Camera) {
             rules.camera = cycle(rules.camera, 2);
         }
-        if (event.action == Action::Aggressor) {
-            rules.aggressor = cycle(rules.aggressor, 2);
+        if (event.action == Action::Rule && event.rule < MechanicCatalog::kMostRoomRules) {
+            rules.mechanics = static_cast<u8>(rules.mechanics ^ (1U << event.rule));
         }
         if (m_online && !m_online->settings(rules)) {
             ui.notice = "The player limit cannot be lower than the joined party.";

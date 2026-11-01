@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -39,7 +38,6 @@
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
 #include "game/hud/RuneMeter.h"
-#include "game/hud/StreakMeter.h"
 #include "game/level/ExitPortals.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelTransporters.h"
@@ -456,10 +454,9 @@ public:
     /** Draws no HUD: no names, status boxes, compass, messages or captions. */
     void setHudHidden(bool hidden) { m_hudHidden = hidden; }
     bool hudHidden() const { return m_hudHidden; }
-    /** The seats this machine plays, a bit each: the streak meter shows only theirs.
-     * Presentation only; every seat until told otherwise. */
+    /** The seats this machine plays, a bit each: the companion arrows and the mechanics' HUD
+     * show only theirs. Presentation only; every seat until told otherwise. */
     void setLocalSeats(u8 mask) { m_localSeats = mask; }
-    const StreakMeter& streakMeter() const { return m_streakMeter; }
     /** Solo cameras, the netplay room's rule: each seat's own single-player camera, with
      * what any of them sees counting as on screen and nothing holding the party together.
      * The shared camera keeps following underneath for the hand-offs to the boss and
@@ -687,10 +684,10 @@ private:
     std::vector<s32> occupiedFloors() const;
     PartyPickups::Services pickupServices();
     void praiseStreaks(f32 seconds);
-    /** Reads the settings' additive mechanics into the facade, every tick and at opening. */
+    /** Switches the level's mechanics as the settings say, every tick and at opening. */
     void syncMechanics();
-    /** Steps the meter by the frame's own clock and draws it for the local seats. */
-    void drawStreakMeter();
+    /** Lets the mechanics draw on the HUD for this machine's seats still in the game. */
+    void drawMechanicsHud();
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
@@ -766,14 +763,11 @@ private:
     LevelSoundscape m_audio;
     SceneSoundEvents m_recordedAudio;
     ChallengeHud m_challengeHud;
-    MechanicsFacade m_mechanics; ///< the additive mechanics' settings for this level
+    MechanicsFacade m_mechanics; ///< this level's instance of every mechanic the build carries
     bool m_previousBossCamera = false;
     bool m_hudHidden = false;
     u8 m_localSeats = 0xF;
     bool m_open = false;
-    StreakMeter m_streakMeter; ///< presentation only, never simulation state
-    std::optional<std::chrono::steady_clock::time_point> m_streakFrame;
-    std::optional<std::chrono::steady_clock::time_point> m_auraFrame; ///< the elemental show's
     const Texture* m_glowSheet = nullptr; ///< FONT32's glow, borrowed from the static set
     const Texture* m_runeFrame = nullptr;
     const Texture* m_runeColumn = nullptr;
