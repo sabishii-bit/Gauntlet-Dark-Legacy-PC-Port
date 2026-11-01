@@ -6,16 +6,46 @@
 
 namespace gdl::game::damage {
 
-/** The bits of a hit's damage type that name what kind of harm it is (the original's DMG_
- * values): an element in the low nibble, and the marks a blow leaves or withholds. */
+/**
+ * The damage word (the original's DMG_ values): one bit space shared by a weapon powerup's
+ * flags, a strike's damage type, a hit's flags and what a struck player suffers. The low
+ * nibble is an element; the rest say what a blow does to what it hits or how it flies.
+ */
 inline constexpr u32 kElementMask = 0xF;
 inline constexpr u32 kFire = 1;
 inline constexpr u32 kElectric = 2;
 inline constexpr u32 kLight = 3;
 inline constexpr u32 kAcid = 4;
-inline constexpr u32 kElementCount = 5;        ///< none, then the four
+inline constexpr u32 kElementCount = 5;    ///< none, then the four
+inline constexpr u32 kKnockBack = 0x10;    ///< shoves the struck body back
+inline constexpr u32 kKnockDown = 0x20;    ///< puts it on the ground
+inline constexpr u32 kBlownAway = 0x40;    ///< throws it away
+inline constexpr u32 kStun = 0x80;         ///< holds it still a moment
+inline constexpr u32 kKnockOver = 0x100;   ///< topples it
+inline constexpr u32 kMagic = 0x200;       ///< potion magic: past armour, met by magic resistance
+inline constexpr u32 kExplode = 0x400;     ///< bursts where it lands
+inline constexpr u32 kGas = 0x800;         ///< poison gas: past armour, met by gas immunity
+inline constexpr u32 kDeathStun = 0x1000;  ///< Death's touch
+inline constexpr u32 kSpike = 0x2000;      ///< a spike's
+inline constexpr u32 kGrabbed = 0x4000;    ///< the struck body is held
+inline constexpr u32 kThrown = 0x8000;     ///< and thrown
+inline constexpr u32 kWhirlwind = 0x10000; ///< spun away
+inline constexpr u32 kArrow = 0x20000;     ///< flies as an arrow
+inline constexpr u32 kFireBall = 0x40000;  ///< flies as a fireball
+inline constexpr u32 kThreeWayShot = 0x80000;  ///< three missiles a throw
+inline constexpr u32 kSuperShot = 0x100000;    ///< the charged super shot
+inline constexpr u32 kReflect = 0x200000;      ///< the missile turns back off what it hits
+inline constexpr u32 kFiveWayShot = 0x400000;  ///< five missiles a throw
 inline constexpr u32 kHeal = 0x800000;         ///< what it takes feeds the caster's healing
 inline constexpr u32 kNoHitEffect = 0x1000000; ///< leaves no mark where it lands
+inline constexpr u32 kTurbo = 0x2000000;       ///< a turbo attack's
+inline constexpr u32 kSticky = 0x4000000;      ///< the missile sticks where it lands
+inline constexpr u32 kBossHit = 0x8000000;     ///< a boss's own blow
+inline constexpr u32 kHammer = 0x10000000;     ///< the thunder hammer
+inline constexpr u32 kRapidFire = 0x20000000;  ///< throws faster
+inline constexpr u32 kLow = 0x40000000;        ///< flies low: passes a levitating body
+/** The knocks a blow may carry, which knockback armour takes off it. */
+inline constexpr u32 kKnocks = kKnockBack | kKnockDown | kBlownAway | kKnockOver;
 
 /** The element a hit carries; nought for none. */
 u32 element(u32 flags);

@@ -73,6 +73,10 @@ struct LevelEnemy {
 /** How the camera frames a boss fight: how far about the party's line to the boss it may
  * swing, how far it stands and how steep it looks, and where about the boss it looks. */
 struct BossCameraInfo {
+    static constexpr u32 kLiveAnchor = 0x1;   ///< flags: looks where the boss's attention is now
+    static constexpr u32 kFrontOnly = 0x2;    ///< flags: never looks from the boss's far side
+    static constexpr u32 kTracksParty = 0x10; ///< flags: looks at the party's middle
+
     u32 flags = 0;
     f32 maxYaw = std::numbers::pi_v<f32>;
     f32 cosMaxYaw = -1.0f;
@@ -89,9 +93,12 @@ struct BossCameraInfo {
 };
 
 struct LevelInfo {
+    static constexpr u16 kInAttract = 0x2; ///< selectionFlags: the attract mode tours it
+    static constexpr u32 kTimed = 0x4;     ///< flags: the level clock runs
+
     u16 selectionFlags = 0;
     u32 flags = 0;
-    s32 timeLimit = 0; ///< seconds; flags bit 2 enables the level clock
+    s32 timeLimit = 0; ///< seconds, when kTimed
     std::string name;  ///< "L1"
     std::string title; ///< "Tower"
     std::string audioBank;

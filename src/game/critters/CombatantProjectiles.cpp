@@ -10,6 +10,9 @@
 #include "engine/math/PortableMath.h"
 #include "engine/world/ParticleSystem.h"
 
+#include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFlags.h"
+
 namespace gdl::game {
 namespace {
 constexpr f32 kMorphLife = 15.0f;
@@ -17,7 +20,6 @@ constexpr f32 kSimulationStep = 1.0f / 120.0f;
 constexpr f32 kWallTolerance = 0.001f;
 constexpr f32 kFloorClearance = 0.1f;
 constexpr u32 kSpin = 8;
-constexpr u32 kCustomEffect = 0xF000000;
 constexpr u32 kReflect = 0x200000;
 constexpr f32 kBounceLift = 0.4f;
 constexpr f32 kBounceLifetime = 10.0f;
@@ -75,14 +77,20 @@ u32 CombatantProjectiles::show(Flying& flying, s32 index, SoundPhase phase, Rend
     if (sound) {
         const std::string name = cue->soundFor(flying.shot.realm);
         if (!name.empty()) {
-            sound({flying.instance, phase, index, name});
+            sound({flying.instance, phase, index, name, flying.shot.data->kind(), flying.position});
         }
     }
     if (!cue->shows()) {
         return 0;
     }
     EffectTrees::Setting setting;
-    setting.scale = cue->scale * flying.shot.scale;
+    // Native radial impacts create a new world-space effect and set its
+    // absolute scale to radius/5 (e0074b4c/e0074d28 -> e0077064), independent
+    // of the shooter/flight scale. Ordinary GDL effects still inherit it.
+    const bool absoluteImpact = phase == SoundPhase::Impact &&
+                                flying.shot.data->rules().nativeImpactAreas &&
+                                cue->impactRadius > 0;
+    setting.scale = cue->scale * (absoluteImpact ? 1.0f : flying.shot.scale);
     setting.yaw = portable::atan2(flying.velocity.x, flying.velocity.z);
     setting.seconds = life > 0.0f ? life : cue->life;
     const u32 effect =
@@ -103,7 +111,8 @@ u32 CombatantProjectiles::show(Flying& flying, s32 index, SoundPhase phase, Rend
             if (linked == nullptr) {
                 break;
             }
-            if ((linked->flags & (kCustomEffect | 0x4000U)) == 0x02004000U &&
+            if ((linked->flags & (effect_flags::kParticleMask | effect_flags::kTrail)) ==
+                    (effect_flags::kShortParticle | effect_flags::kTrail) &&
                 linked->offset == Vec3{0}) {
                 if (const auto texture = flying.archive->textures.find(linked->tree)) {
                     effects.attachTrail(effect, fireTrail(*linked),
@@ -119,7 +128,8 @@ u32 CombatantProjectiles::show(Flying& flying, s32 index, SoundPhase phase, Rend
             if (sound) {
                 const std::string name = linked->soundFor(flying.shot.realm);
                 if (!name.empty()) {
-                    sound({flying.instance, phase, at, name});
+                    sound({flying.instance, phase, at, name, flying.shot.data->kind(),
+                           flying.position});
                 }
             }
             at = linked->link;
@@ -156,7 +166,7 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
     if (cue == nullptr) {
         return;
     }
-    if ((cue->flags & kCustomEffect) != 0) {
+    if ((cue->flags & effect_flags::kParticleMask) != 0) {
         // CritterDoParticle returns no effect handle for CritterDoDamageFX to
         // endow with projectile physics or damage. Shipped particles are links.
         log::warn("combatant {}: particle-only cue {} cannot carry projectile damage",
@@ -173,14 +183,20 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
     // Unattached SFXX offsets are world-axis offsets, scaled by the creature.
     flying.shot.origin += cue->offset * shot.scale;
     flying.archive = &archive;
-    flying.leavesGenerator = (cue->flags & 0x20000U) != 0;
-    flying.summonsEnemies = (cue->flags & 0x400000U) != 0;
+    flying.leavesGenerator = (cue->flags & effect_flags::kLeavesGenerator) != 0;
+    flying.summonsEnemies = (cue->flags & effect_flags::kSummonsEnemies) != 0;
     flying.position = flying.shot.origin;
     flying.impactRadius = damage->maxDistance * shot.scale;
+    if (shot.data->rules().nativeImpactAreas) {
+        if (const auto* impact = shot.data->sound(damage->hitSound);
+            impact != nullptr && impact->impactRadius > 0) {
+            flying.impactRadius = impact->impactRadius;
+        }
+    }
     if (planted) {
         flying.planted = true;
         flying.stuck = true;
-        if (collision != nullptr && (cue->flags & 0x10U) != 0) {
+        if (collision != nullptr && (cue->flags & effect_flags::kOnFloor) != 0) {
             const f32 radius = std::max(0.0f, damage->radius * shot.scale);
             if (const auto floor =
                     collision->floorAt(flying.position, 1 + radius * 0.5f, 5 + radius * 0.5f)) {
@@ -450,7 +466,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                cue != nullptr && sound) {
                         const std::string name = cue->soundFor(flying.shot.realm);
                         if (!name.empty()) {
-                            sound({flying.instance, SoundPhase::Impact, damage.hitSound, name});
+                            sound({flying.instance, SoundPhase::Impact, damage.hitSound, name,
+                                   flying.shot.data->kind(), flying.position});
                         }
                     }
                     effects.stop(flying.effect);
@@ -516,7 +533,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     flying.spin = Vec3{0};
                     flying.rotation = Vec3{0};
                     const auto* impact = flying.shot.data->sound(damage.hitSound);
-                    if (collision != nullptr && impact != nullptr && (impact->flags & 0x10U) != 0) {
+                    if (collision != nullptr && impact != nullptr &&
+                        (impact->flags & effect_flags::kOnFloor) != 0) {
                         if (const auto floor = collision->floorAt(
                                 flying.position, 1 + radius * 0.5f, 5 + radius * 0.5f)) {
                             flying.position.y = floor->y + kFloorClearance;
@@ -563,7 +581,7 @@ bool CombatantProjectiles::settleImpact(Flying& flying, u32 effect, EffectTrees&
         return false;
     }
     const auto* impact = flying.shot.data->sound(damage.hitSound);
-    const bool alignToFloor = impact != nullptr && (impact->flags & 0x10U) != 0;
+    const bool alignToFloor = impact != nullptr && (impact->flags & effect_flags::kOnFloor) != 0;
     if (flying.impactRadius <= 0 && !alignToFloor) {
         return false; // ordinary visual-only impacts keep the pose chosen by show()
     }
@@ -594,6 +612,20 @@ bool CombatantProjectiles::settleImpact(Flying& flying, u32 effect, EffectTrees&
     area.flags = damage.flags;
     area.lifetime = area.secondsLeft = *life;
     area.expanding = true;
+    if (flying.shot.data->rules().nativeImpactAreas && impact != nullptr &&
+        impact->impactRadius > 0) {
+        // N64 e007496c/e0074b4c/e0074d28 give these impacts a fixed radius,
+        // independent of the projectile DAMG range or creature scale. e0078270
+        // grows for 10%, holds through 80%, then shrinks over the last 20%.
+        // This is not the native boss ring's full-lifetime linear growth.
+        area.minDot = -1;
+        area.growFraction = 0.1f;
+        area.shrinkFraction = 0.2f;
+        area.flags = (area.flags & ~damage::kElementMask) | impact->impactElement;
+        // The common player hit still has one combined damage amount. Retained
+        // physical/elemental fractions cannot reproduce native separate armor
+        // and elemental resistance until the shared hit contract supports both.
+    }
     flying.impactArea = area;
     flying.effect = effect;
     flying.settled = true;

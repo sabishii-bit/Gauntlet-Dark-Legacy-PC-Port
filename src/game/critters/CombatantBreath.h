@@ -12,7 +12,10 @@ struct CombatantBreath {
     Vec3 origin{0.0f};
     Vec3 end{0.0f};
 
-    static CombatantBreath fromNode(const Mat4& node, const AttackDefinition& damage);
+    /** The optional authored world-X pitch rule leaves GDL's perpendicular-axis
+     * default intact. Both rules rotate the already posed, normalized forward. */
+    static CombatantBreath fromNode(const Mat4& node, const AttackDefinition& damage,
+                                    bool worldAxisPitch = false);
 
     /** Tests the closest point on the segment against the expanded upright
      * cylinder. The horizontal distance window is measured before expansion. */

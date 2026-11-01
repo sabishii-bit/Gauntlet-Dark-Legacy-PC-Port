@@ -16,6 +16,7 @@
 
 #include "game/combat/BodyContact.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/level/NativeStateResources.h"
 #include "game/players/EnemyShrink.h"
@@ -53,7 +54,7 @@ void visitNativeState(NativeStateDigest& digest, const EnemyCue& value) {
     digest.fields<5>(value);
 }
 void visitNativeState(NativeStateDigest& digest, const EnemyFeedback& value) {
-    digest.fields<11>(value);
+    digest.fields<12>(value);
 }
 void visitNativeState(NativeStateDigest& digest, const DeathEvent& value) {
     digest.fields<7>(value);
@@ -178,7 +179,8 @@ bool checkpointEvent(const EnemyFeedback& value) {
     return checkpointKind(value.kind) && value.tier >= 1 && value.tier <= 3 &&
            checkpointCounter(value.hitCount, 0) && checkpointPoint(value.position) &&
            checkpointNumber(value.yaw) && checkpointNumber(value.halfHeight, 0) &&
-           checkpointSlot(value.enemy) && (value.instance == 0 || value.enemy >= 0);
+           checkpointSlot(value.enemy) && (value.instance == 0 || value.enemy >= 0) &&
+           checkpointNumber(value.remainingHealth);
 }
 bool checkpointEvent(const DeathEvent& value) {
     return value.kind <= DeathEvent::Kind::Unmoved && checkpointSlot(value.enemy) &&
@@ -374,12 +376,11 @@ bool Enemies::BodyState::valid() const {
     if (state > State::Dying || presentationState > State::Dying || birth > Birth::Patrol ||
         !checkpointKind(kind) || tier < 1 || tier > 3 || algorithm < 0 || algorithm > 31 ||
         !checkpointCounter(variant, 0) || element < 0 || element > 4 ||
-        !checkpointCounter(generator, -1) ||
-        !checkpointPoint(position) || !checkpointPoint(birthPosition) ||
-        !checkpointPoint(presentationPosition) || !checkpointPoint(push) ||
-        !checkpointPoint(hurtDirection) || !checkpointMind(mind) || !checkpointPlayer(target) ||
-        !checkpointPlayer(targetBefore) || !checkpointPlayer(contact) ||
-        !checkpointPlayer(attackIndex) || !checkpointPlayer(hurtBy) ||
+        !checkpointCounter(generator, -1) || !checkpointPoint(position) ||
+        !checkpointPoint(birthPosition) || !checkpointPoint(presentationPosition) ||
+        !checkpointPoint(push) || !checkpointPoint(hurtDirection) || !checkpointMind(mind) ||
+        !checkpointPlayer(target) || !checkpointPlayer(targetBefore) ||
+        !checkpointPlayer(contact) || !checkpointPlayer(attackIndex) || !checkpointPlayer(hurtBy) ||
         !checkpointNumber(veil, 0, kVeiled) || !checkpointNumber(health) ||
         !checkpointNumber(yaw) || !checkpointNumber(presentationYaw) ||
         !checkpointNumber(deathSeconds) ||
@@ -883,6 +884,7 @@ void Enemies::close() {
     }
     m_simulation.stocks.clear();
     m_stockCache.clear();
+    m_archiveLoader = {};
     m_simulation.blows.clear();
     m_simulation.losses.clear();
     m_simulation.bursts.clear();
@@ -940,6 +942,13 @@ const Enemies::Stock* Enemies::stockOf(s32 kind) const {
     return nullptr;
 }
 
+bool Enemies::setArchiveLoader(ArchiveLoader loader) {
+    if (!m_stockCache.empty() || !m_simulation.stocks.empty())
+        return false;
+    m_archiveLoader = std::move(loader);
+    return true;
+}
+
 bool Enemies::loadKind(s32 kind) {
     if (stockOf(kind) != nullptr) {
         return true;
@@ -958,8 +967,20 @@ bool Enemies::loadKind(s32 kind) {
     auto stock = std::make_unique<Stock>();
     stock->kind = kind;
     const std::filesystem::path directory = m_root / "MONSTERS" / std::string(info.name);
-    const bool bodiless = kind == kItKind && !std::filesystem::exists(directory);
-    if (bodiless || !stock->archive.load(directory)) {
+    bool loaded = false;
+    if (m_archiveLoader) {
+        auto imported = m_archiveLoader(kind);
+        if (!imported)
+            return false;
+        stock->archive = std::move(*imported);
+        loaded = stock->archive.loaded();
+    } else {
+        const bool bodiless = kind == kItKind && !std::filesystem::exists(directory);
+        loaded = !bodiless && stock->archive.load(directory);
+    }
+    if (!loaded) {
+        if (m_archiveLoader)
+            return false;
         if (kind != kItKind) {
             return false;
         }
@@ -1259,9 +1280,8 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     // Death alone is not scaled by the level nor born tougher to an aggravated swarm; the
     // swarm has a third of its kind's health a tier, and hits softer as it loses its kind's
     // full share.
-    const f32 scale = spawn.kind != kDeathKind
-                          ? m_simulation.scales.health * m_aggression.healthScale()
-                          : 1.0f;
+    const f32 scale =
+        spawn.kind != kDeathKind ? m_simulation.scales.health * m_aggression.healthScale() : 1.0f;
     enemy.fullHealth = kind.health * scale;
     enemy.health =
         spawn.kind < kSwarmKindCount ? kind.healthAtTier(enemy.tier) * scale : enemy.fullHealth;
@@ -1668,9 +1688,8 @@ void Enemies::step(f32 seconds, std::span<const EnemyView> players,
             enemy.animator.request(EnemyAction::Walk);
         }
         // An aggravated swarm swings quicker, so its blow lands sooner.
-        const f32 swingSeconds = enemy.animator.swinging()
-                                     ? kMotionSeconds * m_aggression.attackPace()
-                                     : kMotionSeconds;
+        const f32 swingSeconds =
+            enemy.animator.swinging() ? kMotionSeconds * m_aggression.attackPace() : kMotionSeconds;
         enemy.animator.updateCaptured(kMotionTicks, swingSeconds, enemy.contact >= 0);
         if (enemy.kind == kVeilingKind) {
             veil(enemy, kMotionTicks);
@@ -1874,10 +1893,10 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         // Shrunk, it deals half, as a low blow, and its power blow is no more (fn_8004DF58).
         if (EnemyShrink::shrunk(m_simulation.shrink)) {
             blow.damage = EnemyShrink::harmDealt(m_simulation.shrink, blow.damage);
-            blow.flags |= Damage::kLow;
+            blow.flags |= damage::kLow;
         } else {
             if (enemy.reach <= kKnockBackHeight) {
-                blow.flags |= Damage::kLow;
+                blow.flags |= damage::kLow;
             }
             if (blow.power) {
                 blow.damage *= kBlowGrowth;
@@ -2468,7 +2487,8 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
     if (enemy.kind == kItKind) {
         return 0; // nothing harms IT (damage_enemy)
     }
-    if (enemy.element != 0 && (hit.flags & Damage::kElement) == static_cast<u32>(enemy.element)) {
+    if (enemy.element != 0 &&
+        (hit.flags & damage::kElementMask) == static_cast<u32>(enemy.element)) {
         return 0; // an elemental one shrugs off its own element
     }
     const EnemyKind& kind = enemyKind(enemy.kind);
@@ -2495,8 +2515,8 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
             {enemy.generator, EnemyGeneratorEvent::Kind::PatrolHit});
     }
     enemy.hurtPending += amount;
-    if ((modified.flags & Damage::kElement) != 0) {
-        enemy.hurtFlags &= ~Damage::kElement;
+    if ((modified.flags & damage::kElementMask) != 0) {
+        enemy.hurtFlags &= ~damage::kElementMask;
     }
     enemy.hurtFlags |= modified.flags;
     const f32 length = glm::length(hit.direction);
@@ -2518,7 +2538,8 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
                                  enemy.yaw,
                                  enemy.reach,
                                  id,
-                                 enemy.instance};
+                                 enemy.instance,
+                                 enemy.health};
     // A suicide's own fuse kills it without a cry, a burst of blood or a death skin
     // (damage_enemy's play_effects, fn_800945D0's player_index test).
     if (!hit.selfInflicted) {
@@ -2647,7 +2668,7 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
     EnemyMissileKind what = enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());
     if (enemy.element != 0) {
         // The low nibble is an element identifier, not independent elemental bits.
-        what.flags = (what.flags & ~Damage::kElement) | static_cast<u32>(enemy.element);
+        what.flags = (what.flags & ~damage::kElementMask) | static_cast<u32>(enemy.element);
     }
     // The trees are the kind's <PREFIX>_ARROW, _BOMB and _FBALL (InitEnemyMissiles); a kind
     // with no tree for the slot lets nothing go, and nothing goes at a player more than an
@@ -2994,7 +3015,7 @@ std::optional<Enemies::Presentation> Enemies::presentation(s32 id) const {
     }
     const auto& enemy = m_simulation.enemies[static_cast<usize>(id)];
     if (enemy.state == State::Inactive || !enemy.animator.bound() ||
-        (enemy.killed && enemy.algorithm == kSuicideWay)) {
+        (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind))) {
         return std::nullopt;
     }
     const auto* stock = stockOf(enemy.kind);
@@ -3028,8 +3049,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
     const f32 aura = m_aggression.aura();
     std::optional<SelectionHighlight> rage;
     if (aura > 0.0f) {
-        const f32 beat =
-            0.5f + 0.5f * std::sin(static_cast<f32>(m_simulation.frame) * kAuraBeat);
+        const f32 beat = 0.5f + 0.5f * std::sin(static_cast<f32>(m_simulation.frame) * kAuraBeat);
         const f32 strength = aura * (0.6f + 0.4f * beat);
         rage.emplace(camera != nullptr ? camera->position : Vec3{0.0f},
                      kAuraRim.withAlpha(static_cast<u8>(std::lround(255.0f * strength))),
@@ -3040,8 +3060,10 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
     m_auraBodies = 0;
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
+        // IT has already transferred its tag; it has no corpse to display in
+        // the interval before the next simulation tick retires its pool slot.
         if (enemy.state == State::Inactive || !enemy.animator.bound() ||
-            (enemy.killed && enemy.algorithm == kSuicideWay)) {
+            (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind))) {
             continue;
         }
         const Figure found = bodyOf(enemy);
@@ -3139,7 +3161,7 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
         // It lies on the floor under the body, but not while the body rises (UpdateEnemy).
         if (enemy.state == State::Inactive || !enemy.animator.bound() || stock == nullptr ||
             enemy.animator.action() == EnemyAction::Start ||
-            (enemy.killed && enemy.algorithm == kSuicideWay)) {
+            (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind))) {
             continue;
         }
         const auto tier = static_cast<usize>(std::clamp(enemy.tier, 1, 3) - 1);
@@ -3185,8 +3207,8 @@ std::optional<Enemies::Observation> Enemies::observe(s32 id) const {
                        enemy.flashSeconds > 0};
     result.scale = m_simulation.shrink * sizeOf(enemy);
     result.alpha = opacityOf(id);
-    if (enemy.killed && enemy.algorithm == kSuicideWay) {
-        result.alpha = 0; // the explosion replaces the body immediately
+    if (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind)) {
+        result.alpha = 0; // the explosion or transferred tag replaces the body immediately
     } else if (enemy.killed && enemy.kind == kDeathKind) {
         result.alpha *= std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds);
     }

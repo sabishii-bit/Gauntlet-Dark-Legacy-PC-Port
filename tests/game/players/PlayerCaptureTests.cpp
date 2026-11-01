@@ -86,4 +86,45 @@ TEST_CASE("capture owns its hand pose and ignores release without an attachment"
     REQUIRE(capture.owner() == -1);
     REQUIRE_FALSE(capture.boss());
 }
+
+TEST_CASE("an imported capture restores its support footprint before the release drop",
+          "[game][players][capture][native-capture]") {
+    const bool restoreSupport = GENERATE(false, true);
+    const bool interrupted = GENERATE(false, true);
+    WorldCollision collision;
+    collision.build({
+        {{0, 1, 0}, {{{-8, 0, -8}, {8, 0, -8}, {8, 0, 8}}}},
+        {{0, 1, 0}, {{{-8, 0, -8}, {8, 0, 8}, {-8, 0, 8}}}},
+    });
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {2, 0, 3}, 0);
+    PlayerCapture capture;
+    capture.attach(1, true, glm::translate(Mat4{1}, Vec3{100, 25, 100}), actor, restoreSupport);
+    capture.attach(1, true, glm::translate(Mat4{1}, Vec3{120, -15, 120}), actor, restoreSupport);
+    const auto held = capture.checkpoint();
+    REQUIRE(held.valid());
+    CHECK(held.supportXZ == Vec2{2, 3});
+    CHECK(held.restoreSupport == restoreSupport);
+    capture.release(Vec3{0}, interrupted ? 0 : 50);
+    const auto released = capture.checkpoint();
+    PlayerCapture replay;
+    REQUIRE(replay.restore(released));
+    CHECK(replay == capture);
+    std::optional<f32> damage;
+    for (int tick = 0; tick < 120 && !damage; ++tick)
+        damage = capture.update(1.0f / 60, actor, collision);
+    if (restoreSupport) {
+        REQUIRE(damage);
+        CHECK(*damage == (interrupted ? 0 : 50));
+        CHECK(actor.position() == Vec3{2, 0, 3});
+        CHECK_FALSE(capture.active());
+    } else {
+        // The unmodified GDL path retains its authored release footprint.
+        CHECK_FALSE(damage);
+        CHECK(actor.position().x == 120);
+        CHECK(actor.position().z == 120);
+    }
+    capture.clear();
+    CHECK_FALSE(capture.checkpoint().restoreSupport);
+}
 } // namespace

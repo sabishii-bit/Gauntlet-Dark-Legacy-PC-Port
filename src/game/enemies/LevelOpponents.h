@@ -11,6 +11,7 @@
 
 #include "engine/core/Types.h"
 
+#include "expansions/shared/enemies/LegendsActors.h"
 #include "game/audio/LevelSoundscape.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/CombatantProjectiles.h"
@@ -21,7 +22,6 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
-#include "game/enemies/LegendsActors.h"
 #include "game/enemies/PlacedEnemies.h"
 #include "game/hud/BossMeter.h"
 #include "game/level/LevelWorld.h"
@@ -100,6 +100,9 @@ public:
      * frame; it is never simulation state. */
     void drawElementals(RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
                         f32 seconds);
+    /** Imported boss mesh effects share their parent's presented hierarchy;
+     * ordinary levels retain their existing effect interpolation unchanged. */
+    std::vector<EffectTrees::DrawAttachment> presentedBossEffects(f32 alpha) const;
     usize elementalAuras() const { return m_auras.auras(); }
     usize bagCount() const { return m_sim.bags.size(); }
     /** The longest run of close blows under way among the players still in the party. */
@@ -362,7 +365,7 @@ private:
         SoundCueToken start;
         SpeechTiming timing;
         f32 volume = 1;
-        f32 pan = 0;
+        Vec3 position{0.0f}; ///< where it began, panned from each machine's own listener
         bool operator==(const Yell&) const = default;
     };
     struct YellClock {

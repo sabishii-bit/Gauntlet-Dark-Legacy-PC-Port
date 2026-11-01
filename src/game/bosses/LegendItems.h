@@ -9,6 +9,7 @@
 #include "engine/math/Math.h"
 #include "engine/world/ParticleSystem.h"
 
+#include "game/audio/LegendSound.h"
 #include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
@@ -139,7 +140,7 @@ struct LegendShow {
         WithBearer ///< ahead of the bearer, riding with them
     };
     /** A moment of the rite with a sound of its own. */
-    enum class Sound : u8 { PickedUp, Thrown, Flying, Landed, WornOff };
+    using Sound = LegendSound;
 
     static constexpr std::string_view kHeldTree = "LEGENDHLD";
     static constexpr std::string_view kProjectileTree = "LEGENDPRJ";

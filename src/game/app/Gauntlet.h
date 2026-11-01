@@ -41,8 +41,8 @@
 #include "game/scenes/AttractScene.h"
 #include "game/scenes/GameContext.h"
 #include "game/scenes/IdleScreen.h"
-#include "game/scenes/LegendsMapCatalog.h"
-#include "game/scenes/LegendsPreview.h"
+#include "expansions/shared/scenes/LegendsMapCatalog.h"
+#include "expansions/shared/scenes/LegendsPreview.h"
 #include "game/scenes/LevelLoadingScreen.h"
 #include "game/scenes/MovieScene.h"
 #include "game/scenes/PlayScene.h"
@@ -53,6 +53,8 @@
 #include "game/tower/LevelExitSpeech.h"
 
 namespace gdl::game {
+
+struct LegendsAdviceState;
 
 /** The game: owns the top-level game flow and drives the engine each frame. */
 class Gauntlet final : public Application {
@@ -125,12 +127,14 @@ private:
      * through as a preview; `completedTravel` is finishLegendsTravel's own flag. */
     void consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
                             const std::filesystem::path& directory, bool playable,
-                            bool completedTravel = false);
+                            bool completedTravel = false,
+                            std::optional<std::vector<PartyMember>> visitingParty = std::nullopt);
     /** Leaves a Legends map or its preview for the level left for it. */
     void consoleLegendsClose(DevConsole& console);
     void updateLegendsPreview(f64 deltaSeconds);
     bool commitLegendsProgress();
     bool closeLegendsLevel(bool keepProgress = true);
+    bool quitLegendsLevel();
     void finishLegendsTravel();
     void consoleUnlockTower(DevConsole& console);
     void consoleGet(DevConsole& console, DevConsole::Arguments arguments);
@@ -174,6 +178,7 @@ private:
     bool saveSettings(const GameConfig& config);
     bool applySettings(const GameConfig& config, bool persist);
     void updateAfterLevel(f64 deltaSeconds);
+    bool openImportedShop(ShopVisit visit);
     void finishJourney();
     void updateJourney(f64 deltaSeconds);
     bool updateCompletion(f64 deltaSeconds);
@@ -254,6 +259,8 @@ private:
     std::unique_ptr<PlaySession>
         m_legendsOrigin; ///< paused GDL scene during an offline native visit
     std::vector<PartyMember> m_legendsEntryParty;
+    std::vector<PartyMember> m_legendsTowerParty; ///< last installed native Tower collection
+    std::shared_ptr<LegendsAdviceState> m_legendsAdvice; ///< native new-party advice scope
     PauseMenu m_pause;
     MusicDuck m_musicDuck; ///< the music under the pause menu
     AfterLevelScene m_afterLevel;
@@ -278,6 +285,7 @@ private:
         std::string movie;
         bool secret = false;
         bool returningFromChallenge = false;
+        bool resumeImported = false; ///< an in-place menu, not map travel or level completion
     };
     std::optional<Journey> m_journey;
     void returnFromChallenge(std::span<const PartyMember> party);
@@ -288,8 +296,6 @@ private:
     SmokeTestScene m_smokeTest;
     bool m_movieActive = false;
     bool m_titleWarned = false;
-    f64 m_fpsAccumulator = 0.0;
-    u64 m_fpsLastFrame = 0;
 };
 
 } // namespace gdl::game

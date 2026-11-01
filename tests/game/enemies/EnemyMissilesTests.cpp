@@ -1318,4 +1318,37 @@ TEST_CASE("while the swarm is shrunk what it throws is that size and does half, 
     CHECK(missiles.missile(0).kind.damage == Approx(arrow.damage));
     CHECK(missiles.missile(0).scale == 1.0f);
 }
+TEST_CASE("only the original's missile rows give a kind something to throw",
+          "[game][enemies][enemy-traits]") {
+    // The shared shot and lob are the medium kinds'; a bolt of one's own is the demon's,
+    // sorcerer's, plague's, ghost's, warlock's and garm's; the worm has three of its own.
+    constexpr std::array<s32, 10> kShared{1, 4, 7, 10, 13, 14, 16, 19, 23, 24};
+    constexpr std::array<s32, 6> kOwnBolt{2, 7, 14, 20, 24, 27};
+    for (s32 kind = -1; kind <= 45; ++kind) {
+        CAPTURE(kind);
+        if (kind == 17) {
+            for (const s32 slot : {0, 1, 2}) {
+                const auto bolt = enemyMissileOf(kind, slot);
+                REQUIRE(bolt.has_value());
+                CHECK(bolt->slot == slot);
+                CHECK(bolt->damage == 5.0f * static_cast<f32>(slot + 1));
+            }
+            CHECK_FALSE(enemyMissileOf(kind, 3).has_value());
+            continue;
+        }
+        const bool shared = std::ranges::contains(kShared, kind);
+        const auto arrow = enemyMissileOf(kind, EnemyMissileKind::kArrow);
+        const auto bomb = enemyMissileOf(kind, EnemyMissileKind::kBomb);
+        CHECK(arrow.has_value() == shared);
+        CHECK(bomb.has_value() == shared);
+        if (shared) {
+            CHECK(*arrow == EnemyMissileKind::arrow());
+            CHECK(*bomb == EnemyMissileKind::bomb());
+        }
+        CHECK(enemyMissileOf(kind, EnemyMissileKind::kBolt).has_value() ==
+              std::ranges::contains(kOwnBolt, kind));
+        CHECK_FALSE(enemyMissileOf(kind, EnemyMissileKind::kDeathShot).has_value());
+    }
+}
+
 } // namespace

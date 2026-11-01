@@ -37,6 +37,7 @@ void PlayerArsenal::appendBindingDigest(NativeStateDigest& digest) const {
             digest.resource(resources.powerups);
         }
         digest.values(resources.wallHitSound, resources.tower, resources.bossEncounter);
+        digest.flag(static_cast<bool>(resources.strikeMuzzleObject));
         digest.flag(resources.multiplayer != nullptr);
         if (resources.multiplayer) {
             digest.value(*resources.multiplayer);
@@ -234,7 +235,7 @@ std::optional<PlayerMissiles::WeaponThrow> PlayerArsenal::weaponThrow(const Play
     weapon.direction = actor.facing();
     weapon.speed = PlayerMissiles::speedFor(stat);
     weapon.damage = PlayerMissiles::damageFor(stat);
-    weapon.flags = worn.weapon & ~powerup::kSuperShot;
+    weapon.flags = worn.weapon & ~damage::kSuperShot;
     weapon.attackSeconds = attackSeconds;
     weapon.shots = worn.shots();
     return weapon;
@@ -268,7 +269,7 @@ std::optional<PlayerArsenal::PreparedWeapon> PlayerArsenal::prepareWeapon(
     if (mode == WeaponMode::Volley) {
         // PlyrSfxDoDamage type 10 keeps the weapon element and Super Shot, but removes
         // fan modifiers. PlayerStartMissile mode zero launches from effectpos, not the hand.
-        prepared.weapon.flags = worn.weapon & ~(powerup::kThreeWayShot | powerup::kFiveWayShot);
+        prepared.weapon.flags = worn.weapon & ~(damage::kThreeWayShot | damage::kFiveWayShot);
         prepared.weapon.shots = 1;
         prepared.weapon.hand = prepared.pojo ? Vec3{0, -0.5f, -1.25f} : Vec3{0};
     }
@@ -392,8 +393,8 @@ PlayerArsenal::WeaponCue PlayerArsenal::weaponCue(u32 weapon, const PlayerFigure
     constexpr std::array<std::string_view, 5> kElementThrows{"", "S_AMULETFIRE", "S_AMULETLIGHTNI",
                                                              "S_AMULETLIGHT", "S_AMULETACID"};
     constexpr u32 kSpecialThrows =
-        powerup::kThreeWayShot | powerup::kFiveWayShot | powerup::kSuperShot;
-    const auto element = static_cast<usize>(weapon & 0xFU);
+        damage::kThreeWayShot | damage::kFiveWayShot | damage::kSuperShot;
+    const auto element = static_cast<usize>(weapon & damage::kElementMask);
     if ((weapon & kSpecialThrows) != 0) {
         return {.name = "S_SUPERSHOT"};
     }
@@ -403,13 +404,14 @@ PlayerArsenal::WeaponCue PlayerArsenal::weaponCue(u32 weapon, const PlayerFigure
     return {.call = figure.throwSound()};
 }
 
-Vec3 PlayerArsenal::weaponMuzzle(const MissileLaunch& first) const {
+Vec3 PlayerArsenal::weaponMuzzle(const MissileLaunch& first,
+                                 std::vector<WallContact>* contacts) const {
     const f32 radius = first.spec->radius;
     // PlayerStartMissile clears the muzzle with WeaponWallCollide, so the fences only the
     // party walks against (a lava ledge's) are no obstruction to the shot.
     return m_resources->collision.resolveWalls(
         first.position, radius, first.position.y - radius * 0.5f, first.position.y + radius * 0.5f,
-        nullptr, std::nullopt, WorldCollision::WallPush::All, WorldCollision::kMissileQueryFlags);
+        contacts, std::nullopt, WorldCollision::WallPush::All, WorldCollision::kMissileQueryFlags);
 }
 
 void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
@@ -430,8 +432,17 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     bindWeaponAppearance(actor, figure, *prepared, weaponStreak(actor, superShot));
     const auto& launch = prepared->missiles.front();
     // An obstructed muzzle still produces a world impact, without a flying weapon.
-    const Vec3 clear = superShot ? launch.position : weaponMuzzle(launch);
+    std::vector<WallContact> muzzleContacts;
+    const Vec3 clear = superShot ? launch.position : weaponMuzzle(launch, &muzzleContacts);
     if (glm::distance(clear, launch.position) > 1e-4f) {
+        // A native imported shootwall is both an item and world geometry.
+        // Let its authored owner receive this physical contact even though no
+        // flying missile is created. An unrelated wall must still stop it.
+        if (m_resources->strikeMuzzleObject && !muzzleContacts.empty() &&
+            muzzleContacts.front().object >= 0) {
+            m_resources->strikeMuzzleObject(muzzleContacts.front().object, launch.damage,
+                                            launch.flags, launch.owner);
+        }
         presentImpact({.position = clear, .owner = launch.owner});
         return;
     }
@@ -470,7 +481,7 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     }
     auto& inventory = actor.save().progress().inventory;
     const auto worn = PowerupEffects::of(inventory);
-    if (!inventory.spendPowerup(powerup::kWeapon, powerup::kSuperShot, m_resources->tower)) {
+    if (!inventory.spendPowerup(powerup::kWeapon, damage::kSuperShot, m_resources->tower)) {
         launchWeapon(actor, body, actor.facing(), 1, true, target);
         return;
     }
@@ -492,7 +503,7 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     // ModifyPlayerDpos bypasses target correction for the Super Shot damage flag.
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat) * (m_resources->bossEncounter ? 1.5f : 2.0f);
-    launch.flags = worn.weapon | powerup::kSuperShot | 0x20U;
+    launch.flags = worn.weapon | damage::kSuperShot | damage::kKnockDown;
     launch.spec = &MissileSpec::superShot();
     launch.playerHitGap = PlayerMissiles::hitGap(&m_resources->weapons, launch.spec->impactTree);
     launch.model = pojo ? &m_phoenixShot : &m_superShot;
@@ -628,7 +639,7 @@ void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body,
     launch.model = &m_gauntlets[which];
     launch.archive = &m_resources->weapons;
     launch.tree = kSpecs[which].model;
-    launch.streak = weaponStreak(actor, (launch.flags & powerup::kSuperShot) != 0);
+    launch.streak = weaponStreak(actor, (launch.flags & damage::kSuperShot) != 0);
     if (auto* archive = body->effects()) {
         launch.textureLender = &archive->textures;
     }

@@ -3,6 +3,7 @@
 #include <array>
 #include <functional>
 #include <map>
+#include <optional>
 
 #include "engine/net/PacketTransport.h"
 
@@ -61,9 +62,10 @@ public:
     static bool recognizes(std::span<const u8> bytes);
 
     /** Links: the host's to every guest, a guest's to the host, and optionally a guest's
-     * direct links to other guests, which carry their own inputs sooner than the relay. */
+     * direct links to other guests, which carry their own inputs sooner than the relay.
+     * `absent` are peers dropped before this epoch: they need no link and start suspended. */
     bool open(u8 localPeer, u64 epoch, const Owners& owners, const Grants& grants, u8 delay,
-              std::span<const Link> links, Clock clock = {});
+              std::span<const Link> links, Clock clock = {}, std::span<const u8> absent = {});
     /** After successful device sampling, pass retained local inputs and current
      * progress. An empty span still publishes progress/ACKs during a held frame. */
     bool publish(std::span<const InputCommand> commands, u64 nextTick);
@@ -92,6 +94,10 @@ public:
     u64 receivedThrough(u8 origin) const;
     u64 acknowledgedThrough(u8 receiver, u8 origin) const;
     usize retainedFrames(u8 origin) const;
+    /** A guest's: how far the host holds the input of a guest this peer was opened with a
+     * direct link to, by the host's own acknowledgements, even once that link is gone.
+     * Nothing for an origin heard only through the host, which holds all it relays. */
+    std::optional<u64> hostReceipt(u8 origin) const;
 
 private:
     using Frame = std::vector<InputCommand>;
@@ -122,6 +128,7 @@ private:
     u64 m_lastTime = 0;
     std::array<u8, 5> m_sendOrigin{1, 1, 1, 1, 1};
     std::array<bool, 5> m_suspended{};
+    std::array<bool, 5> m_direct{}; ///< a guest's origins it was opened with a direct link to
     Failure m_failure = Failure::None;
 };
 } // namespace gdl::game

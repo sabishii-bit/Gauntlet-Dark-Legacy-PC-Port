@@ -20,6 +20,7 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/Combatant.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
@@ -2046,8 +2047,8 @@ TEST_CASE("native trap properties reach player damage and reactions",
             f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
                                 const PlayerImpact& impact) {
                 CHECK(victim == 0);
-                CHECK(impact.flags == (trial.properties | PlayerImpact::kStun));
-                CHECK(directed == (trial.properties == PlayerImpact::kKnockDown));
+                CHECK(impact.flags == (trial.properties | damage::kStun));
+                CHECK(directed == (trial.properties == damage::kKnockDown));
                 if (directed) {
                     CHECK(glm::distance(impact.direction, -Vec3{trap.figure.transform()[2]}) <
                           0.0001f);
@@ -2060,7 +2061,7 @@ TEST_CASE("native trap properties reach player damage and reactions",
                 f.fixtures.update(2, 1.0f / 30, f.players, f.events);
             }
             REQUIRE(hits == 1);
-            const bool heavy = trial.properties == PlayerImpact::kKnockDown;
+            const bool heavy = trial.properties == damage::kKnockDown;
             CHECK((player.actor.save().health() < 1000) == (!protectedBody || heavy));
             if (heavy && !protectedBody) {
                 CHECK((player.reaction == PlayerDeed::FallForward ||
@@ -2074,7 +2075,7 @@ TEST_CASE("native trap properties reach player damage and reactions",
                 CHECK(player.knockback.velocity() == Vec3{0});
                 CHECK(player.reaction != PlayerDeed::FallForward);
                 CHECK(player.reaction != PlayerDeed::FallBack);
-                if (!protectedBody && trial.properties == PlayerImpact::kSpike) {
+                if (!protectedBody && trial.properties == damage::kSpike) {
                     CHECK(player.reaction == PlayerDeed::Spike);
                 }
             }

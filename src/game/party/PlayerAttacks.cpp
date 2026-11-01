@@ -15,8 +15,10 @@
 
 #include "game/bosses/LegendItems.h"
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/effects/PotionEmission.h"
 #include "game/effects/WeaponGlow.h"
@@ -273,7 +275,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
             const auto key =
                 static_cast<usize>(kImportedTargetBase) + static_cast<usize>(native.id);
             const MissileTarget body{static_cast<s32>(key), native.base, native.radius,
-                                     native.height};
+                                     native.height, native.surface};
             if (std::ranges::find(rammed, key) == rammed.end() &&
                 body.touches(actor.followPoint(), actor.radius() + kRamReach)) {
                 rammed.push_back(key);
@@ -399,7 +401,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
                 continue;
             }
             const s32 id = kImportedTargetBase + native.id;
-            const MissileTarget body{id, native.base, native.radius, native.height};
+            const MissileTarget body{id, native.base, native.radius, native.height, native.surface};
             if (body.touches(actor.followPoint(), actor.radius() + kRamReach)) {
                 once(static_cast<usize>(id), true, [&] {
                     imported->strike(native.id, blow, EnemyHit::kKnockDown, actor.player());
@@ -797,7 +799,7 @@ void PlayerAttacks::presentStrikeHit(usize index, const MoveStrike& row, const V
         return;
     }
     const MoveEffect& effect = stats->moveEffects[static_cast<usize>(row.hitEffect)];
-    if ((effect.flags & 2U) != 0 && m_resources->shake != nullptr) {
+    if ((effect.flags & effect_flags::kShakes) != 0 && m_resources->shake != nullptr) {
         m_resources->shake->start();
     }
     if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
@@ -873,7 +875,7 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
     row.damageType = source->damageType;
     bool stoppedByPlayer = false;
     if (source->multiplayer == MultiplayerMode::Hurt && targets.hurt &&
-        (row.damageType & Damage::kMagic) == 0) {
+        (row.damageType & damage::kMagic) == 0) {
         for (usize index = 0; index < players.size(); ++index) {
             auto& player = players[index];
             if (player.actor.player() == hit.owner || player.life != PlayerLife::Standing ||
@@ -926,12 +928,12 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
                     flags = (flags & ~kLightAreaMask) | kNoHitEffect;
                 }
                 targets.hurt(index, hit.damage, HurtKind::Blow, {flags, direction});
-                if ((row.damageType & Damage::kGas) != 0) {
+                if ((row.damageType & damage::kGas) != 0) {
                     player.effectGap = kGasEffectGap;
                 } else if (hit.damage > 2) {
                     f32 gap = hit.hitGap;
                     if (hit.swept) {
-                        const bool passThrough = (row.damageType & powerup::kSuperShot) != 0;
+                        const bool passThrough = (row.damageType & damage::kSuperShot) != 0;
                         const std::string_view tree =
                             row.hitEffect >= 0 &&
                                     static_cast<usize>(row.hitEffect) < stats->moveEffects.size()
@@ -944,12 +946,12 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
                     player.effectGap = gap;
                 }
             }
-            if (hit.swept && (row.damageType & powerup::kSuperShot) != 0 &&
-                (row.damageType & powerup::kReflect) != 0 && row.hitEffect >= 0 && hit.damage > 2) {
+            if (hit.swept && (row.damageType & damage::kSuperShot) != 0 &&
+                (row.damageType & damage::kReflect) != 0 && row.hitEffect >= 0 && hit.damage > 2) {
                 presentStrikeHit(source->actor, row, player.actor.position(), players, false);
-                source->damageType &= ~powerup::kSuperShot;
+                source->damageType &= ~damage::kSuperShot;
             }
-            if (hit.swept && (row.damageType & powerup::kSuperShot) == 0) {
+            if (hit.swept && (row.damageType & damage::kSuperShot) == 0) {
                 presentStrikeHit(source->actor, row, player.actor.followPoint(), players);
                 m_strikes.hitPlayer(hit.strike, false, hit.from);
                 stoppedByPlayer = true;
@@ -1269,8 +1271,8 @@ void PlayerAttacks::updateArmour(f32 seconds, std::span<PlayerRuntime> players,
             continue;
         }
         const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
-        const bool fire = (worn.armor & powerup::kFireShield) != 0;
-        const bool lightning = (worn.armor & powerup::kLightningShield) != 0;
+        const bool fire = (worn.armor & armor::kFireArmor) != 0;
+        const bool lightning = (worn.armor & armor::kElectricArmor) != 0;
         const PlayerAnimator& body = runtime.figure->animator();
         if ((!fire && !lightning) || body.meleeing() || body.throwing() || body.conjuring() ||
             body.reacting() || body.turboing() || body.dying()) {
@@ -1653,7 +1655,7 @@ std::vector<MissileTarget> PlayerAttacks::acquisitionTargets(const Targets& targ
     std::erase_if(reachable, [](const MissileTarget& target) {
         return (target.id >= kSafeRockTargetBase && target.id < kWallTargetBase) ||
                (target.id >= kImportedTargetBase + kImportedArenaBase &&
-                target.id < kImportedTargetBase + kImportedTargetCount);
+                target.id < kImportedTargetBase + kImportedSceneryBase);
     });
     return reachable;
 }
@@ -1683,7 +1685,7 @@ bool PlayerAttacks::strikeSwitch(s32 id, u32 flags) {
     if (id < kSwitchTargetBase || id >= kImportedTargetBase) {
         return false;
     }
-    if (m_resources && (flags & Damage::kGas) == 0) {
+    if (m_resources && (flags & damage::kGas) == 0) {
         m_resources->world.shootTrigger(static_cast<usize>(id - kSwitchTargetBase));
     }
     return true;
@@ -1704,11 +1706,13 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
                     continue;
                 }
                 MissileTarget target{kImportedTargetBase + native.id, native.base, native.radius,
-                                     native.height};
-                target.acquisition = TargetAssist::itemAcquisition(
-                    glm::translate(Mat4{1}, native.base), Vec3{0}, native.radius, native.height,
-                    TargetAssist::kItemDistanceScale);
-                target.acquisition->enabled = native.damageable;
+                                     native.height, native.surface};
+                if (native.surface.empty()) {
+                    target.acquisition = TargetAssist::itemAcquisition(
+                        glm::translate(Mat4{1}, native.base), Vec3{0}, native.radius, native.height,
+                        TargetAssist::kItemDistanceScale);
+                    target.acquisition->enabled = native.damageable;
+                }
                 missileTargets.push_back(target);
             }
         }
@@ -1761,12 +1765,6 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     auto candidates = acquisitionTargets(targets);
     const f32 range =
         targets.opponents.bosses().view().alive ? TargetAssist::kBossRange : TargetAssist::kRange;
-    if (!fixedFacing) {
-        if (const auto contact = contactEnemy(actor, targets, facing, range);
-            contact && contact->acquisition) {
-            return contact->acquisition->point;
-        }
-    }
     Vec3 origin = actor.followPoint();
     if (fixedFacing) {
         // Acquisition must use the actual hand-offset line, not a parallel ray
@@ -1775,6 +1773,25 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
             weapon->direction = facing;
             weapon->shots = 1;
             origin = PlayerMissiles::weaponLaunches(*weapon).front().position;
+        }
+    }
+    const auto* imported = m_resources->world.imported();
+    const auto* encounter = imported ? imported->importedBoss() : nullptr;
+    if (encounter && encounter->rangedAimFirst && targets.opponents.bosses().view().awake) {
+        // The encounter opts into a first query, not an unconditional target:
+        // the ordinary facing, cursor-line, range and wall tests still apply.
+        // Do not remove fixtures from the physical or melee target rosters.
+        const auto bossTargets = targets.opponents.bosses().targets();
+        if (const auto boss = TargetAssist::select(origin, facing, bossTargets, range,
+                                                   &m_resources->world.collision(),
+                                                   m_resources->acquisitionCone, fixedFacing)) {
+            return boss;
+        }
+    }
+    if (!fixedFacing) {
+        if (const auto contact = contactEnemy(actor, targets, facing, range);
+            contact && contact->acquisition) {
+            return contact->acquisition->point;
         }
     }
     const auto ordinary =
@@ -1885,7 +1902,7 @@ PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Tar
     // Contact shields need locomotion to stay active. An unpressed swing must not
     // lock the wearer into melee before the shield reaches its target.
     const auto worn = PowerupEffects::of(actor.save().progress().inventory);
-    if ((worn.armor & (powerup::kFireShield | powerup::kLightningShield)) != 0) {
+    if ((worn.armor & (armor::kFireArmor | armor::kElectricArmor)) != 0) {
         return PlayerDeed::None;
     }
     const auto target = meleeTarget(actor, targets, facing, actor.reach() + kStepReach);
@@ -2444,7 +2461,10 @@ bool PlayerAttacks::dispatchProjectileImpact(
         return true;
     }
     if (impact.worldObject >= 0) {
-        if (m_resources->world.explodeObject(impact.worldObject, impact.position)) {
+        if (auto* imported = m_resources->world.imported()) {
+            imported->strikeWorldObject(impact.worldObject, impact.damage, impact.flags,
+                                        impact.owner);
+        } else if (m_resources->world.explodeObject(impact.worldObject, impact.position)) {
             for (const Vec3& position : m_resources->world.takeWorldExplosions()) {
                 targets.fixtures.worldExplosion(position, players, targets.fixtureEvents);
             }
@@ -2467,10 +2487,10 @@ bool PlayerAttacks::dispatchProjectileImpact(
             return p.actor.player() == impact.player;
         });
         if (player != players.end() && player->effectGap <= 0 && targets.hurt) {
-            targets.hurt(
-                static_cast<usize>(player - players.begin()), impact.stun ? 0 : impact.damage,
-                impact.stun ? HurtKind::QuietBlow : HurtKind::Blow,
-                {impact.flags | (impact.stun ? PlayerImpact::kStun : 0), impact.direction});
+            targets.hurt(static_cast<usize>(player - players.begin()),
+                         impact.stun ? 0 : impact.damage,
+                         impact.stun ? HurtKind::QuietBlow : HurtKind::Blow,
+                         {impact.flags | (impact.stun ? damage::kStun : 0), impact.direction});
             if (impact.damage > 2) {
                 player->effectGap = impact.playerHitGap;
             }
@@ -2503,7 +2523,7 @@ bool PlayerAttacks::dispatchProjectileImpact(
         return true;
     }
     const BlowSource source =
-        (impact.flags & powerup::kSuperShot) != 0 ? BlowSource::SuperShot : BlowSource::Shot;
+        (impact.flags & damage::kSuperShot) != 0 ? BlowSource::SuperShot : BlowSource::Shot;
     f32 credit = 0.0f;
     if (impact.target >= kWallTargetBase) {
         targets.fixtures.strikeWall(static_cast<usize>(impact.target - kWallTargetBase),

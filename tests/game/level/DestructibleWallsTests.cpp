@@ -9,6 +9,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/level/DestructibleWalls.h"
 #include "game/party/TargetAssist.h"
 
@@ -50,7 +51,7 @@ TEST_CASE("Shootable walls own removable geometry, health and party visibility",
     walls.draw(device, Mat4{1}, {});
     REQUIRE(device.draws.size() == 1);
     CHECK(walls.target(0, 6000).pointNear({10, 3, 0}) == Vec3{10, 3, 5});
-    CHECK_FALSE(walls.strike(0, 100, collision, Damage::kGas));
+    CHECK_FALSE(walls.strike(0, 100, collision, damage::kGas));
     CHECK(walls.wall(0).health == 25);
     CHECK(walls.strike(0, 10, collision) == 16);
     CHECK(walls.wall(0).flash > 0);

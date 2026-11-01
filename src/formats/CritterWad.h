@@ -110,6 +110,11 @@ struct CritterSoundRecord {
     s16 custom1 = 0;
     u32 tint = 0xFFFFFFFFU; ///< none when all ones
     f32 scale = 1.0f;
+    // Decoded-adapter metadata, not additional fields in the GameCube SFXX record.
+    f32 impactRadius = 0;
+    f32 impactPhysicalFraction = 1;
+    f32 impactElementalFraction = 0;
+    u32 impactElement = 0;
 };
 
 /** The critter itself: its size, pace, strength and worth, and which records are its. */
@@ -143,6 +148,7 @@ struct CritterTypeRecord {
     f32 maxHealth = 0.0f;
     f32 expValue = 0.0f;
     f32 wakeThreshold = 0.0f;
+    f32 pressureReferenceDamage = 0.0f;   ///< N64 TYPE +0xB8; absent from GDL's tempo rule
     std::array<f32, 3> healthBarOffset{}; ///< where its in-world bar hangs
     s16 hitSoundClose = -1;  ///< the sound record started where a blow strikes it (0xF4)
     s16 hitSoundFar = -1;    ///< and where a missile does (0xF6)

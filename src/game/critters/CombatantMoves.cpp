@@ -49,8 +49,7 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
         return false;
     }
     const MoveDefinition& move = data.moves()[index];
-    constexpr u32 kRequiresNode = 0x10;
-    if ((move.flags & kRequiresNode) != 0 && !nodeAvailable(critter, move.colnode)) {
+    if ((move.flags & MoveDefinition::kNeedsNode) != 0 && !nodeAvailable(critter, move.colnode)) {
         return false;
     }
     const auto sequence = critter.stock->tree->findSequence(move.anim);
@@ -88,14 +87,20 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
         attachment.pose.evaluate(tree, selected, attachment.player.frame());
     }
     if (recordUse) {
-        critter.moveTimes[index] =
-            critter.age + static_cast<f32>(std::max(critter.player.frameCount() - 2, 0)) / 30.0f;
+        // The ordinary engine includes the animation in its rest interval. Native
+        // imported families can instead date cooldowns from move entry; adding
+        // the duration there would impose a second, unauthored wait after it.
+        critter.moveTimes[index] = critter.age;
+        if (!critter.stock->cooldownStartsWithMove) {
+            critter.moveTimes[index] +=
+                static_cast<f32>(std::max(critter.player.frameCount() - 2, 0)) / 30.0f;
+        }
     }
     critter.pose.evaluate(*critter.stock->tree, *sequence, 0.0f);
     return true;
 }
 
-void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) {
+void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) const {
     critter.targets.clear();
     critter.targetYaw = critter.yaw;
     const bool boss = critter.definition->kind() == CombatantKind::Boss;
@@ -251,22 +256,22 @@ std::optional<usize> Combatant::patrolStep(const Actor& critter) {
     if (!critter.patrolAim.has_value()) {
         return std::nullopt;
     }
-    constexpr u32 kLinkedOnly = 4;
     const std::span<const MoveDefinition> moves = critter.definition->moves();
     for (usize i = 0; i < moves.size(); ++i) {
         const MoveDefinition& move = moves[i];
         // The steps of the walk family; the one to a point wants a player.
         const bool step =
             move.type >= MoveDefinition::kStepFrom && move.type <= MoveDefinition::kStepLast;
-        if (step && move.type != MoveDefinition::kStepToPoint && (move.flags & kLinkedOnly) == 0 &&
-            move.speed > 0.0f) {
+        if (step && move.type != MoveDefinition::kStepToPoint &&
+            (move.flags & MoveDefinition::kLinkedOnly) == 0 && move.speed > 0.0f) {
             return i;
         }
     }
     return std::nullopt;
 }
 
-std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const EnemyView> players) {
+std::optional<usize> Combatant::bestMove(const Actor& critter,
+                                         std::span<const EnemyView> players) const {
     const CritterData& data = *critter.definition;
     const EnemyView* view = viewOf(players, critter.target);
     f32 distance = 100000.0f;
@@ -296,8 +301,7 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
         // priority controls interruptions, not which eligible step it chooses.
         const bool step =
             move.type >= MoveDefinition::kStepFrom && move.type <= MoveDefinition::kStepLast;
-        constexpr u32 kLinkedOnly = 4;
-        if (!step || (move.flags & kLinkedOnly) != 0 ||
+        if (!step || (move.flags & MoveDefinition::kLinkedOnly) != 0 ||
             (move.cooldown > 0 && critter.age < critter.moveTimes[i] + move.cooldown)) {
             continue;
         }
@@ -323,8 +327,8 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
         return best;
     }
     // Boss and ordinary AI both fall back to TAUNT below rateScale 0.8, then READY.
-    // CritterFindMoveType chooses the most overdue eligible move, measuring
-    // cooldown from the previous animation's end.
+    // CritterFindMoveType chooses the most overdue eligible move. The family's
+    // immutable timing policy determines the recorded cooldown origin.
     for (const s32 type : {MoveDefinition::kTaunt, MoveDefinition::kReady}) {
         if (type == MoveDefinition::kTaunt && attackRate(critter) >= 0.8f) {
             continue;
@@ -332,7 +336,7 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
         f32 earliest = 0.0f;
         for (usize i = 0; i < data.moves().size(); ++i) {
             const MoveDefinition& move = data.moves()[i];
-            if (move.type != type || (move.flags & 4U) != 0) {
+            if (move.type != type || (move.flags & MoveDefinition::kLinkedOnly) != 0) {
                 continue;
             }
             const f32 remaining =
@@ -478,6 +482,15 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         transition(static_cast<usize>(current->link));
         return;
     }
+    if (critter.stock->initialMoveBeforeWake && current != nullptr &&
+        current->type == MoveDefinition::kStart) {
+        // The decoded special-move selector requests READY after START before
+        // considering autonomous attacks. It does not select an unlinked START2.
+        if (const auto ready = data.moveOfType(MoveDefinition::kReady)) {
+            transition(*ready);
+            return;
+        }
+    }
     // Asked to roar, it does so before anything else; held, it keeps to its stance.
     if (critter.roarWanted) {
         if (const auto bellow = data.moveOfType(MoveDefinition::kRoar);
@@ -499,15 +512,14 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         std::optional<usize> block;
         for (usize i = 0; i < data.moves().size(); ++i) {
             const MoveDefinition& move = data.moves()[i];
-            constexpr u32 kLinkedOnly = 4;
-            constexpr u32 kRequiresNode = 0x10;
-            if (move.type != MoveDefinition::kBlock || (move.flags & kLinkedOnly) != 0 ||
-                ((move.flags & 2U) != 0 && !critter.childrenIntact) ||
+            if (move.type != MoveDefinition::kBlock ||
+                (move.flags & MoveDefinition::kLinkedOnly) != 0 ||
+                ((move.flags & MoveDefinition::kNeedsChildren) != 0 && !critter.childrenIntact) ||
                 (move.cooldown > 0 && critter.age < critter.moveTimes[i] + move.cooldown) ||
                 !critter.stock->tree->findSequence(move.anim).has_value()) {
                 continue;
             }
-            if ((move.flags & kRequiresNode) != 0 &&
+            if ((move.flags & MoveDefinition::kNeedsNode) != 0 &&
                 (!nodeAvailable(critter, move.colnode) ||
                  (move.link >= 0 &&
                   (static_cast<usize>(move.link) >= data.moves().size() ||

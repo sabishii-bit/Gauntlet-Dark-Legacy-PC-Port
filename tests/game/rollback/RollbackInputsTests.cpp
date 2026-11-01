@@ -212,6 +212,241 @@ TEST_CASE("a dropped peer's seats hold neutral actual input from the first still
     CHECK_FALSE(inputs.timeSyncIdle());
 }
 
+TEST_CASE("a drop holds still the input a direct link brought early, past what has settled",
+          "[netplay][rollback-inputs][drop]") {
+    const u64 settled = GENERATE(u64{0}, u64{4});
+    CAPTURE(settled);
+    // Guest three of three, which hears peer two directly, sooner than the host does.
+    RollbackInputs inputs;
+    REQUIRE(inputs.open(3, 9, {1, 2, 3, 0}, {11, 12, 13, 0}, 0));
+    const auto command = [](u64 tick, u8 seat, f32 x) {
+        InputCommand result;
+        result.epoch = 9;
+        result.tick = tick;
+        result.grant = 11 + seat;
+        result.seat = seat;
+        result.direction = {x, 0};
+        result.magnitude = x == 0 ? 0.0f : 1.0f;
+        return result;
+    };
+    for (u64 tick = 1; tick <= 5; ++tick) {
+        REQUIRE(inputs.submit(1, std::array{command(tick, 0, 0.0f)}) ==
+                RollbackInputs::Admission::Accepted);
+        REQUIRE(inputs.submit(2, std::array{command(tick, 1, 1.0f)}) ==
+                RollbackInputs::Admission::Accepted);
+        REQUIRE(inputs.sample(std::array{command(tick, 2, 0.0f)}));
+        REQUIRE(inputs.advance());
+    }
+    REQUIRE(inputs.confirmedTick() == 5);
+    // The host had peer two's input only through tick three, so the shared drop starts at four.
+    REQUIRE(inputs.suspend(2, 4, settled));
+    const u64 revised = std::max<u64>(4, settled + 1);
+    REQUIRE(inputs.mismatchTick() == revised);
+    for (u64 tick = 4; tick <= 5; ++tick) {
+        CAPTURE(tick);
+        REQUIRE(inputs.actualFrame(tick));
+        // A settled tick keeps what it ran on; resync repairs it, nothing can undo it here.
+        CHECK((*inputs.actualFrame(tick))[1].magnitude == (tick < revised ? 1.0f : 0.0f));
+    }
+    REQUIRE(inputs.rewind(revised));
+    for (u64 tick = revised; tick <= 5; ++tick) {
+        const auto frame = inputs.advance();
+        REQUIRE(frame);
+        CHECK(frame->predictedSeats == 0);
+        CHECK(frame->commands[1].magnitude == 0);
+    }
+    CHECK(inputs.confirmedTick() == 5);
+}
+
+TEST_CASE("a dropped seat takes none of the recorded input from its drop on",
+          "[netplay][rollback-inputs][drop][journal]") {
+    // A rebuild adopts the host's journal and the input it held itself; a dropped peer's seat
+    // stays still from its drop whatever either recorded there.
+    RollbackInputs inputs;
+    REQUIRE(inputs.open(3, 9, {1, 2, 3, 0}, {11, 12, 13, 0}, 0));
+    const auto command = [](u64 tick, u8 seat, f32 x) {
+        InputCommand result;
+        result.epoch = 9;
+        result.tick = tick;
+        result.grant = 11 + seat;
+        result.seat = seat;
+        result.direction = {x, 0};
+        result.magnitude = x == 0 ? 0.0f : 1.0f;
+        return result;
+    };
+    REQUIRE(inputs.suspend(2, 4));
+    for (const u64 tick : {u64{3}, u64{5}}) {
+        REQUIRE(inputs.adoptActual(command(tick, 0, 0.0f)));
+        REQUIRE(inputs.adoptActual(command(tick, 1, 1.0f)));
+        REQUIRE(inputs.adoptActual(command(tick, 2, 0.0f)));
+    }
+    const auto before = inputs.actualFrame(3);
+    const auto after = inputs.actualFrame(5);
+    REQUIRE(before);
+    REQUIRE(after);
+    CHECK((*before)[1].magnitude == 1.0f);
+    CHECK((*after)[1].magnitude == 0.0f);
+    CHECK((*after)[1].grant == 12);
+}
+
+TEST_CASE("a dropped peer's guessed stillness still runs again from its first still tick",
+          "[netplay][rollback-inputs][drop]") {
+    const auto command = [](u64 tick, u8 seat) {
+        InputCommand result;
+        result.epoch = 9;
+        result.tick = tick;
+        result.grant = seat == 0 ? 11 : 12;
+        result.seat = seat;
+        return result;
+    };
+    RollbackInputs inputs;
+    REQUIRE(inputs.open(1, 9, {1, 2, 0, 0}, {11, 12, 0, 0}, 0));
+    // Peer two stands still for three ticks and goes quiet; its stillness is guessed right.
+    for (u64 tick = 1; tick <= 3; ++tick) {
+        REQUIRE(inputs.submit(2, std::array{command(tick, 1)}) == Admission::Accepted);
+    }
+    for (u64 tick = 1; tick <= 6; ++tick) {
+        REQUIRE(inputs.sample(std::array{command(tick, 0)}));
+        REQUIRE(inputs.advance());
+    }
+    REQUIRE(inputs.confirmedTick() == 3);
+    REQUIRE_FALSE(inputs.mismatchTick());
+    REQUIRE(inputs.suspend(2, 4));
+    CHECK_FALSE(inputs.suspendedSeat(1, 3));
+    CHECK(inputs.suspendedSeat(1, 4));
+    CHECK_FALSE(inputs.suspendedSeat(0, 6));
+    CHECK_FALSE(inputs.suspendedSeat(InputCommand::kSeats, 6));
+    // Its seat leaves play at tick four, so the ticks run from there run again.
+    REQUIRE(inputs.mismatchTick() == 4);
+    REQUIRE(inputs.rewind(4));
+    for (u64 tick = 4; tick <= 6; ++tick) {
+        const auto frame = inputs.advance();
+        REQUIRE(frame);
+        CHECK(frame->predictedSeats == 0);
+    }
+    CHECK(inputs.confirmedTick() == 6);
+
+    // Ticks already settled are never asked to run again.
+    RollbackInputs settled;
+    REQUIRE(settled.open(1, 9, {1, 2, 0, 0}, {11, 12, 0, 0}, 0));
+    for (u64 tick = 1; tick <= 6; ++tick) {
+        REQUIRE(settled.submit(2, std::array{command(tick, 1)}) == Admission::Accepted);
+        REQUIRE(settled.sample(std::array{command(tick, 0)}));
+        REQUIRE(settled.advance());
+    }
+    REQUIRE(settled.confirmedTick() == 6);
+    REQUIRE(settled.suspend(2, 4, 6));
+    CHECK_FALSE(settled.mismatchTick());
+}
+
+/** Peer one hosts; peers two and three are guests, and three also hears two directly. */
+constexpr RollbackInputs::Owners kGuestsLinked{1, 2, 3, 0};
+constexpr RollbackInputs::Grants kGuestsLinkedGrants{11, 12, 13, 0};
+InputCommand linkedCommand(u64 tick, u8 seat, f32 x) {
+    InputCommand result;
+    result.epoch = 9;
+    result.tick = tick;
+    result.grant = kGuestsLinkedGrants[seat];
+    result.seat = seat;
+    result.direction = {x, 0};
+    result.magnitude = x == 0 ? 0.0f : 1.0f;
+    return result;
+}
+
+TEST_CASE("every survivor holds a dropped guest still from the host's tick, whatever it held",
+          "[netplay][rollback-inputs][drop][direct-link]") {
+    const bool executed = GENERATE(false, true);
+    CAPTURE(executed);
+    RollbackInputs host;
+    RollbackInputs guest;
+    REQUIRE(host.open(1, 9, kGuestsLinked, kGuestsLinkedGrants, 0));
+    REQUIRE(guest.open(3, 9, kGuestsLinked, kGuestsLinkedGrants, 0));
+    for (u64 tick = 1; tick <= 3; ++tick) {
+        REQUIRE(host.sample(std::array{linkedCommand(tick, 0, 0.0f)}));
+        REQUIRE(guest.sample(std::array{linkedCommand(tick, 2, 0.0f)}));
+        REQUIRE(host.submit(2, std::array{linkedCommand(tick, 1, 0.0f)}) == Admission::Accepted);
+        REQUIRE(host.submit(3, std::array{linkedCommand(tick, 2, 0.0f)}) == Admission::Accepted);
+        REQUIRE(guest.submit(1, std::array{linkedCommand(tick, 0, 0.0f)}) == Admission::Accepted);
+        REQUIRE(guest.submit(2, std::array{linkedCommand(tick, 1, 0.0f)}) == Admission::Accepted);
+        REQUIRE(host.advance());
+        REQUIRE(guest.advance());
+    }
+    // Peer two's fourth tick of movement reaches peer three directly; the host never gets it.
+    REQUIRE(guest.submit(2, std::array{linkedCommand(4, 1, 1.0f)}) == Admission::Accepted);
+    REQUIRE(host.sample(std::array{linkedCommand(4, 0, 0.0f)}));
+    REQUIRE(guest.sample(std::array{linkedCommand(4, 2, 0.0f)}));
+    REQUIRE(host.submit(3, std::array{linkedCommand(4, 2, 0.0f)}) == Admission::Accepted);
+    if (executed) {
+        REQUIRE(guest.advance()); // on that movement, before the host's own input is in
+        CHECK(guest.confirmedTick() == 3);
+    }
+    // The host drops peer two from the tick after the last input it received.
+    REQUIRE(host.suspend(2, 4));
+    REQUIRE(guest.suspend(2, 4));
+    REQUIRE(guest.submit(1, std::array{linkedCommand(4, 0, 0.0f)}) == Admission::Accepted);
+    if (executed) {
+        REQUIRE(guest.mismatchTick() == 4);
+        REQUIRE(guest.rewind(4));
+    }
+    REQUIRE(host.advance());
+    const auto frame = guest.advance();
+    REQUIRE(frame);
+    CHECK(frame->predictedSeats == 0);
+    CHECK(frame->commands[1].magnitude == 0.0f);
+    for (u64 tick = 1; tick <= 4; ++tick) {
+        CAPTURE(tick);
+        const auto hostFrame = host.actualFrame(tick);
+        const auto guestFrame = guest.actualFrame(tick);
+        REQUIRE(hostFrame);
+        REQUIRE(guestFrame);
+        for (usize seat = 0; seat < 3; ++seat) {
+            const auto expected = InputPacket::encode(std::span{&(*hostFrame)[seat], 1});
+            REQUIRE(expected);
+            CHECK(InputPacket::encode(std::span{&(*guestFrame)[seat], 1}) == expected);
+        }
+    }
+    CHECK(host.confirmedTick() == 4);
+    CHECK(guest.confirmedTick() == 4);
+}
+
+TEST_CASE("a guest confirms another guest's input only as far as the host holds it",
+          "[netplay][rollback-inputs][drop][direct-link]") {
+    RollbackInputs host;
+    REQUIRE(host.open(1, 9, kGuestsLinked, kGuestsLinkedGrants, 0));
+    CHECK_FALSE(host.observeHostReceipt(2, 9)); // the host's receipt is its own
+    RollbackInputs guest;
+    REQUIRE(guest.open(3, 9, kGuestsLinked, kGuestsLinkedGrants, 0));
+    CHECK_FALSE(guest.observeHostReceipt(1, 9)); // the host's own input is all the host's
+    CHECK_FALSE(guest.observeHostReceipt(3, 9)); // as the guest's own is its own
+    CHECK_FALSE(guest.observeHostReceipt(4, 9)); // and nobody sits at the fourth
+    for (u64 tick = 1; tick <= 4; ++tick) {
+        REQUIRE(guest.sample(std::array{linkedCommand(tick, 2, 0.0f)}));
+        REQUIRE(guest.submit(1, std::array{linkedCommand(tick, 0, 0.0f)}) == Admission::Accepted);
+        // Peer two's fourth tick comes over the direct link before the host has it.
+        REQUIRE(guest.submit(2, std::array{linkedCommand(tick, 1, tick == 4 ? 1.0f : 0.0f)}) ==
+                Admission::Accepted);
+        REQUIRE(guest.observeHostReceipt(2, std::min<u64>(tick, 3)));
+        REQUIRE(guest.advance());
+    }
+    CHECK(guest.confirmedTick() == 3);
+    REQUIRE(guest.observeHostReceipt(2, 2)); // an older report lowers nothing
+    CHECK(guest.confirmedTick() == 3);
+    SECTION("the host receives it") {
+        REQUIRE(guest.observeHostReceipt(2, 4));
+        CHECK(guest.confirmedTick() == 4);
+    }
+    SECTION("the host drops peer two first") {
+        REQUIRE(guest.suspend(2, 4));
+        REQUIRE(guest.mismatchTick() == 4);
+        REQUIRE(guest.rewind(4));
+        const auto frame = guest.advance();
+        REQUIRE(frame);
+        CHECK(frame->commands[1].magnitude == 0.0f);
+        // The drop says the host holds all before it; nothing waits on peer two any more.
+        CHECK(guest.confirmedTick() == 4);
+    }
+}
+
 TEST_CASE("the startup delay follows the measured round trip", "[netplay][rollback-inputs]") {
     CHECK(RollbackInputs::leadForPing(-1) == 1);
     CHECK(RollbackInputs::leadForPing(0) == 0);

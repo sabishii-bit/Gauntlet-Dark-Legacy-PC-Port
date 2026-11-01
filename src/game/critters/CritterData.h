@@ -15,7 +15,27 @@
 #include "game/critters/CritterMovement.h"
 #include "game/critters/MoveDefinition.h" // IWYU pragma: export
 
+namespace gdl::formats {
+struct CritterFile;
+}
+
 namespace gdl::game {
+
+/** Immutable combat rules supplied by an asset adapter. Defaults retain GDL's
+ * authored behavior; imported records need not pretend their runtime is identical. */
+struct CritterRules {
+    f32 projectileMaxRate = 1.5f;
+    f32 projectileRateScale = 0.75f;
+    f32 ballisticTargetOffset = 0;
+    bool linearRadialAreas = false;
+    f32 areaHalfHeight = 0;
+    f32 pressureReferenceDamage = 0;
+    bool nativeImpactAreas = false;
+    bool worldAxisBreathPitch = false;
+    /** Negative retains the class cylinder midpoint; otherwise measured from feet. */
+    f32 projectileTargetHeight = -1;
+    bool restoreCaptureSupport = false;
+};
 
 struct CombatantAttachment {
     std::string tree;
@@ -29,6 +49,10 @@ class CritterData {
 public:
     /** Loads the native WAD first, accepting a legacy JSON path or fixture as well. */
     bool load(const std::filesystem::path& file, usize typeIndex = 0);
+    /** Builds the common combat description from a validated platform decoder. */
+    static CritterData fromDecoded(std::string_view name, const formats::CritterFile& source,
+                                   usize typeIndex = 0, CritterRules rules = {});
+    const CritterRules& rules() const { return m_rules; }
     s32 childIndex() const { return m_childIndex; }
     s32 parentIndex() const { return m_parentIndex; }
     std::string_view rootNode() const { return m_rootNode; }
@@ -39,6 +63,13 @@ public:
     std::string_view prefix() const { return m_prefix; }     ///< "GOLEM"
     std::string tree() const { return m_prefix + m_suffix; } ///< "GOLEM1"
     CombatantKind kind() const { return m_kind; } ///< descriptor family, not a boss encounter id
+    /** The type flags: what the body is like. */
+    static constexpr u32 kShadowed = 0x1; ///< a shadow under it
+    static constexpr u32 kByParts = 0x2;  ///< aimed at and walked into part by part
+    static constexpr u32 kSquareBounds = 0x20;
+    static constexpr u32 kInitialStepBasis = 0x40;
+    static constexpr u32 kSolidParts = 0x100; ///< its solid parts stop a body
+    static constexpr u32 kUnrestrictedTurn = 0x400;
     u32 typeFlags() const { return m_typeFlags; }
     f32 radius() const { return m_radius; }
     f32 wallRadius() const { return m_wallRadius; }
@@ -76,6 +107,8 @@ public:
     std::optional<usize> moveNamed(std::string_view name) const;
 
 private:
+    CritterRules m_rules;
+    void assignDecoded(std::string_view name, const formats::CritterFile& source, usize typeIndex);
     bool loadNative(const std::filesystem::path& file, usize typeIndex);
 
     s32 m_childIndex = -1;

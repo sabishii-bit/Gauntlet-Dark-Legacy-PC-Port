@@ -5,6 +5,8 @@
 #include <tuple>
 #include <unordered_set>
 
+#include "game/combat/DamageTypes.h"
+
 namespace gdl::game {
 namespace {
 using State = PlayerAttacksCheckpoint::State;
@@ -32,8 +34,8 @@ std::optional<ItemAttack> descriptor(Item item, bool pojo) {
     case Item::Mask: worn.special = powerup::kSkorneMask; break;
     case Item::LeftGauntlet: worn.special = powerup::kLeftGauntlet; break;
     case Item::RightGauntlet: worn.special = powerup::kRightGauntlet; break;
-    case Item::SuperShot: worn.weapon = powerup::kSuperShot; break;
-    case Item::Hammer: worn.weapon = powerup::kThunderHammer; break;
+    case Item::SuperShot: worn.weapon = damage::kSuperShot; break;
+    case Item::Hammer: worn.weapon = damage::kHammer; break;
     case Item::FireBreath: worn.special = powerup::kFireBreath; break;
     case Item::AcidBreath: worn.special = powerup::kAcidBreath; break;
     case Item::LightningBreath: worn.special = powerup::kLightningBreath; break;

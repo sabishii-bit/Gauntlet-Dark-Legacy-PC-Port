@@ -2,6 +2,7 @@
 
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -293,6 +294,10 @@ public:
 
     /** Loads a kind's archive ahead of need; false when it is not there. */
     bool loadKind(s32 kind);
+    /** Optional immutable resource provider, installed before loading any kind.
+     * A supplied provider owns the whole roster; missing art is not substituted. */
+    using ArchiveLoader = std::function<std::unique_ptr<ItemArchive>(s32)>;
+    bool setArchiveLoader(ArchiveLoader loader);
     bool kindLoaded(s32 kind) const;
     const ItemArchive* archiveOf(s32 kind) const;
     ItemArchive* archive(s32 kind);
@@ -720,6 +725,7 @@ private:
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
     u64 m_restoreGeneration = 0;
     std::filesystem::path m_root;
+    ArchiveLoader m_archiveLoader;
     const WorldCollision* m_collision = nullptr;
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     // Live mutable values, copied directly for same-process rewind. Enemy animators

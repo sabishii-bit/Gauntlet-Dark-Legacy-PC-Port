@@ -211,6 +211,159 @@ TEST_CASE("a scene rebuilt from the confirmed journal stands where the live one 
     CHECK(rebuilt->driver.journal().frames().back()[0].magnitude == 1);
 }
 
+TEST_CASE("a bound scene returned to its epoch's start replays the journal where no load can",
+          "[native-rollback-driver][native-rollback-rebind][journal][assets]") {
+    using Mode = NativeRollbackDriver::AudioMode;
+    auto live = std::make_unique<Fixture>(MatchOwners{1, 2, 0, 0}, true, "G1", true);
+    auto diverged = std::make_unique<Fixture>(MatchOwners{1, 2, 0, 0}, true, "G1", true);
+    SessionInputs::Frame walking;
+    walking[0].move = {{0, 1}, 1};
+    constexpr u64 kThrough = 60;
+    const auto play = [&](Fixture& fixture, u64 tick) {
+        fixture.remote(2, tick);
+        fixture.progress(tick);
+        REQUIRE(fixture.driver.sample((tick < 40 || tick > kThrough) ? walking
+                                                                     : SessionInputs::Frame{}));
+        const auto result = fixture.driver.advance();
+        REQUIRE(result.status == Status::Advanced);
+        REQUIRE(result.audio);
+        fixture.scene.dispatchRecordedAudio(*result.audio);
+    };
+    for (auto* fixture : {live.get(), diverged.get()}) {
+        REQUIRE(fixture->scene.beginRecordedAudio(kEpoch));
+        REQUIRE(fixture->driver.bind(fixture->scene, fixture->match, 1, Mode::Required));
+        for (u64 tick = 1; tick <= kThrough; ++tick) {
+            play(*fixture, tick);
+        }
+        REQUIRE(fixture->driver.confirmedTick() == kThrough);
+    }
+    REQUIRE(diverged->scene.nativeAgreementDigest() == live->scene.nativeAgreementDigest());
+    // A divergence planted in one scene, as though its epoch began where no load puts it.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): planted divergence
+    const_cast<PlayerActor*>(diverged->scene.actor(0))->save().gold += 7;
+    REQUIRE(diverged->scene.nativeAgreementDigest() != live->scene.nativeAgreementDigest());
+    std::vector<InputCommand> commands;
+    for (const auto& frame : diverged->driver.journal().frames()) {
+        commands.push_back(frame[0]);
+        commands.push_back(frame[1]);
+    }
+    REQUIRE(diverged->driver.restoreBinding());
+    CHECK_FALSE(diverged->driver.restoreBinding());
+    // The epoch binds again only through rebind, once its sound is recorded afresh.
+    REQUIRE(diverged->scene.restartRecordedAudio(kEpoch));
+    CHECK_FALSE(diverged->driver.bind(diverged->scene, diverged->match, 1, Mode::Required));
+    REQUIRE(diverged->driver.rebind(diverged->scene, diverged->match, 1, Mode::Required));
+    REQUIRE(diverged->driver.adopt(commands));
+    REQUIRE(diverged->driver.beginRebuild(kThrough));
+    while (diverged->driver.nextTick() <= kThrough) {
+        REQUIRE(diverged->driver.advance().status == Status::Advanced);
+    }
+    REQUIRE(diverged->driver.finishRebuild());
+    CHECK(diverged->driver.confirmedTick() == kThrough);
+    CHECK(diverged->scene.nativeAgreementDigest() == live->scene.nativeAgreementDigest());
+    // Both go on in step, the restored scene recording the same epoch's sound again.
+    for (auto* fixture : {live.get(), diverged.get()}) {
+        play(*fixture, kThrough + 1);
+    }
+    CHECK(diverged->scene.nativeAgreementDigest() == live->scene.nativeAgreementDigest());
+}
+
+TEST_CASE("a dropped peer's character waits in the tower from its first still tick on every peer",
+          "[native-rollback-driver][drop][assets]") {
+    // Two survivors of a three-peer room learn that peer three holds still from tick 40: one
+    // before it runs that tick, the other only after running past it on a guess.
+    constexpr u64 kStill = 40;
+    constexpr u64 kLearned = 44;
+    constexpr u64 kThrough = 60;
+    constexpr s32 kDroppedSeat = 2;
+    const MatchOwners owners{1, 2, 3, 0};
+    auto early = std::make_unique<Fixture>(owners);
+    auto late = std::make_unique<Fixture>(owners);
+    for (auto* fixture : {early.get(), late.get()}) {
+        REQUIRE(fixture->driver.bind(fixture->scene, fixture->match, 1));
+    }
+    REQUIRE(early->driver.suspend(3, kStill));
+    for (u64 tick = 1; tick <= kThrough; ++tick) {
+        for (auto* fixture : {early.get(), late.get()}) {
+            const bool learnsLate = fixture == late.get();
+            CAPTURE(tick, learnsLate);
+            fixture->remote(2, tick);
+            if (tick < kStill) {
+                fixture->remote(3, tick);
+            }
+            fixture->progress(tick);
+            REQUIRE(fixture->driver.sample({}));
+            REQUIRE(fixture->driver.advance().status == Status::Advanced);
+        }
+        if (tick == kLearned) {
+            REQUIRE(late->driver.suspend(3, kStill));
+        }
+    }
+    for (auto* fixture : {early.get(), late.get()}) {
+        const bool learnsLate = fixture == late.get();
+        CAPTURE(learnsLate);
+        CHECK(fixture->driver.confirmedTick() == kThrough);
+        const auto* dropped = fixture->scene.runtime(kDroppedSeat);
+        REQUIRE(dropped != nullptr);
+        CHECK(dropped->life == PlayerLife::InTower);
+        CHECK_FALSE(dropped->towerPrompt);
+        CHECK_FALSE(dropped->departed);
+        REQUIRE(fixture->scene.runtime(1) != nullptr);
+        CHECK(fixture->scene.runtime(1)->life == PlayerLife::Standing);
+    }
+    CHECK(early->driver.statistics().corrections == 0);
+    CHECK(late->driver.statistics().corrections == 1);
+    REQUIRE(early->scene.nativeAgreementDigest());
+    CHECK(early->scene.nativeAgreementDigest() == late->scene.nativeAgreementDigest());
+}
+
+TEST_CASE("a guest rebuilt after a drop sends the dropped character to the tower when the host did",
+          "[native-rollback-driver][drop][journal][assets]") {
+    // The rebuild learns of the drop first, as an online rebuild applies drops before the
+    // journal, then replays the host's journal through and past the still tick.
+    constexpr u64 kStill = 20;
+    constexpr u64 kThrough = 40;
+    constexpr s32 kDroppedSeat = 2;
+    const MatchOwners owners{1, 2, 3, 0};
+    auto host = std::make_unique<Fixture>(owners);
+    REQUIRE(host->driver.bind(host->scene, host->match, 1));
+    REQUIRE(host->driver.suspend(3, kStill));
+    for (u64 tick = 1; tick <= kThrough; ++tick) {
+        host->remote(2, tick);
+        if (tick < kStill) {
+            host->remote(3, tick);
+        }
+        host->progress(tick);
+        REQUIRE(host->driver.sample({}));
+        REQUIRE(host->driver.advance().status == Status::Advanced);
+    }
+    REQUIRE(host->driver.confirmedTick() == kThrough);
+    auto rebuilt = std::make_unique<Fixture>(owners);
+    REQUIRE(rebuilt->driver.bind(rebuilt->scene, rebuilt->match, 2));
+    REQUIRE(rebuilt->driver.suspend(3, kStill));
+    const auto chunks = JournalPacket::chunks(host->driver.journal(), 1, kThrough, true);
+    REQUIRE_FALSE(chunks.empty());
+    for (const auto& chunk : chunks) {
+        const auto bytes = JournalPacket::encode(chunk);
+        REQUIRE(bytes);
+        const auto decoded = JournalPacket::decode(*bytes);
+        REQUIRE(decoded);
+        REQUIRE(rebuilt->driver.adopt(decoded->commands));
+    }
+    REQUIRE(rebuilt->driver.beginRebuild(kThrough));
+    while (rebuilt->driver.nextTick() <= kThrough) {
+        REQUIRE(rebuilt->driver.advance().status == Status::Advanced);
+    }
+    REQUIRE(rebuilt->driver.finishRebuild());
+    for (auto* fixture : {host.get(), rebuilt.get()}) {
+        const auto* dropped = fixture->scene.runtime(kDroppedSeat);
+        REQUIRE(dropped != nullptr);
+        CHECK(dropped->life == PlayerLife::InTower);
+    }
+    REQUIRE(host->scene.nativeAgreementDigest());
+    CHECK(rebuilt->scene.nativeAgreementDigest() == host->scene.nativeAgreementDigest());
+}
+
 TEST_CASE("late host admitted console input rewinds all peers and survives journal rebuilding once",
           "[native-rollback-driver][online-console][journal][assets]") {
     const u8 peers = GENERATE(u8{2}, u8{4});
@@ -1087,6 +1240,39 @@ TEST_CASE("native rollback requires a matching audio boundary and fails closed i
     REQUIRE(resumed.audio);
 }
 
+TEST_CASE("a drop after a directly delivered frame settled here holds what that frame ran on",
+          "[native-rollback][drop][assets]") {
+    const bool early = GENERATE(false, true);
+    CAPTURE(early);
+    auto fixture = std::make_unique<Fixture>(MatchOwners{1, 2, 3, 0});
+    REQUIRE(fixture->driver.bind(fixture->scene, fixture->match, 3));
+    for (u64 tick = 1; tick <= 3; ++tick) {
+        REQUIRE(fixture->driver.sample({}));
+        fixture->remote(1, tick);
+        fixture->remote(2, tick);
+        REQUIRE(fixture->driver.advance().status == Status::Advanced);
+    }
+    REQUIRE(fixture->driver.confirmedTick() == 3);
+    // Peer two's walk for tick four reaches this guest over its direct link, or never does.
+    SessionInputs::Frame walking;
+    walking[1].move = {{1, 0}, 1};
+    REQUIRE(fixture->driver.sample({}));
+    fixture->remote(1, 4);
+    if (early) {
+        fixture->remote(2, 4, walking);
+    }
+    REQUIRE(fixture->driver.advance().status == Status::Advanced);
+    REQUIRE(fixture->driver.confirmedTick() == (early ? 4 : 3));
+    // The host had peer two's input only through tick three, so the shared drop starts at four.
+    REQUIRE(fixture->driver.suspend(2, 4));
+    REQUIRE(fixture->driver.sample({}));
+    fixture->remote(1, 5);
+    const auto next = fixture->driver.advance();
+    CHECK(next.status == Status::Advanced);
+    CHECK(fixture->driver.failure() == NativeRollbackDriver::Failure::None);
+    CHECK(fixture->driver.confirmedTick() == 5);
+}
+
 TEST_CASE("native rollback restores accumulated all-seat arrival skip votes with the scene",
           "[native-rollback-driver][native-rollback-votes][assets]") {
     auto fixture = std::make_unique<Fixture>(MatchOwners{1, 2, 3, 4}, false, "G5");
@@ -1128,6 +1314,29 @@ TEST_CASE("native rollback restores accumulated all-seat arrival skip votes with
     CHECK(driver.confirmedTick() == 0);
     CHECK(fixture->physicalRumbles == 0);
     CHECK(fixture->persistentUnlocks == 0);
+}
+
+TEST_CASE("a dropped peer's seat never holds up the arrival camera's skip",
+          "[native-rollback-driver][native-rollback-votes][drop][assets]") {
+    auto fixture = std::make_unique<Fixture>(MatchOwners{1, 2, 0, 0}, false, "G5");
+    auto& scene = fixture->scene;
+    REQUIRE(scene.startCamera().mode() == StartCamera::Mode::Legacy);
+    for (u64 tick = 1; tick <= 100 && scene.startCamera().ticksLeft() > StartCamera::kSkipBelow;
+         ++tick) {
+        REQUIRE(scene.recordStep(1, tick, kStep, {}).outcome == PlayOutcome::Running);
+    }
+    REQUIRE(scene.startCamera().phase() == StartCamera::Phase::Hold);
+    auto& driver = fixture->driver;
+    REQUIRE(driver.bind(scene, fixture->match, 1));
+    REQUIRE(driver.suspend(2, 1));
+    SessionInputs::Frame local;
+    local[0].menu.select = true;
+    REQUIRE(driver.sample(local));
+    REQUIRE(driver.advance().status == Status::Advanced);
+    CHECK(driver.arrivalVotes() == std::array<bool, 4>{true, false, false, false});
+    CHECK(scene.startCamera().phase() != StartCamera::Phase::Hold);
+    REQUIRE(scene.runtime(1) != nullptr);
+    CHECK(scene.runtime(1)->life == PlayerLife::InTower);
 }
 
 TEST_CASE("active native rollback measures warm eight frame corrections with recorded audio",
@@ -1333,4 +1542,33 @@ TEST_CASE("active native rollback measures warm eight frame corrections with rec
     CHECK(physicalAudio > 0);
     CHECK(finiteCues > 0);
     driver.clear();
+}
+
+TEST_CASE("a guest corrects a directly delivered frame that the host's drop holds still",
+          "[native-rollback][drop][direct-link][assets]") {
+    auto fixture = std::make_unique<Fixture>(MatchOwners{1, 2, 3, 0});
+    REQUIRE(fixture->driver.bind(fixture->scene, fixture->match, 3));
+    SessionInputs::Frame walking;
+    walking[1].move = {{1, 0}, 1};
+    for (u64 tick = 1; tick <= 4; ++tick) {
+        // The host acknowledges peer two through tick three; tick four came directly.
+        REQUIRE(fixture->driver.observeHostReceipt(2, std::min<u64>(tick, 3)));
+        REQUIRE(fixture->driver.sample({}));
+        fixture->remote(1, tick);
+        fixture->remote(2, tick, tick == 4 ? walking : SessionInputs::Frame{});
+        REQUIRE(fixture->driver.advance().status == Status::Advanced);
+    }
+    CHECK(fixture->driver.confirmedTick() == 3);
+    // The host's drop starts where its own receipt ends.
+    REQUIRE(fixture->driver.suspend(2, 4));
+    REQUIRE(fixture->driver.sample({}));
+    fixture->remote(1, 5);
+    const auto next = fixture->driver.advance();
+    CAPTURE(static_cast<unsigned>(next.status), static_cast<unsigned>(fixture->driver.failure()));
+    REQUIRE(next.status == Status::Advanced);
+    REQUIRE(next.frames.size() == 2); // tick four again, then tick five
+    for (const auto& frame : next.frames) {
+        CHECK(frame.input.commands[1].magnitude == 0.0f);
+    }
+    CHECK(fixture->driver.confirmedTick() == 5);
 }

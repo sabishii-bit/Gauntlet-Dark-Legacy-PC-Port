@@ -17,6 +17,7 @@
 
 #include "game/bosses/BossDefinition.h" // IWYU pragma: export
 #include "game/bosses/LegendItems.h"
+#include "game/bosses/LegendProfile.h"
 #include "game/critters/Combatant.h"
 
 namespace gdl::game {
@@ -61,7 +62,8 @@ public:
 
     void open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
               const WorldCollision* collision, const EnemyScales& scales, char realm,
-              std::span<TextureSet* const> textureLenders = {});
+              std::span<TextureSet* const> textureLenders = {},
+              const LegendProfile* legendProfile = nullptr);
     void close();
 
     /** Stands the boss of `kind` (`bossNameOf` it) at `position` facing `yaw`, asleep until
@@ -69,6 +71,9 @@ public:
     bool spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance = 0.0f);
     /** Load render assets without creating a fighter or beginning an encounter. */
     CombatantAssets* preload(s32 kind);
+    /** Installs an imported encounter's complete native archive before spawning.
+     * Rejects replacement of live/cached borrowers; no fallback data is read. */
+    CombatantAssets* preload(s32 kind, std::unique_ptr<CombatantAssets> assets);
 
     /** The realm of the legend item that weakens this boss, or nought. */
     s32 legendRealm() const { return legendRealmOf(m_sim.kind); }
@@ -79,6 +84,8 @@ public:
      * Repeated notifications are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_sim.rite; }
+    /** Actual animated attachment targeted by this encounter's legendary item. */
+    std::optional<Mat4> legendTargetTransform() const;
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
     /** Its waking clock runs from its placement, through an entrance that holds it still. */
@@ -108,7 +115,7 @@ public:
     f32 hurt(const EnemyHit& hit, s32 partId = kTargetId);
     void damagedPlayer(s32 player, f32 amount, s32 partId = kTargetId);
     /** Wakes it as the party coming within its threshold would. */
-    void wake() { m_sim.awake = m_sim.id.has_value(); }
+    void wake();
     bool frozen() const;
     bool blinded() const;
     bool curbed() const;
@@ -170,6 +177,9 @@ private:
     const WorldCollision* m_collision = nullptr;
     EnemyScales m_scales;
     char m_realm = 'G';
+    // Copy immutable configuration: no borrowed profile can dangle or change
+    // under an in-memory rewind. Reopening invalidates the snapshot epoch.
+    std::optional<LegendProfile> m_legendProfile;
     struct Simulation {
         std::vector<CombatantAssets*> assets;
         std::optional<s32> id;

@@ -289,6 +289,11 @@ TEST_CASE("native console actions target their canonical seat and rewind cheats 
     auto fixture = std::make_unique<Fixture>("G2", 2, false);
     fixture->advanceTo(360);
     auto& scene = fixture->scene;
+    const auto flying = [&](s32 seat) {
+        return std::ranges::any_of(scene.participants(), [&](const PlayerRuntime& player) {
+            return player.actor.player() == seat && player.ghost;
+        });
+    };
     REQUIRE(scene.beginRecordedAudio(1));
     PlayScene::LocalSnapshot before;
     REQUIRE(scene.saveLocal(before));
@@ -308,6 +313,7 @@ TEST_CASE("native console actions target their canonical seat and rewind cheats 
     CHECK(scene.cheats(1).god);
     CHECK(scene.cheats(1).noTarget);
     CHECK(scene.cheats(1).noclip);
+    CHECK(flying(1));
     CHECK_FALSE(scene.cheats(0).god);
     CHECK(scene.actor(0)->save().gold == hostGold);
     CHECK(scene.actor(1)->save().gold == guestGold + 37);
@@ -320,7 +326,10 @@ TEST_CASE("native console actions target their canonical seat and rewind cheats 
     CHECK_FALSE(scene.cheats(1).god);
     CHECK_FALSE(scene.cheats(1).noTarget);
     CHECK_FALSE(scene.cheats(1).noclip);
+    // Pads, pickups and portals see the restored body again, as they did before the toggle.
+    CHECK_FALSE(flying(1));
     REQUIRE(scene.recordStep(1, 361, kStep, input, actions).outcome == PlayOutcome::Running);
+    CHECK(flying(1));
     CHECK(scene.nativeAgreementDigest() == afterDigest);
 }
 

@@ -6,6 +6,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 #include "engine/audio/AdsStream.h"
@@ -116,7 +117,7 @@ void LevelSoundscape::recordTo(SceneSoundEvents* events) {
 }
 
 bool LevelSoundscape::canAttachRecorder() const {
-    return m_events == nullptr && m_openings.empty() && m_voice == kNoSound &&
+    return m_events == nullptr && !m_announcements && m_openings.empty() && m_voice == kNoSound &&
            m_narration.backlog() == 0 && m_barks.backlog() == 0;
 }
 
@@ -670,6 +671,7 @@ void LevelSoundscape::close() {
     ++m_localEpoch;
     m_sim.players = 1;
     suspend();
+    m_announcements = {};
     m_ear = {};
     m_ambientDuck.reset();
     m_ambience.clear();
@@ -962,7 +964,27 @@ f64 LevelSoundscape::narrationBacklog() const {
     return m_narration.backlog();
 }
 
-SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator which) {
+void LevelSoundscape::bindAnnouncements(AnnouncementResolver resolver) {
+    requirePresentation("binding an announcement adapter during a native tick");
+    if (m_events != nullptr || m_narration.backlog() != 0) {
+        throw std::logic_error("announcement adapters require an idle offline soundscape");
+    }
+    ++m_localEpoch;
+    m_announcements = std::move(resolver);
+}
+
+SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator which,
+                                            std::optional<AnnouncementSubject> subject) {
+    if (m_announcements && !m_narration.held()) {
+        const std::array lines{name};
+        if (const auto sequence = m_announcements(lines, subject)) {
+            return track(m_narration.queue(*sequence, 1));
+        }
+    }
+    return queueNarrationFallback(name, which);
+}
+
+SoundHandle LevelSoundscape::queueNarrationFallback(std::string_view name, Narrator which) {
     for (SoundSet* bank : {&m_narrator, &m_narratorSecond}) {
         if (const auto found = bank->find(name); found.has_value()) {
             return queue(*bank, *found);
@@ -989,17 +1011,25 @@ SoundHandle LevelSoundscape::queue(SoundSet& bank, u32 sound) {
 }
 
 bool LevelSoundscape::announce(SoundSet& characterBank, std::string_view name, bool pojo,
-                               std::span<const std::string_view> lines, f32 maxWait) {
+                               std::span<const std::string_view> lines, f32 maxWait,
+                               std::optional<AnnouncementSubject> subject) {
     if (!narrationRoom(maxWait)) {
         return false;
     }
+    if (m_announcements && subject) {
+        subject->pojo = pojo;
+        if (const auto sequence = m_announcements(lines, subject)) {
+            track(m_narration.queue(*sequence, 1));
+            return true;
+        }
+    }
     if (pojo) {
-        queueNarration(kPojoName);
+        queueNarrationFallback(kPojoName, Narrator::Either);
     } else {
         queueNarrationFrom(characterBank, name);
     }
     for (const std::string_view line : lines) {
-        queueNarration(line);
+        queueNarrationFallback(line, Narrator::Either);
     }
     return true;
 }
@@ -1174,7 +1204,7 @@ void LevelSoundscape::opening(const TriggerOpening& event) {
     if (event.atOnce || event.sound < 0) {
         return;
     }
-    if (event.subtype == 20 || event.subtype == 22) {
+    if (LevelTrigger::bridgeSubtype(event.subtype)) {
         if (!m_boss) {
             playNamed(std::format("S_BRID{}{}", event.closed ? "CL" : "OP", m_realm),
                       kMotionVolume);
@@ -1202,7 +1232,7 @@ void LevelSoundscape::opening(const TriggerOpening& event) {
 
 void LevelSoundscape::settled(const TriggerOpening& event) {
     auto scope = soundScope({kOpeningOwner, static_cast<u64>(std::max(event.target, 0)), 1}, 2);
-    if (event.subtype == 20 || event.subtype == 22) {
+    if (LevelTrigger::bridgeSubtype(event.subtype)) {
         return;
     }
     if (event.sound >= kMotionSlot) {

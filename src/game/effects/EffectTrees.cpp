@@ -130,9 +130,16 @@ EffectTrees& EffectTrees::operator=(EffectTrees&& other) noexcept {
     return *this;
 }
 
-Mat4 EffectTrees::EffectState::transform() const {
+Mat4 EffectTrees::EffectState::transform(const Mat4* presentedParent) const {
     Mat4 basis = attachment.value_or(portable::rotate(Mat4{1.0f}, yaw, Vec3{0, 1, 0}));
     basis[3] = Vec4{position, 1.0f};
+    if (presentedParent != nullptr && attachment) {
+        basis = *presentedParent;
+        // Own velocity, stretch and end-of-life shrink still belong to the
+        // effect. Replace only the parent basis and its translation, retaining
+        // any movement since the last gameplay attachment update.
+        basis[3] = Vec4{Vec3{(*presentedParent)[3]} + position - Vec3{(*attachment)[3]}, 1};
+    }
     const f32 remaining = secondsLeftOf(*this);
     const f32 shrink = shrinks && remaining < 0.2f ? std::max(5 * remaining + 0.001f, 0.0f) : 1;
     return glm::scale(basis, Vec3{scale * shrink} * stretch);
@@ -1182,12 +1189,16 @@ void EffectTrees::update(f32 seconds) {
 }
 
 void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                       const CameraFrame* camera, f32 frameBlend) const {
+                       const CameraFrame* camera, f32 frameBlend,
+                       std::span<const DrawAttachment> attachments) const {
     const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
     const f32 blend = std::clamp(frameBlend, 0.0f, 1.0f);
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         auto direction = effect->flightDirection;
-        Mat4 placement = effect->transform();
+        const auto attachment = std::ranges::find(attachments, effect->id, &DrawAttachment::effect);
+        const Mat4* parent =
+            attachment != attachments.end() && effect->attachment ? &attachment->parent : nullptr;
+        Mat4 placement = effect->transform(parent);
         const bool continuous = frameBlend >= 0 && effect->presentationCaptured &&
                                 effect->previousTree == effect->tree &&
                                 glm::distance(Vec3{effect->previousTransform[3]},
@@ -1195,7 +1206,8 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
         const TreePose* pose = &effect->pose;
         f32 visualFrame = effect->player.frame();
         if (continuous) {
-            placement = blendPlacement(effect->previousTransform, placement, blend);
+            if (parent == nullptr)
+                placement = blendPlacement(effect->previousTransform, placement, blend);
             const auto previousDirection = effect->previousDirection;
             if (direction && previousDirection && glm::dot(*direction, *previousDirection) > 0) {
                 direction = glm::mix(*previousDirection, *direction, blend);

@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 
 namespace {
@@ -29,7 +31,7 @@ TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     REQUIRE(effects.bodyAlpha() == 1.0f);
     REQUIRE(effects.paceAdd == 0.0f);
 
-    inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0.0f, 30.0f);
+    inventory.addPowerup(powerup::kWeapon, damage::kThreeWayShot, 0.0f, 30.0f);
     inventory.addPowerup(powerup::kSpeed, 0, 2.5f, 30.0f);
     inventory.addPowerup(powerup::kMagic, 0, 40.0f, 30.0f);
     inventory.addPowerup(powerup::kSpecial, powerup::kInvisible, 0.0f, 30.0f);
@@ -57,7 +59,7 @@ TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     effects.invisibleLeft = 20.75f;
     REQUIRE(effects.bodyAlpha() == Approx(111.0f / 255.0f));
     // Five ways beats three; one taken off does nothing.
-    inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot, 0.0f, 30.0f);
+    inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot, 0.0f, 30.0f);
     REQUIRE(PowerupEffects::of(inventory).shots() == 5);
     for (PowerupSlot& slot : inventory.powerups) {
         slot.on = slot.kind != powerup::kWeapon;
@@ -66,7 +68,7 @@ TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     REQUIRE(effects.shots() == 1);
     REQUIRE(effects.weapon == 0U);
     REQUIRE(effects.invisible());
-    REQUIRE(inventory.powerup(powerup::kWeapon, powerup::kFiveWayShot) == nullptr);
+    REQUIRE(inventory.powerup(powerup::kWeapon, damage::kFiveWayShot) == nullptr);
 }
 
 TEST_CASE("a powerup is named by the first of the original's list whose flags it carries",
@@ -134,13 +136,13 @@ TEST_CASE("only the longest enabled amulet supplies the elemental nibble",
     Inventory inventory;
     inventory.addPowerup(5, 1, 0, 90);
     inventory.addPowerup(5, 2, 0, 60);
-    inventory.addPowerup(5, powerup::kThreeWayShot, 0, 30);
-    CHECK(PowerupEffects::of(inventory).weapon == (powerup::kThreeWayShot | 1));
+    inventory.addPowerup(5, damage::kThreeWayShot, 0, 30);
+    CHECK(PowerupEffects::of(inventory).weapon == (damage::kThreeWayShot | 1));
     inventory.powerups[0].on = false;
-    CHECK(PowerupEffects::of(inventory).weapon == (powerup::kThreeWayShot | 2));
+    CHECK(PowerupEffects::of(inventory).weapon == (damage::kThreeWayShot | 2));
     inventory.powerups[0].on = true;
     inventory.powerups[1].strength = 100;
-    CHECK(PowerupEffects::of(inventory).weapon == (powerup::kThreeWayShot | 2));
+    CHECK(PowerupEffects::of(inventory).weapon == (damage::kThreeWayShot | 2));
 }
 
 TEST_CASE("charged powerups expire on the final use and disabled items cannot be spent",
@@ -175,12 +177,12 @@ TEST_CASE("an ending powerup blinks, and invulnerability shows its chrome",
     REQUIRE(effects.bodyAlpha() < 0.5f);
 
     REQUIRE(PowerupEffects{}.chrome() == PowerupEffects::Chrome::None);
-    inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0.0f, 20.0f);
+    inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0.0f, 20.0f);
     effects = PowerupEffects::of(inventory);
     REQUIRE(effects.invulnerableLeft == 20.0f);
     REQUIRE(effects.chrome() == PowerupEffects::Chrome::Silver);
     // The gold one (INVULGICON, 0x110000) is gold whatever else is worn.
-    inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable | powerup::kInvulnerable, 0.0f,
+    inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable | armor::kInvulnerable, 0.0f,
                          25.0f);
     effects = PowerupEffects::of(inventory);
     REQUIRE(effects.invulnerableLeft == 25.0f);

@@ -22,6 +22,7 @@
 #include "formats/CritterWad.h"
 #include "game/bosses/BossCoins.h"
 #include "game/characters/ClassData.h"
+#include "game/combat/EffectFlags.h"
 #include "game/critters/CombatantBreath.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CritterData.h"
@@ -162,7 +163,7 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(stomp->tree == "EXPRING");
     REQUIRE(stomp->shows());
     REQUIRE(stomp->offset == Vec3{0.0f, 1.0f, 0.0f});
-    REQUIRE((stomp->flags & CombatEffectDefinition::kShakes) != 0);
+    REQUIRE((stomp->flags & effect_flags::kShakes) != 0);
     REQUIRE(golem.damage(3)->sound == 10);
     REQUIRE_FALSE(golem.sound(8)->shows()); // NULLFX
     REQUIRE(golem.hitSoundClose() == 0);

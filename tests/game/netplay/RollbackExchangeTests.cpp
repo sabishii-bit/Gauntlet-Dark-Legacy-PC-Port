@@ -740,3 +740,111 @@ TEST_CASE("a guest's direct link carries that guest's own inputs sooner and may 
         CHECK(packet.connection == kHost);
     }
 }
+
+TEST_CASE("a stream opened after a guest was dropped wants no link to it and waits on nobody",
+          "[rollback-exchange][drop]") {
+    const Exchange::Owners owners{1, 2, 3, 0};
+    Exchange::Grants grants{};
+    for (usize seat = 0; seat < owners.size(); ++seat) {
+        grants[seat] = owners[seat] != 0 ? static_cast<u32>(20 + seat) : 0;
+    }
+    const auto clock = [] { return u64{1'000'000}; };
+    const std::array<u8, 1> secondGuest{2};
+    const std::array<u8, 1> hostPeer{1};
+    const std::array<u8, 2> stranger{2, 4};
+    const std::array third{Exchange::Link{3, 103}};
+    const std::array both{Exchange::Link{2, 102}, Exchange::Link{3, 103}};
+    const std::array toHost{Exchange::Link{1, kHost}};
+    // Without the drop the host's star still wants every guest; with it, never that one.
+    CHECK_FALSE(Exchange{}.open(1, kEpoch, owners, grants, 0, third, clock));
+    CHECK_FALSE(Exchange{}.open(1, kEpoch, owners, grants, 0, both, clock, secondGuest));
+    // Only another seated guest can be the one dropped.
+    CHECK_FALSE(Exchange{}.open(1, kEpoch, owners, grants, 0, third, clock, hostPeer));
+    CHECK_FALSE(Exchange{}.open(1, kEpoch, owners, grants, 0, third, clock, stranger));
+    CHECK_FALSE(Exchange{}.open(2, kEpoch, owners, grants, 0, toHost, clock, secondGuest));
+    Exchange host;
+    Exchange guest;
+    REQUIRE(host.open(1, kEpoch, owners, grants, 0, third, clock, secondGuest));
+    REQUIRE(guest.open(3, kEpoch, owners, grants, 0, toHost, clock, secondGuest));
+    const auto command = [&](u8 seat, u64 tick) {
+        InputCommand input;
+        input.epoch = kEpoch;
+        input.tick = tick;
+        input.seat = seat;
+        input.grant = grants[seat];
+        return input;
+    };
+    const auto consume = [](const Exchange::Message&, auto) { return true; };
+    // Each side's frames go to the other alone, and each keeps only the redundant tail once
+    // the other holds them: neither waits on the dropped guest's acknowledgement.
+    for (u64 tick = 1; tick <= 12; ++tick) {
+        CAPTURE(tick);
+        const auto fromHost = command(0, tick);
+        const auto fromGuest = command(2, tick);
+        REQUIRE(host.publish(std::span{&fromHost, 1}, tick + 1));
+        REQUIRE(guest.publish(std::span{&fromGuest, 1}, tick + 1));
+        Wire hostWire;
+        Wire guestWire;
+        REQUIRE(host.flush(hostWire));
+        REQUIRE(guest.flush(guestWire));
+        REQUIRE_FALSE(hostWire.packets.empty());
+        REQUIRE_FALSE(guestWire.packets.empty());
+        for (const auto& packet : hostWire.packets) {
+            CHECK(packet.connection == 103);
+            CHECK(guest.receive(kHost, packet.bytes, 0, consume) == Exchange::Admission::Accepted);
+        }
+        for (const auto& packet : guestWire.packets) {
+            CHECK(packet.connection == kHost);
+            CHECK(host.receive(103, packet.bytes, 0, consume) == Exchange::Admission::Accepted);
+        }
+    }
+    CHECK(guest.receivedThrough(1) == 12);
+    CHECK(host.receivedThrough(3) == 12);
+    CHECK(host.retainedFrames(1) == RollbackInputs::kRedundantTicks);
+    CHECK(guest.retainedFrames(3) == RollbackInputs::kRedundantTicks);
+    CHECK(host.failure() == Exchange::Failure::None);
+    CHECK(guest.failure() == Exchange::Failure::None);
+}
+
+TEST_CASE("a guest knows how far the host holds the input a direct link brings it sooner",
+          "[rollback-exchange][direct-link][drop]") {
+    const Exchange::Owners owners{1, 2, 3, 0};
+    Exchange::Grants grants{};
+    for (usize seat = 0; seat < owners.size(); ++seat) {
+        grants[seat] = owners[seat] != 0 ? static_cast<u32>(20 + seat) : 0;
+    }
+    const auto clock = [] { return u64{1'000'000}; };
+    const std::array hostLinks{Exchange::Link{2, 102}, Exchange::Link{3, 103}};
+    const std::array starLinks{Exchange::Link{1, kHost}};
+    const std::array thirdLinks{Exchange::Link{1, kHost}, Exchange::Link{2, 302}};
+    Exchange host;
+    Exchange star;  // a third guest hearing the second only through the host
+    Exchange third; // one hearing it directly as well
+    REQUIRE(host.open(1, kEpoch, owners, grants, 0, hostLinks, clock));
+    REQUIRE(star.open(3, kEpoch, owners, grants, 0, starLinks, clock));
+    REQUIRE(third.open(3, kEpoch, owners, grants, 0, thirdLinks, clock));
+    CHECK_FALSE(host.hostReceipt(2));
+    CHECK_FALSE(star.hostReceipt(2)); // the host holds all it relays
+    CHECK_FALSE(third.hostReceipt(1));
+    CHECK_FALSE(third.hostReceipt(3));
+    CHECK(third.hostReceipt(2) == 0);
+    InputCommand command;
+    command.epoch = kEpoch;
+    command.tick = 1;
+    command.seat = 1;
+    command.grant = grants[1];
+    const auto consume = [](const Exchange::Message&, auto) { return true; };
+    // The second guest's first frame reaches the third directly, before the host has it.
+    REQUIRE(third.receive(302, encode({kEpoch, 2, 2, {}, {command}, 1}), 0, consume) ==
+            Exchange::Admission::Accepted);
+    CHECK(third.receivedThrough(2) == 1);
+    CHECK(third.hostReceipt(2) == 0);
+    // The host's own acknowledgement says when it holds it too.
+    Exchange::Message report{kEpoch, 1, 1, {}, {}, 1};
+    report.received[2] = 1;
+    REQUIRE(third.receive(kHost, encode(report), 0, consume) == Exchange::Admission::Accepted);
+    CHECK(third.hostReceipt(2) == 1);
+    // A direct link that goes leaves the figure in force: what it brought may still lead.
+    third.detach(302);
+    CHECK(third.hostReceipt(2) == 1);
+}

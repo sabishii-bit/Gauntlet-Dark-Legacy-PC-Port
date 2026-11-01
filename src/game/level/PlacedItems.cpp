@@ -251,6 +251,29 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
     }
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     m_infos = infos;
+    // Runtime drops also exist on imported maps, whose native fixture records
+    // deliberately do not enter the GC roster. These four POWERUPS definitions
+    // are identical in all 68 shipped WORLDS.PS2 catalogs. Append only missing
+    // names before play, preserving every authored index and rollback binding.
+    constexpr std::array<std::string_view, 4> kPotionNames{"POT_RED", "POT_BLU", "POT_YEL",
+                                                           "POT_GRE"};
+    for (usize element = 0; element < kPotionNames.size(); ++element) {
+        if (recordOf(kPotionNames[element])) {
+            continue;
+        }
+        ItemInfo potion;
+        potion.type = ItemInfo::kPowerup;
+        potion.subtype = static_cast<s32>(ItemKind::Potion);
+        potion.name = kPotionNames[element];
+        potion.collisionType = 1;
+        potion.radius = .5f;
+        potion.height = 2;
+        potion.properties = static_cast<u32>(element + 1);
+        potion.value = 1;
+        potion.hitPoints = 1;
+        potion.activeType = 16;
+        m_infos.push_back(std::move(potion));
+    }
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
@@ -293,7 +316,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         }
         item.position = instance.position;
         item.transform = itemPlacement(item.position, instance.rotation);
-        if ((info.collisionFlags & 1U) == 0) {
+        if ((info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             restOnFloor(item,
                         itemSupportAt(instance.position, collision,
                                       restCollision ? &*restCollision : nullptr),

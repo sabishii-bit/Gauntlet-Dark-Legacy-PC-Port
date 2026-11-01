@@ -1,0 +1,197 @@
+# Optional native-content adapters stay outside the GameCube engine/readers.
+# Namespace compatibility is retained; the directory and targets own the boundary.
+add_library(expansion_formats STATIC
+    dreamcast/formats/LegendsDreamcastMap.cpp
+    dreamcast/formats/LegendsDreamcastScene.cpp
+    dreamcast/formats/LegendsDreamcastScene.h
+    dreamcast/formats/LegendsDreamcastTexture.cpp
+    dreamcast/formats/LegendsDreamcastTexture.h
+    dreamcast/formats/LegendsSceneMotion.cpp
+    dreamcast/formats/LegendsSceneMotion.h
+    n64/formats/LegendsMap.cpp
+    n64/formats/LegendsN64Critter.cpp
+    n64/formats/LegendsN64Critter.h
+    n64/formats/LegendsN64Camera.cpp
+    n64/formats/LegendsN64Camera.h
+    n64/formats/LegendsN64Ambient.cpp
+    n64/formats/LegendsN64Ambient.h
+    n64/formats/LegendsN64Gates.cpp
+    n64/formats/LegendsN64Gates.h
+    n64/formats/LegendsN64Morph.cpp
+    n64/formats/LegendsN64Morph.h
+    n64/formats/LegendsN64Portal.cpp
+    n64/formats/LegendsN64Portal.h
+    n64/formats/LegendsN64Progress.cpp
+    n64/formats/LegendsN64Progress.h
+    n64/formats/LegendsN64Scene.cpp
+    n64/formats/LegendsN64Scene.h
+    n64/formats/LegendsN64SequenceGroups.cpp
+    n64/formats/LegendsN64SequenceGroups.h
+    n64/formats/LegendsN64Switches.cpp
+    n64/formats/LegendsN64Switches.h
+    n64/formats/LegendsN64Text.cpp
+    n64/formats/LegendsN64Text.h
+    n64/formats/LegendsN64Font.cpp
+    n64/formats/LegendsN64Font.h
+    n64/formats/LegendsN64Texture.cpp
+    n64/formats/LegendsN64Texture.h
+    n64/formats/LegendsN64Tower.cpp
+    n64/formats/LegendsN64Tower.h
+    n64/formats/LegendsN64Traps.cpp
+    n64/formats/LegendsN64Traps.h
+    shared/formats/LegendsMap.h)
+add_library(gdl::expansion_formats ALIAS expansion_formats)
+target_link_libraries(expansion_formats PUBLIC gdl::formats)
+gdl_apply_compiler_options(expansion_formats)
+set_target_properties(expansion_formats PROPERTIES FOLDER "expansions")
+
+add_library(expansion_audio STATIC
+    shared/audio/RestoredSpeech.h
+    shared/audio/RestoredSpeech.cpp
+    n64/audio/MortBank.h
+    n64/audio/MortBank.cpp
+    n64/audio/LegendsSoundTable.h
+    n64/audio/LegendsSoundTable.cpp
+    dreamcast/audio/DreamcastStream.cpp
+    dreamcast/audio/DreamcastStream.h
+    n64/audio/N64LegendsEffects.h
+    n64/audio/N64LegendsStream.h)
+add_library(gdl::expansion_audio ALIAS expansion_audio)
+target_link_libraries(expansion_audio PUBLIC gdl::engine)
+target_compile_definitions(expansion_audio PUBLIC
+    GDL_LEGENDS_AUDIO=$<BOOL:${GDL_LEGENDS_AUDIO}>)
+if(GDL_LEGENDS_AUDIO)
+    include(GdlLegendsAudio)
+    gdl_add_legends_audio()
+    target_sources(expansion_audio PRIVATE n64/audio/N64LegendsStream.cpp)
+    target_link_libraries(expansion_audio PRIVATE gdl::legends_audio_native)
+    gdl_configure_legends_audio_source(n64/audio/N64LegendsStream.cpp)
+else()
+    target_sources(expansion_audio PRIVATE n64/audio/N64LegendsStreamStub.cpp)
+endif()
+gdl_apply_compiler_options(expansion_audio)
+set_target_properties(expansion_audio PROPERTIES FOLDER "expansions")
+
+# Scene adapters consume ordinary game mechanics, which also call their generic
+# imported-level contracts. Keep them in the game link unit without a cyclic
+# game <-> expansion static-library dependency.
+function(gdl_add_expansion_game_sources target)
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastItems.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsInitialPose.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsInitialPose.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsMusic.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsMusic.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsSounds.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsSounds.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsSpeech.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsSpeech.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsAnnouncements.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsAnnouncements.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsAmbient.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsAmbient.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsObelisk.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsObelisk.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/assets/LegendsN64Archive.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/assets/LegendsN64Archive.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/bosses/LegendsBosses.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/bosses/LegendsBossAssets.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/bosses/LegendsBossAssets.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/bosses/LegendsBosses.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsDeath.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsDeath.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneDeath.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsLevelLegend.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/camera/LegendsCamera.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/camera/LegendsCamera.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/critters/LegendsCritters.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/critters/LegendsCritters.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsGenerators.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsEnemyAssets.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsEnemyAssets.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsEnemySounds.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsEnemySounds.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsGenerators.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBlast.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBlast.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBossEruption.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBossEruption.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsContainers.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsContainers.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsFixtureEvents.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsGates.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsGates.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsLootSelectors.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsLootSelectors.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsN64Items.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsPortalAppearance.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsPortalAppearance.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsPortals.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsPortals.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsSwitches.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsSwitches.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsAdvice.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsSumner.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsSumner.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerMotion.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerMotion.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerPortals.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerPortals.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerProgress.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerProgress.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTraps.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsScenery.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsScenery.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneScenery.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsAudioMix.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/audio/LegendsAudioMix.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTraps.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsUnlocks.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsUnlocks.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsWorldMotion.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsWorldMotion.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsLevelBoss.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsLevelEnemies.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsLevelEffects.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsLevelSumner.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/menu/LegendsDialogue.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/menu/LegendsDialogue.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSumnerText.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSumnerText.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsN64Music.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsN64Music.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneArena.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneBoss.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneContainers.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneGenerators.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneProgress.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneRiders.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneSwitches.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsSceneTraps.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsScrolls.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsScrolls.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsWorldPresentation.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsWorldPresentation.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/GauntletLegends.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsVisit.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsVisit.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/enemies/LegendsActors.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/enemies/LegendsActors.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/level/LegendsItems.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/level/LegendsItems.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsLevel.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsLevel.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsMapCatalog.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsMapCatalog.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsPreview.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsPreviewSelection.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsPreview.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsSceneAdapter.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsSceneSelection.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsSceneAdapter.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsTraversal.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsTraversal.h")
+    target_link_libraries(${target} PRIVATE gdl::expansion_formats gdl::expansion_audio)
+endfunction()

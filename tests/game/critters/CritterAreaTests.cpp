@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <numbers>
 #include <string>
+#include <utility>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -29,6 +30,34 @@ EnemyView playerAt(const Vec3& position) {
     view.radius = 1;
     view.height = 6;
     return view;
+}
+
+TEST_CASE("native impact envelopes grow hold and shrink without age damage fade",
+          "[game][boss-areas][native-impact-envelope]") {
+    CritterArea area;
+    area.radius = 3.6f;
+    area.damage = 50;
+    area.expanding = true;
+    area.linearGrowth = true; // the explicit envelope takes precedence over ring behavior
+    area.growFraction = 0.1f;
+    area.shrinkFraction = 0.2f;
+    area.lifetime = 2;
+    for (const auto [elapsed, radius] : std::array<std::pair<f32, f32>, 8>{{{0, 0},
+                                                                            {0.05f, 1.8f},
+                                                                            {0.1f, 3.6f},
+                                                                            {0.5f, 3.6f},
+                                                                            {0.8f, 3.6f},
+                                                                            {0.9f, 1.8f},
+                                                                            {0.95f, 0.9f},
+                                                                            {1, 0}}}) {
+        CAPTURE(elapsed);
+        area.secondsLeft = area.lifetime * (1 - elapsed);
+        CHECK(area.currentRadius() == Approx(radius).margin(0.00001f));
+        CHECK(area.currentDamage() == (elapsed < 1 ? 50 : 0));
+    }
+    area.lifetime = 0;
+    area.secondsLeft = 1;
+    CHECK(area.currentRadius() == 0);
 }
 
 TEST_CASE("attached damage sectors use horizontal reach height and a directional cone",

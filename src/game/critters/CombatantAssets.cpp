@@ -12,6 +12,8 @@
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/world/AnimationPlayer.h"
+
+#include "game/combat/EffectFlags.h"
 namespace gdl::game {
 namespace {
 /** Every instance is made with subtype nought: the first of SHADOW1L1..3L1. */
@@ -24,6 +26,10 @@ CombatantAssets::~CombatantAssets() {
     clear();
 }
 void CombatantAssets::clear() {
+    cooldownStartsWithMove = false;
+    projectileLifetime = 0;
+    wakeDelay = 2;
+    initialMoveBeforeWake = false;
     m_checkpointBinding = std::make_shared<const u8>(0);
     m_localBinding = std::make_shared<const u8>(0);
     children.clear();
@@ -94,6 +100,43 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     if (common.find("anim.ps2") || common.find("animations.json")) {
         shared.load(common.root());
     }
+    std::set<s32> visited{0};
+    for (s32 child = data.childIndex(); child >= 0;) {
+        CritterData part;
+        if (!visited.insert(child).second ||
+            !part.load(root / "critter" / (definition.name + ".json"), static_cast<usize>(child))) {
+            log::warn("combatant {}: invalid child type {}", definition.name, child);
+            clear();
+            return false;
+        }
+        child = part.childIndex();
+        children.push_back(std::move(part));
+    }
+    return bindPresentation(device, root, textureLenders, &shared);
+}
+
+bool CombatantAssets::bindDecoded(RenderDevice& device, const std::filesystem::path& commonRoot,
+                                  const CombatantDefinition& family, char realm, ItemArchive source,
+                                  CritterData moves, std::vector<CritterData> childTypes,
+                                  std::span<TextureSet* const> textureLenders,
+                                  const AnimationSet* sharedEffects) {
+    clear();
+    definition = family;
+    this->realm = realm;
+    data = std::move(moves);
+    children = std::move(childTypes);
+    archive = std::move(source);
+    if (definition.name.empty() || definition.kind == CombatantKind::Unknown ||
+        data.kind() != definition.kind) {
+        clear();
+        return false;
+    }
+    return bindPresentation(device, commonRoot, textureLenders, sharedEffects);
+}
+
+bool CombatantAssets::bindPresentation(RenderDevice& device, const std::filesystem::path& root,
+                                       std::span<TextureSet* const> textureLenders,
+                                       const AnimationSet* sharedEffects) {
     const auto recordLifetimes = [&](const AnimationSet& animations) {
         for (u32 i = 0; i < animations.size(); ++i) {
             const auto& effect = animations.tree(i);
@@ -108,7 +151,9 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         }
     };
     recordLifetimes(archive.trees);
-    recordLifetimes(shared); // Own trees win; child combatants may reference either archive.
+    if (sharedEffects != nullptr) {
+        recordLifetimes(*sharedEffects); // Own trees win over shared effect names.
+    }
     const auto index = archive.trees.find(data.tree());
     if (!index.has_value()) {
         log::warn("combatant {}: no tree {}", definition.name, data.tree());
@@ -116,19 +161,13 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         return false;
     }
     tree = &archive.trees.tree(*index);
-    std::set<s32> visited{0};
-    for (s32 child = data.childIndex(); child >= 0;) {
-        CritterData part;
-        if (!visited.insert(child).second ||
-            !part.load(root / "critter" / (definition.name + ".json"), static_cast<usize>(child)) ||
-            part.parentIndex() != 0 ||
+    for (const auto& part : children) {
+        if (part.parentIndex() != 0 ||
             !tree->findNode(part.rootNode(), kCombatantNodeNameLength).has_value()) {
-            log::warn("combatant {}: invalid child type {}", definition.name, child);
+            log::warn("combatant {}: invalid child root {}", definition.name, part.rootNode());
             clear();
             return false;
         }
-        child = part.childIndex();
-        children.push_back(std::move(part));
     }
     if (!body.bind(*tree, archive.models, archive.textures, device, textureLenders)) {
         clear();
@@ -190,7 +229,7 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     // the owning model or an already-loaded model. Restrict the latter to the
     // explicitly borrowed stage context; never search unrelated level archives.
     for (const auto& effect : data.sounds()) {
-        if ((effect.flags & CombatEffectDefinition::kSkin) == 0 || skins.contains(effect.tree)) {
+        if ((effect.flags & effect_flags::kSkin) == 0 || skins.contains(effect.tree)) {
             continue;
         }
         if (const auto first = bindings.image(effect.tree)) {

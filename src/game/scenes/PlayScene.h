@@ -67,14 +67,15 @@
 #include "game/rollback/FrameEventLedger.h"
 #include "game/rollback/SimulationObservation.h"
 #include "game/scenes/GameContext.h"
+#include "game/scenes/ScenePicking.h"
 #include "game/scenes/SceneSelection.h"
+#include "game/scenes/SeatCameras.h"
+#include "game/scenes/TowerCeremonies.h"
 #include "game/scenes/TransitionScreen.h"
 #include "game/tower/GameOver.h"
 #include "game/tower/LevelArrivalPresentation.h"
 #include "game/tower/SumnerFigure.h"
 #include "game/tower/SumnerVisit.h"
-#include "game/tower/TowerPromotion.h"
-#include "game/tower/TowerRelics.h"
 #include "game/tower/TowerWelcome.h"
 
 namespace gdl::game {
@@ -253,6 +254,9 @@ public:
     /** Presentation boundary only, after abandoning history or confirming travel.
      * Ending recording invalidates snapshots from its audio epoch. */
     void endRecordedAudio();
+    /** For a scene returned to the state it began `epoch` in: abandons that epoch's recorded
+     * history and records the same epoch again from its first tick. */
+    bool restartRecordedAudio(u64 epoch);
     u64 recordedAudioEpoch() const { return m_recordedAudio.epoch(); }
     const LevelSoundscape& audio() const { return m_audio; }
     SceneSoundEvents::Result reconcileRecordedAudio(u64 firstTick,
@@ -300,8 +304,10 @@ public:
     void releaseSounds() { m_audio.releaseSounds(); }
     /** Application boundary for parking a live scene behind an imported level.
      * Stops only this scene's voices; never holds the shared effects category. */
-    void suspendForImportedLevel();
+    void suspendForImportedLevel(bool preserveImportedSpeech = false);
     void resumeAfterImportedLevel();
+    /** Recover an offline imported exit whose destination could not be loaded. */
+    bool recoverImportedDeparture();
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight,
                 bool optionsOpen = false, f32 frameBlend = -1.0f);
 
@@ -466,8 +472,8 @@ public:
     bool soloViewActive() const;
     /** The seat whose camera this machine looks through under solo cameras; below nought,
      * the lowest standing one. Presentation only. */
-    void setViewSeat(s32 seat) { m_viewSeat = seat; }
-    s32 viewSeat() const { return m_viewSeat; }
+    void setViewSeat(s32 seat) { m_seats.setViewSeat(seat); }
+    s32 viewSeat() const { return m_seats.viewSeat(); }
     const TowerCamera& seatCamera(s32 seat) const;
     const CompanionArrows& companionArrows() const { return m_arrows; }
     /** Looks through `camera` instead of the level's own, for the developer console's free
@@ -476,6 +482,11 @@ public:
     /** Fells `player`'s character where it stands, for the developer console; false in the
      * tower, where nobody falls, or for one not standing. */
     bool kill(s32 player);
+    /** Sends `player`'s character to wait in the tower at once, as a fallen one does
+     * (unseen, untouchable, waited for by no portal, going on fallen, its keys left for the
+     * others) but with no death or question: the seat of a peer gone from an online game.
+     * False for a player not in. */
+    bool waitInTower(s32 player);
     /** Flies `player`'s character by `offset`, through everything, facing `yaw` when
      * given; false for one not standing. */
     bool noclipMove(s32 player, const Vec3& offset, std::optional<f32> yaw);
@@ -484,8 +495,8 @@ public:
      * ray from the eye meets; nothing with nothing there or nothing rendered yet. */
     std::optional<SceneSelection> pick(Vec2 cursor);
     /** The developer console's selection, marked out in the view while it holds. */
-    void select(const std::optional<SceneSelection>& selection) { m_selection = selection; }
-    const std::optional<SceneSelection>& selection() const { return m_selection; }
+    void select(const std::optional<SceneSelection>& selection) { m_picking.select(selection); }
+    const std::optional<SceneSelection>& selection() const { return m_picking.selection(); }
     /** Stands a copy of `level`'s object `name` at `position` facing `yaw`, loading that
      * level's archive if need be, for the developer console. */
     bool spawnObject(const LevelRef& level, std::string_view name, const Vec3& position, f32 yaw);
@@ -579,8 +590,8 @@ public:
     static std::filesystem::path costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                   const CharacterSave& save);
     const SumnerFigure& sumner() const { return m_sumner; }
-    const TowerPromotion& promotion() const { return m_promotion; }
-    const TowerRelics& towerRelics() const { return m_towerRelics; }
+    const TowerPromotion& promotion() const { return m_ceremonies.promotion(); }
+    const TowerRelics& towerRelics() const { return m_ceremonies.relics(); }
     bool showingRelicCeremony() const { return relicCeremonyOn(); }
     s32 familiarTier(s32 player) const;
 
@@ -596,6 +607,36 @@ private:
     OutputFrame* m_outputFrame = nullptr; ///< call-scoped collector, never snapshot state
     void emitOutput(OutputPayload payload);
     PlayOutcome advanceNative(f64 deltaSeconds, const Inputs& inputs);
+    /** One call's fixed clock: the ticks it covers and their seconds. */
+    struct TickClock {
+        s32 ticks = 0;
+        f32 seconds = 0.0f;
+    };
+    /** The tick's phases, in the order advanceNative runs them: the preamble runs under every
+     * hold (the presentation kept for interpolation, the clock, speech, music and the HUD's
+     * clocks); a hold owns the whole tick while it lasts; play runs when nothing holds. */
+    TickClock beginTick(f64 deltaSeconds);
+    PlayOutcome advanceGameOver(s32 ticks, f32 seconds);
+    void advanceScroll(s32 ticks, const Inputs& inputs);
+    PlayOutcome advanceDeparture(s32 ticks, f32 seconds, const Inputs& inputs);
+    void advanceHintScroll(s32 ticks, f32 seconds, const Inputs& inputs);
+    void advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs);
+    PlayOutcome advancePlay(s32 ticks, f32 seconds, const Inputs& inputs);
+    /** Play's phases, in order: the powerups worn and the world stood in; the party's
+     * movement, which gives the camera its subjects; the fixtures, hazards, opponents and
+     * attacks; an imported level's own services (not while held); the triggers; the portals
+     * (when they may end the tick); the cameras; the rune meter. */
+    void advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held);
+    std::vector<CameraSubject> advancePartyMotion(s32 ticks, f32 seconds, const Inputs& inputs,
+                                                  bool held);
+    void advanceCombat(s32 ticks, f32 seconds, bool held);
+    void advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& subjects);
+    void applyImportedHazards(ImportedLevel& imported);
+    void presentImportedPickups(ImportedLevel& imported);
+    void advanceTriggers(f32 seconds);
+    std::optional<PlayOutcome> advancePortals(s32 ticks, f32 seconds, const Inputs& inputs);
+    void advanceCameras(f32 seconds, const std::vector<CameraSubject>& subjects);
+    void advanceRuneMeter();
     std::string applyConsoleAction(const ConsoleAction& action);
     std::string spawnConsoleAction(s32 player, std::span<const std::string> arguments);
     void advanceConsoleFlight(f64 deltaSeconds, const Inputs& inputs);
@@ -614,8 +655,6 @@ private:
      * shared one. The previous is its last tick's, for the frame's interpolation. */
     WorldCamera presentedCamera() const;
     const std::optional<WorldCamera>& previousViewCamera() const;
-    /** The seat shown here: the view seat while it is in the party, else the lowest standing. */
-    s32 presentedSeat() const;
     WorldCamera cameraOfSeat(s32 seat) const; ///< shaken like the shared one
     /** The camera `actor` plays against: its seat's own under solo cameras, else the shared. */
     WorldCamera cameraFor(const PlayerActor& actor) const;
@@ -624,7 +663,8 @@ private:
     /** The seats whose companions the arrows point to: the shown seat alone under solo
      * cameras, else this machine's. */
     u8 arrowOwnSeats() const;
-    using SeatCameraStates = std::array<TowerCamera::State, static_cast<usize>(kPlayerCount)>;
+    using SeatCameraStates = SeatCameras::States;
+    static_assert(SeatCameras::kSeats == static_cast<usize>(kPlayerCount));
     SeatCameraStates seatCameraStates() const;
     /** One subject per party member, in party order, moved by `displacement`. */
     std::vector<CameraSubject> partySubjects(const Vec3& displacement) const;
@@ -660,7 +700,7 @@ private:
     PlayerAttacks::Targets attackTargets();
     void answerTowerPrompts(const Inputs& inputs);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,
-              const PlayerImpact& impact = {});
+              const PlayerImpact& impact = {}, bool armorAbsorbed = false);
     /** What a blow to `runtime` (the player at `index`) sounds, shows and teaches. */
     PlayerHealth::Events healthEvents(usize index, PlayerRuntime& runtime);
     void updateEnemies(s32 ticks, f32 seconds);
@@ -675,11 +715,6 @@ private:
      * Appearance upgrades and title ceremonies wait for a tower return. */
     void updateLevels();
     void updatePromotion(s32 ticks, f32 seconds);
-    bool ownsFigure(usize player, const PlayerFigure* figure) const;
-    void activateFigure(usize player, PlayerFigure* figure);
-    void upgradeFigure(usize player);
-    void beginTowerRelics();
-    void revealTowerRoutes();
     void updateTowerRelics(s32 ticks, f32 seconds);
     bool relicCeremonyOn() const;
     static constexpr f32 kLevelUpHealth = 100.0f;
@@ -700,10 +735,15 @@ private:
     bool openMessage(std::string_view name, usize page);
     void handleTriggerEvents();
     PartyMotion::Events motionEvents();
+    ScenePicking::Scene pickingScene();
+    TowerCeremonies::Scene ceremonyScene();
     void perform(usize index, PartyMotion::Action action);
     Vec3 limitStep(usize index, const Vec3& before, const Vec3& after) const;
     void updateSumnerVisit(f32 seconds);
     void updateHints(const Inputs& inputs, s32 ticks);
+    void openImportedDialogue();
+    bool importedOpening() const;
+    void updateImportedDialogue(const Inputs& inputs, s32 ticks);
 
     RenderDevice* m_device = nullptr;
     GameContext m_context;
@@ -713,13 +753,15 @@ private:
     PartyHud m_hud;
     Canvas m_canvas;
     TowerCamera m_camera;
-    std::array<TowerCamera, static_cast<usize>(kPlayerCount)> m_seatCameras; ///< by seat
+    SeatCameras m_seats; ///< the seats' own cameras, under solo cameras
     std::optional<Mat4> m_presentedClip;
+    WorldCamera m_presentedView;
+    f32 m_presentedWorldAlpha = -1;
     std::optional<Mat4> m_presentedCanvas; ///< local pointer mapping, never simulation state
     std::optional<WorldCamera> m_previousCamera;
     std::optional<WorldCamera> m_previousSeatView; ///< this machine's view alone, never digested
     std::optional<WorldCamera> m_viewOverride;
-    std::optional<SceneSelection> m_selection;
+    ScenePicking m_picking;
     std::vector<PlayerRuntime> m_players;
     LevelSoundscape m_audio;
     SceneSoundEvents m_recordedAudio;
@@ -728,7 +770,6 @@ private:
     bool m_previousBossCamera = false;
     bool m_hudHidden = false;
     u8 m_localSeats = 0xF;
-    s32 m_viewSeat = -1; ///< presentation only: the seat shown here under solo cameras
     bool m_open = false;
     StreakMeter m_streakMeter; ///< presentation only, never simulation state
     std::optional<std::chrono::steady_clock::time_point> m_streakFrame;
@@ -753,22 +794,8 @@ private:
     std::vector<PointLight> m_lights; ///< this frame's, gathered before it is drawn
     BossSequence m_bossSequence;
     SumnerVisit m_sumnerVisit;
-    TowerPromotion m_promotion;
-    TowerRelics m_towerRelics;
-    LevelSoundscape::Speech m_relicVoice;
-    LevelSoundscape::Speech m_promotionVoice;
+    TowerCeremonies m_ceremonies;
     TriggerCues m_triggerCues;
-    std::vector<std::unique_ptr<PlayerFigure>>
-        m_promotionFigures; ///< retain borrowed voice/effect clips until close
-    struct PromotionFigure {
-        usize player = 0;
-        s32 character = 0;
-        s32 color = 0;
-        s32 level = 0;
-        PlayerFigure* figure = nullptr;
-        PlayerFigure::LocalSnapshot initial;
-    };
-    std::vector<PromotionFigure> m_promotionBindings;
 
     ItemArchive m_weapons;              ///< shared weapon and effect assets
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive

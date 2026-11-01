@@ -192,6 +192,39 @@ TEST_CASE("native boss equality observes waiting clocks before any fighter is vi
     CHECK(boss.equalLocal(initial, after));
 }
 
+TEST_CASE("boss legend presentation configuration is immutable within a rewind epoch",
+          "[local-rewind][boss-local-rewind][legend-profile]") {
+    test::FakeRenderDevice device;
+    Bosses boss;
+    const auto digest = [&] {
+        NativeStateDigest value;
+        REQUIRE(boss.appendNativeDigest(value));
+        REQUIRE(value.checkedFinish());
+        return *value.checkedFinish();
+    };
+    boss.open(device, {}, nullptr, {}, 'G');
+    const auto ordinary = digest();
+    LegendProfile profile;
+    profile.targetNode = 2;
+    boss.open(device, {}, nullptr, {}, 'G', {}, &profile);
+    const auto imported = digest();
+    CHECK(imported != ordinary);
+    Bosses::LocalSnapshot saved;
+    REQUIRE(boss.saveLocal(saved));
+    profile.targetNode = 3;
+    profile.eyeReplacement = "OTHER_EYE";
+    CHECK(digest() == imported);
+    REQUIRE(boss.restoreLocal(saved));
+    NativeStateDigest restored;
+    REQUIRE(boss.appendLocalDigest(restored, saved));
+    CHECK(restored.checkedFinish() == imported);
+    boss.open(device, {}, nullptr, {}, 'G', {}, &profile);
+    CHECK(digest() != imported);
+    CHECK_FALSE(boss.restoreLocal(saved));
+    boss.open(device, {}, nullptr, {}, 'G');
+    CHECK(digest() == ordinary);
+}
+
 TEST_CASE("native legend equality includes waiting and recovery between public phase changes",
           "[local-rewind][boss-local-rewind][native-equality]") {
     LegendRite rite;

@@ -29,6 +29,7 @@ layout(set = 3, binding = 0) uniform sampler uSecondSampler;
 VARYING(0) in vec4 vColor;
 VARYING(1) in vec2 vUv;
 VARYING(2) in vec2 vUv2;
+VARYING(3) noperspective in float vFog;
 
 layout(location = 0) out vec4 outColor;
 
@@ -99,6 +100,9 @@ void main() {
     } else if (pc.scale.z < 0.0) {
         outColor = blendFrames(base, sampleSprite(SPRITE_ARGS(uSecondImage, uSecondSampler), vUv),
                                -pc.scale.z) * vColor;
+    } else if (pc.effectData0.y < -0.5) {
+        // Imported Dreamcast lightmaps carry coloured illumination in RGB565.
+        outColor.rgb *= texture(uSecondTexture, vUv2).rgb;
     } else if (pc.effectData0.y > 0.5) {
         // An authored silhouette: the second texture's clear texels cut the draw away.
         if (texture(uSecondTexture, vUv2).a < 0.5) {
@@ -115,4 +119,7 @@ void main() {
     // What a draw is darkened by, as when the level's ambient light is pulled down.
     outColor.rgb = clamp(outColor.rgb * pc.scale.w, 0.0, 1.0);
     outColor.rgb *= 1.0 - pc.params.w;
+    // Per-instance flashes affect colour only, not authored cutouts or translucent coverage.
+    outColor.rgb = mix(outColor.rgb, vec3(1.0), pc.effectData0.z);
+    outColor.rgb = mix(outColor.rgb, pc.effectData1.rgb, vFog);
 }

@@ -17,8 +17,11 @@
 #include "engine/platform/Paths.h"
 #include "engine/render/RenderTypes.h"
 
+#include "expansions/shared/characters/LegendsVisit.h"
+#include "expansions/shared/scenes/LegendsLevel.h"
 #include "formats/TplFile.h"
 #include "game/app/GameCursor.h"
+#include "game/app/ImportedShop.h"
 #include "game/app/Scenario.h"
 #include "game/characters/AutoSave.h"
 #include "game/config/ControlProfiles.h"
@@ -32,7 +35,6 @@ namespace {
 
 constexpr std::string_view kMovieDirectory = "VQMOVIES";
 constexpr std::string_view kTextDirectory = "text";
-constexpr f64 kFpsReportInterval = 2.0;
 constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked memory-card icon
 
 } // namespace
@@ -349,13 +351,6 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         m_legendsSounds->update();
     }
 
-    m_fpsAccumulator += deltaSeconds;
-    if (m_fpsAccumulator >= kFpsReportInterval) {
-        log::trace("{:.1f} fps",
-                   static_cast<f64>(renderedFrames() - m_fpsLastFrame) / m_fpsAccumulator);
-        m_fpsAccumulator = 0.0;
-        m_fpsLastFrame = renderedFrames();
-    }
 }
 
 bool Gauntlet::updateIdle(f64 deltaSeconds) {
@@ -464,6 +459,10 @@ bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember
                                  bool manage) {
     if (m_select.open(renderDevice(), context(), startingPlayer, party, manage,
                       m_title.musicHandle())) {
+        // Native game-main state8 calls e0070d2c on entering player selection.
+        // Failed selection loads and ordinary map/quit transitions do not reset it.
+        if (m_legendsAdvice)
+            *m_legendsAdvice = {};
         return true;
     }
     log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",
@@ -516,6 +515,7 @@ bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> pa
         // party is authoritative; do not leave a stale parked scene or soundtrack.
         m_legendsOrigin.reset();
         m_legendsEntryParty.clear();
+        m_legendsTowerParty.clear();
         if (m_legendsSounds) {
             m_legendsSounds->stopAll();
             m_legendsSounds.reset();
@@ -663,6 +663,13 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     }
     const bool wasLeaving = m_play->scene.leaving();
     const PlayOutcome outcome = m_play->scene.update(deltaSeconds, m_sessionInputs.advance(inputs));
+    if (outcome == PlayOutcome::Running) {
+        if (auto* imported = m_play->world.imported(); imported && imported->takeShopRequest()) {
+            if (openImportedShop(ShopVisit::Shop)) {
+                return;
+            }
+        }
+    }
     // Exit speech begins with the sinking spin, once for the party, and must
     // survive closing PlayScene before the tally. Temple/Underworld and the
     // boss wizard's departure have their own speeches.
@@ -735,14 +742,37 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         return;
     }
     if (outcome == PlayOutcome::GameOver) {
+        if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
+            native && native->platform() == LegendsPlatform::N64) {
+            // A failed visit still owns its permanent native discoveries. Keep
+            // the normal abandoned-level gold/XP policy and AutoSave setting;
+            // never turn defeat into stage completion or a GDL campaign grant.
+            // GameOver is reached after every runtime has departed, so party()
+            // intentionally contains nobody. Snapshot those actual participants
+            // before the scene is destroyed, including their original save slots.
+            std::vector<PartyMember> participants;
+            for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
+                if (const auto* runtime = m_play->scene.runtime(seat)) {
+                    participants.push_back({seat, runtime->actor.save(), runtime->slot});
+                }
+            }
+            auto party = m_play->scene.abandonedParty(participants);
+            for (auto& member : party) {
+                if (const auto* current = m_play->scene.liveSave(member.player)) {
+                    retainLegendsProgress(member.save, *current, LegendsPlatform::N64);
+                }
+            }
+            autoSave(party);
+        }
         m_legendsOrigin.reset();
         m_legendsEntryParty.clear();
+        m_legendsTowerParty.clear();
         if (m_legendsSounds) {
             m_legendsSounds->stopAll();
             m_legendsSounds.reset();
         }
         m_parent.reset();
-        // The game was quit: play the failure movie without overwriting manual saves.
+        // Normal GDL failure still does not overwrite manual saves.
         m_play->scene.close();
         m_play->world.clear();
         m_exitSpeech.close();
@@ -884,12 +914,21 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         // as Quit Level gives it up; the party's autosave keeps what it brought out.
         m_legendsOrigin.reset();
         m_legendsEntryParty.clear();
+        m_legendsTowerParty.clear();
         if (m_legendsSounds) {
             m_legendsSounds->stopAll();
             m_legendsSounds.reset();
         }
         if (!m_play->world.isTower()) {
             party = m_play->scene.abandonedParty(party);
+            if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
+                native && native->platform() == LegendsPlatform::N64) {
+                for (auto& member : party) {
+                    if (const auto* current = m_play->scene.liveSave(member.player)) {
+                        retainLegendsProgress(member.save, *current, LegendsPlatform::N64);
+                    }
+                }
+            }
         }
         autoSave(party);
         m_parent.reset();
@@ -904,6 +943,11 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         return;
     }
     if (outcome == PauseOutcome::Shop || outcome == PauseOutcome::Inventory) {
+        if (m_play->world.imported()) {
+            openImportedShop(outcome == PauseOutcome::Shop ? ShopVisit::Shop
+                                                           : ShopVisit::Inventory);
+            return;
+        }
         Journey journey;
         journey.destination = LevelRef::tower();
         journey.party = party;
@@ -923,8 +967,7 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
     }
     if (outcome == PauseOutcome::ReturnTower) {
         if (m_legendsOrigin) {
-            // Quit Level abandons this native visit; Escape/Resume never leaves it.
-            closeLegendsLevel(false);
+            quitLegendsLevel();
             return;
         }
         // Quitting a level gives up what it gave, as dying in it does: the original kills
@@ -945,6 +988,30 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
     }
 }
 
+bool Gauntlet::openImportedShop(ShopVisit visit) {
+    if (!m_play->scene.isOpen() || !m_play->world.imported() || m_journey ||
+        (visit != ShopVisit::Shop && visit != ShopVisit::Inventory)) {
+        return false;
+    }
+    Journey journey;
+    journey.destination = m_play->world.ref();
+    journey.party = m_play->scene.party();
+    journey.resumeImported = true;
+    if (!m_afterLevel.open(renderDevice(), context(), journey.party, {}, {1000, 100, 1000},
+                           m_play->world.ref().name, visit)) {
+        return false;
+    }
+    // Menu voices use the same mixer, so suspend only the scene's own handles.
+    // Its camera, enemies and fixtures remain at precisely this tick.
+    m_play->scene.suspendForImportedLevel();
+    if (m_legendsSounds) {
+        m_legendsSounds->setCategoryPaused(SoundCategory::Music, true);
+    }
+    m_journey = std::move(journey);
+    resetPlayInput();
+    return true;
+}
+
 void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     ShopSession::Inputs inputs;
     for (s32 player = 0; player < 4; ++player) {
@@ -952,6 +1019,27 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     }
     if (m_afterLevel.update(deltaSeconds, inputs)) {
         GDL_VERIFY(m_journey.has_value(), "Shop requires a pending journey");
+        if (m_journey->resumeImported) {
+            auto party = m_afterLevel.session().party();
+            if (commitImportedShop(m_play->scene, m_journey->party, party)) {
+                if (m_afterLevel.session().visit() == ShopVisit::Shop) {
+                    autoSave(party);
+                }
+                for (const auto& member : party) {
+                    m_play->scene.setSaveSlot(member.player, member.slot);
+                }
+            } else {
+                log::warn("Imported shop return refused: the parked party changed");
+            }
+            m_afterLevel.close();
+            m_journey.reset();
+            m_play->scene.resumeAfterImportedLevel();
+            if (m_legendsSounds) {
+                m_legendsSounds->setCategoryPaused(SoundCategory::Music, false);
+            }
+            resetPlayInput();
+            return;
+        }
         m_journey->party = m_afterLevel.session().party();
         const bool manageCharacters = m_afterLevel.session().visit() == ShopVisit::Level ||
                                       m_afterLevel.session().visit() == ShopVisit::Completion;
@@ -1318,6 +1406,27 @@ void Gauntlet::onShutdown() {
     m_netplay.reset();
     window().stopRumble();
     m_online.reset();
+    if (m_play && m_play->scene.isOpen()) {
+        if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
+            native && native->platform() == LegendsPlatform::N64) {
+            // Closing the window during the GameOver caption precedes its
+            // outcome callback. Include departed participants just as that
+            // callback does, or their permanent native discoveries disappear.
+            std::vector<PartyMember> participants;
+            for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
+                if (const auto* runtime = m_play->scene.runtime(seat)) {
+                    participants.push_back({seat, runtime->actor.save(), runtime->slot});
+                }
+            }
+            auto party = m_play->scene.abandonedParty(participants);
+            for (auto& member : party) {
+                if (const auto* current = m_play->scene.liveSave(member.player)) {
+                    retainLegendsProgress(member.save, *current, LegendsPlatform::N64);
+                }
+            }
+            autoSave(party);
+        }
+    }
     commitLegendsProgress();
     m_legendsPreview.close();
     if (m_legendsSounds) {
@@ -1333,6 +1442,7 @@ void Gauntlet::onShutdown() {
     m_parent.reset();
     m_legendsOrigin.reset();
     m_legendsEntryParty.clear();
+    m_legendsTowerParty.clear();
     m_pause.close();
     m_movie.close();
     m_title.close();

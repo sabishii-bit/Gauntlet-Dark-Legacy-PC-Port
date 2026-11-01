@@ -14,6 +14,7 @@
 
 #include "game/audio/SceneSoundEvents.h"
 #include "game/bosses/LegendItems.h"
+#include "game/bosses/LegendProfile.h"
 #include "game/effects/EffectTrees.h"
 
 namespace gdl::game {
@@ -28,6 +29,7 @@ public:
         ItemArchive& items;
         ItemArchive& weapons;
         TextureSet& sharedTextures;
+        const LegendProfile* profile = nullptr; ///< borrowed immutable native presentation
     };
     /** Synchronous audio port: the caller selects banks, the presentation owns its loop. */
     struct Audio {
@@ -39,6 +41,8 @@ public:
          * reserves its native start token; gathering presents its final desire. */
         std::function<std::optional<SoundCueToken>(std::string_view, bool, s32, s32, u32)> record;
         std::function<void(std::string_view, s32, s32, SoundCueToken)> desire;
+        /** Optional imported phase route. True suppresses ordinary named cues. */
+        std::function<bool(LegendSound)> mapped;
     };
     /** Current pose supplied by the scene, independent of its actor/figure storage. */
     struct Bearer {
@@ -59,6 +63,7 @@ public:
         /** Swept contact with the animated body, not just the homing anchor.
          * Called synchronously during update; never retained by the presentation. */
         std::function<bool(const Vec3&, const Vec3&, f32)> touches = nullptr;
+        std::optional<Mat4> attachment = std::nullopt; ///< exact animated impact parent
     };
     struct Update {
         PlayerDeed gesture = PlayerDeed::None;
@@ -93,6 +98,10 @@ public:
     const Texture* frozenTexture() const { return m_sim.frozenTexture; }
 
 private:
+    LegendShow::Flight flight() const;
+    std::string_view heldTree() const;
+    std::string_view projectileTree() const;
+    std::string_view burstTree() const;
     void brandish(const Bearer& bearer);
     void hold(const Bearer& bearer);
     void release(const Bearer& bearer, const std::optional<Target>& target);

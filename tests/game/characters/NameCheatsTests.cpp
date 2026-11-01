@@ -9,6 +9,7 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/NameCheats.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PowerupEffects.h"
@@ -68,7 +69,7 @@ TEST_CASE("paired codes grant every matching row without overwriting other inven
           "[game][cheats][players]") {
     CharacterSave save;
     save.name = "1ANGEL";
-    save.progress().inventory.addPowerup(5, powerup::kThreeWayShot, 0, 60);
+    save.progress().inventory.addPowerup(5, damage::kThreeWayShot, 0, 60);
     REQUIRE(applyNameCheats(save));
     const auto effects = PowerupEffects::of(save.progress().inventory);
     CHECK(effects.levitating());
@@ -155,8 +156,7 @@ TEST_CASE("hidden name codes choose their authored class colour and persistent a
         save.character = 15;
         save.color = 0;
         REQUIRE(applyNameCheats(save));
-        CHECK(save.character ==
-              (costume.directory == "SUM" ? kSumnerClass : costume.character));
+        CHECK(save.character == (costume.directory == "SUM" ? kSumnerClass : costume.character));
         CHECK(save.color == costume.color);
         CHECK(save.progress().inventory.powerupCount() == 0);
         const auto loaded = CharacterSave::fromJson(save.toJson());
@@ -212,9 +212,9 @@ TEST_CASE("permanent turbo and super shot cheats use normal gameplay consumers",
     save.name = "SSHOTS";
     REQUIRE(applyNameCheats(save));
     for (s32 i = 0; i < 100; ++i) {
-        CHECK(save.progress().inventory.spendPowerup(5, powerup::kSuperShot));
+        CHECK(save.progress().inventory.spendPowerup(5, damage::kSuperShot));
     }
-    const auto* shot = save.progress().inventory.powerup(5, powerup::kSuperShot);
+    const auto* shot = save.progress().inventory.powerup(5, damage::kSuperShot);
     REQUIRE(shot);
     CHECK(shot->charge == -1);
 }

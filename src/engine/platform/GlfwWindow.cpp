@@ -388,13 +388,13 @@ bool GlfwWindow::selectMonitor(s32 index) {
         return true;
     }
     auto* monitor = std::span(monitors, static_cast<usize>(count))[static_cast<usize>(index)];
-    if (auto* attached = glfwGetWindowMonitor(m_window)) {
-        if (attached == monitor) {
+    const WindowMode mode = windowMode();
+    if (mode != WindowMode::Windowed) {
+        if (glfwGetWindowMonitor(m_window) == monitor) {
             return true;
         }
         // The same mode on the display chosen, at its own desktop size when the current
         // size is not among its modes.
-        const WindowMode mode = windowMode();
         s32 width = 0;
         s32 height = 0;
         glfwGetWindowSize(m_window, &width, &height);
@@ -468,7 +468,9 @@ DisplayOptions GlfwWindow::displayOptions() const {
 
 WindowMode GlfwWindow::windowMode() const {
     if (glfwGetWindowMonitor(m_window) == nullptr) {
-        return WindowMode::Windowed;
+        return glfwGetWindowAttrib(m_window, GLFW_DECORATED) == GLFW_TRUE
+                   ? WindowMode::Windowed
+                   : WindowMode::BorderlessFullscreen;
     }
     return glfwGetWindowAttrib(m_window, GLFW_AUTO_ICONIFY) == GLFW_TRUE
                ? WindowMode::Fullscreen
@@ -523,8 +525,15 @@ bool GlfwWindow::setDisplayMode(WindowMode mode, Extent2D resolution) {
         return false;
     }
     const bool attached = glfwGetWindowMonitor(m_window) != nullptr;
-    if (!attached && glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) {
-        glfwGetWindowPos(m_window, &m_windowX, &m_windowY);
+    const bool desktopPositioning = glfwGetPlatform() != GLFW_PLATFORM_WAYLAND;
+    s32 previousX = m_windowX;
+    s32 previousY = m_windowY;
+    if (desktopPositioning) {
+        glfwGetWindowPos(m_window, &previousX, &previousY);
+        if (windowMode() == WindowMode::Windowed) {
+            m_windowX = previousX;
+            m_windowY = previousY;
+        }
     }
     // The desktop of the display taken is kept to give back; a move to another display
     // records that one's.
@@ -563,23 +572,41 @@ bool GlfwWindow::setDisplayMode(WindowMode mode, Extent2D resolution) {
     const s32 previousRefresh =
         previousMode != nullptr ? previousMode->refreshRate : GLFW_DONT_CARE;
     const s32 previousIconify = glfwGetWindowAttrib(m_window, GLFW_AUTO_ICONIFY);
+    const s32 previousDecorated = glfwGetWindowAttrib(m_window, GLFW_DECORATED);
+    const s32 previousFloating = glfwGetWindowAttrib(m_window, GLFW_FLOATING);
     const s32 previousCursor = glfwGetInputMode(m_window, GLFW_CURSOR);
+    const auto presentation = windowPresentation(mode, desktopPositioning);
+    s32 x = m_windowX;
+    s32 y = m_windowY;
+    if (mode == WindowMode::BorderlessFullscreen && desktopPositioning) {
+        glfwGetMonitorPos(monitor, &x, &y);
+    }
     glfwGetError(nullptr); // Discard earlier unrelated input/monitor errors.
     glfwSetWindowAttrib(m_window, GLFW_AUTO_ICONIFY,
-                        mode == WindowMode::Fullscreen ? GLFW_TRUE : GLFW_FALSE);
-    // A monitor-attached window at the desktop mode is GLFW's borderless fullscreen.
+                        presentation.autoIconify ? GLFW_TRUE : GLFW_FALSE);
+    glfwSetWindowAttrib(m_window, GLFW_DECORATED, presentation.decorated ? GLFW_TRUE : GLFW_FALSE);
+    if (desktopPositioning) {
+        glfwSetWindowAttrib(m_window, GLFW_FLOATING, GLFW_FALSE);
+    }
+    // GLFW's Win32 monitor attachment makes a window HWND_TOPMOST even at desktop
+    // resolution. Borderless must remain in the ordinary desktop z-order so the
+    // taskbar and switched-to applications can cover it.
     // Never select a higher refresh rate just because a resolution offers one.
-    glfwSetWindowMonitor(m_window, mode == WindowMode::Windowed ? nullptr : monitor, m_windowX,
-                         m_windowY, static_cast<s32>(resolution.width),
-                         static_cast<s32>(resolution.height), refresh);
+    glfwSetWindowMonitor(m_window, presentation.attached ? monitor : nullptr, x, y,
+                         static_cast<s32>(resolution.width), static_cast<s32>(resolution.height),
+                         refresh);
     applyCursorMode();
     if (glfwGetError(nullptr) == GLFW_NO_ERROR) {
         return true;
     }
     // Restore the actual previous window (including a manually resized client area).
     glfwSetWindowAttrib(m_window, GLFW_AUTO_ICONIFY, previousIconify);
+    glfwSetWindowAttrib(m_window, GLFW_DECORATED, previousDecorated);
+    if (desktopPositioning) {
+        glfwSetWindowAttrib(m_window, GLFW_FLOATING, previousFloating);
+    }
     glfwSetInputMode(m_window, GLFW_CURSOR, previousCursor);
-    glfwSetWindowMonitor(m_window, previousMonitor, m_windowX, m_windowY, previousWidth,
+    glfwSetWindowMonitor(m_window, previousMonitor, previousX, previousY, previousWidth,
                          previousHeight, previousRefresh);
     return false;
 }

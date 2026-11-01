@@ -90,8 +90,8 @@ TEST_CASE("the great ones' affinities come from their data and meet the element 
         Case{"DRAGON", 1, damage::kFire, 0.75f},     Case{"DRAGON", 1, damage::kElectric, 1.5f},
         Case{"DRAGON", 1, damage::kAcid, 1.25f},     Case{"LICH", 8, damage::kAcid, 0.75f},
         Case{"LICH", 8, damage::kLight, 1.5f},       Case{"YETI", 2, damage::kElectric, 0.75f},
-        Case{"GOLEM", 16, Damage::kMagic, 0.75f},    Case{"GOLEM", 16, 0, 1.0f},
-        Case{"SKORNE1", 4096, Damage::kMagic, 0.0f}, Case{"SKORNE1", 4096, damage::kFire, 1.25f},
+        Case{"GOLEM", 16, damage::kMagic, 0.75f},    Case{"GOLEM", 16, 0, 1.0f},
+        Case{"SKORNE1", 4096, damage::kMagic, 0.0f}, Case{"SKORNE1", 4096, damage::kFire, 1.25f},
     };
     for (const Case& c : kCases) {
         CAPTURE(c.name, c.hitFlags);
@@ -101,7 +101,7 @@ TEST_CASE("the great ones' affinities come from their data and meet the element 
         const f32 plain = std::max(20.0f - data.armor(), 0.0f);
         const Damage modified =
             Damage::modify(20.0f, c.hitFlags, data.shieldFlags(), data.armor(), true);
-        const f32 expected = (c.hitFlags & Damage::kMagic) != 0 ? 20.0f * c.share : plain * c.share;
+        const f32 expected = (c.hitFlags & damage::kMagic) != 0 ? 20.0f * c.share : plain * c.share;
         CHECK(modified.amount == Approx(expected));
     }
 }

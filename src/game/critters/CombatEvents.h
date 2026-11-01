@@ -29,6 +29,7 @@ struct CombatGrab {
     std::optional<Mat4> attachment;
     Vec3 velocity{0};
     f32 damage = 0;
+    bool restoreSupport = false; ///< release returns to the pre-parent support footprint
     bool operator==(const CombatGrab&) const = default;
 };
 /** A stage attachment, identified by its encounter-owned obstacle index. */
@@ -123,7 +124,7 @@ inline void visitNativeState(NativeStateDigest& digest, const CombatTrample& sta
     digest.fields<3>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatGrab& state) {
-    digest.fields<5>(state);
+    digest.fields<6>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatArenaTarget& state) {
     digest.fields<3>(state);

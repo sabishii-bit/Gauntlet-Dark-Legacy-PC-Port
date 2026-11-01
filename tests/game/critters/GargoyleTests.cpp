@@ -14,6 +14,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/combat/EffectFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantProjectiles.h"
 #include "game/critters/Critters.h"
@@ -118,7 +119,7 @@ TEST_CASE("gargoyle death skins follow the death cue and the sack waits for the 
     const auto* skin = assets.data.sound(move.sound);
     REQUIRE(skin != nullptr);
     REQUIRE(skin->tree == "DEATHGAR");
-    REQUIRE(skin->flags == CombatEffectDefinition::kSkin);
+    REQUIRE(skin->flags == effect_flags::kSkin);
     REQUIRE(assets.skins.at("DEATHGAR").size() == 15);
     EnemyHit hit;
     hit.player = 0;

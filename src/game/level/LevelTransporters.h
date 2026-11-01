@@ -28,7 +28,7 @@ public:
     LevelTransporters(LevelTransporters&&) = delete;
     LevelTransporters& operator=(LevelTransporters&&) = delete;
     ~LevelTransporters() = default;
-    static constexpr s32 kItemType = 11;
+    static constexpr s32 kItemType = ItemInfo::kTransporter;
     struct Contact {
         s32 instance = -1;
         s32 id = 0;

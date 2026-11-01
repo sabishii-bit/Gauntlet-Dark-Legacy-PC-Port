@@ -302,7 +302,7 @@ void ThreadedRenderDevice::draw(const ImmediateBatch& batch, const Texture& text
     const auto mask = m_impl->retain(state.maskedTexture);
     const auto next = m_impl->retain(state.nextTexture);
     m_impl->record([batch = ImmediateBatch{batch}, base, lightmap, mask, next, transform,
-                    state = DrawState{state}](Impl& worker) mutable noexcept(false) {
+                    state = resolvedDrawState(state)](Impl& worker) mutable noexcept(false) {
         state.lightmap = worker.resolve(lightmap);
         state.maskedTexture = worker.resolve(mask);
         state.nextTexture = worker.resolve(next);

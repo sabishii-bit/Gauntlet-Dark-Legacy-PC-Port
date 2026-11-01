@@ -11,6 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "formats/CritterWad.h"
 #include "game/critters/CritterData.h"
 #include "game/level/ItemFigure.h"
 #include "game/level/NativeStateResources.h"
@@ -62,6 +63,57 @@ NativeStateDigest::Digest figureHash(const NativeStateResources& registry,
     digest.value(figure);
     REQUIRE(digest.checkedFinish());
     return *digest.checkedFinish();
+}
+
+TEST_CASE("native critter resource identity includes decoded impact policies",
+          "[native-digest][native-state-resources][native-impact-envelope]") {
+    formats::CritterFile source;
+    source.descriptors.resize(1);
+    source.types.resize(1);
+    source.types[0].moveCount = 1;
+    source.moves.resize(1);
+    source.sounds.resize(1);
+    auto& effect = source.sounds[0];
+    effect.name = "EXPLOSION";
+    effect.impactRadius = 3.6f;
+    effect.impactPhysicalFraction = 0.1f;
+    effect.impactElementalFraction = 0.9f;
+    effect.impactElement = 4;
+    CritterRules rules;
+    rules.nativeImpactAreas = true;
+    const auto original = CritterData::fromDecoded("TEST", source, 0, rules);
+    const auto identical = CritterData::fromDecoded("TEST", source, 0, rules);
+    NativeStateResources first;
+    NativeStateResources second;
+    REQUIRE(first.registerCritter(original, "native/TEST", 0));
+    REQUIRE(second.registerCritter(identical, "native/TEST", 0));
+    const auto originalIdentity = resourceHash(first, &original);
+    const auto originalEffect = resourceHash(first, original.sound(0));
+    REQUIRE(originalIdentity);
+    REQUIRE(originalEffect);
+    CHECK(originalIdentity == resourceHash(second, &identical));
+    CHECK(originalEffect == resourceHash(second, identical.sound(0)));
+    for (u32 field = 0; field < 5; ++field) {
+        CAPTURE(field);
+        auto changed = source;
+        auto& sound = changed.sounds[0];
+        switch (field) {
+        case 0: sound.impactRadius = 5; break;
+        case 1: sound.impactPhysicalFraction = 0.2f; break;
+        case 2: sound.impactElementalFraction = 0.8f; break;
+        case 3: sound.impactElement = 2; break;
+        case 4: sound.scale = 0.72f; break;
+        }
+        const auto altered = CritterData::fromDecoded("TEST", changed, 0, rules);
+        NativeStateResources registry;
+        REQUIRE(registry.registerCritter(altered, "native/TEST", 0));
+        const auto alteredIdentity = resourceHash(registry, &altered);
+        const auto alteredEffect = resourceHash(registry, altered.sound(0));
+        REQUIRE(alteredIdentity);
+        REQUIRE(alteredEffect);
+        CHECK(originalIdentity != alteredIdentity);
+        CHECK(originalEffect != alteredEffect);
+    }
 }
 
 TEST_CASE("native builtin white textures identify particle fallbacks without renderer writes",

@@ -16,6 +16,56 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("sloping physical targets cannot occlude their own melee acquisition",
+          "[game][target-assist][melee][native-scenery-combat]") {
+    // The sloping back of SHOOTW_PEW_207, independent of optional asset loading.
+    CollisionTriangle first;
+    first.vertices = {
+        {{19.6875f, 3.9375f, 14.6875f}, {19.375f, 0, 14.375f}, {27.8125f, 3.9375f, 18.5f}}};
+    first.normal = glm::normalize(
+        glm::cross(first.vertices[1] - first.vertices[0], first.vertices[2] - first.vertices[0]));
+    first.object = 77;
+    first.objectFlags = 2;
+    auto second = first;
+    second.vertices = {{{27.875f, 0, 18.3125f}, {27.8125f, 3.9375f, 18.5f}, {19.375f, 0, 14.375f}}};
+    second.normal = glm::normalize(glm::cross(second.vertices[1] - second.vertices[0],
+                                              second.vertices[2] - second.vertices[0]));
+    const std::array faces{first, second};
+    const Vec3 feet{21.442085f, 0, 17.664749f};
+    const Vec3 origin = feet + Vec3{0, 2.5f, 0};
+    const MissileTarget target{77, {24.15625f, 0, 15.4375f}, 5.678f, 3.9375f, faces};
+    const Vec3 nearest = target.pointNear(origin);
+    const Vec3 direction = glm::normalize(nearest - origin);
+    const Vec3 probe = origin + direction * 1.75f;
+    WorldCollision collision;
+    collision.build({first, second});
+    // Establish the former mismatch rather than merely testing an easy face.
+    REQUIRE_FALSE(target.touches(probe, 0.25f));
+    REQUIRE(glm::distance(collision.resolveWalls(probe, 0.25f, probe.y - 0.25f, probe.y + 0.25f),
+                          probe) > 0.0001f);
+    const auto contact = collision.sweepSphere(origin, nearest, 0.25f);
+    REQUIRE(contact);
+    const Vec3 sphereCentre = origin + (nearest - origin) * contact->time;
+    CHECK(target.touches(contact->point, 0.001f));
+    CHECK_FALSE(target.touches(sphereCentre, 0.001f));
+    CHECK(glm::distance(sphereCentre, contact->point) == Approx(0.25f).margin(0.0001f));
+    CHECK(TargetAssist::around(feet, 5, std::span{&target, 1}, 8.5f, &collision));
+    CHECK(TargetAssist::select(origin, direction, std::span{&target, 1}, 30, &collision));
+
+    // A separate wall in front still blocks, even with the same owner index.
+    const Vec3 across = glm::normalize(Vec3{direction.z, 0, -direction.x}) * 10.0f;
+    const Vec3 middle = origin + direction;
+    CollisionTriangle occluder;
+    occluder.vertices = {{middle + across - Vec3{0, 10, 0}, middle - across - Vec3{0, 10, 0},
+                          middle + Vec3{0, 10, 0}}};
+    occluder.normal = -glm::normalize(Vec3{direction.x, 0, direction.z});
+    occluder.object = first.object;
+    occluder.objectFlags = 2;
+    collision.build({first, second, occluder});
+    CHECK_FALSE(TargetAssist::around(feet, 5, std::span{&target, 1}, 8.5f, &collision));
+    CHECK_FALSE(TargetAssist::select(origin, direction, std::span{&target, 1}, 30, &collision));
+}
+
 TEST_CASE("cursor height acquisition only considers bodies on the current firing line",
           "[game][target-assist][cursor-projectile-aim]") {
     const Vec3 origin{1, 5, 2};

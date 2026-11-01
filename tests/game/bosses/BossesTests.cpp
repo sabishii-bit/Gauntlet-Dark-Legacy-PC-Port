@@ -391,6 +391,7 @@ TEST_CASE("the Plague javelin harms on impact and blindness ends 29 seconds afte
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'K');
     REQUIRE(bosses.spawn(38, Vec3{0}, 0, 100));
+    CHECK(bosses.legendTargetTransform() == bosses.nodeTransform("BODY1_EYEBALL"));
     REQUIRE(bosses.bringLegend(0));
     const auto checkEye = [&](std::string_view expected, std::string_view absent) {
         device.draws.clear();

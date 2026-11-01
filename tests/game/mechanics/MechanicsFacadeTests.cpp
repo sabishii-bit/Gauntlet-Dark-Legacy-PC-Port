@@ -5,6 +5,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/ArmorFlags.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/MeleeStreak.h"
@@ -92,7 +93,7 @@ TEST_CASE("kills under time stop, invulnerability or invisibility count nothing"
     REQUIRE(on.runEffect(BlowSource::Shot, BlowOutcome::Killed, players[1], players) ==
             RunEffect::Count);
     // Invulnerable, the first earns nothing; the second is not affected.
-    players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
+    players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable,
                                                             0, 1);
     CHECK(on.runEffect(BlowSource::Swing, BlowOutcome::Killed, players[0], players) ==
           RunEffect::Nothing);

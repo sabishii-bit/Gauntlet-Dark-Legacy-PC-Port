@@ -6,6 +6,8 @@
 #include "engine/core/Types.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
 #include "game/players/PowerupEffects.h"
@@ -173,8 +175,8 @@ TEST_CASE("pickup focus selects new renewed and replaced slots without opening t
     REQUIRE(selector.selection() == 0);
     selector.step(SelectorInput{.down = true}, inventory, 32);
     inventory.powerups[0] = {};
-    inventory.addPowerup(powerup::kArmor, powerup::kReflectShield, 0, 60);
-    selector.focus(inventory, powerup::kArmor, powerup::kReflectShield);
+    inventory.addPowerup(powerup::kArmor, armor::kReflect, 0, 60);
+    selector.focus(inventory, powerup::kArmor, armor::kReflect);
     REQUIRE(selector.state() == State::SlidingOut);
     selector.step({}, inventory, 1);
     selector.step(SelectorInput{.up = true}, inventory, 32);
@@ -189,8 +191,8 @@ TEST_CASE("usage follows selection then newest active pickup and ignores disable
     selector.focus(inventory, powerup::kSpecial, powerup::kGrowth);
     inventory.addPowerup(powerup::kSpeed, 0, 2, 30);
     selector.focus(inventory, powerup::kSpeed, 0);
-    inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, 30);
-    selector.focus(inventory, powerup::kArmor, powerup::kInvulnerable);
+    inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, 30);
+    selector.focus(inventory, powerup::kArmor, armor::kInvulnerable);
     REQUIRE(selector.usageSlot(inventory) == 2);
     inventory.powerups[2].on = false;
     REQUIRE(selector.usageSlot(inventory) == 1);
@@ -207,7 +209,7 @@ TEST_CASE("usage distinguishes charges from timed stat boosts and permanent item
     const PowerupSlot speed{20.26f, powerup::kSpeed, 5, 0, true};
     REQUIRE_FALSE(PowerupSelector::charged(speed));
     REQUIRE(PowerupSelector::remaining(speed) == 20.26f);
-    PowerupSlot shots{-1, powerup::kWeapon, 4, powerup::kSuperShot, true};
+    PowerupSlot shots{-1, powerup::kWeapon, 4, damage::kSuperShot, true};
     REQUIRE(PowerupSelector::charged(shots));
     REQUIRE(PowerupSelector::remaining(shots) == 4);
     shots.charge = -1;
@@ -218,8 +220,7 @@ TEST_CASE("usage distinguishes charges from timed stat boosts and permanent item
     REQUIRE(PowerupSelector::remaining(shots) == 2);
     shots.on = false;
     REQUIRE_FALSE(PowerupSelector::remaining(shots));
-    REQUIRE(PowerupSelector::charged(
-        PowerupSlot{-1, powerup::kWeapon, 3, powerup::kThunderHammer, true}));
+    REQUIRE(PowerupSelector::charged(PowerupSlot{-1, powerup::kWeapon, 3, damage::kHammer, true}));
     REQUIRE(PowerupSelector::charged(
         PowerupSlot{-1, powerup::kSpecial, 3, powerup::kFireBreath, true}));
 }

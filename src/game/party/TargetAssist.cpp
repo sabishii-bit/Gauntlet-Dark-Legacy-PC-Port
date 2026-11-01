@@ -167,20 +167,29 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
         bool blocked = false;
         if (collision != nullptr) {
             constexpr f32 kProbeRadius = 0.25f;
-            const f32 length = glm::length(offset);
-            const Vec3 direction = offset / length;
-            const auto steps = static_cast<s32>(std::ceil((length - targetRadius) / kProbeRadius));
-            for (s32 step = 1; step < steps; ++step) {
-                const f32 along = static_cast<f32>(step) * kProbeRadius;
-                const Vec3 at = origin + direction * along;
-                if (!target.surface.empty() && target.touches(at, kProbeRadius)) {
-                    break;
+            if (!target.surface.empty()) {
+                // Use the same sphere geometry as the physical target. A short
+                // vertical cylinder can touch a sloping target before a sphere
+                // does, incorrectly making that target its own sight blocker.
+                // Check the actual contact point, not merely the object ID:
+                // an independently blocking face may share the same owner.
+                if (const auto hit = collision->sweepSphere(origin, point, kProbeRadius)) {
+                    blocked = !target.touches(hit->point, 0.001f);
                 }
-                if (glm::distance(collision->resolveWalls(at, kProbeRadius, at.y - kProbeRadius,
-                                                          at.y + kProbeRadius),
-                                  at) > 1e-4f) {
-                    blocked = true;
-                    break;
+            } else {
+                const f32 length = glm::length(offset);
+                const Vec3 direction = offset / length;
+                const auto steps =
+                    static_cast<s32>(std::ceil((length - targetRadius) / kProbeRadius));
+                for (s32 step = 1; step < steps; ++step) {
+                    const f32 along = static_cast<f32>(step) * kProbeRadius;
+                    const Vec3 at = origin + direction * along;
+                    if (glm::distance(collision->resolveWalls(at, kProbeRadius, at.y - kProbeRadius,
+                                                              at.y + kProbeRadius),
+                                      at) > 1e-4f) {
+                        blocked = true;
+                        break;
+                    }
                 }
             }
         }

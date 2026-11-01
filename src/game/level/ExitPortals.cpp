@@ -190,7 +190,7 @@ std::vector<ExitPortals::Contact> ExitPortals::contacts(const WorldLayout& layou
         portal.minPlayers = instance.minPlayers;
         portal.radius = info.radius;
         portal.position = instance.position;
-        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (collision != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             if (const auto floor = collision->restingFloorAt(
                     instance.position, ItemFigure::kFloorReachAbove, ItemFigure::kFloorReachBelow,
                     ItemFigure::kFloorReachRadius);
@@ -201,7 +201,7 @@ std::vector<ExitPortals::Contact> ExitPortals::contacts(const WorldLayout& layou
         portal.transform = itemPlacement(portal.position, instance.rotation);
         const auto* supportWorld =
             itemSupportAt(instance.position, collision, authored ? &*authored : nullptr);
-        if (supportWorld != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (supportWorld != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             if (const auto floor = supportWorld->restingFloorAt(instance.position, 4, 10, 1)) {
                 if (const auto transform = supportWorld->objectTransform(floor->object)) {
                     Vec3 position = instance.position;

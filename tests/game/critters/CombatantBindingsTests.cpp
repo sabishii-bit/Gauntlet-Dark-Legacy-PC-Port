@@ -19,6 +19,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/bosses/BossDefinition.h"
+#include "game/combat/EffectFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantAssets.h"
 #include "game/critters/Critters.h"
@@ -252,7 +253,7 @@ TEST_CASE("catalogued boss effects bind as skins particles or trees in the level
                         // CritterDoParticle resolves a bitmap, not an animation tree.
                         // The shipped Dragon link is also exercised by projectile-trail tests.
                         REQUIRE(assets.archive.textures.find(effect.tree));
-                    } else if ((effect.flags & CombatEffectDefinition::kSkin) != 0) {
+                    } else if ((effect.flags & effect_flags::kSkin) != 0) {
                         REQUIRE(assets.skins.contains(effect.tree));
                         REQUIRE_FALSE(assets.skins.at(effect.tree).empty());
                     } else {

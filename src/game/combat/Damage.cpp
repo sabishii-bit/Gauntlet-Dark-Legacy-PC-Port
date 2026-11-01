@@ -1,39 +1,43 @@
 #include "game/combat/Damage.h"
 
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
+
 namespace gdl::game {
-Damage Damage::modify(f32 amount, u32 flags, u32 shield, f32 armor, bool bossEncounter) {
-    if ((shield & kGoldInvulnerable) != 0) {
+Damage Damage::modify(f32 amount, u32 flags, u32 shield, f32 armorStat, bool bossEncounter) {
+    if ((shield & armor::kGoldInvulnerable) != 0) {
         return {amount > 1 ? -0.1f * amount : 0, flags};
     }
-    if ((shield & kInvulnerable) != 0 || ((shield & 0x1000) != 0 && (flags & kMagic) != 0) ||
-        ((shield & 0x2000) != 0 && (flags & kGas) != 0)) {
+    if ((shield & armor::kInvulnerable) != 0 ||
+        ((shield & armor::kImmuneMagic) != 0 && (flags & damage::kMagic) != 0) ||
+        ((shield & armor::kImmuneGas) != 0 && (flags & damage::kGas) != 0)) {
         return {0, flags};
     }
     const f32 weak = bossEncounter ? 0.75f : 0.5f;
     const f32 resist = bossEncounter ? 1.25f : 1.5f;
     const f32 strong = bossEncounter ? 1.5f : 2.0f;
-    if ((shield & 0x40000) != 0) {
-        flags &= ~0x10170U;
+    if ((shield & armor::kNoKnockback) != 0) {
+        flags &= ~(damage::kKnocks | damage::kWhirlwind);
     }
-    if ((shield & 0x10) != 0 && (flags & kMagic) != 0) {
+    if ((shield & armor::kResistMagic) != 0 && (flags & damage::kMagic) != 0) {
         amount *= weak;
     }
-    if ((flags & (kMagic | kGas)) == 0) {
+    if ((flags & (damage::kMagic | damage::kGas)) == 0) {
         if (amount < 0) {
             amount = -amount;
         } else {
-            amount = amount <= armor ? 0 : amount - armor;
+            amount = amount <= armorStat ? 0 : amount - armorStat;
         }
     }
-    const u32 element = flags & kElement;
-    if (amount > 0 && element >= 1 && element <= 4) {
-        const u32 own = 1U << (element - 1);
-        const u32 opposite = 1U << ((element - 1) ^ 1U);
-        if ((shield & own) != 0) {
+    const u32 element = flags & damage::kElementMask;
+    if (amount > 0 && element >= 1 && element < damage::kElementCount) {
+        // The elements pair off: fire with lightning, light with acid.
+        const u32 paired = ((element - 1) ^ 1U) + 1;
+        if ((shield & armor::resist(element)) != 0) {
             amount *= weak;
-        } else if ((shield & (own << 8)) != 0) {
+        } else if ((shield & armor::immune(element)) != 0) {
             amount = 0;
-        } else if ((shield & (opposite | (opposite << 8))) != 0) {
+        } else if ((shield & (armor::resist(paired) | armor::immune(paired))) != 0) {
             amount *= strong;
         } else {
             amount *= resist;

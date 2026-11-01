@@ -31,7 +31,7 @@ public:
         bool operator==(const State&) const = default;
     };
 
-    static constexpr u32 kVersion = 7;
+    static constexpr u32 kVersion = 8;
     static constexpr usize kHeaderBytes = 16;
     static constexpr usize kMaxBytes = static_cast<const usize>(512 * 1024);
     /** Shared budgets for these explicit fields. Complete participant leaves

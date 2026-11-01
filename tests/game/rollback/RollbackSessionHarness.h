@@ -56,7 +56,8 @@ public:
                m_session->publishNativeInputs(m_inputs.redundantInputs(), m_inputs.tick());
     }
     std::optional<game::RollbackInputs::Frame> advance() {
-        if (!running()) {
+        // As the shipping loop does before every advance.
+        if (!running() || !m_session->reportHostReceipts(m_inputs)) {
             return std::nullopt;
         }
         if (const auto wrong = m_inputs.mismatchTick()) {

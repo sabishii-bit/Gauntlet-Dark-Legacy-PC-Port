@@ -6,6 +6,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/players/ItemPickup.h"
@@ -38,6 +39,9 @@ bool LevelOpponents::releaseDeath(s32 record, const Vec3& position, s32 count) {
 }
 
 void LevelOpponents::stopDeathSound() {
+    if (m_resources)
+        if (auto* imported = m_resources->world.imported())
+            imported->setDeathContact(false);
     if (m_resources.has_value() && !m_resources->audio.recordingSounds()) {
         m_resources->audio.stop(m_deathSound);
         m_deathSound = kNoSound;
@@ -47,6 +51,8 @@ void LevelOpponents::stopDeathSound() {
 
 void LevelOpponents::clearDeaths() {
     if (m_resources.has_value()) {
+        if (auto* imported = m_resources->world.imported())
+            imported->setDeathContact(false);
         for (const u32 id : m_sim.deathEffects) {
             m_resources->effects.stop(id);
         }
@@ -71,9 +77,10 @@ void LevelOpponents::gatherLoops() const {
                               SceneSoundPlayback::PlayOnceUntilCancelled, 1, 0, m_sim.deathSound);
     }
     for (const auto& yell : m_sim.yells) {
+        // The shared state keeps where the cry began; this machine's listener pans it.
         audio.desireNamedLoop({yell.emitter, 2, yell.instance}, "S_SUICIDE_YELL",
-                              SceneSoundPlayback::PlayOnceUntilCancelled, yell.volume, yell.pan,
-                              yell.start);
+                              SceneSoundPlayback::PlayOnceUntilCancelled, yell.volume,
+                              audio.panAt(yell.position), yell.start);
     }
 }
 
@@ -99,13 +106,22 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
         auto scope =
             resources.audio.soundScope({20, static_cast<u64>(std::max(cue.enemy, 0)), cue.instance},
                                        32 + static_cast<u32>(cue.kind));
+        auto* imported = resources.world.imported();
+        const bool nativeSound = imported && imported->playDeathCue(cue);
         switch (cue.kind) {
-        case DeathEvent::Kind::Killed: resources.audio.playNamed("S_DEATHDIE"); return;
+        case DeathEvent::Kind::Killed:
+            if (!nativeSound)
+                resources.audio.playNamed("S_DEATHDIE");
+            return;
         case DeathEvent::Kind::Exhausted:
-            resources.audio.playNamed("S_DEATHLAUGH");
+            if (!nativeSound)
+                resources.audio.playNamed("S_DEATHLAUGH");
             teach(cue, HelpMessages::kDeathLeavesExperience, HelpMessages::kDeathLeavesHealth);
             return;
-        case DeathEvent::Kind::Awakened: resources.audio.playNamed("S_DEATHSHATTER"); return;
+        case DeathEvent::Kind::Awakened:
+            if (!nativeSound)
+                resources.audio.playNamed("S_DEATHSHATTER");
+            return;
         case DeathEvent::Kind::Unmoved:
             teach(cue, HelpMessages::kUseMagicOnDeath, HelpMessages::kUseMagicOnDeath);
             return;
@@ -138,16 +154,17 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
                     // "<name> has lost a level" (AudioExp).
                     const CharacterSave& save = player.actor.save();
                     const std::array lines{std::string_view{"S_LOSTLEVEL"}};
-                    resources.audio.announce(
-                        player.figure->voice(), PickupVoices::nameOf(save.character, save.color),
-                        PickupVoices::carriesPojo(save), lines, kLostLevelWait);
+                    resources.audio.announce(player.figure->voice(),
+                                             PickupVoices::nameOf(save.character, save.color),
+                                             PickupVoices::carriesPojo(save), lines, kLostLevelWait,
+                                             AnnouncementSubject{save.character, save.color});
                 }
             } else if (cue.kind == DeathEvent::Kind::MagicHeal ||
                        cue.kind == DeathEvent::Kind::Return) {
                 heal();
             } else if (events.hurt) {
                 events.hurt(i, cue.amount, HurtKind::DeathDrain, true,
-                            PlayerImpact{.flags = 0x1000});
+                            PlayerImpact{.flags = damage::kDeathStun});
                 if (player.life != PlayerLife::Standing) {
                     m_enemies.finishDeath(cue.enemy, cue.player);
                 }
@@ -187,7 +204,11 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
                                                 m_enemies.yawOf(i), Vec3{0, 1, 0});
         resources.effects.placeAt(effect, transform);
     }
-    if (resources.audio.recordingSounds()) {
+    auto* imported = resources.world.imported();
+    if (imported && imported->setDeathContact(contact)) {
+        m_sim.deathSound = {};
+        m_resumeDeathSound = false;
+    } else if (resources.audio.recordingSounds()) {
         if (contact && !m_sim.deathContact) {
             auto scope = resources.audio.soundScope({20, Enemies::kMost, 1}, 1);
             m_sim.deathSound = resources.audio.beginNamedCue("S_DEATHSUCK");

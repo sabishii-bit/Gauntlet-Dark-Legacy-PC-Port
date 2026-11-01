@@ -10,6 +10,7 @@
 #include "FakeRenderDevice.h"
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PowerupCompanion.h"
 
@@ -301,7 +302,7 @@ TEST_CASE("one powerup companion at a time, in the original's order", "[game][wo
     worn.special |= powerup::kPhoenix;
     CHECK(PowerupCompanion::choose(worn, false) == Kind::Phoenix);
     // The fire shield blazes only while its bearer runs with it.
-    worn.armor = powerup::kFireShield;
+    worn.armor = armor::kFireArmor;
     CHECK(PowerupCompanion::choose(worn, false) == Kind::Phoenix);
     CHECK(PowerupCompanion::choose(worn, true) == Kind::FireShield);
     worn.special |= powerup::kPojo;
@@ -339,7 +340,7 @@ TEST_CASE("a companion fades over the last second of what brings it", "[game][wo
     inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0.0f, 0.25f);
     CHECK(PowerupCompanion::fadeOf(inventory) == Approx(0.25f));
     // The fire shield's time counts too, and the longest wins.
-    inventory.addPowerup(powerup::kArmor, powerup::kFireShield, 0.0f, 0.5f);
+    inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0.0f, 0.5f);
     CHECK(PowerupCompanion::fadeOf(inventory) == Approx(0.5f));
     inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0.0f, 20.0f);
     CHECK(PowerupCompanion::fadeOf(inventory) == 1.0f);

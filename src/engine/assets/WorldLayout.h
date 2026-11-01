@@ -88,9 +88,12 @@ struct ItemInfo {
     static constexpr s32 kTrigger = 5;     ///< a spot that drives a world object
     static constexpr s32 kGate = 7;        ///< a door a key opens
     static constexpr s32 kTrap = 8;
+    static constexpr s32 kObstacle = 10; ///< scenery in the way: walls, rocks, falling pieces
+    static constexpr s32 kTransporter = 11;
     static constexpr s32 kRotator = 12;    ///< turns a world object about its upright axis
     static constexpr s32 kChoiceList = -1; ///< not an item: a list to pick one from
     static constexpr s32 kGold = 1;        ///< the powerup subtype of gold
+    static constexpr s32 kKey = 2;         ///< and of a key (a ring of them when stacked)
     static constexpr s32 kRunestone = 10;  ///< the powerup subtype of a runestone
     static constexpr s32 kScroll = 14;  ///< of a scroll: its instance's first parameter is its page
     static constexpr s32 kCrystal = 15; ///< of a realm's crystal
@@ -104,17 +107,21 @@ struct ItemInfo {
     f32 xSize = 0.0f; ///< half its box across, for the box-shaped
     f32 zSize = 0.0f; ///< and along
     s32 collisionType = 0;
-    u32 collisionFlags = 0; ///< bit 0 keeps the authored height instead of snapping to a floor
+    u32 collisionFlags = 0; ///< kKeepsHeight
     Vec3 collisionOffset{0.0f, 0.0f, 0.0f};
     u32 objectFlags = 0;
     u32 properties = 0;
     s32 value = 0;
     s32 armor = 0;
     s32 hitPoints = 0;
-    s32 activeType = 0;
+    s32 activeType = 0; ///< kAlwaysActive, among what the kind does
     s32 activeOff = 0;
     s32 activeOn = 0;
     std::vector<s32> choices; ///< a choice list's item records
+
+    static constexpr u32 kKeepsHeight =
+        0x1; ///< collisionFlags: the authored height, never a floor's
+    static constexpr u32 kAlwaysActive = 0x40; ///< activeType: a generator that breeds unseen
 };
 
 /** An item's authored collision surface, in the item's local coordinates. */
@@ -126,6 +133,9 @@ struct ItemCollisionTriangle {
 /** One item the level places: which kind, the party it takes to show it, its own name when
  * it has one, where it stands and the kind's parameters. */
 struct ItemInstance {
+    static constexpr u32 kAlwaysActive = 0x1; ///< flags: a generator that breeds unseen
+    static constexpr u32 kNoGeometry = 0x2;   ///< flags: an empty node that keeps its trigger
+
     s32 info = -1;
     s32 minPlayers = 0;
     u32 flags = 0;

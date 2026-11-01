@@ -12,6 +12,13 @@
 
 namespace gdl::game {
 namespace {
+/** The native contract's rule byte, a bit each. */
+constexpr u8 kRuleAutoMelee = 0x1;
+constexpr u8 kRuleAutoActivateItems = 0x2;
+constexpr u8 kRuleExpandedShop = 0x4;
+constexpr u8 kRuleAutoAim = 0x8;
+constexpr u8 kRuleMask = kRuleAutoMelee | kRuleAutoActivateItems | kRuleExpandedShop | kRuleAutoAim;
+
 bool identity(const std::string& peer) {
     return peer.size() == 32 && std::ranges::all_of(peer, [](char c) {
                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
@@ -138,14 +145,14 @@ std::optional<NativeMessage> decodeNative(std::span<const u8> bytes) {
             contract.rules.scene = reader.readU32();
             const u8 flags = reader.readU8();
             contract.rules.startupDelay = reader.readU8();
-            if ((flags & ~15U) != 0 || reader.readU8() != kNativeInitialization ||
+            if ((flags & ~kRuleMask) != 0 || reader.readU8() != kNativeInitialization ||
                 reader.readU8() != 0) {
                 return std::nullopt;
             }
-            contract.rules.autoMelee = (flags & 1U) != 0;
-            contract.rules.autoActivateItems = (flags & 2U) != 0;
-            contract.rules.expandedShop = (flags & 4U) != 0;
-            contract.rules.autoAim = (flags & 8U) != 0;
+            contract.rules.autoMelee = (flags & kRuleAutoMelee) != 0;
+            contract.rules.autoActivateItems = (flags & kRuleAutoActivateItems) != 0;
+            contract.rules.expandedShop = (flags & kRuleExpandedShop) != 0;
+            contract.rules.autoAim = (flags & kRuleAutoAim) != 0;
             contract.identity.build = string(reader, 256);
             contract.identity.runtime = string(reader, 256);
             contract.identity.content = string(reader, 64);
@@ -177,9 +184,10 @@ std::vector<u8> nativeBytes(NativeKind kind, const std::string& scope,
     if (kind == NativeKind::Offer) {
         const auto& rules = contract.rules;
         word(bytes, rules.scene);
-        const auto flags = static_cast<u8>(
-            static_cast<u8>(rules.autoMelee) | (static_cast<u8>(rules.autoActivateItems) << 1U) |
-            (static_cast<u8>(rules.expandedShop) << 2U) | (static_cast<u8>(rules.autoAim) << 3U));
+        const auto flags = static_cast<u8>((rules.autoMelee ? kRuleAutoMelee : 0U) |
+                                           (rules.autoActivateItems ? kRuleAutoActivateItems : 0U) |
+                                           (rules.expandedShop ? kRuleExpandedShop : 0U) |
+                                           (rules.autoAim ? kRuleAutoAim : 0U));
         bytes.insert(bytes.end(), {flags, rules.startupDelay, kNativeInitialization, 0});
         string(bytes, contract.identity.build);
         string(bytes, contract.identity.runtime);
@@ -241,6 +249,10 @@ bool OnlineSession::configureNative(const NativeIdentity& local,
     m_native = std::make_unique<NativeBootstrap>();
     m_native->local = local;
     m_native->hostRules = hostRules;
+    // Compatibility identifiers only: never log room codes, endpoint IDs or profile data.
+    log::info("Native online identity: role={} build={} runtime={} content={} data={} language={}",
+              m_host ? "host" : "guest", local.build, local.runtime, local.content, local.data,
+              local.language);
     return true;
 }
 const OnlineSession::NativeContract* OnlineSession::nativeContract() const {
@@ -304,6 +316,16 @@ bool OnlineSession::nativeMessage(Connection connection, std::span<const u8> byt
     }
     if (message->kind == NativeKind::Offer) {
         if (!message->contract || message->contract->identity != m_native->local) {
+            if (message->contract) {
+                const auto& remote = message->contract->identity;
+                const auto& local = m_native->local;
+                log::warn("Native compatibility rejected: local_build={} host_build={} "
+                          "build_equal={} runtime_equal={} content_equal={} data_equal={} "
+                          "language_equal={}",
+                          local.build, remote.build, local.build == remote.build,
+                          local.runtime == remote.runtime, local.content == remote.content,
+                          local.data == remote.data, local.language == remote.language);
+            }
             m_failureDetail = "Native simulation executable, runtime, content or language differs";
             return false;
         }

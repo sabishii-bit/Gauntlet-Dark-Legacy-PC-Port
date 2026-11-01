@@ -1,6 +1,7 @@
 #include <array>
 #include <chrono>
 #include <condition_variable>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -317,5 +318,47 @@ TEST_CASE("recording validates frame and texture ownership and skips minimized w
     CHECK_THROWS_AS(device.endFrame(), std::logic_error);
     CHECK_THROWS_AS(device.applyBloom(), std::logic_error);
     CHECK(control->draws.frames == 1);
+}
+
+TEST_CASE("render packets capture scoped world fog without leaking it into UI or later frames",
+          "[threaded-render][scene-fog]") {
+    auto control = std::make_shared<Control>();
+    ThreadedRenderDevice device(std::make_unique<Backend>(control), {640, 448});
+    ImmediateBatch batch;
+    batch.rect({0, 0, 4, 4}, 0, Color::white());
+    const SceneFog first{Vec3{1.0f, .75f, .5f}, -12.0f, 1.25f};
+    const SceneFog second{Vec3{.25f, .5f, 1.0f}, -4.0f, .8f};
+    REQUIRE(device.beginFrame());
+    device.setSceneFog(first);
+    device.draw(batch, device.whiteTexture(), Mat4{1});
+    device.setSceneFog(second);
+    device.draw(batch, device.whiteTexture(), Mat4{1});
+    device.setSceneFog({});
+    device.draw(batch, device.whiteTexture(), Mat4{1}); // UI after the world scope.
+    device.endFrame();
+    device.waitIdle();
+    REQUIRE(control->draws.draws.size() == 3);
+    CHECK(control->draws.draws[0].state.fog == first);
+    CHECK(control->draws.draws[1].state.fog == second);
+    CHECK(control->draws.draws[2].state.fog == SceneFog{});
+    CHECK(device.sceneFog() == SceneFog{});
+
+    REQUIRE(device.beginFrame());
+    device.draw(batch, device.whiteTexture(), Mat4{1});
+    auto malformed = first;
+    malformed.reciprocalScale = std::numeric_limits<f32>::quiet_NaN();
+    device.setSceneFog(malformed);
+    device.draw(batch, device.whiteTexture(), Mat4{1});
+    malformed = second;
+    malformed.color.y = std::numeric_limits<f32>::infinity();
+    device.setSceneFog(malformed);
+    device.draw(batch, device.whiteTexture(), Mat4{1});
+    device.endFrame();
+    device.waitIdle();
+    REQUIRE(control->draws.draws.size() == 6);
+    for (usize index = 3; index < 6; ++index) {
+        CHECK(control->draws.draws[index].state.fog == SceneFog{});
+    }
+    CHECK(device.sceneFog() == SceneFog{});
 }
 } // namespace

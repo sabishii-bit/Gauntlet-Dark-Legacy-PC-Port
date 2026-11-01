@@ -21,7 +21,9 @@ namespace gdl::game {
 struct MenuScreen {
     template <class Visitor>
     friend void visitNativeState(Visitor& digest, const MenuScreen& value) {
-        digest.template fields<3>(value);
+        const auto& [width, height, horizontalFov] = value;
+        static_cast<void>(horizontalFov); // sizes only the icon drawn for this machine's camera
+        digest.values(width, height);
     }
     s32 width = 512;
     s32 height = 384;
@@ -167,12 +169,13 @@ class OptionMenu {
                      columnHeight, titleBottom, iconScale, backdrop, iconY, iconTimer, iconDrawY,
                      iconRotation, bodyTop, itemAreas, alternateX, lastPointer, hoverPart,
                      dragging, painter] = value;
-        static_cast<void>(painter); // borrowed presentation, never simulation state
+        static_cast<void>(painter);   // borrowed presentation, never simulation state
+        static_cast<void>(iconScale); // drawn for this machine's own camera
         digest.values(definition, screen, open, backdropReleased, selection, scroll, time,
                       finishTimer, lineHeight, columnX, columnY, columnWidth, columnRight,
-                      columnHeight, titleBottom, iconScale, backdrop, iconY, iconTimer,
-                      iconDrawY, iconRotation, bodyTop, itemAreas, alternateX, lastPointer,
-                      hoverPart, dragging);
+                      columnHeight, titleBottom, backdrop, iconY, iconTimer, iconDrawY,
+                      iconRotation, bodyTop, itemAreas, alternateX, lastPointer, hoverPart,
+                      dragging);
     }
 
 public:

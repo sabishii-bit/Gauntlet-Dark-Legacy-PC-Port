@@ -14,6 +14,7 @@
 #include "TestSupport.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/NativeClassData.h"
+#include "game/combat/EffectFlags.h"
 
 namespace {
 
@@ -42,7 +43,7 @@ std::vector<u8> nativeClassWad() {
     test::ByteWriter writer;
     writer.putU32(static_cast<u32>(kDirectoryOffset)).putU32(3).putZeros(8);
     // One linked particle effect, with a node name in the sound field.
-    writer.putU32(MoveEffect::kParticleFlags).putS32(-1);
+    writer.putU32(effect_flags::kParticleMask).putS32(-1);
     padTo(writer, kEffectOffset + 0x10);
     writer.putText("HAND_GLOW");
     padTo(writer, kEffectOffset + 0x20);

@@ -211,7 +211,7 @@ TEST_CASE("potion history does not misclassify foreign projectile modes",
         launch.potion = 5;
     }
     SECTION("weapon modifier flags") {
-        launch.flags = powerup::kFiveWayShot;
+        launch.flags = damage::kFiveWayShot;
     }
     SECTION("conflicting weapon identity") {
         launch.release = MissileRelease{0, 3};
@@ -233,7 +233,7 @@ TEST_CASE("potion flight restoration rejects foreign modes and invalid states at
     CHECK_FALSE(replay.restorePotionFlight(replay.missile(0).instance, invalid));
     CHECK(PlayerMissiles::flightCheckpoint(replay.missile(0)) == before);
     CHECK_FALSE(replay.restorePotionFlight(999, before));
-    for (const u32 flags : {powerup::kReflect, powerup::kSuperShot}) {
+    for (const u32 flags : {damage::kReflect, damage::kSuperShot}) {
         PlayerMissiles wrong;
         auto launch = bottle;
         launch.flags = flags;

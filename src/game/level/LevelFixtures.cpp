@@ -773,8 +773,7 @@ LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
             {36, hit.trap, 1, static_cast<u8>(players[hit.victim].actor.player())}, 1);
         // ItemTouch passes the authored elements and impact flags through damage_player;
         // tentacles knock down along their facing, whereas spikes carry their own flinch.
-        const bool directed =
-            (hit.impact.flags & (PlayerImpact::kKnockBack | PlayerImpact::kKnockDown)) != 0;
+        const bool directed = (hit.impact.flags & (damage::kKnockBack | damage::kKnockDown)) != 0;
         events->hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn,
                      directed, hit.impact);
         // The trap's own sound belongs to accepted contact, not its activation, and sounds
@@ -1247,7 +1246,7 @@ void LevelFixtures::worldExplosion(const Vec3& position, std::span<PlayerRuntime
     ring.radius = customRealm ? 6.0f : 5.0f;
     ring.damage = 50.0f;
     ring.seconds = lifetime;
-    ring.flags = tree == "WORLD_EXP" ? kPoisonDamage : 0x21;
+    ring.flags = tree == "WORLD_EXP" ? kPoisonDamage : damage::kFire | damage::kKnockDown;
     m_sim.blasts.push_back(std::move(ring));
     if (realm == 9) {
         f32 distance = std::numeric_limits<f32>::max();
@@ -1353,7 +1352,7 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
                 if (glm::length(out) > 0.0f) {
                     const Vec2 away = glm::normalize(out) * kBlastPush;
                     players[i].knockback.queue(
-                        Vec3{away.x, 0.0f, away.y}, PlayerImpact::kKnockDown,
+                        Vec3{away.x, 0.0f, away.y}, damage::kKnockDown,
                         PlayerHealth::guarded(players[i], felt.damage, true));
                 }
             }
@@ -1413,7 +1412,7 @@ void LevelFixtures::blastScenery(const Vec3& position, f32 radius, f32 damage, u
                 continue;
             }
             const s32 id = kImportedTargetBase + native.id;
-            const MissileTarget body{id, native.base, native.radius, native.height};
+            const MissileTarget body{id, native.base, native.radius, native.height, native.surface};
             if (body.touches(position, reach) && first(id)) {
                 imported->strike(native.id, damage, flags, -1);
             }
@@ -1636,7 +1635,6 @@ void LevelFixtures::playGateSound(s32 subtype, const NamedPublisher& publish) {
         }
     }
 }
-
 
 bool LevelFixtures::unlockGate(usize index) {
     if (!m_gates.unlock(index)) {

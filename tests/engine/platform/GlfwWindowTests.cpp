@@ -2,6 +2,18 @@
 
 #include "engine/platform/Window.h"
 
+TEST_CASE("borderless desktop mode does not request exclusive monitor ownership",
+          "[window][display-policy]") {
+    using namespace gdl;
+    CHECK(windowPresentation(WindowMode::Windowed) == WindowPresentation{false, true, false});
+    CHECK(windowPresentation(WindowMode::Fullscreen) == WindowPresentation{true, false, true});
+    CHECK(windowPresentation(WindowMode::BorderlessFullscreen) ==
+          WindowPresentation{false, false, false});
+    // A compositor with no global window coordinates must perform the placement.
+    CHECK(windowPresentation(WindowMode::BorderlessFullscreen, false) ==
+          WindowPresentation{true, false, false});
+}
+
 TEST_CASE("window cursors can be installed, replaced and reset without changing input capture",
           "[gpu][cursor-window]") {
     auto window = gdl::createGlfwWindow({"gdl cursor test", 320, 240});

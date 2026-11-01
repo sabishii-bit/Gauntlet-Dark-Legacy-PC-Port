@@ -56,6 +56,7 @@ add_library(engine STATIC
     render/ImmediateBatch.h
     render/ImmediateBatch.cpp
     render/RenderDevice.h
+    render/SceneFog.h
     render/ThreadedRenderDevice.h
     render/ThreadedRenderDevice.cpp
     render/DepthOfField.h
@@ -110,9 +111,6 @@ add_library(engine STATIC
     audio/StreamSource.h
     audio/AdsStream.h
     audio/AdsStream.cpp
-    audio/DreamcastStream.h
-    audio/DreamcastStream.cpp
-    audio/N64LegendsStream.h
     audio/MusicDeclicker.cpp
     audio/MusicDeclicker.h
     audio/StreamPlaylist.cpp
@@ -233,15 +231,6 @@ target_compile_definitions(engine
         GDL_ENABLE_VULKAN_VALIDATION=$<BOOL:${GDL_ENABLE_VULKAN_VALIDATION}>)
 
 gdl_apply_compiler_options(engine)
-# The N64 music sequencer needs the fetched amuse sources; without them the stream is a
-# stub that never opens, and the game plays the Legends maps silently.
-if(GDL_LEGENDS_AUDIO)
-    target_sources(engine PRIVATE audio/N64LegendsStream.cpp)
-    target_link_libraries(engine PRIVATE gdl::legends_audio_native)
-    gdl_configure_legends_audio_source(audio/N64LegendsStream.cpp)
-else()
-    target_sources(engine PRIVATE audio/N64LegendsStreamStub.cpp)
-endif()
 set_target_properties(engine PROPERTIES FOLDER "engine")
 
 get_target_property(_engine_sources engine SOURCES)

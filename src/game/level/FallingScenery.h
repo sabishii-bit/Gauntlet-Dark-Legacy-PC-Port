@@ -32,7 +32,7 @@ struct FallingCue {
  */
 class FallingScenery {
 public:
-    static constexpr s32 kObstacle = 10;
+    static constexpr s32 kObstacle = ItemInfo::kObstacle;
     static constexpr s32 kFallAway = 40;                 ///< brushed, it falls
     static constexpr s32 kLeafFall = 49;                 ///< brushed, it drifts down
     static constexpr s32 kShootFall = 52;                ///< only a shot or a blow brings it down

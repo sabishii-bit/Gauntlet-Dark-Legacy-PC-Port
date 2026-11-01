@@ -135,7 +135,7 @@ LevelTransporters::contacts(const WorldLayout& layout, s32 players,
             itemPlacement(pad.position + Vec3{0, ItemFigure::kFloorLift, 0}, instance.rotation);
         const auto* supportWorld =
             itemSupportAt(instance.position, collision, authored ? &*authored : nullptr);
-        if (supportWorld != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (supportWorld != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             if (const auto floor = supportWorld->restingFloorAt(instance.position, 4, 10, 1)) {
                 if (const auto transform = supportWorld->objectTransform(floor->object)) {
                     const Mat4 inverse = glm::inverse(*transform);

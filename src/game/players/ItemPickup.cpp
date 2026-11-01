@@ -7,7 +7,9 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -20,7 +22,6 @@ constexpr s32 kHealthPerLevel = 100;
 constexpr s32 kHealthLimit = 9999;
 constexpr s32 kFeast = 100;   ///< food from here up is meat, down from its negative bad meat
 constexpr s32 kRealGold = 10; ///< more than this is treasure, else junk
-constexpr u32 kShieldFlag = 0x200000; ///< the armour powerup that is a shield
 constexpr std::string_view kKeySound = "S_PICKUPKEY";
 constexpr std::string_view kMagicSound = "S_PICKUPMAGIC";
 constexpr std::string_view kSpecialSound = "S_PICKUPSPECIAL";
@@ -35,30 +36,51 @@ s32 powerupMessage(s32 kind, u32 flags) {
         u32 flag;
         s32 message;
     };
-    static constexpr std::array kCues{
-        Cue{5, 0x80000, 37},   Cue{5, 0x400000, 47},   Cue{5, 0x200000, 38},
-        Cue{5, 0x100000, 48},  Cue{5, 0x10000000, 86}, Cue{5, 0x20000000, 87},
-        Cue{6, 0x100000, 54},  Cue{6, 0x10000, 35},    Cue{6, 0x80000, 49},
-        Cue{6, 0x20000, 52},   Cue{6, 0x200000, 91},   Cue{6, 0x400000, 92},
-        Cue{6, 0x2000, 132},   Cue{9, 4, 36},          Cue{9, 2, 39},
-        Cue{9, 8, 51},         Cue{9, 1, 53},          Cue{9, 0x10, 81},
-        Cue{9, 0x20, 82},      Cue{9, 0x40, 83},       Cue{9, 0x80, 84},
-        Cue{9, 0x100, 88},     Cue{9, 0x200, 89},      Cue{9, 0x400, 93},
-        Cue{9, 0x2000, 98},    Cue{9, 0x1000, 99},     Cue{9, 0x8000, 100},
-        Cue{9, 0x4000, 100},   Cue{9, 0x80000, 113},   Cue{9, 0x100000, 148},
-        Cue{9, 0x200000, 149}, Cue{9, 0x400000, 150}};
+    static constexpr std::array kCues{Cue{powerup::kWeapon, damage::kThreeWayShot, 37},
+                                      Cue{powerup::kWeapon, damage::kFiveWayShot, 47},
+                                      Cue{powerup::kWeapon, damage::kReflect, 38},
+                                      Cue{powerup::kWeapon, damage::kSuperShot, 48},
+                                      Cue{powerup::kWeapon, damage::kHammer, 86},
+                                      Cue{powerup::kWeapon, damage::kRapidFire, 87},
+                                      Cue{powerup::kArmor, armor::kGoldInvulnerable, 54},
+                                      Cue{powerup::kArmor, armor::kInvulnerable, 35},
+                                      Cue{powerup::kArmor, armor::kAntiDeath, 49},
+                                      Cue{powerup::kArmor, armor::kReflect, 52},
+                                      Cue{powerup::kArmor, armor::kFireArmor, 91},
+                                      Cue{powerup::kArmor, armor::kElectricArmor, 92},
+                                      Cue{powerup::kArmor, armor::kImmuneGas, 132},
+                                      Cue{powerup::kSpecial, powerup::kInvisible, 36},
+                                      Cue{powerup::kSpecial, powerup::kXRay, 39},
+                                      Cue{powerup::kSpecial, powerup::kStopTime, 51},
+                                      Cue{powerup::kSpecial, powerup::kLevitation, 53},
+                                      Cue{powerup::kSpecial, powerup::kFireBreath, 81},
+                                      Cue{powerup::kSpecial, powerup::kAcidBreath, 82},
+                                      Cue{powerup::kSpecial, powerup::kLightningBreath, 83},
+                                      Cue{powerup::kSpecial, powerup::kPhoenix, 84},
+                                      Cue{powerup::kSpecial, powerup::kGrowth, 88},
+                                      Cue{powerup::kSpecial, powerup::kEnemyShrink, 89},
+                                      Cue{powerup::kSpecial, powerup::kPojo, 93},
+                                      Cue{powerup::kSpecial, powerup::kSkorneMask, 98},
+                                      Cue{powerup::kSpecial, powerup::kSkorneHorns, 99},
+                                      Cue{powerup::kSpecial, powerup::kLeftGauntlet, 100},
+                                      Cue{powerup::kSpecial, powerup::kRightGauntlet, 100},
+                                      Cue{powerup::kSpecial, powerup::kTurbo, 113},
+                                      Cue{powerup::kSpecial, powerup::kMikey, 148},
+                                      Cue{powerup::kSpecial, powerup::kHandOfDeath, 149},
+                                      Cue{powerup::kSpecial, powerup::kHealthVamp, 150}};
     for (const Cue& cue : kCues) {
         if (kind == cue.kind && (flags & cue.flag) != 0) {
             return cue.message;
         }
     }
-    if (kind == 5 && (flags & 15) >= 1 && (flags & 15) <= 4) {
-        return 39 + static_cast<s32>(flags & 15);
+    const u32 element = flags & damage::kElementMask;
+    if (kind == powerup::kWeapon && element >= damage::kFire && element <= damage::kAcid) {
+        return 39 + static_cast<s32>(element);
     }
-    if (kind == 7) {
+    if (kind == powerup::kSpeed) {
         return 32;
     }
-    if (kind == 8) {
+    if (kind == powerup::kMagic) {
         return 33;
     }
     return -1;
@@ -66,20 +88,20 @@ s32 powerupMessage(s32 kind, u32 flags) {
 
 /** sounds_evt.c::fn_8009CEE0: these effects also play when the help was seen already. */
 std::string_view powerupSound(s32 kind, u32 flags) {
-    if (kind == 6 && (flags & kShieldFlag) != 0) {
+    if (kind == powerup::kArmor && (flags & armor::kFireArmor) != 0) {
         return kShieldSound;
     }
-    if (kind == 9) {
-        if ((flags & 1) != 0) {
+    if (kind == powerup::kSpecial) {
+        if ((flags & powerup::kLevitation) != 0) {
             return "S_LEVITATEUP";
         }
-        if ((flags & 0x100) != 0) {
+        if ((flags & powerup::kGrowth) != 0) {
             return "S_GROW";
         }
-        if ((flags & 0x200) != 0) {
+        if ((flags & powerup::kEnemyShrink) != 0) {
             return "S_SHRINK";
         }
-        if ((flags & 0x400) != 0) {
+        if ((flags & powerup::kPojo) != 0) {
             return "S_POJO";
         }
     }
@@ -170,7 +192,7 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
             // unlike ordinary food healing, that may exceed the level's food cap.
             const auto worn = PowerupEffects::of(inventory);
             const auto damage =
-                Damage::modify(-static_cast<f32>(offer.amount), Damage::kGas, worn.armor, 0, false);
+                Damage::modify(-static_cast<f32>(offer.amount), damage::kGas, worn.armor, 0, false);
             save.progress().health =
                 std::clamp(static_cast<s32>(std::lround(static_cast<f32>(health) - damage.amount)),
                            1, kHealthLimit);

@@ -192,7 +192,8 @@ public:
     bool finishResync();
 
     /** A peer the host has dropped: its seats hold neutral input from `tick` of `epoch`
-     * on, and from the first tick of every later epoch; its characters stay in the party. */
+     * on, and from the first tick of every later epoch; its characters stay in the party.
+     * In a shop `tick` is one past the host's next step, the first its lane is gone from. */
     struct Drop {
         u8 peer = 0;
         u64 epoch = 0;
@@ -203,13 +204,32 @@ public:
      * when still reachable. The first still tick is the one after its last input seen. */
     bool drop(u8 peer);
     bool dropped(u8 peer) const { return peer < m_dropped.size() && m_dropped[peer].peer != 0; }
-    /** Every drop so far, with the tick a driver of `epoch` holds the seats still from. */
+    /** Every drop that holds for `epoch`, with the tick its driver holds the seats still from. */
     std::vector<Drop> dropsFor(u64 epoch) const;
+    /** Whether a dropped `peer`'s lane is gone by shop step `step` of `epoch`, so that every
+     * peer ends it with the step the host ended it at, whenever the drop reached it. */
+    bool shopLaneGone(u8 peer, u64 epoch, u64 step) const;
     /** Drops not yet applied to the running driver, each taken once. */
     std::vector<Drop> takeDrops();
     /** Peers whose input lags the local head by more than the prediction window: the
      * ones a stall is waiting on. */
     std::vector<u8> quietPeers() const;
+    /** A guest's: how far the host holds a guest's input that a direct link may bring
+     * sooner; pass it to the driver before advancing (RollbackInputs::observeHostReceipt). */
+    std::optional<u64> hostReceipt(u8 peer) const {
+        return m_exchange ? m_exchange->hostReceipt(peer) : std::nullopt;
+    }
+    /** Passes every hostReceipt to `inputs` (a driver or RollbackInputs), as each advance
+     * needs first; false when it refuses one. */
+    template <class Inputs> bool reportHostReceipts(Inputs& inputs) const {
+        for (u8 peer = 2; peer <= 4; ++peer) {
+            const auto held = hostReceipt(peer);
+            if (held && !inputs.observeHostReceipt(peer, *held)) {
+                return false;
+            }
+        }
+        return true;
+    }
     /** False when the lost link ends the match; true when the peer was dropped instead. */
     bool disconnected(PacketTransport::Connection connection);
     /** A direct link closed; the host's relay carries that peer from here. */

@@ -340,7 +340,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                         std::optional<std::vector<u32>> back;
                         // A frame's own textures stay on it while its vertices move on (the
                         // vermin change texture with the frame); only translucency must agree.
-                        if (from.translucent == to.translucent) {
+                        if (run.interpolate && from.translucent == to.translucent) {
                             ahead = morphMap(*from.mesh, *to.mesh);
                             back = ahead ? morphMap(*to.mesh, *from.mesh) : std::nullopt;
                         }
@@ -563,6 +563,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             }
             m_batch.end();
             DrawState state;
+            state.whiteBlend = m_whiteBlend;
             state.mipmaps = true;
             const auto sampling =
                 std::ranges::find(m_textureSampling, shape.slots[p], &TextureSampling::slot);

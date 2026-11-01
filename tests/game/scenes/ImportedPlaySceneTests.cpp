@@ -31,8 +31,11 @@ public:
     s32 grants = 0;
     bool block = false;
     bool travel = false;
+    std::optional<ImportedDeparture> customDeparture;
     bool activate = true;
     usize visitors = 0;
+    std::vector<s32> supportingFloors;
+    s32 supportUpdates = 0;
     WorldCamera native;
     Vec3 attention{0};
     std::vector<CameraSubject> subjects;
@@ -90,6 +93,10 @@ public:
             ++grants;
         }
     }
+    void supportOpponents(std::span<const s32> owners) override {
+        supportingFloors.assign(owners.begin(), owners.end());
+        ++supportUpdates;
+    }
     std::vector<ImportedPickup> takePickups() override { return std::exchange(pickups, {}); }
     std::vector<ImportedHazardHit> takeHazardHits() override { return std::exchange(hazards, {}); }
     void watch(const ViewVolume& /*view*/) override { ++watches; }
@@ -97,6 +104,13 @@ public:
     void pauseSounds() override { ++soundPauses; }
     void stopSounds() override { ++soundStops; }
     bool travelRequested() const override { return travel; }
+    std::optional<ImportedDeparture> departure(f32 /*alpha*/ = -1) const override {
+        return travel ? customDeparture : std::nullopt;
+    }
+    bool cancelDeparture() override {
+        customDeparture.reset();
+        return std::exchange(travel, false);
+    }
 };
 
 TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera and contacts",
@@ -117,6 +131,8 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
     collision.build(
         {{{0, 1, 0}, {Vec3{-100, 0, -100}, Vec3{-100, 0, 100}, Vec3{100, 0, -100}}, 0, 4},
          {{0, 1, 0}, {Vec3{100, 0, -100}, Vec3{-100, 0, 100}, Vec3{100, 0, 100}}, 0, 4}});
+    const std::array<s32, 1> floorOwners{0};
+    collision.setMovingObjects(floorOwners, 0x1000);
     auto layout = WorldLayout::fromDecoded(
         {}, {{.kind = LocatorKind::Start, .position = {0, 0, 0}}}, {-100, 0, -100}, {100, 40, 100});
     const bool loaded =
@@ -151,6 +167,22 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
     CHECK(scene.viewCamera().yaw == imported->native.yaw);
     CHECK(scene.viewCamera().position == imported->native.position);
 
+    SECTION("native pressure bridges receive retained ordinary enemy floor owners") {
+        REQUIRE(scene.enemies().loadKind(kGruntKind));
+        const auto enemy = scene.enemies().spawn(
+            EnemySpawn{.kind = kGruntKind, .position = {10, 0, 10}, .placed = true, .asleep = true},
+            {});
+        REQUIRE(enemy);
+        REQUIRE(scene.enemies().floorOf(*enemy) == 0);
+        const auto updates = imported->supportUpdates;
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        CHECK(imported->supportUpdates > updates);
+        REQUIRE(imported->supportingFloors == std::vector<s32>{0});
+        scene.enemies().close();
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        CHECK(imported->supportingFloors.empty());
+    }
+
     SECTION("pausing suspends native motion sounds without closing the native scene") {
         const auto stopped = imported->soundStops;
         const auto paused = imported->soundPauses;
@@ -163,6 +195,73 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         CHECK(scene.actor(0)->position() == position);
         REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
         CHECK(imported->animationUpdates > animations);
+    }
+    SECTION("confirmed imported suspension preserves the outgoing narration owner") {
+        scene.close();
+        AudioMixer mixer(48000);
+        SoundPlayer sounds(mixer);
+        context.sounds = &sounds;
+        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        REQUIRE(imported->soundServices > 0);
+        // The imported owner, not LevelSoundscape, owns this finite phrase.
+        // Suspending the old scene must not flush the shared player's voice.
+        SoundClip clip;
+        clip.sampleRate = 48000;
+        clip.channels = 1;
+        clip.samples.assign(4096, .25f);
+        SoundSequence phrase;
+        phrase.steps.push_back({&clip, false, false});
+        const auto voice = sounds.play(phrase);
+        REQUIRE(voice != kNoSound);
+        const auto stopped = imported->soundStops;
+        const auto paused = imported->soundPauses;
+        const auto serviced = imported->soundServices;
+        const auto before = scene.actor(0)->save();
+        scene.suspendForImportedLevel(true);
+        CHECK(imported->soundStops == stopped);
+        CHECK(imported->soundPauses == paused + 1);
+        CHECK(sounds.isPlaying(voice));
+        std::array<f32, 1024> mixed{};
+        mixer.mix(mixed);
+        CHECK(mixed.back() == Catch::Approx(.25f));
+        scene.resumeAfterImportedLevel();
+        CHECK(scene.actor(0)->save() == before);
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        CHECK(imported->soundServices == serviced + 1);
+        scene.close(); // close borrowers before the section's audio objects
+    }
+    SECTION("failed imported destination restores play and allows a fresh departure") {
+        const auto before = scene.actor(0)->save();
+        CHECK_FALSE(scene.recoverImportedDeparture());
+        imported->travel = true;
+        PlayOutcome outcome = PlayOutcome::Running;
+        for (s32 tick = 0; tick < 600 && outcome == PlayOutcome::Running; ++tick)
+            outcome = scene.update(1.0 / 30, {});
+        REQUIRE(outcome == PlayOutcome::Travel);
+        REQUIRE(scene.leaving());
+        REQUIRE(scene.transition().covering());
+        REQUIRE(scene.recoverImportedDeparture());
+        CHECK_FALSE(scene.leaving());
+        CHECK_FALSE(imported->travel);
+        CHECK(scene.actor(0)->save().gold == before.gold);
+        CHECK(scene.actor(0)->save().progress().legends == before.progress().legends);
+        for (s32 tick = 0; tick < 60; ++tick)
+            REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        CHECK_FALSE(scene.transition().showing());
+        CHECK(scene.canPause(0));
+        const auto position = scene.actor(0)->position();
+        PlayScene::Inputs move;
+        move[0].move = {{0, 1}, 1};
+        for (s32 tick = 0; tick < 10; ++tick)
+            REQUIRE(scene.update(1.0 / 30, move) == PlayOutcome::Running);
+        CHECK(glm::distance(scene.actor(0)->position(), position) > .1f);
+        imported->travel = true;
+        outcome = scene.update(1.0 / 30, {});
+        REQUIRE(outcome == PlayOutcome::Running);
+        for (s32 tick = 0; tick < 600 && outcome == PlayOutcome::Running; ++tick)
+            outcome = scene.update(1.0 / 30, {});
+        CHECK(outcome == PlayOutcome::Travel);
     }
     SECTION("movement and imported body contacts use the native camera yaw") {
         PlayScene::Inputs inputs{};
@@ -255,6 +354,94 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
               Catch::Approx(static_cast<f64>(departureTicks) * static_cast<f32>(1.0 / 30)));
         CHECK(imported->partyUpdates == before + 1);
     }
+    SECTION("a white native departure retains the visible party without a second black cover") {
+        imported->customDeparture = ImportedDeparture{};
+        imported->customDeparture->keepVisible = true;
+        imported->customDeparture->whiteFade = 0.0f;
+        imported->travel = true;
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        REQUIRE(scene.leaving());
+        const Vec3 feet = scene.actor(0)->position();
+        const auto render = [&](f32 width = 640, f32 height = 448) {
+            device.draws.clear();
+            scene.render(device, makeScreenProjection(width, height), width, height);
+        };
+        // A final clip-space cover includes HUD and any aspect-ratio margins.
+        const auto whiteCover = [&] {
+            if (!device.draws.empty()) {
+                const auto& draw = device.draws.back();
+                if (draw.texture == &device.whiteTexture() && !draw.vertices.empty() &&
+                    draw.transform == Mat4{1} && test::minCorner(draw) == Vec2{-1, -1} &&
+                    test::maxCorner(draw) == Vec2{1, 1} && !draw.state.depthTest &&
+                    !draw.state.depthWrite) {
+                    return std::optional{draw.vertices.front().color};
+                }
+            }
+            return std::optional<Color>{};
+        };
+        imported->customDeparture->whiteFade = .5f;
+        imported->customDeparture->fog = SceneFog{Vec3{1}, -12, 1};
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        render();
+        CHECK(std::ranges::any_of(
+            device.draws, [](const auto& draw) { return draw.state.fog.reciprocalScale == -12; }));
+        CHECK(device.draws.back().state.fog == SceneFog{});
+        CHECK(device.sceneFog() == SceneFog{});
+        const auto half = whiteCover();
+        REQUIRE(half);
+        CHECK(half->r == 255);
+        CHECK(half->g == 255);
+        CHECK(half->b == 255);
+        CHECK(half->a == 127);
+        const usize withHud = device.draws.size();
+        scene.setHudHidden(true);
+        render(1920, 1080);
+        REQUIRE(whiteCover());
+        CHECK(whiteCover()->a == 127);
+        CHECK(device.draws.size() < withHud);
+        render(600, 1000);
+        REQUIRE(whiteCover());
+        CHECK(whiteCover()->a == 127);
+        scene.setHudHidden(false);
+        render();
+        CHECK_FALSE(scene.transition().showing());
+        const auto bodyVertices = [&] {
+            usize count = 0;
+            for (const auto& draw : device.draws) {
+                if (draw.state.depthTest && draw.state.depthWrite) {
+                    count += draw.vertices.size();
+                }
+            }
+            return count;
+        };
+        const usize before = bodyVertices();
+        REQUIRE(before > 0);
+        imported->customDeparture->finished = true;
+        // A provider cannot release control before its white cover is complete.
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        imported->customDeparture->whiteFade = 1.0f;
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Travel);
+        render();
+        REQUIRE(whiteCover());
+        CHECK(whiteCover()->a == 255);
+        const usize retained = bodyVertices();
+        REQUIRE(retained > 0);
+        imported->customDeparture->keepVisible = false;
+        render();
+        CHECK(bodyVertices() < retained);
+        imported->customDeparture->keepVisible = true;
+        CHECK(scene.actor(0)->position() == feet);
+        CHECK_FALSE(scene.transition().showing());
+        REQUIRE(scene.recoverImportedDeparture());
+        CHECK_FALSE(scene.leaving());
+        CHECK_FALSE(imported->departure());
+        render();
+        CHECK_FALSE(whiteCover());
+        CHECK(std::ranges::none_of(device.draws, [](const auto& draw) {
+            return draw.state.fog.reciprocalScale != 0 || draw.state.fog.bias != 0;
+        }));
+        CHECK(scene.canPause(0));
+    }
     SECTION("native pickup receipts target input seats without granting their rewards again") {
         const std::array thirdSeat{PartyMember{2, CharacterSave{}}};
         REQUIRE(scene.open(device, context, world, thirdSeat, options));
@@ -276,6 +463,21 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
         CHECK(scene.actor(2)->save().gold == 23);
         CHECK(scene.hud().pickups().cards().size() == 1);
+    }
+    SECTION("imported scroll receipts explicitly distinguish localized keys from prose") {
+        bool localized = false;
+        SECTION("authored document text is not looked up as a key") {}
+        SECTION("milestone localization keys are resolved before opening the parchment") {
+            localized = true;
+        }
+        const std::string key = "menu.player";
+        REQUIRE(strings.get(key) != key);
+        imported->pickups.push_back({0, {}, {}, {}, {key}, localized});
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        REQUIRE(scene.scroll().active());
+        REQUIRE(scene.scroll().lines().size() == 1);
+        CHECK(scene.scroll().lines().front() == (localized ? strings.get(key) : key));
+        CHECK(imported->pickups.empty());
     }
     SECTION("native hazard contacts use player seats and the common health dispatcher") {
         const std::array thirdSeat{PartyMember{2, CharacterSave{}}};

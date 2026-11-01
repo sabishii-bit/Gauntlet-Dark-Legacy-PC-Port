@@ -149,6 +149,7 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
         break;
     case PartyMotion::Action::ComboStart: m_attacks.comboStart(i, m_players); break;
     case PartyMotion::Action::Fallen:
+        // Silent: a dropped peer's seat comes here between recorded ticks (waitInTower).
         m_players[i].mikey.clear();
         m_players[i].mikeyFigure.reset();
         if (m_device != nullptr) {

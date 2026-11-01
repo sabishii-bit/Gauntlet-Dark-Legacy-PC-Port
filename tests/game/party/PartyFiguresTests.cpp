@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/party/PartyFigures.h"
 #include "game/players/PowerupEffects.h"
@@ -55,11 +56,9 @@ TEST_CASE("drawing a moving player samples completed states without changing col
 TEST_CASE("a shield armour is borne on the arm, reflecting before fire before lightning",
           "[game][screens][figures]") {
     CHECK(PartyFigures::shieldObjectOf(0).empty());
-    CHECK(PartyFigures::shieldObjectOf(powerup::kLightningShield) == "L_SHLD");
-    CHECK(PartyFigures::shieldObjectOf(powerup::kFireShield | powerup::kLightningShield) ==
-          "FW_SHLD");
-    CHECK(PartyFigures::shieldObjectOf(powerup::kReflectShield | powerup::kFireShield) ==
-          "RF_SHLD");
+    CHECK(PartyFigures::shieldObjectOf(armor::kElectricArmor) == "L_SHLD");
+    CHECK(PartyFigures::shieldObjectOf(armor::kFireArmor | armor::kElectricArmor) == "FW_SHLD");
+    CHECK(PartyFigures::shieldObjectOf(armor::kReflect | armor::kFireArmor) == "RF_SHLD");
 }
 
 TEST_CASE("in a dark level each standing player carries a lantern", "[game][screens][figures]") {
@@ -121,7 +120,8 @@ TEST_CASE("an invisible player is drawn among the translucent bodies, after the 
     REQUIRE_FALSE(device.draws.empty());
     // Faded, it still writes depth, so the level's sorted scenery stays behind it.
     CHECK(device.draws.front().state.depthWrite);
-    CHECK(std::ranges::all_of(device.draws, [](const auto& draw) { return draw.state.depthWrite; }));
+    CHECK(
+        std::ranges::all_of(device.draws, [](const auto& draw) { return draw.state.depthWrite; }));
 }
 
 TEST_CASE("a party without figures draws nothing", "[game][screens][figures]") {
@@ -185,11 +185,11 @@ TEST_CASE("the portal's skin, then the damage flash, then the chrome is worn",
     const PortalDeparture departure;
     PowerupEffects worn;
     CHECK(figures.skinOf(runtime, worn, departure) == nullptr);
-    worn.armor = powerup::kInvulnerable;
+    worn.armor = armor::kInvulnerable;
     worn.invulnerableLeft = 20.0f;
     const Texture* silver = figures.skinOf(runtime, worn, departure);
     REQUIRE(silver != nullptr);
-    worn.armor |= powerup::kGoldInvulnerable;
+    worn.armor |= armor::kGoldInvulnerable;
     const Texture* gold = figures.skinOf(runtime, worn, departure);
     REQUIRE(gold != nullptr);
     CHECK(gold != silver);

@@ -89,7 +89,7 @@ public:
         record.texture = &texture;
         record.vertices.assign(batch.triangles().begin(), batch.triangles().end());
         record.transform = transform;
-        record.state = state;
+        record.state = resolvedDrawState(state);
         draws.push_back(std::move(record));
     }
 

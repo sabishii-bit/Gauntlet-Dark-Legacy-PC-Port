@@ -5,6 +5,7 @@
 #include <span>
 #include <vector>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/world/TextureAnimator.h"
 
@@ -17,7 +18,7 @@ namespace gdl::game {
  * trees: name + health tier, with the original L1 / L1ROOT lookup fallbacks. */
 class SafeRocks {
 public:
-    static constexpr s32 kItemType = 10;
+    static constexpr s32 kItemType = ItemInfo::kObstacle;
     static constexpr s32 kSubtype = 41;
     static constexpr s32 kWhole = 3;
 

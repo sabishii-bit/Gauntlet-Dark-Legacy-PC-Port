@@ -248,7 +248,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         const f32 radius = critter.definition->wallRadius();
         // CritterMoveNodeCol mode 1 checks active nodes, then the body's fallback.
         // Dying critters keep that body until their instance is removed.
-        if ((other.definition->typeFlags() & 2U) != 0) {
+        if ((other.definition->typeFlags() & CritterData::kByParts) != 0) {
             const auto parts = other.definition->parts();
             for (usize i = 0; i < parts.size(); ++i) {
                 const auto& part = parts[i];
@@ -317,7 +317,7 @@ bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
                            : 0;
             return start + t * delta;
         };
-        if ((critter.definition->typeFlags() & 0x100U) != 0) {
+        if ((critter.definition->typeFlags() & CritterData::kSolidParts) != 0) {
             const auto parts = critter.definition->parts();
             for (usize i = 0; i < parts.size(); ++i) {
                 const auto& part = parts[i];

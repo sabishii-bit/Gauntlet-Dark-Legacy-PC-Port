@@ -194,6 +194,11 @@ private:
     };
 
     Decision decide(Action next, bool contact) const;
+    /** What the current action gives way to, a hit answered from the stance. */
+    Decision continuation(Action next, bool contact) const;
+    /** What is played for `wanted` when the creature's tree lacks it: the nearest
+     * sequence it has of the same kind. */
+    Action standIn(Action wanted) const;
     void play(Decision decision, f32 seconds);
 
     const TreeInfo* m_tree = nullptr;

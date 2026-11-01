@@ -57,6 +57,11 @@ public:
     void load(RenderDevice& device, TextureSet& textures, const std::filesystem::path& root,
               const StringTable* strings);
     void clear();
+    /** Borrowed for this level only; does not replace the HUD's shared font. */
+    void setPresentation(const DialoguePresentation* presentation) {
+        m_presentation = presentation;
+        m_scroll.setPresentation(presentation);
+    }
     void setControlLabels(const ControlLabels& labels) { m_controlLabels = labels; }
     /** With no page, shows the whole message (the welcome); otherwise just that page. */
     bool open(RenderDevice& device, std::string_view name, const StringTable* strings,
@@ -87,6 +92,7 @@ private:
     TextPainter m_text;
     MessageTable m_scrollText;
     ScrollBox m_scroll; ///< references our painter, so this owner must not move
+    const DialoguePresentation* m_presentation = nullptr;
     Simulation m_sim;
     std::shared_ptr<const u8> m_localBinding = std::make_shared<const u8>(0);
 };

@@ -31,7 +31,7 @@ void appendTreeConstruction(NativeStateDigest& digest, const TreeInfo& tree) {
                       direction, textureAnimation);
         digest.wide(objectFrames.size());
         for (const auto& run : objectFrames) {
-            digest.fields<3>(run);
+            digest.fields<4>(run);
         }
     }
     digest.wide(sequences.size());
@@ -342,6 +342,10 @@ bool NativeStateResources::registerCritter(const CritterData& data, std::string_
     auto value = identity("critter");
     value.values(wadKey, typeIndex, data.childIndex(), data.parentIndex(), data.name(),
                  data.folder(), data.prefix(), data.tree(), data.rootNode(), data.kind());
+    value.fields<10>(data.rules());
+    for (const auto& sound : data.sounds()) {
+        value.fields<14>(sound);
+    }
     const auto dataIdentity = value.finish();
     if (!bind(typeid(CritterData), &data, dataIdentity)) {
         return false;
@@ -365,6 +369,8 @@ bool NativeStateResources::registerCombatantAssets(const CombatantAssets& assets
     auto value = identity("combatant-family");
     value.string(logicalKey);
     value.fields<11>(assets.definition);
+    value.values(assets.cooldownStartsWithMove, assets.projectileLifetime, assets.wakeDelay,
+                 assets.initialMoveBeforeWake);
     if (!bind(typeid(CombatantAssets), &assets, value.finish())) {
         return false;
     }

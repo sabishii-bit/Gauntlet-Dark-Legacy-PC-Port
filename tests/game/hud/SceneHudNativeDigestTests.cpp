@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
 #include "game/level/NativeStateResources.h"
@@ -205,13 +206,13 @@ TEST_CASE("native HUD values include help lifetime and nonvisible acquisition hi
     CHECK_FALSE(stale.checkedFinish());
 
     Inventory inventory;
-    inventory.addPowerup(powerup::kWeapon, powerup::kThunderHammer, 7, 20);
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 9, 20);
+    inventory.addPowerup(powerup::kWeapon, damage::kHammer, 7, 20);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 9, 20);
     PowerupSelector direct;
     PowerupSelector history;
-    direct.focus(inventory, powerup::kWeapon, powerup::kSuperShot);
-    history.focus(inventory, powerup::kWeapon, powerup::kThunderHammer);
-    history.focus(inventory, powerup::kWeapon, powerup::kSuperShot);
+    direct.focus(inventory, powerup::kWeapon, damage::kSuperShot);
+    history.focus(inventory, powerup::kWeapon, damage::kHammer);
+    history.focus(inventory, powerup::kWeapon, damage::kSuperShot);
     CHECK(direct.state() == history.state());
     CHECK(direct.selection() == history.selection());
     CHECK(direct.slide() == history.slide());

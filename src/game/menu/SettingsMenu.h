@@ -55,6 +55,8 @@ public:
 
 private:
     void rebuild(s32 selection = 0);
+    /** The row a list page opens on: its current choice, else the first. */
+    s32 currentChoice() const;
     void change(s32 direction);
     bool flushAudio();
     void commit(GameConfig next);

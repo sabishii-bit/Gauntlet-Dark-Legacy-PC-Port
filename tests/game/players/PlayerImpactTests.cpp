@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/CritterData.h"
 #include "game/players/PlayerImpact.h"
 
@@ -17,26 +18,25 @@ TEST_CASE("damage flags select grounded reactions rather than damage amount alon
           "[game][players][player-impact]") {
     PlayerImpact impact;
     REQUIRE(impact.reaction(100, 0, false) == PlayerDeed::None);
-    impact.flags = PlayerImpact::kKnockBack;
+    impact.flags = damage::kKnockBack;
     REQUIRE(impact.reaction(10, 0, false) == PlayerDeed::Flinch);
     REQUIRE(impact.reaction(2, 0, false) == PlayerDeed::None);
     REQUIRE(impact.reaction(10, 0, true) == PlayerDeed::None);
-    impact.flags = PlayerImpact::kStun;
+    impact.flags = damage::kStun;
     REQUIRE(impact.reaction(1, 0, false) == PlayerDeed::Reel);
     REQUIRE(impact.reaction(0, 0, false) == PlayerDeed::Reel);
     REQUIRE(impact.reaction(-1, 0, false) == PlayerDeed::None);
-    impact.flags = PlayerImpact::kSpike;
+    impact.flags = damage::kSpike;
     REQUIRE(impact.reaction(1, 0, false) == PlayerDeed::None);
     REQUIRE(impact.reaction(2, 0, false) == PlayerDeed::Spike);
-    impact.flags |= PlayerImpact::kStun | PlayerImpact::kKnockBack;
+    impact.flags |= damage::kStun | damage::kKnockBack;
     REQUIRE(impact.reaction(10, 0, false) == PlayerDeed::Flinch);
     REQUIRE(impact.reaction(2, 0, false) == PlayerDeed::Spike);
 }
 
 TEST_CASE("heavy blows fall with their direction and guards downgrade them to knockback",
           "[game][players][player-impact]") {
-    for (const u32 flag :
-         {PlayerImpact::kKnockDown, PlayerImpact::kBlownAway, PlayerImpact::kKnockOver}) {
+    for (const u32 flag : {damage::kKnockDown, damage::kBlownAway, damage::kKnockOver}) {
         CAPTURE(flag);
         PlayerImpact impact{flag, {0, 0, -1}};
         REQUIRE(impact.reaction(10, 0, false) == PlayerDeed::FallBack);
@@ -53,7 +53,7 @@ TEST_CASE("heavy blows fall with their direction and guards downgrade them to kn
 TEST_CASE("a whirlwind sweeps the player up before any other knock",
           "[game][players][player-impact]") {
     // PlayerKnockback tests 0x10000 first: with a knock down too, it is still the whirlwind.
-    const PlayerImpact impact{PlayerImpact::kWhirlwind | PlayerImpact::kKnockDown, {0, 0, -1}};
+    const PlayerImpact impact{damage::kWhirlwind | damage::kKnockDown, {0, 0, -1}};
     REQUIRE(impact.reaction(10, 0, false) == PlayerDeed::Whirled);
     REQUIRE(impact.reaction(10, std::numbers::pi_v<f32>, false) == PlayerDeed::Whirled);
     REQUIRE(impact.reaction(10, 0, true) == PlayerDeed::Flinch); // a guard takes it down
@@ -70,7 +70,7 @@ TEST_CASE("the genie's wind is the whirlwind", "[game][players][player-impact][a
     REQUIRE(djinn.load(file));
     s32 winds = 0;
     for (const AttackDefinition& attack : djinn.damages()) {
-        if ((attack.flags & PlayerImpact::kWhirlwind) != 0) {
+        if ((attack.flags & damage::kWhirlwind) != 0) {
             ++winds;
             const PlayerImpact impact{attack.flags, Vec3{0, 0, 1}};
             REQUIRE(impact.reaction(attack.damage > 2.0f ? attack.damage : 10.0f, 0, false) ==
@@ -81,7 +81,7 @@ TEST_CASE("the genie's wind is the whirlwind", "[game][players][player-impact][a
 }
 
 TEST_CASE("a lesser contact cannot erase a queued knockdown", "[game][players][player-impact]") {
-    const PlayerImpact web{PlayerImpact::kSticky, Vec3{0}};
+    const PlayerImpact web{damage::kSticky, Vec3{0}};
     REQUIRE(web.reaction(1, 0, false) == PlayerDeed::Webbed);
     REQUIRE(web.reaction(1, 0, true) == PlayerDeed::Webbed);
     REQUIRE(PlayerImpact::combine(PlayerDeed::FallBack, PlayerDeed::Webbed) ==

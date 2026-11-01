@@ -7,6 +7,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/ArmorFlags.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -77,7 +78,7 @@ PowerupCompanion::Kind PowerupCompanion::choose(const PowerupEffects& worn, bool
     if ((worn.special & powerup::kPojo) != 0) {
         return Kind::Pojo;
     }
-    if ((worn.armor & powerup::kFireShield) != 0 && shieldRunning) {
+    if ((worn.armor & armor::kFireArmor) != 0 && shieldRunning) {
         return Kind::FireShield;
     }
     if ((worn.special & powerup::kPhoenix) != 0) {
@@ -149,7 +150,7 @@ f32 PowerupCompanion::fadeOf(const Inventory& inventory) {
         }
         const bool brings =
             (slot.kind == powerup::kSpecial && (slot.flags & kCompanionSpecials) != 0) ||
-            (slot.kind == powerup::kArmor && (slot.flags & powerup::kFireShield) != 0);
+            (slot.kind == powerup::kArmor && (slot.flags & armor::kFireArmor) != 0);
         if (brings) {
             left = std::max(left, slot.strength < 0.0f ? kFadeSeconds : slot.strength);
         }

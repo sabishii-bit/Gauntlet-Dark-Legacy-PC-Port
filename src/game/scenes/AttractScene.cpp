@@ -118,7 +118,7 @@ bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
         for (usize n = 0; n < realm.levels.size(); ++n) {
             const usize index = m_nextLevel[realmIndex]++ % realm.levels.size();
             const auto* info = data.level(realm.levels[index]);
-            if (info == nullptr || (info->selectionFlags & 2U) == 0) {
+            if (info == nullptr || (info->selectionFlags & LevelInfo::kInAttract) == 0) {
                 continue;
             }
             const auto level = context.levels->byName(realm.levels[index]);

@@ -19,6 +19,8 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerMissiles.h"
 
@@ -41,8 +43,8 @@ constexpr std::string_view kSoundDirectory = "audio";
 constexpr s32 kOgre = 12;
 constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f;
-constexpr std::array kArmEquipment{powerup::kLeftGauntlet, powerup::kReflectShield,
-                                   powerup::kFireShield, powerup::kLightningShield};
+constexpr std::array kArmEquipment{powerup::kLeftGauntlet, armor::kReflect, armor::kFireArmor,
+                                   armor::kElectricArmor};
 constexpr std::array<std::string_view, 4> kArmModels{"BOSSGAUNTL", "RF_SHLD", "FW_SHLD", "L_SHLD"};
 std::optional<usize> armOf(u32 equipment) {
     for (usize i = 0; i < kArmEquipment.size(); ++i) {
@@ -799,7 +801,7 @@ bool PlayerFigure::bindArmEquipment(RenderDevice& device, ItemArchive& powerups,
 }
 
 bool PlayerFigure::armEquipmentReady(u32 equipment) const {
-    if ((equipment & ~(powerup::kLeftGauntlet | powerup::kShields)) != 0) {
+    if ((equipment & ~(powerup::kLeftGauntlet | armor::kArmShields)) != 0) {
         return false;
     }
     const auto arm = armOf(equipment);
@@ -864,9 +866,9 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
         object = "BOSSHORNS";
     } else if ((worn.special & powerup::kSkorneMask) != 0) {
         object = "BOSSMASK";
-    } else if ((worn.armor & 0x80000U) != 0) {
+    } else if ((worn.armor & armor::kAntiDeath) != 0) {
         object = "HEAD_HALO";
-    } else if ((worn.armor & 0x2000U) != 0) {
+    } else if ((worn.armor & armor::kImmuneGas) != 0) {
         object = "HEAD_GAS";
     } else if (worn.xray()) {
         object = "HEAD_XRAY";
@@ -933,9 +935,9 @@ void PlayerFigure::setWeaponPowerups(RenderDevice& device, ItemArchive& powerups
     if ((worn.special & powerup::kRightGauntlet) != 0) {
         archive = &powerups;
         object = "BOSSGAUNTR";
-    } else if ((worn.weapon & powerup::kSuperShot) != 0) {
+    } else if ((worn.weapon & damage::kSuperShot) != 0) {
         object = "SUPERXBOW";
-    } else if ((worn.weapon & powerup::kThunderHammer) != 0) {
+    } else if ((worn.weapon & damage::kHammer) != 0) {
         object = "HAMMER_HD";
     }
     const bool held = m_handNode >= 0 && archive->loaded() && !object.empty() &&

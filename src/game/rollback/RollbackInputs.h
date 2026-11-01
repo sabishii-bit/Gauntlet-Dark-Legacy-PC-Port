@@ -112,25 +112,35 @@ public:
     /** Takes a trusted journal command as actual input, local seats included, outside
      * the live admission window: a journal is replayed from the first tick, not
      * predicted. Refuses a wrong epoch, grant or owner, or a value contradicting one
-     * already held. */
+     * already held. A dropped peer's seat stays still from its drop on, whatever the
+     * journal recorded there. */
     bool adoptActual(const InputCommand& command);
     /** After an adopted journal has been executed, local sampling continues at the tick
      * after the last local command held, never before the next tick to simulate. */
     bool resumeSampling();
     /** From `fromTick` on, a dropped peer's seats hold neutral input that counts as
      * actual: nothing is predicted, nothing is awaited and the journal records it. Its
-     * input for earlier ticks is still taken, anything later is ignored. */
-    bool suspend(u8 peer, u64 fromTick);
+     * input for earlier ticks is still taken, anything later is ignored. Input it sent
+     * that already arrived for those ticks gives way to neutral too, and is corrected
+     * where it was used, except through `settledThrough`, whose effects are past undoing.
+     * The seats leave play there as well, so unsettled ticks already simulated replay. */
+    bool suspend(u8 peer, u64 fromTick, u64 settledThrough = 0);
     bool suspended(u8 peer) const {
         return peer < m_suspendedFrom.size() && m_suspendedFrom[peer] != 0;
     }
+    /** Whether `seat` belongs to a peer suspended at or before `tick`. */
+    bool suspendedSeat(usize seat, u64 tick) const;
+    /** A guest's: the host holds another guest's input through `through`. The host drops
+     * a guest from the tick after its own receipt, so that guest's input, however soon a
+     * direct link brought it, confirms only this far. A peer never reported bounds
+     * nothing; a later report never lowers the bound. */
+    bool observeHostReceipt(u8 peer, u64 through);
 
 private:
     using Actual = std::array<std::optional<InputCommand>, InputCommand::kSeats>;
     bool occupied(u8 peer) const;
     Admission admit(u8 peer, std::span<const InputCommand> commands);
     bool complete(u64 tick, const Actual& frame) const;
-    bool suspendedSeat(usize seat, u64 tick) const;
     InputCommand neutral(u8 seat, u64 tick) const;
     InputCommand prediction(u8 seat, u64 tick) const;
     void trim();
@@ -148,6 +158,7 @@ private:
     std::array<u64, 5> m_peerTicks{};
     std::array<u8, 5> m_peerTransitTicks{};
     std::array<u64, 5> m_suspendedFrom{};
+    std::array<std::optional<u64>, 5> m_hostReceipts{};
     Actual m_predictionSeed;
     std::map<u64, Actual> m_actual;
     std::map<u64, Frame> m_used;

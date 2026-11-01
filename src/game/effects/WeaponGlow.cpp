@@ -20,7 +20,7 @@ constexpr s32 kSorceressClass = 6;
 
 u32 WeaponGlow::elementOf(const PowerupEffects& worn) {
     const bool handFull = (worn.special & powerup::kRightGauntlet) != 0 ||
-                          (worn.weapon & (powerup::kSuperShot | powerup::kThunderHammer)) != 0;
+                          (worn.weapon & (damage::kSuperShot | damage::kHammer)) != 0;
     return handFull ? 0 : damage::element(worn.weapon);
 }
 

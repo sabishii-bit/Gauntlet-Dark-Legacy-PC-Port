@@ -324,6 +324,8 @@ template <class A, class T> void runtime(A& archive, T& state) {
     vector(archive, capture.velocity);
     numbers(archive, capture.supportHeight, capture.damage, capture.flying, capture.owner,
             capture.boss);
+    numbers(archive, capture.supportXZ.x, capture.supportXZ.y);
+    archive.number(capture.restoreSupport);
     auto& combo = state.combo;
     numbers(archive, combo.role, combo.partner, combo.grabberClass, combo.riding, combo.rideAsked,
             combo.ticksLeft, combo.turnTicks, combo.graceSeconds);

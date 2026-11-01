@@ -49,7 +49,7 @@ void ItemSupport::bind(const ItemInstance& instance, const ItemInfo& info,
                        const Obstacle& box, const WorldCollision* current) {
     m_object = -1;
     authored = itemSupportAt(instance.position, current, authored);
-    if (authored == nullptr || (info.collisionFlags & 1U) != 0) {
+    if (authored == nullptr || (info.collisionFlags & ItemInfo::kKeepsHeight) != 0) {
         return;
     }
     const auto floor = authored->restingFloorAt(instance.position, 4, 10, 1);

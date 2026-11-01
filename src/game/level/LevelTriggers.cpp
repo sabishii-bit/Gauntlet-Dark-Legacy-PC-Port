@@ -1,6 +1,7 @@
 #include "game/level/LevelTriggers.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -66,7 +67,7 @@ bool LevelTriggers::appendLocalDigest(NativeStateDigest& digest, const LocalSnap
 
 namespace {
 
-constexpr u32 kDefaultFlags = 0x8;
+constexpr u32 kDefaultFlags = LevelTrigger::kStaysSolid;
 constexpr u8 kTinyRadius = 0xFF;
 constexpr f32 kToggleDelay = 2.0f;
 constexpr f32 kHeightSpeed = 4.0f;
@@ -102,22 +103,46 @@ s16 paramS16(const ItemInstance& instance, usize at) {
     return value;
 }
 
+/** A trigger kind's own flags (SetItem, items.c 6877-6891); subtypes 21 and 25-29 have no
+ * names of their own. Any other subtype takes the instance's flag word with kDefaultFlags. */
+struct SubtypeFlags {
+    s32 subtype;
+    u32 flags;
+};
+constexpr std::array kSubtypeFlags{
+    SubtypeFlags{LevelTrigger::kMomentaryBridge, LevelTrigger::kFades},
+    SubtypeFlags{21, LevelTrigger::kStaysSolid},
+    SubtypeFlags{LevelTrigger::kLatchedBridge, LevelTrigger::kFades | LevelTrigger::kOpensOnce},
+    SubtypeFlags{LevelTrigger::kMovementLessonPad,
+                 LevelTrigger::kStaysSolid | LevelTrigger::kOpensOnce},
+    SubtypeFlags{25, LevelTrigger::kDelaysWhenEmpty | LevelTrigger::kToggles},
+    SubtypeFlags{26, LevelTrigger::kOpensOnce},
+    SubtypeFlags{27, LevelTrigger::kDelaysWhenEmpty | LevelTrigger::kStaysSolid |
+                         LevelTrigger::kToggles},
+    SubtypeFlags{28, LevelTrigger::kStaysSolid | LevelTrigger::kCloses},
+    SubtypeFlags{29, LevelTrigger::kStaysSolid | LevelTrigger::kOpensOnce},
+};
+static_assert([] {
+    for (usize i = 0; i < kSubtypeFlags.size(); ++i) {
+        for (usize j = i + 1; j < kSubtypeFlags.size(); ++j) {
+            if (kSubtypeFlags[i].subtype == kSubtypeFlags[j].subtype) {
+                return false;
+            }
+        }
+    }
+    return true;
+}());
+
 u32 flagsOf(const ItemInfo& info, const ItemInstance& instance) {
     const u32 params = static_cast<u16>(paramS16(instance, 2));
     u32 flags = params | kDefaultFlags;
-    switch (info.subtype) {
-    case 20: flags = 0x10; break;
-    case 21: flags = 8; break;
-    case 22: flags = 0x12; break;
-    case 23: flags = 10; break;
-    case 25: flags = 0x804; break;
-    case 26: flags = 2; break;
-    case 27: flags = 0x80C; break;
-    case 28: flags = 9; break;
-    case 29: flags = 10; break;
-    default: break;
+    for (const SubtypeFlags& row : kSubtypeFlags) {
+        if (row.subtype == info.subtype) {
+            flags = row.flags;
+            break;
+        }
     }
-    return flags | (params & ~0xFFU);
+    return flags | (params & ~LevelTrigger::kKindMask);
 }
 
 bool bounded(f32 value, f32 minimum = -1e6f, f32 maximum = 1e6f) {
@@ -524,7 +549,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         };
         std::optional<FloorHit> support;
         const WorldCollision* supportCollision = initialFloors;
-        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (collision != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             support =
                 initialFloors->restingFloorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
             if (restCollision) {
@@ -574,7 +599,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             flags |= LevelTrigger::kOnTarget;
         }
         trigger.flags = flags;
-        trigger.kind = flags & 0xFFU;
+        trigger.kind = flags & LevelTrigger::kKindMask;
         trigger.radius =
             instance.params[4] == kTinyRadius ? 0.01f : 0.5f * static_cast<f32>(instance.params[4]);
         if (trigger.radius <= 0.0f) {
@@ -584,7 +609,8 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.nextId = instance.params[7];
         trigger.shootable = info.subtype == LevelTrigger::kShootableSubtype;
         trigger.height = info.height;
-        trigger.movementLesson = info.subtype == 23 && trigger.target >= 0;
+        trigger.movementLesson =
+            info.subtype == LevelTrigger::kMovementLessonPad && trigger.target >= 0;
         // The slot is a signed byte in the data: 255 (and anything high) means none.
         const u8 slot = instance.params[5];
         trigger.sound = slot >= 0x80 ? -1 : static_cast<s32>(slot);
@@ -873,7 +899,7 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
             } else if (contact && trigger.toggleCooldown <= 0) {
                 open = !open;
                 trigger.toggleCooldown = kToggleDelay;
-            } else if (!contact && (trigger.flags & 0x800U) != 0) {
+            } else if (!contact && (trigger.flags & LevelTrigger::kDelaysWhenEmpty) != 0) {
                 // Empty-pad delay is one second per additional participant.
                 trigger.toggleCooldown = m_sim.emptyToggleDelay;
             }
@@ -893,7 +919,8 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
         trigger.fired = contact;
     }
     if (trigger.fired && !wasFired && contact && !atOnce) {
-        m_sim.cameraCues.push_back({trigger.id, trigger.target, (trigger.flags & 0x1000U) != 0});
+        m_sim.cameraCues.push_back(
+            {trigger.id, trigger.target, (trigger.flags & LevelTrigger::kShakesCamera) != 0});
         if ((trigger.flags & LevelTrigger::kWakesStatue) != 0) {
             m_sim.wakes.push_back(trigger.spot);
         }
@@ -1042,9 +1069,8 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         // Retain an already revealed bridge only: standing over an absent one
         // must not activate its button, chain, camera or whole-party requirement.
         const auto supported = [&](s32 floor) {
-            return floor >= 0 &&
-                   std::ranges::find(target.subtree, static_cast<usize>(floor)) !=
-                       target.subtree.end();
+            return floor >= 0 && std::ranges::find(target.subtree, static_cast<usize>(floor)) !=
+                                     target.subtree.end();
         };
         // A platform that goes clear as it moves cannot move under a player: it waits for
         // them to step off (did_generate's 2 skips the height step), solid where it stands.
@@ -1053,14 +1079,15 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
                             return supported(visitor.floorObject);
                         });
         const bool momentaryBridge =
-            (target.kind & (0x47U | LevelTrigger::kOscillates)) == 0 &&
+            (target.kind & (LevelTrigger::kLatches | LevelTrigger::kRequirement |
+                            LevelTrigger::kOscillates)) == 0 &&
             (target.kind & LevelTrigger::kFades) != 0;
-        target.pressed =
-            target.open && momentaryBridge &&
-            (std::ranges::any_of(visitors, [&](const TriggerVisitor& visitor) {
-                 return supported(visitor.floorObject);
-             }) ||
-             std::ranges::any_of(occupiedFloors, supported));
+        target.pressed = target.open && momentaryBridge &&
+                         (std::ranges::any_of(visitors,
+                                              [&](const TriggerVisitor& visitor) {
+                                                  return supported(visitor.floorObject);
+                                              }) ||
+                          std::ranges::any_of(occupiedFloors, supported));
         target.wholePartyReady = false;
     }
     for (usize i = 0; i < m_sim.triggers.size(); ++i) {
@@ -1162,7 +1189,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     // An unoccupied pad must not cancel another pad's contact, or reset a target
     // registered as a latch by its first switch.
     for (Target& target : m_sim.targets) {
-        if (!target.forced && (target.kind & 7U) == 0 && !target.pressed &&
+        if (!target.forced && (target.kind & LevelTrigger::kLatches) == 0 && !target.pressed &&
             openTarget(target, false, false, animator, scene, collision)) {
             m_sim.openings.push_back(openingOf(target, false));
         }

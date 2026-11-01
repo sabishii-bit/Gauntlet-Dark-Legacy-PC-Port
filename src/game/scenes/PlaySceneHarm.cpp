@@ -48,7 +48,7 @@ void PlayScene::answerTowerPrompts(const Inputs& inputs) {
 }
 
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
-                     const PlayerImpact& impact) {
+                     const PlayerImpact& impact, bool armorAbsorbed) {
     // damage_player excludes trigger-camera shots even though existing effects
     // and the player's action continue to advance beneath the input lock.
     if (index >= m_players.size() || m_sim.switchCutscene.active()) {
@@ -64,7 +64,9 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
     const PartyDamage::Context context{
         .tower = m_world->isTower(),
         .damageScale = level != nullptr ? level->tuning.damage : 1.0f,
-        .bossEncounter = level != nullptr && level->bossType >= 0,
+        .bossEncounter =
+            (level != nullptr && level->bossType >= 0) ||
+            (m_world->imported() != nullptr && m_world->imported()->importedBoss() != nullptr),
         .cutscene = m_sim.switchCutscene.active(),
         .lastRealmLevel =
             m_context.levels != nullptr && m_context.levels->isLastLevel(m_world->ref()),
@@ -72,7 +74,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
         .playSeconds = m_sim.playSeconds};
     PartyDamage::hurt(m_sim.health, runtime, damage, kind, directed, context,
                       healthEvents(index, runtime), impact,
-                      m_classes.stats(runtime.actor.save().character));
+                      armorAbsorbed ? nullptr : m_classes.stats(runtime.actor.save().character));
 }
 
 PlayerHealth::Events PlayScene::healthEvents(usize index, PlayerRuntime& runtime) {
@@ -101,6 +103,22 @@ bool PlayScene::kill(s32 player) {
         const auto audioScope = m_audio.soundScope({31, 0, 1, static_cast<u8>(player)},
                                                    static_cast<u32>(HurtKind::Burn) + 1);
         PlayerHealth::fall(runtime, healthEvents(i, runtime));
+        return true;
+    }
+    return false;
+}
+
+bool PlayScene::waitInTower(s32 player) {
+    for (usize i = 0; i < m_players.size(); ++i) {
+        PlayerRuntime& runtime = m_players[i];
+        if (runtime.actor.player() != player) {
+            continue;
+        }
+        if (runtime.life != PlayerLife::InTower) {
+            runtime.life = PlayerLife::InTower;
+            perform(i, PartyMotion::Action::Fallen);
+        }
+        runtime.towerPrompt = false; // nobody is left at that seat to answer it
         return true;
     }
     return false;
@@ -148,7 +166,8 @@ void PlayScene::sayWithName(usize index, std::string_view line, f32 wait) {
         m_audio.soundScope({34, 0, 1, static_cast<u8>(m_players[index].actor.player())}, 1);
     const std::array lines{line};
     m_audio.announce(body->voice(), PickupVoices::nameOf(save.character, save.color),
-                     PickupVoices::carriesPojo(save), lines, wait);
+                     PickupVoices::carriesPojo(save), lines, wait,
+                     AnnouncementSubject{save.character, save.color});
 }
 
 } // namespace gdl::game

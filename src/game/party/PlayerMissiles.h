@@ -14,6 +14,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/config/MultiplayerMode.h"
 #include "game/effects/EffectTrees.h"
 #include "game/effects/MissileStreak.h"
@@ -173,7 +174,7 @@ public:
     PlayerMissiles& operator=(PlayerMissiles&&) = delete;
     ~PlayerMissiles() = default;
     static constexpr u32 kPlainModifiers =
-        powerup::kRapidFire | powerup::kThreeWayShot | powerup::kFiveWayShot;
+        damage::kRapidFire | damage::kThreeWayShot | damage::kFiveWayShot;
     static constexpr u32 kStrongThrowFlags = 0x02000010U;
     static constexpr u32 kReplayModifiers = kPlainModifiers | kStrongThrowFlags | 0xFU;
     /** Ordinary elemental or plain throws only; other weapon modes remain authoritative. */

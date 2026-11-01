@@ -114,6 +114,20 @@ bool SumnerVisit::loadTexts(const std::filesystem::path& file, const StringTable
     return true;
 }
 
+bool SumnerVisit::openTopics(s32 player, const TextPainter& text, const MenuScreen& screen,
+                              HintMenuLabels labels) {
+    if (!m_menu.open(text, screen, std::move(labels))) {
+        return false;
+    }
+    m_sim.owner = player;
+    return true;
+}
+
+void SumnerVisit::closeTopics() {
+    m_menu.close();
+    m_sim.owner = -1;
+}
+
 void SumnerVisit::clear() {
     m_localBinding = std::make_shared<const u8>(0);
     m_menu.close();

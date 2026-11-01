@@ -833,13 +833,26 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
 }
 
 PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
-    Decision d{requested};
     // Native requests at/after P_USE_MAGIC replace an ordinary attack's
     // dispatch state with READY before its phase can choose a continuation.
     if (ordinaryAttack() && (requested == Action::UsePotion || requested == Action::ThrowPotion)) {
+        Decision d{requested};
         d.cut = Cut::IfDifferent;
         return d;
     }
+    Decision d = continuation(requested);
+    applyCutIns(requested, d);
+    if (d.action == Action::Ready && m_current != Action::Ready) {
+        d.transition = readyTransition();
+    }
+    if (d.action != m_current) {
+        d.action = refine(d.action);
+    }
+    return d;
+}
+
+PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
+    Decision d{requested};
     switch (m_current) {
     case Action::Ready:
         d.repeat = true;
@@ -1134,6 +1147,10 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         }
         break;
     }
+    return d;
+}
+
+void PlayerAnimator::applyCutIns(Action requested, Decision& d) const {
     // A partner's combo takes the body at once (action.c 558's mode 2 for P_FALL_DOWN to
     // P_GRABBED), once and not looped.
     if (requested >= Action::ComboWar1 && requested <= Action::ComboJes && d.action == requested &&
@@ -1168,13 +1185,6 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         !entering() && !reacting()) {
         d.cut = Cut::IfDifferent;
     }
-    if (d.action == Action::Ready && m_current != Action::Ready) {
-        d.transition = readyTransition();
-    }
-    if (d.action != m_current) {
-        d.action = refine(d.action);
-    }
-    return d;
 }
 
 f32 PlayerAnimator::readyTransition() const {

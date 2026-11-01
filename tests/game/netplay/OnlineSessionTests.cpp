@@ -870,6 +870,30 @@ TEST_CASE("a guest that leaves on its own is dropped, its link closing afterward
     CHECK(pair.hostSession.flush());
 }
 
+TEST_CASE("what a guest sent before the host dropped it is ignored when it arrives",
+          "[netplay][online-session][drop]") {
+    const bool leaving = GENERATE(false, true);
+    CAPTURE(leaving);
+    test::OnlinePair pair;
+    pair.prepare();
+    pair.ready();
+    if (leaving) {
+        pair.guestSession.leave(); // its Stop is on the way
+    } else {
+        REQUIRE(pair.guestInputs.sample(inputs(pair.guest, pair.guestInputs)));
+        REQUIRE(pair.guestSession.flush()); // its input is on the way
+    }
+    REQUIRE_FALSE(pair.hostWire.events.empty());
+    // The stall deadline drops the guest before the host reads what it sent.
+    REQUIRE(pair.host.drop(2));
+    pair.hostSession.update(0);
+    CHECK(pair.hostSession.failure() == Failure::None);
+    CHECK(pair.hostSession.phase() == Phase::Active);
+    CHECK(pair.host.phase() == MatchSession::Phase::Running);
+    CHECK(pair.host.takeDrops().size() == 1);
+    CHECK(pair.hostSession.flush());
+}
+
 TEST_CASE("online state fails closed after a started room changes or its service fails",
           "[netplay][online-session]") {
     Client host;

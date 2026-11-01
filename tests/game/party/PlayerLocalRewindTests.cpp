@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerRuntimeCheckpoint.h"
@@ -290,7 +291,7 @@ struct PartyRewind {
                 .named = [this](std::string_view cue, f32) { sounds.emplace_back(cue); }};
             if (phase == 19 || phase == 94) {
                 health.hurt(player, 7.25f, HurtKind::Blow, true, false, 1, events,
-                            {PlayerImpact::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
+                            {damage::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
             }
             if (phase % 11 == 0) {
                 ++player.actor.save().gold;

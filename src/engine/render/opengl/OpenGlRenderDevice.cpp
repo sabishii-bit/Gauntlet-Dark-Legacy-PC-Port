@@ -487,7 +487,8 @@ bool OpenGlRenderDevice::beginFrame() {
 }
 
 void OpenGlRenderDevice::draw(const ImmediateBatch& batch, const Texture& texture,
-                              const Mat4& transform, const DrawState& state) {
+                              const Mat4& transform, const DrawState& requested) {
+    const DrawState state = resolvedDrawState(requested);
     GDL_ASSERT(m_frameOpen, "draw called outside beginFrame/endFrame");
     const auto triangles = batch.triangles();
     if (triangles.empty()) {
@@ -540,19 +541,21 @@ void OpenGlRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     const Vec4 params{state.uvOffset.x, state.uvOffset.y, state.alphaTest, state.darken};
     const Vec4 scale{state.uvScale.x, state.uvScale.y,
                      state.maskedTexture != nullptr ? 1.0f : -textureBlend, state.colorScale};
-    const Vec4 effect{
-        m_smoothSprites && state.usesSpriteSmoothing() &&
-                firstTexture.description().filter == TextureFilter::Linear
-            ? 1.0f
-            : 0.0f,
-        m_authoredSilhouettes && state.lightmapCutout && state.lightmap != nullptr ? 1.0f : 0.0f,
-        0.0f, 0.0f};
-    constexpr Vec4 kNoEffect{0.0f};
+    const Vec4 effect{m_smoothSprites && state.usesSpriteSmoothing() &&
+                              firstTexture.description().filter == TextureFilter::Linear
+                          ? 1.0f
+                          : 0.0f,
+                      state.lightmapRgb && state.lightmap != nullptr ? -1.0f
+                      : m_authoredSilhouettes && state.lightmapCutout && state.lightmap != nullptr
+                          ? 1.0f
+                          : 0.0f,
+                      std::clamp(state.whiteBlend, 0.0f, 1.0f), state.fog.reciprocalScale};
+    const Vec4 fog{state.blend == BlendMode::Additive ? Vec3{0} : state.fog.color, state.fog.bias};
     m_gl.uniformMatrix4fv(program.transform, 1, GL_FALSE, glm::value_ptr(transform));
     m_gl.uniform4fv(program.params, 1, glm::value_ptr(params));
     m_gl.uniform4fv(program.scale, 1, glm::value_ptr(scale));
     m_gl.uniform4fv(program.effectData0, 1, glm::value_ptr(effect));
-    m_gl.uniform4fv(program.effectData1, 1, glm::value_ptr(kNoEffect));
+    m_gl.uniform4fv(program.effectData1, 1, glm::value_ptr(fog));
 
     const bool additive = state.blend == BlendMode::Additive;
     // Coverage already weights the resolved colour; blending again would darken edges.

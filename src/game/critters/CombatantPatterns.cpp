@@ -10,12 +10,22 @@
 
 namespace gdl::game {
 
-f32 Combatant::attackRate(const Actor& critter) {
+f32 Combatant::attackRate(const Actor& critter) const {
+    if (critter.definition->rules().pressureReferenceDamage > 0) {
+        // Family targeting evaluates children from the root. A child's own tick
+        // uses its explicit copy-in/copy-out pressure transaction; parent fallback
+        // still reads the root's state, without casting away the parent link's constness.
+        const CritterPressure& pressure = &critter != &m_sim.actor && m_sim.actor.parent != nullptr
+                                              ? m_sim.actor.parent->m_sim.pressure
+                                              : m_sim.pressure;
+        return pressure.rate(critter.definition->maxHealth(), critter.health,
+                             critter.definition->rules().pressureReferenceDamage);
+    }
     return 0.5f + 4.5f * (1.0f - critter.health / (1.0f + critter.maxHealth));
 }
 
 s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria,
-                            std::span<const EnemyView> players, bool fallback) {
+                            std::span<const EnemyView> players, bool fallback) const {
     for (const Actor* owner = &critter; owner != nullptr;
          owner = fallback && owner->parent != nullptr ? &owner->parent->m_sim.actor : nullptr) {
         const Actor& source = *owner;
@@ -108,10 +118,9 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
     s32 playerChoice = -1;
     for (usize i = 0; i < data.patterns().size(); ++i) {
         const AttackPattern& pattern = data.patterns()[i];
-        constexpr u32 kDisabled = 0x1000;
         if (static_cast<s32>(i) == previousPattern || pattern.moves.empty() ||
-            (pattern.flags & kDisabled) != 0 ||
-            ((pattern.flags & 2U) != 0 && !critter.childrenIntact) ||
+            (pattern.flags & AttackPattern::kDisabled) != 0 ||
+            ((pattern.flags & AttackPattern::kNeedsChildren) != 0 && !critter.childrenIntact) ||
             !available(pattern.moves.front()) ||
             critter.age < critter.patternTimes[i] + pattern.cooldown) {
             continue;
@@ -126,17 +135,15 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
     }
     for (usize i = 0; i < data.moves().size(); ++i) {
         const MoveDefinition& move = data.moves()[i];
-        constexpr u32 kLinkedOnly = 4;
-        constexpr u32 kRequiresNode = 0x10;
         if (static_cast<s32>(i) == critter.move || !move.attack() ||
-            ((move.flags & 2U) != 0 && !critter.childrenIntact) ||
-            (move.flags & kLinkedOnly) != 0 || !available(static_cast<s32>(i))) {
+            ((move.flags & MoveDefinition::kNeedsChildren) != 0 && !critter.childrenIntact) ||
+            (move.flags & MoveDefinition::kLinkedOnly) != 0 || !available(static_cast<s32>(i))) {
             continue;
         }
         const auto hasNode = [&](const MoveDefinition& m) {
             return nodeAvailable(critter, m.colnode);
         };
-        if ((move.flags & kRequiresNode) != 0 &&
+        if ((move.flags & MoveDefinition::kNeedsNode) != 0 &&
             (!hasNode(move) ||
              (move.link >= 0 && (static_cast<usize>(move.link) >= data.moves().size() ||
                                  !hasNode(data.moves()[static_cast<usize>(move.link)]))))) {

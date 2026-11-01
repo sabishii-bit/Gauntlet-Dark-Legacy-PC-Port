@@ -12,8 +12,9 @@ bool PlayerCapture::Checkpoint::valid() const {
         return std::isfinite(value) && std::abs(value) <= 1'000'000;
     };
     if (!finite(velocity.x) || !finite(velocity.y) || !finite(velocity.z) ||
-        !finite(supportHeight) || !finite(damage) || damage < 0 || owner < -1 || owner > 65535 ||
-        (body && flying) || (body ? owner < 0 : owner != -1)) {
+        !finite(supportHeight) || !finite(supportXZ.x) || !finite(supportXZ.y) || !finite(damage) ||
+        damage < 0 || owner < -1 || owner > 65535 || (body && flying) ||
+        (body ? owner < 0 : owner != -1) || (restoreSupport && !body && !flying)) {
         return false;
     }
     if (body) {
@@ -29,7 +30,8 @@ bool PlayerCapture::Checkpoint::valid() const {
     return true;
 }
 PlayerCapture::Checkpoint PlayerCapture::checkpoint() const {
-    return {m_body, m_velocity, m_supportHeight, m_damage, m_flying, m_owner, m_boss};
+    return {m_body,  m_velocity, m_supportHeight, m_damage,        m_flying,
+            m_owner, m_boss,     m_supportXZ,     m_restoreSupport};
 }
 bool PlayerCapture::restore(const Checkpoint& state) {
     if (!state.valid()) {
@@ -42,11 +44,16 @@ bool PlayerCapture::restore(const Checkpoint& state) {
     m_flying = state.flying;
     m_owner = state.owner;
     m_boss = state.boss;
+    m_supportXZ = state.supportXZ;
+    m_restoreSupport = state.restoreSupport;
     return true;
 }
-void PlayerCapture::attach(s32 owner, bool boss, const Mat4& contact, PlayerActor& actor) {
+void PlayerCapture::attach(s32 owner, bool boss, const Mat4& contact, PlayerActor& actor,
+                           bool restoreSupport) {
     if (!held()) {
         m_supportHeight = actor.position().y;
+        m_supportXZ = {actor.position().x, actor.position().z};
+        m_restoreSupport = restoreSupport;
     }
     m_owner = owner;
     m_boss = boss;
@@ -74,6 +81,15 @@ std::optional<f32> PlayerCapture::update(f32 seconds, PlayerActor& actor,
                                          const WorldCollision& collision) {
     if (!m_flying || seconds <= 0) {
         return std::nullopt;
+    }
+    if (m_restoreSupport) {
+        // N64 PlayerUnsetParent (e004e888) restores the pre-parent XYZ, adding
+        // only a 1..10-unit lift from the carried pose. The hand is presentation,
+        // not a new walking footprint: it can sweep outside the entire arena.
+        // Keep the common movement/landing policy after that native release.
+        const f32 lift = std::clamp(actor.position().y - m_supportHeight, 1.0f, 10.0f);
+        actor.place({m_supportXZ.x, m_supportHeight + lift, m_supportXZ.y});
+        m_restoreSupport = false;
     }
     // PlayerMotion clamps each horizontal component to 40 units/s for thrown
     // states, damps velocity by 0.9 per 30 Hz frame, and lowers toward the floor

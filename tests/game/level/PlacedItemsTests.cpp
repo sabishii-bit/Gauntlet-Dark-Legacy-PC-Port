@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -35,6 +36,54 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("runtime potion drops retain native definitions without authored pickup records",
+          "[placed-items][aggressor-drops][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    WorldLayout layout;
+    SECTION("an imported empty roster receives the four immutable definitions") {}
+    SECTION("authored potion indices and values are preserved") {
+        REQUIRE(layout.load(root / "LEVELS/LEVELH1"));
+    }
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&powerups};
+    items.bind(device, layout, nullptr, archives);
+    constexpr std::array<std::string_view, 4> names{"POT_RED", "POT_BLU", "POT_YEL", "POT_GRE"};
+    for (usize element = 0; element < names.size(); ++element) {
+        CAPTURE(names[element]);
+        const usize index = items.size();
+        const Vec3 position{10000.0f + static_cast<f32>(element) * 10, 0, 10000};
+        REQUIRE(items.throwItem(device, names[element], position, Vec3{0}, nullptr, .1f));
+        const auto& item = items.item(index);
+        CHECK(item.name == names[element]);
+        CHECK(item.subtype == static_cast<s32>(ItemKind::Potion));
+        CHECK(item.flags == element + 1);
+        CHECK(item.value == 1);
+        CHECK(item.health == 1);
+        CHECK(item.radius == .5f);
+        CHECK(item.height == 2);
+        REQUIRE(item.model);
+        CHECK(item.model->bound());
+        if (!layout.itemInfos().empty()) {
+            const auto original =
+                std::ranges::find(layout.itemInfos(), names[element], &ItemInfo::name);
+            REQUIRE(original != layout.itemInfos().end());
+            CHECK(item.info == original - layout.itemInfos().begin());
+            CHECK(item.flags == original->properties);
+        }
+        CHECK_FALSE(item.takeable());
+        items.update(.2f);
+        CHECK(item.takeable());
+        CharacterSave save;
+        const auto taking = takeItem(save, {item.subtype, item.value, item.flags, item.strength});
+        REQUIRE(taking.took());
+        REQUIRE(save.progress().inventory.potions.size() == 1);
+        CHECK(save.progress().inventory.potions[0] == element + 1);
+    }
+}
 
 TEST_CASE("native pickup gas and fruit shadows composite over an already drawn chest",
           "[placed-items][pickup-occlusion][assets]") {

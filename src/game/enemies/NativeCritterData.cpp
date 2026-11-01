@@ -115,6 +115,10 @@ CombatEffectDefinition soundOf(const formats::CritterSoundRecord& source) {
     sound.skinLoops = source.custom0;
     sound.particleSpeed = 0.01f * static_cast<f32>(source.custom1);
     sound.scale = source.scale <= 0.0f ? 1.0f : source.scale;
+    sound.impactRadius = source.impactRadius;
+    sound.impactPhysicalFraction = source.impactPhysicalFraction;
+    sound.impactElementalFraction = source.impactElementalFraction;
+    sound.impactElement = source.impactElement;
     return sound;
 }
 
@@ -122,6 +126,20 @@ CombatEffectDefinition soundOf(const formats::CritterSoundRecord& source) {
 
 bool CritterData::loadNative(const std::filesystem::path& file, usize typeIndex) {
     const auto source = formats::parseCritterWad(readFile(file));
+    assignDecoded(paths::utf8(file.stem()), source, typeIndex);
+    return true;
+}
+
+CritterData CritterData::fromDecoded(std::string_view name, const formats::CritterFile& source,
+                                     usize typeIndex, CritterRules rules) {
+    CritterData result;
+    result.m_rules = rules;
+    result.assignDecoded(name, source, typeIndex);
+    return result;
+}
+
+void CritterData::assignDecoded(std::string_view name, const formats::CritterFile& source,
+                                usize typeIndex) {
     if (typeIndex >= source.types.size()) {
         throw FormatError("critter wad: missing requested type");
     }
@@ -147,7 +165,7 @@ bool CritterData::loadNative(const std::filesystem::path& file, usize typeIndex)
     if (moves.empty()) {
         throw FormatError("critter wad: type has no moves");
     }
-    m_name = normalizeAssetName(paths::utf8(file.stem()));
+    m_name = normalizeAssetName(name);
     m_folder = toLowerAscii(descriptor.name);
     m_prefix = descriptor.prefix;
     m_kind = static_cast<CombatantKind>(descriptor.type);
@@ -238,7 +256,6 @@ bool CritterData::loadNative(const std::filesystem::path& file, usize typeIndex)
         part.flags = static_cast<u32>(node.flags);
         m_parts.push_back(part);
     }
-    return true;
 }
 
 } // namespace gdl::game

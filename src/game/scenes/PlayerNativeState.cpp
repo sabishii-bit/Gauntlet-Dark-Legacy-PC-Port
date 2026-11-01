@@ -82,8 +82,10 @@ void visitNativeState(NativeStateDigest& digest, const Knockback& value) {
 }
 
 void visitNativeState(NativeStateDigest& digest, const PlayerCapture& value) {
-    const auto& [body, velocity, supportHeight, damage, flying, owner, boss] = value;
-    digest.values(body, velocity, supportHeight, damage, flying, owner, boss);
+    const auto& [body, velocity, supportHeight, damage, flying, owner, boss, supportXZ,
+                 restoreSupport] = value;
+    digest.values(body, velocity, supportHeight, damage, flying, owner, boss, supportXZ,
+                  restoreSupport);
 }
 
 void visitNativeState(NativeStateDigest& digest, const PlayerTransport& value) {

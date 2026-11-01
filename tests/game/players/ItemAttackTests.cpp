@@ -5,6 +5,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/players/ItemAttack.h"
 
 namespace {
@@ -17,9 +18,9 @@ TEST_CASE("item attacks retain retail priority and elemental damage", "[game][it
     CHECK_FALSE(ItemAttack::select(worn));
     worn.special = powerup::kBreath;
     CHECK(ItemAttack::select(worn)->tree == "FIREBREATHE");
-    worn.weapon = powerup::kThunderHammer;
+    worn.weapon = damage::kHammer;
     CHECK(ItemAttack::select(worn)->deed == PlayerDeed::Hammer);
-    worn.weapon |= powerup::kSuperShot;
+    worn.weapon |= damage::kSuperShot;
     CHECK(ItemAttack::select(worn)->deed == PlayerDeed::SuperShot);
     worn.special |= powerup::kRightGauntlet;
     CHECK(ItemAttack::select(worn)->deed == PlayerDeed::FireRight);
@@ -61,7 +62,7 @@ TEST_CASE("breath expands forwards while hammer damage waits for the impact dela
     CHECK_FALSE(breath.reaches(Mat4{1}, ahead, 0.8f, 1));
     CHECK(breath.damageAt(0.1f, 1) == Approx(34.2f));
     CHECK(breath.damageAt(0.5f, 1) < breath.damageAt(0.1f, 1));
-    worn.weapon = powerup::kThunderHammer;
+    worn.weapon = damage::kHammer;
     const auto hammer = *ItemAttack::select(worn);
     CHECK_FALSE(hammer.reaches(Mat4{1}, ahead, 0.09f, 1));
     CHECK(hammer.reaches(Mat4{1}, behind, 0.1f, 1));
@@ -73,7 +74,7 @@ TEST_CASE("breath expands forwards while hammer damage waits for the impact dela
 TEST_CASE("hammer expansion measures its active phase after the authored delay",
           "[game][items][alpha-hammer-phase][alpha-area-height]") {
     PowerupEffects worn;
-    worn.weapon = powerup::kThunderHammer;
+    worn.weapon = damage::kHammer;
     const auto hammer = *ItemAttack::select(worn);
     const MissileTarget near{0, {0, 0, -11}, 0.25f, 2};
     const MissileTarget rim{1, {0, 0, 14}, 0.25f, 2};

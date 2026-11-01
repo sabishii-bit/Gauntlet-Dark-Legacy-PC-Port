@@ -12,6 +12,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/ClassData.h"
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/hud/StatusBox.h"
 #include "game/players/PowerupEffects.h"
 
@@ -188,7 +190,7 @@ TEST_CASE("powerup usage rounds time to one decimal and shows whole remaining ch
     CHECK(StatusBoxPainter::usageAmount(slot) == "0.0");
     slot.strength = -1;
     CHECK(StatusBoxPainter::usageAmount(slot).empty());
-    slot = PowerupSlot{-1, powerup::kWeapon, 12, powerup::kSuperShot, true};
+    slot = PowerupSlot{-1, powerup::kWeapon, 12, damage::kSuperShot, true};
     CHECK(StatusBoxPainter::usageAmount(slot) == "12");
     slot.on = false;
     CHECK(StatusBoxPainter::usageAmount(slot).empty());
@@ -238,7 +240,7 @@ TEST_CASE("powerup usage fits the unused bottom of all four full status cards in
             }
         }
         REQUIRE(score != nullptr);
-        view.powerup = PowerupSlot{9999.96f, powerup::kArmor, 0, powerup::kInvulnerable, true};
+        view.powerup = PowerupSlot{9999.96f, powerup::kArmor, 0, armor::kInvulnerable, true};
         device.draws.clear();
         canvas.begin(device, Mat4{1});
         painter.draw(canvas, player, view, true);

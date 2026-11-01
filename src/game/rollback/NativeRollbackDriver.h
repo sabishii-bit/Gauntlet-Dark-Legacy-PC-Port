@@ -122,25 +122,31 @@ public:
     std::optional<Terminal> tentativeTerminal() const;
     std::array<bool, InputCommand::kSeats> arrivalVotes() const;
     std::span<const InputCommand> redundantInputs() const;
-    std::vector<InputCommand> resendInputs(u64 firstTick) const;
     const Statistics& statistics() const;
     /** The epoch's confirmed input record so far. */
     const EpochInputJournal& journal() const;
     /** Actual input held beyond a tick for any seat: what a rebuilding peer needs after
      * the journal so that it never contradicts input it already sent. */
     std::vector<InputCommand> actualInputsAfter(u64 tick) const;
-    /** Binds a freshly loaded scene to the bound epoch again, for a peer rebuilding the
-     * stage from a journal; otherwise as bind(). */
+    /** Binds the bound epoch again, to a freshly loaded scene or to one restoreBinding()
+     * returned to the epoch's start, for a peer rebuilding the stage from a journal;
+     * otherwise as bind(). */
     bool rebind(PlayScene& scene, const MatchContext& context, u8 localPeer,
                 AudioMode audio = AudioMode::Disabled);
+    /** Returns the bound scene to the state it was bound in and releases the histories, for
+     * a stage that no load can bring back to its epoch's start; rebind() follows. */
+    bool restoreBinding();
     /** Takes trusted journal commands as actual input for any seat, local ones included. */
     bool adopt(std::span<const InputCommand> commands);
     /** Replays adopted input to `through` from the first tick without pacing, per-tick
      * history or digests before it. Call before advancing; finishRebuild() once the head
      * has passed `through` resumes local sampling where the journal left off. */
     bool beginRebuild(u64 through);
-    /** A dropped peer's seats hold neutral input from `fromTick` on; see RollbackInputs. */
+    /** A dropped peer's seats hold neutral input from `fromTick` on (see RollbackInputs), and
+     * from that tick on its characters wait in the tower (PlayScene::waitInTower). */
     bool suspend(u8 peer, u64 fromTick);
+    /** A guest's: how far the host holds another guest's input; see RollbackInputs. */
+    bool observeHostReceipt(u8 peer, u64 through);
     bool finishRebuild();
     bool rebuilding() const;
     Failure failure() const;

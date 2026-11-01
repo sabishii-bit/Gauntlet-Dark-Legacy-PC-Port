@@ -22,6 +22,8 @@ struct Relics {
     static constexpr s32 kRealmCount = 16;
     static constexpr usize kGargoyleKinds = 3;
     static constexpr u16 kTowerCeremonyMask = 0x1f;
+    static constexpr u16 kAllRunes = (1U << kRuneCount) - 1;
+    static constexpr u16 kAllShards = 0x7fe; ///< every boss's, the ten in the tower's order
     /** How many pieces of each kind the statues want. */
     static constexpr std::array<s32, kGargoyleKinds> kGargoyleNeeded{12, 20, 28};
 

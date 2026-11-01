@@ -9,6 +9,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/level/ItemFigure.h"
 #include "game/party/TargetAssist.h"
 
@@ -114,7 +115,6 @@ void DestructibleWalls::bind(RenderDevice& device, const WorldLayout& layout, Mo
     m_textures = &textures;
     m_collision = &collision;
     m_white = &device.whiteTexture();
-    constexpr s32 kObstacle = 10;
     constexpr s32 kWall = 42;
     const auto& infos = layout.itemInfos();
     const auto& instances = layout.itemInstances();
@@ -127,7 +127,7 @@ void DestructibleWalls::bind(RenderDevice& device, const WorldLayout& layout, Mo
         const auto& info = infos[static_cast<usize>(instance.info)];
         const auto subtype =
             static_cast<s32>(instance.params[0]) | (static_cast<s32>(instance.params[1]) << 8);
-        if (info.type != kObstacle || (subtype > 0 ? subtype : info.subtype) != kWall) {
+        if (info.type != ItemInfo::kObstacle || (subtype > 0 ? subtype : info.subtype) != kWall) {
             continue;
         }
         Wall wall;
@@ -201,7 +201,7 @@ MissileTarget DestructibleWalls::target(usize index, s32 id) const {
 std::optional<s32> DestructibleWalls::strike(usize index, f32 power, WorldCollision& collision,
                                              u32 flags) {
     if (!standing(index) || !std::isfinite(power) || power <= 0 || m_walls[index].armor < 0 ||
-        (flags & Damage::kGas) != 0) {
+        (flags & damage::kGas) != 0) {
         return std::nullopt;
     }
     auto& wall = m_walls[index];

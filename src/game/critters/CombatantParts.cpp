@@ -99,6 +99,10 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
     bool intact = true;
     bool anyAlive = false;
     for (auto& part : children()) {
+        // Parts share the encounter's cumulative contact ledger. The root owns
+        // updates through this transaction, so no mutable pointer is hidden in
+        // the child's read-only parent binding or borrowed across rewind.
+        part->m_sim.pressure = m_sim.pressure;
         Actor& actor = part->m_sim.actor;
         actor.position = position();
         actor.yaw = yaw();
@@ -146,6 +150,7 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
             part->synchronizeChild();
             part->aimGaze(actor, seconds, players); // its head still turns (CritterLookAtPlayer)
         }
+        m_sim.pressure = part->m_sim.pressure;
         intact &= part->alive();
         anyAlive |= part->alive();
         // A head at an attack of its own, or in a pattern, keeps the body in SYNC

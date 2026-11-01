@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantProjectile.h"
 #include "game/effects/DynamicLights.h"
 #include "game/players/EnemyShrink.h"
@@ -476,13 +477,13 @@ std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot) {
         switch (kind) {
         case 2:  // the demon
         case 20: // the ghost
-            return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f, 0x1);
+            return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f, damage::kFire);
         case kPlague: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f);
         case kSorcerer:
-        case kWarlock: return EnemyMissileKind::bolt(20.0f, 20.0f, 0.2f, 0x3);
+        case kWarlock: return EnemyMissileKind::bolt(20.0f, 20.0f, 0.2f, damage::kLight);
         case kGarm:
-            return EnemyMissileKind::bolt(25.0f, 80.0f, 2.0f, 0x2 | EnemyMissileKind::kPierces,
-                                          0.0f);
+            return EnemyMissileKind::bolt(25.0f, 80.0f, 2.0f,
+                                          damage::kElectric | EnemyMissileKind::kPierces, 0.0f);
         default: return std::nullopt;
         }
     }
@@ -721,7 +722,7 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
         }
         u32 flags = blast.flags;
         if (damage < kBurstKnockFrom) {
-            flags &= ~0x170u;
+            flags &= ~damage::kKnocks;
         }
         const auto push = [](const Vec3& away) {
             const Vec2 flat{away.x, away.z};

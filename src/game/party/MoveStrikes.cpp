@@ -171,7 +171,7 @@ u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position
         constexpr f32 kMorphLead = 0.03332f;
         const f32 birth = std::max(effectSeconds - kMorphLead, 0.0f);
         started.secondsLeft += birth;
-        if ((strike.flags & 0x800) != 0) {
+        if ((strike.flags & MoveStrike::kWaitsForMorph) != 0) {
             started.launchIn = birth;
         }
     }

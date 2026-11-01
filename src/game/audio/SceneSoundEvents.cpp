@@ -10,6 +10,13 @@
 
 namespace gdl::game {
 namespace {
+/** Cue ids and loop channels stay under the tag bits that mark a loop's start and stop
+ * events by their channel. */
+constexpr u32 kMostCues = 0x80000000U;
+constexpr u32 kMostChannels = 0x40000000U;
+constexpr u32 kLoopStartTag = 0x80000000U;
+constexpr u32 kLoopStopTag = 0xc0000000U;
+
 bool sameBinding(const SoundSequence& left, const SoundSequence& right) {
     return left.volume == right.volume && left.gainCurve == right.gainCurve &&
            std::ranges::equal(left.steps, right.steps, [](const auto& a, const auto& b) {
@@ -38,7 +45,7 @@ bool validPredecessor(const SoundCueToken& after, u64 epoch, u64 tick) {
 SceneSoundEvents::Scope::Scope(SceneSoundEvents& owner, FrameEventEmitter emitter, u32 cue)
     : m_owner(owner), m_previous(owner.m_scope), m_capture(owner.m_capture),
       m_exceptions(std::uncaught_exceptions()) {
-    if (!owner.m_recording || !emitter.valid() || cue == 0 || cue >= 0x80000000U) {
+    if (!owner.m_recording || !emitter.valid() || cue == 0 || cue >= kMostCues) {
         // A failed constructor has no destructor to unwind the capture.
         owner.abortTick();
         owner.unsupported("sound emitter scope outside a native tick or without a stable identity");
@@ -107,6 +114,11 @@ void SceneSoundEvents::close() {
     m_epoch = 0;
     m_firstTick = m_dispatchFloor = 0;
     m_output = nullptr;
+}
+
+void SceneSoundEvents::discard() {
+    close();
+    m_ledger = Ledger{};
 }
 
 void SceneSoundEvents::beginTick(u64 tick) {
@@ -189,7 +201,7 @@ SoundCueToken SceneSoundEvents::beginCue(const SoundSequence& sequence) {
 void SceneSoundEvents::desireLoop(const FrameLoopKey& key, const SoundSequence& sequence,
                                   SceneSoundPlayback playback, f32 volume, f32 pan,
                                   SoundCueToken start) {
-    if (!m_recording || !key.valid() || key.channel >= 0x40000000U || !std::isfinite(volume) ||
+    if (!m_recording || !key.valid() || key.channel >= kMostChannels || !std::isfinite(volume) ||
         !std::isfinite(pan) ||
         (playback != SceneSoundPlayback::RepeatWhileDesired &&
          playback != SceneSoundPlayback::PlayOnceUntilCancelled) ||
@@ -238,7 +250,7 @@ SoundCueToken SceneSoundEvents::emit(const SoundSequence& sequence, f32 volume, 
     if (after && after.event == identity) {
         unsupported("sound cue cannot depend on itself");
     }
-    SceneSoundPayload payload{bindResource(sequence), volume, pan, {}};
+    SceneSoundPayload payload{.resource = bindResource(sequence), .volume = volume, .pan = pan};
     if (hasPredecessor) {
         payload.after = after;
     }
@@ -283,7 +295,7 @@ SceneSoundEvents::Result SceneSoundEvents::reconcileFrames(u64 firstTick,
         const auto& journal = frame.finite;
         for (const auto& event : journal.events) {
             if (event.policy != Ledger::Policy::OneShot || event.loop ||
-                event.id.cue >= 0x80000000U || !m_resources.contains(event.payload.resource) ||
+                event.id.cue >= kMostCues || !m_resources.contains(event.payload.resource) ||
                 !std::isfinite(event.payload.volume) || !std::isfinite(event.payload.pan)) {
                 unsupported("finite sound journal references an unsupported policy or resource");
             }
@@ -304,7 +316,7 @@ SceneSoundEvents::Result SceneSoundEvents::reconcileFrames(u64 firstTick,
         }
         for (const auto& desire : frame.loops) {
             const auto& payload = desire.payload;
-            if (!desire.key.valid() || desire.key.channel >= 0x40000000U ||
+            if (!desire.key.valid() || desire.key.channel >= kMostChannels ||
                 !keys.insert(desire.key).second || !m_resources.contains(payload.resource) ||
                 !std::isfinite(payload.volume) || !std::isfinite(payload.pan) || payload.after ||
                 (payload.start != SoundCueToken{} &&
@@ -316,7 +328,7 @@ SceneSoundEvents::Result SceneSoundEvents::reconcileFrames(u64 firstTick,
                 unsupported("invalid complete desired-loop frame");
             }
             complete.events.push_back({{m_epoch, tick, desire.key.emitter,
-                                        0x80000000U | desire.key.channel, desire.key.instance},
+                                        kLoopStartTag | desire.key.channel, desire.key.instance},
                                        Ledger::Policy::LoopStart,
                                        payload,
                                        desire.key});
@@ -327,7 +339,7 @@ SceneSoundEvents::Result SceneSoundEvents::reconcileFrames(u64 firstTick,
                 // distinct semantic events, while the retained owner key stays
                 // the same; never change an existing event identity's policy.
                 complete.events.push_back({{m_epoch, tick, old.key.emitter,
-                                            0xc0000000U | old.key.channel, old.key.instance},
+                                            kLoopStopTag | old.key.channel, old.key.instance},
                                            Ledger::Policy::LoopStop,
                                            old.payload,
                                            old.key});

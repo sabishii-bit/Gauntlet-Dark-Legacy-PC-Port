@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/config/ControlProfiles.h"
 #include "game/scenes/PlayScene.h"
 
@@ -96,7 +97,7 @@ TEST_CASE("a real melee animation gives one hit pulse to its attacker's input sl
     constexpr s32 kPlayer = 3;
     CharacterSave save;
     save.autoAttack = true;
-    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
     const std::array party{PartyMember{kPlayer, save}};
     PlayOptions options;
     options.welcome = false;
@@ -162,7 +163,7 @@ TEST_CASE("shooting a generator gives its destroying player one pulse rather tha
     };
     constexpr s32 kPlayer = 3;
     CharacterSave save;
-    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
     const std::array party{PartyMember{kPlayer, save}};
     PlayOptions options;
     options.welcome = false;

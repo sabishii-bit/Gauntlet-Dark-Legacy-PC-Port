@@ -1,25 +1,5 @@
 # Native asset readers shared by the runtime and optional inspection/export tools.
 add_library(formats STATIC
-    LegendsMap.h
-    LegendsMap.cpp
-    LegendsDreamcastMap.cpp
-    LegendsDreamcastScene.cpp
-    LegendsN64Scene.cpp
-    LegendsN64Camera.cpp
-    LegendsN64Tower.cpp
-    LegendsN64Progress.cpp
-    LegendsN64Gates.cpp
-    LegendsN64Traps.cpp
-    LegendsN64Portal.cpp
-    LegendsN64Text.cpp
-    LegendsN64Switches.cpp
-    LegendsN64Morph.cpp
-    LegendsN64Morph.h
-    LegendsSceneMotion.cpp
-    LegendsDreamcastTexture.h
-    LegendsDreamcastTexture.cpp
-    LegendsN64Texture.h
-    LegendsN64Texture.cpp
     ModelArchive.h
     ModelArchive.cpp
     GcTexture.h

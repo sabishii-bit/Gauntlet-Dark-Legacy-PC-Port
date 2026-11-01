@@ -569,7 +569,8 @@ void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgb
 }
 
 void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& texture,
-                              const Mat4& transform, const DrawState& state) {
+                              const Mat4& transform, const DrawState& requested) {
+    const DrawState state = resolvedDrawState(requested);
     GDL_ASSERT(m_frameOpen, "draw called outside beginFrame/endFrame");
     if (!m_renderingStarted) {
         beginRendering();
@@ -641,9 +642,11 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
                      firstTexture.description().filter == TextureFilter::Linear
                  ? 1.0f
                  : 0.0f,
-             m_authoredSilhouettes && state.lightmapCutout && state.lightmap != nullptr ? 1.0f
-                                                                                       : 0.0f,
-             0, 0}};
+             state.lightmapRgb && state.lightmap != nullptr                               ? -1.0f
+             : m_authoredSilhouettes && state.lightmapCutout && state.lightmap != nullptr ? 1.0f
+                                                                                          : 0.0f,
+             std::clamp(state.whiteBlend, 0.0f, 1.0f), state.fog.reciprocalScale},
+        Vec4{state.blend == BlendMode::Additive ? Vec3{0} : state.fog.color, state.fog.bias}};
     vkCmdPushConstants(cmd, m_pipeline->layout(),
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        VulkanPipeline::kPushConstantSize, &constants);

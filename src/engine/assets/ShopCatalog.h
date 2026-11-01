@@ -10,6 +10,12 @@
 namespace gdl {
 /** A runtime view of an entry in the game's item catalog. */
 struct ShopItem {
+    /** The buy driver's types with their own rules (the rest buy powerups). */
+    static constexpr s32 kExit = 0; ///< every shop's first row
+    static constexpr s32 kKey = 1;
+    static constexpr s32 kPotion = 3;
+    static constexpr s32 kHealthRefill = 17;
+
     std::string texture;
     std::string description;
     f32 scale = 1.0f;

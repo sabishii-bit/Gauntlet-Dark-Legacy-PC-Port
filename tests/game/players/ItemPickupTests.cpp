@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PickupVoices.h"
 #include "game/players/PowerupEffects.h"
@@ -128,7 +129,7 @@ TEST_CASE("poison food passes through active armor including Gold Invulnerabilit
     save.progress().health = 300;
     auto& inventory = save.progress().inventory;
     SECTION("gold heals ten percent of poison damage") {
-        inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable, 0, 30);
+        inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 30);
         const auto taking = takeItem(save, offer(ItemKind::Food, -100));
         CHECK(save.health() == 310);
         CHECK(taking.took());
@@ -138,13 +139,13 @@ TEST_CASE("poison food passes through active armor including Gold Invulnerabilit
         CHECK(taking.message == 28);
     }
     SECTION("gold healing can exceed the ordinary food health cap") {
-        inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable, 0, 30);
+        inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 30);
         save.progress().health = mostHealth(1);
         CHECK(takeItem(save, offer(ItemKind::Food, -50)).took());
         CHECK(save.health() == mostHealth(1) + 5);
     }
     SECTION("silver and gas protection prevent poison damage") {
-        for (const u32 armor : {powerup::kInvulnerable, 0x2000U}) {
+        for (const u32 armor : {armor::kInvulnerable, 0x2000U}) {
             inventory = {};
             inventory.addPowerup(powerup::kArmor, armor, 0, 30);
             CHECK(takeItem(save, offer(ItemKind::Food, -100)).took());
@@ -152,7 +153,7 @@ TEST_CASE("poison food passes through active armor including Gold Invulnerabilit
         }
     }
     SECTION("inactive and expired gold do not protect") {
-        inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable, 0, 30, false);
+        inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 30, false);
         takeItem(save, offer(ItemKind::Food, -100));
         CHECK(save.health() == 200);
         inventory.powerups[0].on = true;

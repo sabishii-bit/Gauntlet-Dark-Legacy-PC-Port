@@ -12,6 +12,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 
@@ -54,8 +56,8 @@ struct Fixture {
         save.name = "OUTPUT";
         save.progress().health = 5000;
         if (hammer) {
-            save.progress().inventory.addPowerup(powerup::kWeapon, powerup::kThunderHammer, 10, -1);
-            save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+            save.progress().inventory.addPowerup(powerup::kWeapon, damage::kHammer, 10, -1);
+            save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
         }
         const std::array party{PartyMember{3, save}};
         PlayOptions options;

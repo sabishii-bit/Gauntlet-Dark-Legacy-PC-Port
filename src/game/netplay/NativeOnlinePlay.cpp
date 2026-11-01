@@ -1,8 +1,11 @@
 #include "game/netplay/NativeOnlinePlay.h"
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
+#include <set>
 #include <span>
+#include <utility>
 
 #include "engine/core/Log.h"
 
@@ -48,6 +51,20 @@ std::string_view failureDescription(NativeOnlinePlay::Failure failure) {
     case NativeOnlinePlay::Failure::Party: return "Online character progress disagrees";
     }
     return "Online scene stopped";
+}
+std::string_view inputAdmissionDescription(RollbackInputs::Admission result) {
+    switch (result) {
+    case RollbackInputs::Admission::Accepted: return "accepted";
+    case RollbackInputs::Admission::Duplicate: return "duplicate";
+    case RollbackInputs::Admission::Stale: return "stale";
+    case RollbackInputs::Admission::Invalid: return "invalid";
+    case RollbackInputs::Admission::WrongPeer: return "wrong peer";
+    case RollbackInputs::Admission::WrongEpoch: return "wrong epoch";
+    case RollbackInputs::Admission::WrongGrant: return "wrong seat grant";
+    case RollbackInputs::Admission::TooEarly: return "ahead of input window";
+    case RollbackInputs::Admission::Conflict: return "conflicting input";
+    }
+    return "unknown";
 }
 
 std::optional<MatchParty> profilesOf(std::span<const PartyMember> members,
@@ -128,6 +145,14 @@ struct NativeOnlinePlay::Data {
                    driver.bind(scene, agreed, session.localPeer(),
                                NativeRollbackDriver::AudioMode::Required);
         }
+        /** Binds the scene's own epoch again once its driver returned it to the epoch's
+         * start, for a rebuild that cannot load the stage afresh. */
+        bool rebindDriver(MatchSession& session) {
+            const auto& agreed = session.context();
+            return scene.restartRecordedAudio(agreed.epoch) &&
+                   driver.rebind(scene, agreed, session.localPeer(),
+                                 NativeRollbackDriver::AudioMode::Required);
+        }
         /** Routes the room's input to the driver; a rebuilding scene attaches only once
          * its head stands near the room's, so nothing arrives too early to admit. */
         bool attach(MatchSession& session) {
@@ -140,13 +165,30 @@ struct NativeOnlinePlay::Data {
                                    result == RollbackInputs::Admission::Duplicate ||
                                    result == RollbackInputs::Admission::Stale;
                         };
-                        if (!message.commands.empty() &&
-                            !admitted(driver.submit(message.origin, message.commands))) {
-                            return false;
+                        if (!message.commands.empty()) {
+                            const auto result = driver.submit(message.origin, message.commands);
+                            if (!admitted(result)) {
+                                log::error("Native input refused: reason={} epoch={} origin={} "
+                                           "next={} confirmed={} sender_next={} commands={}",
+                                           inputAdmissionDescription(result), message.epoch,
+                                           message.origin, driver.nextTick(), driver.confirmedTick(),
+                                           message.nextTick, message.commands.size());
+                                return false;
+                            }
                         }
-                        return !transit ||
-                               admitted(driver.observePeerTick(message.origin, message.epoch,
-                                                               message.nextTick, *transit));
+                        if (transit) {
+                            const auto result = driver.observePeerTick(
+                                message.origin, message.epoch, message.nextTick, *transit);
+                            if (!admitted(result)) {
+                                log::error("Native progress refused: reason={} epoch={} origin={} "
+                                           "next={} confirmed={} sender_next={} transit_ticks={}",
+                                           inputAdmissionDescription(result), message.epoch,
+                                           message.origin, driver.nextTick(), driver.confirmedTick(),
+                                           message.nextTick, *transit);
+                                return false;
+                            }
+                        }
+                        return true;
                     })) {
                 return false;
             }
@@ -657,6 +699,21 @@ struct NativeOnlinePlay::Data {
         }
         return true;
     }
+    /** The actual input the level's driver holds past `through`, which a rebuild keeps: this
+     * peer's own was sent and the room's acknowledged, so the room sends neither again. A
+     * dropped peer's seats hold still from its drop by rule instead. */
+    std::vector<InputCommand> heldInputs(u64 through) const {
+        const auto& match = session->match();
+        const auto drops = match.dropsFor(match.context().epoch);
+        auto held = level->driver.actualInputsAfter(through);
+        std::erase_if(held, [&](const InputCommand& command) {
+            return std::ranges::any_of(drops, [&](const MatchSession::Drop& drop) {
+                return match.context().owners[command.seat] == drop.peer &&
+                       command.tick >= drop.tick;
+            });
+        });
+        return held;
+    }
     /** The host's: the confirmed journal to the resync tick plus the unconfirmed tail it
      * holds, queued for every peer that owes a rebuild. */
     bool serveJournal(MatchSession& match, const MatchSession::Resync& pending) {
@@ -692,30 +749,60 @@ struct NativeOnlinePlay::Data {
         return true;
     }
     /** A named peer's: reload the stage as the epoch began and replay the journal to the
-     * resync tick, then rejoin the room's input where its own recorded input ends. */
+     * resync tick, then rejoin the room's input where its own recorded input ends. A parent
+     * resumed from a challenge began its epoch where no load can bring it back, so its own
+     * scene returns to the state the epoch was bound in instead. */
     Phase rebuild(MatchSession& match) {
         const auto through = match.resyncRequested();
-        if (!through || !level || levelResumed || !current) {
+        if (!through || !level || !current) {
             return fail(Failure::Scene);
         }
         const auto commands = match.takeJournal();
+        const auto started = std::chrono::steady_clock::now();
+        const auto held = heldInputs(*through);
+        // Held input lies past the resync tick, where only the host's tail can hold it too.
+        std::set<std::pair<u64, u8>> tail;
+        for (const auto& recorded : commands) {
+            if (recorded.tick > *through) {
+                tail.emplace(recorded.tick, recorded.seat);
+            }
+        }
+        const auto absent = std::ranges::count_if(
+            held, [&](const InputCommand& kept) { return !tail.contains({kept.tick, kept.seat}); });
         log::warn("Native online resync: rebuilding {} to tick {} from {} journal commands",
                   current->name, *through, commands.size());
+        log::info("Native resync state: epoch={} peer={} prior_next={} prior_confirmed={} "
+                  "prior_sample={} held={} held_absent_from_host={}",
+                  epoch, match.localPeer(), level->driver.nextTick(), level->driver.confirmedTick(),
+                  level->driver.sampleTick(), held.size(), absent);
+        // The binding is restorable only while the scene still records the epoch's sound.
+        if (levelResumed && !level->driver.restoreBinding()) {
+            log::error("Native online resync: the resumed stage could not return to its start");
+            return fail(Failure::Scene);
+        }
         level->unbind();
-        auto candidate = std::make_unique<Level>();
-        if (!candidate->world.load(*device, context.unpackedRoot, *current) ||
-            !candidate->scene.open(*device, context, candidate->world, levelMembers, options)) {
-            return fail(Failure::Assets);
+        // A resumed parent goes on in its own scene; any other stage is loaded afresh.
+        std::unique_ptr<Level> candidate;
+        if (levelResumed) {
+            candidate = std::move(level);
+        } else {
+            candidate = std::make_unique<Level>();
+            if (!candidate->world.load(*device, context.unpackedRoot, *current) ||
+                !candidate->scene.open(*device, context, candidate->world, levelMembers, options)) {
+                return fail(Failure::Assets);
+            }
+            candidate->scene.setLocalSeats(seatMask(session->seats()));
+            candidate->scene.setSoloCameras(context.config != nullptr &&
+                                            context.config->multiplayer.soloCamera);
+            candidate->scene.setViewSeat(lowestSeat(session->seats()));
+            for (usize seat = 0; seat < levelConsoleCheats.size(); ++seat) {
+                candidate->scene.setCheats(static_cast<s32>(seat), levelConsoleCheats[seat]);
+            }
         }
-        candidate->scene.setLocalSeats(seatMask(session->seats()));
-        candidate->scene.setSoloCameras(context.config != nullptr &&
-                                        context.config->multiplayer.soloCamera);
-        candidate->scene.setViewSeat(lowestSeat(session->seats()));
-        for (usize seat = 0; seat < levelConsoleCheats.size(); ++seat) {
-            candidate->scene.setCheats(static_cast<s32>(seat), levelConsoleCheats[seat]);
-        }
-        if (!candidate->scene.nativePresentationReady() || !candidate->bindDriver(match) ||
+        if (!candidate->scene.nativePresentationReady() ||
+            !(levelResumed ? candidate->rebindDriver(match) : candidate->bindDriver(match)) ||
             !applyDrops(*candidate) || !candidate->driver.adopt(commands) ||
+            (!held.empty() && !candidate->driver.adopt(held)) ||
             !candidate->driver.beginRebuild(*through)) {
             log::error(
                 "Native online resync: the stage could not be reloaded or the journal adopted");
@@ -750,6 +837,10 @@ struct NativeOnlinePlay::Data {
         }
         log::info("Native online resync: {} rebuilt to tick {} (epoch {}, peer {})", current->name,
                   *through, epoch, match.localPeer());
+        log::info("Native resync resumed: next={} confirmed={} sample={} rebuild_ms={:.1f}",
+                  level->driver.nextTick(), level->driver.confirmedTick(), level->driver.sampleTick(),
+                  std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - started)
+                      .count());
         return phase = Phase::Playing;
     }
     Phase updateShop(const SessionInputs::Frame& devices) {
@@ -757,14 +848,6 @@ struct NativeOnlinePlay::Data {
         auto& match = session->match();
         auto& sync = match.shop();
         if (!shopFinished) {
-            // A dropped player's lane ends at once rather than holding the shop.
-            for (const auto& drop : match.dropsFor(epoch)) {
-                for (usize seat = 0; seat < match.context().owners.size(); ++seat) {
-                    if (match.context().owners[seat] == drop.peer) {
-                        shop.abandonLane(static_cast<s32>(seat));
-                    }
-                }
-            }
             const auto local = selection->inputs(*session, devices);
             if (!local) {
                 return fail(Failure::Input);
@@ -795,6 +878,13 @@ struct NativeOnlinePlay::Data {
         phase = Phase::Shopping;
         auto step = match.host() ? sync.advance() : sync.take();
         if (step) {
+            // A dropped player's lane ends rather than holding the shop, at the step the host
+            // ended it at on every peer, however late the drop reached it.
+            for (usize seat = 0; seat < match.context().owners.size(); ++seat) {
+                if (match.shopLaneGone(match.context().owners[seat], epoch, step->tick)) {
+                    shop.abandonLane(static_cast<s32>(seat));
+                }
+            }
             for (usize seat = 0; seat < step->focus.size(); ++seat) {
                 if (match.host() && step->observedPhase[seat] != 255) {
                     const auto lane = std::ranges::find(
@@ -939,6 +1029,11 @@ struct NativeOnlinePlay::Data {
         if (!match.publishNativeInputs(level->driver.redundantInputs(), level->driver.nextTick()) ||
             !session->flush()) {
             return fail(Failure::Session);
+        }
+        // Another guest's input that a direct link brought sooner confirms only as far as the
+        // host holds it: the host drops a guest from the tick after its own receipt.
+        if (!match.reportHostReceipts(level->driver)) {
+            return fail(Failure::Input);
         }
         const auto end = match.nativeEndTick();
         const auto result = level->driver.advance(!end || level->driver.nextTick() <= *end);

@@ -11,7 +11,6 @@
 
 namespace gdl::game {
 namespace {
-constexpr s32 kObstacle = 10;
 constexpr s32 kEntranceRock = 51;
 constexpr FallingProfile kProfile{}; ///< the masonry falls as most loose pieces do
 } // namespace
@@ -94,7 +93,8 @@ void SkorneArena::bind(RenderDevice& device, const WorldLayout& layout, ModelSet
         const auto& info = infos[static_cast<usize>(instance.info)];
         const auto subtype =
             static_cast<s32>(instance.params[0]) | (static_cast<s32>(instance.params[1]) << 8);
-        if (info.type != kObstacle || (subtype > 0 ? subtype : info.subtype) != kEntranceRock) {
+        if (info.type != ItemInfo::kObstacle ||
+            (subtype > 0 ? subtype : info.subtype) != kEntranceRock) {
             continue;
         }
         TreeInfo tree;

@@ -1315,6 +1315,350 @@ TEST_CASE("a host observation mismatch orders the diverged peer to rebuild and t
     }
 }
 
+TEST_CASE("a rebuilt guest hashes again the ticks its diverged scene had already hashed",
+          "[match-lockstep][match-native-agreement][journal]") {
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 60);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->sessions[peer].observeNative(30, observed(peer == 2 ? 1 : 0),
+                                                   MatchSession::Time{}));
+    }
+    // The verdict on tick 30 comes once every peer has also hashed tick 60, the diverged
+    // guest wrongly.
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->sessions[peer].observeNative(60, observed(peer == 2 ? 1 : 0),
+                                                   MatchSession::Time{}));
+    }
+    pumpAgreement(*room);
+    auto& guest = room->sessions[2];
+    REQUIRE(guest.resyncRequested() == 30);
+    REQUIRE(guest.finishResync());
+    pumpAgreement(*room);
+    // Rebuilt, the guest reaches tick 60 again and hashes it as everyone else did.
+    REQUIRE(guest.publishNativeInputs({}, 61));
+    REQUIRE(guest.confirmNativeTick(guest.context().epoch, 60));
+    CHECK(guest.observeNative(60, observed(), MatchSession::Time{}));
+    pumpAgreement(*room);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+        CHECK_FALSE(room->sessions[peer].resyncing());
+        REQUIRE(room->sessions[peer].nativeAgreement());
+        CHECK(room->sessions[peer].nativeAgreement()->agreedTick() == 60);
+    }
+}
+
+TEST_CASE("a rebuild target dropped mid-repair leaves nothing owed and the rest carry on",
+          "[match-lockstep][match-native-agreement][journal][drop]") {
+    const bool transferStarted = GENERATE(false, true);
+    const bool linkLost = GENERATE(false, true);
+    CAPTURE(transferStarted, linkLost);
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 30);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->sessions[peer].observeNative(30, observed(peer == 2 ? 1 : 0),
+                                                   MatchSession::Time{}));
+    }
+    pumpAgreement(*room);
+    auto& host = room->sessions[1];
+    REQUIRE(host.pendingResync());
+    REQUIRE(host.resync()->peers == 0b100);
+    EpochInputJournal journal;
+    REQUIRE(journal.open(host.context().epoch, room->owners));
+    for (u64 tick = 1; tick <= 30; ++tick) {
+        JournalFrame frame;
+        for (u8 peer = 1; peer <= 3; ++peer) {
+            for (const auto& command : room->commands(peer, tick, false)) {
+                frame[command.seat] = command;
+            }
+        }
+        REQUIRE(journal.append(tick, frame));
+    }
+    const auto chunks = JournalPacket::chunks(journal, 1, 30, true);
+    REQUIRE_FALSE(chunks.empty());
+    if (transferStarted) {
+        for (const auto& chunk : chunks) {
+            REQUIRE(host.queueJournal(2, chunk));
+        }
+        REQUIRE(host.journalQueued(2));
+    }
+    // The target's link is lost, or the stall deadline drops it while the link stands.
+    REQUIRE((linkLost ? host.disconnected(102) : host.drop(2)));
+    REQUIRE(host.dropped(2));
+    CHECK(host.queuedJournal() == 0);
+    CHECK_FALSE(host.queueJournal(2, chunks.front()));
+    pumpAgreement(*room);
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+        CHECK(room->sessions[peer].dropped(2));
+        CHECK_FALSE(room->sessions[peer].resyncing());
+        CHECK_FALSE(room->sessions[peer].pendingResync());
+    }
+}
+
+TEST_CASE("the stage after a guest's drop opens, skips its movie and plays without that guest",
+          "[match-lockstep][drop][native-travel]") {
+    const auto owners =
+        GENERATE(MatchOwners{1, 2, 0, 0}, MatchOwners{1, 2, 3, 0}, MatchOwners{1, 2, 3, 4});
+    auto room = std::make_unique<Room>(owners);
+    room->ready();
+    for (u8 peer = 1; peer <= 4; ++peer) {
+        if (room->present(peer)) {
+            REQUIRE(room->inputs[peer].sample(room->commands(peer, 1, false)));
+        }
+    }
+    room->pump();
+    room->advanceAll(1, false);
+    room->agreeTerminal();
+    auto& host = room->sessions[1];
+    // The guest goes before the host prepares, or while the others are still being told to
+    // and are finishing the stage it leaves.
+    const bool afterPrepare = GENERATE(false, true);
+    CAPTURE(afterPrepare);
+    const auto party = room->party();
+    if (!afterPrepare) {
+        REQUIRE(host.disconnected(102));
+    }
+    REQUIRE(host.prepare(8, MatchTransition::Travel, &party));
+    if (afterPrepare) {
+        REQUIRE(host.disconnected(102));
+    }
+    REQUIRE(host.dropped(2));
+    room->pump();
+    std::vector<u8> survivors;
+    for (u8 peer = 1; peer <= 4; ++peer) {
+        if (room->present(peer) && peer != 2) {
+            survivors.push_back(peer);
+        }
+    }
+    for (const u8 peer : survivors) {
+        CAPTURE(peer);
+        if (peer != 1) {
+            REQUIRE(room->inputs[peer].completeBoundary());
+        }
+        REQUIRE(room->sessions[peer].phase() == Phase::Loading);
+        REQUIRE(room->sessions[peer].context() == host.context());
+    }
+    // Everyone left asks to skip the entry movie; the dropped guest's seat counts as asking.
+    for (const u8 peer : survivors) {
+        for (u8 seat = 0; seat < static_cast<u8>(owners.size()); ++seat) {
+            if (owners[seat] == peer) {
+                REQUIRE(room->sessions[peer].requestMovieSkip(seat));
+            }
+        }
+    }
+    room->pump();
+    for (const u8 peer : survivors) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].movieSkipReady());
+        REQUIRE(room->loaded(peer));
+    }
+    room->pump();
+    for (const u8 peer : survivors) {
+        CAPTURE(peer);
+        REQUIRE(room->sessions[peer].phase() == Phase::Running);
+        const auto drops = room->sessions[peer].dropsFor(host.context().epoch);
+        REQUIRE(drops.size() == 1);
+        CHECK(drops.front().tick == 1);
+        REQUIRE(room->inputs[peer].inputs().suspend(2, drops.front().tick));
+    }
+    // The dropped guest's seat holds still from the first tick, and nobody waits for it.
+    for (u64 tick = 1; tick <= 5; ++tick) {
+        for (const u8 peer : survivors) {
+            REQUIRE(room->inputs[peer].sample(room->commands(peer, tick, false)));
+        }
+        room->pump();
+        for (const u8 peer : survivors) {
+            CAPTURE(peer, tick);
+            const auto frame = room->inputs[peer].advance();
+            REQUIRE(frame);
+            CHECK(frame->predictedSeats == 0);
+            CHECK(frame->commands[1].magnitude == 0.0f);
+            REQUIRE(room->inputs[peer].complete());
+        }
+    }
+}
+
+TEST_CASE("the host ignores what a rebuilding guest reported before it was told to rebuild",
+          "[match-lockstep][match-native-agreement][journal]") {
+    auto room = std::make_unique<Room>();
+    room->ready();
+    executeThrough(*room, 60);
+    // The guest's report on sixty follows its wrong one on thirty, so it reaches the host
+    // only after the host has restarted agreement and ordered the rebuild.
+    for (u8 peer = 1; peer <= 2; ++peer) {
+        for (const u64 tick : {u64{30}, u64{60}}) {
+            REQUIRE(room->sessions[peer].observeNative(tick, observed(peer == 2 ? 1 : 0),
+                                                       MatchSession::Time{}));
+        }
+    }
+    pumpAgreement(*room);
+    auto& host = room->sessions[1];
+    auto& guest = room->sessions[2];
+    CHECK(host.phase() == Phase::Running);
+    REQUIRE(host.resync());
+    CHECK(host.resync()->tick == 30);
+    REQUIRE(guest.resyncRequested() == 30);
+    REQUIRE(guest.finishResync());
+    pumpAgreement(*room);
+    // Rebuilt, it confirms sixty again and hashes what the host hashed there.
+    REQUIRE(room->inputs[2].complete());
+    REQUIRE(guest.observeNative(60, observed(), MatchSession::Time{}));
+    pumpAgreement(*room);
+    for (u8 peer = 1; peer <= 2; ++peer) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+        CHECK_FALSE(room->sessions[peer].resyncing());
+        REQUIRE(room->sessions[peer].nativeAgreement());
+        CHECK(room->sessions[peer].nativeAgreement()->agreedTick() == 60);
+    }
+}
+
+TEST_CASE("a mismatch the host's own late digest completes is repaired rather than ending play",
+          "[match-lockstep][match-native-agreement][journal]") {
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 30);
+    // Both guests report thirty before the host's own scene has hashed it; guest two's differs.
+    REQUIRE(room->sessions[2].observeNative(30, observed(1), MatchSession::Time{}));
+    REQUIRE(room->sessions[3].observeNative(30, observed(), MatchSession::Time{}));
+    pumpAgreement(*room);
+    auto& host = room->sessions[1];
+    REQUIRE_FALSE(host.resyncing());
+    REQUIRE(host.observeNative(30, observed(), MatchSession::Time{}));
+    CHECK(host.phase() == Phase::Running);
+    REQUIRE(host.resync());
+    CHECK(host.resync()->tick == 30);
+    CHECK(host.resync()->peers == 0b100);
+    pumpAgreement(*room);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+    }
+    CHECK(room->sessions[2].resyncRequested() == 30);
+    CHECK_FALSE(room->sessions[3].resyncRequested());
+}
+
+TEST_CASE("a drop that leaves the remaining digests disagreeing orders a repair, not an end",
+          "[match-lockstep][match-native-agreement][journal][drop]") {
+    // The next update orders the repair, or else the next flush before the failed stream's
+    // notice could leave.
+    const bool updated = GENERATE(false, true);
+    CAPTURE(updated);
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 30);
+    auto& host = room->sessions[1];
+    REQUIRE(host.observeNative(30, observed(), MatchSession::Time{}));
+    REQUIRE(room->sessions[2].observeNative(30, observed(1), MatchSession::Time{}));
+    pumpAgreement(*room);
+    // Guest three never reports thirty; dropping it leaves only the disagreement.
+    REQUIRE_FALSE(host.resyncing());
+    REQUIRE(host.drop(3));
+    if (updated) {
+        host.update(0.0, MatchSession::Time{});
+        REQUIRE(host.resync());
+    }
+    pumpAgreement(*room);
+    CHECK(host.phase() == Phase::Running);
+    REQUIRE(host.resync());
+    CHECK(host.resync()->tick == 30);
+    CHECK(host.resync()->peers == 0b100);
+    CHECK(room->sessions[2].phase() == Phase::Running);
+    CHECK(room->sessions[2].resyncRequested() == 30);
+}
+
+TEST_CASE("after a rebuild target is dropped mid-repair the next divergence is repaired too",
+          "[match-lockstep][match-native-agreement][journal][drop]") {
+    const bool linkLost = GENERATE(false, true);
+    CAPTURE(linkLost);
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 30);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->sessions[peer].observeNative(30, observed(peer == 2 ? 1 : 0),
+                                                   MatchSession::Time{}));
+    }
+    pumpAgreement(*room);
+    auto& host = room->sessions[1];
+    REQUIRE(host.resyncing());
+    REQUIRE(host.resync()->peers == 0b100);
+    // The target's link goes, or the stall deadline drops it, before it reports a rebuild.
+    REQUIRE((linkLost ? host.disconnected(102) : host.drop(2)));
+    pumpAgreement(*room);
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        CAPTURE(peer);
+        REQUIRE_FALSE(room->sessions[peer].resyncing());
+        const auto drops = room->sessions[peer].takeDrops();
+        REQUIRE(drops.size() == 1);
+        REQUIRE(room->inputs[peer].inputs().suspend(2, drops.front().tick));
+    }
+    for (u32 attempt = 0; attempt < 200 && (room->inputs[1].confirmedTick() < 60 ||
+                                            room->inputs[3].confirmedTick() < 60);
+         ++attempt) {
+        for (const u8 peer : {u8{1}, u8{3}}) {
+            if (room->inputs[peer].sampleReady()) {
+                REQUIRE(room->inputs[peer].sample(
+                    room->commands(peer, room->inputs[peer].sampleTick(), false)));
+            }
+        }
+        pumpAgreement(*room);
+        for (const u8 peer : {u8{1}, u8{3}}) {
+            if (room->inputs[peer].advance()) {
+                REQUIRE(room->inputs[peer].complete());
+            }
+        }
+    }
+    REQUIRE(room->sessions[1].observeNative(60, observed(), MatchSession::Time{}));
+    REQUIRE(room->sessions[3].observeNative(60, observed(3), MatchSession::Time{}));
+    pumpAgreement(*room);
+    // A repair left waiting on the dropped peer would make this mismatch end the match.
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+        REQUIRE(room->sessions[peer].resyncing());
+        CHECK(room->sessions[peer].resync()->tick == 60);
+        CHECK(room->sessions[peer].resync()->peers == 0b1000);
+    }
+    CHECK(room->sessions[3].resyncRequested() == 60);
+}
+
+TEST_CASE("local input conflicts report history failure instead of a connection failure",
+          "[match-lockstep][netplay-diagnostics]") {
+    auto room = std::make_unique<Room>();
+    room->ready();
+    executeThrough(*room, 30);
+    auto& guest = room->sessions[2];
+    REQUIRE(guest.publishNativeInputs(room->commands(2, 31, true), 31));
+    CHECK_FALSE(guest.publishNativeInputs(room->commands(2, 31, false), 31));
+    CHECK(guest.phase() == Phase::Stopped);
+    CHECK(guest.stopReason() == MatchStop::TransportFailure);
+    CHECK(guest.failureDetail().find("input publication failed: conflicting input history") !=
+          std::string_view::npos);
+    CHECK(guest.failureDetail().find("epoch 1, peer 2, next tick 31") != std::string_view::npos);
+    const auto detail = std::string(guest.failureDetail());
+    guest.leave();
+    CHECK(guest.failureDetail() == detail);
+}
+
+TEST_CASE("remote input conflicts report the origin and receiving simulation tick",
+          "[match-lockstep][netplay-diagnostics]") {
+    auto room = std::make_unique<Room>();
+    room->ready();
+    executeThrough(*room, 30);
+    auto& host = room->sessions[1];
+    const auto contradictory = inputMessage(2, room->commands(2, 30, true), 31, 10000);
+    CHECK(host.receive(102, contradictory) == Admission::Invalid);
+    CHECK(host.phase() == Phase::Stopped);
+    CHECK(host.failureDetail().find("input reception failed: conflicting input history") !=
+          std::string_view::npos);
+    CHECK(host.failureDetail().find("epoch 1, peer 1, origin 2, next tick 31") !=
+          std::string_view::npos);
+}
+
 TEST_CASE("native match guest observation failure retains shared stop through congestion",
           "[match-lockstep][match-native-agreement]") {
     auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 4});
@@ -1485,5 +1829,206 @@ TEST_CASE("a guest's failed transport or lost link drops it and the rest agree w
         CHECK(room->sessions[peer].phase() == Phase::Running);
         REQUIRE(room->sessions[peer].nativeAgreement());
         CHECK(room->sessions[peer].nativeAgreement()->agreedTick() == 30);
+    }
+}
+
+namespace {
+/** Room::pump with guests two and three also linked to each other directly. Nothing moves
+ * to or from a peer the host has dropped. */
+void pumpLinked(Room& room) {
+    for (u8 pass = 0; pass < 4; ++pass) {
+        for (u8 source = 1; source <= 3; ++source) {
+            if (room.sessions[1].dropped(source)) {
+                continue;
+            }
+            room.sessions[source].flush(room.wires[source]);
+            const auto packets = std::move(room.wires[source].sent);
+            room.wires[source].sent.clear();
+            for (const auto& packet : packets) {
+                const u8 target = source == 1 ? static_cast<u8>(packet.connection - 100)
+                                  : packet.connection == kHost ? u8{1}
+                                  : source == 2                ? u8{3}
+                                                               : u8{2};
+                if (room.sessions[1].dropped(target)) {
+                    continue;
+                }
+                const auto incoming = source == 1   ? kHost
+                                      : target == 1 ? PacketTransport::Connection{100} + source
+                                      : target == 3 ? PacketTransport::Connection{302}
+                                                    : PacketTransport::Connection{203};
+                const auto admitted = room.sessions[target].receive(incoming, packet.bytes);
+                CAPTURE(source, target, static_cast<unsigned>(admitted));
+                REQUIRE((admitted == Admission::Accepted || admitted == Admission::Stale));
+            }
+        }
+    }
+}
+} // namespace
+
+TEST_CASE("a drop gives every survivor the host's still seats whatever a direct link brought",
+          "[match-lockstep][drop][direct-link]") {
+    const bool executed = GENERATE(false, true);
+    CAPTURE(executed);
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    const std::array hostLink{MatchLink{1, kHost}};
+    const std::array toThird{MatchLink{3, 203}};
+    const std::array toSecond{MatchLink{2, 302}};
+    room->sessions[2].clear();
+    room->sessions[3].clear();
+    REQUIRE(room->sessions[2].open(2, room->owners, hostLink, 0, toThird));
+    REQUIRE(room->sessions[3].open(3, room->owners, hostLink, 0, toSecond));
+    REQUIRE(room->sessions[1].prepare(7));
+    pumpLinked(*room);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->loaded(peer));
+    }
+    pumpLinked(*room);
+    auto& third = room->inputs[3];
+    // Each advance passes on the host's receipt first (reportHostReceipts), as the shipping
+    // loop does.
+    const auto witness = [&] { REQUIRE(room->sessions[3].hostReceipt(2)); };
+    for (u64 tick = 1; tick <= 30; ++tick) {
+        for (u8 peer = 1; peer <= 3; ++peer) {
+            REQUIRE(room->inputs[peer].sample(room->commands(peer, tick, false)));
+        }
+        pumpLinked(*room);
+        witness();
+        room->advanceAll(tick, false);
+    }
+    CHECK(room->sessions[3].hostReceipt(2) == 30);
+    CHECK_FALSE(room->sessions[3].hostReceipt(1)); // the host's own input is all its own
+    CHECK_FALSE(room->sessions[1].hostReceipt(2)); // and the host hears no guest directly
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        REQUIRE(room->inputs[peer].sample(room->commands(peer, 31, false)));
+    }
+    // Peer two's next movement reaches peer three directly; its copy to the host is lost.
+    const auto early = inputMessage(2, room->commands(2, 31, true), 32, 1000);
+    REQUIRE(room->sessions[3].receive(302, early) == Admission::Accepted);
+    if (executed) {
+        // The host's own tick 31 reaches peer three as well; peer two sent nothing more.
+        room->sessions[1].flush(room->wires[1]);
+        const auto fromHost = std::move(room->wires[1].sent);
+        room->wires[1].sent.clear();
+        for (const auto& packet : fromHost) {
+            if (packet.connection == 103) {
+                const auto admitted = room->sessions[3].receive(kHost, packet.bytes);
+                REQUIRE((admitted == Admission::Accepted || admitted == Admission::Stale));
+            }
+        }
+        witness();
+        const auto walked = third.advance();
+        REQUIRE(walked);
+        CHECK(walked->commands[1].magnitude == 0.5f);
+        REQUIRE(third.complete());
+        CHECK(third.confirmedTick() == 30); // the host holds peer two only through tick 30
+    }
+    REQUIRE(room->sessions[1].disconnected(102));
+    pumpLinked(*room);
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        const auto drops = room->sessions[peer].takeDrops();
+        REQUIRE(drops.size() == 1);
+        REQUIRE(drops.front().tick == 31);
+        REQUIRE(room->inputs[peer].inputs().suspend(2, 31));
+    }
+    witness();
+    REQUIRE(room->inputs[1].advance());
+    const auto taken = third.advance(); // corrects tick 31 if it walked there, else takes it
+    CHECK(taken.has_value() == !executed);
+    REQUIRE(third.lastFrame());
+    CHECK(third.lastFrame()->commands[1].magnitude == 0.0f);
+    CHECK(third.tick() == 32);
+    for (u64 tick = 1; tick <= 31; ++tick) {
+        CAPTURE(tick);
+        const auto hostFrame = room->inputs[1].inputs().actualFrame(tick);
+        const auto guestFrame = third.inputs().actualFrame(tick);
+        REQUIRE(hostFrame);
+        REQUIRE(guestFrame);
+        for (usize seat = 0; seat < 3; ++seat) {
+            CHECK(inputBytes(std::span{&(*hostFrame)[seat], 1}) ==
+                  inputBytes(std::span{&(*guestFrame)[seat], 1}));
+        }
+    }
+    CHECK(third.confirmedTick() == 31); // a dropped guest bounds nothing any more
+    REQUIRE(third.complete());
+}
+
+TEST_CASE("a guest still linked to a dropped guest opens the next stage without that link",
+          "[match-lockstep][drop][direct-link][native-travel]") {
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    const std::array hostLink{MatchLink{1, kHost}};
+    const std::array toThird{MatchLink{3, 203}};
+    const std::array toSecond{MatchLink{2, 302}};
+    room->sessions[2].clear();
+    room->sessions[3].clear();
+    REQUIRE(room->sessions[2].open(2, room->owners, hostLink, 0, toThird));
+    REQUIRE(room->sessions[3].open(3, room->owners, hostLink, 0, toSecond));
+    REQUIRE(room->sessions[1].prepare(7));
+    pumpLinked(*room);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->loaded(peer));
+    }
+    pumpLinked(*room);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->inputs[peer].sample(room->commands(peer, 1, false)));
+    }
+    pumpLinked(*room);
+    room->advanceAll(1, false);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->inputs[peer].submitBoundaryDigest());
+    }
+    pumpLinked(*room);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->inputs[peer].completeBoundary());
+    }
+    auto& host = room->sessions[1];
+    auto& third = room->sessions[3];
+    REQUIRE(host.disconnected(102));
+    const auto party = room->party();
+    REQUIRE(host.prepare(8, MatchTransition::Travel, &party));
+    pumpLinked(*room);
+    REQUIRE(room->inputs[3].completeBoundary());
+    REQUIRE(third.phase() == Phase::Loading);
+    REQUIRE(third.context() == host.context());
+    CHECK(third.dropped(2));
+    // Nothing has told guest three that its own link to guest two is gone.
+    REQUIRE(third.directLinks() == 1);
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        for (u8 seat = 0; seat < static_cast<u8>(room->owners.size()); ++seat) {
+            if (room->owners[seat] == peer) {
+                REQUIRE(room->sessions[peer].requestMovieSkip(seat));
+            }
+        }
+    }
+    pumpLinked(*room);
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        CAPTURE(peer);
+        REQUIRE(room->loaded(peer));
+    }
+    pumpLinked(*room);
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        CAPTURE(peer);
+        REQUIRE(room->sessions[peer].phase() == Phase::Running);
+        const auto drops = room->sessions[peer].dropsFor(host.context().epoch);
+        REQUIRE(drops.size() == 1);
+        REQUIRE(room->inputs[peer].inputs().suspend(2, drops.front().tick));
+    }
+    for (u64 tick = 1; tick <= 5; ++tick) {
+        for (const u8 peer : {u8{1}, u8{3}}) {
+            REQUIRE(room->inputs[peer].sample(room->commands(peer, tick, false)));
+        }
+        // The new stage's input goes to the host alone, never down the stale link.
+        third.flush(room->wires[3]);
+        for (const auto& packet : room->wires[3].sent) {
+            CHECK(packet.connection == kHost);
+        }
+        pumpLinked(*room);
+        for (const u8 peer : {u8{1}, u8{3}}) {
+            CAPTURE(peer, tick);
+            const auto frame = room->inputs[peer].advance();
+            REQUIRE(frame);
+            CHECK(frame->predictedSeats == 0);
+            CHECK(frame->commands[1].magnitude == 0.0f);
+            REQUIRE(room->inputs[peer].complete());
+        }
     }
 }

@@ -10,7 +10,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/PowerupEffects.h"
 namespace {
@@ -50,11 +52,9 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
     const auto checkProtected = [](Fixture& f) {
         REQUIRE_FALSE(PlayerHealth::canBeDamaged(f.player));
         f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events,
-                      {PlayerImpact::kKnockDown, Vec3{1, 0, 0}});
-        f.health.hurt(f.player, 30, HurtKind::Pierce, true, false, 1, f.events,
-                      {PlayerImpact::kSticky});
-        f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
-                      {PlayerImpact::kStun});
+                      {damage::kKnockDown, Vec3{1, 0, 0}});
+        f.health.hurt(f.player, 30, HurtKind::Pierce, true, false, 1, f.events, {damage::kSticky});
+        f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events, {damage::kStun});
         f.hit(30, HurtKind::Gas);
         CHECK(f.player.actor.save().health() == 1000);
         CHECK(f.player.life == PlayerLife::Standing);
@@ -87,7 +87,7 @@ TEST_CASE("stun shots react without health loss and magic never harms a player",
           "[player-health][multiplayer-combat]") {
     Fixture f;
     f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
-                  {PlayerImpact::kStun | PlayerImpact::kKnockDown, Vec3{0, 0, 1}});
+                  {damage::kStun | damage::kKnockDown, Vec3{0, 0, 1}});
     CHECK(f.player.actor.save().health() == 1000);
     CHECK(f.player.reaction == PlayerDeed::Reel);
     CHECK_FALSE(f.player.knockback.pending());
@@ -95,13 +95,12 @@ TEST_CASE("stun shots react without health loss and magic never harms a player",
     CHECK(f.cries.empty());
     f.player.reaction = PlayerDeed::None;
     f.health.hurt(f.player, 100, HurtKind::Blow, true, false, 1, f.events,
-                  {Damage::kMagic | PlayerImpact::kStun});
+                  {damage::kMagic | damage::kStun});
     CHECK(f.player.actor.save().health() == 1000);
     CHECK(f.player.reaction == PlayerDeed::None);
-    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
-                                                          0, 1);
-    f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
-                  {PlayerImpact::kStun});
+    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0,
+                                                          1);
+    f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events, {damage::kStun});
     CHECK(f.player.reaction == PlayerDeed::None);
 }
 
@@ -175,9 +174,9 @@ TEST_CASE("turbo animation blocks boss knockdown throughout the move but not aft
         s32 frames = 0;
         while (figure.animator().damageProtected() && frames < 300) {
             f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
-                          {PlayerImpact::kStun});
+                          {damage::kStun});
             f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
-                          {PlayerImpact::kKnockDown, Vec3{1, 0, 0}}, true);
+                          {damage::kKnockDown, Vec3{1, 0, 0}}, true);
             f.hit(5, HurtKind::Gas);
             CHECK(f.player.actor.save().health() == 1000);
             CHECK(f.player.reaction == PlayerDeed::None);
@@ -190,7 +189,7 @@ TEST_CASE("turbo animation blocks boss knockdown throughout the move but not aft
         CHECK(f.sounds.empty());
         CHECK(f.cries.empty());
         f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
-                      {PlayerImpact::kKnockDown, Vec3{1, 0, 0}}, true);
+                      {damage::kKnockDown, Vec3{1, 0, 0}}, true);
         CHECK(f.player.actor.save().health() == 850);
         CHECK(f.player.reaction != PlayerDeed::None);
         CHECK(f.player.knockback.pending());
@@ -244,7 +243,7 @@ TEST_CASE("armor absorbs ground-hand damage without preventing its sticky reacti
     ClassStats stats;
     stats.armorMin = 400;
     stats.armorMax = 800;
-    const PlayerImpact impact{.flags = PlayerImpact::kSticky};
+    const PlayerImpact impact{.flags = damage::kSticky};
     f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
     CHECK(f.player.actor.save().health() == 1000);
     CHECK(f.player.reaction == PlayerDeed::Webbed);
@@ -253,7 +252,7 @@ TEST_CASE("armor absorbs ground-hand damage without preventing its sticky reacti
     f.player.reaction = PlayerDeed::FallBack;
     f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
     CHECK(f.player.reaction == PlayerDeed::FallBack);
-    f.player.actor.save().progress().inventory.addPowerup(6, Damage::kInvulnerable, 0, 60);
+    f.player.actor.save().progress().inventory.addPowerup(6, armor::kInvulnerable, 0, 60);
     f.player.reaction = PlayerDeed::None;
     f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
     CHECK(f.player.reaction == PlayerDeed::None);
@@ -342,8 +341,8 @@ TEST_CASE("fractional health below one is lethal even when its HUD value rounds 
 TEST_CASE("gold invulnerability retains fractional healing between absorbed hits",
           "[player-health][fractional-health]") {
     Fixture f;
-    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor,
-                                                          Damage::kGoldInvulnerable, 0, 60);
+    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable,
+                                                          0, 60);
     for (s32 i = 0; i < 4; ++i) {
         f.hit(2.5f);
     }
@@ -357,13 +356,13 @@ TEST_CASE("a heavy blow taken unguarded teaches the guard to one who never block
         f.health.hurt(f.player, damage, HurtKind::Blow, true, false, 1, f.events,
                       PlayerImpact{.flags = flags});
     };
-    heavy(15, PlayerImpact::kKnockDown); // not over fifteen
-    heavy(40, 0);                        // not heavy
+    heavy(15, damage::kKnockDown); // not over fifteen
+    heavy(40, 0);                  // not heavy
     CHECK(f.blockLessons == 0);
-    heavy(40, PlayerImpact::kKnockDown);
+    heavy(40, damage::kKnockDown);
     CHECK(f.blockLessons == 1);
     f.player.blocked = true; // one who has blocked needs no lesson
-    heavy(40, PlayerImpact::kKnockDown);
+    heavy(40, damage::kKnockDown);
     CHECK(f.blockLessons == 1);
 }
 
@@ -389,7 +388,7 @@ TEST_CASE("a blow taken during the running shove flashes the guard's lines",
     f.player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Shove);
     REQUIRE(f.player.figure->animator().shoving());
     f.health.hurt(f.player, 40, HurtKind::Blow, true, false, 1, f.events,
-                  PlayerImpact{.flags = PlayerImpact::kKnockDown});
+                  PlayerImpact{.flags = damage::kKnockDown});
     CHECK(flashes == 1);
     CHECK(f.player.actor.save().health() == 1000 - 20);
 }
@@ -494,8 +493,8 @@ TEST_CASE("the lowest standing player's heart beats faster and louder as health 
     CHECK_FALSE(PlayerHealth::heartbeat(party, 2, true));
     CHECK(party[0].heartbeatTicks == 60);
     party[0].heartbeatTicks = 0;
-    party[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
-                                                          0, 60);
+    party[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0,
+                                                          60);
     CHECK_FALSE(PlayerHealth::heartbeat(party, 2, false));
 }
 
@@ -552,7 +551,7 @@ TEST_CASE("a severe gas hit replaces the choking cue with one pain cry",
 TEST_CASE("surviving hits request reactions after health gates and damage scaling",
           "[game][screens][player-health][player-impact]") {
     Fixture f;
-    const PlayerImpact impact{PlayerImpact::kKnockDown, {0, 0, -1}};
+    const PlayerImpact impact{damage::kKnockDown, {0, 0, -1}};
     f.health.hurt(f.player, 10, HurtKind::Blow, true, true, 1, f.events, impact);
     REQUIRE(f.player.reaction == PlayerDeed::None);
     f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 0.1f, f.events, impact);
@@ -602,7 +601,7 @@ TEST_CASE("inventory protection reaches damage healing and reaction handling",
     SECTION("knockback armor strips the reaction without discarding damage") {
         inventory.addPowerup(6, 0x40000, 0, 15);
         f.health.hurt(f.player, 30, HurtKind::Blow, true, false, 1, f.events,
-                      {PlayerImpact::kKnockDown, {0, 0, 1}});
+                      {damage::kKnockDown, {0, 0, 1}});
         CHECK(f.player.actor.save().health() == 970);
         CHECK(f.player.reaction == PlayerDeed::None);
     }
@@ -624,7 +623,7 @@ TEST_CASE("an enemy arrow and bolt land with their own sounds, a blow with the p
 TEST_CASE("a hit that knocks pushes its victim the way it came, as guarding and harm allow",
           "[player-health][knockback]") {
     Fixture f;
-    const PlayerImpact knock{.flags = PlayerImpact::kKnockDown, .direction = Vec3{0, 0, 1}};
+    const PlayerImpact knock{.flags = damage::kKnockDown, .direction = Vec3{0, 0, 1}};
     f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, knock);
     REQUIRE(f.player.knockback.pending());
     f.player.knockback.kick(0.0f, false);
@@ -673,11 +672,9 @@ TEST_CASE("damage feedback uses the native hit flags after armor and low-damage 
         REQUIRE(f.vibrations == std::vector<s32>{hit.frames});
     }
     Fixture f;
-    f.health.hurt(f.player, 2, HurtKind::Blow, true, false, 1, f.events,
-                  {PlayerImpact::kWhirlwind});
+    f.health.hurt(f.player, 2, HurtKind::Blow, true, false, 1, f.events, {damage::kWhirlwind});
     CHECK(f.vibrations == std::vector<s32>{10});
-    f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events,
-                  {PlayerImpact::kKnockDown});
+    f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events, {damage::kKnockDown});
     CHECK(f.player.life == PlayerLife::Dying);
     CHECK(f.vibrations == std::vector<s32>{10, 20});
     f.hit(10);
@@ -690,11 +687,11 @@ TEST_CASE("harmless contacts healing tower damage and invulnerability do not vib
     f.hit(0);
     f.hit(-10);
     f.hit(10, HurtKind::Blow, true);
-    f.health.hurt(f.player, 0, HurtKind::Blow, true, false, 1, f.events, {PlayerImpact::kStun});
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, {Damage::kMagic});
+    f.health.hurt(f.player, 0, HurtKind::Blow, true, false, 1, f.events, {damage::kStun});
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, {damage::kMagic});
     CHECK(f.vibrations.empty());
-    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
-                                                          0, 1);
+    f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0,
+                                                          1);
     f.hit(50);
     CHECK(f.vibrations.empty());
 }

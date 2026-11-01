@@ -4,9 +4,9 @@
 
 #include "engine/core/Types.h"
 
+#include "expansions/shared/characters/LegendsProgress.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
-#include "game/characters/LegendsProgress.h"
 #include "game/characters/LevelRecord.h"
 #include "game/characters/Relics.h"
 
@@ -15,7 +15,7 @@ class NativeStateDigest;
 }
 
 namespace gdl::game {
-class CharacterSave;
+struct CharacterSave;
 }
 
 namespace gdl::game {

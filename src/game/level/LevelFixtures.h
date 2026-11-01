@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 
 #include "game/audio/LevelSoundscape.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/Combatant.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/EnemyMissiles.h"
@@ -248,7 +249,8 @@ private:
         f32 damage = 0.0f;
         f32 seconds = kExplosionSeconds;
         f32 elapsed = 0.0f;
-        u32 flags = 0x421; ///< fire + explosion + knockdown; world effects supply their own
+        u32 flags = damage::kFire | damage::kExplode |
+                    damage::kKnockDown; ///< world effects supply their own
         bool started = false;
         bool done = false;
         std::vector<usize> players; ///< party indices it has reached

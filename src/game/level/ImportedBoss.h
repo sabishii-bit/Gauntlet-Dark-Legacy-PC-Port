@@ -24,6 +24,9 @@ struct ImportedBoss {
         s32 tierHealth = 40;
     };
     std::vector<ArenaRock> arenaRocks;
+    /** An eligible boss part is acquired before ordinary objects on ranged
+     * attacks. Opt-in encounter policy; physical contacts and melee are unchanged. */
+    bool rangedAimFirst = false;
 };
 
 } // namespace gdl::game

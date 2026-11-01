@@ -7,6 +7,7 @@
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/level/DestructibleWallsCheckpoint.h"
 #include "game/rollback/LocalStateHistory.h"
 
@@ -56,7 +57,7 @@ struct Fixture {
             REQUIRE_FALSE(walls.strike(0, 100, collision)); // Not shown for one player.
             REQUIRE_FALSE(walls.strike(1, 100, collision)); // Negative armour.
             walls.setPlayerCount(2, collision);
-            REQUIRE_FALSE(walls.strike(0, 100, collision, Damage::kGas));
+            REQUIRE_FALSE(walls.strike(0, 100, collision, damage::kGas));
             walls.reveal(0);
         } else if (tick == 1) {
             hit = walls.strike(0, 10, collision);

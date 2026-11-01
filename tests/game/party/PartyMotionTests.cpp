@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
@@ -624,7 +625,7 @@ TEST_CASE("super shot keeps the player's facing instead of turning toward assist
     CHECK(f.players[0].actor.yaw() == Approx(0));
 }
 
-TEST_CASE("held strong ranged input moves at quarter pace from its first frame",
+TEST_CASE("held strong ranged input stays stationary from its first frame",
           "[game][party-motion][alpha-combat][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
@@ -642,14 +643,19 @@ TEST_CASE("held strong ranged input moves at quarter pace from its first frame",
     f.events.attackDeed = [](usize, bool, bool, const Vec3&) { return PlayerDeed::StrongAttack; };
     f.inputs[3].strongAttack = true;
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
-    for (s32 frame = 0; frame < 8; ++frame) {
+    bool finished = false;
+    for (s32 frame = 0; frame < 120; ++frame) {
         CAPTURE(frame);
         const Vec3 before = player.actor.position();
         f.step();
-        CHECK(glm::distance(before, player.actor.position()) ==
-              Approx(player.actor.speed() * 0.25f / 30.0f).margin(0.0001f));
-        CHECK(player.figure->animator().strongThrowing());
+        CHECK(player.actor.position() == before);
+        if (!player.figure->animator().strongThrowing()) {
+            REQUIRE(frame > 0);
+            finished = true;
+            break;
+        }
     }
+    CHECK(finished);
 }
 
 TEST_CASE("quick melee creeps forward from its first input frame while slow melee stays planted",
@@ -1107,7 +1113,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     CombatBlow blow;
     blow.player = 3;
     blow.damage = 10;
-    blow.flags = PlayerImpact::kKnockDown;
+    blow.flags = damage::kKnockDown;
     blow.direction = {0, 0, -1};
     using Action = PlayerAnimator::Action;
     PlayerDeed expected = PlayerDeed::FallBack;
@@ -1133,7 +1139,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
         recovery = Action::Ready;
     }
     SECTION("stun flags reel without knocking the player off their feet") {
-        blow.flags = PlayerImpact::kStun;
+        blow.flags = damage::kStun;
         expected = PlayerDeed::Reel;
         first = Action::Stun;
         recovery = Action::Ready;
@@ -1149,7 +1155,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     REQUIRE(player.figure->animator().action() == first);
     // The stick moves nothing until the player is up; only the knock slides the body, the
     // way the blow travelled and no further than its kick carries.
-    const f32 along = blow.flags == PlayerImpact::kStun ? 0.0f : blow.direction.z;
+    const f32 along = blow.flags == damage::kStun ? 0.0f : blow.direction.z;
     bool gotUp = false;
     for (s32 i = 0; i < 120 && player.figure->animator().reacting(); ++i) {
         f.calls.clear();
@@ -1613,9 +1619,8 @@ TEST_CASE("the combo button with half the meter lifts a warrior's partner ahead,
 }
 } // namespace
 
-TEST_CASE(
-    "the Robotron scheme walks the camera's way facing its walk and faces the mouse to shoot",
-    "[controls][cursor][party-motion][robotron][assets]") {
+TEST_CASE("the Robotron scheme walks the camera's way facing its walk and faces the mouse to shoot",
+          "[controls][cursor][party-motion][robotron][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()

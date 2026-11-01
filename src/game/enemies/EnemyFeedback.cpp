@@ -11,29 +11,6 @@ namespace gdl::game {
 namespace {
 constexpr f32 kLowEnemyHeight = 4.0f;
 
-bool hasTierSounds(s32 kind) {
-    switch (kind) {
-    case 1:
-    case 2:
-    case 4:
-    case 5:
-    case 7:
-    case 8:
-    case 10:
-    case 11:
-    case 13:
-    case 14:
-    case 16:
-    case 17:
-    case 19:
-    case 20:
-    case 23:
-    case 24:
-    case 25:
-    case 26: return true;
-    default: return false;
-    }
-}
 std::string bankName(std::string name, s32 bossType) {
     // Some boss banks replace byte 14 with a variant letter; bank keys hold 15 characters.
     char variant = '\0';
@@ -57,10 +34,12 @@ EnemyFeedback::meleeSound(s32 kind, s32 tier, std::span<const LevelEnemy> roster
     if (kind < 0 || kind >= kSwarmKindCount) {
         return std::nullopt;
     }
-    if (kind == 4 || kind == 5 || kind == 10) {
+    if (kind == enemy_type::kGrunt || kind == enemy_type::kKnight ||
+        kind == enemy_type::kLizardman) {
         return tier >= 2 ? "S_PLYRDMG4" : "S_PLYRDMG5";
     }
-    if (enemyKind(kind).height > kLowEnemyHeight && kind != 2 && kind != 8 && kind != 11) {
+    if (enemyKind(kind).height > kLowEnemyHeight && kind != enemy_type::kDemon &&
+        kind != enemy_type::kMummy && kind != enemy_type::kTreefolk) {
         return std::nullopt;
     }
     const auto row = std::ranges::find(roster, kind, &LevelEnemy::kind);
@@ -68,10 +47,11 @@ EnemyFeedback::meleeSound(s32 kind, s32 tier, std::span<const LevelEnemy> roster
         return std::string{};
     }
     std::string stem = row->stream;
-    if (hasTierSounds(kind)) {
+    if (tieredSounds(kind)) {
         stem += tier > 1 || row->subtype >= 10 || bossType >= 0 ? '2' : '1';
     }
-    return bankName(std::format("S_{}{}", stem, kind == 11 ? "STRIKE" : "BITE"), bossType);
+    return bankName(std::format("S_{}{}", stem, kind == enemy_type::kTreefolk ? "STRIKE" : "BITE"),
+                    bossType);
 }
 
 std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossType) const {
@@ -82,7 +62,7 @@ std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossTyp
     if (row == roster.end() || row->stream.empty()) {
         return {};
     }
-    const bool tiered = hasTierSounds(kind);
+    const bool tiered = tieredSounds(kind);
     // Classes >= 10 bind both sizes to the large sound set. This includes
     // the Temple's four species, regardless of the current actor's tier.
     const bool large = tier > 1 || row->subtype >= 10 || bossType >= 0;
@@ -90,7 +70,7 @@ std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossTyp
     std::string stem{row->stream};
     if (tiered) {
         stem += large ? '2' : '1';
-    } else if (kind == 27) {
+    } else if (kind == enemy_type::kGarm2) {
         stem += '1';
     }
     std::string name;
@@ -109,24 +89,24 @@ std::string_view EnemyFeedback::effect() const {
         return {};
     }
     const u32 element = damage::element(flags);
-    if (element == 0 && kind == 5) {
+    if (element == 0 && kind == enemy_type::kKnight) {
         return killed ? "HITDIE" : "HITCOL";
     }
-    if (element == 0 && (kind == 11 || kind == 21)) {
+    if (element == 0 && (kind == enemy_type::kTreefolk || kind == enemy_type::kAcid)) {
         return killed ? "TREEDIE" : "TREEHIT";
     }
     return damage::hitEffect(element, killed);
 }
 
 f32 EnemyFeedback::effectScale() const {
-    return kind == 5 ? 1.0f : halfHeight * 0.5f;
+    return kind == enemy_type::kKnight ? 1.0f : halfHeight * 0.5f;
 }
 
 std::string_view EnemyFeedback::deathSkin() const {
     constexpr std::array<std::string_view, 5> kSkins{"DEATHBLOOD", "DEATHFIRE", "DEATHELEC",
                                                      "DEATHLIGHT", "DEATHACID"};
-    const u32 element = flags & 0xF;
-    if (element == 0 && (kind == 5 || kind == 11)) {
+    const u32 element = flags & damage::kElementMask;
+    if (element == 0 && (kind == enemy_type::kKnight || kind == enemy_type::kTreefolk)) {
         return "DEATHALT";
     }
     return halfHeight > 2 && element < kSkins.size() ? kSkins[element] : std::string_view{};
@@ -136,6 +116,6 @@ s32 EnemyFeedback::deathSkinFrames() const {
     if (deathSkin().empty()) {
         return 0;
     }
-    return kind == 5 && (flags & 0xF) == 0 ? 15 : 10;
+    return kind == enemy_type::kKnight && (flags & damage::kElementMask) == 0 ? 15 : 10;
 }
 } // namespace gdl::game

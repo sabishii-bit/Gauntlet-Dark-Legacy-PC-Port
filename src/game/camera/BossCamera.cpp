@@ -83,12 +83,11 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
     const f32 range = record.maxDistance - record.minDistance;
     const f32 t =
         range > 0.01f ? std::clamp((m_distance - record.minDistance) / range, 0.0f, 1.0f) : 1.0f;
-    // BCAM bit 0 selects the live elevated anchor; otherwise retail uses the base
-    // position initialized with the creature's geometry. Bit 4 tracks the party.
+    // Without either flag the anchor is the base position the creature's geometry gave.
     Vec3 anchor = boss.baseAttention.value_or(boss.position);
-    if ((record.flags & 0x10) != 0) {
+    if ((record.flags & BossCameraInfo::kTracksParty) != 0) {
         anchor = middleOf(party);
-    } else if ((record.flags & 1) != 0) {
+    } else if ((record.flags & BossCameraInfo::kLiveAnchor) != 0) {
         anchor = boss.position + boss.attentionOffset;
     }
     return anchor + record.minAttention + (record.maxAttention - record.minAttention) * t;
@@ -113,8 +112,8 @@ f32 BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const CameraS
     const bool bounded = boss.focus == BossCameraSubject::Focus::Combat && record.maxYaw < kPi;
     const f32 cosMost = bounded ? portable::cos(record.maxYaw) : -2.0f;
     f32 dot = side.x * facing.x + side.z * facing.z;
-    if ((record.flags & 2) == 0) {
-        // Without BCAM bit 1 the camera may also look from the boss's far side, and keeps
+    if ((record.flags & BossCameraInfo::kFrontOnly) == 0) {
+        // The camera may also look from the boss's far side, and keeps
         // to whichever side it is on now: a party crossing the boss's line does not swing
         // it half a turn round.
         const Vec3 fromLook = m_camera.position - m_attention;

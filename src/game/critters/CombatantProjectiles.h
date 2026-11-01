@@ -67,6 +67,8 @@ public:
         SoundPhase phase = SoundPhase::Launch;
         s32 effect = -1;       ///< authored SFXX row, including linked cues
         std::string_view name; ///< borrowed only for the synchronous callback
+        CombatantKind ownerKind = CombatantKind::Unknown;
+        Vec3 position{0};
     };
     using PlaySound = std::function<void(const SoundCue&)>;
     void launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,

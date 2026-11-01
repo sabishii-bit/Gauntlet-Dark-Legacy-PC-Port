@@ -6,6 +6,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/level/TowerAccess.h"
+
 namespace gdl::game {
 
 namespace {
@@ -84,7 +86,8 @@ void BossVictory::begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound, 
     m_kind = kind;
     m_realm = realm;
     m_quality = qualityOf(runesInRealm, runesFound);
-    m_allTempleRunes = (runesFound & 0x0fffU) == 0x0fffU;
+    m_allTempleRunes =
+        (runesFound & TowerAccess::kUnderworldRunes) == TowerAccess::kUnderworldRunes;
     m_goldLeft = goldLeft;
     m_ticksLeft = kind == kDemon || kind == kGarm ? kLongWaitTicks : kWaitTicks;
 }

@@ -4,6 +4,8 @@
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+
+#include "game/combat/EffectFlags.h"
 namespace gdl::game {
 /** CritterInitMoves/LoadFinish pass a 16-byte field width to AtreeFindNodeIdx,
  * which compares width minus one. ANIM node names can be longer than the WAD references. */
@@ -28,6 +30,9 @@ struct TargetCriteria {
 
 /** A gated sequence of moves. Its entry criteria do not apply again between steps. */
 struct AttackPattern {
+    static constexpr u32 kNeedsChildren = 0x2; ///< flags: only while the children are intact
+    static constexpr u32 kDisabled = 0x1000;   ///< flags: never chosen
+
     u32 flags = 0;
     f32 cooldown = 0.0f;
     std::vector<s32> moves;
@@ -78,17 +83,10 @@ struct AttackDefinition {
 /** An effect and a sound a critter's move, strike or hurt starts: the tree of its own
  * archive, the sound named with the level's letter, and how it is placed. */
 struct CombatEffectDefinition {
-    static constexpr u32 kFollows = 0x801;         ///< rides on the body rather than staying put
-    static constexpr u32 kShakes = 0x2;            ///< shakes the camera
-    static constexpr u32 kArenaCue = 0x20;         ///< invokes the current boss arena's callback
-    static constexpr u32 kUntilNextMove = 0x40000; ///< removed when its owner's move changes
-    static constexpr u32 kSkin = 0x100;      ///< texture sequence applied to the creature itself
-    static constexpr u32 kNoLoop = 0x800000; ///< timed effects hold their final pose
-
     std::string tree;        ///< "ATK01FX"; "NULLFX" or empty shows nothing
     std::string soundFormat; ///< "S_GOL%cSWING"
-    u32 flags = 0;
-    s32 link = -1; ///< another started with it
+    u32 flags = 0;           ///< effect_flags::
+    s32 link = -1;           ///< another started with it
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 life = 0.0f;
     f32 scale = 1.0f;
@@ -96,15 +94,23 @@ struct CombatEffectDefinition {
     f32 particleRate = 0.0f;  ///< custom emitter births per 30 Hz frame
     f32 particleSpeed = 0.0f; ///< custom emitter speed in world units per second
     s32 skinLoops = 0;        ///< additional passes of a skin sequence (SFXX custom0)
+    f32 impactRadius = 0; ///< adapter-supplied impact radius; zero retains ordinary GDL behavior
+    f32 impactPhysicalFraction =
+        1; ///< native split retained for adapters; common hits are combined
+    f32 impactElementalFraction = 0;
+    u32 impactElement = 0;
 
     bool shows() const { return !tree.empty() && tree != "NULLFX"; }
-    bool follows() const { return (flags & kFollows) != 0; }
+    bool follows() const { return (flags & effect_flags::kFollows) != 0; }
     /** The sound's name for a level whose name starts with `letter`. */
     std::string soundFor(char letter) const;
 };
 
 /** One thing a critter does, and when it does it. */
 struct MoveDefinition {
+    static constexpr u32 kNeedsChildren = 0x2; ///< flags: only while the children are intact
+    static constexpr u32 kLinkedOnly = 0x4;    ///< flags: never chosen, only reached as a link
+    static constexpr u32 kNeedsNode = 0x10;    ///< flags: only while its node is there
     static constexpr s32 kInit = 0;
     static constexpr s32 kStart = 16;
     static constexpr s32 kDeath = 17;

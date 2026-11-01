@@ -1,11 +1,11 @@
 #include "game/effects/TurboEmission.h"
 
 #include <algorithm>
-#include <cmath>
 #include <utility>
 
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/EffectFlags.h"
 #include "game/effects/DynamicLights.h"
 
 namespace gdl::game {
@@ -42,7 +42,8 @@ TurboEmission::Particle TurboEmission::particle(const MoveEffect& effect) {
     descriptor.angle = ParticleDescriptor::kSphere;
     descriptor.rate.fill(effect.radius);
     descriptor.speed = static_cast<f32>(effect.alphaMod) * 0.01f / ParticleDescriptor::kFrameRate;
-    const bool shortLife = (effect.flags & MoveEffect::kParticleFlags) == 0x02000000U;
+    const bool shortLife =
+        (effect.flags & effect_flags::kParticleMask) == effect_flags::kShortParticle;
     descriptor.particleLife = shortLife ? 6 : 15;
     descriptor.particleFade = shortLife ? 0 : 15;
     descriptor.red = descriptor.green = descriptor.blue = descriptor.alpha =
@@ -51,8 +52,8 @@ TurboEmission::Particle TurboEmission::particle(const MoveEffect& effect) {
     descriptor.width = ParticleEnvelope{width, width, width, width};
     result.node = effect.sound;
     result.offset = effect.offset;
-    result.previousEffect = (effect.flags & 0x40000U) != 0;
-    result.partnerFallback = (effect.flags & 0x2000U) != 0;
+    result.previousEffect = (effect.flags & effect_flags::kUntilNextMove) != 0;
+    result.partnerFallback = (effect.flags & effect_flags::kOtherParent) != 0;
     return result;
 }
 
@@ -89,21 +90,23 @@ std::optional<TurboEmission::Strike> TurboEmission::prepare(const ClassStats& st
         emission.row = index;
         emission.authored = effect;
         emission.primary = index == strike.effect;
-        emission.shake = (effect.flags & 2U) != 0;
+        emission.shake = (effect.flags & effect_flags::kShakes) != 0;
         if (effect.particle()) {
             emission.particle = particle(effect);
             result.effects.push_back(std::move(emission));
             continue;
         }
-        constexpr u32 kOtherParents = 0x10U | 0x40U | 0x80U | 0x800U | 0x40000U;
+        constexpr u32 kOtherParents = effect_flags::kOnFloor | effect_flags::kDetached |
+                                      effect_flags::kAtInitialRoot | effect_flags::kRootParent |
+                                      effect_flags::kUntilNextMove;
         // Stationary area trees follow the first posed node. Saved matrices,
         // floor placement and stage/effect parents retain separate SFXX policies.
         if (!context.detached && strike.type != MoveStrike::kFlies && strike.speed == 0 &&
             (effect.flags & kOtherParents) == 0) {
             Attachment attachment;
             attachment.carrier = emission.primary && carrier != nullptr;
-            attachment.bodyParent = (effect.flags & 1U) != 0;
-            if ((effect.flags & 0x2000U) != 0 && context.partnerAvailable) {
+            attachment.bodyParent = (effect.flags & effect_flags::kBodyParent) != 0;
+            if ((effect.flags & effect_flags::kOtherParent) != 0 && context.partnerAvailable) {
                 attachment.actor = Actor::Partner;
             }
             const Vec3 offset = effect.offset + (attachment.bodyParent ? Vec3{0} : strike.offset);
@@ -118,7 +121,7 @@ std::optional<TurboEmission::Strike> TurboEmission::prepare(const ClassStats& st
         setting.tint = effect.tint();
         setting.yaw = portable::atan2(context.facing.x, context.facing.z) + strike.angle;
         setting.seconds = effect.lifetime;
-        setting.shrinks = (effect.flags & 0x10000U) != 0 && strike.hitEffect < 0;
+        setting.shrinks = (effect.flags & effect_flags::kShrinks) != 0 && strike.hitEffect < 0;
         emission.carriesFlight = emission.primary && carrier != nullptr && carrier->flies;
         const bool loops = strike.loopEffect >= 0 &&
                            static_cast<usize>(strike.loopEffect) < stats.moveEffects.size();
@@ -128,7 +131,7 @@ std::optional<TurboEmission::Strike> TurboEmission::prepare(const ClassStats& st
             if (loops) {
                 setting.then = stats.moveEffects[static_cast<usize>(strike.loopEffect)].tree;
                 setting.morphIn = carrier->secondsLeft - strike.maxTime;
-                setting.holdForMorph = (strike.flags & 0x800) != 0;
+                setting.holdForMorph = (strike.flags & MoveStrike::kWaitsForMorph) != 0;
             }
         } else if (emission.primary && carrier != nullptr && loops) {
             // PlyrSfxDoDamageSub morphs every harming row's effect into its loop effect once
@@ -137,7 +140,7 @@ std::optional<TurboEmission::Strike> TurboEmission::prepare(const ClassStats& st
             setting.then = stats.moveEffects[static_cast<usize>(strike.loopEffect)].tree;
             setting.seconds = effectSeconds + strike.maxTime;
             setting.morphIn = effectSeconds;
-            setting.holdForMorph = (strike.flags & 0x800) != 0;
+            setting.holdForMorph = (strike.flags & MoveStrike::kWaitsForMorph) != 0;
         }
         emission.position = origin + side * effect.offset.x + Vec3{0, effect.offset.y, 0} +
                             context.facing * effect.offset.z;

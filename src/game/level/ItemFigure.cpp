@@ -759,6 +759,8 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
         // as well as overrides so a locked/tinted copy cannot affect its siblings.
         model.setAppearance(appearance != nullptr && appearance->unlit,
                             appearance != nullptr ? appearance->tint : Color::white());
+        model.setWhiteBlend(appearance != nullptr ? appearance->whiteBlend : 0.0f);
+        model.setDoubleSided(appearance != nullptr && appearance->doubleSided);
         if (appearance != nullptr) {
             for (const usize node : appearance->hiddenMeshes) {
                 model.setMeshAlpha(node, 0);

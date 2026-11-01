@@ -49,15 +49,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(GdlCompilerOptions)
 include(GdlShaders)
 option(GDL_LEGENDS_AUDIO
-    "Sequence Gauntlet Legends N64 music natively (fetches amuse, fmt and nowide at configure time)"
+    "Sequence native N64 music/effects (fetches amuse, fmt and nowide; independent of MORT speech)"
     ON)
-if(GDL_LEGENDS_AUDIO)
-    include(GdlLegendsAudio)
-    gdl_add_legends_audio()
-endif()
-
 add_subdirectory(src/engine)
 add_subdirectory(src/formats)
+add_subdirectory(src/expansions)
 add_subdirectory(src/game)
 add_subdirectory(tools)
 

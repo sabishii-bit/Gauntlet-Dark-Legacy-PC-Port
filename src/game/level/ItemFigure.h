@@ -166,6 +166,8 @@ public:
         Color tint = Color::white();
         bool unlit = false;
         std::span<const usize> hiddenMeshes;
+        f32 whiteBlend = 0.0f;
+        bool doubleSided = false; ///< explicit native display-list culling override
     };
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               f32 alpha = 1.0f, f32 scale = 1.0f, const CameraFrame* camera = nullptr,

@@ -286,6 +286,15 @@ f32 EnemyAnimator::Presentation::frame(f32 blend) const {
 }
 
 EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
+    Decision d = continuation(next, contact);
+    if (isHit(d.action)) {
+        d.repeat = false;
+    }
+    d.action = standIn(d.action);
+    return d;
+}
+
+EnemyAnimator::Decision EnemyAnimator::continuation(Action next, bool contact) const {
     Decision d;
     d.action = next;
     // A hit is answered from the stance, whatever the body was doing.
@@ -454,51 +463,51 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
         break;
     default: break;
     }
-    // What the tree lacks is stood in for.
-    if (isHit(d.action)) {
-        d.repeat = false;
-    }
-    switch (d.action) {
+    return d;
+}
+
+EnemyAnimator::Action EnemyAnimator::standIn(Action wanted) const {
+    switch (wanted) {
     case Action::Attack2:
     case Action::PowerAttack:
     case Action::Attack4:
     case Action::Attack5:
-        if (!has(d.action)) {
-            d.action = Action::Attack;
+        if (!has(wanted)) {
+            return Action::Attack;
         }
         break;
     case Action::Walk:
     case Action::ReadyToRun:
-        if (!has(d.action)) {
-            d.action = Action::Run;
+        if (!has(wanted)) {
+            return Action::Run;
         }
         break;
     case Action::Run:
     case Action::ReadyToWalk:
-        if (!has(d.action)) {
-            d.action = Action::Walk;
+        if (!has(wanted)) {
+            return Action::Walk;
         }
         break;
     case Action::WalkToReady:
     case Action::RunToReady:
     case Action::ThrowToReady:
-        if (!has(d.action)) {
-            d.action = Action::Ready;
+        if (!has(wanted)) {
+            return Action::Ready;
         }
         break;
     case Action::Throw2:
-        if (!has(d.action)) {
-            d.action = Action::Throw;
+        if (!has(wanted)) {
+            return Action::Throw;
         }
         break;
     case Action::Throw:
-        if (!has(d.action)) {
-            d.action = Action::Throw2;
+        if (!has(wanted)) {
+            return Action::Throw2;
         }
         break;
     default: break;
     }
-    return d;
+    return wanted;
 }
 
 void EnemyAnimator::play(Decision decision, f32 seconds) {

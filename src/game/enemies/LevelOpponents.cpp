@@ -108,12 +108,12 @@ void LevelOpponents::appendFollowupValues(NativeStateDigest& digest, const Simul
     cue(deathSound);
     digest.wide(yells.size());
     for (const auto& yell : yells) {
-        const auto& [emitter, instance, start, timing, volume, pan] = yell;
+        const auto& [emitter, instance, start, timing, volume, position] = yell;
         digest.fields<4>(emitter);
         digest.value(instance);
         cue(start);
         digest.fields<2>(timing);
-        digest.values(volume, pan);
+        digest.values(volume, position);
     }
     rows.template operator()<2>(yellClocks);
     digest.values(hearers, shrink, critterExperienceOwed);
@@ -211,6 +211,8 @@ void LevelOpponents::playEnemyCues() {
         return;
     }
     for (const EnemyCue& cue : m_enemies.takeCues()) {
+        if (auto* imported = m_resources->world.imported(); imported && imported->playEnemyCue(cue))
+            continue;
         auto& audio = m_resources->audio;
         if (audio.recordingSounds() &&
             (cue.enemy < 0 || cue.enemy >= Enemies::kMost || cue.instance == 0)) {
@@ -248,7 +250,7 @@ void LevelOpponents::playEnemyCues() {
                         }
                         m_sim.yells.push_back({emitter, clock.next++, start,
                                                audio.namedTiming(kSuicideYellSound), volume,
-                                               audio.panAt(cue.position)});
+                                               cue.position});
                     }
                 }
             } else {
@@ -329,7 +331,12 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
     if (effect != 0) {
         m_sim.cueEffects.push_back(effect);
     }
-    playAt(emission.sound, emission.level, hit.position);
+    auto* imported = m_resources->world.imported();
+    const bool nativeBomb = emission.sound == "S_LOBBER_BOMB" && imported &&
+                            imported->playOpponentSound(emission.sound, hit.position);
+    if (!nativeBomb) {
+        playAt(emission.sound, emission.level, hit.position);
+    }
     if (hit.ricochet) {
         return true;
     }
@@ -358,7 +365,10 @@ void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
     EnemyBlast blast;
     blast.position = burst.position;
     blast.damage = burst.damage;
-    const bool cloud = cloudRealm(m_resources->world.ref().name);
+    const auto* imported = m_resources->world.imported();
+    const bool cloud =
+        imported ? imported->suicideUsesGas().value_or(cloudRealm(m_resources->world.ref().name))
+                 : cloudRealm(m_resources->world.ref().name);
     ItemArchive& weapons = m_resources->weapons;
     const auto start = [&](std::string_view tree, const Vec3& at,
                            const EffectTrees::Setting& setting) -> u32 {
@@ -681,6 +691,10 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     }
     const u32 seed = simulationSeed(world.ref().name);
     m_enemies.open(device, resources.root, &world.collision(), most, scales, seed);
+    if (const auto* imported = world.imported(); imported && imported->hasEnemyAssets()) {
+        m_enemies.setArchiveLoader(
+            [imported](s32 kind) { return imported->loadEnemyAssets(kind); });
+    }
     m_enemies.setContactGridBounds(world.layout().minBounds(), world.layout().maxBounds());
     m_statues.setContactGridBounds(world.layout().minBounds(), world.layout().maxBounds());
     m_enemies.setHazards(&world.hazards());
@@ -737,6 +751,17 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     }
     if (importedBoss) {
         openImportedBoss(scales);
+        const PlayerRuntime* bearer = nullptr;
+        for (const auto& runtime : players) {
+            if (!runtime.departed && runtime.life == PlayerLife::Standing &&
+                world.imported()->hasBossLegend(runtime.actor.save()) &&
+                (!bearer || runtime.actor.player() < bearer->actor.player())) {
+                bearer = &runtime;
+            }
+        }
+        if (bearer) {
+            m_bosses.bringLegend(bearer->actor.player());
+        }
     }
     // The level's boss, at its boss mark.
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
@@ -1034,6 +1059,8 @@ void LevelOpponents::bindImportedSounds() {
     if (!m_resources || !m_resources->world.imported()) {
         return;
     }
+    if (m_resources->world.imported()->hasEnemyAssets())
+        return;
     std::array<bool, kSwarmKindCount> needed{};
     for (const auto& actor : m_resources->world.imported()->importedActors()) {
         if (actor.spawn.kind >= 0 && actor.spawn.kind < kSwarmKindCount) {
@@ -1041,9 +1068,18 @@ void LevelOpponents::bindImportedSounds() {
         }
     }
     for (const auto& [nativeIndex, pool] : m_importedGenerators) {
-        static_cast<void>(nativeIndex);
         if (pool >= 0) {
             needed[static_cast<usize>(m_generators.kindOf(pool))] = true;
+            const auto definitions = m_resources->world.imported()->importedGenerators();
+            const auto definition =
+                std::ranges::find(definitions, nativeIndex, &ImportedGenerator::nativeIndex);
+            if (definition != definitions.end() && definition->broodTier != 0) {
+                for (const auto kind : definition->broodKinds) {
+                    if (kind >= 0 && kind < kSwarmKindCount) {
+                        needed[static_cast<usize>(kind)] = true;
+                    }
+                }
+            }
         }
     }
     if (std::ranges::none_of(needed, [](bool value) { return value; })) {
@@ -1135,11 +1171,14 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
         if (!impact) {
             continue;
         }
-        if (impact->sound) {
+        auto* imported = m_resources->world.imported();
+        const bool nativeSound = imported && imported->playEnemyMelee(blow.kind, blow.tier);
+        if (impact->sound && !nativeSound) {
             m_resources->audio.playNamed(*impact->sound);
         }
         if (blow.ward == EnemyMeleeWard::None) {
-            events.hurt(i, blow.damage, impact->kind, true, impact->impact);
+            events.hurt(i, blow.damage, nativeSound ? HurtKind::Blow : impact->kind, true,
+                        impact->impact);
             continue;
         }
         if (blow.ward == EnemyMeleeWard::HealthVamp && blow.damage > 0) {
@@ -1209,7 +1248,7 @@ void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
             if (!PlayerHealth::canBeDamaged(player)) {
                 continue;
             }
-            capture.attach(grab.critter, boss, *grab.attachment, player.actor);
+            capture.attach(grab.critter, boss, *grab.attachment, player.actor, grab.restoreSupport);
             player.reaction = PlayerDeed::None;
             player.rammed.clear();
         } else {
@@ -1309,7 +1348,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     const LevelInfo* level = m_resources->world.level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
     const bool timeStopped = PlayerPowerups::timeStopped(players);
-    if (m_importedActors.count() != 0) {
+    if (m_importedActors.count() != 0 || m_resources->world.imported()) {
         std::vector<EnemyView> living;
         for (const auto& view : views) {
             const auto player = std::ranges::find_if(players, [&](const PlayerRuntime& runtime) {
@@ -1361,7 +1400,9 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             }
             m_sim.yells.clear();
         }
-        playAt(kSuicideBombSound, kLoudSound, burst.position);
+        const auto imported = m_resources->world.imported();
+        if (!imported || !imported->playOpponentSound(kSuicideBombSound, burst.position))
+            playAt(kSuicideBombSound, kLoudSound, burst.position);
         explodeSuicide(burst);
     }
     advanceClouds();
@@ -1383,7 +1424,13 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_bosses.setArenaAnchors(events.arenaAnchors ? events.arenaAnchors() : std::vector<Mat4>{});
     m_bosses.setArenaTargets(events.arenaTargets ? events.arenaTargets()
                                                  : std::vector<CombatArenaTarget>{});
+    auto* importedArena = m_resources->world.imported();
+    const bool bossWasAwake = importedArena != nullptr && m_bosses.view().awake;
     m_bosses.update(ticks, seconds, views);
+    if (importedArena != nullptr && !bossWasAwake && m_bosses.view().awake &&
+        m_bosses.position() != nullptr) {
+        importedArena->bossIntro(*m_bosses.position());
+    }
     for (const auto& grab : m_critters.takeGrabs()) {
         applyGrab(grab, false, players);
     }
@@ -1405,6 +1452,12 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
     }
     const auto shotSound = [&](const CombatantProjectiles::SoundCue& cue) {
+        if (cue.ownerKind == CombatantKind::Boss) {
+            if (auto* imported = m_resources->world.imported();
+                imported && imported->playOpponentSound(cue.name, cue.position)) {
+                return;
+            }
+        }
         auto& audio = m_resources->audio;
         if (audio.recordingSounds() && (cue.instance == 0 || cue.effect < 0)) {
             audio.recorder()->unsupported("combatant projectile cue without its source lifetime");
@@ -1529,7 +1582,11 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             for (PlayerRuntime& runtime : players) {
                 PlayerActor& actor = runtime.actor;
                 if (actor.player() == event.player) {
-                    actor.save().progress().relics.spendLegend(event.realm);
+                    if (auto* imported = m_resources->world.imported()) {
+                        imported->consumeBossLegend(actor.save());
+                    } else {
+                        actor.save().progress().relics.spendLegend(event.realm);
+                    }
                 }
             }
         }
@@ -1638,7 +1695,9 @@ bool LevelOpponents::awardEnemyLosses(const Events& events, const FeedbackPublis
             }
             effect = *emitted;
         } else {
-            playAt(emission.sound, kLoudSound, emission.position);
+            auto* imported = m_resources->world.imported();
+            if (!imported || !imported->playEnemyFeedback(feedback, feedback.remainingHealth))
+                playAt(emission.sound, kLoudSound, emission.position);
             if (emission.archive != nullptr) {
                 effect = m_resources->effects.startSet(m_resources->device, *emission.archive,
                                                        emission.tree, emission.position,
@@ -1843,7 +1902,9 @@ bool LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
     if (effect != 0) {
         m_sim.cueEffects.push_back(effect);
     }
-    if (!publish && !emission.sound.empty()) {
+    const bool nativeSound = !publish && m_resources->world.imported() &&
+                             m_resources->world.imported()->playGeneratorFeedback(*event);
+    if (!publish && !nativeSound && !emission.sound.empty()) {
         // Slots are append-only for a loaded level; the native birth serial
         // distinguishes generated lifetimes and is restored with their state.
         const auto audioScope = m_resources->audio.soundScope(
@@ -1892,7 +1953,14 @@ bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
             m_resources->world.setObjectVisible(object, false);
         }
     }
-    const auto emission = CritterCueEmission::resolve(cue, archive, m_resources->weapons);
+    // Imported native assets are installed without the donor texture context.
+    // Their scoped effect banks are already composed into this archive: an
+    // absent native effect must not silently become a similarly named GDL one.
+    const auto* imported = m_resources->world.imported();
+    const bool ownEffectsOnly = ofBoss && archive != nullptr && imported != nullptr &&
+                                imported->importedBoss() != nullptr && !m_importedBossTextures;
+    const auto emission =
+        CritterCueEmission::resolve(cue, archive, ownEffectsOnly ? *archive : m_resources->weapons);
     if (emission.archive != nullptr) {
         const auto issued = publish ? publish(emission)
                                     : std::optional{m_resources->effects.startSet(
@@ -1921,9 +1989,12 @@ bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     }
     // The great ones' sounds play at 224 of 255 as heard from where the players stand
     // (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten); a death's at that level whole.
-    if (!publish && !cue.sound.empty() && cue.attenuated) {
+    const bool nativeSound =
+        !publish && ofBoss && !cue.sound.empty() && m_resources->world.imported() &&
+        m_resources->world.imported()->playOpponentSound(cue.sound, cue.soundPosition);
+    if (!publish && !nativeSound && !cue.sound.empty() && cue.attenuated) {
         playAt(cue.sound, kLoudSound, cue.soundPosition);
-    } else if (!publish && !cue.sound.empty()) {
+    } else if (!publish && !nativeSound && !cue.sound.empty()) {
         m_resources->audio.playAt(cue.sound, cue.soundPosition, 0.0f, kLoudSound / kFullLevel);
     }
     return true;
@@ -1958,6 +2029,23 @@ void LevelOpponents::finishSummons(std::span<const EnemyView> players) {
             }
         }
     }
+}
+
+std::vector<EffectTrees::DrawAttachment> LevelOpponents::presentedBossEffects(f32 alpha) const {
+    std::vector<EffectTrees::DrawAttachment> result;
+    if (!m_resources || !m_resources->world.imported() || alpha < 0 || !m_bosses.present())
+        return result;
+    const auto& boss = m_bosses.fighter();
+    for (const auto& riding : m_sim.critterEffects) {
+        if (!riding.ofBoss || riding.playerAttachment || (!riding.rootAttachment && !riding.node))
+            continue;
+        const std::string_view node =
+            riding.rootAttachment ? boss.data()->rootNode() : std::string_view{*riding.node};
+        if (const auto parent = boss.presentedNodeTransform(node, alpha))
+            result.push_back({riding.effect,
+                              CritterArea::placement(*parent, riding.nodeOffset, riding.pitchYaw)});
+    }
+    return result;
 }
 
 /** Effects riding on the great ones go where they go, and are let go of when they end. */

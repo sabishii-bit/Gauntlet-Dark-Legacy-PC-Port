@@ -25,9 +25,13 @@ struct CritterArea {
     f32 secondsLeft = 0.0f;
     f32 lifetime = 0.0f;
     bool expanding = false;
+    bool linearGrowth = false;
+    f32 halfHeight = 0;   ///< zero retains the ordinary radius-derived vertical extent
+    f32 growFraction = 0; ///< optional grow/plateau/shrink envelope, fractions of elapsed life
+    f32 shrinkFraction = 0;
     bool operator==(const CritterArea&) const = default;
     friend void visitNativeState(NativeStateDigest& digest, const CritterArea& state) {
-        digest.fields<12>(state);
+        digest.fields<16>(state);
     }
 
     /** The effect's translation is not rotated by its own directional angles. */

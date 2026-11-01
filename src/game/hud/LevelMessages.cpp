@@ -87,6 +87,7 @@ void LevelMessages::clear() {
     m_sim.message.reset();
     m_sim.firstPage = 0;
     m_controlLabels = {};
+    setPresentation(nullptr);
     m_scroll.close();
     m_scroll.setArt({});
     m_scroll.setText(nullptr);
@@ -131,12 +132,14 @@ std::optional<LevelMessages::Look> LevelMessages::look() const {
 
 bool LevelMessages::openImported(RenderDevice& device, std::span<const std::string> text,
                                  const StringTable* strings) {
-    if (!m_text.ready() || text.empty() || active()) {
+    const auto& painter = m_presentation ? m_presentation->text() : m_text;
+    if (!painter.ready() || text.empty() || active()) {
         return false;
     }
-    constexpr f32 kScale = .5f;
-    constexpr s32 kWidth = ScrollBox::kMaxWidth - ScrollBox::kMargin;
-    constexpr usize kLinesPerPage = 9;
+    const f32 scale = m_presentation ? m_presentation->scale() : .5f;
+    const s32 width =
+        m_presentation ? m_presentation->textWidth() : ScrollBox::kMaxWidth - ScrollBox::kMargin;
+    const usize linesPerPage = m_presentation ? m_presentation->linesPerPage() : 9;
     std::vector<std::string> pages;
     std::string page;
     usize lines = 0;
@@ -145,7 +148,7 @@ bool LevelMessages::openImported(RenderDevice& device, std::span<const std::stri
             page += '\n';
         }
         page += line;
-        if (++lines == kLinesPerPage) {
+        if (++lines == linesPerPage) {
             pages.push_back(std::exchange(page, {}));
             lines = 0;
         }
@@ -159,7 +162,7 @@ bool LevelMessages::openImported(RenderDevice& device, std::span<const std::stri
             std::string line;
             while (words >> word) {
                 if (!line.empty() &&
-                    m_text.measure(std::string(line).append(" ").append(word), kScale) > kWidth) {
+                    painter.measure(std::string(line).append(" ").append(word), scale) > width) {
                     append(line);
                     line.clear();
                 }
@@ -168,7 +171,7 @@ bool LevelMessages::openImported(RenderDevice& device, std::span<const std::stri
                 }
                 // Malformed overlong tokens still cannot draw outside the parchment.
                 for (const char character : word) {
-                    if (!line.empty() && m_text.measure(line + character, kScale) > kWidth) {
+                    if (!line.empty() && painter.measure(line + character, scale) > width) {
                         append(line);
                         line.clear();
                     }
@@ -188,7 +191,7 @@ bool LevelMessages::openImported(RenderDevice& device, std::span<const std::stri
         return false;
     }
     const bool opened =
-        m_scroll.open(device, std::move(pages), kScale,
+        m_scroll.open(device, std::move(pages), scale,
                       strings ? std::string(strings->get("scroll.pressButton")) : std::string{});
     if (opened) {
         m_sim.message.reset();
@@ -204,7 +207,7 @@ LevelMessages::Cues LevelMessages::step(s32 ticks, u32 accepted) {
     const bool wasBurning = m_scroll.burning();
     m_scroll.step(ticks, accepted);
     const bool stopVoice = (m_scroll.burning() && !wasBurning) || !m_scroll.active();
-    return {stopVoice, stopVoice && !wasBurning};
+    return {stopVoice, !m_presentation && stopVoice && !wasBurning};
 }
 
 void LevelMessages::saveLocal(LocalSnapshot& saved) const {

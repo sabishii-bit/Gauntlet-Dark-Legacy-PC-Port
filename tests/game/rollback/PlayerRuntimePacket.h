@@ -14,7 +14,7 @@ namespace gdl::game {
  * creates an asset, chooses a filesystem path, or replaces a persistent save. */
 class PlayerRuntimePacket {
 public:
-    static constexpr u32 kVersion = 3;
+    static constexpr u32 kVersion = 4;
     static constexpr usize kHeaderBytes = 16;
     static constexpr usize kMaxBytes = static_cast<const usize>(512 * 1024);
     static constexpr usize kMaxRecords = 4096;

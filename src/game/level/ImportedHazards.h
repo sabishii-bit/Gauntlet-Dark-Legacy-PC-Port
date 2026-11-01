@@ -14,6 +14,7 @@ struct ImportedHazardHit {
     bool pierces = false;
     bool poison = false;
     PlayerImpact impact;
+    bool armorAbsorbed = false; ///< expansion already applied armor; shields/reactions still apply
 };
 
 /** Native hazards own their clocks and victim lists, not a second enemy simulation.

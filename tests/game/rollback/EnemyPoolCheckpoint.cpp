@@ -298,9 +298,10 @@ template <class IO, class T> bool mind(IO& io, T& value) {
 
 template <class IO, class T> bool body(IO& io, T& value, usize& nodesLeft) {
     return io(value.instance, value.state, value.kind, value.tier, value.algorithm, value.variant,
-              value.element, value.generator, value.bred, value.birth, value.health, value.fullHealth, value.sight,
-              value.radius, value.height, value.reach, value.position, value.birthPosition,
-              value.presentationPosition, value.presentationYaw, value.presentationState) &&
+              value.element, value.generator, value.bred, value.birth, value.health,
+              value.fullHealth, value.sight, value.radius, value.height, value.reach,
+              value.position, value.birthPosition, value.presentationPosition,
+              value.presentationYaw, value.presentationState) &&
            optional(io, value.floor, [&](auto& floor) { return io(floor.object, floor.local); }) &&
            io(value.yaw) && mind(io, value.mind) &&
            io(value.push, value.pushMagnitude, value.pushes, value.target, value.targetBefore,
@@ -333,7 +334,8 @@ template <class IO, class T> bool event(IO& io, T& value) {
         return io(value.kind, value.enemyKind, value.position, value.enemy, value.instance);
     } else if constexpr (std::is_same_v<Value, EnemyFeedback>) {
         return io(value.kind, value.tier, value.hitCount, value.killed, value.close, value.flags,
-                  value.position, value.yaw, value.halfHeight, value.enemy, value.instance);
+                  value.position, value.yaw, value.halfHeight, value.enemy, value.instance,
+                  value.remainingHealth);
     } else if constexpr (std::is_same_v<Value, DeathEvent>) {
         return io(value.kind, value.enemy, value.player, value.form, value.amount, value.position,
                   value.instance);

@@ -6,6 +6,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -53,7 +54,7 @@ void PowerupSelector::focus(const Inventory& inventory, s32 kind, u32 flags) {
 
 bool PowerupSelector::charged(const PowerupSlot& slot) {
     return (slot.kind == powerup::kWeapon &&
-            (slot.flags & (powerup::kSuperShot | powerup::kThunderHammer)) != 0) ||
+            (slot.flags & (damage::kSuperShot | damage::kHammer)) != 0) ||
            (slot.kind == powerup::kSpecial && (slot.flags & powerup::kBreath) != 0);
 }
 

@@ -61,13 +61,13 @@ TEST_CASE("weapon preparation samples live inventory without launches or resourc
     CHECK(plain->flags == 0);
     auto& inventory = f.actor.save().progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 12, 30, true);
-    inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot | 4U, 7, 30, true);
+    inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot | 4U, 7, 30, true);
     const auto before = inventory.powerups;
     const auto enchanted = f.arsenal.weaponThrow(f.actor, 0.5f);
     REQUIRE(enchanted);
     CHECK(enchanted->hand == Vec3{0, -0.5f, -1.25f});
     CHECK(enchanted->shots == 5);
-    CHECK(enchanted->flags == (powerup::kFiveWayShot | 4U));
+    CHECK(enchanted->flags == (damage::kFiveWayShot | 4U));
     CHECK(enchanted->attackSeconds == 0.5f);
     CHECK(f.arsenal.missiles().count() == 0);
     CHECK(f.arsenal.missiles().visuals().count() == 0);
@@ -81,8 +81,8 @@ TEST_CASE("complete weapon preparation is resource-free and keeps single-volley 
           "[game][world][player-arsenal][weapon-prepare]") {
     Fixture fixture;
     const PlayerFigure figure;
-    const u32 flags = GENERATE(0U, powerup::kRapidFire | powerup::kFiveWayShot | 4U,
-                               powerup::kThreeWayShot | powerup::kSuperShot);
+    const u32 flags = GENERATE(0U, damage::kRapidFire | damage::kFiveWayShot | 4U,
+                               damage::kThreeWayShot | damage::kSuperShot);
     const bool spreads = GENERATE(false, true);
     const bool aimed = GENERATE(false, true);
     auto& inventory = fixture.actor.save().progress().inventory;
@@ -99,7 +99,7 @@ TEST_CASE("complete weapon preparation is resource-free and keeps single-volley 
     REQUIRE(prepared);
     CHECK(prepared->soundFlags == flags);
     CHECK_FALSE(prepared->pojo);
-    CHECK(prepared->weapon.flags == (flags & ~powerup::kSuperShot));
+    CHECK(prepared->weapon.flags == (flags & ~damage::kSuperShot));
     CHECK(prepared->weapon.direction == direction);
     CHECK(prepared->weapon.scale == 2);
     CHECK(prepared->weapon.target == target);
@@ -165,7 +165,7 @@ TEST_CASE("explicit prepared provenance is canonical and never inferred from a t
     REQUIRE_FALSE(figure->animator().released());
     REQUIRE_FALSE(figure->animator().strongReleased());
     auto& inventory = fixture.actor.save().progress().inventory;
-    inventory.addPowerup(powerup::kWeapon, powerup::kRapidFire | powerup::kFiveWayShot, 0, 30);
+    inventory.addPowerup(powerup::kWeapon, damage::kRapidFire | damage::kFiveWayShot, 0, 30);
     const MissileRelease identity{1, figure->animator().player().generation(), false, 0, 0x10000};
     REQUIRE(identity.generation != 0);
     auto requested = identity;
@@ -220,7 +220,7 @@ TEST_CASE("explicit prepared provenance is canonical and never inferred from a t
         eligible = false;
     }
     SECTION("unsupported inventory preserves flight but not replay provenance") {
-        inventory.addPowerup(powerup::kWeapon, powerup::kReflect, 0, 30);
+        inventory.addPowerup(powerup::kWeapon, damage::kReflect, 0, 30);
         eligible = false;
     }
     SECTION("Pojo substitution preserves flight but not replay provenance") {
@@ -275,7 +275,7 @@ TEST_CASE("prepared ordinary and single-volley releases match live native missil
     fixture.actor.spawn(2, save, fixture.classes.stats(character), {10, 3, 20}, 0.4f);
     auto figure = PlayerFigure::load(fixture.device, root, save, false);
     REQUIRE(figure);
-    for (const u32 flags : {0U, powerup::kFiveWayShot | powerup::kRapidFire}) {
+    for (const u32 flags : {0U, damage::kFiveWayShot | damage::kRapidFire}) {
         if (flags != 0) {
             fixture.actor.save().progress().inventory.addPowerup(powerup::kWeapon, flags, 0, 30);
         }
@@ -420,12 +420,12 @@ TEST_CASE("plain weapon birth retains release provenance after the player is int
     }
     SECTION("rapid and spread throws keep native fan provenance") {
         const u32 flags =
-            GENERATE(powerup::kRapidFire, powerup::kThreeWayShot, powerup::kFiveWayShot,
-                     powerup::kRapidFire | powerup::kThreeWayShot, PlayerMissiles::kPlainModifiers);
+            GENERATE(damage::kRapidFire, damage::kThreeWayShot, damage::kFiveWayShot,
+                     damage::kRapidFire | damage::kThreeWayShot, PlayerMissiles::kPlainModifiers);
         inventory.addPowerup(powerup::kWeapon, flags, 0, 30);
     }
     SECTION("spread plus an unsupported weapon remains authoritative") {
-        inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot | powerup::kReflect, 0, 30);
+        inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot | damage::kReflect, 0, 30);
         eligible = false;
     }
     SECTION("Pojo substitutions remain authoritative") {
@@ -483,8 +483,8 @@ TEST_CASE("plain weapon birth retains release provenance after the player is int
 TEST_CASE("native weapon sound capture reports the played cue once per released fan",
           "[game][world][player-arsenal][weapon-sound][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
-    const auto flags = GENERATE(0U, 1U, 2U, 3U, 4U, powerup::kRapidFire, powerup::kThreeWayShot,
-                                powerup::kRapidFire | powerup::kFiveWayShot | 4U);
+    const auto flags = GENERATE(0U, 1U, 2U, 3U, 4U, damage::kRapidFire, damage::kThreeWayShot,
+                                damage::kRapidFire | damage::kFiveWayShot | 4U);
     const bool strong = GENERATE(false, true);
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
@@ -509,7 +509,7 @@ TEST_CASE("native weapon sound capture reports the played cue once per released 
     REQUIRE(common.load(root / "AUDIO/COMMON"));
     constexpr std::array<std::string_view, 5> kThrowCues{"", "S_AMULETFIRE", "S_AMULETLIGHTNI",
                                                          "S_AMULETLIGHT", "S_AMULETACID"};
-    const bool fan = (flags & (powerup::kThreeWayShot | powerup::kFiveWayShot)) != 0;
+    const bool fan = (flags & (damage::kThreeWayShot | damage::kFiveWayShot)) != 0;
     SoundSet& expectedBank = fan || (flags & 0xFU) != 0 ? common : figure->voice();
     const auto name = fan                   ? std::string{"S_SUPERSHOT"}
                       : (flags & 0xFU) != 0 ? std::string{kThrowCues[flags & 0xFU]}
@@ -597,7 +597,7 @@ TEST_CASE("native weapon sound capture excludes scripted unsupported and blocked
         scripted = true;
     }
     SECTION("reflective rider remains authoritative") {
-        inventory.addPowerup(powerup::kWeapon, powerup::kReflect, 0, 30);
+        inventory.addPowerup(powerup::kWeapon, damage::kReflect, 0, 30);
     }
     SECTION("Pojo substitution remains authoritative") {
         inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 30);
@@ -791,8 +791,8 @@ TEST_CASE("every Super Shot volley renders the authored weapon streak until expi
     REQUIRE(f.classes.load(root / "pdata"));
     f.arsenal.bind({f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
     auto& inventory = f.actor.save().progress().inventory;
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 2, -1);
-    inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0, 30);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 2, -1);
+    inventory.addPowerup(powerup::kWeapon, damage::kThreeWayShot, 0, 30);
     PlayerFigure figure;
     const auto slot = f.weapons.textures.find("WEP_STREAK");
     REQUIRE(slot);
@@ -1015,7 +1015,7 @@ TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapo
                     boss});
     auto& inventory = f.actor.save().progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 60);
-    inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot | 4, 0, 60);
+    inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot | 4, 0, 60);
     const Vec3 aim{10, 5, 40};
     f.arsenal.launchFamiliar(f.actor, &figure, aim);
     REQUIRE(f.arsenal.missiles().count() == 1);
@@ -1175,8 +1175,8 @@ TEST_CASE("super shot spends one charge per volley and preserves the last charge
     Fixture f;
     PlayerFigure figure;
     auto& inventory = f.actor.save().progress().inventory;
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 1, -1);
-    inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0, 30);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 1, -1);
+    inventory.addPowerup(powerup::kWeapon, damage::kThreeWayShot, 0, 30);
     bool tower = false;
     bool boss = false;
     SECTION("ordinary level") {}
@@ -1201,15 +1201,15 @@ TEST_CASE("super shot spends one charge per volley and preserves the last charge
     for (usize i = 0; i < 3; ++i) {
         const auto& shot = f.arsenal.missiles().missile(i);
         CHECK(shot.spec == &MissileSpec::superShot());
-        CHECK((shot.flags & powerup::kSuperShot) != 0);
+        CHECK((shot.flags & damage::kSuperShot) != 0);
         CHECK(shot.damage == Approx(boss ? 7.5f : 10.0f));
         CHECK(shot.velocity.y == 0);
     }
-    CHECK((inventory.powerup(powerup::kWeapon, powerup::kSuperShot) != nullptr) == tower);
+    CHECK((inventory.powerup(powerup::kWeapon, damage::kSuperShot) != nullptr) == tower);
     if (!tower) {
         f.arsenal.launchSuperShot(f.actor, &figure);
         REQUIRE(f.arsenal.missiles().count() == 6);
-        CHECK((f.arsenal.missiles().missile(3).flags & powerup::kSuperShot) == 0);
+        CHECK((f.arsenal.missiles().missile(3).flags & damage::kSuperShot) == 0);
     }
 }
 
@@ -1225,11 +1225,11 @@ TEST_CASE("super shot ignores assisted targets while normal and depleted shots r
     CHECK(normal.x > 0);
     CHECK(normal.y > 0);
 
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 1, -1);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 1, -1);
     f.arsenal.launchSuperShot(f.actor, &figure, target);
     REQUIRE(f.arsenal.missiles().count() == 2);
     const auto& charged = f.arsenal.missiles().missile(1);
-    CHECK((charged.flags & powerup::kSuperShot) != 0);
+    CHECK((charged.flags & damage::kSuperShot) != 0);
     // ModifyPlayerDpos (0x80085fa0) keeps the supplied heading for Super Shot.
     CHECK(charged.velocity.x == Approx(0).margin(0.0001f));
     CHECK(charged.velocity.y == Approx(0).margin(0.0001f));
@@ -1238,7 +1238,7 @@ TEST_CASE("super shot ignores assisted targets while normal and depleted shots r
     f.arsenal.launchSuperShot(f.actor, &figure, target);
     REQUIRE(f.arsenal.missiles().count() == 3);
     const auto& depleted = f.arsenal.missiles().missile(2);
-    CHECK((depleted.flags & powerup::kSuperShot) == 0);
+    CHECK((depleted.flags & damage::kSuperShot) == 0);
     CHECK(depleted.velocity.x == Approx(normal.x));
     CHECK(depleted.velocity.y == Approx(normal.y));
     CHECK(depleted.velocity.z == Approx(normal.z));
@@ -1252,14 +1252,14 @@ TEST_CASE("Skorne gauntlets use their own elemental projectiles without consumin
         auto& inventory = f.actor.save().progress().inventory;
         inventory.addPowerup(powerup::kSpecial,
                              left ? powerup::kLeftGauntlet : powerup::kRightGauntlet, 0, 60);
-        inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 5, -1);
+        inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 5, -1);
         f.arsenal.launchGauntlet(f.actor, &figure, left);
         REQUIRE(f.arsenal.missiles().count() == 1);
         const auto& missile = f.arsenal.missiles().missile(0);
         CHECK(missile.spec->model == (left ? "BOSSG_ELEC" : "BOSSG_ACID"));
         CHECK((missile.flags & 0xFU) == (left ? 2U : 4U));
         CHECK(missile.damage == 5);
-        CHECK(inventory.powerup(powerup::kWeapon, powerup::kSuperShot)->charge == 5);
+        CHECK(inventory.powerup(powerup::kWeapon, damage::kSuperShot)->charge == 5);
     }
 }
 
@@ -1309,7 +1309,7 @@ TEST_CASE("normal and spread throws render saturated costume streaks for every c
                                  Color::rgba(255, 0, 0, 190), Color::rgba(0, 255, 0, 190)};
     for (s32 character = 0; character < kClassCount; ++character) {
         for (s32 color = 0; color < kColorCount; ++color) {
-            for (const u32 spread : {0U, powerup::kThreeWayShot, powerup::kFiveWayShot}) {
+            for (const u32 spread : {0U, damage::kThreeWayShot, damage::kFiveWayShot}) {
                 CAPTURE(character, color, spread);
                 f.arsenal.bind(
                     {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
@@ -1474,22 +1474,44 @@ TEST_CASE("ordinary impact descriptors retain native artwork and cue priority wi
 }
 
 TEST_CASE("an obstructed muzzle still produces impact feedback without launching a weapon",
-          "[game][world][player-arsenal][projectile-impact]") {
+          "[game][world][player-arsenal][projectile-impact][native-scenery-projectiles]") {
+    const s32 bridge = GENERATE(0, 1, 2, 3);
+    const bool spread = GENERATE(false, true);
+    CAPTURE(bridge, spread);
     const auto root = impactAssets();
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture f;
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.audio.open(root, &sounds, nullptr);
-    f.arsenal.bind({f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, &sounds,
-                    "S_WEAPONHITWOOD"});
+    PlayerArsenal::Resources resources{f.device,  f.classes, f.weapons, f.collision,
+                                       f.effects, f.audio,   &sounds,   "S_WEAPONHITWOOD"};
+    s32 calls = 0;
+    if (bridge != 0) {
+        resources.strikeMuzzleObject = [&](s32 object, f32 power, u32 flags, s32 player) {
+            ++calls;
+            CHECK(object == 77);
+            CHECK(power == PlayerMissiles::kLeastDamage);
+            CHECK(flags == (spread ? damage::kFiveWayShot : 0));
+            CHECK(player == f.actor.player());
+            return bridge == 1; // unrelated owners may refuse without bypassing the wall
+        };
+    }
+    f.arsenal.bind(resources);
+    if (spread) {
+        f.actor.save().progress().inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot, 0,
+                                                       30, true);
+    }
     CollisionTriangle wall;
     wall.normal = {0, 0, -1};
     wall.vertices = {Vec3{-30, -5, 22}, Vec3{30, -5, 22}, Vec3{0, 40, 22}};
+    wall.object = bridge == 3 ? -1 : 77;
     f.collision.build({wall});
     PlayerFigure figure;
-    f.arsenal.launchWeapon(f.actor, &figure, {0, 0, 1}, 1, false);
+    f.arsenal.launchWeapon(f.actor, &figure, {0, 0, 1}, 1, spread);
     CHECK(f.arsenal.missiles().count() == 0);
+    CHECK(calls == (bridge == 1 || bridge == 2 ? 1 : 0));
+    CHECK(f.arsenal.missiles().takeImpacts().empty());
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "SPARKS");
     CHECK(sounds.voiceCount() == 1);
@@ -1531,12 +1553,12 @@ TEST_CASE("spread volleys leave every impact but sound only the centre shot",
                     "S_WEAPONHITWOOD"});
     s32 shots = 3;
     SECTION("three-way") {
-        f.actor.save().progress().inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0,
+        f.actor.save().progress().inventory.addPowerup(powerup::kWeapon, damage::kThreeWayShot, 0,
                                                        30);
     }
     SECTION("five-way") {
         shots = 5;
-        f.actor.save().progress().inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot, 0,
+        f.actor.save().progress().inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot, 0,
                                                        30);
     }
     PlayerFigure figure;

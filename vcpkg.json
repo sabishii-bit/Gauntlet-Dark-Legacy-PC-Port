@@ -1,9 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "name": "gauntlet-dark-legacy",
-  "version-string": "0.1.0",
+  "name": "cgaunt-plus-plus",
+  "version-string": "1.0.0",
   "license": "GPL-3.0-only",
-  "description": "C++26 / Vulkan reconstruction of the Gauntlet Dark Legacy engine.",
+  "description": "C++ reconstruction of the Gauntlet Dark Legacy engine.",
   "builtin-baseline": "1577f17ee57f42a0ef6d75bbb82cb37d0b76d7e8",
   "dependencies": [
     "catch2",

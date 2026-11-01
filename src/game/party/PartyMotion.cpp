@@ -7,6 +7,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/FloorRiding.h"
 #include "game/party/PartyCollision.h"
 #include "game/party/PartyCombo.h"
@@ -135,7 +137,7 @@ f32 PartyMotion::actionPace(const PlayerAnimator* animator, PlayerDeed deed, boo
         pace = 0;
     } else if (deed == PlayerDeed::StrongAttack && animator != nullptr &&
                animator->canBegin(deed)) {
-        // PlayerMotion consumes PWRA_THROW's A48=.25 even on its first frame.
+        // Lock the first input frame too, before StrongThrow owns the animator.
         // Held heavy input must not override a spin or power swing already playing.
         pace = std::min(pace, PlayerAnimator::kStrongThrowPace);
     }
@@ -274,8 +276,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 PartyCombo::ride(players, i,
                                  !held && steering < inputs.size() ? inputs[steering].move
                                                                    : MoveInput{},
-                                 dwarf < players.size() ? yawOf(dwarf) : cameraYaw, ticks,
-                                 seconds, collision, comboEvents);
+                                 dwarf < players.size() ? yawOf(dwarf) : cameraYaw, ticks, seconds,
+                                 collision, comboEvents);
             }
             PartyCombo::animate(players, i, ticks, seconds, comboEvents);
             subjects.push_back({actor.position(), actor.followPoint()});
@@ -561,9 +563,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].rammed.clear();
         }
         if (players[i].figure != nullptr) {
-            players[i].figure->setAttackSpeed((powerups.weapon & powerup::kRapidFire) != 0,
+            players[i].figure->setAttackSpeed((powerups.weapon & damage::kRapidFire) != 0,
                                               (powerups.special & powerup::kSpeedBoost) != 0);
-            players[i].figure->setShielded((powerups.armor & powerup::kShields) != 0);
+            players[i].figure->setShielded((powerups.armor & armor::kArmShields) != 0);
             // Shoved and moving, it shows being pushed, facing the way it goes.
             const Vec3 moved = actor.position() - before;
             const bool pushed = !down && players[i].knockback.pushed() &&
@@ -580,8 +582,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 players[i].figure->setMelee(events.meleeSense(i, attackHeld, attackFacing));
             }
             players[i].figure->setCombo(players[i].combo.grabberClass, players[i].combo.rideAsked);
-            players[i].figure->animate(move.magnitude, ticks, seconds, deed,
-                                       events.chainHeldMelee);
+            players[i].figure->animate(move.magnitude, ticks, seconds, deed, events.chainHeldMelee);
             players[i].figure->updateTrail(
                 PlayerFigure::bodyPlacement(players[i].capture.body().value_or(actor.transform()),
                                             actor.save(), powerups),

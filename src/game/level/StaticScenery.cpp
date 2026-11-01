@@ -76,7 +76,7 @@ void StaticScenery::bind(RenderDevice& device, const WorldLayout& layout, const 
         const u32 override =
             static_cast<u32>(instance.params[0]) | (static_cast<u32>(instance.params[1]) << 8U);
         const bool positiveOverride = override > 0 && override < 0x8000U;
-        if (info.type != 10 ||
+        if (info.type != ItemInfo::kObstacle ||
             (positiveOverride ? static_cast<s32>(override) : info.subtype) != 0) {
             continue;
         }
@@ -85,12 +85,12 @@ void StaticScenery::bind(RenderDevice& device, const WorldLayout& layout, const 
         prop.minPlayers = instance.minPlayers;
         ItemInstance placed = instance;
         // AddItemSub uses the initialized world, within four units above/ten below.
-        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (collision != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             if (const auto floor = collision->floorAt(instance.position, 4, 10)) {
                 placed.position.y = floor->y + ItemFigure::kFloorLift;
             }
         }
-        if ((instance.flags & 2U) == 0) {
+        if ((instance.flags & ItemInstance::kNoGeometry) == 0) {
             prop.figure.placeStaticFallback(device, scope, info.name, placed, nullptr,
                                             info.objectFlags);
         }

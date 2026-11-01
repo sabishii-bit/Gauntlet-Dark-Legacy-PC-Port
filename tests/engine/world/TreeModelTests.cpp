@@ -772,15 +772,18 @@ TEST_CASE(
     dark.ambient = dark.lightColor = Vec3{0.0f};
     const Color blue = Color::rgba(0, 0, 255);
     figure.setAppearance(true, blue, false);
+    figure.setWhiteBlend(0.4f);
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, dark);
     REQUIRE(device.draws[0].vertices[0].color == blue);
     REQUIRE_FALSE(device.draws[0].state.depthWrite);
+    REQUIRE(device.draws[0].state.whiteBlend == 0.4f);
     // A new binding resets instance overrides.
     REQUIRE(figure.bind(trees.tree(0), models, textures, device));
     device.draws.clear();
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, dark);
     REQUIRE(device.draws[0].vertices[0].color == Color::black());
     REQUIRE(device.draws[0].state.depthWrite);
+    REQUIRE(device.draws[0].state.whiteBlend == 0);
 }
 
 TEST_CASE("a faded tree model blends every part, and draws nothing once unseen", "[world][model]") {
@@ -957,6 +960,49 @@ TEST_CASE("the spawn effect's flame column comes and goes with its frames",
     effect.setFrame(0, 13);
     effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws.size() == floorOnly);
+}
+
+TEST_CASE("decoded discrete object swaps do not morph compatible geometry",
+          "[world][model][object-frames]") {
+    const auto directory = sampleFigure("tree-discrete-object-frames");
+    ModelSet source;
+    TextureSet textures;
+    REQUIRE(source.load(directory));
+    REQUIRE(textures.load(directory));
+    std::vector<Mesh> meshes{source.mesh(0), source.mesh(0)};
+    for (auto& vertex : meshes[1].vertices) {
+        vertex.position.x += 10;
+    }
+    auto entries = std::vector<ModelSetEntry>{source.entry(0), source.entry(0)};
+    entries[0].name = "FIRST";
+    entries[1].name = "SECOND";
+    auto models = ModelSet::fromDecoded(std::move(entries), std::move(meshes));
+    TreeInfo tree;
+    tree.name = "SWAP";
+    tree.sequences.resize(1);
+    tree.sequences[0].frames = 2;
+    tree.nodes.resize(1);
+    tree.nodes[0].objectFrames.push_back({"FIRST", 0, 2, false});
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    figure.setPresentationFrame(0, .75f);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].vertices[0].position == models.mesh(0).vertices[0].position);
+    device.draws.clear();
+    figure.setPresentationFrame(0, 1.0f);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].vertices[0].position == models.mesh(1).vertices[0].position);
+    tree.nodes[0].objectFrames[0].interpolate = true;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    device.draws.clear();
+    figure.setPresentationFrame(0, .5f);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].vertices[0].position.x ==
+          Approx(models.mesh(0).vertices[0].position.x + 5));
 }
 
 TEST_CASE("a tree model adds glowing nodes onto the frame without writing depth",

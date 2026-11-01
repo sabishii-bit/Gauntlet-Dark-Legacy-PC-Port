@@ -16,6 +16,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
 #include "game/bosses/BossDefinition.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CombatantProjectiles.h"
 #include "game/level/LevelWorld.h"
@@ -677,6 +678,77 @@ TEST_CASE("timed-out explosive shots enter their impact phase without a collisio
     CHECK(f.effects.count() == 0);
 }
 
+TEST_CASE("native impacts use fixed radius element and envelope without changing default blasts",
+          "[boss-projectiles][projectile-impact][native-impact-envelope]") {
+    Fixture f;
+    const bool native = GENERATE(false, true);
+    const u32 element = GENERATE(1U, 2U, 4U);
+    const f32 radius = element == 1 ? 5.0f : 3.6f;
+    formats::CritterFile source;
+    source.descriptors.resize(1);
+    source.types.resize(1);
+    source.types[0].moveCount = 1;
+    source.moves.resize(1);
+    source.damages.resize(1);
+    auto& attack = source.damages[0];
+    attack.type = 1;
+    attack.flags = 0x22;
+    attack.radius = 0.5f;
+    attack.maxDistance = 6;
+    attack.minDot = -1;
+    attack.damage = 50;
+    attack.sfxIndex = 0;
+    attack.sfx = 1;
+    source.sounds.resize(2);
+    source.sounds[0].name = "LOOP";
+    source.sounds[0].life = 0.01f;
+    auto& impact = source.sounds[1];
+    impact.name = "HIT";
+    impact.life = 1;
+    impact.scale = radius / 5;
+    impact.impactRadius = radius;
+    impact.impactPhysicalFraction = 0.1f;
+    impact.impactElementalFraction = 0.9f;
+    impact.impactElement = element;
+    CritterRules rules;
+    rules.nativeImpactAreas = native;
+    f.data = CritterData::fromDecoded("TEST", source, 0, rules);
+    REQUIRE(f.data.sound(1)->impactRadius == radius);
+    REQUIRE(f.data.sound(1)->impactPhysicalFraction == 0.1f);
+    REQUIRE(f.data.sound(1)->impactElementalFraction == 0.9f);
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 0;
+    shot.origin = {0, 3, 0};
+    shot.scale = 2; // native wrappers use their fixed radius, not DAMG range * actor scale
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).scale == 2); // The flight still inherits its shooter.
+    f.step(0.02f);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "HIT");
+    CHECK(f.effects.effect(0).scale == Approx(radius / 5 * (native ? 1 : 2)));
+    const Vec3 landed = f.effects.effect(0).position;
+    const std::array probes{EnemyView{0, landed + Vec3{radius * 0.8f, -3, 0}, 0.05f, 6},
+                            EnemyView{1, landed + Vec3{radius + 1.4f, -3, 0}, 0.05f, 6}};
+    f.step(0.48f, probes);
+    const auto middle = f.projectiles.takeHits();
+    REQUIRE(middle.size() == (native ? 1 : 2));
+    for (const auto& hit : middle) {
+        CHECK(hit.flags == (native ? (0x20U | element) : 0x22U));
+        CHECK(hit.damage == Approx(native ? 50.0f : 12.75f));
+    }
+    f.step(0.4f, probes);
+    CHECK(f.projectiles.takeHits().empty());
+    const std::array centre{EnemyView{0, landed + Vec3{radius * 0.1f, -3, 0}, 0.05f, 6}};
+    f.step(0.05f, centre);
+    const auto tail = f.projectiles.takeHits();
+    REQUIRE(tail.size() == (native ? 1 : 0));
+    if (native)
+        CHECK(tail[0].damage == 50);
+}
+
 TEST_CASE("only the final flight morph clears the projectile's expanding impact damage",
           "[boss-projectiles][projectile-impact]") {
     Fixture f;
@@ -917,7 +989,7 @@ TEST_CASE("planted hand traps hold a fixed position, allow escape, and end their
         f.step(dt, players);
         for (const auto& hit : f.projectiles.takeHits()) {
             REQUIRE(hit.damage == 1);
-            REQUIRE(hit.flags == PlayerImpact::kSticky);
+            REQUIRE(hit.flags == damage::kSticky);
             REQUIRE(hit.direction == Vec3{0});
             ++hits;
         }
@@ -1011,7 +1083,7 @@ TEST_CASE("Lich's shipped hand trap aligns to the floor and morphs for five seco
     shot.damageIndex = 17;
     shot.origin = {0, 3, 0};
     REQUIRE(f.data.damage(17)->type == AttackDefinition::kTargetArea);
-    REQUIRE(f.data.damage(17)->flags == PlayerImpact::kSticky);
+    REQUIRE(f.data.damage(17)->flags == damage::kSticky);
     f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound, &floor);
     REQUIRE(f.projectiles.count() == 1);
     REQUIRE(f.effects.effect(0).name == "ATK14GENFX");
@@ -1175,7 +1247,7 @@ TEST_CASE("Lich and Spider Queen egg records request stage generators",
                                 REQUIRE((hit.flags & 0x170U) == 0); // faint tail cannot stagger
                             }
                         }
-                        REQUIRE((hit.flags & PlayerImpact::kSticky) == 0);
+                        REQUIRE((hit.flags & damage::kSticky) == 0);
                         const PlayerImpact impact{hit.flags, hit.direction};
                         REQUIRE(impact.reaction(hit.damage, 0, false) != PlayerDeed::Webbed);
                     }

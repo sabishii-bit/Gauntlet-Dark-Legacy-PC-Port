@@ -47,8 +47,8 @@ void prepareSumner(CharacterSave& save) {
     for (s32 potion = 0; potion < Inventory::kMostPotions; ++potion) {
         progress.inventory.potions.push_back(potion % kColorCount);
     }
-    progress.relics.runes = 0x1fff;
-    progress.relics.shards = 0x7fe;
+    progress.relics.runes = Relics::kAllRunes;
+    progress.relics.shards = Relics::kAllShards;
 }
 
 /** What is carried; only the powerup slots that hold something are written. */

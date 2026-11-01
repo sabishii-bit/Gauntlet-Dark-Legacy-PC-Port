@@ -28,12 +28,10 @@ function(gdl_patch_amuse_file source relative original_hash patched_hash)
         math(EXPR index "${index} + 1")
         string(FIND "${content}" "${before}" offset)
         if(offset LESS 0)
-            # A specifically authenticated older local patch may already have
-            # applied this replacement. The final full-file hash still gates it.
-            string(FIND "${content}" "${after}" already_applied)
-            if(already_applied LESS 0)
-                message(FATAL_ERROR "Amuse patch context missing: ${relative}")
-            endif()
+            # Authenticated intermediate revisions may already have applied
+            # this replacement or changed its context in a later replacement.
+            # The mandatory final full-file hash still gates the entire result;
+            # missing contexts never certify success.
         else()
             string(REPLACE "${before}" "${after}" content "${content}")
         endif()
@@ -249,8 +247,8 @@ void Sequencer::setCtrlValue(uint8_t chan, uint16_t ctrl, int8_t val) {
 ]=]
     )
     gdl_patch_amuse_file("${source}" "lib/SongState.cpp"
-        b02db28b1851159f54f80147427494fda2d106ec2f1e77f60576e39cf6bf9e93
-        d36409cfe36d683b18a13859b60a1533285a9f6c51f564b4f4dfa1f47dd77f6a
+        "b02db28b1851159f54f80147427494fda2d106ec2f1e77f60576e39cf6bf9e93;d36409cfe36d683b18a13859b60a1533285a9f6c51f564b4f4dfa1f47dd77f6a;f712eddd13fb96b929f30e2a236a46792bbefd48ae1b63d53d8ccc2b0727408a;f8a87b97531ec5908c6acfa7c7a5d288252f9be5acb2f80e17f9d8bee18a8321"
+        59529f78564fca434703fe03b3985d7e385151cfbbb548ced623bbed5c779962
         [=[          m_data = nullptr;
           break;
         }
@@ -366,6 +364,99 @@ void Sequencer::setCtrlValue(uint8_t chan, uint16_t ctrl, int8_t val) {
         m_data += 4;
 
 ]=]
+        # Keep scheduled region boundaries and tempo changes accurate. The
+        # final replacement below separates a looped pattern's activation
+        # clock from its earlier authored arrangement start.
+        [=[  m_curRegion = region;
+  uint32_t regionIdx]=]
+        [=[  m_curRegion = region;
+  const uint32_t regionTick = m_parent->m_bigEndian ? SBig(region->m_startTick) : region->m_startTick;
+  uint32_t regionIdx]=]
+        [=[m_nextPitchTick = m_curTick + delta.first;]=]
+        [=[m_nextPitchTick = regionTick + delta.first;]=]
+        [=[m_nextModTick = m_curTick + delta.first;]=]
+        [=[m_nextModTick = regionTick + delta.first;]=]
+        [=[void SongState::Track::resetTempo() {
+  if (m_parent->m_header.m_tempoTableOff != 0u) {
+    m_tempoPtr = reinterpret_cast<const TempoChange*>(m_parent->m_songData + m_parent->m_header.m_tempoTableOff);
+  } else {
+    m_tempoPtr = nullptr;
+  }
+}]=]
+        [=[void SongState::Track::resetTempo() {
+  m_tempo = m_parent->m_header.m_initialTempo & 0x7fffffff;
+  if (m_parent->m_header.m_tempoTableOff != 0u) {
+    m_tempoPtr = reinterpret_cast<const TempoChange*>(m_parent->m_songData + m_parent->m_header.m_tempoTableOff);
+    while (m_tempoPtr->m_tick != 0xffffffff) {
+      TempoChange change = *m_tempoPtr;
+      if (m_parent->m_bigEndian) change.swapBig();
+      if (change.m_tick > m_curTick) break;
+      m_tempo = change.m_tempo & 0x7fffffff;
+      ++m_tempoPtr;
+    }
+  } else {
+    m_tempoPtr = nullptr;
+  }
+}]=]
+        [=[  double ticksPerSecond = static_cast<double>(m_tempo) * 384 / 60;
+  uint32_t ticks]=]
+        [=[  double ticksPerSecond = static_cast<double>(m_tempo) * 384 / 60;
+  seq.setTempo(m_midiChan, ticksPerSecond);
+  uint32_t ticks]=]
+        [=[    m_lastN64EventTick = absTick;
+    m_data += 4;
+  }
+}]=]
+        [=[    m_lastN64EventTick = absTick;
+    m_data += 4;
+  }
+  m_eventWaitCountdown += int32_t(regionTick) - int32_t(m_curTick);
+}]=]
+        [=[          seq.keyOn(m_midiChan, note, vel);
+          if (length == 0) {
+            seq.keyOff(m_midiChan, note, 0);
+          }
+          m_remNoteLengths[note] = length;]=]
+        [=[          const int remaining = int(length) + std::min(m_eventWaitCountdown, 0);
+          if (remaining > 0 || (length == 0 &&
+              m_eventWaitCountdown >= -int32_t(endTick - m_curTick))) {
+            seq.keyOn(m_midiChan, note, vel);
+            if (remaining <= 0) {
+              seq.keyOff(m_midiChan, note, 0);
+            }
+            m_remNoteLengths[note] = std::max(remaining, 0);
+          }]=]
+        [=[      if (uint32_t(endTick) > loopEndTick) {
+        m_nextRegion]=]
+        [=[      if (uint32_t(endTick) >= loopEndTick) {
+        // Carry the fractional update past the loop boundary. Discarding it
+        // makes independent tracks drift apart on each repetition.
+        m_remDt += (endTick - loopEndTick) / ticksPerSecond;
+        m_nextRegion]=]
+        [=[    if (ticks <= 0) {
+      /* Turn over tempo */]=]
+        [=[    if (m_curTick >= change.m_tick) {
+      /* Turn over tempo */]=]
+        [=[  m_remDt -= ticks / ticksPerSecond;]=]
+        [=[  if (m_parent->m_loop) {
+    const TrackRegion* terminator = m_nextRegion;
+    while (terminator->indexValid(m_parent->m_bigEndian)) ++terminator;
+    if (terminator->indexLoop(m_parent->m_bigEndian) >= 0) {
+      const uint32_t loopEnd = m_parent->m_bigEndian ? SBig(terminator->m_startTick) : terminator->m_startTick;
+      if (loopEnd >= m_curTick) ticks = std::min(ticks, loopEnd - m_curTick);
+    }
+  }
+  m_remDt -= ticks / ticksPerSecond;]=]
+        [=[        m_remDt += (endTick - loopEndTick) / ticksPerSecond;
+]=]
+        [=[]=]
+        [=[  const uint32_t regionTick = m_parent->m_bigEndian ? SBig(region->m_startTick) : region->m_startTick;]=]
+        [=[  const uint32_t scheduledTick = m_parent->m_bigEndian ? SBig(region->m_startTick) : region->m_startTick;
+  // N64 MusyX resets the pattern clock independently of the arrangement clock
+  // (game.bin e0081cdc / e0081300 / e0081760). A loop may select a region
+  // authored before the loop point; its notes restart, rather than being sought
+  // past. cathy2a uses this to repeat its organ phrase over the later backing.
+  const uint32_t regionTick = std::max(scheduledTick, m_curTick);]=]
     )
     gdl_patch_amuse_file("${source}" "lib/Voice.cpp"
         "8e4d642fb016dbee180a84ef2ed4b63ca7261b66ef3adb4fddda192f1aea210f;0ec9acab898403ccb1e5f97eb9d8c3fe1019b8b89f7b823076722efac97c64a5"

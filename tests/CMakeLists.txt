@@ -4,6 +4,7 @@ find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 include(Catch)
+add_subdirectory(expansions/audio)
 
 # Detailed state comparisons retain legacy capture/catalog codecs only in tests.
 # No production target links these snapshots or their compression dependency.
@@ -65,17 +66,29 @@ target_link_libraries(game_diagnostics PUBLIC gdl::game PRIVATE lz4::lz4)
 gdl_apply_compiler_options(game_diagnostics)
 
 add_executable(tests
-    game/level/LegendsUnlocksTests.cpp
-    game/level/LegendsPortalAppearanceTests.cpp
-    game/bosses/LegendsBossesTests.cpp
-    game/bosses/LegendsBossIntegrationTests.cpp
-    game/critters/LegendsCrittersTests.cpp
-    game/enemies/LegendsActorsTests.cpp
-    game/enemies/LevelOpponentsLegendsTests.cpp
-    game/scenes/LegendsLevelProgressTests.cpp
-    game/scenes/LegendsSceneArenaTests.cpp
-    game/scenes/LegendsArenaCombatTests.cpp
-    game/scenes/LegendsBossRewardsTests.cpp
+    expansions/n64/level/LegendsUnlocksTests.cpp
+    expansions/n64/level/LegendsPortalAppearanceTests.cpp
+    expansions/n64/bosses/LegendsBossesTests.cpp
+    expansions/n64/bosses/LegendsBossIntegrationTests.cpp
+    expansions/n64/bosses/LegendsBossAssetsTests.cpp
+    expansions/n64/bosses/LegendsPlagueTests.cpp
+    expansions/n64/formats/LegendsPlagueMaterialTests.cpp
+    expansions/n64/bosses/LegendsLegendTests.cpp
+    expansions/n64/enemies/LegendsDeathTests.cpp
+    expansions/n64/scenes/LegendsDeathIntegrationTests.cpp
+    expansions/n64/bosses/LegendsBossMeleeTests.cpp
+    expansions/n64/bosses/LegendsBossBreathTests.cpp
+    expansions/n64/bosses/LegendsSkorneGameplayTests.cpp
+    expansions/n64/level/LegendsBossEruptionTests.cpp
+    expansions/n64/formats/LegendsN64CritterTests.cpp
+    expansions/n64/critters/LegendsCrittersTests.cpp
+    expansions/shared/enemies/LegendsActorsTests.cpp
+    expansions/n64/enemies/LevelOpponentsLegendsTests.cpp
+    expansions/n64/scenes/LegendsLevelProgressTests.cpp
+    expansions/n64/scenes/LegendsSceneArenaTests.cpp
+    expansions/n64/scenes/LegendsArenaCombatTests.cpp
+    expansions/n64/scenes/LegendsBossRewardsTests.cpp
+    expansions/n64/scenes/LegendsBossAudioTests.cpp
     engine/io/NativeStateDigestTests.cpp
     game/scenes/PlayerNativeStateTests.cpp
     game/enemies/EnemyMissilesNativeDigestTests.cpp
@@ -284,11 +297,8 @@ add_executable(tests
     engine/assets/SoundSetTests.cpp
     engine/audio/SoundPlayerTests.cpp
     engine/audio/AdsStreamTests.cpp
-    engine/audio/DreamcastStreamTests.cpp
-    engine/audio/N64LegendsStreamTests.cpp
-    engine/audio/N64LegendsEffectsTests.cpp
-    game/audio/LegendsSoundsTests.cpp
-    game/audio/LegendsOpponentSoundsTests.cpp
+    expansions/dreamcast/audio/DreamcastStreamTests.cpp
+    expansions/n64/audio/LegendsOpponentSoundsTests.cpp
     engine/audio/MusicDeclickerTests.cpp
     engine/audio/StreamPlaylistTests.cpp
     engine/assets/ModelSetTests.cpp
@@ -336,6 +346,9 @@ add_executable(tests
     game/camera/FreeCameraTests.cpp
     game/players/NoclipMotionTests.cpp
     game/scenes/SceneSelectionTests.cpp
+    game/scenes/ScenePickingTests.cpp
+    game/scenes/SeatCamerasTests.cpp
+    game/scenes/TowerCeremoniesTests.cpp
     engine/world/SelectionHighlightTests.cpp
     game/level/SkorneArenaTests.cpp
     game/level/FallingPieceTests.cpp
@@ -359,61 +372,77 @@ add_executable(tests
     engine/ui/CanvasTests.cpp
     engine/ui/TextPainterTests.cpp
     formats/ModelArchiveTests.cpp
-    formats/LegendsMapTests.cpp
-    formats/LegendsDreamcastMapTests.cpp
-    formats/LegendsDreamcastTextureTests.cpp
-    formats/LegendsN64TextureTests.cpp
-    game/scenes/LegendsPreviewTests.cpp
-    game/scenes/LegendsPlayableTests.cpp
-    game/scenes/LegendsTraversalTests.cpp
-    game/scenes/LegendsMusicTests.cpp
-    game/scenes/LegendsMapCatalogTests.cpp
-    game/scenes/LegendsSceneAdapterTests.cpp
-    game/scenes/LegendsSceneTrapsTests.cpp
-    game/scenes/LegendsLevelEffectsTests.cpp
-    game/scenes/LegendsMotionSoundsTests.cpp
-    game/scenes/LegendsInitialPoseTests.cpp
+    expansions/n64/formats/LegendsMapTests.cpp
+    expansions/dreamcast/formats/LegendsDreamcastMapTests.cpp
+    expansions/dreamcast/formats/LegendsDreamcastTextureTests.cpp
+    expansions/n64/formats/LegendsN64TextureTests.cpp
+    expansions/shared/scenes/LegendsPreviewTests.cpp
+    expansions/n64/scenes/LegendsPlayableTests.cpp
+    expansions/shared/scenes/LegendsTraversalTests.cpp
+    expansions/dreamcast/scenes/LegendsMusicTests.cpp
+    expansions/shared/scenes/LegendsMapCatalogTests.cpp
+    expansions/shared/scenes/LegendsSceneAdapterTests.cpp
+    expansions/shared/scenes/LegendsFixtureSelectionTests.cpp
+    expansions/n64/scenes/LegendsSceneTrapsTests.cpp
+    expansions/n64/scenes/LegendsLevelEffectsTests.cpp
+    expansions/dreamcast/scenes/LegendsInitialPoseTests.cpp
     game/level/ItemFigureTextureLendersTests.cpp
     engine/assets/DecodedAssetsTests.cpp
-    formats/LegendsDreamcastSceneTests.cpp
-    formats/LegendsN64SceneTests.cpp
-    formats/LegendsN64CameraTests.cpp
-    game/camera/LegendsCameraTests.cpp
-    formats/LegendsN64TowerTests.cpp
-    formats/LegendsN64ProgressTests.cpp
-    formats/LegendsN64GatesTests.cpp
-    formats/LegendsN64TrapsTests.cpp
-    game/level/LegendsTowerProgressTests.cpp
-    game/level/LegendsTowerPortalsTests.cpp
-    game/level/LegendsGatesTests.cpp
-    formats/LegendsN64PortalTests.cpp
-    game/level/LegendsPortalsTests.cpp
-    formats/LegendsN64MorphTests.cpp
-    game/level/LegendsTowerMotionTests.cpp
+    expansions/dreamcast/formats/LegendsDreamcastSceneTests.cpp
+    expansions/n64/formats/LegendsN64SceneTests.cpp
+    expansions/n64/formats/LegendsN64CameraTests.cpp
+    expansions/n64/camera/LegendsCameraTests.cpp
+    expansions/n64/level/LegendsObeliskTests.cpp
+    expansions/n64/formats/LegendsN64AmbientTests.cpp
+    expansions/n64/audio/LegendsAmbientTests.cpp
+    expansions/n64/scenes/LegendsAmbientPlaybackTests.cpp
+    expansions/n64/scenes/LegendsEntryTests.cpp
+    expansions/n64/formats/LegendsN64TowerTests.cpp
+    expansions/n64/formats/LegendsN64ProgressTests.cpp
+    expansions/n64/formats/LegendsN64GatesTests.cpp
+    expansions/n64/formats/LegendsN64TrapsTests.cpp
+    expansions/n64/level/LegendsTowerProgressTests.cpp
+    expansions/n64/level/LegendsTowerPortalsTests.cpp
+    expansions/n64/level/LegendsGatesTests.cpp
+    expansions/n64/formats/LegendsN64PortalTests.cpp
+    expansions/n64/level/LegendsPortalsTests.cpp
+    expansions/n64/formats/LegendsN64MorphTests.cpp
+    expansions/n64/level/LegendsTowerMotionTests.cpp
+    expansions/n64/level/LegendsSumnerTests.cpp
+    expansions/n64/scenes/LegendsSumnerTextTests.cpp
+    expansions/n64/scenes/LegendsSumnerIntegrationTests.cpp
     game/level/ImportedLevelWorldTests.cpp
     game/scenes/ImportedPlaySceneTests.cpp
-    game/scenes/LegendsGameplayTests.cpp
-    game/scenes/LegendsTowerTests.cpp
-    game/scenes/LegendsRidersTests.cpp
-    game/scenes/LegendsProgressionTests.cpp
-    game/scenes/LegendsWorldPresentationTests.cpp
-    formats/LegendsSceneMotionTests.cpp
-    game/scenes/LegendsN64MusicTests.cpp
-    game/characters/LegendsProgressTests.cpp
-    game/characters/LegendsVisitTests.cpp
-    game/level/LegendsItemsTests.cpp
-    game/level/LegendsN64ItemsTests.cpp
-    game/level/LegendsContainersTests.cpp
-    game/level/LegendsBlastTests.cpp
-    game/level/LegendsTrapsTests.cpp
-    game/enemies/LegendsGeneratorsTests.cpp
+    expansions/n64/scenes/LegendsGameplayTests.cpp
+    expansions/n64/scenes/LegendsTowerTests.cpp
+    expansions/n64/scenes/LegendsRidersTests.cpp
+    expansions/n64/scenes/LegendsBattleSwitchTests.cpp
+    expansions/n64/scenes/LegendsProgressionTests.cpp
+    expansions/n64/bosses/LegendsChimeraTests.cpp
+    expansions/n64/bosses/LegendsChimeraTargetingTests.cpp
+    expansions/n64/menu/LegendsDialogueTests.cpp
+    expansions/n64/scenes/LegendsWorldPresentationTests.cpp
+    expansions/dreamcast/formats/LegendsSceneMotionTests.cpp
+    expansions/n64/scenes/LegendsN64MusicTests.cpp
+    expansions/shared/characters/LegendsProgressTests.cpp
+    expansions/shared/characters/LegendsVisitTests.cpp
+    expansions/shared/level/LegendsItemsTests.cpp
+    expansions/n64/level/LegendsN64ItemsTests.cpp
+    expansions/n64/level/LegendsContainersTests.cpp
+    expansions/n64/level/LegendsBlastTests.cpp
+    expansions/n64/level/LegendsTrapsTests.cpp
+    expansions/n64/level/LegendsSceneryTests.cpp
+    expansions/n64/scenes/LegendsSceneSceneryTests.cpp
+    expansions/n64/enemies/LegendsGeneratorsTests.cpp
+    expansions/n64/enemies/LegendsEnemyAssetsTests.cpp
+    expansions/n64/enemies/LegendsEnemySoundsTests.cpp
     game/party/ImportedTargetsTests.cpp
-    formats/LegendsN64TextTests.cpp
-    formats/LegendsN64SwitchesTests.cpp
-    game/level/LegendsSwitchesTests.cpp
-    game/level/LegendsLootSelectorsTests.cpp
-    game/level/LegendsWorldMotionTests.cpp
-    game/level/LegendsDreamcastItemsTests.cpp
+    expansions/n64/formats/LegendsN64TextTests.cpp
+    expansions/n64/formats/LegendsN64SwitchesTests.cpp
+    expansions/n64/level/LegendsSwitchesTests.cpp
+    expansions/n64/level/LegendsLootSelectorsTests.cpp
+    expansions/n64/level/LegendsWorldMotionTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastItemsTests.cpp
     formats/GcTextureTests.cpp
     formats/FontFileTests.cpp
     formats/TextRomTests.cpp
@@ -517,6 +546,7 @@ add_executable(tests
     game/camera/CameraShakeTests.cpp
     game/critters/CritterAttackSelectionTests.cpp
     game/critters/CritterAreaTests.cpp
+    game/critters/CritterPressureTests.cpp
     game/critters/CritterMovementTests.cpp
     game/critters/CritterPatrolTests.cpp
     game/critters/CritterStatuesTests.cpp
@@ -603,7 +633,7 @@ add_executable(gameplayregressions
     game/scenes/PlaySceneSwitchTests.cpp game/level/TriggerCuesTests.cpp
     engine/world/WorldAnimatorTests.cpp
     fixtures/NativeModelFixture.cpp fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
-target_link_libraries(gameplayregressions PRIVATE gdl::game Catch2::Catch2WithMain)
+target_link_libraries(gameplayregressions PRIVATE game_diagnostics gdl::game Catch2::Catch2WithMain)
 target_include_directories(gameplayregressions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(gameplayregressions PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
@@ -933,8 +963,35 @@ target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestT
     game/netplay/OnlineNativeBootstrapTests.cpp game/netplay/NativeOnlinePlayTests.cpp
     game/app/NativeOnlineIdentityTests.cpp game/app/NumericWitnessTests.cpp game/audio/SpeechTimingTests.cpp)
 target_link_libraries(tests PRIVATE Vulkan::Headers volk::volk GPUOpen::VulkanMemoryAllocator)
-target_link_libraries(tests PRIVATE gdl::legends_audio_native)
-gdl_configure_legends_audio_source(engine/audio/N64LegendsEffectsTests.cpp)
+target_link_libraries(tests PRIVATE gdl::expansion_formats gdl::expansion_audio)
+target_sources(tests PRIVATE
+    expansions/ExpansionIsolationTests.cpp
+    expansions/shared/audio/RestoredSpeechTests.cpp
+    expansions/n64/audio/LegendsAnnouncementsTests.cpp
+    expansions/n64/audio/LegendsAnnouncementIntegrationTests.cpp
+    expansions/n64/audio/MortBankTests.cpp)
+if(GDL_LEGENDS_AUDIO)
+    target_sources(tests PRIVATE
+        expansions/n64/audio/N64LegendsStreamTests.cpp
+        expansions/n64/audio/N64SongTimingTests.cpp
+        expansions/n64/audio/N64LegendsEffectsTests.cpp
+        expansions/n64/audio/LegendsSoundsTests.cpp
+        expansions/n64/audio/LegendsSpeechTests.cpp
+        expansions/n64/scenes/LegendsMotionSoundsTests.cpp)
+    target_link_libraries(tests PRIVATE gdl::legends_audio_native)
+    gdl_configure_legends_audio_source(expansions/n64/audio/N64LegendsEffectsTests.cpp)
+    gdl_configure_legends_audio_source(expansions/n64/audio/N64SongTimingTests.cpp)
+    # Sequence timing is independent of gameplay and installed game assets.
+    add_executable(legends_song_timing_tests expansions/n64/audio/N64SongTimingTests.cpp)
+    target_link_libraries(legends_song_timing_tests PRIVATE
+        Catch2::Catch2WithMain gdl::legends_audio_native)
+    gdl_apply_compiler_options(legends_song_timing_tests)
+    set_target_properties(legends_song_timing_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>" FOLDER "tests")
+    add_test(NAME legends_song_timing COMMAND legends_song_timing_tests)
+else()
+    target_sources(tests PRIVATE expansions/n64/audio/N64LegendsDisabledTests.cpp)
+endif()
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(tests PRIVATE
     VK_NO_PROTOTYPES
@@ -953,7 +1010,7 @@ endif()
 set_target_properties(tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>"
     FOLDER "tests")
-add_dependencies(tests gauntlet_shaders)
+add_dependencies(tests gauntlet_shaders expansion_audio_tests)
 
 # Unit tests are discovered individually; the GPU integration tests run as one
 # CTest entry labelled "gpu" so machines without a display can skip them

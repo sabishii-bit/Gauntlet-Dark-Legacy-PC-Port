@@ -5,6 +5,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/EffectFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantBreath.h"
 namespace gdl::game {
@@ -46,7 +47,8 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     case AttackDefinition::kBreath:
         // CritterFirePlayerCollide uses the selected animation node, falling
         // back to the model root, not the actor's collision/attention offset.
-        breath = CombatantBreath::fromNode(attachmentTransform(critter, move.colnode), *damage);
+        breath = CombatantBreath::fromNode(attachmentTransform(critter, move.colnode), *damage,
+                                           critter.definition->rules().worldAxisBreathPitch);
         centre = breath->origin;
         break;
     default: return;
@@ -54,8 +56,11 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     // A blow lands every update of its window, held off by the player's hit gap; a ring or
     // a targeted area once a move.
     const bool gated = breath.has_value() || damage->type == AttackDefinition::kBlow;
+    const bool tracksPressure = critter.definition->rules().pressureReferenceDamage > 0 &&
+                                critter.definition->kind() == CombatantKind::Boss &&
+                                (breath.has_value() || damage->type == AttackDefinition::kBlow);
     for (const EnemyView& view : players) {
-        if (view.hidden || !view.damageable ||
+        if (view.hidden || (!view.damageable && !tracksPressure) ||
             (!gated && std::ranges::find(critter.struckThisMove, view.player) !=
                            critter.struckThisMove.end())) {
             continue;
@@ -81,6 +86,15 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
                      std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
         }
         if (!within) {
+            continue;
+        }
+        if (tracksPressure) {
+            // The source contact consumer records raw DAMG damage after calling
+            // player damage, even when armor or immunity prevents health loss.
+            // Projectile dispatch is a separate path and does not enter this ledger.
+            m_sim.pressure.note(view.player, damage->damage);
+        }
+        if (!view.damageable) {
             continue;
         }
         CombatBlow blow;
@@ -123,12 +137,17 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
                   Vec3{body * Vec4{damage->offset, 0.0f}};
     shot.forward = Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
     if (const EnemyView* target = viewOf(players, critter.moveTarget); target != nullptr) {
-        shot.target = target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
+        const f32 height = critter.definition->rules().projectileTargetHeight;
+        shot.target =
+            target->position + Vec3{0.0f, height >= 0 ? height : 0.5f * target->height, 0.0f};
     }
     shot.rate = attackRate(critter);
     shot.scale = critter.scale;
     shot.damageScale = m_sim.scales.damage;
     shot.endVisual = critter.stock->definition.projectileEndVisual;
+    if (damage->speed > 0) {
+        shot.birthLife = critter.stock->projectileLifetime;
+    }
     if ((damage->behaviorFlags & AttackDefinition::kCurbed) != 0 && critter.curbSeconds > 0.0f) {
         shot.birthLife = critter.curbSeconds;
     }
@@ -169,12 +188,12 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         if (record == nullptr) {
             break;
         }
-        if ((record->flags & 0x400U) != 0) {
+        if ((record->flags & effect_flags::kHidesBody) != 0) {
             critter.hidden = true;
         }
         CombatCue out;
         out.critter = id;
-        const bool skin = (record->flags & CombatEffectDefinition::kSkin) != 0;
+        const bool skin = (record->flags & effect_flags::kSkin) != 0;
         if (skin) {
             critter.skin = record;
             critter.skinAge = 0;
@@ -193,27 +212,31 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         out.life = record->life;
         // CritterDoSfxSub maps SFXX 0x800000 to StartFXTree's 0x20000000:
         // play once even with a positive lifetime (Garm's death body lasts 300s).
-        out.loop = (record->flags & CombatEffectDefinition::kNoLoop) == 0;
+        out.loop = (record->flags & effect_flags::kNoLoop) == 0;
         const Vec3 offset = record->offset + (damage != nullptr ? damage->offset : Vec3{0});
         if (damage != nullptr) {
             out.pitchYaw = {damage->pitch, damage->yaw};
         }
         out.follows = record->follows();
-        out.shakes = (record->flags & CombatEffectDefinition::kShakes) != 0;
-        out.arena = (record->flags & CombatEffectDefinition::kArenaCue) != 0;
-        out.untilNextMove = (record->flags & CombatEffectDefinition::kUntilNextMove) != 0;
+        out.shakes = (record->flags & effect_flags::kShakes) != 0;
+        out.arena = (record->flags & effect_flags::kArenaCue) != 0;
+        out.untilNextMove = (record->flags & effect_flags::kUntilNextMove) != 0;
         critter.moveEffect |= out.untilNextMove;
         // Without a root/entity/global parenting override, a move effect uses its
         // active animated node. Hit marks have no requested attachment.
-        constexpr u32 kAlternateParent = 0x2000U | 0x800U | 0x80U | 0x40U | 1U;
-        // SFXX 0x800 selects the animation root's parent; bit 1 selects the
-        // animated root itself. Garm's hand-ball tracks rely on that root's lift.
-        const bool root = (record->flags & 0x801U) != 0 && (record->flags & (0x2000U | 0x40U)) == 0;
+        constexpr u32 kAlternateParent = effect_flags::kOtherParent | effect_flags::kRootParent |
+                                         effect_flags::kAtInitialRoot | effect_flags::kDetached |
+                                         effect_flags::kBodyParent;
+        // Garm's hand-ball tracks rely on the animated root's lift.
+        const bool root =
+            record->follows() &&
+            (record->flags & (effect_flags::kOtherParent | effect_flags::kDetached)) == 0;
         if (root && !out.tree.empty()) {
             const usize rootIndex = critter.branch.value_or(0);
             const auto& nodes = critter.stock->tree->nodes;
-            const s32 attachment = (record->flags & 0x800U) != 0 ? nodes[rootIndex].parent
-                                                                 : static_cast<s32>(rootIndex);
+            const s32 attachment = (record->flags & effect_flags::kRootParent) != 0
+                                       ? nodes[rootIndex].parent
+                                       : static_cast<s32>(rootIndex);
             out.rootAttachment = attachment < 0;
             Mat4 parent = modelTransform(critter);
             if (attachment >= 0) {
@@ -225,7 +248,7 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             out.position = Vec3{parent * Vec4{offset, 1.0f}};
             out.scale = record->scale;
             out.follows = true;
-        } else if ((record->flags & 0x80U) != 0 && (record->flags & 0x801U) == 0) {
+        } else if ((record->flags & effect_flags::kAtInitialRoot) != 0 && !record->follows()) {
             out.position = critter.initialRoot + record->offset * critter.scale;
             out.follows = false;
             out.yaw = 0;
@@ -236,7 +259,7 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             out.position = Vec3{attachmentTransform(critter, *node) * Vec4{offset, 1.0f}};
             out.scale = record->scale; // creature scale is already in the parent matrix
             out.follows = true;
-        } else if ((record->flags & 0x40U) != 0) {
+        } else if ((record->flags & effect_flags::kDetached) != 0) {
             // A move's unattached effect is placed at the active node once. Damage
             // cues instead supply their already-resolved world point in position.
             out.position =

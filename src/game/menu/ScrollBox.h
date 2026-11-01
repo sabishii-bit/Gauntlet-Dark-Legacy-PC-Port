@@ -13,6 +13,7 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/menu/BurnDialogueScroll.h"
+#include "game/menu/DialoguePresentation.h"
 
 namespace gdl::game {
 
@@ -52,16 +53,7 @@ public:
     static constexpr Color kGlowColor = Color::rgba(130, 0, 234);
     static constexpr Color kTextColor = Color::rgba(22, 12, 3); ///< ink on the parchment
 
-    struct PageLayout {
-        template <class Visitor>
-        friend void visitNativeState(Visitor& visitor, const PageLayout& value) {
-            visitor.template fields<4>(value);
-        }
-        std::vector<std::string> lines;
-        Rect area;
-        s32 textTop = 0;
-        s32 promptY = 0;
-    };
+    using PageLayout = DialoguePage;
 
 private:
     struct Simulation {
@@ -97,6 +89,11 @@ public:
     void setText(const TextPainter* text) {
         m_localBinding = std::make_shared<const u8>(0);
         m_text = text;
+    }
+    void setPresentation(const DialoguePresentation* presentation) {
+        close();
+        m_localBinding = std::make_shared<const u8>(0);
+        m_presentation = presentation;
     }
 
     /** Unrolls over `pages`, drawn at `scale`, with `prompt` under each; false without text
@@ -145,6 +142,7 @@ private:
 
     ScrollBoxArt m_art;
     const TextPainter* m_text = nullptr;
+    const DialoguePresentation* m_presentation = nullptr;
     BurnDialogueScroll m_fire;
     std::vector<std::unique_ptr<Texture>> m_burnFrames;
     Simulation m_sim;

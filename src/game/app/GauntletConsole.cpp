@@ -10,12 +10,16 @@
 #include "engine/assets/WorldData.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Log.h"
+#include "engine/io/File.h"
 #include "engine/math/Math.h"
 #include "engine/platform/Paths.h"
+#include "expansions/n64/level/LegendsUnlocks.h"
+#include "expansions/shared/scenes/LegendsLevel.h"
 
 #include "game/app/Gauntlet.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
+#include "game/console/ConsoleCommands.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyKinds.h"
@@ -25,7 +29,6 @@
 #include "game/menu/MenuInput.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/NoclipMotion.h"
-#include "game/console/ConsoleCommands.h"
 #include "game/scenes/SceneSelection.h"
 
 namespace gdl::game {
@@ -38,8 +41,7 @@ void Gauntlet::setUpConsole() {
     m_console.print("Type help for the commands.");
     m_console.setPolicy(
         [this](std::string_view name) {
-            if (name == "party_count" || name == "activate" || name == "unlock" ||
-                name == "lock") {
+            if (name == "party_count" || name == "activate" || name == "unlock" || name == "lock") {
                 return !m_online && !m_netplay; // the level's own state: offline only
             }
             if (m_legendsPreview.isOpen()) {
@@ -339,12 +341,12 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
         const LevelTrigger& trigger = consoleWorld()->triggers().trigger(static_cast<usize>(id));
         lines.push_back(std::format("{} {}: switch {} of {}", selection.token(), entry.name, id,
                                     consoleWorld()->ref().name));
-        lines.push_back(std::format(
-            "{}; id {}; drives {}; {}{}{}{}", place(Vec3{trigger.placement[3]}), entry.id,
-            entry.target.empty() ? std::string("nothing") : entry.target,
-            entry.fired ? "fired" : "waiting", entry.shootable ? ", shootable" : "",
-            entry.chained ? ", fired through another" : "",
-            entry.enabled ? "" : ", not for this party"));
+        lines.push_back(
+            std::format("{}; id {}; drives {}; {}{}{}{}", place(Vec3{trigger.placement[3]}),
+                        entry.id, entry.target.empty() ? std::string("nothing") : entry.target,
+                        entry.fired ? "fired" : "waiting", entry.shootable ? ", shootable" : "",
+                        entry.chained ? ", fired through another" : "",
+                        entry.enabled ? "" : ", not for this party"));
         lines.emplace_back("activate $SELECTED presses it");
         break;
     }
@@ -361,7 +363,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
         lines.push_back(std::format("{} {}: door {} of {}", selection.token(), name, id,
                                     consoleWorld()->ref().name));
         lines.push_back(std::format("{}; {}", place(gate.figure.position()),
-                                    gate.state == LockedGates::kShut ? "shut: a key opens it"
+                                    gate.state == LockedGates::kShut      ? "shut: a key opens it"
                                     : gate.state == LockedGates::kOpening ? "swinging open"
                                                                           : "open"));
         lines.emplace_back("unlock $SELECTED opens it without a key; lock $SELECTED shuts it");
@@ -379,17 +381,30 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
             ConsoleCommands::instanceName(consoleWorld()->layout(), chest.instance);
         lines.push_back(std::format("{} {}: chest {} of {}", selection.token(), name, id,
                                     consoleWorld()->ref().name));
-        lines.push_back(std::format(
-            "{}; {}{}", place(chest.figure.position()),
-            chest.state == Chests::kShut ? (chest.locked ? "shut: a key opens it" : "shut: unlocked")
-            : chest.state == Chests::kOpening ? "opening"
-                                               : "open",
-            chest.gone ? ", gone" : ""));
+        lines.push_back(std::format("{}; {}{}", place(chest.figure.position()),
+                                    chest.state == Chests::kShut
+                                        ? (chest.locked ? "shut: a key opens it" : "shut: unlocked")
+                                    : chest.state == Chests::kOpening ? "opening"
+                                                                      : "open",
+                                    chest.gone ? ", gone" : ""));
         lines.emplace_back("unlock $SELECTED lets it open without a key; lock $SELECTED asks one");
         break;
     }
     case Kind::Object: {
         const LevelWorld& world = *consoleWorld();
+        if (const auto* imported = world.imported()) {
+            if (const auto object = imported->object(id)) {
+                lines.push_back(std::format("{} {}: object {} of {}", selection.token(),
+                                            object->name, id, world.ref().name));
+                lines.push_back(place(object->position));
+                lines.push_back(std::format("flags {:#x}; draw flags {:#x}; {} triangles; {}",
+                                            object->flags, object->drawFlags, object->triangles,
+                                            object->visible ? "shown" : "hidden"));
+            } else {
+                gone();
+            }
+            break;
+        }
         const auto& objects = world.layout().objects();
         if (id < 0 || static_cast<usize>(id) >= objects.size()) {
             lines.push_back(
@@ -817,7 +832,8 @@ std::vector<Gauntlet::ConsoleFixture> Gauntlet::consoleFixtures() const {
     const LockedGates& gates = scene->gates();
     for (usize i = 0; i < gates.size(); ++i) {
         if (gates.gate(i).shown) {
-            fixtures.push_back({SceneSelection::Kind::Gate, i,
+            fixtures.push_back({SceneSelection::Kind::Gate,
+                                i,
                                 {std::format("gate#{}", i),
                                  ConsoleCommands::instanceName(layout, gates.gate(i).instance)}});
         }
@@ -825,7 +841,8 @@ std::vector<Gauntlet::ConsoleFixture> Gauntlet::consoleFixtures() const {
     const Chests& chests = scene->chests();
     for (usize i = 0; i < chests.size(); ++i) {
         if (chests.chest(i).shown && !chests.chest(i).gone) {
-            fixtures.push_back({SceneSelection::Kind::Chest, i,
+            fixtures.push_back({SceneSelection::Kind::Chest,
+                                i,
                                 {std::format("chest#{}", i),
                                  ConsoleCommands::instanceName(layout, chests.chest(i).instance)}});
         }
@@ -895,8 +912,8 @@ void Gauntlet::consoleActivate(DevConsole& console, DevConsole::Arguments argume
             tokens += tokens.empty() ? "" : ", ";
             tokens += entries[index].token;
         }
-        console.print(std::format("{} names {} switches: {}; say which by its token",
-                                  arguments[0], found.size(), tokens));
+        console.print(std::format("{} names {} switches: {}; say which by its token", arguments[0],
+                                  found.size(), tokens));
         return;
     }
     const ConsoleCommands::SwitchEntry& entry = switches[found[0]];
@@ -922,8 +939,8 @@ void Gauntlet::consoleLock(DevConsole& console, DevConsole::Arguments arguments,
     if (request->character) {
         const auto index = classIndexOf(request->what);
         if (!index.has_value()) {
-            console.print(std::format("No character is coded {}; list characters names them",
-                                      request->what));
+            console.print(
+                std::format("No character is coded {}; list characters names them", request->what));
             return;
         }
         if (*index < kStartingClassCount) {
@@ -944,10 +961,11 @@ void Gauntlet::consoleLock(DevConsole& console, DevConsole::Arguments arguments,
                 }
             }
         }
-        console.print(std::format("{} {}{}", classCode(*index),
-                                  unlock ? "unlocked: the select screen offers it"
-                                         : "locked: the select screen hides it again",
-                                  written ? "" : " (for this session; the profile was not written)"));
+        console.print(
+            std::format("{} {}{}", classCode(*index),
+                        unlock ? "unlocked: the select screen offers it"
+                               : "locked: the select screen hides it again",
+                        written ? "" : " (for this session; the profile was not written)"));
         return;
     }
     if (consoleScene() == nullptr || !m_play || !m_play->scene.isOpen()) {
@@ -973,8 +991,8 @@ void Gauntlet::consoleLock(DevConsole& console, DevConsole::Arguments arguments,
             tokens += tokens.empty() ? "" : ", ";
             tokens += entries[index].token;
         }
-        console.print(std::format("{} names {} things: {}; say which by its token",
-                                  request->what, found.size(), tokens));
+        console.print(std::format("{} names {} things: {}; say which by its token", request->what,
+                                  found.size(), tokens));
         return;
     }
     const ConsoleFixture& fixture = fixtures[found[0]];
@@ -1260,8 +1278,8 @@ void Gauntlet::consoleGoto(DevConsole& console, DevConsole::Arguments arguments)
         if (!found.has_value()) {
             // A word that is neither a level nor an installed Legends map, as before the
             // Legends maps were taken: the levels are what list maps names first.
-            console.print(std::format("No level or Legends map named {}; list maps names them",
-                                      name));
+            console.print(
+                std::format("No level or Legends map named {}; list maps names them", name));
             return;
         }
         consoleLegendsOpen(console, found->first, found->second, !destination->preview);
@@ -1310,6 +1328,36 @@ void Gauntlet::consoleTravel(const LevelRef& level, std::optional<Vec3> position
 }
 
 void Gauntlet::consoleUnlockTower(DevConsole& console) {
+    if (auto* native = dynamic_cast<LegendsLevel*>(m_play->world.imported())) {
+        if (native->platform() != LegendsPlatform::N64) {
+            console.print("Native Dreamcast tower unlocking is not supported yet.");
+            return;
+        }
+        try {
+            const auto root = native->directory().parent_path().parent_path();
+            const auto program = AssetLocator{root}.find("_program/game.bin");
+            if (!program) {
+                console.print("The native N64 unlock table is unavailable.");
+                return;
+            }
+            const auto unlocks = LegendsN64Unlocks::decode(readFile(*program));
+            s32 changed = 0;
+            for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
+                if (auto* save = m_play->scene.liveSave(player)) {
+                    if (unlocks.unlockAll(save->progress().legendsProgress(LegendsPlatform::N64))) {
+                        ++changed;
+                    }
+                }
+            }
+            // Native gates observe the live union on the next gameplay tick.
+            // Never reopen the Dark Legacy tower or mutate its crystal/relic bits.
+            console.print(std::format("The N64 tower stands open to {} character{}.", changed,
+                                      changed == 1 ? "" : "s"));
+        } catch (const std::exception& error) {
+            console.print(std::format("Native tower unlock failed: {}", error.what()));
+        }
+        return;
+    }
     s32 opened = 0;
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         if (CharacterSave* save = m_play->scene.liveSave(player)) {

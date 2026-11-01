@@ -14,6 +14,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/config/GameConfig.h"
 #include "game/enemies/Enemies.h"
 #include "game/scenes/PlayScene.h"
@@ -48,7 +49,7 @@ TEST_CASE("Stop Time holds native looping platforms through entry and switch cam
         cameraShot ? Vec3{40.828125f, 10.0703125f, -88.390625f} : Vec3{18.8f, 0.2f, 0.7f};
     CharacterSave save;
     save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 60);
-    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
     const std::array party{PartyMember{0, save}};
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));

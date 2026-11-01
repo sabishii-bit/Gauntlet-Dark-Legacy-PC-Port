@@ -2400,4 +2400,68 @@ TEST_CASE(
     CHECK(world.triggers().opened(kDoor4));
 }
 
+TEST_CASE("every trigger subtype takes the item setup's kind flags, whatever the instance adds",
+          "[triggers][trigger-kinds]") {
+    // SetItem (items.c 6877-6891): subtypes 20-23 and 25-29 carry their kind's own flags, any
+    // other the instance's flag word with 8 added; the word's high byte is always kept. The
+    // word is read unsigned (zero-extended), as LevelTriggers reads it.
+    struct Row {
+        s32 subtype;
+        u32 flags;
+    };
+    constexpr std::array<Row, 9> kOwnFlags{{{20, 0x10},
+                                            {21, 0x8},
+                                            {22, 0x12},
+                                            {23, 0xA},
+                                            {25, 0x804},
+                                            {26, 0x2},
+                                            {27, 0x80C},
+                                            {28, 0x9},
+                                            {29, 0xA}}};
+    constexpr std::array<s32, 17> kSubtypes{-1, 0,  19, 20, 21, 22, 23, 24, 25,
+                                            26, 27, 28, 29, 30, 31, 32, 255};
+    constexpr std::array<u32, 11> kWords{0x0000, 0x0001, 0x0040, 0x00FF, 0x0400, 0x0800,
+                                         0x1000, 0x2000, 0x8000, 0xFF00, 0xFFFF};
+    std::string infos;
+    std::string instances;
+    for (usize s = 0; s < kSubtypes.size(); ++s) {
+        infos += std::format(R"({}{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1}})",
+                             s == 0 ? "" : ",", kSubtypes[s]);
+        for (const u32 word : kWords) {
+            // No target (255, 255), the word little-endian in bytes 2 and 3, radius byte 2.
+            instances += std::format(
+                R"({}{{"info":{},"position":[0,0,0],"params":[255,255,{},{},2,255,0,0,0,0,0,0]}})",
+                instances.empty() ? "" : ",", s, word & 0xFFU, word >> 8U);
+        }
+    }
+    const auto dir = test::sampleLevel("trigger-kind-flags");
+    writeTextFile(dir / "world.json",
+                  std::format(R"({{"objects":[{{"name":"WALL","position":[0,10,0]}}],)"
+                              R"("itemInfos":[{}],"itemInstances":[{}]}})",
+                              infos, instances));
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr); // no collision: nothing can add the on-target bit
+    REQUIRE(triggers.size() == kSubtypes.size() * kWords.size());
+    for (usize s = 0; s < kSubtypes.size(); ++s) {
+        for (usize w = 0; w < kWords.size(); ++w) {
+            const u32 word = kWords[w];
+            u32 own = word | 0x8U;
+            for (const Row& row : kOwnFlags) {
+                if (row.subtype == kSubtypes[s]) {
+                    own = row.flags;
+                }
+            }
+            const u32 expected = own | (word & 0xFF00U);
+            const LevelTrigger& trigger = triggers.trigger((s * kWords.size()) + w);
+            CAPTURE(kSubtypes[s], word);
+            CHECK(trigger.flags == expected);
+            CHECK(trigger.kind == (expected & 0xFFU));
+        }
+    }
+}
+
 } // namespace

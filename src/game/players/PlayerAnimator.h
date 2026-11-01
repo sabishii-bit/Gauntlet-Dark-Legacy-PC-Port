@@ -517,7 +517,9 @@ public:
     static constexpr f32 kStrafePace = 0.667f; ///< strafing steps, shooting or not
     static constexpr f32 kWebPace = 0.4f;
     static constexpr f32 kQuickMeleePace = 0.25f;
-    static constexpr f32 kStrongThrowPace = 0.25f;
+    // The stationary heavy-throw control policy also covers its recovery. Retail
+    // PWRA_THROW/PWRA_THROW_R used .25 here (DoPlayerAction's A48).
+    static constexpr f32 kStrongThrowPace = 0.0f;
     bool quickMeleeing() const {
         return m_current >= Action::Quick1 && m_current <= Action::Quick3Recover;
     }
@@ -637,6 +639,12 @@ private:
     /** Native attack categories 1..10, excluding an active legend-item gesture. */
     bool ordinaryAttack() const;
     Decision decide(Action requested) const;
+    /** What the current action gives way to by itself, the request aside from cutting
+     * in: a chain's next swing, a wind-up's release, a loop's next cycle. */
+    Decision continuation(Action requested) const;
+    /** Where `requested` cuts the current action short at once rather than waiting
+     * for its end: a partner's combo, a potion, an attack, Death's grab. */
+    void applyCutIns(Action requested, Decision& d) const;
     f32 readyTransition() const;
     f32 meleePace() const;
     Action meleeRequest(PlayerDeed deed, bool moved) const;

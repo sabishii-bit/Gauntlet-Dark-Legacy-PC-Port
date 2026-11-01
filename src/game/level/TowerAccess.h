@@ -44,6 +44,7 @@ public:
     static constexpr u16 kUnderworldShards = 0x3FE;  ///< and the temple's
     static constexpr u16 kUnderworldRunes = 0xFFF;   ///< the first twelve runestones
     static constexpr u16 kBattlefieldShards = 0x7FE; ///< and the underworld's
+    static constexpr s32 kTempleShardOrder = 9;      ///< the temple boss's place among the shards
     static constexpr u16 kGarmRunes = 0x1FFF;        ///< all thirteen runestones
     /** The crystal gate each world's crystals open (lbl_80124D4C); nought is no gate. */
     static constexpr std::array<s32, kWorldCount> kWorldGates{0, 3, 2, 6, 5, 0, 0,

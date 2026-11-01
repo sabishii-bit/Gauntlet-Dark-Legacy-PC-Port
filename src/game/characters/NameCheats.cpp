@@ -5,6 +5,8 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Inventory.h"
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -37,18 +39,18 @@ struct PowerupCode {
 // GUNE5D Cheats (801209E4): the powerup rows use duration -1. ALLFUL and
 // 10000K are count assignments handled below; both rows of 1ANGEL must run.
 constexpr std::array<PowerupCode, 14> kPowerups{{
-    {"INVULN", powerup::kArmor, 0, powerup::kInvulnerable},
-    {"SSHOTS", powerup::kWeapon, -1, powerup::kSuperShot},
+    {"INVULN", powerup::kArmor, 0, armor::kInvulnerable},
+    {"SSHOTS", powerup::kWeapon, -1, damage::kSuperShot},
     {"1ANGEL", powerup::kSpecial, 0, powerup::kLevitation},
-    {"1ANGEL", powerup::kArmor, 0, 0x80000},
+    {"1ANGEL", powerup::kArmor, 0, armor::kAntiDeath},
     {"DELTA1", powerup::kSpecial, 0, powerup::kGrowth | powerup::kEnemyShrink},
     {"000000", powerup::kSpecial, 0, powerup::kInvisible},
     {"PEEKIN", powerup::kSpecial, 0, powerup::kXRay},
     {"PURPLE", powerup::kSpecial, 0, powerup::kTurbo},
     {"XSPEED", powerup::kSpecial, 4, powerup::kSpeedBoost},
-    {"QCKSHT", powerup::kWeapon, 0, powerup::kRapidFire},
-    {"MENAGE", powerup::kWeapon, 0, powerup::kThreeWayShot},
-    {"REFLEX", powerup::kWeapon, 0, powerup::kReflect},
+    {"QCKSHT", powerup::kWeapon, 0, damage::kRapidFire},
+    {"MENAGE", powerup::kWeapon, 0, damage::kThreeWayShot},
+    {"REFLEX", powerup::kWeapon, 0, damage::kReflect},
     {"NOVATO", powerup::kSpecial, 0, powerup::kStopTime},
     {"MEBERT", powerup::kSpecial, 0, powerup::kPhoenix},
 }};

@@ -117,6 +117,23 @@ void LegendPresentation::carry(s32 player, s32 realm, s32 kind,
     }
 }
 
+LegendShow::Flight LegendPresentation::flight() const {
+    return m_assets.profile && m_assets.profile->flight ? *m_assets.profile->flight
+                                                        : LegendShow::flightOf(m_sim.kind);
+}
+
+std::string_view LegendPresentation::heldTree() const {
+    return m_assets.profile ? m_assets.profile->held : LegendShow::kHeldTree;
+}
+
+std::string_view LegendPresentation::projectileTree() const {
+    return m_assets.profile ? m_assets.profile->projectile : LegendShow::kProjectileTree;
+}
+
+std::string_view LegendPresentation::burstTree() const {
+    return m_assets.profile ? m_assets.profile->burst : LegendShow::kBurstTree;
+}
+
 s32 LegendPresentation::occupiedHand() const {
     return LegendShow::heldInHand(m_sim.kind) && m_sim.held != 0 && m_effects.playing(m_sim.held)
                ? m_sim.player
@@ -151,7 +168,7 @@ void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
             break;
         }
         stopLoop();
-        if (LegendShow::flightOf(m_sim.kind) == LegendShow::Flight::AtBoss) {
+        if (flight() == LegendShow::Flight::AtBoss) {
             playSound(LegendShow::Sound::Landed);
         }
         playSound(LegendShow::Sound::WornOff);
@@ -163,12 +180,12 @@ void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
 
 void LegendPresentation::hold(const Bearer& bearer) {
     if (m_sim.held == 0 && m_assets.items.loaded() &&
-        m_assets.items.trees.find(LegendShow::kHeldTree).has_value()) {
+        m_assets.items.trees.find(heldTree()).has_value()) {
         EffectTrees::Setting setting;
         setting.seconds = LegendShow::kHeldSeconds;
         setting.unlit = true;
         setting.depthWrite = false;
-        m_sim.held = start(m_assets.items, LegendShow::kHeldTree, bearer.holdPoint, setting);
+        m_sim.held = start(m_assets.items, heldTree(), bearer.holdPoint, setting);
     }
     if (m_sim.held != 0) {
         m_effects.placeAt(m_sim.held,
@@ -177,6 +194,9 @@ void LegendPresentation::hold(const Bearer& bearer) {
 }
 
 void LegendPresentation::brandish(const Bearer& bearer) {
+    if (m_assets.profile && !m_assets.profile->charge) {
+        return;
+    }
     if (!m_assets.weapons.loaded()) {
         return;
     }
@@ -244,7 +264,7 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
         m_sim.flying = 0;
         stopLoop();
     }
-    if (m_sim.flying != 0 && LegendShow::flightOf(m_sim.kind) == LegendShow::Flight::Flies) {
+    if (m_sim.flying != 0 && flight() == LegendShow::Flight::Flies) {
         m_sim.flightLeft -= seconds;
         if (m_sim.kind == 38) {
             // ProcessEffects' 0x40000000 branch recomputes velocity toward
@@ -284,8 +304,7 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
             land(target);
             result.landed = true;
         }
-    } else if (m_sim.flying != 0 && hasBearer &&
-               LegendShow::flightOf(m_sim.kind) == LegendShow::Flight::WithBearer) {
+    } else if (m_sim.flying != 0 && hasBearer && flight() == LegendShow::Flight::WithBearer) {
         const Mat4 root =
             portable::rotate(glm::translate(Mat4{1}, bearer->position),
                              portable::atan2(bearer->facing.x, bearer->facing.z), Vec3{0, 1, 0});
@@ -307,7 +326,7 @@ void LegendPresentation::release(const Bearer& bearer, const std::optional<Targe
     EffectTrees::Setting setting;
     setting.unlit = true;
     setting.depthWrite = false;
-    switch (LegendShow::flightOf(m_sim.kind)) {
+    switch (flight()) {
     case LegendShow::Flight::Flies: {
         const Vec3 from = bearer.position + bearer.facing + Vec3{0.0f, LegendShow::kLift, 0.0f};
         const Vec3 to = target->position + Vec3{0.0f, target->height * 0.5f, 0.0f};
@@ -320,23 +339,31 @@ void LegendPresentation::release(const Bearer& bearer, const std::optional<Targe
             setting.velocity = (to - from) * (LegendShow::kSpeed / distance);
         }
         setting.seconds = LegendShow::kFlightSeconds;
-        m_sim.flying = start(m_assets.items, LegendShow::kProjectileTree, from, setting);
+        m_sim.flying = start(m_assets.items, projectileTree(), from, setting);
         break;
     }
     case LegendShow::Flight::AtBoss:
         setting.seconds = LegendShow::burstSecondsOf(m_sim.kind);
-        setting.then = std::string(LegendShow::burstTreeOf(m_sim.kind));
-        m_sim.flying = start(m_assets.items, LegendShow::restingTreeOf(m_sim.kind),
-                             target->position + LegendShow::bossOffsetOf(m_sim.kind), setting);
+        setting.then = m_assets.profile ? m_assets.profile->secondBurst
+                                        : std::string(LegendShow::burstTreeOf(m_sim.kind));
+        m_sim.flying =
+            start(m_assets.items,
+                  m_assets.profile ? projectileTree() : LegendShow::restingTreeOf(m_sim.kind),
+                  target->position + (m_assets.profile ? m_assets.profile->bossOffset
+                                                       : LegendShow::bossOffsetOf(m_sim.kind)),
+                  setting);
         break;
     case LegendShow::Flight::WithBearer:
         setting.seconds = LegendShow::burstSecondsOf(m_sim.kind);
-        setting.then = std::string(LegendShow::burstTreeOf(m_sim.kind));
-        m_sim.flying = start(m_assets.items, LegendShow::kProjectileTree,
+        setting.then = m_assets.profile ? m_assets.profile->secondBurst
+                                        : std::string(LegendShow::burstTreeOf(m_sim.kind));
+        m_sim.flying = start(m_assets.items, projectileTree(),
                              bearer.position + bearer.facing * LegendShow::kAhead, setting);
         break;
     }
-    const ParticleDescriptor trail = LegendShow::trailOf(m_sim.kind);
+    const ParticleDescriptor trail = m_assets.profile && !m_assets.profile->trail
+                                         ? ParticleDescriptor{}
+                                         : LegendShow::trailOf(m_sim.kind);
     if (m_sim.flying != 0 && !trail.texture.empty()) {
         TextureSet* textures = &m_assets.items.textures;
         auto slot = textures->find(trail.texture);
@@ -367,14 +394,22 @@ void LegendPresentation::land(const std::optional<Target>& target) {
     m_effects.stop(m_sim.flying);
     m_sim.flying = 0;
     stopLoop();
-    if (target.has_value() && m_assets.items.loaded() &&
-        m_assets.items.trees.find(LegendShow::kBurstTree).has_value()) {
+    if (target && target->attachment && m_assets.profile &&
+        m_assets.profile->impactAttachmentSeconds > 0) {
+        EffectTrees::Setting setting;
+        setting.seconds = m_assets.profile->impactAttachmentSeconds;
+        setting.unlit = true;
+        setting.depthWrite = false;
+        m_sim.attached = start(m_assets.items, projectileTree(), target->position, setting);
+        followTarget(target);
+    } else if (target.has_value() && m_assets.items.loaded() &&
+               m_assets.items.trees.find(burstTree()).has_value()) {
         EffectTrees::Setting setting;
         if (m_sim.kind == 36) {
             setting.seconds = 28.0f;
         }
         const u32 effect =
-            start(m_assets.items, LegendShow::kBurstTree,
+            start(m_assets.items, burstTree(),
                   target->position + Vec3{0.0f, target->height * 0.5f, 0.0f}, setting);
         if (m_sim.kind == 36) {
             m_sim.attached = effect;
@@ -393,11 +428,23 @@ void LegendPresentation::followTarget(const std::optional<Target>& target) {
         m_sim.attached = 0;
         return;
     }
+    if (m_assets.profile && m_assets.profile->impactAttachmentSeconds > 0) {
+        if (target->attachment) {
+            m_effects.placeAt(m_sim.attached, *target->attachment);
+        } else {
+            m_effects.stop(m_sim.attached);
+            m_sim.attached = 0;
+        }
+        return;
+    }
     const Mat4 root = target->root.value_or(glm::translate(Mat4{1.0f}, target->position));
     m_effects.placeAt(m_sim.attached, glm::translate(root, Vec3{0.0f, 6.0f, 0.0f}));
 }
 
 void LegendPresentation::playSound(LegendShow::Sound sound, bool looping) {
+    if (m_audio.mapped && m_audio.mapped(sound)) {
+        return;
+    }
     if (!m_audio.play && !m_audio.record) {
         return;
     }

@@ -14,6 +14,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PartyMotion.h"
 #include "game/players/PowerupEffects.h"
 #include "game/rollback/PlayerHealthCheckpoint.h"
@@ -97,8 +98,15 @@ PlayerRuntimeCheckpoint::State sample() {
     value.meleeFacing = Vec3{1, 0, -1};
     value.attackStep = PlayerRuntime::AttackStep{{1, 2, 3}, {4, 5, 6}};
     value.previous = {{7, 8, 9}, 0.25f, true, 0x123456789ABCULL};
-    value.capture = {
-        glm::translate(Mat4{1}, Vec3{1, 3, 2}), {1, 2, 3}, 0.25f, 12.5f, false, 7, true};
+    value.capture = {glm::translate(Mat4{1}, Vec3{1, 3, 2}),
+                     {1, 2, 3},
+                     0.25f,
+                     12.5f,
+                     false,
+                     7,
+                     true,
+                     {4.25f, -7.5f},
+                     true};
     value.combo = {ComboRole::Thrown, 1, 0, false, true, 80, 7, 0.75f, {2, 3, 4}};
     value.transport = {{9, 8, 7}, 16, true};
     value.mikey = {{3, 4, 5}, 0.375, 17, 8, 0xAABBCCDD};
@@ -124,7 +132,7 @@ PlayerRuntimeCheckpoint::State sample() {
     value.deathHaloHeard = true;
     value.reaction = PlayerDeed::Flinch;
     Knockback impulse;
-    impulse.queue({0, 0, 1}, PlayerImpact::kKnockBack, 30);
+    impulse.queue({0, 0, 1}, damage::kKnockBack, 30);
     value.knockback = impulse.checkpoint();
     TurboMeter meter;
     meter.add(73);
@@ -311,7 +319,7 @@ TEST_CASE("participant packet restores exact native damage motion and random cue
     const auto tick = [&](s32 time) {
         if (time % 7 == 0) {
             health.hurt(players[0], 9.25f, HurtKind::Blow, true, false, 1, healthEvents,
-                        {PlayerImpact::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
+                        {damage::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
         }
         std::array<PlayInput, 1> inputs{};
         inputs[0].move = {Vec2{0.4f, 0.6f}, 0.72f};

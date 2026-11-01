@@ -15,6 +15,12 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
             if (actor.grabbed < 0) {
                 return;
             }
+            if (actor.definition->rules().pressureReferenceDamage > 0 &&
+                actor.definition->kind() == CombatantKind::Boss) {
+                // Native boss release reaches the same raw contact tally as a
+                // node strike, before the player applies immunity or armor.
+                m_sim.pressure.note(actor.grabbed, damage.damage);
+            }
             // CritterReleasePlayer uses the body's forward, with Y replaced by -0.1.
             const Vec3 direction{portable::sin(actor.yaw), -0.1f, portable::cos(actor.yaw)};
             m_sim.grabs.push_back({actor.grabbed, m_sim.id, std::nullopt,
@@ -71,6 +77,7 @@ void Combatant::carryGrab(Actor& actor, std::span<const EnemyView> players) {
     }
     m_sim.grabs.push_back(
         {actor.grabbed, m_sim.id,
-         glm::translate(attachmentTransform(actor, actor.grabNode), actor.grabOffset), Vec3{0}, 0});
+         glm::translate(attachmentTransform(actor, actor.grabNode), actor.grabOffset), Vec3{0}, 0,
+         actor.definition->rules().restoreCaptureSupport});
 }
 } // namespace gdl::game

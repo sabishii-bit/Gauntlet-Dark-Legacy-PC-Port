@@ -5,6 +5,7 @@
 #include "engine/assets/BitmapFont.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
 #include "RecordedDrawChecks.h"
@@ -242,6 +243,45 @@ TEST_CASE("native Sumner visit rewind restores greeting ownership hint progressi
     corrected.visit.clear();
     CHECK_FALSE(corrected.visit.restoreLocal(stale));
     CHECK(corrected.visit.owner() == -1);
+}
+
+TEST_CASE("Sumner's scroll keeps each machine's field of view out of the shared state",
+          "[game][screens][sumner-visit][sumner-visit-fov]") {
+    Fixture narrow("sumner-visit-fov-narrow");
+    Fixture wide("sumner-visit-fov-wide");
+    narrow.config.camera.horizontalFovDegrees = 42.0f;
+    wide.config.camera.horizontalFovDegrees = 97.0f;
+    const auto shared = [](const Fixture& f) {
+        NativeStateDigest digest;
+        REQUIRE(f.visit.appendNativeDigest(digest));
+        return digest.finish();
+    };
+    const auto rewound = [](const Fixture& f) {
+        SumnerVisit::LocalSnapshot saved;
+        f.visit.saveLocal(saved);
+        NativeStateDigest digest;
+        REQUIRE(f.visit.appendLocalDigest(digest, saved));
+        return digest.finish();
+    };
+    narrow.open(3);
+    wide.open(3);
+    // Each machine still sizes the scroll's arrow for its own camera.
+    CHECK(narrow.visit.menu().topics().iconScale() > wide.visit.menu().topics().iconScale());
+    CHECK(shared(narrow) == shared(wide));
+    CHECK(rewound(narrow) == rewound(wide));
+    MenuInput select;
+    select.select = true;
+    MenuInput back;
+    back.back = true;
+    // Asked and answered, back to the topics, then away: the same shared state throughout.
+    for (const MenuInput& input : {select, back, back}) {
+        const auto kind = narrow.step(input).kind;
+        CHECK(wide.step(input).kind == kind);
+        CHECK(shared(narrow) == shared(wide));
+        CHECK(rewound(narrow) == rewound(wide));
+    }
+    CHECK_FALSE(narrow.visit.menu().reading());
+    CHECK(narrow.visit.active() == wide.visit.active());
 }
 
 } // namespace

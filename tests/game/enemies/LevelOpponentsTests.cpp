@@ -2,6 +2,7 @@
 #include <array>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <numbers>
 #include <span>
 #include <string>
@@ -17,6 +18,7 @@
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/world/SampleLevel.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldLighting.h"
@@ -24,8 +26,12 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "fixtures/NativeSoundBank.h"
+#include "game/audio/SceneSoundEvents.h"
 #include "game/bosses/LegendItems.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
 #include "game/enemies/EnemyKinds.h"
@@ -251,8 +257,7 @@ TEST_CASE("a level gargoyle's fireball never lands on a reflective shield's wear
     std::array<PlayerRuntime, 1> players;
     const Vec3 start = world.startPoint(0)->position;
     players[0].actor.spawn(0, {}, nullptr, start, 0.0f);
-    players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor,
-                                                            powerup::kReflectShield, 0, 1);
+    players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kReflect, 0, 1);
     LevelFixtures fixtures;
     fixtures.bind({device, world, weapons, effects, audio, 1});
     LevelOpponents opponents;
@@ -477,9 +482,8 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
     events.award = [](s32, s32, bool) {};
     events.hurt = [&](usize i, f32 amount, HurtKind hurt, bool directed, const PlayerImpact& hit) {
         CHECK(i == 0);
-        CHECK(((hit.flags & Damage::kLow) != 0) == (kind == kRatKind));
-        CHECK(((hit.flags & PlayerImpact::kKnockBack) != 0) ==
-              (kind == kGruntKind && contacts == 7));
+        CHECK(((hit.flags & damage::kLow) != 0) == (kind == kRatKind));
+        CHECK(((hit.flags & damage::kKnockBack) != 0) == (kind == kGruntKind && contacts == 7));
         health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
         ++contacts;
     };
@@ -932,8 +936,8 @@ TEST_CASE("area blasts and Thunder Hammer give gargoyles distance-independent ho
         auto& player = players[0];
         player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
         REQUIRE(player.figure);
-        player.actor.save().progress().inventory.addPowerup(powerup::kWeapon,
-                                                            powerup::kThunderHammer, 2, -1);
+        player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, damage::kHammer, 2,
+                                                            -1);
         player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Hammer);
         for (s32 frame = 0;
              frame < 180 && player.figure->animator().itemReleased() == PlayerDeed::None; ++frame) {
@@ -2658,7 +2662,7 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
                       const PlayerImpact& impact) {
         REQUIRE(damage == 40);
         REQUIRE(directed);
-        REQUIRE(impact.flags == PlayerImpact::kKnockDown);
+        REQUIRE(impact.flags == damage::kKnockDown);
         REQUIRE(impact.direction == Vec3(0, 0, -1));
         hurt.push_back(index);
         kinds.push_back(kind);
@@ -2666,7 +2670,7 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     CombatBlow fire;
     fire.player = 3;
     fire.damage = 40;
-    fire.flags = PlayerImpact::kKnockDown;
+    fire.flags = damage::kKnockDown;
     fire.direction = {0, 0, -1};
     fire.breath = true;
     LevelOpponents::applyCritterBlow(fire, players, events);
@@ -3263,6 +3267,96 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
     sound.update();
 }
 
+TEST_CASE("a recorded bomber cry shares where it began and each machine's listener pans it",
+          "[level-opponents][suicide][native-combat-audio][local-rewind]") {
+    const auto root = test::scratchDirectory("suicide-cry-listener");
+    writeMeleeEnemy(root, kGruntKind);
+    const std::array<test::NativeSoundSample, 1> samples{{{24000, std::vector<s16>(24000, 4096)}}};
+    test::writeNativeSoundBank(
+        root / "audio/COMMON",
+        R"({"sounds":[{"name":"S_SUICIDE_YELL","sequence":[{"sample":0}]}]})", samples);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    audio.open(root, nullptr, nullptr);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 12}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& enemies = opponents.enemies();
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto bomber = enemies.spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .algorithm = kSuicideWay, .placed = true}, {});
+    REQUIRE(bomber);
+    auto setup = enemies.checkpoint();
+    REQUIRE(setup);
+    setup->cues.push_back(
+        {EnemyCue::Kind::Yell, kGruntKind, Vec3{0}, *bomber, enemies.observe(*bomber)->instance});
+    REQUIRE(enemies.restore(*setup));
+    SceneSoundEvents recorder;
+    recorder.open(1, nullptr);
+    audio.recordTo(&recorder);
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    struct Heard {
+        SceneSoundEvents::Frame frame;
+        NativeStateDigest::Digest shared{};
+    };
+    const auto hear = [&](u64 tick, const AmbientEar& ear) {
+        recorder.beginTick(tick);
+        audio.prepareRecordedFrame(ear);
+        {
+            const auto scope = audio.soundScope({30, 0, 1}, 1);
+            opponents.update(0, 0.0f, players, {}, events);
+            opponents.gatherLoops();
+        }
+        Heard heard{recorder.endFrame()};
+        NativeStateDigest digest;
+        REQUIRE(opponents.appendNativeFollowupDigest(digest));
+        heard.shared = digest.finish();
+        return heard;
+    };
+    const AmbientEar west{{-15, 10, 30}, {1, 0, 0}};
+    const AmbientEar east{{15, 10, 30}, {1, 0, 0}};
+    auto before = std::make_unique<LevelOpponents::LocalSnapshot>();
+    REQUIRE(opponents.saveLocal(*before));
+    EffectTrees::LocalSnapshot effectsBefore;
+    effects.saveLocal(effectsBefore);
+    // One native tick heard through two machines' solo cameras, either side of the bomber.
+    const auto fromWest = hear(1, west);
+    REQUIRE(opponents.restoreLocal(*before));
+    REQUIRE(effects.restoreLocal(effectsBefore));
+    const auto fromEast = hear(1, east);
+    REQUIRE(fromWest.frame.loops.size() == 1);
+    REQUIRE(fromEast.frame.loops.size() == 1);
+    const auto& westCry = fromWest.frame.loops.front();
+    const auto& eastCry = fromEast.frame.loops.front();
+    CHECK(westCry.key == eastCry.key);
+    CHECK(westCry.payload.start == eastCry.payload.start);
+    CHECK(westCry.payload.volume == eastCry.payload.volume);
+    CHECK(westCry.payload.pan == Catch::Approx(0.4472136f));
+    CHECK(eastCry.payload.pan == Catch::Approx(-0.4472136f));
+    CHECK(fromWest.shared == fromEast.shared);
+    // Under way, the cry follows this machine's listener without starting over.
+    const auto later = hear(2, west);
+    REQUIRE(later.frame.loops.size() == 1);
+    CHECK(later.frame.loops.front().key == eastCry.key);
+    CHECK(later.frame.loops.front().payload.start == eastCry.payload.start);
+    CHECK(later.frame.loops.front().payload.pan == Catch::Approx(westCry.payload.pan));
+    audio.recordTo(nullptr);
+    recorder.close();
+    opponents.close();
+    audio.close();
+}
+
 TEST_CASE("in the town a suicide leaves a poison cloud that turns through its three trees and "
           "gasses the party while it hangs",
           "[level-opponents][suicide][assets]") {
@@ -3485,12 +3579,12 @@ TEST_CASE("a shrinker worn shrinks the swarm: their blows land low for half with
         const bool power = i == 7;
         if (shrinking) {
             CHECK(amounts[i] == Catch::Approx(0.5f * fight));
-            CHECK((flags[i] & Damage::kLow) != 0);
-            CHECK((flags[i] & PlayerImpact::kKnockBack) == 0);
+            CHECK((flags[i] & damage::kLow) != 0);
+            CHECK((flags[i] & damage::kKnockBack) == 0);
         } else {
             CHECK(amounts[i] == Catch::Approx(power ? 1.5f * fight : fight));
-            CHECK((flags[i] & Damage::kLow) == 0);
-            CHECK(((flags[i] & PlayerImpact::kKnockBack) != 0) == power);
+            CHECK((flags[i] & damage::kLow) == 0);
+            CHECK(((flags[i] & damage::kKnockBack) != 0) == power);
         }
     }
     // A hit on it counts double while it is shrunk.

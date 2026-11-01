@@ -27,6 +27,7 @@ void Combatant::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
     m_sim.childCount = 0;
     m_sim.actor = Actor{};
+    m_sim.pressure = {};
     m_sim.id = -1;
     m_sim.collision = nullptr;
     m_sim.blows.clear();
@@ -67,6 +68,14 @@ bool Combatant::raisesArenaRocks() const {
         });
     }
     return false;
+}
+void Combatant::captureEncounterPlayers(std::span<const EnemyView> players) {
+    if (m_sim.actor.parent != nullptr || m_sim.actor.definition == nullptr ||
+        m_sim.actor.definition->rules().pressureReferenceDamage <= 0) {
+        return;
+    }
+    m_sim.pressure.refresh(players);
+    m_sim.pressure.capture(players, m_sim.actor.definition->rules().pressureReferenceDamage);
 }
 bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                       const WorldCollision* collision, const EnemyScales& scales, char realm) {
@@ -149,8 +158,8 @@ void Combatant::appendSimulationDigest(NativeStateDigest& digest, const Simulati
     // Bind the actual records in full so adding a native field requires updating
     // this visitor. No portable checkpoint representation participates here.
     const auto& [actor, incarnation, childCount, id, collision, hazards, scales, realm, fullHarm,
-                 arenaRandom, cues, grabs, spews, shots, arenaActivations, tramples, rams, pushes,
-                 blows, losses, assets] = state;
+                 pressure, arenaRandom, cues, grabs, spews, shots, arenaActivations, tramples, rams,
+                 pushes, blows, losses, assets] = state;
     const auto& [actorState, hidden, forcedPattern, childrenIntact, smoothValid, stock, definition,
                  parent, branch, health, burnGap, maxHealth, position, floor, yaw, initialYaw,
                  homePosition, initialRoot, push, target, targetDistance, targetYaw, targets,
@@ -187,8 +196,8 @@ void Combatant::appendSimulationDigest(NativeStateDigest& digest, const Simulati
                   incarnation, childCount, id);
     digest.resource(collision);
     digest.resource(hazards);
-    digest.values(scales, realm, fullHarm, arenaRandom, cues, grabs, spews, shots, arenaActivations,
-                  tramples, rams, pushes, blows, losses);
+    digest.values(scales, realm, fullHarm, pressure, arenaRandom, cues, grabs, spews, shots,
+                  arenaActivations, tramples, rams, pushes, blows, losses);
     // assets holds lifetime fences, including old incarnations with pending
     // outputs. Validate them above; hash the actual bound definitions/resources
     // at their uses, never token allocation identity or retained cache history.
@@ -282,8 +291,9 @@ bool Combatant::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right
     const auto& b = right.m_state;
     const auto values = [](const Simulation& s) {
         return std::tie(s.incarnation, s.childCount, s.id, s.collision, s.hazards, s.scales,
-                        s.realm, s.fullHarm, s.arenaRandom, s.cues, s.grabs, s.spews, s.shots,
-                        s.arenaActivations, s.tramples, s.rams, s.pushes, s.blows, s.losses);
+                        s.realm, s.fullHarm, s.pressure, s.arenaRandom, s.cues, s.grabs, s.spews,
+                        s.shots, s.arenaActivations, s.tramples, s.rams, s.pushes, s.blows,
+                        s.losses);
     };
     if (values(a) != values(b) || !a.actor.equalLocal(b.actor) ||
         !std::ranges::equal(a.assets, b.assets, [](const auto& first, const auto& second) {
@@ -320,6 +330,7 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
                            const Vec3& position, f32 yaw, const WorldCollision* collision,
                            const EnemyScales& scales, char realm) {
     m_sim.actor = Actor{};
+    m_sim.pressure = {};
     m_sim.id = -1;
     m_sim.collision = nullptr;
     if (stock.tree == nullptr) {
@@ -387,6 +398,59 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
 
     return true;
 }
+void Combatant::prepareEntrance() {
+    Actor& actor = m_sim.actor;
+    if (actor.stock == nullptr || !actor.stock->initialMoveBeforeWake) {
+        return;
+    }
+    if (const auto initial = actor.definition->moveOfType(MoveDefinition::kInit)) {
+        startMove(actor, *initial, false);
+    }
+    for (auto& part : children()) {
+        part->prepareEntrance();
+        part->synchronizeChild();
+    }
+}
+
+void Combatant::beginEntrance() {
+    Actor& actor = m_sim.actor;
+    if (actor.stock == nullptr || !actor.stock->initialMoveBeforeWake) {
+        return;
+    }
+    if (moveType() == MoveDefinition::kInit) {
+        if (const auto start = actor.definition->moveOfType(MoveDefinition::kStart)) {
+            startMove(actor, *start);
+        }
+    }
+    for (auto& part : children()) {
+        part->beginEntrance();
+        part->synchronizeChild();
+    }
+}
+
+void Combatant::advanceEntrance(f32 seconds) {
+    Actor& actor = m_sim.actor;
+    if (!present() || actor.stock == nullptr || !actor.stock->initialMoveBeforeWake ||
+        moveType() != MoveDefinition::kInit || !actor.player.playing() || seconds <= 0) {
+        return;
+    }
+    // N64 Boss.bin e08842e8 still calls e0882b38 while state0 waits for the
+    // party. e0882f9c keeps INIT selected: a looping REDY (Chimera) animates,
+    // while a one-frame INIT (Skorne) remains unchanged. Do not run combat AI
+    // here: the deadline/distance gate still owns the transition to START.
+    capturePresentation();
+    const auto& sequence = actor.stock->tree->sequences[actor.player.sequence()];
+    actor.player.advance(seconds, sequence.repeats);
+    actor.pose.evaluate(*actor.stock->tree, actor.player.sequence(), actor.player.frame());
+    actor.smooth = smoothPose(actor);
+    actor.smoothValid = true;
+    for (auto& part : children()) {
+        part->synchronizeChild();
+        part->m_sim.actor.smooth = actor.smooth;
+        part->m_sim.actor.smoothValid = true;
+    }
+}
+
 void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                        std::span<const Combatant> peers, bool timeStopped) {
     if (m_sim.actor.parent == nullptr) {
@@ -416,6 +480,10 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         return;
     }
     if (critter.parent == nullptr) {
+        if (critter.definition != nullptr &&
+            critter.definition->rules().pressureReferenceDamage > 0) {
+            m_sim.pressure.refresh(players);
+        }
         // Linked heads keep their hit-feedback clock even when the body drives their pose.
         updateHitFlashes(critter, ticks);
         for (auto& child : children()) {

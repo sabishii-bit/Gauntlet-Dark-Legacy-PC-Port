@@ -35,7 +35,8 @@ TreeInfo nativeTree(formats::TreeDefinition source) {
             throw FormatError("node parent must come before the node");
         }
         for (const auto& run : node.objectFrames) {
-            info.objectFrames.push_back({normalizeAssetName(run.object), run.start, run.frames});
+            info.objectFrames.push_back(
+                {normalizeAssetName(run.object), run.start, run.frames, run.interpolate});
         }
         tree.nodes.push_back(std::move(info));
     }

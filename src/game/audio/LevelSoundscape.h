@@ -2,6 +2,7 @@
 
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -18,6 +19,7 @@
 #include "engine/io/AssetLocator.h"
 
 #include "game/audio/AmbientSounds.h"
+#include "game/audio/AnnouncementSubject.h"
 #include "game/audio/MusicAreas.h"
 #include "game/audio/VoiceQueue.h"
 #include "game/level/LevelTriggers.h"
@@ -40,6 +42,11 @@ public:
 
     void open(const std::filesystem::path& root, SoundPlayer* output, const LevelAudioInfo* info,
               char realm = 'L', bool boss = false);
+    using AnnouncementResolver = std::function<std::optional<SoundSequence>(
+        std::span<const std::string_view>, std::optional<AnnouncementSubject>)>;
+    /** Optional offline imported presentation, bound before play. The callback
+     * returns a complete predecoded phrase or null for complete base-game fallback. */
+    void bindAnnouncements(AnnouncementResolver resolver);
     /** Capture gameplay cues before mixer mutation. Attach once before
      * saving native history and close the recorder before releasing these banks.
      * Owned loops are gathered after native work; music and mixer controls are
@@ -194,14 +201,16 @@ public:
     /** Queues a narrator line (with `Either`, one the level's own banks keep as well), or a
      * name clip of a character's own bank; kNoSound when the sound is missing or the queue is
      * full. */
-    SoundHandle queueNarration(std::string_view name, Narrator which = Narrator::Either);
+    SoundHandle queueNarration(std::string_view name, Narrator which = Narrator::Either,
+                               std::optional<AnnouncementSubject> subject = {});
     SoundHandle queueNarrationFrom(SoundSet& bank, std::string_view name);
     static constexpr std::string_view kPojoName = "S_POJO2"; ///< Pojo's name before a line
     /** An announcement by name (AudioWithName): the character's name clip from its own bank,
      * or Pojo's when it carries him, then `lines`, queued together; nothing, and false, when
      * the queue has no room within `maxWait`. */
     bool announce(SoundSet& characterBank, std::string_view name, bool pojo,
-                  std::span<const std::string_view> lines, f32 maxWait);
+                  std::span<const std::string_view> lines, f32 maxWait,
+                  std::optional<AnnouncementSubject> subject = {});
     /** While held nothing more is let into the queue: the good wizard has the floor. */
     void holdNarration(bool held) { m_narration.hold(held); }
     /** Advances both queues' clocks, letting finished lines go. */
@@ -316,6 +325,7 @@ private:
     SoundSet* narrationBankOf(std::string_view name, Narrator which, u32& sound);
     Speech speech(SoundSet& bank, u32 sound, const Speech& after);
     SoundHandle queue(SoundSet& bank, u32 sound);
+    SoundHandle queueNarrationFallback(std::string_view name, Narrator which);
     /** The stream's file name for an area's part: the stem, the area's letter past one area,
      * the part's number past one part. */
     std::string streamName(s32 area, s32 part) const;
@@ -351,7 +361,7 @@ private:
         std::unique_ptr<SoundSet> sounds;
     };
     std::vector<BorrowedBank> m_borrowed; ///< retained resources, including undone console loads
-    AmbientSounds m_ambience;                          ///< cleared before its borrowed banks
+    AmbientSounds m_ambience;             ///< cleared before its borrowed banks
     MusicAreas m_areas;
     std::vector<u32> m_objectFlags; ///< the level's objects' flags, by object
     std::optional<u32> m_pickup;
@@ -384,6 +394,7 @@ private:
     PlacedLoop m_hourglass{"S_HOURGLASS", kHourglassVolume};
     std::vector<SoundHandle> m_voices; ///< includes queued lines; pruned as new sounds start
     VoiceQueue m_narration;
+    AnnouncementResolver m_announcements;
     VoiceQueue m_barks;
     /** Logical requests/timers. Stream callbacks and mixer handles remain presentation state. */
     struct Simulation {

@@ -14,7 +14,11 @@ f32 CombatantProjectile::speed(const AttackDefinition& damage, f32 rate) {
 
 Vec3 CombatantProjectile::velocity(const AttackDefinition& damage, const CombatShot& shot,
                                    f32 spreadSample) {
-    const f32 pace = speed(damage, shot.rate);
+    const auto rules = shot.data != nullptr ? shot.data->rules() : CritterRules{};
+    const f32 pace =
+        damage.speed + rules.projectileRateScale *
+                           (std::clamp(shot.rate, 0.5f, rules.projectileMaxRate) - 0.5f) *
+                           (damage.maxSpeed - damage.speed);
     if (damage.speed <= 0.0f || pace <= 0.0f) {
         return Vec3{0.0f};
     }
@@ -34,7 +38,8 @@ Vec3 CombatantProjectile::velocity(const AttackDefinition& damage, const CombatS
         const f32 inverse = distance > 0.001f ? 1.0f / distance : 1.0f;
         direction.x *= inverse;
         direction.z *= inverse;
-        direction.y = direction.y * inverse + 0.5f * damage.gravity * distance / (pace * pace);
+        direction.y = (direction.y + rules.ballisticTargetOffset) * inverse +
+                      0.5f * damage.gravity * distance / (pace * pace);
     }
     const f32 yaw = damage.yaw + 0.5f * std::clamp(spreadSample, -1.0f, 1.0f) * damage.yawSpread;
     const f32 cy = portable::cos(yaw);

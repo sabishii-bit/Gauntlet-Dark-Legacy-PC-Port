@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.parse
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 SEVERITY = {1: "error", 2: "warning", 3: "info", 4: "hint"}
 
 

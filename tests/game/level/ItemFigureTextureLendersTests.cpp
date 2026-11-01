@@ -166,17 +166,19 @@ TEST_CASE("Item figure appearance overrides do not leak across shared copies",
     const Color litColor = device.draws.front().vertices.front().color;
     device.draws.clear();
     const std::array<usize, 1> hidden{0};
-    const ItemFigure::Appearance appearance{Color::rgba(8, 8, 8), true, hidden};
+    const ItemFigure::Appearance appearance{Color::rgba(8, 8, 8), true, hidden, 0, true};
     figure.draw(device, Mat4{1}, {}, 1, 1, nullptr, TreeModel::Pass::All, -1, &appearance);
     // Hiding the parent mesh must retain its child's own visible geometry.
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws.front().vertices.size() == 3);
     CHECK(device.draws.front().vertices.front().color == Color::rgba(8, 8, 8));
+    CHECK_FALSE(device.draws.front().state.cullBack);
     CHECK(figure.checkpoint() == before);
     device.draws.clear();
     copy.draw(device, Mat4{1}, {});
     REQUIRE(device.draws.size() == 2);
     CHECK(device.draws.front().vertices.front().color == litColor);
+    CHECK(device.draws.front().state.cullBack);
     CHECK(copy.checkpoint() == before);
 }
 } // namespace

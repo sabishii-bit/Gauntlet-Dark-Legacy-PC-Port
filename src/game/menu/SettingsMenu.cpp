@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <span>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #include "engine/core/Types.h"
 
@@ -16,7 +20,6 @@ constexpr s32 kLanguageCode = 5;
 constexpr s32 kAggressorModeCode = 6;
 constexpr s32 kDisplayCode = 13;
 constexpr s32 kRendererCode = 14;
-constexpr s32 kVideoRows = 12;
 constexpr s32 kAudioSliders = 3;
 /** Where a notice stands under the Audio sliders and the Video action row. */
 constexpr s32 kLowNoticeY = 348;
@@ -38,6 +41,339 @@ u32 cycleChoice(std::span<const u32> choices, u32 value, s32 direction) {
         }
     }
     return choices.front();
+}
+
+constexpr std::array<std::string_view, 2> kOnOff{"settings.on", "settings.off"};
+constexpr std::array<std::string_view, 2> kRendererLabels{"settings.vulkan", "settings.opengl"};
+constexpr std::array<std::string_view, 1> kFrameRateLabels{"settings.unlimited"};
+constexpr std::array<std::string_view, 3> kSampleLabels{"settings.off", "settings.msaa2",
+                                                        "settings.msaa4"};
+constexpr std::array<std::string_view, 3> kWindowModeLabels{
+    "settings.windowed", "settings.fullscreen", "settings.borderless"};
+
+using Page = SettingsMenu::Page;
+using Scope = SettingsMenu::Scope;
+
+/** A row that opens another page. */
+struct PageLink {
+    s32 code = 0;
+    std::string_view label;
+    Page page = Page::Root;
+};
+/** The root's pages, in the order listed; the compass is not offered in a level. */
+constexpr std::array<PageLink, 5> kRootLinks{{{0, "menu.audio", Page::Audio},
+                                              {1, "menu.gameOptions", Page::Game},
+                                              {2, "menu.compass", Page::Compass},
+                                              {kGraphicsCode, "menu.graphics", Page::Graphics},
+                                              {3, "menu.controls", Page::Controls}}};
+/** The Game page's own pages: its first rows, each code its place. */
+constexpr std::array<PageLink, 3> kGameLinks{{{0, "settings.difficulty", Page::Difficulty},
+                                              {1, "settings.multiplayer", Page::Multiplayer},
+                                              {2, "settings.combat", Page::Combat}}};
+
+const PageLink* linkOf(std::span<const PageLink> links, s32 code) {
+    for (const PageLink& link : links) {
+        if (link.code == code) {
+            return &link;
+        }
+    }
+    return nullptr;
+}
+const PageLink* linkTo(std::span<const PageLink> links, Page page) {
+    for (const PageLink& link : links) {
+        if (link.page == page) {
+            return &link;
+        }
+    }
+    return nullptr;
+}
+
+/** An On/Off row bound to its setting. */
+template <class Config> struct Switch {
+    s32 code = 0;
+    std::string_view label;
+    bool Config::*field = nullptr;
+};
+constexpr std::array<Switch<GameOptionsConfig>, 3> kGameSwitches{
+    {{3, "settings.expandedShop", &GameOptionsConfig::expandedShop},
+     {4, "settings.autoSave", &GameOptionsConfig::autoSave},
+     {kAggressorModeCode, "settings.aggressorMode", &GameOptionsConfig::aggressorMode}}};
+constexpr std::array<Switch<CombatConfig>, 4> kCombatSwitches{
+    {{0, "settings.autoMelee", &CombatConfig::autoMelee},
+     {1, "settings.enemyHealthBars", &CombatConfig::enemyHealthBars},
+     {2, "settings.autoActivateItems", &CombatConfig::autoActivateItems},
+     {3, "settings.autoAim", &CombatConfig::autoAim}}};
+
+/** Flips the switch with `code`; false when there is none. */
+template <class Config, usize N>
+bool flipSwitch(const std::array<Switch<Config>, N>& switches, s32 code, Config& config) {
+    for (const auto& entry : switches) {
+        if (entry.code == code) {
+            config.*entry.field = !(config.*entry.field);
+            return true;
+        }
+    }
+    return false;
+}
+
+/** What the Video rows read besides the settings: the scope and what the machine offers. */
+struct VideoView {
+    Scope scope = Scope::Title;
+    const DisplayOptions& display;
+    std::vector<Extent2D> resolutions; ///< the sizes a fullscreen window may take
+    s32 monitor = 0;                   ///< the display shown: the one chosen, else the window's
+};
+
+/** What a row shows: a text id to look up, or text shown as it is (a size, a count). */
+struct Shown {
+    std::string_view id;
+    std::string literal;
+};
+
+std::string sizeText(Extent2D size) {
+    return std::to_string(size.width) + " x " + std::to_string(size.height);
+}
+
+/**
+ * One Video row, defined once: its code and label, what it shows, when it is offered, what a
+ * step does to it and what Restore Defaults puts back. An On/Off row names its setting and
+ * needs nothing more; `enabled` alone greys a row, a step keeps its own guard.
+ */
+struct VideoRow {
+    s32 code = 0;
+    std::string_view label;
+    bool DisplayConfig::*toggle = nullptr;
+    Shown (*shown)(const GameConfig&, const VideoView&) = nullptr;
+    bool (*enabled)(const GameConfig&, const VideoView&) = nullptr; ///< none: always offered
+    /** Steps the row by `direction`; false leaves the settings and the page as they were. */
+    bool (*step)(GameConfig&, const VideoView&, s32 direction) = nullptr;
+    /** What Restore Defaults puts back; none: the row keeps its value. */
+    void (*restore)(GameConfig&, const GameConfig& defaults, const VideoView&) = nullptr;
+    std::span<const std::string_view> labels; ///< every text id it may show, for the width
+};
+
+/** Scene post-processing is the Vulkan device's alone. */
+bool vulkanOnly(const GameConfig& config, const VideoView& /*view*/) {
+    return config.display.renderer != GraphicsApi::OpenGl;
+}
+
+const std::array<VideoRow, 12> kVideoTable{{
+    // The renderer is chosen from the title alone, the one drawing a level not being
+    // swappable under it; the choice takes effect when the game is next started.
+    {.code = kRendererCode,
+     .label = "settings.renderer",
+     .shown =
+         [](const GameConfig& config, const VideoView& /*view*/) {
+             return Shown{config.display.renderer == GraphicsApi::OpenGl ? "settings.opengl"
+                                                                         : "settings.vulkan"};
+         },
+     .enabled = [](const GameConfig& /*config*/,
+                   const VideoView& view) { return view.scope == Scope::Title; },
+     .step =
+         [](GameConfig& config, const VideoView& view, s32 /*direction*/) {
+             if (view.scope != Scope::Title) {
+                 return false;
+             }
+             config.display.renderer = otherGraphicsApi(config.display.renderer);
+             return true;
+         },
+     .restore =
+         [](GameConfig& config, const GameConfig& defaults, const VideoView& view) {
+             if (view.scope == Scope::Title) {
+                 config.display.renderer = defaults.display.renderer;
+             }
+         },
+     .labels = kRendererLabels},
+    {.code = 0, .label = "settings.vsync", .toggle = &DisplayConfig::vsync},
+    {.code = 1,
+     .label = "settings.fps",
+     .shown =
+         [](const GameConfig& config, const VideoView& /*view*/) {
+             const auto rate = config.timing.gameplayFrameRate;
+             return rate == 0 ? Shown{"settings.unlimited"} : Shown{{}, std::to_string(rate)};
+         },
+     .step =
+         [](GameConfig& config, const VideoView& /*view*/, s32 direction) {
+             const auto rate = cycleChoice(kFrameRates, config.timing.gameplayFrameRate, direction);
+             config.display.maxFrameRate = rate;
+             config.timing.gameplayFrameRate = rate;
+             return true;
+         },
+     .restore =
+         [](GameConfig& config, const GameConfig& defaults, const VideoView& /*view*/) {
+             config.display.maxFrameRate = defaults.display.maxFrameRate;
+             config.timing.gameplayFrameRate = defaults.timing.gameplayFrameRate;
+         },
+     .labels = kFrameRateLabels},
+    {.code = 2,
+     .label = "settings.antialiasing",
+     .shown =
+         [](const GameConfig& config, const VideoView& /*view*/) {
+             const auto samples = config.display.sampleCount;
+             return Shown{samples == 2   ? "settings.msaa2"
+                          : samples == 4 ? "settings.msaa4"
+                                         : "settings.off"};
+         },
+     .step =
+         [](GameConfig& config, const VideoView& /*view*/, s32 direction) {
+             config.display.sampleCount =
+                 cycleChoice(kSampleCounts, config.display.sampleCount, direction);
+             return true;
+         },
+     .restore =
+         [](GameConfig& config, const GameConfig& defaults, const VideoView& /*view*/) {
+             config.display.sampleCount = defaults.display.sampleCount;
+         },
+     .labels = kSampleLabels},
+    // Chosen in fullscreen alone; borderless shows the desktop's size.
+    {.code = 3,
+     .label = "settings.resolution",
+     .shown =
+         [](const GameConfig& config, const VideoView& view) {
+             const bool borderless = config.display.windowMode == WindowMode::BorderlessFullscreen;
+             return Shown{
+                 {},
+                 sizeText(borderless && !view.display.desktop.isZero()
+                              ? view.display.desktop
+                              : Extent2D{config.display.windowWidth, config.display.windowHeight})};
+         },
+     .enabled =
+         [](const GameConfig& config, const VideoView& view) {
+             return config.display.windowMode == WindowMode::Fullscreen &&
+                    view.resolutions.size() > 1;
+         },
+     .step =
+         [](GameConfig& config, const VideoView& view, s32 direction) {
+             if (config.display.windowMode != WindowMode::Fullscreen || view.resolutions.empty()) {
+                 return false;
+             }
+             const auto& choices = view.resolutions;
+             const auto it = std::ranges::find(
+                 choices, Extent2D{config.display.windowWidth, config.display.windowHeight});
+             const auto count = static_cast<s32>(choices.size());
+             const auto index = it == choices.end() ? 0 : static_cast<s32>(it - choices.begin());
+             const auto size = choices[static_cast<usize>((index + direction + count) % count)];
+             config.display.windowWidth = size.width;
+             config.display.windowHeight = size.height;
+             return true;
+         },
+     .restore =
+         [](GameConfig& config, const GameConfig& defaults, const VideoView& /*view*/) {
+             config.display.windowWidth = defaults.display.windowWidth;
+             config.display.windowHeight = defaults.display.windowHeight;
+         }},
+    // Going fullscreen at a size the display does not offer takes the desktop's.
+    {.code = 4,
+     .label = "settings.windowMode",
+     .shown =
+         [](const GameConfig& config, const VideoView& /*view*/) {
+             const auto mode = config.display.windowMode;
+             return Shown{mode == WindowMode::Fullscreen             ? "settings.fullscreen"
+                          : mode == WindowMode::BorderlessFullscreen ? "settings.borderless"
+                                                                     : "settings.windowed"};
+         },
+     .enabled = [](const GameConfig& /*config*/,
+                   const VideoView& view) { return !view.display.desktop.isZero(); },
+     .step =
+         [](GameConfig& config, const VideoView& view, s32 direction) {
+             if (view.display.desktop.isZero()) {
+                 return false;
+             }
+             config.display.windowMode = static_cast<WindowMode>(
+                 (static_cast<s32>(config.display.windowMode) + direction + 3) % 3);
+             if (config.display.windowMode == WindowMode::Fullscreen &&
+                 std::ranges::find(
+                     view.display.resolutions,
+                     Extent2D{config.display.windowWidth, config.display.windowHeight}) ==
+                     view.display.resolutions.end()) {
+                 config.display.windowWidth = view.display.desktop.width;
+                 config.display.windowHeight = view.display.desktop.height;
+             }
+             return true;
+         },
+     .restore =
+         [](GameConfig& config, const GameConfig& defaults, const VideoView& /*view*/) {
+             config.display.windowMode = defaults.display.windowMode;
+         },
+     .labels = kWindowModeLabels},
+    // The display, counted as the platform lists them; one alone offers no choice. Restore
+    // Defaults leaves it where it is.
+    {.code = kDisplayCode,
+     .label = "settings.display",
+     .shown = [](const GameConfig& /*config*/,
+                 const VideoView& view) { return Shown{{}, std::to_string(view.monitor + 1)}; },
+     .enabled = [](const GameConfig& /*config*/,
+                   const VideoView& view) { return view.display.monitors.size() > 1; },
+     .step =
+         [](GameConfig& config, const VideoView& view, s32 direction) {
+             const auto count = static_cast<s32>(view.display.monitors.size());
+             if (count < 2) {
+                 return false;
+             }
+             config.display.monitor = (view.monitor + direction + count) % count;
+             return true;
+         }},
+    {.code = 8,
+     .label = "settings.depthOfField",
+     .toggle = &DisplayConfig::depthOfField,
+     .enabled = vulkanOnly},
+    {.code = 9, .label = "settings.bloom", .toggle = &DisplayConfig::bloom, .enabled = vulkanOnly},
+    {.code = 10,
+     .label = "settings.ambientOcclusion",
+     .toggle = &DisplayConfig::ambientOcclusion,
+     .enabled = vulkanOnly},
+    {.code = 11,
+     .label = "settings.textureFiltering",
+     .shown =
+         [](const GameConfig& config, const VideoView& /*view*/) {
+             const auto index = static_cast<usize>(
+                 std::ranges::find(kTextureFiltering, config.display.textureFiltering) -
+                 kTextureFiltering.begin());
+             return Shown{kTextureLabels[index < kTextureLabels.size() ? index : 1]};
+         },
+     .step =
+         [](GameConfig& config, const VideoView& /*view*/, s32 direction) {
+             config.display.textureFiltering =
+                 cycleChoice(kTextureFiltering, config.display.textureFiltering, direction);
+             return true;
+         },
+     .restore =
+         [](GameConfig& config, const GameConfig& defaults, const VideoView& /*view*/) {
+             config.display.textureFiltering = defaults.display.textureFiltering;
+         },
+     .labels = kTextureLabels},
+    {.code = 12, .label = "settings.smoothSprites", .toggle = &DisplayConfig::smoothSprites},
+}};
+constexpr s32 kVideoRows = static_cast<s32>(std::tuple_size_v<decltype(kVideoTable)>);
+
+const VideoRow* videoRow(s32 code) {
+    for (const VideoRow& row : kVideoTable) {
+        if (row.code == code) {
+            return &row;
+        }
+    }
+    return nullptr;
+}
+Shown shownOf(const VideoRow& row, const GameConfig& config, const VideoView& view) {
+    if (row.toggle != nullptr) {
+        return Shown{config.display.*row.toggle ? "settings.on" : "settings.off"};
+    }
+    return row.shown(config, view);
+}
+bool stepRow(const VideoRow& row, GameConfig& config, const VideoView& view, s32 direction) {
+    if (row.toggle != nullptr) {
+        config.display.*row.toggle = !(config.display.*row.toggle);
+        return true;
+    }
+    return row.step(config, view, direction);
+}
+void restoreRow(const VideoRow& row, GameConfig& config, const GameConfig& defaults,
+                const VideoView& view) {
+    if (row.toggle != nullptr) {
+        config.display.*row.toggle = defaults.display.*row.toggle;
+    } else if (row.restore != nullptr) {
+        row.restore(config, defaults, view);
+    }
 }
 } // namespace
 std::string SettingsMenu::text(std::string_view id) const {
@@ -128,13 +464,11 @@ void SettingsMenu::rebuild(s32 selection) {
         m_controls.define(definition, *m_painter, [this](std::string_view id) { return text(id); });
         break;
     case Page::Root: {
-        add(text("menu.audio"), 0);
-        add(text("menu.gameOptions"), 1);
-        if (m_scope != Scope::Level) {
-            add(text("menu.compass"), 2);
+        for (const PageLink& link : kRootLinks) {
+            if (link.page != Page::Compass || m_scope != Scope::Level) {
+                add(text(link.label), link.code);
+            }
         }
-        add(text("menu.graphics"), kGraphicsCode);
-        add(text("menu.controls"), 3);
         rows.fit(1.0f, m_screen.width);
         break;
     }
@@ -162,65 +496,13 @@ void SettingsMenu::rebuild(s32 selection) {
             add(text("settings.revert"), 101);
             definition.scale = 0.7f;
         } else {
-            const auto choice = [&](std::string label, std::string value, s32 code) {
-                rows.value(std::move(label), code, std::move(value));
-            };
-            // The renderer is chosen from the title alone, the one drawing a level not being
-            // swappable under it; the choice takes effect when the game is next started.
-            const bool openGl = m_config.display.renderer == GraphicsApi::OpenGl;
-            choice(text("settings.renderer"), text(openGl ? "settings.opengl" : "settings.vulkan"),
-                   kRendererCode);
-            definition.items.back().enabled = m_scope == Scope::Title;
-            choice(text("settings.vsync"),
-                   text(m_config.display.vsync ? "settings.on" : "settings.off"), 0);
-            const auto rate = m_config.timing.gameplayFrameRate;
-            choice(text("settings.fps"),
-                   (rate == 0 ? text("settings.unlimited") : std::to_string(rate)), 1);
-            const auto samples = m_config.display.sampleCount;
-            std::string_view sampleLabel = "settings.off";
-            if (samples == 2) {
-                sampleLabel = "settings.msaa2";
-            } else if (samples == 4) {
-                sampleLabel = "settings.msaa4";
+            const VideoView view{m_scope, m_display, resolutions(), shownMonitor()};
+            for (const VideoRow& row : kVideoTable) {
+                const Shown shown = shownOf(row, m_config, view);
+                rows.value(text(row.label), row.code,
+                           shown.id.empty() ? shown.literal : text(shown.id),
+                           row.enabled == nullptr || row.enabled(m_config, view));
             }
-            choice(text("settings.antialiasing"), text(sampleLabel), 2);
-            const bool borderless = m_config.display.windowMode == WindowMode::BorderlessFullscreen;
-            const auto size =
-                borderless && !m_display.desktop.isZero()
-                    ? m_display.desktop
-                    : Extent2D{m_config.display.windowWidth, m_config.display.windowHeight};
-            choice(text("settings.resolution"),
-                   std::to_string(size.width) + " x " + std::to_string(size.height), 3);
-            definition.items.back().enabled =
-                m_config.display.windowMode == WindowMode::Fullscreen && resolutions().size() > 1;
-            std::string_view modeLabel = "settings.windowed";
-            if (m_config.display.windowMode == WindowMode::Fullscreen) {
-                modeLabel = "settings.fullscreen";
-            } else if (borderless) {
-                modeLabel = "settings.borderless";
-            }
-            choice(text("settings.windowMode"), text(modeLabel), 4);
-            definition.items.back().enabled = !m_display.desktop.isZero();
-            // The display, counted as the platform lists them; one alone offers no choice.
-            choice(text("settings.display"), std::to_string(shownMonitor() + 1), kDisplayCode);
-            definition.items.back().enabled = m_display.monitors.size() > 1;
-            // Scene post-processing is the Vulkan device's alone.
-            choice(text("settings.depthOfField"),
-                   text(m_config.display.depthOfField ? "settings.on" : "settings.off"), 8);
-            definition.items.back().enabled = !openGl;
-            choice(text("settings.bloom"),
-                   text(m_config.display.bloom ? "settings.on" : "settings.off"), 9);
-            definition.items.back().enabled = !openGl;
-            choice(text("settings.ambientOcclusion"),
-                   text(m_config.display.ambientOcclusion ? "settings.on" : "settings.off"), 10);
-            definition.items.back().enabled = !openGl;
-            const auto filterIndex = static_cast<usize>(
-                std::ranges::find(kTextureFiltering, m_config.display.textureFiltering) -
-                kTextureFiltering.begin());
-            choice(text("settings.textureFiltering"),
-                   text(kTextureLabels[filterIndex < kTextureLabels.size() ? filterIndex : 1]), 11);
-            choice(text("settings.smoothSprites"),
-                   text(m_config.display.smoothSprites ? "settings.on" : "settings.off"), 12);
             s32 labelWidth = 0;
             s32 valueWidth = 0;
             for (const auto& item : definition.items) {
@@ -228,21 +510,16 @@ void SettingsMenu::rebuild(s32 selection) {
                 valueWidth = std::max(valueWidth, m_painter->measure(item.value, 1));
             }
             // Budget all choices, not just the current value, so cycling never resizes the font.
-            for (const auto* id :
-                 {"settings.borderless", "settings.fullscreen", "settings.windowed", "settings.on",
-                  "settings.off", "settings.unlimited", "settings.msaa2", "settings.msaa4",
-                  "settings.vulkan", "settings.opengl"}) {
-                valueWidth = std::max(valueWidth, m_painter->measure(text(id), 1));
+            for (const VideoRow& row : kVideoTable) {
+                for (const auto id : row.toggle != nullptr
+                                         ? std::span<const std::string_view>{kOnOff}
+                                         : row.labels) {
+                    valueWidth = std::max(valueWidth, m_painter->measure(text(id), 1));
+                }
             }
             const auto measureSize = [&](Extent2D extent) {
-                valueWidth =
-                    std::max(valueWidth, m_painter->measure(std::to_string(extent.width) + " x " +
-                                                                std::to_string(extent.height),
-                                                            1));
+                valueWidth = std::max(valueWidth, m_painter->measure(sizeText(extent), 1));
             };
-            for (const auto id : kTextureLabels) {
-                valueWidth = std::max(valueWidth, m_painter->measure(text(id), 1));
-            }
             valueWidth = std::max(valueWidth,
                                   m_painter->measure(std::to_string(m_display.monitors.size()), 1));
             for (const auto extent : m_display.resolutions) {
@@ -313,23 +590,21 @@ void SettingsMenu::rebuild(s32 selection) {
         definition.title = text("menu.gameOptions");
         rows.column();
         rows.switches();
-        add(text("settings.difficulty"), 0);
-        add(text("settings.multiplayer"), 1);
-        add(text("settings.combat"), 2);
-        rows.toggle(text("settings.expandedShop"), 3, m_config.game.expandedShop);
-        rows.toggle(text("settings.autoSave"), 4, m_config.game.autoSave);
-        rows.toggle(text("settings.aggressorMode"), kAggressorModeCode,
-                    m_config.game.aggressorMode);
+        for (const PageLink& link : kGameLinks) {
+            add(text(link.label), link.code);
+        }
+        for (const auto& entry : kGameSwitches) {
+            rows.toggle(text(entry.label), entry.code, m_config.game.*entry.field);
+        }
         rows.value(text("settings.language"), kLanguageCode, languageName());
         break;
     case Page::Combat:
         definition.title = text("settings.combat");
         rows.column(SettingsRows::kColumnX, 160);
         rows.switches();
-        rows.toggle(text("settings.autoMelee"), 0, m_config.combat.autoMelee);
-        rows.toggle(text("settings.enemyHealthBars"), 1, m_config.combat.enemyHealthBars);
-        rows.toggle(text("settings.autoActivateItems"), 2, m_config.combat.autoActivateItems);
-        rows.toggle(text("settings.autoAim"), 3, m_config.combat.autoAim);
+        for (const auto& entry : kCombatSwitches) {
+            rows.toggle(text(entry.label), entry.code, m_config.combat.*entry.field);
+        }
         break;
     case Page::Difficulty:
         definition.title = text("settings.difficulty");
@@ -418,65 +693,10 @@ void SettingsMenu::change(s32 direction) {
         return;
     }
     if (m_page == Page::Graphics) {
-        if (code == 0) {
-            next.display.vsync = !next.display.vsync;
-        } else if (code == 1) {
-            const auto rate = cycleChoice(kFrameRates, next.timing.gameplayFrameRate, direction);
-            next.display.maxFrameRate = rate;
-            next.timing.gameplayFrameRate = rate;
-        } else if (code == 2) {
-            next.display.sampleCount =
-                cycleChoice(kSampleCounts, next.display.sampleCount, direction);
-        } else if (code == 3) {
-            if (next.display.windowMode != WindowMode::Fullscreen) {
-                return;
-            }
-            const auto choices = resolutions();
-            if (choices.empty()) {
-                return;
-            }
-            const auto it = std::ranges::find(
-                choices, Extent2D{next.display.windowWidth, next.display.windowHeight});
-            const auto count = static_cast<s32>(choices.size());
-            const auto index = it == choices.end() ? 0 : static_cast<s32>(it - choices.begin());
-            const auto size = choices[static_cast<usize>((index + direction + count) % count)];
-            next.display.windowWidth = size.width;
-            next.display.windowHeight = size.height;
-        } else if (code == 8) {
-            next.display.depthOfField = !next.display.depthOfField;
-        } else if (code == 9) {
-            next.display.bloom = !next.display.bloom;
-        } else if (code == 10) {
-            next.display.ambientOcclusion = !next.display.ambientOcclusion;
-        } else if (code == 11) {
-            next.display.textureFiltering =
-                cycleChoice(kTextureFiltering, next.display.textureFiltering, direction);
-        } else if (code == 12) {
-            next.display.smoothSprites = !next.display.smoothSprites;
-        } else if (code == kRendererCode) {
-            if (m_scope != Scope::Title) {
-                return;
-            }
-            next.display.renderer = otherGraphicsApi(next.display.renderer);
-        } else if (code == kDisplayCode) {
-            const auto count = static_cast<s32>(m_display.monitors.size());
-            if (count < 2) {
-                return;
-            }
-            next.display.monitor = (shownMonitor() + direction + count) % count;
-        } else if (code == 4) {
-            if (m_display.desktop.isZero()) {
-                return;
-            }
-            next.display.windowMode = static_cast<WindowMode>(
-                (static_cast<s32>(next.display.windowMode) + direction + 3) % 3);
-            if (next.display.windowMode == WindowMode::Fullscreen &&
-                std::ranges::find(m_display.resolutions,
-                                  Extent2D{next.display.windowWidth, next.display.windowHeight}) ==
-                    m_display.resolutions.end()) {
-                next.display.windowWidth = m_display.desktop.width;
-                next.display.windowHeight = m_display.desktop.height;
-            }
+        const VideoView view{m_scope, m_display, resolutions(), shownMonitor()};
+        if (const VideoRow* row = videoRow(code);
+            row != nullptr && !stepRow(*row, next, view, direction)) {
+            return;
         }
         m_config = std::move(next);
         m_notice.clear();
@@ -484,13 +704,7 @@ void SettingsMenu::change(s32 direction) {
         return;
     }
     if (m_page == Page::Game) {
-        if (code == 3) {
-            next.game.expandedShop = !next.game.expandedShop;
-        } else if (code == 4) {
-            next.game.autoSave = !next.game.autoSave;
-        } else if (code == kAggressorModeCode) {
-            next.game.aggressorMode = !next.game.aggressorMode;
-        } else if (code == kLanguageCode) {
+        if (code == kLanguageCode) {
             // The next language the text directory holds; a lone one stays.
             const auto choices = languages();
             if (choices.empty()) {
@@ -506,7 +720,7 @@ void SettingsMenu::change(s32 direction) {
             if (next.text.language == m_config.text.language) {
                 return;
             }
-        } else {
+        } else if (!flipSwitch(kGameSwitches, code, next.game)) {
             return;
         }
     } else if (m_page == Page::Difficulty) {
@@ -516,12 +730,8 @@ void SettingsMenu::change(s32 direction) {
     } else if (m_page == Page::Compass) {
         next.camera.compass = code == 1;
     } else if (m_page == Page::Combat) {
-        switch (code) {
-        case 0: next.combat.autoMelee = !next.combat.autoMelee; break;
-        case 1: next.combat.enemyHealthBars = !next.combat.enemyHealthBars; break;
-        case 2: next.combat.autoActivateItems = !next.combat.autoActivateItems; break;
-        case 3: next.combat.autoAim = !next.combat.autoAim; break;
-        default: return;
+        if (!flipSwitch(kCombatSwitches, code, next.combat)) {
+            return;
         }
     } else {
         return;
@@ -646,21 +856,10 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         } else if (code == 6) {
             // Restore Defaults stages the shipped video settings for Apply.
             const GameConfig defaults;
-            if (m_scope == Scope::Title) {
-                m_config.display.renderer = defaults.display.renderer;
+            const VideoView view{m_scope, m_display, resolutions(), shownMonitor()};
+            for (const VideoRow& row : kVideoTable) {
+                restoreRow(row, m_config, defaults, view);
             }
-            m_config.display.vsync = defaults.display.vsync;
-            m_config.display.depthOfField = defaults.display.depthOfField;
-            m_config.display.bloom = defaults.display.bloom;
-            m_config.display.ambientOcclusion = defaults.display.ambientOcclusion;
-            m_config.display.sampleCount = defaults.display.sampleCount;
-            m_config.display.textureFiltering = defaults.display.textureFiltering;
-            m_config.display.smoothSprites = defaults.display.smoothSprites;
-            m_config.display.windowWidth = defaults.display.windowWidth;
-            m_config.display.windowHeight = defaults.display.windowHeight;
-            m_config.display.windowMode = defaults.display.windowMode;
-            m_config.display.maxFrameRate = defaults.display.maxFrameRate;
-            m_config.timing.gameplayFrameRate = defaults.timing.gameplayFrameRate;
             rebuild(kVideoRows + 1);
         } else if (event.direction != 0) {
             change(event.direction);
@@ -674,20 +873,15 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (m_page == Page::Root) {
             return {MenuAction::Back, 0};
         }
-        if (m_page == Page::Difficulty || m_page == Page::Multiplayer || m_page == Page::Combat) {
-            s32 selection = 0;
-            if (m_page == Page::Multiplayer) {
-                selection = 1;
-            } else if (m_page == Page::Combat) {
-                selection = 2;
-            }
+        // Back from one of the Game page's own pages lands on the row that opened it.
+        if (const PageLink* link = linkTo(kGameLinks, m_page)) {
             m_page = Page::Game;
             m_notice.clear();
-            rebuild(selection);
+            rebuild(link->code);
             return {};
         }
-        const s32 previousCode =
-            m_page == Page::Graphics ? kGraphicsCode : static_cast<s32>(m_page) - 1;
+        const PageLink* link = linkTo(kRootLinks, m_page);
+        const s32 previousCode = link != nullptr ? link->code : 0;
         m_page = Page::Root;
         m_notice.clear();
         rebuild();
@@ -698,14 +892,17 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     }
     if (event.action == MenuAction::Choice) {
         if (m_page == Page::Root) {
-            if (event.code == 3) {
+            const PageLink* link = linkOf(kRootLinks, event.code);
+            if (link == nullptr) {
+                return event;
+            }
+            if (link->page == Page::Controls) {
                 m_page = Page::Controls;
                 m_controls.begin(m_config);
                 rebuild();
                 return event;
             }
-            m_page =
-                event.code == kGraphicsCode ? Page::Graphics : static_cast<Page>(event.code + 1);
+            m_page = link->page;
             if (m_page == Page::Audio) {
                 m_audioSampleTicks = 0;
             }
@@ -721,22 +918,11 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
                 m_video.begin(m_config, m_previewVideo, m_persist, m_clock);
             }
             m_notice.clear();
-            rebuild(m_page == Page::Compass && m_config.camera.compass ? 1 : 0);
-        } else if (m_page == Page::Game && event.code == 0) {
-            m_page = Page::Difficulty;
-            // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
-            // NOLINTNEXTLINE(readability-qualified-auto)
-            const auto selected =
-                std::ranges::find(DifficultyConfig::kNames, m_config.difficulty.level);
-            rebuild(selected == DifficultyConfig::kNames.end()
-                        ? 1
-                        : static_cast<s32>(selected - DifficultyConfig::kNames.begin()));
-        } else if (m_page == Page::Game && event.code == 1) {
-            m_page = Page::Multiplayer;
-            rebuild(static_cast<s32>(m_config.multiplayer.mode));
-        } else if (m_page == Page::Game && event.code == 2) {
-            m_page = Page::Combat;
-            rebuild();
+            rebuild(currentChoice());
+        } else if (const PageLink* link =
+                       m_page == Page::Game ? linkOf(kGameLinks, event.code) : nullptr) {
+            m_page = link->page;
+            rebuild(currentChoice());
         } else if (m_page == Page::Audio) {
             if (event.code == kAudioSliders && event.part != 0 &&
                 m_config.audio.stereo != (event.part == 2)) {
@@ -754,6 +940,20 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         m_audioSampleTicks = 0;
     }
     return event;
+}
+s32 SettingsMenu::currentChoice() const {
+    switch (m_page) {
+    case Page::Difficulty:
+        for (usize i = 0; i < DifficultyConfig::kNames.size(); ++i) {
+            if (DifficultyConfig::kNames[i] == m_config.difficulty.level) {
+                return static_cast<s32>(i);
+            }
+        }
+        return 1; // an unknown level opens on the normal one
+    case Page::Multiplayer: return static_cast<s32>(m_config.multiplayer.mode);
+    case Page::Compass: return m_config.camera.compass ? 1 : 0;
+    default: return 0;
+    }
 }
 s32 SettingsMenu::depth() const {
     if (m_page == Page::Root) {

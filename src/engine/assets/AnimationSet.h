@@ -39,6 +39,7 @@ struct TreeNodeInfo {
         std::string object;
         s32 start = 0;
         s32 frames = 0;
+        bool interpolate = true; ///< decoded discrete swaps must not morph geometry
     };
     std::vector<ObjectFrames> objectFrames; ///< an object node's, one per sequence
 

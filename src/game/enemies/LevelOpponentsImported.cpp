@@ -22,7 +22,10 @@ void LevelOpponents::openImportedActors() {
             if (!m_enemies.loadKind(actor.spawn.kind)) {
                 return nullptr;
             }
-            if (auto* native = resources.world.imported()->importedActorArchive(actor.spawn.kind)) {
+            if (auto* native =
+                    resources.world.imported()->hasEnemyAssets()
+                        ? nullptr
+                        : resources.world.imported()->importedActorArchive(actor.spawn.kind)) {
                 return native;
             }
             return m_enemies.archive(actor.spawn.kind);
@@ -33,7 +36,10 @@ void LevelOpponents::openImportedActors() {
     }
     // Critter cues use the costume's native GDL bank. Swarm voices are bound
     // independently below, so borrowing art cannot accidentally mute the golems.
-    if (actors.empty()) {
+    if (actors.empty() || (resources.world.imported()->hasEnemyAssets() &&
+                           std::ranges::none_of(actors, [](const ImportedActor& actor) {
+                               return actor.spawn.kind == kGolemEnemyKind;
+                           }))) {
         return;
     }
     LevelCatalog catalog;
@@ -71,11 +77,19 @@ void LevelOpponents::updateImportedActors(f32 seconds, std::span<const EnemyView
                 .has_value();
         }
         const auto id = m_enemies.spawn(actor.spawn, views, m_generators.obstacles());
-        if (id && actor.spawn.kind == kItKind) {
+        if (id && actor.spawn.kind == kItKind && !m_resources->world.imported()->hasEnemyAssets()) {
             m_importedActors.bindLive(actor.nativeIndex, *id, m_enemies.instanceOf(*id));
         }
         return id.has_value();
     });
+    if (!timeStopped && !views.empty()) {
+        if (auto* imported = m_resources->world.imported()) {
+            imported->releaseEnemies([&](const EnemySpawn& spawn) {
+                return m_enemies.loadKind(spawn.kind) &&
+                       m_enemies.spawn(spawn, views, m_generators.obstacles()).has_value();
+            });
+        }
+    }
 }
 
 void LevelOpponents::openImportedBoss(const EnemyScales& scales) {
@@ -87,6 +101,29 @@ void LevelOpponents::openImportedBoss(const EnemyScales& scales) {
         return;
     }
     auto& resources = *m_resources;
+    auto nativeAssets =
+        resources.world.imported()->loadBossAssets(resources.device, resources.root);
+    if (nativeAssets) {
+        m_bosses.open(resources.device, resources.root, &resources.world.collision(), scales,
+                      definition->counterpartStage.front(), {},
+                      resources.world.imported()->bossLegendProfile());
+        if (!m_bosses.preload(definition->kind, std::move(nativeAssets))) {
+            throw FormatError("Imported boss: native assets could not be installed");
+        }
+        Vec3 position = definition->position;
+        if (const auto floor = resources.world.collision().floorAt(position, 14, 1000))
+            position.y = floor->y;
+        if (!m_bosses.spawn(definition->kind, position, definition->yaw)) {
+            throw FormatError("Imported boss: native combatant could not be created");
+        }
+        auto* archive = m_bosses.archive();
+        m_bossMeter.bind(m_bosses.healthMeters(), archive ? &archive->textures : nullptr);
+        if (const auto white = resources.world.powerups().textures.find("AAAWHITE")) {
+            m_bosses.setHitFlash(
+                &resources.world.powerups().textures.texture(resources.device, *white));
+        }
+        return;
+    }
     LevelCatalog catalog;
     WorldData donor;
     if (!catalog.load(resources.root) ||

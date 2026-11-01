@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <limits>
 #include <set>
+#include <string>
 
+#include "engine/core/Log.h"
 #include "engine/io/ByteReader.h"
 
 namespace gdl::game {
@@ -14,6 +16,17 @@ enum class Kind : u8 { Report = 1, Accepted, Failed };
 using Failure = NativeAgreement::Failure;
 using Digest = NativeAgreement::Digest;
 using Bytes = std::array<u8, NativeAgreement::kPacketBytes>;
+
+std::string digestText(const Digest& digest) {
+    constexpr std::string_view kDigits = "0123456789abcdef";
+    std::string result;
+    result.reserve(digest.size() * 2);
+    for (const u8 byte : digest) {
+        result.push_back(kDigits[byte >> 4U]);
+        result.push_back(kDigits[byte & 15U]);
+    }
+    return result;
+}
 
 Bytes encode(Kind kind, u64 epoch, u64 tick, const Digest& digest, Failure failure = Failure::None,
              bool terminal = false) {
@@ -217,6 +230,9 @@ NativeAgreement::Admission NativeAgreement::admit(u8 peer, u64 tick, const Diges
             return Admission::Stale;
         }
         if (previous->second != digest) {
+            log::error("Native digest conflict: epoch={} tick={} local={} origin={} "
+                       "confirmed=true previous={} received={}",
+                       m_epoch, tick, m_local, peer, digestText(previous->second), digestText(digest));
             fail(Failure::Conflict, tick);
             return Admission::Failed;
         }
@@ -229,6 +245,9 @@ NativeAgreement::Admission NativeAgreement::admit(u8 peer, u64 tick, const Diges
     auto& previous = entry->second.digests[peer];
     if (previous) {
         if (*previous != digest) {
+            log::error("Native digest conflict: epoch={} tick={} local={} origin={} "
+                       "confirmed=false previous={} received={}",
+                       m_epoch, tick, m_local, peer, digestText(*previous), digestText(digest));
             fail(Failure::Conflict, tick);
             return Admission::Failed;
         }
@@ -256,6 +275,11 @@ void NativeAgreement::settle() {
             bool mismatch = false;
             for (u8 peer = 1; peer <= 4; ++peer) {
                 if (occupied(peer) && *pending.digests[peer] != digest) {
+                    log::warn("Native digest mismatch: epoch={} tick={} host={} peer={} guest={} "
+                              "agreed={} pending={} terminal={}",
+                              m_epoch, tick, digestText(digest), peer,
+                              digestText(*pending.digests[peer]), m_agreed, m_pending.size(),
+                              m_terminal.has_value());
                     m_mismatched[peer] = true;
                     mismatch = true;
                 }
@@ -377,6 +401,9 @@ NativeAgreement::Admission NativeAgreement::receive(PacketTransport::Connection 
         return Admission::Invalid;
     }
     if (*entry->second.digests[m_local] != message->digest) {
+        log::error("Native host verdict mismatch: epoch={} tick={} peer={} local={} host={}",
+                   m_epoch, message->tick, m_local, digestText(*entry->second.digests[m_local]),
+                   digestText(message->digest));
         fail(Failure::Mismatch, message->tick);
         return Admission::Failed;
     }

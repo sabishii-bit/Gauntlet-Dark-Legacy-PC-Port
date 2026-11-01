@@ -23,6 +23,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/effects/PotionEmission.h"
@@ -30,9 +31,9 @@
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
 #include "game/level/SafeRocks.h"
+#include "game/mechanics/MechanicsFacade.h"
 #include "game/party/BodyCollision.h"
 #include "game/party/PartyMotion.h"
-#include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/ComboMove.h"
@@ -128,7 +129,7 @@ TEST_CASE("native turbo volleys retain distinct duplicate-row and catch-up relea
       "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
       "moves":{"turboB":0,"turboC1":0,"turboC2":0},"moveStrikes":[
       {"type":10,"startFrame":0,"endFrame":40,"delay":1,"angle":0.45,"flags":256}]})");
-    const u32 flags = GENERATE(0U, 4U, powerup::kRapidFire | powerup::kFiveWayShot | 4U);
+    const u32 flags = GENERATE(0U, 4U, damage::kRapidFire | damage::kFiveWayShot | 4U);
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     Fixture fixture;
@@ -169,7 +170,7 @@ TEST_CASE("native turbo volleys retain distinct duplicate-row and catch-up relea
     CHECK(player.figure->animator().attackSeconds() == priorAttackSeconds);
     SoundSet common;
     REQUIRE(common.load(nativeRoot / "AUDIO/COMMON"));
-    const bool fan = (flags & powerup::kFiveWayShot) != 0;
+    const bool fan = (flags & damage::kFiveWayShot) != 0;
     auto& bank = flags == 0 ? player.figure->voice() : common;
     const auto call = bank.find(fan ? "S_SUPERSHOT" : flags != 0 ? "S_AMULETACID" : "S_WARTHROW");
     REQUIRE(call);
@@ -236,8 +237,8 @@ TEST_CASE("native turbo volleys retain distinct duplicate-row and catch-up relea
             // PlyrSfxDoDamage type 10 passes field_11C & 0xFFB7FFFF to
             // PlayerStartMissile: the authored volley suppresses only fan bits.
             CHECK(missile.flags == (flags & 0xFFB7FFFFU));
-            CHECK((missile.flags & (powerup::kThreeWayShot | powerup::kFiveWayShot)) == 0);
-            CHECK((missile.flags & powerup::kRapidFire) == (flags & powerup::kRapidFire));
+            CHECK((missile.flags & (damage::kThreeWayShot | damage::kFiveWayShot)) == 0);
+            CHECK((missile.flags & damage::kRapidFire) == (flags & damage::kRapidFire));
             CHECK((missile.flags & 0xFU) == (flags & 0xFU));
             CHECK(observed[index].release == release);
             CHECK(observed[index].handle == played[index].handle);
@@ -909,8 +910,7 @@ TEST_CASE("weapon modes route player hits through health with shared contact imm
     CHECK(party[1].reaction ==
           (mode == MultiplayerMode::Stun ? PlayerDeed::Reel : PlayerDeed::None));
     // A cooling victim still reflects a later shot before the damage-time gate.
-    party[1].actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kReflectShield,
-                                                          0, 1);
+    party[1].actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kReflect, 0, 1);
     REQUIRE(f.arsenal.missiles().launch(launch));
     f.attacks.updateProjectiles(0.2f, party, f.targets);
     if (mode != MultiplayerMode::Normal) {
@@ -1046,8 +1046,8 @@ TEST_CASE("turbo point hits show their impact and reflective armor turns their v
         party[0].turbo.add(100);
         if (reflective) {
             party[1].effectGap = 1;
-            party[1].actor.save().progress().inventory.addPowerup(powerup::kArmor,
-                                                                  powerup::kReflectShield, 0, 1);
+            party[1].actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kReflect,
+                                                                  0, 1);
         }
         s32 hits = 0;
         bool reflected = false;
@@ -1223,7 +1223,7 @@ TEST_CASE("an elemental weapon glows in the hand while it is worn",
     CHECK(f.effects.count() == 1);
     CHECK(player.weaponGlow.element() == 1);
     // The super shot fills the hand instead; taking the amulet off puts the glow out.
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 3, 1);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 3, 1);
     f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
     CHECK(f.effects.count() == 0);
     inventory.powerups[1].on = false;
@@ -1344,7 +1344,7 @@ TEST_CASE("weapon throw audio follows the worn amulet or special shot",
         auto& player = f.players[0];
         player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
         REQUIRE(player.figure);
-        const u32 flag = i == 4 ? powerup::kSuperShot : static_cast<u32>(i + 1);
+        const u32 flag = i == 4 ? damage::kSuperShot : static_cast<u32>(i + 1);
         player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, flag, 3, 1);
         if (i == 4) {
             f.arsenal.launchSuperShot(player.actor, player.figure.get());
@@ -2321,7 +2321,7 @@ TEST_CASE("retail item attacks play authored effects and spend one charge on the
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     for (const u32 mask : {powerup::kFireBreath, powerup::kAcidBreath, powerup::kLightningBreath,
-                           powerup::kSkorneHorns, powerup::kSkorneMask, powerup::kThunderHammer}) {
+                           powerup::kSkorneHorns, powerup::kSkorneMask, damage::kHammer}) {
         Fixture f;
         std::vector<s32> impacts;
         PlayerAttacks::Resources resources{f.device,  f.classes, f.world, f.weapons,
@@ -2339,7 +2339,7 @@ TEST_CASE("retail item attacks play authored effects and spend one charge on the
         auto& player = f.players[0];
         player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
         REQUIRE(player.figure);
-        const bool hammer = mask == powerup::kThunderHammer;
+        const bool hammer = mask == damage::kHammer;
         const s32 kind = hammer ? powerup::kWeapon : powerup::kSpecial;
         auto& inventory = player.actor.save().progress().inventory;
         inventory.addPowerup(kind, mask, 2, -1);
@@ -2393,7 +2393,7 @@ TEST_CASE("stationary item attacks use native horizontal swarm reach and retain 
     REQUIRE(player.figure);
     auto& inventory = player.actor.save().progress().inventory;
     inventory.addPowerup(hammer ? powerup::kWeapon : powerup::kSpecial,
-                         hammer ? powerup::kThunderHammer : powerup::kFireBreath, 2, -1);
+                         hammer ? damage::kHammer : powerup::kFireBreath, 2, -1);
     EnemyScales scales;
     scales.health = 100;
     auto& enemies = f.opponents.enemies();
@@ -2628,7 +2628,7 @@ TEST_CASE("Temple wall projectile hits remove the mesh and collision through the
     REQUIRE(walls.size() == 5);
     CHECK(walls.target(0, 0).pointNear({55, 3, -5}) == Vec3{55, 3, -10});
     REQUIRE(walls.wall(0).health == 25);
-    f.fixtures.strikeWall(0, 100, Damage::kGas | element);
+    f.fixtures.strikeWall(0, 100, damage::kGas | element);
     CHECK(walls.wall(0).health == 25);
     CHECK(f.effects.count() == 0);
     CHECK(sounds.voiceCount() == 0);
@@ -2933,7 +2933,7 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
     // From whichever side is open to it.
     bool shot = false;
     for (const Vec3 side : {Vec3{0, 0, 4}, Vec3{0, 0, -4}, Vec3{4, 0, 0}, Vec3{-4, 0, 0}}) {
-        throwAt(spot + side, Damage::kGas);
+        throwAt(spot + side, damage::kGas);
         CHECK_FALSE(triggers.trigger(target).shot); // a cloud sets nothing off
         throwAt(spot + side, 0);
         if (triggers.trigger(target).shot) {
@@ -4190,7 +4190,7 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("G1");
     REQUIRE(level);
-    for (const u32 shield : {powerup::kFireShield, powerup::kLightningShield}) {
+    for (const u32 shield : {armor::kFireArmor, armor::kElectricArmor}) {
         CAPTURE(shield);
         Fixture f;
         REQUIRE(f.world.load(f.device, root, *level));
@@ -4221,7 +4221,7 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
         const f32 once = enemies.healthOf(*id);
         CHECK(once < full);
         f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
-        if (shield == powerup::kFireShield) {
+        if (shield == armor::kFireArmor) {
             CHECK(enemies.healthOf(*id) < once); // every frame, never waiting
             CHECK(f.effects.count() == 0);
         } else {
@@ -4263,8 +4263,7 @@ TEST_CASE("fire shield uses the retail one-unit contact band rather than its fla
     player.actor.spawn(0, {}, f.classes.stats(0), {}, 0);
     player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
     REQUIRE(player.figure);
-    player.actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kFireShield, 0,
-                                                        60);
+    player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, 60);
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& enemies = f.opponents.enemies();
     EnemyScales scales;
@@ -4372,7 +4371,7 @@ TEST_CASE("automatic melee requires a forward creature inside the unheld swing b
     const PlayerAttacks unbound;
     CHECK(unbound.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::None);
     auto& inventory = actor.save().progress().inventory;
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 3, 1);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 3, 1);
     const Inventory before = inventory;
     CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::SuperShot);
     CHECK(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) == PlayerDeed::AutoMelee);
@@ -4407,8 +4406,9 @@ TEST_CASE("Pojo maps heavy input to its light attack at both close and ranged di
     const auto light = f.attacks.attackDeed(actor, false, f.targets, true, chain);
     CHECK((light == PlayerDeed::Melee || light == PlayerDeed::MeleeLow));
     CHECK(f.attacks.attackDeed(actor, true, f.targets, true, chain) ==
-          (pojo ? light : light == PlayerDeed::MeleeLow ? PlayerDeed::MeleeSlowLow
-                                                      : PlayerDeed::MeleeSlow));
+          (pojo                            ? light
+           : light == PlayerDeed::MeleeLow ? PlayerDeed::MeleeSlowLow
+                                           : PlayerDeed::MeleeSlow));
     actor.place({0, 0, -50});
     REQUIRE(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Beyond);
     CHECK(f.attacks.attackDeed(actor, false, f.targets, true, chain) == PlayerDeed::Attack);
@@ -4545,10 +4545,10 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
     s32 stagger = 0;
     LevelOpponents::Events opponents;
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
-                          const PlayerImpact& impact) {
+                         const PlayerImpact& impact) {
         ++hurt;
-        health.hurt(f.players[index], damage, kind, directed, false, 1, healthEvents, impact,
-                    false, f.classes.stats(kJester));
+        health.hurt(f.players[index], damage, kind, directed, false, 1, healthEvents, impact, false,
+                    f.classes.stats(kJester));
         stagger += f.players[index].reaction != PlayerDeed::None ? 1 : 0;
     };
     opponents.settleBlasts = [] {};
@@ -4566,11 +4566,10 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
             f.attacks.melee(index, f.players, f.targets);
         } else if (action == PartyMotion::Action::ThrowWeapon) {
             ++throws;
-            f.arsenal.launchWeapon(player.actor, player.figure.get(), player.actor.facing(), 1,
-                                   true,
-                                   f.attacks.aim(player.actor, player.actor.facing(), f.targets,
-                                                 true),
-                                   std::nullopt, true);
+            f.arsenal.launchWeapon(
+                player.actor, player.figure.get(), player.actor.facing(), 1, true,
+                f.attacks.aim(player.actor, player.actor.facing(), f.targets, true), std::nullopt,
+                true);
         }
     };
     motion.select = [](usize, const SelectorInput&, s32) {};
@@ -4680,12 +4679,11 @@ TEST_CASE("ranged prediction respects all native item attack substitutions witho
     auto& actor = f.players[0].actor;
     auto& inventory = actor.save().progress().inventory;
     const u32 mask =
-        GENERATE(powerup::kSuperShot, powerup::kThunderHammer, powerup::kFireBreath,
-                 powerup::kAcidBreath, powerup::kLightningBreath, powerup::kSkorneHorns,
-                 powerup::kSkorneMask, powerup::kLeftGauntlet, powerup::kRightGauntlet);
-    const auto kind = mask == powerup::kSuperShot || mask == powerup::kThunderHammer
-                          ? powerup::kWeapon
-                          : powerup::kSpecial;
+        GENERATE(damage::kSuperShot, damage::kHammer, powerup::kFireBreath, powerup::kAcidBreath,
+                 powerup::kLightningBreath, powerup::kSkorneHorns, powerup::kSkorneMask,
+                 powerup::kLeftGauntlet, powerup::kRightGauntlet);
+    const auto kind = mask == damage::kSuperShot || mask == damage::kHammer ? powerup::kWeapon
+                                                                            : powerup::kSpecial;
     inventory.addPowerup(kind, mask, 3, 60);
     REQUIRE(inventory.powerup(kind, mask));
     REQUIRE(ItemAttack::select(PowerupEffects::of(inventory)));
@@ -4702,7 +4700,7 @@ TEST_CASE("automatic melee options and contact shields never authorize nearby pr
     auto& actor = f.players[0].actor;
     const bool autoAttack = GENERATE(false, true);
     actor.save().autoAttack = autoAttack;
-    const u32 shield = GENERATE(0U, powerup::kFireShield, powerup::kLightningShield);
+    const u32 shield = GENERATE(0U, armor::kFireArmor, armor::kElectricArmor);
     if (shield != 0) {
         actor.save().progress().inventory.addPowerup(powerup::kArmor, shield, 0, 60);
     }
@@ -4771,7 +4769,7 @@ TEST_CASE("an active elemental shield takes priority over automatic melee even d
         enemies.spawn({.kind = kGruntKind, .tier = 3, .position = {0, 0, 2}, .placed = true}, {}));
     auto& actor = f.players[0].actor;
     auto& inventory = actor.save().progress().inventory;
-    const u32 shield = GENERATE(powerup::kFireShield, powerup::kLightningShield);
+    const u32 shield = GENERATE(armor::kFireArmor, armor::kElectricArmor);
     REQUIRE(f.attacks.automaticMeleeDeed(actor, f.targets, actor.facing()) ==
             PlayerDeed::AutoMelee);
     inventory.addPowerup(powerup::kArmor, shield, 0, 60);
@@ -6021,7 +6019,9 @@ TEST_CASE("a shot that only hurts does nothing for the run; a shot that kills co
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     EnemyScales scales;
     bool kills = false;
-    SECTION("a hit on a body that stands") { scales.health = 100; }
+    SECTION("a hit on a body that stands") {
+        scales.health = 100;
+    }
     SECTION("a kill") {
         scales.health = 0.3f;
         kills = true;
@@ -6103,7 +6103,8 @@ TEST_CASE("a turbo strike that kills counts one toward the run of close blows",
     }
     REQUIRE(enemies.healthOf(*enemy) < whole);
     CHECK_FALSE(enemies.alive(*enemy));
-    CHECK(f.players[0].streak.count() == (enemies.heightOf(*enemy) > PlayerAttacks::kLowEnemy ? 1 : 0));
+    CHECK(f.players[0].streak.count() ==
+          (enemies.heightOf(*enemy) > PlayerAttacks::kLowEnemy ? 1 : 0));
     f.attacks.clear();
     f.opponents.close();
 }

@@ -2,20 +2,18 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
+
 namespace gdl::game {
-/** A hit after armour, elemental affinities and protective items have been applied. */
+/** A hit after armour, elemental affinities and protective items have been applied: its
+ * amount and its damage word (damage::), met by the armour word (armor::) the target
+ * wears and the armour stat it has. */
 struct Damage {
     f32 amount = 0;
     u32 flags = 0;
 
-    static constexpr u32 kElement = 0xF;
-    static constexpr u32 kMagic = 0x200;
-    static constexpr u32 kGas = 0x800;
-    static constexpr u32 kLow = 0x40000000;
-    static constexpr u32 kInvulnerable = 0x10000;
-    static constexpr u32 kGoldInvulnerable = 0x100000;
-
     /** Negative results heal. Boss encounters use their own elemental multipliers. */
-    static Damage modify(f32 amount, u32 flags, u32 shield, f32 armor, bool bossEncounter);
+    static Damage modify(f32 amount, u32 flags, u32 shield, f32 armorStat, bool bossEncounter);
 };
 } // namespace gdl::game

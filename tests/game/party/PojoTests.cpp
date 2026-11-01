@@ -12,6 +12,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/NameCheats.h"
+#include "game/combat/DamageTypes.h"
 #include "game/netplay/CharacterProfile.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerArsenal.h"
@@ -367,7 +368,7 @@ TEST_CASE("Pojo replaces the costume and equipped hand and head models in both p
     REQUIRE(original > 0);
     auto& inventory = save.progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kPojo | powerup::kXRay, 0, 2);
-    inventory.addPowerup(powerup::kWeapon, powerup::kThunderHammer, -1, -1);
+    inventory.addPowerup(powerup::kWeapon, damage::kHammer, -1, -1);
     figure->setCompanionPowerups(device, powerups, inventory, &weapons);
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     figure->holdOnArm(device, &weapons, "RF_SHLD");
@@ -428,7 +429,7 @@ TEST_CASE("Pojo throws animated PHOENIX_FBALL from the retail mouth offset for e
         REQUIRE(figure);
         auto& inventory = actor.save().progress().inventory;
         inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
-        inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0, 60);
+        inventory.addPowerup(powerup::kWeapon, damage::kThreeWayShot, 0, 60);
         arsenal.launchWeapon(actor, figure.get(), actor.facing(), 1, true);
         REQUIRE(arsenal.missiles().count() == 3);
         for (usize shot = 0; shot < arsenal.missiles().count(); ++shot) {

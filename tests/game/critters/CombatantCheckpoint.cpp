@@ -71,7 +71,7 @@ auto values(const CombatCue& v) {
                     v.placement, v.playerAttachment);
 }
 auto values(const CombatGrab& v) {
-    return std::tie(v.player, v.critter, v.attachment, v.velocity, v.damage);
+    return std::tie(v.player, v.critter, v.attachment, v.velocity, v.damage, v.restoreSupport);
 }
 auto values(const CombatSpew& v) {
     return std::tie(v.critter, v.origin, v.velocity, v.halfAngle);
@@ -98,7 +98,8 @@ auto values(const CombatLoss& v) {
 }
 auto values(const CritterArea& v) {
     return std::tie(v.local, v.node, v.worldParent, v.velocity, v.displacement, v.radius, v.minDot,
-                    v.damage, v.flags, v.secondsLeft, v.lifetime, v.expanding);
+                    v.damage, v.flags, v.secondsLeft, v.lifetime, v.expanding, v.linearGrowth,
+                    v.halfHeight);
 }
 auto values(const CombatArenaTarget& v) {
     return std::tie(v.index, v.placement, v.active);
@@ -344,15 +345,18 @@ bool CombatantCheckpoint::Part::valid() const {
     return actor.valid() && id >= -1 &&
            id <= std::numeric_limits<s32>::max() - static_cast<s32>(kMaxParts) &&
            game::scales(scales) && realm >= 'A' && realm <= 'Z' && arenaRandom > 0 &&
-           arenaRandom < 2147483647U && events.valid() &&
+           arenaRandom < 2147483647U && events.valid() && pressure.activePlayers < 16 &&
+           std::ranges::all_of(pressure.attemptedDamage, nonnegative) &&
+           (!pressure.levelBonus || nonnegative(*pressure.levelBonus)) &&
            // Retirement resets Actor, not the enclosing native slot identity.
            (actor.definition.resource != 0 || actor.state == 0);
 }
 bool CombatantCheckpoint::Part::operator==(const Part& other) const {
-    return std::tie(actor, incarnation, id, collision, hazards, scales, realm, fullHarm,
-                    arenaRandom, events) ==
-           std::tie(other.actor, other.incarnation, other.id, other.collision, other.hazards,
-                    other.scales, other.realm, other.fullHarm, other.arenaRandom, other.events);
+    return std::tie(actor, incarnation, id, collision, hazards, scales, realm, fullHarm, pressure,
+                    arenaRandom, events) == std::tie(other.actor, other.incarnation, other.id,
+                                                     other.collision, other.hazards, other.scales,
+                                                     other.realm, other.fullHarm, other.pressure,
+                                                     other.arenaRandom, other.events);
 }
 bool CombatantCheckpoint::State::valid() const {
     if (parts.empty() || parts.size() > kMaxParts || !std::ranges::all_of(parts, &Part::valid)) {
@@ -533,6 +537,7 @@ std::optional<CombatantCheckpoint::Part> CombatantCheckpoint::capturePart(const 
     out.scales = owner.m_sim.scales;
     out.realm = owner.m_sim.realm;
     out.fullHarm = owner.m_sim.fullHarm;
+    out.pressure = owner.m_sim.pressure;
     out.arenaRandom = *random;
     out.events = std::move(*events);
     auto& a = out.actor;
@@ -784,6 +789,7 @@ bool CombatantCheckpoint::preparePart(Combatant& staged, const Part& part,
     staged.m_sim.scales = part.scales;
     staged.m_sim.realm = part.realm;
     staged.m_sim.fullHarm = part.fullHarm;
+    staged.m_sim.pressure = part.pressure;
     staged.m_sim.arenaRandom.seed(part.arenaRandom);
     staged.m_sim.cues = part.events.cues;
     staged.m_sim.grabs = part.events.grabs;

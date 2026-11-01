@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/ArmorFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/party/PlayerFigure.h"
 
@@ -126,13 +127,13 @@ const Texture* PartyFigures::skinOf(const PlayerRuntime& runtime, const PowerupE
 }
 
 std::string_view PartyFigures::shieldObjectOf(u32 armor) {
-    if ((armor & powerup::kReflectShield) != 0) {
+    if ((armor & armor::kReflect) != 0) {
         return "RF_SHLD";
     }
-    if ((armor & powerup::kFireShield) != 0) {
+    if ((armor & armor::kFireArmor) != 0) {
         return "FW_SHLD";
     }
-    if ((armor & powerup::kLightningShield) != 0) {
+    if ((armor & armor::kElectricArmor) != 0) {
         return "L_SHLD";
     }
     return {};
@@ -141,7 +142,8 @@ std::string_view PartyFigures::shieldObjectOf(u32 armor) {
 bool PartyFigures::shown(const PlayerRuntime& runtime, const Scene& scene) {
     const auto* imported = scene.world.imported();
     const auto native = imported ? imported->departure(scene.frameBlend) : std::nullopt;
-    const bool finished = native ? native->finished : scene.departure.finished();
+    const bool finished =
+        native ? native->finished && !native->keepVisible : scene.departure.finished();
     return runtime.figure != nullptr && runtime.life != PlayerLife::InTower &&
            (runtime.life != PlayerLife::Standing || !finished);
 }

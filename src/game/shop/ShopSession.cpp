@@ -88,7 +88,8 @@ void ShopLane::skipStatsAdjustment() {
     phaseSeconds = std::max(phaseSeconds, reveal.back() / kTickRate);
 }
 bool ShopLane::selectable(const ShopItem& item) const {
-    return item.type == 0 || shopEligibility(member.save, stats, item) == ShopResult::Bought ||
+    return item.type == ShopItem::kExit ||
+           shopEligibility(member.save, stats, item) == ShopResult::Bought ||
            ownsShopItem(member.save, item);
 }
 void ShopLane::rememberShopEntry() {

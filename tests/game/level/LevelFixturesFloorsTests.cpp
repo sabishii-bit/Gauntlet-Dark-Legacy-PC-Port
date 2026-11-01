@@ -18,6 +18,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/combat/DamageTypes.h"
 #include "game/level/Breakables.h"
 #include "game/level/Chests.h"
 #include "game/level/ItemFigure.h"
@@ -1001,7 +1002,7 @@ TEST_CASE("trap hits preserve authored impact properties and rotated direction",
     REQUIRE(hits.size() == 4);
     const std::array<u32, 4> properties{32, 8192, 1, 2};
     for (usize i = 0; i < hits.size(); ++i) {
-        CHECK(hits[i].impact.flags == (properties[i] | PlayerImpact::kStun));
+        CHECK(hits[i].impact.flags == (properties[i] | damage::kStun));
         CHECK(hits[i].victim == i);
         CHECK(hits[i].pierces == (i < 2));
         if (i == 0) {
@@ -1489,7 +1490,7 @@ TEST_CASE("Courtyard tentacles retain authored height and hit the rotated offset
         for (const auto& blow : traps.update(1, 1.0f / 60, victims)) {
             if (blow.victim < ids.size() && blow.trap == ids[blow.victim]) {
                 CHECK(blow.damage > 0);
-                CHECK((blow.impact.flags & PlayerImpact::kKnockDown) != 0);
+                CHECK((blow.impact.flags & damage::kKnockDown) != 0);
                 CHECK(glm::distance(blow.impact.direction,
                                     -Vec3{traps.trap(blow.trap).figure.transform()[2]}) < 0.0001f);
                 hit[blow.victim] = true;
@@ -1563,7 +1564,7 @@ TEST_CASE("Courtyard tentacles' rendered strikes overlap their native shore cont
             if (hit.victim < tentacles.size() && hit.trap == tentacles[hit.victim]) {
                 CHECK(traps.trap(hit.trap).action == 2);
                 CHECK(hit.damage > 0);
-                CHECK((hit.impact.flags & PlayerImpact::kKnockDown) != 0);
+                CHECK((hit.impact.flags & damage::kKnockDown) != 0);
                 struck[hit.victim] = true;
             }
         }

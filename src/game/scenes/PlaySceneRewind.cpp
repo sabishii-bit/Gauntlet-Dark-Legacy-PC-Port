@@ -94,9 +94,9 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
         // A new captured owner must enter this schema explicitly; never silently
         // let the rewind roster grow beyond the state checked for agreement.
         [[maybe_unused]] const auto& [owner, worldOwner, generation, state, players, world,
-                                      fixtures, spawned, opponents, attacks, arsenal, effects, portals,
-                                      transporters, departure, arrival, sumner, hud, messages,
-                                      sumnerVisit, promotion, relics, bossSequence, audio,
+                                      fixtures, spawned, opponents, attacks, arsenal, effects,
+                                      portals, transporters, departure, arrival, sumner, hud,
+                                      messages, sumnerVisit, promotion, relics, bossSequence, audio,
                                       challengeHud, camera, transition, relicSpeech,
                                       promotionSpeech, relicCue, promotionCue, previousCamera,
                                       seatCameras, previousSeatView, previousBossCamera,
@@ -164,18 +164,18 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
     child("hud", m_hud, &Data::hud);
     child("messages", m_messages, &Data::messages);
     child("sumner-visit", m_sumnerVisit, &Data::sumnerVisit);
-    child("promotion", m_promotion, &Data::promotion);
-    child("relics", m_towerRelics, &Data::relics);
+    child("promotion", m_ceremonies.promotion(), &Data::promotion);
+    child("relics", m_ceremonies.relics(), &Data::relics);
     child("boss-sequence", m_bossSequence, &Data::bossSequence);
     child("audio", m_audio, &Data::audio);
     child("challenge-hud", m_challengeHud, &Data::challengeHud);
     measured("camera-speech", [&] {
         digest.values(data ? data->camera : m_camera.localState(),
                       data ? data->transition : m_transition.state(),
-                      data ? data->relicSpeech : m_relicVoice.timing,
-                      data ? data->promotionSpeech : m_promotionVoice.timing,
-                      data ? data->relicCue : m_relicVoice.cue,
-                      data ? data->promotionCue : m_promotionVoice.cue,
+                      data ? data->relicSpeech : m_ceremonies.relicVoice().timing,
+                      data ? data->promotionSpeech : m_ceremonies.promotionVoice().timing,
+                      data ? data->relicCue : m_ceremonies.relicVoice().cue,
+                      data ? data->promotionCue : m_ceremonies.promotionVoice().cue,
                       data ? data->previousCamera : m_previousCamera,
                       data ? data->seatCameras : seatCameraStates(),
                       data ? data->previousBossCamera : m_previousBossCamera,
@@ -235,17 +235,13 @@ bool PlayScene::saveLocal(LocalSnapshot& saved) const {
     m_hud.saveLocal(data.hud);
     m_messages.saveLocal(data.messages);
     m_sumnerVisit.saveLocal(data.sumnerVisit);
-    m_promotion.saveLocal(data.promotion);
-    m_towerRelics.saveLocal(data.relics);
+    m_ceremonies.saveLocal(data.promotion, data.relics, data.relicSpeech, data.promotionSpeech,
+                           data.relicCue, data.promotionCue);
     m_bossSequence.saveLocal(data.bossSequence);
     m_audio.saveLocal(data.audio);
     m_challengeHud.saveLocal(data.challengeHud);
     data.camera = m_camera.localState();
     data.transition = m_transition.state();
-    data.relicSpeech = m_relicVoice.timing;
-    data.promotionSpeech = m_promotionVoice.timing;
-    data.relicCue = m_relicVoice.cue;
-    data.promotionCue = m_promotionVoice.cue;
     data.previousCamera = m_previousCamera;
     data.seatCameras = seatCameraStates();
     data.previousSeatView = m_previousSeatView;
@@ -266,23 +262,21 @@ bool PlayScene::canRestoreLocal(const LocalSnapshot& saved) const {
         const auto& player = data.players[i];
         // Check retained ownership before dereferencing a borrowed costume.
         if (player.simulation.actor.player() != m_players[i].actor.player() ||
-            !ownsFigure(i, player.figure) ||
+            !m_ceremonies.ownsFigure(m_players, i, player.figure) ||
             (player.figure != nullptr && !player.figure->canRestoreLocal(player.figureState))) {
             return false;
         }
     }
     return m_world->canRestoreLocal(data.world) && m_fixtures.canRestoreLocal(data.fixtures) &&
-           m_spawned.canRestoreLocal(data.spawned) &&
-           m_opponents.canRestoreLocal(data.opponents) && m_attacks.canRestoreLocal(data.attacks) &&
-           m_arsenal.canRestoreLocal(data.arsenal) && m_effects.canRestoreLocal(data.effects) &&
-           m_portals.canRestoreLocal(data.portals) &&
+           m_spawned.canRestoreLocal(data.spawned) && m_opponents.canRestoreLocal(data.opponents) &&
+           m_attacks.canRestoreLocal(data.attacks) && m_arsenal.canRestoreLocal(data.arsenal) &&
+           m_effects.canRestoreLocal(data.effects) && m_portals.canRestoreLocal(data.portals) &&
            m_transporters.canRestoreLocal(data.transporters) &&
            m_departure.canRestoreLocal(data.departure) && m_arrival.canRestoreLocal(data.arrival) &&
            m_sumner.canRestoreLocal(data.sumner) && m_hud.canRestoreLocal(data.hud) &&
            m_messages.canRestoreLocal(data.messages) &&
            m_sumnerVisit.canRestoreLocal(data.sumnerVisit) &&
-           m_promotion.canRestoreLocal(data.promotion) &&
-           m_towerRelics.canRestoreLocal(data.relics) &&
+           m_ceremonies.canRestoreLocal(data.promotion, data.relics) &&
            m_bossSequence.canRestoreLocal(data.bossSequence) &&
            m_audio.canRestoreLocal(data.audio) && m_challengeHud.canRestoreLocal(data.challengeHud);
 }
@@ -316,8 +310,8 @@ bool PlayScene::restoreLocal(const LocalSnapshot& saved) {
     m_hud.restoreLocal(data.hud);
     m_messages.restoreLocal(data.messages);
     m_sumnerVisit.restoreLocal(data.sumnerVisit);
-    m_promotion.restoreLocal(data.promotion);
-    m_towerRelics.restoreLocal(data.relics);
+    m_ceremonies.restoreLocal(data.promotion, data.relics, data.relicSpeech, data.promotionSpeech,
+                              data.relicCue, data.promotionCue);
     m_bossSequence.restoreLocal(data.bossSequence);
     m_audio.restoreLocal(data.audio);
     m_challengeHud.restoreLocal(data.challengeHud);
@@ -325,7 +319,7 @@ bool PlayScene::restoreLocal(const LocalSnapshot& saved) {
     for (usize i = 0; i < m_players.size(); ++i) {
         const auto& player = data.players[i];
         auto& live = m_players[i];
-        activateFigure(i, player.figure);
+        m_ceremonies.activateFigure(m_players, i, player.figure);
         live.simulation() = player.simulation;
         live.previous = player.previous;
         if (live.figure != nullptr) {
@@ -343,17 +337,13 @@ bool PlayScene::restoreLocal(const LocalSnapshot& saved) {
         live.glow = player.glow;
         live.weaponGlow = player.weaponGlow;
         live.deathHeldEffect = player.deathHeldEffect;
+        // Noclip flight is not in the record; it follows the cheats just restored.
+        live.ghost = cheats(live.actor.player()).noclip;
     }
     m_camera.restoreLocal(data.camera);
     m_transition.restoreLocal(data.transition);
-    m_relicVoice.timing = data.relicSpeech;
-    m_promotionVoice.timing = data.promotionSpeech;
-    m_relicVoice.cue = data.relicCue;
-    m_promotionVoice.cue = data.promotionCue;
     m_previousCamera = data.previousCamera;
-    for (usize i = 0; i < m_seatCameras.size(); ++i) {
-        m_seatCameras[i].restoreLocal(data.seatCameras[i]);
-    }
+    m_seats.restore(data.seatCameras);
     m_previousSeatView = data.previousSeatView;
     m_previousBossCamera = data.previousBossCamera;
     m_names.restoreHeld(data.namesHeld);

@@ -20,12 +20,13 @@ namespace gdl::game {
 class HazardSurfaces {
 public:
     static constexpr u32 kHarmMask = 0xF0000;
+    static constexpr u32 kBurning = 0x10000; ///< the harm that is a burning floor
     static constexpr u32 kTriggered = 0x2000000;
     static constexpr u32 kHarmsWhenTriggered = 0x8000000;
     static constexpr f32 kReach = 0.1f; ///< how near a wall counts as against it
     // Intentional port adjustment: retail burns enemies every movement update.
     static constexpr f32 kEnemyBurnGap = 0.25f;
-    static bool burning(u32 flags) { return (flags & kHarmMask) == 0x10000; }
+    static bool burning(u32 flags) { return (flags & kHarmMask) == kBurning; }
 
     /** What a surface does to whoever touches it. */
     struct Harm {

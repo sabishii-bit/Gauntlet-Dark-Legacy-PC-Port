@@ -5,6 +5,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/DamageTypes.h"
+
 namespace gdl::game {
 namespace {
 f32 activePhase(f32 elapsed, f32 lifetime, f32 delay) {
@@ -43,10 +45,10 @@ std::optional<ItemAttack> ItemAttack::select(const PowerupEffects& worn) {
                           .sound = "S_GAUNTLET2",
                           .flags = 4};
     }
-    if ((worn.weapon & powerup::kSuperShot) != 0) {
+    if ((worn.weapon & damage::kSuperShot) != 0) {
         return ItemAttack{.deed = PlayerDeed::SuperShot, .tree = "SUPERARROW", .sound = {}};
     }
-    if ((worn.weapon & powerup::kThunderHammer) != 0) {
+    if ((worn.weapon & damage::kHammer) != 0) {
         return ItemAttack{PlayerDeed::Hammer,
                           "EXPRING",
                           "S_THUNDERHAMMER",
@@ -56,7 +58,7 @@ std::optional<ItemAttack> ItemAttack::select(const PowerupEffects& worn) {
                           -1,
                           32,
                           powerup::kWeapon,
-                          powerup::kThunderHammer,
+                          damage::kHammer,
                           false};
     }
     u32 element = 0;

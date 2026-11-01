@@ -36,6 +36,7 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/config/GameConfig.h"
 #include "game/critters/Critters.h"
@@ -137,14 +138,13 @@ TEST_CASE("D1 bridge occupancy follows living enemy support and replays its deat
     std::optional<FloorHit> support;
     for (usize i = 0; i < world.triggers().size() && !support; ++i) {
         const auto trigger = world.triggers().trigger(i);
-        if (!trigger.enabled || trigger.chained || trigger.target < 0 ||
-            trigger.minPlayers != 1 || (trigger.kind & 0x67U) != 0 ||
-            (trigger.kind & LevelTrigger::kFades) == 0) {
+        if (!trigger.enabled || trigger.chained || trigger.target < 0 || trigger.minPlayers != 1 ||
+            (trigger.kind & 0x67U) != 0 || (trigger.kind & LevelTrigger::kFades) == 0) {
             continue;
         }
-        const std::array button{TriggerVisitor{.position = trigger.spot, .party = 0},
-                                TriggerVisitor{.position = trigger.spot + Vec3{1000, 0, 0},
-                                               .party = 1}};
+        const std::array button{
+            TriggerVisitor{.position = trigger.spot, .party = 0},
+            TriggerVisitor{.position = trigger.spot + Vec3{1000, 0, 0}, .party = 1}};
         world.updateTriggers(1, button);
         REQUIRE(world.triggers().opened(trigger.target));
         const Vec3 origin{world.scene().worldTransform(static_cast<usize>(trigger.target))[3]};
@@ -187,8 +187,7 @@ TEST_CASE("D1 bridge occupancy follows living enemy support and replays its deat
         enemies.hurt(*enemy, EnemyHit{.damage = 100000, .player = 0});
         REQUIRE_FALSE(enemies.alive(*enemy));
         // A dying body still rests on the bridge; it must no longer retain it.
-        const auto corpseFloor =
-            world.collision().floorAt(enemies.positionOf(*enemy), 0.1f, 0.1f);
+        const auto corpseFloor = world.collision().floorAt(enemies.positionOf(*enemy), 0.1f, 0.1f);
         REQUIRE(corpseFloor);
         REQUIRE(corpseFloor->object == target);
         REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
@@ -649,7 +648,7 @@ TEST_CASE("Temple organist remains audible over three loops in the scenario scen
     // This is an 80-second ambience test in an active enemy level. Keep the
     // listener alive through the native inventory rule, not a stalled death cue.
     for (auto& member : party) {
-        member.save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+        member.save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
     }
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
@@ -692,7 +691,7 @@ TEST_CASE("Temple organist remains audible over three loops in the scenario scen
 TEST_CASE("normal attack input emits visible weapon and amulet streaks on successive shots",
           "[game][screens][super-shot-scene][weapon-streak-scene][assets]") {
     const u32 weapon = GENERATE(0U, damage::kFire, damage::kElectric, damage::kLight, damage::kAcid,
-                                powerup::kSuperShot);
+                                damage::kSuperShot);
     CAPTURE(weapon);
     const auto root = unpackedRoot();
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
@@ -735,7 +734,7 @@ TEST_CASE("normal attack input emits visible weapon and amulet streaks on succes
         }
         REQUIRE(scene.missiles().count() > 0);
         const auto& missile = scene.missiles().missile(0);
-        CHECK((missile.flags & (powerup::kSuperShot | damage::kElementMask)) == weapon);
+        CHECK((missile.flags & (damage::kSuperShot | damage::kElementMask)) == weapon);
         if (weapon > 0 && weapon <= damage::kAcid) {
             REQUIRE(missile.rider != 0);
         }
@@ -749,7 +748,7 @@ TEST_CASE("normal attack input emits visible weapon and amulet streaks on succes
             }
             REQUIRE(draw.vertices.size() == 6);
             CHECK(draw.vertices.front().color.a == 190);
-            CHECK(draw.vertices.front().color == (weapon == powerup::kSuperShot
+            CHECK(draw.vertices.front().color == (weapon == damage::kSuperShot
                                                       ? Color::rgba(255, 255, 255, 190)
                                                       : Color::rgba(0, 255, 0, 190)));
             CHECK(draw.state.depthTest);
@@ -2771,9 +2770,9 @@ TEST_CASE("walking into a grunt deals automatic melee damage without firing equi
           "[game][screens][automatic-melee-scene][autoattack][combat-settings][assets]") {
     const bool enabled = GENERATE(true, false);
     const bool characterEnabled = GENERATE(true, false);
-    const u32 weapon = GENERATE(powerup::kSuperShot, powerup::kThunderHammer);
+    const u32 weapon = GENERATE(damage::kSuperShot, damage::kHammer);
     // Exercise both partial-stick walking and full-stick running through the real scene.
-    const f32 magnitude = weapon == powerup::kSuperShot ? 0.5f : 1.0f;
+    const f32 magnitude = weapon == damage::kSuperShot ? 0.5f : 1.0f;
     CAPTURE(enabled, characterEnabled, weapon, magnitude);
     const auto root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
@@ -2795,7 +2794,7 @@ TEST_CASE("walking into a grunt deals automatic melee damage without firing equi
     save.progress().inventory.addPowerup(powerup::kWeapon, weapon, 7, -1);
     // Prevent the control case's enemy blows from interrupting its approach. This
     // armour neither reflects damage nor harms anything touching the player.
-    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
     constexpr s32 kPlayer = 3; // controller identity differs from the sole runtime index
     const std::array party{PartyMember{kPlayer, save}};
     PlayOptions options;
@@ -3540,9 +3539,11 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     const Vec3 attention = scene.bossCamera().attention();
     REQUIRE(glm::distance(scene.startCamera().attention(), attention) < 0.01f);
     WorldCamera before = scene.viewCamera();
+    f64 elapsed = 0;
     for (s32 frame = 0; frame < rate * 30 && scene.spawning(); ++frame) {
         before = scene.viewCamera();
         scene.update(1.0 / rate, {});
+        elapsed += 1.0 / rate;
         if (scene.startCamera().active()) {
             REQUIRE(glm::distance(scene.startCamera().attention(), attention) < 0.01f);
         }
@@ -3552,10 +3553,25 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     CHECK(glm::distance(before.position, after.position) < StartCamera::kArrival + 0.01f);
     CHECK(glm::distance(before.forward(), after.forward()) < 0.02f);
     CHECK(after.position == scene.bossCamera().camera().position);
-    // The next update wakes Garm and follows the same camera, not a second abrupt cut.
-    scene.update(1.0 / rate, {});
+    // The twenty-tick camera ride finishes before the boss's independent two-second
+    // wake deadline. Its remaining wait must neither restart that clock nor cut the
+    // camera. The older distance-paced ride used to outlast this deadline.
+    REQUIRE(elapsed < 2.0);
+    REQUIRE_FALSE(scene.bosses().view().awake);
+    WorldCamera previous = after;
+    while (!scene.bosses().view().awake && elapsed < 2.0 + 2.0 / rate) {
+        scene.update(1.0 / rate, {});
+        elapsed += 1.0 / rate;
+        REQUIRE_FALSE(scene.spawning());
+        CHECK(glm::distance(previous.forward(), scene.viewCamera().forward()) < 0.05f);
+        CHECK(scene.viewCamera().position == scene.bossCamera().camera().position);
+        if (elapsed < 2.0 - 1e-5) {
+            CHECK_FALSE(scene.bosses().view().awake);
+        }
+        previous = scene.viewCamera();
+    }
     REQUIRE(scene.bosses().view().awake);
-    CHECK(glm::distance(after.forward(), scene.viewCamera().forward()) < 0.05f);
+    CHECK(elapsed <= 2.0 + 1.0 / rate + 1e-5);
 }
 
 TEST_CASE("Lich entrance uses its authored camera and seals the walkway before waking",
@@ -4428,7 +4444,7 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     save.name = "AB";
     Inventory& carried = save.progress().inventory;
     carried.potions = {1, 4};
-    carried.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0.0f, 30.0f);
+    carried.addPowerup(powerup::kWeapon, damage::kThreeWayShot, 0.0f, 30.0f);
     carried.addPowerup(powerup::kSpeed, 0, 3.0f, 30.0f);
     carried.addPowerup(powerup::kSpecial, powerup::kGrowth, 0.0f, 30.0f);
     PlayOptions options;
@@ -5305,7 +5321,7 @@ TEST_CASE("fire shield flames composite after gates and deferred scenery",
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
-    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kFireShield, 0, 120);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, 120);
     const std::vector<PartyMember> party{PartyMember{0, save}};
     PlayOptions options;
     options.welcome = false;
@@ -5634,7 +5650,7 @@ TEST_CASE("auto aim off keeps a standing throw on the player's facing",
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AIM";
-    save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
     constexpr s32 kPlayer = 2;
     const std::array party{PartyMember{kPlayer, save}};
     PlayOptions options;
@@ -6065,9 +6081,9 @@ TEST_CASE("a timed powerup drains and a potion is spent while the console's chea
     CharacterSave* live = scene.liveSave(0);
     REQUIRE(live != nullptr);
     Inventory& inventory = live->progress().inventory;
-    inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0.0f, 30.0f);
+    inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0.0f, 30.0f);
     REQUIRE(inventory.addPotions(1, 2) == 2);
-    const PowerupSlot* held = inventory.powerup(powerup::kArmor, powerup::kInvulnerable);
+    const PowerupSlot* held = inventory.powerup(powerup::kArmor, armor::kInvulnerable);
     REQUIRE(held != nullptr);
     CHECK(held->strength == Approx(30.0f));
     // A second of play takes a second off the powerup, cheats or none.
@@ -6077,7 +6093,7 @@ TEST_CASE("a timed powerup drains and a potion is spent while the console's chea
     for (s32 i = 0; i < 60; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    held = inventory.powerup(powerup::kArmor, powerup::kInvulnerable);
+    held = inventory.powerup(powerup::kArmor, armor::kInvulnerable);
     REQUIRE(held != nullptr);
     CHECK(held->strength == Approx(29.0f).margin(0.1f));
     // A potion used is a potion gone.

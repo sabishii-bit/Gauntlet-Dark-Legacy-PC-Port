@@ -19,8 +19,6 @@ namespace {
 
 using Json = nlohmann::json;
 
-constexpr u32 kShadowedType = 1; ///< the type flag for a shadow under it
-
 Vec3 vecOf(const Json& json, const char* key) {
     const auto values = json.value(key, std::vector<f32>{});
     return values.size() >= 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f, 0.0f, 0.0f};
@@ -102,10 +100,10 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
         m_movement.roamRadius =
             type.value("roamRadius", type.value("speed", m_movement.roamRadius));
         m_movement.turnLimit = type.value("turnLimit", m_movement.turnLimit);
-        m_shadowed = (typeFlags & kShadowedType) != 0;
-        m_movement.squareBounds = (typeFlags & 0x20U) != 0;
-        m_movement.initialStepBasis = (typeFlags & 0x40U) != 0;
-        m_movement.unrestrictedTurn = (typeFlags & 0x400U) != 0;
+        m_shadowed = (typeFlags & kShadowed) != 0;
+        m_movement.squareBounds = (typeFlags & kSquareBounds) != 0;
+        m_movement.initialStepBasis = (typeFlags & kInitialStepBasis) != 0;
+        m_movement.unrestrictedTurn = (typeFlags & kUnrestrictedTurn) != 0;
         if (type.contains("defaultPos")) {
             const Vec3 home = vecOf(type, "defaultPos");
             if (home.y < 999.0f) {
@@ -266,7 +264,7 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
             part.damageScale = n.value("damageScale", 1.0f);
             part.healthScale = n.value("healthScale", 1.0f);
             part.targetScoreScale =
-                (typeFlags & 2U) != 0 ? n.value("targetScoreScale", 1.0f) : 0.0f;
+                (typeFlags & kByParts) != 0 ? n.value("targetScoreScale", 1.0f) : 0.0f;
             part.maxTargetDistance = n.value("maxTargetDistance", 0.0f);
             part.damageEffect = n.value("sfxIndex", -1);
             part.flags = n.value("flags", 0U);

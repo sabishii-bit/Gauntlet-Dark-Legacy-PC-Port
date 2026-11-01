@@ -64,8 +64,8 @@ constexpr bool kHasExtraGeneratorMember =
 void Generators::appendSimulationDigest(
     NativeStateDigest& digest, const Simulation& state,
     std::optional<std::span<const TextureAnimator::Clock>> savedClocks) {
-    const auto& [collision, generators, view, attentionGate, bodies, scales, players,
-                 specialBirth, nextInstance, bound] = state;
+    const auto& [collision, generators, view, attentionGate, bodies, scales, players, specialBirth,
+                 nextInstance, bound, importedRandom] = state;
     digest.resource(collision);
     digest.wide(generators.size());
     static_assert(std::is_aggregate_v<Generator>);
@@ -101,6 +101,10 @@ void Generators::appendSimulationDigest(
     }
     digest.fields<3>(scales);
     digest.values(players, specialBirth, nextInstance, bound);
+    if (importedRandom) {
+        digest.string("Generators.importedRandom.1");
+        digest.fields<2>(importedRandom->checkpoint());
+    }
 }
 
 bool Generators::registerNativeResources(NativeStateResources& resources) const {
@@ -143,6 +147,7 @@ bool Generators::appendNativeDigest(NativeStateDigest& digest) const {
         appendSlot(digest, slot);
     }
     appendSimulationDigest(digest, m_sim);
+    appendImportedHealth(digest);
     return digest.good();
 }
 
@@ -158,7 +163,24 @@ bool Generators::appendLocalDigest(NativeStateDigest& digest, const LocalSnapsho
     }
     appendSimulationDigest(digest, saved.m_state,
                            std::span<const TextureAnimator::Clock>{saved.m_clocks});
+    appendImportedHealth(digest);
     return digest.good();
+}
+
+void Generators::appendImportedHealth(NativeStateDigest& digest) const {
+    // Base-game histories retain their existing schema. Imported levels are
+    // offline, but their native digest must still identify the damage rules.
+    if (!m_importedHealth.empty()) {
+        digest.string("Generators.importedHealth.1");
+        digest.wide(m_importedHealth.size());
+        for (const auto& health : m_importedHealth) {
+            digest.values(health.instance, health.remaining);
+            if (health.broodTier != 0) {
+                digest.string("Generators.importedBrood.1");
+                digest.values(health.broodKinds, health.broodTier);
+            }
+        }
+    }
 }
 
 s32 generatorExperience(s32 kind, bool destroyed) {
@@ -309,7 +331,7 @@ bool Generators::equalLocal(const LocalSnapshot& left, const LocalSnapshot& righ
     }
     const auto values = [](const Simulation& value) {
         return std::tie(value.attentionGate, value.scales, value.players, value.specialBirth,
-                        value.nextInstance, value.bound);
+                        value.nextInstance, value.bound, value.importedRandom);
     };
     return values(a) == values(b) &&
            std::ranges::equal(
@@ -655,7 +677,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         placement.most = paramOf(instance, 2);
         placement.interval = paramOf(instance, 3);
         placement.minPlayers = instance.minPlayers;
-        placement.alwaysActive = (info.activeType & 0x40U) != 0 || (instance.flags & 1U) != 0;
+        placement.alwaysActive = (info.activeType & ItemInfo::kAlwaysActive) != 0 ||
+                                 (instance.flags & ItemInstance::kAlwaysActive) != 0;
         placement.position = instance.position;
         placement.rotation = instance.rotation;
         if (!stand(device, enemies, placement, authored ? &*authored : nullptr, realmItems,
@@ -719,7 +742,7 @@ bool Generators::stand(RenderDevice& device, Enemies& enemies, const Placement& 
     generator.armor = static_cast<f32>(info.armor);
     const Mat4 placed = itemPlacement(placement.position, placement.rotation);
     generator.position = placement.position;
-    if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
+    if (collision != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
         if (const auto floor = collision->floorAt(placement.position, 3.0f, 6.0f)) {
             // AddItemSub uses the same floor lift as other placed items.
             // Ground portals otherwise share the floor's depth exactly.
@@ -826,6 +849,38 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
         body.armor < 0 || (body.collisionType != 1 && body.collisionType != 3)) {
         return std::nullopt;
     }
+    const bool authoredHealth =
+        std::ranges::any_of(imported.stageHealth, [](s32 health) { return health != 0; });
+    ImportedHealth health;
+    const bool mixed = imported.broodTier != 0;
+    if ((mixed &&
+         (imported.broodTier < 1 || imported.broodTier > 3 ||
+          std::ranges::any_of(imported.broodKinds,
+                              [](s32 kind) { return kind < 0 || kind >= kSwarmKindCount; }))) ||
+        (!mixed && imported.broodKinds != std::array<s32, 3>{-1, -1, -1})) {
+        return std::nullopt;
+    }
+    if (mixed) {
+        for (const auto kind : imported.broodKinds) {
+            if (!enemies.loadKind(kind)) {
+                return std::nullopt;
+            }
+        }
+        health.broodKinds = imported.broodKinds;
+        health.broodTier = imported.broodTier;
+    }
+    if (authoredHealth) {
+        s32 total = 0;
+        for (s32 state = 0; state < kStates; ++state) {
+            const s32 amount = imported.stageHealth[static_cast<usize>(state)];
+            if (amount < 0 || amount > 100000 ||
+                (state < imported.tier ? amount == 0 : amount != 0)) {
+                return std::nullopt;
+            }
+            total += amount;
+            health.remaining[static_cast<usize>(state)] = static_cast<f32>(total);
+        }
+    }
     Placement placement;
     placement.info = &body;
     placement.body = &body;
@@ -841,6 +896,24 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
     syncFloors();
     const s32 id = static_cast<s32>(m_sim.generators.size()) - 1;
     m_externalBodies.push_back(instanceOf(id));
+    if (authoredHealth || mixed) {
+        health.instance = instanceOf(id);
+        auto& generator = m_sim.generators.back();
+        if (authoredHealth) {
+            generator.health = health.remaining.back();
+            generator.threshold = health.remaining.front();
+        } else {
+            for (usize state = 0; state < health.remaining.size(); ++state) {
+                health.remaining[state] = generator.threshold * static_cast<f32>(state + 1);
+            }
+        }
+        m_importedHealth.push_back(health);
+        if (mixed && !m_sim.importedRandom) {
+            m_sim.importedRandom.emplace(0x4c454745U);
+        }
+    }
+    ++m_localEpoch; // earlier snapshots cannot predate an imported rule binding
+    ++m_restoreGeneration;
     return id;
 }
 
@@ -851,7 +924,7 @@ bool Generators::externallyPresented(s32 id) const {
 
 void Generators::bindSupport(Generator& generator, const ItemInfo& info, const Vec3& authored,
                              const WorldCollision* collision) {
-    if (collision == nullptr || (info.collisionFlags & 1U) != 0) {
+    if (collision == nullptr || (info.collisionFlags & ItemInfo::kKeepsHeight) != 0) {
         return;
     }
     const auto floor = collision->floorAt(authored, 4, 10, 1);
@@ -913,7 +986,7 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.algorithm = 0;
     generator.countdown = 0;
     generator.viewRadius = kGeneratorViewScale * std::max(info.radius, info.height);
-    generator.alwaysActive = (info.activeType & 0x40U) != 0;
+    generator.alwaysActive = (info.activeType & ItemInfo::kAlwaysActive) != 0;
     generator.most = static_cast<s32>(static_cast<f32>(kDefaultMost[0]) * m_sim.scales.most);
     generator.interval =
         static_cast<s32>(static_cast<f32>(kDefaultInterval[0]) * m_sim.scales.rate);
@@ -978,6 +1051,7 @@ void Generators::clear() {
     m_sim.bound = false;
     m_roster.clear();
     m_externalBodies.clear();
+    m_importedHealth.clear();
     m_records.clear();
     m_realmItems = nullptr;
     m_lenders.clear();
@@ -985,6 +1059,7 @@ void Generators::clear() {
     m_sim.view.reset();
     m_sim.attentionGate = false;
     m_sim.specialBirth = 0;
+    m_sim.importedRandom.reset();
     m_sim.nextInstance = 1;
     m_sim.generators.clear();
     for (auto& bodies : m_sim.bodies) {
@@ -1137,6 +1212,19 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             spawn.algorithm = generator.kind == -2 ? 7 : kHellAlgorithms[at];
             spawn.allBirthDirections = true;
         }
+        const auto imported =
+            std::ranges::find(m_importedHealth, generator.instance, &ImportedHealth::instance);
+        if (imported != m_importedHealth.end() && imported->broodTier != 0) {
+            // Imported native mixed broods select one of three authored species.
+            // Their RNG belongs to this simulation snapshot and never advances
+            // the ordinary GDL brood cycle or any global/presentation clock.
+            const u32 roll = (*m_sim.importedRandom)() >> 17U;
+            const usize choice = (roll * 3U) >> 15U;
+            spawn.kind = imported->broodKinds[choice];
+            spawn.tier = imported->broodTier;
+            spawn.algorithm = enemyKind(spawn.kind).algorithm;
+            spawn.allBirthDirections = true;
+        }
         spawn.position = generator.position;
         spawn.direction = generator.direction;
         spawn.clearance = patrol ? generator.patrolClearance : generator.clearance;
@@ -1179,9 +1267,19 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     }
 }
 
-s32 Generators::stateFor(const Generator& generator, bool destroyed) {
+s32 Generators::stateFor(const Generator& generator, bool destroyed) const {
     if (destroyed || generator.health <= 0.0f) {
         return 0;
+    }
+    const auto imported =
+        std::ranges::find(m_importedHealth, generator.instance, &ImportedHealth::instance);
+    if (imported != m_importedHealth.end()) {
+        for (s32 state = 0; state < kStates; ++state) {
+            if (generator.health <= imported->remaining[static_cast<usize>(state)]) {
+                return state + 1;
+            }
+        }
+        return kStates;
     }
     if (generator.health <= generator.threshold) {
         return 1;

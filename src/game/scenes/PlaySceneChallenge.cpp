@@ -46,8 +46,7 @@ void PlayScene::beginChallenge() {
         }
     }
     const auto* level = m_world->level();
-    constexpr u32 kTimedLevel = 4;
-    if (level == nullptr || (level->flags & kTimedLevel) == 0 ||
+    if (level == nullptr || (level->flags & LevelInfo::kTimed) == 0 ||
         !m_sim.challenge.begin(index, level->timeLimit, coins)) {
         log::warn("Secret challenge {} has no time limit; refresh WDATA with gdlunpack",
                   m_world->ref().name);
@@ -123,8 +122,8 @@ void PlayScene::suspendForChallenge() {
     }
 }
 
-void PlayScene::suspendForImportedLevel() {
-    if (m_world && m_world->imported()) {
+void PlayScene::suspendForImportedLevel(bool preserveImportedSpeech) {
+    if (!preserveImportedSpeech && m_world && m_world->imported()) {
         m_world->imported()->stopSounds();
     }
     // The parked scene keeps its actors and fixtures, but its mixer handles must
@@ -142,6 +141,21 @@ void PlayScene::resumeAfterImportedLevel() {
     m_audio.startMusic(m_context.assets,
                        m_world->level() != nullptr ? m_world->level()->musicVolume : 1.0f);
     m_audio.releaseSounds();
+}
+
+bool PlayScene::recoverImportedDeparture() {
+    auto* imported = m_world ? m_world->imported() : nullptr;
+    if (!m_open || !m_sim.leaving || !imported || !imported->cancelDeparture()) {
+        return false;
+    }
+    // Destination loading is an offline application boundary. Keep this
+    // scene's actors/rewards, remove its departure pose, and restore input.
+    // The imported owner must also prevent immediate re-admission in place.
+    m_sim.leaving = false;
+    m_sim.destination = {};
+    m_transition.clearAway();
+    resumeAfterImportedLevel();
+    return true;
 }
 
 void PlayScene::resumeFromChallenge(std::span<const PartyMember> party) {

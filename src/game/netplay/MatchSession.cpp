@@ -51,6 +51,11 @@ bool validOwners(const MatchOwners& owners) {
 bool belongs(const MatchOwners& owners, u8 peer) {
     return peer != 0 && std::ranges::find(owners, peer) != owners.end();
 }
+/** A link a drop took down: whatever still arrives on it is nothing new. */
+bool droppedLink(std::span<const PacketTransport::Connection> dropped,
+                 PacketTransport::Connection connection) {
+    return connection != 0 && std::ranges::find(dropped, connection) != dropped.end();
+}
 u8 seatsOf(const MatchOwners& owners, u8 peer = 0) {
     u8 mask = 0;
     for (usize seat = 0; seat < owners.size(); ++seat) {
@@ -59,6 +64,16 @@ u8 seatsOf(const MatchOwners& owners, u8 peer = 0) {
         }
     }
     return mask;
+}
+/** Every dropped peer's seats: they count as having voted to skip an entry movie. */
+u8 droppedSeats(const MatchOwners& owners, std::span<const MatchSession::Drop> dropped) {
+    u8 seats = 0;
+    for (const auto& drop : dropped) {
+        if (drop.peer != 0) {
+            seats |= seatsOf(owners, drop.peer);
+        }
+    }
+    return seats;
 }
 bool checkpointed(MatchTransition transition) {
     return transition == MatchTransition::Travel || transition == MatchTransition::Shop ||
@@ -80,6 +95,28 @@ std::string_view agreementReason(NativeAgreement::Failure reason) {
     case NativeAgreement::Failure::Transport: return "transport failure";
     }
     return "unknown";
+}
+std::string_view inputFailureReason(RollbackExchange::Failure reason) {
+    switch (reason) {
+    case RollbackExchange::Failure::None: return "invalid input or progress";
+    case RollbackExchange::Failure::Conflict: return "conflicting input history";
+    case RollbackExchange::Failure::Window: return "input history window exhausted";
+    case RollbackExchange::Failure::Disconnected: return "input link disconnected";
+    case RollbackExchange::Failure::Transport: return "input transport or clock failure";
+    }
+    return "unknown input failure";
+}
+std::string_view inputAdmissionReason(RollbackExchange::Admission result) {
+    switch (result) {
+    case RollbackExchange::Admission::Accepted: return "accepted";
+    case RollbackExchange::Admission::WrongPeer: return "wrong peer";
+    case RollbackExchange::Admission::WrongEpoch: return "wrong epoch";
+    case RollbackExchange::Admission::Invalid: return "invalid input packet";
+    case RollbackExchange::Admission::Conflict: return "conflicting input history";
+    case RollbackExchange::Admission::Full: return "input history window exhausted";
+    case RollbackExchange::Admission::Rejected: return "simulation rejected input or progress";
+    }
+    return "unknown input admission";
 }
 } // namespace
 
@@ -456,21 +493,19 @@ bool MatchSession::beginNativeInputs() {
     }
     auto inputs = std::make_unique<RollbackExchange>();
     std::vector<RollbackExchange::Link> links;
+    std::vector<u8> absent;
     for (u8 peer = 1; peer <= 4; ++peer) {
-        if (m_links[peer] != 0) {
+        if (m_dropped[peer].peer != 0) {
+            absent.push_back(peer); // its link is gone; its seats hold still from the start
+        } else if (m_links[peer] != 0) {
             links.push_back({peer, m_links[peer]});
         } else if (m_direct[peer] != 0) {
             links.push_back({peer, m_direct[peer]});
         }
     }
     if (!inputs->open(m_local, m_context.epoch, m_owners, m_context.grants, m_context.inputLead,
-                      links)) {
+                      links, {}, absent)) {
         return false;
-    }
-    for (const auto& drop : m_dropped) {
-        if (drop.peer != 0) {
-            inputs->suspend(drop.peer);
-        }
     }
     m_exchange = std::move(inputs);
     m_nativeNextTick = 1;
@@ -542,6 +577,11 @@ bool MatchSession::beginResync(Time now) {
     return true;
 }
 bool MatchSession::restartAgreement(u64 tick, Time now) {
+    log::info("Native agreement restart: epoch={} peer={} restart={} next={} confirmed={} "
+              "cached_future_digests={}",
+              m_context.epoch, m_local, tick, m_nativeNextTick, m_nativeCompleted,
+              std::ranges::count_if(m_recentDigests,
+                                    [tick](const auto& value) { return value.first > tick; }));
     auto agreement = std::make_unique<NativeAgreement>();
     std::vector<NativeAgreement::Link> links;
     for (u8 peer = 1; peer <= 4; ++peer) {
@@ -606,6 +646,10 @@ bool MatchSession::finishResync() {
     if (!queue(1, MatchControlKind::ResyncDone, MatchStop::None, 0, done)) {
         return false;
     }
+    log::info("Native resync acknowledged: epoch={} peer={} rebuilt={} prior_next={} "
+              "prior_confirmed={} retained_local_inputs={}",
+              m_context.epoch, m_local, m_resync->tick, m_nativeNextTick, m_nativeCompleted,
+              m_exchange ? m_exchange->retainedFrames(m_local) : 0);
     m_resyncTarget = false;
     m_journalComplete = false;
     m_journalIncoming.clear();
@@ -676,7 +720,7 @@ bool MatchSession::acceptPreparedContext(const MatchContext& context, MatchParty
         m_drainingContext = sourceContext;
     }
     m_loaded = {};
-    m_movieSkipVotes = 0;
+    m_movieSkipVotes = droppedSeats(m_owners, m_dropped);
     m_movieSkipRequests = 0;
     m_loadingSeconds = 0;
     m_phase = Phase::Loading;
@@ -698,7 +742,7 @@ bool MatchSession::finishNativeDrain() {
     if (shop) {
         m_shop = std::move(*shop);
     }
-    m_movieSkipVotes = votes;
+    m_movieSkipVotes |= votes;
     return true;
 }
 bool MatchSession::prepare(u32 scene, MatchTransition transition, const MatchParty* party,
@@ -777,8 +821,13 @@ bool MatchSession::prepare(u32 scene, MatchTransition transition, const MatchPar
         m_drainingContext = previousContext;
     }
     m_shop.begin(m_context.epoch, m_local, m_owners, m_context.grants, shop);
+    for (const auto& drop : m_dropped) {
+        if (drop.peer != 0) {
+            m_shop.suspend(drop.peer);
+        }
+    }
     m_loaded = {};
-    m_movieSkipVotes = 0;
+    m_movieSkipVotes = droppedSeats(m_owners, m_dropped);
     m_movieSkipRequests = 0;
     m_loadingSeconds = 0;
     m_phase = Phase::Loading;
@@ -964,6 +1013,15 @@ void MatchSession::applyDrop(const Drop& drop) {
     m_pendingDrops.push_back(drop);
     m_loaded[drop.peer] = true;
     m_movieSkipVotes |= seatsOf(m_owners, drop.peer);
+    // A dropped peer owes no rebuild, so nobody waits on its completion.
+    const auto bit = static_cast<u8>(1U << drop.peer);
+    m_journalQueuedPeers &= static_cast<u8>(~bit);
+    if (m_resync) {
+        m_resync->peers &= static_cast<u8>(~bit);
+        if (m_resync->peers == 0) {
+            m_resync.reset();
+        }
+    }
     for (auto* agreement : {m_nativeAgreement.get(), m_terminalAgreement.get(),
                             m_drainingAgreement.get(), m_drainingTerminal.get()}) {
         if (agreement) {
@@ -989,8 +1047,10 @@ bool MatchSession::drop(u8 peer) {
         std::ranges::find(m_owners, peer) == m_owners.end() || !playing) {
         return false;
     }
-    const Drop drop{peer, m_context.epoch,
-                    (m_exchange ? m_exchange->receivedThrough(peer) : 0) + 1};
+    const u64 tick = m_context.transition == MatchTransition::Shop
+                         ? m_shop.tick() + 1
+                         : (m_exchange ? m_exchange->receivedThrough(peer) : 0) + 1;
+    const Drop drop{peer, m_context.epoch, tick};
     // The control goes out on the link as it stands, the dropped peer's included.
     if (!broadcast(MatchControlKind::Drop, MatchStop::None, 0,
                    Resync{drop.tick, static_cast<u8>(1U << peer)})) {
@@ -999,6 +1059,8 @@ bool MatchSession::drop(u8 peer) {
     }
     applyDrop(drop);
     m_droppedLinks[peer] = m_links[peer];
+    std::erase_if(m_journalDeliveries,
+                  [&](const auto& queued) { return queued.connection == m_links[peer]; });
     m_links[peer] = 0;
     if (m_phase == Phase::Loading) {
         tryCommit();
@@ -1008,11 +1070,18 @@ bool MatchSession::drop(u8 peer) {
 std::vector<MatchSession::Drop> MatchSession::dropsFor(u64 epoch) const {
     std::vector<Drop> result;
     for (const auto& drop : m_dropped) {
-        if (drop.peer != 0) {
+        // A guest finishing a stage may already hold a drop the host made in the next one.
+        if (drop.peer != 0 && drop.epoch <= epoch) {
             result.push_back({drop.peer, epoch, drop.epoch == epoch ? drop.tick : 1});
         }
     }
     return result;
+}
+bool MatchSession::shopLaneGone(u8 peer, u64 epoch, u64 step) const {
+    const auto drops = dropsFor(epoch);
+    return peer != 0 && std::ranges::any_of(drops, [&](const Drop& drop) {
+               return drop.peer == peer && step + 1 >= drop.tick;
+           });
 }
 std::vector<MatchSession::Drop> MatchSession::takeDrops() {
     return std::exchange(m_pendingDrops, {});
@@ -1039,15 +1108,16 @@ bool MatchSession::disconnected(PacketTransport::Connection connection) {
     if (peer == 0) {
         // A dropped guest's link closing after the drop, as it does when the guest left
         // on its own and its Stop arrived first, is nothing new.
-        return connection != 0 &&
-               std::ranges::find(m_droppedLinks, connection) != m_droppedLinks.end();
+        return droppedLink(m_droppedLinks, connection);
     }
+    // Nothing queued for a closed link can leave, and it must not crowd out what the others
+    // are still owed, the drop's own notice among it.
+    const auto closed = [&](const auto& queued) { return queued.connection == connection; };
+    std::erase_if(m_controls, closed);
+    std::erase_if(m_journalDeliveries, closed);
     if (m_dropped[peer].peer != 0 || (host() && peer != 1 && drop(peer))) {
         m_links[peer] = 0;
-        std::erase_if(m_controls,
-                      [&](const auto& queued) { return queued.connection == connection; });
-        std::erase_if(m_journalDeliveries,
-                      [&](const auto& queued) { return queued.connection == connection; });
+        std::erase_if(m_controls, closed);
         return true;
     }
     if (m_nativeAgreement) {
@@ -1069,9 +1139,8 @@ bool MatchSession::disconnected(PacketTransport::Connection connection) {
         m_drainingInputs->disconnected(connection);
     }
     m_links[peer] = 0;
-    std::erase_if(m_controls, [&](const auto& queued) { return queued.connection == connection; });
-    std::erase_if(m_journalDeliveries,
-                  [&](const auto& queued) { return queued.connection == connection; });
+    std::erase_if(m_controls, closed);
+    std::erase_if(m_journalDeliveries, closed);
     if (m_nativeAgreement || m_terminalAgreement || m_drainingTerminal || m_drainingAgreement) {
         const auto* agreement = m_nativeAgreement     ? m_nativeAgreement.get()
                                 : m_terminalAgreement ? m_terminalAgreement.get()
@@ -1094,7 +1163,8 @@ void MatchSession::update(f64 seconds, Time now) {
         failNativeAgreement(NativeAgreement::Failure::Timeout, 0, m_drainingAgreement.get());
         return;
     }
-    if (m_nativeAgreement && !m_nativeAgreement->update(now)) {
+    // A drop can leave the remaining digests disagreeing; that is repaired like any mismatch.
+    if (m_nativeAgreement && !m_nativeAgreement->update(now) && !agreementFailed(now)) {
         failNativeAgreement(NativeAgreement::Failure::Timeout);
         return;
     }
@@ -1181,7 +1251,11 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
         m_pendingNativeMovieVotes |= message.movieSkipVotes;
         return Admission::Accepted;
     }
-    if (message.context != m_context) {
+    // A drop the host makes once it has prepared the next stage can reach a guest still
+    // finishing this one; it belongs to that stage, as the host's own does.
+    const bool pendingDrop = message.kind == MatchControlKind::Drop && m_pendingNativeContext &&
+                             message.context == *m_pendingNativeContext;
+    if (message.context != m_context && !pendingDrop) {
         return Admission::Stale;
     }
     switch (message.kind) {
@@ -1233,13 +1307,19 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
         if (m_phase != Phase::Running) {
             return Admission::WrongPhase;
         }
+        const bool target = (message.resyncPeers & (1U << m_local)) != 0;
+        if (target) {
+            // The rebuilt scene hashes those ticks again; what the diverged one took is wrong.
+            std::erase_if(m_recentDigests,
+                          [&](const auto& recent) { return recent.first > message.resyncTick; });
+        }
         if (!restartAgreement(message.resyncTick, Clock::now())) {
             failNativeAgreement(NativeAgreement::Failure::Protocol, message.resyncTick);
             return Admission::Accepted;
         }
         m_resync = Resync{message.resyncTick, message.resyncPeers};
         m_consoleRequests.clear();
-        m_resyncTarget = (message.resyncPeers & (1U << m_local)) != 0;
+        m_resyncTarget = target;
         m_journalComplete = false;
         m_journalIncoming.clear();
         return Admission::Accepted;
@@ -1276,7 +1356,7 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
                 stop(MatchStop::Left, false);
                 return Admission::Accepted;
             }
-            applyDrop({dropped, m_context.epoch, message.resyncTick});
+            applyDrop({dropped, message.context.epoch, message.resyncTick});
         }
         return Admission::Accepted;
     }
@@ -1304,6 +1384,10 @@ MatchSession::Admission MatchSession::receive(PacketTransport::Connection connec
     const auto inputAt = now.value_or(Clock::now());
     const auto peer = peerOf(connection);
     if (peer == 0) {
+        // Whatever a dropped guest sent before it heard of its drop is ignored, not refused.
+        if (droppedLink(m_droppedLinks, connection)) {
+            return Admission::Stale;
+        }
         // A direct link carries another guest's own inputs and nothing else.
         if (directPeerOf(connection) == 0 || !RollbackExchange::recognizes(bytes)) {
             return Admission::WrongPeer;
@@ -1390,6 +1474,12 @@ MatchSession::Admission MatchSession::receive(PacketTransport::Connection connec
             }
         }
         if (m_phase != Phase::Running || m_context.transition == MatchTransition::Shop) {
+            return Admission::Stale;
+        }
+        if (host() && m_resync && (m_resync->peers & (1U << peer)) != 0) {
+            // Until its completion arrives a rebuilding peer reports the timeline that
+            // diverged; the restarted stream takes its digests only after that. A failure
+            // it reports meanwhile comes with its Stop as well.
             return Admission::Stale;
         }
         const bool fresh = !m_nativeAgreement;
@@ -1484,6 +1574,15 @@ MatchSession::Admission MatchSession::nativeInputs(PacketTransport::Connection c
     case RollbackExchange::Admission::Rejected:
         // A callback may have admitted a prefix before another native guard
         // refused. Stop rather than retrying an ambiguous partially consumed batch.
+        m_failureDetail = std::format("Online input reception failed: {} (epoch {}, peer {}, "
+                                     "origin {}, next tick {}). Play stopped to protect progress.",
+                                     inputAdmissionReason(result), m_context.epoch, m_local,
+                                     message->origin, m_nativeNextTick);
+        log::error("{} sender_next={} commands={} confirmed={} received_through={} "
+                   "retained_frames={} resync={} draining={} rtt_ms={}",
+                   m_failureDetail, message->nextTick, message->commands.size(), m_nativeCompleted,
+                   inputs->receivedThrough(message->origin), inputs->retainedFrames(message->origin),
+                   m_resync.has_value(), draining, pingMs);
         stop(MatchStop::TransportFailure, true);
         return Admission::Invalid;
     case RollbackExchange::Admission::Invalid: return Admission::Invalid;
@@ -1512,6 +1611,14 @@ bool MatchSession::publishNativeInputs(std::span<const InputCommand> commands, u
         return false;
     }
     if (!m_exchange->publish(commands, nextTick)) {
+        m_failureDetail = std::format("Online input publication failed: {} (epoch {}, peer {}, "
+                                     "next tick {}). Play stopped to protect progress.",
+                                     inputFailureReason(m_exchange->failure()), m_context.epoch,
+                                     m_local, nextTick);
+        log::error("{} commands={} confirmed={} received_through={} retained_frames={} resync={}",
+                   m_failureDetail, commands.size(), m_nativeCompleted,
+                   m_exchange->receivedThrough(m_local), m_exchange->retainedFrames(m_local),
+                   m_resync.has_value());
         stop(MatchStop::TransportFailure, true);
         return false;
     }
@@ -1593,6 +1700,13 @@ bool MatchSession::observeNative(u64 tick, const NativeAgreement::Digest& digest
         failNativeAgreement(NativeAgreement::Failure::Window, tick);
         return false;
     case NativeAgreement::Admission::Failed:
+        // The host's own digest can be the one that completes a mismatch; that is repaired
+        // as when a report completes it.
+        if (agreementFailed(now)) {
+            return true;
+        }
+        failNativeAgreement(NativeAgreement::Failure::Protocol, tick);
+        return false;
     case NativeAgreement::Admission::Stale:
     case NativeAgreement::Admission::WrongPeer:
     case NativeAgreement::Admission::Invalid:
@@ -1661,6 +1775,10 @@ void MatchSession::flush(PacketTransport& transport, Time now) {
         }
         if (result != PacketTransport::SendResult::Sent) {
             const auto connection = delivery.connection;
+            if (peerOf(connection) == 0) {
+                m_journalDeliveries.pop_front(); // that link closed after this was queued
+                continue;
+            }
             disconnected(connection);
             return;
         }
@@ -1680,13 +1798,18 @@ void MatchSession::flush(PacketTransport& transport, Time now) {
     if (m_context.transition == MatchTransition::Shop) {
         while (!m_shop.outgoing().empty()) {
             const auto& delivery = m_shop.outgoing().front();
-            const auto result = transport.send(m_links[delivery.peer], delivery.bytes,
-                                               PacketTransport::Delivery::Reliable);
+            const auto connection = m_links[delivery.peer];
+            if (connection == 0) {
+                m_shop.sent(); // a dropped guest's link is gone: nothing more goes to it
+                continue;
+            }
+            const auto result =
+                transport.send(connection, delivery.bytes, PacketTransport::Delivery::Reliable);
             if (result == PacketTransport::SendResult::Congested) {
                 return;
             }
             if (result != PacketTransport::SendResult::Sent) {
-                disconnected(m_links[delivery.peer]);
+                disconnected(connection);
                 return;
             }
             m_shop.sent();
@@ -1705,6 +1828,11 @@ void MatchSession::flush(PacketTransport& transport, Time now) {
             return;
         }
         stop(MatchStop::TransportFailure, true);
+        return;
+    }
+    // A mismatch is repaired before the failed stream's notice can leave; the order to rebuild
+    // then goes out ahead of the restarted stream.
+    if (m_nativeAgreement && m_nativeAgreement->failed() && agreementFailed(now)) {
         return;
     }
     if (m_nativeAgreement && !m_nativeAgreement->flush(transport, now, &closedConnection)) {

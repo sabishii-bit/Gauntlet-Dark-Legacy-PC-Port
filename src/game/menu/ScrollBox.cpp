@@ -29,7 +29,9 @@ std::vector<std::string> ScrollBox::splitLines(std::string_view page) {
 bool ScrollBox::open(RenderDevice& device, std::vector<std::string> pages, f32 scale,
                      std::string prompt) {
     close();
-    if (m_text == nullptr || !m_text->ready() || pages.empty()) {
+    if ((m_presentation ? !m_presentation->text().ready()
+                        : m_text == nullptr || !m_text->ready()) ||
+        pages.empty()) {
         return false;
     }
     m_sim.device = &device;
@@ -61,6 +63,9 @@ void ScrollBox::showPage(usize page) {
 
 ScrollBox::PageLayout ScrollBox::layout(std::string_view page, f32 scale,
                                         std::string_view prompt) const {
+    if (m_presentation) {
+        return m_presentation->layout(page, scale, prompt);
+    }
     PageLayout result;
     result.lines = splitLines(page);
     s32 textWidth = 0;
@@ -110,6 +115,10 @@ void ScrollBox::step(s32 ticks, u32 accepted) {
 
 /** After the last page the scroll burns away; without the burn art it simply goes. */
 void ScrollBox::finish() {
+    if (m_presentation) {
+        close();
+        return;
+    }
     const bool canBurn = m_sim.device != nullptr && m_art.backdropImage != nullptr &&
                          !m_art.burnMasks.empty() && !m_art.burnRing.empty();
     if (!canBurn || !m_fire.start(*m_sim.device, m_sim.layout.area, *m_art.backdropImage,
@@ -125,7 +134,7 @@ void ScrollBox::prepare(RenderDevice& device) {
 }
 
 void ScrollBox::draw(Canvas& canvas) const {
-    if (!m_sim.active || m_text == nullptr) {
+    if (!m_sim.active || (m_text == nullptr && m_presentation == nullptr)) {
         return;
     }
     // The words are gone before the scroll burns; only the fire is left to see.
@@ -142,6 +151,10 @@ u8 ScrollBox::promptAlpha() const {
 
 void ScrollBox::drawWords(Canvas& canvas, const PageLayout& page, f32 scale,
                           std::string_view prompt, u8 alpha) const {
+    if (m_presentation) {
+        m_presentation->draw(canvas, page, scale, prompt, alpha);
+        return;
+    }
     if (m_art.backdrop != nullptr) {
         canvas.draw(*m_art.backdrop, page.area);
     }
@@ -249,6 +262,7 @@ bool ScrollBox::appendDigest(NativeStateDigest& digest, const LocalSnapshot* sav
         digest.resource(texture);
     }
     digest.flag(m_text != nullptr);
+    digest.flag(m_presentation != nullptr);
     if (m_text) {
         digest.value(*m_text);
     }

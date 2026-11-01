@@ -17,6 +17,7 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerFigure.h"
 #include "game/players/PowerupEffects.h"
@@ -126,14 +127,14 @@ TEST_CASE("equipped hand powerups replace the class weapon and restore it when s
     };
 
     Inventory inventory;
-    inventory.addPowerup(powerup::kWeapon, powerup::kThunderHammer, 1, -1);
+    inventory.addPowerup(powerup::kWeapon, damage::kHammer, 1, -1);
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     checkHeld(weapons, "HAMMER_HD");
     inventory.powerups[0].on = false;
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     checkRestored();
     inventory.powerups[0].on = true;
-    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 1, -1);
+    inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 1, -1);
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     checkHeld(weapons, "SUPERXBOW");
     inventory.addPowerup(powerup::kSpecial, powerup::kRightGauntlet, 0, 1);
@@ -142,17 +143,17 @@ TEST_CASE("equipped hand powerups replace the class weapon and restore it when s
     inventory.advance(2);
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     checkHeld(weapons, "SUPERXBOW");
-    REQUIRE(inventory.spendPowerup(powerup::kWeapon, powerup::kSuperShot, false));
+    REQUIRE(inventory.spendPowerup(powerup::kWeapon, damage::kSuperShot, false));
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     checkHeld(weapons, "HAMMER_HD");
-    REQUIRE(inventory.spendPowerup(powerup::kWeapon, powerup::kThunderHammer, false));
+    REQUIRE(inventory.spendPowerup(powerup::kWeapon, damage::kHammer, false));
     figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
     checkRestored();
 
     // Missing optional art must not leave the player empty-handed.
     ItemArchive absent;
     PowerupEffects worn;
-    worn.weapon = powerup::kThunderHammer;
+    worn.weapon = damage::kHammer;
     figure->setWeaponPowerups(device, powerups, absent, worn);
     checkRestored();
 }
@@ -984,10 +985,10 @@ TEST_CASE("hand replacement priority and restoration render without retail asset
     };
     PowerupEffects worn;
     checkWeapon(1);
-    worn.weapon = powerup::kThunderHammer;
+    worn.weapon = damage::kHammer;
     figure->setWeaponPowerups(device, archive, archive, worn);
     checkWeapon(11);
-    worn.weapon |= powerup::kSuperShot;
+    worn.weapon |= damage::kSuperShot;
     figure->setWeaponPowerups(device, archive, archive, worn);
     checkWeapon(21);
     checkWeapon(21, true); // the held crossbow does not vanish with the thrown class weapon
@@ -1002,7 +1003,7 @@ TEST_CASE("hand replacement priority and restoration render without retail asset
     worn.weapon = 1; // elemental overlays keep the ordinary weapon
     figure->setWeaponPowerups(device, archive, archive, worn);
     checkWeapon(1);
-    worn.weapon = powerup::kThunderHammer;
+    worn.weapon = damage::kHammer;
     ItemArchive absent;
     figure->setWeaponPowerups(device, absent, absent, worn);
     checkWeapon(1);
@@ -1088,8 +1089,11 @@ TEST_CASE("a player figure draws a rest-pose weapon when optional animations are
 }
 
 TEST_CASE("Sumner throws with the wizard's native voice bank", "[figure][sumner][assets]") {
-    const auto root =
-        test::assetOrSkip("PLAYERS/WIZ/SUM/objects.ngc").parent_path().parent_path().parent_path().parent_path();
+    const auto root = test::assetOrSkip("PLAYERS/WIZ/SUM/objects.ngc")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
     test::FakeRenderDevice device;
     CharacterSave save;
     save.selectClass(kSumnerClass);

@@ -8,6 +8,7 @@
 
 #include "game/bosses/BossCoins.h"
 #include "game/bosses/SkorneRelics.h"
+#include "game/level/ImportedLevel.h"
 #include "game/party/PlayerFigure.h"
 #include "game/players/PowerupEffects.h"
 
@@ -85,10 +86,14 @@ constexpr f32 kBossDeathBlastRadius = 1000.0f;
 void BossSequence::bind(Resources resources) {
     clear();
     m_resources.emplace(resources);
+    auto* nativeItems =
+        resources.world.imported() ? resources.world.imported()->bossLegendArchive() : nullptr;
     m_legend = std::make_unique<LegendPresentation>(
         resources.effects,
-        LegendPresentation::Assets{resources.device, resources.world.items(), resources.weapons,
-                                   resources.textures},
+        LegendPresentation::Assets{
+            resources.device, nativeItems ? *nativeItems : resources.world.items(),
+            resources.weapons, resources.textures,
+            resources.world.imported() ? resources.world.imported()->bossLegendProfile() : nullptr},
         LegendPresentation::Audio{
             [this](std::string_view name) { return m_resources->audio.playNamed(name); },
             [this](SoundHandle handle) { m_resources->audio.stop(handle); },
@@ -116,6 +121,10 @@ void BossSequence::bind(Resources resources) {
                          1},
                         name, SceneSoundPlayback::PlayOnceUntilCancelled, 1, 0, start);
                 }
+            },
+            [this](LegendSound phase) {
+                auto* imported = m_resources->world.imported();
+                return imported && imported->playBossLegendSound(phase);
             }});
 }
 
@@ -200,18 +209,14 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
     std::optional<LegendPresentation::Target> target;
     if (const Vec3* at = bosses.position(); at != nullptr) {
         target = LegendPresentation::Target{*at, bosses.height(), bosses.rootTransform()};
-        if (bosses.view().kind == 35) {
-            if (const auto lion = bosses.nodeTransform("CHIMLIONHEA")) {
-                target->position = Vec3{(*lion)[3]};
-                target->height = 0;
-            }
-        } else if (bosses.view().kind == 38) {
+        if (const auto attachment = bosses.legendTargetTransform()) {
+            target->position = Vec3{(*attachment)[3]};
+            target->height = 0;
+            target->attachment = *attachment;
+        }
+        if (bosses.view().kind == 38) {
             // PlayerMotion targets hitnode1, TYPE.lookNode1 in PBOSS.WAD,
             // rather than the boss's floor-space collision centre.
-            if (const auto eye = bosses.nodeTransform("BODY1_EYEBALL")) {
-                target->position = Vec3{(*eye)[3]};
-                target->height = 0;
-            }
             target->touches = [&bosses](const Vec3& from, const Vec3& to, f32 radius) {
                 return bosses.struckBy(from, to, radius).has_value();
             };

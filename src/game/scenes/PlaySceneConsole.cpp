@@ -1,5 +1,3 @@
-#include "game/scenes/PlayScene.h"
-
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -9,8 +7,9 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/characters/Progression.h"
-#include "game/players/NoclipMotion.h"
 #include "game/console/ConsoleCommands.h"
+#include "game/players/NoclipMotion.h"
+#include "game/scenes/PlayScene.h"
 
 namespace gdl::game {
 namespace {
@@ -63,9 +62,9 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
             return "This command toggles without arguments.";
         }
         ConsoleCheats changed = cheats(player);
-        bool& enabled = verb == "god" ? changed.god
+        bool& enabled = verb == "god"        ? changed.god
                         : verb == "notarget" ? changed.noTarget
-                                              : changed.noclip;
+                                             : changed.noclip;
         enabled = !enabled;
         setCheats(player, changed);
         return std::format("{} {}", verb, enabled ? "on" : "off");
@@ -86,8 +85,8 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
             // PartyRecords applies native stage scaling and can share the award
             // with a combo partner. Check both additions before entering its s32
             // arithmetic; an untrusted console amount must never overflow it.
-            const auto scaled = [&](s32 amount, const CharacterSave& character)
-                -> std::optional<s32> {
+            const auto scaled = [&](s32 amount,
+                                    const CharacterSave& character) -> std::optional<s32> {
                 const f32 scale = m_world->level() != nullptr
                                       ? m_world->level()->tuning.experienceScale(
                                             experienceLevel(character.experience()))
@@ -100,7 +99,8 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
                 const auto points = static_cast<s32>(won);
                 return static_cast<s64>(character.experience()) + points <=
                                std::numeric_limits<s32>::max()
-                           ? std::optional{points} : std::nullopt;
+                           ? std::optional{points}
+                           : std::nullopt;
             };
             const auto awarded = scaled(gift->amount, *save);
             if (!awarded) {
@@ -147,8 +147,7 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
             }
             return ConsoleCommands::report(*gift, takeItem(*save, gift->offer, 1.0f, true));
         }
-        case ConsoleCommands::Gift::Kind::Info:
-            return "get info is a local inspection command.";
+        case ConsoleCommands::Gift::Kind::Info: return "get info is a local inspection command.";
         }
     }
     if (verb == "spawn") {
@@ -179,11 +178,10 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
         if (!destination->level) {
             return relocate(*destination->position) ? "Moved the party." : "Nobody is standing.";
         }
-        const auto level = *destination->level == "TOWER"
-                               ? std::optional{LevelRef::tower()}
-                               : m_context.levels != nullptr
-                                     ? m_context.levels->byName(*destination->level)
-                                     : std::nullopt;
+        const auto level = *destination->level == "TOWER" ? std::optional{LevelRef::tower()}
+                           : m_context.levels != nullptr
+                               ? m_context.levels->byName(*destination->level)
+                               : std::nullopt;
         if (!level) {
             return std::format("No map named {}", *destination->level);
         }
@@ -237,7 +235,7 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
     }
     std::optional<LevelRef> from;
     if (spawn->map) {
-        from = *spawn->map == "TOWER" ? std::optional{LevelRef::tower()}
+        from = *spawn->map == "TOWER"        ? std::optional{LevelRef::tower()}
                : m_context.levels != nullptr ? m_context.levels->byName(*spawn->map)
                                              : std::nullopt;
         if (!from) {
@@ -270,12 +268,12 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
         const auto views = m_opponents.views(m_players);
         s32 count = 0;
         for (s32 i = 0; i < spawn->count && m_sim.consoleSpawns < kMaximumConsoleSpawns; ++i) {
-            if (enemies().loadKind(spawn->enemyKind) &&
-                enemies().spawn({.kind = spawn->enemyKind,
-                                 .tier = spawn->tier,
-                                 .position = spotAt(i),
-                                 .direction = -facing,
-                                 .placed = true}, views)) {
+            if (enemies().loadKind(spawn->enemyKind) && enemies().spawn({.kind = spawn->enemyKind,
+                                                                         .tier = spawn->tier,
+                                                                         .position = spotAt(i),
+                                                                         .direction = -facing,
+                                                                         .placed = true},
+                                                                        views)) {
                 ++count;
                 ++m_sim.consoleSpawns;
             }
@@ -324,14 +322,13 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
             }
         }
         const auto id = generators().spawn(*m_device, enemies(), kind, spawn->tier, spotAt(0), yaw,
-                                            items, record);
+                                           items, record);
         m_sim.consoleSpawns += id ? 1U : 0U;
         if (id) {
             borrowVoices();
         }
-        return id
-                   ? std::format("Stood a tier {} {} generator", spawn->tier, spawn->name)
-                   : std::format("No {} generator could stand here", spawn->name);
+        return id ? std::format("Stood a tier {} {} generator", spawn->tier, spawn->name)
+                  : std::format("No {} generator could stand here", spawn->name);
     }
     case Kind::Item: {
         if (from) {
@@ -339,9 +336,8 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
         }
         const bool placed = m_world->placeItem(*m_device, spawn->name, spotAt(0));
         m_sim.consoleSpawns += placed ? 1U : 0U;
-        return placed
-                   ? std::format("Dropped {}", spawn->name)
-                   : std::format("No pickup named {}", spawn->name);
+        return placed ? std::format("Dropped {}", spawn->name)
+                      : std::format("No pickup named {}", spawn->name);
     }
     case Kind::Thing:
         if (!from && m_world->placeItem(*m_device, spawn->name, spotAt(0))) {
@@ -353,9 +349,8 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
         const LevelRef source = from.value_or(m_world->ref());
         const bool placed = spawnObject(source, spawn->name, spotAt(0), yaw);
         m_sim.consoleSpawns += placed ? 1U : 0U;
-        return placed
-                   ? std::format("Stood {} of {}", spawn->name, source.name)
-                   : std::format("No object named {} in {}", spawn->name, source.name);
+        return placed ? std::format("Stood {} of {}", spawn->name, source.name)
+                      : std::format("No object named {} in {}", spawn->name, source.name);
     }
     }
     return "Unknown spawn kind.";
@@ -384,12 +379,11 @@ void PlayScene::advanceConsoleFlight(f64 deltaSeconds, const Inputs& inputs) {
         // a local render delta, camera transform or already-integrated position.
         const Vec3 offset = wish * NoclipMotion::kSpeed * static_cast<f32>(deltaSeconds);
         const std::optional<f32> yaw = wish.x * wish.x + wish.z * wish.z > 1.0e-6f
-                                          ? std::optional{portable::atan2(wish.x, wish.z)}
-                                          : std::nullopt;
+                                           ? std::optional{portable::atan2(wish.x, wish.z)}
+                                           : std::nullopt;
         noclipMove(player, offset, yaw);
     }
 }
-
 
 bool PlayScene::pressSwitch(usize index) {
     return m_open && m_world != nullptr && m_world->pressTrigger(index);
@@ -405,6 +399,40 @@ bool PlayScene::lockGate(usize index) {
 
 bool PlayScene::setChestLocked(usize index, bool locked) {
     return m_open && m_fixtures.setChestLocked(index, locked);
+}
+
+ScenePicking::Scene PlayScene::pickingScene() {
+    return {m_world, m_opponents, m_fixtures, m_players, m_spawned};
+}
+
+std::optional<SceneSelection> PlayScene::pick(Vec2 cursor) {
+    if (!m_open || m_world == nullptr || !m_presentedClip.has_value()) {
+        return std::nullopt;
+    }
+    return ScenePicking::pick(pickingScene(), cursor, *m_presentedClip, m_presentedView,
+                              m_presentedWorldAlpha);
+}
+
+void PlayScene::markSelection(const SelectionHighlight* highlight) {
+    m_picking.markSelection(pickingScene(), highlight);
+}
+
+bool PlayScene::noclipMove(s32 player, const Vec3& offset, std::optional<f32> yaw) {
+    for (PlayerRuntime& runtime : m_players) {
+        if (runtime.actor.player() != player) {
+            continue;
+        }
+        if (runtime.departed || runtime.life != PlayerLife::Standing) {
+            return false;
+        }
+        runtime.actor.place(runtime.actor.position() + offset);
+        if (yaw.has_value()) {
+            runtime.actor.turnTo(*yaw);
+        }
+        runtime.fixtureSpot.reset();
+        return true;
+    }
+    return false;
 }
 
 } // namespace gdl::game

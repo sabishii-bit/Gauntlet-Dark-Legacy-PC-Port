@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/EffectFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantProjectile.h"
 
@@ -30,14 +31,16 @@ f32 arenaDistance(const Vec3& delta) {
 } // namespace
 
 bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
-    constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x10U | 0x40U | 0x800U;
-    // Root attachment takes precedence over the saved-position flag (0x80).
+    constexpr u32 kAttachedAppearanceFlags = effect_flags::kBodyParent | effect_flags::kShakes |
+                                             4U | effect_flags::kOnFloor | effect_flags::kDetached |
+                                             effect_flags::kRootParent;
+    // Root attachment takes precedence over the initial-root placement.
     // Garm's invisible damage carrier moves; its visible arc is separately
     // animated. Do not turn that unsupported carrier into an instant full hit.
-    const u32 allowed =
-        kAttachedAppearanceFlags | (sound != nullptr && (sound->flags & 0x801U) != 0 ? 0x80U : 0U);
+    const u32 allowed = kAttachedAppearanceFlags |
+                        (sound != nullptr && sound->follows() ? effect_flags::kAtInitialRoot : 0U);
     return sound != nullptr && (sound->flags & ~allowed) == 0 &&
-           ((sound->flags & 0x40U) == 0 || (sound->flags & 0x801U) == 0) &&
+           ((sound->flags & effect_flags::kDetached) == 0 || !sound->follows()) &&
            (damage.behaviorFlags & ~0x2000U) == 0 && damage.gravity == 0 &&
            (damage.speed == 0 || sound->tree == "NULLFX") && damage.morph < 0 &&
            damage.morphEnd < 0 && sound->link < 0;
@@ -72,13 +75,13 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     }
     // Root-parent SFXX policies replace the supplied DAMG position outright.
     // World-mode damage rotates its offset before reparenting to the stage node.
-    const bool rootParent = (sound->flags & 0x801U) != 0;
+    const bool rootParent = sound->follows();
     Vec3 offset = rootParent ? sound->offset : damage.offset + sound->offset;
     if (worldParent.has_value()) {
         offset =
             Vec3{modelTransform(critter) * Vec4{damage.offset, 0}} + sound->offset * critter.scale;
     }
-    if ((sound->flags & 0x40U) != 0 && !worldParent.has_value()) {
+    if ((sound->flags & effect_flags::kDetached) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
         const Vec3 position = Vec3{attachmentTransform(critter, node) * Vec4{sound->offset, 1}} +
@@ -88,7 +91,8 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
             portable::rotate(glm::translate(Mat4{1}, position), critter.yaw, Vec3{0, 1, 0});
         offset = Vec3{0};
     }
-    if ((sound->flags & 0x10U) != 0 && damage.hitSound < 0 && m_sim.collision != nullptr) {
+    if ((sound->flags & effect_flags::kOnFloor) != 0 && damage.hitSound < 0 &&
+        m_sim.collision != nullptr) {
         const Mat4 parent = worldParent.value_or(attachmentTransform(critter, node));
         const Vec3 position{parent * Vec4{offset, 1}};
         const f32 radius = damage.radius * critter.scale;
@@ -114,8 +118,9 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     } else {
         const usize root = critter.branch.value_or(0);
         const auto& nodes = critter.stock->tree->nodes;
-        const s32 attachment =
-            (sound->flags & 0x800U) != 0 ? nodes[root].parent : static_cast<s32>(root);
+        const s32 attachment = (sound->flags & effect_flags::kRootParent) != 0
+                                   ? nodes[root].parent
+                                   : static_cast<s32>(root);
         if (attachment >= 0) {
             area.node = nodes[static_cast<usize>(attachment)].name;
         }
@@ -140,6 +145,14 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     area.secondsLeft = life;
     area.lifetime = life;
     area.expanding = damage.type != AttackDefinition::kAttachedArea;
+    const auto& rules = critter.definition->rules();
+    if (rules.linearRadialAreas) {
+        // Native effects grow their collision cylinder over the whole life,
+        // retaining full damage. This is not GDL's fading directional wave.
+        area.linearGrowth = true;
+        area.minDot = -1;
+        area.halfHeight = rules.areaHalfHeight;
+    }
     critter.areas.push_back(area);
 
     CombatCue cue;
@@ -152,7 +165,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.scale = sound->scale * (worldParent.has_value() ? critter.scale : 1.0f);
     cue.life = life;
     cue.follows = !worldParent.has_value();
-    cue.shakes = (sound->flags & CombatEffectDefinition::kShakes) != 0;
+    cue.shakes = (sound->flags & effect_flags::kShakes) != 0;
     cue.rootAttachment = area.node.empty();
     if (!area.node.empty()) {
         cue.node = area.node;

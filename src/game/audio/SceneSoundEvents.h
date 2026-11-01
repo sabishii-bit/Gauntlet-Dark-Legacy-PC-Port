@@ -94,6 +94,9 @@ public:
     ~SceneSoundEvents() = default;
     void open(u64 epoch, SoundPlayer* output, u64 firstTick = 1);
     void close();
+    /** Closes and forgets the epoch's history, so that a scene returned to the start of that
+     * epoch can record the same epoch again from its first tick. */
+    void discard();
     void beginTick(u64 tick);
     Journal endTick();
     Frame endFrame();

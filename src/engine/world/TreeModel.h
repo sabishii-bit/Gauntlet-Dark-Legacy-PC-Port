@@ -55,6 +55,7 @@ public:
         m_highlight = nullptr;
         resetTextures();
         setAppearance(false);
+        m_whiteBlend = 0;
         m_cullBack = true;
     }
     bool bound() const { return !m_nodes.empty(); }
@@ -107,6 +108,7 @@ public:
     /** Marks every part out with `highlight` as it is drawn, as the developer console's
      * selection; null marks nothing. */
     void setHighlight(const SelectionHighlight* highlight) { m_highlight = highlight; }
+    void setWhiteBlend(f32 fraction) { m_whiteBlend = std::clamp(fraction, 0.0f, 1.0f); }
     const SelectionHighlight* highlight() const { return m_highlight; }
     Vec2 textureOffset(u32 slot) const;
     /** How a slot's coordinates are stretched, one and one when they are not. */
@@ -225,6 +227,7 @@ private:
     bool m_fadedDepthWrite = false;
     bool m_cullBack = true;
     Color m_tint = Color::white();
+    f32 m_whiteBlend = 0.0f;
     const SelectionHighlight* m_highlight = nullptr;
     std::vector<TextureFrame> m_frames;
     struct TextureSampling {

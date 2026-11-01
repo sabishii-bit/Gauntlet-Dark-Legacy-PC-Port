@@ -18,6 +18,8 @@
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
 #include "game/characters/Relics.h"
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/level/LevelTriggers.h"
@@ -53,21 +55,21 @@ struct Powerup {
 };
 constexpr std::array<Powerup, 28> kPowerups{{
     {"levitate", "held above the ground", powerup::kSpecial, powerup::kLevitation, false, 0},
-    {"invulnerable", "takes no harm", powerup::kArmor, powerup::kInvulnerable, false, 0},
-    {"goldinvulnerable", "takes no harm, gilded", powerup::kArmor, powerup::kGoldInvulnerable,
-     false, 0},
+    {"invulnerable", "takes no harm", powerup::kArmor, armor::kInvulnerable, false, 0},
+    {"goldinvulnerable", "takes no harm, gilded", powerup::kArmor, armor::kGoldInvulnerable, false,
+     0},
     {"antideath", "a halo Death cannot take", powerup::kArmor, DeathRules::kProtection, false, 0},
-    {"reflectshield", "turns missiles back", powerup::kArmor, powerup::kReflectShield, false, 0},
-    {"fireshield", "burns what it is against", powerup::kArmor, powerup::kFireShield, false, 0},
-    {"lightningshield", "shocks what it is against", powerup::kArmor, powerup::kLightningShield,
-     false, 0},
-    {"supershot", "one huge shot a charge", powerup::kWeapon, powerup::kSuperShot, true, 0},
-    {"threeway", "three shots at once", powerup::kWeapon, powerup::kThreeWayShot, false, 0},
-    {"fiveway", "five shots at once", powerup::kWeapon, powerup::kFiveWayShot, false, 0},
-    {"rapidfire", "shoots faster", powerup::kWeapon, powerup::kRapidFire, false, 0},
-    {"reflect", "shots that bounce off the walls", powerup::kWeapon, powerup::kReflect, false, 0},
-    {"thunderhammer", "a hammer blow of lightning a charge", powerup::kWeapon,
-     powerup::kThunderHammer, true, 0},
+    {"reflectshield", "turns missiles back", powerup::kArmor, armor::kReflect, false, 0},
+    {"fireshield", "burns what it is against", powerup::kArmor, armor::kFireArmor, false, 0},
+    {"lightningshield", "shocks what it is against", powerup::kArmor, armor::kElectricArmor, false,
+     0},
+    {"supershot", "one huge shot a charge", powerup::kWeapon, damage::kSuperShot, true, 0},
+    {"threeway", "three shots at once", powerup::kWeapon, damage::kThreeWayShot, false, 0},
+    {"fiveway", "five shots at once", powerup::kWeapon, damage::kFiveWayShot, false, 0},
+    {"rapidfire", "shoots faster", powerup::kWeapon, damage::kRapidFire, false, 0},
+    {"reflect", "shots that bounce off the walls", powerup::kWeapon, damage::kReflect, false, 0},
+    {"thunderhammer", "a hammer blow of lightning a charge", powerup::kWeapon, damage::kHammer,
+     true, 0},
     {"firebreath", "breathes fire a charge", powerup::kSpecial, powerup::kFireBreath, true, 0},
     {"acidbreath", "breathes acid a charge", powerup::kSpecial, powerup::kAcidBreath, true, 0},
     {"lightningbreath", "breathes lightning a charge", powerup::kSpecial, powerup::kLightningBreath,

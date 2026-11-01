@@ -187,7 +187,7 @@ public:
          * borrowed from the immutable pool catalog; CPU birth state is owned.
          * Native starts leave this empty and use their original bind path. */
         std::shared_ptr<const Effect> morphPrototype;
-        Mat4 transform() const;
+        Mat4 transform(const Mat4* presentedParent = nullptr) const;
         f32 opacity() const;
     };
 
@@ -322,8 +322,16 @@ public:
     /** A discontinuous placement or bounce must not blend across its contact point. */
     void snapPresentation(u32 id);
     void update(f32 seconds);
+    /** A caller may present a mesh attached to an interpolated actor hierarchy.
+     * Borrowed only for this draw; neither gameplay anchors nor particle state
+     * are changed. Absent entries keep ordinary effect interpolation. */
+    struct DrawAttachment {
+        u32 effect = 0;
+        Mat4 parent{1};
+    };
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr, f32 frameBlend = -1.0f) const;
+              const CameraFrame* camera = nullptr, f32 frameBlend = -1.0f,
+              std::span<const DrawAttachment> attachments = {}) const;
     /** End the current effects without discarding this stage's reusable artwork. */
     void reset();
     void clear();

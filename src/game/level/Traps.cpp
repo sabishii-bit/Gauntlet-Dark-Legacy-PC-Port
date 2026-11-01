@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -107,7 +108,8 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, const AssetSco
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         // SetItem preserves placements with collision flag 1 (the Courtyard tentacles
         // emerge from below the floor); their collision offset rotates with the item.
-        const auto* floor = (info.collisionFlags & 1U) != 0 ? nullptr : collision;
+        const auto* floor =
+            (info.collisionFlags & ItemInfo::kKeepsHeight) != 0 ? nullptr : collision;
         if (!trap.figure.place(device, scope, name, instance, floor)) {
             log::warn("Traps: no figure {} in the item archive", name);
         }
@@ -258,11 +260,10 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
                 m_sim.gaps[v] = static_cast<f32>(trap.ticksLeft + 1) * kSecondsPerTickLeft;
                 const bool pierces =
                     trap.subtype == kSpikes || trap.subtype == kBlade || trap.subtype == kBlades;
-                const u32 flags = trap.properties | PlayerImpact::kStun;
-                const Vec3 direction =
-                    (flags & (PlayerImpact::kKnockBack | PlayerImpact::kKnockDown)) != 0
-                        ? -Vec3{trap.figure.transform()[2]}
-                        : Vec3{0};
+                const u32 flags = trap.properties | damage::kStun;
+                const Vec3 direction = (flags & (damage::kKnockBack | damage::kKnockDown)) != 0
+                                           ? -Vec3{trap.figure.transform()[2]}
+                                           : Vec3{0};
                 hits.push_back(TrapHit{index, v, trap.damage, trap.subtype, pierces,
                                        trap.figure.position(), PlayerImpact{flags, direction}});
             }

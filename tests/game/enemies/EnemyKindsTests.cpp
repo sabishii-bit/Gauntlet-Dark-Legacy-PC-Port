@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <array>
+#include <limits>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -94,6 +98,52 @@ TEST_CASE("a level breeds its roster's kinds for the classes its generators name
                                          {5, kLargeClass, {}}};
     REQUIRE(levelKindOf(castle, kGruntKind, 5) == 19);
     REQUIRE(levelKindOf(castle, kGruntKind, 2) == 4);
+}
+
+TEST_CASE("only the original's small kinds are small, whatever the code",
+          "[game][enemies][enemy-traits]") {
+    // The kinds of height three: scorpion, rat, snake, spider, maggot, wolf, dog, acid, hand.
+    constexpr std::array<s32, 9> kSmall{0, 3, 6, 9, 12, 15, 18, 21, 22};
+    std::vector<s32> kinds{std::numeric_limits<s32>::min(), -1000, 1000,
+                           std::numeric_limits<s32>::max()};
+    for (s32 kind = -2; kind <= 46; ++kind) {
+        kinds.push_back(kind);
+    }
+    for (const s32 kind : kinds) {
+        CAPTURE(kind);
+        CHECK(smallKind(kind) == std::ranges::contains(kSmall, kind));
+    }
+}
+
+TEST_CASE("the original's enemy types name their own kind rows", "[game][enemies][enemy-traits]") {
+    struct Row {
+        s32 type;
+        std::string_view name;
+    };
+    constexpr std::array<Row, 33> kRows{{
+        {enemy_type::kScorpion, "SCO"},    {enemy_type::kTroll, "TRO"},
+        {enemy_type::kDemon, "DEM"},       {enemy_type::kRat, "RAT"},
+        {enemy_type::kGrunt, "GRU"},       {enemy_type::kKnight, "KNI"},
+        {enemy_type::kSnake, "SNA"},       {enemy_type::kSorcerer, "SOR"},
+        {enemy_type::kMummy, "MUM"},       {enemy_type::kSpider, "SPI"},
+        {enemy_type::kLizardman, "LIZ"},   {enemy_type::kTreefolk, "TRE"},
+        {enemy_type::kMaggot, "MAG"},      {enemy_type::kZombie, "ZOM"},
+        {enemy_type::kPlague, "PLA"},      {enemy_type::kWolf, "WOL"},
+        {enemy_type::kIce, "ICE"},         {enemy_type::kWorm, "WRM"},
+        {enemy_type::kDog, "DOG"},         {enemy_type::kSkeleton, "SKE"},
+        {enemy_type::kGhost, "GHO"},       {enemy_type::kAcid, "ACI"},
+        {enemy_type::kHand, "HAN"},        {enemy_type::kImp, "IMP"},
+        {enemy_type::kWarlock, "WAR"},     {enemy_type::kSky, "SKY"},
+        {enemy_type::kWhirlwind, "WIND"},  {enemy_type::kGarm2, "GRM"},
+        {enemy_type::kGolem, "GOLEM"},     {enemy_type::kDeath, "DEATH"},
+        {enemy_type::kIt, "IT"},           {enemy_type::kGargoyle, "GAR"},
+        {enemy_type::kGeneral, "GENERAL"},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.type);
+        CHECK(enemyKind(row.type).name == row.name);
+        CHECK(enemyKindOf(row.name) == row.type);
+    }
 }
 
 } // namespace

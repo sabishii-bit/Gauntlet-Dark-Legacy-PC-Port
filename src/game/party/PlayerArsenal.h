@@ -85,6 +85,9 @@ public:
         bool bossEncounter = false;
         ItemArchive* powerups = nullptr;              ///< borrowed potion-cast feedback archive
         const MultiplayerMode* multiplayer = nullptr; ///< sampled when a weapon is launched
+        /** Optional imported-world item bridge. Ordinary GDL wall obstruction
+         * remains feedback-only; the receiver accepts only authored destructibles. */
+        std::function<bool(s32 object, f32 power, u32 flags, s32 player)> strikeMuzzleObject;
     };
     PlayerArsenal() = default;
     ~PlayerArsenal() = default;
@@ -197,7 +200,7 @@ private:
                               PreparedWeapon& prepared, const MissileStreak& streak) const;
     /** Native ordinary fans share the first muzzle; later flight directions
      * never add separate launch-time wall queries. Caller has a bound owner. */
-    Vec3 weaponMuzzle(const MissileLaunch& first) const;
+    Vec3 weaponMuzzle(const MissileLaunch& first, std::vector<WallContact>* contacts) const;
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
     u64 m_restoreGeneration = 1;
     void loadPotionModels();

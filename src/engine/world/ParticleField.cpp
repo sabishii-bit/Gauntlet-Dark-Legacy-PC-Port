@@ -44,14 +44,14 @@ void visitNativeState(NativeStateDigest& digest, const ParticleField& state) {
         digest.values(emitter, sourceObject, worldObject);
         digest.resource(texture);
         const auto& [blend, lightmap, masked, next, fraction, scale, offset, alpha, cull,
-                     depthWrite, depthTest, mipmaps, clamp, cutout, coverage, smooth, darken,
-                     colorScale] = draw;
+                     depthWrite, depthTest, mipmaps, clamp, cutout, lightmapRgb, coverage, smooth, darken,
+                     colorScale, whiteBlend, fog] = draw;
         digest.value(blend);
         digest.resource(lightmap);
         digest.resource(masked);
         digest.resource(next);
         digest.values(fraction, scale, offset, alpha, cull, depthWrite, depthTest, mipmaps, clamp,
-                      cutout, coverage, smooth, darken, colorScale);
+                      cutout, lightmapRgb, coverage, smooth, darken, colorScale, whiteBlend, fog);
         // Only these four per-draw samples and m_batch are excluded: draw()
         // recomputes them from native texture clocks and interpolation alpha.
         static_cast<void>(presentedTexture);

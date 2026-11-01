@@ -114,7 +114,8 @@ bool RollbackExchange::occupied(u8 peer) const {
     return peer > 0 && peer <= 4 && std::ranges::find(m_owners, peer) != m_owners.end();
 }
 bool RollbackExchange::open(u8 localPeer, u64 epoch, const Owners& owners, const Grants& grants,
-                            u8 delay, std::span<const Link> links, Clock clock) {
+                            u8 delay, std::span<const Link> links, Clock clock,
+                            std::span<const u8> absent) {
     if (m_open || localPeer == 0 || localPeer > 4 || epoch == 0 ||
         delay > RollbackInputs::kMaxDelay || std::ranges::find(owners, localPeer) == owners.end() ||
         std::ranges::find(owners, 1) == owners.end()) {
@@ -135,9 +136,17 @@ bool RollbackExchange::open(u8 localPeer, u64 epoch, const Owners& owners, const
         }
         connections[link.peer] = link.connection;
     }
+    std::array<bool, 5> gone{};
+    for (const u8 peer : absent) {
+        if (peer < 2 || peer > 4 || peer == localPeer || connections[peer] != 0 ||
+            std::ranges::find(owners, peer) == owners.end()) {
+            return false;
+        }
+        gone[peer] = true;
+    }
     for (u8 peer = 1; peer <= 4; ++peer) {
         const bool needed = peer != localPeer && std::ranges::find(owners, peer) != owners.end() &&
-                            (localPeer == 1 || peer == 1);
+                            (localPeer == 1 || peer == 1) && !gone[peer];
         // The star is required; a guest may add direct links, the host has nothing to add.
         if ((needed && connections[peer] == 0) ||
             (!needed && connections[peer] != 0 && localPeer == 1)) {
@@ -151,6 +160,7 @@ bool RollbackExchange::open(u8 localPeer, u64 epoch, const Owners& owners, const
     m_owners = owners;
     m_grants = grants;
     m_links = connections;
+    m_suspended = gone;
     m_clock = clock ? std::move(clock) : Clock{steadyMicroseconds};
     m_lastTime = m_clock();
     m_progress[m_local] = {1, 0, m_lastTime};
@@ -159,6 +169,7 @@ bool RollbackExchange::open(u8 localPeer, u64 epoch, const Owners& owners, const
             continue;
         }
         m_next[peer] = 1;
+        m_direct[peer] = localPeer != 1 && peer != 1 && connections[peer] != 0;
         for (u8 origin = 1; origin <= 4; ++origin) {
             m_received[peer][origin] = occupied(origin) ? delay : 0;
         }
@@ -508,5 +519,9 @@ u64 RollbackExchange::acknowledgedThrough(u8 receiver, u8 origin) const {
 }
 usize RollbackExchange::retainedFrames(u8 origin) const {
     return occupied(origin) ? m_history[origin].size() : 0;
+}
+std::optional<u64> RollbackExchange::hostReceipt(u8 origin) const {
+    return occupied(origin) && m_direct[origin] ? std::optional{m_received[1][origin]}
+                                                : std::nullopt;
 }
 } // namespace gdl::game

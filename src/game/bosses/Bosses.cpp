@@ -16,11 +16,15 @@
 namespace gdl::game {
 namespace {
 void appendConfiguration(NativeStateDigest& digest, const WorldCollision* collision,
-                         const EnemyScales& scales, char realm, bool open) {
+                         const EnemyScales& scales, char realm, bool open,
+                         const std::optional<LegendProfile>& profile) {
     // Immutable during one binding, but relevant before the first fighter is
     // born. Reopening changes the local epoch and invalidates saved values.
     digest.resource(collision);
     digest.values(scales, realm, open);
+    digest.flag(profile.has_value());
+    if (profile)
+        digest.fields<12>(*profile);
 }
 } // namespace
 
@@ -51,7 +55,8 @@ void Bosses::appendSimulationDigest(
 
 bool Bosses::appendNativeDigest(NativeStateDigest& digest) const {
     digest.string("Bosses.native.1");
-    appendConfiguration(digest, m_collision, m_scales, m_realm, m_device != nullptr);
+    appendConfiguration(digest, m_collision, m_scales, m_realm, m_device != nullptr,
+                        m_legendProfile);
     appendSimulationDigest(digest, m_sim);
     return m_fighter.appendNativeDigest(digest) && digest.good();
 }
@@ -62,7 +67,8 @@ bool Bosses::appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& s
         return false;
     }
     digest.string("Bosses.native.1");
-    appendConfiguration(digest, m_collision, m_scales, m_realm, m_device != nullptr);
+    appendConfiguration(digest, m_collision, m_scales, m_realm, m_device != nullptr,
+                        m_legendProfile);
     appendSimulationDigest(digest, saved.m_state,
                            std::span<const TextureAnimator::Clock>{saved.m_clocks});
     return m_fighter.appendLocalDigest(digest, saved.m_fighter) && digest.good();
@@ -141,7 +147,7 @@ bool Bosses::restoreLocal(const LocalSnapshot& snapshot) {
 
 void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
                   const WorldCollision* collision, const EnemyScales& scales, char realm,
-                  std::span<TextureSet* const> textureLenders) {
+                  std::span<TextureSet* const> textureLenders, const LegendProfile* legendProfile) {
     close();
     m_device = &device;
     m_root = unpackedRoot;
@@ -149,6 +155,8 @@ void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoo
     m_collision = collision;
     m_scales = scales;
     m_realm = static_cast<char>(std::toupper(static_cast<unsigned char>(realm)));
+    if (legendProfile)
+        m_legendProfile = *legendProfile;
 }
 
 void Bosses::close() {
@@ -157,6 +165,7 @@ void Bosses::close() {
     m_sim.assets.clear();
     m_assetCache.clear();
     m_textureLenders.clear();
+    m_legendProfile.reset();
     m_hitFlash = nullptr;
     m_device = nullptr;
     m_collision = nullptr;
@@ -225,7 +234,8 @@ void Bosses::stageLegend(s32 ticks) {
                 // world_update (0x8005674c) clears the initial 18000-tick
                 // blindness 29 seconds after the roar, not five minutes later.
                 m_fighter.blind(0);
-                m_fighter.replaceNodeModel(*m_device, "EYEBALL", {});
+                if (!m_legendProfile || !m_legendProfile->eyeReplacement.empty())
+                    m_fighter.replaceNodeModel(*m_device, "EYEBALL", {});
             }
         }
         m_sim.legendEvents.push_back(LegendEvent{cue, m_sim.rite.player(), legendRealm()});
@@ -283,8 +293,12 @@ void Bosses::strikeWithLegend() {
     if (weakness->blindTicks > 0) {
         m_fighter.blind(weakness->blindTicks);
     }
-    if (m_sim.kind == 38 && !m_fighter.replaceNodeModel(*m_device, "EYEBALL", "PBOSSQEYEBALL")) {
-        log::warn("Plague javelin: cannot bind native PBOSSQEYEBALL replacement");
+    if (m_sim.kind == 38) {
+        const std::string_view replacement = m_legendProfile
+                                                 ? std::string_view{m_legendProfile->eyeReplacement}
+                                                 : std::string_view{"PBOSSQEYEBALL"};
+        if (!replacement.empty() && !m_fighter.replaceNodeModel(*m_device, "EYEBALL", replacement))
+            log::warn("Plague javelin: cannot bind {} replacement", replacement);
     }
     if (weakness->curbs()) {
         m_fighter.curb(weakness->curbSeconds);
@@ -307,6 +321,23 @@ bool Bosses::blinded() const {
 }
 bool Bosses::curbed() const {
     return m_sim.id.has_value() && m_fighter.curbed();
+}
+
+CombatantAssets* Bosses::preload(s32 kind, std::unique_ptr<CombatantAssets> assets) {
+    const auto name = bossNameOf(kind);
+    if (m_device == nullptr || m_sim.id || name.empty() || !assets ||
+        assets->definition.name != name || assets->definition.kind != CombatantKind::Boss ||
+        assets->data.kind() != CombatantKind::Boss || assets->tree == nullptr ||
+        !assets->body.bound() || std::ranges::any_of(m_assetCache, [&](const auto& value) {
+            return value->definition.name == name;
+        })) {
+        return nullptr;
+    }
+    auto* result = assets.get();
+    result->textures.restoreClock({});
+    m_assetCache.push_back(std::move(assets));
+    m_sim.assets.push_back(result);
+    return result;
 }
 
 CombatantAssets* Bosses::preload(s32 kind) {
@@ -341,7 +372,11 @@ CombatantAssets* Bosses::preload(s32 kind) {
     }
     // Keep the javelin's alternate eye in the load-time resource roster.
     if (kind == 38) {
-        assets->prepareReplacement(*m_device, "EYEBALL", "PBOSSQEYEBALL");
+        const std::string_view replacement = m_legendProfile
+                                                 ? std::string_view{m_legendProfile->eyeReplacement}
+                                                 : std::string_view{"PBOSSQEYEBALL"};
+        if (!replacement.empty())
+            assets->prepareReplacement(*m_device, "EYEBALL", replacement);
     }
     return assets;
 }
@@ -356,6 +391,7 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     if (!m_fighter.spawn(*assets, kTargetId, position, yaw, m_collision, m_scales, m_realm)) {
         return false;
     }
+    m_fighter.prepareEntrance();
     m_sim.id = kTargetId;
     m_sim.kind = kind;
     m_sim.name = bossNameOf(kind);
@@ -379,24 +415,40 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
     if (!m_sim.id.has_value()) {
         return;
     }
-    // Asleep for two seconds at least, then until the whole party is within its threshold
-    // (CritterBossAI's activation deadline and MaxPlayerDist); then it fights on until it falls.
+    m_fighter.captureEncounterPlayers(players);
+    // Wait through the bound family's activation deadline, then until the whole
+    // party is within its threshold. Ordinary GDL retains its two-second delay.
     if (!m_sim.awake) {
         m_sim.wakeClock += seconds;
+        const auto stock = std::ranges::find_if(
+            m_sim.assets, [&](const auto* assets) { return &assets->data == m_fighter.data(); });
+        const bool decodedEntrance = stock != m_sim.assets.end() && (*stock)->initialMoveBeforeWake;
         const Vec3* at = position();
         f32 farthest = 0.0f;
         bool anyone = false;
         for (const EnemyView& view : players) {
             if (at != nullptr && !view.hidden) {
-                farthest = std::max(farthest, glm::distance(view.position, *at));
+                const Vec3 delta = view.position - *at;
+                // Native e0886190 explicitly zeros Y before measuring targets;
+                // e0886e54 returns the furthest admitted player's distance.
+                // Preserve the existing three-dimensional GDL wake test.
+                const f32 distance =
+                    decodedEntrance ? glm::length(Vec2{delta.x, delta.z}) : glm::length(delta);
+                farthest = std::max(farthest, distance);
                 anyone = true;
             }
         }
-        if (m_sim.wakeClock >= kWakeArmSeconds &&
+        const f32 delay = stock != m_sim.assets.end() ? (*stock)->wakeDelay : kWakeArmSeconds;
+        if (m_sim.wakeClock >= delay &&
             (m_sim.wakeDistance <= 0.0f || (anyone && farthest <= m_sim.wakeDistance))) {
-            m_sim.awake = true;
+            wake();
         }
         if (!m_sim.awake) {
+            if (ticks > 0 && decodedEntrance) {
+                for (auto* assets : m_sim.assets)
+                    assets->textures.advance(seconds);
+                m_fighter.advanceEntrance(seconds);
+            }
             return;
         }
     }
@@ -423,16 +475,45 @@ std::vector<CombatBlow> Bosses::takeBlows() {
     return m_fighter.takeBlows();
 }
 
+void Bosses::wake() {
+    if (m_sim.id.has_value() && !m_sim.awake) {
+        m_fighter.beginEntrance();
+        m_sim.awake = true;
+    }
+}
+
 std::vector<CombatCue> Bosses::takeCues() {
     auto cues = m_fighter.takeCues();
-    if (m_sim.kind == 35 && m_sim.rite.stage() != LegendRite::Stage::None) {
+    const std::string_view stump = m_legendProfile ? std::string_view{m_legendProfile->lionStump}
+                                                   : std::string_view{"STUMPLQ"};
+    if (m_sim.kind == 35 && m_sim.rite.stage() != LegendRite::Stage::None && !stump.empty()) {
         for (auto& cue : cues) {
             if (cue.tree == "STUMPL") {
-                cue.tree = "STUMPLQ";
+                cue.tree = stump;
             }
         }
     }
     return cues;
+}
+
+std::optional<Mat4> Bosses::legendTargetTransform() const {
+    if (!m_sim.id)
+        return {};
+    if (m_legendProfile) {
+        if (!m_legendProfile->targetNode)
+            return {};
+        for (const auto* stock : m_sim.assets) {
+            if (&stock->data == m_fighter.data() && stock->tree &&
+                *m_legendProfile->targetNode < stock->tree->nodes.size())
+                return nodeTransform(stock->tree->nodes[*m_legendProfile->targetNode].name);
+        }
+        return {};
+    }
+    if (m_sim.kind == 35)
+        return nodeTransform("CHIMLIONHEA");
+    if (m_sim.kind == 38)
+        return nodeTransform("BODY1_EYEBALL");
+    return {};
 }
 
 std::optional<Mat4> Bosses::nodeTransform(std::string_view node) const {

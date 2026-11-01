@@ -7,6 +7,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 
@@ -227,7 +228,7 @@ struct Fixture {
         CharacterSave save;
         save.name = "CONTROL";
         save.progress().health = 5000;
-        save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0, -1);
+        save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
         party[0] = {0, save};
         open();
         for (u64 tick = 1; tick <= 480 && entering(); ++tick) {

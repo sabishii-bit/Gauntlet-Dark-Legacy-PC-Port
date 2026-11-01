@@ -31,6 +31,14 @@ set_target_properties(vqdump gdlunpack assetcheck PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>"
     FOLDER "tools")
 
+# Optional source data is supplied at runtime, never required to build the game.
+add_executable(mortdump mortdump/main.cpp)
+target_link_libraries(mortdump PRIVATE gdl::expansion_audio gdl::formats)
+gdl_apply_compiler_options(mortdump)
+gdl_use_utf8_code_page(mortdump)
+set_target_properties(mortdump PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>" FOLDER "tools")
+
 if(GDL_ENABLE_NETPLAY)
     find_package(Threads REQUIRED)
     # Deliberately independent of gdl::game/engine: no window, renderer or assets.

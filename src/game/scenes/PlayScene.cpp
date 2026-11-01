@@ -15,9 +15,11 @@
 #include "engine/render/DepthOfField.h"
 #include "engine/world/WorldCamera.h"
 
+#include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
+#include "game/combat/DamageTypes.h"
 #include "game/hud/CinematicBars.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PartyLighting.h"
@@ -26,7 +28,6 @@
 #include "game/party/TargetAssist.h"
 #include "game/players/EnemyShrink.h"
 #include "game/players/PowerupEffects.h"
-#include "game/scenes/LegendsTraversal.h"
 
 namespace gdl::game {
 
@@ -85,6 +86,12 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
+    if (const auto* imported = world.imported()) {
+        m_messages.setPresentation(imported->messagePresentation());
+        m_audio.bindAnnouncements([imported](auto lines, auto subject) {
+            return imported->gameplayAnnouncement(lines, subject);
+        });
+    }
     m_messages.setControlLabels(context.controlLabels);
     m_hud.setControlLabels(context.controlLabels);
     m_names.load(device, m_context.unpackedRoot, m_staticTextures);
@@ -100,10 +107,13 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_glowSheet = &m_staticTextures.texture(device, *glow);
         m_hud.setGlow(m_glowSheet);
     }
-    // Sumner, his hints and his welcome belong to the tower alone.
-    if (world.isTower()) {
+    // Imported residents reuse the menu artwork, not the GC tower figure or
+    // its campaign advice. Bind it now, never during an interactive frame.
+    if (world.isTower() || world.imported()) {
         m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(), m_context.unpackedRoot,
                            m_context.strings);
+    }
+    if (world.isTower()) {
         m_sumner.load(device, world.items(), world.layout());
     }
     // What the tower opens to this party: its portals, their glows, its lifts and where it
@@ -227,11 +237,20 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     beginSpawn(device, options.position.has_value()
                            ? std::nullopt
                            : world.entranceCamera(arrival != nullptr ? arrival->next : 0));
-    m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
-                    context.sounds, world.wallHitSound(), world.isTower(),
-                    world.level() != nullptr && world.level()->bossType >= 0, &world.powerups(),
-                    context.config != nullptr ? &context.config->multiplayer.mode : nullptr},
-                   effectTextures);
+    std::function<bool(s32, f32, u32, s32)> strikeMuzzleObject;
+    if (auto* imported = world.imported()) {
+        strikeMuzzleObject = [imported](s32 object, f32 power, u32 flags, s32 player) {
+            return imported->strikeWorldObject(object, power, flags, player);
+        };
+    }
+    m_arsenal.bind(
+        {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, context.sounds,
+         world.wallHitSound(), world.isTower(),
+         (world.level() != nullptr && world.level()->bossType >= 0) ||
+             (world.imported() != nullptr && world.imported()->importedBoss() != nullptr),
+         &world.powerups(), context.config != nullptr ? &context.config->multiplayer.mode : nullptr,
+         std::move(strikeMuzzleObject)},
+        effectTextures);
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_sim.dimmer, &m_sim.shake,
                     context.config != nullptr ? &context.config->multiplayer.mode : nullptr,
@@ -246,9 +265,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
     m_open = true;
     if (world.isTower()) {
-        m_promotion.begin(m_players, m_hud.strings());
-        m_promotion.bind(device, world.items(), world.layout(), m_players);
-        beginTowerRelics();
+        m_ceremonies.open(ceremonyScene(), m_hud.strings(), m_messages.strings(), m_portals);
     }
     log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
@@ -262,7 +279,7 @@ void PlayScene::close() {
         m_world->imported()->stopSounds();
     }
     ++m_openGeneration;
-    m_selection.reset();
+    m_picking.select(std::nullopt);
     m_nativeDigestResources.clear();
     if (m_context.stopVibration) {
         m_context.stopVibration();
@@ -289,10 +306,7 @@ void PlayScene::close() {
     m_sim.consoleTravel.reset();
     m_sim.consoleSpawns = 0;
     m_borrowedItems.clear();
-    m_promotion.clear();
-    m_towerRelics.clear();
-    m_relicVoice = {};
-    m_promotionVoice = {};
+    m_ceremonies.clearCeremonies();
     m_messages.clear();
     if (m_world != nullptr) {
         m_world->setPlayerCount(0);
@@ -323,7 +337,7 @@ void PlayScene::close() {
     m_auraFrame.reset();
     m_glowSheet = nullptr;
     m_localSeats = 0xF;
-    m_viewSeat = -1;
+    m_seats.setViewSeat(-1);
     m_previousSeatView.reset();
     m_sim.soloCameras = false;
     m_staticTextures.releaseTextures();
@@ -334,8 +348,7 @@ void PlayScene::close() {
     }
     m_sim.gameOver.clear();
     m_audio.close(); // before the figures whose class voices it can play
-    m_promotionBindings.clear();
-    m_promotionFigures.clear();
+    m_ceremonies.releaseFigures();
     m_players.clear();
     m_arrival.clear();
     m_weapons.release(); // its textures must go before the device does
@@ -978,6 +991,10 @@ void PlayScene::updateSumnerVisit(f32 seconds) {
 
 /** The scene routes the scroll owner's input and applies its sound/gesture cues. */
 void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
+    if (m_world->imported()) {
+        updateImportedDialogue(inputs, ticks);
+        return;
+    }
     const auto player = static_cast<usize>(std::max(m_sumnerVisit.owner(), 0));
     const PlayInput input = player < inputs.size() ? inputs[player] : PlayInput{};
     const HintMenuEvent event =
@@ -1156,6 +1173,12 @@ void PlayScene::endRecordedAudio() {
     m_audio.recordTo(nullptr);
 }
 
+bool PlayScene::restartRecordedAudio(u64 epoch) {
+    endRecordedAudio();
+    m_recordedAudio.discard();
+    return beginRecordedAudio(epoch);
+}
+
 SceneSoundEvents::Result
 PlayScene::reconcileRecordedAudio(u64 firstTick, std::span<const SceneSoundEvents::Frame> frames,
                                   std::optional<u64> newHead) {
@@ -1200,7 +1223,7 @@ void PlayScene::gatherRecordedAudio(const Inputs& inputs, PlayOutcome outcome) {
     const auto* level = m_world->level();
     m_audio.gatherLoops(
         listeners, {frame.position, frame.right}, level != nullptr ? level->soundVolume : 1.0f,
-        m_sim.switchCutscene.active() || m_promotion.active() || relicCeremonyOn(),
+        m_sim.switchCutscene.active() || m_ceremonies.promotion().active() || relicCeremonyOn(),
         &m_world->scene(), m_sim.leaving ? std::nullopt : m_portals.flamePosition(visitors),
         hourglass);
     TriggerCues::gatherAudio(*m_world, m_audio);
@@ -1279,16 +1302,63 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
     if (!m_open) {
         return PlayOutcome::Running;
     }
+    const auto [ticks, seconds] = beginTick(deltaSeconds);
+    // Each hold below owns the whole tick while it lasts, in this order of precedence.
+    if (m_sim.gameOver.active()) {
+        return advanceGameOver(ticks, seconds);
+    }
+    if (m_sim.switchCutscene.active()) {
+        updateSwitchCutscene(ticks, seconds);
+        return PlayOutcome::Running;
+    }
+    // A scroll holds everything else still until it has burnt away; the welcome's leads on
+    // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
+    // Sumner was saying over it.
+    if (m_messages.active()) {
+        advanceScroll(ticks, inputs);
+        return PlayOutcome::Running;
+    }
+    // Gone through a portal, the party is out of play while the transition picture comes
+    // up over the level, which goes on around it; once it covers the view they travel.
+    m_transition.update(seconds);
+    m_ceremonies.relics().animate(seconds);
+    if (m_sim.leaving) {
+        return advanceDeparture(ticks, seconds, inputs);
+    }
+    // Sumner's scroll of hints holds play the same way, while he goes on moving behind it.
+    if (m_sumnerVisit.active()) {
+        advanceHintScroll(ticks, seconds, inputs);
+        return PlayOutcome::Running;
+    }
+    // Materialising, the party stands still, playing its entrance, while the level runs on
+    // around it and the start camera holds, then rides in; the title slides up until the
+    // ride, when it sits.
+    if (spawning()) {
+        advanceEntrance(ticks, seconds, inputs);
+        return PlayOutcome::Running;
+    }
+    if (m_ceremonies.promotion().active() && !m_sim.welcome.cutting()) {
+        updatePromotion(ticks, seconds);
+        return PlayOutcome::Running;
+    }
+    if (relicCeremonyOn()) {
+        updateTowerRelics(ticks, seconds);
+        return PlayOutcome::Running;
+    }
+    return advancePlay(ticks, seconds, inputs);
+}
+
+PlayScene::TickClock PlayScene::beginTick(f64 deltaSeconds) {
     syncMechanics();
     PartyFigures::snapshot(m_players);
     m_effects.capturePresentation();
     m_world->capturePresentation();
     m_fixtures.capturePresentation();
-    m_towerRelics.capturePresentation();
+    m_ceremonies.relics().capturePresentation();
     m_arrival.capturePresentation();
     m_transporters.capturePresentation();
     m_sumner.capturePresentation();
-    m_promotion.capturePresentation();
+    m_ceremonies.promotion().capturePresentation();
     m_bossSequence.capturePresentation();
     m_sim.opponentsAdvanced = false;
     m_sim.projectilesAdvanced = false;
@@ -1310,8 +1380,7 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
     m_world->setPlayerCount(joinedPlayers);
     m_audio.setPlayerCount(joinedPlayers);
     m_audio.updateNarration(seconds);
-    m_promotionVoice.timing.advance(seconds);
-    m_relicVoice.timing.advance(seconds);
+    m_ceremonies.advanceSpeech(seconds);
     m_bossSequence.advanceAudio(seconds);
     // The music's areas: the boss waking asks for the second, the zones for theirs.
     m_audio.bossAwake(m_opponents.bosses().view().awake);
@@ -1326,183 +1395,180 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
     m_names.step(m_players, ticks,
                  spawning() || m_sim.gameOver.active() || m_sim.switchCutscene.active() ||
                      m_messages.active() || m_sim.welcome.cutting() || m_sumnerVisit.active() ||
-                     m_promotion.active() || relicCeremonyOn());
-    if (m_sim.gameOver.active()) {
-        // The world remains behind the caption, but no player input, portal,
-        // reward or victory ceremony can restart the finished session.
-        m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
-        m_portals.animate(seconds);
-        m_effects.update(seconds);
-        updateAmbience();
-        if (m_sim.gameOver.step(ticks)) {
-            m_audio.narrate(GameOver::kVoice, LevelSoundscape::Narrator::Primary);
-        }
-        return m_sim.gameOver.finished() ? PlayOutcome::GameOver : PlayOutcome::Running;
+                     m_ceremonies.promotion().active() || relicCeremonyOn());
+    return {ticks, seconds};
+}
+
+PlayOutcome PlayScene::advanceGameOver(s32 ticks, f32 seconds) {
+    // The world remains behind the caption, but no player input, portal,
+    // reward or victory ceremony can restart the finished session.
+    m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
+    m_portals.animate(seconds);
+    m_effects.update(seconds);
+    updateAmbience();
+    if (m_sim.gameOver.step(ticks)) {
+        m_audio.narrate(GameOver::kVoice, LevelSoundscape::Narrator::Primary);
     }
-    if (m_sim.switchCutscene.active()) {
-        updateSwitchCutscene(ticks, seconds);
-        return PlayOutcome::Running;
+    return m_sim.gameOver.finished() ? PlayOutcome::GameOver : PlayOutcome::Running;
+}
+
+void PlayScene::advanceScroll(s32 ticks, const Inputs& inputs) {
+    const LevelMessages::Cues cues = m_messages.step(ticks, acceptedPlayers(inputs));
+    if (cues.stopVoice) {
+        m_audio.stopVoice();
     }
-    // A scroll holds everything else still until it has burnt away; the welcome's leads on
-    // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
-    // Sumner was saying over it.
-    if (m_messages.active()) {
-        const LevelMessages::Cues cues = m_messages.step(ticks, acceptedPlayers(inputs));
-        if (cues.stopVoice) {
-            m_audio.stopVoice();
-        }
-        if (cues.burnSound) {
-            m_audio.playNamed(kScrollBurnSound);
-        }
-        if (!m_messages.active()) {
-            m_sim.welcome.scrollClosed(m_world->layout(), m_sumner);
-        }
-        return PlayOutcome::Running;
+    if (cues.burnSound) {
+        m_audio.playNamed(kScrollBurnSound);
     }
-    // Gone through a portal, the party is out of play while the transition picture comes
-    // up over the level, which goes on around it; once it covers the view they travel.
-    m_transition.update(seconds);
-    m_towerRelics.animate(seconds);
-    if (m_sim.leaving) {
-        // DoExit uses state4, outside msgUpdate's active-reader states1/2/3/5.
-        // Dismiss the last lesson instead of freezing its timer through departure.
-        m_hud.help().clear();
-        auto* imported = m_world->imported();
-        const bool nativeDeparture = imported != nullptr && imported->departure().has_value();
-        // Departing survivors cannot act, but native Legends continues their
-        // current animation tree while its separate spin/shrink clock runs.
-        // Another player's death and tower choice still run until all can leave.
-        bool dying = false;
+    if (!m_messages.active()) {
+        m_sim.welcome.scrollClosed(m_world->layout(), m_sumner);
+    }
+}
+
+PlayOutcome PlayScene::advanceDeparture(s32 ticks, f32 seconds, const Inputs& inputs) {
+    // DoExit uses state4, outside msgUpdate's active-reader states1/2/3/5.
+    // Dismiss the last lesson instead of freezing its timer through departure.
+    m_hud.help().clear();
+    auto* imported = m_world->imported();
+    const bool nativeDeparture = imported != nullptr && imported->departure().has_value();
+    // Departing survivors cannot act, but native Legends continues their
+    // current animation tree while its separate spin/shrink clock runs.
+    // Another player's death and tower choice still run until all can leave.
+    bool dying = false;
+    for (usize i = 0; i < m_players.size(); ++i) {
+        PlayerRuntime& runtime = m_players[i];
+        if (runtime.life != PlayerLife::Dying) {
+            if (nativeDeparture && runtime.life == PlayerLife::Standing && runtime.figure) {
+                runtime.figure->animateDeparture(seconds);
+            }
+            continue;
+        }
+        if (runtime.figure != nullptr) {
+            runtime.figure->animate(0.0f, ticks, seconds, PlayerDeed::Die);
+        }
+        if (runtime.figure == nullptr || runtime.figure->animator().dead()) {
+            runtime.life = PlayerLife::InTower;
+            perform(i, PartyMotion::Action::Fallen);
+        } else {
+            dying = true;
+        }
+    }
+    answerTowerPrompts(inputs);
+    if (!nativeDeparture) {
+        m_departure.update(ticks);
+    }
+    m_portals.animate(seconds);
+    if (!nativeDeparture && m_departure.started()) {
+        std::vector<CameraSubject> subjects;
         for (usize i = 0; i < m_players.size(); ++i) {
-            PlayerRuntime& runtime = m_players[i];
-            if (runtime.life != PlayerLife::Dying) {
-                if (nativeDeparture && runtime.life == PlayerLife::Standing && runtime.figure) {
-                    runtime.figure->animateDeparture(seconds);
-                }
-                continue;
-            }
-            if (runtime.figure != nullptr) {
-                runtime.figure->animate(0.0f, ticks, seconds, PlayerDeed::Die);
-            }
-            if (runtime.figure == nullptr || runtime.figure->animator().dead()) {
-                runtime.life = PlayerLife::InTower;
-                perform(i, PartyMotion::Action::Fallen);
-            } else {
-                dying = true;
+            if (!isDown(i)) {
+                const auto& actor = m_players[i].actor;
+                subjects.push_back({actor.position() + m_departure.displacement(),
+                                    actor.followPoint() + m_departure.displacement(),
+                                    actor.height() * 0.5f});
             }
         }
-        answerTowerPrompts(inputs);
-        if (!nativeDeparture) {
-            m_departure.update(ticks);
+        m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(), cameraView(),
+                        seconds);
+        if (m_sim.soloCameras) {
+            followSeatCameras(partySubjects(m_departure.displacement()), seconds);
         }
-        m_portals.animate(seconds);
-        if (!nativeDeparture && m_departure.started()) {
-            std::vector<CameraSubject> subjects;
-            for (usize i = 0; i < m_players.size(); ++i) {
-                if (!isDown(i)) {
-                    const auto& actor = m_players[i].actor;
-                    subjects.push_back({actor.position() + m_departure.displacement(),
-                                        actor.followPoint() + m_departure.displacement(),
-                                        actor.height() * 0.5f});
-                }
-            }
-            m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(),
-                            cameraView(), seconds);
-            if (m_sim.soloCameras) {
-                followSeatCameras(partySubjects(m_departure.displacement()), seconds);
-            }
-            if (imported) {
-                imported->followCamera(subjects, seconds);
-            }
+        if (imported) {
+            imported->followCamera(subjects, seconds);
         }
-        if (!nativeDeparture && m_departure.finished()) {
-            m_transition.comeUp();
-        }
-        m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
-        if (nativeDeparture) {
-            if (const auto native = imported->departure(); native && native->finished) {
+    }
+    if (!nativeDeparture && m_departure.finished()) {
+        m_transition.comeUp();
+    }
+    m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
+    bool nativeCovered = false;
+    if (nativeDeparture) {
+        if (const auto native = imported->departure(); native && native->finished) {
+            if (!native->whiteFade) {
                 m_transition.comeUp();
             }
+            nativeCovered = native->covered(m_transition.covering());
         }
-        m_effects.update(seconds);
-        updateAmbience();
-        return m_transition.covering() && !dying ? PlayOutcome::Travel : PlayOutcome::Running;
     }
-    // Sumner's scroll of hints holds play the same way, while he goes on moving behind it.
-    if (m_sumnerVisit.active()) {
-        updateHints(inputs, ticks);
-        m_sumner.update(seconds);
-        return PlayOutcome::Running;
-    }
-    // Materialising, the party stands still, playing its entrance, while the level runs on
-    // around it and the start camera holds, then rides in; the title slides up until the
-    // ride, when it sits.
-    if (spawning()) {
-        // The entrance holds the enemies still: nothing breeds and nothing fights until the
-        // party is in play. world_update's earlyenemies (the Mountain's Peak) lifts only
-        // fn_80060114's gate, so there the placed enemies the camera comes to see stand.
-        const LevelInfo* level = m_world->level();
-        watchOpponents(level != nullptr && level->earlyEnemies);
-        m_arrival.animate(seconds);
-        for (const PlayerRuntime& runtime : m_players) {
-            const std::unique_ptr<PlayerFigure>& figure = runtime.figure;
-            if (figure != nullptr) {
-                figure->animate(0.0f, ticks, seconds);
-            }
-        }
-        m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
-        m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
-        m_opponents.bosses().arm(seconds);
+    m_effects.update(seconds);
+    updateAmbience();
+    return (nativeDeparture ? nativeCovered : m_transition.covering()) && !dying
+               ? PlayOutcome::Travel
+               : PlayOutcome::Running;
+}
+
+void PlayScene::advanceHintScroll(s32 ticks, f32 seconds, const Inputs& inputs) {
+    updateHints(inputs, ticks);
+    m_sumner.update(seconds);
+    if (m_world->imported()) {
+        m_world->update(seconds, false);
         updateAmbience();
-        const bool cameraHandoff = m_arrival.camera().active();
-        // Ride to the camera that will actually take over. A boss entrance must not
-        // approach the normal level camera and then cut to a different fight view.
-        const bool bossView = bossCameraOn();
-        m_arrival.advance(ticks, anyButton(inputs),
-                          bossView ? m_sim.bossCamera.camera().position
-                                   : m_camera.camera().position,
-                          bossView ? m_sim.bossCamera.attention() : m_camera.attention());
-        if (m_arrival.takeTitleLanded()) {
-            if (const LevelInfo* level = m_world->level();
-                level != nullptr && !m_world->isTower()) {
-                m_audio.announceTitle(level->flags);
-            }
+    }
+}
+
+void PlayScene::advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs) {
+    // The entrance holds the enemies still: nothing breeds and nothing fights until the
+    // party is in play. world_update's earlyenemies (the Mountain's Peak) lifts only
+    // fn_80060114's gate, so there the placed enemies the camera comes to see stand.
+    const LevelInfo* level = m_world->level();
+    watchOpponents(level != nullptr && level->earlyEnemies);
+    m_arrival.animate(seconds);
+    for (const PlayerRuntime& runtime : m_players) {
+        const std::unique_ptr<PlayerFigure>& figure = runtime.figure;
+        if (figure != nullptr) {
+            figure->animate(0.0f, ticks, seconds);
         }
-        if (!spawning()) {
-            if (cameraHandoff && m_arrival.camera().mode() == StartCamera::Mode::Standard) {
-                std::vector<CameraSubject> subjects;
-                for (const auto& player : m_players) {
-                    if (player.life == PlayerLife::Standing) {
-                        subjects.push_back({player.actor.position(), player.actor.followPoint(),
-                                            player.actor.height() * 0.5f});
-                    }
-                }
-                const auto everyone = partySubjects(Vec3{0.0f});
-                for (s32 i = 0; i < StartCamera::kWarmSteps; ++i) {
-                    m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(),
-                                    cameraView(), 1.0f / TowerCamera::kStepRate);
-                    if (m_sim.soloCameras) {
-                        followSeatCameras(everyone, 1.0f / TowerCamera::kStepRate);
-                    }
-                    if (auto* imported = m_world->imported()) {
-                        imported->followCamera(subjects, 1.0f / TowerCamera::kStepRate);
-                    }
+    }
+    m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
+    m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
+    m_opponents.bosses().arm(seconds);
+    // An imported level's authored opening pan runs while the same party
+    // materialises. It must not wait behind GDL's entrance presentation.
+    if (auto* imported = m_world->imported()) {
+        const auto subjects = partySubjects(Vec3{0});
+        imported->followCamera(subjects, seconds);
+    }
+    updateAmbience();
+    const bool cameraHandoff = m_arrival.camera().active();
+    // Ride to the camera that will actually take over. A boss entrance must not
+    // approach the normal level camera and then cut to a different fight view.
+    const bool bossView = bossCameraOn();
+    m_arrival.advance(ticks, anyButton(inputs),
+                      bossView ? m_sim.bossCamera.camera().position : m_camera.camera().position,
+                      bossView ? m_sim.bossCamera.attention() : m_camera.attention());
+    if (m_arrival.takeTitleLanded()) {
+        if (const LevelInfo* level = m_world->level(); level != nullptr && !m_world->isTower()) {
+            m_audio.announceTitle(level->flags);
+        }
+    }
+    if (!spawning()) {
+        if (cameraHandoff && m_arrival.camera().mode() == StartCamera::Mode::Standard) {
+            std::vector<CameraSubject> subjects;
+            for (const auto& player : m_players) {
+                if (player.life == PlayerLife::Standing) {
+                    subjects.push_back({player.actor.position(), player.actor.followPoint(),
+                                        player.actor.height() * 0.5f});
                 }
             }
-            m_sim.welcome.arrived(*m_device, m_messages, m_context.strings, m_world->layout(),
-                                  m_sumner);
+            const auto everyone = partySubjects(Vec3{0.0f});
+            for (s32 i = 0; i < StartCamera::kWarmSteps; ++i) {
+                m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(),
+                                cameraView(), 1.0f / TowerCamera::kStepRate);
+                if (m_sim.soloCameras) {
+                    followSeatCameras(everyone, 1.0f / TowerCamera::kStepRate);
+                }
+                // Native imported camera clocks already advance above;
+                // GDL's follow-camera warm-up must not fast-forward them.
+            }
         }
-        return PlayOutcome::Running;
+        m_sim.welcome.arrived(*m_device, m_messages, m_context.strings, m_world->layout(),
+                              m_sumner);
     }
-    if (m_promotion.active() && !m_sim.welcome.cutting()) {
-        updatePromotion(ticks, seconds);
-        return PlayOutcome::Running;
-    }
-    if (relicCeremonyOn()) {
-        updateTowerRelics(ticks, seconds);
-        return PlayOutcome::Running;
-    }
-    const bool held = m_sim.welcome.hold(ticks);
+}
+
+PlayOutcome PlayScene::advancePlay(s32 ticks, f32 seconds, const Inputs& inputs) {
+    const bool welcomeHeld = m_sim.welcome.hold(ticks);
+    const bool held = welcomeHeld || importedOpening();
     if (!held && m_world->isTower()) {
         m_sim.towerNoticeSeconds += seconds;
         if (m_sim.towerNoticeSeconds >= 3.0f &&
@@ -1516,6 +1582,39 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
         m_sim.secretTravel = true;
         return PlayOutcome::Travel;
     }
+    advancePowerupsAndWorld(ticks, seconds, held);
+    std::vector<CameraSubject> subjects = advancePartyMotion(ticks, seconds, inputs, held);
+    advanceCombat(ticks, seconds, held);
+    if (!held) {
+        advanceImportedLevel(seconds, subjects);
+    }
+    advanceTriggers(seconds);
+    if (m_sim.switchCutscene.active()) {
+        updateAmbience();
+        return PlayOutcome::Running;
+    }
+    if (!held && !m_messages.active() && m_world->isTower()) {
+        updateSumnerVisit(seconds);
+    }
+    answerTowerPrompts(inputs);
+    if (!m_players.empty() && std::ranges::all_of(m_players, [](const PlayerRuntime& runtime) {
+            return runtime.departed;
+        })) {
+        startGameOver(); // nobody is left in the game
+        return PlayOutcome::Running;
+    }
+    if (!held && !m_sim.leaving) {
+        if (const auto outcome = advancePortals(ticks, seconds, inputs)) {
+            return *outcome;
+        }
+    }
+    advanceCameras(seconds, subjects);
+    advanceRuneMeter();
+    updateAmbience();
+    return PlayOutcome::Running;
+}
+
+void PlayScene::advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held) {
     auto powerupClock = PlayerPowerups::Clock::Paused;
     if (!held && !m_world->isTower()) {
         const bool bossLevel = m_world->level() != nullptr && m_world->level()->bossType >= 0;
@@ -1559,12 +1658,19 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
         }
     }
     updateTransporters(ticks, seconds, held);
+}
+
+std::vector<CameraSubject> PlayScene::advancePartyMotion(s32 ticks, f32 seconds,
+                                                         const Inputs& inputs, bool held) {
     m_sim.movementUpdated = !held;
     std::vector<PlayerActor> importedBefore;
+    std::vector<bool> importedCaptured;
     if (m_world->imported()) {
         importedBefore.reserve(m_players.size());
+        importedCaptured.reserve(m_players.size());
         for (const auto& player : m_players) {
             importedBefore.push_back(player.actor);
+            importedCaptured.push_back(player.capture.active());
         }
     }
     const f32 sharedYaw = m_world->imported() ? simulationCamera().yaw
@@ -1573,14 +1679,21 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
     const std::vector<f32> yaws = movementYaws(sharedYaw);
     std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, yaws, ticks, seconds, m_world->collision(), motionEvents());
-    if (const auto* imported = m_world->imported()) {
+    if (auto* imported = m_world->imported()) {
         for (usize i = 0; i < m_players.size(); ++i) {
             auto& player = m_players[i];
             if (player.departed || player.life != PlayerLife::Standing || player.ghost ||
-                player.combo.riding || player.capture.active() || player.transport.active()) {
+                player.combo.riding || importedCaptured[i] || player.capture.active() ||
+                player.transport.active()) {
+                // A release may land during this step. Capture owns its collision;
+                // don't sweep from its former hand pose as ordinary locomotion.
                 continue;
             }
             auto& actor = player.actor;
+            if (!held) {
+                imported->touchScenery(actor.player(), importedBefore[i].position(),
+                                       actor.position(), actor.radius(), actor.height());
+            }
             const Vec3 corrected = imported->resolveMovement(
                 importedBefore[i].position(), actor.position(), actor.radius(), actor.height());
             if (glm::distance(corrected, actor.position()) > .00001f ||
@@ -1592,6 +1705,10 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
             subjects[i] = {actor.position(), actor.followPoint(), actor.height() * .5f};
         }
     }
+    return subjects;
+}
+
+void PlayScene::advanceCombat(s32 ticks, f32 seconds, bool held) {
     m_sim.playSeconds += seconds;
     if (!held) {
         PartyRecords::advanceTime(m_players, seconds);
@@ -1605,7 +1722,9 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
             m_audio.playNamed(PlayerHealth::kHeartbeatSound, beat->volume);
         }
     }
-    updateEnemies(ticks, seconds);
+    if (m_world->imported() == nullptr || !held) {
+        updateEnemies(ticks, seconds);
+    }
     m_attacks.updateProjectiles(seconds, m_players, attackTargets());
     m_sim.projectilesAdvanced = seconds > 0;
     m_attacks.updateStrikes(seconds, m_players, attackTargets());
@@ -1630,140 +1749,76 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
     if (m_device != nullptr) {
         m_sim.pickups.collect(*m_device, m_players, pickupServices());
     }
-    if (auto* imported = m_world->imported(); imported && !held) {
-        std::vector<PlayerActor*> standing;
-        for (auto& player : m_players) {
-            if (!player.departed && player.life == PlayerLife::Standing && !player.ghost) {
-                standing.push_back(&player.actor);
-            }
-        }
-        imported->updateParty(standing, seconds,
-                              m_context.config == nullptr ||
-                                  m_context.config->combat.autoActivateItems);
-        imported->affectArea([&](const Vec3& position, f32 radius, f32 damage, u32 flags,
-                                 std::vector<s32>& opponents) {
-            m_opponents.blast(position, radius, damage, opponents, m_players, flags);
-        });
-        for (const auto& hit : imported->takeHazardHits()) {
-            const auto victim = std::ranges::find_if(m_players, [&](const auto& runtime) {
-                return runtime.actor.player() == hit.player;
-            });
-            if (victim != m_players.end()) {
-                hurt(static_cast<usize>(victim - m_players.begin()), hit.damage,
-                     hit.poison    ? HurtKind::Gas
-                     : hit.pierces ? HurtKind::Pierce
-                                   : HurtKind::Blow,
-                     (hit.impact.flags & (PlayerImpact::kKnockBack | PlayerImpact::kKnockDown)) !=
-                         0,
-                     hit.impact);
-            }
-        }
-        for (const auto& receipt : imported->takePickups()) {
-            const auto recipient = std::ranges::find_if(m_players, [&](const auto& player) {
-                return player.actor.player() == receipt.player;
-            });
-            if (recipient != m_players.end()) {
-                if (!receipt.scrollPages.empty()) {
-                    m_messages.openImported(*m_device, receipt.scrollPages, m_context.strings);
-                }
-                // Native collection already granted the item. Reuse only the
-                // common presentation, never the GC grant/campaign dispatcher.
-                m_sim.pickups.presentTaken(receipt.offer, receipt.taking, receipt.name,
-                                           static_cast<usize>(recipient - m_players.begin()),
-                                           m_players, pickupServices());
-            }
-        }
-        // Native transporters may relocate a visitor during this callback.
-        // Frame the corrected body, not the pre-contact PartyMotion snapshot.
-        for (usize i = 0; i < m_players.size(); ++i) {
-            const auto& actor = m_players[i].actor;
-            subjects[i] = {actor.position(), actor.followPoint(), actor.height() * .5f};
-        }
-        if (imported->travelRequested() && !m_sim.leaving) {
-            m_sim.destination = {};
-            m_sim.leaving = true;
-            if (!imported->departure()) {
-                m_departure.begin(*m_device, m_weapons.textures);
-            }
-            m_audio.playNamed(PortalDeparture::kSound, PortalDeparture::kVolume);
-        }
-    }
+}
+
+void PlayScene::advanceTriggers(f32 seconds) {
     m_world->updateTriggers(seconds, visitors(), false, occupiedFloors());
     m_fixtures.syncFloors();
     m_opponents.syncFloors();
     m_transporters.syncFloors(m_world->collision());
     handleTriggerEvents();
-    if (m_sim.switchCutscene.active()) {
-        updateAmbience();
-        return PlayOutcome::Running;
-    }
-    if (!held && !m_messages.active() && m_world->isTower()) {
-        updateSumnerVisit(seconds);
-    }
-    answerTowerPrompts(inputs);
-    if (!m_players.empty() && std::ranges::all_of(m_players, [](const PlayerRuntime& runtime) {
-            return runtime.departed;
-        })) {
-        startGameOver(); // nobody is left in the game
-        return PlayOutcome::Running;
-    }
-    if (!held && !m_sim.leaving) {
-        // A portal waits for everyone still on their feet.
-        std::vector<PortalVisitor> standing;
-        standing.reserve(m_players.size());
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (!isDown(i) && !m_players[i].ghost) {
-                const auto player = static_cast<usize>(m_players[i].actor.player());
-                standing.push_back(PortalVisitor{
-                    m_players[i].actor.position(), m_players[i].actor.radius(), static_cast<s32>(i),
-                    player >= inputs.size() || !inputs[player].move.any()});
-            }
+}
+
+std::optional<PlayOutcome> PlayScene::advancePortals(s32 ticks, f32 seconds, const Inputs& inputs) {
+    // A portal waits for everyone still on their feet.
+    std::vector<PortalVisitor> standing;
+    standing.reserve(m_players.size());
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (!isDown(i) && !m_players[i].ghost) {
+            const auto player = static_cast<usize>(m_players[i].actor.player());
+            standing.push_back(PortalVisitor{
+                m_players[i].actor.position(), m_players[i].actor.radius(), static_cast<s32>(i),
+                player >= inputs.size() || !inputs[player].move.any()});
         }
-        // With everyone fallen, the last death played out and the announcer done, the party
-        // goes back to the tower as it came into the level (game_main sends a party of the
-        // dead or waiting to the tower, where PlayerRestoreState stands them again). The
-        // defeat caption is for a game that is being quit, not for a wiped party.
-        if (GameOver::ready(m_players) && m_audio.narrationBacklog() <= 0.0) {
-            m_sim.destination = LevelRef::tower();
-            m_audio.stopCues();
-            log::info("All players have fallen; back to the tower");
+    }
+    // With everyone fallen, the last death played out and the announcer done, the party
+    // goes back to the tower as it came into the level (game_main sends a party of the
+    // dead or waiting to the tower, where PlayerRestoreState stands them again). The
+    // defeat caption is for a game that is being quit, not for a wiped party.
+    if (GameOver::ready(m_players) && m_audio.narrationBacklog() <= 0.0) {
+        m_sim.destination = LevelRef::tower();
+        m_audio.stopCues();
+        log::info("All players have fallen; back to the tower");
+        return PlayOutcome::Travel;
+    }
+    const std::optional<usize> reached = m_portals.update(ticks, seconds, standing);
+    const CameraFrame ear = CameraFrame::of(presentedCamera());
+    m_audio.updateExitFlame(m_portals.flamePosition(standing), {ear.position, ear.right});
+    const LevelInfo* level = m_world->level();
+    const std::vector<s32> waiting = m_portals.takeWaiting();
+    for (const s32 index : waiting) {
+        if (level == nullptr || level->bossType < 0) {
+            postHelp(HelpMessages::kEveryoneToExit, static_cast<usize>(index));
+        }
+    }
+    // Kept waiting, one is named and heard to wait (AudioPlayerBreath, player.c 2487).
+    for (usize i = 0; i < m_players.size(); ++i) {
+        const bool still = std::ranges::find(waiting, static_cast<s32>(i)) != waiting.end();
+        if (m_players[i].exitWait.step(still, ticks)) {
+            sayWithName(i, m_world->isTower() ? ExitWait::kTowerVoice : ExitWait::kVoice,
+                        ExitWait::kWait);
+        }
+    }
+    if (const auto portal = reached; portal.has_value() && leaveBy(*portal)) {
+        // The leaving branch no longer updates waiting visitors. Release their
+        // activation loop before S_TUNNEL takes over for the descent.
+        m_audio.updateExitFlame(std::nullopt, {});
+        m_opponents.settleRewards(m_players, opponentEvents());
+        if (m_portals.portal(*portal).secret) {
+            m_sim.secretTravel = true;
+            m_sim.secretReturnPosition = m_portals.portal(*portal).departurePosition.value_or(
+                m_portals.portal(*portal).position);
+            m_portals.consume(*portal);
             return PlayOutcome::Travel;
         }
-        const std::optional<usize> reached = m_portals.update(ticks, seconds, standing);
-        const CameraFrame ear = CameraFrame::of(presentedCamera());
-        m_audio.updateExitFlame(m_portals.flamePosition(standing), {ear.position, ear.right});
-        const LevelInfo* level = m_world->level();
-        const std::vector<s32> waiting = m_portals.takeWaiting();
-        for (const s32 index : waiting) {
-            if (level == nullptr || level->bossType < 0) {
-                postHelp(HelpMessages::kEveryoneToExit, static_cast<usize>(index));
-            }
-        }
-        // Kept waiting, one is named and heard to wait (AudioPlayerBreath, player.c 2487).
-        for (usize i = 0; i < m_players.size(); ++i) {
-            const bool still = std::ranges::find(waiting, static_cast<s32>(i)) != waiting.end();
-            if (m_players[i].exitWait.step(still, ticks)) {
-                sayWithName(i, m_world->isTower() ? ExitWait::kTowerVoice : ExitWait::kVoice,
-                            ExitWait::kWait);
-            }
-        }
-        if (const auto portal = reached; portal.has_value() && leaveBy(*portal)) {
-            // The leaving branch no longer updates waiting visitors. Release their
-            // activation loop before S_TUNNEL takes over for the descent.
-            m_audio.updateExitFlame(std::nullopt, {});
-            m_opponents.settleRewards(m_players, opponentEvents());
-            if (m_portals.portal(*portal).secret) {
-                m_sim.secretTravel = true;
-                m_sim.secretReturnPosition = m_portals.portal(*portal).departurePosition.value_or(
-                    m_portals.portal(*portal).position);
-                m_portals.consume(*portal);
-                return PlayOutcome::Travel;
-            }
-            m_sim.leaving = true;
-            m_departure.begin(*m_device, m_weapons.textures);
-            m_audio.playNamed(PortalDeparture::kSound, PortalDeparture::kVolume);
-        }
+        m_sim.leaving = true;
+        m_departure.begin(*m_device, m_weapons.textures);
+        m_audio.playNamed(PortalDeparture::kSound, PortalDeparture::kVolume);
     }
+    return std::nullopt;
+}
+
+void PlayScene::advanceCameras(f32 seconds, const std::vector<CameraSubject>& subjects) {
     // The camera keeps to those still standing, while anyone is.
     std::vector<CameraSubject> followed;
     for (usize i = 0; i < subjects.size(); ++i) {
@@ -1784,8 +1839,20 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
         followSeatCameras(subjects, seconds);
     }
     if (auto* imported = m_world->imported()) {
+        const auto& boss = m_opponents.bosses();
+        const auto view = boss.view();
+        if (view.awake) {
+            if (view.alive && boss.position()) {
+                imported->trackBoss(*boss.position());
+            } else {
+                imported->trackBoss(std::nullopt);
+            }
+        }
         imported->followCamera(followed.empty() ? subjects : followed, seconds);
     }
+}
+
+void PlayScene::advanceRuneMeter() {
     if (m_sim.runeItem) {
         const auto& items = m_world->placedItems();
         const bool available = *m_sim.runeItem < items.size() && !items.item(*m_sim.runeItem).taken;
@@ -1796,8 +1863,6 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
                                  {frame.position, frame.right});
         }
     }
-    updateAmbience();
-    return PlayOutcome::Running;
 }
 
 /** Places the level's loops for the party, heard from the camera. */
@@ -1815,7 +1880,7 @@ void PlayScene::updateAmbience() {
     const LevelInfo* level = m_world->level();
     m_audio.updateAmbience(listeners, AmbientEar{frame.position, frame.right},
                            level != nullptr ? level->soundVolume : 1.0f,
-                           m_sim.switchCutscene.active() || m_promotion.active() ||
+                           m_sim.switchCutscene.active() || m_ceremonies.promotion().active() ||
                                relicCeremonyOn(),
                            &m_world->scene());
     std::optional<Vec3> hourglass;
@@ -1908,6 +1973,13 @@ std::vector<s32> PlayScene::occupiedFloors() const {
  * newest first, at most twelve. */
 void PlayScene::gatherLights() {
     PartyLighting::gather(m_lights, m_effects, m_opponents, m_players, m_world->level());
+    if (const auto* imported = m_world->imported()) {
+        const auto native = imported->pointLights();
+        m_lights.insert(m_lights.begin(), native.begin(), native.end());
+        if (m_lights.size() > WorldLighting::kMostPoints) {
+            m_lights.resize(WorldLighting::kMostPoints);
+        }
+    }
     m_world->setPointLights(m_lights);
 }
 
@@ -1928,8 +2000,8 @@ void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& 
 }
 
 bool PlayScene::cinematicBars() const {
-    return m_sim.welcome.cutting() || (m_promotion.active() && !spawning()) || relicCeremonyOn() ||
-           m_sim.switchCutscene.showing();
+    return m_sim.welcome.cutting() || (m_ceremonies.promotion().active() && !spawning()) ||
+           relicCeremonyOn() || m_sim.switchCutscene.showing();
 }
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
@@ -1952,7 +2024,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                              : currentCamera;
     if (!m_viewOverride && !scriptedCamera()) {
         if (const auto* imported = m_world->imported()) {
-            if (const auto sampled = imported->camera(frameBlend)) {
+            if (const auto sampled = imported->camera(effectBlend)) {
                 // The native camera owns its interpolation history. Sampling
                 // it and interpolating m_previousCamera again adds one tick of lag.
                 const f32 distance =
@@ -1965,12 +2037,19 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
                                            frameProjection);
     m_presentedClip = clip;
+    m_presentedView = camera;
+    m_presentedWorldAlpha = effectBlend;
     const CameraFrame companionCamera = CameraFrame::of(camera);
     const SelectionHighlight highlight{camera.position};
+    const auto nativeDeparture =
+        m_world->imported() ? m_world->imported()->departure(frameBlend) : std::nullopt;
+    const SceneFog previousFog = device.sceneFog();
+    device.setSceneFog(nativeDeparture && nativeDeparture->fog ? *nativeDeparture->fog
+                                                               : SceneFog{});
     markSelection(&highlight);
     m_world->drawOpaque(device, clip, camera, effectBlend);
     m_spawned.draw(device, clip, m_world->lighting());
-    m_towerRelics.draw(device, clip, m_world->lighting(), camera, effectBlend);
+    m_ceremonies.relics().draw(device, clip, m_world->lighting(), camera, effectBlend);
     m_sumner.draw(device, clip, m_world->lighting(), effectBlend);
     m_figures.draw(device, m_players, figureScene(frameBlend), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting(), &companionCamera,
@@ -1979,8 +2058,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const CameraFrame effectCamera = companionCamera;
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera, effectBlend);
     m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
-    m_opponents.importedActors().draw(device, clip, m_world->lighting(), &effectCamera,
-                                      TreeModel::Pass::DepthWriting, opponentBlend);
+    const bool importedOpponentsReady = !importedOpening();
+    if (importedOpponentsReady) {
+        m_opponents.importedActors().draw(device, clip, m_world->lighting(), &effectCamera,
+                                          TreeModel::Pass::DepthWriting, opponentBlend);
+    }
     m_opponents.generators().draw(device, clip, m_world->lighting(), opponentBlend,
                                   TreeModel::Pass::Opaque);
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
@@ -2010,8 +2092,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // authored materials write depth. Otherwise a nearer cloud rejects the shadow.
     drawShadows(device, clip, camera.position, frameBlend, opponentBlend);
     m_world->drawDeferred(device, clip, camera, effectBlend);
-    m_opponents.importedActors().draw(device, clip, m_world->lighting(), &effectCamera,
-                                      TreeModel::Pass::Effects, opponentBlend);
+    if (importedOpponentsReady) {
+        m_opponents.importedActors().draw(device, clip, m_world->lighting(), &effectCamera,
+                                          TreeModel::Pass::Effects, opponentBlend);
+    }
     // GHO's native 0xC01880 sorts its additive, non-depth-writing body after scenery.
     // A fence blended over it instead makes even a nearer ghost appear behind the fence.
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
@@ -2030,10 +2114,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {
-        m_promotion.draw(device, clip, m_world->lighting(), effectBlend);
+        m_ceremonies.promotion().draw(device, clip, m_world->lighting(), effectBlend);
     }
     if (relicCeremonyOn()) {
-        m_towerRelics.drawWizard(device, clip, m_world->lighting(), camera, effectBlend);
+        m_ceremonies.relics().drawWizard(device, clip, m_world->lighting(), camera, effectBlend);
     }
     // Neither the wizard nor the boss's key effect writes depth; the original sorts both by
     // distance, so whichever stands nearer the camera is drawn over the other.
@@ -2050,16 +2134,24 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_opponents.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera, projectileBlend);
-    m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera, effectBlend);
+    const auto bossAttachments = m_opponents.presentedBossEffects(opponentBlend);
+    m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera, effectBlend,
+                   bossAttachments);
     if (wizardNearer) {
         drawVictoryWizard();
     }
     m_arrival.drawEffects(device, clip, m_world->lighting(), effectBlend);
-    if (m_selection.has_value() && m_selection->kind == SceneSelection::Kind::Object) {
-        m_world->scene().drawHighlight(device, clip, static_cast<usize>(m_selection->id),
-                                       highlight);
+    if (const auto& selection = m_picking.selection();
+        selection.has_value() && selection->kind == SceneSelection::Kind::Object) {
+        if (const auto* imported = m_world->imported()) {
+            imported->highlightObject(device, clip, camera, effectBlend, selection->id, highlight);
+        } else {
+            m_world->scene().drawHighlight(device, clip, static_cast<usize>(selection->id),
+                                           highlight);
+        }
     }
     markSelection(nullptr);
+    device.setSceneFog(previousFog);
     if (config.display.bloom) {
         device.applyBloom();
     }
@@ -2100,8 +2192,21 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
     const bool cut = cinematicBars();
-    m_transition.draw(m_canvas, width, height); // over the view, under the boxes
+    const auto drawNativeCover = [&] {
+        if (!nativeDeparture || !nativeDeparture->whiteFade) {
+            return;
+        }
+        const f32 opacity = std::isfinite(*nativeDeparture->whiteFade)
+                                ? std::clamp(*nativeDeparture->whiteFade, 0.0f, 1.0f)
+                                : 0;
+        const auto alpha = static_cast<u8>(opacity * 255);
+        m_canvas.fillScreen(Color::white().withAlpha(alpha));
+    };
+    if (!nativeDeparture || !nativeDeparture->whiteFade) {
+        m_transition.draw(m_canvas, width, height); // over the view, under the boxes
+    }
     if (m_hudHidden) {
+        drawNativeCover();
         m_canvas.end(); // the developer console asked for the view alone
         return;
     }
@@ -2144,12 +2249,13 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_messages.draw(m_canvas);
     if (!spawning()) {
-        m_promotion.drawCaption(m_canvas, m_messages.text(), width, height);
+        m_ceremonies.promotion().drawCaption(m_canvas, m_messages.text(), width, height);
     }
     if (relicCeremonyOn()) {
-        m_towerRelics.drawCaption(m_canvas, m_messages.text(), width, height);
+        m_ceremonies.relics().drawCaption(m_canvas, m_messages.text(), width, height);
     }
     m_sumnerVisit.draw(m_canvas, m_messages.text());
+    drawNativeCover(); // Special departures cover the entire window, including the HUD.
     m_canvas.end();
 }
 
@@ -2164,7 +2270,8 @@ void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
 
 bool PlayScene::canPause(s32 player) const {
     return m_open && !m_sim.leaving && !m_sim.gameOver.active() && !m_sim.switchCutscene.active() &&
-           !m_messages.active() && !m_promotion.active() && !m_towerRelics.active() &&
+           (m_world->imported() == nullptr || !m_sumnerVisit.active()) && !m_messages.active() &&
+           !m_ceremonies.promotion().active() && !m_ceremonies.relics().active() &&
            actor(player) != nullptr && !fallen(player);
 }
 
@@ -2173,7 +2280,8 @@ bool PlayScene::canJoin(s32 player) const {
            m_players.size() < static_cast<usize>(kPlayerCount) && !m_sim.leaving &&
            !m_sim.gameOver.active() && !m_sim.switchCutscene.active() && !spawning() &&
            !m_messages.active() && !m_sumnerVisit.active() &&
-           m_sim.welcome.intro() == Intro::None && !m_promotion.active() && !relicCeremonyOn();
+           m_sim.welcome.intro() == Intro::None && !m_ceremonies.promotion().active() &&
+           !relicCeremonyOn();
 }
 
 const PlayerActor* PlayScene::actor(s32 player) const {

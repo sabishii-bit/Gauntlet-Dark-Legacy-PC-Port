@@ -1,4 +1,5 @@
 #include <array>
+#include <string_view>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -164,4 +165,59 @@ TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctio
     CHECK(feedback.effect().empty());
     CHECK(feedback.deathSkin().empty());
 }
+TEST_CASE("each swarm kind keeps its hit and melee sound names at both tiers",
+          "[game][enemies][enemy-traits]") {
+    // A one-row roster per kind, struck far off and not killed on the first hit. "none" is
+    // no dedicated melee sound: the player's ordinary pain answers instead.
+    struct Row {
+        s32 kind;
+        std::string_view small;
+        std::string_view large;
+        std::string_view meleeSmall;
+        std::string_view meleeLarge;
+    };
+    constexpr std::array<Row, 28> kRows{{
+        {0, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {1, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {2, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "S_QQ1BITE", "S_QQ2BITE"},
+        {3, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {4, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "S_PLYRDMG5", "S_PLYRDMG4"},
+        {5, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "S_PLYRDMG5", "S_PLYRDMG4"},
+        {6, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {7, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {8, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "S_QQ1BITE", "S_QQ2BITE"},
+        {9, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {10, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "S_PLYRDMG5", "S_PLYRDMG4"},
+        {11, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "S_QQ1STRIKE", "S_QQ2STRIKE"},
+        {12, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {13, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {14, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {15, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {16, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {17, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {18, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {19, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {20, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {21, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {22, "S_QQHITFAR", "S_QQHITFAR", "S_QQBITE", "S_QQBITE"},
+        {23, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {24, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {25, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {26, "S_QQ1HITFAR", "S_QQ2HIT1FAR", "none", "none"},
+        {27, "S_QQ1HITFAR", "S_QQ1HITFAR", "none", "none"},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.kind);
+        const std::array roster{LevelEnemy{row.kind, 1, "QQ"}};
+        EnemyFeedback feedback;
+        feedback.kind = row.kind;
+        feedback.tier = 1;
+        CHECK(feedback.sound(roster) == row.small);
+        feedback.tier = 2;
+        CHECK(feedback.sound(roster) == row.large);
+        CHECK(EnemyFeedback::meleeSound(row.kind, 1, roster).value_or("none") == row.meleeSmall);
+        CHECK(EnemyFeedback::meleeSound(row.kind, 2, roster).value_or("none") == row.meleeLarge);
+    }
+}
+
 } // namespace

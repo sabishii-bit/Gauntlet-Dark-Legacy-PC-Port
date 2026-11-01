@@ -16,6 +16,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/critters/CombatEvents.h"
 #include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantGaze.h"
@@ -23,6 +24,7 @@
 #include "game/critters/CombatantVisual.h"
 #include "game/critters/CritterArea.h"
 #include "game/critters/CritterPatrol.h"
+#include "game/critters/CritterPressure.h"
 #include "game/enemies/Enemies.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/ItemFigure.h"
@@ -67,7 +69,8 @@ public:
     static constexpr std::array<f32, 5> kRoarShares{1.0f, 1.0f, 1.5f, 2.0f, 2.0f};
     static constexpr f32 kRoarMemory = 3.0f;
     static constexpr s32 kFlashTicks = 4; ///< two 30 Hz frames
-    static constexpr u32 kFlashesWhole = 0x100000 | 0x200 | 0x100 | 0x20;
+    static constexpr u32 kFlashesWhole =
+        damage::kSuperShot | damage::kMagic | damage::kKnockOver | damage::kKnockDown;
     static constexpr f32 kUnderLevelLoss = 0.02f;
     /** A boss's share of harm by how many are in the game (lbl_8011AEC0). */
     static constexpr std::array<f32, 5> kBossShares{1.0f, 1.0f, 0.5f, 0.3f, 0.2f};
@@ -83,6 +86,9 @@ public:
     void setArenaAnchors(std::span<const Mat4> anchors);
     void setArenaTargets(std::span<const CombatArenaTarget> targets);
     bool raisesArenaRocks() const;
+    /** Captures encounter pressure's one-time level bonus before the wake delay;
+     * subsequent calls refresh participation without recalculating that bonus. */
+    void captureEncounterPlayers(std::span<const EnemyView> players);
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {}, bool timeStopped = false);
     /** Follows the supporting moving floor without advancing combat or animation. */
@@ -148,6 +154,13 @@ public:
     f32 radius() const { return data() != nullptr ? data()->radius() : 0; }
     s32 target() const { return m_sim.actor.target; }
     bool moveDone() const { return m_sim.actor.moveDone; }
+    /** Decoded encounters may hold their distinct INIT pose before waking. The
+     * ordinary spawn path remains START; these calls do nothing without that policy. */
+    void prepareEntrance();
+    /** Advance only the optional dormant INIT animation, without choosing moves,
+     * damaging players or emitting attack cues. */
+    void advanceEntrance(f32 seconds);
+    void beginEntrance();
     bool frozen() const { return m_sim.actor.frozenTicks > 0; }
     bool blinded() const { return m_sim.actor.blindTicks > 0; }
     bool curbed() const { return m_sim.actor.curbSeconds > 0; }
@@ -158,6 +171,9 @@ public:
     const CritterData* data() const;
     ItemArchive* archive();
     std::optional<Mat4> nodeTransform(std::string_view node) const;
+    /** Render-only attachment sampled from the same composed root/child pose
+     * as draw(). Never use this fractional pose for simulation contacts. */
+    std::optional<Mat4> presentedNodeTransform(std::string_view node, f32 alpha) const;
     std::optional<Mat4> rootTransform() const;
     /** Animated hit volumes; movement uses only solid nodes plus the root fallback. */
     std::vector<MissileTarget> bodyTargets(bool solidOnly = false) const;
@@ -355,6 +371,7 @@ private:
         EnemyScales scales;
         char realm = 'G';
         bool fullHarm = false;
+        CritterPressure pressure;
         std::minstd_rand arenaRandom;
         std::vector<CombatCue> cues;
         std::vector<CombatGrab> grabs;
@@ -428,12 +445,13 @@ private:
     static TreePose smoothPose(const Actor& actor);
     static f32 presentationBlend(const Actor& actor, f32 alpha);
     static TreePose presentationPose(const Actor& actor, f32 alpha);
+    TreePose composedPresentationPose(f32 alpha) const;
     static f32 presentationFrame(const Actor& actor, f32 alpha);
     static Mat4 presentationModel(const Actor& actor, f32 alpha);
     std::vector<MissileTarget> ownTargets(bool solidOnly) const;
     void loseHealth(f32 amount);
     void chooseMove(Actor& critter, std::span<const EnemyView> players);
-    static std::optional<usize> bestMove(const Actor& critter, std::span<const EnemyView> players);
+    std::optional<usize> bestMove(const Actor& critter, std::span<const EnemyView> players) const;
     /** The first step move that goes anywhere, for a round of the lookouts with no player in
      * sight (CritterLookForReady's waypoint pick). */
     static std::optional<usize> patrolStep(const Actor& critter);
@@ -443,9 +461,9 @@ private:
     /** Native c.pos: the root's rotated TYPE origin, inherited by its child parts. */
     static Vec3 targetingOrigin(const Actor& critter);
     bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
-    static s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
-                            std::span<const EnemyView> players, bool fallback = false);
-    static f32 attackRate(const Actor& critter);
+    s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
+                     std::span<const EnemyView> players, bool fallback = false) const;
+    f32 attackRate(const Actor& critter) const;
     static bool supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound);
     std::optional<f32> startArea(Actor& critter, s32 id, const AttackDefinition& damage,
                                  std::string_view node,
@@ -479,7 +497,7 @@ private:
                    std::span<const EnemyView> players, std::span<const Combatant> peers);
     static void rotate(Actor& critter, f32 seconds, const MoveDefinition* move,
                        std::span<const EnemyView> players);
-    static void chooseTarget(Actor& critter, std::span<const EnemyView> players);
+    void chooseTarget(Actor& critter, std::span<const EnemyView> players) const;
     void chooseFamilyTargets(std::span<const EnemyView> players);
     static void selectFirstTarget(Actor& critter);
     static f32 inverseAnger(const Actor& critter, usize player);

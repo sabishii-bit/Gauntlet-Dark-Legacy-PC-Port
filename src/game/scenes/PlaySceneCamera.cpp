@@ -14,7 +14,8 @@ std::optional<Vec3> PlayScene::cursorAim(Vec2 cursor, const Vec3& position) cons
 
 bool PlayScene::scriptedCamera() const {
     return m_sim.switchCutscene.showing() || m_arrival.camera().active() ||
-           m_sim.welcome.camera().has_value() || m_promotion.active() || relicCeremonyOn();
+           m_sim.welcome.camera().has_value() || m_ceremonies.promotion().active() ||
+           relicCeremonyOn();
 }
 
 bool PlayScene::cameraContinuous() const {
@@ -37,25 +38,8 @@ bool PlayScene::soloViewActive() const {
            !bossCameraOn();
 }
 
-s32 PlayScene::presentedSeat() const {
-    s32 lowest = -1;
-    for (usize i = 0; i < m_players.size(); ++i) {
-        const s32 seat = m_players[i].actor.player();
-        if (seat < 0 || seat >= kPlayerCount) {
-            continue;
-        }
-        if (seat == m_viewSeat) {
-            return seat;
-        }
-        if (!isDown(i) && (lowest < 0 || seat < lowest)) {
-            lowest = seat;
-        }
-    }
-    return lowest;
-}
-
 const TowerCamera& PlayScene::seatCamera(s32 seat) const {
-    return m_seatCameras[static_cast<usize>(std::clamp(seat, 0, kPlayerCount - 1))];
+    return m_seats.camera(seat);
 }
 
 WorldCamera PlayScene::cameraOfSeat(s32 seat) const {
@@ -65,7 +49,7 @@ WorldCamera PlayScene::cameraOfSeat(s32 seat) const {
 
 WorldCamera PlayScene::presentedCamera() const {
     if (soloViewActive() && !scriptedCamera()) {
-        if (const s32 seat = presentedSeat(); seat >= 0) {
+        if (const s32 seat = m_seats.presented(m_players); seat >= 0) {
             return cameraOfSeat(seat);
         }
     }
@@ -96,7 +80,7 @@ std::vector<f32> PlayScene::movementYaws(f32 shared) const {
 
 u8 PlayScene::arrowOwnSeats() const {
     if (soloViewActive() && !scriptedCamera()) {
-        if (const s32 seat = presentedSeat(); seat >= 0) {
+        if (const s32 seat = m_seats.presented(m_players); seat >= 0) {
             return static_cast<u8>(1U << static_cast<u32>(seat));
         }
     }
@@ -104,11 +88,7 @@ u8 PlayScene::arrowOwnSeats() const {
 }
 
 PlayScene::SeatCameraStates PlayScene::seatCameraStates() const {
-    SeatCameraStates states;
-    for (usize i = 0; i < states.size(); ++i) {
-        states[i] = m_seatCameras[i].localState();
-    }
-    return states;
+    return m_seats.states();
 }
 
 std::vector<CameraSubject> PlayScene::partySubjects(const Vec3& displacement) const {
@@ -122,66 +102,18 @@ std::vector<CameraSubject> PlayScene::partySubjects(const Vec3& displacement) co
     return subjects;
 }
 
-namespace {
-/** The standing members' subjects, for a fallen seat's camera to keep with the party. */
-std::vector<CameraSubject> standingOf(std::span<const CameraSubject> subjects,
-                                      std::span<const PlayerRuntime> players) {
-    std::vector<CameraSubject> standing;
-    for (usize i = 0; i < subjects.size() && i < players.size(); ++i) {
-        if (players[i].life == PlayerLife::Standing) {
-            standing.push_back(subjects[i]);
-        }
-    }
-    return standing;
-}
-} // namespace
-
 void PlayScene::resetSeatCameras(std::span<const CameraSubject> subjects,
                                  std::span<const WorldLocator> markers, const CameraRange& range) {
-    const auto standing = standingOf(subjects, m_players);
-    for (usize i = 0; i < m_players.size() && i < subjects.size(); ++i) {
-        const s32 seat = m_players[i].actor.player();
-        if (seat < 0 || seat >= kPlayerCount) {
-            continue;
-        }
-        const std::span<const CameraSubject> own =
-            !isDown(i) ? subjects.subspan(i, 1)
-            : standing.empty() ? subjects
-                               : std::span<const CameraSubject>{standing};
-        m_seatCameras[static_cast<usize>(seat)].reset(own, markers, range, cameraView());
-    }
+    m_seats.reset(m_players, subjects, markers, range, cameraView());
 }
 
 void PlayScene::followSeatCameras(std::span<const CameraSubject> subjects, f32 seconds) {
-    const auto standing = standingOf(subjects, m_players);
-    for (usize i = 0; i < m_players.size() && i < subjects.size(); ++i) {
-        const s32 seat = m_players[i].actor.player();
-        if (seat < 0 || seat >= kPlayerCount) {
-            continue;
-        }
-        const std::span<const CameraSubject> own =
-            !isDown(i) ? subjects.subspan(i, 1)
-            : standing.empty() ? subjects
-                               : std::span<const CameraSubject>{standing};
-        m_seatCameras[static_cast<usize>(seat)].update(own, m_world->cameraMarkers(),
-                                                       m_world->cameraRange(), cameraView(),
-                                                       seconds);
-    }
+    m_seats.follow(m_players, subjects, m_world->cameraMarkers(), m_world->cameraRange(),
+                   cameraView(), seconds);
 }
 
 void PlayScene::snapSeatCameras(std::span<const CameraSubject> subjects) {
-    const auto standing = standingOf(subjects, m_players);
-    for (usize i = 0; i < m_players.size() && i < subjects.size(); ++i) {
-        const s32 seat = m_players[i].actor.player();
-        if (seat < 0 || seat >= kPlayerCount) {
-            continue;
-        }
-        const std::span<const CameraSubject> own =
-            !isDown(i) ? subjects.subspan(i, 1)
-            : standing.empty() ? subjects
-                               : std::span<const CameraSubject>{standing};
-        m_seatCameras[static_cast<usize>(seat)].snapAttention(own, m_world->cameraRange());
-    }
+    m_seats.snap(m_players, subjects, m_world->cameraRange());
 }
 
 WorldCamera PlayScene::simulationCamera() const {
@@ -195,11 +127,12 @@ WorldCamera PlayScene::simulationCamera() const {
     if (const auto cut = m_sim.welcome.camera()) {
         return *cut;
     }
-    if (const auto& promotion = m_promotion.camera();
-        promotion.has_value() && !spawning() && m_promotion.active()) {
+    if (const auto& promotion = m_ceremonies.promotion().camera();
+        promotion.has_value() && !spawning() && m_ceremonies.promotion().active()) {
         return *promotion;
     }
-    if (const auto& ceremony = m_towerRelics.camera(); ceremony.has_value() && relicCeremonyOn()) {
+    if (const auto& ceremony = m_ceremonies.relics().camera();
+        ceremony.has_value() && relicCeremonyOn()) {
         return *ceremony;
     }
     if (m_world != nullptr) {

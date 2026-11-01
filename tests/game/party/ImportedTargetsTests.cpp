@@ -278,4 +278,41 @@ TEST_CASE("Imported closed containers block ordinary players and enemy missiles"
     CHECK(f.fixtures.obstacles().empty());
     CHECK(f.fixtures.missileStops().empty());
 }
+
+TEST_CASE("Imported ram and blast contacts use authored faces instead of bounding cylinders",
+          "[legends][imported-targets][assets]") {
+    Fixture f;
+    const std::array<CollisionTriangle, 2> faces{{
+        {{-1, 0, 0}, {Vec3{20, 0, -10}, Vec3{20, 8, -10}, Vec3{20, 0, 10}}, 0, 2},
+        {{-1, 0, 0}, {Vec3{20, 0, 10}, Vec3{20, 8, -10}, Vec3{20, 8, 10}}, 0, 2},
+    }};
+    // The cylinder contains the origin, but the actual wall is twenty units away.
+    // A rejected broad contact must not consume the attack's one-hit ledger.
+    f.imported->bodies = {{0, {20, 0, 0}, 20, 8, true, true, faces}};
+    const MissileTarget cylinder{kImportedTargetBase, {20, 0, 0}, 20, 8};
+    REQUIRE(cylinder.touches({0, 3, 0}, 2));
+
+    SECTION("ram") {
+        f.attacks.ramBarrels(0, f.players, f.targets);
+        CHECK(f.imported->hits.empty());
+        CHECK(f.players[0].rammed.empty());
+
+        f.players[0].actor.place({19.5f, 0, 0});
+        f.attacks.ramBarrels(0, f.players, f.targets);
+        f.attacks.ramBarrels(0, f.players, f.targets);
+        CHECK(f.players[0].rammed == std::vector<usize>{kImportedTargetBase});
+    }
+    SECTION("blast") {
+        std::vector<s32> reached;
+        f.fixtures.blastScenery({0, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, {}, reached);
+        CHECK(f.imported->hits.empty());
+        CHECK(reached.empty());
+
+        f.fixtures.blastScenery({19.5f, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, {}, reached);
+        f.fixtures.blastScenery({19.5f, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, {}, reached);
+        CHECK(reached == std::vector<s32>{kImportedTargetBase});
+    }
+    REQUIRE(f.imported->hits.size() == 1);
+    CHECK(f.imported->hits.front().id == 0);
+}
 } // namespace

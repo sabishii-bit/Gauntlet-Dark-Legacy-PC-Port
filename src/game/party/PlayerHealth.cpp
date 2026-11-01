@@ -7,7 +7,9 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
 namespace {
@@ -84,7 +86,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
                         bool inTower, f32 damageScale, const Events& events,
                         const PlayerImpact& impact, bool bossEncounter, const ClassStats* stats) {
     if (!canBeDamaged(runtime) || inTower || damage < 0.0f ||
-        (impact.flags & Damage::kMagic) != 0) {
+        (impact.flags & damage::kMagic) != 0) {
         return;
     }
     if (damage > 1.0f && kind != HurtKind::DeathDrain) {
@@ -93,14 +95,14 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
     PlayerImpact received = impact;
     if (kind == HurtKind::Gas) {
-        received.flags |= Damage::kGas;
+        received.flags |= damage::kGas;
     }
     const f32 armor = stats != nullptr ? armorDefense(*stats, runtime.actor.save()) : 0;
     const Damage modified = Damage::modify(kind == HurtKind::DeathDrain ? -damage : damage,
                                            received.flags, worn.armor, armor, bossEncounter);
     damage = modified.amount;
     received.flags = modified.flags;
-    if ((received.flags & Damage::kLow) != 0 && (worn.special & powerup::kLevitation) != 0) {
+    if ((received.flags & damage::kLow) != 0 && (worn.special & powerup::kLevitation) != 0) {
         return;
     }
     if (damage < 0) {
@@ -124,7 +126,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         // Stun shots and sticky hits retain their reaction with no health loss.
         // PlayerKnockback tests it before hit_damage, but invulnerability's
         // 0x10000 shield clears all reactions first (pmotion.c).
-        if ((worn.armor & Damage::kInvulnerable) == 0) {
+        if ((worn.armor & armor::kInvulnerable) == 0) {
             runtime.reaction = PlayerImpact::combine(
                 runtime.reaction, received.reaction(0, runtime.actor.yaw(), false));
         }
@@ -140,18 +142,18 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         // damage_player 80078B18..80078B7C: feedback follows post-armor/guard flags,
         // including lethal blows; harmless contacts and healing never reach this branch.
         s32 frames = 10;
-        if ((flags & 0x10040) != 0) {
+        if ((flags & (damage::kWhirlwind | damage::kBlownAway)) != 0) {
             frames = 30;
-        } else if ((flags & 0x120) != 0) {
+        } else if ((flags & (damage::kKnockDown | damage::kKnockOver)) != 0) {
             frames = 20;
-        } else if ((flags & 0x90) != 0) {
+        } else if ((flags & (damage::kKnockBack | damage::kStun)) != 0) {
             frames = 15;
         }
         events.vibrate(frames);
     }
     // Gas leaves its victim retching a second, Death's touch a frame (damage_player,
     // player.c 3442).
-    if ((received.flags & Damage::kGas) != 0) {
+    if ((received.flags & damage::kGas) != 0) {
         runtime.gagSeconds = kGasGagSeconds;
     }
     if ((received.flags & kDrainFlag) != 0) {
@@ -222,7 +224,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
  * (AudioPlayerHit's rows). */
 void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events, u32 flags) {
     // Cloud damage uses the queued choking bark; piercing traps use the direct groan.
-    if ((flags & Damage::kGas) != 0) {
+    if ((flags & damage::kGas) != 0) {
         events.cry("POISON");
         return;
     }
@@ -281,7 +283,7 @@ std::optional<PlayerHealth::Heartbeat> PlayerHealth::heartbeat(std::span<PlayerR
         lowest->heartbeatTicks = kFailingTicks;
     }
     const u32 armor = PowerupEffects::of(lowest->actor.save().progress().inventory).armor;
-    if (inTower || (armor & (powerup::kInvulnerable | powerup::kGoldInvulnerable)) != 0) {
+    if (inTower || (armor & (armor::kInvulnerable | armor::kGoldInvulnerable)) != 0) {
         return std::nullopt;
     }
     f32 level = kBaseLevel;

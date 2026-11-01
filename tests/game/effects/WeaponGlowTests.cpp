@@ -14,6 +14,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/combat/DamageTypes.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/LevelItemArchives.h"
 #include "game/players/PowerupEffects.h"
@@ -58,11 +59,11 @@ TEST_CASE("an elemental weapon's effects are named by its colour and shown by th
     CHECK(WeaponGlow::throwTree(5).empty());
     // The weapon flags' element, unless something else fills the hand.
     PowerupEffects worn;
-    worn.weapon = 3 | powerup::kThreeWayShot;
+    worn.weapon = 3 | damage::kThreeWayShot;
     CHECK(WeaponGlow::elementOf(worn) == 3);
-    worn.weapon = 3 | powerup::kSuperShot;
+    worn.weapon = 3 | damage::kSuperShot;
     CHECK(WeaponGlow::elementOf(worn) == 0);
-    worn.weapon = 3 | powerup::kThunderHammer;
+    worn.weapon = 3 | damage::kHammer;
     CHECK(WeaponGlow::elementOf(worn) == 0);
     worn.weapon = 3;
     worn.special = powerup::kRightGauntlet;

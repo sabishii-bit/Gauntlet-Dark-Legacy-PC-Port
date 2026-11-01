@@ -314,7 +314,8 @@ private:
     const Bodies* bodiesOf(s32 kind) const;
     bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind, ItemArchive* realmItems,
                     std::span<TextureSet* const> lenders);
-    static s32 stateFor(const Generator& generator, bool destroyed);
+    s32 stateFor(const Generator& generator, bool destroyed) const;
+    void appendImportedHealth(NativeStateDigest& digest) const;
     SwarmAggression m_aggression; ///< this update's, from the simulation
     s32 m_frenziedHuts = 0;       ///< of the last update, for the log
     s32 m_birthsTried = 0;
@@ -356,11 +357,19 @@ private:
         u32 specialBirth = 0;
         u64 nextInstance = 1;
         bool bound = false;
+        std::optional<Mt19937> importedRandom; ///< absent for ordinary GDL scenes
     } m_sim;
     std::vector<std::unique_ptr<Bodies>> m_bodyCache;
     /** Immutable level-presentation ownership, keyed by pool lifetime rather than
      * reusable slot index. Imported levels do not participate in rollback. */
     std::vector<u64> m_externalBodies;
+    struct ImportedHealth {
+        u64 instance = 0;
+        std::array<f32, kStates> remaining{}; ///< cumulative health below each damage state
+        std::array<s32, 3> broodKinds{-1, -1, -1};
+        s32 broodTier = 0;
+    };
+    std::vector<ImportedHealth> m_importedHealth; ///< immutable imported-level durability
     std::vector<ItemInfo> m_records;     ///< the level's generator records, for the console
     ItemArchive* m_realmItems = nullptr; ///< what bind was given, for standings after it
     std::vector<TextureSet*> m_lenders;

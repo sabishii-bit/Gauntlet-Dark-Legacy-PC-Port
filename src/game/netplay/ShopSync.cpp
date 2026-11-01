@@ -8,6 +8,12 @@
 
 namespace gdl::game {
 namespace {
+/** The setup packet's flag word: two bits, then a bit a seat for the fallen. */
+constexpr u32 kSetupExpanded = 0x1;
+constexpr u32 kSetupEnding = 0x2;
+constexpr u32 kSetupFallenShift = 8;
+constexpr u32 kSetupMask = kSetupExpanded | kSetupEnding | (0xFU << kSetupFallenShift);
+
 constexpr u32 kMagic = fourcc("GDSH");
 enum class Kind : u8 { Setup, Input, Step, Done };
 constexpr u16 kHeld = 0x780;
@@ -101,8 +107,8 @@ void ShopSync::begin(u64 epoch, u8 local, const std::array<u8, 4>& owners,
         auto bytes = packet(epoch, Kind::Setup);
         word(bytes, setup->source);
         word(bytes, setup->destination);
-        word(bytes, static_cast<u32>(setup->expanded) | (static_cast<u32>(setup->ending) << 1) |
-                        (static_cast<u32>(setup->fallen) << 8));
+        word(bytes, (setup->expanded ? kSetupExpanded : 0U) | (setup->ending ? kSetupEnding : 0U) |
+                        (static_cast<u32>(setup->fallen) << kSetupFallenShift));
         for (const auto value : setup->maxima) {
             word(bytes, static_cast<u32>(value));
         }
@@ -146,12 +152,12 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
         setup.source = reader.readU32();
         setup.destination = reader.readU32();
         const auto flags = reader.readU32();
-        if ((flags & ~0xf03U) != 0) {
+        if ((flags & ~kSetupMask) != 0) {
             return Admission::Invalid;
         }
-        setup.expanded = (flags & 1) != 0;
-        setup.ending = (flags & 2) != 0;
-        setup.fallen = static_cast<u8>(flags >> 8);
+        setup.expanded = (flags & kSetupExpanded) != 0;
+        setup.ending = (flags & kSetupEnding) != 0;
+        setup.fallen = static_cast<u8>(flags >> kSetupFallenShift);
         for (auto& value : setup.maxima) {
             value = reader.readS32();
         }

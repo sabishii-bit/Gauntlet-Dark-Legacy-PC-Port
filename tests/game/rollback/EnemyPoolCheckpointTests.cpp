@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -204,7 +205,8 @@ TEST_CASE("enemy pool wire preserves every slot field queue clock and all three 
     // Pin little-endian version, fixed native slot count, MT words and a full
     // 64-bit lifetime counter independently of the decoder under test.
     CHECK(std::vector<u8>(encoded->begin(), encoded->begin() + 8) ==
-          std::vector<u8>{4, 0, 0, 0, static_cast<u8>(Enemies::kMost), 0, 0, 0}); // the slots
+          std::vector<u8>{static_cast<u8>(EnemyPoolCheckpoint::kVersion), 0, 0, 0,
+                          static_cast<u8>(Enemies::kMost), 0, 0, 0}); // the slots
     const auto random = RandomCheckpoint::encode(state.random);
     REQUIRE(random);
     CHECK(std::equal(random->begin(), random->end(), encoded->begin() + 8));
@@ -516,12 +518,15 @@ struct NativePool {
         players[0].position.z = static_cast<f32>(tick % 9) * 0.25f;
         players[1].position.x = 8 - static_cast<f32>(tick % 7) * 0.125f;
         if (tick == 5 || tick == 31) {
-            enemies.hurt(
-                2,
-                {.damage = 2, .flags = EnemyHit::kKnockBack, .direction = {1, 0, 0}, .player = 0});
+            enemies.hurt(2, {.damage = 2,
+                             .flags = EnemyHit::kKnockBack,
+                             .direction = {1, 0, 0},
+                             .player = 0,
+                             .where = std::nullopt});
         }
         if (tick == 38) {
-            enemies.hurt(4, {.damage = 1000, .flags = EnemyHit::kMagic, .player = 1});
+            enemies.hurt(
+                4, {.damage = 1000, .flags = EnemyHit::kMagic, .player = 1, .where = std::nullopt});
         }
         enemies.setShrink(tick >= 20 && tick < 29 ? 0.5f : 1);
         enemies.update(1, kStep, players, obstacles, nullptr, 1, tick >= 42 && tick < 47);

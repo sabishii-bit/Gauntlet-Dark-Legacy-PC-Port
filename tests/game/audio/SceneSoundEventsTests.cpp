@@ -506,4 +506,40 @@ TEST_CASE("terminal correction cannot resurrect already retired sound dispatch i
     CHECK(plays == 1);
     events.close();
 }
+TEST_CASE("a discarded scene recorder records its own epoch again from the first tick",
+          "[scene-sound-events][local-rewind]") {
+    const Sounds sounds;
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    SceneSoundEvents events;
+    usize plays = 0;
+    const SoundPlayer::Capture observe(&player, [&](const auto& event) {
+        plays += event.kind == SoundPlayer::Event::Kind::Play ? 1 : 0;
+    });
+    const auto record = [&] {
+        events.beginTick(1);
+        {
+            auto scope = events.scoped(kPlayer, 1);
+            events.emit(sounds.a);
+        }
+        const std::array frame{events.endFrame()};
+        const auto result = events.reconcileFrames(1, frame);
+        REQUIRE(result);
+        events.dispatch(result);
+        REQUIRE(events.confirm(1));
+    };
+    events.open(9, &player);
+    record();
+    CHECK(plays == 1);
+    // Closing leaves the epoch spent; only a discarded history records it again.
+    events.close();
+    CHECK_THROWS_AS(events.open(9, &player), SceneSoundEvents::Unsupported);
+    events.discard();
+    events.open(9, &player);
+    CHECK(events.epoch() == 9);
+    record();
+    CHECK(plays == 2);
+    events.close();
+}
+
 } // namespace

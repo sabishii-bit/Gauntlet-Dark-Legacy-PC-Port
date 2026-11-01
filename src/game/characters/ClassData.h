@@ -10,6 +10,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/combat/EffectFlags.h"
+
 namespace gdl::game {
 
 /** The playable classes: eight to start with, eight unlockable, and the hidden Sumner. */
@@ -51,13 +53,12 @@ bool classUnlocked(s32 classIndex, u16 unlockMask);
 
 /** An effect one of a class's moves shows. */
 struct MoveEffect {
-    static constexpr u32 kParticleFlags = 0x0F000000;
     s32 next = -1;    ///< another started with it
     std::string tree; ///< of the costume colour's effects; none when empty or `NULLFX`
     std::string sound;
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 scale = 1.0f;
-    u32 flags = 0;
+    u32 flags = 0; ///< effect_flags::
     f32 lifetime = 0.0f;
     f32 radius = 0.0f;      ///< a particle record's emission rate per game frame
     s16 alphaMod = 0;       ///< a particle record's speed in hundredths of a unit/second
@@ -67,7 +68,7 @@ struct MoveEffect {
     Color tint() const;
     /** A particle emitter rather than a tree and a sound: `tree` names its texture and
      * `sound` the node it is hung from (PsfxDoParticle), such as the magic users' hand glow. */
-    bool particle() const { return (flags & kParticleFlags) != 0; }
+    bool particle() const { return (flags & effect_flags::kParticleMask) != 0; }
 };
 
 /** One thing a move does at one of its frames. */
@@ -80,6 +81,8 @@ struct MoveStrike {
     static constexpr s32 kHidesWeapon = 0x400; ///< flags: the hand is empty while it lasts
     static constexpr s32 kSweepsIn = 0x200;    ///< a volley's angle closes from full to none
     static constexpr s32 kSweepsOut = 0x100;   ///< or opens from none to full
+    static constexpr s32 kWaitsForMorph =
+        0x800; ///< what flies launches once its effect has morphed
 
     s32 type = kBursts;
     f32 hitRadius = 0.0f;

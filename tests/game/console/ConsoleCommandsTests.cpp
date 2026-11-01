@@ -13,12 +13,13 @@
 
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
+#include "game/combat/DamageTypes.h"
+#include "game/console/ConsoleCommands.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/TowerAccess.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
-#include "game/console/ConsoleCommands.h"
 
 namespace {
 using namespace gdl;
@@ -38,8 +39,7 @@ TEST_CASE("list knows maps, items and inventory in any case", "[dev-console][com
     CHECK(ConsoleCommands::listingOf(Args{}) == ConsoleCommands::Listing::Unknown);
     CHECK(ConsoleCommands::listingOf(Args{"shops"}) == ConsoleCommands::Listing::Unknown);
     CHECK(ConsoleCommands::listingOf(Args{"Switches"}) == ConsoleCommands::Listing::Switches);
-    CHECK(ConsoleCommands::listingOf(Args{"characters"}) ==
-          ConsoleCommands::Listing::Characters);
+    CHECK(ConsoleCommands::listingOf(Args{"characters"}) == ConsoleCommands::Listing::Characters);
     CHECK(ConsoleCommands::listUsage().contains("list switches"));
     CHECK(ConsoleCommands::listUsage().contains("list characters"));
 }
@@ -61,7 +61,8 @@ TEST_CASE("list characters names every class with its standing and the name cost
 TEST_CASE("lock and unlock take a character by code or a door or chest by token or name",
           "[dev-console][commands]") {
     std::string error;
-    const auto character = ConsoleCommands::parseLockRequest(Args{"Character", "min"}, error, "unlock");
+    const auto character =
+        ConsoleCommands::parseLockRequest(Args{"Character", "min"}, error, "unlock");
     REQUIRE(character.has_value());
     CHECK(character->character);
     CHECK(character->what == "min");
@@ -77,9 +78,9 @@ TEST_CASE("lock and unlock take a character by code or a door or chest by token 
     CHECK(ConsoleCommands::lockUsage("unlock").contains("unlock character <code>"));
     CHECK(ConsoleCommands::activateUsage().contains("activate switch#N"));
     // A token names one thing alone; a name every thing that answers to it, in any case.
-    const std::vector<ConsoleCommands::NamedEntry> entries{
-        {"switch#0", "BRIDGEPAD", "E1BRIDGE"}, {"switch#1", "BRIDGEPAD", "E1DOOR"},
-        {"switch#2", "TRIGGER2", "E1DOOR"}};
+    const std::vector<ConsoleCommands::NamedEntry> entries{{"switch#0", "BRIDGEPAD", "E1BRIDGE"},
+                                                           {"switch#1", "BRIDGEPAD", "E1DOOR"},
+                                                           {"switch#2", "TRIGGER2", "E1DOOR"}};
     CHECK(ConsoleCommands::entriesNamed(entries, "SWITCH#1") == std::vector<usize>{1});
     CHECK(ConsoleCommands::entriesNamed(entries, "bridgepad") == std::vector<usize>{0, 1});
     CHECK(ConsoleCommands::entriesNamed(entries, "e1door") == std::vector<usize>{1, 2});
@@ -153,7 +154,7 @@ TEST_CASE("get reads the item, its amount and a potion's kind", "[dev-console][c
     CHECK(get({"invulnerable", "90"}).offer.strength == Approx(90.0f));
     auto shots = get({"supershot"});
     CHECK(shots.offer.kind == powerup::kWeapon);
-    CHECK(shots.offer.flags == powerup::kSuperShot);
+    CHECK(shots.offer.flags == damage::kSuperShot);
     CHECK(shots.offer.amount > 0); // charges: one huge shot each
     CHECK(get({"supershot", "5"}).offer.amount == 5);
     auto halo = get({"antideath"});
@@ -253,7 +254,7 @@ TEST_CASE("the inventory lines tell what a character is, carries and has gathere
     progress.inventory.keys = 2;
     progress.inventory.potions = {1, 4};
     progress.inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0.0f, 30.0f);
-    progress.inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 4.0f, -1.0f);
+    progress.inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 4.0f, -1.0f);
     progress.relics.addRune(0);
     progress.relics.addRune(5);
     progress.relics.addShard(3);
@@ -616,7 +617,6 @@ TEST_CASE("get info asks after the thing selected, or one named by its token",
     CHECK(error.find("get info") != std::string::npos);
     CHECK(ConsoleCommands::getUsage().find("get info [$SELECTED]") != std::string::npos);
 }
-
 
 TEST_CASE("goto takes a Legends map by name or platform, a preview of it, and the way back",
           "[dev-console][commands][legends]") {

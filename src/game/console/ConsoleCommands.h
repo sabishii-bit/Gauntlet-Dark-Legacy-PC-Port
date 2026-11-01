@@ -12,7 +12,7 @@
 
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Inventory.h"
-#include "game/characters/LegendsProgress.h"
+#include "expansions/shared/characters/LegendsProgress.h"
 #include "game/critters/CombatantKind.h"
 #include "game/level/LevelCatalog.h"
 #include "game/players/ItemPickup.h"

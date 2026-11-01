@@ -108,7 +108,7 @@ f32 PlayerMissiles::speedFor(s32 stat) {
 }
 
 bool PlayerMissiles::replayModifiers(u32 flags) {
-    return (flags & ~kReplayModifiers) == 0 && (flags & 0xFU) <= 4;
+    return (flags & ~kReplayModifiers) == 0 && (flags & damage::kElementMask) <= damage::kAcid;
 }
 
 f32 PlayerMissiles::reachFor(f32 attackSeconds) {
@@ -142,7 +142,7 @@ std::vector<MissileLaunch> PlayerMissiles::weaponLaunches(const WeaponThrow& wea
     launch.multiplayer = weapon.multiplayer;
     launch.reach = reachFor(weapon.attackSeconds);
     const bool superShot =
-        (weapon.flags & powerup::kSuperShot) != 0 && (weapon.flags & 0x02000000U) == 0;
+        (weapon.flags & damage::kSuperShot) != 0 && (weapon.flags & damage::kTurbo) == 0;
     launch.spec = superShot ? &MissileSpec::superShot() : &MissileSpec::of(weapon.character);
     if (weapon.shots == 5) {
         launch.wallSound = MissileWallSound::FiveWay;
@@ -427,7 +427,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
         for (auto& contact : missile.playerContacts) {
             contact.remaining -= seconds;
         }
-        const bool penetrates = missile.potion == 0 && (missile.flags & powerup::kSuperShot) != 0;
+        const bool penetrates = missile.potion == 0 && (missile.flags & damage::kSuperShot) != 0;
         // Steps no longer than half its size, so no wall is flown clean through.
         const f32 radius = missile.spec->radius;
         const f32 travel = glm::length(missile.velocity) * seconds;
@@ -478,10 +478,10 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                     impact.flags = missile.flags;
                     impact.effect = missile.spec->impactTree;
                     if (penetrates) {
-                        if ((missile.flags & powerup::kReflect) != 0 &&
+                        if ((missile.flags & damage::kReflect) != 0 &&
                             !missile.spec->impactTree.empty() && missile.damage > 2) {
                             // This update still passes through; the next contact update does not.
-                            missile.flags &= ~powerup::kSuperShot;
+                            missile.flags &= ~damage::kSuperShot;
                             impact.position = player.body.base;
                         } else {
                             impact.effect = {};
@@ -558,7 +558,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                 if (wall && !contacts.empty()) {
                     object = contacts.front().object;
                 }
-                if (missile.potion == 0 && (missile.flags & powerup::kReflect) != 0) {
+                if (missile.potion == 0 && (missile.flags & damage::kReflect) != 0) {
                     ++missile.continuity;
                     missile.presentationCaptured = false;
                     const Vec3 normal =

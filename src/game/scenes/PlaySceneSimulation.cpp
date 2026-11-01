@@ -74,9 +74,7 @@ SimulationObservation::Digest PlayScene::simulationControlDigest() const {
     // hidden camera velocities, RNG, rune cue latches and arbitration clocks.
     control.value(m_sim);
     m_camera.appendNativeDigest(control);
-    for (const TowerCamera& seat : m_seatCameras) {
-        seat.appendNativeDigest(control); // the seats' own cameras, solo or not
-    }
+    m_seats.appendNativeDigest(control); // the seats' own cameras, solo or not
     control.flag(PlayerPowerups::timeStopped(m_players));
     control.flag(m_context.stopTimeTotal != nullptr);
     if (m_context.stopTimeTotal != nullptr) {
@@ -96,14 +94,15 @@ SimulationObservation::Digest PlayScene::simulationControlDigest() const {
     control.word(m_sumnerVisit.menu().revision());
     control.flag(m_sumnerVisit.menu().reading());
     control.flag(m_sumnerVisit.menu().burning());
-    control.flag(m_promotion.active());
-    control.camera(m_promotion.camera());
-    control.flag(m_towerRelics.active());
-    control.word(static_cast<u32>(m_towerRelics.phase()));
-    control.word(m_towerRelics.displayedRunes());
-    control.word(m_towerRelics.displayedShards());
-    control.word(m_towerRelics.pendingCeremonies());
-    control.camera(m_towerRelics.camera());
+    control.flag(m_ceremonies.promotion().active());
+    control.camera(m_ceremonies.promotion().camera());
+    const TowerRelics& relics = m_ceremonies.relics();
+    control.flag(relics.active());
+    control.word(static_cast<u32>(relics.phase()));
+    control.word(relics.displayedRunes());
+    control.word(relics.displayedShards());
+    control.word(relics.pendingCeremonies());
+    control.camera(relics.camera());
     control.flag(m_messages.active());
     const auto message = m_messages.look();
     control.flag(message.has_value());
@@ -119,8 +118,8 @@ SimulationObservation::Digest PlayScene::simulationControlDigest() const {
     control.flag(m_departure.finished());
     control.real(m_departure.phase());
     control.word(static_cast<u32>(m_bossSequence.victory().state().stage()));
-    control.speech(m_promotionVoice.timing);
-    control.speech(m_relicVoice.timing);
+    control.speech(m_ceremonies.promotionVoice().timing);
+    control.speech(m_ceremonies.relicVoice().timing);
     control.speech(m_bossSequence.speechTiming());
     control.speech(m_audio.narrationTiming());
     control.flag(m_audio.narrationHeld());
@@ -187,13 +186,8 @@ bool PlayScene::registerNativeDigestResources() {
             return false;
         }
     }
-    // Corrected costume upgrades retain old figures so saved effects can still
-    // borrow their class banks. Visit the actual owners: the initial costume is
-    // not a promotion-cache entry. Register without activating or loading them.
-    for (const auto& figure : m_promotionFigures) {
-        if (figure && !figure->registerNativeResources(resources)) {
-            return false;
-        }
+    if (!m_ceremonies.registerRetainedFigures(resources)) {
+        return false;
     }
     return m_opponents.critters().registerNativeResources(resources, stage + "/critters") &&
            m_opponents.bosses().registerNativeResources(resources, stage + "/bosses") &&
@@ -203,7 +197,7 @@ bool PlayScene::registerNativeDigestResources() {
            m_fixtures.registerNativeResources(resources) &&
            m_arsenal.registerNativeResources(resources) &&
            m_portals.registerNativeResources(resources) &&
-           m_towerRelics.registerNativeResources(resources) &&
+           m_ceremonies.relics().registerNativeResources(resources) &&
            m_effects.registerNativeResources(resources) && resources.good();
 }
 

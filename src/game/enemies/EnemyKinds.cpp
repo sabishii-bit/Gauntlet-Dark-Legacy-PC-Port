@@ -76,18 +76,20 @@ const EnemyKind& enemyKind(s32 kind) {
 }
 
 bool smallKind(s32 kind) {
-    switch (kind) {
-    case 0:
-    case 3:
-    case 6:
-    case 9:
-    case 12:
-    case 15:
-    case 18:
-    case 21:
-    case 22: return true;
-    default: return false;
-    }
+    constexpr std::array kSmall{enemy_type::kScorpion, enemy_type::kRat,    enemy_type::kSnake,
+                                enemy_type::kSpider,   enemy_type::kMaggot, enemy_type::kWolf,
+                                enemy_type::kDog,      enemy_type::kAcid,   enemy_type::kHand};
+    return std::ranges::contains(kSmall, kind);
+}
+
+bool tieredSounds(s32 kind) {
+    constexpr std::array kTiered{
+        enemy_type::kTroll,    enemy_type::kDemon,    enemy_type::kGrunt,     enemy_type::kKnight,
+        enemy_type::kSorcerer, enemy_type::kMummy,    enemy_type::kLizardman, enemy_type::kTreefolk,
+        enemy_type::kZombie,   enemy_type::kPlague,   enemy_type::kIce,       enemy_type::kWorm,
+        enemy_type::kSkeleton, enemy_type::kGhost,    enemy_type::kImp,       enemy_type::kWarlock,
+        enemy_type::kSky,      enemy_type::kWhirlwind};
+    return std::ranges::contains(kTiered, kind);
 }
 
 s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {

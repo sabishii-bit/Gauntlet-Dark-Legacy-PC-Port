@@ -43,6 +43,7 @@ struct TreeNode {
         std::string object;
         s16 start = 0;
         s16 frames = 0;
+        bool interpolate = true; ///< false for discrete authored mesh swaps
     };
     std::vector<ObjectFrames> objectFrames; ///< an object node's, one per sequence
 };

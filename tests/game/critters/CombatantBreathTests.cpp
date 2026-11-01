@@ -80,6 +80,42 @@ TEST_CASE("breath uses a cylinder and an unexpanded horizontal distance window",
     REQUIRE_FALSE(point.touches(damage, {0, 3, 5}, 1, 3));
 }
 
+TEST_CASE("imported world-axis breath pitch acts after the posed forward and authored yaw",
+          "[game][enemies][breath][native-breath]") {
+    AttackDefinition damage;
+    damage.maxDistance = 10;
+    damage.yaw = std::numbers::pi_v<f32> / 2;
+    damage.pitch = std::numbers::pi_v<f32> / 6;
+    // Native yaw turns +Z into -X. World-X pitch cannot then tip it downward,
+    // unlike GDL's direction-dependent horizontal perpendicular.
+    const auto native = CombatantBreath::fromNode(Mat4{1}, damage, true);
+    CHECK(native.end.x == Approx(-10));
+    CHECK(native.end.y == Approx(0).margin(0.00001));
+    CHECK(native.end.z == Approx(0).margin(0.00001));
+    const auto ordinary = CombatantBreath::fromNode(Mat4{1}, damage);
+    CHECK(ordinary.end.x == Approx(-8.660254f));
+    CHECK(ordinary.end.y == Approx(-5));
+    CHECK(ordinary.origin == native.origin);
+
+    Mat4 posed = glm::translate(Mat4{1}, Vec3{10, 20, 30});
+    posed[2] = Vec4{1.2f, 1.6f, 0, 0};
+    damage.yaw = 0;
+    damage.offset = {0, 0, 2};
+    const auto inclined = CombatantBreath::fromNode(posed, damage, true);
+    CHECK(inclined.origin.x == Approx(12.4f));
+    CHECK(inclined.origin.y == Approx(23.2f));
+    CHECK(inclined.origin.z == Approx(30));
+    const Vec3 direction = (inclined.end - inclined.origin) / damage.maxDistance;
+    CHECK(direction.x == Approx(0.6f));
+    CHECK(direction.y == Approx(0.8f * std::cos(damage.pitch)));
+    CHECK(direction.z == Approx(0.4f));
+    CHECK(glm::length(inclined.end - inclined.origin) == Approx(damage.maxDistance));
+
+    posed[2] = Vec4{0};
+    const auto zero = CombatantBreath::fromNode(posed, damage, true);
+    CHECK(zero.end == zero.origin);
+}
+
 TEST_CASE("critter damage loading preserves the breath's inner distance limit",
           "[game][enemies][breath]") {
     const auto file = test::scratchDirectory("breath-damage") / "creature.json";

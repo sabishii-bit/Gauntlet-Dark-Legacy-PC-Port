@@ -18,6 +18,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
+#include "game/critters/CombatantCheckpoint.h"
 #include "game/critters/Critters.h"
 #include "game/critters/Gargoyle.h"
 #include "game/critters/General.h"
@@ -25,6 +26,7 @@
 #include "game/critters/HeadedBodyFixture.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/NativeStateResources.h"
 
 namespace {
 using namespace gdl;
@@ -729,6 +731,8 @@ TEST_CASE("combatant volleys keep their move target while the next attack select
     test::FakeRenderDevice device;
     CombatantAssets assets;
     REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    CHECK(assets.data.rules().projectileTargetHeight < 0);
+    CHECK_FALSE(assets.data.rules().restoreCaptureSupport);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
     std::array<EnemyView, 4> players;
@@ -979,8 +983,9 @@ TEST_CASE("ordinary taunts obey the same health and cooldown gates as bosses",
     }
 }
 
-TEST_CASE("ready step cooldown includes its animation before the rest interval",
-          "[combatant][critter-ready]") {
+TEST_CASE("ready step cooldown preserves the family's animation or move-entry origin",
+          "[combatant][critter-ready][move-cooldown]") {
+    const bool cooldownStartsWithMove = GENERATE(false, true);
     const auto root = familyAssets();
     writeTextFile(root / "MONSTERS/GENERAL/LEVELG/animations.json", R"({"trees":[{"name":"BODY",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
@@ -993,8 +998,12 @@ TEST_CASE("ready step cooldown includes its animation before the rest interval",
     test::FakeRenderDevice device;
     CombatantAssets assets;
     REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    REQUIRE_FALSE(assets.cooldownStartsWithMove);
+    assets.cooldownStartsWithMove = cooldownStartsWithMove;
     Combatant actor;
     REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
+    const std::array resources{CombatantCheckpoint::Resource{1, &assets}};
+    CombatantCheckpoint observation(actor, resources, {});
     EnemyView player;
     player.player = 3;
     player.position = {0, 0, 20};
@@ -1002,14 +1011,49 @@ TEST_CASE("ready step cooldown includes its animation before the rest interval",
     actor.update(2, 3.0f / 30, players);
     actor.update(2, 1.0f / 30, players);
     REQUIRE(actor.moveName() == "WALK");
+    const auto started = observation.checkpoint();
+    REQUIRE(started);
+    const auto& state = started->parts.front().actor;
+    const auto walk = assets.data.moveNamed("WALK");
+    REQUIRE(walk);
+    CHECK(state.moveTimes[*walk] == Approx(state.age + (cooldownStartsWithMove ? 0 : 28.0f / 30)));
     actor.update(2, 1.0f, players);
     REQUIRE(actor.moveDone());
     actor.update(2, 1.0f / 30, players);
-    CHECK(actor.moveName() == "READY");
+    CHECK(actor.moveName() == (cooldownStartsWithMove ? "WALK" : "READY"));
     for (s32 frame = 0; frame < 35 && actor.moveName() != "WALK"; ++frame) {
         actor.update(2, 1.0f / 30, players);
     }
     CHECK(actor.moveName() == "WALK");
+}
+
+TEST_CASE("combatant immutable timing policies participate in resource identity",
+          "[combatant][move-cooldown][native-state-resources]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets ordinary, imported;
+    REQUIRE(ordinary.load(device, root, General::definition(), 'G'));
+    REQUIRE(imported.load(device, root, General::definition(), 'G'));
+    const auto hash = [](const CombatantAssets& assets) {
+        NativeStateResources resources;
+        REQUIRE(resources.registerCombatantAssets(assets, "test/fighter"));
+        NativeStateDigest digest(resources.resources());
+        digest.resource(&assets);
+        REQUIRE(digest.checkedFinish());
+        return *digest.checkedFinish();
+    };
+    const auto original = hash(ordinary);
+    CHECK(hash(imported) == original);
+    imported.cooldownStartsWithMove = true;
+    CHECK(hash(imported) != original);
+    imported.cooldownStartsWithMove = false;
+    imported.projectileLifetime = 5;
+    CHECK(hash(imported) != original);
+    imported.clear();
+    CHECK_FALSE(imported.cooldownStartsWithMove);
+    CHECK(imported.projectileLifetime == 0);
+    REQUIRE(imported.load(device, root, General::definition(), 'G'));
+    CHECK(hash(imported) == original);
 }
 
 TEST_CASE("native eagle gargoyle approaches a player beyond its attack ranges",

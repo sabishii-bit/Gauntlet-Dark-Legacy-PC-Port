@@ -98,6 +98,9 @@ bool RollbackInputs::open(u8 localPeer, u64 epoch, const Owners& owners, const G
 }
 
 bool RollbackInputs::suspendedSeat(usize seat, u64 tick) const {
+    if (seat >= m_owners.size()) {
+        return false;
+    }
     const u8 owner = m_owners[seat];
     return owner != 0 && m_suspendedFrom[owner] != 0 && tick >= m_suspendedFrom[owner];
 }
@@ -120,7 +123,7 @@ bool RollbackInputs::complete(u64 tick, const Actual& frame) const {
     return true;
 }
 
-bool RollbackInputs::suspend(u8 peer, u64 fromTick) {
+bool RollbackInputs::suspend(u8 peer, u64 fromTick, u64 settledThrough) {
     if (!m_open || !occupied(peer) || peer == m_local || fromTick == 0) {
         return false;
     }
@@ -128,20 +131,22 @@ bool RollbackInputs::suspend(u8 peer, u64 fromTick) {
         return m_suspendedFrom[peer] == fromTick;
     }
     m_suspendedFrom[peer] = fromTick;
-    // Ticks already executed on a prediction become actual neutral input; a prediction
-    // that was not neutral is corrected like any other.
+    // Ticks already executed on a prediction become actual neutral input, and so does input
+    // a direct link brought here before the host had it: every peer holds the host's tick.
+    // Whatever was used and was not neutral is corrected like any other misprediction.
+    const u64 revisable = std::max(fromTick, settledThrough + 1);
     for (auto& [tick, actual] : m_actual) {
-        if (tick < fromTick) {
+        if (tick < revisable) {
             continue;
         }
         for (usize seat = 0; seat < m_owners.size(); ++seat) {
-            if (m_owners[seat] == peer && !actual[seat]) {
+            if (m_owners[seat] == peer) {
                 actual[seat] = neutral(static_cast<u8>(seat), tick);
             }
         }
     }
     for (const auto& [tick, used] : m_used) {
-        if (tick < fromTick) {
+        if (tick < revisable) {
             continue;
         }
         for (usize seat = 0; seat < m_owners.size(); ++seat) {
@@ -150,6 +155,11 @@ bool RollbackInputs::suspend(u8 peer, u64 fromTick) {
                 m_mismatch = m_mismatch ? std::min(*m_mismatch, tick) : tick;
             }
         }
+    }
+    // The seats leave play at fromTick too (NativeRollbackDriver), so the unsettled ticks
+    // already simulated from there replay, even where the guess was right.
+    if (const auto executed = m_used.lower_bound(revisable); executed != m_used.end()) {
+        m_mismatch = m_mismatch ? std::min(*m_mismatch, executed->first) : executed->first;
     }
     while (m_actualThrough != std::numeric_limits<u64>::max()) {
         const auto next = m_actual.find(m_actualThrough + 1);
@@ -314,7 +324,22 @@ std::vector<InputCommand> RollbackInputs::resendInputs(u64 firstTick) const {
 
 u64 RollbackInputs::confirmedTick() const {
     const u64 executed = m_next - 1;
-    return std::min({m_actualThrough, executed, m_mismatch.value_or(m_next) - 1});
+    u64 held = std::numeric_limits<u64>::max();
+    for (u8 peer = 2; peer <= 4; ++peer) {
+        // A dropped peer's earlier input is all the host's, as its drop says.
+        if (m_hostReceipts[peer] && m_suspendedFrom[peer] == 0) {
+            held = std::min(held, *m_hostReceipts[peer]);
+        }
+    }
+    return std::min({m_actualThrough, executed, m_mismatch.value_or(m_next) - 1, held});
+}
+
+bool RollbackInputs::observeHostReceipt(u8 peer, u64 through) {
+    if (!m_open || m_local == 1 || peer == 1 || peer == m_local || !occupied(peer)) {
+        return false;
+    }
+    m_hostReceipts[peer] = std::max(m_hostReceipts[peer].value_or(0), through);
+    return true;
 }
 
 bool RollbackInputs::ready() const {
@@ -483,6 +508,9 @@ bool RollbackInputs::adoptActual(const InputCommand& command) {
         (command.console &&
          (m_owners[command.seat] != 1 || m_owners[command.console->seat] == 0))) {
         return false;
+    }
+    if (suspendedSeat(command.seat, command.tick)) {
+        return true; // still from its drop on, as live input from there is ignored
     }
     auto& slot = m_actual[command.tick][command.seat];
     if (slot) {

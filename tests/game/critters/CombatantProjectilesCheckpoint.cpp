@@ -27,7 +27,8 @@ bool kind(CombatantKind value) {
 }
 auto areaValues(const CritterArea& v) {
     return std::tie(v.local, v.node, v.worldParent, v.velocity, v.displacement, v.radius, v.minDot,
-                    v.damage, v.flags, v.secondsLeft, v.lifetime, v.expanding);
+                    v.damage, v.flags, v.secondsLeft, v.lifetime, v.expanding, v.linearGrowth,
+                    v.halfHeight);
 }
 bool areaValid(const CritterArea& v) {
     return matrix(v.local) && name(v.node) && (!v.worldParent || matrix(*v.worldParent)) &&

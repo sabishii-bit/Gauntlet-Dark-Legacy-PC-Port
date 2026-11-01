@@ -11,6 +11,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerRuntimeCheckpoint.h"
@@ -51,7 +52,7 @@ struct Fixture {
         // not an independently reimplemented damage formula.
         if (tick % 7 == 0) {
             health.hurt(runtime, 7.25f, HurtKind::Blow, true, false, 1, healthEvents,
-                        {PlayerImpact::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
+                        {damage::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
         }
         if (tick % 11 == 0) {
             auto& progress = runtime.actor.save().progress();
@@ -184,7 +185,7 @@ TEST_CASE("runtime checkpoint preserves inactive inventory slots all classes and
     runtime.deathDrainTicks = 1;
     runtime.deathHaloHeard = true;
     runtime.reaction = PlayerDeed::Flinch;
-    runtime.knockback.queue({0, 0, 1}, PlayerImpact::kKnockBack, 30);
+    runtime.knockback.queue({0, 0, 1}, damage::kKnockBack, 30);
     runtime.turbo.add(73);
     runtime.pojoTurbo = true;
     runtime.helpHeard = {13, 2, 13};

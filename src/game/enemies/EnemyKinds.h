@@ -39,18 +39,56 @@ struct EnemyKind {
     f32 healthAtTier(s32 tier) const;
 };
 
+/** The original's enemy types (e_e_tpye), the kind codes of every table here: the swarm's
+ * twenty-eight, then the great ones. Code 28 counts the swarm and is no kind's. */
+namespace enemy_type {
+inline constexpr s32 kScorpion = 0;
+inline constexpr s32 kTroll = 1;
+inline constexpr s32 kDemon = 2;
+inline constexpr s32 kRat = 3;
+inline constexpr s32 kGrunt = 4;
+inline constexpr s32 kKnight = 5;
+inline constexpr s32 kSnake = 6;
+inline constexpr s32 kSorcerer = 7;
+inline constexpr s32 kMummy = 8;
+inline constexpr s32 kSpider = 9;
+inline constexpr s32 kLizardman = 10;
+inline constexpr s32 kTreefolk = 11;
+inline constexpr s32 kMaggot = 12;
+inline constexpr s32 kZombie = 13;
+inline constexpr s32 kPlague = 14;
+inline constexpr s32 kWolf = 15;
+inline constexpr s32 kIce = 16;
+inline constexpr s32 kWorm = 17;
+inline constexpr s32 kDog = 18;
+inline constexpr s32 kSkeleton = 19;
+inline constexpr s32 kGhost = 20;
+inline constexpr s32 kAcid = 21;
+inline constexpr s32 kHand = 22;
+inline constexpr s32 kImp = 23;
+inline constexpr s32 kWarlock = 24;
+inline constexpr s32 kSky = 25;
+inline constexpr s32 kWhirlwind = 26;
+inline constexpr s32 kGarm2 = 27; ///< Garm's brood, not Garm himself
+inline constexpr s32 kGolem = 29;
+inline constexpr s32 kDeath = 30;
+inline constexpr s32 kIt = 31;
+inline constexpr s32 kGargoyle = 32;
+inline constexpr s32 kGeneral = 33;
+} // namespace enemy_type
+
 /** The kinds in the original's order: the swarm first, then the great ones. */
-inline constexpr s32 kEnemyKindCount = 34;
-inline constexpr s32 kSwarmKindCount = 28; ///< the kinds that come in tiers
-inline constexpr s32 kGruntKind = 4;
-inline constexpr s32 kRatKind = 3;
-inline constexpr s32 kWormKind = 17;
-inline constexpr s32 kDeathKind = 30;
-inline constexpr s32 kItKind = 31;
-inline constexpr s32 kGarmBroodKind = 27; ///< what Garm breeds
-inline constexpr s32 kGolemEnemyKind = 29;
-inline constexpr s32 kGargoyleEnemyKind = 32;
-inline constexpr s32 kGeneralEnemyKind = 33;
+inline constexpr s32 kEnemyKindCount = enemy_type::kGeneral + 1;
+inline constexpr s32 kSwarmKindCount = enemy_type::kGarm2 + 1; ///< the kinds that come in tiers
+inline constexpr s32 kGruntKind = enemy_type::kGrunt;
+inline constexpr s32 kRatKind = enemy_type::kRat;
+inline constexpr s32 kWormKind = enemy_type::kWorm;
+inline constexpr s32 kDeathKind = enemy_type::kDeath;
+inline constexpr s32 kItKind = enemy_type::kIt;
+inline constexpr s32 kGarmBroodKind = enemy_type::kGarm2; ///< what Garm breeds
+inline constexpr s32 kGolemEnemyKind = enemy_type::kGolem;
+inline constexpr s32 kGargoyleEnemyKind = enemy_type::kGargoyle;
+inline constexpr s32 kGeneralEnemyKind = enemy_type::kGeneral;
 
 const EnemyKind& enemyKind(s32 kind);
 
@@ -72,5 +110,8 @@ s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength);
 
 /** Whether the kind is one of the small ones, which only ever prowl. */
 bool smallKind(s32 kind);
+/** Whether the kind's hit and bite sounds come a set a tier: its sound stem then ends in the
+ * set's digit. */
+bool tieredSounds(s32 kind);
 
 } // namespace gdl::game

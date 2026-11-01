@@ -19,6 +19,7 @@ add_library(game STATIC
     netplay/RollbackExchange.cpp
     rollback/FrameEventLedger.cpp
     audio/SceneSoundEvents.cpp
+    audio/AnnouncementSubject.h
     level/NativeStateResources.cpp
     netplay/NativeAgreement.cpp
     rollback/ShotIdentity.cpp
@@ -86,52 +87,9 @@ add_library(game STATIC
     shop/ShopLayout.cpp
     app/Gauntlet.h
     app/Gauntlet.cpp
-    app/GauntletLegends.cpp
-    scenes/LegendsPreview.cpp
-    scenes/LegendsLevel.cpp
-    level/LegendsUnlocks.cpp
-    level/LegendsPortalAppearance.cpp
-    bosses/LegendsBosses.cpp
-    critters/LegendsCritters.cpp
+    app/ImportedShop.cpp
+    app/ImportedShop.h
     enemies/LevelOpponentsImported.cpp
-    enemies/LegendsActors.cpp
-    scenes/LegendsLevelBoss.cpp
-    scenes/LegendsSceneBoss.cpp
-    scenes/LegendsSceneArena.cpp
-    scenes/LegendsWorldPresentation.cpp
-    camera/LegendsCamera.cpp
-    level/LegendsTowerMotion.cpp
-    level/LegendsTowerProgress.cpp
-    level/LegendsTowerPortals.cpp
-    level/LegendsGates.cpp
-    level/LegendsPortals.cpp
-    scenes/LegendsTraversal.cpp
-    scenes/LegendsMusic.cpp
-    scenes/LegendsMapCatalog.cpp
-    scenes/LegendsSceneAdapter.cpp
-    scenes/LegendsLevelEffects.cpp
-    scenes/LegendsSceneTraps.cpp
-    audio/LegendsSounds.cpp
-    scenes/LegendsSceneContainers.cpp
-    scenes/LegendsSceneProgress.cpp
-    scenes/LegendsSceneRiders.cpp
-    scenes/LegendsSceneGenerators.cpp
-    scenes/LegendsScrolls.cpp
-    level/LegendsContainers.cpp
-    level/LegendsBlast.cpp
-    level/LegendsTraps.cpp
-    level/LegendsSwitches.cpp
-    level/LegendsLootSelectors.cpp
-    level/LegendsWorldMotion.cpp
-    scenes/LegendsSceneSwitches.cpp
-    enemies/LegendsGenerators.cpp
-    scenes/LegendsInitialPose.cpp
-    scenes/LegendsN64Music.cpp
-    characters/LegendsProgress.cpp
-    characters/LegendsVisit.cpp
-    level/LegendsItems.cpp
-    level/LegendsN64Items.cpp
-    level/LegendsDreamcastItems.cpp
     app/GauntletNetplay.cpp
     app/GameCursor.cpp
     app/BuildLabel.cpp
@@ -275,6 +233,7 @@ add_library(game STATIC
     bosses/BossDefinition.cpp
     critters/CombatantPatterns.cpp
     critters/CritterArea.cpp
+    critters/CritterPressure.cpp
     critters/CombatantAreas.cpp
     bosses/BossCoins.cpp
     bosses/SkorneRelics.cpp
@@ -329,8 +288,8 @@ add_library(game STATIC
     tower/TowerPromotion.cpp
     tower/TowerRelics.cpp
     tower/TowerCompletion.cpp
-    scenes/PlaySceneRelics.cpp
-    scenes/PlayScenePromotion.cpp
+    scenes/TowerCeremonies.cpp
+    scenes/PlaySceneCeremonies.cpp
     scenes/PlaySceneRewind.cpp
     party/PlayerArsenal.cpp
     effects/PotionEmission.cpp
@@ -354,6 +313,7 @@ add_library(game STATIC
     level/Rotators.h
     level/Rotators.cpp
     menu/ScrollBox.h
+    menu/DialoguePresentation.h
     menu/ScrollBox.cpp
     menu/MenuInput.h
     menu/MenuInput.cpp
@@ -414,8 +374,12 @@ add_library(game STATIC
     scenes/PlayerSelectScene.h
     scenes/PlayerSelectScene.cpp
     bosses/LegendPresentation.h
+    audio/LegendSound.h
     bosses/LegendPresentation.cpp
     scenes/PlayScene.h
+    scenes/ScenePicking.h
+    scenes/SeatCameras.h
+    scenes/TowerCeremonies.h
     party/PartyMotion.cpp
     party/PartyCollision.cpp
     party/FloorRiding.cpp
@@ -447,18 +411,21 @@ add_library(game STATIC
     effects/WeaponTrail.cpp
     party/PlayerHealth.cpp
     scenes/PlayScene.cpp
+    scenes/PlaySceneImported.cpp
     scenes/PlaySceneConsole.cpp
     scenes/PlaySceneTransport.cpp
     scenes/PlaySceneMotion.cpp
     scenes/PlaySceneHarm.cpp
     scenes/PlaySceneCamera.cpp
-    scenes/PlaySceneSelection.cpp
+    scenes/ScenePicking.cpp
+    scenes/SeatCameras.cpp
     scenes/SceneSelection.cpp
     scenes/PlaySceneSwitch.cpp
     level/SwitchCutscene.cpp
     level/SwitchCutscene.h)
 
 add_library(gdl::game ALIAS game)
+gdl_add_expansion_game_sources(game)
 
 # The online compatibility identity digests the sources rather than the executable. The
 # digest is taken on every build; the unit is rewritten only when it changes.

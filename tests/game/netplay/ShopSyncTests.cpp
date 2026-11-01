@@ -217,6 +217,10 @@ TEST_CASE("a dropped guest's pending shop transaction is discarded and the shop 
     CHECK(pair.host.dropped(2));
     REQUIRE(pair.host.shop().setup());
     CHECK(pair.host.shop().finished()); // the dropped seat holds the shop no longer
-    CHECK(pair.host.receive(1, pending) == MatchSession::Admission::WrongPeer);
+    // What the dropped guest still sends is ignored: its purchase never reaches the shop.
+    CHECK(pair.host.receive(1, pending) == MatchSession::Admission::Stale);
+    const auto step = pair.host.shop().advance();
+    REQUIRE(step);
+    CHECK_FALSE(step->inputs[1].select);
 }
 } // namespace

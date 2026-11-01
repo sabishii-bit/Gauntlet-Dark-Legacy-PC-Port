@@ -60,6 +60,8 @@ jobs:
         run: python -m unittest discover -s tests/scripts -v
       - name: Build and unit tests
         run: python scripts/build.py --test
+      - name: Expansion audio without optional backend
+        run: python scripts/checks/expansion_audio.py
 
   linux:
     name: Linux (GCC)
@@ -81,6 +83,8 @@ jobs:
         run: python3 -m unittest discover -s tests/scripts -v
       - name: Tools, build and unit tests
         run: python3 scripts/setup.py --yes --test
+      - name: Expansion audio without optional backend
+        run: python3 scripts/checks/expansion_audio.py
       # The GPU tier on a software Vulkan device under a virtual display: best effort, as
       # what lavapipe can do differs between Mesa releases.
       - name: GPU tests (lavapipe under Xvfb)

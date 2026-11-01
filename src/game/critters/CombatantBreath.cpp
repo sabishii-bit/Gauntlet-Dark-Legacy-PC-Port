@@ -7,7 +7,8 @@
 #include "engine/math/PortableMath.h"
 
 namespace gdl::game {
-CombatantBreath CombatantBreath::fromNode(const Mat4& node, const AttackDefinition& damage) {
+CombatantBreath CombatantBreath::fromNode(const Mat4& node, const AttackDefinition& damage,
+                                          bool worldAxisPitch) {
     Vec3 forward{node[2]};
     const f32 length = glm::length(forward);
     if (length > 0.0f) {
@@ -18,11 +19,18 @@ CombatantBreath CombatantBreath::fromNode(const Mat4& node, const AttackDefiniti
     forward = {forward.x * cy - forward.z * sy, forward.y, forward.z * cy + forward.x * sy};
     const f32 cp = portable::cos(damage.pitch);
     const f32 sp = portable::sin(damage.pitch);
-    // Pitch about the horizontal perpendicular of the yawed direction, as authored.
-    // Do not substitute a world-X rotation or renormalize its horizontal axis.
-    const Vec3 direction{sp * forward.x * forward.y + forward.x * cp,
-                         forward.y * cp - sp * (forward.x * forward.x + forward.z * forward.z),
-                         sp * forward.y * forward.z + forward.z * cp};
+    Vec3 direction;
+    if (worldAxisPitch) {
+        // N64 e0887410 passes the posed forward directly through e0014400:
+        // X stays fixed; the original Y/Z rotate without a second node transform.
+        direction = {forward.x, forward.y * cp - forward.z * sp, forward.z * cp + forward.y * sp};
+    } else {
+        // GDL pitches about the horizontal perpendicular of the yawed direction.
+        // Do not normalize that axis or replace it with the imported world-X rule.
+        direction = {sp * forward.x * forward.y + forward.x * cp,
+                     forward.y * cp - sp * (forward.x * forward.x + forward.z * forward.z),
+                     sp * forward.y * forward.z + forward.z * cp};
+    }
     const Vec3 origin{node * Vec4{damage.offset, 1.0f}};
     return {origin, origin + direction * damage.maxDistance};
 }

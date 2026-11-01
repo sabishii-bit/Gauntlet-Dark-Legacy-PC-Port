@@ -95,7 +95,7 @@ struct NativeRollbackDriver::Data {
         pending.clear();
         return true;
     }
-    void filterArrival(SessionInputs::Frame& frame) {
+    void filterArrival(SessionInputs::Frame& frame, u64 tick) {
         const auto& camera = scene->arrival().camera();
         if (!camera.active()) {
             control.arrivalVotes = {};
@@ -104,10 +104,14 @@ struct NativeRollbackDriver::Data {
         const bool eligible = camera.mode() == StartCamera::Mode::Legacy &&
                               camera.phase() == StartCamera::Phase::Hold &&
                               camera.ticksLeft() <= StartCamera::kSkipBelow;
+        // A dropped peer's seat never holds up the skip, as with the entry movie's vote.
+        const auto voting = [&](usize seat) {
+            return context.owners[seat] != 0 && !inputs.suspendedSeat(seat, tick);
+        };
         bool unanimous = eligible;
         for (usize seat = 0; seat < frame.size(); ++seat) {
             auto& menu = frame[seat].menu;
-            if (eligible && context.owners[seat] != 0) {
+            if (eligible && voting(seat)) {
                 control.arrivalVotes[seat] =
                     control.arrivalVotes[seat] || menu.start || menu.select || menu.back;
                 unanimous = unanimous && control.arrivalVotes[seat];
@@ -116,7 +120,7 @@ struct NativeRollbackDriver::Data {
         }
         if (unanimous) {
             for (usize seat = 0; seat < frame.size(); ++seat) {
-                frame[seat].menu.select = context.owners[seat] != 0;
+                frame[seat].menu.select = voting(seat);
             }
         }
     }
@@ -138,6 +142,13 @@ struct NativeRollbackDriver::Data {
         if (!frame) {
             return fail(Failure::Input);
         }
+        // A dropped peer's characters leave play at its first still tick on every peer,
+        // however late the drop reached this one: suspension runs the ticks after it again.
+        for (usize seat = 0; seat < context.owners.size(); ++seat) {
+            if (inputs.suspendedSeat(seat, tick)) {
+                scene->waitInTower(static_cast<s32>(seat));
+            }
+        }
         SessionInputs::Frame commands;
         std::vector<ConsoleAction> console;
         for (usize seat = 0; seat < commands.size(); ++seat) {
@@ -146,7 +157,7 @@ struct NativeRollbackDriver::Data {
                 console.push_back(*frame->commands[seat].console);
             }
         }
-        filterArrival(commands);
+        filterArrival(commands, tick);
         auto output = scene->recordStep(context.epoch, tick, 1.0 / 60, commands, console);
         if (!output.consoleReplies.empty() && (!rebuildThrough || tick > *rebuildThrough)) {
             consoleReplies[tick] = std::move(output.consoleReplies);
@@ -401,6 +412,15 @@ bool NativeRollbackDriver::rebind(PlayScene& scene, const MatchContext& context,
     m_rebinding = false;
     return bound;
 }
+bool NativeRollbackDriver::restoreBinding() {
+    const auto& data = *m_data;
+    if (data.failed != Failure::None || data.scene == nullptr ||
+        !data.scene->restoreLocal(data.binding)) {
+        return false;
+    }
+    clear();
+    return true;
+}
 const EpochInputJournal& NativeRollbackDriver::journal() const {
     return m_data->journal;
 }
@@ -417,7 +437,11 @@ bool NativeRollbackDriver::adopt(std::span<const InputCommand> commands) {
 }
 bool NativeRollbackDriver::suspend(u8 peer, u64 fromTick) {
     auto& data = *m_data;
-    return data.failed == Failure::None && data.inputs.suspend(peer, fromTick);
+    return data.failed == Failure::None && data.inputs.suspend(peer, fromTick, data.confirmed);
+}
+bool NativeRollbackDriver::observeHostReceipt(u8 peer, u64 through) {
+    auto& data = *m_data;
+    return data.failed == Failure::None && data.inputs.observeHostReceipt(peer, through);
 }
 bool NativeRollbackDriver::beginRebuild(u64 through) {
     auto& data = *m_data;
@@ -606,9 +630,6 @@ std::array<bool, InputCommand::kSeats> NativeRollbackDriver::arrivalVotes() cons
 }
 std::span<const InputCommand> NativeRollbackDriver::redundantInputs() const {
     return m_data->inputs.redundantInputs();
-}
-std::vector<InputCommand> NativeRollbackDriver::resendInputs(u64 firstTick) const {
-    return m_data->inputs.resendInputs(firstTick);
 }
 const NativeRollbackDriver::Statistics& NativeRollbackDriver::statistics() const {
     return m_data->stats;

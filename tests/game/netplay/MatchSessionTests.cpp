@@ -944,6 +944,131 @@ TEST_CASE("a guest detecting its host closure in send still stops the match",
     CHECK_FALSE(room.sessions[2].dropped(1));
 }
 
+TEST_CASE("a dropped guest's shop messages never hold up the rest of the shop",
+          "[netplay][match-session][drop][online-shop]") {
+    Room room({1, 2, 3, 0});
+    room.ready();
+    room.completeOne();
+    auto& host = room.sessions[1];
+    const auto party = room.party();
+    ShopSetup setup;
+    setup.source = 7;
+    setup.destination = 8;
+    setup.maxima = {1000, 100, 1000};
+    REQUIRE(host.prepare(7, MatchTransition::Shop, &party, &setup));
+    // The setup waits for each guest when guest two's link closes.
+    REQUIRE(host.shop().outgoing().size() == 2);
+    REQUIRE(host.disconnected(1));
+    REQUIRE(host.dropped(2));
+    // As the provider does, a connection it does not hold refuses every send.
+    struct Provider final : PacketTransport {
+        usize shopPackets = 0;
+        usize refused = 0;
+        SendResult send(Connection connection, std::span<const u8> bytes,
+                        Delivery /*delivery*/) override {
+            if (connection != 2) {
+                ++refused;
+                return SendResult::Disconnected;
+            }
+            if (ShopSync::recognizes(bytes)) {
+                ++shopPackets;
+            }
+            return SendResult::Sent;
+        }
+        std::vector<Event> poll() override { return {}; }
+        std::optional<Statistics> statistics(Connection /*connection*/) const override {
+            return std::nullopt;
+        }
+        void close(Connection /*connection*/) override {}
+    } provider;
+    for (u32 attempt = 0; attempt < 3; ++attempt) {
+        host.flush(provider);
+    }
+    CHECK(provider.refused == 0);
+    CHECK(host.shop().outgoing().empty());
+    CHECK(provider.shopPackets == 1); // guest three's setup
+    // Every later step still names the dropped guest; its copy is let go each time.
+    const auto step = host.shop().advance();
+    REQUIRE(step);
+    REQUIRE(host.shop().publish(*step));
+    host.flush(provider);
+    CHECK(provider.refused == 0);
+    CHECK(host.shop().outgoing().empty());
+    CHECK(provider.shopPackets == 2);
+    CHECK(host.phase() == Phase::Loading);
+}
+
+TEST_CASE("a dropped guest holds none of the shops the host opens after its drop",
+          "[netplay][match-session][drop][online-shop]") {
+    const bool earlier = GENERATE(false, true);
+    CAPTURE(earlier);
+    Room room({1, 2, 0, 0});
+    room.ready();
+    room.completeOne();
+    auto& host = room.sessions[1];
+    const auto party = room.party();
+    ShopSetup setup;
+    setup.source = 7;
+    setup.destination = 8;
+    setup.maxima = {1000, 100, 1000};
+    // Dropped in the level before, or while the shop loads.
+    if (earlier) {
+        REQUIRE(host.disconnected(1));
+    }
+    REQUIRE(host.prepare(7, MatchTransition::Shop, &party, &setup));
+    if (!earlier) {
+        REQUIRE(host.disconnected(1));
+    }
+    REQUIRE(host.dropped(2));
+    CHECK_FALSE(host.shop().finished());
+    REQUIRE(host.shop().finish());
+    CHECK(host.shop().finished()); // the host's own lane was the last one owed
+}
+
+TEST_CASE("a guest dropped mid-shop leaves its lane at the host's next step on every peer",
+          "[netplay][match-session][drop][online-shop]") {
+    Room room({1, 2, 3, 0});
+    room.ready();
+    room.completeOne();
+    auto& host = room.sessions[1];
+    auto& guest = room.sessions[2];
+    const auto party = room.party();
+    ShopSetup setup;
+    setup.source = 7;
+    setup.destination = 8;
+    setup.maxima = {1000, 100, 1000};
+    REQUIRE(host.prepare(7, MatchTransition::Shop, &party, &setup));
+    const auto epoch = host.context().epoch;
+    for (u32 step = 0; step < 3; ++step) {
+        const auto ran = host.shop().advance();
+        REQUIRE(ran);
+        REQUIRE(host.shop().publish(*ran));
+    }
+    REQUIRE(host.disconnected(2)); // guest three's link closes after the third step
+    REQUIRE(host.dropped(3));
+    const auto drops = host.dropsFor(epoch);
+    REQUIRE(drops.size() == 1);
+    CHECK(drops.front().tick == 4);
+    CHECK_FALSE(host.shopLaneGone(3, epoch, 2));
+    CHECK(host.shopLaneGone(3, epoch, 3));
+    CHECK_FALSE(host.shopLaneGone(2, epoch, 3));
+    // Controls go out ahead of shop steps, so the drop reaches guest two before the steps the
+    // host ran with the lane still open; guest two still ends it only from the fourth.
+    host.flush(room.wires[1]);
+    const auto sent = std::move(room.wires[1].sent);
+    room.wires[1].sent.clear();
+    for (const auto& packet : sent) {
+        if (packet.connection == 1) {
+            const auto admitted = guest.receive(99, packet.bytes);
+            CHECK((admitted == Admission::Accepted || admitted == Admission::Stale));
+        }
+    }
+    REQUIRE(guest.dropped(3));
+    CHECK(guest.dropsFor(epoch) == drops);
+    CHECK_FALSE(guest.shopLaneGone(3, epoch, 2));
+    CHECK(guest.shopLaneGone(3, epoch, 3));
+}
+
 TEST_CASE("transport send failure terminates loading instead of pretending a start succeeded",
           "[netplay][match-session]") {
     Room room({1, 2, 0, 0});
@@ -1061,4 +1186,39 @@ TEST_CASE("a guest's direct links feed the input exchange and nothing else",
     CHECK(guest.directLinks() == 0);
     CHECK(guest.receive(5, *inputs) == MatchSession::Admission::WrongPeer);
     CHECK(guest.phase() == MatchSession::Phase::Lobby);
+}
+
+TEST_CASE("a drop made once the host prepares reaches a guest still finishing the stage",
+          "[netplay][match-session][online-shop][drop]") {
+    Room room({1, 2, 3, 0});
+    room.ready();
+    room.completeOne();
+    auto& host = room.sessions[1];
+    auto& guest = room.sessions[3];
+    const auto party = room.party();
+    ShopSetup setup;
+    setup.source = 7;
+    setup.destination = 8;
+    REQUIRE(host.prepare(7, MatchTransition::Shop, &party, &setup));
+    REQUIRE(host.disconnected(1)); // guest two leaves as the tally begins
+    host.flush(room.wires[1]);
+    const auto sent = std::move(room.wires[1].sent);
+    room.wires[1].sent.clear();
+    // Prepare, the profiles, the drop and the shop setup arrive in one batch, before guest
+    // three has finished the stage it is leaving.
+    for (const auto& packet : sent) {
+        if (packet.connection == 2) {
+            const auto admitted = guest.receive(99, packet.bytes);
+            CHECK((admitted == Admission::Accepted || admitted == Admission::Stale));
+        }
+    }
+    REQUIRE(guest.pendingNativeContext());
+    CHECK(guest.dropped(2));
+    CHECK(guest.dropsFor(guest.context().epoch).empty()); // not in the stage it finishes
+    REQUIRE(guest.completeNativeBoundary(guest.context().epoch, room.completed[3]));
+    REQUIRE(guest.context() == host.context());
+    const auto drops = guest.dropsFor(guest.context().epoch);
+    REQUIRE(drops.size() == 1);
+    CHECK(drops.front().peer == 2);
+    CHECK(drops.front().tick == host.dropsFor(host.context().epoch).front().tick);
 }

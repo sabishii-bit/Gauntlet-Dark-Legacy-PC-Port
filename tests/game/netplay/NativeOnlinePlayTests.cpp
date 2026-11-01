@@ -3,6 +3,8 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <optional>
+#include <span>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -426,7 +428,7 @@ TEST_CASE("native online bootstrap opens canonical sparse fresh parties on both 
     CHECK(compared >= 6);
 }
 
-TEST_CASE("a guest gone quiet is dropped by the host and its character stands still",
+TEST_CASE("a guest gone quiet is dropped by the host and its character waits in the tower",
           "[native-online-play][native-rollback-online][drop][assets]") {
     auto pair = std::make_unique<NativePair>(immediateTower(), "", false, "L1", true);
     pair->settle();
@@ -459,9 +461,50 @@ TEST_CASE("a guest gone quiet is dropped by the host and its character stands st
     const auto* actor = pair->host.scene()->actor(kSeats[1]);
     REQUIRE(actor != nullptr);
     CHECK_FALSE(actor->moving());
+    REQUIRE(pair->host.scene()->runtime(kSeats[1]) != nullptr);
+    CHECK(pair->host.scene()->runtime(kSeats[1])->life == PlayerLife::InTower);
     CHECK(pair->host.scene()->actor(kSeats[0])->moving());
     CHECK(pair->guestSession.match().phase() == MatchSession::Phase::Stopped);
     CHECK(pair->guestSession.match().stopReason() == MatchStop::Left);
+}
+
+TEST_CASE("the remaining player leaves the tower once its guest is dropped",
+          "[native-online-play][native-rollback-online][drop][native-travel][assets]") {
+    auto pair = std::make_unique<NativePair>(immediateTower(), "", false);
+    pair->settle();
+    pair->synchronize();
+    const auto before = pair->hostSession.match().context().epoch;
+    REQUIRE(pair->host.scene());
+    const auto& exits = pair->host.scene()->portals();
+    usize index = 0;
+    while (index < exits.size() &&
+           (!exits.portal(index).destination || exits.portal(index).destination->name != "G1")) {
+        ++index;
+    }
+    REQUIRE(index < exits.size());
+    REQUIRE_FALSE(exits.portal(index).shut);
+    const Vec3 spot = exits.portal(index).position;
+    // The guest's link closes after its queued messages arrive: the host drops it.
+    pair->hostWire.events.push_back({PacketTransport::EventType::Disconnected, 1, {}, {}});
+    for (u32 frame = 0; frame < 900 && pair->hostSession.match().context().epoch == before;
+         ++frame) {
+        // Only the host's own character stands on the portal.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+        const_cast<PlayerActor*>(pair->host.scene()->actor(kSeats[0]))->place(spot);
+        REQUIRE(pair->host.update({}) != NativeOnlinePlay::Phase::Failed);
+    }
+    CHECK(pair->hostSession.match().dropped(2));
+    REQUIRE(pair->hostSession.match().context().epoch == before + 1);
+    CHECK(pair->hostSession.match().context().transition == MatchTransition::Travel);
+    // The guest's character waited in the tower and goes on with the party, fallen.
+    REQUIRE(pair->host.scene());
+    const auto* dropped = pair->host.scene()->runtime(kSeats[1]);
+    REQUIRE(dropped != nullptr);
+    CHECK(dropped->life == PlayerLife::InTower);
+    const auto party = pair->host.scene()->party();
+    const auto member = std::ranges::find(party, static_cast<s32>(kSeats[1]), &PartyMember::player);
+    REQUIRE(member != party.end());
+    CHECK(member->fallen);
 }
 
 TEST_CASE(
@@ -528,6 +571,92 @@ TEST_CASE(
     CHECK(pair->hostSession.match().nativeAgreement()->agreedTick() > orderedTick);
     CHECK_FALSE(pair->hostSession.match().resyncing());
     CHECK_FALSE(pair->guestSession.match().resyncing());
+}
+
+TEST_CASE("a rebuilt guest keeps the input it sent before the host received it",
+          "[native-online-play][native-rollback-online][journal][assets]") {
+    NativeCommandTrace sent;
+    u64 served = 0;
+    std::optional<u64> sentWhenServed;
+    auto pair = std::make_unique<NativePair>(immediateTower(), "", false, "L1", true);
+    pair->settle();
+    pair->synchronize();
+    // From here the guest's packets reach the host six frames late, so the host serves its
+    // journal without the input the guest sent last. Nothing the guest sent may change.
+    const auto guestPeer = pair->guestSession.match().localPeer();
+    pair->guestWire.beforeSend = [&](std::span<const u8> bytes, auto) {
+        sent.observe(bytes, guestPeer);
+        return PeerTransport::SendResult::Sent;
+    };
+    pair->hostWire.beforeSend = [&](std::span<const u8> bytes, auto) {
+        if (const auto chunk = JournalPacket::decode(bytes)) {
+            for (const auto& command : chunk->commands) {
+                if (command.seat == kSeats[1]) {
+                    served = std::max(served, command.tick);
+                }
+            }
+            if (chunk->last && !sentWhenServed) {
+                sentWhenServed = sent.latest(kSeats[1]);
+            }
+        }
+        return PeerTransport::SendResult::Sent;
+    };
+    pair->guestWire.latency = 6;
+    for (u32 frame = 0; frame < 40; ++frame) {
+        SessionInputs::Frame first;
+        SessionInputs::Frame second;
+        first[kHostDevice].move = {{1, 0}, 0.5f};
+        second[kGuestDevice].move = {{-1, 0}, 0.5f};
+        pair->step(first, second);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): a planted divergence, as above
+    auto* actor = const_cast<PlayerActor*>(pair->guest.scene()->actor(kSeats[1]));
+    REQUIRE(actor != nullptr);
+    actor->place(actor->position() + Vec3{30, 0, 0});
+    bool ordered = false;
+    u32 rebuiltAt = 0;
+    u64 orderedTick = 0;
+    const auto play = [&](u32 frame) {
+        SessionInputs::Frame first;
+        SessionInputs::Frame second;
+        first[kHostDevice].move = {{frame % 40 < 20 ? 1.0f : -1.0f, 0}, 0.5f};
+        if (!ordered) {
+            // Once the rebuild is ordered the guest lets go, so a tick it sampled again
+            // would contradict the command it had already sent for it.
+            second[kGuestDevice].move = {{frame % 30 < 15 ? -1.0f : 1.0f, 0}, 0.5f};
+        }
+        pair->step(first, second);
+    };
+    for (u32 frame = 0; frame < 600 && rebuiltAt == 0; ++frame) {
+        play(frame);
+        if (!ordered && pair->hostSession.match().resyncing()) {
+            ordered = true;
+            orderedTick = pair->hostSession.match().resync()->tick;
+        }
+        if (ordered && !pair->hostSession.match().resyncing() &&
+            !pair->guestSession.match().resyncing()) {
+            rebuiltAt = frame;
+        }
+    }
+    REQUIRE(ordered);
+    REQUIRE(rebuiltAt > 0);
+    REQUIRE(sentWhenServed);
+    CHECK(*sentWhenServed > served);
+    CHECK(pair->guest.failure() == NativeOnlinePlay::Failure::None);
+    // It carries on from the input it had sent, and both agree past the resync point.
+    const u64 resumed = pair->guest.simulatedTick();
+    for (u32 frame = 0; frame < 150; ++frame) {
+        play(frame);
+    }
+    CHECK(pair->guest.simulatedTick() > resumed + 100);
+    CHECK(pair->host.phase() == NativeOnlinePlay::Phase::Playing);
+    CHECK(pair->guest.phase() == NativeOnlinePlay::Phase::Playing);
+    REQUIRE(pair->hostSession.match().nativeAgreement() != nullptr);
+    CHECK(pair->hostSession.match().nativeAgreement()->agreedTick() > orderedTick);
+    CHECK_FALSE(pair->hostSession.match().resyncing());
+    CHECK_FALSE(pair->guestSession.match().resyncing());
+    pair->guestWire.beforeSend = {};
+    pair->hostWire.beforeSend = {};
 }
 
 TEST_CASE("native online local pause fences only the owned device while agreed ticks continue",
@@ -1491,6 +1620,103 @@ TEST_CASE("native secret travel resumes each retained parent and commits only lo
     CHECK(pair->hostSaves == 1);
     CHECK(pair->guestSaves == 1);
 }
+TEST_CASE("a parent resumed from a secret challenge rebuilds a guest divergence in place",
+          "[native-online-play][native-secret][journal][assets]") {
+    PlayOptions options;
+    options.welcome = false;
+    auto pair = std::make_unique<NativePair>(options, "B1", false, "B2");
+    pair->settle();
+    pair->synchronize();
+    const auto arrive = [&](std::string_view name) {
+        for (u32 frame = 0;
+             frame < 3600 && (pair->host.phase() != NativeOnlinePlay::Phase::Playing ||
+                              pair->guest.phase() != NativeOnlinePlay::Phase::Playing);
+             ++frame) {
+            pair->step();
+        }
+        REQUIRE(pair->host.scene());
+        REQUIRE(pair->guest.scene());
+        REQUIRE(pair->host.scene()->world()->ref().name == name);
+        REQUIRE(pair->guest.scene()->world()->ref().name == name);
+        pair->settle();
+        pair->synchronize();
+    };
+    const auto parentEpoch = pair->hostSession.match().context().epoch;
+    for (u32 frame = 0; frame < 1800 && pair->hostSession.match().context().epoch == parentEpoch;
+         ++frame) {
+        pair->placeOnPortal(pair->host, "S4", true);
+        pair->placeOnPortal(pair->guest, "S4", true);
+        pair->step();
+    }
+    REQUIRE(pair->hostSession.match().context().transition == MatchTransition::SecretEnter);
+    arrive("S4");
+    const auto& items = pair->host.scene()->world()->placedItems();
+    for (usize index = 0; index < items.size(); ++index) {
+        const auto& coin = items.item(index);
+        if (coin.subtype != 1 || !coin.visible || coin.taken) {
+            continue;
+        }
+        pair->synchronize();
+        for (auto* play : {&pair->host, &pair->guest}) {
+            for (const auto seat : kSeats) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+                const_cast<PlayerActor*>(play->scene()->actor(seat))->place(coin.position);
+            }
+        }
+        pair->step();
+        pair->step();
+    }
+    REQUIRE(pair->host.scene()->challenge().won());
+    REQUIRE(pair->guest.scene()->challenge().won());
+    const auto challengeEpoch = pair->hostSession.match().context().epoch;
+    for (u32 frame = 0; frame < 1200 && pair->hostSession.match().context().epoch == challengeEpoch;
+         ++frame) {
+        SessionInputs::Frame first;
+        SessionInputs::Frame second;
+        first[kHostDevice].menu.select = second[kGuestDevice].menu.select = frame % 30 == 0;
+        pair->step(first, second);
+    }
+    REQUIRE(pair->hostSession.match().context().transition == MatchTransition::SecretReturn);
+    arrive("B2");
+    const auto* resumed = pair->guest.scene();
+    for (u32 frame = 0; frame < 40; ++frame) {
+        pair->step();
+    }
+    pair->synchronize();
+    // The guest's own resumed parent diverges, and no load can bring it back to its epoch.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): planted divergence
+    ++const_cast<PlayerActor*>(pair->guest.scene()->actor(kSeats[1]))->save().gold;
+    bool ordered = false;
+    bool recovered = false;
+    u64 orderedTick = 0;
+    for (u32 frame = 0; frame < 600 && !recovered; ++frame) {
+        pair->step();
+        if (!ordered && pair->hostSession.match().resyncing()) {
+            ordered = true;
+            orderedTick = pair->hostSession.match().resync()->tick;
+        }
+        recovered = ordered && !pair->hostSession.match().resyncing() &&
+                    !pair->guestSession.match().resyncing();
+    }
+    REQUIRE(ordered);
+    REQUIRE(recovered);
+    // Rebuilt in place: the same resumed scene goes on rather than a stage loaded afresh.
+    CHECK(pair->guest.scene() == resumed);
+    for (u32 frame = 0; frame < 150; ++frame) {
+        pair->step();
+    }
+    CHECK(pair->host.phase() == NativeOnlinePlay::Phase::Playing);
+    CHECK(pair->guest.phase() == NativeOnlinePlay::Phase::Playing);
+    for (const auto seat : kSeats) {
+        CHECK(pair->guest.scene()->actor(seat)->save().gold ==
+              pair->host.scene()->actor(seat)->save().gold);
+    }
+    REQUIRE(pair->hostSession.match().nativeAgreement() != nullptr);
+    CHECK(pair->hostSession.match().nativeAgreement()->agreedTick() > orderedTick);
+    CHECK_FALSE(pair->hostSession.match().resyncing());
+    CHECK_FALSE(pair->guestSession.match().resyncing());
+}
+
 TEST_CASE("native completion checkpoints save only local progress and honor Auto Save",
           "[native-online-play][native-save][native-completion][assets]") {
     (void)test::assetOrSkip("VQMOVIES/victory.avi");

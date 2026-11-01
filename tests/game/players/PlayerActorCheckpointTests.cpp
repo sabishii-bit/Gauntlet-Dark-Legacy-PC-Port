@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "game/combat/DamageTypes.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PowerupEffects.h"
 
@@ -94,7 +95,7 @@ TEST_CASE("actor checkpoints preserve native contact order dimensions and unclam
     recipient.gold = 571;
     recipient.progress().health = 123;
     recipient.progress().experience = 2345;
-    recipient.progress().inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot, 7, 123);
+    recipient.progress().inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot, 7, 123);
     PlayerActor replay;
     replay.spawn(1, recipient, nullptr, {-7, 1, 2}, 2);
     const auto identity = replay.save().toJson();

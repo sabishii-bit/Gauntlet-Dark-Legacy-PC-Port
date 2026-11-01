@@ -4,6 +4,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/players/PlayerImpact.h"
 
 namespace gdl::game {
@@ -29,10 +30,10 @@ std::optional<HazardSurfaces::Harm> HazardSurfaces::harmOf(u32 flags) {
     // PlayerMotion_FloorFXDamage: a burn, a blow that knocks back, or one that fells.
     const u32 kind = (flags >> kHarmShift) & kHarmKinds;
     if (kind == kKnockingKind) {
-        return Harm{kKnock, PlayerImpact::kKnockBack, false};
+        return Harm{kKnock, damage::kKnockBack, false};
     }
     if (kind >= kFirstFellingKind && kind <= kLastFellingKind) {
-        return Harm{kFell, PlayerImpact::kKnockDown, true};
+        return Harm{kFell, damage::kKnockDown, true};
     }
     return Harm{kBurn, 0, false};
 }
@@ -45,7 +46,7 @@ std::optional<HazardSurfaces::Harm> HazardSurfaces::enemyHarmOf(u32 flags) {
     }
     const u32 kind = (flags >> kHarmShift) & kHarmKinds;
     if (kind == kKnockingKind) {
-        return Harm{kBurn, PlayerImpact::kKnockBack, false};
+        return Harm{kBurn, damage::kKnockBack, false};
     }
     if (kind == kBurningKind || (kind >= kFirstFellingKind && kind <= kLastFellingKind)) {
         return harm;

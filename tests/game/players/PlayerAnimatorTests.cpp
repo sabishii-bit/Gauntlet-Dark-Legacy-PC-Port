@@ -1112,7 +1112,7 @@ TEST_CASE("a fresh defend press restarts any guard phase without treating a hold
     }
 }
 
-TEST_CASE("strong ranged attacks retain quarter movement through release and recovery",
+TEST_CASE("strong ranged attacks remain stationary through release and recovery",
           "[player-animation][alpha-combat]") {
     TreeInfo tree = classTree();
     for (const char* name : {"ATTPWRATHROW", "ATTPWRATHROWR"}) {
@@ -1125,9 +1125,10 @@ TEST_CASE("strong ranged attacks retain quarter movement through release and rec
     REQUIRE(animator.bind(tree, false));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
     REQUIRE(animator.strongThrowing());
-    // DoPlayerAction (0x800ac068), actions 99/100: A48=.25, A4C=1.
+    // Unlike retail's quarter pace, the stationary heavy-throw policy also
+    // holds through release and recovery, not only its initial windup.
     for (s32 frame = 0; frame < 60 && animator.strongThrowing(); ++frame) {
-        CHECK(animator.moveScale() == Approx(0.25f));
+        CHECK(animator.moveScale() == 0.0f);
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
     }
     CHECK_FALSE(animator.strongThrowing());
@@ -1244,11 +1245,11 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
     REQUIRE(animator.action() == Action::StrongThrow);
     REQUIRE(animator.turboBegan());
     REQUIRE(animator.strongThrowing());
-    REQUIRE(animator.moveScale() == Approx(0.25f));
+    REQUIRE(animator.moveScale() == Approx(0.0f));
     s32 releases = 0;
     s32 steps = 0;
     while (animator.strongThrowing() && steps < 200) {
-        CHECK(animator.moveScale() == Approx(0.25f)); // wind-up and recovery, including held input
+        CHECK(animator.moveScale() == Approx(0.0f)); // wind-up and recovery, including held input
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
         if (animator.strongReleased()) {
             REQUIRE(animator.action() == Action::StrongThrowRecover);
@@ -1864,7 +1865,7 @@ TEST_CASE("automatic melee can count held close swings without changing manual p
                     step(PlayerDeed::None);
                 }
                 if (fullChain || swings == 1) {
-                    const Action expected = swings == 1 ? Action::PowerClose
+                    const Action expected = swings == 1   ? Action::PowerClose
                                             : swings == 2 ? Action::PowerMed
                                                           : Action::Spin;
                     CHECK(animator.action() == expected);

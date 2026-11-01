@@ -8,6 +8,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/hud/HelpMessages.h"
 #include "game/party/PartyDamage.h"
 #include "game/party/PartyMotion.h"
@@ -219,7 +220,7 @@ TEST_CASE("native enemy damage dispatch preserves party damage and following mot
     for (s32 tick = 0; tick < 4800 && (!power || victims != ((1U << 3) | (1U << 1))); ++tick) {
         enemies.update(1, kStep, LevelOpponents::enemyViews(fixture.players));
         for (const auto& blow : enemies.takeBlows()) {
-            power |= (blow.flags & PlayerImpact::kKnockBack) != 0;
+            power |= (blow.flags & damage::kKnockBack) != 0;
             victims |= 1U << blow.player;
             blows.push_back(blow);
         }
@@ -323,7 +324,7 @@ TEST_CASE("ordinary knockback retains native damage and reaction without request
     const std::array blows{EnemyBlow{.player = 3,
                                      .kind = kGruntKind,
                                      .damage = 70,
-                                     .flags = PlayerImpact::kKnockBack,
+                                     .flags = damage::kKnockBack,
                                      .direction = {0, 0, 1}}};
     const PartyDamage::Context context{.playSeconds = 75};
     fixture.native(blows, context);
@@ -364,7 +365,7 @@ TEST_CASE("native heavy damage preserves knockdowns and guard lesson routing",
     const std::array blows{EnemyBlow{.player = 3,
                                      .kind = kGruntKind,
                                      .damage = 70,
-                                     .flags = PlayerImpact::kKnockDown,
+                                     .flags = damage::kKnockDown,
                                      .direction = {0, 0, 1}}};
     const PartyDamage::Context context{.playSeconds = 75};
     fixture.native(blows, context);
@@ -437,7 +438,7 @@ TEST_CASE("shared scene hurt preserves the strict lesson threshold and last leve
     auto events = fixture.events(0, context);
     events.learnBlock = [&] { ++fixture.lessons; };
     PartyDamage::hurt(fixture.health, player, 70, HurtKind::Blow, true, context, events,
-                      {PlayerImpact::kKnockDown, {0, 0, 1}},
+                      {damage::kKnockDown, {0, 0, 1}},
                       fixture.classes.stats(player.actor.save().character));
     CHECK(fixture.lessons == (elapsed > 60 ? 1 : 0));
     const auto expected = player.entrySave.progress().levels;

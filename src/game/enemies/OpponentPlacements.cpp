@@ -59,7 +59,7 @@ OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
         // AddItemSub sets the item on the floor about it (FloorPos, four up and ten down) and
         // parents it to a moving one, so a placement on a flying platform (the Grounds'
         // general) is seen and born where the platform is, not where it was authored.
-        if (collision != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (collision != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             // Animated stumps may already start lowered by the time opponents
             // load. Bind to the floor at the authored pose, as other item riders
             // do, then let PlacedEnemies use its current transform for admission.
@@ -96,7 +96,7 @@ OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
                 CritterStatues::Placement statue;
                 statue.kind = family;
                 statue.instance = instance;
-                statue.onFloor = (info.collisionFlags & 1U) == 0;
+                statue.onFloor = (info.collisionFlags & ItemInfo::kKeepsHeight) == 0;
                 statue.radius = info.radius;
                 statue.height = info.height;
                 statue.viewRadius = placement.viewRadius;
@@ -129,7 +129,7 @@ OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
             CritterStatues::Placement statue;
             statue.enemy = placement.spawn;
             statue.instance = instance;
-            statue.onFloor = (info.collisionFlags & 1U) == 0;
+            statue.onFloor = (info.collisionFlags & ItemInfo::kKeepsHeight) == 0;
             statue.radius = info.radius;
             statue.height = info.height;
             statue.viewRadius = placement.viewRadius;

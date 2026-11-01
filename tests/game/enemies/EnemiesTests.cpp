@@ -4014,4 +4014,63 @@ TEST_CASE("an elemental one is born tougher and bigger, shrugs off its own eleme
     CHECK(enemies.elementOf(*third) == 0);
 }
 
+/** resolvedWayOf as it stands, every name spelt as its value, for the sweep below. */
+s32 frozenWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
+    constexpr std::array<s32, 34> kAlgorithm{2, 7, 7, 2, 7, 7, 7, 7, 7, 7, 7, 7, 2,  7, 7,  7, 7,
+                                             7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 0, 19, 3, 27, 7, 7};
+    constexpr std::array<s32, 9> kSmall{0, 3, 6, 9, 12, 15, 18, 21, 22};
+    constexpr std::array<s32, 5> kCaster{2, 7, 14, 17, 24};
+    constexpr std::array<s32, 13> kMediumOther{1, 4, 5, 8, 10, 11, 13, 16, 19, 20, 25, 32, 33};
+    if (way < 0 || way > 31) {
+        way = kAlgorithm[static_cast<usize>(std::clamp(kind, 0, 33))];
+    }
+    if (kind == 27) {
+        return 31;
+    }
+    if (kind == 31) {
+        return 27;
+    }
+    const bool caster = std::ranges::contains(kCaster, kind);
+    const bool medium = caster || std::ranges::contains(kMediumOther, kind);
+    if (std::ranges::contains(kSmall, kind)) {
+        if (way != 2 && way != 4) {
+            way = mirrored ? 4 : 2;
+        }
+    } else if (medium && way == 0) {
+        switch (strength) {
+        case 3: way = caster ? 30 : 7; break;
+        case 4: way = 23; break;
+        case 5: way = 17; break;
+        case 6: way = 18; break;
+        default: way = 7; break;
+        }
+    }
+    if (way == 1) {
+        way = 0;
+    } else if (way == 10) {
+        way = 7;
+    }
+    return way;
+}
+
+TEST_CASE("every kind, strength and way resolves as the original's table has it",
+          "[game][enemies][enemy-traits]") {
+    usize mismatches = 0;
+    for (s32 kind = -1; kind <= 45; ++kind) {
+        for (s32 strength = -1; strength <= 7; ++strength) {
+            for (s32 way = -2; way <= 33; ++way) {
+                for (const bool mirrored : {false, true}) {
+                    if (resolvedWayOf(kind, strength, way, mirrored) !=
+                        frozenWayOf(kind, strength, way, mirrored)) {
+                        UNSCOPED_INFO("kind " << kind << " strength " << strength << " way " << way
+                                              << " mirrored " << mirrored);
+                        ++mismatches;
+                    }
+                }
+            }
+        }
+    }
+    CHECK(mismatches == 0);
+}
+
 } // namespace

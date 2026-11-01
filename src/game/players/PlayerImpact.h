@@ -3,20 +3,16 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
-/** Damage modifiers and the direction the blow travels, separate from its pain sound. */
+/** The damage word (damage::) a blow lands on a player with, and the direction it travels,
+ * separate from its pain sound. */
 struct PlayerImpact {
-    static constexpr u32 kKnockBack = 0x10;
-    static constexpr u32 kKnockDown = 0x20;
-    static constexpr u32 kBlownAway = 0x40;
-    static constexpr u32 kStun = 0x80;
-    static constexpr u32 kKnockOver = 0x100;
-    static constexpr u32 kSpike = 0x2000;
-    static constexpr u32 kWhirlwind = 0x10000;
-    static constexpr u32 kSticky = 0x4000000;
-    static constexpr u32 kHeavy = kKnockDown | kBlownAway | kKnockOver | kWhirlwind;
+    /** The knocks that put the body down. */
+    static constexpr u32 kHeavy =
+        damage::kKnockDown | damage::kBlownAway | damage::kKnockOver | damage::kWhirlwind;
 
     u32 flags = 0;
     Vec3 direction{0.0f};

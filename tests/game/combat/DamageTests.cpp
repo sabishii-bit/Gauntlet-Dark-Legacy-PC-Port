@@ -3,7 +3,9 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 
 namespace {
 using namespace gdl;
@@ -27,18 +29,18 @@ TEST_CASE("elemental amulets use retail affinity and encounter multipliers",
 }
 TEST_CASE("protective items distinguish immunity healing and knockback protection",
           "[game][items][damage]") {
-    CHECK(Damage::modify(100, 1, Damage::kInvulnerable, 0, false).amount == 0);
-    CHECK(Damage::modify(100, 1, Damage::kGoldInvulnerable, 0, false).amount == Approx(-10));
-    CHECK(Damage::modify(1, 0, Damage::kGoldInvulnerable, 0, false).amount == 0);
-    CHECK(Damage::modify(20, Damage::kGas, 0x2000, 0, false).amount == 0);
+    CHECK(Damage::modify(100, 1, armor::kInvulnerable, 0, false).amount == 0);
+    CHECK(Damage::modify(100, 1, armor::kGoldInvulnerable, 0, false).amount == Approx(-10));
+    CHECK(Damage::modify(1, 0, armor::kGoldInvulnerable, 0, false).amount == 0);
+    CHECK(Damage::modify(20, damage::kGas, 0x2000, 0, false).amount == 0);
     CHECK(Damage::modify(20, 0, 0x2000, 0, false).amount == 20);
-    CHECK(Damage::modify(20, Damage::kMagic, 0x1000, 0, false).amount == 0);
-    CHECK(Damage::modify(20, Damage::kMagic, 0x10, 100, false).amount == 10);
-    CHECK(Damage::modify(20, Damage::kMagic, 0x10, 100, true).amount == 15);
+    CHECK(Damage::modify(20, damage::kMagic, 0x1000, 0, false).amount == 0);
+    CHECK(Damage::modify(20, damage::kMagic, 0x10, 100, false).amount == 10);
+    CHECK(Damage::modify(20, damage::kMagic, 0x10, 100, true).amount == 15);
     const auto braced = Damage::modify(20, 0x10170 | 1, 0x40000, 0, false);
     CHECK(braced.flags == 1);
     CHECK(braced.amount == 30);
     CHECK(Damage::modify(20, 0, 0, 100, false).amount == 0);
-    CHECK(Damage::modify(20, Damage::kGas, 0, 100, false).amount == 20);
+    CHECK(Damage::modify(20, damage::kGas, 0, 100, false).amount == 20);
 }
 } // namespace

@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/LevelCatalog.h"
@@ -48,19 +49,19 @@ TEST_CASE("a surface's flags name what it does to a body", "[game][world][hazard
     const auto knock = HazardSurfaces::harmOf(0x20000);
     REQUIRE(knock);
     CHECK(knock->damage == 10.0f);
-    CHECK(knock->impact == PlayerImpact::kKnockBack);
+    CHECK(knock->impact == damage::kKnockBack);
     for (const u32 kind : {0x30000U, 0x40000U, 0x50000U}) {
         const auto fell = HazardSurfaces::harmOf(kind);
         REQUIRE(fell);
         CHECK(fell->damage == 15.0f);
-        CHECK(fell->impact == PlayerImpact::kKnockDown);
+        CHECK(fell->impact == damage::kKnockDown);
         CHECK(fell->jolts);
     }
     CHECK(HazardSurfaces::harmOf(0x60000)->damage == 5.0f);
     // Enemies take the knocking kind as a burn with a knock, and nothing from the sixth.
     CHECK(HazardSurfaces::enemyHarmOf(0x10000)->damage == 5.0f);
     CHECK(HazardSurfaces::enemyHarmOf(0x20000)->damage == 5.0f);
-    CHECK(HazardSurfaces::enemyHarmOf(0x20000)->impact == PlayerImpact::kKnockBack);
+    CHECK(HazardSurfaces::enemyHarmOf(0x20000)->impact == damage::kKnockBack);
     CHECK(HazardSurfaces::enemyHarmOf(0x40000)->damage == 15.0f);
     CHECK_FALSE(HazardSurfaces::enemyHarmOf(0x60000));
     // What a trigger drives hurts only when it is also marked to.
@@ -89,7 +90,7 @@ TEST_CASE("a body is hurt by a harmful wall it is against or a harmful floor it 
     hazards.bind(layout);
     CHECK_FALSE(hazards.harmOfObject(0));
     REQUIRE(hazards.harmOfObject(2));
-    CHECK(hazards.harmOfObject(2)->impact == PlayerImpact::kKnockBack);
+    CHECK(hazards.harmOfObject(2)->impact == damage::kKnockBack);
     CHECK(hazards.harmful() == 3);
 
     const Vec3 up{0.0f, 1.0f, 0.0f};
@@ -286,7 +287,7 @@ TEST_CASE("native trolleys and minecarts knock players down without dragging the
                 continue;
             }
             runtime.surfaceGap = 1;
-            REQUIRE(touch->harm.impact == PlayerImpact::kKnockDown);
+            REQUIRE(touch->harm.impact == damage::kKnockDown);
             const s32 before = actor.save().health();
             health.hurt(runtime, touch->harm.damage, HurtKind::Blow, true, false, 1, healthEvents,
                         {touch->harm.impact, touch->away});

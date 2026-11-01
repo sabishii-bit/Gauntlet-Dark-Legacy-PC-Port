@@ -11,6 +11,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/enemies/LevelOpponents.h"
 
@@ -336,7 +337,7 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
     LevelOpponents::Events events;
     s32 hits = 0;
     events.hurt = [&](usize, f32 damage, HurtKind kind, bool, const PlayerImpact& impact) {
-        if ((impact.flags & PlayerImpact::kSticky) != 0) {
+        if ((impact.flags & damage::kSticky) != 0) {
             CHECK(kind == HurtKind::Blow); // ProcessEffects mode 1, not the spike-trap groan.
             CHECK(damage > 0);
             CHECK(impact.reaction(damage, 0, false) == PlayerDeed::Webbed);

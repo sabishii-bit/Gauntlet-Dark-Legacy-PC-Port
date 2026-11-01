@@ -123,7 +123,21 @@ struct LevelTrigger {
     static constexpr u32 kKeepContact = 0x80;
     static constexpr u32 kStaysSolid = 0x8;     ///< the target keeps blocking while it moves
     static constexpr u32 kWakesStatue = 0x2000; ///< going active wakes the nearest statue
+    static constexpr u32 kDelaysWhenEmpty =
+        0x800; ///< a toggle pad left empty waits before it toggles back
+    static constexpr u32 kShakesCamera = 0x1000; ///< its camera cue shakes
+    static constexpr u32 kKindMask = 0xFF;       ///< the low byte: how the target moves
+    /** The kinds that hold their target; a pad with none of them is momentary. */
+    static constexpr u32 kLatches = kCloses | kOpensOnce | kToggles;
     static constexpr s32 kShootableSubtype = 31;
+    static constexpr s32 kMomentaryBridge = 20;   ///< subtype: fades out, back when left
+    static constexpr s32 kLatchedBridge = 22;     ///< subtype: fades out once and stays
+    static constexpr s32 kMovementLessonPad = 23; ///< subtype: its opening teaches the move
+    /** Whether a subtype's target fades rather than moves: the bridges, which the level
+     * sounds as such. */
+    static constexpr bool bridgeSubtype(s32 subtype) {
+        return subtype == kMomentaryBridge || subtype == kLatchedBridge;
+    }
 };
 
 /**

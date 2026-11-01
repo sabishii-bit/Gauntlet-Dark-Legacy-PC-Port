@@ -18,6 +18,7 @@
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/config/GameConfig.h"
 #include "game/menu/MenuInput.h"
 #include "game/players/PowerupEffects.h"
@@ -288,7 +289,7 @@ TEST_CASE("name cheats enter through the ordinary character selection flow",
         REQUIRE(f.lane.lockedIn());
         CHECK(f.lane.save().name == "INVULN");
         CHECK((PowerupEffects::of(f.lane.save().progress().inventory).armor &
-               powerup::kInvulnerable) != 0);
+               armor::kInvulnerable) != 0);
     }
     SECTION("costume names force the authored class and colour before greeting") {
         name.typed = "ICE600";

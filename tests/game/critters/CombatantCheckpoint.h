@@ -167,6 +167,7 @@ public:
         EnemyScales scales;
         char realm = 'G';
         bool fullHarm = false;
+        CritterPressure pressure;
         /** Canonical linear-congruential state, not a standard-library object dump.
          * Native minstd_rand draws/mapping are unchanged by this local checkpoint. */
         u32 arenaRandom = 1;

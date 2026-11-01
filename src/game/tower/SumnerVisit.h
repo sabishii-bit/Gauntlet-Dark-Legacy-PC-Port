@@ -52,6 +52,10 @@ public:
                         const std::filesystem::path& root, const StringTable* strings);
     /** Loads hint text independently of artwork (also usable with a text-only scroll). */
     bool loadTexts(const std::filesystem::path& file, const StringTable* strings = nullptr);
+    /** Reuses resident-menu artwork without borrowing the base campaign's hint rules. */
+    bool openTopics(s32 player, const TextPainter& text, const MenuScreen& screen,
+                    HintMenuLabels labels);
+    void closeTopics();
     /** Ends the interaction and releases borrowed art, retaining hint progression. */
     void clear();
 

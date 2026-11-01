@@ -500,7 +500,7 @@ template <class A, class T> void field(A& a, T& v) {
                v.rootAttachment, v.node, v.nodeOffset, v.pitchYaw, v.loop, v.placement,
                v.playerAttachment);
     } else if constexpr (std::is_same_v<V, CombatGrab>) {
-        fields(a, v.player, v.critter, v.attachment, v.velocity, v.damage);
+        fields(a, v.player, v.critter, v.attachment, v.velocity, v.damage, v.restoreSupport);
     } else if constexpr (std::is_same_v<V, CombatSpew>) {
         fields(a, v.critter, v.origin, v.velocity, v.halfAngle);
     } else if constexpr (std::is_same_v<V, CombatArenaActivation>) {
@@ -522,7 +522,8 @@ template <class A, class T> void field(A& a, T& v) {
         fields(a, v.placement, v.active);
     } else if constexpr (std::is_same_v<V, CritterArea>) {
         fields(a, v.local, v.node, v.worldParent, v.velocity, v.displacement, v.radius, v.minDot,
-               v.damage, v.flags, v.secondsLeft, v.lifetime, v.expanding);
+               v.damage, v.flags, v.secondsLeft, v.lifetime, v.expanding, v.linearGrowth,
+               v.halfHeight, v.growFraction, v.shrinkFraction);
     } else if constexpr (std::is_same_v<V, CombatantProjectilesCheckpoint::State>) {
         fields(a, v.catalog, v.flying, v.emittedEffects, v.hits, v.worldHits, v.rockHits,
                v.generators, v.summons, v.random, v.ricochetIn, v.nextInstance);

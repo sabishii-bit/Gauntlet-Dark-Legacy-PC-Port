@@ -167,10 +167,13 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
             // "POJO IS NOW POJO" named the new form twice.
             const bool asPojo = PickupVoices::carriesPojo(save) && id != HelpMessages::kNowPojo;
             audio.announce(players[index].figure->voice(),
-                           PickupVoices::nameOf(save.character, save.color), asPojo, lines,
-                           wait);
+                           PickupVoices::nameOf(save.character, save.color), asPojo, lines, wait,
+                           AnnouncementSubject{save.character, save.color});
         } else {
-            audio.queueNarration(spec->voice);
+            const CharacterSave& save = players[index].actor.save();
+            audio.queueNarration(
+                spec->voice, LevelSoundscape::Narrator::Either,
+                AnnouncementSubject{save.character, save.color, PickupVoices::carriesPojo(save)});
         }
     }
     return true;

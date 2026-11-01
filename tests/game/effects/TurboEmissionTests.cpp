@@ -9,6 +9,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
+#include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/effects/TurboEmission.h"
 #include "game/effects/WeaponGlow.h"
@@ -245,9 +247,9 @@ TEST_CASE("turbo particle descriptors preserve node names phases and previous-ef
     CHECK(descriptor.rate == std::array<f32, 4>{2.5f, 2.5f, 2.5f, 2.5f});
     CHECK(descriptor.speed == Approx(-0.015f));
     CHECK(descriptor.particleLife ==
-          ((effect.flags & MoveEffect::kParticleFlags) == 0x02000000U ? 6U : 15U));
+          ((effect.flags & effect_flags::kParticleMask) == 0x02000000U ? 6U : 15U));
     CHECK(descriptor.particleFade ==
-          ((effect.flags & MoveEffect::kParticleFlags) == 0x02000000U ? 0U : 15U));
+          ((effect.flags & effect_flags::kParticleMask) == 0x02000000U ? 0U : 15U));
     CHECK(descriptor.width.lifeStart == 3);
     CHECK(descriptor.width.fadeEnd == 3);
     CHECK(descriptor.alpha.lifeStart == 255);
@@ -298,9 +300,9 @@ TEST_CASE("turbo volleys retain ordinary native weapon modifiers but never fan o
     weapon.attackSeconds = 0.3f;
     weapon.scale = 2;
     weapon.shots = 5;
-    weapon.flags = powerup::kFiveWayShot | powerup::kRapidFire | 4;
+    weapon.flags = damage::kFiveWayShot | damage::kRapidFire | 4;
     weapon.target = Vec3{90, 3, 10};
-    const u32 soundFlags = weapon.flags | powerup::kSuperShot;
+    const u32 soundFlags = weapon.flags | damage::kSuperShot;
     const Vec3 direction{0.6f, 0, 0.8f};
     const auto prepared = TurboEmission::volley(weapon, direction, soundFlags);
     CHECK(prepared.soundFlags == soundFlags);
@@ -385,12 +387,12 @@ struct NativeFixture {
 TEST_CASE("Archer turbo arrows retain Super Shot and elemental artwork without spending charges",
           "[game][turbo-emission][turbo-item-visuals][assets]") {
     const auto deed = GENERATE(PlayerDeed::TurboStrong, PlayerDeed::TurboFull);
-    const u32 flags = GENERATE(1U, 2U, 3U, 4U, powerup::kSuperShot);
+    const u32 flags = GENERATE(1U, 2U, 3U, 4U, damage::kSuperShot);
     NativeFixture fixture(3);
     auto& player = fixture.players[0];
     auto& inventory = player.actor.save().progress().inventory;
     inventory.addPowerup(powerup::kWeapon, flags, 7, -1);
-    inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot, 0, 30);
+    inventory.addPowerup(powerup::kWeapon, damage::kFiveWayShot, 0, 30);
     const auto held = inventory.powerups;
     usize observed = 0;
     for (s32 tick = 0; tick < 150; ++tick) {
@@ -403,7 +405,7 @@ TEST_CASE("Archer turbo arrows retain Super Shot and elemental artwork without s
             CHECK(shot.flags == flags); // No five-way fan on each bonus arrow.
             REQUIRE(shot.streak.texture != nullptr);
             const auto& visuals = fixture.arsenal.missiles().visuals();
-            const bool superShot = flags == powerup::kSuperShot;
+            const bool superShot = flags == damage::kSuperShot;
             CHECK(shot.spec == (superShot ? &MissileSpec::superShot() : &MissileSpec::of(3)));
             const u32 effect = superShot ? shot.effect : shot.rider;
             REQUIRE(effect != 0);

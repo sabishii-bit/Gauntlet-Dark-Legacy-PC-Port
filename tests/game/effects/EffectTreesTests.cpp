@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -334,6 +335,79 @@ TEST_CASE("effect presentation snaps new spawns teleports redirects and loop cut
     device.draws.clear();
     effects.draw(device, Mat4{1}, {}, nullptr, 0);
     CHECK(device.draws.empty());
+}
+
+TEST_CASE("explicit presented parents affect only their attached mesh draw",
+          "[effects][presentation][presented-parent]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(presentationFixture()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.persistent = true;
+    setting.emitParticles = false;
+    setting.scale = 2;
+    setting.stretch = {1, 2, 3};
+    setting.velocity = {60, 0, 0};
+    const u32 id = effects.startSet(device, archive, "MOVING", {7, 0, 0}, setting);
+    REQUIRE(id != 0);
+    effects.placeAt(id, glm::translate(Mat4{1}, Vec3{7, 0, 0}));
+    effects.capturePresentation();
+    effects.placeAt(id, glm::translate(Mat4{1}, Vec3{11, 0, 0}));
+    effects.update(1.0f / 60);
+    const auto clock = effects.effect(0).player.checkpoint();
+    const auto nativePose = effects.effect(0).pose.checkpoint();
+    const auto nativeTransform = effects.effect(0).transform();
+    const auto remaining = effects.remaining(id);
+    const std::array overrideParent{
+        EffectTrees::DrawAttachment{id, glm::translate(Mat4{1}, Vec3{30, 0, 0})}};
+    const auto corner = [&](std::span<const EffectTrees::DrawAttachment> parents) {
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {}, nullptr, .5f, parents);
+        REQUIRE(device.draws.size() == 1);
+        return device.draws.front().vertices.front().position;
+    };
+    const Vec3 ordinary = corner({});
+    CHECK(ordinary.x == Catch::Approx(9.5f)); // Prior7 -> current11 + own velocity1.
+    CHECK(ordinary.y == Catch::Approx(1));    // Pose.25 times own scale2/stretch2.
+    const Vec3 attached = corner(overrideParent);
+    CHECK(attached.x == Catch::Approx(31)); // Presented30 plus own velocity1, no second blend.
+    CHECK(attached.y == Catch::Approx(1));
+    CHECK(corner({}) == ordinary); // No retained override can affect a later base-game draw.
+    const std::array unrelated{
+        EffectTrees::DrawAttachment{id + 1, glm::translate(Mat4{1}, Vec3{100, 0, 0})}};
+    CHECK(corner(unrelated) == ordinary);
+    CHECK(effects.effect(0).player.checkpoint() == clock);
+    CHECK(effects.effect(0).pose.checkpoint() == nativePose);
+    CHECK(effects.effect(0).transform() == nativeTransform);
+    CHECK(effects.remaining(id) == remaining);
+
+    // Births have no prior effect transform, but the shown actor parent is
+    // still authoritative. Only explicit callers opt into this continuity.
+    effects.snapPresentation(id);
+    CHECK(corner(overrideParent).x == Catch::Approx(31));
+    CHECK(corner({}).x == Catch::Approx(12));
+}
+
+TEST_CASE("presented effect parents preserve authored scale and lifetime shrink",
+          "[effects][presentation][presented-parent]") {
+    EffectTrees::EffectState effect;
+    effect.attachment = glm::translate(Mat4{1}, Vec3{10, 20, 30});
+    effect.position = {12, 23, 34};
+    effect.scale = 2;
+    effect.stretch = {1, 2, 3};
+    effect.shrinks = true;
+    effect.secondsLeft = .1f;
+    const Mat4 parent = glm::translate(Mat4{1}, Vec3{40, 50, 60});
+    const Mat4 native = effect.transform();
+    const Mat4 shown = effect.transform(&parent);
+    CHECK(Vec3{shown[3]} == Vec3{42, 53, 64});
+    for (Mat4::length_type axis = 0; axis < 3; ++axis)
+        CHECK(shown[axis] == native[axis]);
+    CHECK(glm::length(Vec3{shown[0]}) == Catch::Approx(1.002f));
+    CHECK(effect.position == Vec3{12, 23, 34});
+    effect.attachment.reset();
+    CHECK(effect.transform(&parent) == effect.transform());
 }
 
 TEST_CASE("held effects do not replay the last particle movement on successive render frames",

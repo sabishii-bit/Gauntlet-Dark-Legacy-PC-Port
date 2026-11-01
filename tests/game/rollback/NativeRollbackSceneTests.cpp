@@ -20,6 +20,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
+#include "game/combat/DamageTypes.h"
 #include "game/netplay/CharacterProfile.h"
 #include "game/netplay/RollbackExchange.h"
 #include "game/players/PowerupEffects.h"
@@ -138,10 +140,8 @@ struct NativeScene {
             save.progress().health = 5000;
             save.progress().inventory.addPotions(static_cast<s32>(seat + 1), 5);
             if (!settings.secret) {
-                save.progress().inventory.addPowerup(powerup::kWeapon, powerup::kThunderHammer, 80,
-                                                     -1);
-                save.progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0,
-                                                     -1);
+                save.progress().inventory.addPowerup(powerup::kWeapon, damage::kHammer, 80, -1);
+                save.progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0, -1);
             }
             REQUIRE(CharacterProfile::capture(save));
             party.push_back({static_cast<s32>(seat), save});

@@ -111,7 +111,8 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, const As
         gate.minPlayers = instance.minPlayers;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         if (!gate.figure.place(device, scope, name, instance,
-                               (info.collisionFlags & 1U) != 0 ? nullptr : collision)) {
+                               (info.collisionFlags & ItemInfo::kKeepsHeight) != 0 ? nullptr
+                                                                                   : collision)) {
             log::warn("Gates: no figure {} in the item archive", name);
         }
         gate.box = gate.figure.obstacle(info);
@@ -248,7 +249,6 @@ void LockedGates::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
         }
     }
 }
-
 
 bool LockedGates::unlock(usize index) {
     if (index >= m_sim.gates.size()) {

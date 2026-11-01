@@ -11,6 +11,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
+#include "engine/render/SceneFog.h"
 
 namespace gdl {
 
@@ -71,11 +72,14 @@ struct DrawState {
     /** The lightmap is an authored silhouette: its clear texels cut the draw away instead
      * of darkening it. */
     bool lightmapCutout = false;
+    bool lightmapRgb = false; ///< optional imported RGB lighting; native GC uses alpha intensity
     bool alphaToCoverage = false; ///< allow MSAA coverage for depth-writing cutout surfaces
     bool smoothSprite = false;    ///< opt-in magnification of soft, camera-facing pickup art
     f32 darken = 0.0f;            ///< how much of its colour is taken away: 0 none, 1 all
     f32 colorScale =
         1.0f; ///< RGB combiner scale, clamped before alpha blending; leaves alpha alone
+    f32 whiteBlend = 0.0f; ///< presentation flash toward white, preserving texture coverage
+    SceneFog fog;          ///< resolved when recording a draw; UI normally has zero fog
 
     /** Available flipbook blend after preserving skin/lightmap ownership of stage two. */
     f32 effectiveTextureBlend() const {
@@ -124,6 +128,15 @@ public:
     virtual void endFrame() = 0;
 
     virtual void setClearColor(const Vec4& rgba) = 0;
+    /** World-only draw scope; callers restore the previous value before UI/post effects. */
+    void setSceneFog(const SceneFog& fog) { m_sceneFog = fog.valid() ? fog : SceneFog{}; }
+    const SceneFog& sceneFog() const { return m_sceneFog; }
+    DrawState resolvedDrawState(DrawState state) const {
+        if (m_sceneFog.reciprocalScale != 0 || m_sceneFog.bias != 0) {
+            state.fog = m_sceneFog;
+        }
+        return state;
+    }
     virtual Extent2D framebufferExtent() const = 0;
     /** Supplies a main-thread window-size snapshot for a render worker. Direct devices
      * may continue querying their window when no override has been supplied. */
@@ -173,6 +186,9 @@ public:
     virtual void addHeatSource(const HeatSource& source) = 0;
     /** Contact shading before translucent effects and UI. */
     virtual bool applyAmbientOcclusion(const AmbientOcclusion& settings) = 0;
+
+private:
+    SceneFog m_sceneFog;
 };
 
 /** Either throws RenderDeviceUnavailable when its API cannot start on this machine. The

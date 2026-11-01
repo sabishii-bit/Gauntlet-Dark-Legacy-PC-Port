@@ -153,12 +153,13 @@ bool Chests::bind(RenderDevice& device, const WorldLayout& layout, const AssetSc
         chest.locked = (static_cast<u32>(info.activeType) & kLocked) != 0;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         if (!chest.figure.place(device, scope, name, instance,
-                                (info.collisionFlags & 1U) != 0 ? nullptr : collision)) {
+                                (info.collisionFlags & ItemInfo::kKeepsHeight) != 0 ? nullptr
+                                                                                    : collision)) {
             log::warn("Chests: no figure {} in the item archive", name);
         }
         const auto* support =
             itemSupportAt(instance.position, collision, restCollision ? &*restCollision : nullptr);
-        if (support != nullptr && (info.collisionFlags & 1U) == 0) {
+        if (support != nullptr && (info.collisionFlags & ItemInfo::kKeepsHeight) == 0) {
             constexpr f32 kAbove = 4.0f;
             constexpr f32 kBelow = 10.0f;
             if (const auto floor = support->restingFloorAt(instance.position, kAbove, kBelow, 1)) {
@@ -435,7 +436,7 @@ usize Chests::updateXray(RenderDevice& device, const AssetScope& scope, ItemArch
                 std::string_view name = record.name;
                 if (record.type == ItemInfo::kPlacedEnemy) {
                     name = "DEATH_ICON";
-                } else if (record.subtype == 2 && chest.count > 1) {
+                } else if (record.subtype == ItemInfo::kKey && chest.count > 1) {
                     name = "KEYRING";
                 }
                 AssetScope previewArt = scope;
@@ -513,7 +514,6 @@ void Chests::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& l
         }
     }
 }
-
 
 bool Chests::setLocked(usize index, bool locked) {
     if (index >= m_sim.chests.size()) {

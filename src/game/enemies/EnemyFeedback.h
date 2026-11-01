@@ -27,6 +27,7 @@ struct EnemyFeedback {
     f32 halfHeight = 0;
     s32 enemy = -1;
     u64 instance = 0; ///< captured before the source slot can be recycled
+    f32 remainingHealth = 0; ///< captured at this hit, before later hits or slot reuse
     bool operator==(const EnemyFeedback&) const = default;
 
     std::string sound(std::span<const LevelEnemy> roster, s32 bossType = -1) const;
