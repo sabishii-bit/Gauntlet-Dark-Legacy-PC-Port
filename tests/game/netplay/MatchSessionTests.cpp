@@ -337,6 +337,9 @@ TEST_CASE("match control has an exact bounded versioned encoding", "[netplay][ma
             corrupt[index] = 255;
             CHECK_FALSE(MatchControlPacket::decode(corrupt));
         }
+        auto named = bytes;
+        named[45] = 0x02; // a resync peer, the host, on a kind that names none
+        CHECK_FALSE(MatchControlPacket::decode(named));
     }
     auto context = room.sessions[1].context();
     SECTION("missing seat grant") {
@@ -429,12 +432,12 @@ TEST_CASE("match control seat votes and peer sets keep their byte layout",
     resync.resyncPeers = PeerSet::fromBits(0b01100);
     const auto resyncBytes = MatchControlPacket::encode(resync);
     REQUIRE(resyncBytes);
-    constexpr std::string_view kResync = "47444c54"                         // magic
-                                         "08070000"                         // version, resync
-                                         "0300000000000000"                 // epoch
-                                         "34120000"                         // scene
-                                         "3c000100"                         // tick rate, lead
-                                         "01020100"                         // owners
+    constexpr std::string_view kResync = "47444c54"         // magic
+                                         "08070000"         // version, resync
+                                         "0300000000000000" // epoch
+                                         "34120000"         // scene
+                                         "3c000100"         // tick rate, lead, start
+                                         "01020100"         // owners
                                          "11000000220000003300000000000000" // grants
                                          "000c0000"          // challenge won, peers two, three
                                          "0000000000000000"  // source epoch
@@ -444,6 +447,50 @@ TEST_CASE("match control seat votes and peer sets keep their byte layout",
     const auto decodedResync = MatchControlPacket::decode(*resyncBytes);
     REQUIRE(decodedResync);
     CHECK(decodedResync->resyncPeers == resync.resyncPeers);
+}
+
+TEST_CASE("match control refuses peer sets its kind cannot name", "[netplay][match-session]") {
+    constexpr usize kPeersByte = 45;
+    MatchContext context;
+    context.epoch = 3;
+    context.scene = 0x1234;
+    context.owners = {1, 2, 1, 0};
+    context.grants = {0x11, 0x22, 0x33, 0};
+    struct Case {
+        MatchControlKind kind = MatchControlKind::Prepare;
+        u64 tick = 0;
+        PeerSet named;   ///< peers the kind may name
+        PeerSet refused; ///< peers it may not
+    };
+    const std::array cases{
+        // A resync names guests only: not the host, nor a peer past four.
+        Case{MatchControlKind::Resync, 60, PeerSet::of(2), PeerSet::fromBits(0b00110)},
+        Case{MatchControlKind::Resync, 60, PeerSet::of(2), PeerSet::fromBits(0x20)},
+        // A rebuild's end and a drop name exactly one guest.
+        Case{MatchControlKind::ResyncDone, 0, PeerSet::of(2), PeerSet{}},
+        Case{MatchControlKind::ResyncDone, 0, PeerSet::of(2), PeerSet::fromBits(0b01100)},
+        Case{MatchControlKind::Drop, 60, PeerSet::of(2), PeerSet{}},
+        Case{MatchControlKind::Drop, 60, PeerSet::of(2), PeerSet::fromBits(0b01100)},
+        // Every other kind names nobody.
+        Case{MatchControlKind::Prepare, 0, PeerSet{}, PeerSet::of(2)},
+    };
+    for (const Case& refusal : cases) {
+        INFO("kind " << static_cast<s32>(refusal.kind) << ", peers "
+                     << static_cast<s32>(refusal.refused.bits()));
+        MatchControl control;
+        control.kind = refusal.kind;
+        control.context = context;
+        control.resyncTick = refusal.tick;
+        control.resyncPeers = refusal.named;
+        const auto bytes = MatchControlPacket::encode(control);
+        REQUIRE(bytes);
+        REQUIRE(MatchControlPacket::decode(*bytes));
+        control.resyncPeers = refusal.refused;
+        CHECK_FALSE(MatchControlPacket::encode(control));
+        auto forged = *bytes;
+        forged[kPeersByte] = refusal.refused.bits();
+        CHECK_FALSE(MatchControlPacket::decode(forged));
+    }
 }
 
 TEST_CASE("console packets keep their byte layout", "[netplay][match-session][console-input]") {

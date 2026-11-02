@@ -337,6 +337,16 @@ TEST_CASE("shop setup authenticates the ending flag and rejects old or undefined
     CHECK(guest.setup()->expanded);
     CHECK(guest.setup()->ending);
 }
+TEST_CASE("a shop setup names only the party's four seats as fallen", "[netplay][online-shop]") {
+    ShopSetup setup{1793, 3585, true, {}, {1000, 100, 1000}, {}};
+    CHECK(setup.valid());
+    setup.fallen = SeatSet::fromBits(0b1111);
+    CHECK(setup.valid());
+    setup.fallen = SeatSet::of(4);
+    CHECK_FALSE(setup.valid());
+    setup.fallen = SeatSet::fromBits(0b1000'0001);
+    CHECK_FALSE(setup.valid());
+}
 TEST_CASE("a two-peer post-level epoch waits for profiles setup and every shop close",
           "[netplay][online-shop]") {
     test::OnlinePair pair;

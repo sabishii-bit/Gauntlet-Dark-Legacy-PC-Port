@@ -8,8 +8,18 @@
 #include "engine/io/ByteWriter.h"
 #include "engine/math/RandomDistribution.h"
 
+#include "game/rollback/InputCommand.h"
+
 namespace gdl::game {
 namespace {
+/** Every seat of the party, the only ones a setup may name as fallen. */
+constexpr SeatSet kSeats = [] {
+    SeatSet seats;
+    for (usize seat = 0; seat < InputCommand::kSeats; ++seat) {
+        seats.insert(seat);
+    }
+    return seats;
+}();
 /** The setup packet's flag word: two bits, then a bit a seat for the fallen. */
 constexpr u32 kSetupExpanded = 0x1;
 constexpr u32 kSetupEnding = 0x2;
@@ -17,6 +27,7 @@ constexpr u32 kSetupFallenShift = 8;
 constexpr u32 kSetupMask = kSetupExpanded | kSetupEnding | (0xFU << kSetupFallenShift);
 
 constexpr u32 kMagic = fourcc("GDSH");
+constexpr u8 kVersion = 2;
 enum class Kind : u8 { Setup, Input, Step, Done };
 constexpr u16 kHeld = 0x780;
 constexpr u16 kActions = 0x7ff;
@@ -25,7 +36,7 @@ std::vector<u8> packet(u64 epoch, Kind kind) {
     std::vector<u8> bytes;
     ByteWriter out(bytes);
     out.writeU32(kMagic);
-    out.writeU8(2);
+    out.writeU8(kVersion);
     out.writeU8(static_cast<u8>(kind));
     out.writeU16(0);
     out.writeU64(epoch);
@@ -54,7 +65,7 @@ MenuInput menu(u16 bits) {
 } // namespace
 bool ShopSetup::valid() const {
     return source != 0 && source <= 65535 && destination != 0 && destination <= 65535 &&
-           fallen.bits() < 16 && std::ranges::all_of(maxima, [](s32 v) { return v >= 0; }) &&
+           kSeats.includes(fallen) && std::ranges::all_of(maxima, [](s32 v) { return v >= 0; }) &&
            std::ranges::all_of(totals, [](const auto& values) {
                return std::ranges::all_of(values, [](s32 v) { return v >= 0; });
            });
@@ -120,7 +131,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
     }
     ByteReader reader(bytes);
     reader.readU32();
-    if (reader.readU8() != 2) {
+    if (reader.readU8() != kVersion) {
         return Admission::Invalid;
     }
     const auto kind = static_cast<Kind>(reader.readU8());
