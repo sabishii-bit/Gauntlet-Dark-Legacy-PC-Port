@@ -21,3 +21,7 @@ TEST_CASE("Death variants have distinct drains and legend potion rewards", "[dea
     CHECK(DeathRules::magicHealing(76, 100) == Catch::Approx(23.2f));
     CHECK(DeathRules::magicHealing(99, 50) == Catch::Approx(48.4f));
 }
+
+TEST_CASE("Death's touch is turned by the armour word's anti-death bit", "[death][flag-masks]") {
+    STATIC_REQUIRE(DeathRules::kProtection == 0x80000U);
+}

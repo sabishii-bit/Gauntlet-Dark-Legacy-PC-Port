@@ -69,10 +69,11 @@ namespace {
 
 using Action = PlayerAnimator::Action;
 
-/** The specials that bring a companion (0x7004F1), whose time left fades it. */
+/** The specials that bring a companion, whose time left fades it. */
 constexpr u32 kCompanionSpecials = powerup::kLevitation | powerup::kBreath | powerup::kPhoenix |
                                    powerup::kPojo | powerup::kMikey | powerup::kHandOfDeath |
                                    powerup::kHealthVamp;
+static_assert(kCompanionSpecials == 0x7004F1U);
 constexpr f32 kFadeSeconds = 1.0f;
 
 } // namespace

@@ -25,12 +25,12 @@ f32 yawBetween(const Vec3& from, const Vec3& to) {
 
 namespace {
 constexpr f32 kMostPush = 40.0f;
-// What a hit's flags do to a great one (CritterGetDoAction, CritterDoKnockback).
-constexpr u32 kKnockOver = damage::kKnockOver;   ///< knocked down: KD
-constexpr u32 kKnockedBack = damage::kKnockDown; ///< knocked back: KB
-constexpr u32 kShaken = damage::kKnockBack;      ///< flinches: HITREACT
+// What a hit's flags do to a great one (CritterGetDoAction, CritterDoKnockback): a knock over
+// knocks it down (KD), a knock down only knocks it back (KB) and a knock back makes it flinch
+// (HITREACT).
 /** The heaviest shoves. */
 constexpr u32 kHardPush = damage::kBlownAway | damage::kKnockOver | damage::kWhirlwind;
+static_assert(kHardPush == 0x10140U);
 constexpr f32 kDeathPush = 20.0f;
 constexpr f32 kHardPushScale = 10.0f;
 constexpr f32 kKnockBackPush = 7.5f;
@@ -404,9 +404,9 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
             scale = kDeathPush;
         } else if ((flags & kHardPush) != 0) {
             scale = kHardPushScale;
-        } else if ((flags & kKnockedBack) != 0) {
+        } else if ((flags & damage::kKnockDown) != 0) {
             scale = kKnockBackPush;
-        } else if ((flags & kShaken) != 0) {
+        } else if ((flags & damage::kKnockBack) != 0) {
             scale = kShakePush;
         }
         scale -= critter.stock->definition.knockbackReduction;
@@ -449,10 +449,10 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
     critter.hurtFlags = 0;
     const bool linked = current != nullptr && current->link >= 0;
     bool reacted = linked;
-    if (!reacted && (flags & kKnockOver) != 0) {
+    if (!reacted && (flags & damage::kKnockOver) != 0) {
         reacted = cutIn(data.moveOfType(MoveDefinition::kKnockDown));
     }
-    if (!reacted && (flags & (kKnockOver | kKnockedBack)) != 0) {
+    if (!reacted && (flags & (damage::kKnockOver | damage::kKnockDown)) != 0) {
         reacted = cutIn(data.moveOfType(MoveDefinition::kKnockBack));
     }
     if (!reacted && critter.roarOwed >= roarThreshold(m_sim.scales.players) &&
@@ -460,7 +460,7 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         critter.roarOwed = 0.0f;
         reacted = true;
     }
-    if (!reacted && (flags & kShaken) != 0) {
+    if (!reacted && (flags & damage::kKnockBack) != 0) {
         reacted = cutIn(data.moveOfType(MoveDefinition::kHitReact));
     }
     if (reacted && !linked) {

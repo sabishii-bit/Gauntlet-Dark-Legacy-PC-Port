@@ -16,7 +16,6 @@
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
 #include "game/party/PartyMotion.h"
-#include "game/players/PowerupEffects.h"
 #include "game/rollback/PlayerHealthCheckpoint.h"
 #include "game/rollback/PlayerRuntimePacket.h"
 

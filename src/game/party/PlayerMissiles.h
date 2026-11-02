@@ -19,7 +19,6 @@
 #include "game/config/MultiplayerMode.h"
 #include "game/effects/EffectTrees.h"
 #include "game/effects/MissileStreak.h"
-#include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
 

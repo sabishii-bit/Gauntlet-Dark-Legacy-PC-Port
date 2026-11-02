@@ -749,6 +749,7 @@ CombatantProjectiles::hitItems(const Flying& flying, const Vec3& from, const Vec
         // SfxSkipItem: hostile effects can hit safe rocks, but magic/gas and
         // unbreakable armour do not take damage from these attacks.
         constexpr u32 kMagicOrGas = damage::kMagic | damage::kGas;
+        static_assert(kMagicOrGas == 0xA00U);
         if (item->rockArmor >= 0 && (damage.flags & kMagicOrGas) == 0) {
             const f32 power = damage.damage * flying.shot.damageScale;
             m_sim.rockHits.push_back({static_cast<usize>(item->rock), power});

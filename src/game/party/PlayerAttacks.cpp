@@ -52,6 +52,7 @@ constexpr f32 kChargeBlow = 32.0f; ///< and to an enemy or a great one (PlayerMo
 constexpr u32 kFireElement = 1;    ///< the fire shield's harm
 /** The lightning shield's blow: lightning, knocking down. */
 constexpr u32 kShockFlags = damage::kElectric | damage::kKnockDown;
+static_assert(kShockFlags == 0x22U);
 constexpr f32 kFramesPerSecond = 30.0f;
 constexpr std::string_view kShockEffect = "L_SHLD_ACTIVE"; ///< fx 55, from shield to struck
 constexpr std::string_view kHaloSound = "S_HALO";          ///< once as Death is taken hold of

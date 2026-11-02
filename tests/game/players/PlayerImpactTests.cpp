@@ -14,6 +14,11 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("the heavy knocks are the DMG_ bits that put a player down",
+          "[game][players][player-impact][flag-masks]") {
+    STATIC_REQUIRE(PlayerImpact::kHeavy == 0x10160U);
+}
+
 TEST_CASE("damage flags select grounded reactions rather than damage amount alone",
           "[game][players][player-impact]") {
     PlayerImpact impact;

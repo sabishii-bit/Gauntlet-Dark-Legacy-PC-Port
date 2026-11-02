@@ -62,16 +62,6 @@ TEST_CASE("the damage word keeps the original's DMG_ bits", "[game][damage-types
     // The knocks a weak area blow loses, and those that throw a body down.
     STATIC_REQUIRE(damage::kKnocks == 0x170U);
     STATIC_REQUIRE(damage::kHeavyKnocks == 0x10160U);
-    // A great one's heaviest shoves, and what frees a struck player's first slide.
-    STATIC_REQUIRE((damage::kBlownAway | damage::kKnockOver | damage::kWhirlwind) == 0x10140U);
-    STATIC_REQUIRE((damage::kHeavyKnocks | damage::kThrown) == 0x18160U);
-    // The lightning shield's blow, the phoenix's, a suicide blast's and a strong throw's.
-    STATIC_REQUIRE((damage::kElectric | damage::kKnockDown) == 0x22U);
-    STATIC_REQUIRE((damage::kFire | damage::kKnockBack) == 0x11U);
-    STATIC_REQUIRE((damage::kFire | damage::kKnockDown | damage::kExplode) == 0x421U);
-    STATIC_REQUIRE((damage::kTurbo | damage::kKnockBack) == 0x02000010U);
-    // What a safe rock takes no harm from.
-    STATIC_REQUIRE((damage::kMagic | damage::kGas) == 0xA00U);
 }
 
 TEST_CASE("the common hit marks are blood or the element's burst, and the deaths their own",

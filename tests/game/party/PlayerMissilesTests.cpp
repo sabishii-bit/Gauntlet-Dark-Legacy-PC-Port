@@ -25,6 +25,13 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("a throw's modifier masks keep the original's DMG_ bits",
+          "[game][missiles][weapon-replay][flag-masks]") {
+    STATIC_REQUIRE(PlayerMissiles::kPlainModifiers == 0x20480000U);
+    STATIC_REQUIRE(PlayerMissiles::kStrongThrowFlags == 0x02000010U);
+    STATIC_REQUIRE(PlayerMissiles::kReplayModifiers == 0x2248001FU);
+}
+
 TEST_CASE("weapon replay admits authored elemental strong and ordinary spread modifiers",
           "[game][missiles][weapon-replay][elemental-prediction]") {
     for (u32 element = 0; element < 16; ++element) {

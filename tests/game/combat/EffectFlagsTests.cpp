@@ -32,10 +32,6 @@ TEST_CASE("the effect word keeps the SFXX row's bits", "[game][effect-flags]") {
     CHECK(effect_flags::kNoLoop == 0x800000U);
     CHECK(effect_flags::kParticleMask == 0x0F000000U);
     CHECK(effect_flags::kShortParticle == 0x02000000U);
-    // The placements a turbo strike's effects cannot take.
-    STATIC_REQUIRE((effect_flags::kOnFloor | effect_flags::kDetached |
-                    effect_flags::kAtInitialRoot | effect_flags::kRootParent |
-                    effect_flags::kOtherParent | effect_flags::kUntilNextMove) == 0x428D0U);
 }
 
 } // namespace

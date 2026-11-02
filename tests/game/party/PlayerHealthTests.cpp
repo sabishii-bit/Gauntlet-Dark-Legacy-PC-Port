@@ -46,6 +46,11 @@ struct Fixture {
     }
 };
 
+TEST_CASE("a player's heavy flags are the DMG_ bits that throw a body down",
+          "[player-health][flag-masks]") {
+    STATIC_REQUIRE(PlayerHealth::kHeavyFlags == 0x10160U);
+}
+
 TEST_CASE("both combo participants reject damage and reactions until unlinked",
           "[player-health][attack-invulnerability]") {
     Fixture grabber;

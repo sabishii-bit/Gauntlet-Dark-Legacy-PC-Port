@@ -197,6 +197,7 @@ TurboEffectResources::prepareStrike(RenderDevice& device, s32 row, ItemArchive& 
         constexpr u32 kUnsupportedParents =
             effect_flags::kOnFloor | effect_flags::kDetached | effect_flags::kAtInitialRoot |
             effect_flags::kRootParent | effect_flags::kOtherParent | effect_flags::kUntilNextMove;
+        static_assert(kUnsupportedParents == 0x428D0U);
         if ((effect.flags & kUnsupportedParents) != 0) {
             return Status::UnsupportedParent;
         }

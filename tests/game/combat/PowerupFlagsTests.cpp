@@ -10,9 +10,14 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+/** Whether every one of `Constants` is a constant `T`. */
+template <class T, class... Constants>
+constexpr bool kAllOfType = std::conjunction_v<std::is_same<Constants, const T>...>;
+
 TEST_CASE("the powerup kinds are the original's item subtypes", "[game][powerup-flags]") {
-    STATIC_REQUIRE(std::is_same_v<decltype(powerup::kWeapon), const s32>);
-    STATIC_REQUIRE(std::is_same_v<decltype(powerup::kSpecial), const s32>);
+    STATIC_REQUIRE(kAllOfType<s32, decltype(powerup::kWeapon), decltype(powerup::kArmor),
+                              decltype(powerup::kSpeed), decltype(powerup::kMagic),
+                              decltype(powerup::kSpecial)>);
     CHECK(powerup::kWeapon == 5);
     CHECK(powerup::kArmor == 6);
     CHECK(powerup::kSpeed == 7);
@@ -21,9 +26,18 @@ TEST_CASE("the powerup kinds are the original's item subtypes", "[game][powerup-
 }
 
 TEST_CASE("the special word keeps the original's SPECIAL_TYPE bits", "[game][powerup-flags]") {
-    STATIC_REQUIRE(std::is_same_v<decltype(powerup::kLevitation), const u32>);
-    STATIC_REQUIRE(std::is_same_v<decltype(powerup::kBreath), const u32>);
-    STATIC_REQUIRE(std::is_same_v<decltype(powerup::kHealthVamp), const u32>);
+    STATIC_REQUIRE(
+        kAllOfType<u32, decltype(powerup::kLevitation), decltype(powerup::kXRay),
+                   decltype(powerup::kInvisible), decltype(powerup::kStopTime),
+                   decltype(powerup::kFireBreath), decltype(powerup::kAcidBreath),
+                   decltype(powerup::kLightningBreath), decltype(powerup::kBreath),
+                   decltype(powerup::kPhoenix), decltype(powerup::kGrowth),
+                   decltype(powerup::kEnemyShrink), decltype(powerup::kPojo),
+                   decltype(powerup::kSkorneHorns), decltype(powerup::kSkorneMask),
+                   decltype(powerup::kRightGauntlet), decltype(powerup::kLeftGauntlet),
+                   decltype(powerup::kSpeedBoost), decltype(powerup::kHealth),
+                   decltype(powerup::kDummy), decltype(powerup::kTurbo), decltype(powerup::kMikey),
+                   decltype(powerup::kHandOfDeath), decltype(powerup::kHealthVamp)>);
     CHECK(powerup::kLevitation == 0x1U);
     CHECK(powerup::kXRay == 0x2U);
     CHECK(powerup::kInvisible == 0x4U);
@@ -47,9 +61,12 @@ TEST_CASE("the special word keeps the original's SPECIAL_TYPE bits", "[game][pow
     CHECK(powerup::kMikey == 0x100000U);
     CHECK(powerup::kHandOfDeath == 0x200000U);
     CHECK(powerup::kHealthVamp == 0x400000U);
-    // The specials that bring a companion.
-    STATIC_REQUIRE((powerup::kLevitation | powerup::kBreath | powerup::kPhoenix | powerup::kPojo |
-                    powerup::kMikey | powerup::kHandOfDeath | powerup::kHealthVamp) == 0x7004F1U);
+}
+
+TEST_CASE("a wrong type among the constants fails the type check", "[game][powerup-flags]") {
+    STATIC_REQUIRE_FALSE(
+        kAllOfType<u32, decltype(powerup::kLevitation), decltype(powerup::kArmor)>);
+    STATIC_REQUIRE_FALSE(kAllOfType<s32, decltype(powerup::kWeapon), decltype(powerup::kTurbo)>);
 }
 
 } // namespace

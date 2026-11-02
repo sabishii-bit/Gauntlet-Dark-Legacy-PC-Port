@@ -62,6 +62,7 @@ constexpr f32 kCloudHold = 2.0f; ///< the cloud's second stage lasts this
 constexpr f32 kBlastRadius = 6.0f;
 constexpr f32 kCloudRadius = 7.5f;
 constexpr u32 kBlastFlags = damage::kFire | damage::kKnockDown | damage::kExplode;
+static_assert(kBlastFlags == 0x421U);
 constexpr f32 kBlastLight = 20.0f;
 constexpr f32 kRingScale = 1.2f;
 constexpr f32 kCloudDrop = 1.0f;

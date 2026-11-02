@@ -46,6 +46,13 @@ std::filesystem::path unpackedRoot() {
     return test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
 }
 
+TEST_CASE("an enemy hit's masks keep the original's DMG_ bits", "[game][enemies][flag-masks]") {
+    STATIC_REQUIRE(EnemyHit::kKnockBack == 0x10U);
+    STATIC_REQUIRE(EnemyHit::kKnockDown == 0x20U);
+    STATIC_REQUIRE(EnemyHit::kFloors == 0x10160U);
+    STATIC_REQUIRE(EnemyHit::kMagic == 0x200U);
+}
+
 TEST_CASE("enemy aim snapshots retain the native collision-height anchor",
           "[enemies][alpha-aim-acquisition][assets]") {
     test::FakeRenderDevice device;

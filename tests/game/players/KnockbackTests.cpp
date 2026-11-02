@@ -22,6 +22,16 @@ constexpr f32 kPace = 10.0f;
 
 static_assert(std::is_trivially_copyable_v<Knockback::Checkpoint>);
 
+TEST_CASE("knockback's flag masks keep the original's DMG_ bits",
+          "[game][players][knockback][flag-masks]") {
+    STATIC_REQUIRE(Knockback::kKnockBack == 0x10U);
+    STATIC_REQUIRE(Knockback::kKnockDown == 0x20U);
+    STATIC_REQUIRE(Knockback::kBlownAway == 0x40U);
+    STATIC_REQUIRE(Knockback::kKnockOver == 0x100U);
+    STATIC_REQUIRE(Knockback::kWhirlwind == 0x10000U);
+    STATIC_REQUIRE(Knockback::kFastSlide == 0x18160U);
+}
+
 TEST_CASE("contact adds direct velocity without requiring damage or a reaction",
           "[game][players][knockback][multiplayer]") {
     Knockback knock;

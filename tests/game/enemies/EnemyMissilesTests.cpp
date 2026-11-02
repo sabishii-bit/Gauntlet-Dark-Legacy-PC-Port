@@ -30,6 +30,16 @@ using Catch::Approx;
 constexpr s32 kTicks = 2;
 constexpr f32 kStep = 1.0f / 30.0f;
 
+TEST_CASE("enemy missile and blast masks keep the original's DMG_ bits",
+          "[game][enemies][flag-masks]") {
+    STATIC_REQUIRE(EnemyMissileKind::kKnockBack == 0x10U);
+    STATIC_REQUIRE(EnemyMissileKind::kKnockDown == 0x20U);
+    STATIC_REQUIRE(EnemyMissileKind::kArrowHit == 0x20000U);
+    STATIC_REQUIRE(EnemyMissileKind::kBoltHit == 0x40000U);
+    STATIC_REQUIRE(EnemyMissileKind::kPierces == 0x100000U);
+    STATIC_REQUIRE(EnemyBlast::kGas == 0x800U);
+}
+
 void checkBillboard(const test::RecordedDraw& draw, const CameraFrame& camera) {
     REQUIRE(draw.vertices.size() >= 3);
     const Vec3 across = draw.vertices[1].position - draw.vertices[0].position;

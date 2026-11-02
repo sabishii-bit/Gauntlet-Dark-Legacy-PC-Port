@@ -11,8 +11,7 @@ namespace gdl::game {
  * separate from its pain sound. */
 struct PlayerImpact {
     /** The knocks that put the body down. */
-    static constexpr u32 kHeavy =
-        damage::kKnockDown | damage::kBlownAway | damage::kKnockOver | damage::kWhirlwind;
+    static constexpr u32 kHeavy = damage::kHeavyKnocks;
 
     u32 flags = 0;
     Vec3 direction{0.0f};
