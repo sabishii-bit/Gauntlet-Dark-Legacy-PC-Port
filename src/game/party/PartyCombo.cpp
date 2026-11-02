@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/PowerupFlags.h"
 #include "game/party/FloorRiding.h"
 #include "game/party/PartyCollision.h"
 #include "game/players/PowerupEffects.h"

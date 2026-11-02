@@ -19,6 +19,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/NameCheats.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
 #include "game/level/LevelCatalog.h"
 #include "game/party/PartyPickups.h"

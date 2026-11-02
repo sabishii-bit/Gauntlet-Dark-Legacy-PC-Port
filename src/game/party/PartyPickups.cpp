@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/NameCheats.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/hud/HelpMessages.h"
 #include "game/hud/PickupHud.h"
 #include "game/players/ItemPickup.h"

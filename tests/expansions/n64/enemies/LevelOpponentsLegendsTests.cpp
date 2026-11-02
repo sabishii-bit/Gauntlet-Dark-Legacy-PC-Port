@@ -16,6 +16,7 @@
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LevelOpponents.h"
@@ -74,8 +75,9 @@ TEST_CASE("Native Town suicide barrels release damaging poison instead of the fi
     CAPTURE(mapName);
     const auto directory =
         test::dataDirectory().parent_path() / "assets/n64/extracted/levels" / mapName;
-    if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("Native N64 extraction is not installed");
+    }
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
                                              readFile(directory / "objects.wad"),
@@ -133,8 +135,9 @@ TEST_CASE("Native Town suicide barrels release damaging poison instead of the fi
     for (s32 frame = 0; frame < 150; ++frame) {
         opponents.update(2, 1.0f / 30, players, {}, events);
         effects.update(1.0f / 30);
-        for (usize i = 0; i < effects.count(); ++i)
+        for (usize i = 0; i < effects.count(); ++i) {
             shown.insert(effects.effect(i).name);
+        }
     }
     CHECK(shown.contains("SUICIDEEXP"));
     if (poison) {

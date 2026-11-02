@@ -5,7 +5,7 @@
 
 #include "expansions/shared/level/LegendsItems.h"
 #include "game/combat/ArmorFlags.h"
-#include "game/players/PowerupEffects.h"
+#include "game/combat/PowerupFlags.h"
 
 namespace {
 using namespace gdl;

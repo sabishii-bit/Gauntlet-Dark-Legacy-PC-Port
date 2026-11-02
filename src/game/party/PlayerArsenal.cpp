@@ -11,6 +11,7 @@
 
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/NativeStateResources.h"

@@ -8,7 +8,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/ArmorFlags.h"
-#include "game/players/PowerupEffects.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {

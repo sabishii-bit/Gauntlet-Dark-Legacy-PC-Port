@@ -8,6 +8,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/ArmorFlags.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/party/PlayerFigure.h"
 

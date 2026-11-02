@@ -154,6 +154,7 @@ add_library(game STATIC
     combat/BodyContact.cpp
     combat/Damage.cpp
     combat/DamageTypes.cpp
+    combat/PowerupFlags.h
     party/PlayerPowerups.h
     party/PlayerPowerups.cpp
     players/PowerupEffects.h

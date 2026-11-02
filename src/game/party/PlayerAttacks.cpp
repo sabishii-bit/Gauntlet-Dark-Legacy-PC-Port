@@ -19,6 +19,7 @@
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/enemies/DeathRules.h"
@@ -1788,7 +1789,8 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     }
     const auto* imported = m_resources->world.imported();
     const auto* encounter = imported ? imported->importedBoss() : nullptr;
-    if (encounter && encounter->rangedAimFirst && targets.opponents.bosses().view().awake) {
+    if (encounter != nullptr && encounter->rangedAimFirst &&
+        targets.opponents.bosses().view().awake) {
         // The encounter opts into a first query, not an unconditional target:
         // the ordinary facing, cursor-line, range and wall tests still apply.
         // Do not remove fixtures from the physical or melee target rosters.

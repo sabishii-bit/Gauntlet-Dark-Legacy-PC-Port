@@ -4,6 +4,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/PlayerAttacks.h"
 

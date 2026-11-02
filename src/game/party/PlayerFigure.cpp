@@ -21,6 +21,7 @@
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerMissiles.h"
 

@@ -12,11 +12,11 @@
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/hud/HelpMessages.h"
 #include "game/party/PartyPickups.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PickupVoices.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 

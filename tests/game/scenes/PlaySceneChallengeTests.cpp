@@ -16,7 +16,7 @@
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
 #include "game/characters/ClassData.h"
-#include "game/players/PowerupEffects.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {

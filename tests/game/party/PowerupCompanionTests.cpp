@@ -11,6 +11,7 @@
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/combat/ArmorFlags.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PowerupCompanion.h"
 

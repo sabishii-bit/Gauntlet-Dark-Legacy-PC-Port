@@ -6,6 +6,7 @@
 #include "engine/math/RandomDistribution.h"
 
 #include "game/characters/ClassData.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {

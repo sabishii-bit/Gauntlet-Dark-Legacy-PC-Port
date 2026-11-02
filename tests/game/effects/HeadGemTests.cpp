@@ -2,8 +2,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/HeadGem.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

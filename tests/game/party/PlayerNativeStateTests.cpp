@@ -7,8 +7,8 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/world/WorldCollision.h"
 
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerRuntime.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

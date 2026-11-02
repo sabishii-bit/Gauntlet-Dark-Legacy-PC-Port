@@ -21,6 +21,7 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"

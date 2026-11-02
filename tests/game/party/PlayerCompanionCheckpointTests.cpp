@@ -11,6 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerFigure.h"
 #include "game/rollback/PlayerRuntimePacket.h"
 

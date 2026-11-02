@@ -33,6 +33,7 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
 #include "game/enemies/EnemyKinds.h"
@@ -49,7 +50,6 @@
 #include "game/party/PlayerHealth.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/PlayerAnimator.h"
-#include "game/players/PowerupEffects.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;

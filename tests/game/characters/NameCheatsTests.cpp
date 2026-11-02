@@ -10,6 +10,7 @@
 #include "game/characters/Inventory.h"
 #include "game/characters/NameCheats.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PowerupEffects.h"

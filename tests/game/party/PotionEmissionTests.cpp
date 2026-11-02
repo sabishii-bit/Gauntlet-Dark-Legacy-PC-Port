@@ -14,6 +14,7 @@
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PotionEmission.h"
 #include "game/players/PlayerAnimator.h"

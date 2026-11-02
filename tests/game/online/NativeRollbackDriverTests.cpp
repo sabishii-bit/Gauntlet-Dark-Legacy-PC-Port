@@ -16,8 +16,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterProfile.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/online/NativeRollbackDriver.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

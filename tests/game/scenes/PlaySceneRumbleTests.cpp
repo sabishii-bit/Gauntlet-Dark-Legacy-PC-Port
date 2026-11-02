@@ -11,6 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/ArmorFlags.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/config/ControlProfiles.h"
 #include "game/scenes/PlayScene.h"
 

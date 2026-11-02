@@ -14,6 +14,7 @@
 #include "game/characters/CharacterProfile.h"
 #include "game/characters/NameCheats.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerAttacks.h"

@@ -9,8 +9,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/players/PlayerActor.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

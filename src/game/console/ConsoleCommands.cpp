@@ -20,11 +20,11 @@
 #include "game/characters/Relics.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/TowerAccess.h"
-#include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
 

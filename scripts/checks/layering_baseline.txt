@@ -15,8 +15,6 @@ src/game/audio/AmbientSounds.cpp -> game/level
 src/game/audio/LevelSoundscape.h -> game/level
 src/game/audio/MusicAreas.cpp -> game/level
 src/game/audio/SceneSoundEvents.h -> game/rollback
-src/game/characters/Inventory.cpp -> game/players
-src/game/characters/NameCheats.cpp -> game/players
 src/game/characters/Progression.h -> expansions/shared
 src/game/console/ConsoleCommands.h -> expansions/shared
 src/game/effects/CritterCueEmission.h -> game/critters

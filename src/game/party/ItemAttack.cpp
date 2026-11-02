@@ -6,6 +6,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 
 namespace gdl::game {
 namespace {

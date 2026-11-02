@@ -9,6 +9,7 @@
 
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/FloorRiding.h"
 #include "game/party/PartyCollision.h"
 #include "game/party/PartyCombo.h"

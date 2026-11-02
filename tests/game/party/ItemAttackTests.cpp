@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/ItemAttack.h"
 
 namespace {

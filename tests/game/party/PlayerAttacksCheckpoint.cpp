@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 
 namespace gdl::game {
 namespace {

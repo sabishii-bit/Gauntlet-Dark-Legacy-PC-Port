@@ -15,6 +15,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/LevelItemArchives.h"
 #include "game/players/PowerupEffects.h"

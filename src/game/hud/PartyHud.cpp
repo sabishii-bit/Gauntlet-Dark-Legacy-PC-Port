@@ -9,6 +9,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PartyNames.h"
 #include "game/players/PickupVoices.h"
 #include "game/players/PowerupEffects.h"

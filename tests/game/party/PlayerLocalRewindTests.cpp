@@ -14,10 +14,10 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerRuntimeCheckpoint.h"
-#include "game/players/PowerupEffects.h"
 #include "game/rollback/LocalStateHistory.h"
 #include "game/rollback/NativeProbeTiming.h"
 

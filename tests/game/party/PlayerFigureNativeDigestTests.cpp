@@ -9,6 +9,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/BodyGlow.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/NativeStateResources.h"

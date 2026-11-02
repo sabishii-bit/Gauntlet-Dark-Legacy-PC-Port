@@ -20,6 +20,7 @@
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/hud/CinematicBars.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PartyLighting.h"

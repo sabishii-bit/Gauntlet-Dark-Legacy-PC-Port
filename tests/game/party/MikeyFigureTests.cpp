@@ -2,8 +2,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/MikeyFigure.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

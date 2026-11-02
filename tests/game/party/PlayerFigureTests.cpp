@@ -18,6 +18,7 @@
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerFigure.h"
 #include "game/players/PowerupEffects.h"

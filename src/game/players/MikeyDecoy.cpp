@@ -4,7 +4,7 @@
 #include <cmath>
 #include <utility>
 
-#include "game/players/PowerupEffects.h"
+#include "game/combat/PowerupFlags.h"
 
 namespace gdl::game {
 bool MikeyDecoy::Checkpoint::valid() const {

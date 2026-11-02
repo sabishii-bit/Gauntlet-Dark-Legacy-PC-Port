@@ -11,6 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/ArmorFlags.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/party/PartyFigures.h"
 #include "game/players/PowerupEffects.h"

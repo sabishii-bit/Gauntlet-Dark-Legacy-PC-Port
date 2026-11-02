@@ -14,12 +14,12 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
 #include "game/players/ComboMove.h"
 #include "game/players/CursorAim.h"
-#include "game/players/PowerupEffects.h"
 #include "game/rollback/SessionInputs.h"
 
 namespace {

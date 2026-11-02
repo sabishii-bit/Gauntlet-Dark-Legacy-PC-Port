@@ -12,6 +12,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/enemies/LevelOpponents.h"
@@ -19,7 +20,6 @@
 #include "game/level/LevelCatalog.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/ItemPickup.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

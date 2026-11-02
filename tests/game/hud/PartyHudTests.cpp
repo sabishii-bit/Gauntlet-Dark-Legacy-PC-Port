@@ -11,8 +11,8 @@
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/NameCheats.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/hud/PartyHud.h"
-#include "game/players/PowerupEffects.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "game/combat/PowerupFlags.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {

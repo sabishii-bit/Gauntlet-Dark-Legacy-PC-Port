@@ -27,6 +27,7 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"

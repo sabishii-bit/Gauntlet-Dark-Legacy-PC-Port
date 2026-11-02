@@ -4,6 +4,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerFigure.h"
 #include "game/players/EnemyShrink.h"
 #include "game/players/PowerupEffects.h"

@@ -13,10 +13,10 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
 #include "game/level/NativeStateResources.h"
-#include "game/players/PowerupEffects.h"
 #include "game/widgets/ScrollBox.h"
 
 namespace {

@@ -124,7 +124,7 @@ void BossSequence::bind(Resources resources) {
             },
             [this](LegendSound phase) {
                 auto* imported = m_resources->world.imported();
-                return imported && imported->playBossLegendSound(phase);
+                return imported != nullptr && imported->playBossLegendSound(phase);
             }});
 }
 

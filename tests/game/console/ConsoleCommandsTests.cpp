@@ -14,12 +14,12 @@
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/console/ConsoleCommands.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/TowerAccess.h"
 #include "game/players/ItemPickup.h"
-#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;

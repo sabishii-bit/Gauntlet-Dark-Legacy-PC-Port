@@ -4,7 +4,7 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Inventory.h"
-#include "game/players/PowerupEffects.h"
+#include "game/combat/PowerupFlags.h"
 
 namespace {
 

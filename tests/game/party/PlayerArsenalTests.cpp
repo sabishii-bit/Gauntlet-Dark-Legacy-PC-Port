@@ -19,6 +19,7 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/ItemFigure.h"
 #include "game/party/PlayerArsenal.h"

@@ -15,6 +15,7 @@
 
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/CritterCueEmission.h"
 #include "game/effects/DynamicLights.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
@@ -209,8 +210,10 @@ void LevelOpponents::playEnemyCues() {
         return;
     }
     for (const EnemyCue& cue : m_enemies.takeCues()) {
-        if (auto* imported = m_resources->world.imported(); imported && imported->playEnemyCue(cue))
+        if (auto* imported = m_resources->world.imported();
+            imported && imported->playEnemyCue(cue)) {
             continue;
+        }
         auto& audio = m_resources->audio;
         if (audio.recordingSounds() &&
             (cue.enemy < 0 || cue.enemy >= Enemies::kMost || cue.instance == 0)) {
@@ -330,7 +333,7 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
         m_sim.cueEffects.push_back(effect);
     }
     auto* imported = m_resources->world.imported();
-    const bool nativeBomb = emission.sound == "S_LOBBER_BOMB" && imported &&
+    const bool nativeBomb = emission.sound == "S_LOBBER_BOMB" && imported != nullptr &&
                             imported->playOpponentSound(emission.sound, hit.position);
     if (!nativeBomb) {
         playAt(emission.sound, emission.level, hit.position);
@@ -1055,8 +1058,9 @@ void LevelOpponents::bindImportedSounds() {
     if (!m_resources || !m_resources->world.imported()) {
         return;
     }
-    if (m_resources->world.imported()->hasEnemyAssets())
+    if (m_resources->world.imported()->hasEnemyAssets()) {
         return;
+    }
     std::array<bool, kSwarmKindCount> needed{};
     for (const auto& actor : m_resources->world.imported()->importedActors()) {
         if (actor.spawn.kind >= 0 && actor.spawn.kind < kSwarmKindCount) {
@@ -1168,7 +1172,8 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
             continue;
         }
         auto* imported = m_resources->world.imported();
-        const bool nativeSound = imported && imported->playEnemyMelee(blow.kind, blow.tier);
+        const bool nativeSound =
+            imported != nullptr && imported->playEnemyMelee(blow.kind, blow.tier);
         if (impact->sound && !nativeSound) {
             m_resources->audio.playNamed(*impact->sound);
         }
@@ -1397,9 +1402,10 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             }
             m_sim.yells.clear();
         }
-        const auto imported = m_resources->world.imported();
-        if (!imported || !imported->playOpponentSound(kSuicideBombSound, burst.position))
+        auto* const imported = m_resources->world.imported();
+        if (!imported || !imported->playOpponentSound(kSuicideBombSound, burst.position)) {
             playAt(kSuicideBombSound, kLoudSound, burst.position);
+        }
         explodeSuicide(burst);
     }
     advanceClouds();
@@ -1693,8 +1699,9 @@ bool LevelOpponents::awardEnemyLosses(const Events& events, const FeedbackPublis
             effect = *emitted;
         } else {
             auto* imported = m_resources->world.imported();
-            if (!imported || !imported->playEnemyFeedback(feedback, feedback.remainingHealth))
+            if (!imported || !imported->playEnemyFeedback(feedback, feedback.remainingHealth)) {
                 playAt(emission.sound, kLoudSound, emission.position);
+            }
             if (emission.archive != nullptr) {
                 effect = m_resources->effects.startSet(m_resources->device, *emission.archive,
                                                        emission.tree, emission.position,
@@ -1905,7 +1912,7 @@ bool LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
     if (effect != 0) {
         m_sim.cueEffects.push_back(effect);
     }
-    const bool nativeSound = !publish && m_resources->world.imported() &&
+    const bool nativeSound = !publish && m_resources->world.imported() != nullptr &&
                              m_resources->world.imported()->playGeneratorFeedback(*event);
     if (!publish && !nativeSound && !emission.sound.empty()) {
         // Slots are append-only for a loaded level; the native birth serial
@@ -1993,7 +2000,7 @@ bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     // The great ones' sounds play at 224 of 255 as heard from where the players stand
     // (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten); a death's at that level whole.
     const bool nativeSound =
-        !publish && ofBoss && !cue.sound.empty() && m_resources->world.imported() &&
+        !publish && ofBoss && !cue.sound.empty() && m_resources->world.imported() != nullptr &&
         m_resources->world.imported()->playOpponentSound(cue.sound, cue.soundPosition);
     if (!publish && !nativeSound && !cue.sound.empty() && cue.attenuated) {
         playAt(cue.sound, kLoudSound, cue.soundPosition);
@@ -2036,17 +2043,20 @@ void LevelOpponents::finishSummons(std::span<const EnemyView> players) {
 
 std::vector<EffectTrees::DrawAttachment> LevelOpponents::presentedBossEffects(f32 alpha) const {
     std::vector<EffectTrees::DrawAttachment> result;
-    if (!m_resources || !m_resources->world.imported() || alpha < 0 || !m_bosses.present())
+    if (!m_resources || !m_resources->world.imported() || alpha < 0 || !m_bosses.present()) {
         return result;
+    }
     const auto& boss = m_bosses.fighter();
     for (const auto& riding : m_sim.critterEffects) {
-        if (!riding.ofBoss || riding.playerAttachment || (!riding.rootAttachment && !riding.node))
+        if (!riding.ofBoss || riding.playerAttachment || (!riding.rootAttachment && !riding.node)) {
             continue;
+        }
         const std::string_view node =
             riding.rootAttachment ? boss.data()->rootNode() : std::string_view{*riding.node};
-        if (const auto parent = boss.presentedNodeTransform(node, alpha))
+        if (const auto parent = boss.presentedNodeTransform(node, alpha)) {
             result.push_back({riding.effect,
                               CritterArea::placement(*parent, riding.nodeOffset, riding.pitchYaw)});
+        }
     }
     return result;
 }

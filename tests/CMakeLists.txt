@@ -225,6 +225,7 @@ add_executable(tests
     game/combat/DamageTests.cpp
     game/combat/BodyContactTests.cpp
     game/combat/DamageTypesTests.cpp
+    game/combat/PowerupFlagsTests.cpp
     game/party/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
     game/widgets/MenuFontTests.cpp

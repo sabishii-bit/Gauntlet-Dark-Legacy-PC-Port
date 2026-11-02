@@ -7,6 +7,7 @@
 
 #include "game/characters/ClassData.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 
 namespace gdl::game {
 void visitNativeState(NativeStateDigest& digest, const WeaponGlow& value) {

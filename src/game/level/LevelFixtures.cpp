@@ -19,6 +19,7 @@
 #include "engine/world/TreeModel.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/hud/HelpMessages.h"

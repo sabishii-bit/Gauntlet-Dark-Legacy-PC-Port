@@ -9,8 +9,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/party/AttackCheckpointFixture.h"
-#include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
