@@ -47,7 +47,8 @@ VkSampler createSampler(VkDevice device, VkFilter filter, VkSamplerAddressMode a
 
 VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& desc)
     : m_window(window), m_desc(desc) {
-    m_context = std::make_unique<VulkanContext>(window, desc.enableValidation);
+    m_context =
+        std::make_unique<VulkanContext>(window, desc.applicationName, desc.enableValidation);
     m_swapchain = std::make_unique<VulkanSwapchain>(*m_context, window.framebufferSize(),
                                                     desc.vsync, desc.sampleCount);
 

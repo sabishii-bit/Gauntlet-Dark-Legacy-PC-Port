@@ -143,7 +143,7 @@ TEST_CASE("animated world markers move new emissions without carrying existing p
     CHECK(field.emitter(own).particles()[1].origin == Vec3{independentNode[3]});
     // Presentation samples age, never the animated marker's interpolated pose.
     for (const f32 alpha : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
-        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha);
+        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha, {});
         CHECK(field.particleCount() == 8);
         CHECK(field.emitter(first).particles()[0].origin == old.origin);
         CHECK(field.emitter(first).particles()[0].age == 1);
@@ -178,7 +178,7 @@ TEST_CASE("particle flipbook pairs are render-only and preserve hard depth cutou
     }
     const auto draw = [&](f32 alpha) {
         device.draws.clear();
-        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha);
+        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha, {});
         REQUIRE(device.draws.size() == 3);
     };
     draw(0.5f);
@@ -233,7 +233,7 @@ TEST_CASE("particles batch only matching flipbook pairs and blend fractions",
     for (usize i = 0; i < field.size(); ++i) {
         field.setTextureBlend(i, current, &next, i < 2 ? 0.25f : 0.75f);
     }
-    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f);
+    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f, {});
     REQUIRE(device.draws.size() == 2);
     CHECK(device.draws[0].vertices.size() == 12);
     CHECK(device.draws[1].vertices.size() == 12);
@@ -257,7 +257,7 @@ TEST_CASE("particle presentation fills fractional ticks without advancing emissi
     field.step(1.0f / 60);
     const auto center = [&](f32 alpha) {
         device.draws.clear();
-        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha);
+        field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, alpha, {});
         REQUIRE(device.draws.size() == 1);
         const auto& vertices = device.draws.front().vertices;
         return (vertices[0].position.x + vertices[1].position.x) * 0.5f;
@@ -291,7 +291,7 @@ TEST_CASE("particle depth comparison remains independent of writes and batching"
     }
     field.step(1.0f / 30);
     REQUIRE(field.particleCount() == 4);
-    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, -1.0f, {});
     REQUIRE(device.draws.size() == 4);
     for (usize i = 0; i < device.draws.size(); ++i) {
         CHECK(device.draws[i].state.depthTest == (i < 2));
@@ -314,7 +314,7 @@ TEST_CASE("placed particle templates preserve an explicit always-pass depth flag
     field.bind(layout, textures, device);
     field.step(1.0f / 30);
     REQUIRE(field.particleCount() == 1);
-    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, -1.0f, {});
     REQUIRE(device.draws.size() == 1);
     CHECK_FALSE(device.draws.front().state.depthTest);
     CHECK_FALSE(device.draws.front().state.depthWrite);
@@ -372,7 +372,7 @@ TEST_CASE("a field starts an emitter at every marker naming a template", "[world
     REQUIRE(first.origin.z > 69.0f); // at the marker, under the group
     REQUIRE(first.origin.z < 71.0f);
 
-    field.draw(device, Mat4{1.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+    field.draw(device, Mat4{1.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f}, -1.0f, {});
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws[0].texture == &lender.texture(device, 3));
     REQUIRE(device.draws[0].vertices.size() == 12);
@@ -383,7 +383,7 @@ TEST_CASE("a field starts an emitter at every marker naming a template", "[world
     field.clear();
     REQUIRE(field.size() == 0);
     device.draws.clear();
-    field.draw(device, Mat4{1.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+    field.draw(device, Mat4{1.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f}, -1.0f, {});
     REQUIRE(device.draws.empty());
 }
 
@@ -411,7 +411,7 @@ TEST_CASE("an emitter can be started on its own, stopped and pruned", "[world][p
     REQUIRE(field.particleCount() == 3);
     REQUIRE(field.emitter(spark).particles()[2].origin == Vec3{4.0f, 5.0f, 6.0f});
     field.setNode(9, Mat4{1.0f}); // out of range: ignored
-    field.draw(device, Mat4{1.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+    field.draw(device, Mat4{1.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f}, -1.0f, {});
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws[0].texture == &device.whiteTexture());
     // Stopped, it lets its particles die, then it can be pruned away.

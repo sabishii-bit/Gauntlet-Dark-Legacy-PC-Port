@@ -45,7 +45,7 @@ TEST_CASE("tree particle render blends address local slots without changing nati
         REQUIRE(particles.field().particleCount() == 1);
         particles.setTextureBlend(0, first, &next, 0.5f);
         device.draws.clear();
-        particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f);
+        particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f, {});
         REQUIRE(device.draws.size() == 1);
     };
     particles.bind(archive.trees.tree(0), archive, device, Mat4{1}, pose);
@@ -55,7 +55,7 @@ TEST_CASE("tree particle render blends address local slots without changing nati
     CHECK(particles.field().textureOf(0) == &archive.textures.texture(device, 0));
     particles.clearTextureBlends();
     device.draws.clear();
-    particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f);
+    particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, 0.5f, {});
     REQUIRE(device.draws.size() == 1);
     CHECK(device.draws[0].texture == &archive.textures.texture(device, 0));
 
@@ -137,7 +137,7 @@ TEST_CASE("tree particle nodes follow posed attachments without requiring model 
     local[0].scale = Vec3{9}; // ancestor scaling must not multiply the billboard again
     local[1].scale.y = 3;
     particles.setLocalScales(local);
-    particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+    particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}, -1.0f, {});
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws[0].texture == &device.whiteTexture());
     const auto& vertices = device.draws[0].vertices;

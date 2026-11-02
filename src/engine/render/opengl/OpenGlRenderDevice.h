@@ -49,7 +49,7 @@ public:
     void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override;
     const Texture& whiteTexture() const override;
     void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
-              const DrawState& state) override;
+              const DrawState& requested) override;
     void waitIdle() override;
     void detachFromThread() override;
     void attachToThread() override;

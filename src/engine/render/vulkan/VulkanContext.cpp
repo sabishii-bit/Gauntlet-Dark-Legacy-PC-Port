@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -57,9 +58,10 @@ const char* deviceTypeName(VkPhysicalDeviceType type) {
 
 } // namespace
 
-VulkanContext::VulkanContext(Window& window, bool enableValidation) {
+VulkanContext::VulkanContext(Window& window, const std::string& applicationName,
+                             bool enableValidation) {
     try {
-        createInstance(window, enableValidation);
+        createInstance(window, applicationName, enableValidation);
         if (m_validationEnabled) {
             createDebugMessenger();
         }
@@ -112,7 +114,8 @@ void VulkanContext::destroy() {
     m_instance = VK_NULL_HANDLE;
 }
 
-void VulkanContext::createInstance(Window& window, bool enableValidation) {
+void VulkanContext::createInstance(Window& window, const std::string& applicationName,
+                                   bool enableValidation) {
     if (volkInitialize() != VK_SUCCESS) {
         throw RenderDeviceUnavailable(
             "No Vulkan loader was found; a Vulkan-capable graphics driver is not installed");
@@ -164,7 +167,7 @@ void VulkanContext::createInstance(Window& window, bool enableValidation) {
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Gauntlet Dark Legacy";
+    appInfo.pApplicationName = applicationName.c_str();
     appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
     appInfo.pEngineName = "gdl";
     appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);

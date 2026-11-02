@@ -97,7 +97,7 @@ struct Buffer {
 
 struct CoverageDevice {
     std::unique_ptr<Window> window = createGlfwWindow({"gdl coverage readback test", 320, 240});
-    VulkanContext context{*window, true};
+    VulkanContext context{*window, "", true};
     VkDescriptorSetLayout imageLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout samplerLayout = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;

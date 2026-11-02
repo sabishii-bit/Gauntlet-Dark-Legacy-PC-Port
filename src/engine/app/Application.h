@@ -15,6 +15,8 @@
 namespace gdl {
 
 struct ApplicationDesc {
+    /** What the program is called, as the graphics driver is told; the program names itself. */
+    std::string name;
     WindowDesc window;
     std::filesystem::path assetDirectory;
     /** A file, relative to the asset directory, that only the program's data holds: run

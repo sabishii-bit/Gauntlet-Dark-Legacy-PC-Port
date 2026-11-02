@@ -30,6 +30,7 @@ public:
 };
 
 struct RenderDeviceDesc {
+    std::string applicationName; ///< the program's name, for the graphics driver
     bool vsync = true;
     bool enableValidation = false;
     std::filesystem::path shaderDirectory;

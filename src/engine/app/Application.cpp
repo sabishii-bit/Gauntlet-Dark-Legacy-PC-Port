@@ -50,6 +50,7 @@ bool Application::startRenderer(GraphicsApi api) {
     WindowDesc window = m_desc.window;
     window.api = api;
     RenderDeviceDesc deviceDesc;
+    deviceDesc.applicationName = m_desc.name;
     deviceDesc.vsync = m_desc.vsync;
     deviceDesc.sampleCount = m_desc.sampleCount;
     deviceDesc.textureFiltering = m_desc.textureFiltering;

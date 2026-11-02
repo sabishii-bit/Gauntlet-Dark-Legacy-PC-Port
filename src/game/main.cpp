@@ -84,7 +84,8 @@ int runGauntlet(std::span<const std::string> rawArgs) {
     const auto roots = gdl::game::resolveAssetRoots(gdl::paths::executableDirectory(),
                                                     GDL_DEFAULT_ASSET_DIR, GDL_DEFAULT_DATA_DIR);
     gdl::ApplicationDesc defaults;
-    defaults.window.title = "Gauntlet Dark Legacy";
+    defaults.name = "Gauntlet Dark Legacy";
+    defaults.window.title = defaults.name;
     defaults.assetDirectory = roots.assets;
     defaults.assetMarker = gdl::game::assetMarker();
     defaults.enableValidation = GDL_DEBUG != 0;

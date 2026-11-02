@@ -144,8 +144,9 @@ TEST_CASE("native particle digest canonicalizes only authored texture-batched ma
     const auto add = [&](ParticleField& field, const Texture& texture, bool reverse) {
         for (s32 i = 0; i < 2; ++i) {
             const s32 index = reverse ? 1 - i : i;
-            field.start(descriptor, glm::translate(Mat4{1}, Vec3{10.0f + static_cast<f32>(index), 2, 3}),
-                         &texture, static_cast<u32>(index + 23));
+            field.start(descriptor,
+                        glm::translate(Mat4{1}, Vec3{10.0f + static_cast<f32>(index), 2, 3}),
+                        &texture, static_cast<u32>(index + 23));
         }
     };
     add(first, ascending.whiteTexture(), false);
@@ -159,7 +160,7 @@ TEST_CASE("native particle digest canonicalizes only authored texture-batched ma
     CHECK(secondBindings.hash(second) != expected);
     second = saved;
     second.setTextureBlend(0, descending.whiteTexture(), second.textureOf(1), 0.37f);
-    second.draw(descending, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f);
+    second.draw(descending, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f, {});
     CHECK(secondBindings.hash(second) == expected);
     CHECK(std::array{first.sourceObject(0), first.sourceObject(1)} == firstOrder);
     CHECK(std::array{second.sourceObject(0), second.sourceObject(1)} == secondOrder);
@@ -194,7 +195,7 @@ TEST_CASE("native particle value copies restore topology RNG and fractional cloc
     for (u32 frame = 0; frame < 192; ++frame) {
         const u32 distance = frame % 8 + 1;
         CAPTURE(frame, distance);
-        predicted.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f);
+        predicted.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f, {});
         history[frame % history.size()] = predicted;
         for (u32 i = 0; i < distance; ++i) {
             predicted.setNode(0, glm::translate(Mat4{1}, Vec3{9, 8, 7}));
@@ -217,10 +218,10 @@ TEST_CASE("native particle value copies restore topology RNG and fractional cloc
             CHECK(predicted.checkpoint() == reference.checkpoint());
         }
         device.draws.clear();
-        reference.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f);
+        reference.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f, {});
         const auto expected = device.draws;
         device.draws.clear();
-        predicted.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f);
+        predicted.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.37f, {});
         REQUIRE(device.draws.size() == expected.size());
         for (usize d = 0; d < expected.size(); ++d) {
             CHECK(device.draws[d].state == expected[d].state);
@@ -265,7 +266,7 @@ TEST_CASE("stepped particle draw samples preserve native bindings and do not ble
         CAPTURE(alpha);
         field.setTextureBlend(0, shown, &next, 0.8f, true);
         device.draws.clear();
-        field.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, alpha);
+        field.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, alpha, {});
         REQUIRE(device.draws.size() == 1);
         CHECK(device.draws[0].texture == &shown);
         CHECK(device.draws[0].state.nextTexture == nullptr);
@@ -277,13 +278,13 @@ TEST_CASE("stepped particle draw samples preserve native bindings and do not ble
     // The old interpolated-only API still ignores overrides on hard cutouts.
     field.setTextureBlend(0, shown, &next, 0.8f);
     device.draws.clear();
-    field.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.5f);
+    field.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.5f, {});
     REQUIRE(device.draws.size() == 1);
     CHECK(device.draws[0].texture == &device.whiteTexture());
     field.setTextureBlend(0, shown, &next, 0.8f, true);
     field.clearTextureBlends();
     device.draws.clear();
-    field.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, -1);
+    field.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, -1, {});
     REQUIRE(device.draws.size() == 1);
     CHECK(device.draws[0].texture == &device.whiteTexture());
     CHECK(bindings.hash(field) == baseline);
@@ -311,7 +312,7 @@ TEST_CASE("native particle comparison sees fractional and hidden emission state 
     CHECK_FALSE(changed.equalLocal(base));
     changed = base;
     changed.setTextureBlend(0, device.whiteTexture(), &device.whiteTexture(), 0.5f);
-    changed.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.5f);
+    changed.draw(device, Mat4{1}, {1, 0, 0}, {0, 1, 0}, 0.5f, {});
     CHECK(changed.equalLocal(base));
 
     ParticleEmitter a;

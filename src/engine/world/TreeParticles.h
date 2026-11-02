@@ -45,10 +45,10 @@ public:
     void clearTextureBlends();
     /** Ends emission without discarding particles already in flight. */
     void stop();
-    /** The emitters facing the camera; those wearing one of `thermal`'s particle textures
-     * add heat. */
+    /** The emitters facing the camera, as ParticleField::draw; those wearing one of
+     * `thermal`'s particle textures add heat. */
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
-              f32 presentationAlpha = -1.0f, const ThermalMaterial& thermal = {}) const;
+              f32 presentationAlpha, const ThermalMaterial& thermal) const;
     const ParticleField& field() const { return m_field; }
 
 private:

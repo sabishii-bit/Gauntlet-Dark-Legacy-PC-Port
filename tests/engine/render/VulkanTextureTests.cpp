@@ -20,7 +20,7 @@ using namespace gdl;
 struct TextureDevice {
     GDL_NON_COPYABLE_NON_MOVABLE(TextureDevice);
     std::unique_ptr<Window> window = createGlfwWindow({"gdl mip readback test", 320, 240});
-    VulkanContext context{*window, true};
+    VulkanContext context{*window, "", true};
     VkDescriptorSetLayout layout = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
 

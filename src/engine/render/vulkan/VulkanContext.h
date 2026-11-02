@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/render/vulkan/VulkanCommon.h"
@@ -11,7 +13,8 @@ class Window;
 /** Instance, device, queue and allocator: the renderer state that outlives the swapchain. */
 class VulkanContext {
 public:
-    VulkanContext(Window& window, bool enableValidation);
+    /** `applicationName` is what the instance tells the driver the program is called. */
+    VulkanContext(Window& window, const std::string& applicationName, bool enableValidation);
     ~VulkanContext();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanContext);
@@ -37,7 +40,7 @@ public:
 private:
     /** Lets go of whatever has been made, in reverse order; safe on a part-made context. */
     void destroy();
-    void createInstance(Window& window, bool enableValidation);
+    void createInstance(Window& window, const std::string& applicationName, bool enableValidation);
     void createDebugMessenger();
     void pickPhysicalDevice();
     void createDevice();

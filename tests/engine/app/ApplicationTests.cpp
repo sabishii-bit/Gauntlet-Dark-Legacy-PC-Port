@@ -222,9 +222,11 @@ private:
 TEST_CASE("an application description names no program and expects no data file",
           "[app][app-desc]") {
     const ApplicationDesc desc;
+    CHECK(desc.name.empty());
     CHECK(desc.window.title.empty());
     CHECK(desc.assetMarker.empty());
     CHECK(WindowDesc{}.title.empty());
+    CHECK(RenderDeviceDesc{}.applicationName.empty());
 }
 
 TEST_CASE("the application brings up a window and GPU and renders frames", "[gpu][app]") {

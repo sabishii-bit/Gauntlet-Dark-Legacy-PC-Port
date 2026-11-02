@@ -105,9 +105,10 @@ public:
     void step(f32 seconds);
     /** Camera-facing particles. Negative alpha draws native ticks; [0,1] samples the
      * last simulation interval without advancing emission. Held owners pass -1. Emitters
-     * wearing one of `thermal`'s particle textures add heat where they burn. */
+     * wearing one of `thermal`'s particle textures add heat where they burn; an empty
+     * material adds none. */
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
-              f32 presentationAlpha = -1.0f, const ThermalMaterial& thermal = {}) const;
+              f32 presentationAlpha, const ThermalMaterial& thermal) const;
 
 private:
     friend void visitNativeState(NativeStateDigest& /*digest*/, const ParticleField& /*state*/);
