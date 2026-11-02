@@ -8,7 +8,7 @@
 #include "engine/core/Log.h"
 #include "engine/io/NativeStateDigest.h"
 
-#include "game/menu/ScrollBox.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace gdl::game {
 bool TowerRelics::appendNativeDigest(NativeStateDigest& digest) const {

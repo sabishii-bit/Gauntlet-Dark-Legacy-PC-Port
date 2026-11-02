@@ -18,11 +18,11 @@
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/menu/BurnDialogueScroll.h"
-#include "game/menu/MenuInput.h"
-#include "game/menu/OptionMenu.h"
+#include "game/context/GameContext.h"
 #include "game/menu/SettingsMenu.h"
-#include "game/scenes/GameContext.h"
+#include "game/widgets/BurnDialogueScroll.h"
+#include "game/widgets/MenuInput.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 

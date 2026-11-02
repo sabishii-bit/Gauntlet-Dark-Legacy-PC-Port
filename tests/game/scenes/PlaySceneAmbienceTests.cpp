@@ -11,8 +11,8 @@
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/config/GameConfig.h"
+#include "game/context/GameContext.h"
 #include "game/level/LevelWorld.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {

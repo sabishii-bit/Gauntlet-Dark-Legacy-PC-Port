@@ -16,7 +16,7 @@
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/combat/DamageTypes.h"
-#include "game/effects/EnemyFeedbackEmission.h"
+#include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/ImportedLevel.h"

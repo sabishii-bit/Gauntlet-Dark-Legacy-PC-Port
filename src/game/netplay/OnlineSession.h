@@ -7,8 +7,8 @@
 
 #include "engine/net/PeerTransport.h"
 
-#include "game/characters/PartyBootstrap.h"
 #include "game/netplay/MatchSession.h"
+#include "game/netplay/PartyBootstrap.h"
 #include "game/netplay/RoomService.h"
 
 namespace gdl::game {

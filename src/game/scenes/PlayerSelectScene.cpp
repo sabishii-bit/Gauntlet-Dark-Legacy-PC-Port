@@ -12,8 +12,8 @@
 
 #include "game/characters/Progression.h"
 #include "game/config/ControlProfiles.h"
-#include "game/menu/MenuFont.h"
 #include "game/players/PickupVoices.h"
+#include "game/widgets/MenuFont.h"
 
 namespace gdl::game {
 

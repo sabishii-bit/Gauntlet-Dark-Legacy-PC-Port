@@ -6,7 +6,7 @@
 
 #include "engine/ui/TextPainter.h"
 
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 /** The one way the settings pages make their rows, so every page reads and fits alike: a

@@ -6,7 +6,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
-#include "game/effects/PotionEmission.h"
+#include "game/party/PotionEmission.h"
 #include "game/rollback/PotionIdentity.h"
 
 namespace {

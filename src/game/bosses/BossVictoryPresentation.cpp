@@ -10,7 +10,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
-#include "game/menu/ScrollBox.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace gdl::game {
 void BossVictoryPresentation::appendState(NativeStateDigest& digest, const Simulation& state,

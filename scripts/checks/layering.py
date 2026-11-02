@@ -30,11 +30,15 @@ BASELINE = pathlib.Path(__file__).resolve().with_name("layering_baseline.txt")
 # Lowest first. `net` is the engine's packet transport, used only by the game's netplay.
 ENGINE_ORDER = ("core", "math", "io", "net", "platform", "render", "codec", "audio", "assets",
                 "ui", "world", "app")
-# Lowest first. `mechanics` is the seam additive mechanics answer through, below everything
-# that asks it; `console` is the developer console, below the screens.
-GAME_ORDER = ("config", "combat", "mechanics", "characters", "players", "camera", "audio",
-              "effects", "level", "party", "enemies", "critters", "bosses", "tower", "shop",
-              "hud", "menu", "rollback", "netplay", "console", "scenes", "app")
+# Lowest first. `widgets` are what every screen reads and draws with (menu input, fonts,
+# option lists, scrolls); `mechanics` is the seam additive mechanics answer through, below
+# everything that asks it; `context` is GameContext, what every screen is handed; `console` is
+# the developer console, below the scenes; `online` plays a room's stages over the scenes,
+# which `netplay` keeps in step.
+GAME_ORDER = ("config", "widgets", "combat", "mechanics", "characters", "players", "camera",
+              "audio", "effects", "level", "party", "enemies", "critters", "bosses", "tower",
+              "shop", "hud", "context", "menu", "rollback", "netplay", "console", "scenes",
+              "online", "app")
 # What the native format readers may include: the engine's value types, never its devices.
 FORMATS_REACH = ("core", "math", "io", "render", "codec", "assets")
 SOURCE_SUFFIXES = (".h", ".cpp")

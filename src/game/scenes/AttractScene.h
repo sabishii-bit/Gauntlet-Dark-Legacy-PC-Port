@@ -9,9 +9,9 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/context/GameContext.h"
 #include "game/level/LevelWorld.h"
-#include "game/menu/MenuInput.h"
-#include "game/scenes/GameContext.h"
+#include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
 

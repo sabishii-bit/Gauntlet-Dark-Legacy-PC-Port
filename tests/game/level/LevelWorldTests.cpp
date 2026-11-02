@@ -23,13 +23,13 @@
 #include "game/camera/TowerCamera.h"
 #include "game/characters/Progression.h"
 #include "game/config/GameConfig.h"
+#include "game/context/GameContext.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/TowerAccess.h"
 #include "game/players/PlayerActor.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {

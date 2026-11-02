@@ -12,9 +12,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/characters/CharacterProfile.h"
 #include "game/characters/Progression.h"
 #include "game/enemies/OpponentResources.h"
-#include "game/netplay/CharacterProfile.h"
 #include "game/rollback/PlacedEnemyCheckpoint.h"
 #include "game/scenes/PlayScene.h"
 

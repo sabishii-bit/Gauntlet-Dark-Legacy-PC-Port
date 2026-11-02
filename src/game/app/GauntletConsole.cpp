@@ -13,23 +13,23 @@
 #include "engine/io/File.h"
 #include "engine/math/Math.h"
 #include "engine/platform/Paths.h"
+
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
-
 #include "game/app/Gauntlet.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
 #include "game/console/ConsoleCommands.h"
+#include "game/console/NoclipMotion.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/Generators.h"
 #include "game/level/PlacedItems.h"
 #include "game/level/TowerAccess.h"
-#include "game/menu/MenuInput.h"
 #include "game/players/ItemPickup.h"
-#include "game/players/NoclipMotion.h"
 #include "game/scenes/SceneSelection.h"
+#include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
 

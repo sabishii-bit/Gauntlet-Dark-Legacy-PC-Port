@@ -21,10 +21,10 @@
 #include "TestSupport.h"
 #include "game/audio/ShopMusic.h"
 #include "game/effects/ShopFrameLight.h"
-#include "game/menu/MenuInput.h"
 #include "game/players/PickupVoices.h"
 #include "game/scenes/AfterLevelScene.h"
 #include "game/shop/ShopLayout.h"
+#include "game/widgets/MenuInput.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;

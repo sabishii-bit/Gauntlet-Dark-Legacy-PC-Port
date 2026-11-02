@@ -17,8 +17,8 @@
 
 #include "game/app/NativeOnlineIdentity.h"
 #include "game/netplay/HostedRoom.h"
-#include "game/netplay/NativeOnlinePlay.h"
 #include "game/netplay/OnlineParty.h"
+#include "game/online/NativeOnlinePlay.h"
 #include "game/rollback/RollbackInputs.h"
 #endif
 

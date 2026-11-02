@@ -8,7 +8,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/rollback/NativeRollbackDriver.h"
+#include "game/online/NativeRollbackDriver.h"
 
 namespace {
 using namespace gdl;

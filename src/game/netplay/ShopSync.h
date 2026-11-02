@@ -9,7 +9,7 @@
 
 #include "engine/core/Types.h"
 
-#include "game/menu/MenuInput.h"
+#include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
 /** Host-authored setup; no filenames, disk slots or guest-supplied rewards. */

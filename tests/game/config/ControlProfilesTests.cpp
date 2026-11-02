@@ -4,8 +4,8 @@
 #include "engine/core/Error.h"
 
 #include "game/config/ControlProfiles.h"
-#include "game/menu/MenuInput.h"
 #include "game/players/PlayerControls.h"
+#include "game/widgets/MenuInput.h"
 
 namespace {
 using namespace gdl;

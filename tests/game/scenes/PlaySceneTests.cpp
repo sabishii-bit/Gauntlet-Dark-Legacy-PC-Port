@@ -39,6 +39,7 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/config/GameConfig.h"
+#include "game/context/GameContext.h"
 #include "game/critters/Critters.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyAnimator.h"
@@ -48,12 +49,11 @@
 #include "game/level/ItemFigure.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LevelWorld.h"
-#include "game/menu/ScrollBox.h"
 #include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SceneSelection.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace {
 

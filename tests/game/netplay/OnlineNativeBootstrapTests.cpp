@@ -6,8 +6,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "game/netplay/NativePlaySetup.h"
 #include "game/netplay/OnlineSession.h"
+#include "game/online/NativePlaySetup.h"
 #include "game/rollback/RollbackSessionHarness.h"
 
 namespace {

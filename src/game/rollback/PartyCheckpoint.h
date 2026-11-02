@@ -1,6 +1,6 @@
 #pragma once
 
-#include "game/netplay/CharacterProfile.h"
+#include "game/characters/CharacterProfile.h"
 #include "game/rollback/InputCommand.h"
 
 namespace gdl::game {

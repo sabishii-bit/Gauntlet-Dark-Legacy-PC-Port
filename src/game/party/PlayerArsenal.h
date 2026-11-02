@@ -11,9 +11,9 @@
 
 #include "game/audio/LevelSoundscape.h"
 #include "game/effects/EffectTrees.h"
-#include "game/effects/PotionEmission.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PlayerMissiles.h"
+#include "game/party/PotionEmission.h"
 #include "game/players/PlayerActor.h"
 namespace gdl::game {
 /** Owns player projectiles and thrown-potion models. Bound services are borrowed;

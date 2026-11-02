@@ -7,7 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 

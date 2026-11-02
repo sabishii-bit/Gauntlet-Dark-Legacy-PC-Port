@@ -90,7 +90,7 @@ add_executable(tests
     expansions/n64/scenes/LegendsBossRewardsTests.cpp
     expansions/n64/scenes/LegendsBossAudioTests.cpp
     engine/io/NativeStateDigestTests.cpp
-    game/scenes/PlayerNativeStateTests.cpp
+    game/party/PlayerNativeStateTests.cpp
     game/enemies/EnemyMissilesNativeDigestTests.cpp
     game/critters/CombatantProjectilesNativeDigestTests.cpp
     game/level/LevelTriggersNativeDigestTests.cpp
@@ -171,7 +171,7 @@ add_executable(tests
     engine/world/WorldStateCheckpointTests.cpp
     engine/world/WorldCollapsedCollisionTests.cpp
     game/level/WorldDestructionCheckpointTests.cpp
-    game/effects/EnemyFeedbackEmissionTests.cpp
+    game/enemies/EnemyFeedbackEmissionTests.cpp
     game/party/PartyDamageTests.cpp
     game/party/PlayerArsenalCheckpointTests.cpp
     game/party/MoveStrikesCheckpointTests.cpp
@@ -179,10 +179,10 @@ add_executable(tests
     game/rollback/PlayerPoseCheckpointTests.cpp
     game/rollback/PlayerPotionCheckpointTests.cpp
     game/level/WorldMotionTests.cpp
-    game/effects/TurboEmissionTests.cpp
-    game/effects/TurboEffectResourcesTests.cpp
+    game/party/TurboEmissionTests.cpp
+    game/party/TurboEffectResourcesTests.cpp
     game/rollback/TurboEffectCheckpointTests.cpp
-    game/combat/MeleeGeometryTests.cpp
+    game/party/MeleeGeometryTests.cpp
     game/rollback/PlayerKnockbackCheckpointTests.cpp
     game/players/MeleeSelectionTests.cpp
     game/players/PlayerActorCheckpointTests.cpp
@@ -197,12 +197,12 @@ add_executable(tests
     game/enemies/CombatProgressCheckpointTests.cpp
     game/netplay/MatchSessionTests.cpp
     game/netplay/ShopSyncTests.cpp
-    game/netplay/OnlineCompletionTests.cpp
-    game/netplay/OnlineLevelEntryTests.cpp
+    game/online/OnlineCompletionTests.cpp
+    game/online/OnlineLevelEntryTests.cpp
     game/netplay/OnlineSessionTests.cpp
-    game/netplay/CharacterProfileTests.cpp
+    game/characters/CharacterProfileTests.cpp
     game/characters/PartyCheckpointTests.cpp
-    game/characters/PartyBootstrapTests.cpp
+    game/netplay/PartyBootstrapTests.cpp
     game/netplay/OnlinePartyTests.cpp
     game/netplay/MeasuredPacketTransportTests.cpp
     game/rollback/SessionInputsTests.cpp
@@ -221,24 +221,24 @@ add_executable(tests
     game/enemies/LevelOpponentsDeathTests.cpp
     game/scenes/PlaySceneAmbienceTests.cpp
     game/level/DestructibleWallsTests.cpp
-    game/level/MissileTargetTests.cpp
+    game/party/MissileTargetTests.cpp
     game/combat/DamageTests.cpp
     game/combat/BodyContactTests.cpp
     game/combat/DamageTypesTests.cpp
     game/party/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
-    game/menu/MenuFontTests.cpp
+    game/widgets/MenuFontTests.cpp
     game/menu/SettingsRowsTests.cpp
     game/menu/VideoSettingsTests.cpp
     game/hud/CompassHudTests.cpp
     game/menu/SaveMenuTests.cpp
     game/menu/PauseMenuTests.cpp
     formats/ShopWadTests.cpp
-    game/characters/ShopTests.cpp
+    game/shop/ShopTests.cpp
     game/scenes/AfterLevelSceneTests.cpp
     game/hud/AutoSaveIconTests.cpp
     game/scenes/PostShopReturnTests.cpp
-    game/hud/InventoryPanelTests.cpp
+    game/shop/InventoryPanelTests.cpp
     game/hud/LinkIndicatorTests.cpp
     TestSupport.h
     fixtures/ReferenceObj.cpp
@@ -325,7 +325,7 @@ add_executable(tests
     formats/WorldDataWadTests.cpp
     engine/assets/WorldDataTests.cpp
     engine/assets/MessageTableTests.cpp
-    game/menu/ScrollBoxTests.cpp
+    game/widgets/ScrollBoxTests.cpp
     game/tower/SumnerFigureTests.cpp
     game/tower/SumnerHintsTests.cpp
     game/party/PlayerMissilesTests.cpp
@@ -343,7 +343,7 @@ add_executable(tests
     game/effects/WeaponGlowTests.cpp
     game/camera/CameraMovementLimitTests.cpp
     game/camera/FreeCameraTests.cpp
-    game/players/NoclipMotionTests.cpp
+    game/console/NoclipMotionTests.cpp
     game/scenes/SceneSelectionTests.cpp
     game/scenes/ScenePickingTests.cpp
     game/scenes/SeatCamerasTests.cpp
@@ -356,13 +356,13 @@ add_executable(tests
     game/bosses/SpiderQueenTests.cpp
     game/bosses/LichTests.cpp
     game/party/PlayerArsenalTests.cpp
-    game/effects/PotionEmissionTests.cpp
+    game/party/PotionEmissionTests.cpp
     game/party/PotionFlightTests.cpp
     game/party/PojoTests.cpp
     game/party/PojoVoiceTests.cpp
     game/audio/LevelSoundscapeTests.cpp
     game/audio/VoiceQueueTests.cpp
-    game/menu/HintMenuTests.cpp
+    game/tower/HintMenuTests.cpp
     game/level/PlacedItemsTests.cpp
     game/level/SpawnedObjectsTests.cpp
     game/audio/AmbientSoundsTests.cpp
@@ -458,16 +458,16 @@ add_executable(tests
     game/app/LevelCompletionTests.cpp
     game/audio/MusicDuckTests.cpp
     game/scenes/MovieSceneTests.cpp
-    game/menu/MenuInputTests.cpp
+    game/widgets/MenuInputTests.cpp
     game/menu/MainMenuFactoryTests.cpp
-    game/menu/OptionMenuTests.cpp
+    game/widgets/OptionMenuTests.cpp
     game/scenes/TitleSceneTests.cpp
     game/scenes/IdleScreenTests.cpp
     game/scenes/AttractSceneTests.cpp
     game/config/GameConfigTests.cpp
     game/characters/ClassDataTests.cpp
     game/characters/NativeClassDataTests.cpp
-    game/enemies/NativeCritterDataTests.cpp
+    game/critters/NativeCritterDataTests.cpp
     game/critters/CombatantBindingsTests.cpp
     game/app/AssetRootsTests.cpp
     game/scenes/NativeGameplayTests.cpp
@@ -506,7 +506,7 @@ add_executable(tests
     game/players/PlayerAnimatorTests.cpp
     game/players/PlayerAnimatorCadenceTests.cpp
     game/players/PlayerAnimatorInterruptTests.cpp
-    game/players/ItemAttackTests.cpp
+    game/party/ItemAttackTests.cpp
     game/players/KnockbackTests.cpp
     game/players/PlayerImpactTests.cpp
     game/level/LevelWorldTests.cpp
@@ -614,7 +614,7 @@ add_executable(tests
     formats/PlayerDataWadTests.cpp
     formats/TplFileTests.cpp
     formats/IcoWriterTests.cpp
-    game/menu/BurnDialogueScrollTests.cpp
+    game/widgets/BurnDialogueScrollTests.cpp
     engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE game_diagnostics gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
@@ -628,7 +628,7 @@ add_executable(gameplayregressions
     game/scenes/PostShopReturnTests.cpp
     game/level/LevelFixturesTests.cpp
     game/party/PowerupCompanionTests.cpp game/config/GameConfigTests.cpp
-    game/characters/ShopTests.cpp game/characters/AutoSaveTests.cpp
+    game/shop/ShopTests.cpp game/characters/AutoSaveTests.cpp
     game/level/SecretChallengeTests.cpp game/scenes/PlaySceneChallengeTests.cpp
     game/audio/LevelSoundscapeTests.cpp game/scenes/PlaySceneAmbienceTests.cpp
     game/scenes/PlaySceneSwitchTests.cpp game/level/TriggerCuesTests.cpp
@@ -650,7 +650,7 @@ add_executable(playerformtests game/party/PojoTests.cpp game/party/PojoVoiceTest
     game/effects/EffectTreesTests.cpp
     game/party/PlayerAttacksTests.cpp
     game/party/PartyPickupsTests.cpp game/scenes/PlaySceneTests.cpp
-    game/netplay/CharacterProfileTests.cpp
+    game/characters/CharacterProfileTests.cpp
     game/party/PowerupCompanionTests.cpp fixtures/NativeModelFixture.cpp
     fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
 target_link_libraries(playerformtests PRIVATE gdl::game Catch2::Catch2WithMain)
@@ -665,7 +665,7 @@ if(GDL_ENABLE_NETPLAY)
         game/netplay/NativeCampaignTransportTests.cpp)
     # Fast, asset-free native adapter and room checks, separate from GPU fixtures.
     add_executable(netplaytests engine/net/SessionTransportTests.cpp
-        engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp game/menu/NetplayMenuTests.cpp
+        engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp game/online/NetplayMenuTests.cpp
         game/netplay/HostedRoomTests.cpp game/netplay/OnlineSessionTests.cpp
         game/app/CommandLineTests.cpp)
     target_link_libraries(netplaytests PRIVATE gdl::game gdl::engine_net Catch2::Catch2WithMain)
@@ -679,7 +679,7 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/TreeModelTests.cpp
         game/rollback/ShotIdentityTests.cpp
         game/party/PlayerArsenalTests.cpp
-        game/effects/PotionEmissionTests.cpp
+        game/party/PotionEmissionTests.cpp
         game/party/PotionFlightTests.cpp
         game/rollback/PlayerActionCheckpointTests.cpp
         game/rollback/PlayerTurboCheckpointTests.cpp
@@ -729,7 +729,7 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/WorldCollisionTests.cpp
         engine/world/ParticleFieldTests.cpp
         game/level/WorldDestructionCheckpointTests.cpp
-        game/effects/EnemyFeedbackEmissionTests.cpp
+        game/enemies/EnemyFeedbackEmissionTests.cpp
         game/level/LevelTriggersCheckpointTests.cpp
         game/party/PartyDamageTests.cpp
         game/hud/HelpMessagesTests.cpp
@@ -741,13 +741,13 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/ParticleCheckpointTests.cpp
         game/effects/EffectCheckpointTests.cpp
         game/level/WorldMotionTests.cpp
-        game/effects/TurboEmissionTests.cpp
-        game/effects/TurboEffectResourcesTests.cpp
+        game/party/TurboEmissionTests.cpp
+        game/party/TurboEffectResourcesTests.cpp
         game/rollback/TurboEffectCheckpointTests.cpp
         game/party/PlayerMissilesTests.cpp
         game/party/PlayerMissilesCheckpointTests.cpp
         game/effects/EffectTreesPoolCheckpointTests.cpp
-        game/combat/MeleeGeometryTests.cpp
+        game/party/MeleeGeometryTests.cpp
         game/rollback/PlayerKnockbackCheckpointTests.cpp
         game/players/KnockbackTests.cpp
         game/players/PlayerActorCheckpointTests.cpp
@@ -771,8 +771,8 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/AnimationPlayerTests.cpp engine/world/WorldAnimatorTests.cpp
         game/players/PlayerAnimatorTests.cpp
         game/netplay/MeasuredPacketTransportTests.cpp
-        game/netplay/OnlineCompletionTests.cpp
-        game/netplay/OnlineLevelEntryTests.cpp
+        game/online/OnlineCompletionTests.cpp
+        game/online/OnlineLevelEntryTests.cpp
         engine/audio/SoundPlayerTests.cpp
         game/app/OnlineRunTests.cpp game/netplay/NativeCampaignTransportTests.cpp
         game/scenes/TitleSceneTests.cpp
@@ -802,24 +802,24 @@ if(GDL_ENABLE_NETPLAY)
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
     gdl_apply_compiler_options(nativeprobe)
     set_target_properties(nativeprobe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
-    target_sources(netplayplaytests PRIVATE game/rollback/SimulationSeedTests.cpp
+    target_sources(netplayplaytests PRIVATE game/level/SimulationSeedTests.cpp
         game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
         game/scenes/NativePresentationReadinessTests.cpp
         game/rollback/HintInputCommandTests.cpp game/rollback/NativeHintInputTests.cpp
         game/netplay/NativeAgreementSceneTests.cpp
         game/netplay/NativeAgreementTests.cpp
-        game/netplay/OnlineNativeBootstrapTests.cpp game/netplay/NativeOnlinePlayTests.cpp
+        game/netplay/OnlineNativeBootstrapTests.cpp game/online/NativeOnlinePlayTests.cpp
         game/app/NativeOnlineIdentityTests.cpp game/app/NumericWitnessTests.cpp
         game/rollback/SimulationObservationTests.cpp game/scenes/PlaySceneSimulationCameraTests.cpp
         game/rollback/LockstepInputsTests.cpp game/rollback/LockstepInputs.cpp game/rollback/MatchLockstepTests.cpp
-        game/rollback/NativeRollbackLifecycleTests.cpp game/netplay/NativePlaySetupTests.cpp
+        game/online/NativeRollbackLifecycleTests.cpp game/online/NativePlaySetupTests.cpp
         game/audio/SpeechTimingTests.cpp)
-    add_executable(simulationtests game/rollback/SimulationSeedTests.cpp
+    add_executable(simulationtests game/level/SimulationSeedTests.cpp
         engine/io/NativeStateDigestTests.cpp
         engine/io/Sha256Tests.cpp game/rollback/CanonicalDigestSinkTests.cpp
         engine/world/WorldCollisionTests.cpp engine/world/WorldAnimatorTests.cpp
         engine/world/WorldSceneTests.cpp
-        game/scenes/PlayerNativeStateTests.cpp
+        game/party/PlayerNativeStateTests.cpp
         game/enemies/EnemyMissilesNativeDigestTests.cpp
         game/critters/CombatantProjectilesNativeDigestTests.cpp
         game/level/LevelTriggersNativeDigestTests.cpp
@@ -854,7 +854,7 @@ if(GDL_ENABLE_NETPLAY)
         game/scenes/PlaySceneOutputTests.cpp
         game/rollback/SimulationObserverBossTests.cpp
         game/rollback/NativeRollbackSceneTests.cpp
-        game/rollback/NativeRollbackDriverTests.cpp
+        game/online/NativeRollbackDriverTests.cpp
         game/scenes/PlaySceneControlEqualityTests.cpp
         game/audio/SceneSoundEventsTests.cpp
         game/level/TriggerCuesTests.cpp
@@ -874,9 +874,9 @@ if(GDL_ENABLE_NETPLAY)
         game/hud/ChallengeHudTests.cpp
         game/hud/LevelMessagesTests.cpp
         game/tower/SumnerVisitTests.cpp
-        game/menu/ScrollBoxTests.cpp
-        game/menu/HintMenuTests.cpp
-        game/menu/BurnDialogueScrollTests.cpp
+        game/widgets/ScrollBoxTests.cpp
+        game/tower/HintMenuTests.cpp
+        game/widgets/BurnDialogueScrollTests.cpp
         game/tower/SumnerHintsTests.cpp
         game/tower/TowerPromotionTests.cpp
         game/bosses/BossVictoryPresentationTests.cpp
@@ -927,15 +927,15 @@ if(GDL_ENABLE_NETPLAY)
         game/netplay/NativeAgreementSceneTests.cpp
         game/netplay/NativeAgreementTests.cpp
         game/netplay/OnlineSessionTests.cpp game/netplay/OnlineNativeBootstrapTests.cpp
-        game/netplay/NativeOnlinePlayTests.cpp game/app/OnlineRunTests.cpp
+        game/online/NativeOnlinePlayTests.cpp game/app/OnlineRunTests.cpp
         game/netplay/NativeCampaignTransportTests.cpp
         game/netplay/OnlinePartyTests.cpp
         game/app/NativeOnlineIdentityTests.cpp game/app/NumericWitnessTests.cpp engine/assets/StringTableTests.cpp
         game/rollback/SimulationObservationTests.cpp game/scenes/PlaySceneSimulationCameraTests.cpp
         game/rollback/LockstepInputsTests.cpp game/rollback/LockstepInputs.cpp game/rollback/MatchLockstepTests.cpp
-        game/netplay/MatchSessionTests.cpp game/netplay/ShopSyncTests.cpp game/characters/ShopTests.cpp
+        game/netplay/MatchSessionTests.cpp game/netplay/ShopSyncTests.cpp game/shop/ShopTests.cpp
         game/scenes/AfterLevelSceneTests.cpp
-        game/rollback/NativeRollbackLifecycleTests.cpp game/netplay/NativePlaySetupTests.cpp
+        game/online/NativeRollbackLifecycleTests.cpp game/online/NativePlaySetupTests.cpp
         game/audio/SpeechTimingTests.cpp
         game/audio/VoiceQueueTests.cpp game/audio/LevelSoundscapeTests.cpp
         game/bosses/BossSequenceTests.cpp fixtures/NativeSoundBank.cpp fixtures/NativeModelFixture.cpp
@@ -956,19 +956,19 @@ target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestT
     game/scenes/PlaySceneOutputTests.cpp
     game/rollback/SimulationObserverBossTests.cpp
     game/rollback/NativeRollbackSceneTests.cpp
-    game/rollback/NativeRollbackDriverTests.cpp
+    game/online/NativeRollbackDriverTests.cpp
     game/scenes/PlaySceneControlEqualityTests.cpp
     game/audio/SceneSoundEventsTests.cpp
     game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
     game/scenes/NativePresentationReadinessTests.cpp
     game/rollback/HintInputCommandTests.cpp game/rollback/NativeHintInputTests.cpp
-    game/menu/NetplayMenuTests.cpp
-    game/rollback/SimulationSeedTests.cpp game/rollback/SimulationObservationTests.cpp
-    game/scenes/PlaySceneSimulationCameraTests.cpp game/netplay/NativePlaySetupTests.cpp
-    game/rollback/NativeRollbackLifecycleTests.cpp game/rollback/LockstepInputsTests.cpp game/rollback/LockstepInputs.cpp
+    game/online/NetplayMenuTests.cpp
+    game/level/SimulationSeedTests.cpp game/rollback/SimulationObservationTests.cpp
+    game/scenes/PlaySceneSimulationCameraTests.cpp game/online/NativePlaySetupTests.cpp
+    game/online/NativeRollbackLifecycleTests.cpp game/rollback/LockstepInputsTests.cpp game/rollback/LockstepInputs.cpp
     game/netplay/NativeAgreementSceneTests.cpp
     game/rollback/MatchLockstepTests.cpp game/netplay/NativeAgreementTests.cpp
-    game/netplay/OnlineNativeBootstrapTests.cpp game/netplay/NativeOnlinePlayTests.cpp
+    game/netplay/OnlineNativeBootstrapTests.cpp game/online/NativeOnlinePlayTests.cpp
     game/app/NativeOnlineIdentityTests.cpp game/app/NumericWitnessTests.cpp game/audio/SpeechTimingTests.cpp)
 target_link_libraries(tests PRIVATE Vulkan::Headers volk::volk GPUOpen::VulkanMemoryAllocator)
 target_link_libraries(tests PRIVATE gdl::expansion_formats gdl::expansion_audio)

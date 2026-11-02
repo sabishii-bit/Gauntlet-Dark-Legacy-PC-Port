@@ -9,7 +9,7 @@
 
 #include "expansions/n64/formats/LegendsN64Font.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
-#include "game/menu/ScrollBox.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace gdl::game {
 

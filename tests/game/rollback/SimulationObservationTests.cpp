@@ -10,8 +10,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/characters/CharacterProfile.h"
 #include "game/enemies/OpponentResources.h"
-#include "game/netplay/CharacterProfile.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/players/PowerupEffects.h"
 #include "game/rollback/SessionInputs.h"

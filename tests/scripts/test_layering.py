@@ -68,6 +68,18 @@ class RuleTests(unittest.TestCase):
         }), {"src/game/level/Chests.cpp -> game/party",
              "src/game/app/Gauntlet.cpp -> expansions/shared"})
 
+    def test_widgets_lie_under_every_screen_and_online_over_the_scenes(self):
+        self.assertEqual(self.found({
+            "src/game/hud/PartyHud.cpp": '#include "game/widgets/MenuFont.h"\n',
+            "src/game/widgets/OptionMenu.cpp": '#include "game/menu/PauseMenu.h"\n',
+            "src/game/menu/PauseMenu.h": '#include "game/context/GameContext.h"\n',
+            "src/game/context/GameContext.h": '#include "game/scenes/PlayScene.h"\n',
+            "src/game/online/NativeOnlinePlay.cpp": '#include "game/scenes/PlayScene.h"\n',
+            "src/game/netplay/MatchSession.cpp": '#include "game/online/NativePlaySetup.h"\n',
+        }), {"src/game/widgets/OptionMenu.cpp -> game/menu",
+             "src/game/context/GameContext.h -> game/scenes",
+             "src/game/netplay/MatchSession.cpp -> game/online"})
+
     def test_a_mod_builds_on_the_engine_and_the_game_alone(self):
         self.assertEqual(self.found({
             "src/mods/rage/RageMode.cpp": ('#include "mods/rage/RageMode.h"\n'
@@ -103,7 +115,7 @@ class BaselineTests(unittest.TestCase):
         self.baseline = self.root / "baseline.txt"
         tree(self.root, {
             "src/game/level/Chests.cpp": '#include "game/party/PlayerRuntime.h"\n',
-            "src/game/hud/PartyHud.cpp": '#include "game/menu/ScrollBox.h"\n',
+            "src/game/hud/PartyHud.cpp": '#include "game/menu/PauseMenu.h"\n',
         })
 
     def tearDown(self):

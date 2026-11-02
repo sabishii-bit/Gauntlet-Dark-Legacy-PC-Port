@@ -6,11 +6,11 @@
 #include "engine/core/Types.h"
 
 #include "game/effects/ShopFrameLight.h"
-#include "game/hud/InventoryPanel.h"
-#include "game/menu/OptionMenu.h"
-#include "game/menu/TextHighlight.h"
 #include "game/scenes/AfterLevelScene.h"
+#include "game/shop/InventoryPanel.h"
 #include "game/shop/ShopLayout.h"
+#include "game/widgets/OptionMenu.h"
+#include "game/widgets/TextHighlight.h"
 
 namespace gdl::game {
 namespace {

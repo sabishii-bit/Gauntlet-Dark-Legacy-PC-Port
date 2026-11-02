@@ -10,7 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/effects/EnemyFeedbackEmission.h"
+#include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/ImportedLevel.h"
 

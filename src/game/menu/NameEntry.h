@@ -7,7 +7,7 @@
 
 #include "engine/core/Types.h"
 
-#include "game/menu/MenuInput.h"
+#include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
 

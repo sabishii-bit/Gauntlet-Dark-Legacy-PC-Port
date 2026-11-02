@@ -19,7 +19,7 @@
 #include "TestSupport.h"
 #include "game/app/NativeOnlineIdentity.h"
 #include "game/app/OnlineRun.h"
-#include "game/scenes/GameContext.h"
+#include "game/context/GameContext.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {

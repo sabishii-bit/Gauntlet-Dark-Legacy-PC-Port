@@ -20,9 +20,9 @@
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/config/GameConfig.h"
-#include "game/menu/MenuInput.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/SelectLane.h"
+#include "game/widgets/MenuInput.h"
 
 namespace {
 

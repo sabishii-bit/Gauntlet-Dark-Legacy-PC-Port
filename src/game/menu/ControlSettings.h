@@ -1,7 +1,7 @@
 #pragma once
 #include <functional>
 
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 /** Per-player editor. Captures only the selected device, after the opening press is released.

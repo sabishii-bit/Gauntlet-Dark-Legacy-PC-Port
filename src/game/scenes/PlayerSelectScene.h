@@ -22,11 +22,11 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Party.h"
+#include "game/context/GameContext.h"
 #include "game/hud/StatusBox.h"
 #include "game/level/LevelWorld.h"
-#include "game/menu/MenuInput.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/SelectLane.h"
+#include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
 

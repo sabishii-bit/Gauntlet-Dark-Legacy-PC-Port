@@ -9,11 +9,11 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "game/characters/Progression.h"
-#include "game/menu/OptionMenu.h"
-#include "game/menu/ScrollBox.h"
 #include "game/party/PartyNames.h"
 #include "game/players/PickupVoices.h"
 #include "game/players/PowerupEffects.h"
+#include "game/widgets/OptionMenu.h"
+#include "game/widgets/ScrollBox.h"
 namespace gdl::game {
 namespace {
 constexpr std::string_view kScrollTexture = "SCROLL_A";

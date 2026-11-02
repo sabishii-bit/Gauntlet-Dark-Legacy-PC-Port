@@ -7,12 +7,11 @@
 #include <string>
 
 #include "engine/render/RenderDevice.h"
-
-#include "game/characters/Party.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/characters/Party.h"
 #include "game/hud/LinkIndicator.h"
-#include "game/menu/NetplayMenu.h"
+#include "game/online/NetplayMenu.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/scenes/SceneSelection.h"
 

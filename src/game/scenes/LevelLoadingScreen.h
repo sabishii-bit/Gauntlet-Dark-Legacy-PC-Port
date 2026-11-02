@@ -12,8 +12,8 @@
 #include "engine/ui/Canvas.h"
 
 #include "game/characters/Party.h"
+#include "game/context/GameContext.h"
 #include "game/hud/StatusBox.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/TransitionScreen.h"
 
 namespace gdl::game {

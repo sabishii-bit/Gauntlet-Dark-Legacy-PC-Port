@@ -19,12 +19,12 @@
 #include "game/characters/Party.h"
 #include "game/characters/Progression.h"
 #include "game/config/GameConfig.h"
+#include "game/context/GameContext.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/party/PlayerFigure.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/scenes/AfterLevelScene.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {

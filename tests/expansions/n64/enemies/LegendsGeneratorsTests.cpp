@@ -22,7 +22,7 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
-#include "game/effects/EnemyFeedbackEmission.h"
+#include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/party/PlayerAttacks.h"
 

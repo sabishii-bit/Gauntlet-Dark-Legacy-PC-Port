@@ -11,9 +11,9 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/characters/Party.h"
-#include "game/menu/BurnDialogueScroll.h"
+#include "game/context/GameContext.h"
 #include "game/menu/SettingsMenu.h"
-#include "game/scenes/GameContext.h"
+#include "game/widgets/BurnDialogueScroll.h"
 
 namespace gdl::game {
 enum class PauseOutcome : u8 {

@@ -8,7 +8,7 @@
 
 #include "game/characters/Progression.h"
 #include "game/console/ConsoleCommands.h"
-#include "game/players/NoclipMotion.h"
+#include "game/console/NoclipMotion.h"
 #include "game/scenes/PlayScene.h"
 
 namespace gdl::game {

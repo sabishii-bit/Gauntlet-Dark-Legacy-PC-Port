@@ -9,8 +9,8 @@
 #include "game/config/GameConfig.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/ControlSettings.h"
-#include "game/menu/OptionMenu.h"
 #include "game/menu/VideoSettings.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 

@@ -8,8 +8,8 @@
 #include "engine/math/Math.h"
 #include "engine/render/AmbientOcclusion.h"
 
-#include "game/menu/MenuFont.h"
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/MenuFont.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 namespace {

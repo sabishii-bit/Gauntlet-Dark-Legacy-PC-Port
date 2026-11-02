@@ -16,8 +16,8 @@
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
 #include "game/level/NativeStateResources.h"
-#include "game/menu/ScrollBox.h"
 #include "game/players/PowerupEffects.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace {
 using namespace gdl;

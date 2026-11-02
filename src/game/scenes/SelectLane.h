@@ -16,9 +16,9 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/hud/ControlPrompts.h"
-#include "game/menu/MenuInput.h"
 #include "game/menu/NameEntry.h"
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/MenuInput.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 

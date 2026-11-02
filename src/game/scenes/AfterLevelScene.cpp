@@ -14,10 +14,10 @@
 
 #include "game/audio/ShopMusic.h"
 #include "game/config/ControlProfiles.h"
-#include "game/menu/MenuFont.h"
-#include "game/menu/OptionMenu.h"
 #include "game/players/PickupVoices.h"
 #include "game/shop/ShopLayout.h"
+#include "game/widgets/MenuFont.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 namespace {

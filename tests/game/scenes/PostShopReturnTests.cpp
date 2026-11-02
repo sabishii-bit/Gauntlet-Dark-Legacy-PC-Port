@@ -11,12 +11,12 @@
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
 #include "game/characters/CharacterSave.h"
-#include "game/characters/ShopPurchase.h"
 #include "game/config/GameConfig.h"
 #include "game/level/LevelWorld.h"
 #include "game/scenes/AfterLevelScene.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/PlayerSelectScene.h"
+#include "game/shop/ShopPurchase.h"
 
 namespace {
 using namespace gdl;

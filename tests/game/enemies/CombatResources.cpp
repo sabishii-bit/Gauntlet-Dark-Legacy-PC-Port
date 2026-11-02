@@ -5,8 +5,8 @@
 #include <set>
 #include <utility>
 
-#include "game/effects/TurboEmission.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/party/TurboEmission.h"
 
 namespace gdl::game {
 namespace {

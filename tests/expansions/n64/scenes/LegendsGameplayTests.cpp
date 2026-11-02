@@ -22,13 +22,13 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/app/ImportedShop.h"
-#include "game/characters/ShopPurchase.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
+#include "game/shop/ShopPurchase.h"
 
 namespace {
 using namespace gdl;

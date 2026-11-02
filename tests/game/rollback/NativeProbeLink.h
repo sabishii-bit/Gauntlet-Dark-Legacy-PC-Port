@@ -9,7 +9,7 @@
 #include "engine/net/SessionTransport.h"
 
 #include "game/netplay/MatchSession.h"
-#include "game/rollback/NativeRollbackDriver.h"
+#include "game/online/NativeRollbackDriver.h"
 
 namespace gdl::test {
 /** Test-only outbound application-datagram impairment, not an Internet RTT. */

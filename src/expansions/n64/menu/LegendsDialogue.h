@@ -5,7 +5,7 @@
 
 #include "engine/core/SpecialMembers.h"
 
-#include "game/menu/DialoguePresentation.h"
+#include "game/widgets/DialoguePresentation.h"
 
 namespace gdl::game {
 

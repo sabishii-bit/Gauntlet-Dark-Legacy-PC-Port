@@ -1,17 +1,21 @@
 # Everything except main() lives in a library so the tests can link it.
-# Modules by subject, lowest first: config (settings), combat (damage rules), mechanics (the
-# seam additive gameplay mechanics answer through, and the catalog of them), characters
-# (class data, saves, inventory, progression), players (a character's body and controls),
-# camera, audio (what a level sounds like), effects, level (the levels and what stands in
-# them), party (the party in a level, frame by frame), enemies (the swarm and the level's
-# opponents), critters, bosses, tower (between levels, with Sumner), shop, hud, menu
-# (widgets and the in-game menus), rollback (commands, timelines and checkpoints), netplay
-# (rooms and sessions), console (the developer console, its command objects and their
-# parsers), scenes (the full screens), app (the driver and attract flow). A module includes
-# only those below it; app owns the input boundary.
+# Modules by subject, lowest first: config (settings), widgets (what every screen reads and
+# draws with: menu input, fonts, option lists, scrolls), combat (damage rules), mechanics (the
+# seam additive gameplay mechanics answer through, and the catalog of them), characters (class
+# data, saves, inventory, progression), players (a character's body and controls), camera,
+# audio (what a level sounds like), effects, level (the levels and what stands in them), party
+# (the party in a level, frame by frame), enemies (the swarm and the level's opponents),
+# critters, bosses, tower (between levels, with Sumner and his scrolls), shop (the shop and
+# the inventory panel), hud, context (GameContext: the settings, text, sound, files and
+# callbacks every screen is handed), menu (the title, pause, save and settings menus and the
+# name picker), rollback (commands, timelines and checkpoints), netplay (rooms, sessions and
+# keeping the peers in step), console (the developer console, its command objects and their
+# parsers), scenes (the full screens), online (an online game's stages, over the scenes, and
+# its lobby menu), app (the driver and attract flow). A module includes only those below it;
+# app owns the input boundary.
 add_library(game STATIC
     netplay/AssetDigest.cpp
-    menu/NetplayMenu.cpp
+    online/NetplayMenu.cpp
     netplay/HostedRoom.cpp
     rollback/InputCommand.cpp
     rollback/InputTimeline.cpp
@@ -27,26 +31,26 @@ add_library(game STATIC
     rollback/EffectIdentity.cpp
     rollback/PotionIdentity.cpp
     level/WorldMotion.cpp
-    effects/TurboEmission.cpp
-    effects/TurboEffectResources.cpp
-    combat/MeleeGeometry.cpp
+    party/TurboEmission.cpp
+    party/TurboEffectResources.cpp
+    party/MeleeGeometry.cpp
     netplay/MatchSession.cpp
     netplay/ShopSync.cpp
     netplay/OnlineSession.cpp
-    netplay/CharacterProfile.cpp
+    characters/CharacterProfile.cpp
     rollback/PartyCheckpoint.cpp
-    characters/PartyBootstrap.cpp
-    rollback/NativeRollbackDriver.cpp
-    netplay/NativePlaySetup.cpp
-    netplay/NativeOnlinePlay.cpp
+    netplay/PartyBootstrap.cpp
+    online/NativeRollbackDriver.cpp
+    online/NativePlaySetup.cpp
+    online/NativeOnlinePlay.cpp
     netplay/OnlineParty.cpp
-    netplay/OnlineLevelEntry.cpp
-    netplay/OnlineCompletion.cpp
+    online/OnlineLevelEntry.cpp
+    online/OnlineCompletion.cpp
     app/OnlineRun.cpp
     app/NativeOnlineIdentity.cpp
     app/NumericWitness.cpp
     scenes/PlaySceneSimulation.cpp
-    scenes/PlayerNativeState.cpp
+    party/PlayerNativeState.cpp
     party/PlayInput.h
     rollback/SessionInputs.cpp
     level/StaticScenery.cpp
@@ -59,24 +63,24 @@ add_library(game STATIC
     hud/RuneMeter.cpp
     scenes/PlaySceneChallenge.cpp
     level/DestructibleWalls.cpp
-    level/MissileTarget.cpp
+    party/MissileTarget.cpp
     menu/SettingsMenu.cpp
     menu/MainMenuFactory.cpp
     menu/SettingsRows.cpp
-    menu/TextHighlight.cpp
+    widgets/TextHighlight.cpp
     menu/ControlSettings.cpp
     hud/ControlPrompts.cpp
     menu/VideoSettings.cpp
-    menu/MenuFont.cpp
+    widgets/MenuFont.cpp
     hud/CompassHud.cpp
     menu/SaveMenu.cpp
     menu/PauseMenu.cpp
-    characters/ShopPurchase.h
-    characters/ShopPurchase.cpp
+    shop/ShopPurchase.h
+    shop/ShopPurchase.cpp
     characters/LevelResults.h
     characters/LevelResults.cpp
-    hud/InventoryPanel.h
-    hud/InventoryPanel.cpp
+    shop/InventoryPanel.h
+    shop/InventoryPanel.cpp
     hud/LinkIndicator.cpp
     shop/ShopSession.h
     shop/ShopSession.cpp
@@ -161,7 +165,7 @@ add_library(game STATIC
     players/PlayerControls.h
     players/PlayerControls.cpp
     players/CursorAim.cpp
-    players/NoclipMotion.cpp
+    console/NoclipMotion.cpp
     players/PlayerActor.h
     players/PlayerActor.cpp
     players/PlayerCapture.h
@@ -205,7 +209,7 @@ add_library(game STATIC
     enemies/Enemies.cpp
     enemies/Generators.cpp
     critters/CritterData.cpp
-    enemies/NativeCritterData.cpp
+    critters/NativeCritterData.cpp
     critters/CritterMovement.cpp
     critters/CritterPatrol.cpp
     critters/CritterStatues.cpp
@@ -287,7 +291,7 @@ add_library(game STATIC
     scenes/PlaySceneCeremonies.cpp
     scenes/PlaySceneRewind.cpp
     party/PlayerArsenal.cpp
-    effects/PotionEmission.cpp
+    party/PotionEmission.cpp
     audio/LevelSoundscape.cpp
     audio/VoiceQueue.cpp
     effects/EffectTrees.h
@@ -307,20 +311,20 @@ add_library(game STATIC
     level/HazardSurfaces.cpp
     level/Rotators.h
     level/Rotators.cpp
-    menu/ScrollBox.h
-    menu/DialoguePresentation.h
-    menu/ScrollBox.cpp
-    menu/MenuInput.h
-    menu/MenuInput.cpp
-    menu/OptionMenu.h
-    menu/OptionMenu.cpp
-    menu/HintMenu.h
-    menu/HintMenu.cpp
-    menu/BurnDialogueScroll.h
-    menu/BurnDialogueScroll.cpp
+    widgets/ScrollBox.h
+    widgets/DialoguePresentation.h
+    widgets/ScrollBox.cpp
+    widgets/MenuInput.h
+    widgets/MenuInput.cpp
+    widgets/OptionMenu.h
+    widgets/OptionMenu.cpp
+    tower/HintMenu.h
+    tower/HintMenu.cpp
+    widgets/BurnDialogueScroll.h
+    widgets/BurnDialogueScroll.cpp
     menu/NameEntry.h
     menu/NameEntry.cpp
-    scenes/GameContext.h
+    context/GameContext.h
     scenes/TitleScene.h
     scenes/TitleScene.cpp
     scenes/MovieScene.h
@@ -398,13 +402,13 @@ add_library(game STATIC
     enemies/OpponentSimulation.cpp
     enemies/OpponentPlacements.cpp
     party/PlayerAttacks.cpp
-    effects/EnemyMissileEmission.cpp
+    enemies/EnemyMissileEmission.cpp
     effects/CritterCueEmission.cpp
     party/PartyLighting.cpp
-    effects/EnemyFeedbackEmission.cpp
+    enemies/EnemyFeedbackEmission.cpp
     party/PartyDamage.cpp
-    scenes/PlayerItemAttacks.cpp
-    players/ItemAttack.cpp
+    party/PlayerItemAttacks.cpp
+    party/ItemAttack.cpp
     effects/HeadGem.cpp
     effects/BodyGlow.cpp
     players/MeleeStreak.cpp

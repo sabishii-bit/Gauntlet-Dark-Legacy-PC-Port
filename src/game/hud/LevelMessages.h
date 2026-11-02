@@ -10,7 +10,7 @@
 #include "engine/core/Types.h"
 
 #include "game/hud/ControlPrompts.h"
-#include "game/menu/ScrollBox.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace gdl::game {
 

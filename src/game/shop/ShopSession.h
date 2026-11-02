@@ -10,9 +10,9 @@
 
 #include "game/characters/LevelResults.h"
 #include "game/characters/Party.h"
-#include "game/characters/ShopPurchase.h"
-#include "game/hud/InventoryPanel.h"
-#include "game/menu/MenuInput.h"
+#include "game/shop/InventoryPanel.h"
+#include "game/shop/ShopPurchase.h"
+#include "game/widgets/MenuInput.h"
 namespace gdl::game {
 enum class ShopPhase : u8 { Tally, BeforeStats, Shopping, AfterStats, Inventory, FinalStats, Done };
 /** What the screen is opened for (init_shop's mode): a level's tally, shop and inventory

@@ -11,7 +11,7 @@
 #include "engine/platform/Paths.h"
 
 #include "game/menu/MainMenuFactory.h"
-#include "game/menu/TextHighlight.h"
+#include "game/widgets/TextHighlight.h"
 
 namespace gdl::game {
 

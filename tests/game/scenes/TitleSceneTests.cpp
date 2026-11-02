@@ -13,10 +13,10 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
+#include "game/context/GameContext.h"
 #include "game/menu/MainMenuFactory.h"
-#include "game/menu/MenuInput.h"
-#include "game/scenes/GameContext.h"
 #include "game/scenes/TitleScene.h"
+#include "game/widgets/MenuInput.h"
 
 namespace {
 

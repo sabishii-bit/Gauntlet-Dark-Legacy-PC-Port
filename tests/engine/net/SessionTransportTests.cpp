@@ -8,8 +8,8 @@
 #include "engine/net/SessionTransport.h"
 
 #include "game/netplay/HostedRoom.h"
-#include "game/netplay/NativePlaySetup.h"
 #include "game/netplay/OnlineSession.h"
+#include "game/online/NativePlaySetup.h"
 #include "game/rollback/RollbackSessionHarness.h"
 
 namespace {

@@ -22,10 +22,10 @@
 #include "TestSupport.h"
 #include "game/characters/Party.h"
 #include "game/config/GameConfig.h"
-#include "game/menu/MenuInput.h"
-#include "game/scenes/GameContext.h"
+#include "game/context/GameContext.h"
 #include "game/scenes/PlayerSelectScene.h"
 #include "game/scenes/TitleScene.h"
+#include "game/widgets/MenuInput.h"
 
 namespace {
 

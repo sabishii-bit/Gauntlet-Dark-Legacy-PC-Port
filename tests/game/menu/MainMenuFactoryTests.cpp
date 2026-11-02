@@ -9,7 +9,7 @@
 
 #include "FakeRenderDevice.h"
 #include "game/menu/MainMenuFactory.h"
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace {
 

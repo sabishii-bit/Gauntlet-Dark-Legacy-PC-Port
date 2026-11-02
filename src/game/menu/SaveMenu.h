@@ -7,7 +7,7 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Party.h"
-#include "game/menu/OptionMenu.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
 /** Confirmed character-file operations for one player in a paused party. */

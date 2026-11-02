@@ -12,8 +12,8 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/audio/SpeechTiming.h"
+#include "game/context/GameContext.h"
 #include "game/hud/StatusBox.h"
-#include "game/scenes/GameContext.h"
 #include "game/shop/ShopSession.h"
 
 namespace gdl::game {

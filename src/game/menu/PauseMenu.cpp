@@ -8,7 +8,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
-#include "game/menu/MenuFont.h"
+#include "game/widgets/MenuFont.h"
 
 namespace gdl::game {
 namespace {

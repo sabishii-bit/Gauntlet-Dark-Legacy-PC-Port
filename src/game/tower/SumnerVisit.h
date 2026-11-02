@@ -9,7 +9,7 @@
 #include "engine/ui/ModelSprite.h"
 
 #include "game/config/GameConfig.h"
-#include "game/menu/HintMenu.h"
+#include "game/tower/HintMenu.h"
 #include "game/tower/SumnerHints.h"
 
 namespace gdl::game {

@@ -17,11 +17,12 @@
 #include "game/combat/DamageTypes.h"
 #include "game/effects/CritterCueEmission.h"
 #include "game/effects/DynamicLights.h"
-#include "game/effects/EnemyFeedbackEmission.h"
-#include "game/effects/EnemyMissileEmission.h"
+#include "game/enemies/EnemyFeedbackEmission.h"
+#include "game/enemies/EnemyMissileEmission.h"
 #include "game/enemies/OpponentPlacements.h"
 #include "game/enemies/OpponentSimulation.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/SimulationSeed.h"
 #include "game/party/BodyCollision.h"
 #include "game/party/PartyDamage.h"
 #include "game/party/PlayerPowerups.h"
@@ -29,7 +30,6 @@
 #include "game/players/ItemPickup.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
-#include "game/rollback/SimulationSeed.h"
 namespace gdl::game {
 namespace {
 // The swarm's own sounds (sounds_evt.c): a throw going off, a suicide's cry and bang.
