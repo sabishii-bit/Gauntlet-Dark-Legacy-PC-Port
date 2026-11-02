@@ -61,12 +61,14 @@ public:
         cameraSamples.push_back(alpha);
         return alpha >= 0 && sampledView ? *sampledView : view;
     }
-    std::optional<ImportedObjectHit> pickObject(const Vec3&, const Vec3&, const WorldCamera&,
-                                                f32) const override {
+    std::optional<ImportedObjectHit> pickObject(const Vec3& /*origin*/, const Vec3& /*direction*/,
+                                                const WorldCamera& /*view*/,
+                                                f32 /*alpha*/) const override {
         return picked;
     }
-    void highlightObject(RenderDevice&, const Mat4&, const WorldCamera&, f32, s32 id,
-                         const SelectionHighlight&) const override {
+    void highlightObject(RenderDevice& /*device*/, const Mat4& /*clip*/,
+                         const WorldCamera& /*view*/, f32 /*alpha*/, s32 id,
+                         const SelectionHighlight& /*highlight*/) const override {
         highlighted = id;
     }
     void updateParty(std::span<PlayerActor*> players, f32 /*seconds*/,
@@ -267,10 +269,10 @@ TEST_CASE("Imported camera rendering retains the paused and disabled interpolati
         f32 alpha;
         bool sampled;
     };
-    constexpr std::array cases{RenderCase{false, .25f, true}, RenderCase{false, 1.0f, true},
-                               RenderCase{true, .25f, false}, RenderCase{false, -1.0f, false},
-                               RenderCase{true, -1.0f, false}};
-    for (const auto& render : cases) {
+    constexpr std::array kCases{RenderCase{false, .25f, true}, RenderCase{false, 1.0f, true},
+                                RenderCase{true, .25f, false}, RenderCase{false, -1.0f, false},
+                                RenderCase{true, -1.0f, false}};
+    for (const auto& render : kCases) {
         CAPTURE(render.paused, render.alpha);
         fixture.device.draws.clear();
         imported->cameraSamples.clear();
@@ -496,8 +498,9 @@ TEST_CASE("Tower completion portals survive real arrival and admit their actual 
     GameplayFixture fixture;
     const auto directory =
         test::dataDirectory().parent_path() / "assets/n64/extracted/levels/tower2";
-    if (!std::filesystem::is_directory(directory))
+    if (!std::filesystem::is_directory(directory)) {
         SKIP("Native N64 Tower extraction is not installed");
+    }
     auto map = nativeMap(directory);
     auto adapter = LegendsSceneAdapter::load(fixture.device, LegendsPlatform::N64, directory, map);
     auto visitor = member(0);
@@ -535,8 +538,9 @@ TEST_CASE("Tower completion portals survive real arrival and admit their actual 
         const auto bank = directory.parent_path().parent_path() / "bosseffect/skodeath";
         for (const auto& texture : formats::decodeLegendsN64Textures(
                  readFile(bank / "objects.wad"), readFile(bank / "texdyn.rom"))) {
-            if (!texture.image.pixels.empty())
+            if (!texture.image.pixels.empty()) {
                 fireImages.push_back(texture.image.pixels);
+            }
         }
         fixture.device.draws.clear();
         fixture.scene.render(fixture.device, Mat4{1}, 640, 448);
@@ -548,64 +552,78 @@ TEST_CASE("Tower completion portals survive real arrival and admit their actual 
         const auto cross2 = [](Vec2 a, Vec2 b) { return a.x * b.y - a.y * b.x; };
         const auto texelAlpha = [](const test::RecordedDraw& draw, Vec2 uv) {
             const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
-            if (!texture || texture->pixels.empty())
+            if (texture == nullptr || texture->pixels.empty()) {
                 return 1.0f;
+            }
             uv = uv * draw.state.uvScale + draw.state.uvOffset;
             uv -= glm::floor(uv);
-            const auto x =
-                std::min(static_cast<u32>(uv.x * texture->width()), texture->width() - 1);
-            const auto y =
-                std::min(static_cast<u32>(uv.y * texture->height()), texture->height() - 1);
+            const auto x = std::min(static_cast<u32>(uv.x * static_cast<f32>(texture->width())),
+                                    texture->width() - 1);
+            const auto y = std::min(static_cast<u32>(uv.y * static_cast<f32>(texture->height())),
+                                    texture->height() - 1);
             return static_cast<f32>(texture->pixels[(y * texture->width() + x) * 4 + 3]) / 255;
         };
         // Check the real scene's camera, transformed geometry, texel coverage,
         // culling and existing opaque depth, not merely a submitted bank pointer.
         for (const auto& fire : fixture.device.draws) {
             const auto* texture = dynamic_cast<const test::FakeTexture*>(fire.texture);
-            if (!texture || std::ranges::find(fireImages, texture->pixels) == fireImages.end())
+            if (texture == nullptr ||
+                std::ranges::find(fireImages, texture->pixels) == fireImages.end()) {
                 continue;
+            }
             REQUIRE_FALSE(fire.state.cullBack);
             for (usize at = 0; at + 2 < fire.vertices.size(); at += 3) {
-                const auto a = project(fire, at), b = project(fire, at + 1),
-                           c = project(fire, at + 2);
+                const auto a = project(fire, at);
+                const auto b = project(fire, at + 1);
+                const auto c = project(fire, at + 2);
                 const Vec3 sample = (a + b + c) / 3.0f;
                 if (sample.x < 0 || sample.x >= 640 || sample.y < 0 || sample.y >= 448 ||
-                    sample.z <= 0 || sample.z >= 1)
+                    sample.z <= 0 || sample.z >= 1) {
                     continue;
+                }
                 const Vec2 uv =
                     (fire.vertices[at].uv + fire.vertices[at + 1].uv + fire.vertices[at + 2].uv) /
                     3.0f;
                 if (texelAlpha(fire, uv) <= fire.state.alphaTest ||
                     fire.vertices[at].color.a == 0 || fire.vertices[at + 1].color.a == 0 ||
-                    fire.vertices[at + 2].color.a == 0)
+                    fire.vertices[at + 2].color.a == 0) {
                     continue;
+                }
                 bool blocked = false;
                 for (const auto& surface : fixture.device.draws) {
-                    if (!surface.state.depthWrite || !surface.state.depthTest || &surface == &fire)
+                    if (!surface.state.depthWrite || !surface.state.depthTest ||
+                        &surface == &fire) {
                         continue;
+                    }
                     // Translucent contributors can blend over the effect; this
                     // probe tests opaque coverage only, without inventing a GPU.
-                    if (surface.state.blend != BlendMode::Opaque)
+                    if (surface.state.blend != BlendMode::Opaque) {
                         continue;
+                    }
                     for (usize tri = 0; tri + 2 < surface.vertices.size(); tri += 3) {
-                        const auto p = project(surface, tri), q = project(surface, tri + 1),
-                                   r = project(surface, tri + 2);
+                        const auto p = project(surface, tri);
+                        const auto q = project(surface, tri + 1);
+                        const auto r = project(surface, tri + 2);
                         const f32 determinant = cross2(Vec2{q - p}, Vec2{r - p});
-                        if (std::abs(determinant) < .00001f)
+                        if (std::abs(determinant) < .00001f) {
                             continue;
+                        }
                         const f32 v = cross2(Vec2{sample - p}, Vec2{r - p}) / determinant;
                         const f32 w = cross2(Vec2{q - p}, Vec2{sample - p}) / determinant;
                         const f32 u = 1 - v - w;
                         if (u < 0 || v < 0 || w < 0 ||
-                            p.z * u + q.z * v + r.z * w <= sample.z + .000001f)
+                            p.z * u + q.z * v + r.z * w <= sample.z + .000001f) {
                             continue;
+                        }
                         const Vec2 surfaceUv = surface.vertices[tri].uv * u +
                                                surface.vertices[tri + 1].uv * v +
                                                surface.vertices[tri + 2].uv * w;
                         blocked |= texelAlpha(surface, surfaceUv) > surface.state.alphaTest;
                     }
                 }
-                visible += !blocked;
+                if (!blocked) {
+                    ++visible;
+                }
             }
         }
         CHECK(visible > 0);
@@ -620,8 +638,9 @@ TEST_CASE("Tower completion portals survive real arrival and admit their actual 
             CHECK(departure->skin == nullptr);
             CHECK(departure->keepVisible);
             CHECK_FALSE(departure->transportSound);
-            if (!departure->finished)
+            if (!departure->finished) {
                 CHECK_FALSE(departure->covered(fixture.scene.transition().covering()));
+            }
         }
     }
     REQUIRE(outcome == PlayOutcome::Travel);
@@ -1086,12 +1105,14 @@ public:
     bool targetBodies = true;
     bool nativeCamera = false;
     void resetCamera(std::span<const CameraSubject> subjects) override {
-        if (nativeCamera)
+        if (nativeCamera) {
             level->resetCamera(subjects);
+        }
     }
     void followCamera(std::span<const CameraSubject> subjects, f32 seconds) override {
-        if (nativeCamera)
+        if (nativeCamera) {
             level->followCamera(subjects, seconds);
+        }
     }
     std::optional<WorldCamera> camera(f32 alpha = -1) const override {
         return nativeCamera ? level->camera(alpha) : std::nullopt;
@@ -1150,7 +1171,7 @@ public:
 TEST_CASE("Native fire and Ice steam damage through PlayScene without bypassing immunity",
           "[legends][gameplay][native-traps][native-hazard-health][assets]") {
     GameplayFixture fixture;
-    const auto mapName = GENERATE("mount1", "ice1", "ice2", "ice3", "ice4");
+    const auto* const mapName = GENERATE("mount1", "ice1", "ice2", "ice3", "ice4");
     CAPTURE(mapName);
     const auto directory =
         test::dataDirectory().parent_path() / "assets/n64/extracted/levels" / mapName;
@@ -1202,8 +1223,9 @@ TEST_CASE("Native fire and Ice steam damage through PlayScene without bypassing 
     }
     REQUIRE(imported->delivered.size() == 1);
     CHECK(imported->delivered[0].damage > 0);
-    if (std::string_view{mapName} == "mount1")
+    if (std::string_view{mapName} == "mount1") {
         CHECK(imported->delivered[0].damage == 2);
+    }
     CHECK(imported->delivered[0].armorAbsorbed);
     CHECK((imported->delivered[0].impact.flags & damage::kLow) != 0);
     CHECK(fixture.scene.liveSave(0)->health() ==
@@ -1215,8 +1237,9 @@ TEST_CASE("Every Ice4 steam vent reaches a grounded player with the native camer
           "[legends][native-traps][ice4-vents][assets]") {
     GameplayFixture fixture;
     const auto directory = test::dataDirectory().parent_path() / "assets/n64/extracted/levels/ice4";
-    if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("N64 Ice4 extraction is not installed");
+    }
     auto map = nativeMap(directory);
     const auto definitions = formats::decodeLegendsN64Traps(
         readFile(directory / "ipr.rom"),
@@ -1254,7 +1277,8 @@ TEST_CASE("Every Ice4 steam vent reaches a grounded player with the native camer
             for (const auto& draw : fixture.device.draws) {
                 // Steam is the narrow, upright quad over this vent. Ignore the
                 // flat base: merely drawing it would hide the original symptom.
-                Vec3 lo{1e6f}, hi{-1e6f};
+                Vec3 lo{1e6f};
+                Vec3 hi{-1e6f};
                 for (const auto& vertex : draw.vertices) {
                     const Vec3 point{draw.transform * Vec4{vertex.position, 1}};
                     lo = glm::min(lo, point);
@@ -1262,11 +1286,13 @@ TEST_CASE("Every Ice4 steam vent reaches a grounded player with the native camer
                 }
                 const Vec3 centre = (lo + hi) * .5f;
                 if (hi.y - lo.y < 4 || hi.y - lo.y > 6 ||
-                    glm::distance(Vec2{centre.x, centre.z}, Vec2{position.x, position.z}) > .5f)
+                    glm::distance(Vec2{centre.x, centre.z}, Vec2{position.x, position.z}) > .5f) {
                     continue;
+                }
                 const auto& texture = dynamic_cast<const test::FakeTexture&>(*draw.texture);
-                for (usize pixel = 3; pixel < texture.pixels.size(); pixel += 4)
+                for (usize pixel = 3; pixel < texture.pixels.size(); pixel += 4) {
                     visibleSteam |= texture.pixels[pixel] > 0;
+                }
             }
         }
         const Vec3 settled = fixture.scene.actor(0)->position();
