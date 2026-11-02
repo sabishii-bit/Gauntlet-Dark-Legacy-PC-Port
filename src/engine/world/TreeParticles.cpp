@@ -132,7 +132,7 @@ void TreeParticles::clearTextureBlends() {
 }
 
 void TreeParticles::draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
-                         f32 presentationAlpha) const {
-    m_field.draw(device, clip, right, up, presentationAlpha);
+                         f32 presentationAlpha, const ThermalMaterial& thermal) const {
+    m_field.draw(device, clip, right, up, presentationAlpha, thermal);
 }
 } // namespace gdl

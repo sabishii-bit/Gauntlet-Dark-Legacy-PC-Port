@@ -211,12 +211,13 @@ void Application::checkAssetDirectory() const {
         log::warn("No asset directory configured (pass --assets <dir>)");
         return;
     }
-    const auto marker = dir / "STATIC" / "objects.ngc";
+    const auto& marker = m_desc.assetMarker;
     std::error_code ec;
-    if (std::filesystem::exists(marker, ec)) {
+    if (marker.empty() || std::filesystem::exists(dir / marker, ec)) {
         log::info("Asset directory: {}", paths::utf8(dir));
     } else {
-        log::warn("Asset directory {} does not contain STATIC/objects.ngc", paths::utf8(dir));
+        log::warn("Asset directory {} does not contain {}", paths::utf8(dir),
+                  paths::genericUtf8(marker));
     }
 }
 

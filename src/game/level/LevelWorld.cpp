@@ -298,7 +298,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     }
     if (!m_scene.build(m_layout, m_models, m_textures, device, m_sim.lighting, lent,
                        controlledObjects, backgroundObjects, cameraFadeObjects,
-                       m_collision.loaded() ? &m_collision : nullptr)) {
+                       m_collision.loaded() ? &m_collision : nullptr, kThermalTextures)) {
         clear();
         return false;
     }

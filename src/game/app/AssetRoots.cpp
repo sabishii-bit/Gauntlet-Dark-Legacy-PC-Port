@@ -29,4 +29,8 @@ AssetRoots resolveAssetRoots(const std::filesystem::path& executableDirectory,
             adjacentOrFallback(executableDirectory, "data", developerData)};
 }
 
+std::filesystem::path assetMarker() {
+    return std::filesystem::path{"STATIC"} / "objects.ngc";
+}
+
 } // namespace gdl::game

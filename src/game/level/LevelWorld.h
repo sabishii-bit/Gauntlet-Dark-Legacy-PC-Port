@@ -27,6 +27,7 @@
 #include "engine/world/WorldScene.h"
 
 #include "game/camera/TowerCamera.h"
+#include "game/effects/ThermalTextures.h"
 #include "game/level/DestructibleWalls.h"
 #include "game/level/FallingScenery.h"
 #include "game/level/HazardSurfaces.h"
@@ -363,7 +364,7 @@ public:
         m_placedItems.draw(device, clip, m_sim.litNow, &frame, TreeModel::Pass::BlendedBehind,
                            presentationAlpha);
         m_sim.particles.draw(device, clip, frame.right, frame.up,
-                             m_sim.particlesAdvanced ? presentationAlpha : -1.0f);
+                             m_sim.particlesAdvanced ? presentationAlpha : -1.0f, kThermalTextures);
     }
 
 private:

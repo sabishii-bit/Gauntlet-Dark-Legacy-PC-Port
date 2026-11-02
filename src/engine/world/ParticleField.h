@@ -11,6 +11,7 @@
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/ParticleSystem.h"
+#include "engine/world/ThermalMaterial.h"
 
 namespace gdl {
 
@@ -103,9 +104,10 @@ public:
     /** Moves `seconds` on, in whole game frames. */
     void step(f32 seconds);
     /** Camera-facing particles. Negative alpha draws native ticks; [0,1] samples the
-     * last simulation interval without advancing emission. Held owners pass -1. */
+     * last simulation interval without advancing emission. Held owners pass -1. Emitters
+     * wearing one of `thermal`'s particle textures add heat where they burn. */
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
-              f32 presentationAlpha = -1.0f) const;
+              f32 presentationAlpha = -1.0f, const ThermalMaterial& thermal = {}) const;
 
 private:
     friend void visitNativeState(NativeStateDigest& /*digest*/, const ParticleField& /*state*/);

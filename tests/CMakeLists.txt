@@ -315,6 +315,7 @@ add_executable(tests
     engine/world/AmbientDimmerTests.cpp
     engine/world/WorldCameraTests.cpp
     engine/world/WorldSceneTests.cpp
+    engine/world/ThermalMaterialTests.cpp
     engine/world/TextureAnimatorTests.cpp
     engine/world/WorldAnimatorTests.cpp
     game/level/WorldDestructionTests.cpp
@@ -343,6 +344,7 @@ add_executable(tests
     game/party/TargetAssistTests.cpp
     game/party/BodyCollisionTests.cpp
     game/effects/BlobShadowTests.cpp
+    game/effects/ThermalTexturesTests.cpp
     game/party/PlayerFigureTests.cpp
     game/level/AssetCensusTests.cpp
     game/party/PlayerFamiliarTests.cpp

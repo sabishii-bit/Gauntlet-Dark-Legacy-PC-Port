@@ -7,6 +7,7 @@
 #include "engine/assets/ItemArchive.h"
 #include "engine/core/Types.h"
 #include "engine/world/ParticleField.h"
+#include "engine/world/ThermalMaterial.h"
 #include "engine/world/TreePose.h"
 
 namespace gdl {
@@ -44,8 +45,10 @@ public:
     void clearTextureBlends();
     /** Ends emission without discarding particles already in flight. */
     void stop();
+    /** The emitters facing the camera; those wearing one of `thermal`'s particle textures
+     * add heat. */
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
-              f32 presentationAlpha = -1.0f) const;
+              f32 presentationAlpha = -1.0f, const ThermalMaterial& thermal = {}) const;
     const ParticleField& field() const { return m_field; }
 
 private:

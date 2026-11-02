@@ -16,6 +16,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/world/SceneGeometry.h"
 #include "engine/world/SelectionHighlight.h"
+#include "engine/world/ThermalMaterial.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldLighting.h"
 
@@ -70,14 +71,15 @@ public:
      * the model's sorting flags alone do not make geometry a backdrop.
      * `cameraFadeObjects` opts selected geometry into the short camera-depth fade
      * without changing the authored layout, collision or gameplay opacity. `floors`, when
-     * given, tells a decal lying on the level's floor from a veil hanging over it. */
+     * given, tells a decal lying on the level's floor from a veil hanging over it. An object
+     * wearing one of `thermal`'s surface textures stands as a unit of its own and adds heat. */
     bool build(const WorldLayout& layout, ModelSet& models, TextureSet& textures,
                RenderDevice& device, const WorldLighting& lighting = {},
                std::span<TextureSet* const> lenders = {},
                std::span<const usize> controlledObjects = {},
                std::span<const usize> backgroundObjects = {},
                std::span<const usize> cameraFadeObjects = {},
-               const WorldCollision* floors = nullptr);
+               const WorldCollision* floors = nullptr, const ThermalMaterial& thermal = {});
     /** A sheet no thicker than this, lying on another object's floor, is a decal. */
     static constexpr f32 kDecalThickness = 1.0f;
     static constexpr f32 kDecalLift = 0.5f; ///< how far above its floor a decal may lie
@@ -289,7 +291,7 @@ private:
     void captureStaticPlacements();
 
     Slot& slotFor(u32 index, TextureSet& textures, RenderDevice& device,
-                  std::span<TextureSet* const> lenders);
+                  std::span<TextureSet* const> lenders, const ThermalMaterial& thermal);
     const Mat4& worldOf(usize object) const;
     const Mat4& presentedWorldOf(usize object, f32 alpha) const;
     Unit* unitOf(usize object);

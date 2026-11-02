@@ -100,7 +100,8 @@ void submitHeat(RenderDevice& device, const ImmediateBatch& geometry, const Mat4
 } // namespace
 
 WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDevice& device,
-                                      std::span<TextureSet* const> lenders) {
+                                      std::span<TextureSet* const> lenders,
+                                      const ThermalMaterial& thermal) {
     if (const auto found = m_slots.find(index); found != m_slots.end()) {
         return found->second;
     }
@@ -113,7 +114,7 @@ WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDev
         const TextureSetEntry& entry = textures.entry(index);
         if (const auto binding = TextureBindings(textures, lenders).slot(index)) {
             slot.texture = &binding->set->texture(device, binding->index);
-            slot.thermal = ThermalMaterial::surface(entry.name);
+            slot.thermal = thermal.surface(entry.name);
             slot.usable = true;
             return slot;
         }
@@ -133,7 +134,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                        std::span<TextureSet* const> lenders,
                        std::span<const usize> controlledObjects,
                        std::span<const usize> backgroundObjects,
-                       std::span<const usize> cameraFadeObjects, const WorldCollision* floors) {
+                       std::span<const usize> cameraFadeObjects, const WorldCollision* floors,
+                       const ThermalMaterial& thermal) {
     clear();
     m_lighting = lighting;
     const std::vector<WorldObject>& objects = layout.objects();
@@ -270,10 +272,10 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool lifted = !material.depthTest && facing == 0;
         const bool depthTest = material.depthTest || lifted;
         const bool background = std::ranges::find(backgroundObjects, i) != backgroundObjects.end();
-        const bool thermal = std::ranges::any_of(mesh->parts, [&](const MeshPart& part) {
-            return slotFor(part.texture, textures, device, lenders).thermal;
+        const bool burning = std::ranges::any_of(mesh->parts, [&](const MeshPart& part) {
+            return slotFor(part.texture, textures, device, lenders, thermal).thermal;
         });
-        const bool unit = thermal || background || m_placements[i].moving || material.sorted ||
+        const bool unit = burning || background || m_placements[i].moving || material.sorted ||
                           material.distanceFadeRange > 0 || facing != 0 || lifted ||
                           std::ranges::find(controlledObjects, i) != controlledObjects.end();
         Unit placedUnit;
@@ -296,7 +298,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool decal = !m_placements[i].moving && decalOf(*mesh, offset, i);
         bool placed = false;
         for (const MeshPart& part : mesh->parts) {
-            const Slot& slot = slotFor(part.texture, textures, device, lenders);
+            const Slot& slot = slotFor(part.texture, textures, device, lenders, thermal);
             if (!slot.usable) {
                 continue;
             }
@@ -314,12 +316,11 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                                  1.0f / static_cast<f32>(std::max(map.height, 1U))};
                     }
                     unitPart.additive = additive;
-                    placedUnit.veil =
-                        placedUnit.veil || (veilOf(part.texture, additive) && !decal);
+                    placedUnit.veil = placedUnit.veil || (veilOf(part.texture, additive) && !decal);
                     placedUnit.parts.push_back(unitPart);
                 } else {
-                    Batch& batch = batchFor(part.texture, lightmap, additive, depthWrite,
-                                            depthTest, veilOf(part.texture, additive) && !decal);
+                    Batch& batch = batchFor(part.texture, lightmap, additive, depthWrite, depthTest,
+                                            veilOf(part.texture, additive) && !decal);
                     for (const u32 index : part.indices) {
                         const MeshVertex& v = mesh->vertices[index];
                         const Vec3 at = v.position + offset;

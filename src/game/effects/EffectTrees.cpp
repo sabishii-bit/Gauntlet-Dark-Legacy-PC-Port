@@ -11,6 +11,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/effects/DynamicLights.h"
+#include "game/effects/ThermalTextures.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -1206,8 +1207,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
         const TreePose* pose = &effect->pose;
         f32 visualFrame = effect->player.frame();
         if (continuous) {
-            if (parent == nullptr)
+            if (parent == nullptr) {
                 placement = blendPlacement(effect->previousTransform, placement, blend);
+            }
             const auto previousDirection = effect->previousDirection;
             if (direction && previousDirection && glm::dot(*direction, *previousDirection) > 0) {
                 direction = glm::mix(*previousDirection, *direction, blend);
@@ -1273,8 +1275,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                 }
             }
         }
-        effect->particles.draw(device, clip, frame.right, frame.up, particleBlend);
-        effect->trails.draw(device, clip, frame.right, frame.up, particleBlend);
+        effect->particles.draw(device, clip, frame.right, frame.up, particleBlend,
+                               kThermalTextures);
+        effect->trails.draw(device, clip, frame.right, frame.up, particleBlend, kThermalTextures);
     }
 }
 

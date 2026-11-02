@@ -17,6 +17,9 @@ namespace gdl {
 struct ApplicationDesc {
     WindowDesc window;
     std::filesystem::path assetDirectory;
+    /** A file, relative to the asset directory, that only the program's data holds: run
+     * warns when the directory lacks it. Empty checks for nothing. */
+    std::filesystem::path assetMarker;
     bool vsync = true;
     u32 sampleCount = 1; ///< requested raster samples; the renderer checks GPU support
     u32 textureFiltering = 8;

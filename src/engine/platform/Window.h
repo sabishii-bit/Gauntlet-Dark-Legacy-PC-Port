@@ -16,7 +16,7 @@
 namespace gdl {
 
 struct WindowDesc {
-    std::string title = "Gauntlet Dark Legacy";
+    std::string title; ///< what the window's frame shows; the program names itself
     u32 width = 1280;
     u32 height = 896;
     bool resizable = true;

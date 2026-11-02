@@ -8,6 +8,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/effects/ThermalTextures.h"
 #include "game/level/Chests.h"
 #include "game/level/ItemFigure.h"
 #include "game/level/ItemSupport.h"
@@ -1191,14 +1192,14 @@ void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
             if (TreeModel::compositesEffects(pass)) {
                 const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
                 item.particles.draw(device, clip, frame.right, frame.up,
-                                    m_sim.burstsAdvanced ? frameBlend : -1.0f);
+                                    m_sim.burstsAdvanced ? frameBlend : -1.0f, kThermalTextures);
             }
         }
     }
     if (TreeModel::compositesEffects(pass)) {
         const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
         m_sim.bursts.draw(device, clip, frame.right, frame.up,
-                          m_sim.burstsAdvanced ? frameBlend : -1.0f);
+                          m_sim.burstsAdvanced ? frameBlend : -1.0f, kThermalTextures);
     }
 }
 

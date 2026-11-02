@@ -12,6 +12,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/effects/ThermalTextures.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -782,7 +783,8 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
                                          visualFrame,
                                          textures().presentationOffset(presentationAlpha));
             m_sim.particles.draw(device, clip, frame.right, frame.up,
-                                 m_sim.presentationAdvanced ? presentationAlpha : -1.0f);
+                                 m_sim.presentationAdvanced ? presentationAlpha : -1.0f,
+                                 kThermalTextures);
         }
     }
 }

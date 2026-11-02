@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/platform/Paths.h"
+
 #include "TestSupport.h"
 #include "game/app/AssetRoots.h"
 
@@ -38,6 +40,11 @@ TEST_CASE("shipped configuration resolves independently from game assets", "[gam
     const auto roots = resolveAssetRoots(root, "developer/assets", "developer/data");
     REQUIRE(roots.assets == "developer/assets");
     REQUIRE(roots.data == root / "data");
+}
+
+TEST_CASE("a retail data directory is known by its STATIC/objects.ngc", "[game][asset-roots]") {
+    CHECK(assetMarker() == std::filesystem::path{"STATIC"} / "objects.ngc");
+    CHECK(paths::genericUtf8(assetMarker()) == "STATIC/objects.ngc");
 }
 
 } // namespace

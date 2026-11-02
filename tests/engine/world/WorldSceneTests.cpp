@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -14,6 +15,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/world/SelectionHighlight.h"
 #include "engine/world/TextureAnimator.h"
+#include "engine/world/ThermalMaterial.h"
 #include "engine/world/WorldScene.h"
 #include "engine/world/WorldStateCheckpoint.h"
 
@@ -26,6 +28,10 @@ namespace {
 
 using namespace gdl;
 using Catch::Approx;
+
+/** The sample's burning surface, as a game names it: the torch's lent TORCHB. */
+constexpr std::array<std::string_view, 1> kSampleFlames{"TORCHB"};
+constexpr ThermalMaterial kSampleThermal{{}, kSampleFlames};
 
 struct Fixture {
     std::filesystem::path directory;
@@ -49,7 +55,7 @@ struct Fixture {
                std::span<const usize> cameraFade = {}) {
         const std::array<TextureSet*, 1> lenders{&lender};
         return scene.build(layout, models, textures, device, WorldLighting{}, lenders, controlled,
-                           background, cameraFade);
+                           background, cameraFade, nullptr, kSampleThermal);
     }
 };
 
@@ -221,7 +227,26 @@ TEST_CASE("placed flame surfaces produce separate depth-tested heat sources",
     REQUIRE(f.device.beginFrame());
     f.scene.draw(f.device, clip, CameraFrame{});
     CHECK(f.device.heat.sources()[0].radius == Vec2{0});
-    REQUIRE(f.scene.build(f.layout, f.models, f.textures, f.device));
+    REQUIRE(f.scene.build(f.layout, f.models, f.textures, f.device, {}, {}, {}, {}, {}, nullptr,
+                          kSampleThermal));
+    REQUIRE(f.device.beginFrame());
+    f.scene.draw(f.device, clip, CameraFrame{});
+    CHECK(f.device.heat.sources()[0].radius == Vec2{0});
+}
+
+TEST_CASE("a scene told of no burning surfaces batches its flames and adds no heat",
+          "[world][scene][heat-surfaces]") {
+    Fixture f("world-scene-cold-surfaces");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"FLAME","position":[-4,0,0],"next":1,"child":-1},
+      {"name":"FLAME","position":[4,0,0],"next":2,"child":-1},
+      {"name":"WALL","position":[0,0,0],"next":-1,"child":-1}]})");
+    REQUIRE(f.layout.load(f.directory));
+    const std::array<TextureSet*, 1> lenders{&f.lender};
+    REQUIRE(f.scene.build(f.layout, f.models, f.textures, f.device, WorldLighting{}, lenders));
+    CHECK(f.scene.unitCount() == 0); // the engine knows no flame by name
+    Mat4 clip = glm::scale(Mat4{1}, Vec3{0.1f});
+    clip[3].z = 0.5f;
     REQUIRE(f.device.beginFrame());
     f.scene.draw(f.device, clip, CameraFrame{});
     CHECK(f.device.heat.sources()[0].radius == Vec2{0});

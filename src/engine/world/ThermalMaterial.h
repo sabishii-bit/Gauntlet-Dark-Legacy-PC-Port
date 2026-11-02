@@ -1,29 +1,23 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
+#include <span>
 #include <string_view>
 
 namespace gdl {
 
-/** Explicit flame bindings for optional heat distortion; colour and additive blending
- * alone cannot distinguish fire from poison, lightning, portals or reflected light. */
+/** The textures the optional heat distortion shimmers over, as the caller names them:
+ * colour and additive blending alone cannot tell fire from poison, lightning, portals or
+ * reflected light. It views names the caller keeps alive; empty, nothing is hot. */
 struct ThermalMaterial {
-    static bool particle(std::string_view name) {
-        constexpr std::array kNames{
-            "P_TORCH",          "P_TORCH_P",    "NU_TORCH",     "EMBER_SPARK2",
-            "POOLFIRE",         "POOLFIRE2",    "POOLFIREC",    "BLUEP_TORCH",
-            "BLUEEMBER_SPARK2", "BLUEPOOLFIRE", "DRAGONBREATH", "FBALLX",
-            "FBALLX2",          "AXEPARTFIRE",  "ARCPARTFIRE",  "SWORDPARTFIRE"};
-        return std::ranges::find(kNames, name) != kNames.end();
-    }
+    std::span<const std::string_view> particles; ///< particle textures that are flames
+    std::span<const std::string_view> surfaces;  ///< animated surface slots that burn
 
-    static bool surface(std::string_view name) {
-        // Animated surface slots, not the masonry/wood supporting them. Lava oceans
-        // and distant fire-cloud backdrops need a surface mask, not one huge ellipse.
-        constexpr std::array kNames{"TORCHA", "TORCHB",  "TORCHC",    "NU_TORCH",   "FIRE",
-                                    "FLAME",  "FLAME2_", "FIRE_BOWL", "H_FIREWOOD", "H_FIREBACK"};
-        return std::ranges::find(kNames, name) != kNames.end();
+    bool particle(std::string_view name) const {
+        return std::ranges::find(particles, name) != particles.end();
+    }
+    bool surface(std::string_view name) const {
+        return std::ranges::find(surfaces, name) != surfaces.end();
     }
 };
 } // namespace gdl

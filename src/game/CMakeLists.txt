@@ -303,6 +303,7 @@ add_library(game STATIC
     audio/LevelSoundscape.cpp
     audio/VoiceQueue.cpp
     effects/EffectTrees.h
+    effects/ThermalTextures.h
     effects/DynamicLights.cpp
     effects/EffectTrees.cpp
     level/PlacedItems.h

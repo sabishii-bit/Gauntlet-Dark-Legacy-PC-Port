@@ -44,8 +44,8 @@ void visitNativeState(NativeStateDigest& digest, const ParticleField& state) {
         digest.values(emitter, sourceObject, worldObject);
         digest.resource(texture);
         const auto& [blend, lightmap, masked, next, fraction, scale, offset, alpha, cull,
-                     depthWrite, depthTest, mipmaps, clamp, cutout, lightmapRgb, coverage, smooth, darken,
-                     colorScale, whiteBlend, fog] = draw;
+                     depthWrite, depthTest, mipmaps, clamp, cutout, lightmapRgb, coverage, smooth,
+                     darken, colorScale, whiteBlend, fog] = draw;
         digest.value(blend);
         digest.resource(lightmap);
         digest.resource(masked);
@@ -143,10 +143,10 @@ bool ParticleField::restore(const Checkpoint& state) {
 
 namespace {
 
-void submitHeat(RenderDevice& device, const ParticleEmitter& emitter, const Mat4& clip,
-                const Vec3& right, const Vec3& up, f32 frameOffset, f32 seconds) {
-    if (!ThermalMaterial::particle(emitter.descriptor().texture) ||
-        !emitter.descriptor().depthTest) {
+void submitHeat(RenderDevice& device, const ParticleEmitter& emitter,
+                const ThermalMaterial& thermal, const Mat4& clip, const Vec3& right, const Vec3& up,
+                f32 frameOffset, f32 seconds) {
+    if (!thermal.particle(emitter.descriptor().texture) || !emitter.descriptor().depthTest) {
         return;
     }
     Vec3 center{0.0f};
@@ -348,7 +348,7 @@ void ParticleField::step(f32 seconds) {
 }
 
 void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up,
-                         f32 presentationAlpha) const {
+                         f32 presentationAlpha, const ThermalMaterial& thermal) const {
     const f32 frameOffset =
         presentationAlpha < 0.0f
             ? 0.0f
@@ -372,7 +372,7 @@ void ParticleField::draw(RenderDevice& device, const Mat4& clip, const Vec3& rig
         if (entry.emitter.particles().empty()) {
             continue;
         }
-        submitHeat(device, entry.emitter, clip, right, up, frameOffset,
+        submitHeat(device, entry.emitter, thermal, clip, right, up, frameOffset,
                    static_cast<f32>((m_state.heatFrames + frameOffset) / kFrameRate));
         const Texture* presentedTexture = entry.texture;
         DrawState presentedState = entry.state;

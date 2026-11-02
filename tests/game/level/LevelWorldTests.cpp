@@ -14,10 +14,14 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/render/HeatDistortion.h"
+#include "engine/world/SampleLevel.h"
 #include "engine/world/WorldCamera.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/app/Scenario.h"
 #include "game/bosses/Bosses.h"
 #include "game/camera/TowerCamera.h"
@@ -1263,7 +1267,6 @@ TEST_CASE("level trigger eligibility uses joined count independently of standing
     CHECK(triggers.opened(marker.target));
 }
 
-
 TEST_CASE("the console's party count sets the level up for that many until it is lifted",
           "[party-count][assets]") {
     const auto root =
@@ -1298,6 +1301,66 @@ TEST_CASE("the console's party count sets the level up for that many until it is
     CHECK(scene.partyCount(1) == 4);
     REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
     CHECK(tower.placedItems().playerCount() == 4);
+}
+
+TEST_CASE("a level's flame surfaces and torch particles shimmer by the game's names",
+          "[game][world][thermal-textures]") {
+    test::FakeRenderDevice device;
+    const auto root = test::sampleLevel("level-world-thermal");
+    // The level owns its torch here, so the scene binds TORCHB without a lender.
+    writeFile(root / "textures/003_TORCHB.png", test::kTinyPng);
+    writeTextFile(root / "textures.json", R"({
+  "source": "/sample/",
+  "defs": [],
+  "bitmaps": [
+    {"index": 0, "name": "STONE", "file": "textures/000_STONE.png", "width": 2, "height": 2,
+     "format": 50, "flags": 0, "halfResolution": false, "frames": 0},
+    {"index": 1, "name": "GLASS", "file": "textures/001_GLASS.png", "width": 2, "height": 2,
+     "format": 50, "flags": 128, "halfResolution": false, "frames": 0},
+    {"index": 2, "name": "LM", "file": "textures/002_LM.png", "width": 2, "height": 2,
+     "format": 146, "flags": 0, "halfResolution": false, "frames": 0},
+    {"index": 3, "name": "TORCHB", "file": "textures/003_TORCHB.png", "width": 2, "height": 2,
+     "format": 50, "flags": 0, "halfResolution": false, "frames": 0}
+  ]
+})");
+    writeTextFile(root / "world.json", R"({
+  "objects": [
+    {"name": "FLAME", "position": [-4, 0, 0], "next": 1, "child": -1},
+    {"name": "WALL", "position": [0, 0, 0], "next": 2, "child": -1},
+    {"name": "L1PSYSE_BRAZIER", "position": [4, 0, 0], "next": -1, "child": -1, "flags": 2048}
+  ],
+  "particles": [
+    {"id": "E", "preset": 5, "flags": 648, "flagMask": 648, "enables": 355297,
+     "particleLife": [0.2, 0.22], "angle": 80, "texture": "P_TORCH",
+     "direction": [0, 1, 0], "volume": [0.1, 0.3, 0.1], "rate": [25, 25, 25, 25],
+     "gravity": -0.38, "speed": 4, "rgba": [0, 16777215, 16777215, 0],
+     "width": [2.8, 2, 2, 0.1]}
+  ]
+})");
+    test::convertModelFixture(root);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    CHECK(world.scene().unitCount() == 1); // the burning flame stands apart from the wall
+    REQUIRE(world.particles().size() == 1);
+    for (s32 tick = 0; tick < 4; ++tick) {
+        world.update(1.0f / 30.0f);
+    }
+    REQUIRE(world.particles().particleCount() > 0);
+    Mat4 clip = glm::scale(Mat4{1}, Vec3{0.1f});
+    clip[3].z = 0.5f;
+    REQUIRE(device.beginFrame());
+    world.draw(device, clip, WorldCamera{});
+    bool surfaceHeat = false;
+    bool particleHeat = false;
+    for (const HeatSource& source : device.heat.sources()) {
+        if (source.radius.x <= 0) {
+            continue;
+        }
+        surfaceHeat = surfaceHeat || source.center.x < 0.5f;
+        particleHeat = particleHeat || source.center.x > 0.5f;
+    }
+    CHECK(surfaceHeat);
+    CHECK(particleHeat);
 }
 
 } // namespace

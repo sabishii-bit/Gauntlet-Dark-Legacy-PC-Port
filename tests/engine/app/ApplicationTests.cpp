@@ -219,6 +219,14 @@ private:
     s32 m_windowStep = 0;
 };
 
+TEST_CASE("an application description names no program and expects no data file",
+          "[app][app-desc]") {
+    const ApplicationDesc desc;
+    CHECK(desc.window.title.empty());
+    CHECK(desc.assetMarker.empty());
+    CHECK(WindowDesc{}.title.empty());
+}
+
 TEST_CASE("the application brings up a window and GPU and renders frames", "[gpu][app]") {
     ApplicationDesc desc;
     desc.window.title = "gdl tests";
