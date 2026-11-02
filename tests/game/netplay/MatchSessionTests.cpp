@@ -199,7 +199,8 @@ struct Room {
 };
 std::vector<u8> message(const MatchSession& session, MatchControlKind kind,
                         MatchStop stop = MatchStop::None, u8 votes = 0) {
-    const auto bytes = MatchControlPacket::encode({kind, stop, session.context(), votes});
+    const auto bytes =
+        MatchControlPacket::encode({kind, stop, session.context(), SeatSet::fromBits(votes)});
     REQUIRE(bytes);
     return *bytes;
 }
@@ -323,7 +324,7 @@ TEST_CASE("match control has an exact bounded versioned encoding", "[netplay][ma
         CHECK(decoded->context == room.sessions[1].context());
         CHECK(decoded->kind == static_cast<MatchControlKind>(kind));
         CHECK(decoded->stop == stop);
-        CHECK(decoded->movieSkipVotes == votes);
+        CHECK(decoded->movieSkipVotes.bits() == votes);
         CHECK(bytes[4] == MatchControlPacket::kVersion);
         for (usize size = 0; size < bytes.size(); ++size) {
             CHECK_FALSE(MatchControlPacket::decode(std::span(bytes).first(size)));
@@ -360,7 +361,7 @@ TEST_CASE("match control packets keep their byte layout", "[netplay][match-sessi
     MatchControl control;
     control.kind = MatchControlKind::Drop;
     control.resyncTick = 0x0123456789abcdefULL;
-    control.resyncPeers = 0b01000;
+    control.resyncPeers = PeerSet::fromBits(0b01000);
     auto& context = control.context;
     context.epoch = 0x1122334455667788ULL;
     context.scene = 0x1234;
@@ -390,6 +391,59 @@ TEST_CASE("match control packets keep their byte layout", "[netplay][match-sessi
     CHECK(decoded->resyncTick == control.resyncTick);
     CHECK(decoded->resyncPeers == control.resyncPeers);
     CHECK(MatchControlPacket::encode(*decoded) == bytes);
+}
+
+TEST_CASE("match control seat votes and peer sets keep their byte layout",
+          "[netplay][match-session]") {
+    MatchContext context;
+    context.epoch = 3;
+    context.scene = 0x1234;
+    context.owners = {1, 2, 1, 0};
+    context.grants = {0x11, 0x22, 0x33, 0};
+    MatchControl vote;
+    vote.kind = MatchControlKind::MovieSkipVote;
+    vote.context = context;
+    vote.movieSkipVotes = SeatSet::fromBits(0b0101);
+    const auto voteBytes = MatchControlPacket::encode(vote);
+    REQUIRE(voteBytes);
+    constexpr std::string_view kVote = "47444c54"                         // magic
+                                       "08060005"                         // version, vote, votes
+                                       "0300000000000000"                 // epoch
+                                       "34120000"                         // scene
+                                       "3c000100"                         // tick rate, lead, start
+                                       "01020100"                         // owners
+                                       "11000000220000003300000000000000" // grants
+                                       "00000000"          // challenge won, resync peers
+                                       "0000000000000000"  // source epoch
+                                       "0000000000000000"  // source tick
+                                       "0000000000000000"; // resync tick
+    CHECK(test::hexBytes(*voteBytes) == kVote);
+    const auto decodedVote = MatchControlPacket::decode(*voteBytes);
+    REQUIRE(decodedVote);
+    CHECK(decodedVote->movieSkipVotes == vote.movieSkipVotes);
+
+    MatchControl resync;
+    resync.kind = MatchControlKind::Resync;
+    resync.context = context;
+    resync.resyncTick = 60;
+    resync.resyncPeers = PeerSet::fromBits(0b01100);
+    const auto resyncBytes = MatchControlPacket::encode(resync);
+    REQUIRE(resyncBytes);
+    constexpr std::string_view kResync = "47444c54"                         // magic
+                                         "08070000"                         // version, resync
+                                         "0300000000000000"                 // epoch
+                                         "34120000"                         // scene
+                                         "3c000100"                         // tick rate, lead
+                                         "01020100"                         // owners
+                                         "11000000220000003300000000000000" // grants
+                                         "000c0000"          // challenge won, peers two, three
+                                         "0000000000000000"  // source epoch
+                                         "0000000000000000"  // source tick
+                                         "3c00000000000000"; // resync tick
+    CHECK(test::hexBytes(*resyncBytes) == kResync);
+    const auto decodedResync = MatchControlPacket::decode(*resyncBytes);
+    REQUIRE(decodedResync);
+    CHECK(decodedResync->resyncPeers == resync.resyncPeers);
 }
 
 TEST_CASE("console packets keep their byte layout", "[netplay][match-session][console-input]") {
@@ -447,7 +501,7 @@ TEST_CASE("secret result flags are bounded host context and secret entries have 
         CHECK(encoded.has_value() == (transition == MatchTransition::SecretReturn));
         context.challengeWon = false;
         const auto vote = MatchControlPacket::encode(
-            {MatchControlKind::MovieSkipVote, MatchStop::None, context, 1});
+            {MatchControlKind::MovieSkipVote, MatchStop::None, context, SeatSet::of(0)});
         CHECK(vote.has_value() ==
               (transition == MatchTransition::Start || transition == MatchTransition::Travel));
     }
@@ -563,8 +617,8 @@ TEST_CASE("movie skipping requires every occupied seat not just every machine",
     REQUIRE(host.requestMovieSkip(0));
     REQUIRE(guest.requestMovieSkip(2));
     room.pump();
-    CHECK(host.movieSkipVotes() == 5);
-    CHECK(guest.movieSkipVotes() == 5);
+    CHECK(host.movieSkipVotes().bits() == 5);
+    CHECK(guest.movieSkipVotes().bits() == 5);
     CHECK_FALSE(host.movieSkipReady());
     CHECK_FALSE(guest.movieSkipReady());
     REQUIRE(host.requestMovieSkip(1));
@@ -599,10 +653,10 @@ TEST_CASE("movie skipping requires every occupied seat not just every machine",
     CHECK_FALSE(host.movieSkipReady());
     CHECK_FALSE(guest.movieSkipReady());
     CHECK(host.receive(1, oldVote) == Admission::Stale);
-    CHECK(host.movieSkipVotes() == 0);
+    CHECK(host.movieSkipVotes().empty());
     REQUIRE(guest.requestMovieSkip(2));
     room.pump();
-    CHECK(host.movieSkipVotes() == 4);
+    CHECK(host.movieSkipVotes().bits() == 4);
 }
 
 TEST_CASE("movie skip masks cannot vote for empty seats or another peer's players",
@@ -614,14 +668,14 @@ TEST_CASE("movie skip masks cannot vote for empty seats or another peer's player
     room.pump();
     const auto forged = message(guest, MatchControlKind::MovieSkipVote, MatchStop::None, 3);
     CHECK(host.receive(1, forged) == Admission::WrongPeer);
-    CHECK(host.movieSkipVotes() == 0);
+    CHECK(host.movieSkipVotes().empty());
     CHECK_FALSE(host.requestMovieSkip(2));
     for (const u8 mask : std::array<u8, 4>{0, 4, 16, 255}) {
-        CHECK_FALSE(MatchControlPacket::encode(
-            {MatchControlKind::MovieSkipVote, MatchStop::None, host.context(), mask}));
+        CHECK_FALSE(MatchControlPacket::encode({MatchControlKind::MovieSkipVote, MatchStop::None,
+                                                host.context(), SeatSet::fromBits(mask)}));
     }
-    CHECK_FALSE(
-        MatchControlPacket::encode({MatchControlKind::Ready, MatchStop::None, host.context(), 1}));
+    CHECK_FALSE(MatchControlPacket::encode(
+        {MatchControlKind::Ready, MatchStop::None, host.context(), SeatSet::of(0)}));
     REQUIRE(host.requestMovieSkip(0));
     REQUIRE(guest.requestMovieSkip(1));
     room.pump();

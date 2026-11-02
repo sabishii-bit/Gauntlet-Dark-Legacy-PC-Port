@@ -810,7 +810,7 @@ TEST_CASE("native travel drains exact source inputs before profiles shop and new
         REQUIRE(guest.shop().setup());
     }
     if (transition == MatchTransition::Travel) {
-        CHECK(guest.movieSkipVotes() == 1);
+        CHECK(guest.movieSkipVotes().bits() == 1);
         REQUIRE(guest.requestMovieSkip(1));
         room->pump();
         CHECK(host.movieSkipReady());
@@ -925,7 +925,8 @@ TEST_CASE("native transition fences refuse stale impossible and conflicting boun
     CHECK(guest.receive(kHost, *checkpoint) == Admission::Invalid);
     CHECK(guest.context() == old);
     CHECK(guest.travelParty() == nullptr);
-    guest.update(MatchSession::kLoadTimeout); // still playing to the stage's end: the host decides first
+    // Still playing to the stage's end: the host decides first.
+    guest.update(MatchSession::kLoadTimeout);
     CHECK(guest.phase() == Phase::Running);
     guest.update(MatchSession::kGuestLoadTimeout - MatchSession::kLoadTimeout);
     CHECK(guest.phase() == Phase::Stopped);
@@ -1256,7 +1257,7 @@ TEST_CASE("a host observation mismatch orders the diverged peer to rebuild and t
         CHECK(room->sessions[peer].phase() == Phase::Running);
         REQUIRE(room->sessions[peer].resyncing());
         CHECK(room->sessions[peer].resync()->tick == 30);
-        CHECK(room->sessions[peer].resync()->peers == 0b100);
+        CHECK(room->sessions[peer].resync()->peers.bits() == 0b100);
         REQUIRE(room->sessions[peer].nativeAgreement());
         CHECK(room->sessions[peer].nativeAgreement()->agreedTick() == 30);
         CHECK(room->inputs[peer].sampleReady());
@@ -1264,7 +1265,7 @@ TEST_CASE("a host observation mismatch orders the diverged peer to rebuild and t
     const auto pending = room->sessions[1].pendingResync();
     REQUIRE(pending);
     CHECK(pending->tick == 30);
-    CHECK(pending->peers == 0b100);
+    CHECK(pending->peers.bits() == 0b100);
     CHECK(room->sessions[2].resyncRequested() == 30);
     CHECK_FALSE(room->sessions[3].resyncRequested());
     CHECK_FALSE(room->sessions[2].journalReady());
@@ -1510,7 +1511,7 @@ TEST_CASE("a rebuild target dropped mid-repair leaves nothing owed and the rest 
     pumpAgreement(*room);
     auto& host = room->sessions[1];
     REQUIRE(host.pendingResync());
-    REQUIRE(host.resync()->peers == 0b100);
+    REQUIRE(host.resync()->peers.bits() == 0b100);
     EpochInputJournal journal;
     REQUIRE(journal.open(host.context().epoch, room->owners));
     for (u64 tick = 1; tick <= 30; ++tick) {
@@ -1678,7 +1679,7 @@ TEST_CASE("a mismatch the host's own late digest completes is repaired rather th
     CHECK(host.phase() == Phase::Running);
     REQUIRE(host.resync());
     CHECK(host.resync()->tick == 30);
-    CHECK(host.resync()->peers == 0b100);
+    CHECK(host.resync()->peers.bits() == 0b100);
     pumpAgreement(*room);
     for (u8 peer = 1; peer <= 3; ++peer) {
         CAPTURE(peer);
@@ -1712,7 +1713,7 @@ TEST_CASE("a drop that leaves the remaining digests disagreeing orders a repair,
     CHECK(host.phase() == Phase::Running);
     REQUIRE(host.resync());
     CHECK(host.resync()->tick == 30);
-    CHECK(host.resync()->peers == 0b100);
+    CHECK(host.resync()->peers.bits() == 0b100);
     CHECK(room->sessions[2].phase() == Phase::Running);
     CHECK(room->sessions[2].resyncRequested() == 30);
 }
@@ -1731,7 +1732,7 @@ TEST_CASE("after a rebuild target is dropped mid-repair the next divergence is r
     pumpAgreement(*room);
     auto& host = room->sessions[1];
     REQUIRE(host.resyncing());
-    REQUIRE(host.resync()->peers == 0b100);
+    REQUIRE(host.resync()->peers.bits() == 0b100);
     // The target's link goes, or the stall deadline drops it, before it reports a rebuild.
     REQUIRE((linkLost ? host.disconnected(102) : host.drop(2)));
     pumpAgreement(*room);
@@ -1767,7 +1768,7 @@ TEST_CASE("after a rebuild target is dropped mid-repair the next divergence is r
         CHECK(room->sessions[peer].phase() == Phase::Running);
         REQUIRE(room->sessions[peer].resyncing());
         CHECK(room->sessions[peer].resync()->tick == 60);
-        CHECK(room->sessions[peer].resync()->peers == 0b1000);
+        CHECK(room->sessions[peer].resync()->peers.bits() == 0b1000);
     }
     CHECK(room->sessions[3].resyncRequested() == 60);
 }

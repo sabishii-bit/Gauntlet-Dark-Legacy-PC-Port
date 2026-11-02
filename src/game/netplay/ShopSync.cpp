@@ -54,7 +54,7 @@ MenuInput menu(u16 bits) {
 } // namespace
 bool ShopSetup::valid() const {
     return source != 0 && source <= 65535 && destination != 0 && destination <= 65535 &&
-           fallen < 16 && std::ranges::all_of(maxima, [](s32 v) { return v >= 0; }) &&
+           fallen.bits() < 16 && std::ranges::all_of(maxima, [](s32 v) { return v >= 0; }) &&
            std::ranges::all_of(totals, [](const auto& values) {
                return std::ranges::all_of(values, [](s32 v) { return v >= 0; });
            });
@@ -102,7 +102,7 @@ void ShopSync::begin(u64 epoch, u8 local, const std::array<u8, 4>& owners,
         out.writeU32(setup->source);
         out.writeU32(setup->destination);
         out.writeU32((setup->expanded ? kSetupExpanded : 0U) | (setup->ending ? kSetupEnding : 0U) |
-                     (static_cast<u32>(setup->fallen) << kSetupFallenShift));
+                     (static_cast<u32>(setup->fallen.bits()) << kSetupFallenShift));
         for (const auto value : setup->maxima) {
             out.writeS32(value);
         }
@@ -151,7 +151,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
         }
         setup.expanded = (flags & kSetupExpanded) != 0;
         setup.ending = (flags & kSetupEnding) != 0;
-        setup.fallen = static_cast<u8>(flags >> kSetupFallenShift);
+        setup.fallen = SeatSet::fromBits(static_cast<u8>(flags >> kSetupFallenShift));
         for (auto& value : setup.maxima) {
             value = reader.readS32();
         }

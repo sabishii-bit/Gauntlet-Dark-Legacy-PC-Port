@@ -30,7 +30,7 @@ u64 completeStartupFrame(test::OnlinePair& pair) {
 struct Shops {
     ShopSync host;
     ShopSync guest;
-    ShopSetup setup{1793, 3585, true, 0, {1000, 100, 1000}, {}};
+    ShopSetup setup{1793, 3585, true, {}, {1000, 100, 1000}, {}};
     Shops() {
         host.begin(2, 1, {1, 2, 0, 0}, {11, 22, 0, 0}, &setup);
         guest.begin(2, 2, {1, 2, 0, 0}, {11, 22, 0, 0});
@@ -91,8 +91,13 @@ TEST_CASE("shop packets keep their byte layout", "[netplay][online-shop]") {
     constexpr u64 kEpoch = 0x1122334455667788ULL;
     const std::array<u8, 4> owners{1, 2, 0, 0};
     const std::array<u32, 4> grants{0x0a0b0c0d, 22, 0, 0};
-    ShopSetup setup{0x0701, 0x0e01, true, 0b0110, {1000, 0, 0x01020304}, {}, true};
-    setup.totals = {{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}};
+    const ShopSetup setup{.source = 0x0701,
+                          .destination = 0x0e01,
+                          .expanded = true,
+                          .fallen = SeatSet::fromBits(0b0110),
+                          .maxima = {1000, 0, 0x01020304},
+                          .totals = {{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}},
+                          .ending = true};
     ShopSync host;
     ShopSync guest;
     host.begin(kEpoch, 1, owners, grants, &setup);
@@ -314,7 +319,7 @@ TEST_CASE("shop setup authenticates the ending flag and rejects old or undefined
           "[netplay][online-shop][online-completion]") {
     ShopSync host;
     ShopSync guest;
-    ShopSetup setup{1793, 3585, true, 0, {1000, 100, 1000}, {}};
+    ShopSetup setup{1793, 3585, true, {}, {1000, 100, 1000}, {}};
     setup.ending = true;
     host.begin(2, 1, {1, 2, 0, 0}, {11, 22, 0, 0}, &setup);
     guest.begin(2, 2, {1, 2, 0, 0}, {11, 22, 0, 0});
@@ -339,7 +344,7 @@ TEST_CASE("a two-peer post-level epoch waits for profiles setup and every shop c
     pair.ready();
     const u64 terminalTick = completeStartupFrame(pair);
     const auto party = *pair.hostSession.party();
-    const ShopSetup setup{1, 3585, true, 0, {1000, 100, 1000}, {}};
+    const ShopSetup setup{1, 3585, true, {}, {1000, 100, 1000}, {}};
     REQUIRE(pair.host.prepare(1, MatchTransition::Shop, &party, &setup));
     pair.pump();
     REQUIRE(pair.guest.completeNativeBoundary(pair.guest.context().epoch, terminalTick));
@@ -378,7 +383,7 @@ TEST_CASE("a dropped guest's pending shop transaction is discarded and the shop 
     pair.ready();
     const u64 terminalTick = completeStartupFrame(pair);
     const auto party = *pair.hostSession.party();
-    const ShopSetup setup{1, 3585, false, 0, {1000, 100, 1000}, {}};
+    const ShopSetup setup{1, 3585, false, {}, {1000, 100, 1000}, {}};
     REQUIRE(pair.host.prepare(1, MatchTransition::Shop, &party, &setup));
     pair.pump();
     REQUIRE(pair.guest.completeNativeBoundary(pair.guest.context().epoch, terminalTick));

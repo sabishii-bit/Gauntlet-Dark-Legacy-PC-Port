@@ -1,7 +1,6 @@
 #include "game/netplay/MatchSession.h"
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -47,21 +46,21 @@ bool droppedLink(std::span<const PacketTransport::Connection> dropped,
                  PacketTransport::Connection connection) {
     return connection != 0 && std::ranges::find(dropped, connection) != dropped.end();
 }
-u8 seatsOf(const MatchOwners& owners, u8 peer = 0) {
-    u8 mask = 0;
+SeatSet seatsOf(const MatchOwners& owners, u8 peer = 0) {
+    SeatSet seats;
     for (usize seat = 0; seat < owners.size(); ++seat) {
         if (owners[seat] != 0 && (peer == 0 || owners[seat] == peer)) {
-            mask |= static_cast<u8>(1U << seat);
+            seats.insert(seat);
         }
     }
-    return mask;
+    return seats;
 }
 /** Every dropped peer's seats: they count as having voted to skip an entry movie. */
-u8 droppedSeats(const MatchOwners& owners, std::span<const MatchSession::Drop> dropped) {
-    u8 seats = 0;
+SeatSet droppedSeats(const MatchOwners& owners, std::span<const MatchSession::Drop> dropped) {
+    SeatSet seats;
     for (const auto& drop : dropped) {
         if (drop.peer != 0) {
-            seats |= seatsOf(owners, drop.peer);
+            seats.insert(seatsOf(owners, drop.peer));
         }
     }
     return seats;
@@ -135,15 +134,15 @@ bool MatchControl::valid() const {
     const bool resync = kind == MatchControlKind::Resync;
     const bool done = kind == MatchControlKind::ResyncDone;
     const bool drop = kind == MatchControlKind::Drop;
-    constexpr u8 kGuestBits = 0b11100; // peers two to four
-    if ((resyncTick != 0) != (resync || drop) || (resyncPeers != 0) != (resync || done || drop) ||
+    constexpr auto kGuests = PeerSet::fromBits(0b11100); // peers two to four
+    if ((resyncTick != 0) != (resync || drop) || resyncPeers.empty() == (resync || done || drop) ||
         (resync && resyncTick % MatchSession::kNativeAgreementPeriod != 0) ||
-        (resyncPeers & ~kGuestBits) != 0 || ((done || drop) && std::popcount(resyncPeers) != 1)) {
+        !kGuests.includes(resyncPeers) || ((done || drop) && resyncPeers.count() != 1)) {
         return false;
     }
     return context.valid() && static_cast<u8>(kind) <= 9 && static_cast<u8>(stop) <= 4 &&
            ((kind == MatchControlKind::Stop) == (stop != MatchStop::None)) &&
-           (vote == (movieSkipVotes != 0)) && (movieSkipVotes & ~seatsOf(context.owners)) == 0 &&
+           vote == !movieSkipVotes.empty() && seatsOf(context.owners).includes(movieSkipVotes) &&
            (!vote || hasEntryMovie(context.transition)) && kind != MatchControlKind::Pause &&
            kind != MatchControlKind::RequestPause;
 }
@@ -158,7 +157,7 @@ std::optional<std::vector<u8>> MatchControlPacket::encode(const MatchControl& co
     out.writeU8(kVersion);
     out.writeU8(static_cast<u8>(control.kind));
     out.writeU8(static_cast<u8>(control.stop));
-    out.writeU8(control.movieSkipVotes);
+    out.writeU8(control.movieSkipVotes.bits());
     const auto& context = control.context;
     out.writeU64(context.epoch);
     out.writeU32(context.scene);
@@ -169,7 +168,7 @@ std::optional<std::vector<u8>> MatchControlPacket::encode(const MatchControl& co
     for (const auto grant : context.grants) {
         out.writeU32(grant);
     }
-    out.writeU32(static_cast<u32>(context.challengeWon) | (u32{control.resyncPeers} << 8U));
+    out.writeU32(static_cast<u32>(context.challengeWon) | (u32{control.resyncPeers.bits()} << 8U));
     out.writeU64(context.sourceEpoch);
     out.writeU64(context.sourceTick);
     out.writeU64(control.resyncTick);
@@ -186,7 +185,7 @@ std::optional<MatchControl> MatchControlPacket::decode(std::span<const u8> bytes
     MatchControl control;
     control.kind = static_cast<MatchControlKind>(reader.readU8());
     control.stop = static_cast<MatchStop>(reader.readU8());
-    control.movieSkipVotes = reader.readU8();
+    control.movieSkipVotes = SeatSet::fromBits(reader.readU8());
     auto& context = control.context;
     context.epoch = reader.readU64();
     context.scene = reader.readU32();
@@ -205,7 +204,7 @@ std::optional<MatchControl> MatchControlPacket::decode(std::span<const u8> bytes
         return std::nullopt;
     }
     context.challengeWon = challengeWon != 0;
-    control.resyncPeers = static_cast<u8>(flags >> 8U);
+    control.resyncPeers = PeerSet::fromBits(static_cast<u8>(flags >> 8U));
     context.sourceEpoch = reader.readU64();
     context.sourceTick = reader.readU64();
     control.resyncTick = reader.readU64();
@@ -423,7 +422,7 @@ u8 MatchSession::peerOf(PacketTransport::Connection connection) const {
     }
     return 0;
 }
-bool MatchSession::queue(u8 peer, MatchControlKind kind, MatchStop reason, u8 votes,
+bool MatchSession::queue(u8 peer, MatchControlKind kind, MatchStop reason, SeatSet votes,
                          Resync resync) {
     const auto bytes =
         MatchControlPacket::encode({kind, reason, m_context, votes, resync.tick, resync.peers});
@@ -434,7 +433,8 @@ bool MatchSession::queue(u8 peer, MatchControlKind kind, MatchStop reason, u8 vo
     m_controls.push_back({m_links[peer], *bytes});
     return true;
 }
-bool MatchSession::broadcast(MatchControlKind kind, MatchStop reason, u8 votes, Resync resync) {
+bool MatchSession::broadcast(MatchControlKind kind, MatchStop reason, SeatSet votes,
+                             Resync resync) {
     const auto peers =
         std::ranges::count_if(m_links, [](auto connection) { return connection != 0; });
     if (m_controls.size() + static_cast<usize>(peers) > kControlBudget) {
@@ -452,7 +452,7 @@ void MatchSession::discardGameplay() {
     m_resync.reset();
     m_rebuiltFrom = {};
     m_repairs = 0;
-    m_journalQueuedPeers = 0;
+    m_journalQueuedPeers = {};
     m_resyncTarget = false;
     m_journalComplete = false;
     m_journalIncoming.clear();
@@ -468,7 +468,7 @@ void MatchSession::discardGameplay() {
     m_pendingNativeContext.reset();
     m_pendingNativeParty = {};
     m_pendingNativeShop.reset();
-    m_pendingNativeMovieVotes = 0;
+    m_pendingNativeMovieVotes = {};
     m_drainingInputs.reset();
     m_drainingAgreement.reset();
     m_drainingTerminal.reset();
@@ -549,16 +549,16 @@ bool MatchSession::beginResync(Time now) {
     const auto& mismatched = m_nativeAgreement->mismatchedPeers();
     for (u8 peer = 2; peer <= 4; ++peer) {
         if (mismatched[peer]) {
-            resync.peers |= static_cast<u8>(1U << peer);
+            resync.peers.insert(peer);
         }
     }
-    if (resync.peers == 0 || resync.tick == 0) {
+    if (resync.peers.empty() || resync.tick == 0) {
         return false;
     }
     // A rebuild that is followed at once by the same disagreement cannot help, nor can
     // repairs that keep coming: the play stops instead of rebuilding forever.
     for (u8 peer = 2; peer <= 4; ++peer) {
-        if ((resync.peers & (1U << peer)) != 0 && m_rebuiltFrom[peer] != 0 &&
+        if (resync.peers.contains(peer) && m_rebuiltFrom[peer] != 0 &&
             resync.tick == m_rebuiltFrom[peer] + kNativeAgreementPeriod) {
             log::warn("Native rebuild of peer {} from tick {} did not bring it back into step",
                       peer, m_rebuiltFrom[peer]);
@@ -571,13 +571,13 @@ bool MatchSession::beginResync(Time now) {
         return false;
     }
     if (!restartAgreement(resync.tick, now) ||
-        !broadcast(MatchControlKind::Resync, MatchStop::None, 0, resync)) {
+        !broadcast(MatchControlKind::Resync, MatchStop::None, {}, resync)) {
         return false;
     }
     log::warn("Native observation mismatch at epoch {} tick {}: peers {:#x} will rebuild",
-              m_context.epoch, resync.tick, resync.peers);
+              m_context.epoch, resync.tick, resync.peers.bits());
     for (u8 peer = 2; peer <= 4; ++peer) {
-        if ((resync.peers & (1U << peer)) != 0) {
+        if (resync.peers.contains(peer)) {
             m_rebuiltFrom[peer] = resync.tick;
         }
     }
@@ -585,7 +585,7 @@ bool MatchSession::beginResync(Time now) {
     m_resyncSince = now;
     m_resync = resync;
     m_consoleRequests.clear();
-    m_journalQueuedPeers = 0;
+    m_journalQueuedPeers = {};
     return true;
 }
 bool MatchSession::restartAgreement(u64 tick, Time now) {
@@ -616,27 +616,28 @@ bool MatchSession::restartAgreement(u64 tick, Time now) {
     return true;
 }
 std::optional<MatchSession::Resync> MatchSession::pendingResync() const {
-    if (!host() || !m_resync || (m_resync->peers & ~m_journalQueuedPeers) == 0) {
+    if (!host() || !m_resync || m_journalQueuedPeers.includes(m_resync->peers)) {
         return std::nullopt;
     }
-    return Resync{m_resync->tick, static_cast<u8>(m_resync->peers & ~m_journalQueuedPeers)};
+    auto owed = m_resync->peers;
+    owed.erase(m_journalQueuedPeers);
+    return Resync{m_resync->tick, owed};
 }
 bool MatchSession::queueJournal(u8 peer, const JournalPacket::Chunk& chunk) {
     const auto bytes = JournalPacket::encode(chunk);
     if (!host() || !m_resync || peer == 0 || peer > 4 || m_links[peer] == 0 ||
-        (m_resync->peers & (1U << peer)) == 0 || (m_journalQueuedPeers & (1U << peer)) != 0 ||
-        !bytes || chunk.epoch != m_context.epoch ||
-        m_journalDeliveries.size() >= kJournalDeliveries) {
+        !m_resync->peers.contains(peer) || m_journalQueuedPeers.contains(peer) || !bytes ||
+        chunk.epoch != m_context.epoch || m_journalDeliveries.size() >= kJournalDeliveries) {
         return false;
     }
     m_journalDeliveries.push_back({m_links[peer], *bytes});
     return true;
 }
 bool MatchSession::journalQueued(u8 peer) {
-    if (!host() || !m_resync || peer == 0 || peer > 4 || (m_resync->peers & (1U << peer)) == 0) {
+    if (!host() || !m_resync || peer == 0 || peer > 4 || !m_resync->peers.contains(peer)) {
         return false;
     }
-    m_journalQueuedPeers |= static_cast<u8>(1U << peer);
+    m_journalQueuedPeers.insert(peer);
     return true;
 }
 std::optional<u64> MatchSession::resyncRequested() const {
@@ -654,8 +655,8 @@ bool MatchSession::finishResync() {
         return false;
     }
     Resync done;
-    done.peers = static_cast<u8>(1U << m_local);
-    if (!queue(1, MatchControlKind::ResyncDone, MatchStop::None, 0, done)) {
+    done.peers = PeerSet::of(m_local);
+    if (!queue(1, MatchControlKind::ResyncDone, MatchStop::None, {}, done)) {
         return false;
     }
     log::info("Native resync acknowledged: epoch={} peer={} rebuilt={} prior_next={} "
@@ -667,8 +668,8 @@ bool MatchSession::finishResync() {
     m_journalIncoming.clear();
     // The rebuilt scene confirms again from the resync tick onward.
     m_nativeCompleted = std::min(m_nativeCompleted, m_resync->tick);
-    m_resync->peers &= static_cast<u8>(~done.peers);
-    if (m_resync->peers == 0) {
+    m_resync->peers.erase(done.peers);
+    if (m_resync->peers.empty()) {
         m_resync.reset();
     }
     return true;
@@ -733,7 +734,7 @@ bool MatchSession::acceptPreparedContext(const MatchContext& context, MatchParty
     }
     m_loaded = {};
     m_movieSkipVotes = droppedSeats(m_owners, m_dropped);
-    m_movieSkipRequests = 0;
+    m_movieSkipRequests = {};
     m_loadingSeconds = 0;
     m_phase = Phase::Loading;
     return true;
@@ -754,7 +755,7 @@ bool MatchSession::finishNativeDrain() {
     if (shop) {
         m_shop = std::move(*shop);
     }
-    m_movieSkipVotes |= votes;
+    m_movieSkipVotes.insert(votes);
     return true;
 }
 bool MatchSession::prepare(u32 scene, MatchTransition transition, const MatchParty* party,
@@ -840,7 +841,7 @@ bool MatchSession::prepare(u32 scene, MatchTransition transition, const MatchPar
     }
     m_loaded = {};
     m_movieSkipVotes = droppedSeats(m_owners, m_dropped);
-    m_movieSkipRequests = 0;
+    m_movieSkipRequests = {};
     m_loadingSeconds = 0;
     m_phase = Phase::Loading;
     if (!broadcast(MatchControlKind::Prepare)) {
@@ -961,17 +962,17 @@ bool MatchSession::requestMovieSkip(u8 seat) {
         seat >= m_owners.size() || m_owners[seat] != m_local) {
         return false;
     }
-    const auto bit = static_cast<u8>(1U << seat);
-    if ((m_movieSkipRequests & bit) != 0) {
+    if (m_movieSkipRequests.contains(seat)) {
         return true;
     }
-    const auto votes = static_cast<u8>(m_movieSkipVotes | bit);
+    auto votes = m_movieSkipVotes;
+    votes.insert(seat);
     if (host() ? !broadcast(MatchControlKind::MovieSkipVote, MatchStop::None, votes)
-               : !queue(1, MatchControlKind::MovieSkipVote, MatchStop::None, bit)) {
+               : !queue(1, MatchControlKind::MovieSkipVote, MatchStop::None, SeatSet::of(seat))) {
         stop(MatchStop::TransportFailure, true);
         return false;
     }
-    m_movieSkipRequests |= bit;
+    m_movieSkipRequests.insert(seat);
     if (host()) {
         m_movieSkipVotes = votes;
     }
@@ -979,8 +980,8 @@ bool MatchSession::requestMovieSkip(u8 seat) {
 }
 bool MatchSession::movieSkipReady() const {
     const auto required = seatsOf(m_owners);
-    return m_phase == Phase::Loading && hasEntryMovie(m_context.transition) && required != 0 &&
-           (m_movieSkipVotes & required) == required;
+    return m_phase == Phase::Loading && hasEntryMovie(m_context.transition) && !required.empty() &&
+           m_movieSkipVotes.includes(required);
 }
 void MatchSession::stop(MatchStop reason, bool notify) {
     if (m_phase == Phase::Offline || m_phase == Phase::Stopped) {
@@ -1030,13 +1031,12 @@ void MatchSession::applyDrop(const Drop& drop) {
     m_dropped[drop.peer] = drop;
     m_pendingDrops.push_back(drop);
     m_loaded[drop.peer] = true;
-    m_movieSkipVotes |= seatsOf(m_owners, drop.peer);
+    m_movieSkipVotes.insert(seatsOf(m_owners, drop.peer));
     // A dropped peer owes no rebuild, so nobody waits on its completion.
-    const auto bit = static_cast<u8>(1U << drop.peer);
-    m_journalQueuedPeers &= static_cast<u8>(~bit);
+    m_journalQueuedPeers.erase(drop.peer);
     if (m_resync) {
-        m_resync->peers &= static_cast<u8>(~bit);
-        if (m_resync->peers == 0) {
+        m_resync->peers.erase(drop.peer);
+        if (m_resync->peers.empty()) {
             m_resync.reset();
         }
     }
@@ -1070,8 +1070,8 @@ bool MatchSession::drop(u8 peer) {
                          : (m_exchange ? m_exchange->receivedThrough(peer) : 0) + 1;
     const Drop drop{peer, m_context.epoch, tick};
     // The control goes out on the link as it stands, the dropped peer's included.
-    if (!broadcast(MatchControlKind::Drop, MatchStop::None, 0,
-                   Resync{drop.tick, static_cast<u8>(1U << peer)})) {
+    if (!broadcast(MatchControlKind::Drop, MatchStop::None, {},
+                   Resync{drop.tick, PeerSet::of(peer)})) {
         stop(MatchStop::TransportFailure, true);
         return false;
     }
@@ -1116,7 +1116,7 @@ std::vector<u8> MatchSession::quietPeers(f64 seconds, Time now) const {
         // A peer rebuilding owes nothing until it is done.
         if (peer == m_local || m_dropped[peer].peer != 0 ||
             std::ranges::find(m_owners, peer) == m_owners.end() ||
-            (m_resync && (m_resync->peers & (1U << peer)) != 0)) {
+            (m_resync && m_resync->peers.contains(peer))) {
             continue;
         }
         if (silence(peer, now) >= seconds) {
@@ -1190,7 +1190,7 @@ void MatchSession::dropOverdue(Time now) {
             continue;
         }
         for (const u8 peer : agreement->overdue(now)) {
-            const bool rebuilding = m_resync && (m_resync->peers & (1U << peer)) != 0;
+            const bool rebuilding = m_resync && m_resync->peers.contains(peer);
             if (!rebuilding && !dropped(peer)) {
                 log::warn("Online peer {} is overdue at epoch {}: dropping it", peer,
                           m_context.epoch);
@@ -1205,7 +1205,7 @@ void MatchSession::dropOverdue(Time now) {
         return;
     }
     for (u8 peer = 2; peer <= 4; ++peer) {
-        if (m_resync && (m_resync->peers & (1U << peer)) != 0) {
+        if (m_resync && m_resync->peers.contains(peer)) {
             log::warn("Online peer {} did not finish its rebuild from tick {}: dropping it", peer,
                       m_resync->tick);
             drop(peer);
@@ -1359,7 +1359,7 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
     }
     if (m_pendingNativeContext && message.context == *m_pendingNativeContext && peer == 1 &&
         message.kind == MatchControlKind::MovieSkipVote) {
-        m_pendingNativeMovieVotes |= message.movieSkipVotes;
+        m_pendingNativeMovieVotes.insert(message.movieSkipVotes);
         return Admission::Accepted;
     }
     // A drop the host makes once it has prepared the next stage can reach a guest still
@@ -1371,14 +1371,15 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
     }
     switch (message.kind) {
     case MatchControlKind::MovieSkipVote: {
-        if (host() && (message.movieSkipVotes & ~seatsOf(m_owners, peer)) != 0) {
+        if (host() && !seatsOf(m_owners, peer).includes(message.movieSkipVotes)) {
             return Admission::WrongPeer;
         }
         // A late vote may follow natural movie completion and the final Ready.
         if (m_phase != Phase::Loading) {
             return Admission::Stale;
         }
-        const auto votes = static_cast<u8>(m_movieSkipVotes | message.movieSkipVotes);
+        auto votes = m_movieSkipVotes;
+        votes.insert(message.movieSkipVotes);
         if (host() && votes != m_movieSkipVotes &&
             !broadcast(MatchControlKind::MovieSkipVote, MatchStop::None, votes)) {
             stop(MatchStop::TransportFailure, true);
@@ -1419,7 +1420,7 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
         if (m_phase != Phase::Running) {
             return Admission::WrongPhase;
         }
-        const bool target = (message.resyncPeers & (1U << m_local)) != 0;
+        const bool target = message.resyncPeers.contains(m_local);
         if (target) {
             // The rebuilt scene hashes those ticks again; what the diverged one took is wrong.
             std::erase_if(m_recentDigests,
@@ -1438,22 +1439,22 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
         return Admission::Accepted;
     }
     case MatchControlKind::ResyncDone: {
-        if (!m_resync || (host() ? (message.resyncPeers & (1U << peer)) == 0 : peer != 1)) {
+        if (!m_resync || (host() ? !message.resyncPeers.contains(peer) : peer != 1)) {
             return Admission::Stale;
         }
-        if (host() && !broadcast(MatchControlKind::ResyncDone, MatchStop::None, 0,
+        if (host() && !broadcast(MatchControlKind::ResyncDone, MatchStop::None, {},
                                  Resync{0, message.resyncPeers})) {
             stop(MatchStop::TransportFailure, true);
             return Admission::Accepted;
         }
         for (u8 rebuilt = 1; rebuilt <= 4; ++rebuilt) {
-            if ((message.resyncPeers & (1U << rebuilt)) != 0) {
+            if (message.resyncPeers.contains(rebuilt)) {
                 m_heardAt[rebuilt] = m_now; // its silence while it rebuilt was owed
             }
         }
-        m_journalQueuedPeers &= static_cast<u8>(~message.resyncPeers);
-        m_resync->peers &= static_cast<u8>(~message.resyncPeers);
-        if (m_resync->peers == 0) {
+        m_journalQueuedPeers.erase(message.resyncPeers);
+        m_resync->peers.erase(message.resyncPeers);
+        if (m_resync->peers.empty()) {
             m_resync.reset();
         }
         return Admission::Accepted;
@@ -1463,7 +1464,7 @@ MatchSession::Admission MatchSession::control(u8 peer, const MatchControl& messa
             return Admission::WrongPeer;
         }
         for (u8 dropped = 2; dropped <= 4; ++dropped) {
-            if ((message.resyncPeers & (1U << dropped)) == 0) {
+            if (!message.resyncPeers.contains(dropped)) {
                 continue;
             }
             if (m_dropped[dropped].peer != 0) {
@@ -1594,7 +1595,7 @@ MatchSession::Admission MatchSession::receive(PacketTransport::Connection connec
         if (m_phase != Phase::Running || m_context.transition == MatchTransition::Shop) {
             return Admission::Stale;
         }
-        if (host() && m_resync && (m_resync->peers & (1U << peer)) != 0) {
+        if (host() && m_resync && m_resync->peers.contains(peer)) {
             // Until its completion arrives a rebuilding peer reports the timeline that
             // diverged; the restarted stream takes its digests only after that. A failure
             // it reports meanwhile comes with its Stop as well.

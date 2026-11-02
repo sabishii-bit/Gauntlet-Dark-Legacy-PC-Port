@@ -16,13 +16,11 @@ namespace {
 
 /** The seats this machine plays, a bit each, for the scene's local presentation. */
 gdl::u8 seatMask(std::span<const gdl::u8> seats) {
-    gdl::u8 mask = 0;
+    gdl::game::SeatSet mask;
     for (const gdl::u8 seat : seats) {
-        if (seat < 8) {
-            mask |= static_cast<gdl::u8>(1U << seat);
-        }
+        mask.insert(seat);
     }
-    return mask;
+    return mask.bits();
 }
 
 /** The lowest seat this machine plays, whose camera it looks through under solo cameras. */
@@ -171,8 +169,9 @@ struct NativeOnlinePlay::Data {
                                 log::error("Native input refused: reason={} epoch={} origin={} "
                                            "next={} confirmed={} sender_next={} commands={}",
                                            inputAdmissionDescription(result), message.epoch,
-                                           message.origin, driver.nextTick(), driver.confirmedTick(),
-                                           message.nextTick, message.commands.size());
+                                           message.origin, driver.nextTick(),
+                                           driver.confirmedTick(), message.nextTick,
+                                           message.commands.size());
                                 return false;
                             }
                         }
@@ -183,8 +182,8 @@ struct NativeOnlinePlay::Data {
                                 log::error("Native progress refused: reason={} epoch={} origin={} "
                                            "next={} confirmed={} sender_next={} transit_ticks={}",
                                            inputAdmissionDescription(result), message.epoch,
-                                           message.origin, driver.nextTick(), driver.confirmedTick(),
-                                           message.nextTick, *transit);
+                                           message.origin, driver.nextTick(),
+                                           driver.confirmedTick(), message.nextTick, *transit);
                                 return false;
                             }
                         }
@@ -224,7 +223,7 @@ struct NativeOnlinePlay::Data {
     std::function<void(u16)> unlockClasses;
     std::unique_ptr<Level> level, parent;
     std::vector<PartyMember> levelMembers; ///< the party the current level was loaded with
-    bool levelResumed = false; ///< a parent brought back from a challenge cannot be reloaded
+    bool levelResumed = false;  ///< a parent brought back from a challenge cannot be reloaded
     f32 levelStopTimeTotal = 0; ///< the campaign's Stop Time total as the current level opened
     std::optional<LevelRef> current, secretParent;
     std::optional<Boundary> boundary;
@@ -345,10 +344,9 @@ struct NativeOnlinePlay::Data {
             consoleCheats[seat] = scene.cheats(static_cast<s32>(seat));
         }
         const auto& consoleTravel = scene.consoleTravelRequest();
-        const bool returning = consoleTravel
-                                   ? world.ref().isSecret() && secretParent &&
-                                         consoleTravel->destination == *secretParent
-                                   : scene.secretTravel() && world.ref().isSecret();
+        const bool returning = consoleTravel ? world.ref().isSecret() && secretParent &&
+                                                   consoleTravel->destination == *secretParent
+                                             : scene.secretTravel() && world.ref().isSecret();
         const bool entering = consoleTravel
                                   ? consoleTravel->destination.isSecret() && !world.ref().isSecret()
                                   : scene.secretTravel() && !returning;
@@ -409,7 +407,7 @@ struct NativeOnlinePlay::Data {
             }
             for (const auto& member : next.members) {
                 if (member.fallen) {
-                    shopState.fallen |= static_cast<u8>(1U << static_cast<u32>(member.player));
+                    shopState.fallen.insert(static_cast<usize>(member.player));
                 }
             }
             if (!shopState.valid()) {
@@ -725,7 +723,7 @@ struct NativeOnlinePlay::Data {
             return false;
         }
         for (u8 peer = 2; peer <= 4; ++peer) {
-            if ((pending.peers & (1U << peer)) == 0) {
+            if (!pending.peers.contains(peer)) {
                 continue;
             }
             auto chunks = JournalPacket::chunks(level->driver.journal(), 1, pending.tick, false);
@@ -846,7 +844,8 @@ struct NativeOnlinePlay::Data {
         log::info("Native online resync: {} rebuilt to tick {} (epoch {}, peer {})", current->name,
                   *through, epoch, match.localPeer());
         log::info("Native resync resumed: next={} confirmed={} sample={} rebuild_ms={:.1f}",
-                  level->driver.nextTick(), level->driver.confirmedTick(), level->driver.sampleTick(),
+                  level->driver.nextTick(), level->driver.confirmedTick(),
+                  level->driver.sampleTick(),
                   std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - started)
                       .count());
         return phase = Phase::Playing;
@@ -1030,10 +1029,10 @@ struct NativeOnlinePlay::Data {
             return rebuild(match);
         }
         const auto local = selection->inputs(*session, localDevices);
-        auto console = match.host() && level->driver.sampleReady() &&
-                               !level->driver.tentativeTerminal()
-                           ? match.takeConsoleRequest()
-                           : std::nullopt;
+        auto console =
+            match.host() && level->driver.sampleReady() && !level->driver.tentativeTerminal()
+                ? match.takeConsoleRequest()
+                : std::nullopt;
         if (!local || !level->driver.sample(*local, std::move(console))) {
             return fail(Failure::Input);
         }

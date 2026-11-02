@@ -117,6 +117,7 @@ add_executable(tests
     game/audio/NativeSoundIdentityTests.cpp
     game/rollback/RollbackInputsTests.cpp
     game/rollback/InputJournalTests.cpp
+    game/rollback/BitSet8Tests.cpp
     game/rollback/FrameEventLedgerTests.cpp
     game/party/PlayerLocalRewindTests.cpp
     game/party/PlayerSimulationEqualityTests.cpp

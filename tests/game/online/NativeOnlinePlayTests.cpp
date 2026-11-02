@@ -463,8 +463,8 @@ TEST_CASE("a guest gone quiet is dropped by the host and its character waits in 
     const auto now = MatchSession::Clock::now();
     CHECK(pair->hostSession.match().quietSeconds(now) >=
           std::chrono::duration<f64>(now - silentSince).count());
-    REQUIRE(pair->hostSession.match().quietPeers(
-                MatchSession::kQuietAfter, silentSince + std::chrono::seconds{1}) ==
+    REQUIRE(pair->hostSession.match().quietPeers(MatchSession::kQuietAfter,
+                                                 silentSince + std::chrono::seconds{1}) ==
             std::vector<u8>{2});
     REQUIRE(pair->hostSession.match().drop(2));
     const u64 before = pair->host.simulatedTick();
@@ -558,7 +558,7 @@ TEST_CASE(
         if (!ordered && pair->hostSession.match().resyncing()) {
             ordered = true;
             orderedTick = pair->hostSession.match().resync()->tick;
-            CHECK(pair->hostSession.match().resync()->peers == 0b100);
+            CHECK(pair->hostSession.match().resync()->peers.bits() == 0b100);
         }
         if (ordered && !pair->hostSession.match().resyncing() &&
             !pair->guestSession.match().resyncing()) {

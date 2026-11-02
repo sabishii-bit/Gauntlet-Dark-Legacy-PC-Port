@@ -8,6 +8,7 @@
 #include "game/netplay/NativeAgreement.h"
 #include "game/netplay/RollbackExchange.h"
 #include "game/netplay/ShopSync.h"
+#include "game/rollback/BitSet8.h"
 #include "game/rollback/InputJournal.h"
 #include "game/rollback/PartyCheckpoint.h"
 
@@ -55,9 +56,9 @@ struct MatchControl {
     MatchControlKind kind = MatchControlKind::Prepare;
     MatchStop stop = MatchStop::None;
     MatchContext context;
-    u8 movieSkipVotes = 0; // occupied seat bits, never machine bits
-    u64 resyncTick = 0;    // Resync: the tick agreement restarts at; Drop: the first still tick
-    u8 resyncPeers = 0;    // Resync/ResyncDone/Drop: bit per peer id
+    SeatSet movieSkipVotes; // occupied seats, never machines
+    u64 resyncTick = 0;     // Resync: the tick agreement restarts at; Drop: the first still tick
+    PeerSet resyncPeers;    // Resync/ResyncDone/Drop: the peers named
     bool valid() const;
 };
 class MatchControlPacket {
@@ -68,12 +69,12 @@ public:
     static std::optional<MatchControl> decode(std::span<const u8> bytes);
 };
 
-/** A rebuild the host ordered for the peers named by bit from the confirmed tick: every
+/** A rebuild the host ordered for the peers named from the confirmed tick: every
  * peer restarts digest agreement there and the named peers reload the stage and replay the
  * journal the host sends them, while everyone else waits. */
 struct MatchResync {
     u64 tick = 0;
-    u8 peers = 0;
+    PeerSet peers;
     bool operator==(const MatchResync&) const = default;
 };
 /** Native shared-simulation lifecycle and authenticated rollback input routing.
@@ -128,7 +129,7 @@ public:
     bool requestConsole(const ConsoleAction& action);
     std::optional<ConsoleAction> takeConsoleRequest();
     bool movieSkipReady() const;
-    u8 movieSkipVotes() const { return m_movieSkipVotes; }
+    SeatSet movieSkipVotes() const { return m_movieSkipVotes; }
     /** Global pause has no shared tick boundary and is deliberately unsupported. */
     static bool requestPause() { return false; }
     void leave();
@@ -256,9 +257,9 @@ private:
         std::vector<u8> bytes;
     };
     u8 peerOf(PacketTransport::Connection connection) const;
-    bool queue(u8 peer, MatchControlKind kind, MatchStop reason = MatchStop::None, u8 votes = 0,
-               Resync resync = {});
-    bool broadcast(MatchControlKind kind, MatchStop reason = MatchStop::None, u8 votes = 0,
+    bool queue(u8 peer, MatchControlKind kind, MatchStop reason = MatchStop::None,
+               SeatSet votes = {}, Resync resync = {});
+    bool broadcast(MatchControlKind kind, MatchStop reason = MatchStop::None, SeatSet votes = {},
                    Resync resync = {});
     bool beginResync(Time now);
     bool restartAgreement(u64 tick, Time now);
@@ -343,9 +344,9 @@ private:
     std::vector<InputCommand> m_journalIncoming;
     std::array<Drop, 5> m_dropped{};
     std::vector<Drop> m_pendingDrops;
-    std::array<Time, 5> m_heardAt{}; ///< when each peer's fresh input last arrived
-    Time m_now;                      ///< the time the latest update brought
-    Time m_resyncSince;              ///< when the repair under way began, or a guest heard of it
+    std::array<Time, 5> m_heardAt{};    ///< when each peer's fresh input last arrived
+    Time m_now;                         ///< the time the latest update brought
+    Time m_resyncSince;                 ///< when the repair under way began, or a guest heard of it
     std::array<u64, 5> m_rebuiltFrom{}; ///< the tick each guest was last rebuilt from, this epoch
 
     // Keep byte-sized lifecycle state together rather than between aligned streams.
@@ -354,12 +355,12 @@ private:
     u8 m_local = 0;
     MatchOwners m_owners{};
     std::array<bool, 5> m_loaded{};
-    u8 m_movieSkipVotes = 0;
-    u8 m_movieSkipRequests = 0;
+    SeatSet m_movieSkipVotes;
+    SeatSet m_movieSkipRequests;
     u8 m_startupDelay = 1;
-    u8 m_pendingNativeMovieVotes = 0;
+    SeatSet m_pendingNativeMovieVotes;
     bool m_consolePermissions = false;
-    u8 m_journalQueuedPeers = 0;
+    PeerSet m_journalQueuedPeers;
     bool m_resyncTarget = false;
     bool m_journalComplete = false;
     u8 m_repairs = 0; ///< this epoch's

@@ -21,6 +21,7 @@ add_library(game STATIC
     rollback/InputTimeline.cpp
     rollback/RollbackInputs.cpp
     rollback/InputJournal.cpp
+    rollback/BitSet8.h
     netplay/RollbackExchange.cpp
     rollback/FrameEventLedger.cpp
     audio/SceneSoundEvents.cpp

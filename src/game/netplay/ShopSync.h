@@ -9,6 +9,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/rollback/BitSet8.h"
 #include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
@@ -17,7 +18,7 @@ struct ShopSetup {
     u32 source = 0;
     u32 destination = 0;
     bool expanded = false;
-    u8 fallen = 0;
+    SeatSet fallen; ///< the seats whose characters fell in the level
     std::array<s32, 3> maxima{};
     std::array<std::array<s32, 3>, 4> totals{};
     bool ending = false; ///< host-confirmed defeat; local WDATA determines the ending movie
