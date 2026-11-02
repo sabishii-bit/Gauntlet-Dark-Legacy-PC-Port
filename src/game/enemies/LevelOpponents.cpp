@@ -14,6 +14,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/characters/Progression.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/CritterCueEmission.h"
@@ -47,8 +48,7 @@ constexpr f32 kHeardWhole = 1.4f;  ///< how loud a sound is at nobody's distance
 constexpr f32 kHeardFade = 50.0f;  ///< and the distance over which it loses all of that
 constexpr f32 kUnseenBurst = 1.0f; ///< a burst's life when its effect cannot be shown
 constexpr std::string_view kRicochetSound = "S_RICOCHET";
-constexpr u32 kReflectingArmor = 0x01020000; ///< reflective armour and armour reflect
-constexpr s32 kCritterIds = 3000;            ///< the swarm's ids past the ordinary enemies
+constexpr s32 kCritterIds = 3000; ///< the swarm's ids past the ordinary enemies
 constexpr s32 kBossIds = 4000;
 // SuicideExplosion (sfx.c): a burning blast, or in the town and the sky a poison cloud, and
 // either way the thrower kind's own fragments.
@@ -61,7 +61,7 @@ constexpr std::array<std::string_view, 3> kSuicideCloud{"POISONEXP1", "POISONEXP
 constexpr f32 kCloudHold = 2.0f; ///< the cloud's second stage lasts this
 constexpr f32 kBlastRadius = 6.0f;
 constexpr f32 kCloudRadius = 7.5f;
-constexpr u32 kBlastFlags = 0x421; ///< fire, knocked down, an explosion
+constexpr u32 kBlastFlags = damage::kFire | damage::kKnockDown | damage::kExplode;
 constexpr f32 kBlastLight = 20.0f;
 constexpr f32 kRingScale = 1.2f;
 constexpr f32 kCloudDrop = 1.0f;
@@ -995,7 +995,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.invisible = powerups.invisible();
         view.antiDeath = (powerups.armor & DeathRules::kProtection) != 0;
         view.heldDeath = player.deathHeld;
-        view.reflects = (powerups.armor & kReflectingArmor) != 0;
+        view.reflects = (powerups.armor & armor::kReflects) != 0;
         if ((powerups.special & powerup::kHealthVamp) != 0) {
             view.meleeWard = EnemyMeleeWard::HealthVamp;
         } else if ((powerups.special & powerup::kHandOfDeath) != 0) {
@@ -1834,7 +1834,7 @@ void LevelOpponents::blast(const Vec3& position, f32 radius, f32 damage, std::ve
         strikeEnemy(enemy, damage, flags, Vec3{away.x, 0.0f, away.z}, -1, players);
     }
     for (const s32 generator : generators().within(position, radius)) {
-        if ((flags & 0x800) == 0 && first(kGenerators + generator)) {
+        if ((flags & damage::kGas) == 0 && first(kGenerators + generator)) {
             strikeGenerator(generator, damage, -1, players);
         }
     }

@@ -17,6 +17,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/Enemies.h"
 #include "game/party/PlayerMissiles.h"
 
@@ -28,11 +29,11 @@ struct EnemyMissileKind {
     static constexpr s32 kBomb = 1;      ///< and a lob
     static constexpr s32 kBolt = 2;      ///< and a kind's own shot
     static constexpr s32 kDeathShot = 3; ///< the garm brood's burst, with no sound or spark
-    static constexpr u32 kKnockBack = 0x10;
-    static constexpr u32 kKnockDown = 0x20;
-    static constexpr u32 kArrowHit = 0x20000; ///< DMG_ARROW: how a player hears the hit
-    static constexpr u32 kBoltHit = 0x40000;  ///< DMG_FBALL
-    static constexpr u32 kPierces = 0x100000; ///< DMG_SUPER: through players and items
+    static constexpr u32 kKnockBack = damage::kKnockBack;
+    static constexpr u32 kKnockDown = damage::kKnockDown;
+    static constexpr u32 kArrowHit = damage::kArrow; ///< how a player hears the hit
+    static constexpr u32 kBoltHit = damage::kFireBall;
+    static constexpr u32 kPierces = damage::kSuperShot; ///< through players and items
 
     s32 slot = kArrow;
     u32 flags = 0;
@@ -153,7 +154,7 @@ struct EnemyMissileHit {
  * the stage, its harm falling from one and a half times to nothing as it does, and is then
  * harmless until the next. */
 struct EnemyBlast {
-    static constexpr u32 kGas = 0x800;
+    static constexpr u32 kGas = damage::kGas;
 
     Vec3 position{0.0f};
     f32 radius = 3.0f;

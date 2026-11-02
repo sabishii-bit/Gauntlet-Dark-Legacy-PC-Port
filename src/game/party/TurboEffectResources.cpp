@@ -5,6 +5,7 @@
 #include <set>
 #include <utility>
 
+#include "game/combat/EffectFlags.h"
 #include "game/party/PlayerFigure.h"
 
 namespace gdl::game {
@@ -193,7 +194,9 @@ TurboEffectResources::prepareStrike(RenderDevice& device, s32 row, ItemArchive& 
             return Status::InvalidChain;
         }
         const auto& effect = m_stats->moveEffects[static_cast<usize>(effectRow)];
-        constexpr u32 kUnsupportedParents = 0x10U | 0x40U | 0x80U | 0x800U | 0x2000U | 0x40000U;
+        constexpr u32 kUnsupportedParents =
+            effect_flags::kOnFloor | effect_flags::kDetached | effect_flags::kAtInitialRoot |
+            effect_flags::kRootParent | effect_flags::kOtherParent | effect_flags::kUntilNextMove;
         if ((effect.flags & kUnsupportedParents) != 0) {
             return Status::UnsupportedParent;
         }

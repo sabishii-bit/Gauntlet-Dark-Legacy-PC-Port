@@ -5,6 +5,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/combat/DamageTypes.h"
+
 namespace gdl {
 class NativeStateDigest;
 }
@@ -29,12 +31,13 @@ class Knockback {
 
 public:
     bool operator==(const Knockback&) const = default;
-    static constexpr u32 kKnockBack = 0x10;
-    static constexpr u32 kKnockDown = 0x20;
-    static constexpr u32 kBlownAway = 0x40;
-    static constexpr u32 kKnockOver = 0x100;
-    static constexpr u32 kWhirlwind = 0x10000;
-    static constexpr u32 kFastSlide = 0x18160; ///< the flags that free the first frame's travel
+    static constexpr u32 kKnockBack = damage::kKnockBack;
+    static constexpr u32 kKnockDown = damage::kKnockDown;
+    static constexpr u32 kBlownAway = damage::kBlownAway;
+    static constexpr u32 kKnockOver = damage::kKnockOver;
+    static constexpr u32 kWhirlwind = damage::kWhirlwind;
+    /** The flags that free the first frame's travel. */
+    static constexpr u32 kFastSlide = damage::kHeavyKnocks | damage::kThrown;
     static constexpr f32 kWhirlKick = 100.0f;
     static constexpr f32 kBlownKick = 100.0f;
     static constexpr f32 kFallKick = 32.0f;

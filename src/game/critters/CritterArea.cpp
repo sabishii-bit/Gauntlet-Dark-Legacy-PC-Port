@@ -6,6 +6,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/DamageTypes.h"
+
 namespace gdl::game {
 Mat4 CritterArea::placement(const Mat4& parent, const Vec3& offset, const Vec2& pitchYaw) {
     Mat4 local = portable::rotate(Mat4{1}, pitchYaw.x, Vec3{1, 0, 0});
@@ -87,7 +89,7 @@ f32 CritterArea::currentDamage() const {
 }
 
 f32 CritterArea::hitGap() const {
-    constexpr u32 kHalfSecondHits = 0x800;
+    constexpr u32 kHalfSecondHits = damage::kGas;
     if ((flags & kHalfSecondHits) != 0) {
         return 0.5f;
     }

@@ -34,6 +34,8 @@ inline constexpr u32 kReflect2 = 0x1000000;        ///< ARMOR_REFLECT2
 inline constexpr u32 kArmShields = kReflect | kFireArmor | kElectricArmor;
 /** What keeps a blow from knocking its wearer about. */
 inline constexpr u32 kStandsFirm = kInvulnerable | kNoKnockback | kGoldInvulnerable;
+/** The two armours that turn a missile back off their wearer. */
+inline constexpr u32 kReflects = kReflect | kReflect2;
 
 /** The resistance bit of `element` (1 to 4), and its immunity bit. */
 constexpr u32 resist(u32 element) {

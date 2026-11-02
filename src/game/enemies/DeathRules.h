@@ -5,6 +5,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/combat/ArmorFlags.h"
+
 namespace gdl {
 class NativeStateDigest;
 }
@@ -17,7 +19,7 @@ struct DeathRules {
     static constexpr s32 kDrainTicks = 3;
     static constexpr f32 kFadeSeconds = 255.0f / 240.0f;
     static constexpr f32 kRiseSpeed = 10.0f;
-    static constexpr u32 kProtection = 0x80000;
+    static constexpr u32 kProtection = armor::kAntiDeath;
     static DeathForm form(s32 tier);
     static std::string_view effect(DeathForm form);
     static s32 experience(s32 level, bool stealing);

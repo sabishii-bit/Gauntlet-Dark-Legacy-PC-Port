@@ -1,5 +1,6 @@
 #include <array>
 #include <string>
+#include <type_traits>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -32,6 +33,45 @@ TEST_CASE("a damage type carries its element, its healing and whether it marks",
     CHECK(damage::magicHeal(24) == 0);
     CHECK(damage::magicHeal(25) == damage::kHeal);
     CHECK(damage::magicHeal(99) == damage::kHeal);
+}
+
+TEST_CASE("the damage word keeps the original's DMG_ bits", "[game][damage-types]") {
+    STATIC_REQUIRE(std::is_same_v<decltype(damage::kElementMask), const u32>);
+    STATIC_REQUIRE(std::is_same_v<decltype(damage::kKnocks), const u32>);
+    STATIC_REQUIRE(std::is_same_v<decltype(damage::kHeavyKnocks), const u32>);
+    STATIC_REQUIRE(damage::kElementMask == 0xFU);
+    STATIC_REQUIRE(damage::kFire == 0x1U);
+    STATIC_REQUIRE(damage::kElectric == 0x2U);
+    STATIC_REQUIRE(damage::kKnockBack == 0x10U);
+    STATIC_REQUIRE(damage::kKnockDown == 0x20U);
+    STATIC_REQUIRE(damage::kBlownAway == 0x40U);
+    STATIC_REQUIRE(damage::kKnockOver == 0x100U);
+    STATIC_REQUIRE(damage::kMagic == 0x200U);
+    STATIC_REQUIRE(damage::kExplode == 0x400U);
+    STATIC_REQUIRE(damage::kGas == 0x800U);
+    STATIC_REQUIRE(damage::kDeathStun == 0x1000U);
+    STATIC_REQUIRE(damage::kThrown == 0x8000U);
+    STATIC_REQUIRE(damage::kWhirlwind == 0x10000U);
+    STATIC_REQUIRE(damage::kArrow == 0x20000U);
+    STATIC_REQUIRE(damage::kFireBall == 0x40000U);
+    STATIC_REQUIRE(damage::kSuperShot == 0x100000U);
+    STATIC_REQUIRE(damage::kReflect == 0x200000U);
+    STATIC_REQUIRE(damage::kNoHitEffect == 0x1000000U);
+    STATIC_REQUIRE(damage::kTurbo == 0x2000000U);
+    STATIC_REQUIRE(damage::kSticky == 0x4000000U);
+    // The knocks a weak area blow loses, and those that throw a body down.
+    STATIC_REQUIRE(damage::kKnocks == 0x170U);
+    STATIC_REQUIRE(damage::kHeavyKnocks == 0x10160U);
+    // A great one's heaviest shoves, and what frees a struck player's first slide.
+    STATIC_REQUIRE((damage::kBlownAway | damage::kKnockOver | damage::kWhirlwind) == 0x10140U);
+    STATIC_REQUIRE((damage::kHeavyKnocks | damage::kThrown) == 0x18160U);
+    // The lightning shield's blow, the phoenix's, a suicide blast's and a strong throw's.
+    STATIC_REQUIRE((damage::kElectric | damage::kKnockDown) == 0x22U);
+    STATIC_REQUIRE((damage::kFire | damage::kKnockBack) == 0x11U);
+    STATIC_REQUIRE((damage::kFire | damage::kKnockDown | damage::kExplode) == 0x421U);
+    STATIC_REQUIRE((damage::kTurbo | damage::kKnockBack) == 0x02000010U);
+    // What a safe rock takes no harm from.
+    STATIC_REQUIRE((damage::kMagic | damage::kGas) == 0xA00U);
 }
 
 TEST_CASE("the common hit marks are blood or the element's burst, and the deaths their own",

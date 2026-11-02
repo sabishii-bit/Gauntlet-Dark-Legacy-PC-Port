@@ -657,8 +657,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                     }
                     return;
                 }
-                constexpr u32 kSticky = 0x4000000;
-                if (targeted && (harm->flags & kSticky) != 0) {
+                if (targeted && (harm->flags & damage::kSticky) != 0) {
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
                         plant(critter, i, index);

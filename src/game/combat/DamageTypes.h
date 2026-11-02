@@ -46,6 +46,8 @@ inline constexpr u32 kRapidFire = 0x20000000;  ///< throws faster
 inline constexpr u32 kLow = 0x40000000;        ///< flies low: passes a levitating body
 /** The knocks a blow may carry, which knockback armour takes off it. */
 inline constexpr u32 kKnocks = kKnockBack | kKnockDown | kBlownAway | kKnockOver;
+/** The knocks that throw a struck body down: all but the knock back, and the whirlwind. */
+inline constexpr u32 kHeavyKnocks = kKnockDown | kBlownAway | kKnockOver | kWhirlwind;
 
 /** The element a hit carries; nought for none. */
 u32 element(u32 flags);

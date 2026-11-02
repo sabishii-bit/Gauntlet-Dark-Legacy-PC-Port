@@ -50,7 +50,8 @@ constexpr std::string_view kBlockEffect = "BLOCKFX";
 constexpr f32 kRamDamage = 3.0f;   ///< what a charge does to what it runs into
 constexpr f32 kChargeBlow = 32.0f; ///< and to an enemy or a great one (PlayerMotion's anim 8)
 constexpr u32 kFireElement = 1;    ///< the fire shield's harm
-constexpr u32 kShockFlags = 0x22;  ///< the lightning shield's: lightning, knocking down
+/** The lightning shield's blow: lightning, knocking down. */
+constexpr u32 kShockFlags = damage::kElectric | damage::kKnockDown;
 constexpr f32 kFramesPerSecond = 30.0f;
 constexpr std::string_view kShockEffect = "L_SHLD_ACTIVE"; ///< fx 55, from shield to struck
 constexpr std::string_view kHaloSound = "S_HALO";          ///< once as Death is taken hold of
@@ -912,9 +913,8 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
                                   m_resources->world)) {
                 continue;
             }
-            constexpr u32 kReflectiveArmor = 0x01020000;
             const u32 armor = PowerupEffects::of(player.actor.save().progress().inventory).armor;
-            if (hit.swept && (armor & kReflectiveArmor) != 0) {
+            if (hit.swept && (armor & armor::kReflects) != 0) {
                 m_strikes.hitPlayer(hit.strike, true, hit.from);
                 m_resources->audio.playNamed("S_RICOCHET");
                 for (const auto& effect : m_sim.strikeEffects) {
@@ -935,9 +935,7 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
                 }
                 u32 flags = row.damageType;
                 if (!hit.swept && hit.damage < 5) {
-                    constexpr u32 kLightAreaMask = 0x170;
-                    constexpr u32 kNoHitEffect = 0x1000000;
-                    flags = (flags & ~kLightAreaMask) | kNoHitEffect;
+                    flags = (flags & ~damage::kKnocks) | damage::kNoHitEffect;
                 }
                 targets.hurt(index, hit.damage, HurtKind::Blow, {flags, direction});
                 if ((row.damageType & damage::kGas) != 0) {
@@ -984,14 +982,12 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
             continue;
         }
         // A pass-through wave must not deal its full damage every render frame.
-        constexpr u32 kPassThrough = 0x100000;
         constexpr f32 kProjectileGap = 0.25f;
         constexpr f32 kPassThroughExtraGap = 3.0f;
         const f32 baseGap = hit.swept ? kProjectileGap : hit.hitGap;
+        const bool passThrough = (row.damageType & damage::kSuperShot) != 0;
         const f32 gap =
-            hit.damage > 2
-                ? baseGap + ((row.damageType & kPassThrough) != 0 ? kPassThroughExtraGap : 0.0f)
-                : 0.0f;
+            hit.damage > 2 ? baseGap + (passThrough ? kPassThroughExtraGap : 0.0f) : 0.0f;
         if (contact == source->contacts.end()) {
             source->contacts.push_back({target.id, gap});
         } else {
@@ -2453,12 +2449,11 @@ void PlayerAttacks::stepProjectileFlights(f32 seconds, std::span<PlayerRuntime> 
     for (const auto& player : players) {
         m_resources->arsenal.followCaster(player.actor);
         if (player.life == PlayerLife::Standing && !player.departed) {
-            constexpr u32 kReflectiveArmor = 0x01020000;
             const u32 armor = PowerupEffects::of(player.actor.save().progress().inventory).armor;
             missilePlayers.push_back(
                 {player.actor.player(),
                  {0, player.actor.position(), player.actor.radius(), player.actor.height()},
-                 (armor & kReflectiveArmor) != 0});
+                 (armor & armor::kReflects) != 0});
         }
     }
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(), missileTargets,

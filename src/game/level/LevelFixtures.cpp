@@ -135,8 +135,6 @@ constexpr f32 kGasGapSeconds = 0.5f;
 constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
-constexpr u32 kPoisonDamage = 0x800;
-constexpr u32 kExplosionDamage = 0x400;
 
 } // namespace
 bool LevelFixtures::appendSimulationDigest(NativeStateDigest& digest,
@@ -1247,7 +1245,7 @@ void LevelFixtures::worldExplosion(const Vec3& position, std::span<PlayerRuntime
     ring.radius = customRealm ? 6.0f : 5.0f;
     ring.damage = 50.0f;
     ring.seconds = lifetime;
-    ring.flags = tree == "WORLD_EXP" ? kPoisonDamage : damage::kFire | damage::kKnockDown;
+    ring.flags = tree == "WORLD_EXP" ? damage::kGas : damage::kFire | damage::kKnockDown;
     m_sim.blasts.push_back(std::move(ring));
     if (realm == 9) {
         f32 distance = std::numeric_limits<f32>::max();
@@ -1297,7 +1295,7 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
     const Step felt{ring.position, ring.radius * (kRingFade + (1.0f - phase)),
                     ring.damage * kRingGrowth * (phase - kRingFade)};
     const bool holds = felt.damage > kRingHeldFrom;
-    const bool poison = (ring.flags & kPoisonDamage) != 0;
+    const bool poison = (ring.flags & damage::kGas) != 0;
     if (poison) {
         const auto expire = [&](auto& reached, auto& ready) {
             std::erase_if(ready, [&](const auto& hit) { return hit.second <= ring.elapsed; });
@@ -1363,7 +1361,7 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
     // ProcessEffects shortens the item query by 1.5 for DMG_EXPLODE: barrels, walls and rocks
     // are items too.
     const f32 reach = std::max(
-        0.0f, felt.radius - ((ring.flags & kExplosionDamage) != 0 ? kItemBlastInset : 0.0f));
+        0.0f, felt.radius - ((ring.flags & damage::kExplode) != 0 ? kItemBlastInset : 0.0f));
     const auto opponents = [&] {
         if (!events.opponents) {
             return;
@@ -1388,10 +1386,10 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
 void LevelFixtures::blastScenery(const Vec3& position, f32 radius, f32 damage, u32 flags,
                                  std::span<PlayerRuntime> players, const Events& events,
                                  std::vector<s32>& reached) {
-    if (!m_resources.has_value() || (flags & kPoisonDamage) != 0) {
+    if (!m_resources.has_value() || (flags & damage::kGas) != 0) {
         return;
     }
-    const bool destructive = (flags & kExplosionDamage) != 0;
+    const bool destructive = (flags & damage::kExplode) != 0;
     const f32 reach = std::max(0.0f, radius - (destructive ? kItemBlastInset : 0.0f));
     const auto first = [&](s32 id) {
         if (std::ranges::find(reached, id) != reached.end()) {
@@ -1440,9 +1438,9 @@ void LevelFixtures::blastPickups(const Vec3& position, f32 radius, f32 damage, u
     if (!m_resources) {
         return;
     }
-    const bool destructive = (flags & kExplosionDamage) != 0;
+    const bool destructive = (flags & damage::kExplode) != 0;
     const f32 reach = std::max(0.0f, radius - (destructive ? kItemBlastInset : 0.0f));
-    if ((flags & kPoisonDamage) != 0) {
+    if ((flags & damage::kGas) != 0) {
         spoilFood(position, reach, damage, players, events);
         return;
     }

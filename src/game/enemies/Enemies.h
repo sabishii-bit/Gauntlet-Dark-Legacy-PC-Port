@@ -22,6 +22,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/effects/BlobShadow.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyAnimator.h"
@@ -125,10 +126,10 @@ struct EnemyGeneratorEvent {
 
 /** What a player's hit carries besides damage: the original's damage-type bits that matter. */
 struct EnemyHit {
-    static constexpr u32 kKnockBack = 0x10;
-    static constexpr u32 kKnockDown = 0x20;
-    static constexpr u32 kFloors = 0x10160; ///< any of these throws the enemy down
-    static constexpr u32 kMagic = 0x200;    ///< a magic hit over ten also throws it down
+    static constexpr u32 kKnockBack = damage::kKnockBack;
+    static constexpr u32 kKnockDown = damage::kKnockDown;
+    static constexpr u32 kFloors = damage::kHeavyKnocks; ///< any of these throws the enemy down
+    static constexpr u32 kMagic = damage::kMagic; ///< a magic hit over ten also throws it down
 
     f32 damage = 0.0f;
     u32 flags = 0;
@@ -438,7 +439,7 @@ public:
                   u32 sequence, f32 frame, f32 textureFrame, const Texture* hitFlash,
                   const CameraFrame* camera, TreeModel::Pass pass = TreeModel::Pass::All,
                   f32 alpha = 1, const Texture* deathSkin = nullptr, bool dying = false);
-    usize count() const; ///< live, dying included
+    usize count() const;                           ///< live, dying included
     s32 most() const { return m_simulation.most; } ///< the slots in play, the level's cap
     /** Lifts the cap to the whole pool, while the tuning asks for it (`SwarmTuning`). */
     void widenPool() { m_simulation.most = kMost; }
@@ -464,7 +465,7 @@ public:
     void syncFloors();
     s32 algorithmOf(s32 id) const;
     s32 pushCountOf(s32 id) const;
-    s32 variantOf(s32 id) const;   ///< the strength it was placed at, four and over for a variant
+    s32 variantOf(s32 id) const; ///< the strength it was placed at, four and over for a variant
     /** The element it is attuned to (`BodyTraits::affinity`), 0 none: immune to it and
      * dealing it. */
     s32 affinityOf(s32 id) const;
@@ -502,7 +503,7 @@ public:
         s32 kind = 0;
         s32 tier = 1;
         s32 algorithm = 0;
-        s32 variant = 0; ///< the strength placed at: 4 an archer, 5 a bomber, 6 a suicide
+        s32 variant = 0;  ///< the strength placed at: 4 an archer, 5 a bomber, 6 a suicide
         s32 affinity = 0; ///< the element it is attuned to (`BodyTraits::affinity`), 0 none
         s32 generator = -1;
         bool bred = false; ///< a generator bred it
@@ -703,7 +704,7 @@ private:
     Figure bodyOf(const Appearance& appearance);
     SwarmTuning tuning() const; ///< the mechanics' tuning as it stands, never kept
     Rules m_rules;              ///< borrowed until close; never simulation state
-    s32 m_highlightedId = -1;                        ///< the developer console's selection
+    s32 m_highlightedId = -1;   ///< the developer console's selection
     const SelectionHighlight* m_highlight = nullptr; ///< how it is marked out, while drawn
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
               std::span<const EnemyView> players, std::span<const Obstacle> obstacles,

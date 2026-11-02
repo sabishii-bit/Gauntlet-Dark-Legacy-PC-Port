@@ -382,7 +382,7 @@ std::string_view EnemyMissileHit::effect() const {
     }
     constexpr std::array<std::string_view, 5> kWorldHits{"SPARKS", "FIREHIT", "HITCOL", "HITCOL",
                                                          "HITCOL"};
-    const u32 element = flags & 0xF;
+    const u32 element = flags & damage::kElementMask;
     return worldContact && element < kWorldHits.size() ? kWorldHits[element] : std::string_view{};
 }
 

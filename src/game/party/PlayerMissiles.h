@@ -175,8 +175,9 @@ public:
     ~PlayerMissiles() = default;
     static constexpr u32 kPlainModifiers =
         damage::kRapidFire | damage::kThreeWayShot | damage::kFiveWayShot;
-    static constexpr u32 kStrongThrowFlags = 0x02000010U;
-    static constexpr u32 kReplayModifiers = kPlainModifiers | kStrongThrowFlags | 0xFU;
+    static constexpr u32 kStrongThrowFlags = damage::kTurbo | damage::kKnockBack;
+    static constexpr u32 kReplayModifiers =
+        kPlainModifiers | kStrongThrowFlags | damage::kElementMask;
     /** Ordinary elemental or plain throws only; other weapon modes remain authoritative. */
     static bool replayModifiers(u32 flags);
     static constexpr f32 kSlowest = 20.0f; ///< units a second with no strength at all

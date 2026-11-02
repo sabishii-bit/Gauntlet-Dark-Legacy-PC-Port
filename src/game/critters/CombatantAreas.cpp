@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantProjectile.h"
@@ -234,9 +235,7 @@ void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> p
             blow.damage = dealt(area.currentDamage());
             blow.flags = area.flags;
             if (blow.damage < 5) {
-                constexpr u32 kHeavyHitFlags = 0x170;
-                constexpr u32 kNoHitEffect = 0x1000000;
-                blow.flags = (blow.flags & ~kHeavyHitFlags) | kNoHitEffect;
+                blow.flags = (blow.flags & ~damage::kKnocks) | damage::kNoHitEffect;
             }
             blow.origin = Vec3{area.transform(parent)[3]};
             const Vec3 away = player.position - blow.origin;

@@ -940,8 +940,9 @@ const Enemies::Stock* Enemies::stockOf(s32 kind) const {
 }
 
 bool Enemies::setArchiveLoader(ArchiveLoader loader) {
-    if (!m_stockCache.empty() || !m_simulation.stocks.empty())
+    if (!m_stockCache.empty() || !m_simulation.stocks.empty()) {
         return false;
+    }
     m_archiveLoader = std::move(loader);
     return true;
 }
@@ -967,8 +968,9 @@ bool Enemies::loadKind(s32 kind) {
     bool loaded = false;
     if (m_archiveLoader) {
         auto imported = m_archiveLoader(kind);
-        if (!imported)
+        if (!imported) {
             return false;
+        }
         stock->archive = std::move(*imported);
         loaded = stock->archive.loaded();
     } else {
@@ -976,8 +978,9 @@ bool Enemies::loadKind(s32 kind) {
         loaded = !bodiless && stock->archive.load(directory);
     }
     if (!loaded) {
-        if (m_archiveLoader)
+        if (m_archiveLoader) {
             return false;
+        }
         if (kind != kItKind) {
             return false;
         }

@@ -47,6 +47,9 @@ TEST_CASE("the special word keeps the original's SPECIAL_TYPE bits", "[game][pow
     CHECK(powerup::kMikey == 0x100000U);
     CHECK(powerup::kHandOfDeath == 0x200000U);
     CHECK(powerup::kHealthVamp == 0x400000U);
+    // The specials that bring a companion.
+    STATIC_REQUIRE((powerup::kLevitation | powerup::kBreath | powerup::kPhoenix | powerup::kPojo |
+                    powerup::kMikey | powerup::kHandOfDeath | powerup::kHealthVamp) == 0x7004F1U);
 }
 
 } // namespace

@@ -20,13 +20,10 @@ constexpr f32 kSimulationStep = 1.0f / 120.0f;
 constexpr f32 kWallTolerance = 0.001f;
 constexpr f32 kFloorClearance = 0.1f;
 constexpr u32 kSpin = 8;
-constexpr u32 kReflect = 0x200000;
 constexpr f32 kBounceLift = 0.4f;
 constexpr f32 kBounceLifetime = 10.0f;
 constexpr f32 kBounceTimeLoss = 1.0f;
 constexpr f32 kFloorImpactLift = 2.0f;
-constexpr u32 kPassThrough = 0x100000;
-constexpr u32 kSticky = 0x4000000;
 constexpr f32 kStickyLife = 20.0f;
 constexpr f32 kProjectileHitGap = 0.25f;
 
@@ -144,10 +141,9 @@ void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
     transform = portable::rotate(transform, flying.rotation.x, Vec3{1, 0, 0});
     transform = portable::rotate(transform, flying.rotation.z, Vec3{0, 0, 1});
     const auto* damage = flying.shot.data->damage(flying.shot.damageIndex);
-    constexpr u32 kArrow = 0x20000;
     // ProcessEffects aligns arrow effects with velocity every frame, including
     // its vertical component. Garm's eye ribbons use this, not a yaw-only pose.
-    const bool directed = !flying.stuck && !flying.settled && (damage->flags & kArrow) != 0;
+    const bool directed = !flying.stuck && !flying.settled && (damage->flags & damage::kArrow) != 0;
     effects.placeAt(flying.effect, transform,
                     directed ? std::optional<Vec3>{flying.velocity} : std::nullopt);
 }
@@ -158,7 +154,7 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
     const AttackDefinition* damage =
         shot.data != nullptr ? shot.data->damage(shot.damageIndex) : nullptr;
     const bool planted = damage != nullptr && damage->type == AttackDefinition::kTargetArea &&
-                         (damage->flags & kSticky) != 0;
+                         (damage->flags & damage::kSticky) != 0;
     if (damage == nullptr || (!planted && damage->type != AttackDefinition::kProjectile)) {
         return;
     }
@@ -441,7 +437,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                 }
                 if (wall && !item) {
                     m_sim.worldHits.push_back({flying.position, worldObject,
-                                               liquid && (damage.flags & kReflect) == 0,
+                                               liquid && (damage.flags & damage::kReflect) == 0,
                                                flying.instance});
                 }
                 summon(flying);
@@ -474,7 +470,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     flying.effect = 0;
                     break;
                 }
-                if (wall && !item && (damage.flags & kReflect) != 0) {
+                if (wall && !item && (damage.flags & damage::kReflect) != 0) {
                     effects.snapPresentation(flying.effect);
                     if (glm::dot(flying.velocity, normal) < 0) {
                         flying.velocity = glm::reflect(flying.velocity, normal);
@@ -494,7 +490,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     const f32 speed = glm::length(flying.velocity);
                     const f32 hitDamage = damage.damage * flying.shot.damageScale;
                     const bool pierces =
-                        (damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0;
+                        (damage.flags & damage::kSuperShot) != 0 && flying.piercedPlayer < 0;
                     const f32 hitGap =
                         hitDamage > 2
                             ? projectileHitGap(*flying.archive,
@@ -511,10 +507,10 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                           false,
                                           {},
                                           flying.instance});
-                    if ((damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0) {
+                    if ((damage.flags & damage::kSuperShot) != 0 && flying.piercedPlayer < 0) {
                         // Reflecting super shots leave an impact and spend their
                         // pass-through bit; ordinary super shots keep travelling.
-                        if ((damage.flags & kReflect) != 0 && damage.hitSound >= 0 &&
+                        if ((damage.flags & damage::kReflect) != 0 && damage.hitSound >= 0 &&
                             damage.damage * flying.shot.damageScale > 2) {
                             show(flying, damage.hitSound, SoundPhase::Impact, device, effects,
                                  sound);
@@ -527,7 +523,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                 }
                 const PlaySound impactSound = liquid && !item ? PlaySound{} : sound;
                 effects.stop(flying.effect);
-                if ((damage.flags & kSticky) != 0 && damage.hitSound >= 0) {
+                if ((damage.flags & damage::kSticky) != 0 && damage.hitSound >= 0) {
                     flying.stuck = true;
                     flying.velocity = Vec3{0};
                     flying.spin = Vec3{0};
@@ -655,9 +651,7 @@ void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
         const Vec3 push = length > 0 ? Vec3{away.x, 0, away.z} * (0.25f / length) : Vec3{0};
         u32 flags = area.flags;
         if (area.currentDamage() < 5) {
-            constexpr u32 kHeavyHitFlags = 0x170;
-            constexpr u32 kNoHitEffect = 0x1000000;
-            flags = (flags & ~kHeavyHitFlags) | kNoHitEffect;
+            flags = (flags & ~damage::kKnocks) | damage::kNoHitEffect;
         }
         m_sim.hits.push_back({player.player,
                               area.currentDamage(),
@@ -732,7 +726,7 @@ CombatantProjectiles::hitItems(const Flying& flying, const Vec3& from, const Vec
         }
     }
     std::ranges::stable_sort(contacts, {}, &decltype(contacts)::value_type::first);
-    const bool pierces = (damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0;
+    const bool pierces = (damage.flags & damage::kSuperShot) != 0 && flying.piercedPlayer < 0;
     for (const auto& [at, item] : contacts) {
         if (item->rock < 0) {
             if (!pierces) {
@@ -752,10 +746,10 @@ CombatantProjectiles::hitItems(const Flying& flying, const Vec3& from, const Vec
         if (health <= 0) {
             continue;
         }
-        // SfxSkipItem: hostile effects can hit safe rocks, but heal/gas and
+        // SfxSkipItem: hostile effects can hit safe rocks, but magic/gas and
         // unbreakable armour do not take damage from these attacks.
-        constexpr u32 kHealOrGas = 0x200 | 0x800;
-        if (item->rockArmor >= 0 && (damage.flags & kHealOrGas) == 0) {
+        constexpr u32 kMagicOrGas = damage::kMagic | damage::kGas;
+        if (item->rockArmor >= 0 && (damage.flags & kMagicOrGas) == 0) {
             const f32 power = damage.damage * flying.shot.damageScale;
             m_sim.rockHits.push_back({static_cast<usize>(item->rock), power});
             health -= std::max(1.0f, std::round(power - static_cast<f32>(item->rockArmor)));

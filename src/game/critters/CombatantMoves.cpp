@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/critters/Combatant.h"
 #include "game/enemies/EnemyMind.h"
 namespace gdl::game {
@@ -25,10 +26,11 @@ f32 yawBetween(const Vec3& from, const Vec3& to) {
 namespace {
 constexpr f32 kMostPush = 40.0f;
 // What a hit's flags do to a great one (CritterGetDoAction, CritterDoKnockback).
-constexpr u32 kKnockOver = 0x100;  ///< knocked down: KD
-constexpr u32 kKnockedBack = 0x20; ///< knocked back: KB
-constexpr u32 kShaken = 0x10;      ///< flinches: HITREACT
-constexpr u32 kHardPush = 0x10140; ///< the heaviest shoves
+constexpr u32 kKnockOver = damage::kKnockOver;   ///< knocked down: KD
+constexpr u32 kKnockedBack = damage::kKnockDown; ///< knocked back: KB
+constexpr u32 kShaken = damage::kKnockBack;      ///< flinches: HITREACT
+/** The heaviest shoves. */
+constexpr u32 kHardPush = damage::kBlownAway | damage::kKnockOver | damage::kWhirlwind;
 constexpr f32 kDeathPush = 20.0f;
 constexpr f32 kHardPushScale = 10.0f;
 constexpr f32 kKnockBackPush = 7.5f;

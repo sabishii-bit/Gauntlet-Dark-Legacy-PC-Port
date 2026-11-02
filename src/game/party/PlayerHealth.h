@@ -8,6 +8,7 @@
 #include "engine/math/Mt19937.h"
 
 #include "game/characters/ClassData.h"
+#include "game/combat/DamageTypes.h"
 #include "game/party/PlayInput.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerImpact.h"
@@ -53,7 +54,7 @@ public:
         bool logDeaths = true; ///< private replay may reject a lethal result without a false log
     };
     static constexpr f32 kBlockLessonFrom = 15.0f; ///< over this a blow teaches the guard
-    static constexpr u32 kHeavyFlags = 0x10160;    ///< knock-back, knock-down and knock-over
+    static constexpr u32 kHeavyFlags = damage::kHeavyKnocks;
     /** Action/partner protection shared by incoming damage and combatant contact checks.
      * Does not hide a player from targeting or replace armor's damage modifiers. */
     static bool canBeDamaged(const PlayerRuntime& runtime);

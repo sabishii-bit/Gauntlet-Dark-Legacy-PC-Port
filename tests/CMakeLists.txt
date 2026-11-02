@@ -222,9 +222,11 @@ add_executable(tests
     game/scenes/PlaySceneAmbienceTests.cpp
     game/level/DestructibleWallsTests.cpp
     game/party/MissileTargetTests.cpp
+    game/combat/ArmorFlagsTests.cpp
     game/combat/DamageTests.cpp
     game/combat/BodyContactTests.cpp
     game/combat/DamageTypesTests.cpp
+    game/combat/EffectFlagsTests.cpp
     game/combat/PowerupFlagsTests.cpp
     game/party/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp

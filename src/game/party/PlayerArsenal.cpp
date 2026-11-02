@@ -21,7 +21,7 @@
 namespace gdl::game {
 namespace {
 constexpr f32 kPhoenixDamage = 10.0f;
-constexpr u32 kPhoenixDamageFlags = 0x11; ///< fire plus knockback
+constexpr u32 kPhoenixDamageFlags = damage::kFire | damage::kKnockBack;
 
 } // namespace
 void PlayerArsenal::appendBindingDigest(NativeStateDigest& digest) const {

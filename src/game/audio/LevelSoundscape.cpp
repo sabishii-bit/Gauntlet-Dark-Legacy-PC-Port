@@ -15,6 +15,8 @@
 #include "engine/core/Types.h"
 #include "engine/platform/Paths.h"
 
+#include "game/combat/ArmorFlags.h"
+
 namespace gdl::game {
 namespace {
 // fn_8009EFCC's table (sounds_evt.c 90-93) by step kind, first and second foot.
@@ -1085,7 +1087,7 @@ void LevelSoundscape::playFootstep(bool second, Footing footing, f32 distance) {
 }
 
 Footing LevelSoundscape::footingOf(u32 floorFlags, u32 armorFlags, bool inWater) {
-    constexpr u32 kMetal = 0x10000;
+    constexpr u32 kMetal = armor::kInvulnerable;
     constexpr u32 kStairs = 8;
     if (inWater) {
         return Footing::Water;

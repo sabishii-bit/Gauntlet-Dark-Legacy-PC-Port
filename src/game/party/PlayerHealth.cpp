@@ -29,7 +29,6 @@ constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
 constexpr std::string_view kAboutToDieLine = "S_ABOUT";
 constexpr f32 kLowHealthWait = 1.0f; ///< seconds a line waits behind narration (fn_8009FFF4)
 constexpr f32 kAboutToDieWait = 0.5f;
-constexpr u32 kDrainFlag = 0x1000;             ///< Death's touch
 constexpr f32 kGasGagSeconds = 1.0f;           ///< retching after gas
 constexpr f32 kDrainGagSeconds = 1.0f / 15.0f; ///< and after Death's touch
 
@@ -175,7 +174,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     if ((received.flags & damage::kGas) != 0) {
         runtime.gagSeconds = kGasGagSeconds;
     }
-    if ((received.flags & kDrainFlag) != 0) {
+    if ((received.flags & damage::kDeathStun) != 0) {
         runtime.gagSeconds = kDrainGagSeconds;
     }
     const CharacterSave& save = runtime.actor.save();
@@ -247,12 +246,10 @@ void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events, u32 fl
         events.cry("POISON");
         return;
     }
-    constexpr u32 kArrowHit = 0x20000;
-    constexpr u32 kBoltHit = 0x40000;
     if (runtime.hitSoundGap <= 0) {
-        if ((flags & kArrowHit) != 0) {
+        if ((flags & damage::kArrow) != 0) {
             events.sound(kArrowHitSound);
-        } else if ((flags & kBoltHit) != 0) {
+        } else if ((flags & damage::kFireBall) != 0) {
             events.sound(kBoltHitSound);
         } else {
             events.sound(kHitSound);
