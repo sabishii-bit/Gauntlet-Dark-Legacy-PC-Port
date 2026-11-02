@@ -80,6 +80,14 @@ class RuleTests(unittest.TestCase):
              "src/game/context/GameContext.h -> game/scenes",
              "src/game/netplay/MatchSession.cpp -> game/online"})
 
+    def test_the_hud_lies_over_the_party_and_under_what_reports_through_it(self):
+        self.assertEqual(self.found({
+            "src/game/enemies/LevelOpponents.cpp": '#include "game/hud/LevelMessages.h"\n',
+            "src/game/tower/TowerWelcome.h": '#include "game/hud/LevelMessages.h"\n',
+            "src/game/hud/PartyHud.h": '#include "game/party/PlayerRuntime.h"\n',
+            "src/game/hud/BossMeter.h": '#include "game/critters/CritterData.h"\n',
+        }), {"src/game/hud/BossMeter.h -> game/critters"})
+
     def test_a_mod_builds_on_the_engine_and_the_game_alone(self):
         self.assertEqual(self.found({
             "src/mods/rage/RageMode.cpp": ('#include "mods/rage/RageMode.h"\n'

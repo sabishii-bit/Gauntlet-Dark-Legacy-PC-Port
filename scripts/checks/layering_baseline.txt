@@ -22,12 +22,9 @@ src/game/console/ConsoleCommands.h -> expansions/shared
 src/game/effects/CritterCueEmission.h -> game/critters
 src/game/effects/EffectTrees.cpp -> game/level
 src/game/enemies/EnemyMissiles.cpp -> game/critters
-src/game/enemies/LevelOpponents.cpp -> game/hud
 src/game/enemies/LevelOpponents.h -> expansions/shared
 src/game/enemies/LevelOpponents.h -> game/bosses
 src/game/enemies/LevelOpponents.h -> game/critters
-src/game/enemies/LevelOpponents.h -> game/hud
-src/game/enemies/LevelOpponentsDeath.cpp -> game/hud
 src/game/enemies/OpponentPlacements.cpp -> game/critters
 src/game/level/Breakables.cpp -> game/party
 src/game/level/Breakables.h -> game/party
@@ -57,4 +54,3 @@ src/game/party/PlayerAttacks.cpp -> game/enemies
 src/game/party/PlayerAttacks.cpp -> game/hud
 src/game/party/PlayerAttacks.h -> game/enemies
 src/game/scenes/PlayScene.cpp -> expansions/shared
-src/game/tower/TowerWelcome.h -> game/hud

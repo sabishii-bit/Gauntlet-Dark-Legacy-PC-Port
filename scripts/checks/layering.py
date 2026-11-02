@@ -32,12 +32,13 @@ ENGINE_ORDER = ("core", "math", "io", "net", "platform", "render", "codec", "aud
                 "ui", "world", "app")
 # Lowest first. `widgets` are what every screen reads and draws with (menu input, fonts,
 # option lists, scrolls); `mechanics` is the seam additive mechanics answer through, below
-# everything that asks it; `context` is GameContext, what every screen is handed; `console` is
+# everything that asks it; `hud` lies over the party, under the opponents, tower and shop that
+# report through it; `context` is GameContext, what every screen is handed; `console` is
 # the developer console, below the scenes; `online` plays a room's stages over the scenes,
 # which `netplay` keeps in step.
 GAME_ORDER = ("config", "widgets", "combat", "mechanics", "characters", "players", "camera",
-              "audio", "effects", "level", "party", "enemies", "critters", "bosses", "tower",
-              "shop", "hud", "context", "menu", "rollback", "netplay", "console", "scenes",
+              "audio", "effects", "level", "party", "hud", "enemies", "critters", "bosses",
+              "tower", "shop", "context", "menu", "rollback", "netplay", "console", "scenes",
               "online", "app")
 # What the native format readers may include: the engine's value types, never its devices.
 FORMATS_REACH = ("core", "math", "io", "render", "codec", "assets")

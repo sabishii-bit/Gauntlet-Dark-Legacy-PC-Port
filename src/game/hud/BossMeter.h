@@ -12,7 +12,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
 
-#include "game/critters/CritterData.h"
+#include "game/hud/HealthMeter.h"
 
 namespace gdl::game {
 

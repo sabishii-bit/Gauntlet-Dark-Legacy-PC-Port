@@ -4,15 +4,15 @@
 # seam additive gameplay mechanics answer through, and the catalog of them), characters (class
 # data, saves, inventory, progression), players (a character's body and controls), camera,
 # audio (what a level sounds like), effects, level (the levels and what stands in them), party
-# (the party in a level, frame by frame), enemies (the swarm and the level's opponents),
-# critters, bosses, tower (between levels, with Sumner and his scrolls), shop (the shop and
-# the inventory panel), hud, context (GameContext: the settings, text, sound, files and
-# callbacks every screen is handed), menu (the title, pause, save and settings menus and the
-# name picker), rollback (commands, timelines and checkpoints), netplay (rooms, sessions and
-# keeping the peers in step), console (the developer console, its command objects and their
-# parsers), scenes (the full screens), online (an online game's stages, over the scenes, and
-# its lobby menu), app (the driver and attract flow). A module includes only those below it;
-# app owns the input boundary.
+# (the party in a level, frame by frame), hud (what the party sees in play: status boxes,
+# messages, meters), enemies (the swarm and the level's opponents), critters, bosses, tower
+# (between levels, with Sumner and his scrolls), shop (the shop and the inventory panel),
+# context (GameContext: the settings, text, sound, files and callbacks every screen is handed),
+# menu (the title, pause, save and settings menus and the name picker), rollback (commands,
+# timelines and checkpoints), netplay (rooms, sessions and keeping the peers in step), console
+# (the developer console, its command objects and their parsers), scenes (the full screens),
+# online (an online game's stages, over the scenes, and its lobby menu), app (the driver and
+# attract flow). A module includes only those below it; app owns the input boundary.
 add_library(game STATIC
     netplay/AssetDigest.cpp
     online/NetplayMenu.cpp
@@ -370,6 +370,7 @@ add_library(game STATIC
     hud/PickupHud.cpp
     hud/BossMeter.h
     hud/BossMeter.cpp
+    hud/HealthMeter.h
     bosses/BossVictory.h
     bosses/BossVictory.cpp
     bosses/BossVictoryPresentation.cpp
