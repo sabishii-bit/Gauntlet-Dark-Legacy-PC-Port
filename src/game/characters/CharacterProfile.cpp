@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <cstddef>
 #include <limits>
 #include <string_view>
 #include <utility>
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 #include "game/characters/NameCheats.h"
 
@@ -20,17 +20,6 @@ bool bounded(f32 value, f32 low, f32 high) {
 bool counter(s32 value) {
     return value >= 0 && value <= 1'000'000;
 }
-void word(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-void real(std::vector<u8>& bytes, f32 value) {
-    word(bytes, std::bit_cast<u32>(value));
-}
-f32 real(ByteReader& reader) {
-    return std::bit_cast<f32>(reader.readU32());
-}
 
 usize sharedPrefix(std::string_view first, std::string_view second) {
     usize result = 0;
@@ -40,19 +29,18 @@ usize sharedPrefix(std::string_view first, std::string_view second) {
     return result;
 }
 
-void legends(std::vector<u8>& bytes, const LegendsProgress& progress) {
+void legends(ByteWriter& out, const LegendsProgress& progress) {
     for (const u64 mask :
          {progress.runestones, progress.shards, progress.obelisks, progress.legendItems}) {
-        word(bytes, static_cast<u32>(mask));
-        word(bytes, static_cast<u32>(mask >> 32U));
+        out.writeU64(mask);
     }
-    word(bytes, static_cast<u32>(progress.completedMaps.size()));
+    out.writeU32(static_cast<u32>(progress.completedMaps.size()));
     std::string_view previous;
     for (const auto& map : progress.completedMaps) {
         const usize prefix = sharedPrefix(previous, map);
-        bytes.push_back(static_cast<u8>(prefix));
-        bytes.push_back(static_cast<u8>(map.size() - prefix));
-        bytes.insert(bytes.end(), map.begin() + static_cast<std::ptrdiff_t>(prefix), map.end());
+        out.writeU8(static_cast<u8>(prefix));
+        out.writeU8(static_cast<u8>(map.size() - prefix));
+        out.writeString(std::string_view{map}.substr(prefix));
         previous = map;
     }
 }
@@ -63,8 +51,7 @@ bool legends(ByteReader& reader, LegendsProgress& progress) {
     }
     for (auto* mask :
          {&progress.runestones, &progress.shards, &progress.obelisks, &progress.legendItems}) {
-        const u64 low = reader.readU32();
-        *mask = low | (u64{reader.readU32()} << 32U);
+        *mask = reader.readU64();
     }
     const usize count = reader.readU32();
     if (count > LegendsProgress::kMaxCompletedMaps || count > reader.remaining() / 2) {
@@ -81,10 +68,7 @@ bool legends(ByteReader& reader, LegendsProgress& progress) {
             prefix + suffix > LegendsProgress::kMaxMapName || suffix > reader.remaining()) {
             return false;
         }
-        std::string map = previous.substr(0, prefix);
-        for (const u8 character : reader.readBytes(suffix)) {
-            map.push_back(static_cast<char>(character));
-        }
+        std::string map = previous.substr(0, prefix) + reader.readString(suffix);
         // One representation per sorted map list, not arbitrary equivalent prefix splits.
         if (sharedPrefix(previous, map) != prefix) {
             return false;
@@ -181,67 +165,66 @@ std::optional<std::vector<u8>> CharacterProfilePacket::encode(const CharacterPro
     }
     std::vector<u8> bytes;
     bytes.reserve(kMinBytes);
-    word(bytes, fourcc("GDCP"));
-    word(bytes, kVersion);
+    ByteWriter out(bytes);
+    out.writeU32(fourcc("GDCP"));
+    out.writeU32(kVersion);
     for (usize i = 0; i < 8; ++i) {
-        bytes.push_back(i < profile.name.size() ? static_cast<u8>(profile.name[i]) : 0);
+        out.writeU8(i < profile.name.size() ? static_cast<u8>(profile.name[i]) : u8{0});
     }
     const auto& p = profile.progress;
     for (const s32 value : {profile.character, profile.color, profile.gold, profile.levelTotal,
                             p.experience, p.gold, p.promotedLevel, p.health}) {
-        word(bytes, static_cast<u32>(value));
+        out.writeS32(value);
     }
-    word(bytes, profile.autoAttack ? 1 : 0);
+    out.writeU32(profile.autoAttack ? 1 : 0);
     for (const f32 value : {p.fightAdd, p.armorAdd, p.magicAdd, p.speedAdd}) {
-        real(bytes, value);
+        out.writeF32(value);
     }
     for (const s32 value : p.crystals) {
-        word(bytes, static_cast<u32>(value));
+        out.writeS32(value);
     }
-    word(bytes, p.unlocked);
-    word(bytes, static_cast<u32>(p.inventory.keys));
-    word(bytes, static_cast<u32>(p.inventory.potions.size()));
+    out.writeU32(p.unlocked);
+    out.writeS32(p.inventory.keys);
+    out.writeU32(static_cast<u32>(p.inventory.potions.size()));
     for (usize i = 0; i < Inventory::kMostPotions; ++i) {
-        word(bytes, i < p.inventory.potions.size() ? static_cast<u32>(p.inventory.potions[i]) : 0);
+        out.writeS32(i < p.inventory.potions.size() ? p.inventory.potions[i] : 0);
     }
     for (const auto& slot : p.inventory.powerups) {
-        real(bytes, slot.strength);
-        word(bytes, static_cast<u32>(slot.kind));
-        real(bytes, slot.charge);
-        word(bytes, slot.flags);
-        word(bytes, slot.on ? 1 : 0);
+        out.writeF32(slot.strength);
+        out.writeS32(slot.kind);
+        out.writeF32(slot.charge);
+        out.writeU32(slot.flags);
+        out.writeU32(slot.on ? 1 : 0);
     }
     for (const u16 value :
          {p.relics.runes, p.relics.legends, p.relics.shards, p.relics.pendingRunes,
           p.relics.pendingShards, p.relics.pendingCeremonies}) {
-        word(bytes, value);
+        out.writeU32(value);
     }
     for (const s32 value : p.relics.gargoylePieces) {
-        word(bytes, static_cast<u32>(value));
+        out.writeS32(value);
     }
-    bytes.insert(bytes.end(), p.levels.beaten.begin(), p.levels.beaten.end());
-    bytes.insert(bytes.end(), 2, 0);
+    out.writeBytes(p.levels.beaten);
+    out.writeU16(0);
     for (const auto& masks : {p.levels.runeLevels, p.levels.legendLevels, p.levels.bossDeaths}) {
         for (const u16 value : masks) {
-            word(bytes, value);
+            out.writeU32(value);
         }
     }
     for (const s32 value : {p.lifetime.enemiesKilled, p.lifetime.generatorsDestroyed,
                             p.lifetime.goldFound, p.lifetime.bestStreak}) {
-        word(bytes, static_cast<u32>(value));
+        out.writeS32(value);
     }
-    const auto seconds = std::bit_cast<u64>(p.lifetime.playSeconds);
-    word(bytes, static_cast<u32>(seconds));
-    word(bytes, static_cast<u32>(seconds >> 32U));
+    out.writeU64(std::bit_cast<u64>(p.lifetime.playSeconds));
     std::array<u32, 5> help{};
     for (const s32 id : profile.helpSeen) {
         help[static_cast<usize>(id / 32)] |= 1U << static_cast<u32>(id % 32);
     }
     for (const u32 mask : help) {
-        word(bytes, mask);
+        out.writeU32(mask);
     }
     for (const auto& campaign : p.legends) {
-        legends(bytes, campaign);
+        legends(out, campaign);
     }
     if (bytes.size() > kMaxBytes) {
         return std::nullopt; // Preserve the whole profile or refuse; never discard progress.
@@ -283,10 +266,10 @@ std::optional<CharacterProfile> CharacterProfilePacket::decode(std::span<const u
         return std::nullopt;
     }
     profile.autoAttack = autoAttack != 0;
-    p.fightAdd = real(reader);
-    p.armorAdd = real(reader);
-    p.magicAdd = real(reader);
-    p.speedAdd = real(reader);
+    p.fightAdd = reader.readF32();
+    p.armorAdd = reader.readF32();
+    p.magicAdd = reader.readF32();
+    p.speedAdd = reader.readF32();
     for (auto& crystal : p.crystals) {
         crystal = reader.readS32();
     }
@@ -305,9 +288,9 @@ std::optional<CharacterProfile> CharacterProfilePacket::decode(std::span<const u
         }
     }
     for (auto& slot : p.inventory.powerups) {
-        slot.strength = real(reader);
+        slot.strength = reader.readF32();
         slot.kind = reader.readS32();
-        slot.charge = real(reader);
+        slot.charge = reader.readF32();
         slot.flags = reader.readU32();
         const auto on = reader.readU32();
         if (on > 1) {
@@ -346,8 +329,7 @@ std::optional<CharacterProfile> CharacterProfilePacket::decode(std::span<const u
     p.lifetime.generatorsDestroyed = reader.readS32();
     p.lifetime.goldFound = reader.readS32();
     p.lifetime.bestStreak = reader.readS32();
-    const u64 low = reader.readU32();
-    p.lifetime.playSeconds = std::bit_cast<f64>(low | (u64{reader.readU32()} << 32U));
+    p.lifetime.playSeconds = std::bit_cast<f64>(reader.readU64());
     for (s32 block = 0; block < 5; ++block) {
         const auto mask = reader.readU32();
         for (s32 bit = 0; bit < 32; ++bit) {

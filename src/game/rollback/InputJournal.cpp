@@ -8,37 +8,12 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
 constexpr u32 kMagic = fourcc("GDLJ");
 constexpr u8 kLastFlag = 1;
-
-void writeU16(std::vector<u8>& bytes, u16 value) {
-    bytes.push_back(static_cast<u8>(value));
-    bytes.push_back(static_cast<u8>(value >> 8U));
-}
-void writeU32(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-void writeU64(std::vector<u8>& bytes, u64 value) {
-    for (u32 shift = 0; shift < 64; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-void writeF32(std::vector<u8>& bytes, f32 value) {
-    writeU32(bytes, std::bit_cast<u32>(value));
-}
-f32 readF32(ByteReader& reader) {
-    return std::bit_cast<f32>(reader.readU32());
-}
-u64 readU64(ByteReader& reader) {
-    const u64 low = reader.readU32();
-    const u64 high = reader.readU32();
-    return low | (high << 32U);
-}
 
 bool sameControls(const InputCommand& a, const InputCommand& b) {
     const auto bits = [](f32 value) { return std::bit_cast<u32>(value); };
@@ -60,30 +35,30 @@ usize runBytes(const InputCommand& command) {
     return JournalPacket::kRunBytes + (command.console ? 1 + command.console->line.size() : 0);
 }
 
-void writeRun(std::vector<u8>& bytes, const InputCommand& command, u16 run) {
-    writeU32(bytes, command.grant);
-    writeF32(bytes, command.direction.x);
-    writeF32(bytes, command.direction.y);
-    writeF32(bytes, command.magnitude);
-    bytes.push_back(command.aimDirection ? 1 : 0);
+void writeRun(ByteWriter& out, const InputCommand& command, u16 run) {
+    out.writeU32(command.grant);
+    out.writeF32(command.direction.x);
+    out.writeF32(command.direction.y);
+    out.writeF32(command.magnitude);
+    out.writeU8(command.aimDirection ? 1 : 0);
     const Vec3 aim = command.aimDirection.value_or(Vec3{0});
-    writeF32(bytes, aim.x);
-    writeF32(bytes, aim.y);
-    writeF32(bytes, aim.z);
-    writeU32(bytes, command.heldButtons);
-    writeU32(bytes, command.pressedButtons);
-    bytes.push_back(command.hintTopic);
-    bytes.push_back(command.hintRevision);
+    out.writeF32(aim.x);
+    out.writeF32(aim.y);
+    out.writeF32(aim.z);
+    out.writeU32(command.heldButtons);
+    out.writeU32(command.pressedButtons);
+    out.writeU8(command.hintTopic);
+    out.writeU8(command.hintRevision);
     for (const f32 value :
          {command.consoleFlight.x, command.consoleFlight.y, command.consoleFlight.z}) {
-        bytes.push_back(std::bit_cast<u8>(static_cast<s8>(std::round(value * 127.0f))));
+        out.writeU8(std::bit_cast<u8>(static_cast<s8>(std::round(value * 127.0f))));
     }
-    bytes.push_back(command.console ? static_cast<u8>(command.console->line.size()) : 0);
+    out.writeU8(command.console ? static_cast<u8>(command.console->line.size()) : u8{0});
     if (command.console) {
-        bytes.push_back(command.console->seat);
-        bytes.insert(bytes.end(), command.console->line.begin(), command.console->line.end());
+        out.writeU8(command.console->seat);
+        out.writeString(command.console->line);
     }
-    writeU16(bytes, run);
+    out.writeU16(run);
 }
 
 usize seatCount(u8 seats) {
@@ -170,15 +145,16 @@ std::optional<std::vector<u8>> JournalPacket::encode(const Chunk& chunk) {
     }
     std::vector<u8> bytes;
     bytes.reserve(kHeaderBytes + runCount(chunk.commands, chunk.count) * kRunBytes);
-    writeU32(bytes, kMagic);
-    bytes.push_back(kVersion);
-    bytes.push_back(chunk.last ? kLastFlag : 0);
-    bytes.push_back(chunk.seats);
-    bytes.push_back(0);
-    writeU64(bytes, chunk.epoch);
-    writeU64(bytes, chunk.firstTick);
-    writeU16(bytes, chunk.count);
-    writeU16(bytes, 0);
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU8(kVersion);
+    out.writeU8(chunk.last ? kLastFlag : u8{0});
+    out.writeU8(chunk.seats);
+    out.writeU8(0);
+    out.writeU64(chunk.epoch);
+    out.writeU64(chunk.firstTick);
+    out.writeU16(chunk.count);
+    out.writeU16(0);
     for (usize start = 0; start < chunk.commands.size(); start += chunk.count) {
         usize i = 0;
         while (i < chunk.count) {
@@ -187,7 +163,7 @@ std::optional<std::vector<u8>> JournalPacket::encode(const Chunk& chunk) {
                    sameControls(chunk.commands[start + i + run], chunk.commands[start + i])) {
                 ++run;
             }
-            writeRun(bytes, chunk.commands[start + i], static_cast<u16>(run));
+            writeRun(out, chunk.commands[start + i], static_cast<u16>(run));
             i += run;
         }
     }
@@ -214,8 +190,8 @@ std::optional<JournalPacket::Chunk> JournalPacket::decode(std::span<const u8> by
             return std::nullopt;
         }
         chunk.last = (flags & kLastFlag) != 0;
-        chunk.epoch = readU64(reader);
-        chunk.firstTick = readU64(reader);
+        chunk.epoch = reader.readU64();
+        chunk.firstTick = reader.readU64();
         chunk.count = reader.readU16();
         if (reader.readU16() != 0 || chunk.count == 0 || chunk.count > kMaxTicks ||
             chunk.seats == 0) {
@@ -232,14 +208,14 @@ std::optional<JournalPacket::Chunk> JournalPacket::decode(std::span<const u8> by
                 command.epoch = chunk.epoch;
                 command.seat = seat;
                 command.grant = reader.readU32();
-                command.direction.x = readF32(reader);
-                command.direction.y = readF32(reader);
-                command.magnitude = readF32(reader);
+                command.direction.x = reader.readF32();
+                command.direction.y = reader.readF32();
+                command.magnitude = reader.readF32();
                 const u8 aimPresent = reader.readU8();
                 Vec3 aim;
-                aim.x = readF32(reader);
-                aim.y = readF32(reader);
-                aim.z = readF32(reader);
+                aim.x = reader.readF32();
+                aim.y = reader.readF32();
+                aim.z = reader.readF32();
                 if (aimPresent > 1 || (aimPresent == 0 && aim != Vec3{0})) {
                     return std::nullopt;
                 }
@@ -265,8 +241,7 @@ std::optional<JournalPacket::Chunk> JournalPacket::decode(std::span<const u8> by
                     }
                     ConsoleAction action;
                     action.seat = reader.readU8();
-                    const auto line = reader.readBytes(consoleLength);
-                    action.line.assign(line.begin(), line.end());
+                    action.line = reader.readString(consoleLength);
                     command.console = std::move(action);
                 }
                 const u16 run = reader.readU16();

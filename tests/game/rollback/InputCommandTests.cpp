@@ -7,6 +7,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "TestSupport.h"
 #include "game/rollback/InputCommand.h"
 
 namespace {
@@ -129,6 +130,55 @@ TEST_CASE("input packets have a fixed endian and version independent of C++ layo
     CHECK(decoded->front().tick == commands[0].tick);
     CHECK(decoded->front().aimDirection == commands[0].aimDirection);
     CHECK(decoded->front().grant == commands[0].grant);
+    CHECK(InputPacket::encode(*decoded) == encoded);
+}
+
+TEST_CASE("input packets keep the byte layout of console text and held flight",
+          "[netplay][protocol]") {
+    InputCommand command;
+    command.epoch = 0x0102030405060708ULL;
+    command.tick = 9;
+    command.grant = 7;
+    command.seat = 1;
+    command.direction = {-1, 0};
+    command.magnitude = 1;
+    command.hintTopic = 2;
+    command.hintRevision = 5;
+    command.consoleFlight = {-1, 0, 1};
+    command.console = ConsoleAction{3, "god"};
+    const std::array commands{sample(), command};
+    const auto encoded = InputPacket::encode(commands);
+    REQUIRE(encoded);
+    constexpr std::string_view kPacket = "47444c49"         // magic
+                                         "0600"             // version
+                                         "02"               // commands
+                                         "00"               // zero
+                                         "0100000000000000" // first: epoch
+                                         "8877665544332211" // tick
+                                         "04030201"         // grant
+                                         "02010000"         // seat, aim flag, hint topic, revision
+                                         "000000000000803f0000003f" // direction, magnitude
+                                         "0000803f0000000000000000" // aim
+                                         "0100000001000000"         // held, pressed
+                                         "000000"                   // flight
+                                         "00"                       // console length
+                                         "0807060504030201"         // second: epoch
+                                         "0900000000000000"         // tick
+                                         "07000000"                 // grant
+                                         "01000205" // seat, aim flag, hint topic, revision
+                                         "000080bf000000000000803f" // direction, magnitude
+                                         "000000000000000000000000" // aim
+                                         "0000000000000000"         // held, pressed
+                                         "81007f"                   // flight
+                                         "03"                       // console length
+                                         "03"                       // console seat
+                                         "676f64";                  // "god"
+    CHECK(test::hexBytes(*encoded) == kPacket);
+    const auto decoded = InputPacket::decode(*encoded);
+    REQUIRE(decoded);
+    REQUIRE(decoded->size() == 2);
+    CHECK(decoded->back().console == command.console);
+    CHECK(decoded->back().consoleFlight == command.consoleFlight);
     CHECK(InputPacket::encode(*decoded) == encoded);
 }
 

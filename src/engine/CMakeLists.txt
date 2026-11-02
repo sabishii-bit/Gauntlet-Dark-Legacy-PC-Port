@@ -37,6 +37,7 @@ add_library(engine STATIC
     math/Math.h
     math/PortableMath.h
     io/ByteReader.h
+    io/ByteWriter.h
     io/File.h
     io/AssetLocator.h
     platform/Window.h

@@ -260,6 +260,7 @@ add_executable(tests
     engine/math/MathTests.cpp
     engine/math/PortableMathTests.cpp
     engine/io/ByteReaderTests.cpp
+    engine/io/ByteWriterTests.cpp
     engine/io/FileTests.cpp
     engine/io/AssetLocatorTests.cpp
     engine/platform/InputTests.cpp

@@ -12,6 +12,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "FakeMechanic.h"
+#include "TestSupport.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/netplay/HostedRoom.h"
 #include "game/netplay/OnlineSession.h"
@@ -289,8 +290,8 @@ TEST_CASE("room rules are host owned replicated and invalidate every ready vote"
     const auto revision = pair.host.room()->revision;
     const RoomSettings changed{3, 2, 1, 1, 0b101}; // solo cameras and the rule bits travel too
     CHECK_FALSE(pair.guestRoom.settings(changed));
-    CHECK_FALSE(pair.hostRoom.settings({3, 2, 1, 2}));    // no third camera rule
-    CHECK_FALSE(pair.hostRoom.settings({1, 2, 1}));       // already two joined
+    CHECK_FALSE(pair.hostRoom.settings({3, 2, 1, 2})); // no third camera rule
+    CHECK_FALSE(pair.hostRoom.settings({1, 2, 1}));    // already two joined
     CHECK_FALSE(pair.hostRoom.settings({4, 3, 0}));
     REQUIRE(pair.hostRoom.settings(changed));
     CHECK_FALSE(pair.hostRoom.start(revision));
@@ -556,4 +557,156 @@ TEST_CASE("three hosted peers link the guests directly and the match uses the li
         CHECK(session->match().phase() == MatchSession::Phase::Running);
         CHECK(session->match().nativeConfirmed() >= 2);
     }
+}
+
+namespace {
+/** Keeps every packet a room sends with its connection, and dials one fixed connection. */
+struct RecordingWire final : PacketTransport {
+    struct Sent {
+        Connection connection;
+        std::vector<u8> bytes;
+    };
+    std::string card;
+    Connection dialled = 0;
+    std::vector<Event> incoming;
+    std::vector<Sent> sent;
+    std::string address() const override { return card; }
+    std::optional<Connection> dial(const std::string& /*address*/) override { return dialled; }
+    SendResult send(Connection id, std::span<const u8> bytes, Delivery /*delivery*/) override {
+        sent.push_back({id, {bytes.begin(), bytes.end()}});
+        return SendResult::Sent;
+    }
+    std::vector<Event> poll() override { return std::exchange(incoming, {}); }
+    std::optional<Statistics> statistics(Connection /*connection*/) const override { return {}; }
+    void close(Connection /*connection*/) override {}
+    /** What went out on `from`, in order, taken from what was sent. */
+    std::vector<std::vector<u8>> take(Connection from) {
+        std::vector<std::vector<u8>> taken;
+        std::vector<Sent> kept;
+        for (auto& packet : sent) {
+            if (packet.connection == from) {
+                taken.push_back(std::move(packet.bytes));
+            } else {
+                kept.push_back(std::move(packet));
+            }
+        }
+        sent = std::move(kept);
+        return taken;
+    }
+    /** Hands what went out on `from` to `to`, arriving there on its connection `on`. */
+    void deliver(Connection from, RecordingWire& to, Connection on) {
+        for (auto& bytes : take(from)) {
+            to.incoming.push_back({EventType::Message, on, std::move(bytes), {}});
+        }
+    }
+};
+} // namespace
+
+TEST_CASE("hosted room packets keep their byte layout", "[netplay][hosted-room]") {
+    using EventType = PacketTransport::EventType;
+    RecordingWire hostWire;
+    RecordingWire firstWire;
+    RecordingWire secondWire;
+    RecordingWire strangerWire;
+    hostWire.card = "card:host";
+    firstWire.card = "card:first";
+    secondWire.card = "card:second";
+    const std::string content(64, 'a');
+    HostedRoom host(hostWire, true, 1, "test", content);
+    HostedRoom first(firstWire, false, 2, "test", content);
+    HostedRoom second(secondWire, false, 1, "test", content);
+    HostedRoom stranger(strangerWire, false, 1, "other", content);
+
+    firstWire.incoming.push_back({EventType::Connected, 7, {}, {}});
+    first.poll();
+    const auto join = firstWire.take(7);
+    REQUIRE(join.size() == 1);
+    constexpr std::string_view kJoin =
+        "0126"                                                             // join, protocol 38
+        "02"                                                               // players
+        "04"                                                               // build length
+        "74657374"                                                         // "test"
+        "40"                                                               // content length
+        "6161616161616161616161616161616161616161616161616161616161616161" // content
+        "6161616161616161616161616161616161616161616161616161616161616161"
+        "0a00"                  // card length
+        "636172643a6669727374"; // "card:first"
+    CHECK(test::hexBytes(join[0]) == kJoin);
+    hostWire.incoming.push_back({EventType::Connected, 7, {}, {}});
+    hostWire.incoming.push_back({EventType::Message, 7, join[0], {}});
+    host.poll();
+    const auto welcome = hostWire.take(7);
+    REQUIRE(welcome.size() == 2);
+    constexpr std::string_view kRoster =
+        "0226"                                                             // roster, protocol 38
+        "20"                                                               // peer length
+        "3030303030303030303030303030303030303030303030303030303030303038" // the guest itself
+        "0200000000000000"                                                 // revision
+        "00"                                                               // started
+        "0401000000"                                                       // settings
+        "02"                                                               // members
+        "20"                                                               // peer length
+        "3030303030303030303030303030303030303030303030303030303030303031" // the host
+        "00"                                                               // ready
+        "01"                                                               // seats
+        "00"                                                               // seat
+        "20"                                                               // peer length
+        "3030303030303030303030303030303030303030303030303030303030303038" // the guest
+        "00"                                                               // ready
+        "02"                                                               // seats
+        "0102";                                                            // seats
+    CHECK(test::hexBytes(welcome[0]) == kRoster);
+    constexpr std::string_view kCard =
+        "0526"                                                             // card, protocol 38
+        "20"                                                               // peer length
+        "3030303030303030303030303030303030303030303030303030303030303031" // the host
+        "0900"                                                             // card length
+        "636172643a686f7374";                                              // "card:host"
+    CHECK(test::hexBytes(welcome[1]) == kCard);
+    for (const auto& bytes : welcome) {
+        firstWire.incoming.push_back({EventType::Message, 7, bytes, {}});
+    }
+    const auto joined = first.poll();
+    REQUIRE(joined.room);
+    REQUIRE(first.ready(joined.room->revision, true));
+    first.poll();
+    const auto ready = firstWire.take(7);
+    REQUIRE(ready.size() == 1);
+    constexpr std::string_view kReady = "0326"             // ready, protocol 38
+                                        "0200000000000000" // revision
+                                        "01";              // ready
+    CHECK(test::hexBytes(ready[0]) == kReady);
+
+    strangerWire.incoming.push_back({EventType::Connected, 9, {}, {}});
+    stranger.poll();
+    hostWire.incoming.push_back({EventType::Connected, 9, {}, {}});
+    strangerWire.deliver(9, hostWire, 9);
+    host.poll();
+    const auto rejection = hostWire.take(9);
+    REQUIRE(rejection.size() == 1);
+    constexpr std::string_view kReject = "0426" // reject, protocol 38
+                                         "02";  // versions differ
+    CHECK(test::hexBytes(rejection[0]) == kReject);
+
+    secondWire.incoming.push_back({EventType::Connected, 8, {}, {}});
+    second.poll();
+    hostWire.incoming.push_back({EventType::Connected, 8, {}, {}});
+    secondWire.deliver(8, hostWire, 8);
+    host.poll();
+    hostWire.deliver(7, firstWire, 7);
+    first.poll();
+    const std::string secondPeer = std::string(31, '0') + "9";
+    REQUIRE(first.transport().authorizePeers(std::array{secondPeer}));
+    firstWire.dialled = 50;
+    REQUIRE(first.transport().connectPeer(secondPeer) ==
+            std::optional<PacketTransport::Connection>{50});
+    firstWire.incoming.push_back({EventType::Connected, 50, {}, {}});
+    first.poll();
+    const auto hello = firstWire.take(50);
+    REQUIRE(hello.size() == 1);
+    constexpr std::string_view kHello =
+        "0626"                                                              // hello, protocol 38
+        "20"                                                                // peer length
+        "3030303030303030303030303030303030303030303030303030303030303038"; // the dialling guest
+    CHECK(test::hexBytes(hello[0]) == kHello);
 }

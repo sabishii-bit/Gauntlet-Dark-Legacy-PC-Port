@@ -1,6 +1,8 @@
 #pragma once
 
+#include <bit>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "engine/core/Error.h"
@@ -61,11 +63,26 @@ public:
 
     s32 readS32() { return static_cast<s32>(readU32()); }
 
+    /** The low word first, then the high one. */
+    u64 readU64() {
+        const u64 low = readU32();
+        return low | (u64{readU32()} << 32U);
+    }
+
+    /** A float from its IEEE-754 bits, stored as a u32. */
+    f32 readF32() { return std::bit_cast<f32>(readU32()); }
+
     std::span<const u8> readBytes(usize count) {
         require(count);
         const auto view = m_bytes.subspan(m_position, count);
         m_position += count;
         return view;
+    }
+
+    /** `count` bytes as characters: no length and no terminator. */
+    std::string readString(usize count) {
+        const auto view = readBytes(count);
+        return {view.begin(), view.end()};
     }
 
     void skip(usize count) {

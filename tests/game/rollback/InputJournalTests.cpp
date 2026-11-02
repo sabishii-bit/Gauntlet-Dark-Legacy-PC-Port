@@ -5,6 +5,7 @@
 
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
 #include "game/rollback/InputJournal.h"
 
 namespace {
@@ -159,6 +160,85 @@ TEST_CASE("journal chunks pack runs, fit the wire and round-trip exactly", "[net
     REQUIRE(tail.size() == 1);
     CHECK_FALSE(tail.front().last);
     CHECK(tail.front().count == 11);
+}
+
+TEST_CASE("journal chunks keep their byte layout", "[netplay][journal]") {
+    JournalPacket::Chunk chunk;
+    chunk.epoch = 0x1122334455667788ULL;
+    chunk.firstTick = 0x0102030405060708ULL;
+    chunk.count = 3;
+    chunk.seats = 0b0101;
+    chunk.last = true;
+    for (const u8 seat : {u8{0}, u8{2}}) {
+        for (u16 i = 0; i < chunk.count; ++i) {
+            InputCommand command;
+            command.epoch = chunk.epoch;
+            command.tick = chunk.firstTick + i;
+            command.grant = 0x0a0b0c0dU + seat;
+            command.seat = seat;
+            if (seat == 0) {
+                command.direction = {i < 2 ? 1.0f : -1.0f, 0};
+                command.magnitude = 1;
+                command.heldButtons = static_cast<u32>(CommandHeld::Attack);
+            } else {
+                command.aimDirection = Vec3{0, 0, 1};
+                command.hintTopic = 4;
+                command.hintRevision = 9;
+                command.consoleFlight = {1, -1, 0};
+                if (i == 0) {
+                    command.console = ConsoleAction{2, "god"};
+                }
+            }
+            chunk.commands.push_back(command);
+        }
+    }
+    const auto bytes = JournalPacket::encode(chunk);
+    REQUIRE(bytes);
+    constexpr std::string_view kChunk = "47444c4a"                   // magic
+                                        "02010500"                   // version, last, seats, zero
+                                        "8877665544332211"           // epoch
+                                        "0807060504030201"           // first tick
+                                        "0300"                       // count
+                                        "0000"                       // zero
+                                        "0d0c0b0a"                   // seat 0, ticks 0 and 1: grant
+                                        "0000803f000000000000803f"   // direction, magnitude
+                                        "00000000000000000000000000" // aim flag, aim
+                                        "0100000000000000"           // held, pressed
+                                        "0000"                       // hint topic, revision
+                                        "000000"                     // flight
+                                        "00"                         // console length
+                                        "0200"                       // run
+                                        "0d0c0b0a"                   // seat 0, tick 2: grant
+                                        "000080bf000000000000803f"   // direction, magnitude
+                                        "00000000000000000000000000" // aim flag, aim
+                                        "0100000000000000"           // held, pressed
+                                        "0000"                       // hint topic, revision
+                                        "000000"                     // flight
+                                        "00"                         // console length
+                                        "0100"                       // run
+                                        "0f0c0b0a"                   // seat 2, tick 0: grant
+                                        "000000000000000000000000"   // direction, magnitude
+                                        "0100000000000000000000803f" // aim flag, aim
+                                        "0000000000000000"           // held, pressed
+                                        "0409"                       // hint topic, revision
+                                        "7f8100"                     // flight
+                                        "03"                         // console length
+                                        "02"                         // console seat
+                                        "676f64"                     // "god"
+                                        "0100"                       // run
+                                        "0f0c0b0a"                   // seat 2, ticks 1 and 2: grant
+                                        "000000000000000000000000"   // direction, magnitude
+                                        "0100000000000000000000803f" // aim flag, aim
+                                        "0000000000000000"           // held, pressed
+                                        "0409"                       // hint topic, revision
+                                        "7f8100"                     // flight
+                                        "00"                         // console length
+                                        "0200";                      // run
+    CHECK(test::hexBytes(*bytes) == kChunk);
+    const auto decoded = JournalPacket::decode(*bytes);
+    REQUIRE(decoded);
+    CHECK(decoded->commands.size() == chunk.commands.size());
+    CHECK(JournalPacket::encode(*decoded) == bytes);
 }
 
 TEST_CASE("a steady journal packs a long stretch into one chunk", "[netplay][journal]") {

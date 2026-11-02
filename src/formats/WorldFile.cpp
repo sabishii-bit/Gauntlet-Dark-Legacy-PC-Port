@@ -1,7 +1,6 @@
 #include "formats/WorldFile.h"
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 
 #include "engine/core/Error.h"
@@ -43,14 +42,10 @@ Vec3 planeOffset(const Vec3& normal, f32 x, f32 z) {
                 -x * sinTurn + z * cosTilt * cosTurn};
 }
 
-f32 readF32(ByteReader& reader) {
-    return std::bit_cast<f32>(reader.readU32());
-}
-
 Vec3 readVec3(ByteReader& reader) {
-    const f32 x = readF32(reader);
-    const f32 y = readF32(reader);
-    const f32 z = readF32(reader);
+    const f32 x = reader.readF32();
+    const f32 y = reader.readF32();
+    const f32 z = reader.readF32();
     return Vec3{x, y, z};
 }
 
@@ -94,10 +89,10 @@ ItemInfoRecord readItemInfo(std::span<const u8> record) {
     out.subtype = static_cast<s32>(reader.readU32());
     out.collisionType = static_cast<s16>(reader.readU16());
     out.collisionFlags = static_cast<s16>(reader.readU16());
-    out.radius = readF32(reader);
-    out.height = readF32(reader);
-    out.xSize = readF32(reader);
-    out.zSize = readF32(reader);
+    out.radius = reader.readF32();
+    out.height = reader.readF32();
+    out.xSize = reader.readF32();
+    out.zSize = reader.readF32();
     out.collisionOffset = readVec3(reader);
     out.name = readFixedName(reader, kItemNameSize);
     out.objectFlags = reader.readU32();
@@ -155,7 +150,7 @@ WorldFile WorldFile::parse(std::span<const u8> bytes) {
     header.readU32(); // grid rows
     world.minBounds = readVec3(header);
     world.maxBounds = readVec3(header);
-    world.gridSize = readF32(header);
+    world.gridSize = header.readF32();
     world.gridColumns = header.readU32();
     world.gridRows = header.readU32();
     world.itemInfoCount = header.readU32();
@@ -216,7 +211,7 @@ WorldFile WorldFile::parse(std::span<const u8> bytes) {
             animation.frameCount = static_cast<s16>(reader.readU16());
             reader.readU16(); // relocation mark
             animation.state = reader.readU16();
-            animation.startFrame = readF32(reader);
+            animation.startFrame = reader.readF32();
             const u32 entry = reader.readU32();
             animation.track =
                 readKeyTrack(bytes, entry, keys, animation.frameCount, "world file animation");
@@ -254,7 +249,7 @@ WorldFile WorldFile::parse(std::span<const u8> bytes) {
         reader.readU32(); // runtime node pointer
         object.nextIndex = static_cast<s16>(reader.readU16());
         object.childIndex = static_cast<s16>(reader.readU16());
-        object.radius = readF32(reader);
+        object.radius = reader.readF32();
         reader.readU8(); // checked
         object.noCollision = reader.readU8() != 0;
         object.collisionTriangleCount = static_cast<s16>(reader.readU16());

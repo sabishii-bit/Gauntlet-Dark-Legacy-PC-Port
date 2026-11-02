@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "TestSupport.h"
 #include "game/netplay/RollbackExchange.h"
 
 namespace {
@@ -251,6 +252,45 @@ TEST_CASE("rollback datagrams bound and authenticate their envelope before parsi
     ++message.progressAgeUs;
     CHECK_FALSE(Exchange::encode(message));
     CHECK_FALSE(Exchange::decode(std::vector<u8>(Exchange::kMaxBytes + 1)));
+}
+
+TEST_CASE("rollback datagrams keep their byte layout", "[rollback-exchange]") {
+    Exchange::Message message;
+    message.epoch = 0x1122334455667788ULL;
+    message.origin = 3;
+    message.nextTick = 0x0102030405060708ULL;
+    message.received = {0, 0x1112131415161718ULL, 2, 0x2122232425262728ULL, 4};
+    message.progressSerial = 0x3132333435363738ULL;
+    message.progressAgeUs = 0x00012345;
+    const auto heartbeat = encode(message);
+    constexpr std::string_view kHeartbeat = "47445249"         // magic
+                                            "02030000"         // version, origin, zero
+                                            "8877665544332211" // epoch
+                                            "0807060504030201" // next tick
+                                            "1817161514131211" // received from peer one
+                                            "0200000000000000" // peer two
+                                            "2827262524232221" // peer three
+                                            "0400000000000000" // peer four
+                                            "3837363534333231" // progress serial
+                                            "45230100";        // progress age
+    CHECK(test::hexBytes(heartbeat) == kHeartbeat);
+    InputCommand command;
+    command.epoch = message.epoch;
+    command.tick = 9;
+    command.grant = 1;
+    command.seat = 2;
+    message.commands = {command};
+    const auto bytes = encode(message);
+    const auto inputs = InputPacket::encode(message.commands);
+    REQUIRE(inputs);
+    auto expected = heartbeat;
+    expected.insert(expected.end(), inputs->begin(), inputs->end());
+    CHECK(bytes == expected);
+    const auto decoded = Exchange::decode(bytes);
+    REQUIRE(decoded);
+    CHECK(decoded->received == message.received);
+    CHECK(decoded->progressSerial == message.progressSerial);
+    CHECK(Exchange::encode(*decoded) == bytes);
 }
 
 TEST_CASE("rollback exchange rejects unadmitted origins and does not ACK refused frames",

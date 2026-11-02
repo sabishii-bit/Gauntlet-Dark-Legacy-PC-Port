@@ -1,5 +1,9 @@
+#include <algorithm>
+#include <span>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include "TestSupport.h"
 #include "game/rollback/PartyCheckpoint.h"
 
 namespace {
@@ -44,6 +48,24 @@ TEST_CASE("travel profile packets are bounded and reject malformed envelopes",
     state.epoch = 1;
     state.seat = 4;
     CHECK_FALSE(PartyCheckpointPacket::encode(state));
+}
+
+TEST_CASE("travel profile packets keep their byte layout", "[netplay][party-checkpoint]") {
+    PartyCheckpoint state;
+    state.epoch = 0x0123456789abcdefULL;
+    state.seat = 3;
+    state.profile.name = "PLAYER";
+    const auto bytes = PartyCheckpointPacket::encode(state);
+    REQUIRE(bytes);
+    const auto profile = CharacterProfilePacket::encode(state.profile);
+    REQUIRE(profile);
+    REQUIRE(bytes->size() == PartyCheckpointPacket::kHeaderBytes + profile->size());
+    constexpr std::string_view kHeader = "47445043"          // magic
+                                         "02030000"          // version, seat, zero
+                                         "efcdab8967452301"; // epoch
+    CHECK(test::hexBytes(std::span{*bytes}.first(PartyCheckpointPacket::kHeaderBytes)) == kHeader);
+    CHECK(std::ranges::equal(std::span{*bytes}.subspan(PartyCheckpointPacket::kHeaderBytes),
+                             *profile));
 }
 
 TEST_CASE("travel profiles retain both isolated Legends campaigns",

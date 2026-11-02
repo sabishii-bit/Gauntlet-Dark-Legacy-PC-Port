@@ -7,28 +7,13 @@
 #include <limits>
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 #include "engine/math/PortableMath.h"
 
 namespace gdl::game {
 namespace {
 constexpr u32 kMagic = fourcc("GDLI");
 static_assert(sizeof(f32) == 4 && std::numeric_limits<f32>::is_iec559);
-
-void writeU32(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-
-void writeU64(std::vector<u8>& bytes, u64 value) {
-    writeU32(bytes, static_cast<u32>(value));
-    writeU32(bytes, static_cast<u32>(value >> 32U));
-}
-
-u64 readU64(ByteReader& reader) {
-    const u64 low = reader.readU32();
-    return low | (static_cast<u64>(reader.readU32()) << 32U);
-}
 
 bool validAim(const Vec3& aim) {
     const f32 length = glm::dot(aim, aim);
@@ -105,34 +90,34 @@ std::optional<std::vector<u8>> InputPacket::encode(std::span<const InputCommand>
     }
     std::vector<u8> bytes;
     bytes.reserve(kHeaderBytes + commands.size() * kCommandBytes);
-    writeU32(bytes, kMagic);
-    bytes.push_back(static_cast<u8>(kVersion));
-    bytes.push_back(static_cast<u8>(kVersion >> 8U));
-    bytes.push_back(static_cast<u8>(commands.size()));
-    bytes.push_back(0);
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU16(kVersion);
+    out.writeU8(static_cast<u8>(commands.size()));
+    out.writeU8(0);
     for (const auto& command : commands) {
-        writeU64(bytes, command.epoch);
-        writeU64(bytes, command.tick);
-        writeU32(bytes, command.grant);
-        bytes.push_back(command.seat);
-        bytes.push_back(command.aimDirection ? 1 : 0);
-        bytes.push_back(command.hintTopic);
-        bytes.push_back(command.hintRevision);
+        out.writeU64(command.epoch);
+        out.writeU64(command.tick);
+        out.writeU32(command.grant);
+        out.writeU8(command.seat);
+        out.writeU8(command.aimDirection ? 1 : 0);
+        out.writeU8(command.hintTopic);
+        out.writeU8(command.hintRevision);
         const Vec3 aim = command.aimDirection.value_or(Vec3{0});
         for (const f32 value :
              {command.direction.x, command.direction.y, command.magnitude, aim.x, aim.y, aim.z}) {
-            writeU32(bytes, std::bit_cast<u32>(value));
+            out.writeF32(value);
         }
-        writeU32(bytes, command.heldButtons);
-        writeU32(bytes, command.pressedButtons);
+        out.writeU32(command.heldButtons);
+        out.writeU32(command.pressedButtons);
         for (const f32 value :
              {command.consoleFlight.x, command.consoleFlight.y, command.consoleFlight.z}) {
-            bytes.push_back(std::bit_cast<u8>(static_cast<s8>(std::round(value * 127.0f))));
+            out.writeU8(std::bit_cast<u8>(static_cast<s8>(std::round(value * 127.0f))));
         }
-        bytes.push_back(command.console ? static_cast<u8>(command.console->line.size()) : 0);
+        out.writeU8(command.console ? static_cast<u8>(command.console->line.size()) : u8{0});
         if (command.console) {
-            bytes.push_back(command.console->seat);
-            bytes.insert(bytes.end(), command.console->line.begin(), command.console->line.end());
+            out.writeU8(command.console->seat);
+            out.writeString(command.console->line);
         }
     }
     if (bytes.size() > kMaxBytes) {
@@ -161,8 +146,8 @@ std::optional<std::vector<InputCommand>> InputPacket::decode(std::span<const u8>
             return std::nullopt;
         }
         InputCommand command;
-        command.epoch = readU64(reader);
-        command.tick = readU64(reader);
+        command.epoch = reader.readU64();
+        command.tick = reader.readU64();
         command.grant = reader.readU32();
         command.seat = reader.readU8();
         const u8 aimPresent = reader.readU8();
@@ -171,13 +156,13 @@ std::optional<std::vector<InputCommand>> InputPacket::decode(std::span<const u8>
         if (aimPresent > 1) {
             return std::nullopt;
         }
-        command.direction.x = std::bit_cast<f32>(reader.readU32());
-        command.direction.y = std::bit_cast<f32>(reader.readU32());
-        command.magnitude = std::bit_cast<f32>(reader.readU32());
+        command.direction.x = reader.readF32();
+        command.direction.y = reader.readF32();
+        command.magnitude = reader.readF32();
         Vec3 aim;
-        aim.x = std::bit_cast<f32>(reader.readU32());
-        aim.y = std::bit_cast<f32>(reader.readU32());
-        aim.z = std::bit_cast<f32>(reader.readU32());
+        aim.x = reader.readF32();
+        aim.y = reader.readF32();
+        aim.z = reader.readF32();
         if (aimPresent != 0) {
             command.aimDirection = aim;
         } else if (aim != Vec3{0}) {
@@ -200,8 +185,7 @@ std::optional<std::vector<InputCommand>> InputPacket::decode(std::span<const u8>
             }
             ConsoleAction action;
             action.seat = reader.readU8();
-            const auto line = reader.readBytes(consoleLength);
-            action.line.assign(line.begin(), line.end());
+            action.line = reader.readString(consoleLength);
             command.console = std::move(action);
         }
         if (!command.valid()) {

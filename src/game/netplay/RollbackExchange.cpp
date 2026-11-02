@@ -6,19 +6,11 @@
 #include <set>
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
 constexpr u32 kMagic = fourcc("GDRI");
-void write(std::vector<u8>& bytes, u64 value, usize count) {
-    for (usize i = 0; i < count; ++i) {
-        bytes.push_back(static_cast<u8>(value >> (i * 8)));
-    }
-}
-u64 read64(ByteReader& reader) {
-    const u64 low = reader.readU32();
-    return low | (static_cast<u64>(reader.readU32()) << 32);
-}
 bool same(std::span<const InputCommand> a, std::span<const InputCommand> b) {
     return InputPacket::encode(a) == InputPacket::encode(b);
 }
@@ -62,18 +54,19 @@ std::optional<std::vector<u8>> RollbackExchange::encode(const Message& message) 
     }
     std::vector<u8> bytes;
     bytes.reserve(kHeaderBytes + inputs->size());
-    write(bytes, kMagic, 4);
-    write(bytes, kVersion, 1);
-    write(bytes, message.origin, 1);
-    write(bytes, 0, 2);
-    write(bytes, message.epoch, 8);
-    write(bytes, message.nextTick, 8);
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU8(kVersion);
+    out.writeU8(message.origin);
+    out.writeU16(0);
+    out.writeU64(message.epoch);
+    out.writeU64(message.nextTick);
     for (usize peer = 1; peer <= 4; ++peer) {
-        write(bytes, message.received[peer], 8);
+        out.writeU64(message.received[peer]);
     }
-    write(bytes, message.progressSerial, 8);
-    write(bytes, message.progressAgeUs, 4);
-    bytes.insert(bytes.end(), inputs->begin(), inputs->end());
+    out.writeU64(message.progressSerial);
+    out.writeU32(message.progressAgeUs);
+    out.writeBytes(*inputs);
     return bytes;
 }
 bool RollbackExchange::recognizes(std::span<const u8> bytes) {
@@ -93,12 +86,12 @@ std::optional<RollbackExchange::Message> RollbackExchange::decode(std::span<cons
     if (reader.readU16() != 0) {
         return std::nullopt;
     }
-    message.epoch = read64(reader);
-    message.nextTick = read64(reader);
+    message.epoch = reader.readU64();
+    message.nextTick = reader.readU64();
     for (usize peer = 1; peer <= 4; ++peer) {
-        message.received[peer] = read64(reader);
+        message.received[peer] = reader.readU64();
     }
-    message.progressSerial = read64(reader);
+    message.progressSerial = reader.readU64();
     message.progressAgeUs = reader.readU32();
     if (!reader.atEnd()) {
         auto commands = InputPacket::decode(reader.readBytes(reader.remaining()));

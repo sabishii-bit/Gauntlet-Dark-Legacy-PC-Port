@@ -8,6 +8,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
@@ -15,32 +16,22 @@ constexpr u32 kMagic = fourcc("GDLT");
 constexpr u32 kConsoleMagic = fourcc("GDLC");
 constexpr u8 kConsoleVersion = 1;
 constexpr usize kConsoleHeader = 37;
-void word(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-void wide(std::vector<u8>& bytes, u64 value) {
-    word(bytes, static_cast<u32>(value));
-    word(bytes, static_cast<u32>(value >> 32U));
-}
-u64 readWide(ByteReader& reader) {
-    const u64 low = reader.readU32();
-    return low | (static_cast<u64>(reader.readU32()) << 32U);
-}
 std::vector<u8> consolePacket(bool permission, bool enabled, u64 epoch, u64 revision, u64 request,
                               u32 grant, const ConsoleAction* action = nullptr) {
     std::vector<u8> bytes;
-    word(bytes, kConsoleMagic);
-    bytes.insert(bytes.end(), {kConsoleVersion, static_cast<u8>(permission ? 0 : 1),
-                               static_cast<u8>(enabled), action ? action->seat : u8{0}});
-    wide(bytes, epoch);
-    wide(bytes, revision);
-    wide(bytes, request);
-    word(bytes, grant);
-    bytes.push_back(action ? static_cast<u8>(action->line.size()) : 0);
+    ByteWriter out(bytes);
+    out.writeU32(kConsoleMagic);
+    out.writeU8(kConsoleVersion);
+    out.writeU8(static_cast<u8>(permission ? 0 : 1));
+    out.writeU8(static_cast<u8>(enabled));
+    out.writeU8(action ? action->seat : u8{0});
+    out.writeU64(epoch);
+    out.writeU64(revision);
+    out.writeU64(request);
+    out.writeU32(grant);
+    out.writeU8(static_cast<u8>(action ? action->line.size() : 0));
     if (action) {
-        bytes.insert(bytes.end(), action->line.begin(), action->line.end());
+        out.writeString(action->line);
     }
     return bytes;
 }
@@ -162,27 +153,26 @@ std::optional<std::vector<u8>> MatchControlPacket::encode(const MatchControl& co
     }
     std::vector<u8> bytes;
     bytes.reserve(kBytes);
-    word(bytes, kMagic);
-    bytes.insert(bytes.end(), {kVersion, static_cast<u8>(control.kind),
-                               static_cast<u8>(control.stop), control.movieSkipVotes});
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU8(kVersion);
+    out.writeU8(static_cast<u8>(control.kind));
+    out.writeU8(static_cast<u8>(control.stop));
+    out.writeU8(control.movieSkipVotes);
     const auto& context = control.context;
-    word(bytes, static_cast<u32>(context.epoch));
-    word(bytes, static_cast<u32>(context.epoch >> 32U));
-    word(bytes, context.scene);
-    bytes.insert(bytes.end(),
-                 {static_cast<u8>(context.tickRate), static_cast<u8>(context.tickRate >> 8U),
-                  context.inputLead, static_cast<u8>(context.transition)});
-    bytes.insert(bytes.end(), context.owners.begin(), context.owners.end());
+    out.writeU64(context.epoch);
+    out.writeU32(context.scene);
+    out.writeU16(context.tickRate);
+    out.writeU8(context.inputLead);
+    out.writeU8(static_cast<u8>(context.transition));
+    out.writeBytes(context.owners);
     for (const auto grant : context.grants) {
-        word(bytes, grant);
+        out.writeU32(grant);
     }
-    word(bytes, static_cast<u32>(context.challengeWon) | (u32{control.resyncPeers} << 8U));
-    word(bytes, static_cast<u32>(context.sourceEpoch));
-    word(bytes, static_cast<u32>(context.sourceEpoch >> 32U));
-    word(bytes, static_cast<u32>(context.sourceTick));
-    word(bytes, static_cast<u32>(context.sourceTick >> 32U));
-    word(bytes, static_cast<u32>(control.resyncTick));
-    word(bytes, static_cast<u32>(control.resyncTick >> 32U));
+    out.writeU32(static_cast<u32>(context.challengeWon) | (u32{control.resyncPeers} << 8U));
+    out.writeU64(context.sourceEpoch);
+    out.writeU64(context.sourceTick);
+    out.writeU64(control.resyncTick);
     return bytes;
 }
 std::optional<MatchControl> MatchControlPacket::decode(std::span<const u8> bytes) {
@@ -198,8 +188,7 @@ std::optional<MatchControl> MatchControlPacket::decode(std::span<const u8> bytes
     control.stop = static_cast<MatchStop>(reader.readU8());
     control.movieSkipVotes = reader.readU8();
     auto& context = control.context;
-    context.epoch = reader.readU32();
-    context.epoch |= static_cast<u64>(reader.readU32()) << 32U;
+    context.epoch = reader.readU64();
     context.scene = reader.readU32();
     context.tickRate = reader.readU16();
     context.inputLead = reader.readU8();
@@ -217,12 +206,9 @@ std::optional<MatchControl> MatchControlPacket::decode(std::span<const u8> bytes
     }
     context.challengeWon = challengeWon != 0;
     control.resyncPeers = static_cast<u8>(flags >> 8U);
-    context.sourceEpoch = reader.readU32();
-    context.sourceEpoch |= static_cast<u64>(reader.readU32()) << 32U;
-    context.sourceTick = reader.readU32();
-    context.sourceTick |= static_cast<u64>(reader.readU32()) << 32U;
-    control.resyncTick = reader.readU32();
-    control.resyncTick |= static_cast<u64>(reader.readU32()) << 32U;
+    context.sourceEpoch = reader.readU64();
+    context.sourceTick = reader.readU64();
+    control.resyncTick = reader.readU64();
     return control.valid() ? std::optional{control} : std::nullopt;
 }
 
@@ -360,9 +346,9 @@ MatchSession::Admission MatchSession::consoleMessage(u8 peer, std::span<const u8
     const u8 enabled = reader.readU8();
     ConsoleAction action;
     action.seat = reader.readU8();
-    const u64 epoch = readWide(reader);
-    const u64 revision = readWide(reader);
-    const u64 request = readWide(reader);
+    const u64 epoch = reader.readU64();
+    const u64 revision = reader.readU64();
+    const u64 request = reader.readU64();
     const u32 grant = reader.readU32();
     const usize length = reader.readU8();
     if (kind > 1 || enabled > 1 || length != reader.remaining()) {
@@ -388,8 +374,7 @@ MatchSession::Admission MatchSession::consoleMessage(u8 peer, std::span<const u8
     if (!host() || peer == 1) {
         return Admission::WrongPeer;
     }
-    const auto line = reader.readBytes(length);
-    action.line.assign(line.begin(), line.end());
+    action.line = reader.readString(length);
     if (enabled != 0 || !action.valid() || request == 0) {
         return Admission::Invalid;
     }
@@ -581,8 +566,8 @@ bool MatchSession::beginResync(Time now) {
         }
     }
     if (m_repairs >= kRepairsPerEpoch) {
-        log::warn("Native observation mismatch at epoch {} tick {} after {} repairs", m_context.epoch,
-                  resync.tick, m_repairs);
+        log::warn("Native observation mismatch at epoch {} tick {} after {} repairs",
+                  m_context.epoch, resync.tick, m_repairs);
         return false;
     }
     if (!restartAgreement(resync.tick, now) ||
@@ -1197,8 +1182,8 @@ bool MatchSession::disconnected(PacketTransport::Connection connection) {
     return false;
 }
 void MatchSession::dropOverdue(Time now) {
-    for (const auto* stream : {&m_terminalAgreement, &m_drainingTerminal, &m_drainingAgreement,
-                               &m_nativeAgreement}) {
+    for (const auto* stream :
+         {&m_terminalAgreement, &m_drainingTerminal, &m_drainingAgreement, &m_nativeAgreement}) {
         // Read again each time: a drop can retire a draining stream.
         const NativeAgreement* agreement = stream->get();
         if (agreement == nullptr) {
@@ -1719,14 +1704,14 @@ MatchSession::Admission MatchSession::nativeInputs(PacketTransport::Connection c
         // A callback may have admitted a prefix before another native guard
         // refused. Stop rather than retrying an ambiguous partially consumed batch.
         m_failureDetail = std::format("Online input reception failed: {} (epoch {}, peer {}, "
-                                     "origin {}, next tick {}). Play stopped to protect progress.",
-                                     inputAdmissionReason(result), m_context.epoch, m_local,
-                                     message->origin, m_nativeNextTick);
+                                      "origin {}, next tick {}). Play stopped to protect progress.",
+                                      inputAdmissionReason(result), m_context.epoch, m_local,
+                                      message->origin, m_nativeNextTick);
         log::error("{} sender_next={} commands={} confirmed={} received_through={} "
                    "retained_frames={} resync={} draining={} rtt_ms={}",
                    m_failureDetail, message->nextTick, message->commands.size(), m_nativeCompleted,
-                   inputs->receivedThrough(message->origin), inputs->retainedFrames(message->origin),
-                   m_resync.has_value(), draining, pingMs);
+                   inputs->receivedThrough(message->origin),
+                   inputs->retainedFrames(message->origin), m_resync.has_value(), draining, pingMs);
         stop(MatchStop::TransportFailure, true);
         return Admission::Invalid;
     case RollbackExchange::Admission::Invalid: return Admission::Invalid;
@@ -1756,9 +1741,9 @@ bool MatchSession::publishNativeInputs(std::span<const InputCommand> commands, u
     }
     if (!m_exchange->publish(commands, nextTick)) {
         m_failureDetail = std::format("Online input publication failed: {} (epoch {}, peer {}, "
-                                     "next tick {}). Play stopped to protect progress.",
-                                     inputFailureReason(m_exchange->failure()), m_context.epoch,
-                                     m_local, nextTick);
+                                      "next tick {}). Play stopped to protect progress.",
+                                      inputFailureReason(m_exchange->failure()), m_context.epoch,
+                                      m_local, nextTick);
         log::error("{} commands={} confirmed={} received_through={} retained_frames={} resync={}",
                    m_failureDetail, commands.size(), m_nativeCompleted,
                    m_exchange->receivedThrough(m_local), m_exchange->retainedFrames(m_local),

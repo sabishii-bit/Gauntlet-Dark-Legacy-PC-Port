@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 #include "engine/math/RandomDistribution.h"
 
 namespace gdl::game {
@@ -19,24 +20,15 @@ constexpr u32 kMagic = fourcc("GDSH");
 enum class Kind : u8 { Setup, Input, Step, Done };
 constexpr u16 kHeld = 0x780;
 constexpr u16 kActions = 0x7ff;
-void word(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-void wide(std::vector<u8>& bytes, u64 value) {
-    word(bytes, static_cast<u32>(value));
-    word(bytes, static_cast<u32>(value >> 32));
-}
-u64 wide(ByteReader& reader) {
-    const u64 low = reader.readU32();
-    return low | (static_cast<u64>(reader.readU32()) << 32);
-}
+/** The header every shop packet opens with: magic, version, kind, two zero bytes and epoch. */
 std::vector<u8> packet(u64 epoch, Kind kind) {
     std::vector<u8> bytes;
-    word(bytes, kMagic);
-    bytes.insert(bytes.end(), {2, static_cast<u8>(kind), 0, 0});
-    wide(bytes, epoch);
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU8(2);
+    out.writeU8(static_cast<u8>(kind));
+    out.writeU16(0);
+    out.writeU64(epoch);
     return bytes;
 }
 u16 actions(const MenuInput& input) {
@@ -106,16 +98,17 @@ void ShopSync::begin(u64 epoch, u8 local, const std::array<u8, 4>& owners,
     if (local == 1 && setup != nullptr && setup->valid()) {
         m_setup = *setup;
         auto bytes = packet(epoch, Kind::Setup);
-        word(bytes, setup->source);
-        word(bytes, setup->destination);
-        word(bytes, (setup->expanded ? kSetupExpanded : 0U) | (setup->ending ? kSetupEnding : 0U) |
-                        (static_cast<u32>(setup->fallen) << kSetupFallenShift));
+        ByteWriter out(bytes);
+        out.writeU32(setup->source);
+        out.writeU32(setup->destination);
+        out.writeU32((setup->expanded ? kSetupExpanded : 0U) | (setup->ending ? kSetupEnding : 0U) |
+                     (static_cast<u32>(setup->fallen) << kSetupFallenShift));
         for (const auto value : setup->maxima) {
-            word(bytes, static_cast<u32>(value));
+            out.writeS32(value);
         }
         for (const auto& totals : setup->totals) {
             for (const auto value : totals) {
-                word(bytes, static_cast<u32>(value));
+                out.writeS32(value);
             }
         }
         broadcast(bytes);
@@ -134,7 +127,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
     if (reader.readU16() != 0) {
         return Admission::Invalid;
     }
-    const auto epoch = wide(reader);
+    const auto epoch = reader.readU64();
     if (epoch != m_epoch) {
         return epoch < m_epoch ? Admission::Stale : Admission::Invalid;
     }
@@ -182,7 +175,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
         }
         const auto seat = reader.readU32();
         const auto grant = reader.readU32();
-        const auto sequence = wide(reader);
+        const auto sequence = reader.readU64();
         const auto bits = reader.readU32();
         const auto focus = reader.readS32();
         const auto phase = reader.readU32();
@@ -210,7 +203,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
             return Admission::WrongPeer;
         }
         ShopStep step;
-        step.tick = wide(reader);
+        step.tick = reader.readU64();
         if (step.tick < m_tick) {
             return Admission::Stale;
         }
@@ -234,7 +227,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
         return Admission::Accepted;
     }
     if (kind == Kind::Done && m_local == 1 && bytes.size() == 24) {
-        if (wide(reader) > m_tick) {
+        if (reader.readU64() > m_tick) {
             return Admission::Invalid;
         }
         m_finished[peer] = true;
@@ -265,13 +258,14 @@ bool ShopSync::sample(u8 seat, const MenuInput& input, s32 focus, u8 observedPha
             return false;
         }
         auto bytes = packet(m_epoch, Kind::Input);
-        word(bytes, seat);
-        word(bytes, m_grants[seat]);
-        wide(bytes, m_sent[seat] + 1);
-        word(bytes, bits);
-        word(bytes, static_cast<u32>(focus));
-        word(bytes, observedPhase);
-        word(bytes, static_cast<u32>(observedCursor));
+        ByteWriter out(bytes);
+        out.writeU32(seat);
+        out.writeU32(m_grants[seat]);
+        out.writeU64(m_sent[seat] + 1);
+        out.writeU32(bits);
+        out.writeS32(focus);
+        out.writeU32(observedPhase);
+        out.writeU32(static_cast<u32>(observedCursor));
         m_outgoing.push_back({1, std::move(bytes)});
     }
     ++m_sent[seat];
@@ -326,11 +320,12 @@ bool ShopSync::publish(const ShopStep& step) {
         return false;
     }
     auto bytes = packet(m_epoch, Kind::Step);
-    wide(bytes, step.tick);
+    ByteWriter out(bytes);
+    out.writeU64(step.tick);
     for (usize seat = 0; seat < 4; ++seat) {
-        word(bytes, actions(step.inputs[seat]));
-        word(bytes, static_cast<u32>(step.potions[seat]));
-        word(bytes, static_cast<u32>(step.focus[seat]));
+        out.writeU32(actions(step.inputs[seat]));
+        out.writeS32(step.potions[seat]);
+        out.writeS32(step.focus[seat]);
     }
     if (!broadcast(bytes)) {
         return false;
@@ -358,7 +353,7 @@ bool ShopSync::finish() {
     }
     if (m_local != 1) {
         auto bytes = packet(m_epoch, Kind::Done);
-        wide(bytes, m_tick);
+        ByteWriter(bytes).writeU64(m_tick);
         m_outgoing.push_back({1, std::move(bytes)});
     }
     m_finished[m_local] = true;

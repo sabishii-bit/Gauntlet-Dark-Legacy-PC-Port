@@ -3,6 +3,7 @@
 #include <array>
 #include <filesystem>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -65,6 +66,18 @@ inline constexpr std::array<u8, 76> kTinyPng{
     0x24, 0x00, 0x00, 0x00, 0x13, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
     0x1F, 0x0C, 0x81, 0x34, 0x08, 0x30, 0x00, 0x00, 0x48, 0xC9, 0x08, 0xF8, 0x71, 0xC5, 0x31, 0xE0,
     0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+
+/** Lower-case hex of bytes, two digits a byte, for pinning an encoding to a literal. */
+inline std::string hexBytes(std::span<const u8> bytes) {
+    constexpr std::string_view kDigits = "0123456789abcdef";
+    std::string text;
+    text.reserve(bytes.size() * 2);
+    for (const u8 value : bytes) {
+        text.push_back(kDigits[value >> 4U]);
+        text.push_back(kDigits[value & 0xFU]);
+    }
+    return text;
+}
 
 /** Little-endian byte builder for synthetic files. */
 class ByteWriter {

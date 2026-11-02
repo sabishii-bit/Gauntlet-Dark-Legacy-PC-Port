@@ -1,5 +1,8 @@
+#include <array>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include "TestSupport.h"
 #include "game/netplay/OnlinePair.h"
 #include "game/netplay/ShopSync.h"
 
@@ -84,6 +87,78 @@ TEST_CASE("shop synchronization authenticates exact reliable menu edges before m
     Shops::relay(shops.guest, shops.host, 2);
     CHECK(shops.host.finished());
 }
+TEST_CASE("shop packets keep their byte layout", "[netplay][online-shop]") {
+    constexpr u64 kEpoch = 0x1122334455667788ULL;
+    const std::array<u8, 4> owners{1, 2, 0, 0};
+    const std::array<u32, 4> grants{0x0a0b0c0d, 22, 0, 0};
+    ShopSetup setup{0x0701, 0x0e01, true, 0b0110, {1000, 0, 0x01020304}, {}, true};
+    setup.totals = {{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}};
+    ShopSync host;
+    ShopSync guest;
+    host.begin(kEpoch, 1, owners, grants, &setup);
+    guest.begin(kEpoch, 2, owners, grants);
+    REQUIRE(host.outgoing().size() == 1);
+    const auto setupBytes = host.outgoing().front().bytes;
+    constexpr std::string_view kSetup = "47445348"                  // magic
+                                        "02000000"                  // version, setup, zero
+                                        "8877665544332211"          // epoch
+                                        "01070000"                  // source
+                                        "010e0000"                  // destination
+                                        "03060000"                  // expanded, ending, fallen
+                                        "e80300000000000004030201"  // maxima
+                                        "010000000200000003000000"  // totals, seat 0
+                                        "040000000500000006000000"  // seat 1
+                                        "070000000800000009000000"  // seat 2
+                                        "0a0000000b0000000c000000"; // seat 3
+    CHECK(test::hexBytes(setupBytes) == kSetup);
+    REQUIRE(guest.receive(1, setupBytes) == Admission::Accepted);
+    host.sent();
+
+    MenuInput input;
+    input.select = true;
+    input.leftHeld = true;
+    REQUIRE(guest.sample(1, input, 4, 3, 200));
+    const auto inputBytes = guest.outgoing().front().bytes;
+    constexpr std::string_view kInput = "47445348"         // magic
+                                        "02010000"         // version, input, zero
+                                        "8877665544332211" // epoch
+                                        "01000000"         // seat
+                                        "16000000"         // grant
+                                        "0100000000000000" // sequence
+                                        "10020000"         // actions
+                                        "04000000"         // focus
+                                        "03000000"         // observed phase
+                                        "c8000000";        // observed cursor
+    CHECK(test::hexBytes(inputBytes) == kInput);
+    REQUIRE(host.receive(2, inputBytes) == Admission::Accepted);
+    guest.sent();
+
+    ShopStep step;
+    step.inputs[1] = input;
+    step.potions = {1, 2, 3, 4};
+    step.focus = {-1, 4, -1, -1};
+    REQUIRE(host.publish(step));
+    const auto stepBytes = host.outgoing().front().bytes;
+    constexpr std::string_view kStep = "47445348"                  // magic
+                                       "02020000"                  // version, step, zero
+                                       "8877665544332211"          // epoch
+                                       "0000000000000000"          // tick
+                                       "0000000001000000ffffffff"  // seat 0: actions, potion, focus
+                                       "100200000200000004000000"  // seat 1
+                                       "0000000003000000ffffffff"  // seat 2
+                                       "0000000004000000ffffffff"; // seat 3
+    CHECK(test::hexBytes(stepBytes) == kStep);
+    REQUIRE(guest.receive(1, stepBytes) == Admission::Accepted);
+
+    REQUIRE(guest.finish());
+    const auto doneBytes = guest.outgoing().front().bytes;
+    constexpr std::string_view kDone = "47445348"          // magic
+                                       "02030000"          // version, done, zero
+                                       "8877665544332211"  // epoch
+                                       "0100000000000000"; // tick
+    CHECK(test::hexBytes(doneBytes) == kDone);
+    CHECK(host.receive(2, doneBytes) == Admission::Accepted);
+}
 TEST_CASE("shop wire rejects malformed packets and bounds congestion", "[netplay][online-shop]") {
     Shops shops;
     MenuInput buy;
@@ -156,8 +231,7 @@ TEST_CASE("the host's own presses wait and fold as a guest's do", "[netplay][onl
     CHECK(steps[2].focus[0] == -1);
 }
 
-TEST_CASE("only presses count against what the host holds of a seat's",
-          "[netplay][online-shop]") {
+TEST_CASE("only presses count against what the host holds of a seat's", "[netplay][online-shop]") {
     Shops shops;
     MenuInput buy;
     buy.select = true;

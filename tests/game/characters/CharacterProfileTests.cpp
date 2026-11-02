@@ -7,6 +7,7 @@
 
 #include "engine/net/PacketTransport.h"
 
+#include "TestSupport.h"
 #include "game/characters/CharacterProfile.h"
 #include "game/rollback/PartyCheckpoint.h"
 
@@ -77,6 +78,65 @@ TEST_CASE("network character profiles preserve selected progress without exporti
     CHECK(source.classes[0].experience == 1234);
     CHECK(source.moviesSeen.size() == 1);
     CHECK(source.helpSeen.size() == 6);
+}
+TEST_CASE("network character profiles keep their byte layout", "[netplay][character-profile]") {
+    const auto profile = CharacterProfile::capture(character());
+    REQUIRE(profile);
+    const auto bytes = CharacterProfilePacket::encode(*profile);
+    REQUIRE(bytes);
+    constexpr std::string_view kProfile =
+        "47444350"                         // magic
+        "02000000"                         // version
+        "4b4e494748540000"                 // name
+        "03000000020000009f8601009b000000" // class, colour, gold, levels
+        "184205009f860100500000000f270000" // experience, gold, promotion, health
+        "00000000"                         // auto attack
+        "0000c74200009a41000020c00000003f" // fight, armour, magic, speed
+        "ecffffff000000000000000000000000000000000000000000000000" // crystals
+        "00000000000000000000000000000000000000000000000096000000"
+        "ff3f0000"                 // unlocked
+        "09000000"                 // keys
+        "09000000"                 // potions held
+        "010000000200000003000000" // potions
+        "040000000100000002000000"
+        "030000000400000004000000"
+        "000080bf05000000000010400100000000000000" // powerup slots
+        "0000a44106000000000010400200000001000000"
+        "000080bf07000000000010400400000001000000"
+        "0000a44108000000000010400800000000000000"
+        "000080bf09000000000010401000000001000000"
+        "0000a44105000000000010402000000001000000"
+        "000080bf06000000000010404000000000000000"
+        "0000a44107000000000010408000000001000000"
+        "000080bf08000000000010400001000001000000"
+        "0000a44109000000000010400002000000000000"
+        "000080bf05000000000010400004000001000000"
+        "ff1f0000ffff0000ffff0000"                 // runes, legends, shards
+        "00100000008000001f000000"                 // pending runes, shards, ceremonies
+        "0c000000140000001c000000"                 // gargoyle pieces
+        "ffffffffffffffffffffffffffff0000"         // levels beaten, padding
+        "ff1f00007f000000"                         // rune levels
+        "ffff000000800000"                         // legend levels
+        "7b00000040000000"                         // boss deaths
+        "10270000c800000040e2010039000000"         // kills, generators, gold, streak
+        "000000000494e140"                         // play seconds
+        "0100008001000000400000000000000000004000" // help seen
+        "0100000000000080"                         // N64 runestones
+        "0200000000000000"                         // shards
+        "0400000000000000"                         // obelisks
+        "0800000000000000"                         // legend items
+        "03000000"                                 // maps completed
+        "0007636173746c6536"                       // "castle6"
+        "00066d6f756e7431"                         // "mount1"
+        "0005746f776e34"                           // "town4"
+        "1000000000000000"                         // Dreamcast runestones
+        "2000000000000000"                         // shards
+        "4000000000000000"                         // obelisks
+        "1032547698badcfe"                         // legend items
+        "02000000"                                 // maps completed
+        "00076c6576656c6131"                       // "levela1"
+        "05027336";                                // "levels6" after "level"
+    CHECK(test::hexBytes(*bytes) == kProfile);
 }
 TEST_CASE("character profile decoding is exact bounded and rejects malformed values",
           "[netplay][character-profile]") {

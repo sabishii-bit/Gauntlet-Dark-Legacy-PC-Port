@@ -1,7 +1,5 @@
 #include "formats/ParticleTemplate.h"
 
-#include <bit>
-
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/io/ByteReader.h"
@@ -12,14 +10,10 @@ namespace {
 
 constexpr usize kNameSize = 32;
 
-f32 readF32(ByteReader& reader) {
-    return std::bit_cast<f32>(reader.readU32());
-}
-
 Vec3 readVec3(ByteReader& reader) {
-    const f32 x = readF32(reader);
-    const f32 y = readF32(reader);
-    const f32 z = readF32(reader);
+    const f32 x = reader.readF32();
+    const f32 y = reader.readF32();
+    const f32 z = reader.readF32();
     return Vec3{x, y, z};
 }
 
@@ -42,14 +36,14 @@ ParticleTemplateRecord readParticleTemplate(std::span<const u8> record) {
     out.maxDirections = reader.readU32();
     out.maxPositions = reader.readU32();
     for (f32& value : out.emitterLife) {
-        value = readF32(reader);
+        value = reader.readF32();
     }
     for (f32& value : out.particleLife) {
-        value = readF32(reader);
+        value = reader.readF32();
     }
     reader.readU32();
     reader.readU32();
-    out.angle = readF32(reader);
+    out.angle = reader.readF32();
     out.textureCount = static_cast<s32>(reader.readU32());
     for (usize i = 0; i < kNameSize; ++i) {
         const auto c = static_cast<char>(reader.readU8());
@@ -60,19 +54,19 @@ ParticleTemplateRecord readParticleTemplate(std::span<const u8> record) {
     out.direction = readVec3(reader);
     out.volume = readVec3(reader);
     for (f32& value : out.rate) {
-        value = readF32(reader);
+        value = reader.readF32();
     }
-    out.rateRandom = readF32(reader);
-    out.gravity = readF32(reader);
-    out.drag = readF32(reader);
-    out.speed = readF32(reader);
+    out.rateRandom = reader.readF32();
+    out.gravity = reader.readF32();
+    out.drag = reader.readF32();
+    out.speed = reader.readF32();
     for (u32& value : out.rgba) {
         value = reader.readU32();
     }
     for (f32& value : out.width) {
-        value = readF32(reader);
+        value = reader.readF32();
     }
-    out.delay = readF32(reader);
+    out.delay = reader.readF32();
     return out;
 }
 

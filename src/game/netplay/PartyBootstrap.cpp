@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
@@ -12,11 +13,13 @@ constexpr usize kHeader = 8;
 enum class Kind : u8 { Profile, Seal, Acknowledge };
 std::vector<u8> packet(Kind kind, u8 seat = 0, std::span<const u8> profile = {}) {
     std::vector<u8> bytes;
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(kMagic >> shift));
-    }
-    bytes.insert(bytes.end(), {kVersion, static_cast<u8>(kind), seat, 0});
-    bytes.insert(bytes.end(), profile.begin(), profile.end());
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU8(kVersion);
+    out.writeU8(static_cast<u8>(kind));
+    out.writeU8(seat);
+    out.writeU8(0);
+    out.writeBytes(profile);
     return bytes;
 }
 } // namespace

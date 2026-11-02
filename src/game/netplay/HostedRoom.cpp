@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
@@ -18,35 +19,22 @@ enum class Kind : u8 { Game, Join, Roster, Ready, Reject, Card, Hello };
 std::vector<u8> packet(Kind kind) {
     return {static_cast<u8>(kind), kProtocol};
 }
-void number(std::vector<u8>& out, u64 value) {
-    for (u32 shift = 0; shift < 64; shift += 8) {
-        out.push_back(static_cast<u8>(value >> shift));
-    }
-}
-u64 number(ByteReader& in) {
-    const u64 low = in.readU32();
-    return low | (u64{in.readU32()} << 32);
-}
-void string(std::vector<u8>& out, const std::string& value) {
-    out.push_back(static_cast<u8>(value.size()));
-    out.insert(out.end(), value.begin(), value.end());
+/** A room string: its length as a u8, then its characters. */
+void string(ByteWriter& out, std::string_view value) {
+    out.writeU8(static_cast<u8>(value.size()));
+    out.writeString(value);
 }
 std::string string(ByteReader& in) {
-    const auto bytes = in.readBytes(in.readU8());
-    return {bytes.begin(), bytes.end()};
+    return in.readString(in.readU8());
 }
 /** A card, up to kCardLimit bytes; longer ones travel as empty (no direct link). */
-void card(std::vector<u8>& out, const std::string& value) {
+void card(ByteWriter& out, std::string_view value) {
     const auto size = value.size() <= kCardLimit ? value.size() : 0;
-    out.push_back(static_cast<u8>(size & 0xffU));
-    out.push_back(static_cast<u8>(size >> 8U));
-    out.insert(out.end(), value.begin(), value.begin() + static_cast<std::ptrdiff_t>(size));
+    out.writeU16(static_cast<u16>(size));
+    out.writeString(value.substr(0, size));
 }
 std::string card(ByteReader& in) {
-    const usize low = in.readU8();
-    const usize high = in.readU8();
-    const auto bytes = in.readBytes(low | (high << 8U));
-    return {bytes.begin(), bytes.end()};
+    return in.readString(in.readU16());
 }
 std::string peerId(u64 id) {
     return std::format("{:032x}", id);
@@ -107,20 +95,21 @@ void HostedRoom::changed(bool membership) {
             continue;
         }
         auto bytes = packet(Kind::Roster);
-        string(bytes, link.peer);
-        number(bytes, m_room.revision);
-        bytes.push_back(m_room.started ? 1 : 0);
-        bytes.push_back(m_room.settings.maxPlayers);
-        bytes.push_back(m_room.settings.difficulty);
-        bytes.push_back(m_room.settings.friendlyFire);
-        bytes.push_back(m_room.settings.camera);
-        bytes.push_back(m_room.settings.mechanics);
-        bytes.push_back(static_cast<u8>(m_room.members.size()));
+        ByteWriter out(bytes);
+        string(out, link.peer);
+        out.writeU64(m_room.revision);
+        out.writeU8(m_room.started ? 1 : 0);
+        out.writeU8(m_room.settings.maxPlayers);
+        out.writeU8(m_room.settings.difficulty);
+        out.writeU8(m_room.settings.friendlyFire);
+        out.writeU8(m_room.settings.camera);
+        out.writeU8(m_room.settings.mechanics);
+        out.writeU8(static_cast<u8>(m_room.members.size()));
         for (const auto& member : m_room.members) {
-            string(bytes, member.peer);
-            bytes.push_back(member.ready ? 1 : 0);
-            bytes.push_back(static_cast<u8>(member.seats.size()));
-            bytes.insert(bytes.end(), member.seats.begin(), member.seats.end());
+            string(out, member.peer);
+            out.writeU8(member.ready ? 1 : 0);
+            out.writeU8(static_cast<u8>(member.seats.size()));
+            out.writeBytes(member.seats);
         }
         if (!queue(id, std::move(bytes))) {
             fail(Failure::Connection);
@@ -132,8 +121,9 @@ void HostedRoom::changed(bool membership) {
                 continue;
             }
             auto bytes = packet(Kind::Card);
-            string(bytes, member.peer);
-            card(bytes, where);
+            ByteWriter cardOut(bytes);
+            string(cardOut, member.peer);
+            card(cardOut, where);
             if (!queue(id, std::move(bytes))) {
                 fail(Failure::Connection);
             }
@@ -227,7 +217,7 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
             }
             if (failure != Failure::None) {
                 auto rejection = packet(Kind::Reject);
-                rejection.push_back(static_cast<u8>(failure));
+                ByteWriter(rejection).writeU8(static_cast<u8>(failure));
                 queue(id, std::move(rejection));
                 link.rejected = true;
                 return;
@@ -246,7 +236,7 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
             changed(true);
         } else if (kind == Kind::Roster && !m_host) {
             const auto peer = string(reader);
-            RoomSnapshot room{"HOSTROOM", peerId(1), number(reader), false, {}};
+            RoomSnapshot room{"HOSTROOM", peerId(1), reader.readU64(), false, {}};
             const auto started = reader.readU8();
             room.settings = {reader.readU8(), reader.readU8(), reader.readU8(), reader.readU8(),
                              reader.readU8()};
@@ -307,7 +297,7 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
             link.hello = true;
             announce(id);
         } else if (kind == Kind::Ready && m_host && !link.peer.empty()) {
-            const auto revision = number(reader);
+            const auto revision = reader.readU64();
             const auto value = reader.readU8();
             if (!reader.atEnd() || value > 1) {
                 disconnect(id);
@@ -344,7 +334,8 @@ RoomService::Update HostedRoom::poll() {
                         continue;
                     }
                     auto bytes = packet(Kind::Hello);
-                    string(bytes, m_peer);
+                    ByteWriter out(bytes);
+                    string(out, m_peer);
                     queue(event.connection, std::move(bytes));
                     link.hello = true;
                     announce(event.connection);
@@ -358,10 +349,11 @@ RoomService::Update HostedRoom::poll() {
                 if (!m_host && m_hostLink == 0) {
                     m_hostLink = event.connection;
                     auto bytes = packet(Kind::Join);
-                    bytes.push_back(m_players);
-                    string(bytes, m_build);
-                    string(bytes, m_content);
-                    card(bytes, m_wire.address());
+                    ByteWriter out(bytes);
+                    out.writeU8(m_players);
+                    string(out, m_build);
+                    string(out, m_content);
+                    card(out, m_wire.address());
                     queue(event.connection, std::move(bytes));
                 } else if (!m_host) {
                     link.direct = true; // another guest dialled us; its hello names it
@@ -429,8 +421,9 @@ bool HostedRoom::ready(u64 revision, bool value) {
         return false;
     }
     auto bytes = packet(Kind::Ready);
-    number(bytes, revision);
-    bytes.push_back(value ? 1 : 0);
+    ByteWriter out(bytes);
+    out.writeU64(revision);
+    out.writeU8(value ? 1 : 0);
     return queue(m_hostLink, std::move(bytes));
 }
 bool HostedRoom::start(u64 revision) {

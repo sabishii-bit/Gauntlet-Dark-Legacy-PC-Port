@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "TestSupport.h"
 #include "game/netplay/OnlineSession.h"
 #include "game/online/NativePlaySetup.h"
 #include "game/rollback/RollbackSessionHarness.h"
@@ -639,4 +640,48 @@ TEST_CASE("native bootstrap missing confirmation and disconnected peers fail clo
     CHECK(network->clients[1]->session.failure() ==
           (failure != 0 ? Failure::Transport : Failure::Timeout));
     CHECK(network->clients[1]->session.match().phase() == MatchSession::Phase::Offline);
+}
+
+TEST_CASE("native bootstrap packets keep their byte layout", "[online-native-bootstrap]") {
+    auto network = std::make_unique<Network>();
+    OnlineSession::NativeRules rules;
+    rules.autoMelee = true;
+    rules.autoActivateItems = false;
+    rules.expandedShop = true;
+    rules.autoAim = true;
+    rules.startupDelay = 3;
+    network->configure(rules);
+    network->start();
+    const auto offer = network->packet(1, 0);
+    constexpr std::string_view kOffer =
+        "47444e42" // magic
+        "02000200" // version, offer, input mode, zero
+        "6139346437306565643235356361376561383231323235313964333665303633" // the room digest
+        "3861653334343766343262393731313163303266623137376261663762303732"
+        "010e0000"                                     // scene
+        "0d030100"                                     // rules, delay, setup, zero
+        "16000000"                                     // build length
+        "73616d652d65786563757461626c652d736861323536" // build
+        "24000000"                                     // runtime length
+        "77696e646f77732d7836342d6d7376632d31342e34342d66702d707265636973" // runtime
+        "652d7631"
+        "40000000"                                                         // content length
+        "6161616161616161616161616161616161616161616161616161616161616161" // content
+        "6161616161616161616161616161616161616161616161616161616161616161"
+        "40000000"                                                         // data length
+        "6262626262626262626262626262626262626262626262626262626262626262" // data
+        "6262626262626262626262626262626262626262626262626262626262626262"
+        "02000000" // language length
+        "656e";    // "en"
+    CHECK(test::hexBytes(offer) == kOffer);
+    network->complete();
+    const auto setup = network->setups[1]->digest();
+    const auto scope = std::span{offer}.subspan(8, 64);
+    for (const auto& [peer, kind] :
+         {std::pair{u8{1}, u8{1}}, std::pair{u8{2}, u8{2}}, std::pair{u8{1}, u8{3}}}) {
+        std::vector<u8> expected{'G', 'D', 'N', 'B', 2, kind, 2, 0};
+        expected.insert(expected.end(), scope.begin(), scope.end());
+        expected.insert(expected.end(), setup.begin(), setup.end());
+        CHECK(network->packet(peer, kind) == expected);
+    }
 }

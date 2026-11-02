@@ -6,6 +6,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 #include "engine/io/Sha256.h"
 
 #include "game/netplay/RollbackExchange.h"
@@ -74,39 +75,37 @@ bool text(const std::string& value, usize limit) {
     return !value.empty() && value.size() <= limit &&
            std::ranges::all_of(value, [](unsigned char c) { return c >= 32 && c <= 126; });
 }
-void word(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
-void string(std::vector<u8>& bytes, const std::string& value) {
-    word(bytes, static_cast<u32>(value.size()));
-    bytes.insert(bytes.end(), value.begin(), value.end());
+/** A bootstrap string: its length as a u32, then its characters. */
+void string(ByteWriter& out, std::string_view value) {
+    out.writeU32(static_cast<u32>(value.size()));
+    out.writeString(value);
 }
 std::string string(ByteReader& reader, usize limit) {
     const usize size = reader.readU32();
     if (size == 0 || size > limit) {
         throw FormatError("invalid native bootstrap string length");
     }
-    const auto bytes = reader.readBytes(size);
-    return {bytes.begin(), bytes.end()};
+    return reader.readString(size);
 }
 std::string roomDigest(const RoomSnapshot& room) {
     // Canonical admitted roster order, not JSON ordering or local socket IDs.
     // Readiness is intentionally excluded: it changes without a new revision.
     std::vector<u8> bytes;
-    string(bytes, "gdl-native-room-v2");
-    string(bytes, room.code);
-    string(bytes, room.host);
-    word(bytes, static_cast<u32>(room.revision));
-    word(bytes, static_cast<u32>(room.revision >> 32));
-    bytes.insert(bytes.end(), {room.settings.maxPlayers, room.settings.difficulty,
-                               room.settings.friendlyFire, room.settings.camera,
-                               room.settings.mechanics, static_cast<u8>(room.members.size())});
+    ByteWriter out(bytes);
+    string(out, "gdl-native-room-v2");
+    string(out, room.code);
+    string(out, room.host);
+    out.writeU64(room.revision);
+    out.writeU8(room.settings.maxPlayers);
+    out.writeU8(room.settings.difficulty);
+    out.writeU8(room.settings.friendlyFire);
+    out.writeU8(room.settings.camera);
+    out.writeU8(room.settings.mechanics);
+    out.writeU8(static_cast<u8>(room.members.size()));
     for (const auto& row : room.members) {
-        string(bytes, row.peer);
-        bytes.push_back(static_cast<u8>(row.seats.size()));
-        bytes.insert(bytes.end(), row.seats.begin(), row.seats.end());
+        string(out, row.peer);
+        out.writeU8(static_cast<u8>(row.seats.size()));
+        out.writeBytes(row.seats);
     }
     Sha256 hash;
     hash.update(bytes);
@@ -135,8 +134,7 @@ std::optional<NativeMessage> decodeNative(std::span<const u8> bytes) {
             reader.readU8() != 0) {
             return std::nullopt;
         }
-        const auto scope = reader.readBytes(64);
-        NativeMessage result{static_cast<NativeKind>(kind), {scope.begin(), scope.end()}, {}, {}};
+        NativeMessage result{static_cast<NativeKind>(kind), reader.readString(64), {}, {}};
         if (!digest(result.scope)) {
             return std::nullopt;
         }
@@ -163,8 +161,7 @@ std::optional<NativeMessage> decodeNative(std::span<const u8> bytes) {
             }
             result.contract = std::move(contract);
         } else {
-            const auto setup = reader.readBytes(64);
-            result.setup.assign(setup.begin(), setup.end());
+            result.setup = reader.readString(64);
             if (!digest(result.setup)) {
                 return std::nullopt;
             }
@@ -178,24 +175,31 @@ std::vector<u8> nativeBytes(NativeKind kind, const std::string& scope,
                             const OnlineSession::NativeContract& contract,
                             const std::string& setup = {}) {
     std::vector<u8> bytes;
-    word(bytes, kNativeMagic);
-    bytes.insert(bytes.end(), {kNativeVersion, static_cast<u8>(kind), kNativeInputMode, 0});
-    bytes.insert(bytes.end(), scope.begin(), scope.end());
+    ByteWriter out(bytes);
+    out.writeU32(kNativeMagic);
+    out.writeU8(kNativeVersion);
+    out.writeU8(static_cast<u8>(kind));
+    out.writeU8(kNativeInputMode);
+    out.writeU8(0);
+    out.writeString(scope);
     if (kind == NativeKind::Offer) {
         const auto& rules = contract.rules;
-        word(bytes, rules.scene);
+        out.writeU32(rules.scene);
         const auto flags = static_cast<u8>((rules.autoMelee ? kRuleAutoMelee : 0U) |
                                            (rules.autoActivateItems ? kRuleAutoActivateItems : 0U) |
                                            (rules.expandedShop ? kRuleExpandedShop : 0U) |
                                            (rules.autoAim ? kRuleAutoAim : 0U));
-        bytes.insert(bytes.end(), {flags, rules.startupDelay, kNativeInitialization, 0});
-        string(bytes, contract.identity.build);
-        string(bytes, contract.identity.runtime);
-        string(bytes, contract.identity.content);
-        string(bytes, contract.identity.data);
-        string(bytes, contract.identity.language);
+        out.writeU8(flags);
+        out.writeU8(rules.startupDelay);
+        out.writeU8(kNativeInitialization);
+        out.writeU8(0);
+        string(out, contract.identity.build);
+        string(out, contract.identity.runtime);
+        string(out, contract.identity.content);
+        string(out, contract.identity.data);
+        string(out, contract.identity.language);
     } else {
-        bytes.insert(bytes.end(), setup.begin(), setup.end());
+        out.writeString(setup);
     }
     return bytes;
 }

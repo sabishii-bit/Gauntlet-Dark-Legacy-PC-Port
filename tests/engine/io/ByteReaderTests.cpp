@@ -41,4 +41,22 @@ TEST_CASE("ByteReader walks a buffer and refuses to overrun", "[io][bytes]") {
     REQUIRE_THROWS_AS(reader.skip(1), FormatError);
 }
 
+TEST_CASE("ByteReader takes a u64 low word first, a float from its bits and bare characters",
+          "[io][bytes]") {
+    constexpr std::array<u8, 16> kBytes{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+                                        0x00, 0x00, 0xC0, 0xBF, 'a',  'b',  'c',  0x01};
+    ByteReader reader(kBytes);
+    CHECK(reader.readU64() == 0x0102030405060708ULL);
+    CHECK(reader.readF32() == -1.5f);
+    CHECK(reader.readString(3) == "abc");
+    CHECK(reader.readString(0).empty());
+    CHECK_THROWS_AS(reader.readString(2), FormatError);
+    CHECK_THROWS_AS(reader.readF32(), FormatError);
+    CHECK_THROWS_AS(reader.readU64(), FormatError);
+    CHECK(reader.remaining() == 1);
+    constexpr std::array<u8, 7> kShort{};
+    ByteReader shortReader(kShort);
+    CHECK_THROWS_AS(shortReader.readU64(), FormatError);
+}
+
 } // namespace

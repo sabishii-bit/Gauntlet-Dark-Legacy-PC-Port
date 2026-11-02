@@ -3,6 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "TestSupport.h"
 #include "game/netplay/PartyBootstrap.h"
 
 namespace {
@@ -111,6 +112,41 @@ TEST_CASE("party bootstrap relays every owned character and waits for every ackn
     CHECK_FALSE(peers[1].open(1, owners, links, selections(owners, 1)));
 }
 
+TEST_CASE("party bootstrap packets keep their byte layout", "[netplay][party-bootstrap]") {
+    const MatchOwners owners{1, 2, 0, 0};
+    const auto guestParty = selections(owners, 2);
+    PartyBootstrap host;
+    PartyBootstrap guest;
+    Wire hostWire;
+    Wire guestWire;
+    REQUIRE(guest.open(2, owners, std::array{MatchLink{1, 99}}, guestParty));
+    REQUIRE(host.open(1, owners, std::array{MatchLink{2, 2}}, selections(owners, 1)));
+    REQUIRE(guest.flush(guestWire));
+    REQUIRE(guestWire.messages.size() == 1);
+    const auto profile = CharacterProfilePacket::encode(guestParty[0]);
+    REQUIRE(profile);
+    std::vector<u8> expected{'G', 'D', 'P', 'S', 1, 0, 1, 0};
+    expected.insert(expected.end(), profile->begin(), profile->end());
+    CHECK(guestWire.messages[0].bytes == expected);
+    REQUIRE(host.receive(2, guestWire.messages[0].bytes));
+    guestWire.messages.clear();
+    REQUIRE(host.flush(hostWire));
+    REQUIRE(hostWire.messages.size() == 3); // both profiles, then the seal
+    CHECK(hostWire.messages[1].bytes == expected);
+    constexpr std::string_view kSeal = "47445053"  // magic
+                                       "01010000"; // version, seal, seat, zero
+    CHECK(test::hexBytes(hostWire.messages[2].bytes) == kSeal);
+    for (const auto& message : hostWire.messages) {
+        REQUIRE(guest.receive(99, message.bytes));
+    }
+    REQUIRE(guest.flush(guestWire));
+    REQUIRE(guestWire.messages.size() == 1);
+    constexpr std::string_view kAcknowledge = "47445053"  // magic
+                                              "01020000"; // version, acknowledge, seat, zero
+    CHECK(test::hexBytes(guestWire.messages[0].bytes) == kAcknowledge);
+    REQUIRE(host.receive(2, guestWire.messages[0].bytes));
+    CHECK(host.complete());
+}
 TEST_CASE("party bootstrap rejects stolen seats altered local selections and premature seals",
           "[netplay][party-bootstrap]") {
     const MatchOwners owners{1, 2, 0, 0};

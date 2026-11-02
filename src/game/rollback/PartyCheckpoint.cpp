@@ -1,15 +1,11 @@
 #include "game/rollback/PartyCheckpoint.h"
 
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
 constexpr u32 kMagic = fourcc("GDPC");
-void word(std::vector<u8>& bytes, u32 value) {
-    for (u32 shift = 0; shift < 32; shift += 8) {
-        bytes.push_back(static_cast<u8>(value >> shift));
-    }
-}
 } // namespace
 bool PartyCheckpointPacket::recognizes(std::span<const u8> bytes) {
     return bytes.size() >= 4 && ByteReader(bytes).readU32() == kMagic;
@@ -21,11 +17,13 @@ std::optional<std::vector<u8>> PartyCheckpointPacket::encode(const PartyCheckpoi
     }
     std::vector<u8> bytes;
     bytes.reserve(kHeaderBytes + profile->size());
-    word(bytes, kMagic);
-    bytes.insert(bytes.end(), {kVersion, checkpoint.seat, 0, 0});
-    word(bytes, static_cast<u32>(checkpoint.epoch));
-    word(bytes, static_cast<u32>(checkpoint.epoch >> 32U));
-    bytes.insert(bytes.end(), profile->begin(), profile->end());
+    ByteWriter out(bytes);
+    out.writeU32(kMagic);
+    out.writeU8(kVersion);
+    out.writeU8(checkpoint.seat);
+    out.writeU16(0);
+    out.writeU64(checkpoint.epoch);
+    out.writeBytes(*profile);
     return bytes;
 }
 std::optional<PartyCheckpoint> PartyCheckpointPacket::decode(std::span<const u8> bytes) {
@@ -41,8 +39,7 @@ std::optional<PartyCheckpoint> PartyCheckpointPacket::decode(std::span<const u8>
     if (seat >= InputCommand::kSeats || reader.readU16() != 0) {
         return std::nullopt;
     }
-    const u64 low = reader.readU32();
-    const u64 epoch = low | (u64{reader.readU32()} << 32U);
+    const u64 epoch = reader.readU64();
     auto profile = CharacterProfilePacket::decode(reader.readBytes(reader.remaining()));
     if (epoch == 0 || !profile) {
         return std::nullopt;

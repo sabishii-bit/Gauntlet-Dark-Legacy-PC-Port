@@ -9,6 +9,7 @@
 
 #include "engine/platform/Input.h"
 
+#include "TestSupport.h"
 #include "game/camera/CameraMovementLimit.h"
 #include "game/netplay/RollbackExchange.h"
 #include "game/party/PartyMotion.h"
@@ -34,9 +35,8 @@ struct Wire final : PacketTransport {
     std::optional<Statistics> stats;
     mutable usize statisticsQueries = 0;
     SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
-        const auto outcome = failingConnection == 0 || connection == failingConnection
-                                 ? result
-                                 : SendResult::Sent;
+        const auto outcome =
+            failingConnection == 0 || connection == failingConnection ? result : SendResult::Sent;
         if (outcome == SendResult::Sent) {
             if (budget == 0) {
                 return SendResult::Congested;
@@ -354,6 +354,76 @@ TEST_CASE("match control has an exact bounded versioned encoding", "[netplay][ma
         context.epoch = 0;
     }
     CHECK_FALSE(MatchControlPacket::encode({MatchControlKind::Prepare, MatchStop::None, context}));
+}
+
+TEST_CASE("match control packets keep their byte layout", "[netplay][match-session]") {
+    MatchControl control;
+    control.kind = MatchControlKind::Drop;
+    control.resyncTick = 0x0123456789abcdefULL;
+    control.resyncPeers = 0b01000;
+    auto& context = control.context;
+    context.epoch = 0x1122334455667788ULL;
+    context.scene = 0x1234;
+    context.inputLead = 2;
+    context.transition = MatchTransition::Travel;
+    context.owners = {1, 2, 3, 0};
+    context.grants = {0x01020304, 0x05060708, 0x090a0b0c, 0};
+    context.sourceEpoch = context.epoch - 1;
+    context.sourceTick = 0xa1b2c3d4e5f60718ULL;
+    const auto bytes = MatchControlPacket::encode(control);
+    REQUIRE(bytes);
+    constexpr std::string_view kControl = "47444c54"         // magic
+                                          "08090000"         // version, drop, stop, votes
+                                          "8877665544332211" // epoch
+                                          "34120000"         // scene
+                                          "3c000201"         // tick rate, input lead, travel
+                                          "01020300"         // owners
+                                          "04030201080706050c0b0a0900000000" // grants
+                                          "00080000"          // challenge won, resync peers
+                                          "8777665544332211"  // source epoch
+                                          "1807f6e5d4c3b2a1"  // source tick
+                                          "efcdab8967452301"; // resync tick
+    CHECK(test::hexBytes(*bytes) == kControl);
+    const auto decoded = MatchControlPacket::decode(*bytes);
+    REQUIRE(decoded);
+    CHECK(decoded->context == context);
+    CHECK(decoded->resyncTick == control.resyncTick);
+    CHECK(decoded->resyncPeers == control.resyncPeers);
+    CHECK(MatchControlPacket::encode(*decoded) == bytes);
+}
+
+TEST_CASE("console packets keep their byte layout", "[netplay][match-session][console-input]") {
+    Room room({1, 2, 0, 0});
+    room.ready();
+    auto& host = room.sessions[1];
+    auto& guest = room.sessions[2];
+    REQUIRE(host.setConsolePermissions(true));
+    host.flush(room.wires[1]);
+    const auto permission = consoleMessageFrom(room.wires[1], 0);
+    constexpr std::string_view kPermission = "47444c43"         // magic
+                                             "01000100"         // version, permission, on, seat
+                                             "0000000000000000" // epoch
+                                             "0100000000000000" // revision
+                                             "0000000000000000" // request
+                                             "00000000"         // grant
+                                             "00";              // line length
+    CHECK(test::hexBytes(permission) == kPermission);
+    REQUIRE(guest.receive(99, permission) == Admission::Accepted);
+    room.wires[1].sent.clear();
+    REQUIRE(guest.requestConsole({1, "get gold 50"}));
+    guest.flush(room.wires[2]);
+    const auto request = consoleMessageFrom(room.wires[2], 1);
+    constexpr std::string_view kRequest = "47444c43"                // magic
+                                          "01010001"                // version, request, off, seat
+                                          "0100000000000000"        // epoch
+                                          "0100000000000000"        // revision
+                                          "0100000000000000"        // request
+                                          "01000000"                // grant
+                                          "0b"                      // line length
+                                          "67657420676f6c64203530"; // "get gold 50"
+    CHECK(test::hexBytes(request) == kRequest);
+    CHECK(host.receive(1, request) == Admission::Accepted);
+    CHECK(host.takeConsoleRequest() == std::optional{ConsoleAction{1, "get gold 50"}});
 }
 
 TEST_CASE("secret result flags are bounded host context and secret entries have no movie votes",
@@ -684,7 +754,8 @@ TEST_CASE("travel preparation is bounded under congestion and missing profiles t
     const auto prepare = message(host, MatchControlKind::Prepare);
     auto& guest = room.sessions[2];
     REQUIRE(guest.receive(99, prepare) == Admission::Accepted);
-    guest.update(MatchSession::kLoadTimeout); // still playing to the stage's end: the host decides first
+    guest.update(
+        MatchSession::kLoadTimeout); // still playing to the stage's end: the host decides first
     CHECK(guest.phase() == Phase::Running);
     guest.update(MatchSession::kGuestLoadTimeout - MatchSession::kLoadTimeout);
     CHECK(guest.phase() == Phase::Stopped);
@@ -934,8 +1005,8 @@ TEST_CASE("a guest's lost link drops it while the host and the rest carry on",
 
 TEST_CASE("send detects a closed guest before its disconnect event without stopping the match",
           "[netplay][match-session][drop][send-disconnect]") {
-    const auto result = GENERATE(PacketTransport::SendResult::Disconnected,
-                                 PacketTransport::SendResult::Invalid);
+    const auto result =
+        GENERATE(PacketTransport::SendResult::Disconnected, PacketTransport::SendResult::Invalid);
     Room room({1, 2, 3, 0});
     room.ready();
     REQUIRE(room.sample(1));
