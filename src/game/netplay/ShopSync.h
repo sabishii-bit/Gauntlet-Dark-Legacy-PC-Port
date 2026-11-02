@@ -44,6 +44,8 @@ public:
         std::vector<u8> bytes;
     };
     static constexpr usize kBudget = 256;
+    /** A seat's presses the host may hold waiting: ten seconds of one a tick. */
+    static constexpr usize kHeldPresses = 600;
     static bool recognizes(std::span<const u8> bytes);
     void begin(u64 epoch, u8 local, const std::array<u8, 4>& owners,
                const std::array<u32, 4>& grants, const ShopSetup* setup = nullptr);
@@ -53,6 +55,8 @@ public:
     std::optional<ShopStep> advance();
     bool publish(const ShopStep& step);
     std::optional<ShopStep> take();
+    /** On a guest: the host's steps received and not yet taken. */
+    usize held() const { return m_steps.size(); }
     bool finish();
     bool finished() const;
     /** A dropped peer holds the shop no longer: it counts as finished. */
@@ -79,6 +83,10 @@ private:
         u8 phase = 0;
         u16 cursor = 0;
     };
+    /** Queues a seat's command on the host. One without a press folds into a press-free one
+     * still waiting, since only the latest pointer and held buttons matter; false when too
+     * many presses wait. */
+    bool hold(usize seat, const Command& command);
     std::array<std::deque<Command>, 4> m_inputs;
     std::array<bool, 5> m_finished{};
     std::deque<ShopStep> m_steps;

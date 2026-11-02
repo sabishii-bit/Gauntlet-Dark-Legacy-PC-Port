@@ -172,10 +172,17 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
         if (!destination) {
             return error;
         }
+        // Every peer refuses alike what the shared game cannot go to.
+        if (destination->offlineOnly()) {
+            return "Legends maps are offline only.";
+        }
         if (destination->position && !finite(*destination->position)) {
             return "Coordinates must be finite and within +/-1000000.";
         }
         if (!destination->level) {
+            if (!destination->position) {
+                return ConsoleCommands::gotoUsage();
+            }
             return relocate(*destination->position) ? "Moved the party." : "Nobody is standing.";
         }
         const auto level = *destination->level == "TOWER" ? std::optional{LevelRef::tower()}

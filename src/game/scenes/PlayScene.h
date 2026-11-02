@@ -164,7 +164,7 @@ private:
      * and persistent save-slot identities stay in their existing owners. */
     struct Simulation {
         friend void visitNativeState(NativeStateDigest& digest, const Simulation& value) {
-            digest.fields<28>(value);
+            digest.fields<29>(value);
         }
         BossCamera bossCamera;
         GameOver gameOver;
@@ -194,6 +194,7 @@ private:
         u32 consoleSpawns = 0;
         std::optional<s32> partyCountOverride; ///< the console's party count, when set
         bool soloCameras = false; ///< each seat looks through its own camera (a netplay rule)
+        bool fixedRoster = false; ///< nobody leaves the party before it ends (a netplay rule)
 
         bool operator==(const Simulation&) const = default;
     };
@@ -464,6 +465,10 @@ public:
      * level stood them up otherwise. Gameplay state, the same on every peer. */
     void setSoloCameras(bool solo) { m_sim.soloCameras = solo; }
     bool soloCameras() const { return m_sim.soloCameras; }
+    /** An online match's rule: a fallen player is offered no Quit, since the party travels
+     * whole to the match's end; leaving is the netplay menu's, as a drop. */
+    void setFixedRoster(bool fixed) { m_sim.fixedRoster = fixed; }
+    bool fixedRoster() const { return m_sim.fixedRoster; }
     /** Whether the seats look through their own cameras now: solo cameras, with neither a
      * boss camera nor an imported level's own in charge. */
     bool soloViewActive() const;

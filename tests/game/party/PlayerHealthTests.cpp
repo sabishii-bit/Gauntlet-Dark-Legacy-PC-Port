@@ -5,6 +5,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 
@@ -13,6 +14,7 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
+#include "game/party/PartyRecords.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/PowerupEffects.h"
 namespace {
@@ -694,6 +696,30 @@ TEST_CASE("harmless contacts healing tower damage and invulnerability do not vib
                                                           1);
     f.hit(50);
     CHECK(f.vibrations.empty());
+}
+
+TEST_CASE("a fallen player's Quit leaves an open party but not an online match's fixed one",
+          "[player-health][tower-prompt]") {
+    const bool quitOffered = GENERATE(true, false);
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    players[1].life = PlayerLife::InTower;
+    players[1].towerPrompt = true;
+    std::array<PlayInput, 4> inputs{};
+    inputs[1].menu.back = true;
+    PlayerHealth::answerTowerPrompts(players, inputs, quitOffered);
+    CHECK(players[1].departed == quitOffered);
+    CHECK(players[1].towerPrompt == !quitOffered);
+    CHECK(players[1].life == PlayerLife::InTower);
+    CHECK_FALSE(players[0].departed);
+    inputs[1] = {};
+    inputs[1].menu.select = true;
+    PlayerHealth::answerTowerPrompts(players, inputs, quitOffered);
+    CHECK_FALSE(players[1].towerPrompt);
+    CHECK(players[1].departed == quitOffered);
+    // The fixed party still travels whole, as the online match's next stage needs.
+    CHECK(PartyRecords::members(players).size() == (quitOffered ? 1U : 2U));
 }
 
 TEST_CASE("felled outright, the character keeps a hidden point of health and is heard to die",

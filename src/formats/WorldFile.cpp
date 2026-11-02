@@ -7,6 +7,7 @@
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/io/ByteReader.h"
+#include "engine/math/PortableMath.h"
 
 namespace gdl::formats {
 
@@ -27,16 +28,17 @@ constexpr f32 kOffsetUnit = 1.0f / 64.0f; ///< the triangle's 16-bit offsets are
 /**
  * A collision triangle stores one corner and the other two as offsets in the triangle's own
  * plane: (x, 0, z) tilted about the x axis by the angle between the normal and straight up,
- * then turned about y to face the normal's horizontal direction.
+ * then turned about y to face the normal's horizontal direction. The portable functions
+ * unfold every corner alike on every platform: the collision is part of the shared state.
  */
 Vec3 planeOffset(const Vec3& normal, f32 x, f32 z) {
-    const f32 tilt = std::acos(std::clamp(normal.y, -1.0f, 1.0f));
+    const f32 tilt = portable::acos(std::clamp(normal.y, -1.0f, 1.0f));
     const f32 turn =
-        (normal.x == 0.0f && normal.z == 0.0f) ? 0.0f : std::atan2(-normal.x, -normal.z);
-    const f32 sinTilt = std::sin(tilt);
-    const f32 cosTilt = std::cos(tilt);
-    const f32 sinTurn = std::sin(turn);
-    const f32 cosTurn = std::cos(turn);
+        (normal.x == 0.0f && normal.z == 0.0f) ? 0.0f : portable::atan2(-normal.x, -normal.z);
+    const f32 sinTilt = portable::sin(tilt);
+    const f32 cosTilt = portable::cos(tilt);
+    const f32 sinTurn = portable::sin(turn);
+    const f32 cosTurn = portable::cos(turn);
     return Vec3{x * cosTurn + z * cosTilt * sinTurn, z * sinTilt,
                 -x * sinTurn + z * cosTilt * cosTurn};
 }

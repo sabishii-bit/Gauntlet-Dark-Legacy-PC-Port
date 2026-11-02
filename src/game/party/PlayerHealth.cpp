@@ -68,6 +68,24 @@ void PlayerHealth::advanceSurfaceGap(PlayerRuntime& runtime, f32 seconds) {
     runtime.surfaceGap = std::max(runtime.surfaceGap - seconds, 0.0f);
 }
 
+void PlayerHealth::answerTowerPrompts(std::span<PlayerRuntime> players,
+                                      std::span<const PlayInput> inputs, bool quitOffered) {
+    for (PlayerRuntime& runtime : players) {
+        const auto player = static_cast<usize>(runtime.actor.player());
+        if (!runtime.towerPrompt || runtime.life != PlayerLife::InTower ||
+            player >= inputs.size()) {
+            continue;
+        }
+        if (quitOffered && inputs[player].menu.back) {
+            runtime.towerPrompt = false;
+            runtime.departed = true;
+            log::info("Player {} has left the game", player + 1);
+        } else if (inputs[player].menu.select) {
+            runtime.towerPrompt = false;
+        }
+    }
+}
+
 void PlayerHealth::fall(PlayerRuntime& runtime, const Events& events) {
     // Health of nought would read as a class never played: the fallen keep a point that the
     // status box does not show.

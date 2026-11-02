@@ -204,7 +204,7 @@ TEST_CASE("a suspended peer no longer holds the host's agreement and is told not
     REQUIRE(room.streams[2].flush(room.wires[2], room.now));
     room.deliver(2);
     CHECK(room.streams[1].agreedTick() == 0); // peer three has not reported
-    room.streams[1].suspend(3);
+    room.streams[1].suspend(3, room.now);
     CHECK(room.streams[1].agreedTick() == kPeriod);
     CHECK_FALSE(room.streams[1].failed());
     REQUIRE(room.streams[1].flush(room.wires[1], room.now));
@@ -548,16 +548,63 @@ TEST_CASE("native agreement real-time deadlines do not renew on traffic or conge
         CHECK(room.streams[1].pendingTicks() == 0);
     }
     auto& stream = room.streams[mode == 1 ? 2 : 1];
+    // A guest waits on the host longer than the host waits on its guests.
+    const auto limit = mode == 1 ? NativeAgreement::kGuestTimeout : NativeAgreement::kTimeout;
     CHECK(stream.update(Time{} + std::chrono::seconds{9}));
     CHECK(stream.update(Time::min()));
     CHECK(stream.submit(kPeriod, {}, Time{} + std::chrono::seconds{9}) == Admission::Duplicate);
-    CHECK_FALSE(stream.update(Time{} + NativeAgreement::kTimeout));
+    CHECK(stream.update(Time{} + limit - std::chrono::seconds{1}));
+    CHECK(stream.overdue(Time{} + limit - std::chrono::seconds{1}).empty());
+    if (mode != 1) {
+        // The host goes on and names the guest it waits on, for the session to drop.
+        CHECK(stream.update(Time{} + limit));
+        CHECK(stream.overdue(Time{} + limit) == std::vector<u8>{2});
+        return;
+    }
+    CHECK_FALSE(stream.update(Time{} + limit));
     CHECK(stream.failure() == Failure::Timeout);
     CHECK(stream.failureTick() == kPeriod);
-    room.now = Time{} + NativeAgreement::kTimeout;
+    room.now = Time{} + limit;
     room.pump();
     CHECK(room.streams[1].failed());
     CHECK(room.streams[2].failed());
+}
+
+TEST_CASE("the host names the guests an overdue tick still waits on, never itself",
+          "[netplay][native-agreement][drop]") {
+    Room room({1, 2, 3, 0});
+    const auto late = Time{} + NativeAgreement::kTimeout;
+    SECTION("a guest's report is missing") {
+        REQUIRE(room.streams[1].submit(kPeriod, {}, room.now) == Admission::Accepted);
+        REQUIRE(room.streams[3].submit(kPeriod, {}, room.now) == Admission::Accepted);
+        room.pump();
+        CHECK(room.streams[1].overdue(late - std::chrono::seconds{1}).empty());
+        CHECK(room.streams[1].overdue(late) == std::vector<u8>{2});
+        CHECK(room.streams[2].overdue(late).empty()); // only the host judges
+        room.streams[1].suspend(2, late);
+        CHECK(room.streams[1].agreedTick() == kPeriod);
+        CHECK(room.streams[1].overdue(late).empty()); // the verdict to peer three goes out now
+    }
+    SECTION("the host's own digest is the late one") {
+        REQUIRE(room.streams[2].submit(kPeriod, {}, room.now) == Admission::Accepted);
+        room.pump();
+        CHECK(room.streams[1].overdue(late).empty());
+        CHECK_FALSE(room.streams[1].update(late));
+    }
+}
+
+TEST_CASE("a repair starts every agreement wait over", "[netplay][native-agreement]") {
+    Room room;
+    REQUIRE(room.streams[1].submit(kPeriod, {}, room.now) == Admission::Accepted);
+    REQUIRE(room.streams[2].submit(kPeriod, {}, room.now) == Admission::Accepted);
+    const auto repaired = Time{} + std::chrono::seconds{8};
+    room.streams[1].rearm(repaired);
+    room.streams[2].rearm(repaired);
+    // The host's wait on its guest's report, and the guest's on its verdict, run from then.
+    CHECK(room.streams[1].overdue(Time{} + NativeAgreement::kTimeout).empty());
+    CHECK(room.streams[1].overdue(repaired + NativeAgreement::kTimeout) == std::vector<u8>{2});
+    CHECK(room.streams[2].update(Time{} + NativeAgreement::kGuestTimeout));
+    CHECK_FALSE(room.streams[2].update(repaired + NativeAgreement::kGuestTimeout));
 }
 
 TEST_CASE("native agreement idle time and extreme injected clocks cannot invent expiry",
@@ -574,8 +621,14 @@ TEST_CASE("native agreement idle time and extreme injected clocks cannot invent 
         const std::array links{NativeAgreement::Link{2, 102}};
         REQUIRE(stream.open(1, kEpoch, {1, 2, 0, 0}, links, kPeriod, Time::min()));
         REQUIRE(stream.submit(kPeriod, {}, Time::min()) == Admission::Accepted);
-        CHECK_FALSE(stream.update(Time::max()));
-        CHECK(stream.failure() == Failure::Timeout);
+        CHECK(stream.update(Time::max())); // the host goes on and names the guest it waits on
+        CHECK(stream.overdue(Time::max()) == std::vector<u8>{2});
+        NativeAgreement guest;
+        const std::array host{NativeAgreement::Link{1, 100}};
+        REQUIRE(guest.open(2, kEpoch, {1, 2, 0, 0}, host, kPeriod, Time::min()));
+        REQUIRE(guest.submit(kPeriod, {}, Time::min()) == Admission::Accepted);
+        CHECK_FALSE(guest.update(Time::max()));
+        CHECK(guest.failure() == Failure::Timeout);
     }
     SECTION("a start near max cannot overflow its timeout into the past") {
         NativeAgreement stream;
@@ -584,6 +637,12 @@ TEST_CASE("native agreement idle time and extreme injected clocks cannot invent 
         REQUIRE(stream.open(1, kEpoch, {1, 2, 0, 0}, links, kPeriod, start));
         REQUIRE(stream.submit(kPeriod, {}, start) == Admission::Accepted);
         CHECK(stream.update(Time::max()));
+        CHECK(stream.overdue(Time::max()).empty());
+        NativeAgreement guest;
+        const std::array host{NativeAgreement::Link{1, 100}};
+        REQUIRE(guest.open(2, kEpoch, {1, 2, 0, 0}, host, kPeriod, start));
+        REQUIRE(guest.submit(kPeriod, {}, start) == Admission::Accepted);
+        CHECK(guest.update(Time::max()));
     }
 }
 
@@ -676,8 +735,8 @@ TEST_CASE("native agreement reports a closed send before its owner drops the dep
     CHECK(wires[1].attempts == 1);
 
     // The session resolves the authenticated connection only after flush returns.
-    streams[1].suspend(2);
-    streams[3].suspend(2);
+    streams[1].suspend(2, Time{});
+    streams[3].suspend(2, Time{});
     REQUIRE(streams[1].flush(wires[1], Time{}, &closed));
     CHECK(closed == 0);
     REQUIRE(wires[1].sent.size() == 1);

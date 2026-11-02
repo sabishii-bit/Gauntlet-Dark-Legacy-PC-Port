@@ -31,6 +31,12 @@ public:
         Failed
     };
     enum class Failure : u8 { None, Session, Scene, Assets, Input, Presentation, Party };
+    /** Shop steps a guest may hold and still hear each one's menu cues: a burst of a tenth of
+     * a second sounds, while a longer backlog plays only its newest steps' cues. */
+    static constexpr usize kHeardShopSteps = 6;
+    /** Whether a shop step's menu cues are heard, `held` steps still behind it: always on the
+     * host, which steps the shop itself. */
+    static bool shopCuesHeard(bool host, usize held) { return host || held < kHeardShopSteps; }
 
     NativeOnlinePlay();
     ~NativeOnlinePlay();

@@ -15,7 +15,7 @@ SAMPLES = [
     "messages", "sumner-visit", "promotion", "relics", "boss-sequence", "audio",
     "challenge-hud", "mechanics", "camera-speech",
 ]
-SCHEMA = "PlayScene.native.9"
+SCHEMA = "PlayScene.native.10"
 HOW = ("A digest sample change alters every peer's stream: bump the schema string, and update "
        "NativeAgreementSceneTests' ordered owners and this list in the same change.")
 

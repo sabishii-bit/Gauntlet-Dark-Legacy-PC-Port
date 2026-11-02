@@ -71,10 +71,11 @@ void OnlineCompletion::close() {
     m_path.clear();
     m_phase = Phase::Closed;
     m_shown = false;
+    m_unshown = 0;
 }
 
 void OnlineCompletion::update(const GameContext& context, bool unanimousSkip) {
-    if (m_phase != Phase::Movie || !m_shown) {
+    if (m_phase != Phase::Movie || (!m_shown && ++m_unshown < kUnshownTicks)) {
         return;
     }
     m_movie.setVolume(movieVolume(context));

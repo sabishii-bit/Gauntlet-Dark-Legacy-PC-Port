@@ -147,6 +147,19 @@ TEST_CASE("clearing a Sumner visit releases the menu and resets the greeting, no
     REQUIRE(f.visit.owner() == 1);
 }
 
+TEST_CASE("a Sumner scroll goes with an owner who leaves play", "[game][screens][sumner-visit]") {
+    Fixture f("sumner-visit-owner-gone");
+    f.open(3);
+    f.visit.release(1);
+    REQUIRE(f.visit.active());
+    REQUIRE(f.visit.owner() == 3);
+    f.visit.release(3);
+    CHECK_FALSE(f.visit.active());
+    CHECK(f.visit.owner() == -1);
+    REQUIRE_FALSE(f.approach(0.0f, std::nullopt));
+    f.open(1); // the next visitor is greeted anew
+}
+
 TEST_CASE("missing Sumner resources cannot open a scroll", "[game][screens][sumner-visit]") {
     Fixture f("sumner-visit-missing");
     SumnerVisit empty;

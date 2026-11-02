@@ -108,10 +108,12 @@ PartyHud::hourglassLook(std::span<const PlayerRuntime> players) const {
     const f32 ratio = stopTimeTotal() != 0 ? slot->strength / stopTimeTotal() : 0;
     return m_hourglass.look(ratio, 1, true);
 }
-void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
+void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players,
+                          bool quitOffered) {
     for (s32 player = 0; player < kPlayerCount; ++player) {
         StatusBoxView view = status(player, players, &selector(player));
         view.keysShown = relicsShown();
+        view.quitOffered = quitOffered;
         m_boxes.draw(canvas, player, view, true);
     }
     std::array<std::optional<s32>, PickupHud::kSlots> labelTops{};

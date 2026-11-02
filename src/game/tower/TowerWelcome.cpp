@@ -45,6 +45,9 @@ std::optional<s32> TowerWelcome::visitorOf(const LevelTriggers& triggers,
             continue;
         }
         for (const PlayerRuntime& runtime : players) {
+            if (runtime.life != PlayerLife::Standing) {
+                continue;
+            }
             const PlayerActor& actor = runtime.actor;
             const Vec3 away = actor.position() - spot.spot;
             const f32 reach = spot.radius + actor.radius();

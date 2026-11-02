@@ -128,6 +128,12 @@ void SumnerVisit::closeTopics() {
     m_sim.owner = -1;
 }
 
+void SumnerVisit::release(s32 player) {
+    if (player >= 0 && player == m_sim.owner) {
+        closeTopics();
+    }
+}
+
 void SumnerVisit::clear() {
     m_localBinding = std::make_shared<const u8>(0);
     m_menu.close();

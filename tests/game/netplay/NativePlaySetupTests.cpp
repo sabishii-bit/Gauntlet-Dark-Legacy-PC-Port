@@ -15,13 +15,13 @@ using namespace gdl::game;
 
 /** A build offering one mechanic as a room's rule, and one it keeps to a machine. */
 const MechanicCatalog& offered() {
-    static const MechanicCatalog catalog = [] {
+    static const MechanicCatalog kCatalog = [] {
         MechanicCatalog mechanics;
         REQUIRE(mechanics.add(test::FakeMechanic::descriptor("rage")));
         REQUIRE(mechanics.add(test::FakeMechanic::descriptor("local", false)));
         return mechanics;
     }();
-    return catalog;
+    return kCatalog;
 }
 
 NativePlaySetup::Contract contract() {

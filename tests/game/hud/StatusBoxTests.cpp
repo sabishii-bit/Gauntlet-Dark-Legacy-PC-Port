@@ -103,6 +103,22 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
         CHECK(corner != Vec2{128.0f + 8.0f, 323.0f}); // no key icon
     }
     CHECK(promptedActions.empty()); // choices remain, button hints do not
+    // Text batches by font, so a line's absence shows in the vertices, not the draws.
+    const auto vertices = [&device] {
+        usize count = 0;
+        for (const test::RecordedDraw& draw : device.draws) {
+            count += draw.vertices.size();
+        }
+        return count;
+    };
+    const usize offered = vertices();
+    fallen.quitOffered = false; // an online match's prompt offers no Quit Game
+    device.draws.clear();
+    canvas.begin(device, Mat4{1.0f});
+    painter.draw(canvas, 1, fallen, true);
+    canvas.end();
+    CHECK(vertices() < offered);
+    CHECK(vertices() > 0);
 
     // A pickup card at the bar over the box, and a count above it.
     device.draws.clear();

@@ -104,7 +104,7 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
                                       namesHeld] = *data;
     }
     measured("control", [&] {
-        digest.string("PlayScene.native.9");
+        digest.string("PlayScene.native.10");
         digest.value(m_world->ref());
         digest.value(simulationTickRate());
         digest.value(data ? data->state : m_sim);

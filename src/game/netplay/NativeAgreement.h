@@ -5,6 +5,7 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <vector>
 
 #include "engine/net/PacketTransport.h"
 
@@ -53,6 +54,9 @@ public:
     static constexpr usize kQueuedPackets = 16; // per destination
     static constexpr u32 kMaxPeriod = 3600;
     static constexpr auto kTimeout = std::chrono::seconds{10};
+    /** A guest waits longer than the host, so the host's verdict, or its drop of whoever it
+     * still waits on, always arrives first. */
+    static constexpr auto kGuestTimeout = kTimeout + std::chrono::seconds{15};
 
     static bool recognizes(std::span<const u8> bytes);
     static bool recognizesTerminal(std::span<const u8> bytes);
@@ -75,10 +79,21 @@ public:
      * link after flush returns; other send errors remain terminal. */
     bool flush(PacketTransport& transport, Time now = Clock::now(),
                PacketTransport::Connection* closedConnection = nullptr);
+    /** Judges the deadlines; false once the stream has failed. On peer one a tick or delivery
+     * late only on a guest's account never fails it, whichever call meets the deadline:
+     * overdue() names that guest for the session to drop. */
     bool update(Time now = Clock::now());
+    /** On peer one: the guests a tick or a delivery is still waiting on past its deadline,
+     * for the caller to drop; none when what is late is the host's own digest, which fails
+     * the stream instead. */
+    std::vector<u8> overdue(Time now = Clock::now()) const;
+    /** Every wait starts over from `now`: a repair holds the stream, and nobody owes
+     * anything until it ends. */
+    void rearm(Time now = Clock::now());
     void disconnected(PacketTransport::Connection connection);
-    /** A dropped peer is awaited no more and told nothing; pending ticks settle without it. */
-    void suspend(u8 peer);
+    /** A peer dropped at `now` is awaited no more and told nothing; pending ticks settle
+     * without it, and what that owes the others is owed from `now`. */
+    void suspend(u8 peer, Time now = Clock::now());
     bool canSubmit() const;
     bool failed() const { return m_failure != Failure::None; }
     Failure failure() const { return m_failure; }
@@ -101,6 +116,8 @@ private:
         std::array<u8, kPacketBytes> bytes{};
         Time started;
     };
+    std::chrono::seconds timeout() const { return m_local == 1 ? kTimeout : kGuestTimeout; }
+    bool expired(Time start, Time now) const;
     bool occupied(u8 peer) const;
     bool queueReady() const;
     bool scheduled(u64 tick) const;

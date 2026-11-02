@@ -661,6 +661,26 @@ TEST_CASE("goto takes a Legends map by name or platform, a preview of it, and th
     CHECK(ConsoleCommands::platformName(LegendsPlatform::N64) == "N64");
 }
 
+TEST_CASE("goto's Legends forms never reach the shared game; the rest name a level or a point",
+          "[dev-console][commands][online-console]") {
+    std::string error;
+    for (const Args& words : {Args{"back"}, Args{"return"}, Args{"n64", "castle"},
+                              Args{"castle", "preview"}, Args{"MISSING"}, Args{"lab"}}) {
+        CAPTURE(words);
+        const auto destination = ConsoleCommands::parseGoto(words, error);
+        REQUIRE(destination.has_value());
+        CHECK(destination->offlineOnly());
+    }
+    for (const Args& words :
+         {Args{"g1"}, Args{"tower"}, Args{"10", "2.5", "-3"}, Args{"A1", "1", "2", "3"}}) {
+        CAPTURE(words);
+        const auto destination = ConsoleCommands::parseGoto(words, error);
+        REQUIRE(destination.has_value());
+        CHECK_FALSE(destination->offlineOnly());
+        CHECK((destination->level || destination->position));
+    }
+}
+
 TEST_CASE("list maps names the Legends maps installed on a line per platform",
           "[dev-console][commands][legends]") {
     CHECK(ConsoleCommands::legendsMapLines(LegendsPlatform::N64, {}).empty());

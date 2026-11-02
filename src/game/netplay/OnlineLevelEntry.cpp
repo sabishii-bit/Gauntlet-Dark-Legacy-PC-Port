@@ -18,10 +18,11 @@ void OnlineLevelEntry::close() {
     m_loading.close();
     m_phase = Phase::Closed;
     m_shown = false;
+    m_unshown = 0;
     m_wantsMovie = false;
 }
 void OnlineLevelEntry::update(RenderDevice& device, const GameContext& context, bool skipMovie) {
-    if (!m_shown) {
+    if (!m_shown && ++m_unshown < kUnshownTicks) {
         return; // Present the map/first movie frame before advancing its clock.
     }
     if (m_phase == Phase::Movie) {
@@ -51,6 +52,7 @@ void OnlineLevelEntry::update(RenderDevice& device, const GameContext& context, 
         m_loading.close();
         m_phase = Phase::Movie;
         m_shown = false;
+        m_unshown = 0;
     }
 }
 void OnlineLevelEntry::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height) {

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -428,6 +429,14 @@ TEST_CASE("native online bootstrap opens canonical sparse fresh parties on both 
     CHECK(compared >= 6);
 }
 
+TEST_CASE("a guest catching up the shop hears only its newest steps' menu cues",
+          "[native-online-play][native-shop]") {
+    CHECK(NativeOnlinePlay::shopCuesHeard(true, 1000)); // the host steps the shop itself
+    CHECK(NativeOnlinePlay::shopCuesHeard(false, 0));
+    CHECK(NativeOnlinePlay::shopCuesHeard(false, NativeOnlinePlay::kHeardShopSteps - 1));
+    CHECK_FALSE(NativeOnlinePlay::shopCuesHeard(false, NativeOnlinePlay::kHeardShopSteps));
+}
+
 TEST_CASE("a guest gone quiet is dropped by the host and its character waits in the tower",
           "[native-online-play][native-rollback-online][drop][assets]") {
     auto pair = std::make_unique<NativePair>(immediateTower(), "", false, "L1", true);
@@ -442,12 +451,21 @@ TEST_CASE("a guest gone quiet is dropped by the host and its character waits in 
     }
     // The guest's sends stop reaching the host: it predicts, then waits.
     pair->guestWire.silent = true;
+    // What the guest had already sent arrives at the host's next poll; nothing comes after.
+    REQUIRE(pair->host.update(first) != NativeOnlinePlay::Phase::Failed);
+    const auto silentSince = MatchSession::Clock::now();
     for (u32 frame = 0; frame < 40; ++frame) {
         REQUIRE(pair->host.update(first) != NativeOnlinePlay::Phase::Failed);
         REQUIRE(pair->guest.update(second) != NativeOnlinePlay::Phase::Failed);
     }
     CHECK(pair->host.rollbackStatistics().stalls > 0);
-    REQUIRE(pair->hostSession.match().quietPeers() == std::vector<u8>{2});
+    // Nothing fresh has come from it since: a second after that, it is quiet.
+    const auto now = MatchSession::Clock::now();
+    CHECK(pair->hostSession.match().quietSeconds(now) >=
+          std::chrono::duration<f64>(now - silentSince).count());
+    REQUIRE(pair->hostSession.match().quietPeers(
+                MatchSession::kQuietAfter, silentSince + std::chrono::seconds{1}) ==
+            std::vector<u8>{2});
     REQUIRE(pair->hostSession.match().drop(2));
     const u64 before = pair->host.simulatedTick();
     for (u32 frame = 0; frame < 150; ++frame) {
@@ -1352,6 +1370,17 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
         return *found;
     };
     REQUIRE(localLane(pair->host, kSeats[0]).phase == ShopPhase::Tally);
+    // A guest held up while the host steps on catches up at its next poll, every step at once.
+    for (u32 frame = 0; frame < 20; ++frame) {
+        REQUIRE(pair->host.update({}) != NativeOnlinePlay::Phase::Failed);
+    }
+    REQUIRE(pair->guest.update({}) != NativeOnlinePlay::Phase::Failed);
+    CHECK(pair->guestSession.match().shop().held() == 0);
+    for (const s32 seat : kSeats) {
+        CAPTURE(seat);
+        CHECK(localLane(pair->guest, seat).phase == localLane(pair->host, seat).phase);
+        CHECK(localLane(pair->guest, seat).cursor == localLane(pair->host, seat).cursor);
+    }
     for (u32 frame = 0; frame < 90; ++frame) {
         SessionInputs::Frame first;
         SessionInputs::Frame second;

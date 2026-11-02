@@ -140,8 +140,8 @@ TEST_CASE("native online endings ignore unanimous skips and retain their last fr
         CHECK(completion.moviePath() == file);
         CHECK(completion.selection().movie == name);
         CHECK_FALSE(completion.selection().skippable);
-        // A peer whose first render is delayed must still see the full movie.
-        for (s32 tick = 0; tick < expectedTicks + 60; ++tick) {
+        // A peer whose first frame shows late, but within the wait, still sees the whole movie.
+        for (u32 tick = 1; tick < OnlineCompletion::kUnshownTicks; ++tick) {
             completion.update(context, true);
         }
         REQUIRE(completion.phase() == OnlineCompletion::Phase::Movie);
@@ -159,8 +159,10 @@ TEST_CASE("native online endings ignore unanimous skips and retain their last fr
         }
         CAPTURE(name, duration, elapsed);
         REQUIRE(completion.phase() == OnlineCompletion::Phase::Ready);
+        // The first update only starts the clock, and sixtieths summed can fall a hair short
+        // of the last frame: one or two updates past the movie's length.
         CHECK(elapsed >= expectedTicks - 1);
-        CHECK(elapsed <= expectedTicks + 1);
+        CHECK(elapsed <= expectedTicks + 2);
         REQUIRE(completion.visible());
         completion.render(device, projection, 640, 448);
         REQUIRE(device.draws.size() == 1);
@@ -180,6 +182,18 @@ TEST_CASE("native online endings ignore unanimous skips and retain their last fr
         CHECK_FALSE(std::filesystem::exists(config.save.directory));
         completion.close();
         CHECK_FALSE(completion.visible());
+        // One that never shows (a minimised window) plays unseen after the wait, ending as
+        // much later and not holding the others any longer.
+        OnlineCompletion unseen;
+        unseen.open(device, context, source, kind, true);
+        s32 unseenTicks = 0;
+        while (unseen.phase() == OnlineCompletion::Phase::Movie &&
+               unseenTicks < expectedTicks + 200) {
+            unseen.update(context, true);
+            ++unseenTicks;
+        }
+        CHECK(unseen.phase() == OnlineCompletion::Phase::Ready);
+        CHECK(unseenTicks == elapsed + static_cast<s32>(OnlineCompletion::kUnshownTicks) - 1);
     }
 }
 

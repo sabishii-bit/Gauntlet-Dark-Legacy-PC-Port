@@ -225,6 +225,7 @@ struct NativeOnlinePlay::Data {
     std::unique_ptr<Level> level, parent;
     std::vector<PartyMember> levelMembers; ///< the party the current level was loaded with
     bool levelResumed = false; ///< a parent brought back from a challenge cannot be reloaded
+    f32 levelStopTimeTotal = 0; ///< the campaign's Stop Time total as the current level opened
     std::optional<LevelRef> current, secretParent;
     std::optional<Boundary> boundary;
     struct ConfirmedTerminal {
@@ -270,6 +271,7 @@ struct NativeOnlinePlay::Data {
         parent.reset();
         levelMembers.clear();
         levelResumed = false;
+        levelStopTimeTotal = 0;
         boundary.reset();
         terminal.reset();
         current.reset();
@@ -636,6 +638,7 @@ struct NativeOnlinePlay::Data {
         levelMembers.assign(members.begin(), members.end());
         levelResumed = returning;
         levelConsoleCheats = consoleCheats;
+        levelStopTimeTotal = setup->stopTimeTotal();
         if (returning) {
             level = std::move(parent);
             level->scene.resumeFromChallenge(members);
@@ -659,6 +662,7 @@ struct NativeOnlinePlay::Data {
             candidate->scene.setLocalSeats(seatMask(session->seats()));
             candidate->scene.setSoloCameras(context.config != nullptr &&
                                             context.config->multiplayer.soloCamera);
+            candidate->scene.setFixedRoster(true);
             candidate->scene.setViewSeat(lowestSeat(session->seats()));
             for (usize seat = 0; seat < consoleCheats.size(); ++seat) {
                 candidate->scene.setCheats(static_cast<s32>(seat), consoleCheats[seat]);
@@ -786,6 +790,9 @@ struct NativeOnlinePlay::Data {
         if (levelResumed) {
             candidate = std::move(level);
         } else {
+            // The abandoned timeline may have moved the campaign's Stop Time total (a pickup
+            // predicted or diverged); the stage opens again with the one its epoch opened with.
+            setup->stopTimeTotal() = levelStopTimeTotal;
             candidate = std::make_unique<Level>();
             if (!candidate->world.load(*device, context.unpackedRoot, *current) ||
                 !candidate->scene.open(*device, context, candidate->world, levelMembers, options)) {
@@ -794,6 +801,7 @@ struct NativeOnlinePlay::Data {
             candidate->scene.setLocalSeats(seatMask(session->seats()));
             candidate->scene.setSoloCameras(context.config != nullptr &&
                                             context.config->multiplayer.soloCamera);
+            candidate->scene.setFixedRoster(true);
             candidate->scene.setViewSeat(lowestSeat(session->seats()));
             for (usize seat = 0; seat < levelConsoleCheats.size(); ++seat) {
                 candidate->scene.setCheats(static_cast<s32>(seat), levelConsoleCheats[seat]);
@@ -876,8 +884,10 @@ struct NativeOnlinePlay::Data {
             }
         }
         phase = Phase::Shopping;
-        auto step = match.host() ? sync.advance() : sync.take();
-        if (step) {
+        // The host steps the shop once a tick; a guest runs every step it holds, so a stall
+        // or a burst of delivery leaves it no further behind than one poll brings.
+        for (auto step = match.host() ? sync.advance() : sync.take(); step;
+             step = match.host() ? std::nullopt : sync.take()) {
             // A dropped player's lane ends rather than holding the shop, at the step the host
             // ended it at on every peer, however late the drop reached it.
             for (usize seat = 0; seat < match.context().owners.size(); ++seat) {
@@ -909,6 +919,7 @@ struct NativeOnlinePlay::Data {
                     step->inputs[seat].select = step->inputs[seat].back = false;
                 }
             }
+            shop.setCuesHeard(NativeOnlinePlay::shopCuesHeard(match.host(), sync.held()));
             const bool finished =
                 shop.update(1.0 / 60, step->inputs, &step->potions,
                             match.host() ? &step->inputs : nullptr, !match.host());

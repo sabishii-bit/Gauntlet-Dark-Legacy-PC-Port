@@ -24,14 +24,14 @@ using namespace gdl;
 using namespace gdl::game;
 /** A build offering three mechanics as a room's rules. */
 const MechanicCatalog& offered() {
-    static const MechanicCatalog catalog = [] {
+    static const MechanicCatalog kCatalog = [] {
         MechanicCatalog mechanics;
         for (const std::string_view id : {"alpha", "beta", "gamma"}) {
             REQUIRE(mechanics.add(test::FakeMechanic::descriptor(id)));
         }
         return mechanics;
     }();
-    return catalog;
+    return kCatalog;
 }
 struct Wire final : PacketTransport {
     Wire* remote = nullptr;

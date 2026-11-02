@@ -423,6 +423,75 @@ TEST_CASE("shop completion follows native phrase durations without a draining au
     output.stopAll();
     silent.close();
 }
+TEST_CASE("unheard shop cues keep their timing, and level-ups are still said",
+          "[shop][screens][audio][speech-timing][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("AUDIO/COMMON.VBK");
+    test::assetOrSkip("AUDIO/VOICE1.VBK");
+    test::assetOrSkip("AUDIO/VOICE2.VBK");
+    test::assetOrSkip("AUDIO/WAR.VBK");
+    test::FakeRenderDevice device;
+    AudioMixer heardMixer(48000);
+    AudioMixer mutedMixer(48000);
+    SoundPlayer heardOutput(heardMixer);
+    SoundPlayer mutedOutput(mutedMixer);
+    GameContext context;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "SHOP";
+    save.progress().health = 100;
+    save.progress().experience = levelExperience(2);
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    const std::array<LevelResults, 1> results{{{0, {0, 0, levelExperience(2)}}}};
+    AfterLevelScene heard;
+    AfterLevelScene muted;
+    context.sounds = &heardOutput;
+    REQUIRE(heard.open(device, context, party, results, {1, 1, levelExperience(2)}, "G1"));
+    context.sounds = &mutedOutput;
+    REQUIRE(muted.open(device, context, party, results, {1, 1, levelExperience(2)}, "G1"));
+    muted.setCuesHeard(false);
+    SoundSet common;
+    REQUIRE(common.load(root / "audio/COMMON"));
+    const auto select = common.find("S_OPTMENUSEL");
+    REQUIRE(select);
+    const std::string menuBank = common.sequence(*select).bank;
+    REQUIRE_FALSE(heard.update(10, {}));
+    REQUIRE_FALSE(muted.update(10, {}));
+    std::vector<std::string> heardBanks;
+    std::vector<std::string> mutedBanks;
+    const auto played = [](std::vector<std::string>& banks) {
+        return [&banks](const SoundPlayer::Event& event) {
+            if (event.kind == SoundPlayer::Event::Kind::Play) {
+                banks.push_back(event.bank);
+            }
+        };
+    };
+    const SoundPlayer::Capture heardCapture(&heardOutput, played(heardBanks));
+    const SoundPlayer::Capture mutedCapture(&mutedOutput, played(mutedBanks));
+    ShopSession::Inputs accept{};
+    accept[0].select = true;
+    for (s32 press = 0; press < 16 && heard.session().lanes()[0].inventory.phase() !=
+                                          InventoryPanel::Phase::Leaving;
+         ++press) {
+        REQUIRE_FALSE(heard.update(0, accept));
+        REQUIRE_FALSE(muted.update(0, accept));
+        REQUIRE(muted.session().lanes()[0].phase == heard.session().lanes()[0].phase);
+        REQUIRE(muted.lastSounds() == heard.lastSounds());
+    }
+    bool finished = false;
+    for (s32 tick = 0; tick < 60 * 60 && !finished; ++tick) {
+        CAPTURE(tick);
+        finished = heard.update(1.0 / 60, {});
+        REQUIRE(muted.update(1.0 / 60, {}) == finished); // the same timing, heard or not
+    }
+    REQUIRE(finished);
+    CHECK(std::ranges::count(heardBanks, menuBank) > 0);
+    CHECK(std::ranges::count(mutedBanks, menuBank) == 0);
+    CHECK_FALSE(mutedBanks.empty()); // the level-up is still said
+    heardOutput.stopAll();
+    mutedOutput.stopAll();
+}
+
 TEST_CASE("shop lane borders retain retail brightness and opacity in every column",
           "[shop][screens][assets]") {
     // init_shop 8009A504/8009A52C sets 0x80808080; DrawBlit 800B47D0 doubles

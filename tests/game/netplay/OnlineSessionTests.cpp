@@ -959,6 +959,23 @@ TEST_CASE("online session timeouts never require blocking the frame thread",
     CHECK(host.service.leaves == 1);
 }
 
+TEST_CASE("a guest whose terminal certificate never comes is dropped and the host's exit agrees",
+          "[netplay][online-session][drop]") {
+    test::OnlinePair pair;
+    pair.prepare();
+    pair.ready();
+    REQUIRE(pair.hostInputs.advance());
+    REQUIRE(pair.hostInputs.complete());
+    const auto epoch = pair.host.context().epoch;
+    const auto now = MatchSession::Clock::now();
+    REQUIRE(pair.host.observeNativeTerminal(epoch, 1, NativeAgreement::Digest{}, now));
+    CHECK_FALSE(pair.host.nativeTerminalAgreed(epoch, 1));
+    pair.host.update(0, now + NativeAgreement::kTimeout);
+    CHECK(pair.host.phase() == MatchSession::Phase::Running);
+    CHECK(pair.host.dropped(2));
+    CHECK(pair.host.nativeTerminalAgreed(epoch, 1));
+}
+
 TEST_CASE("online failure preserves terminal agreement diagnostics through teardown",
           "[netplay][online-session][session-recovery]") {
     test::OnlinePair pair;
@@ -971,17 +988,10 @@ TEST_CASE("online failure preserves terminal agreement diagnostics through teard
     const NativeAgreement::Digest first{};
     REQUIRE(pair.host.observeNativeTerminal(epoch, 1, first, now));
     CHECK_FALSE(pair.host.completeNativeBoundary(epoch, 1));
-    std::string expected;
-    SECTION("conflicting locally confirmed terminal") {
-        auto changed = first;
-        changed[0] = 1;
-        CHECK_FALSE(pair.host.observeNativeTerminal(epoch, 1, changed, now));
-        expected = "conflicting digest";
-    }
-    SECTION("permanent missing peer terminal certificate") {
-        pair.host.update(0, now + NativeAgreement::kTimeout);
-        expected = "timeout";
-    }
+    auto changed = first;
+    changed[0] = 1;
+    CHECK_FALSE(pair.host.observeNativeTerminal(epoch, 1, changed, now));
+    const std::string expected = "conflicting digest";
     REQUIRE(pair.host.phase() == MatchSession::Phase::Stopped);
     CHECK_FALSE(pair.host.nativeTerminalAgreed(epoch, 1));
     CHECK_FALSE(pair.host.completeNativeBoundary(epoch, 1));

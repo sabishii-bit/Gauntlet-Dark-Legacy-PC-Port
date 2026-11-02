@@ -104,6 +104,9 @@ public:
         std::optional<LegendsPlatform> platform; ///< the map's platform, when named
         bool preview = false; ///< fly through the Legends map rather than walk it
         bool back = false;    ///< leave the Legends map for the level left for it
+        /** A Legends map or the way back from one: this machine's alone, never the shared
+         * game's. */
+        bool offlineOnly() const { return back || legends.has_value(); }
         bool operator==(const Destination&) const = default;
     };
     static std::string gotoUsage();

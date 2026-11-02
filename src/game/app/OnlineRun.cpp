@@ -56,12 +56,10 @@ struct OnlineRun::Impl {
     u64 reportedEpoch = 0;
     u64 reportedTick = 0;
     u64 networkTick = 0;
-    u64 stallsSeen = 0;
     std::array<bool, 5> droppedSeen{};
     std::string notice;
     std::optional<std::chrono::steady_clock::time_point> noticeUntil;
     std::optional<u8> chosenLead;
-    std::optional<std::chrono::steady_clock::time_point> stalledSince;
 #endif
 };
 OnlineRun::OnlineRun() = default;
@@ -560,6 +558,9 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
                 run.nativePlay.pause();
             }
         }
+        // Silence is judged as of the frame's start: while a frame loads or rebuilds, this
+        // machine hears nobody, and that is not the others' silence.
+        const auto now = std::chrono::steady_clock::now();
         const auto phase = run.nativePlay.update(devices);
         const auto completed = run.nativePlay.simulatedTick();
         const auto epoch = session.match().context().epoch;
@@ -588,50 +589,35 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
                    phase != NativeOnlinePlay::Phase::Paused) {
             network(*run.device, "", -1);
         }
-        // Inputs that stop arriving starve the simulation. Say so after a moment and end
-        // the session at a deadline rather than freezing until the transport gives up.
+        // A peer that stops sending starves the simulation, however the pacing hides it: say
+        // so after a moment, and at the deadline the host drops whoever went quiet and the
+        // game goes on; a guest leaves only when it is the host that went quiet.
         std::optional<std::string> stall;
         const bool resyncing = session.match().resyncing();
-        const auto now = std::chrono::steady_clock::now();
-        if (phase == NativeOnlinePlay::Phase::Playing && !resyncing) {
-            const auto stalls = run.nativePlay.rollbackStatistics().stalls;
-            if (stalls > run.stallsSeen) {
-                run.stallsSeen = stalls;
-                if (!run.stalledSince) {
-                    run.stalledSince = now;
-                }
-            } else {
-                run.stalledSince.reset();
-            }
-            if (run.stalledSince) {
-                const f64 seconds = std::chrono::duration<f64>(now - *run.stalledSince).count();
-                if (seconds >= kStallDeadlineSeconds) {
-                    // The host drops whoever went quiet and the game goes on; a guest
-                    // leaves only when it is the host that went quiet.
-                    const auto quiet = session.match().quietPeers();
-                    bool dropped = false;
-                    if (session.host()) {
-                        for (const u8 peer : quiet) {
-                            dropped = session.match().drop(peer) || dropped;
-                        }
-                    }
-                    const bool hostQuiet = std::ranges::find(quiet, u8{1}) != quiet.end();
-                    if (dropped) {
-                        run.stalledSince.reset();
-                    } else if (session.host() || hostQuiet) {
-                        status(*run.device, "Another player stopped responding. Online session "
-                                            "ended. Escape exits.");
-                        session.leave();
-                        run.finished = true;
-                        return;
+        if ((phase == NativeOnlinePlay::Phase::Playing ||
+             phase == NativeOnlinePlay::Phase::Paused) &&
+            !resyncing) {
+            const auto quiet = session.match().quietPeers(kStallNoticeSeconds, now);
+            const f64 seconds = session.match().quietSeconds(now);
+            if (!quiet.empty() && seconds >= kStallDeadlineSeconds) {
+                bool dropped = false;
+                if (session.host()) {
+                    for (const u8 peer : session.match().quietPeers(kStallDeadlineSeconds, now)) {
+                        dropped = session.match().drop(peer) || dropped;
                     }
                 }
-                if (run.stalledSince) {
-                    stall = stallNotice(seconds);
+                const bool hostQuiet = std::ranges::find(quiet, u8{1}) != quiet.end();
+                if (!dropped && (session.host() || hostQuiet)) {
+                    status(*run.device, "Another player stopped responding. Online session "
+                                        "ended. Escape exits.");
+                    session.leave();
+                    run.finished = true;
+                    return;
                 }
             }
-        } else {
-            run.stalledSince.reset();
+            if (!session.match().quietPeers(kStallNoticeSeconds, now).empty()) {
+                stall = stallNotice(session.match().quietSeconds(now));
+            }
         }
         // Whoever dropped out, at the deadline above or by losing its link, the game goes on.
         bool newlyDropped = false;

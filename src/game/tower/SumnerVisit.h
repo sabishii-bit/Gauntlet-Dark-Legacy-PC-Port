@@ -56,6 +56,8 @@ public:
     bool openTopics(s32 player, const TextPainter& text, const MenuScreen& screen,
                     HintMenuLabels labels);
     void closeTopics();
+    /** `player` has left play: a scroll it holds goes at once, unanswered and unburnt. */
+    void release(s32 player);
     /** Ends the interaction and releases borrowed art, retaining hint progression. */
     void clear();
 

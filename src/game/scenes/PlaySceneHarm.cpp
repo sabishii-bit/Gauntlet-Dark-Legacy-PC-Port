@@ -31,20 +31,7 @@ void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
 /** A fallen player asked to wait in the tower or quit answers with their own buttons
  * (player.c 2452): accept waits, back leaves the game (abort_player), out of the party. */
 void PlayScene::answerTowerPrompts(const Inputs& inputs) {
-    for (PlayerRuntime& runtime : m_players) {
-        const auto player = static_cast<usize>(runtime.actor.player());
-        if (!runtime.towerPrompt || runtime.life != PlayerLife::InTower ||
-            player >= inputs.size()) {
-            continue;
-        }
-        if (inputs[player].menu.back) {
-            runtime.towerPrompt = false;
-            runtime.departed = true;
-            log::info("Player {} has left the game", player + 1);
-        } else if (inputs[player].menu.select) {
-            runtime.towerPrompt = false;
-        }
-    }
+    PlayerHealth::answerTowerPrompts(m_players, inputs, !m_sim.fixedRoster);
 }
 
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
@@ -119,6 +106,7 @@ bool PlayScene::waitInTower(s32 player) {
             perform(i, PartyMotion::Action::Fallen);
         }
         runtime.towerPrompt = false; // nobody is left at that seat to answer it
+        m_sumnerVisit.release(player); // nor to read or put away a scroll it holds
         return true;
     }
     return false;

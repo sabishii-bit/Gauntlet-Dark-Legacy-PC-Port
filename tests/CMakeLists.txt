@@ -198,6 +198,7 @@ add_executable(tests
     game/netplay/MatchSessionTests.cpp
     game/netplay/ShopSyncTests.cpp
     game/netplay/OnlineCompletionTests.cpp
+    game/netplay/OnlineLevelEntryTests.cpp
     game/netplay/OnlineSessionTests.cpp
     game/netplay/CharacterProfileTests.cpp
     game/characters/PartyCheckpointTests.cpp
@@ -771,6 +772,7 @@ if(GDL_ENABLE_NETPLAY)
         game/players/PlayerAnimatorTests.cpp
         game/netplay/MeasuredPacketTransportTests.cpp
         game/netplay/OnlineCompletionTests.cpp
+        game/netplay/OnlineLevelEntryTests.cpp
         engine/audio/SoundPlayerTests.cpp
         game/app/OnlineRunTests.cpp game/netplay/NativeCampaignTransportTests.cpp
         game/scenes/TitleSceneTests.cpp
@@ -787,6 +789,9 @@ if(GDL_ENABLE_NETPLAY)
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
         GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
     gdl_apply_compiler_options(netplayplaytests)
+    if(MSVC)
+        target_link_options(netplayplaytests PRIVATE /STACK:16777216) # as the suite's, below
+    endif()
     set_target_properties(netplayplaytests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
     # Actual gameplay, independent-process determinism observations; no replicas.
     add_executable(nativeprobe game/rollback/NativeSimulationProbe.cpp game/rollback/NativeProbeLink.cpp
@@ -941,6 +946,9 @@ if(GDL_ENABLE_NETPLAY)
     target_compile_definitions(simulationtests PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
     gdl_apply_compiler_options(simulationtests)
+    if(MSVC)
+        target_link_options(simulationtests PRIVATE /STACK:16777216) # as the suite's, below
+    endif()
     set_target_properties(simulationtests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
 endif()
 target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp

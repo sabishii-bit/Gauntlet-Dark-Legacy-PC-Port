@@ -42,6 +42,7 @@ struct StatusBoxView {
     s32 potionKind = 0;       ///< of the potion thrown next, which picks the icon's colour
     bool inTower = false;     ///< fallen: the box says so in place of what is carried
     bool towerPrompt = false; ///< fallen outside the tower: wait there, or quit the game
+    bool quitOffered = true;  ///< the prompt offers to quit; an online match's does not
     std::optional<TurboMeterLook> turbo; ///< the turbo meter over the box, when it has one
     u16 runes = 0;                       ///< the runestones held, a bit each (retail's shards)
     u16 bossKeys = 0;                    ///< the bosses' keys, a bit per realm in the tower's order

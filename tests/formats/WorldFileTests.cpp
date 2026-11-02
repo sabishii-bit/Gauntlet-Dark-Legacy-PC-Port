@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <string_view>
@@ -10,6 +11,7 @@
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/PortableMath.h"
 
 #include "TestSupport.h"
 #include "formats/WorldFile.h"
@@ -187,6 +189,64 @@ std::vector<u8> sampleWorld(bool extended) {
     put16(bytes, triangles + 36, 0);
     put16(bytes, triangles + 38, static_cast<u16>(-112));
     return bytes;
+}
+
+TEST_CASE("collision corners unfold with the portable functions on every platform",
+          "[formats][world][determinism]") {
+    // Normals from a fixed integer stream, unit offsets on a zero base: every bit of each
+    // sine and cosine lands in a corner, so a platform's own trigonometry would show.
+    constexpr usize kTriangles = 2048;
+    const usize triangles = kHeader + kExtended; // after an extended header naming nothing
+    std::vector<u8> bytes(triangles + kTriangles * kTriangle, 0);
+    put32(bytes, 8, static_cast<u32>(kTriangles));
+    put32(bytes, 12, static_cast<u32>(triangles));
+    put32(bytes, kHeader, 0xF00BAB02);
+    std::vector<Vec3> normals;
+    u32 state = 12345;
+    const auto component = [&state] {
+        state = state * 1664525U + 1013904223U;
+        return static_cast<f32>(static_cast<s32>(state >> 8) - (1 << 23)) / static_cast<f32>(1 << 23);
+    };
+    while (normals.size() < kTriangles) {
+        const Vec3 raw{component(), component(), component()};
+        if (glm::dot(raw, raw) < 0.01f) {
+            continue;
+        }
+        normals.push_back(glm::normalize(raw));
+    }
+    for (usize i = 0; i < kTriangles; ++i) {
+        const usize at = triangles + i * kTriangle;
+        putF(bytes, at + 8, normals[i].x);
+        putF(bytes, at + 12, normals[i].y);
+        putF(bytes, at + 16, normals[i].z);
+        put16(bytes, at + 32, 64); // (1, 0)
+        put16(bytes, at + 38, 64); // (0, 1)
+    }
+    const WorldFile world = WorldFile::parse(bytes);
+    REQUIRE(world.collision.size() == kTriangles);
+    for (usize i = 0; i < kTriangles; ++i) {
+        const Vec3& n = normals[i];
+        const f32 tilt = portable::acos(std::clamp(n.y, -1.0f, 1.0f));
+        const f32 turn = n.x == 0.0f && n.z == 0.0f ? 0.0f : portable::atan2(-n.x, -n.z);
+        const f32 sinTilt = portable::sin(tilt);
+        const f32 cosTilt = portable::cos(tilt);
+        const f32 sinTurn = portable::sin(turn);
+        const f32 cosTurn = portable::cos(turn);
+        // The decoder's own sums, over a zero corner, so that even a zero's sign agrees.
+        const auto unfold = [&](f32 x, f32 z) {
+            return Vec3{0.0f} + Vec3{x * cosTurn + z * cosTilt * sinTurn, z * sinTilt,
+                                     -x * sinTurn + z * cosTilt * cosTurn};
+        };
+        const Vec3 first = unfold(1.0f, 0.0f);
+        const Vec3 second = unfold(0.0f, 1.0f);
+        CAPTURE(i);
+        for (glm::length_t axis = 0; axis < 3; ++axis) {
+            CHECK(std::bit_cast<u32>(world.collision[i].vertices[1][axis]) ==
+                  std::bit_cast<u32>(first[axis]));
+            CHECK(std::bit_cast<u32>(world.collision[i].vertices[2][axis]) ==
+                  std::bit_cast<u32>(second[axis]));
+        }
+    }
 }
 
 TEST_CASE("a world file yields its objects, hierarchy and locators", "[formats][world]") {

@@ -106,6 +106,108 @@ TEST_CASE("shop wire rejects malformed packets and bounds congestion", "[netplay
     CHECK_FALSE(shops.host.advance());
     CHECK(shops.host.outgoing().size() <= ShopSync::kBudget);
 }
+TEST_CASE("the host folds a seat's waiting pointer moves into one, never its presses",
+          "[netplay][online-shop]") {
+    Shops shops;
+    // A stall's worth of moves, a purchase, its release and a move after that, in one poll.
+    for (s32 tick = 0; tick < 40; ++tick) {
+        REQUIRE(shops.guest.sample(1, {}, tick % 8));
+    }
+    MenuInput buy;
+    buy.select = true;
+    REQUIRE(shops.guest.sample(1, buy, 5));
+    REQUIRE(shops.guest.sample(1, {}));    // the release every press is followed by
+    REQUIRE(shops.guest.sample(1, {}, 3)); // folds into the release, never into the press
+    Shops::relay(shops.guest, shops.host, 2);
+    std::vector<ShopStep> steps;
+    for (s32 tick = 0; tick < 4; ++tick) {
+        const auto step = shops.host.advance();
+        REQUIRE(step);
+        REQUIRE(shops.host.publish(*step));
+        steps.push_back(*step);
+    }
+    CHECK(steps[0].focus[1] == 7); // the moves, folded into the latest
+    CHECK_FALSE(steps[0].inputs[1].select);
+    CHECK(steps[1].inputs[1].select); // the purchase, after them and once
+    CHECK(steps[1].focus[1] == 5);
+    CHECK_FALSE(steps[2].inputs[1].select);
+    CHECK(steps[2].focus[1] == 3);
+    CHECK(steps[3].focus[1] == -1);
+}
+
+TEST_CASE("the host's own presses wait and fold as a guest's do", "[netplay][online-shop]") {
+    Shops shops;
+    MenuInput buy;
+    buy.select = true;
+    REQUIRE(shops.host.sample(0, buy, 2));
+    REQUIRE(shops.host.sample(0, {}));
+    REQUIRE(shops.host.sample(0, {}, 4));
+    std::vector<ShopStep> steps;
+    for (s32 tick = 0; tick < 3; ++tick) {
+        const auto step = shops.host.advance();
+        REQUIRE(step);
+        REQUIRE(shops.host.publish(*step));
+        steps.push_back(*step);
+    }
+    CHECK(steps[0].inputs[0].select);
+    CHECK(steps[0].focus[0] == 2);
+    CHECK_FALSE(steps[1].inputs[0].select);
+    CHECK(steps[1].focus[0] == 4);
+    CHECK(steps[2].focus[0] == -1);
+}
+
+TEST_CASE("only presses count against what the host holds of a seat's",
+          "[netplay][online-shop]") {
+    Shops shops;
+    MenuInput buy;
+    buy.select = true;
+    SECTION("a stall's clicks and their releases all reach the shop") {
+        for (s32 click = 0; click < 40; ++click) {
+            REQUIRE(shops.guest.sample(1, buy, 2));
+            REQUIRE(shops.guest.sample(1, {}));
+        }
+        Shops::relay(shops.guest, shops.host, 2);
+        s32 bought = 0;
+        for (s32 tick = 0; tick < 80; ++tick) {
+            const auto step = shops.host.advance();
+            REQUIRE(step);
+            REQUIRE(shops.host.publish(*step));
+            bought += step->inputs[1].select ? 1 : 0;
+        }
+        CHECK(bought == 40);
+    }
+    SECTION("past ten seconds of presses a seat's next one is refused, their releases aside") {
+        for (usize press = 0; press < ShopSync::kHeldPresses; ++press) {
+            REQUIRE(shops.guest.sample(1, buy, 2));
+            REQUIRE(shops.guest.sample(1, {})); // its release waits too, uncounted
+            if (shops.guest.outgoing().size() >= 200) {
+                Shops::relay(shops.guest, shops.host, 2);
+            }
+        }
+        Shops::relay(shops.guest, shops.host, 2);
+        REQUIRE(shops.guest.sample(1, buy, 2));
+        CHECK(shops.host.receive(2, shops.guest.outgoing().front().bytes) == Admission::Invalid);
+    }
+}
+
+TEST_CASE("a guest keeps every step the host sends while its own loop is held up",
+          "[netplay][online-shop]") {
+    Shops shops;
+    for (usize tick = 0; tick < 300; ++tick) {
+        const auto step = shops.host.advance();
+        REQUIRE(step);
+        REQUIRE(shops.host.publish(*step));
+        if (tick % 50 == 49) {
+            Shops::relay(shops.host, shops.guest, 1);
+        }
+    }
+    usize shown = 0;
+    while (shops.guest.take()) {
+        ++shown;
+    }
+    CHECK(shown == 300);
+}
+
 TEST_CASE("shop colours remain authenticated host outcomes rather than guest RNG draws",
           "[netplay][online-shop][shop-random]") {
     Shops shops;

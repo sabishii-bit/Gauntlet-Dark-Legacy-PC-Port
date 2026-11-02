@@ -185,8 +185,8 @@ bool Gauntlet::dispatchOnlineConsole(DevConsole& console, std::string_view name,
             error.clear();
         }
     } else if (name == "goto") {
-        if (ConsoleCommands::parseGoto(arguments, error)) {
-            error.clear();
+        if (const auto destination = ConsoleCommands::parseGoto(arguments, error)) {
+            error = destination->offlineOnly() ? "Legends maps are offline only." : "";
         }
     } else if (name == "spawn") {
         if (ConsoleCommands::parseSpawn(arguments, error)) {

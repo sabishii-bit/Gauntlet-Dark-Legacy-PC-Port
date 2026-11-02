@@ -684,7 +684,9 @@ TEST_CASE("travel preparation is bounded under congestion and missing profiles t
     const auto prepare = message(host, MatchControlKind::Prepare);
     auto& guest = room.sessions[2];
     REQUIRE(guest.receive(99, prepare) == Admission::Accepted);
-    guest.update(MatchSession::kLoadTimeout);
+    guest.update(MatchSession::kLoadTimeout); // still playing to the stage's end: the host decides first
+    CHECK(guest.phase() == Phase::Running);
+    guest.update(MatchSession::kGuestLoadTimeout - MatchSession::kLoadTimeout);
     CHECK(guest.phase() == Phase::Stopped);
     CHECK(guest.stopReason() == MatchStop::LoadTimeout);
     CHECK_FALSE(guest.travelParty());
@@ -818,6 +820,58 @@ TEST_CASE("ready input sampling leaves the caller's attack levels unchanged",
     CHECK(room.inputs[2].inputs().redundantInputs().front().held(CommandHeld::Attack) == held);
     CHECK(room.inputs[2].inputs().redundantInputs().front().pressed(CommandPress::Attack) ==
           pressed);
+}
+
+TEST_CASE("a guest still loading a later stage at the deadline is dropped and the rest go on",
+          "[netplay][match-session][drop]") {
+    Room room({1, 2, 3, 0});
+    room.ready();
+    room.completeOne();
+    auto& host = room.sessions[1];
+    const auto profiles = room.party();
+    REQUIRE(host.prepare(8, MatchTransition::Travel, &profiles));
+    room.pump();
+    REQUIRE(room.loaded(1));
+    REQUIRE(room.loaded(2));
+    room.pump(); // peer three never loads: minimised, or hung
+    REQUIRE(host.phase() == Phase::Loading);
+    host.update(MatchSession::kLoadTimeout);
+    CHECK(host.phase() == Phase::Running);
+    CHECK(host.dropped(3));
+    room.pump();
+    CHECK(room.sessions[2].phase() == Phase::Running);
+    CHECK(room.sessions[2].dropped(3));
+    CHECK(room.sessions[3].phase() == Phase::Stopped);
+    CHECK(room.sessions[3].stopReason() == MatchStop::Left);
+}
+
+TEST_CASE("play begun by a guest's last word counts everyone as heard from then",
+          "[netplay][match-session][drop]") {
+    // The host has loaded and waits; the last guest's Ready comes long after, as when the
+    // host's own load ran past the others'. Nobody is silent the moment play begins.
+    Room room({1, 2, 0, 0});
+    const MatchSession::Time loadedAt{};
+    REQUIRE(room.sessions[1].prepare(7));
+    room.pump(loadedAt);
+    REQUIRE(room.sessions[2].phase() == Phase::Loading);
+    room.sessions[1].update(0, loadedAt);
+    REQUIRE(room.loaded(1));
+    REQUIRE(room.loaded(2));
+    const auto readyAt = loadedAt + std::chrono::seconds{16};
+    // One poll brings the guest's heartbeat and then the Ready that completes the barrier.
+    room.sessions[2].flush(room.wires[2], readyAt);
+    auto sent = std::move(room.wires[2].sent);
+    room.wires[2].sent.clear();
+    std::ranges::stable_partition(
+        sent, [](const auto& packet) { return RollbackExchange::recognizes(packet.bytes); });
+    REQUIRE(RollbackExchange::recognizes(sent.front().bytes));
+    for (const auto& packet : sent) {
+        const auto admitted = room.sessions[1].receive(1, packet.bytes, readyAt);
+        REQUIRE((admitted == Admission::Accepted || admitted == Admission::Stale));
+    }
+    REQUIRE(room.sessions[1].phase() == Phase::Running);
+    CHECK(room.sessions[1].quietPeers(MatchSession::kQuietAfter, readyAt).empty());
+    CHECK(room.sessions[1].quietSeconds(readyAt) < MatchSession::kQuietAfter);
 }
 
 TEST_CASE("load timeout aborts even before the prepare message reaches a guest",

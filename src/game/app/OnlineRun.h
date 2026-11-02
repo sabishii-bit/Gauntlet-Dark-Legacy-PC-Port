@@ -79,7 +79,8 @@ public:
      * figures go to the log. Unknown ping reads as such. */
     static std::string networkSummary(s32 pingMs);
     const std::string& network() const { return m_network; }
-    /** How long a simulation starved of a peer's inputs waits before the session ends. */
+    /** How long the quietest peer may send nothing, starving the simulation, before the host
+     * drops it and play goes on; a guest leaves instead when it is the host that went quiet. */
     static constexpr f64 kStallDeadlineSeconds = 15;
     /** Seconds a stall may last before the players are told about it. */
     static constexpr f64 kStallNoticeSeconds = 1;

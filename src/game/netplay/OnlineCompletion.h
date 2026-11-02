@@ -16,6 +16,9 @@ struct GameContext;
 class OnlineCompletion {
 public:
     enum class Phase : u8 { Closed, Movie, Ready, Failed };
+    /** Ticks the movie waits for its first frame to show before it plays regardless: a
+     * machine that cannot present (a minimised window) must not hold the others. */
+    static constexpr u32 kUnshownTicks = 60;
     struct Route {
         std::string_view movie;
         ShopVisit visit = ShopVisit::Level;
@@ -51,5 +54,6 @@ private:
     std::filesystem::path m_path;
     Phase m_phase = Phase::Closed;
     bool m_shown = false;
+    u32 m_unshown = 0; ///< ticks waited on the first frame
 };
 } // namespace gdl::game

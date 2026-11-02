@@ -399,7 +399,9 @@ TEST_CASE("shared console rejects invalid values and absent seats without mutati
           ConsoleAction{0, "get exp 2147483647"}, ConsoleAction{0, "get gold 2147483647"},
           ConsoleAction{0, "get keys 2147483647"}, ConsoleAction{0, "get health 2147483647"},
           ConsoleAction{0, "get levitate 1e38"}, ConsoleAction{0, "get levitate nan"},
-          ConsoleAction{0, "goto MISSING"}}) {
+          ConsoleAction{0, "goto MISSING"}, ConsoleAction{0, "goto back"},
+          ConsoleAction{0, "goto return"}, ConsoleAction{0, "goto n64 castle"},
+          ConsoleAction{0, "goto castle preview"}, ConsoleAction{0, "goto lab"}}) {
         CAPTURE(action.line, action.seat);
         REQUIRE(scene.restoreLocal(before));
         const std::array actions{action};

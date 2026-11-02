@@ -218,11 +218,12 @@ const Texture* AfterLevelScene::texture(std::string_view name) {
     }
     return nullptr;
 }
-AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view name) {
-    return effect(bank, name, Effect{});
+AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view name,
+                                                bool heard) {
+    return effect(bank, name, Effect{}, heard);
 }
 AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view name,
-                                                const Effect& after) {
+                                                const Effect& after, bool heard) {
     m_lastSounds.emplace_back(name);
     const auto index = bank.find(name);
     if (!index.has_value()) {
@@ -240,7 +241,7 @@ AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view
     if (result.timing.playing()) {
         m_effects.push_back(result.timing);
     }
-    if (m_context.sounds != nullptr) {
+    if (heard && m_context.sounds != nullptr) {
         try {
             result.handle = m_context.sounds->playAfter(after.handle, sequence);
             if (result.handle != kNoSound) {
@@ -289,13 +290,13 @@ void AfterLevelScene::announceLevel(s32 player) {
 }
 void AfterLevelScene::playCue(const ShopEvent& event) {
     switch (event.cue) {
-    case ShopCue::Select: effect(m_common, kSelectSound); break;
-    case ShopCue::CursorNext: effect(m_common, kCursorNextSound); break;
-    case ShopCue::CursorPrevious: effect(m_common, kCursorPreviousSound); break;
+    case ShopCue::Select: effect(m_common, kSelectSound, m_cuesHeard); break;
+    case ShopCue::CursorNext: effect(m_common, kCursorNextSound, m_cuesHeard); break;
+    case ShopCue::CursorPrevious: effect(m_common, kCursorPreviousSound, m_cuesHeard); break;
     case ShopCue::Bought:
-    case ShopCue::Sold: effect(m_common, kTradeSound); break;
-    case ShopCue::Refused: effect(m_common, kRefusedSound); break;
-    case ShopCue::InventoryShown: effect(m_common, kInventorySound); break;
+    case ShopCue::Sold: effect(m_common, kTradeSound, m_cuesHeard); break;
+    case ShopCue::Refused: effect(m_common, kRefusedSound, m_cuesHeard); break;
+    case ShopCue::InventoryShown: effect(m_common, kInventorySound, m_cuesHeard); break;
     case ShopCue::LevelGained: announceLevel(event.player); break;
     }
 }

@@ -76,12 +76,13 @@ std::optional<Message> decode(std::span<const u8> bytes) {
     }
     return result;
 }
-bool expired(NativeAgreement::Time start, NativeAgreement::Time now) {
-    // Avoid subtracting extreme injected time points or overflowing start+timeout.
-    return start <= NativeAgreement::Time::max() - NativeAgreement::kTimeout &&
-           now >= start + NativeAgreement::kTimeout;
-}
 } // namespace
+
+bool NativeAgreement::expired(Time start, Time now) const {
+    const auto limit = timeout();
+    // Avoid subtracting extreme injected time points or overflowing start+timeout.
+    return start <= Time::max() - limit && now >= start + limit;
+}
 
 bool NativeAgreement::recognizes(std::span<const u8> bytes) {
     return bytes.size() >= 4 &&
@@ -100,13 +101,15 @@ std::optional<std::pair<u64, u64>> NativeAgreement::terminalContext(std::span<co
 bool NativeAgreement::occupied(u8 peer) const {
     return peer != 0 && !m_suspended[peer] && std::ranges::find(m_owners, peer) != m_owners.end();
 }
-void NativeAgreement::suspend(u8 peer) {
+void NativeAgreement::suspend(u8 peer, Time now) {
     if (!m_open || peer == 0 || peer > 4 || peer == m_local || !occupied(peer)) {
         return;
     }
     m_suspended[peer] = true;
     m_outgoing[peer].clear();
     m_links[peer] = 0;
+    // A verdict the drop settles is sent from now, not from the stream's last call.
+    m_now = std::max(m_now, now);
     if (!failed()) {
         settle();
     }
@@ -206,10 +209,13 @@ bool NativeAgreement::update(Time now) {
     }
     m_now = std::max(m_now, now);
     for (const auto& [tick, pending] : m_pending) {
-        if (expired(pending.started, m_now)) {
+        if (expired(pending.started, m_now) && (m_local != 1 || !pending.digests[1])) {
             fail(Failure::Timeout, tick);
             return false;
         }
+    }
+    if (m_local == 1) {
+        return true; // a verdict a guest has not taken in time makes that guest overdue
     }
     // An array iterator is a pointer only on some libraries:
     // NOLINTNEXTLINE(readability-qualified-auto)
@@ -222,6 +228,52 @@ bool NativeAgreement::update(Time now) {
     const auto message = decode(overdue->front().bytes);
     fail(Failure::Timeout, message->tick);
     return false;
+}
+std::vector<u8> NativeAgreement::overdue(Time now) const {
+    std::vector<u8> late;
+    if (!m_open || failed() || m_local != 1) {
+        return late;
+    }
+    const Time at = std::max(m_now, now);
+    const auto add = [&late](u8 peer) {
+        if (std::ranges::find(late, peer) == late.end()) {
+            late.push_back(peer);
+        }
+    };
+    for (const auto& entry : m_pending) {
+        const Pending& pending = entry.second;
+        if (!expired(pending.started, at)) {
+            continue;
+        }
+        if (!pending.digests[1]) {
+            return {}; // the host's own digest is what is late: nobody else to blame
+        }
+        for (u8 peer = 2; peer <= 4; ++peer) {
+            if (occupied(peer) && !pending.digests[peer]) {
+                add(peer);
+            }
+        }
+    }
+    for (u8 peer = 2; peer <= 4; ++peer) {
+        if (!m_outgoing[peer].empty() && expired(m_outgoing[peer].front().started, at)) {
+            add(peer);
+        }
+    }
+    return late;
+}
+void NativeAgreement::rearm(Time now) {
+    if (!m_open || failed()) {
+        return;
+    }
+    m_now = std::max(m_now, now);
+    for (auto& entry : m_pending) {
+        entry.second.started = m_now;
+    }
+    for (auto& queue : m_outgoing) {
+        for (auto& delivery : queue) {
+            delivery.started = m_now;
+        }
+    }
 }
 NativeAgreement::Admission NativeAgreement::admit(u8 peer, u64 tick, const Digest& digest) {
     if (tick <= m_agreed) {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 #include "engine/io/ByteReader.h"
 #include "engine/math/RandomDistribution.h"
@@ -196,12 +197,12 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
         if (sequence <= m_received[seat]) {
             return Admission::Stale;
         }
-        if (sequence != m_received[seat] + 1 || m_inputs[seat].size() >= 32) {
+        if (sequence != m_received[seat] + 1 ||
+            !hold(seat, {static_cast<u16>(bits), focus, static_cast<u8>(phase),
+                         static_cast<u16>(cursor)})) {
             return Admission::Invalid;
         }
         m_received[seat] = sequence;
-        m_inputs[seat].push_back(
-            {static_cast<u16>(bits), focus, static_cast<u8>(phase), static_cast<u16>(cursor)});
         return Admission::Accepted;
     }
     if (kind == Kind::Step) {
@@ -213,7 +214,7 @@ ShopSync::Admission ShopSync::receive(u8 peer, std::span<const u8> bytes) {
         if (step.tick < m_tick) {
             return Admission::Stale;
         }
-        if (step.tick != m_tick || m_steps.size() >= kBudget) {
+        if (step.tick != m_tick) {
             return Admission::Invalid;
         }
         for (usize seat = 0; seat < 4; ++seat) {
@@ -251,25 +252,48 @@ bool ShopSync::sample(u8 seat, const MenuInput& input, s32 focus, u8 observedPha
     if (bits == m_last[seat] && (bits & ~kHeld) == 0 && focus == -1) {
         return true;
     }
-    if (m_sent[seat] == std::numeric_limits<u64>::max() || m_outgoing.size() >= kBudget ||
-        m_inputs[seat].size() >= 32) {
+    if (m_sent[seat] == std::numeric_limits<u64>::max()) {
         return false;
     }
-    ++m_sent[seat];
-    m_last[seat] = bits;
     if (m_local == 1) {
-        m_inputs[seat].push_back({bits, focus, observedPhase, static_cast<u16>(observedCursor)});
+        // The host's own commands wait as a guest's do, folded alike.
+        if (!hold(seat, {bits, focus, observedPhase, static_cast<u16>(observedCursor)})) {
+            return false;
+        }
     } else {
+        if (m_outgoing.size() >= kBudget) {
+            return false;
+        }
         auto bytes = packet(m_epoch, Kind::Input);
         word(bytes, seat);
         word(bytes, m_grants[seat]);
-        wide(bytes, m_sent[seat]);
+        wide(bytes, m_sent[seat] + 1);
         word(bytes, bits);
         word(bytes, static_cast<u32>(focus));
         word(bytes, observedPhase);
         word(bytes, static_cast<u32>(observedCursor));
         m_outgoing.push_back({1, std::move(bytes)});
     }
+    ++m_sent[seat];
+    m_last[seat] = bits;
+    return true;
+}
+bool ShopSync::hold(usize seat, const Command& command) {
+    auto& waiting = m_inputs[seat];
+    const auto pressFree = [](const Command& queued) { return (queued.bits & ~kHeld) == 0; };
+    if (!waiting.empty() && pressFree(waiting.back()) && pressFree(command)) {
+        const s32 focus = command.focus != -1 ? command.focus : waiting.back().focus;
+        waiting.back() = command;
+        waiting.back().focus = focus;
+        return true;
+    }
+    // Only presses count: press-free commands fold, so one at most waits between two presses.
+    const auto presses =
+        std::ranges::count_if(waiting, [&](const Command& queued) { return !pressFree(queued); });
+    if (!pressFree(command) && std::cmp_greater_equal(presses, kHeldPresses)) {
+        return false;
+    }
+    waiting.push_back(command);
     return true;
 }
 std::optional<ShopStep> ShopSync::advance() {

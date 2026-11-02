@@ -8,6 +8,7 @@
 #include "engine/math/Mt19937.h"
 
 #include "game/characters/ClassData.h"
+#include "game/party/PlayInput.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerImpact.h"
 namespace gdl::game {
@@ -69,6 +70,11 @@ public:
     /** Fells the character outright, as the last point of health going does: a point is kept
      * that the status box does not show, the turbo meter empties, and the death is heard. */
     static void fall(PlayerRuntime& runtime, const Events& events);
+    /** Each fallen player's answer to the box's prompt, by seat: select waits in the tower;
+     * back leaves the game when `quitOffered`, and an online match, whose party is fixed to
+     * its end, does not offer it. */
+    static void answerTowerPrompts(std::span<PlayerRuntime> players,
+                                   std::span<const PlayInput> inputs, bool quitOffered);
 
     static constexpr s32 kHeartbeatHealth = 200; ///< at or under this the heart is heard
     static constexpr std::string_view kHeartbeatSound = "S_WARN";

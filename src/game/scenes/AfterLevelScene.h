@@ -39,6 +39,10 @@ public:
     const ShopSession& session() const { return m_session; }
     /** The sounds the last update asked for, by name, whether or not audio is on. */
     const std::vector<std::string>& lastSounds() const { return m_lastSounds; }
+    /** While a backlog of online steps is caught up, only the newest steps' menu cues are
+     * heard. Level-up announcements always are, each waiting for the one before, so a backlog
+     * says them in turn. Every cue keeps its timing: the shop ends on the same step anywhere. */
+    void setCuesHeard(bool heard) { m_cuesHeard = heard; }
 
 private:
     struct Effect {
@@ -80,8 +84,8 @@ private:
     void playCue(const ShopEvent& event);
     void announceLevel(s32 player);
     /** Admits a native duration regardless of optional playback, preserving phrase order. */
-    Effect effect(SoundSet& bank, std::string_view name);
-    Effect effect(SoundSet& bank, std::string_view name, const Effect& after);
+    Effect effect(SoundSet& bank, std::string_view name, bool heard = true);
+    Effect effect(SoundSet& bank, std::string_view name, const Effect& after, bool heard = true);
     void advanceEffects(f64 seconds);
     void updateTallySound();
     bool m_open = false;
@@ -118,5 +122,6 @@ private:
     Effect m_announcement;
     std::vector<SoundHandle> m_outputEffects; ///< stopped before their borrowed banks are replaced
     std::vector<std::string> m_lastSounds;
+    bool m_cuesHeard = true;
 };
 } // namespace gdl::game

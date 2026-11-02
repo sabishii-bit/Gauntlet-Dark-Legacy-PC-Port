@@ -74,7 +74,9 @@ public:
                   s32 number = -1, std::optional<Vec3> position = std::nullopt);
     static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players,
                                 const PowerupSelector* selector = nullptr);
-    void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players);
+    /** The boxes; a fallen player's offers Quit Game only when `quitOffered`. */
+    void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players,
+                    bool quitOffered = true);
     /** Shows the bosses' keys in the boxes a while (a level opening, a runestone found). */
     void showRelics() { m_sim.relicTicks = kRelicTicks; }
     void stepRelics(s32 ticks) { m_sim.relicTicks = std::max(m_sim.relicTicks - ticks, 0); }

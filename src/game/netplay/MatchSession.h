@@ -89,6 +89,17 @@ public:
     enum class Phase : u8 { Offline, Lobby, Loading, Running, Stopped };
     enum class Admission : u8 { Accepted, Stale, WrongPeer, WrongPhase, Invalid };
     static constexpr f64 kLoadTimeout = 120;
+    /** A guest waits on the host's Commit longer than the host waits on its guests, so the
+     * host's drop of whoever has not loaded always comes first. */
+    static constexpr f64 kGuestLoadTimeout = kLoadTimeout + 30;
+    /** How long a peer may send nothing before it counts as quiet: the stall's notice. */
+    static constexpr f64 kQuietAfter = 1.0;
+    /** A rebuild the host waits on past this, and a little more each tick it replays, costs
+     * that guest its place rather than holding everyone. */
+    static constexpr f64 kRepairSeconds = 30;
+    static constexpr f64 kRepairSecondsPerTick = 0.002;
+    /** Repairs an epoch allows before a divergence that keeps coming back ends the match. */
+    static constexpr u8 kRepairsPerEpoch = 3;
     static constexpr usize kControlBudget = 16;
     static constexpr u32 kNativeAgreementPeriod = 30;
 
@@ -211,9 +222,11 @@ public:
     bool shopLaneGone(u8 peer, u64 epoch, u64 step) const;
     /** Drops not yet applied to the running driver, each taken once. */
     std::vector<Drop> takeDrops();
-    /** Peers whose input lags the local head by more than the prediction window: the
-     * ones a stall is waiting on. */
-    std::vector<u8> quietPeers() const;
+    /** Peers that have sent no fresh input for at least `seconds` of wall time, whatever the
+     * pacing makes of it: the ones a stall waits on. None outside play. */
+    std::vector<u8> quietPeers(f64 seconds = kQuietAfter, Time now = Clock::now()) const;
+    /** How long the quietest peer has been silent, in seconds; 0 when none is. */
+    f64 quietSeconds(Time now = Clock::now()) const;
     /** A guest's: how far the host holds a guest's input that a direct link may bring
      * sooner; pass it to the driver before advancing (RollbackInputs::observeHostReceipt). */
     std::optional<u64> hostReceipt(u8 peer) const {
@@ -254,10 +267,25 @@ private:
     MatchOwners activeOwners() const;
     u8 directPeerOf(PacketTransport::Connection connection) const;
     Admission nativeInputs(PacketTransport::Connection connection, std::span<const u8> bytes,
-                           s32 pingMs);
+                           s32 pingMs, Time inputAt);
+    /** The host's: drops each guest an agreement still waits on past its deadline, and
+     * each rebuild target its repair outlasted; only the host's own lateness stops play. */
+    void dropOverdue(Time now);
+    /** How long the repair under way may take: the host's allowance, and on a guest a guest's
+     * timeout more for the host's word that it ended. */
+    f64 repairAllowance() const;
+    bool repairOverdue(Time now) const;
+    /** The host's, at the load deadline of a later stage it has loaded itself: drops each
+     * guest still loading; false when nobody can be dropped. */
+    bool dropUnloaded();
+    /** Every peer counts as heard from `at`, or later where it already was: an epoch has just
+     * begun play, and nobody owed anything before. */
+    void hearEveryone(Time at);
+    f64 silence(u8 peer, Time now) const;
     void applyDrop(const Drop& drop);
     Admission journal(u8 peer, const JournalPacket::Chunk& chunk);
-    void tryCommit();
+    /** The host's: once every machine has loaded, play begins, as of `at`. */
+    void tryCommit(Time at);
     void stop(MatchStop reason, bool notify);
     void discardGameplay();
     bool beginNativeInputs();
@@ -267,7 +295,7 @@ private:
                              const NativeAgreement* source = nullptr);
     bool acceptPreparedContext(const MatchContext& context, MatchParty party = {});
     bool finishNativeDrain();
-    Admission control(u8 peer, const MatchControl& message);
+    Admission control(u8 peer, const MatchControl& message, Time inputAt);
     Admission checkpoint(u8 peer, const PartyCheckpoint& message);
     bool consoleReady() const;
     Admission consoleMessage(u8 peer, std::span<const u8> bytes);
@@ -315,6 +343,10 @@ private:
     std::vector<InputCommand> m_journalIncoming;
     std::array<Drop, 5> m_dropped{};
     std::vector<Drop> m_pendingDrops;
+    std::array<Time, 5> m_heardAt{}; ///< when each peer's fresh input last arrived
+    Time m_now;                      ///< the time the latest update brought
+    Time m_resyncSince;              ///< when the repair under way began, or a guest heard of it
+    std::array<u64, 5> m_rebuiltFrom{}; ///< the tick each guest was last rebuilt from, this epoch
 
     // Keep byte-sized lifecycle state together rather than between aligned streams.
     Phase m_phase = Phase::Offline;
@@ -330,5 +362,6 @@ private:
     u8 m_journalQueuedPeers = 0;
     bool m_resyncTarget = false;
     bool m_journalComplete = false;
+    u8 m_repairs = 0; ///< this epoch's
 };
 } // namespace gdl::game

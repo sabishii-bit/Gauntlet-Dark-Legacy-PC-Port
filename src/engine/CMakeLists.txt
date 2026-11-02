@@ -13,7 +13,8 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # Paths sits here with File: every reader names its files in UTF-8 through it.
 add_library(engine_base STATIC
     core/Log.cpp core/Assert.cpp core/Clock.cpp core/Strings.cpp platform/Paths.cpp
-    io/File.cpp io/AssetLocator.cpp io/Sha256.cpp render/Image.cpp codec/DspAdpcm.cpp)
+    io/File.cpp io/AssetLocator.cpp io/Sha256.cpp render/Image.cpp codec/DspAdpcm.cpp
+    math/PortableMath.cpp)
 add_library(gdl::engine_base ALIAS engine_base)
 target_include_directories(engine_base PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(engine_base PUBLIC glm::glm)
@@ -35,7 +36,6 @@ add_library(engine STATIC
     core/Strings.h
     math/Math.h
     math/PortableMath.h
-    math/PortableMath.cpp
     io/ByteReader.h
     io/File.h
     io/AssetLocator.h

@@ -111,6 +111,34 @@ TEST_CASE("native digest includes RNG state without advancing it", "[native-stat
     CHECK(hash(standard) == beforeStandard);
 }
 
+TEST_CASE("a standard engine is hashed by the outputs it will give, which every library shares",
+          "[native-state-digest]") {
+    // Libraries stream an engine differently (a cursor, or a rotated history), but the
+    // standard fixes its outputs; past a twist is where the layouts part.
+    std::mt19937 standard{71};
+    standard.discard(1000);
+    NativeStateDigest outputs;
+    auto copy = standard;
+    for (usize i = 0; i < std::mt19937::state_size; ++i) {
+        outputs.word(static_cast<u32>(copy()));
+    }
+    REQUIRE(outputs.good());
+    CHECK(hash(standard) == outputs.finish());
+}
+
+TEST_CASE("a linear congruential engine is hashed at its modulus's width on every library",
+          "[native-state-digest]") {
+    // std::minstd_rand's result type is four bytes on one library and eight on another; its
+    // outputs, below 2^31, are hashed as four everywhere.
+    std::minstd_rand engine{31};
+    engine.discard(5);
+    NativeStateDigest expected;
+    auto copy = engine;
+    expected.word(static_cast<u32>(copy()));
+    REQUIRE(expected.good());
+    CHECK(hash(engine) == expected.finish());
+}
+
 struct Borrower {
     const s32* resource = nullptr;
 };

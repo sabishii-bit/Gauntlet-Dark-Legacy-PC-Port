@@ -3,13 +3,12 @@
 #include <array>
 #include <bit>
 #include <deque>
-#include <locale>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <optional>
 #include <random>
 #include <set>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -106,25 +105,27 @@ public:
     void value(std::string_view v) { string(v); }
     void value(const Mt19937& v) { fields<2>(v.checkpoint()); }
     void value(const std::mt19937& v) {
-        // The standard engine exposes its complete retained state through its
-        // stream representation, not native layout. Pin locale and formatting;
-        // this local watchdog targets identical builds, not a portable wire codec.
-        std::ostringstream state;
-        state.imbue(std::locale::classic());
-        state << v;
-        if (!state) {
-            invalidate();
-            return;
+        // The standard fixes the engine's outputs, not its stream text: one library writes
+        // its cursor, another its circular history. The next state_size outputs determine
+        // every later one, so they stand for the state, drawn from a copy.
+        auto copy = v;
+        for (usize i = 0; i < std::mt19937::state_size; ++i) {
+            word(static_cast<u32>(copy()));
         }
-        string(state.str());
     }
     template <class T, T A, T C, T M>
     void value(const std::linear_congruential_engine<T, A, C, M>& v) {
         // For this family the next output uniquely identifies its retained state.
-        // Read from a copy; never advance the gameplay generator to hash it.
+        // Read from a copy; never advance the gameplay generator to hash it. The width is
+        // the modulus's, not result_type's: std::minstd_rand's is four bytes on one library
+        // and eight on another.
         static_assert(M != 0 && std::gcd(A, M) == 1);
         auto copy = v;
-        value(copy());
+        if constexpr (M - 1 <= std::numeric_limits<u32>::max()) {
+            word(static_cast<u32>(copy()));
+        } else {
+            wide(static_cast<u64>(copy()));
+        }
     }
     void value(const Color& v) { fields<4>(v); }
     void value(const Rect& v) { fields<4>(v); }

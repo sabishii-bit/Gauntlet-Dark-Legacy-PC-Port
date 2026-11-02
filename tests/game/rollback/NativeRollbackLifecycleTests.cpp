@@ -163,6 +163,30 @@ TEST_CASE("native cleared rollback driver cannot advance a disconnected scene",
     CHECK(pair.host->scene.nativeAgreementDigest() == hash);
 }
 
+TEST_CASE("an online match's fixed party offers a fallen player no Quit to answer",
+          "[native-rollback-lifecycle][native-quit][assets]") {
+    NativePair pair(u8{0}, true);
+    for (auto* peer : {pair.host.get(), pair.guest.get()}) {
+        peer->scene.setFixedRoster(true);
+    }
+    pair.warm();
+    for (u32 tick = 0; tick < 900 && !pair.host->scene.participants()[0].towerPrompt; ++tick) {
+        pair.step();
+    }
+    REQUIRE(pair.host->scene.participants()[0].towerPrompt);
+    for (u32 tick = 0; tick < 3; ++tick) {
+        SessionInputs::Frame input;
+        input[0].menu.back = tick == 0;
+        const auto result = pair.advance(input);
+        REQUIRE(result[0] == result[1]);
+        CHECK(result[0] == Status::Advanced);
+    }
+    for (auto* peer : {pair.host.get(), pair.guest.get()}) {
+        CHECK(peer->scene.participants()[0].towerPrompt); // still waiting to be answered
+        CHECK_FALSE(peer->scene.participants()[0].departed);
+    }
+}
+
 TEST_CASE("native predicted dead-player Quit is confirmed while Wait keeps the match running",
           "[native-rollback-lifecycle][native-quit][assets]") {
     const auto delay = GENERATE(u8{0}, u8{1}, u8{2});

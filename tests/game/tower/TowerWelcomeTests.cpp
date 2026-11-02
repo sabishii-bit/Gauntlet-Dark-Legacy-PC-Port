@@ -7,10 +7,16 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/world/SampleLevel.h"
+#include "engine/world/WorldAnimator.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/level/LevelTriggers.h"
+#include "game/party/PlayerRuntime.h"
 #include "game/tower/TowerRelics.h"
 #include "game/tower/TowerWelcome.h"
 
@@ -92,6 +98,29 @@ TEST_CASE("Sumner's approach pad and the completed Temple window own different l
             CHECK(world.objectAlpha(beam) == Catch::Approx(0).margin(0.001f));
         }
     }
+}
+
+TEST_CASE("only a standing character visits Sumner's spot", "[game][screens][welcome]") {
+    const auto dir = test::sampleLevel("sumner-spot-visitors");
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":5,"subtype":24,"name":"SPOT","radius":1}],
+      "itemInstances":[{"info":0,"position":[0,0,0],"params":[255,255,0,0,4,255,240,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr);
+    REQUIRE(triggers.size() == 1);
+    REQUIRE(triggers.trigger(0).id == TowerWelcome::kSumnerSpot);
+    std::vector<PlayerRuntime> players(2);
+    players[0].actor.spawn(1, {}, nullptr, Vec3{30, 0, 0}, 0);
+    players[1].actor.spawn(3, {}, nullptr, Vec3{0, 0, 0}, 0);
+    REQUIRE(TowerWelcome::visitorOf(triggers, players) == 3);
+    players[1].life = PlayerLife::InTower; // a dropped peer's seat, left where it stood
+    CHECK_FALSE(TowerWelcome::visitorOf(triggers, players).has_value());
+    players[0].actor.place(Vec3{0, 0, 0});
+    CHECK(TowerWelcome::visitorOf(triggers, players) == 1);
 }
 
 TEST_CASE("a party is new to the tower while none of its classes has experience",

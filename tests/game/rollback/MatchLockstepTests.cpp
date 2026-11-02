@@ -925,7 +925,9 @@ TEST_CASE("native transition fences refuse stale impossible and conflicting boun
     CHECK(guest.receive(kHost, *checkpoint) == Admission::Invalid);
     CHECK(guest.context() == old);
     CHECK(guest.travelParty() == nullptr);
-    guest.update(MatchSession::kLoadTimeout);
+    guest.update(MatchSession::kLoadTimeout); // still playing to the stage's end: the host decides first
+    CHECK(guest.phase() == Phase::Running);
+    guest.update(MatchSession::kGuestLoadTimeout - MatchSession::kLoadTimeout);
     CHECK(guest.phase() == Phase::Stopped);
     CHECK(guest.stopReason() == MatchStop::LoadTimeout);
     CHECK_FALSE(room->inputs[2].advance());
@@ -1170,16 +1172,20 @@ TEST_CASE("the host sees which peer went quiet and drops it so the rest carry on
     auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
     room->ready();
     executeThrough(*room, 10);
-    CHECK(room->sessions[1].quietPeers().empty());
-    // Peer three stops sampling; the others predict it through the window, then wait.
+    MatchSession::Time now{};
+    CHECK(room->sessions[1].quietPeers(MatchSession::kQuietAfter, now).empty());
+    // Peer three stops sending; the others predict it through the window, then wait, and
+    // each still publishes its progress every frame, as play does.
     const auto stepPair = [&] {
+        now += std::chrono::milliseconds{200};
         for (const u8 peer : {u8{1}, u8{2}}) {
             if (room->inputs[peer].sampleReady()) {
                 REQUIRE(room->inputs[peer].sample(
                     room->commands(peer, room->inputs[peer].sampleTick(), false)));
             }
+            REQUIRE(room->inputs[peer].publish());
         }
-        pumpAgreement(*room);
+        pumpAgreement(*room, now);
         for (const u8 peer : {u8{1}, u8{2}}) {
             if (room->inputs[peer].advance()) {
                 REQUIRE(room->inputs[peer].complete());
@@ -1189,8 +1195,9 @@ TEST_CASE("the host sees which peer went quiet and drops it so the rest carry on
     for (u32 attempt = 0; attempt < 12; ++attempt) {
         stepPair();
     }
-    CHECK(room->sessions[1].quietPeers() == std::vector<u8>{3});
-    CHECK(room->sessions[2].quietPeers() == std::vector<u8>{3});
+    CHECK(room->sessions[1].quietPeers(MatchSession::kQuietAfter, now) == std::vector<u8>{3});
+    CHECK(room->sessions[2].quietPeers(MatchSession::kQuietAfter, now) == std::vector<u8>{3});
+    CHECK(room->sessions[1].quietSeconds(now) >= 2.0);
     REQUIRE(room->sessions[1].drop(3));
     pumpAgreement(*room);
     CHECK(room->sessions[3].phase() == Phase::Stopped);
@@ -1204,7 +1211,7 @@ TEST_CASE("the host sees which peer went quiet and drops it so the rest carry on
         CHECK(drops.front().tick == room->sessions[1].dropsFor(drops.front().epoch).front().tick);
         REQUIRE(room->inputs[peer].inputs().suspend(3, drops.front().tick));
     }
-    CHECK(room->sessions[1].quietPeers().empty());
+    CHECK(room->sessions[1].quietPeers(MatchSession::kQuietAfter, now).empty());
     // The two go on and agree at each cadence without peer three.
     for (const u64 cadence : {u64{30}, u64{60}}) {
         CAPTURE(cadence);
@@ -1313,6 +1320,145 @@ TEST_CASE("a host observation mismatch orders the diverged peer to rebuild and t
         REQUIRE(room->sessions[peer].nativeAgreement());
         CHECK(room->sessions[peer].nativeAgreement()->agreedTick() == 60);
     }
+}
+
+TEST_CASE("a repair outlasting the agreement deadline stops nobody",
+          "[match-lockstep][match-native-agreement][journal]") {
+    const bool hashedBeforeVerdict = GENERATE(false, true);
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 60);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->sessions[peer].observeNative(30, observed(peer == 2 ? 1 : 0),
+                                                   MatchSession::Time{}));
+    }
+    if (hashedBeforeVerdict) {
+        for (u8 peer = 1; peer <= 3; ++peer) {
+            REQUIRE(room->sessions[peer].observeNative(60, observed(peer == 2 ? 1 : 0),
+                                                       MatchSession::Time{}));
+        }
+    }
+    pumpAgreement(*room);
+    auto& guest = room->sessions[2];
+    REQUIRE(guest.resyncRequested() == 30);
+    if (!hashedBeforeVerdict) {
+        // The others confirm sixty from input the guest sent before it heard of the repair.
+        for (const u8 peer : {u8{1}, u8{3}}) {
+            REQUIRE(room->sessions[peer].observeNative(60, observed(), MatchSession::Time{}));
+        }
+        pumpAgreement(*room);
+    }
+    // The rebuild takes longer than any agreement deadline; nobody is late meanwhile.
+    const auto during = MatchSession::Time{} + NativeAgreement::kGuestTimeout;
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        room->sessions[peer].update(1.0 / 60, during);
+    }
+    pumpAgreement(*room, during);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+    }
+    REQUIRE(guest.finishResync());
+    pumpAgreement(*room, during);
+    // The repair held the host's wait on the rebuilt guest: nothing is overdue once it ends.
+    room->sessions[1].update(1.0 / 60, during);
+    CHECK(room->sessions[1].phase() == Phase::Running);
+    CHECK_FALSE(room->sessions[1].dropped(2));
+    REQUIRE(guest.publishNativeInputs({}, 61));
+    REQUIRE(guest.confirmNativeTick(guest.context().epoch, 60));
+    CHECK(guest.observeNative(60, observed(), during));
+    pumpAgreement(*room, during);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        CAPTURE(peer);
+        CHECK(room->sessions[peer].phase() == Phase::Running);
+        REQUIRE(room->sessions[peer].nativeAgreement());
+        CHECK(room->sessions[peer].nativeAgreement()->agreedTick() == 60);
+    }
+}
+
+TEST_CASE("a rebuilt guest that disagrees again at its next report stops play instead of "
+          "rebuilding forever",
+          "[match-lockstep][match-native-agreement][journal]") {
+    auto room = std::make_unique<Room>();
+    room->ready();
+    executeThrough(*room, 30);
+    auto& host = room->sessions[1];
+    auto& guest = room->sessions[2];
+    REQUIRE(host.observeNative(30, observed(), MatchSession::Time{}));
+    REQUIRE(guest.observeNative(30, observed(1), MatchSession::Time{}));
+    pumpAgreement(*room);
+    REQUIRE(guest.resyncRequested() == 30);
+    REQUIRE(guest.finishResync());
+    pumpAgreement(*room);
+    REQUIRE_FALSE(host.resyncing());
+    executeThrough(*room, 60);
+    REQUIRE(host.observeNative(60, observed(), MatchSession::Time{}));
+    REQUIRE(guest.observeNative(60, observed(1), MatchSession::Time{}));
+    pumpAgreement(*room);
+    CHECK_FALSE(host.resyncing());
+    CHECK(host.phase() == Phase::Stopped);
+    CHECK(guest.phase() == Phase::Stopped);
+}
+
+TEST_CASE("an epoch's repairs are limited: a divergence that keeps coming back stops play",
+          "[match-lockstep][match-native-agreement][journal]") {
+    auto room = std::make_unique<Room>();
+    room->ready();
+    auto& host = room->sessions[1];
+    auto& guest = room->sessions[2];
+    // Each divergence comes a cadence after the last repair agreed: every one is fresh.
+    for (const u64 tick : {u64{30}, u64{90}, u64{150}}) {
+        CAPTURE(tick);
+        executeThrough(*room, tick);
+        REQUIRE(host.observeNative(tick, observed(), MatchSession::Time{}));
+        REQUIRE(guest.observeNative(tick, observed(1), MatchSession::Time{}));
+        pumpAgreement(*room);
+        REQUIRE(guest.resyncRequested() == tick);
+        REQUIRE(guest.finishResync());
+        pumpAgreement(*room);
+        REQUIRE_FALSE(host.resyncing());
+        executeThrough(*room, tick + 30);
+        REQUIRE(host.observeNative(tick + 30, observed(), MatchSession::Time{}));
+        REQUIRE(guest.observeNative(tick + 30, observed(), MatchSession::Time{}));
+        pumpAgreement(*room);
+        REQUIRE(host.phase() == Phase::Running);
+    }
+    executeThrough(*room, 210);
+    REQUIRE(host.observeNative(210, observed(), MatchSession::Time{}));
+    REQUIRE(guest.observeNative(210, observed(1), MatchSession::Time{}));
+    pumpAgreement(*room);
+    CHECK_FALSE(host.resyncing());
+    CHECK(host.phase() == Phase::Stopped);
+    CHECK(guest.phase() == Phase::Stopped);
+}
+
+TEST_CASE("a rebuild that never finishes costs that guest its place, not the match",
+          "[match-lockstep][journal][drop]") {
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 30);
+    for (u8 peer = 1; peer <= 3; ++peer) {
+        REQUIRE(room->sessions[peer].observeNative(30, observed(peer == 2 ? 1 : 0),
+                                                   MatchSession::Time{}));
+    }
+    pumpAgreement(*room);
+    REQUIRE(room->sessions[2].resyncRequested() == 30);
+    // The guest never finishes; for a while that holds nobody to account.
+    const auto during = MatchSession::Time{} + std::chrono::seconds{20};
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        room->sessions[peer].update(1.0 / 60, during);
+    }
+    CHECK(room->sessions[1].phase() == Phase::Running);
+    CHECK_FALSE(room->sessions[1].dropped(2));
+    // Past its allowance the repair costs the guest its place.
+    const auto late = MatchSession::Time{} + std::chrono::seconds{31};
+    room->sessions[1].update(1.0 / 60, late);
+    pumpAgreement(*room, late);
+    CHECK(room->sessions[1].phase() == Phase::Running);
+    CHECK(room->sessions[1].dropped(2));
+    CHECK_FALSE(room->sessions[1].resyncing());
+    CHECK(room->sessions[3].phase() == Phase::Running);
+    CHECK(room->sessions[3].dropped(2));
 }
 
 TEST_CASE("a rebuilt guest hashes again the ticks its diverged scene had already hashed",
@@ -1704,16 +1850,73 @@ TEST_CASE("native match observation timeout uses monotonic time even while simul
     // The host's own digest is late but in before the guest gives up.
     REQUIRE(room->sessions[1].observeNative(30, observed(),
                                             MatchSession::Time{} + std::chrono::seconds{9}));
-    guest.update(0, MatchSession::Time{} + NativeAgreement::kTimeout);
+    // Nothing more reaches the guest. At its own deadline the host drops the guest it still
+    // waits on or owes a verdict, and agrees the tick alone.
+    auto& host = room->sessions[1];
+    const auto hostDeadline =
+        MatchSession::Time{} + std::chrono::seconds{9} + NativeAgreement::kTimeout;
+    host.update(0, hostDeadline);
+    CHECK(host.phase() == Phase::Running);
+    CHECK(host.dropped(2));
+    REQUIRE(host.nativeAgreement());
+    CHECK(host.nativeAgreement()->agreedTick() == 30);
+    // The guest, told nothing, waits on the host longer than the host waits on it.
+    guest.update(0, hostDeadline);
+    CHECK(guest.phase() == Phase::Running);
+    guest.update(0, MatchSession::Time{} + NativeAgreement::kGuestTimeout);
     CHECK(guest.phase() == Phase::Stopped);
     CHECK(guest.stopReason() == MatchStop::TransportFailure);
-    room->wires[2].result = PacketTransport::SendResult::Sent;
-    pumpAgreement(*room, MatchSession::Time{} + NativeAgreement::kTimeout);
-    // Its stop reaches the host, which drops it and agrees the tick alone.
+}
+
+TEST_CASE("a guest whose cadence report never comes is dropped instead of ending the match",
+          "[match-lockstep][drop]") {
+    const bool three = GENERATE(false, true);
+    auto room = std::make_unique<Room>(three ? MatchOwners{1, 2, 3, 0} : MatchOwners{1, 2, 0, 0});
+    room->ready();
+    executeThrough(*room, 30);
+    REQUIRE(room->sessions[1].observeNative(30, observed(), MatchSession::Time{}));
+    if (three) {
+        REQUIRE(room->sessions[3].observeNative(30, observed(), MatchSession::Time{}));
+    }
+    pumpAgreement(*room); // peer two never reports tick thirty
+    const auto late = MatchSession::Time{} + NativeAgreement::kTimeout + std::chrono::seconds{1};
+    if (three) {
+        room->sessions[3].update(1.0 / 60, late);
+    }
+    room->sessions[1].update(1.0 / 60, late);
+    pumpAgreement(*room, late);
     CHECK(room->sessions[1].phase() == Phase::Running);
     CHECK(room->sessions[1].dropped(2));
     REQUIRE(room->sessions[1].nativeAgreement());
     CHECK(room->sessions[1].nativeAgreement()->agreedTick() == 30);
+    CHECK(room->sessions[2].phase() == Phase::Stopped);
+    if (three) {
+        CHECK(room->sessions[3].phase() == Phase::Running);
+        CHECK_FALSE(room->sessions[1].dropped(3));
+        REQUIRE(room->sessions[3].nativeAgreement());
+        CHECK(room->sessions[3].nativeAgreement()->agreedTick() == 30);
+    }
+}
+
+TEST_CASE("a guest whose terminal certificate never comes is dropped and the exit still agrees",
+          "[match-lockstep][drop]") {
+    auto room = std::make_unique<Room>(MatchOwners{1, 2, 3, 0});
+    room->ready();
+    executeThrough(*room, 5);
+    const auto epoch = room->sessions[1].context().epoch;
+    for (const u8 peer : {u8{1}, u8{3}}) {
+        REQUIRE(room->inputs[peer].submitBoundaryDigest(MatchSession::Time{}));
+    }
+    pumpAgreement(*room); // peer two never certifies tick five
+    const auto late = MatchSession::Time{} + NativeAgreement::kTimeout + std::chrono::seconds{1};
+    room->sessions[3].update(1.0 / 60, late);
+    room->sessions[1].update(1.0 / 60, late);
+    pumpAgreement(*room, late);
+    CHECK(room->sessions[1].phase() == Phase::Running);
+    CHECK(room->sessions[1].dropped(2));
+    CHECK(room->sessions[1].nativeTerminalAgreed(epoch, 5));
+    CHECK(room->sessions[3].phase() == Phase::Running);
+    CHECK(room->sessions[3].nativeTerminalAgreed(epoch, 5));
 }
 
 TEST_CASE("native match observation demux preserves authentication and old epoch isolation",

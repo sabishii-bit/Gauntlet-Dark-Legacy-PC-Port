@@ -154,7 +154,10 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
             style.scale = kInTowerScale;
             m_smallCaps.draw(canvas, left + kPromptTextX, kWaitTextY, text("hud.waitInTower"),
                              style);
-            m_smallCaps.draw(canvas, left + kPromptTextX, kQuitTextY, text("hud.quitGame"), style);
+            if (view.quitOffered) {
+                m_smallCaps.draw(canvas, left + kPromptTextX, kQuitTextY, text("hud.quitGame"),
+                                 style);
+            }
         }
         return;
     }

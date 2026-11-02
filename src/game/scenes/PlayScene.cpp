@@ -632,7 +632,7 @@ bool PlayScene::spawnObject(const LevelRef& level, std::string_view name, const 
         return false;
     }
     const Mat4 transform =
-        glm::rotate(glm::translate(Mat4{1.0f}, position), yaw, Vec3{0.0f, 1.0f, 0.0f});
+        portable::rotate(glm::translate(Mat4{1.0f}, position), yaw, Vec3{0.0f, 1.0f, 0.0f});
     return m_spawned.spawn(*m_device, m_context.unpackedRoot, level, name, transform);
 }
 
@@ -2216,7 +2216,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                       height, static_cast<f32>(StatusBoxPainter::kBarY), frameBlend);
     }
     if (!cut) {
-        m_hud.drawStatus(m_canvas, m_players);
+        m_hud.drawStatus(m_canvas, m_players, !m_sim.fixedRoster);
         if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
             m_sim.runeMeter.draw(m_canvas, *m_runeFrame, *m_runeColumn);
         }

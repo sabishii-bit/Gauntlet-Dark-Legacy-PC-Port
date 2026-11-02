@@ -38,7 +38,7 @@ NativeStateDigest::Digest digestOf(const MechanicsFacade& facade,
 
 TEST_CASE("with no mechanic the facade answers as the original does", "[game][mechanics]") {
     MechanicsFacade facade;
-    MechanicCatalog none;
+    const MechanicCatalog none;
     facade.open(&none, {});
     CHECK(facade.empty());
     const std::array<const MechanicsFacade*, 2> facades{&facade, &MechanicsFacade::standard()};
@@ -236,7 +236,7 @@ TEST_CASE("the mechanics' state rewinds and is agreed with the rest of the level
     REQUIRE(catalog.add(FakeMechanic::descriptor("alpha")));
     MechanicsFacade facade;
     facade.open(&catalog, {});
-    FakeMechanic& alpha = *FakeMechanic::made()[0];
+    const FakeMechanic& alpha = *FakeMechanic::made()[0];
     GameOptionsConfig on;
     on.mechanics["alpha"] = true;
     facade.configure(on);
@@ -262,7 +262,7 @@ TEST_CASE("the mechanics' state rewinds and is agreed with the rest of the level
     CHECK_FALSE(facade.restoreLocal(saved));
     // With nothing laid over the game, the digest still says so.
     MechanicsFacade bare;
-    MechanicCatalog none;
+    const MechanicCatalog none;
     bare.open(&none, {});
     CHECK(digestOf(bare) != digestOf(facade));
 }

@@ -10,6 +10,9 @@ namespace gdl::game {
 class OnlineLevelEntry {
 public:
     enum class Phase : u8 { Closed, Map, Movie, Ready, Failed };
+    /** Ticks the entry waits for its first frame to show before it goes on regardless: a
+     * machine that cannot present (a minimised window) must not hold the others. */
+    static constexpr u32 kUnshownTicks = 60;
     OnlineLevelEntry() = default;
     OnlineLevelEntry(const OnlineLevelEntry&) = delete;
     OnlineLevelEntry& operator=(const OnlineLevelEntry&) = delete;
@@ -30,6 +33,7 @@ private:
     MovieScene m_movie;
     Phase m_phase = Phase::Closed;
     bool m_shown = false;
+    u32 m_unshown = 0; ///< ticks waited on the first frame
     bool m_wantsMovie = false;
 };
 } // namespace gdl::game

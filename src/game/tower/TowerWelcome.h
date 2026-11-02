@@ -43,7 +43,8 @@ public:
 
     /** A party is new to the tower while no class of any of its characters has experience. */
     static bool freshParty(std::span<const PartyMember> party);
-    /** The player standing in the spot before Sumner, first of the party, if any. */
+    /** The standing player in the spot before Sumner, first of the party, if any: a body
+     * waiting in the tower, unseen, visits nobody. */
     static std::optional<s32> visitorOf(const LevelTriggers& triggers,
                                         std::span<const PlayerRuntime> players);
 
