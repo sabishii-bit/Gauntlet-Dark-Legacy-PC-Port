@@ -70,7 +70,7 @@ TEST_CASE("Native cathedral music is measured against actual GDL level mixer rou
                 REQUIRE(native->open(nativeAudio(), song));
                 std::shared_ptr<StreamSource> source = native;
                 if (normalized)
-                    source = legendsAudioMix::prepare(source, legendsAudioMix::Source::Music);
+                    source = legends_audio_mix::prepare(source, legends_audio_mix::Source::Music);
                 REQUIRE(output.playStream(source, true) != kNoSound);
                 const auto levels = measure(output, mixer);
                 WARN("N64 song=" << song << " normalized=" << normalized << " slider=" << slider
@@ -215,8 +215,8 @@ TEST_CASE("Native N64 music follows SoundPlayer music volume and lifetime",
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
     const auto handle =
-        player.playStream(legendsAudioMix::prepare(source, legendsAudioMix::Source::Music), true,
-                          1.0f, SoundCategory::Music);
+        player.playStream(legends_audio_mix::prepare(source, legends_audio_mix::Source::Music),
+                          true, 1.0f, SoundCategory::Music);
     REQUIRE(handle != kNoSound);
     std::array<f32, 1600> output{};
     f64 energy = 0;
@@ -281,11 +281,11 @@ TEST_CASE("N64 soundtrack uses the shared linear calibration without suppressing
         const auto raw = render(*source, usize{32000} * 30, 4096);
         source->rewind();
         const auto calibration =
-            legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Music);
+            legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Music);
         REQUIRE(calibration);
         CHECK(calibration->frames == 32000 * 30);
         CHECK_FALSE(calibration->complete);
-        const auto mixed = legendsAudioMix::prepare(source, legendsAudioMix::Source::Music);
+        const auto mixed = legends_audio_mix::prepare(source, legends_audio_mix::Source::Music);
         REQUIRE(mixed);
         const auto pcm = render(*mixed, usize{32000} * 30, 997);
         REQUIRE(pcm.size() == raw.size());
@@ -316,9 +316,9 @@ TEST_CASE("N64 music preserves loud transients until the slider and final mixer 
     REQUIRE(original->open(root, kSong));
     // Explicit unity calibration proves that the common wrapper never clips
     // headroom. Automatic RMS calibration is covered by the preceding test.
-    const legendsAudioMix::Calibration unity{.kind = legendsAudioMix::Source::Music, .gain = 1};
+    const legends_audio_mix::Calibration unity{.kind = legends_audio_mix::Source::Music, .gain = 1};
     const auto calibrated =
-        legendsAudioMix::prepare(original, legendsAudioMix::Source::Music, unity);
+        legends_audio_mix::prepare(original, legends_audio_mix::Source::Music, unity);
     REQUIRE(calibrated);
     const auto pcm = render(*calibrated, usize{32000} * kSeconds, 4096);
     REQUIRE(std::ranges::any_of(pcm, [](f32 sample) { return std::abs(sample) > 1.0f; }));
@@ -330,7 +330,7 @@ TEST_CASE("N64 music preserves loud transients until the slider and final mixer 
         SoundPlayer player(mixer);
         player.setCategoryVolume(SoundCategory::Music, volume);
         REQUIRE(player.playStream(
-                    legendsAudioMix::prepare(source, legendsAudioMix::Source::Music, unity),
+                    legends_audio_mix::prepare(source, legends_audio_mix::Source::Music, unity),
                     true) != kNoSound);
         std::vector<f32> output(kSeconds * rate * 2);
         for (usize at = 0; at < output.size(); at += 1280) {

@@ -5,7 +5,7 @@
 
 #include "engine/audio/StreamSource.h"
 
-namespace gdl::legendsAudioMix {
+namespace gdl::legends_audio_mix {
 
 enum class Source { Music, Effect, Speech };
 
@@ -33,4 +33,4 @@ std::optional<Calibration> calibrate(StreamSource& source, Source kind);
 std::shared_ptr<StreamSource> prepare(std::shared_ptr<StreamSource> source, Source kind,
                                       std::optional<Calibration> calibration = {});
 
-} // namespace gdl::legendsAudioMix
+} // namespace gdl::legends_audio_mix

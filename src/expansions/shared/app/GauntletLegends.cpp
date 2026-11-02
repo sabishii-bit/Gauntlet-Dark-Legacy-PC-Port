@@ -36,8 +36,8 @@ std::unique_ptr<SoundPlayer> openLegendsMusic(const std::filesystem::path& level
             if (const auto song = legendsN64SongForLevel(paths::utf8(directory.filename()))) {
                 auto stream = std::make_shared<N64LegendsStream>();
                 if (stream->open(directory.parent_path().parent_path() / "audio", *song)) {
-                    soundtrack =
-                        legendsAudioMix::prepare(std::move(stream), legendsAudioMix::Source::Music);
+                    soundtrack = legends_audio_mix::prepare(std::move(stream),
+                                                            legends_audio_mix::Source::Music);
                     soundtrackName = std::format("N64 song {}", *song);
                 } else {
                     console.print(

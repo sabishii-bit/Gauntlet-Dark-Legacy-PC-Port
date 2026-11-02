@@ -170,7 +170,7 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
                 // word only once. This work occurs at asset load, never in ticks.
                 PcmSource source(std::move(phrase));
                 const auto calibration =
-                    legendsAudioMix::calibrate(source, legendsAudioMix::Source::Speech);
+                    legends_audio_mix::calibrate(source, legends_audio_mix::Source::Speech);
                 if (!calibration || !calibration->complete)
                     return;
                 cache->pcmGain = std::max(cache->pcmGain, calibration->gain);

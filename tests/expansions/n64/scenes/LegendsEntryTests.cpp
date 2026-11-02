@@ -13,6 +13,7 @@
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
@@ -64,6 +65,7 @@ struct NativeEntry {
                                            characters.empty() ? root / "no-gc-data" : characters);
     }
 
+    GDL_NON_COPYABLE_NON_MOVABLE(NativeEntry);
     ~NativeEntry() {
         if (level) {
             level->stopSounds();
@@ -105,7 +107,8 @@ TEST_CASE("Native entry narration plays once when the level camera becomes ready
     const std::array<u16, 2> clips{98, 230}; // Authored Ice1 entry sequence.
     auto source = bank.createRestored(clips);
     REQUIRE(source);
-    const auto calibration = legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Speech);
+    const auto calibration =
+        legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Speech);
     REQUIRE(calibration);
     std::vector<f32> pcm;
     while (source->read(pcm, 4096)) {
@@ -175,7 +178,7 @@ TEST_CASE("Native entry narration plays once when the level camera becomes ready
         referenceMixer.mix(expected);
         REQUIRE(bool{samples == expected});
         fixture.level->playSounds(output, {});
-        for (f32 sample : samples) {
+        for (const f32 sample : samples) {
             REQUIRE(std::isfinite(sample));
             energy += static_cast<f64>(sample) * sample;
         }
@@ -209,14 +212,15 @@ TEST_CASE("Native level camera advances during ordinary PlayScene materialisatio
     ref.realmId = -1;
     ref.realm = "Legends";
     ref.name = "n64:ice1";
-    REQUIRE(world.loadImported(fixture.device, characters, ref, std::move(layout),
-                               traversal.collision(), fixture.level));
+    const bool loaded = world.loadImported(fixture.device, characters, ref, std::move(layout),
+                                           traversal.collision(), fixture.level);
+    REQUIRE(loaded);
     CHECK_FALSE(world.entranceCamera()); // No invented GDL camera locator overrides N64.
     GameConfig config;
     config.camera.compass = false;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    AssetLocator assets{characters};
+    const AssetLocator assets{characters};
     GameContext context;
     context.config = &config;
     context.strings = &strings;

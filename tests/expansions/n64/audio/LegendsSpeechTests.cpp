@@ -33,7 +33,7 @@ std::shared_ptr<AudioStream> referenceSpeech(AudioMixer& mixer, const MortBank& 
     REQUIRE(source);
     if (!gain) {
         const auto calibration =
-            legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Speech);
+            legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Speech);
         REQUIRE(calibration);
         gain = calibration->gain;
     }
@@ -335,7 +335,8 @@ TEST_CASE("N64 speech gain preserves peak shape before the effects slider and fi
     constexpr std::array<u16, 1> clips{252};
     auto source = bank.createRestored(clips);
     REQUIRE(source);
-    const auto calibration = legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Speech);
+    const auto calibration =
+        legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Speech);
     REQUIRE(calibration);
     std::vector<f32> pcm;
     while (source->read(pcm, 4096)) {
@@ -405,7 +406,7 @@ TEST_CASE("All native obelisk phrases receive one measured speech gain before us
             auto decoded = bank.createRestored(cue->clips);
             REQUIRE(decoded);
             const auto calibration =
-                legendsAudioMix::calibrate(*decoded, legendsAudioMix::Source::Speech);
+                legends_audio_mix::calibrate(*decoded, legends_audio_mix::Source::Speech);
             REQUIRE(calibration);
             REQUIRE(calibration->complete);
             REQUIRE(calibration->activeRms > .01f);
@@ -470,7 +471,7 @@ TEST_CASE("Town entry narration has measured presence through the real mixer",
         auto decoded = bank.createRestored(cue->clips);
         REQUIRE(decoded);
         const auto calibration =
-            legendsAudioMix::calibrate(*decoded, legendsAudioMix::Source::Speech);
+            legends_audio_mix::calibrate(*decoded, legends_audio_mix::Source::Speech);
         REQUIRE(calibration);
         const f32 oldGain =
             std::min({.30f / calibration->activeRms, 1.4f / calibration->peak, 8.f});

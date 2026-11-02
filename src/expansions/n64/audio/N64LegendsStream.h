@@ -9,7 +9,7 @@ namespace gdl {
 
 /** Native Legends MusyX music, sequenced on demand without intermediate WAV/MIDI files.
  * Only the audited US bank and song bytes are accepted by the third-party sequencer.
- * Returns neutral synth PCM; gameplay passes this through legendsAudioMix::prepare
+ * Returns neutral synth PCM; gameplay passes this through legends_audio_mix::prepare
  * before playback. Float peaks retain headroom for the final AudioMixer limiter. */
 class N64LegendsStream final : public StreamSource {
 public:

@@ -333,8 +333,8 @@ void LegendsSpeech::update(SoundPlayer& output, f32 seconds, bool paused) {
         auto source = m_bank.createRestored(cue.clips);
         if (source) {
             m_handle = output.playStream(
-                legendsAudioMix::prepare(std::move(source), legendsAudioMix::Source::Speech), false,
-                1, SoundCategory::Effects);
+                legends_audio_mix::prepare(std::move(source), legends_audio_mix::Source::Speech),
+                false, 1, SoundCategory::Effects);
             if (m_handle != kNoSound) {
                 return;
             }

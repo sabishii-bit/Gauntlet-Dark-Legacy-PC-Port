@@ -209,7 +209,7 @@ TEST_CASE("Native announcements reach the shared mixer with one phrase gain and 
         auto source = bank.createRestored(words);
         REQUIRE(source);
         const auto calibration =
-            legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Speech);
+            legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Speech);
         REQUIRE(calibration);
         std::vector<f32> pcm;
         while (source->read(pcm, 4096)) {

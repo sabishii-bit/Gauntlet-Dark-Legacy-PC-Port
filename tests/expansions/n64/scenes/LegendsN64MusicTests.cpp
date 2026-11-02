@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -54,7 +55,7 @@ TEST_CASE("Every installed N64 map retains its executable's authored music route
         REQUIRE(address >= 0xe0000400);
         const usize offset = address - 0xe0000400;
         REQUIRE(offset < program.size());
-        const auto first = program.begin() + offset;
+        const auto first = program.begin() + static_cast<std::ptrdiff_t>(offset);
         const auto last = std::find(first, program.end(), 0);
         REQUIRE(last != program.end());
         return std::string(first, last);
@@ -106,8 +107,8 @@ TEST_CASE("Native boss map music remains audible with boss effects and pause res
         LegendsSounds native;
         REQUIRE(native.openN64(root));
         const auto handle =
-            music.playStream(legendsAudioMix::prepare(source, legendsAudioMix::Source::Music), true,
-                             1, SoundCategory::Music);
+            music.playStream(legends_audio_mix::prepare(source, legends_audio_mix::Source::Music),
+                             true, 1, SoundCategory::Music);
         REQUIRE(handle != kNoSound);
         std::array<f32, 1600> output{};
         for (usize interval = 0; interval < 9; ++interval) {

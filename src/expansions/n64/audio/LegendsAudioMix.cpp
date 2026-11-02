@@ -5,7 +5,7 @@
 #include <exception>
 #include <utility>
 
-namespace gdl::legendsAudioMix {
+namespace gdl::legends_audio_mix {
 namespace {
 struct Profile {
     f32 targetRms;
@@ -154,4 +154,4 @@ std::shared_ptr<StreamSource> prepare(std::shared_ptr<StreamSource> source, Sour
     return std::make_shared<MixedSource>(std::move(source), *calibration);
 }
 
-} // namespace gdl::legendsAudioMix
+} // namespace gdl::legends_audio_mix

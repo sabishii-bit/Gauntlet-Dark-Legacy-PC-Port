@@ -14,6 +14,7 @@ class LegendsDialogue final : public DialoguePresentation {
 public:
     LegendsDialogue() = default;
     GDL_NON_COPYABLE_NON_MOVABLE(LegendsDialogue);
+    ~LegendsDialogue() override = default;
     bool load(RenderDevice& device, const std::filesystem::path& nativeRoot);
     const TextPainter& text() const override { return m_text; }
     f32 scale() const override { return kScale; }

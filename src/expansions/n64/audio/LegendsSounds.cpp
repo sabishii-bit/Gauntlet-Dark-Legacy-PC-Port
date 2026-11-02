@@ -14,7 +14,7 @@
 
 namespace gdl::game {
 namespace {
-using Calibrations = std::unordered_map<u16, legendsAudioMix::Calibration>;
+using Calibrations = std::unordered_map<u16, legends_audio_mix::Calibration>;
 
 const Calibrations& nativeCalibrations(N64LegendsEffects& bank) {
     // open() authenticates every native US bank file before this is called.
@@ -30,7 +30,7 @@ const Calibrations& nativeCalibrations(N64LegendsEffects& bank) {
             if (!source)
                 throw FormatError("cannot prepare native N64 effect calibration");
             const auto calibration =
-                legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Effect);
+                legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Effect);
             if (!calibration)
                 throw FormatError("cannot measure native N64 effect calibration");
             result.emplace(id, *calibration);
@@ -126,8 +126,8 @@ SoundHandle LegendsSounds::play(SoundPlayer& output, u32 token, f32 volume, bool
     // Bosses, ambient emitters and fixtures share the same PCM calibration.
     // Authored gain/pan/pitch remain in the native macro; distance and the user
     // category slider remain downstream and are never normalized away.
-    source = legendsAudioMix::prepare(std::move(source), legendsAudioMix::Source::Effect,
-                                      calibration->second);
+    source = legends_audio_mix::prepare(std::move(source), legends_audio_mix::Source::Effect,
+                                        calibration->second);
     return output.playStream(std::move(source), loop, std::min(volume, 1.0f),
                              SoundCategory::Effects);
 }

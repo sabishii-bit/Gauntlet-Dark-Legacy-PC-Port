@@ -86,7 +86,7 @@ private:
 
 TEST_CASE("Native loudness calibration freezes one bounded chunk-independent gain",
           "[legends][audio][native-mix]") {
-    using namespace legendsAudioMix;
+    using namespace legends_audio_mix;
     for (const usize chunk : {usize{1}, usize{73}, usize{4096}}) {
         auto source = std::make_shared<CalibrationSource>();
         source->maximumRead = chunk;
@@ -178,7 +178,8 @@ TEST_CASE("Every native macro can be calibrated safely without changing its raw 
         auto source = bank.create(id);
         REQUIRE(source);
         const auto before = std::chrono::steady_clock::now();
-        const auto measured = legendsAudioMix::calibrate(*source, legendsAudioMix::Source::Effect);
+        const auto measured =
+            legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Effect);
         maximumSeconds =
             std::max(maximumSeconds,
                      std::chrono::duration<f64>(std::chrono::steady_clock::now() - before).count());
@@ -191,7 +192,7 @@ TEST_CASE("Every native macro can be calibrated safely without changing its raw 
         auto raw = bank.create(id);
         REQUIRE(raw);
         auto normalized =
-            legendsAudioMix::prepare(source, legendsAudioMix::Source::Effect, measured);
+            legends_audio_mix::prepare(source, legends_audio_mix::Source::Effect, measured);
         REQUIRE(normalized);
         std::vector<f32> firstRaw, firstMixed;
         CHECK(raw->read(firstRaw, 320) == normalized->read(firstMixed, 320));
@@ -506,13 +507,13 @@ TEST_CASE("Native cue metadata remains available without the optional synthesis 
 TEST_CASE("Native mix compensation preserves source headroom cursor and append semantics",
           "[legends][audio][fixture-calibration]") {
     auto raw = std::make_shared<MixSource>();
-    CHECK_FALSE(legendsAudioMix::prepare({}, legendsAudioMix::Source::Effect));
-    CHECK_FALSE(legendsAudioMix::prepare(raw, static_cast<legendsAudioMix::Source>(99)));
-    const legendsAudioMix::Calibration headroom{.kind = legendsAudioMix::Source::Effect,
-                                                .gain = 1.5f};
-    auto source = legendsAudioMix::prepare(raw, legendsAudioMix::Source::Effect, headroom);
-    CHECK(legendsAudioMix::prepare(source, legendsAudioMix::Source::Effect) == source);
-    CHECK_FALSE(legendsAudioMix::prepare(source, legendsAudioMix::Source::Speech));
+    CHECK_FALSE(legends_audio_mix::prepare({}, legends_audio_mix::Source::Effect));
+    CHECK_FALSE(legends_audio_mix::prepare(raw, static_cast<legends_audio_mix::Source>(99)));
+    const legends_audio_mix::Calibration headroom{.kind = legends_audio_mix::Source::Effect,
+                                                  .gain = 1.5f};
+    auto source = legends_audio_mix::prepare(raw, legends_audio_mix::Source::Effect, headroom);
+    CHECK(legends_audio_mix::prepare(source, legends_audio_mix::Source::Effect) == source);
+    CHECK_FALSE(legends_audio_mix::prepare(source, legends_audio_mix::Source::Speech));
     raw.reset(); // The wrapper retains the decoder independently of its caller.
     REQUIRE(source);
     CHECK(source->desc().sampleRate == 8000);
@@ -534,13 +535,13 @@ TEST_CASE("Native mix compensation preserves source headroom cursor and append s
 
 TEST_CASE("All native PCM categories share one non-cumulative playback boundary",
           "[legends][audio][native-mix][fixture-calibration]") {
-    using Source = legendsAudioMix::Source;
+    using Source = legends_audio_mix::Source;
     constexpr std::array cases{std::pair{Source::Music, .30f}, std::pair{Source::Effect, .32f},
                                std::pair{Source::Speech, .36f}};
     for (const auto& [kind, target] : cases) {
         CAPTURE(kind);
         MixSource reference;
-        const auto calibration = legendsAudioMix::calibrate(reference, kind);
+        const auto calibration = legends_audio_mix::calibrate(reference, kind);
         REQUIRE(calibration);
         REQUIRE(calibration->complete);
         CHECK(calibration->frames == 4);
@@ -548,14 +549,14 @@ TEST_CASE("All native PCM categories share one non-cumulative playback boundary"
         CHECK(calibration->activeRms == Catch::Approx(rms));
         CHECK(calibration->gain == Catch::Approx(target / rms));
         const f32 gain = calibration->gain;
-        auto source = legendsAudioMix::prepare(std::make_shared<MixSource>(), kind);
+        auto source = legends_audio_mix::prepare(std::make_shared<MixSource>(), kind);
         REQUIRE(source);
         // Repeated adapter application must not multiply either the samples or
         // the cursor. This is also exercised after the source has started.
-        CHECK(legendsAudioMix::prepare(source, kind) == source);
+        CHECK(legends_audio_mix::prepare(source, kind) == source);
         std::vector<f32> pcm;
         REQUIRE(source->read(pcm, 1));
-        CHECK(legendsAudioMix::prepare(source, kind) == source);
+        CHECK(legends_audio_mix::prepare(source, kind) == source);
         CHECK(source->read(pcm, 3));
         CHECK(pcm == std::vector<f32>{.8f * gain, -.8f * gain, .25f * gain, -.25f * gain});
         source->rewind();
@@ -811,7 +812,7 @@ TEST_CASE("Native fixtures ambience and boss cues share compensation before the 
         auto neutral = effects.create(cue->effect);
         REQUIRE(neutral);
         const auto calibration =
-            legendsAudioMix::calibrate(*neutral, legendsAudioMix::Source::Effect);
+            legends_audio_mix::calibrate(*neutral, legends_audio_mix::Source::Effect);
         REQUIRE(calibration);
         std::vector<f32> decoded;
         // Some macros loop internally. Compare a bounded two-second interval,

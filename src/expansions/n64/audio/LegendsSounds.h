@@ -38,7 +38,7 @@ public:
 private:
     N64LegendsEffects m_effects;
     std::vector<LegendsSoundEntry> m_entries;
-    std::unordered_map<u16, legendsAudioMix::Calibration> m_calibrations;
+    std::unordered_map<u16, legends_audio_mix::Calibration> m_calibrations;
 };
 
 } // namespace gdl::game
