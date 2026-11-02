@@ -1,12 +1,15 @@
 #include "game/netplay/NativeAgreement.h"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "engine/core/Log.h"
 #include "engine/io/ByteReader.h"
+#include "engine/io/ByteWriter.h"
 
 namespace gdl::game {
 namespace {
@@ -16,6 +19,10 @@ enum class Kind : u8 { Report = 1, Accepted, Failed };
 using Failure = NativeAgreement::Failure;
 using Digest = NativeAgreement::Digest;
 using Bytes = std::array<u8, NativeAgreement::kPacketBytes>;
+/** A packet's magic, version, kind, failure and zero byte, before its epoch, tick and digest. */
+constexpr usize kHeaderBytes = 8;
+static_assert(NativeAgreement::kPacketBytes ==
+              kHeaderBytes + 2 * sizeof(u64) + std::tuple_size_v<Digest>);
 
 std::string digestText(const Digest& digest) {
     constexpr std::string_view kDigits = "0123456789abcdef";
@@ -30,18 +37,19 @@ std::string digestText(const Digest& digest) {
 
 Bytes encode(Kind kind, u64 epoch, u64 tick, const Digest& digest, Failure failure = Failure::None,
              bool terminal = false) {
+    std::vector<u8> written;
+    written.reserve(NativeAgreement::kPacketBytes);
+    ByteWriter out(written);
+    out.writeU32(terminal ? kTerminalMagic : kMagic);
+    out.writeU8(NativeAgreement::kVersion);
+    out.writeU8(static_cast<u8>(kind));
+    out.writeU8(static_cast<u8>(failure));
+    out.writeU8(0);
+    out.writeU64(epoch);
+    out.writeU64(tick);
+    out.writeBytes(digest);
     Bytes bytes{};
-    for (u32 i = 0; i < 4; ++i) {
-        bytes[i] = static_cast<u8>((terminal ? kTerminalMagic : kMagic) >> (i * 8));
-    }
-    bytes[4] = NativeAgreement::kVersion;
-    bytes[5] = static_cast<u8>(kind);
-    bytes[6] = static_cast<u8>(failure);
-    for (u32 i = 0; i < 8; ++i) {
-        bytes[8 + i] = static_cast<u8>(epoch >> (i * 8));
-        bytes[16 + i] = static_cast<u8>(tick >> (i * 8));
-    }
-    std::ranges::copy(digest, bytes.begin() + 24);
+    std::ranges::copy(written, bytes.begin());
     return bytes;
 }
 struct Message {
@@ -65,11 +73,11 @@ std::optional<Message> decode(std::span<const u8> bytes) {
                    0,
                    {},
                    NativeAgreement::recognizesTerminal(bytes)};
-    for (u32 i = 0; i < 8; ++i) {
-        result.epoch |= static_cast<u64>(bytes[8 + i]) << (i * 8);
-        result.tick |= static_cast<u64>(bytes[16 + i]) << (i * 8);
-    }
-    std::copy(bytes.begin() + 24, bytes.end(), result.digest.begin());
+    ByteReader reader(bytes);
+    reader.skip(kHeaderBytes);
+    result.epoch = reader.readU64();
+    result.tick = reader.readU64();
+    std::ranges::copy(reader.readBytes(result.digest.size()), result.digest.begin());
     if (result.epoch == 0 || (result.kind == Kind::Failed) != (result.failure != Failure::None) ||
         (result.kind == Kind::Failed && result.digest != Digest{})) {
         return std::nullopt;
@@ -284,7 +292,8 @@ NativeAgreement::Admission NativeAgreement::admit(u8 peer, u64 tick, const Diges
         if (previous->second != digest) {
             log::error("Native digest conflict: epoch={} tick={} local={} origin={} "
                        "confirmed=true previous={} received={}",
-                       m_epoch, tick, m_local, peer, digestText(previous->second), digestText(digest));
+                       m_epoch, tick, m_local, peer, digestText(previous->second),
+                       digestText(digest));
             fail(Failure::Conflict, tick);
             return Admission::Failed;
         }

@@ -1,4 +1,5 @@
 #include <array>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -6,6 +7,7 @@
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
 #include "formats/IcoWriter.h"
 
 namespace {
@@ -55,6 +57,27 @@ TEST_CASE("icons hold BGRA bitmaps with a transparency mask", "[formats][ico]") 
     REQUIRE(ico[94] == 0x00);
     REQUIRE(ico[98] == 0x40); // and so is masked out
     REQUIRE(ico.size() == 38 + 64 + (40 + 256 * 256 * 4 + 32 * 256));
+}
+
+TEST_CASE("a small icon keeps its byte layout", "[formats][ico]") {
+    Image image = Image::filled(2, 1, Color::rgba(10, 20, 30, 255));
+    image.setPixel(1, 0, Color::rgba(0, 0, 0, 0));
+    const std::array<Image, 1> images{image};
+    constexpr std::string_view kIcon = "000001000100" // reserved, an icon, one image
+                                       "02010000"     // two by one, no palette
+                                       "01002000"     // one plane, 32 bits
+                                       "34000000"     // bitmap bytes
+                                       "16000000"     // bitmap offset
+                                       "28000000"     // header bytes
+                                       "02000000"     // width
+                                       "02000000"     // height, doubled for the mask
+                                       "01002000"     // one plane, 32 bits
+                                       "00000000"     // uncompressed
+                                       "08000000"     // colour bytes
+                                       "00000000000000000000000000000000" // resolutions and colours
+                                       "1e140aff00000000"                 // BGRA row
+                                       "40000000"; // mask row: the second pixel
+    CHECK(test::hexBytes(encodeIco(images)) == kIcon);
 }
 
 TEST_CASE("oversized and empty icons are refused", "[formats][ico]") {

@@ -2,11 +2,13 @@
 #include <array>
 #include <cstddef>
 #include <limits>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "TestSupport.h"
 #include "game/netplay/NativeAgreement.h"
 
 namespace {
@@ -404,6 +406,75 @@ TEST_CASE("native agreement wire is exact bounded canonical little endian",
     oversized.push_back(0);
     CHECK(room.streams[1].receive(102, oversized, room.now) == Admission::Invalid);
     CHECK(room.streams[1].failure() == Failure::Protocol);
+}
+
+TEST_CASE("native agreement packets keep their byte layout", "[netplay][native-agreement]") {
+    constexpr u64 kWideEpoch = 0x1122334455667788ULL;
+    constexpr u64 kTerminalTick = 0x0123456789abcdefULL;
+    const NativeAgreement::Owners owners{1, 2, 0, 0};
+    const std::array hostLinks{NativeAgreement::Link{2, 102}};
+    const std::array guestLinks{NativeAgreement::Link{1, kHost}};
+    NativeAgreement host;
+    NativeAgreement guest;
+    REQUIRE(host.open(1, kWideEpoch, owners, hostLinks, kPeriod, Time{}));
+    REQUIRE(guest.open(2, kWideEpoch, owners, guestLinks, kPeriod, Time{}));
+    REQUIRE(guest.submit(kPeriod, digest(kPeriod), Time{}) == Admission::Accepted);
+    Wire report;
+    REQUIRE(guest.flush(report, Time{}));
+    REQUIRE(report.sent.size() == 1);
+    constexpr std::string_view kReport =
+        "47444e41"                          // magic
+        "01010000"                          // version, report, no failure, zero
+        "8877665544332211"                  // epoch
+        "3c00000000000000"                  // tick
+        "3c47525d68737e89949faab5c0cbd6e1"  // digest, bytes 0 to 15
+        "ecf7020d18232e39444f5a65707b8691"; // digest, bytes 16 to 31
+    CHECK(test::hexBytes(report.sent.front().bytes) == kReport);
+
+    REQUIRE(host.submit(kPeriod, digest(kPeriod), Time{}) == Admission::Accepted);
+    REQUIRE(host.receive(102, report.sent.front().bytes, Time{}) == Admission::Accepted);
+    Wire verdict;
+    REQUIRE(host.flush(verdict, Time{}));
+    REQUIRE(verdict.sent.size() == 1);
+    constexpr std::string_view kVerdict =
+        "47444e41"                          // magic
+        "01020000"                          // version, accepted, no failure, zero
+        "8877665544332211"                  // epoch
+        "3c00000000000000"                  // tick
+        "3c47525d68737e89949faab5c0cbd6e1"  // digest, bytes 0 to 15
+        "ecf7020d18232e39444f5a65707b8691"; // digest, bytes 16 to 31
+    CHECK(test::hexBytes(verdict.sent.front().bytes) == kVerdict);
+
+    NativeAgreement terminal;
+    REQUIRE(terminal.openTerminal(2, kWideEpoch, owners, guestLinks, kTerminalTick, Time{}));
+    REQUIRE(terminal.submit(kTerminalTick, digest(7), Time{}) == Admission::Accepted);
+    Wire terminalReport;
+    REQUIRE(terminal.flush(terminalReport, Time{}));
+    REQUIRE(terminalReport.sent.size() == 1);
+    constexpr std::string_view kTerminal =
+        "47444e54"                          // terminal magic
+        "01010000"                          // version, report, no failure, zero
+        "8877665544332211"                  // epoch
+        "efcdab8967452301"                  // tick
+        "07121d28333e49545f6a75808b96a1ac"  // digest, bytes 0 to 15
+        "b7c2cdd8e3eef9040f1a25303b46515c"; // digest, bytes 16 to 31
+    CHECK(test::hexBytes(terminalReport.sent.front().bytes) == kTerminal);
+
+    NativeAgreement failing;
+    REQUIRE(failing.open(2, kWideEpoch, owners, guestLinks, kPeriod, Time{}));
+    const std::array<u8, 3> garbage{1, 2, 3};
+    REQUIRE(failing.receive(kHost, garbage, Time{}) == Admission::Invalid);
+    Wire notice;
+    CHECK_FALSE(failing.flush(notice, Time{}));
+    REQUIRE(notice.sent.size() == 1);
+    constexpr std::string_view kFailure =
+        "47444e41"                          // magic
+        "01030500"                          // version, failed, protocol, zero
+        "8877665544332211"                  // epoch
+        "0000000000000000"                  // tick
+        "00000000000000000000000000000000"  // digest, bytes 0 to 15
+        "00000000000000000000000000000000"; // digest, bytes 16 to 31
+    CHECK(test::hexBytes(notice.sent.front().bytes) == kFailure);
 }
 
 TEST_CASE("native agreement refuses malformed flags and noncanonical terminal messages",
