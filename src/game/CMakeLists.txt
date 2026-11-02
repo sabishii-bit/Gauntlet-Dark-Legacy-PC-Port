@@ -63,7 +63,8 @@ add_library(game STATIC
     hud/RuneMeter.cpp
     scenes/PlaySceneChallenge.cpp
     level/DestructibleWalls.cpp
-    party/MissileTarget.cpp
+    combat/MissileTarget.h
+    combat/MissileTarget.cpp
     menu/SettingsMenu.cpp
     menu/MainMenuFactory.cpp
     menu/SettingsRows.cpp
@@ -154,6 +155,9 @@ add_library(game STATIC
     combat/BodyContact.cpp
     combat/Damage.cpp
     combat/DamageTypes.cpp
+    combat/StrikeHit.h
+    combat/StrikeHit.cpp
+    combat/CombatArenaTarget.h
     combat/PowerupFlags.h
     party/PlayerPowerups.h
     party/PlayerPowerups.cpp
@@ -190,6 +194,8 @@ add_library(game STATIC
     level/LevelItemArchives.cpp
     level/ItemFigure.h
     level/ItemFigure.cpp
+    level/MissileStop.h
+    level/CombatantObstacle.h
     level/ItemSupport.cpp
     party/BodyCollision.cpp
     party/MoveStrikes.h
@@ -410,7 +416,8 @@ add_library(game STATIC
     enemies/EnemyFeedbackEmission.cpp
     party/PartyDamage.cpp
     party/PlayerItemAttacks.cpp
-    party/ItemAttack.cpp
+    players/ItemAttack.h
+    players/ItemAttack.cpp
     effects/HeadGem.cpp
     effects/BodyGlow.cpp
     players/MeleeStreak.cpp

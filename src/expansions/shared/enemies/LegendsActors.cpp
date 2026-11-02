@@ -28,8 +28,9 @@ const TreeInfo* idleTree(const ImportedActor& actor, ItemArchive& archive) {
     if (actor.spawn.kind == kItKind) {
         // Native e005a8e4 and e005ac34 use this same billboard both before
         // activation and while chasing. There is no corresponding GC body.
-        if (const auto* tree = find("IT1"))
+        if (const auto* tree = find("IT1")) {
             return tree;
+        }
         return find("IT:WALK");
     }
     const auto prefix = enemyKind(actor.spawn.kind).prefix;

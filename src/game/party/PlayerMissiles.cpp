@@ -11,6 +11,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/MissileTarget.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/PowerupEffects.h"
 

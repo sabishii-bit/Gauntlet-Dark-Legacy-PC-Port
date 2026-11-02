@@ -19,9 +19,9 @@
 #include "game/audio/AnnouncementSubject.h"
 #include "game/audio/LegendSound.h"
 #include "game/camera/TowerCamera.h"
+#include "game/combat/CombatArenaTarget.h"
 #include "game/critters/CombatEvents.h"
 #include "game/critters/CombatantAssets.h"
-#include "game/enemies/EnemyMissiles.h"
 #include "game/level/ImportedActors.h"
 #include "game/level/ImportedBoss.h"
 #include "game/level/ImportedGenerators.h"
@@ -29,6 +29,7 @@
 #include "game/level/ImportedTargets.h"
 #include "game/level/ImportedWorldObject.h"
 #include "game/level/ItemFigure.h"
+#include "game/level/MissileStop.h"
 #include "game/players/ItemPickup.h"
 
 namespace gdl::game {

@@ -7,6 +7,7 @@
 #include "game/combat/BodyContact.h"
 #include "game/critters/Combatant.h"
 #include "game/enemies/EnemyMind.h"
+#include "game/level/CombatantObstacle.h"
 namespace gdl::game {
 namespace {
 f32 yawBetween(const Vec3& from, const Vec3& to) {

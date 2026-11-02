@@ -19,6 +19,7 @@
 #include "game/bosses/SkorneRelics.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/level/LevelWorld.h"
+#include "game/party/PlayerMissiles.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/PlayerCapture.h"
 

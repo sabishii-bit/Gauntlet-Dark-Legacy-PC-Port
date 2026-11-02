@@ -22,6 +22,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/enemies/EnemyKinds.h"
+#include "game/enemies/EnemyMissiles.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/NativeStateResources.h"

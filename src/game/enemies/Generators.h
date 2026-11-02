@@ -18,11 +18,11 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/combat/MissileTarget.h"
 #include "game/enemies/Enemies.h"
 #include "game/level/ImportedGenerators.h"
 #include "game/level/ItemFigure.h"
 #include "game/mechanics/SwarmRules.h"
-#include "game/party/PlayerMissiles.h"
 
 namespace gdl::game {
 
@@ -315,7 +315,7 @@ private:
     s32 stateFor(const Generator& generator, bool destroyed) const;
     void appendImportedHealth(NativeStateDigest& digest) const;
     const SwarmRules* m_swarm = nullptr; ///< borrowed until close; never simulation state
-    s32 m_highlightedId = -1;                        ///< the developer console's selection
+    s32 m_highlightedId = -1;            ///< the developer console's selection
     const SelectionHighlight* m_highlight = nullptr; ///< how it is marked out, while drawn
     bool seen(const Generator& generator) const;
     void updatePresence(Generator& generator, bool seen) const;

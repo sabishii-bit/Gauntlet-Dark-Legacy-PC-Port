@@ -9,15 +9,16 @@
 #include "engine/world/AmbientDimmer.h"
 
 #include "game/camera/CameraShake.h"
+#include "game/combat/StrikeHit.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/LevelFixtures.h"
 #include "game/mechanics/MechanicsFacade.h"
-#include "game/party/ItemAttack.h"
 #include "game/party/MeleeGeometry.h"
 #include "game/party/MoveStrikes.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/TargetAssist.h"
 #include "game/party/TurboEmission.h"
+#include "game/players/ItemAttack.h"
 #include "game/players/MeleeSelection.h"
 namespace gdl::game {
 /** Resolves player attacks against level targets and owns their transient effects.

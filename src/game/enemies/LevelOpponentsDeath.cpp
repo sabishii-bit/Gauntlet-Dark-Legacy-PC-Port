@@ -39,9 +39,11 @@ bool LevelOpponents::releaseDeath(s32 record, const Vec3& position, s32 count) {
 }
 
 void LevelOpponents::stopDeathSound() {
-    if (m_resources)
-        if (auto* imported = m_resources->world.imported())
+    if (m_resources) {
+        if (auto* imported = m_resources->world.imported()) {
             imported->setDeathContact(false);
+        }
+    }
     if (m_resources.has_value() && !m_resources->audio.recordingSounds()) {
         m_resources->audio.stop(m_deathSound);
         m_deathSound = kNoSound;
@@ -51,8 +53,9 @@ void LevelOpponents::stopDeathSound() {
 
 void LevelOpponents::clearDeaths() {
     if (m_resources.has_value()) {
-        if (auto* imported = m_resources->world.imported())
+        if (auto* imported = m_resources->world.imported()) {
             imported->setDeathContact(false);
+        }
         for (const u32 id : m_sim.deathEffects) {
             m_resources->effects.stop(id);
         }
@@ -107,20 +110,23 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
             resources.audio.soundScope({20, static_cast<u64>(std::max(cue.enemy, 0)), cue.instance},
                                        32 + static_cast<u32>(cue.kind));
         auto* imported = resources.world.imported();
-        const bool nativeSound = imported && imported->playDeathCue(cue);
+        const bool nativeSound = imported != nullptr && imported->playDeathCue(cue);
         switch (cue.kind) {
         case DeathEvent::Kind::Killed:
-            if (!nativeSound)
+            if (!nativeSound) {
                 resources.audio.playNamed("S_DEATHDIE");
+            }
             return;
         case DeathEvent::Kind::Exhausted:
-            if (!nativeSound)
+            if (!nativeSound) {
                 resources.audio.playNamed("S_DEATHLAUGH");
+            }
             teach(cue, HelpMessages::kDeathLeavesExperience, HelpMessages::kDeathLeavesHealth);
             return;
         case DeathEvent::Kind::Awakened:
-            if (!nativeSound)
+            if (!nativeSound) {
                 resources.audio.playNamed("S_DEATHSHATTER");
+            }
             return;
         case DeathEvent::Kind::Unmoved:
             teach(cue, HelpMessages::kUseMagicOnDeath, HelpMessages::kUseMagicOnDeath);

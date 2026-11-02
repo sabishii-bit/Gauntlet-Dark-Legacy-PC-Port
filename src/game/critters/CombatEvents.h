@@ -32,14 +32,6 @@ struct CombatGrab {
     bool restoreSupport = false; ///< release returns to the pre-parent support footprint
     bool operator==(const CombatGrab&) const = default;
 };
-/** A stage attachment, identified by its encounter-owned obstacle index. */
-struct CombatArenaTarget {
-    usize index = 0;
-    Mat4 placement{1};
-    bool active = false;
-    bool operator==(const CombatArenaTarget&) const = default;
-};
-
 /** A successful eruption makes its obstacle solid after the visual wind-up. */
 struct CombatArenaActivation {
     usize index = 0;
@@ -125,9 +117,6 @@ inline void visitNativeState(NativeStateDigest& digest, const CombatTrample& sta
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatGrab& state) {
     digest.fields<6>(state);
-}
-inline void visitNativeState(NativeStateDigest& digest, const CombatArenaTarget& state) {
-    digest.fields<3>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatArenaActivation& state) {
     digest.fields<2>(state);

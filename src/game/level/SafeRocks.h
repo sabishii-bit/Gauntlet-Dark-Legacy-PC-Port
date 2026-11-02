@@ -9,7 +9,7 @@
 #include "engine/core/Types.h"
 #include "engine/world/TextureAnimator.h"
 
-#include "game/critters/CombatEvents.h"
+#include "game/combat/CombatArenaTarget.h"
 #include "game/level/ItemFigure.h"
 
 namespace gdl::game {

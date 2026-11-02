@@ -1,4 +1,4 @@
-#include "game/party/ItemAttack.h"
+#include "game/players/ItemAttack.h"
 
 #include <cmath>
 

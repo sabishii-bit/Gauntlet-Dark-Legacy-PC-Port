@@ -18,6 +18,7 @@
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
+#include "game/level/MissileStop.h"
 
 namespace gdl::game {
 struct CombatantProjectileHit {

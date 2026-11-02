@@ -6,8 +6,8 @@
 #include "engine/core/Error.h"
 
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
-#include "game/enemies/EnemyMissiles.h"
 #include "game/level/ImportedTargets.h"
+#include "game/level/MissileStop.h"
 
 namespace gdl::game {
 namespace {

@@ -13,6 +13,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantProjectile.h"
 #include "game/effects/DynamicLights.h"
+#include "game/level/MissileStop.h"
 #include "game/players/EnemyShrink.h"
 
 namespace gdl::game {

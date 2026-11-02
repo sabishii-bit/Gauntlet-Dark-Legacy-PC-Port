@@ -7,7 +7,7 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
-#include "game/party/PlayerMissiles.h"
+#include "game/combat/MissileTarget.h"
 
 namespace gdl::game {
 
@@ -127,8 +127,9 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
     m_soundOutput = &output;
     // e005d734 admits token 1 once on contact; its native macro owns the loop.
     // Re-entering or resuming admits a fresh voice, leaving contact cancels it.
-    if (m_deathDrainContact && m_deathDrainSound == kNoSound)
+    if (m_deathDrainContact && m_deathDrainSound == kNoSound) {
         m_deathDrainSound = m_sounds.play(output, 1);
+    }
     m_speech.update(output, 0);
     if (m_entrySpeechPending && m_cameraReady &&
         (!m_entrySpeechAwaitQueue || (!m_speech.playing(output) && m_speech.pendingCount() == 0))) {
@@ -242,8 +243,9 @@ void LegendsLevel::continueSpeechFrom(LegendsLevel& previous) {
         !previous.m_soundOutput) {
         return;
     }
-    if (m_soundOutput && m_soundOutput != previous.m_soundOutput)
+    if (m_soundOutput && m_soundOutput != previous.m_soundOutput) {
         return;
+    }
     // Both scenes use the app's long-lived SoundPlayer. Move its narration
     // owner, not the stream cursor or the already-started phrase. Explicitly
     // empty the source: default moves alone would leave its scalar handle live.

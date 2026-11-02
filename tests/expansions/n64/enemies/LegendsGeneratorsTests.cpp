@@ -710,8 +710,9 @@ TEST_CASE("Desecrated Temple authored portal receives weapons through its actual
           "[legends][legends-generators][native-generator-placement][assets]") {
     const auto native = test::dataDirectory().parent_path() / "assets/n64/extracted";
     const auto directory = native / "levels/boss1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("N64 native extraction is not installed");
+    }
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
                                              readFile(directory / "objects.wad"),
@@ -748,7 +749,7 @@ TEST_CASE("Desecrated Temple authored portal receives weapons through its actual
     AmbientDimmer dimmer;
     PlayerAttacks attacks;
     attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
-    PlayerAttacks::Targets targets{opponents, fixtures, {}, MultiplayerMode::Normal, players};
+    const PlayerAttacks::Targets targets{opponents, fixtures, {}, MultiplayerMode::Normal, players};
     const auto& placement = imported->roster.front();
     const Vec3 outward{std::sin(placement.yaw), 0, std::cos(placement.yaw)};
     const Vec3 center = placement.position + Vec3{0, placement.body.height * .5f, 0};
@@ -787,8 +788,9 @@ TEST_CASE("Desecrated Temple authored portal receives weapons through its actual
                         {device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
                     arsenal.launchWeapon(players[0].actor, players[0].figure.get(), -outward, 1,
                                          false, center);
-                    for (s32 tick = 0; tick < 120 && generators.healthOf(0) == before; ++tick)
+                    for (s32 tick = 0; tick < 120 && generators.healthOf(0) == before; ++tick) {
                         attacks.updateProjectiles(1.0f / 60, players, targets);
+                    }
                 } else {
                     attacks.melee(0, players, targets);
                 }
@@ -804,8 +806,9 @@ TEST_CASE("Desecrated Temple authored portal receives weapons through its actual
 TEST_CASE("Every authored N64 generator damage chain accepts real level-one and level-99 melee",
           "[legends][legends-generators][native-generator-weapons][assets]") {
     const auto native = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(native / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(native / "_program/game.bin")) {
         SKIP("N64 native extraction is not installed");
+    }
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     const auto generic = native / "items/generic";
     const auto ppow = readFile(generic / "ppow.rom");
@@ -821,8 +824,9 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
     std::vector<std::tuple<std::string, ImportedGenerator, std::array<s32, 3>>> roster;
     usize maps = 0;
     for (const auto& entry : std::filesystem::directory_iterator(native / "levels")) {
-        if (!std::filesystem::is_regular_file(entry.path() / "worlds.wad"))
+        if (!std::filesystem::is_regular_file(entry.path() / "worlds.wad")) {
             continue;
+        }
         ++maps;
         const auto name = entry.path().filename().string();
         for (const auto& fixture :
@@ -832,10 +836,12 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
                     std::ranges::find(stages.stages(), name, &LegendsStageUnlock::map);
                 REQUIRE(stage != stages.stages().end());
                 const auto nativeHealth = nativeHealthOf(*definition, pgen, program, *stage);
-                if (name == "boss1" && definition->gameplay.tier == 2)
+                if (name == "boss1" && definition->gameplay.tier == 2) {
                     CHECK(nativeHealth == std::array<s32, 3>{42, 42, 0});
-                if (name == "hell1" && definition->gameplay.tier == 2)
+                }
+                if (name == "hell1" && definition->gameplay.tier == 2) {
                     CHECK(nativeHealth == std::array<s32, 3>{49, 49, 0});
+                }
                 roster.emplace_back(name, definition->gameplay, nativeHealth);
             }
         }
@@ -869,10 +875,10 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
     AmbientDimmer dimmer;
     PlayerAttacks attacks;
     attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
-    PlayerAttacks::Targets targets{opponents, fixtures, {}, MultiplayerMode::Normal, players};
+    const PlayerAttacks::Targets targets{opponents, fixtures, {}, MultiplayerMode::Normal, players};
     auto& generators = opponents.generators();
     for (s32 character = 0; character < 4; ++character) {
-        for (s32 level : {1, 99}) {
+        for (const s32 level : {1, 99}) {
             CharacterSave save;
             save.character = character;
             save.progress().experience = levelExperience(level);
@@ -882,9 +888,12 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
             const auto damage = attacks.meleeDamageOf(0, players);
             REQUIRE(damage > 1);
             std::set<std::tuple<std::string, s32, s32, std::array<s32, 3>>> shotCases;
-            s32 smallestMelee = std::numeric_limits<s32>::max(), largestMelee = 0;
-            s32 smallestShots = std::numeric_limits<s32>::max(), largestShots = 0;
-            s32 portalMelee = 0, portalShots = 0;
+            s32 smallestMelee = std::numeric_limits<s32>::max();
+            s32 largestMelee = 0;
+            s32 smallestShots = std::numeric_limits<s32>::max();
+            s32 largestShots = 0;
+            s32 portalMelee = 0;
+            s32 portalShots = 0;
             for (const auto& [name, original, nativeHealth] : roster) {
                 CAPTURE(name, original.nativeIndex, original.kind, original.tier, character, level,
                         damage);
@@ -921,8 +930,9 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
                 CHECK(count == expected);
                 smallestMelee = std::min(smallestMelee, count);
                 largestMelee = std::max(largestMelee, count);
-                if (name == "boss1")
+                if (name == "boss1") {
                     portalMelee = count;
+                }
                 // Exercise each map's distinct damage chain through a real flying
                 // weapon too. Repeated placements keep the exhaustive melee check
                 // above, without redundantly simulating identical missile flights.
@@ -955,8 +965,9 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
                         arsenal.launchWeapon(players[0].actor, players[0].figure.get(), {0, 0, 1},
                                              1, false, Vec3{0, definition.body.height * .5f, 0});
                         for (s32 tick = 0; tick < 120 && generators.healthOf(*shotId) == before;
-                             ++tick)
+                             ++tick) {
                             attacks.updateProjectiles(1.0f / 60, players, targets);
+                        }
                         REQUIRE(generators.healthOf(*shotId) < before);
                         ++shots;
                     }
@@ -964,8 +975,9 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
                     CHECK(shots == expectedShots);
                     smallestShots = std::min(smallestShots, shots);
                     largestShots = std::max(largestShots, shots);
-                    if (name == "boss1")
+                    if (name == "boss1") {
                         portalShots = shots;
+                    }
                 }
             }
             WARN("Native generator weapon census: class="
@@ -980,14 +992,16 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
 TEST_CASE("Every native generator placement reaches the real scene and common population pool",
           "[legends][legends-generators][native-generator-population][assets]") {
     const auto nativeRoot = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(nativeRoot / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(nativeRoot / "_program/game.bin")) {
         SKIP("Native N64 extraction is not installed");
+    }
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     usize maps = 0;
     usize allPlayers = 0;
     for (const auto& entry : std::filesystem::directory_iterator(nativeRoot / "levels")) {
-        if (!std::filesystem::is_regular_file(entry.path() / "worlds.wad"))
+        if (!std::filesystem::is_regular_file(entry.path() / "worlds.wad")) {
             continue;
+        }
         ++maps;
         const auto name = entry.path().filename().string();
         const auto ipr = readFile(entry.path() / "ipr.rom");
@@ -1004,15 +1018,17 @@ TEST_CASE("Every native generator placement reaches the real scene and common po
             for (usize i = 0; i < count; ++i) {
                 const usize at = first + i * 16;
                 if (ipr[at + 8] == 6 && ipr[at + 10] != 0 && (ipr[at + 13] & 2U) == 0 &&
-                    ipr[at + 14] <= partySize)
+                    ipr[at + 14] <= partySize) {
                     expected.insert(static_cast<u32>(i));
+                }
             }
-            if (partySize == 4)
+            if (partySize == 4) {
                 allPlayers += expected.size();
+            }
             if (name.starts_with("town") && name != "town5") {
                 constexpr std::array<usize, 4> kSolo{47, 51, 52, 43};
                 constexpr std::array<usize, 4> kParty{114, 118, 88, 91};
-                const usize stage = static_cast<usize>(name.back() - '1');
+                const auto stage = static_cast<usize>(name.back() - '1');
                 REQUIRE(stage < 4);
                 CHECK(expected.size() == (partySize == 1 ? kSolo[stage] : kParty[stage]));
             }
@@ -1046,15 +1062,18 @@ TEST_CASE("Every native generator placement reaches the real scene and common po
                 for (usize i = 0; i < adapter->fixtureCount(); ++i) {
                     const auto object = adapter->fixtureObject(
                         LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(i));
-                    if (object && object->visible && object->name.starts_with("GENERATOR:GKN"))
+                    if (object && object->visible && object->name.starts_with("GENERATOR:GKN")) {
                         ++visibleKnights;
-                    if (object && object->visible)
+                    }
+                    if (object && object->visible) {
                         CHECK_FALSE(object->name.starts_with("GENERATOR:GGR"));
+                    }
                 }
                 CHECK(visibleKnights == knights);
             }
-            if (expected.empty())
+            if (expected.empty()) {
                 continue;
+            }
             auto native =
                 std::make_shared<LegendsLevel>(device, map, std::move(adapter), entry.path(), root);
             LegendsTraversal traversal;
@@ -1071,9 +1090,10 @@ TEST_CASE("Every native generator placement reaches the real scene and common po
             LevelSoundscape audio;
             std::vector<PlayerRuntime> players(static_cast<usize>(partySize));
             REQUIRE_FALSE(map.starts.empty());
-            for (usize i = 0; i < players.size(); ++i)
+            for (usize i = 0; i < players.size(); ++i) {
                 players[i].actor.spawn(static_cast<s32>(i), {}, nullptr,
                                        map.starts.front().position, 0);
+            }
             LevelOpponents opponents;
             opponents.open({device, world, weapons, effects, audio, root}, players);
             auto& generators = opponents.generators();
@@ -1094,22 +1114,27 @@ TEST_CASE("Every native generator placement reaches the real scene and common po
                 // metadata corpus. Walking the authored posts must birth both
                 // stage species, with the native archives actually drawing.
                 std::set<s32> wanted;
-                for (const auto& generator : native->importedGenerators())
+                for (const auto& generator : native->importedGenerators()) {
                     wanted.insert(generator.kind);
+                }
                 std::set<s32> born;
                 for (const auto& generator : native->importedGenerators()) {
-                    if (born.contains(generator.kind))
+                    if (born.contains(generator.kind)) {
                         continue;
+                    }
                     const std::array view{
                         EnemyView{.player = 0, .position = generator.position + Vec3{0, 0, 15}}};
-                    for (s32 attempt = 0; attempt < 3; ++attempt)
+                    for (s32 attempt = 0; attempt < 3; ++attempt) {
                         generators.update(120, enemies, view);
-                    for (s32 id = 0; id < Enemies::kMost; ++id) {
-                        if (enemies.alive(id) && enemies.generatorOf(id) >= 0)
-                            born.insert(enemies.kindOf(id));
                     }
-                    if (born == wanted)
+                    for (s32 id = 0; id < Enemies::kMost; ++id) {
+                        if (enemies.alive(id) && enemies.generatorOf(id) >= 0) {
+                            born.insert(enemies.kindOf(id));
+                        }
+                    }
+                    if (born == wanted) {
                         break;
+                    }
                 }
                 CHECK(born == wanted);
                 device.draws.clear();

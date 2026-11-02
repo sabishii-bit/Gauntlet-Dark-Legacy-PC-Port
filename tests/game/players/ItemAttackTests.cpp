@@ -4,10 +4,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/MissileTarget.h"
 #include "game/combat/PowerupFlags.h"
-#include "game/party/ItemAttack.h"
+#include "game/players/ItemAttack.h"
 
 namespace {
 using namespace gdl;
@@ -91,5 +94,27 @@ TEST_CASE("hammer expansion measures its active phase after the authored delay",
     CHECK_FALSE(hammer.reaches(Mat4{1}, {3, {0, -40, 5}, 1, 4}, 0.5f, 1));
     CHECK(hammer.damageAt(0.1f, 0.12f) == Approx(100.5f));
     CHECK(hammer.damageAt(0.1f, 0.1f) == 0);
+}
+
+TEST_CASE("an item attack digests its eleven fields in declaration order",
+          "[game][items][native-digest]") {
+    const ItemAttack attack{
+        PlayerDeed::Hammer, "EXPRING", "S_THUNDERHAMMER", 100, 35, 0.1f, -1, 32, 7, 0x40, true};
+    NativeStateDigest digest;
+    digest.value(attack);
+
+    NativeStateDigest expected;
+    expected.word(static_cast<u32>(PlayerDeed::Hammer));
+    expected.string("EXPRING");
+    expected.string("S_THUNDERHAMMER");
+    expected.real(100);
+    expected.real(35);
+    expected.real(0.1f);
+    expected.real(-1);
+    expected.word(32);
+    expected.integer(7);
+    expected.word(0x40);
+    expected.flag(true);
+    CHECK(digest.finish() == expected.finish());
 }
 } // namespace

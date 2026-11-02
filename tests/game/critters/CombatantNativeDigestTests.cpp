@@ -14,6 +14,7 @@
 #include "game/critters/Combatant.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
+#include "game/level/CombatantObstacle.h"
 #include "game/level/NativeStateResources.h"
 
 namespace {

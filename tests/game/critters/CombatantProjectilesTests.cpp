@@ -745,8 +745,9 @@ TEST_CASE("native impacts use fixed radius element and envelope without changing
     f.step(0.05f, centre);
     const auto tail = f.projectiles.takeHits();
     REQUIRE(tail.size() == (native ? 1 : 0));
-    if (native)
+    if (native) {
         CHECK(tail[0].damage == 50);
+    }
 }
 
 TEST_CASE("only the final flight morph clears the projectile's expanding impact damage",

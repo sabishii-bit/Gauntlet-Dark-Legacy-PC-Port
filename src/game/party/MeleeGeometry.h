@@ -6,7 +6,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
-#include "game/party/PlayerMissiles.h"
+#include "game/combat/MissileTarget.h"
 #include "game/players/MeleeSelection.h"
 
 namespace gdl::game {

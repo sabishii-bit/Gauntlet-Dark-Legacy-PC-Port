@@ -10,6 +10,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "game/enemies/EnemyMissiles.h"
+#include "game/level/MissileStop.h"
 
 namespace {
 using namespace gdl;

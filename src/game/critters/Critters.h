@@ -13,6 +13,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "game/critters/Combatant.h"
+#include "game/level/CombatantObstacle.h"
 
 namespace gdl::game {
 class NativeStateResources;

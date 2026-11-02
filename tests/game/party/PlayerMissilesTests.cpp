@@ -14,6 +14,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/combat/MissileTarget.h"
 #include "game/party/PlayerMissiles.h"
 
 namespace {
@@ -27,9 +28,9 @@ constexpr f32 kStep = 1.0f / 60.0f;
 TEST_CASE("weapon replay admits authored elemental strong and ordinary spread modifiers",
           "[game][missiles][weapon-replay][elemental-prediction]") {
     for (u32 element = 0; element < 16; ++element) {
-        for (const u32 flags : {0U, PlayerMissiles::kPlainModifiers,
-                               PlayerMissiles::kStrongThrowFlags,
-                               PlayerMissiles::kPlainModifiers | PlayerMissiles::kStrongThrowFlags}) {
+        for (const u32 flags :
+             {0U, PlayerMissiles::kPlainModifiers, PlayerMissiles::kStrongThrowFlags,
+              PlayerMissiles::kPlainModifiers | PlayerMissiles::kStrongThrowFlags}) {
             CHECK(PlayerMissiles::replayModifiers(flags | element) == (element <= 4));
         }
     }

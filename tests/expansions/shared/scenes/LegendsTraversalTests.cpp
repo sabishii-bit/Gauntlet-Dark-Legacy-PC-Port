@@ -11,6 +11,7 @@
 #include "TestSupport.h"
 #include "expansions/n64/level/LegendsTowerMotion.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
+#include "game/combat/MissileTarget.h"
 #include "game/party/PlayerMissiles.h"
 
 namespace {
@@ -403,14 +404,14 @@ TEST_CASE("Mountain ravine projectiles reach targets across native body-only bar
         from = {-43.27204f, 7.145833f, -44.095375f};
         to = {-30.457127f, 7.145833f, -53.675457f};
     }
-    const auto directory = test::dataDirectory().parent_path() /
-                           "assets/n64/extracted/levels" / stage;
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/n64/extracted/levels" / stage;
     if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("Native N64 map is not installed");
     }
     const auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
-                                                  readFile(directory / "objects.wad"),
-                                                  readFile(directory / "ipr.rom"));
+                                                   readFile(directory / "objects.wad"),
+                                                   readFile(directory / "ipr.rom"));
     LegendsTraversal traversal;
     traversal.open(map, 0, CharacterSave{});
     const auto& collision = traversal.collision();

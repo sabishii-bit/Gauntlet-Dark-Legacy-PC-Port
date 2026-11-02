@@ -10,7 +10,7 @@
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCollision.h"
 
-#include "game/party/PlayerMissiles.h"
+#include "game/combat/MissileTarget.h"
 
 namespace gdl::game {
 /** Damageable level meshes and their authored collision surfaces. Level models/textures

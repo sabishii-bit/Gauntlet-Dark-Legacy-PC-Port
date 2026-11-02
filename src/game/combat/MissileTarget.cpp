@@ -1,3 +1,5 @@
+#include "game/combat/MissileTarget.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -5,8 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
-#include "game/party/MoveStrikes.h"
-#include "game/party/PlayerMissiles.h"
+#include "game/combat/StrikeHit.h"
 
 namespace gdl::game {
 namespace {

@@ -107,12 +107,13 @@ void LevelOpponents::openImportedBoss(const EnemyScales& scales) {
         m_bosses.open(resources.device, resources.root, &resources.world.collision(), scales,
                       definition->counterpartStage.front(), {},
                       resources.world.imported()->bossLegendProfile());
-        if (!m_bosses.preload(definition->kind, std::move(nativeAssets))) {
+        if (m_bosses.preload(definition->kind, std::move(nativeAssets)) == nullptr) {
             throw FormatError("Imported boss: native assets could not be installed");
         }
         Vec3 position = definition->position;
-        if (const auto floor = resources.world.collision().floorAt(position, 14, 1000))
+        if (const auto floor = resources.world.collision().floorAt(position, 14, 1000)) {
             position.y = floor->y;
+        }
         if (!m_bosses.spawn(definition->kind, position, definition->yaw)) {
             throw FormatError("Imported boss: native combatant could not be created");
         }

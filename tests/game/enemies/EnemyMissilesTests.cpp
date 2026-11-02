@@ -19,6 +19,7 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
+#include "game/level/MissileStop.h"
 
 namespace {
 

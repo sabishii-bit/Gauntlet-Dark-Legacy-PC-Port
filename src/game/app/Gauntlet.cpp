@@ -363,7 +363,6 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         m_legendsSounds->setCategoryScale(SoundCategory::Music, m_musicDuck.level());
         m_legendsSounds->update();
     }
-
 }
 
 bool Gauntlet::updateIdle(f64 deltaSeconds) {
@@ -474,8 +473,9 @@ bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember
                       m_title.musicHandle())) {
         // Native game-main state8 calls e0070d2c on entering player selection.
         // Failed selection loads and ordinary map/quit transitions do not reset it.
-        if (m_legendsAdvice)
+        if (m_legendsAdvice) {
             *m_legendsAdvice = {};
+        }
         return true;
     }
     log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",

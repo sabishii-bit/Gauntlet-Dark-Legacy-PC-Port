@@ -221,13 +221,15 @@ add_executable(tests
     game/enemies/LevelOpponentsDeathTests.cpp
     game/scenes/PlaySceneAmbienceTests.cpp
     game/level/DestructibleWallsTests.cpp
-    game/party/MissileTargetTests.cpp
+    game/combat/MissileTargetTests.cpp
     game/combat/ArmorFlagsTests.cpp
     game/combat/DamageTests.cpp
     game/combat/BodyContactTests.cpp
     game/combat/DamageTypesTests.cpp
     game/combat/EffectFlagsTests.cpp
     game/combat/PowerupFlagsTests.cpp
+    game/combat/StrikeHitTests.cpp
+    game/combat/CombatArenaTargetTests.cpp
     game/party/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
     game/widgets/MenuFontTests.cpp
@@ -509,7 +511,7 @@ add_executable(tests
     game/players/PlayerAnimatorTests.cpp
     game/players/PlayerAnimatorCadenceTests.cpp
     game/players/PlayerAnimatorInterruptTests.cpp
-    game/party/ItemAttackTests.cpp
+    game/players/ItemAttackTests.cpp
     game/players/KnockbackTests.cpp
     game/players/PlayerImpactTests.cpp
     game/level/LevelWorldTests.cpp
@@ -525,6 +527,8 @@ add_executable(tests
     game/level/LevelFixturesFloorsTests.cpp
     game/level/RubbleTests.cpp
     game/level/SafeRocksTests.cpp
+    game/level/MissileStopTests.cpp
+    game/level/CombatantObstacleTests.cpp
     game/characters/LevelWatchTests.cpp
     game/enemies/EnemyKindsTests.cpp
     game/enemies/EnemyAnimatorTests.cpp

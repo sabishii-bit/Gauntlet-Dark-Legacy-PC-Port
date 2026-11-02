@@ -37,10 +37,10 @@
 #include "expansions/shared/formats/LegendsMap.h"
 #include "expansions/shared/level/LegendsItems.h"
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
-#include "game/critters/CombatEvents.h"
-#include "game/enemies/EnemyMissiles.h"
+#include "game/combat/CombatArenaTarget.h"
 #include "game/level/ImportedWorldObject.h"
 #include "game/level/ItemFigure.h"
+#include "game/level/MissileStop.h"
 #include "game/players/PlayerActor.h"
 
 namespace gdl::game {

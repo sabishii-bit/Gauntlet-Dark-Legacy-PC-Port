@@ -151,12 +151,14 @@ LegendsSceneAdapter::load(RenderDevice& device, LegendsPlatform platform,
         usize lightmapBytes = 0;
         for (const auto& object : map.objects) {
             for (const u32 record : object.partLightmaps) {
-                if (record == 0 || !lightmaps.insert(record).second)
+                if (record == 0 || !lightmaps.insert(record).second) {
                     continue;
+                }
                 auto image = formats::decodeDreamcastLightmap(models, pixels, record);
                 lightmapBytes += image.pixels.size();
-                if (lightmapBytes > 128 * 1024 * 1024)
+                if (lightmapBytes > usize{128} * 1024 * 1024) {
                     throw FormatError("Dreamcast lightmap budget exceeded");
+                }
                 map.lightmaps.push_back({record, std::move(image)});
             }
         }
@@ -685,13 +687,15 @@ void LegendsSceneAdapter::updateTowerPortals() {
 
 std::vector<PointLight> LegendsSceneAdapter::towerPortalLights() const {
     std::vector<PointLight> result;
-    if (!m_camera || !m_camera->tower)
+    if (!m_camera || !m_camera->tower) {
         return result;
+    }
     for (usize i = 0; i < m_towerPortals.size(); ++i) {
         const auto& portal = m_towerPortals[i];
         const f32 charge = portal.charge();
-        if (charge <= 0)
+        if (charge <= 0) {
             continue;
+        }
         // e0862fc4/e0861630 create radius10 lights. e08641c4/e0864914
         // update RGB, with a warm 1:1/6:1/8 ratio for the rune fire.
         const Vec3 color = i == 0 ? Vec3{charge} : Vec3{charge, charge / 6, charge / 8};
@@ -722,27 +726,32 @@ LegendsSceneAdapter::tickPortals(std::span<const LegendsPortalVisitor> players, 
         // leave its actual native contact volumes before charging a fresh try;
         // otherwise a missing file would be retried every frame indefinitely.
         for (const auto& player : players) {
-            if (!player.alive)
+            if (!player.alive) {
                 continue;
+            }
             if (!std::isfinite(player.position.x) || !std::isfinite(player.position.y) ||
-                !std::isfinite(player.position.z))
+                !std::isfinite(player.position.z)) {
                 return std::nullopt;
+            }
             for (const auto& portal : m_portals) {
-                if (touchesLegendsPortal(portal, player))
+                if (touchesLegendsPortal(portal, player)) {
                     return std::nullopt;
+                }
             }
             if (m_camera && m_camera->tower) {
                 for (const auto& portal : m_towerPortals) {
                     const auto& definition = portal.definition();
                     const f64 x = static_cast<f64>(player.position.x) - definition.position.x;
                     const f64 z = static_cast<f64>(player.position.z) - definition.position.z;
-                    if (x * x + z * z < static_cast<f64>(definition.radius) * definition.radius)
+                    if (x * x + z * z < static_cast<f64>(definition.radius) * definition.radius) {
                         return std::nullopt;
+                    }
                 }
             }
         }
-        if (living == 0)
+        if (living == 0) {
             return std::nullopt;
+        }
         m_waitForPortalExit = false;
         return std::nullopt;
     }

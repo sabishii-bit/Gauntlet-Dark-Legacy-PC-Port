@@ -23,6 +23,7 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/MissileTarget.h"
 #include "game/effects/BlobShadow.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyAnimator.h"
@@ -35,7 +36,6 @@
 #include "game/mechanics/SwarmAppearance.h"
 #include "game/mechanics/SwarmRules.h"
 #include "game/party/MeleeGeometry.h"
-#include "game/party/PlayerMissiles.h"
 
 namespace gdl::game {
 

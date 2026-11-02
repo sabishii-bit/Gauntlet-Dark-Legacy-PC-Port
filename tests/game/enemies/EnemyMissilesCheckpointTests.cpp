@@ -12,6 +12,7 @@
 #include "TestSupport.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
+#include "game/level/MissileStop.h"
 
 namespace {
 using namespace gdl;

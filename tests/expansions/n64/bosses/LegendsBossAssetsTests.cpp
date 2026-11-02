@@ -1,5 +1,6 @@
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <set>
 #include <utility>
@@ -28,8 +29,9 @@ using namespace gdl::game;
 TEST_CASE("Native boss assets bind six original skeletons and every authored move",
           "[legends][native-boss-assets][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native banks not installed");
+    }
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     const auto program = readFile(root / "_program/game.bin");
     test::FakeRenderDevice device;
@@ -52,25 +54,29 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             CHECK(stock->tree->name == stock->data.tree());
             CHECK(stock->archive.models.loaded());
             CHECK(stock->archive.textures.loaded());
-            if (kind == 34 || kind == 35 || kind == 43)
+            if (kind == 34 || kind == 35 || kind == 43) {
                 REQUIRE(stock->archive.trees.find("FBALL_EXP"));
+            }
             const auto validate = [&](const CritterData& data) {
                 for (const auto& move : data.moves()) {
                     CAPTURE(data.name(), move.name, move.anim, move.colnode);
                     const auto sequence = stock->tree->findSequence(move.anim);
                     REQUIRE(sequence);
-                    if (!move.colnode.empty())
+                    if (!move.colnode.empty()) {
                         CHECK(stock->tree->findNode(move.colnode, kCombatantNodeNameLength));
+                    }
                     TreePose pose;
                     const auto& info = stock->tree->sequences[*sequence];
                     for (const f32 fraction : {0.0f, 0.5f, 1.0f}) {
                         pose.evaluate(*stock->tree, *sequence,
                                       static_cast<f32>(std::max(info.frames - 1, 0)) * fraction);
                         for (const auto& matrix : pose.matrices()) {
-                            for (usize col = 0; col < 4; ++col)
-                                for (usize row = 0; row < 4; ++row)
+                            for (usize col = 0; col < 4; ++col) {
+                                for (usize row = 0; row < 4; ++row) {
                                     REQUIRE(std::isfinite(
                                         matrix[static_cast<int>(col)][static_cast<int>(row)]));
+                                }
+                            }
                         }
                     }
                 }
@@ -92,8 +98,9 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
                     CHECK(cue.scale == 1);
                 }
             }
-            if (kind == 35)
+            if (kind == 35) {
                 CHECK(stock->children.size() == 3);
+            }
             if (kind == 34) {
                 const auto claw = stock->tree->findSequence("CLWL");
                 REQUIRE(claw);
@@ -129,8 +136,9 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
 TEST_CASE("Native boss projectile banks render authored attacks and deliver their damage",
           "[legends][native-boss-projectiles][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native banks not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     test::FakeRenderDevice device;
@@ -144,8 +152,9 @@ TEST_CASE("Native boss projectile banks render authored attacks and deliver thei
             for (usize index = 0; index < stock->data.damages().size(); ++index) {
                 const auto& damage = stock->data.damages()[index];
                 if (damage.type != AttackDefinition::kProjectile || damage.speed <= 0 ||
-                    damage.damage <= 0)
+                    damage.damage <= 0) {
                     continue;
+                }
                 CAPTURE(kind, index);
                 const auto* cue = stock->data.sound(damage.sound);
                 REQUIRE(cue);
@@ -172,8 +181,9 @@ TEST_CASE("Native boss projectile banks render authored attacks and deliver thei
                 effects.draw(device, Mat4{1}, WorldLighting{});
                 REQUIRE_FALSE(device.draws.empty());
                 bool textured = false;
-                for (const auto& draw : device.draws)
+                for (const auto& draw : device.draws) {
                     textured |= !draw.vertices.empty() && draw.texture != &device.whiteTexture();
+                }
                 CHECK(textured);
                 // Place a victim at the actual flight point, not a guessed yaw or
                 // borrowed GameCube attachment. Native flags and damage remain intact.
@@ -193,8 +203,9 @@ TEST_CASE("Native boss projectile banks render authored attacks and deliver thei
                     bool found = false;
                     for (usize effect = 0; effect < effects.count(); ++effect) {
                         const auto& shown = effects.effect(effect);
-                        if (shown.name != impact->tree)
+                        if (shown.name != impact->tree) {
                             continue;
+                        }
                         REQUIRE(shown.tree);
                         CHECK(shown.tree->name == impact->tree);
                         CHECK(shown.archive == &stock->archive);
@@ -208,10 +219,12 @@ TEST_CASE("Native boss projectile banks render authored attacks and deliver thei
                 ++tested;
             }
             CHECK(tested > 0);
-            if (kind == 35 || kind == 38 || kind == 42)
+            if (kind == 35 || kind == 38 || kind == 42) {
                 CHECK(scaledImpacts.contains("ABALL_EXP"));
-            if (kind == 35 || kind == 42)
+            }
+            if (kind == 35 || kind == 42) {
                 CHECK(scaledImpacts.contains("EBALL_EXP"));
+            }
         }
     }
 }
@@ -219,15 +232,16 @@ TEST_CASE("Native boss projectile banks render authored attacks and deliver thei
 TEST_CASE("Imported Skorne roar trims only the pre-roll absent from its GDL counterpart",
           "[legends][native-skorn-render][native-roar-phase][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native banks not installed");
+    }
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     const auto program = readFile(root / "_program/game.bin");
     test::FakeRenderDevice device;
     for (const auto kind : {42, 43}) {
         CAPTURE(kind);
-        const auto gcName = kind == 42 ? "SKORNE1" : "SKORNE2";
-        const auto nativeName = kind == 42 ? "boss1" : "boss2";
+        const auto* const gcName = kind == 42 ? "SKORNE1" : "SKORNE2";
+        const auto* const nativeName = kind == 42 ? "boss1" : "boss2";
         const auto counterpart =
             formats::AnimationFile::parse(readFile(gc / "MONSTERS" / gcName / "ANIM.PS2"));
         const auto gcTreeIndex = counterpart.find("BOSSROARFX");
@@ -237,8 +251,9 @@ TEST_CASE("Imported Skorne roar trims only the pre-roll absent from its GDL coun
         CHECK(gcTree.sequences.front().frameCount == (kind == 42 ? 17 : 18));
         usize gcTextureRuns = 0;
         for (const auto& texture : counterpart.textureAnimations) {
-            if (texture.name.find("ROAR") == std::string::npos)
+            if (texture.name.find("ROAR") == std::string::npos) {
                 continue;
+            }
             CHECK(texture.offset == 0);
             CHECK(texture.frames == 18);
             ++gcTextureRuns;
@@ -248,8 +263,9 @@ TEST_CASE("Imported Skorne roar trims only the pre-roll absent from its GDL coun
             formats::parseCritterWad(readFile(gc / "CRITTER" / (std::string(gcName) + ".WAD")));
         usize gcRoars = 0;
         for (const auto& move : gcMoves.moves) {
-            if (move.name != "ROAR")
+            if (move.name != "ROAR") {
                 continue;
+            }
             CHECK(move.sfxFrame == 20);
             ++gcRoars;
         }
@@ -298,8 +314,9 @@ TEST_CASE("Imported Skorne roar trims only the pre-roll absent from its GDL coun
             before.evaluate(raw, 0, static_cast<f32>(frame + 20));
             after.evaluate(translated, 0, static_cast<f32>(frame));
             REQUIRE(before.matrices().size() == after.matrices().size());
-            for (usize n = 0; n < before.matrices().size(); ++n)
+            for (usize n = 0; n < before.matrices().size(); ++n) {
                 CHECK(before.matrices()[n] == after.matrices()[n]);
+            }
         }
     }
 }
@@ -307,8 +324,9 @@ TEST_CASE("Imported Skorne roar trims only the pre-roll absent from its GDL coun
 TEST_CASE("Native boss cues cannot borrow missing art while GDL shared effects remain available",
           "[legends][native-boss-assets][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native banks not installed");
+    }
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     ItemArchive weapons;
     REQUIRE(weapons.load(gc / "WEAPONS"));
@@ -337,8 +355,9 @@ TEST_CASE("Native boss cues cannot borrow missing art while GDL shared effects r
 TEST_CASE("Native boss fire explosions retain their scoped weapons geometry and pixels",
           "[legends][native-boss-shared-effects][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "weapons/seq.wad"))
+    if (!std::filesystem::is_regular_file(root / "weapons/seq.wad")) {
         SKIP("N64 native weapon bank not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     std::vector<std::string> warnings;
@@ -401,8 +420,9 @@ TEST_CASE("Native boss fire explosions retain their scoped weapons geometry and 
                 if (expected.objectFrames.empty()) {
                     compareRun({expected.object, 0, 1}, {bound.object, 0, 1});
                 } else {
-                    for (usize run = 0; run < expected.objectFrames.size(); ++run)
+                    for (usize run = 0; run < expected.objectFrames.size(); ++run) {
                         compareRun(expected.objectFrames[run], bound.objectFrames[run]);
+                    }
                 }
                 REQUIRE(expected.textureAnimation >= 0);
                 REQUIRE(bound.textureAnimation >= 0);
@@ -431,8 +451,9 @@ TEST_CASE("Native boss fire explosions retain their scoped weapons geometry and 
 TEST_CASE("Native shared effect composition preserves primary groups and named weapon spells",
           "[legends][native-boss-shared-effects][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "bosseffect/fire/seq.wad"))
+    if (!std::filesystem::is_regular_file(root / "bosseffect/fire/seq.wad")) {
         SKIP("N64 native fire bank not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
     std::vector<std::string> warnings;
     const std::array lenders{root / "bosseffect/fire", root / "weapons"};
@@ -444,8 +465,9 @@ TEST_CASE("Native shared effect composition preserves primary groups and named w
     REQUIRE_FALSE(archive->trees.tree(*loop).nodes.empty());
     CHECK_FALSE(archive->trees.tree(*loop).nodes.front().object.starts_with("@N64SHARED/"));
     usize loopCount = 0;
-    for (u32 i = 0; i < archive->trees.size(); ++i)
-        loopCount += archive->trees.tree(i).name == "FBALL_LOOP";
+    for (u32 i = 0; i < archive->trees.size(); ++i) {
+        loopCount += static_cast<usize>(archive->trees.tree(i).name == "FBALL_LOOP");
+    }
     CHECK(loopCount == 1);
     // MAGIC's unrelated spell BODYs must not be merged into a pretend common
     // hierarchy just to expose the two zero-FOURCC explosion groups.
@@ -458,8 +480,9 @@ TEST_CASE("Native shared effect composition preserves primary groups and named w
 TEST_CASE("Native boss effect submissions retain texture color, animated pixels and authored depth",
           "[legends][native-effect-material][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "bosseffect/acid/objects.wad"))
+    if (!std::filesystem::is_regular_file(root / "bosseffect/acid/objects.wad")) {
         SKIP("N64 native effect banks not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
     struct Sample {
         const char* bank;
@@ -493,9 +516,11 @@ TEST_CASE("Native boss effect submissions retain texture color, animated pixels 
             const auto clip = WorldCamera::projection(1.0f, 1.0f) * camera.view();
             for (const int ticks : {0, 12, 24}) {
                 CAPTURE(ticks);
-                if (ticks != 0)
-                    for (int i = 0; i < 12; ++i)
+                if (ticks != 0) {
+                    for (int i = 0; i < 12; ++i) {
                         effects.update(1.0f / 60);
+                    }
+                }
                 device.draws.clear();
                 effects.draw(device, clip, WorldLighting{});
                 REQUIRE_FALSE(device.draws.empty());
@@ -503,15 +528,17 @@ TEST_CASE("Native boss effect submissions retain texture color, animated pixels 
                     REQUIRE_FALSE(draw.vertices.empty());
                     CHECK(draw.state.depthTest == sample.depth);
                     CHECK(draw.state.depthWrite == sample.depth);
-                    for (const auto& vertex : draw.vertices)
+                    for (const auto& vertex : draw.vertices) {
                         CHECK(vertex.color == Color::white());
+                    }
                     const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
                     REQUIRE(texture);
                     REQUIRE_FALSE(texture->pixels.empty());
-                    if (ticks == 0)
+                    if (ticks == 0) {
                         firstPixels = texture->pixels;
-                    else
+                    } else {
                         CHECK(texture->pixels != firstPixels);
+                    }
                     // Reversed Z: authored compare keeps a nearer opaque body in
                     // front of fire, without changing acid/electric's native policy.
                     const auto depthAt = [&](f32 z) {
@@ -541,8 +568,9 @@ TEST_CASE("Native boss effect submissions retain texture color, animated pixels 
 TEST_CASE("Skorne shared projectile materials match their native banks after composition",
           "[legends][native-effect-material][native-skorn-render][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "bosseffect/acid/seq.wad"))
+    if (!std::filesystem::is_regular_file(root / "bosseffect/acid/seq.wad")) {
         SKIP("N64 native boss banks not installed");
+    }
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     const auto program = readFile(root / "_program/game.bin");
     test::FakeRenderDevice device;
@@ -566,20 +594,22 @@ TEST_CASE("Skorne shared projectile materials match their native banks after com
             for (u32 i = 0; i < count; ++i) {
                 const usize at = usize{directory} + usize{i} * 12;
                 REQUIRE(at + 12 <= bytes.size());
-                if (std::equal(tag.begin(), tag.end(), bytes.begin() + at))
+                if (std::equal(tag.begin(), tag.end(),
+                               bytes.begin() + static_cast<std::ptrdiff_t>(at))) {
                     return be32(at + 4);
+                }
             }
             FAIL("Native effect oracle section absent: " << tag);
             return u32{0};
         };
-        const usize firstTexture = usize{section("TXHD")} + 15 * 24;
+        const usize firstTexture = usize{section("TXHD")} + usize{15} * 24;
         REQUIRE(be32(firstTexture + 12) == 0x00080008U);
         REQUIRE(bytes[firstTexture + 18] == 0); // RDP RGBA
         REQUIRE(bytes[firstTexture + 19] == 3); // 32-bit pixels
         const usize firstPixels = usize{section("TEXR")} + be32(firstTexture);
-        REQUIRE(firstPixels + 8 * 8 * 4 <= bytes.size());
-        const std::vector<u8> nativePixels(bytes.begin() + firstPixels,
-                                           bytes.begin() + firstPixels + 8 * 8 * 4);
+        REQUIRE(firstPixels + usize{8} * 8 * 4 <= bytes.size());
+        const auto firstPixel = bytes.begin() + static_cast<std::ptrdiff_t>(firstPixels);
+        const std::vector<u8> nativePixels(firstPixel, firstPixel + std::ptrdiff_t{8} * 8 * 4);
         // The shipping boss composes independently keyed shared effects, unlike
         // the standalone combined-group material test above. Check both paths.
         auto source = loadLegendsN64Archive(root / "bosseffect" / bank, warnings, program);
@@ -602,8 +632,9 @@ TEST_CASE("Skorne shared projectile materials match their native banks after com
                 nativeEffects.update(1.0f / 60);
                 composedEffects.update(1.0f / 60);
             }
-            if (tick != 1 && tick % 12 != 0)
+            if (tick != 1 && tick % 12 != 0) {
                 continue;
+            }
             CAPTURE(tick);
             device.draws.clear();
             nativeEffects.draw(device, clip, {}, &frame, 1);
@@ -635,12 +666,14 @@ TEST_CASE("Skorne shared projectile materials match their native banks after com
                     birthPixels = actualTexture->pixels;
                     CHECK(bool(actualTexture->pixels == nativePixels));
                 }
-                if (tick == 12)
+                if (tick == 12) {
                     CHECK(bool(actualTexture->pixels != birthPixels));
-                if (tick == 1)
+                }
+                if (tick == 1) {
                     INFO("Native " << name
                                    << " first-tick presentation blend=" << actual.state.textureBlend
                                    << ", next texture=" << (actual.state.nextTexture != nullptr));
+                }
                 for (const auto& vertex : actual.vertices) {
                     // FCFFFFFF/FFFCF238 selects TEXEL0, not the authored black
                     // Vtx RGB. The full-camera mode must not multiply it back in.
@@ -665,8 +698,9 @@ TEST_CASE("Skorne shared projectile materials match their native banks after com
 TEST_CASE("Native Skorne keeps its four-second wake and complete authored entrance clock",
           "[legends][native-boss-intro][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "boss1/seq.wad"))
+    if (!std::filesystem::is_regular_file(root / "boss1/seq.wad")) {
         SKIP("N64 native boss banks not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
     const auto gc = test::assetOrSkip("CRITTER").parent_path();
     for (const s32 kind : {42, 43}) {
@@ -704,9 +738,11 @@ TEST_CASE("Native Skorne keeps its four-second wake and complete authored entran
             REQUIRE(actor.spawn(*stock, 0, Vec3{0}, 0, nullptr, {}, 'F'));
             actor.draw(device, Mat4{1}, WorldLighting{});
             std::vector<Vec3> initialGeometry;
-            for (const auto& draw : device.draws)
-                for (const auto& vertex : draw.vertices)
+            for (const auto& draw : device.draws) {
+                for (const auto& vertex : draw.vertices) {
                     initialGeometry.push_back(vertex.position);
+                }
+            }
             REQUIRE_FALSE(initialGeometry.empty());
             bool changedGeometry = false;
             int ticks = 0;
@@ -719,9 +755,11 @@ TEST_CASE("Native Skorne keeps its four-second wake and complete authored entran
                     actor.draw(device, Mat4{1}, WorldLighting{}, nullptr, nullptr, nullptr, alpha);
                 }
                 std::vector<Vec3> shown;
-                for (const auto& draw : device.draws)
-                    for (const auto& vertex : draw.vertices)
+                for (const auto& draw : device.draws) {
+                    for (const auto& vertex : draw.vertices) {
                         shown.push_back(vertex.position);
+                    }
+                }
                 changedGeometry |= shown != initialGeometry;
                 CHECK(actor.moveType() == MoveDefinition::kStart);
             }
@@ -731,20 +769,24 @@ TEST_CASE("Native Skorne keeps its four-second wake and complete authored entran
             actor.clear();
             Bosses bosses;
             bosses.open(device, gc, nullptr, {}, 'F');
-            REQUIRE(bosses.preload(kind, std::move(stock)));
+            const auto* const preloaded = bosses.preload(kind, std::move(stock));
+            REQUIRE(preloaded != nullptr);
             REQUIRE(bosses.spawn(kind, Vec3{0}, 0, 100));
             const std::array players{EnemyView{.player = 0, .position = Vec3{0}}};
-            for (int tick = 0; tick < 210; ++tick)
+            for (int tick = 0; tick < 210; ++tick) {
                 bosses.update(1, 1.0f / 60, players);
+            }
             CHECK_FALSE(bosses.view().awake);
             CHECK(bosses.moveName() == "INIT");
             CHECK_FALSE(bosses.fighter().moveDone());
-            for (int tick = 0; tick < 29; ++tick)
+            for (int tick = 0; tick < 29; ++tick) {
                 bosses.update(1, 1.0f / 60, players);
+            }
             CHECK_FALSE(bosses.view().awake); // 239/60 seconds: still before the native deadline.
             CHECK_FALSE(bosses.fighter().moveDone());
-            for (int tick = 0; tick < 3; ++tick)
+            for (int tick = 0; tick < 3; ++tick) {
                 bosses.update(1, 1.0f / 60, players);
+            }
             CHECK(bosses.view().awake);
             CHECK(bosses.moveName() == "START");
             CHECK_FALSE(bosses.fighter().moveDone());

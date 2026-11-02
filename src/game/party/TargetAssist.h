@@ -5,7 +5,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
-#include "game/party/PlayerMissiles.h"
+#include "game/combat/MissileTarget.h"
 
 namespace gdl::game {
 /** Release-time targeting, not lock-on or homing. Supply only live damageable

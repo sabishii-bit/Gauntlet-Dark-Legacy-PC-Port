@@ -24,6 +24,7 @@
 #include "game/enemies/PlacedEnemies.h"
 #include "game/hud/BossMeter.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/MissileStop.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerHealth.h"
 namespace gdl::game {

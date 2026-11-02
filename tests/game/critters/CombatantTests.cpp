@@ -24,6 +24,7 @@
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
 #include "game/critters/HeadedBodyFixture.h"
+#include "game/level/CombatantObstacle.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/NativeStateResources.h"
@@ -1003,7 +1004,7 @@ TEST_CASE("ready step cooldown preserves the family's animation or move-entry or
     Combatant actor;
     REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
     const std::array resources{CombatantCheckpoint::Resource{1, &assets}};
-    CombatantCheckpoint observation(actor, resources, {});
+    const CombatantCheckpoint observation(actor, resources, {});
     EnemyView player;
     player.player = 3;
     player.position = {0, 0, 20};
@@ -1031,7 +1032,8 @@ TEST_CASE("combatant immutable timing policies participate in resource identity"
           "[combatant][move-cooldown][native-state-resources]") {
     const auto root = familyAssets();
     test::FakeRenderDevice device;
-    CombatantAssets ordinary, imported;
+    CombatantAssets ordinary;
+    CombatantAssets imported;
     REQUIRE(ordinary.load(device, root, General::definition(), 'G'));
     REQUIRE(imported.load(device, root, General::definition(), 'G'));
     const auto hash = [](const CombatantAssets& assets) {

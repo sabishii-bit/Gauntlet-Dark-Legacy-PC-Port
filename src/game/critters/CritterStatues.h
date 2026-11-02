@@ -15,10 +15,10 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/combat/MissileTarget.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
 #include "game/level/ItemFigure.h"
-#include "game/party/PlayerMissiles.h"
 
 namespace gdl::game {
 /** The golems, gargoyles and Deaths a level places stand as item statues, the `GOL_STATUE` or

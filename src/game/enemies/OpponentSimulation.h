@@ -8,6 +8,7 @@
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
 #include "game/enemies/PlacedEnemies.h"
+#include "game/level/MissileStop.h"
 #include "game/mechanics/SwarmRules.h"
 
 namespace gdl::game {
