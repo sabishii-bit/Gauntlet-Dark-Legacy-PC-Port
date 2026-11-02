@@ -19,7 +19,7 @@
 #include "expansions/shared/scenes/LegendsPreview.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
-#include "game/enemies/EnemyMissiles.h"
+#include "game/level/MissileStop.h"
 
 namespace {
 using namespace gdl;
@@ -157,7 +157,9 @@ TEST_CASE("Imported Skorne entrance animates only authored fragments and keeps w
         const auto& object = fixture.map.objects[index];
         poses.push_back(fixture.scene->worldObjectTransform(index));
         if ((object.flags & 0x200U) != 0) {
-            moved += poses.back() != Mat4{1};
+            if (poses.back() != Mat4{1}) {
+                ++moved;
+            }
         } else if (object.name.starts_with("FLOOR__FL")) {
             CHECK(fixture.scene->worldObjectVisible(index));
             CHECK(poses.back() == Mat4{1});
@@ -211,7 +213,7 @@ TEST_CASE("Erupting native fragments draw, pick and highlight their same interpo
     }
     REQUIRE(triangle);
     --objectIndex;
-    std::array<Vec3, 3> authored;
+    std::array<Vec3, 3> authored{};
     for (usize i = 0; i < authored.size(); ++i) {
         const auto& object = fixture.map.objects[objectIndex];
         authored[i] =
@@ -232,7 +234,7 @@ TEST_CASE("Erupting native fragments draw, pick and highlight their same interpo
     motion->update(.2f);
     motion->capturePresentation();
     motion->update(.1f);
-    WorldCamera view;
+    const WorldCamera view{};
     for (const f32 alpha : {0.0f, .5f, 1.0f}) {
         CAPTURE(alpha);
         fixture.device.draws.clear();
@@ -243,7 +245,7 @@ TEST_CASE("Erupting native fragments draw, pick and highlight their same interpo
         });
         REQUIRE(drawn != fixture.device.draws.end());
         CHECK(drawn->transform == motion->worldObjectTransform(objectIndex, alpha));
-        std::array<Vec3, 3> current;
+        std::array<Vec3, 3> current{};
         for (usize i = 0; i < current.size(); ++i) {
             current[i] = Vec3{drawn->transform * Vec4{authored[i], 1}};
         }

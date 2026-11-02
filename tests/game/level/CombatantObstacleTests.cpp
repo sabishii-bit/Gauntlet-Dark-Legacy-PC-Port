@@ -22,7 +22,13 @@ TEST_CASE("a combatant obstacle blocks unless told otherwise and names no breaka
     CHECK_FALSE(obstacle.explodes);
 }
 
-TEST_CASE("a combatant obstacle's kinds keep their byte codes", "[combatant-obstacle]") {
+TEST_CASE("a combatant obstacle's fields keep their types and its kinds their byte codes",
+          "[combatant-obstacle]") {
+    STATIC_CHECK(std::is_same_v<decltype(CombatantObstacle::box), Obstacle>);
+    STATIC_CHECK(std::is_same_v<decltype(CombatantObstacle::id), s32>);
+    STATIC_CHECK(std::is_same_v<decltype(CombatantObstacle::health), s32>);
+    STATIC_CHECK(std::is_same_v<decltype(CombatantObstacle::armor), s32>);
+    STATIC_CHECK(std::is_same_v<decltype(CombatantObstacle::explodes), bool>);
     STATIC_CHECK(std::is_same_v<std::underlying_type_t<CombatantObstacle::Kind>, u8>);
     STATIC_CHECK(static_cast<u8>(CombatantObstacle::Kind::Blocks) == 0);
     STATIC_CHECK(static_cast<u8>(CombatantObstacle::Kind::Chest) == 1);

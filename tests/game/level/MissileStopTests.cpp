@@ -13,6 +13,7 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("a missile stop made of a box is that box and no safe rock", "[missile-stop]") {
+    STATIC_CHECK(std::is_same_v<decltype(MissileStop::box), Obstacle>);
     STATIC_CHECK(std::is_same_v<decltype(MissileStop::rock), s32>);
     STATIC_CHECK(std::is_same_v<decltype(MissileStop::rockHealth), s32>);
     STATIC_CHECK(std::is_same_v<decltype(MissileStop::rockArmor), s32>);
