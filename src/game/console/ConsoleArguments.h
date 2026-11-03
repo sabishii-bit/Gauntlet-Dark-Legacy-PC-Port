@@ -7,8 +7,6 @@
 
 namespace gdl::game {
 
-/** A console command's word in lower case, as its keywords are compared. */
-std::string lowerArgument(std::string_view argument);
 /** A console command's word in upper case, as levels and kinds are named. */
 std::string upperArgument(std::string_view argument);
 /** The whole word read as an integer; nothing when any of it is not one. */

@@ -6,6 +6,8 @@
 #include <optional>
 #include <utility>
 
+#include "engine/core/Strings.h"
+
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
@@ -115,7 +117,7 @@ gdl::Expected<GiftRequest, std::string> parseGift(ConsoleCommand::Arguments argu
     if (arguments.empty()) {
         return gdl::Unexpected(giftUsage());
     }
-    const std::string name = lowerArgument(arguments[0]);
+    const std::string name = toLowerAscii(arguments[0]);
     const ConsoleCommand::Arguments rest = arguments.subspan(1);
     GiftRequest gift;
     if (name == "info") {
@@ -162,7 +164,7 @@ gdl::Expected<GiftRequest, std::string> parseGift(ConsoleCommand::Arguments argu
         for (const std::string& argument : rest) {
             if (const auto value = integerArgument(argument); value.has_value() && *value > 0) {
                 count = *value;
-            } else if (const Potion* potion = potionNamed(lowerArgument(argument))) {
+            } else if (const Potion* potion = potionNamed(toLowerAscii(argument))) {
                 kind = potion->kind;
             } else {
                 return gdl::Unexpected(std::format(

@@ -134,8 +134,8 @@ private:
     s32 consolePlayer() const { return m_ports.consolePlayer(); }
     void toggleCheat(DevConsole& console, bool PlayScene::ConsoleCheats::*flag, std::string_view on,
                      std::string_view off);
-    /** lock's body, or unlock's when `unlock` is set. */
-    void changeLock(DevConsole& console, Arguments arguments, bool unlock);
+    /** lock's or unlock's body, as `verb` says. */
+    void changeLock(DevConsole& console, Arguments arguments, LockVerb verb);
     /** Lends the swarm `level`'s voices for the visitors brought in from it. */
     void consoleBorrowVoices(DevConsole& console, const LevelRef& level);
     /** Fills `level` for `map`, or for the level in play without one; false, having said

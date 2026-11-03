@@ -5,6 +5,8 @@
 #include <format>
 #include <utility>
 
+#include "engine/core/Strings.h"
+
 #include "game/console/ConsoleArguments.h"
 #include "game/console/ConsoleUsage.h"
 
@@ -40,7 +42,7 @@ std::string ConsoleCommands::gotoUsage() {
 }
 
 std::optional<LegendsPlatform> ConsoleCommands::platformOf(std::string_view word) {
-    const std::string name = lowerArgument(word);
+    const std::string name = toLowerAscii(word);
     if (name == "n64") {
         return LegendsPlatform::N64;
     }
@@ -77,8 +79,8 @@ ConsoleCommands::parseGoto(Arguments arguments) {
         }
     }
     if (!rest.empty() && rest.size() <= 2 && !integerArgument(rest[0]).has_value() &&
-        (rest.size() == 1 || lowerArgument(rest[1]) == kPreviewWord)) {
-        const std::string word = lowerArgument(rest[0]);
+        (rest.size() == 1 || toLowerAscii(rest[1]) == kPreviewWord)) {
+        const std::string word = toLowerAscii(rest[0]);
         if (word == "back" || word == "return") {
             if (rest.size() == 1 && !legends.platform.has_value()) {
                 return Destination{.back = true};

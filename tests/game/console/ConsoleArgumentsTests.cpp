@@ -11,10 +11,8 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-TEST_CASE("a console word changes case letter by letter", "[dev-console][commands]") {
-    CHECK(lowerArgument("GoTo E2_x#3") == "goto e2_x#3");
+TEST_CASE("a console word turns upper case letter by letter", "[dev-console][commands]") {
     CHECK(upperArgument("GoTo e2_x#3") == "GOTO E2_X#3");
-    CHECK(lowerArgument("").empty());
     CHECK(upperArgument("").empty());
 }
 

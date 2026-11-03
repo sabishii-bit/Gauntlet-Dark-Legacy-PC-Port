@@ -322,15 +322,16 @@ void OfflineConsoleCommands::activate(DevConsole& console, Arguments arguments) 
 }
 
 void OfflineConsoleCommands::lock(DevConsole& console, Arguments arguments) {
-    changeLock(console, arguments, false);
+    changeLock(console, arguments, LockVerb::Lock);
 }
 
 void OfflineConsoleCommands::unlock(DevConsole& console, Arguments arguments) {
-    changeLock(console, arguments, true);
+    changeLock(console, arguments, LockVerb::Unlock);
 }
 
-void OfflineConsoleCommands::changeLock(DevConsole& console, Arguments arguments, bool unlock) {
-    const auto request = parseLockRequest(arguments, unlock ? LockVerb::Unlock : LockVerb::Lock);
+void OfflineConsoleCommands::changeLock(DevConsole& console, Arguments arguments, LockVerb verb) {
+    const bool unlock = verb == LockVerb::Unlock;
+    const auto request = parseLockRequest(arguments, verb);
     if (!request.has_value()) {
         console.print(request.error());
         return;

@@ -4,6 +4,8 @@
 #include <string_view>
 #include <utility>
 
+#include "engine/core/Strings.h"
+
 #include "game/console/ConsoleArguments.h"
 #include "game/console/ConsoleUsage.h"
 
@@ -25,7 +27,7 @@ gdl::Expected<PartyCountRequest, std::string> parsePartyCount(ConsoleCommand::Ar
     if (arguments.size() != 1) {
         return gdl::Unexpected(partyCountUsage());
     }
-    const std::string word = lowerArgument(arguments[0]);
+    const std::string word = toLowerAscii(arguments[0]);
     if (word == "off" || word == "auto") {
         return PartyCountRequest{.mode = PartyCountRequest::Mode::Players};
     }

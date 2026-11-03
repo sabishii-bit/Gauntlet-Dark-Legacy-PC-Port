@@ -10,6 +10,8 @@
 #include <string_view>
 #include <utility>
 
+#include "engine/core/Strings.h"
+
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/NameCheats.h"
@@ -51,7 +53,7 @@ Listing listingOf(ConsoleCommand::Arguments arguments) {
     if (arguments.empty()) {
         return Listing::Unknown;
     }
-    const std::string what = lowerArgument(arguments[0]);
+    const std::string what = toLowerAscii(arguments[0]);
     if (what == "maps") {
         return Listing::Maps;
     }
@@ -134,7 +136,7 @@ std::vector<std::string> mapLines(const LevelCatalog& catalog) {
             realm.prefix.empty()
                 ? '?'
                 : static_cast<char>(std::toupper(static_cast<unsigned char>(realm.prefix.back())));
-        std::string line = std::format("{} {} ({}):", letter, lowerArgument(realm.file), realm.id);
+        std::string line = std::format("{} {} ({}):", letter, toLowerAscii(realm.file), realm.id);
         for (usize i = 0; i < realm.levels.size(); ++i) {
             const std::string_view title =
                 i < realm.titles.size() ? std::string_view(realm.titles[i]) : std::string_view{};
@@ -161,7 +163,7 @@ std::vector<std::string> critterLines() {
     std::string forms;
     for (const std::string_view form : SpawnRequest::kGargoyleForms) {
         forms += forms.empty() ? "" : "|";
-        forms += lowerArgument(form);
+        forms += toLowerAscii(form);
     }
     return {std::format("Critters (spawn <critter>): golem, general, gargoyle [{}]", forms)};
 }

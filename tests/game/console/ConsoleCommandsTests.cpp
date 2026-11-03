@@ -90,8 +90,12 @@ TEST_CASE("goto takes a Legends map by name or platform, a preview of it, and th
     CHECK(back->back);
     CHECK_FALSE(back->legends.has_value());
     // A level's name is still a level; a platform alone, or with a point, is nothing.
-    CHECK(ConsoleCommands::parseGoto(Args{"e2"})->level == "E2");
-    CHECK(ConsoleCommands::parseGoto(Args{"Tower"})->level == "TOWER");
+    const auto realmLevel = ConsoleCommands::parseGoto(Args{"e2"});
+    REQUIRE(realmLevel.has_value());
+    CHECK(realmLevel->level == "E2");
+    const auto tower = ConsoleCommands::parseGoto(Args{"Tower"});
+    REQUIRE(tower.has_value());
+    CHECK(tower->level == "TOWER");
     CHECK_FALSE(ConsoleCommands::parseGoto(Args{"n64"}).has_value());
     CHECK_FALSE(ConsoleCommands::parseGoto(Args{"n64", "back"}).has_value());
     const auto point = ConsoleCommands::parseGoto(Args{"n64", "1", "2", "3"});

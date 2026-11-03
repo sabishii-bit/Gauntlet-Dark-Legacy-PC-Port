@@ -4,6 +4,8 @@
 #include <format>
 #include <utility>
 
+#include "engine/core/Strings.h"
+
 #include "game/console/ConsoleArguments.h"
 #include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleUsage.h"
@@ -59,7 +61,7 @@ gdl::Expected<SpawnRequest, std::string> parseSpawn(ConsoleCommand::Arguments ar
     // A category word first says which reading is meant; without one the name decides.
     enum class Category : u8 { Any, Enemy, Critter, Generator, Item, Object };
     Category category = Category::Any;
-    std::string first = lowerArgument(arguments[0]);
+    std::string first = toLowerAscii(arguments[0]);
     ConsoleCommand::Arguments rest = arguments.subspan(1);
     if (first == "enemy") {
         category = Category::Enemy;
@@ -76,7 +78,7 @@ gdl::Expected<SpawnRequest, std::string> parseSpawn(ConsoleCommand::Arguments ar
         if (rest.empty()) {
             return gdl::Unexpected(spawnUsage());
         }
-        first = lowerArgument(rest[0]);
+        first = toLowerAscii(rest[0]);
         rest = rest.subspan(1);
     }
     std::string name = upperArgument(first);

@@ -6,14 +6,6 @@
 
 namespace gdl::game {
 
-std::string lowerArgument(std::string_view argument) {
-    std::string result(argument);
-    for (char& c : result) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return result;
-}
-
 std::string upperArgument(std::string_view argument) {
     std::string result(argument);
     for (char& c : result) {
