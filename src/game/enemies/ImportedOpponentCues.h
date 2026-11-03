@@ -13,7 +13,6 @@
 
 namespace gdl::game {
 class ImportedLevel;
-struct CharacterSave;
 
 /** Lets an imported level take the opponents' cues it owns, the rest falling to `native`, and
  * answer for itself as its boss wakes and a legend is spent, which `nativeEncounter` does on a
