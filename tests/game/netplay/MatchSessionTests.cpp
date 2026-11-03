@@ -554,13 +554,18 @@ TEST_CASE("a request outside the shared verbs is never admitted",
     const auto request = consoleMessageFrom(room.wires[2], 1);
     room.wires[2].sent.clear();
     constexpr usize kLengthByte = 36; // the line's length follows the grant
-    for (const std::string_view line : kLines) {
-        CAPTURE(line);
+    const auto forge = [&request](std::string_view line) {
         std::vector<u8> forged(request.begin(),
                                request.begin() + static_cast<std::ptrdiff_t>(kLengthByte));
         forged.push_back(static_cast<u8>(line.size()));
         forged.insert(forged.end(), line.begin(), line.end());
-        CHECK(host.receive(1, forged) == Admission::Invalid);
+        return forged;
+    };
+    // Forging the request's own line gives the request back, so only the line can refuse.
+    REQUIRE(forge("god") == request);
+    for (const std::string_view line : kLines) {
+        CAPTURE(line);
+        CHECK(host.receive(1, forge(line)) == Admission::Invalid);
     }
     CHECK_FALSE(host.takeConsoleRequest());
     CHECK(host.receive(1, request) == Admission::Accepted);

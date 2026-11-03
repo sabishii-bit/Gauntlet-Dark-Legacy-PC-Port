@@ -840,6 +840,7 @@ TEST_CASE("words a command cannot read are refused as they are today", "[dev-con
           Refusal{{"levitate", "x"},
                   "get levitate [seconds]: how long for; under nought for good"}}) {
         CAPTURE(refusal.words);
+        error.clear();
         CHECK_FALSE(ConsoleCommands::parseGet(refusal.words, error).has_value());
         CHECK(error == refusal.error);
     }
@@ -859,21 +860,26 @@ TEST_CASE("words a command cannot read are refused as they are today", "[dev-con
           Refusal{{"generator", "rat", "4"}, "A tier is 1 to 3"}, Refusal{{"object"}, kSpawnUsage},
           Refusal{{"object", "a", "b", "c"}, kSpawnUsage}}) {
         CAPTURE(refusal.words);
+        error.clear();
         CHECK_FALSE(ConsoleCommands::parseSpawn(refusal.words, error).has_value());
         CHECK(error == refusal.error);
     }
     for (const Args& words : {Args{}, Args{"a", "b"}, Args{"n64"}, Args{"G1", "1", "x", "3"}}) {
         CAPTURE(words);
+        error.clear();
         CHECK_FALSE(ConsoleCommands::parseGoto(words, error).has_value());
         CHECK(error == kGotoUsage);
     }
     for (const Args& words : {Args{}, Args{"5"}}) {
         CAPTURE(words);
+        error.clear();
         CHECK_FALSE(ConsoleCommands::parsePartyCount(words, error).has_value());
         CHECK(error == kPartyCountUsage);
     }
+    error.clear();
     CHECK_FALSE(ConsoleCommands::parseLockRequest(Args{"character"}, error, "lock").has_value());
     CHECK(error == kLockUsage);
+    error.clear();
     CHECK_FALSE(ConsoleCommands::parseLockRequest(Args{"character"}, error, "unlock").has_value());
     CHECK(error == kUnlockUsage);
 }

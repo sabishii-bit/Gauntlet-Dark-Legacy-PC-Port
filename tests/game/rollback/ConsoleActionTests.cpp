@@ -21,6 +21,10 @@ constexpr std::array<std::string_view, 10> kLocalLines{
     "help me",   "console_permissions 1", "debug_info on", "hidehud now",  "freecam on",
     "list maps", "activate switch#0",     "unlock gate#0", "lock chest#1", "party_count 2"};
 
+/** Today's longest console line and its seat count, held here so a change to either shows. */
+constexpr usize kLongestLine = 160;
+constexpr u8 kSeatCount = 4;
+
 bool valid(std::string line, u8 seat = 0) {
     return ConsoleAction{seat, std::move(line)}.valid();
 }
@@ -44,17 +48,18 @@ TEST_CASE("the shared console admits exactly its eight verbs, in any case",
     }
     constexpr char kDelete = 127;
     CHECK_FALSE(valid(std::string("god") + kDelete));
+    STATIC_REQUIRE(ConsoleAction::kMaxLine == kLongestLine);
     std::string longest = "god";
-    longest.resize(ConsoleAction::kMaxLine, ' ');
+    longest.resize(kLongestLine, ' ');
     CHECK(valid(longest));
     longest.push_back(' ');
-    REQUIRE(longest.size() == 161);
     CHECK_FALSE(valid(longest));
-    for (u8 seat = 0; seat < InputCommand::kSeats; ++seat) {
+    STATIC_REQUIRE(InputCommand::kSeats == kSeatCount);
+    for (u8 seat = 0; seat < kSeatCount; ++seat) {
         CAPTURE(seat);
         CHECK(valid("god", seat));
     }
-    CHECK_FALSE(valid("god", 4));
+    CHECK_FALSE(valid("god", kSeatCount));
 }
 
 TEST_CASE("a console line's packet bytes stay as they are",
