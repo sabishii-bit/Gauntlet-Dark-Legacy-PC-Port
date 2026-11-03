@@ -2666,6 +2666,68 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     scene.close();
 }
 
+TEST_CASE("in hurt mode a player's blow on another comes from somewhere, so a guard halves it",
+          "[game][screens][assets][player-attacks][hurt-mode]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    GameConfig config;
+    config.multiplayer.mode = MultiplayerMode::Hurt;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    constexpr s32 kStriker = 3;
+    constexpr s32 kStruck = 1;
+    CharacterSave striker;
+    striker.progress().fightAdd = static_cast<f32>(kMaxStat); // a blow well past the armour
+    CharacterSave struck;
+    struck.progress().health = 2000;
+    struck.progress().armorAdd = static_cast<f32>(kMaxStat); // the longest guard
+    const std::array party{PartyMember{kStriker, striker}, PartyMember{kStruck, struck}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
+        scene.update(1.0 / 60.0, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    // Open ground by the start: the striker on the spot facing east, the struck a pace east of
+    // it facing back.
+    REQUIRE(scene.relocate(Vec3{18.8f, 0.2f, 0.7f}));
+    REQUIRE(scene.noclipMove(kStriker, Vec3{0}, kPi * 0.5f));
+    REQUIRE(scene.noclipMove(kStruck, Vec3{0}, -kPi * 0.5f));
+    const auto health = [&] {
+        const PlayerRuntime& runtime = *scene.runtime(kStruck);
+        return static_cast<f32>(runtime.actor.save().health()) + runtime.healthFraction;
+    };
+    std::vector<f32> open;
+    std::vector<f32> guarded;
+    for (s32 frame = 0; frame < 60 * 30 && (open.empty() || guarded.empty()); ++frame) {
+        PlayScene::Inputs input{};
+        input[kStriker].attack = true;
+        input[kStruck].turbo = true;
+        input[kStruck].defendPressed = !scene.animator(kStruck)->guarding();
+        const bool raised = scene.animator(kStruck)->defending();
+        const f32 before = health();
+        REQUIRE(scene.update(1.0 / 60.0, input) == PlayOutcome::Running);
+        if (const f32 taken = before - health(); taken > 0) {
+            (raised && scene.animator(kStruck)->defending() ? guarded : open).push_back(taken);
+        }
+    }
+    REQUIRE_FALSE(open.empty());
+    REQUIRE_FALSE(guarded.empty());
+    // A blow from nowhere in particular would have been taken whole by the guard.
+    CHECK(guarded.front() == Approx(open.front() * 0.5f));
+    scene.close();
+}
+
 TEST_CASE("every class has its turbo attacks: they show, strike and are paid for",
           "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();

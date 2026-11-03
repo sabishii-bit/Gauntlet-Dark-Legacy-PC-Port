@@ -12,6 +12,7 @@
 #include "game/level/ScriptedFixtures.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
+#include "game/party/ScriptedAttacks.h"
 
 namespace gdl::game {
 struct PlayerAttacksTestPeer {
@@ -111,7 +112,9 @@ struct Fixture {
     PlayerAttacks attacks;
     std::array<PlayerRuntime, 1> players;
     test::ScriptedFixtures fixtureHost;
-    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
+    test::AttackScript attackEvents;
+    test::ScriptedAttacks attackHost{attackEvents};
+    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
     std::shared_ptr<NativeTargets> imported = std::make_shared<NativeTargets>();
     std::filesystem::path root;
     Fixture() {
@@ -160,7 +163,7 @@ TEST_CASE("Imported melee and projectile hits cannot fall through to player or s
           "[legends][imported-targets][assets]") {
     Fixture f;
     s32 hurtPlayers = 0;
-    f.targets.hurt = [&](usize, f32, HurtKind, const PlayerImpact&) { ++hurtPlayers; };
+    f.attackEvents.hurt = [&](usize, f32, HurtKind, const PlayerImpact&) { ++hurtPlayers; };
     SECTION("projectile") {
         MissileImpact impact;
         impact.target = kImportedTargetBase;

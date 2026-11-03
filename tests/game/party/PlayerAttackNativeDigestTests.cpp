@@ -11,6 +11,7 @@
 #include "game/level/NativeStateResources.h"
 #include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerAttacks.h"
+#include "game/party/ScriptedAttacks.h"
 
 namespace {
 using namespace gdl;
@@ -172,6 +173,7 @@ struct AttackFixture {
     std::array<PlayerRuntime, 1> players;
     NativeStateResources resources;
     test::ScriptedFixtures fixtureHost;
+    test::ScriptedAttacks attackHost;
     AttackFixture() {
         arsenal.bind({device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
         attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
@@ -202,8 +204,9 @@ TEST_CASE("native player attacks preserve shield clocks potion waves and arsenal
     PlayerAttacks::LocalSnapshot shield;
     attacks.saveLocal(shield);
     const auto shieldHash = nativeHash(attacks, resources);
-    attacks.updateShields(0.001f, fixture->players,
-                          {fixture->opponents, fixture->fixtures, fixture->fixtureHost});
+    attacks.updateShields(
+        0.001f, fixture->players,
+        {fixture->opponents, fixture->fixtures, fixture->fixtureHost, fixture->attackHost});
     REQUIRE(attacks.shieldCount() == 1);
     CHECK(nativeHash(attacks, resources) != shieldHash);
     CHECK(savedHash(attacks, shield, resources) == shieldHash);

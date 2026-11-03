@@ -648,6 +648,7 @@ add_executable(tests
     game/level/LevelFixturesTests.cpp
     game/enemies/LevelOpponentsTests.cpp
     game/party/PlayerHealthTests.cpp
+    game/party/AttackHostTests.cpp
     game/party/PlayerAttacksTests.cpp
     game/menu/NameEntryTests.cpp
     game/scenes/SelectLaneTests.cpp

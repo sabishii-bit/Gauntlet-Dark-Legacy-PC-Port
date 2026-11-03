@@ -15,6 +15,7 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/level/ScriptedFixtures.h"
+#include "game/party/ScriptedAttacks.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -38,6 +39,7 @@ struct ChimeraTargetingScene {
     PlayerArsenal arsenal;
     PlayerAttacks attacks;
     test::ScriptedFixtures fixtureHost;
+    test::ScriptedAttacks attackHost;
 
     ChimeraTargetingScene() {
         const auto directory =
@@ -115,7 +117,10 @@ struct ChimeraTargetingScene {
 
     PlayerAttacks::Targets targets() {
         return {const_cast<LevelOpponents&>(scene.opponents()),
-                const_cast<LevelFixtures&>(scene.fixtures()), fixtureHost, MultiplayerMode::Normal,
+                const_cast<LevelFixtures&>(scene.fixtures()),
+                fixtureHost,
+                attackHost,
+                MultiplayerMode::Normal,
                 scene.participants()};
     }
 

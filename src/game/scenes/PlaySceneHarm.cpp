@@ -106,6 +106,15 @@ void PlayScene::FixtureRouting::shatterPotion(s32 kind, const Vec3& position) {
     m_scene.m_attacks.shatterPotion(kind, position);
 }
 
+void PlayScene::AttackRouting::hurtByAttack(usize member, f32 damage, HurtKind kind,
+                                            const PlayerImpact& impact) {
+    m_scene.hurt(member, damage, kind, true, impact);
+}
+
+void PlayScene::AttackRouting::meleeHit(s32 seat) {
+    m_scene.emitOutput(RumbleOutput{seat, 0, ControlFeedback::MeleeHit});
+}
+
 bool PlayScene::kill(s32 player) {
     if (m_world == nullptr || m_world->isTower()) {
         return false;

@@ -16,6 +16,7 @@
 #include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerArsenalCheckpoint.h"
 #include "game/party/PlayerAttacksCheckpoint.h"
+#include "game/party/ScriptedAttacks.h"
 
 namespace gdl::test {
 inline std::filesystem::path attackCheckpointAssets() {
@@ -96,7 +97,8 @@ struct AttackCheckpointFixture {
     std::vector<s32> helps;
     FixtureScript fixtureEvents;
     ScriptedFixtures fixtureHost{fixtureEvents};
-    game::PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
+    ScriptedAttacks attackHost;
+    game::PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
 
     explicit AttackCheckpointFixture(bool artwork = true) {
         REQUIRE(classes.load(root / "pdata"));

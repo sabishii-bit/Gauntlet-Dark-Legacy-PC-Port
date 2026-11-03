@@ -51,6 +51,7 @@
 #include "game/level/TowerAccess.h"
 #include "game/level/TriggerCues.h"
 #include "game/mechanics/MechanicsFacade.h"
+#include "game/party/AttackHost.h"
 #include "game/party/PartyFigures.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PartyNames.h"
@@ -742,6 +743,18 @@ private:
     private:
         PlayScene& m_scene;
     };
+    /** The scene's answers to what its attacks report: one player's blow on another hurts that
+     * member as a blow from somewhere, and a melee hit rumbles its attacker's controller. */
+    class AttackRouting final : public AttackHost {
+    public:
+        explicit AttackRouting(PlayScene& scene) : m_scene(scene) {}
+        void hurtByAttack(usize member, f32 damage, HurtKind kind,
+                          const PlayerImpact& impact) override;
+        void meleeHit(s32 seat) override;
+
+    private:
+        PlayScene& m_scene;
+    };
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
     void answerTowerPrompts(const Inputs& inputs);
@@ -827,6 +840,7 @@ private:
     ExitPortals m_portals;
     LevelTransporters m_transporters;
     PlayerAttacks m_attacks;
+    AttackRouting m_attackRouting{*this}; ///< what the attacks report into
     LevelFixtures m_fixtures;
     FixtureRouting m_fixtureRouting{*this}; ///< what the fixtures report into
     LevelOpponents m_opponents;

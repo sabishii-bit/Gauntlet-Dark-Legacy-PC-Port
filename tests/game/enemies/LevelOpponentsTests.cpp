@@ -52,6 +52,7 @@
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerHealth.h"
+#include "game/party/ScriptedAttacks.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/PlayerAnimator.h"
 namespace {
@@ -951,7 +952,8 @@ TEST_CASE("area blasts and Thunder Hammer give gargoyles distance-independent ho
         REQUIRE(player.figure->animator().itemReleased() == PlayerDeed::Hammer);
         attacks.useItemAttack(0, players);
         test::ScriptedFixtures fixtureHost;
-        const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
+        test::ScriptedAttacks attackHost;
+        const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
         for (s32 frame = 0; frame < 180 && critters.healthOf(*id) == health; ++frame) {
             attacks.updateProjectiles(1.0f / 60, players, targets);
         }

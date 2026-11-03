@@ -678,14 +678,11 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
     return {m_opponents,
             m_fixtures,
             m_fixtureRouting,
+            m_attackRouting,
             m_context.config != nullptr ? m_context.config->multiplayer.mode
                                         : MultiplayerMode::Normal,
             m_players,
-            [this](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
-                hurt(index, damage, kind, true, impact);
-            },
             m_bossSequence.occupiedHand(),
-            [this](s32 player) { emitOutput(RumbleOutput{player, 0, ControlFeedback::MeleeHit}); },
             &m_mechanics};
 }
 

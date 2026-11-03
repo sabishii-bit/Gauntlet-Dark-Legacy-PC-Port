@@ -21,6 +21,7 @@
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PlayerHealth.h"
+#include "game/party/ScriptedAttacks.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 
@@ -499,7 +500,8 @@ TEST_CASE("Pojo breath uses its animated head and charges only the selected atta
     LevelOpponents opponents;
     LevelFixtures fixtures;
     test::ScriptedFixtures fixtureHost;
-    const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
+    test::ScriptedAttacks attackHost;
+    const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
     arsenal.bind({device, classes, weapons, world.collision(), effects, audio, &sounds, {}});
     attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
     std::array<PlayerRuntime, 1> players;

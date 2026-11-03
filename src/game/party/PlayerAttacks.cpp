@@ -888,8 +888,7 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
     MoveStrike row = stats->moveStrikes[static_cast<usize>(source->row)];
     row.damageType = source->damageType;
     bool stoppedByPlayer = false;
-    if (source->multiplayer == MultiplayerMode::Hurt && targets.hurt &&
-        (row.damageType & damage::kMagic) == 0) {
+    if (source->multiplayer == MultiplayerMode::Hurt && (row.damageType & damage::kMagic) == 0) {
         for (usize index = 0; index < players.size(); ++index) {
             auto& player = players[index];
             if (player.actor.player() == hit.owner || player.life != PlayerLife::Standing ||
@@ -938,7 +937,8 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
                 if (!hit.swept && hit.damage < 5) {
                     flags = (flags & ~damage::kKnocks) | damage::kNoHitEffect;
                 }
-                targets.hurt(index, hit.damage, HurtKind::Blow, {flags, direction});
+                targets.attackHost.hurtByAttack(index, hit.damage, HurtKind::Blow,
+                                                {flags, direction});
                 if ((row.damageType & damage::kGas) != 0) {
                     player.effectGap = kGasEffectGap;
                 } else if (hit.damage > 2) {
@@ -1304,8 +1304,8 @@ void PlayerAttacks::updateArmour(f32 seconds, std::span<PlayerRuntime> players,
         // bearer's, however it lands, and nothing else tells the hand.
         const bool stood = creatureStanding(targets, target->id);
         const auto pulseKill = [&] {
-            if (stood && !creatureStanding(targets, target->id) && targets.meleeHit) {
-                targets.meleeHit(actor.player());
+            if (stood && !creatureStanding(targets, target->id)) {
+                targets.attackHost.meleeHit(actor.player());
             }
         };
         if (fire) {
@@ -2279,10 +2279,9 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         return;
     }
     if (id >= kPlayerTargetBase) {
-        if (targets.hurt) {
-            targets.hurt(static_cast<usize>(id - kPlayerTargetBase), damage, HurtKind::Burn,
-                         {flags, glm::normalize(target->base - actor.position())});
-        }
+        targets.attackHost.hurtByAttack(static_cast<usize>(id - kPlayerTargetBase), damage,
+                                        HurtKind::Burn,
+                                        {flags, glm::normalize(target->base - actor.position())});
         return;
     }
     if (id >= kStatueTargetBase) {
@@ -2339,8 +2338,8 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
                                       targets.fixtureHost);
         targets.fixtures.settleBlasts(players, targets.fixtureHost);
     }
-    if (credit > 0.0f && targets.meleeHit) {
-        targets.meleeHit(actor.player());
+    if (credit > 0.0f) {
+        targets.attackHost.meleeHit(actor.player());
     }
     healHit(actor.player(), flags, credit, point, players, targets);
 }
@@ -2480,11 +2479,11 @@ void PlayerAttacks::dispatchProjectileImpact(
         const auto player = std::ranges::find_if(players, [&impact](const PlayerRuntime& p) {
             return p.actor.player() == impact.player;
         });
-        if (player != players.end() && player->effectGap <= 0 && targets.hurt) {
-            targets.hurt(static_cast<usize>(player - players.begin()),
-                         impact.stun ? 0 : impact.damage,
-                         impact.stun ? HurtKind::QuietBlow : HurtKind::Blow,
-                         {impact.flags | (impact.stun ? damage::kStun : 0), impact.direction});
+        if (player != players.end() && player->effectGap <= 0) {
+            targets.attackHost.hurtByAttack(
+                static_cast<usize>(player - players.begin()), impact.stun ? 0 : impact.damage,
+                impact.stun ? HurtKind::QuietBlow : HurtKind::Blow,
+                {impact.flags | (impact.stun ? damage::kStun : 0), impact.direction});
             if (impact.damage > 2) {
                 player->effectGap = impact.playerHitGap;
             }

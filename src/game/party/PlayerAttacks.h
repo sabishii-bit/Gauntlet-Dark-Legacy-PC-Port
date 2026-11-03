@@ -14,6 +14,7 @@
 #include "game/level/FixtureHost.h"
 #include "game/level/LevelFixtures.h"
 #include "game/mechanics/MechanicsFacade.h"
+#include "game/party/AttackHost.h"
 #include "game/party/MeleeGeometry.h"
 #include "game/party/MoveStrikes.h"
 #include "game/party/PlayerArsenal.h"
@@ -49,15 +50,11 @@ public:
         LevelOpponents& opponents;
         LevelFixtures& fixtures;
         FixtureHost& fixtureHost;
+        AttackHost& attackHost; ///< one player's blows on another, and hits that rumble
         MultiplayerMode multiplayer = MultiplayerMode::Normal;
         // Preserve world-only aggregate callers on compilers warning about omitted fields.
         std::span<const PlayerRuntime> players{}; // NOLINT(readability-redundant-member-init)
-        std::function<void(usize, f32, HurtKind, const PlayerImpact&)>
-            hurt{};            // NOLINT(readability-redundant-member-init)
-        s32 occupiedHand = -1; ///< a relic replaces this player's weapon glow
-        /** An accepted melee blow on a creature, identified by its attacker's input slot. */
-        std::function<void(s32)>
-            meleeHit{}; // NOLINT(readability-redundant-member-init): preserve aggregate callers
+        s32 occupiedHand = -1;                    ///< a relic replaces this player's weapon glow
         /** The additive mechanics' rules about blows; the original's when null. */
         const BlowRules* blows = nullptr;
     };

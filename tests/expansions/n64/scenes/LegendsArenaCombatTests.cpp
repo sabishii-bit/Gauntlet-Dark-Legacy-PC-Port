@@ -14,6 +14,7 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerAttacks.h"
+#include "game/party/ScriptedAttacks.h"
 
 namespace {
 using namespace gdl;
@@ -33,7 +34,8 @@ struct ArenaCombatFixture {
     PlayerAttacks attacks;
     std::array<PlayerRuntime, 1> players;
     test::ScriptedFixtures fixtureHost;
-    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
+    test::ScriptedAttacks attackHost;
+    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
     std::shared_ptr<LegendsLevel> native;
     Vec3 cover{0};
 

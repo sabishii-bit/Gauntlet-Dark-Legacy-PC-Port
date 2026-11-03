@@ -38,6 +38,7 @@
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/PotionEmission.h"
+#include "game/party/ScriptedAttacks.h"
 #include "game/players/ComboMove.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/PowerupEffects.h"
@@ -64,7 +65,9 @@ struct Fixture {
     std::vector<s32> meleeHits;
     test::FixtureScript fixtureEvents;
     test::ScriptedFixtures fixtureHost{fixtureEvents};
-    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
+    test::AttackScript attackEvents;
+    test::ScriptedAttacks attackHost{attackEvents};
+    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
     Fixture() {
         arsenal.bind({device,
                       classes,
@@ -81,7 +84,7 @@ struct Fixture {
         attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer,
                       &shake, &mode});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
-        targets.meleeHit = [this](s32 player) { meleeHits.push_back(player); };
+        attackEvents.meleeHit = [this](s32 player) { meleeHits.push_back(player); };
     }
 };
 
@@ -892,7 +895,7 @@ TEST_CASE("weapon modes route player hits through health with shared contact imm
     s32 hits = 0;
     f.targets.multiplayer = mode;
     f.targets.players = party;
-    f.targets.hurt = [&](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
+    f.attackEvents.hurt = [&](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
         REQUIRE(index == 1);
         ++hits;
         health.hurt(party[index], damage, kind, true, false, 1, events, impact);
@@ -1007,7 +1010,7 @@ TEST_CASE("class turbo areas harm other players only in hurt mode with shared ef
         s32 hits = 0;
         f.targets.multiplayer = mode;
         f.targets.players = party;
-        f.targets.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact&) {
+        f.attackEvents.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact&) {
             CHECK(index == 1);
             CHECK(damage > 0);
             ++hits;
@@ -1055,7 +1058,7 @@ TEST_CASE("turbo point hits show their impact and reflective armor turns their v
         }
         s32 hits = 0;
         bool reflected = false;
-        f.targets.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact&) {
+        f.attackEvents.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact&) {
             CHECK(index == 1);
             CHECK(damage == 70);
             ++hits;
@@ -1131,7 +1134,7 @@ TEST_CASE("player turbo areas respect distant item cover but cross it within ten
         REQUIRE(party[0].figure);
         party[0].turbo.add(100);
         s32 hits = 0;
-        f.targets.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact& impact) {
+        f.attackEvents.hurt = [&](usize index, f32 damage, HurtKind, const PlayerImpact& impact) {
             CHECK(index == 1);
             CHECK(damage > 0);
             CHECK(damage < 5);
@@ -3455,7 +3458,7 @@ TEST_CASE("native melee and ranged attacks use independent Strength and Magic at
     f.targets.multiplayer = MultiplayerMode::Hurt;
     f.targets.players = party;
     s32 contacts = 0;
-    f.targets.hurt = [&](usize index, f32 amount, HurtKind, const PlayerImpact&) {
+    f.attackEvents.hurt = [&](usize index, f32 amount, HurtKind, const PlayerImpact&) {
         CHECK(index == 1);
         CHECK(amount == Approx(melee * (heavy ? 2.0f : 1.0f)));
         ++contacts;
@@ -3594,7 +3597,7 @@ TEST_CASE("ordinary melee and finishers preserve the weapon element while guard 
     }
     // PlayerMotion +0x3824 begins with field_11C for all melee damage, then ORs
     // knockback/down for heavy/power swings. The guard flash is a separate path.
-    f.targets.hurt = [&](usize index, f32 amount, HurtKind, const PlayerImpact& impact) {
+    f.attackEvents.hurt = [&](usize index, f32 amount, HurtKind, const PlayerImpact& impact) {
         CHECK(index == 1);
         ++contacts;
         CHECK(impact.flags == (element | extra));
