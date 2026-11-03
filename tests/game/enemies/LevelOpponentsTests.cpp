@@ -3193,6 +3193,69 @@ TEST_CASE("boss relics choose the first eligible controller rather than party st
     opponents.close();
 }
 
+TEST_CASE("on a native level a brandished legend spends the bearer's relic once before the "
+          "encounter hears of it",
+          "[level-opponents][boss-relics][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    const s32 realm = legendRealmOf(41);
+    const s32 other = legendRealmOf(34);
+    CharacterSave save;
+    REQUIRE(save.progress().relics.addLegend(realm));
+    REQUIRE(save.progress().relics.addLegend(other));
+    const Relics held = save.progress().relics;
+    Relics spent = held;
+    REQUIRE(spent.spendLegend(realm));
+    // The bearer is the first controller, stored second.
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(1, save, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(0, save, nullptr, Vec3{0}, 0);
+    const auto relicsOf = [&](usize member) -> const Relics& {
+        return players[member].actor.save().progress().relics;
+    };
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().view().kind == 41);
+    REQUIRE(opponents.bosses().legend().player() == 0);
+    REQUIRE(opponents.bosses().position() != nullptr);
+    for (PlayerRuntime& player : players) {
+        player.actor.place(*opponents.bosses().position());
+    }
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    usize brandished = 0;
+    events.legend = [&](const LegendEvent& event) {
+        if (event.cue != LegendCue::Brandished) {
+            return;
+        }
+        ++brandished;
+        CHECK(event.player == 0);
+        CHECK(event.realm == realm);
+        CHECK(relicsOf(1) == spent);
+        CHECK(relicsOf(0) == held);
+    };
+    constexpr s32 kMostUpdates = 3000;
+    for (s32 i = 0; i < kMostUpdates && !opponents.bosses().legend().thrown(); ++i) {
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
+    }
+    REQUIRE(opponents.bosses().legend().thrown());
+    CHECK(brandished == 1);
+    CHECK(relicsOf(1) == spent);
+    CHECK(relicsOf(0) == held);
+    opponents.close();
+}
+
 TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
           "[game][screens][level-opponents][boss-effects][assets]") {
     const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();

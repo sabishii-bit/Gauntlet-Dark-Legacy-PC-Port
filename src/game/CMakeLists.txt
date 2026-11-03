@@ -244,6 +244,7 @@ add_library(game STATIC
     enemies/BossEncounterHost.h
     enemies/OpponentPool.h
     enemies/OpponentCues.h
+    enemies/EncounterLevel.h
     level/ItemSupport.cpp
     party/BodyCollision.cpp
     party/MoveStrikes.h

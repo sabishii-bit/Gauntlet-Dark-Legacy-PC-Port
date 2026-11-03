@@ -15,7 +15,9 @@
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/characters/CharacterSave.h"
 #include "game/enemies/DeathRules.h"
+#include "game/enemies/EncounterLevel.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/Generators.h"
@@ -31,9 +33,11 @@ using namespace gdl::game;
 using Log = std::vector<std::string>;
 
 static_assert(std::is_base_of_v<OpponentCues, ImportedOpponentCues>);
+static_assert(std::is_base_of_v<EncounterLevel, ImportedOpponentCues>);
 static_assert(std::is_final_v<ImportedOpponentCues>);
 
-/** An imported level that owns every cue it is asked about, or none, logging each question. */
+/** An imported level that owns every cue and legend it is asked about, or none, logging each
+ * question and each boss intro. */
 class RecordingLevel final : public ImportedLevel {
 public:
     RecordingLevel(Log& log, bool owns) : m_log(log), m_owns(owns) {}
@@ -62,6 +66,12 @@ public:
     bool playGeneratorFeedback(const GeneratorEvent& event) override {
         return ask(std::format("level generator {}", event.generator));
     }
+    void bossIntro(const Vec3& position) override {
+        m_log.push_back(std::format("level intro at {}", position.x));
+    }
+    bool consumeBossLegend(CharacterSave& save) override {
+        return ask(std::format("level legend {}", save.name));
+    }
 
 private:
     bool ask(std::string question) {
@@ -72,8 +82,8 @@ private:
     bool m_owns;
 };
 
-/** The native cues, logging each cue with what came with it. */
-class RecordingCues final : public OpponentCues {
+/** The native cues and encounter level, logging each cue and answer with what came with it. */
+class RecordingCues final : public OpponentCues, public EncounterLevel {
 public:
     explicit RecordingCues(Log& log) : m_log(log) {}
     void enemyCue(const EnemyCue& cue) override {
@@ -115,6 +125,12 @@ public:
         return CueOwner::Native;
     }
     void deathContactReleased() override { m_log.emplace_back("native released"); }
+    void awoke(const Vec3& at) override {
+        m_log.push_back(std::format("native awoke at {}", at.x));
+    }
+    void spendLegend(CharacterSave& bearer, s32 realm) override {
+        m_log.push_back(std::format("native legend {} realm {}", bearer.name, realm));
+    }
 
 private:
     Log& m_log;
@@ -147,7 +163,7 @@ TEST_CASE("on a native level every opponent cue goes straight to the native cues
           "[game][level-opponents][imported-opponent-cues]") {
     Log log;
     RecordingCues native{log};
-    ImportedOpponentCues cues{nullptr, native};
+    ImportedOpponentCues cues{nullptr, native, native};
     const auto [melee, contact] = sendEveryCue(cues);
     CHECK(melee == CueOwner::Native);
     CHECK(contact == CueOwner::Native);
@@ -165,7 +181,7 @@ TEST_CASE("an imported level that owns a cue keeps it from the native cues",
     Log log;
     RecordingCues native{log};
     RecordingLevel level{log, true};
-    ImportedOpponentCues cues{&level, native};
+    ImportedOpponentCues cues{&level, native, native};
     const auto [melee, contact] = sendEveryCue(cues);
     CHECK(melee == CueOwner::Imported);
     CHECK(contact == CueOwner::Imported);
@@ -181,7 +197,7 @@ TEST_CASE("a cue the imported level refuses reaches the native cues once, after 
     Log log;
     RecordingCues native{log};
     RecordingLevel level{log, false};
-    ImportedOpponentCues cues{&level, native};
+    ImportedOpponentCues cues{&level, native, native};
     const auto [melee, contact] = sendEveryCue(cues);
     CHECK(melee == CueOwner::Native);
     CHECK(contact == CueOwner::Native);
@@ -219,7 +235,7 @@ TEST_CASE("an imported level is asked about Death's cue of every kind",
     Log log;
     RecordingCues native{log};
     RecordingLevel level{log, owns};
-    ImportedOpponentCues cues{&level, native};
+    ImportedOpponentCues cues{&level, native, native};
     cues.deathCue(DeathEvent{.kind = kind});
     const auto code = static_cast<s32>(kind);
     CHECK(log ==
@@ -232,7 +248,7 @@ TEST_CASE("an imported level sounds only the lobber's bomb, the boss's shots and
     Log log;
     RecordingCues native{log};
     RecordingLevel level{log, true};
-    ImportedOpponentCues cues{&level, native};
+    ImportedOpponentCues cues{&level, native, native};
     cues.missileLanded("S_ENEMYARROW", 127, Vec3{1, 0, 0});
     cues.shotSound({.name = "S_SPIT",
                     .position = Vec3{3, 0, 0},
@@ -254,11 +270,38 @@ TEST_CASE("an imported level is asked about a melee or a generator without a sou
     Log log;
     RecordingCues native{log};
     RecordingLevel level{log, owns};
-    ImportedOpponentCues cues{&level, native};
+    ImportedOpponentCues cues{&level, native, native};
     CHECK(cues.enemyMelee(15, 3, std::nullopt) == (owns ? CueOwner::Imported : CueOwner::Native));
     cues.generatorFeedback(GeneratorEvent{.generator = 2}, "");
     CHECK(log == (owns ? Log{"level melee 15 tier 3", "level generator 2"}
                        : Log{"level melee 15 tier 3", "native melee 15 tier 3 unsounded",
                              "level generator 2", "native generator 2 "}));
+}
+
+TEST_CASE("on a native level the boss's waking and a legend's spending go to the native level",
+          "[game][level-opponents][imported-opponent-cues]") {
+    Log log;
+    RecordingCues native{log};
+    ImportedOpponentCues cues{nullptr, native, native};
+    CharacterSave bearer;
+    bearer.name = "ANNA";
+    cues.awoke(Vec3{7, 0, 0});
+    cues.spendLegend(bearer, 7);
+    CHECK(log == Log{"native awoke at 7", "native legend ANNA realm 7"});
+}
+
+TEST_CASE("an imported level answers its boss's waking and spends its own legend and never "
+          "the relic",
+          "[game][level-opponents][imported-opponent-cues]") {
+    const bool owns = GENERATE(false, true);
+    Log log;
+    RecordingCues native{log};
+    RecordingLevel level{log, owns};
+    ImportedOpponentCues cues{&level, native, native};
+    CharacterSave bearer;
+    bearer.name = "ANNA";
+    cues.awoke(Vec3{7, 0, 0});
+    cues.spendLegend(bearer, 7);
+    CHECK(log == Log{"level intro at 7", "level legend ANNA"});
 }
 } // namespace

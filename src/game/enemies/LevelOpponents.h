@@ -21,6 +21,7 @@
 #include "game/critters/Critters.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/BossEncounterHost.h"
+#include "game/enemies/EncounterLevel.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
@@ -285,8 +286,9 @@ private:
     private:
         LevelOpponents& m_owner;
     };
-    /** Sounds the opponents' cues from the level's own banks, the way the original does. */
-    class NativeCues final : public OpponentCues {
+    /** Sounds the opponents' cues from the level's own banks, the way the original does, and
+     * spends a brandished legend from the bearer's relics. */
+    class NativeCues final : public OpponentCues, public EncounterLevel {
     public:
         explicit NativeCues(LevelOpponents& owner) : m_owner(owner) {}
         void enemyCue(const EnemyCue& cue) override;
@@ -303,19 +305,25 @@ private:
         CueOwner deathContact(bool contact) override;
         /** Nothing to do: the drain's own sound is stopped by its caller. */
         void deathContactReleased() override {}
+        /** Nothing to do: a native level has no boss intro of its own. */
+        void awoke(const Vec3& /*at*/) override {}
+        void spendLegend(CharacterSave& bearer, s32 realm) override;
 
     private:
         LevelOpponents& m_owner;
     };
     NativeCues m_nativeCues{*this};
-    /** Where the cues go on the level as it stands: an imported level's first, the rest to
-     * the native cues. Callers have checked the borrowed services. */
+    /** Where the cues go on the level as it stands, and who answers as its boss wakes and a
+     * legend is spent: an imported level first, the rest to the native cues. Callers have
+     * checked the borrowed services. */
     ImportedOpponentCues cues();
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
      * carried nothing (CritterDropItem), with the lesson its kind teaches. */
     void dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,
                      OpponentHost& host);
     std::optional<Resources> m_resources;
+    bool m_importedBossLevel = false; ///< an imported level fights its own boss; set at open
+    bool m_cloudSuicides = false;     ///< suicides go up as poison clouds here; set at open
     void refreshBorrowedRoster();
     void bindImportedSounds();
     void openImportedBoss(const EnemyScales& scales);

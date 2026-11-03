@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/enemies/EncounterLevel.h"
 #include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/OpponentCues.h"
 #include "game/enemies/OpponentPool.h"
@@ -17,8 +18,9 @@ namespace {
 constexpr std::string_view kLobberBombSound = "S_LOBBER_BOMB";
 } // namespace
 
-ImportedOpponentCues::ImportedOpponentCues(ImportedLevel* level, OpponentCues& native)
-    : m_level(level), m_native(native) {}
+ImportedOpponentCues::ImportedOpponentCues(ImportedLevel* level, OpponentCues& native,
+                                           EncounterLevel& nativeEncounter)
+    : m_level(level), m_native(native), m_nativeEncounter(nativeEncounter) {}
 
 void ImportedOpponentCues::enemyCue(const EnemyCue& cue) {
     if (m_level == nullptr || !m_level->playEnemyCue(cue)) {
@@ -90,6 +92,22 @@ CueOwner ImportedOpponentCues::deathContact(bool contact) {
 void ImportedOpponentCues::deathContactReleased() {
     if (m_level == nullptr || !m_level->setDeathContact(false)) {
         m_native.deathContactReleased();
+    }
+}
+
+void ImportedOpponentCues::awoke(const Vec3& at) {
+    if (m_level != nullptr) {
+        m_level->bossIntro(at);
+    } else {
+        m_nativeEncounter.awoke(at);
+    }
+}
+
+void ImportedOpponentCues::spendLegend(CharacterSave& bearer, s32 realm) {
+    if (m_level != nullptr) {
+        m_level->consumeBossLegend(bearer);
+    } else {
+        m_nativeEncounter.spendLegend(bearer, realm);
     }
 }
 } // namespace gdl::game

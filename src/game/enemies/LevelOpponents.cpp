@@ -203,7 +203,11 @@ SoundHandle LevelOpponents::playAt(std::string_view name, f32 level, const Vec3&
 }
 
 ImportedOpponentCues LevelOpponents::cues() {
-    return {m_resources->world.imported(), m_nativeCues};
+    return {m_resources->world.imported(), m_nativeCues, m_nativeCues};
+}
+
+void LevelOpponents::NativeCues::spendLegend(CharacterSave& bearer, s32 realm) {
+    bearer.progress().relics.spendLegend(realm);
 }
 
 void LevelOpponents::lights(std::vector<PointLight>& out) const {
@@ -372,10 +376,6 @@ void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
     EnemyBlast blast;
     blast.position = burst.position;
     blast.damage = burst.damage;
-    const auto* imported = m_resources->world.imported();
-    const bool cloud =
-        imported ? imported->suicideUsesGas().value_or(cloudRealm(m_resources->world.ref().name))
-                 : cloudRealm(m_resources->world.ref().name);
     ItemArchive& weapons = m_resources->weapons;
     const auto start = [&](std::string_view tree, const Vec3& at,
                            const EffectTrees::Setting& setting) -> u32 {
@@ -389,7 +389,7 @@ void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
         }
         return id;
     };
-    if (cloud) {
+    if (m_cloudSuicides) {
         EffectTrees::Setting setting;
         setting.stretch = kCloudStretch;
         const Vec3 at = burst.position - Vec3{0.0f, kCloudDrop, 0.0f};
@@ -658,6 +658,8 @@ void LevelOpponents::close() {
     m_bosses.close();
     m_importedBossTextures.reset();
     m_enemies.close();
+    m_importedBossLevel = false;
+    m_cloudSuicides = false;
     m_resources.reset();
 }
 
@@ -674,6 +676,11 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     LevelWorld& world = resources.world;
     const LevelInfo* level = world.level();
     const auto* importedBoss = world.imported() ? world.imported()->importedBoss() : nullptr;
+    m_importedBossLevel = importedBoss != nullptr;
+    const bool cloudLevel = cloudRealm(world.ref().name);
+    m_cloudSuicides = world.imported() != nullptr
+                          ? world.imported()->suicideUsesGas().value_or(cloudLevel)
+                          : cloudLevel;
     const f32 gain = resources.difficultyGain;
     EnemyScales scales;
     scales.players = static_cast<s32>(std::max<usize>(players.size(), 1));
@@ -958,9 +965,7 @@ void LevelOpponents::shrinkOpponents(std::span<const PlayerRuntime> players) {
     }
     const LevelInfo* level = m_resources->world.level();
     const f32 scale = PlayerPowerups::enemyShrink(
-        players, (level != nullptr && level->bossType >= 0) ||
-                     (m_resources->world.imported() != nullptr &&
-                      m_resources->world.imported()->importedBoss() != nullptr));
+        players, (level != nullptr && level->bossType >= 0) || m_importedBossLevel);
     if (EnemyShrink::rises(m_sim.shrink, scale)) {
         m_resources->audio.playNamed(EnemyShrink::kUnshrinkSound);
     }
@@ -1431,12 +1436,10 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     // Boss AI is independent of Stop Time; fired missiles likewise keep moving.
     m_bosses.setArenaAnchors(encounter.arenaAnchors());
     m_bosses.setArenaTargets(encounter.arenaTargets());
-    auto* importedArena = m_resources->world.imported();
-    const bool bossWasAwake = importedArena != nullptr && m_bosses.view().awake;
+    const bool bossWasAwake = m_bosses.view().awake;
     m_bosses.update(ticks, seconds, views);
-    if (importedArena != nullptr && !bossWasAwake && m_bosses.view().awake &&
-        m_bosses.position() != nullptr) {
-        importedArena->bossIntro(*m_bosses.position());
+    if (!bossWasAwake && m_bosses.view().awake && m_bosses.position() != nullptr) {
+        cues().awoke(*m_bosses.position());
     }
     for (const auto& grab : m_critters.takeGrabs()) {
         applyGrab(grab, false, players);
@@ -1582,11 +1585,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             for (PlayerRuntime& runtime : players) {
                 PlayerActor& actor = runtime.actor;
                 if (actor.player() == event.player) {
-                    if (auto* imported = m_resources->world.imported()) {
-                        imported->consumeBossLegend(actor.save());
-                    } else {
-                        actor.save().progress().relics.spendLegend(event.realm);
-                    }
+                    cues().spendLegend(actor.save(), event.realm);
                 }
             }
         }
@@ -1974,9 +1973,8 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     // Imported native assets are installed without the donor texture context.
     // Their scoped effect banks are already composed into this archive: an
     // absent native effect must not silently become a similarly named GDL one.
-    const auto* imported = m_resources->world.imported();
-    const bool ownEffectsOnly = ofBoss && archive != nullptr && imported != nullptr &&
-                                imported->importedBoss() != nullptr && !m_importedBossTextures;
+    const bool ownEffectsOnly =
+        ofBoss && archive != nullptr && m_importedBossLevel && !m_importedBossTextures;
     const auto emission =
         CritterCueEmission::resolve(cue, archive, ownEffectsOnly ? *archive : m_resources->weapons);
     if (emission.archive != nullptr) {
