@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -22,6 +23,7 @@
 #include "game/app/AttractSequencer.h"
 #include "game/app/BuildLabel.h"
 #include "game/app/CommandLine.h"
+#include "game/app/ConsoleActionRoute.h"
 #include "game/app/LevelCompletion.h"
 #include "game/app/LevelDebugOverlay.h"
 #include "game/app/OfflineConsoleCommands.h"
@@ -94,13 +96,24 @@ private:
     const LevelWorld* consoleWorld() const;
     /** What the offline console commands read and change of the game. */
     OfflineConsoleCommands::Ports offlineConsolePorts();
-    bool dispatchOnlineConsole(DevConsole& console, std::string_view name,
-                               DevConsole::Arguments arguments);
+    /** Where the shared console verbs' lines go: the online game's request for the console's
+     * seat, else the next offline step. */
+    ConsoleActionRoute consoleActionRoute();
     bool updateOnlineConsole(f64 deltaSeconds, bool overlay = false);
     /** The player the console speaks for: the one at the keyboard, else the first in; -1
      * with nobody in. */
     s32 consolePlayer();
-    void consoleGoto(DevConsole& console, DevConsole::Arguments arguments);
+    /** Registers the console words the Legends maps answer offline: goto's maps and the way
+     * back from one, and unlock_tower in a native world walked (GauntletLegends.cpp). */
+    void addLegendsConsoleForms();
+    /** goto's Legends words: walks or previews a map, or goes back from one. */
+    void consoleLegendsGoto(DevConsole& console, DevConsole::Arguments arguments);
+    /** unlock_tower in a native Legends world walked: its own tower's unlocks for the party. */
+    void consoleLegendsUnlockTower(DevConsole& console);
+    /** list maps' lines for the Legends maps installed, each platform's found afresh. */
+    std::vector<std::string> legendsMapLines() const;
+    /** The Legends maps' names goto completes to: the N64's, then the Dreamcast's. */
+    std::vector<std::string> legendsMapNames() const;
     /** The installed Legends maps of a platform, found as the catalogue finds them. */
     /** The Legends maps installed for a platform. The disk is walked on the first ask and
      * whenever `rescan` asks (list maps, goto); the console's completion reads what was
@@ -122,8 +135,8 @@ private:
     bool closeLegendsLevel(bool keepProgress = true);
     bool quitLegendsLevel();
     void finishLegendsTravel();
-    void consoleUnlockTower(DevConsole& console);
-    void consoleGet(DevConsole& console, DevConsole::Arguments arguments);
+    /** get info: what the thing selected, or named by its token, is. */
+    void consoleInfo(DevConsole& console, DevConsole::Arguments arguments);
     void consoleHideHud(DevConsole& console);
     void consoleFreeCam(DevConsole& console);
     /** Picks what stands under `cursor` in the view for the console, or lets the selection
@@ -135,16 +148,13 @@ private:
     /** What the console says of a thing selected or named: its token, name, place and
      * what else is known of its kind. */
     std::vector<std::string> consoleDescribe(const SceneSelection& selection);
-    /** Carries the console's cheats, hidden HUD and free camera into the scene each tick. */
+    /** Carries the console's hidden HUD and free camera into the scene each tick. */
     void applyConsoleState(f64 deltaSeconds, bool consoleOpen);
     /** The noclip wish input slot `slot` flies this frame; none while its seat's noclip is off
      * or the console is down. */
     Vec3 consoleFlight(s32 slot, f64 seconds, bool consoleOpen);
     /** Stops every input slot's noclip flight. */
     void resetConsoleFlights();
-    /** Takes the party to `level` through the loading picture, standing it at `position`
-     * facing `yaw` when given; the scene closes at once. */
-    void consoleTravel(const LevelRef& level, std::optional<Vec3> position, std::optional<f32> yaw);
     /** Takes the party where the stepped scene's console travel request leads, by the rule
      * both play modes share: into a challenge the level left waits as its parent, back to that
      * parent it takes up again at the request's place, anywhere else the scene closes behind
@@ -179,11 +189,14 @@ private:
     GameConfig m_config;
     BuildLabel m_buildLabel;
     LevelDebugOverlay m_levelDebug;
+    ConsoleActionRoute m_consoleRoute{consoleActionRoute()}; ///< outlives the console's commands
     DevConsole m_console;
     FreeCamera m_freeCamera;
     LegendsPreview m_legendsPreview;
     mutable std::array<std::optional<std::vector<LegendsMapEntry>>, 2> m_legendsMaps;
     std::array<NoclipMotion, static_cast<usize>(PlayScene::kPlayerCount)> m_noclip;
+    /** Each seat's console cheats as the scene stepped last holds them, carried into the next
+     * scene opened or taken up again. */
     std::array<PlayScene::ConsoleCheats, static_cast<usize>(PlayScene::kPlayerCount)>
         m_consoleCheats{};
     std::optional<s32> m_partyCountOverride; ///< the console's party_count, across levels

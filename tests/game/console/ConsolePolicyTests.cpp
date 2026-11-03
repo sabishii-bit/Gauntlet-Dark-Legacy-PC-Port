@@ -28,17 +28,17 @@ constexpr std::array<Registered, 18> kCommands{{
     {.name = "activate", .reach = ConsoleReach::OfflineOnly},
     {.name = "unlock", .reach = ConsoleReach::OfflineOnly},
     {.name = "lock", .reach = ConsoleReach::OfflineOnly},
-    {.name = "goto", .reach = ConsoleReach::Local},
+    {.name = "goto", .reach = ConsoleReach::Shared},
     {.name = "party_count", .reach = ConsoleReach::OfflineOnly},
-    {.name = "unlock_tower", .reach = ConsoleReach::Local},
-    {.name = "get", .reach = ConsoleReach::Local},
-    {.name = "spawn", .reach = ConsoleReach::Local},
-    {.name = "suicide", .reach = ConsoleReach::Local},
-    {.name = "notarget", .reach = ConsoleReach::Local},
-    {.name = "god", .reach = ConsoleReach::Local},
+    {.name = "unlock_tower", .reach = ConsoleReach::Shared},
+    {.name = "get", .reach = ConsoleReach::Shared},
+    {.name = "spawn", .reach = ConsoleReach::Shared},
+    {.name = "suicide", .reach = ConsoleReach::Shared},
+    {.name = "notarget", .reach = ConsoleReach::Shared},
+    {.name = "god", .reach = ConsoleReach::Shared},
     {.name = "hidehud", .reach = ConsoleReach::Local},
     {.name = "freecam", .reach = ConsoleReach::Local},
-    {.name = "noclip", .reach = ConsoleReach::Local},
+    {.name = "noclip", .reach = ConsoleReach::Shared},
 }};
 
 /** The words a Legends map's preview admits. */
@@ -140,6 +140,28 @@ TEST_CASE("shared words are judged as local ones, and a parked scene changes no 
             CHECK(ConsolePolicy::refusal(parked, command.reach, command.name) ==
                   ConsolePolicy::refusal(session, command.reach, command.name));
         }
+    }
+}
+
+TEST_CASE("a parked scene refuses shared words once they are read, and only a parked one",
+          "[dev-console][online-console]") {
+    // A Legends preview parks the scene it was opened over.
+    const ConsoleSession preview =
+        ConsolePolicy::session({.preview = kPreviewWords, .parked = true});
+    CHECK(preview.hold == SceneHold::Parked);
+    CHECK(preview.seat == ConsoleSeat::Offline);
+    CHECK(ConsolePolicy::sharedRefusal(preview) == ConsolePolicy::kRefused);
+    for (const ConsoleSituation& situation :
+         {ConsoleSituation{}, ConsoleSituation{.preview = kPreviewWords},
+          ConsoleSituation{.online = true, .host = true, .allowed = true},
+          ConsoleSituation{.online = true, .allowed = true}, ConsoleSituation{.online = true},
+          ConsoleSituation{.netplay = true}}) {
+        const ConsoleSession session = ConsolePolicy::session(situation);
+        CHECK(session.hold == SceneHold::Live);
+        CHECK(ConsolePolicy::sharedRefusal(session) == std::nullopt);
+        ConsoleSession parked = session;
+        parked.hold = SceneHold::Parked;
+        CHECK(ConsolePolicy::sharedRefusal(parked) == ConsolePolicy::kRefused);
     }
 }
 

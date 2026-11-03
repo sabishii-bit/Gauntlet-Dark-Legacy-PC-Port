@@ -1,77 +1,28 @@
 #include "game/app/OfflineConsoleCommands.h"
 
-#include <cctype>
 #include <format>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
-#include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldData.h"
 #include "engine/assets/WorldLayout.h"
-#include "engine/core/Assert.h"
 #include "engine/core/Types.h"
-#include "engine/math/Math.h"
-#include "engine/world/WorldCollision.h"
 
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
-#include "game/characters/Progression.h"
-#include "game/console/GiftRequest.h"
 #include "game/console/LevelListingLines.h"
-#include "game/console/NoclipMotion.h"
 #include "game/console/PartyCountRequest.h"
-#include "game/console/SpawnRequest.h"
-#include "game/critters/CombatantKind.h"
-#include "game/critters/Critters.h"
-#include "game/enemies/Enemies.h"
-#include "game/enemies/Generators.h"
-#include "game/enemies/LevelOpponents.h"
 #include "game/level/Chests.h"
 #include "game/level/InstanceNames.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LockedGates.h"
-#include "game/level/TowerAccess.h"
-#include "game/players/ItemPickup.h"
 #include "game/players/PlayerActor.h"
 
 namespace gdl::game {
 
 OfflineConsoleCommands::OfflineConsoleCommands(Ports ports) : m_ports(std::move(ports)) {}
-
-void OfflineConsoleCommands::noclip(DevConsole& console) {
-    const s32 player = consolePlayer();
-    if (player < 0) {
-        console.print("Nobody is in.");
-        return;
-    }
-    bool& flying = m_ports.cheats[static_cast<usize>(player)].noclip;
-    flying = !flying;
-    console.print(flying ? std::format("Noclip on: {}", NoclipMotion::kHelp) : "Noclip off");
-}
-
-void OfflineConsoleCommands::toggleCheat(DevConsole& console, bool PlayScene::ConsoleCheats::*flag,
-                                         std::string_view on, std::string_view off) {
-    const s32 player = consolePlayer();
-    if (player < 0) {
-        console.print("Nobody is in.");
-        return;
-    }
-    bool& granted = m_ports.cheats[static_cast<usize>(player)].*flag;
-    granted = !granted;
-    console.print(granted ? on : off);
-}
-
-void OfflineConsoleCommands::god(DevConsole& console) {
-    toggleCheat(console, &PlayScene::ConsoleCheats::god, "God mode on", "God mode off");
-}
-
-void OfflineConsoleCommands::noTarget(DevConsole& console) {
-    toggleCheat(console, &PlayScene::ConsoleCheats::noTarget, "The enemies no longer see you",
-                "The enemies see you again");
-}
 
 bool OfflineConsoleCommands::consoleLevel(DevConsole& console,
                                           const std::optional<std::string>& map,
@@ -420,195 +371,6 @@ void OfflineConsoleCommands::changeLock(DevConsole& console, Arguments arguments
                          : std::format("{} locked: a key opens it", label));
 }
 
-void OfflineConsoleCommands::consoleBorrowVoices(DevConsole& console, const LevelRef& level) {
-    WorldData data;
-    const LevelInfo* info =
-        data.load(m_ports.unpackedRoot / level.worldDataFile()) ? data.level(level.name) : nullptr;
-    if (info == nullptr ||
-        !playScene()->borrowOpponentSounds(*info, data.audio(info->audioIndex))) {
-        console.print(std::format("({} lends no voices)", level.name));
-    }
-}
-
-void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
-    constexpr f32 kAhead = 6.0f; ///< units before the character
-    constexpr f32 kApart = 3.0f; ///< between several
-    constexpr f32 kProbeAbove = 3.0f;
-    constexpr f32 kProbeBelow = 10.0f;
-    const PlayerActor* actor = playScene()->actor(consolePlayer());
-    if (actor == nullptr) {
-        console.print("Nobody is in to spawn before.");
-        return;
-    }
-    const auto spawn = parseSpawn(arguments);
-    if (!spawn.has_value()) {
-        console.print(spawn.error());
-        return;
-    }
-    // The map named, when one is: where a visitor's voices, costume or object come from.
-    std::optional<LevelRef> from;
-    if (spawn->map.has_value()) {
-        from = *spawn->map == "TOWER" ? std::optional{LevelRef::tower()}
-                                      : m_ports.levels.byName(*spawn->map);
-        if (!from.has_value()) {
-            console.print(std::format("No map named {}; list maps names them", *spawn->map));
-            return;
-        }
-    }
-    const Vec3 facing = actor->facing();
-    const f32 yawToPlayer = actor->yaw() + kPi;
-    const auto spotAt = [&](s32 index) {
-        Vec3 spot = actor->position() + facing * (kAhead + kApart * static_cast<f32>(index));
-        if (const auto floor = playWorld()->collision().floorAt(
-                spot + Vec3{0.0f, kProbeAbove, 0.0f}, kProbeAbove, kProbeBelow)) {
-            spot.y = floor->y;
-        }
-        return spot;
-    };
-    PlayScene& scene = *playScene();
-    switch (spawn->kind) {
-    case SpawnRequest::Kind::Enemy: {
-        if (from.has_value()) {
-            consoleBorrowVoices(console, *from);
-        }
-        s32 stood = 0;
-        const std::vector<EnemyView> views = scene.opponents().views(scene.participants());
-        for (s32 i = 0; i < spawn->count; ++i) {
-            if (scene.enemies().loadKind(spawn->enemyKind) &&
-                scene.enemies()
-                    .spawn(EnemySpawn{.kind = spawn->enemyKind,
-                                      .tier = spawn->tier,
-                                      .position = spotAt(i),
-                                      .direction = -facing,
-                                      .placed = true},
-                           views)
-                    .has_value()) {
-                ++stood;
-            }
-        }
-        console.print(
-            stood > 0 ? std::format("Spawned {} {} at tier {}", stood, spawn->name, spawn->tier)
-                      : std::format("No room for {} here, or its kind is missing", spawn->name));
-        break;
-    }
-    case SpawnRequest::Kind::Critter: {
-        const char realm =
-            from.has_value() && !from->name.empty()
-                ? static_cast<char>(std::toupper(static_cast<unsigned char>(from->name.front())))
-                : '\0';
-        std::optional<s32> id;
-        switch (spawn->critter) {
-        case CombatantKind::Golem:
-            id = scene.critters().spawnGolem(spotAt(0), yawToPlayer, realm);
-            break;
-        case CombatantKind::General:
-            id = scene.critters().spawnGeneral(spotAt(0), yawToPlayer, 0.0f, realm);
-            break;
-        case CombatantKind::Gargoyle:
-            id = scene.critters().spawnGargoyle(spotAt(0), yawToPlayer, spawn->form, realm);
-            break;
-        case CombatantKind::Unknown:
-        case CombatantKind::Boss: break;
-        }
-        const std::string& what = spawn->form.empty() ? spawn->name : spawn->form;
-        console.print(id.has_value()
-                          ? std::format("Spawned a {}", what)
-                          : std::format("No room for a {} here, or its kind is missing", what));
-        break;
-    }
-    case SpawnRequest::Kind::Generator: {
-        if (from.has_value()) {
-            consoleBorrowVoices(console, *from);
-        }
-        s32 kind = spawn->enemyKind;
-        ItemArchive* realmItems = nullptr;
-        const ItemInfo* record = nullptr;
-        ConsoleLevel source;
-        if (spawn->brood) {
-            // A mixed brood is its realm's: its bodies and record come from that realm's
-            // level, the one in play when it is one of them.
-            const s32 realm = from.has_value() ? from->realmId : playWorld()->ref().realmId;
-            if (realm != TowerAccess::kTempleWorld && realm != TowerAccess::kUnderworldWorld) {
-                console.print("A mixed brood is the temple's (E) or the underworld's (F); name "
-                              "a map of either");
-                break;
-            }
-            kind = realm == TowerAccess::kTempleWorld ? Generators::kTempleBrood
-                                                      : Generators::kHellBrood;
-            if (from.has_value()) {
-                realmItems = scene.borrowItems(*from);
-                if (realmItems == nullptr) {
-                    console.print(std::format("{} lends no item archive", from->name));
-                    break;
-                }
-                if (consoleLevel(console, spawn->map, source)) {
-                    record = generatorRecord(*source.layout, "SPECIAL");
-                }
-            }
-        }
-        const auto id =
-            scene.generators().spawn(m_ports.device(), scene.enemies(), kind, spawn->tier,
-                                     spotAt(0), yawToPlayer, realmItems, record);
-        console.print(id.has_value()
-                          ? std::format("Stood a tier {} {} generator", spawn->tier, spawn->name)
-                          : std::format("No {} generator could stand here", spawn->name));
-        break;
-    }
-    case SpawnRequest::Kind::Item:
-        if (from.has_value()) {
-            console.print("Pickups come from the level in play alone; name one without a map");
-        } else if (playWorld()->placeItem(m_ports.device(), spawn->name, spotAt(0))) {
-            console.print(std::format("Dropped {}", spawn->name));
-        } else {
-            console.print(
-                std::format("No pickup record named {} here; list items names them", spawn->name));
-        }
-        break;
-    case SpawnRequest::Kind::Object: {
-        const LevelRef source = from.has_value() ? *from : playWorld()->ref();
-        if (scene.spawnObject(source, spawn->name, spotAt(0), yawToPlayer)) {
-            console.print(std::format("Stood {} of {}", spawn->name, source.name));
-        } else {
-            console.print(std::format("Nothing named {} in {}; list objects {} names what there is",
-                                      spawn->name, source.name, source.name));
-        }
-        break;
-    }
-    case SpawnRequest::Kind::Thing: {
-        if (!from.has_value() && playWorld()->placeItem(m_ports.device(), spawn->name, spotAt(0))) {
-            console.print(std::format("Dropped {}", spawn->name));
-            break;
-        }
-        const LevelRef source = from.has_value() ? *from : playWorld()->ref();
-        if (scene.spawnObject(source, spawn->name, spotAt(0), yawToPlayer)) {
-            console.print(std::format("Stood {} of {}", spawn->name, source.name));
-        } else if (from.has_value()) {
-            console.print(std::format("Nothing named {} in {}; list objects {} names what there is",
-                                      spawn->name, from->name, from->name));
-        } else {
-            console.print(std::format("Nothing named {} here; list items, objects, enemies or "
-                                      "critters name what there is",
-                                      spawn->name));
-        }
-        break;
-    }
-    }
-}
-
-void OfflineConsoleCommands::suicide(DevConsole& console) {
-    if (playWorld()->isTower()) {
-        console.print("Nobody falls in the tower.");
-        return;
-    }
-    s32 fallen = 0;
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        if (playScene()->kill(player)) {
-            ++fallen;
-        }
-    }
-    console.print(fallen > 0 ? std::format("{} fallen", fallen) : "Nobody was standing.");
-}
-
 std::vector<std::string> OfflineConsoleCommands::gotoWords(Arguments arguments) const {
     if (arguments.size() > 1) {
         return arguments.size() == 2 ? std::vector<std::string>{"preview"}
@@ -645,88 +407,6 @@ void OfflineConsoleCommands::partyCount(DevConsole& console, Arguments arguments
         playScene()->setPartyCountOverride(m_ports.partyCount);
     }
     console.print(describe());
-}
-
-void OfflineConsoleCommands::gotoPlace(DevConsole& console,
-                                       const ConsoleCommands::Destination& destination) {
-    if (playScene()->leaving()) {
-        console.print("The party is already on its way.");
-        return;
-    }
-    if (!destination.level.has_value()) {
-        const Vec3& at = *destination.position;
-        if (playScene()->relocate(at)) {
-            console.print(std::format("Moved to {:.1f} {:.1f} {:.1f}", at.x, at.y, at.z));
-        } else {
-            console.print("Nobody is standing to move.");
-        }
-        return;
-    }
-    const std::optional<LevelRef> level = *destination.level == "TOWER"
-                                              ? std::optional{LevelRef::tower()}
-                                              : m_ports.levels.byName(*destination.level);
-    if (!level.has_value()) {
-        console.print(std::format("No map named {}; list maps names them", *destination.level));
-        return;
-    }
-    console.print(std::format("Going to {} ({})", level->name, level->title));
-    m_ports.travel(*level, destination.position, std::nullopt);
-}
-
-void OfflineConsoleCommands::unlockTower(DevConsole& console) {
-    s32 opened = 0;
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        if (CharacterSave* save = playScene()->liveSave(player)) {
-            TowerAccess::openEverything(*save);
-            ++opened;
-        }
-    }
-    if (opened == 0) {
-        console.print("Nobody is in to open it for.");
-        return;
-    }
-    console.print(
-        std::format("The tower stands open to {} character{}.", opened, opened == 1 ? "" : "s"));
-    if (playWorld()->isTower()) {
-        // The portals read the party's progress as the tower opens: open it again, where
-        // the party stands.
-        const PlayerActor* actor = playScene()->actor(consolePlayer());
-        m_ports.travel(LevelRef::tower(),
-                       actor != nullptr ? std::optional{actor->position()} : std::nullopt,
-                       actor != nullptr ? std::optional{actor->yaw()} : std::nullopt);
-    }
-}
-
-void OfflineConsoleCommands::get(DevConsole& console, Arguments arguments) {
-    const auto gift = parseGift(arguments);
-    if (!gift.has_value()) {
-        console.print(gift.error());
-        return;
-    }
-    GDL_VERIFY(gift->kind != GiftRequest::Kind::Info, "get info is answered before the gifts");
-    const s32 player = consolePlayer();
-    CharacterSave* save = playScene()->liveSave(player);
-    if (save == nullptr) {
-        console.print("Nobody is in to give it to.");
-        return;
-    }
-    switch (gift->kind) {
-    case GiftRequest::Kind::Experience:
-        playScene()->awardExperience(player, gift->amount, false);
-        playScene()->restat(player);
-        console.print(std::format("{} experience: level {}", gift->amount,
-                                  experienceLevel(save->experience())));
-        break;
-    case GiftRequest::Kind::Level:
-        save->progress().experience = levelExperience(gift->amount);
-        playScene()->restat(player);
-        console.print(std::format("Level {}", gift->amount));
-        break;
-    case GiftRequest::Kind::Item:
-        // At one times the strength: the seconds asked for are the seconds given.
-        console.print(giftReport(*gift, takeItem(*save, gift->offer, 1.0f, true)));
-        break;
-    }
 }
 
 } // namespace gdl::game

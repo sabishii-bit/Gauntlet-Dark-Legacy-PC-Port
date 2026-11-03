@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -39,6 +40,31 @@ public:
     virtual std::string_view usageNote() const { return {}; }
     /** What the console says when the form is refused for running only offline. */
     virtual std::string_view refusal() const { return {}; }
+};
+
+/** A form made of its reach, its refusal and two functions: the quick way to register one. */
+class LambdaForm final : public ConsoleForm {
+public:
+    using Claims = std::function<bool(Arguments arguments)>;
+    using Handler = std::function<void(DevConsole& console, Arguments arguments)>;
+
+    LambdaForm(ConsoleReach reach, std::string refusal, Claims claims, Handler handler)
+        : m_reach(reach), m_refusal(std::move(refusal)), m_claims(std::move(claims)),
+          m_handler(std::move(handler)) {}
+    bool claims(Arguments arguments) const override { return m_claims && m_claims(arguments); }
+    ConsoleReach reach() const override { return m_reach; }
+    void run(DevConsole& console, Arguments arguments) override {
+        if (m_handler) {
+            m_handler(console, arguments);
+        }
+    }
+    std::string_view refusal() const override { return m_refusal; }
+
+private:
+    ConsoleReach m_reach;
+    std::string m_refusal;
+    Claims m_claims;
+    Handler m_handler;
 };
 
 } // namespace gdl::game

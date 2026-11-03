@@ -1,7 +1,13 @@
 #include <algorithm>
 #include <exception>
 #include <format>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "engine/core/Assert.h"
 #include "engine/core/Strings.h"
 #include "engine/io/File.h"
 #include "engine/platform/Paths.h"
@@ -12,6 +18,7 @@
 #include "expansions/n64/audio/LegendsAudioMix.h"
 #include "expansions/n64/audio/N64LegendsStream.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
+#include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/n64/scenes/LegendsN64Music.h"
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/formats/LegendsMap.h"
@@ -19,6 +26,8 @@
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "game/app/Gauntlet.h"
 #include "game/console/ConsoleCommands.h"
+#include "game/console/ConsoleForm.h"
+#include "game/console/ConsoleReach.h"
 
 namespace gdl::game {
 namespace {
@@ -79,6 +88,116 @@ std::vector<LegendsMapEntry> Gauntlet::legendsMapsOf(LegendsPlatform platform, b
                             std::filesystem::current_path());
     }
     return *found;
+}
+
+std::vector<std::string> Gauntlet::legendsMapLines() const {
+    std::vector<std::string> lines;
+    for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
+        std::vector<std::string> names;
+        for (const LegendsMapEntry& map : legendsMapsOf(platform, true)) {
+            names.push_back(map.name);
+        }
+        const std::vector<std::string> platformLines =
+            ConsoleCommands::legendsMapLines(platform, names);
+        lines.insert(lines.end(), platformLines.begin(), platformLines.end());
+    }
+    return lines;
+}
+
+std::vector<std::string> Gauntlet::legendsMapNames() const {
+    std::vector<std::string> names;
+    for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
+        for (const LegendsMapEntry& map : legendsMapsOf(platform)) {
+            names.push_back(map.name);
+        }
+    }
+    return names;
+}
+
+void Gauntlet::addLegendsConsoleForms() {
+    // goto's Legends words: every word parseGoto reads as a Legends map or the way back from one,
+    // whatever is installed. Online they are refused in their own words.
+    m_console.addForm("goto", std::make_unique<LambdaForm>(
+                                  ConsoleReach::OfflineOnly, "Legends maps are offline only.",
+                                  [](DevConsole::Arguments arguments) {
+                                      const auto destination =
+                                          ConsoleCommands::parseGoto(arguments);
+                                      return destination.has_value() && destination->offlineOnly();
+                                  },
+                                  [this](DevConsole& console, DevConsole::Arguments arguments) {
+                                      consoleLegendsGoto(console, arguments);
+                                  }));
+    // unlock_tower in a native world walked offline opens that world's own tower; elsewhere, and
+    // under a preview, the shared verb answers it.
+    m_console.addForm("unlock_tower",
+                      std::make_unique<LambdaForm>(
+                          ConsoleReach::OfflineOnly, std::string{},
+                          [this](DevConsole::Arguments /*arguments*/) {
+                              return m_online == nullptr && !m_legendsPreview.isOpen() &&
+                                     dynamic_cast<const LegendsLevel*>(m_play->world.imported()) !=
+                                         nullptr;
+                          },
+                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
+                              consoleLegendsUnlockTower(console);
+                          }));
+}
+
+void Gauntlet::consoleLegendsGoto(DevConsole& console, DevConsole::Arguments arguments) {
+    const auto destination = ConsoleCommands::parseGoto(arguments);
+    GDL_VERIFY(destination.has_value() && destination->offlineOnly(),
+               "goto's Legends form claims its own words alone");
+    if (destination->back) {
+        consoleLegendsClose(console);
+        return;
+    }
+    const std::string& name = *destination->legends;
+    const bool path = name.find_first_of("/\\") != std::string::npos;
+    if (path && !destination->platform.has_value()) {
+        console.print("Name the platform with a path: goto n64|dreamcast <path>");
+        return;
+    }
+    const auto found = path
+                           ? std::optional{std::pair{*destination->platform, paths::fromUtf8(name)}}
+                           : findLegendsMap(name, destination->platform);
+    if (!found.has_value()) {
+        // A word that is neither a level nor an installed Legends map, as before the
+        // Legends maps were taken: the levels are what list maps names first.
+        console.print(std::format("No level or Legends map named {}; list maps names them", name));
+        return;
+    }
+    consoleLegendsOpen(console, found->first, found->second, !destination->preview);
+}
+
+void Gauntlet::consoleLegendsUnlockTower(DevConsole& console) {
+    auto* native = dynamic_cast<LegendsLevel*>(m_play->world.imported());
+    GDL_VERIFY(native != nullptr, "unlock_tower's native form runs in a native world alone");
+    if (native->platform() != LegendsPlatform::N64) {
+        console.print("Native Dreamcast tower unlocking is not supported yet.");
+        return;
+    }
+    try {
+        const auto root = native->directory().parent_path().parent_path();
+        const auto program = AssetLocator{root}.find("_program/game.bin");
+        if (!program) {
+            console.print("The native N64 unlock table is unavailable.");
+            return;
+        }
+        const auto unlocks = LegendsN64Unlocks::decode(readFile(*program));
+        s32 changed = 0;
+        for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
+            if (auto* save = m_play->scene.liveSave(player)) {
+                if (unlocks.unlockAll(save->progress().legendsProgress(LegendsPlatform::N64))) {
+                    ++changed;
+                }
+            }
+        }
+        // Native gates observe the live union on the next gameplay tick.
+        // Never reopen the Dark Legacy tower or mutate its crystal/relic bits.
+        console.print(std::format("The N64 tower stands open to {} character{}.", changed,
+                                  changed == 1 ? "" : "s"));
+    } catch (const std::exception& error) {
+        console.print(std::format("Native tower unlock failed: {}", error.what()));
+    }
 }
 
 std::optional<std::pair<LegendsPlatform, std::filesystem::path>>
@@ -432,6 +551,10 @@ bool Gauntlet::closeLegendsLevel(bool keepProgress) {
         m_legendsSounds.reset();
     }
     m_play->scene.resumeAfterImportedLevel();
+    // The level left for the map held the cheats it had then; the visit's go on.
+    for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
+        m_play->scene.setCheats(seat, m_consoleCheats[static_cast<usize>(seat)]);
+    }
     m_sounds->setCategoryScale(SoundCategory::Music, m_musicDuck.level());
     m_sounds->setCategoryScale(SoundCategory::Effects, 1);
     resetPlayInput();

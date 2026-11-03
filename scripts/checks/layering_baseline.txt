@@ -9,8 +9,6 @@ src/engine/platform/Window.h -> engine/render
 src/engine/render/Mesh.h -> engine/assets
 src/game/app/Gauntlet.cpp -> expansions/shared
 src/game/app/Gauntlet.h -> expansions/shared
-src/game/app/GauntletConsole.cpp -> expansions/n64
-src/game/app/GauntletConsole.cpp -> expansions/shared
 src/game/audio/AmbientSounds.cpp -> game/level
 src/game/audio/LevelSoundscape.h -> game/level
 src/game/audio/MusicAreas.cpp -> game/level

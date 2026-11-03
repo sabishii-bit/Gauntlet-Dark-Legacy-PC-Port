@@ -50,25 +50,6 @@ TEST_CASE("console policy hides host commands and prevents their handlers runnin
     REQUIRE(calls == 1);
 }
 
-TEST_CASE("console dispatch routes expanded commands without mutating the local scene",
-          "[console][online-console]") {
-    DevConsole console;
-    s32 localCalls = 0;
-    std::string received;
-    console.addCommand("get", "give an item", ConsoleReach::Local,
-                       [&](DevConsole&, DevConsole::Arguments) { ++localCalls; });
-    console.setVariable("ITEM", "gold");
-    console.setDispatch([&](DevConsole&, std::string_view name, DevConsole::Arguments args) {
-        REQUIRE(name == "get");
-        REQUIRE(args.size() == 2);
-        received = args[0] + " " + args[1];
-        return true;
-    });
-    console.run("GET $ITEM 100");
-    REQUIRE(received == "gold 100");
-    REQUIRE(localCalls == 0);
-}
-
 /** A form of the test's own: it claims a command's words that begin with its word. */
 class StandInForm final : public ConsoleForm {
 public:
@@ -93,17 +74,12 @@ private:
     std::string m_refusal;
 };
 
-TEST_CASE("a form that claims a command's words runs before the command, undispatched",
+TEST_CASE("a form that claims a command's words runs before the command",
           "[dev-console][online-console]") {
     DevConsole console;
     s32 commandCalls = 0;
-    s32 dispatched = 0;
     console.addCommand("get", "gives", ConsoleReach::Local,
                        [&](DevConsole&, DevConsole::Arguments) { ++commandCalls; });
-    console.setDispatch([&](DevConsole&, std::string_view, DevConsole::Arguments) {
-        ++dispatched;
-        return false;
-    });
     auto first = std::make_unique<StandInForm>("info", ConsoleReach::Local);
     auto second = std::make_unique<StandInForm>("info", ConsoleReach::Local);
     StandInForm* info = first.get();
@@ -123,12 +99,10 @@ TEST_CASE("a form that claims a command's words runs before the command, undispa
     CHECK(info->argumentCount == 2);
     CHECK(later->runs == 0);
     CHECK(commandCalls == 0);
-    CHECK(dispatched == 0);
     CHECK(console.output().back() == "info answered");
     console.run("get gold 10");
     CHECK(info->runs == 1);
     CHECK(commandCalls == 1);
-    CHECK(dispatched == 1);
     // A form on a name nobody registered answers nothing.
     console.addForm("fly", std::make_unique<StandInForm>("high", ConsoleReach::Local));
     console.run("fly high");
@@ -169,6 +143,41 @@ TEST_CASE("an offline-only form says its own refusal outside offline play",
     console.run("goto G1");
     CHECK(console.output().back() == "This command is not available in this session.");
     CHECK(commandCalls == 1);
+}
+
+TEST_CASE("a form made of functions claims, runs and refuses as they say",
+          "[dev-console][online-console]") {
+    DevConsole console;
+    s32 commandCalls = 0;
+    console.addCommand("get", "gives", ConsoleReach::Local,
+                       [&](DevConsole&, DevConsole::Arguments) { ++commandCalls; });
+    std::vector<std::string> answered;
+    console.addForm("get", std::make_unique<LambdaForm>(
+                               ConsoleReach::OfflineOnly, "Stand-in words are offline only.",
+                               [](DevConsole::Arguments arguments) {
+                                   return arguments.size() == 1 && arguments.front() == "info";
+                               },
+                               [&](DevConsole& self, DevConsole::Arguments arguments) {
+                                   answered.push_back(arguments.front());
+                                   self.print("answered");
+                               }));
+    console.run("get info");
+    CHECK(answered == std::vector<std::string>{"info"});
+    CHECK(console.output().back() == "answered");
+    console.run("get info x");
+    CHECK(commandCalls == 1);
+    // A command running reads the session the console was given.
+    console.setSession({.seat = ConsoleSeat::Guest});
+    CHECK(console.session().seat == ConsoleSeat::Guest);
+    console.run("get info");
+    CHECK(console.output().back() == "Stand-in words are offline only.");
+    CHECK(answered.size() == 1);
+    // Without its functions a form claims nothing and runs nothing.
+    LambdaForm bare{ConsoleReach::Local, {}, {}, {}};
+    CHECK_FALSE(bare.claims({}));
+    bare.run(console, {});
+    CHECK(bare.refusal().empty());
+    CHECK(bare.reach() == ConsoleReach::Local);
 }
 
 /** One poll of the keyboard: the keys held, the characters typed and the wheel's motion. */
@@ -778,7 +787,7 @@ class CountingCommand final : public ConsoleCommand {
 public:
     explicit CountingCommand(std::string name) : m_name(std::move(name)) {}
     std::string_view name() const override { return m_name; }
-    std::string_view summary() const override { return "counts its arguments"; }
+    std::string summary() const override { return "counts its arguments"; }
     ConsoleReach reach() const override { return ConsoleReach::Local; }
     void run(DevConsole& /*console*/, Arguments arguments) override {
         runs += 1;

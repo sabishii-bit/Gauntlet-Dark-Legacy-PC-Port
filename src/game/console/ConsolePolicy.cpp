@@ -13,6 +13,7 @@ ConsoleSession ConsolePolicy::session(const ConsoleSituation& situation) {
         session.seat = ConsoleSeat::NetplayMenus;
     }
     session.modal = situation.preview;
+    session.hold = situation.parked ? SceneHold::Parked : SceneHold::Live;
     return session;
 }
 
@@ -43,6 +44,13 @@ std::optional<std::string_view> ConsolePolicy::refusal(const ConsoleSession& ses
         return std::nullopt;
     }
     return kRefused;
+}
+
+std::optional<std::string_view> ConsolePolicy::sharedRefusal(const ConsoleSession& session) {
+    if (session.hold == SceneHold::Parked) {
+        return kRefused;
+    }
+    return std::nullopt;
 }
 
 } // namespace gdl::game

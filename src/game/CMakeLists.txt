@@ -101,6 +101,7 @@ add_library(game STATIC
     app/GameCursor.cpp
     app/BuildLabel.cpp
     app/LevelDebugOverlay.cpp
+    console/ConsoleActionSink.h
     console/ConsoleCommand.h
     console/ConsoleCommand.cpp
     console/ConsoleForm.h
@@ -130,8 +131,8 @@ add_library(game STATIC
     app/GauntletConsole.cpp
     app/OfflineConsoleCommands.h
     app/OfflineConsoleCommands.cpp
-    app/OnlineConsoleRoute.h
-    app/OnlineConsoleRoute.cpp
+    app/ConsoleActionRoute.h
+    app/ConsoleActionRoute.cpp
     app/LevelCompletion.h
     audio/MusicDuck.h
     audio/MusicDuck.cpp
@@ -458,6 +459,10 @@ add_library(game STATIC
     scenes/PlaySceneConsole.cpp
     scenes/SharedConsoleVerbs.h
     scenes/SharedConsoleVerbs.cpp
+    scenes/SharedConsoleCommand.h
+    scenes/SharedConsoleCommand.cpp
+    scenes/ConsoleReplies.h
+    scenes/ConsoleReplies.cpp
     scenes/ConsoleStage.h
     scenes/ConsoleStage.cpp
     scenes/ConsoleTravel.h

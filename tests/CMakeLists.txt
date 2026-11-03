@@ -222,8 +222,10 @@ add_executable(tests
     game/console/PartyCountRequestTests.cpp
     game/console/LevelListingLinesTests.cpp
     game/app/OfflineConsoleCommandsTests.cpp
-    game/app/OnlineConsoleRouteTests.cpp
+    game/app/ConsoleActionRouteTests.cpp
     game/scenes/SharedConsoleVerbsTests.cpp
+    game/scenes/SharedConsoleCommandTests.cpp
+    game/scenes/ConsoleRepliesTests.cpp
     game/scenes/ConsoleTravelTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp

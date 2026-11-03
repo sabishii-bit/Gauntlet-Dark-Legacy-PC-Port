@@ -23,6 +23,7 @@
 #include "game/players/ItemPickup.h"
 #include "game/players/PlayerActor.h"
 #include "game/rollback/SharedConsoleWords.h"
+#include "game/scenes/ConsoleReplies.h"
 #include "game/scenes/ConsoleStage.h"
 
 namespace gdl::game {
@@ -47,6 +48,19 @@ ConsoleRefusal unreadable(std::string text, const std::string& usage) {
     return {.kind = kind, .text = std::move(text)};
 }
 
+/** `result` after the notes there are, a line each. */
+std::string afterNotes(std::span<const std::optional<std::string>> notes,
+                       const std::string& result) {
+    std::string reply;
+    for (const std::optional<std::string>& note : notes) {
+        if (note) {
+            reply += *note;
+            reply += '\n';
+        }
+    }
+    return reply + result;
+}
+
 /** A usage's constant rows as rows that own their words. */
 std::vector<std::pair<std::string, std::string>>
 ownedRows(std::span<const std::pair<std::string_view, std::string_view>> rows) {
@@ -58,12 +72,13 @@ ownedRows(std::span<const std::pair<std::string_view, std::string_view>> rows) {
     return owned;
 }
 
-/** A command that reads no words after its name: every peer refuses any, with its name. */
+/** A command that reads no words after its name: every peer refuses any, with its name, before
+ * they are sent; offline the words reach the verb, which says it takes none. */
 class WordlessVerb : public SharedConsoleVerb {
 public:
     bool takesArguments() const override { return false; }
-    Reach check(Arguments arguments, ConsolePlay /*play*/) const override {
-        if (!arguments.empty()) {
+    Reach check(Arguments arguments, ConsolePlay play) const override {
+        if (!arguments.empty() && play == ConsolePlay::Shared) {
             return gdl::Unexpected(ConsoleRefusal{.kind = ConsoleRefusal::Kind::Message,
                                                   .text = std::format("Usage: {}", name())});
         }
@@ -88,7 +103,7 @@ public:
         bool& enabled = changed.*m_flag;
         enabled = !enabled;
         stage.setCheats(seat, changed);
-        return std::format("{} {}", m_name, enabled ? "on" : "off");
+        return cheatReply(stage.play(), m_name, enabled);
     }
 
 private:
@@ -226,12 +241,12 @@ public:
             if (!destination->position) {
                 return ConsoleCommands::gotoUsage();
             }
-            return stage.relocate(*destination->position) ? "Moved the party."
-                                                          : "Nobody is standing.";
+            const Vec3& at = *destination->position;
+            return movedReply(stage.play(), stage.relocate(at) ? std::optional{at} : std::nullopt);
         }
         const auto level = stage.levelNamed(*destination->level);
         if (!level) {
-            return std::format("No map named {}", *destination->level);
+            return unknownMapReply(stage.play(), *destination->level);
         }
         stage.requestTravel({*level, destination->position, std::nullopt}, seat);
         return std::format("Going to {} ({})", level->name, level->title);
@@ -261,6 +276,7 @@ public:
         return ConsoleReach::Shared;
     }
     std::string apply(ConsoleStage& stage, s32 seat, Arguments arguments) const override {
+        const ConsolePlay play = stage.play();
         const PlayerActor* owner = stage.actor(seat);
         if (owner == nullptr) {
             return "Nobody is in to spawn before.";
@@ -276,7 +292,7 @@ public:
         if (spawn->map) {
             from = stage.levelNamed(*spawn->map);
             if (!from) {
-                return std::format("No map named {}", *spawn->map);
+                return unknownMapReply(play, *spawn->map);
             }
         }
         const Vec3 facing = owner->facing();
@@ -289,9 +305,11 @@ public:
             }
             return spot;
         };
+        // What stood borrows the map's voices; offline the reply first says when it lends none.
+        std::optional<std::string> voices;
         const auto borrowVoices = [&] {
-            if (from) {
-                stage.borrowVoices(*from);
+            if (from && !stage.borrowVoices(*from)) {
+                voices = voicesNote(play, from->name);
             }
         };
         using Kind = SpawnRequest::Kind;
@@ -314,7 +332,8 @@ public:
             if (count > 0) {
                 borrowVoices();
             }
-            return std::format("Spawned {} {} at tier {}", count, spawn->name, spawn->tier);
+            return afterNotes(std::array{voices},
+                              spawnedEnemiesReply(play, count, spawn->name, spawn->tier));
         }
         case Kind::Critter: {
             const char realm = from && !from->name.empty() ? from->name.front() : '\0';
@@ -335,18 +354,18 @@ public:
             if (id) {
                 stage.countSpawn();
             }
-            return id ? std::format("Spawned a {}", spawn->name)
-                      : std::format("No room or artwork for {}", spawn->name);
+            return critterReply(play, id.has_value(), spawn->name, spawn->form);
         }
         case Kind::Generator: {
             s32 kind = spawn->enemyKind;
             ItemArchive* items = nullptr;
             WorldLayout layout;
             const ItemInfo* record = nullptr;
+            std::optional<std::string> unpacked; ///< offline, that the map's layout is missing
             if (spawn->brood) {
                 const s32 realm = from ? from->realmId : stage.level().realmId;
                 if (realm != TowerAccess::kTempleWorld && realm != TowerAccess::kUnderworldWorld) {
-                    return "A mixed brood needs a Temple (E) or Underworld (F) map.";
+                    return std::string(broodRealmRefusal(play));
                 }
                 kind = realm == TowerAccess::kTempleWorld ? Generators::kTempleBrood
                                                           : Generators::kHellBrood;
@@ -357,6 +376,8 @@ public:
                     }
                     if (stage.loadLayout(*from, layout)) {
                         record = generatorRecord(layout, "SPECIAL");
+                    } else {
+                        unpacked = notUnpackedNote(play, from->name);
                     }
                 }
             }
@@ -366,19 +387,21 @@ public:
                 stage.countSpawn();
                 borrowVoices();
             }
-            return id ? std::format("Stood a tier {} {} generator", spawn->tier, spawn->name)
-                      : std::format("No {} generator could stand here", spawn->name);
+            return afterNotes(
+                std::array{voices, unpacked},
+                id ? std::format("Stood a tier {} {} generator", spawn->tier, spawn->name)
+                   : std::format("No {} generator could stand here", spawn->name));
         }
         case Kind::Item: {
             if (from) {
-                return "Pickups come from the current level; omit the map.";
+                return std::string(pickupWithMapRefusal(play));
             }
             const bool placed = stage.placeItem(spawn->name, spotAt(0));
             if (placed) {
                 stage.countSpawn();
             }
             return placed ? std::format("Dropped {}", spawn->name)
-                          : std::format("No pickup named {}", spawn->name);
+                          : pickupMissingReply(play, spawn->name);
         }
         case Kind::Thing:
             if (!from && stage.placeItem(spawn->name, spotAt(0))) {
@@ -388,12 +411,14 @@ public:
             [[fallthrough]];
         case Kind::Object: {
             const LevelRef source = from.value_or(stage.level());
-            const bool placed = stage.spawnObject(source, spawn->name, spotAt(0), yaw);
-            if (placed) {
+            if (stage.spawnObject(source, spawn->name, spotAt(0), yaw)) {
                 stage.countSpawn();
+                return std::format("Stood {} of {}", spawn->name, source.name);
             }
-            return placed ? std::format("Stood {} of {}", spawn->name, source.name)
-                          : std::format("No object named {} in {}", spawn->name, source.name);
+            // A thing named without a map was looked for among the pickups as well.
+            return spawn->kind == Kind::Thing && !from
+                       ? thingMissingReply(play, spawn->name, source.name)
+                       : objectMissingReply(play, spawn->name, source.name);
         }
         }
         return "Unknown spawn kind.";
@@ -412,11 +437,12 @@ public:
         if (stage.isTower()) {
             return "Nobody falls in the tower.";
         }
-        return std::format("{} fallen", stage.killEveryone());
+        return fallenReply(stage.play(), stage.killEveryone());
     }
 };
 
-/** unlock_tower: opens the tower to everyone in the party, and reopens it about them there. */
+/** unlock_tower: opens the tower to everyone still in the party, and reopens it about them
+ * there. */
 class TowerUnlockVerb final : public WordlessVerb {
 public:
     std::string_view name() const override { return "unlock_tower"; }
@@ -427,8 +453,14 @@ public:
         if (!arguments.empty()) {
             return "unlock_tower takes no arguments.";
         }
-        for (CharacterSave* save : stage.presentSaves()) {
+        const std::vector<CharacterSave*> saves = stage.presentSaves();
+        for (CharacterSave* save : saves) {
             TowerAccess::openEverything(*save);
+        }
+        const auto opened = static_cast<s32>(saves.size());
+        // Offline, with nobody still in, there is nobody to open the tower again for.
+        if (opened == 0 && stage.play() == ConsolePlay::Offline) {
+            return towerOpenedReply(stage.play(), opened);
         }
         if (stage.isTower()) {
             const PlayerActor* owner = stage.actor(seat);
@@ -437,7 +469,7 @@ public:
                                  owner ? std::optional{owner->yaw()} : std::nullopt},
                                 seat);
         }
-        return "The tower stands open to the party.";
+        return towerOpenedReply(stage.play(), opened);
     }
 };
 

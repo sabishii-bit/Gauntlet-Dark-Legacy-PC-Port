@@ -60,11 +60,12 @@ public:
     }
     /** Whether the command reads any words after its name. */
     virtual bool takesArguments() const = 0;
-    /** Context-free: where these words run in `play`'s game, or why every peer refuses them. */
+    /** Context-free: where these words run in `play`'s game, or why it refuses them before they
+     * are sent. Offline play sends the words a verb takes none of, for the verb to refuse. */
     virtual gdl::Expected<ConsoleReach, ConsoleRefusal>
     check(Arguments arguments, PlayScene::ConsolePlay play) const = 0;
-    /** Runs the words for `seat` at the start of a tick and says what came of it; what the
-     * shared game cannot do, it refuses in its own words. */
+    /** Runs the words for `seat` at the start of a tick and says what came of it in the words of
+     * `stage`'s game; what that game cannot do, it refuses in its own words. */
     virtual std::string apply(ConsoleStage& stage, s32 seat, Arguments arguments) const = 0;
     /** What the console says of this command's words that run only offline. */
     virtual std::string_view offlineOnlyRefusal() const { return {}; }

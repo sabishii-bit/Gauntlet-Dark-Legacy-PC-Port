@@ -139,7 +139,7 @@ void DevConsole::run(std::string_view line) {
     }
     if (const auto refused = ConsolePolicy::refusal(m_session, command->reach(), command->name())) {
         print(*refused);
-    } else if (!m_dispatch || !m_dispatch(*this, command->name(), arguments)) {
+    } else {
         command->run(*this, arguments);
     }
 }

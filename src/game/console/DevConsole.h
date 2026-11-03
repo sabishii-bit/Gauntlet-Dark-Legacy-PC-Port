@@ -1,6 +1,5 @@
 #pragma once
 #include <filesystem>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -42,7 +41,6 @@ public:
     using Arguments = ConsoleCommand::Arguments;
     using Handler = LambdaCommand::Handler;
     using Completer = LambdaCommand::Completer;
-    using Dispatch = std::function<bool(DevConsole&, std::string_view, Arguments)>;
 
     static constexpr s32 kLanes = 4;
     static constexpr s32 kWidth = StatusBoxPainter::kWidth * kLanes; ///< the status strip's
@@ -97,9 +95,8 @@ public:
     /** What the application is doing; the policy judges each command and form by it in help,
      * in the suggestions and when a line runs. */
     void setSession(ConsoleSession session) { m_session = session; }
-    /** Dispatch may consume an admitted command (e.g. queue it for a shared tick) instead of
-     * invoking its handler. A form's words are never dispatched. */
-    void setDispatch(Dispatch dispatch) { m_dispatch = std::move(dispatch); }
+    /** The session set last, which a running command may judge its words by. */
+    const ConsoleSession& session() const { return m_session; }
     /** Appends output, a line per line break, each wrapped to the screen's columns at
      * spaces where it can be. */
     void print(std::string_view text);
@@ -181,7 +178,6 @@ private:
     TextPainter m_text;
     ConsoleRegistry m_commands;
     ConsoleSession m_session;
-    Dispatch m_dispatch;
     std::vector<std::string> m_output;
     std::vector<std::string> m_history;
     std::vector<std::pair<std::string, std::string>> m_variables; ///< by upper-case name

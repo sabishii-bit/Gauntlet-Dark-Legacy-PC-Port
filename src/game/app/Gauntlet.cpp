@@ -27,6 +27,7 @@
 #include "game/config/ControlProfiles.h"
 #include "game/enemies/Enemies.h"
 #include "game/players/PlayerControls.h"
+#include "game/rollback/ConsoleAction.h"
 #include "game/scenes/ConsoleTravel.h"
 #include "game/widgets/MenuInput.h"
 
@@ -616,6 +617,9 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     }
     m_console.setSession(consoleSession());
     m_console.update(deltaSeconds, input(), m_config.menu.console);
+    // The shared verbs' lines typed this frame run in this frame's step alone; a scene a line
+    // has sent the party from takes none.
+    const std::vector<ConsoleAction> actions = m_consoleRoute.takeOffline();
     if (m_legendsPreview.isOpen()) {
         return;
     }
@@ -683,7 +687,17 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
             consoleFlight(player, deltaSeconds, consoleOpen);
     }
     const bool wasLeaving = m_play->scene.leaving();
-    const PlayOutcome outcome = m_play->scene.update(deltaSeconds, m_sessionInputs.advance(inputs));
+    const PlayScene::LocalStep stepped =
+        m_play->scene.step(deltaSeconds, m_sessionInputs.advance(inputs), actions);
+    for (const PlayScene::ConsoleReply& reply : stepped.replies) {
+        m_console.print(reply.text);
+    }
+    // The scene now holds the console's cheats; read them back before any outcome closes it, so
+    // they go with the party into the next scene.
+    for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
+        m_consoleCheats[static_cast<usize>(seat)] = m_play->scene.cheats(seat);
+    }
+    const PlayOutcome outcome = stepped.outcome;
     if (outcome == PlayOutcome::Running) {
         if (auto* imported = m_play->world.imported(); imported && imported->takeShopRequest()) {
             if (openImportedShop(ShopVisit::Shop)) {
@@ -1240,6 +1254,10 @@ void Gauntlet::returnFromChallenge(std::span<const PartyMember> party) {
     m_play.reset();
     m_play = std::move(m_parent);
     m_play->scene.resumeFromChallenge(party);
+    // The parent held the cheats it had when the challenge began; the challenge's go on.
+    for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
+        m_play->scene.setCheats(seat, m_consoleCheats[static_cast<usize>(seat)]);
+    }
     log::info("Returning from secret challenge to {}", m_play->world.ref().name);
     resetPlayInput();
 }

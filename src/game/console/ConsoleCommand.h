@@ -34,7 +34,8 @@ public:
     virtual ~ConsoleCommand() = default;
 
     virtual std::string_view name() const = 0;
-    virtual std::string_view summary() const = 0;
+    /** What `help` says of the command after its name. */
+    virtual std::string summary() const = 0;
     /** Where the command runs, which decides the sessions that admit it. */
     virtual ConsoleReach reach() const = 0;
     virtual void run(DevConsole& console, Arguments arguments) = 0;
@@ -53,7 +54,7 @@ public:
     LambdaCommand(std::string name, std::string summary, ConsoleReach reach, Handler handler,
                   Completer completer = {});
     std::string_view name() const override { return m_name; }
-    std::string_view summary() const override { return m_summary; }
+    std::string summary() const override { return m_summary; }
     ConsoleReach reach() const override { return m_reach; }
     void run(DevConsole& console, Arguments arguments) override;
     std::vector<std::string> completions(Arguments arguments) const override;

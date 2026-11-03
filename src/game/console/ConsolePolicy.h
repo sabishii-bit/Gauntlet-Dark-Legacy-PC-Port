@@ -32,6 +32,7 @@ struct ConsoleSituation {
     bool allowed = false; ///< that game lets this machine's console run commands
     bool netplay = false; ///< the netplay menus are open
     std::span<const std::string_view> preview; ///< what an open Legends map's preview admits
+    bool parked = false; ///< a view, such as a Legends preview, holds the scene behind it
 };
 
 /** Which commands and forms a console session runs, judged by where each says it runs. */
@@ -40,7 +41,8 @@ public:
     static constexpr std::string_view kRefused = "This command is not available in this session.";
 
     /** The session `situation` makes: an online game's seat outranks the netplay menus it was
-     * entered from, and away from an online game the console may run commands. */
+     * entered from, away from an online game the console may run commands, and a parked scene
+     * holds still. */
     static ConsoleSession session(const ConsoleSituation& situation);
 
     /** Why command `name` at `reach` is refused in `session`, or nothing when it runs.
@@ -48,6 +50,10 @@ public:
     static std::optional<std::string_view> refusal(const ConsoleSession& session,
                                                    ConsoleReach reach, std::string_view name,
                                                    std::string_view formRefusal = {});
+    /** Why words admitted to run in the shared game are refused in `session`, once they are
+     * read: a parked scene steps nothing, so it takes no shared words. Help and suggestions
+     * never ask this. */
+    static std::optional<std::string_view> sharedRefusal(const ConsoleSession& session);
 };
 
 } // namespace gdl::game

@@ -148,6 +148,37 @@ TEST_CASE("every peer judges a verb's words alike before they are sent",
     CHECK(verbNamed("spawn").offlineOnlyRefusal().empty());
 }
 
+TEST_CASE("offline play sends the words a verb reads none of, and judges the rest alike",
+          "[online-console][console-input]") {
+    const auto offline = [](std::string_view line) {
+        const std::vector<std::string> words = splitConsoleWords(line);
+        REQUIRE_FALSE(words.empty());
+        return verbNamed(words.front())
+            .check(std::span<const std::string>{words}.subspan(1), Play::Offline);
+    };
+    for (const std::string_view name : {"god", "notarget", "noclip", "suicide", "unlock_tower"}) {
+        CAPTURE(name);
+        for (const std::string& line : {std::string(name), std::format("{} x", name)}) {
+            const Reach reach = offline(line);
+            REQUIRE(reach);
+            CHECK(*reach == ConsoleReach::Shared);
+        }
+    }
+    for (const std::string_view line :
+         {"get", "get banana", "get gold 5", "get info", "goto", "goto 1 2", "goto lab", "goto G1",
+          "spawn", "spawn gru 4", "spawn gru 2 3"}) {
+        CAPTURE(line);
+        const Reach reach = offline(line);
+        const Reach shared = checked(line);
+        REQUIRE(reach.has_value() == shared.has_value());
+        if (reach) {
+            CHECK(*reach == *shared);
+        } else {
+            CHECK(reach.error() == shared.error());
+        }
+    }
+}
+
 TEST_CASE("console places and flights stay finite and within a million of the origin",
           "[online-console][console-input]") {
     constexpr f32 kFarthest = 1.0e6f;

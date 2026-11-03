@@ -23,6 +23,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/characters/Inventory.h"
 #include "game/characters/Progression.h"
 #include "game/characters/Relics.h"
 #include "game/combat/DamageTypes.h"
@@ -35,6 +36,7 @@
 #include "game/level/ExitPortals.h"
 #include "game/level/SpawnedObjects.h"
 #include "game/players/ItemPickup.h"
+#include "game/players/PlayerActor.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/rollback/InputCommand.h"
 #include "game/scenes/ConsoleStage.h"
@@ -48,6 +50,8 @@ constexpr f64 kStep = 1.0 / 60.0;
 constexpr s32 kSeats = 2;
 constexpr u8 kNobody = 3;                                        ///< a seat nobody holds
 constexpr s32 kNearlyFull = std::numeric_limits<s32>::max() - 5; ///< a counter with no room left
+constexpr s32 kLargestGrant = std::numeric_limits<s32>::max();
+constexpr s32 kOverCap = 1000001;               ///< one more than the console's grant cap
 constexpr f32 kChargeNearlyFull = 9999999.0f;   ///< a powerup charge just under ten million
 constexpr f32 kStrengthNearlyFull = 9999999.0f; ///< seconds of a powerup just under ten million
 constexpr f32 kForGood = -1.0f;                 ///< a powerup's strength that never runs out
@@ -58,6 +62,9 @@ constexpr std::string_view kOnItsWay = "The party is already on its way.";
 constexpr std::string_view kNoScene = "No active scene for that console command.";
 constexpr std::string_view kLegendsOffline = "Legends maps are offline only.";
 constexpr std::string_view kNotInParty = "That player is no longer in the party.";
+constexpr std::string_view kOutOfRange = "Coordinates must be finite and within +/-1000000.";
+constexpr std::string_view kOverGrant =
+    "A console grant must be finite and no larger than 1000000.";
 
 // What get, goto and spawn answer words they cannot read, word for word.
 constexpr std::string_view kGetUsage =
@@ -158,12 +165,47 @@ struct Fixture {
         return sayStep(std::move(line), seat).consoleReplies.front().text;
     }
 
+    /** One offline tick carrying `line` for `seat` alone. */
+    PlayScene::LocalStep offlineSayStep(std::string line, u8 seat = 0) {
+        const std::array actions{ConsoleAction{seat, std::move(line)}};
+        auto result = offlineStep(actions);
+        REQUIRE(result.replies.size() == 1);
+        CHECK(result.replies.front().seat == seat);
+        return result;
+    }
+
+    /** What offline play answers `line` said for `seat`, in a tick of its own. */
+    std::string offlineSay(std::string line, u8 seat = 0) {
+        return offlineSayStep(std::move(line), seat).replies.front().text;
+    }
+
+    /** Takes the keys and potions the party came in with. */
+    void emptyHands() {
+        for (s32 seat = 0; seat < kSeats; ++seat) {
+            save(seat).progress().inventory = Inventory{};
+        }
+    }
+
     CharacterSave& save(s32 seat) {
         CharacterSave* live = scene.liveSave(seat);
         REQUIRE(live != nullptr);
         return *live;
     }
 };
+
+/** Lets `seat` fall and leave the game from its box's question. */
+void leave(Fixture& fixture, s32 seat) {
+    PlayScene& scene = fixture.scene;
+    REQUIRE(scene.kill(seat));
+    for (s32 i = 0; i < kDeathTicks && !scene.status(seat).towerPrompt; ++i) {
+        fixture.sharedStep();
+    }
+    REQUIRE(scene.status(seat).towerPrompt);
+    PlayScene::Inputs quit{};
+    quit[static_cast<usize>(seat)].menu.back = true;
+    fixture.sharedStep({}, quit);
+    REQUIRE(scene.runtime(seat)->departed);
+}
 
 /** Every verb's line, the same verbs with words they cannot read, and a seat nobody holds. */
 std::vector<ConsoleAction> awayLines() {
@@ -354,15 +396,7 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     reopen();
 
     // A seat that left the game is passed over, though its own line still reaches the body.
-    REQUIRE(scene.kill(1));
-    for (s32 i = 0; i < kDeathTicks && !scene.status(1).towerPrompt; ++i) {
-        fixture->sharedStep();
-    }
-    REQUIRE(scene.status(1).towerPrompt);
-    PlayScene::Inputs quit{};
-    quit[1].menu.back = true;
-    fixture->sharedStep({}, quit);
-    REQUIRE(scene.runtime(1)->departed);
+    leave(*fixture, 1);
     CHECK(fixture->say("unlock_tower") == "The tower stands open to the party.");
     CHECK(fixture->save(0).progress().relics.runeCount() == Relics::kRuneCount);
     CHECK(fixture->save(1).progress().relics.runeCount() == 0);
@@ -502,6 +536,356 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(tower->save(0).progress().relics.runeCount() == Relics::kRuneCount);
 }
 
+TEST_CASE("every shared verb answers offline in offline play's words", "[native-console][assets]") {
+    test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    fixture->emptyHands();
+    PlayScene::LocalSnapshot opened;
+    REQUIRE(scene.saveLocal(opened));
+    const auto reopen = [&] { REQUIRE(scene.restoreLocal(opened)); };
+
+    // The toggles flip the seat's own cheat in the scene, which holds it from then on; words
+    // after one change nothing.
+    CHECK(fixture->offlineSay("god") == "God mode on");
+    CHECK(scene.cheats(0).god);
+    CHECK_FALSE(scene.cheats(1).god);
+    CHECK(fixture->offlineSay("god x") == "This command toggles without arguments.");
+    CHECK(scene.cheats(0).god);
+    CHECK(fixture->offlineSay("god") == "God mode off");
+    CHECK_FALSE(scene.cheats(0).god);
+    CHECK(fixture->offlineSay("notarget", 1) == "The enemies no longer see you");
+    CHECK(scene.cheats(1).noTarget);
+    CHECK_FALSE(scene.cheats(0).noTarget);
+    CHECK(fixture->offlineSay("notarget x", 1) == "This command toggles without arguments.");
+    CHECK(fixture->offlineSay("notarget", 1) == "The enemies see you again");
+    CHECK_FALSE(scene.cheats(1).noTarget);
+    CHECK(fixture->offlineSay("noclip", 1) ==
+          "Noclip on: the movement keys or left stick fly you as the camera looks, Q and E or the "
+          "right stick up and down, Shift slows");
+    CHECK(scene.cheats(1).noclip);
+    CHECK(fixture->offlineSay("noclip x", 1) == "This command toggles without arguments.");
+    CHECK(fixture->offlineSay("noclip", 1) == "Noclip off");
+    CHECK_FALSE(scene.cheats(1).noclip);
+
+    // get's gifts and the words it cannot read.
+    const s32 gold = fixture->save(0).gold;
+    CHECK(fixture->offlineSay("get gold 37") == "Got 37 gold");
+    CHECK(fixture->save(0).gold == gold + 37);
+    CHECK(fixture->offlineSay("get exp 10") == "10 experience: level 1");
+    CHECK(fixture->offlineSay("get level 5") == "Level 5");
+    CHECK(fixture->save(0).experience() == levelExperience(5));
+    CHECK(fixture->offlineSay("get keys 2") == "Got 2 keys");
+    CHECK(fixture->offlineSay("get potion 2 acid") == "Got 0 potions");
+    CHECK(fixture->offlineSay("get potions 2") == "Got 0 potions");
+    CHECK(fixture->save(0).progress().inventory.potions.size() == 4);
+    CHECK(fixture->offlineSay("get supershot 3") == "Got supershot, 3 charges");
+    CHECK(fixture->offlineSay("get levitate 30") == "Got levitate for 30 seconds");
+    CHECK(fixture->offlineSay("get health 50") == "Health is full already");
+    CHECK(fixture->offlineSay("get") == kGetUsage);
+    CHECK(fixture->offlineSay("get banana") == "No item named banana; list items names them");
+    CHECK(fixture->offlineSay("get exp 0") == "get exp <points>: how much to add");
+    reopen();
+    // Offline grants keep the shared game's cap and counter guards.
+    fixture->save(1).gold = 0;
+    fixture->save(1).progress().lifetime.goldFound = 0;
+    CHECK(fixture->offlineSay(std::format("get gold {}", kLargestGrant), 1) == kOverGrant);
+    CHECK(fixture->save(1).gold == 0);
+    CHECK(fixture->save(1).progress().lifetime.goldFound == 0);
+    CHECK(fixture->offlineSay(std::format("get exp {}", kOverCap), 1) == kOverGrant);
+    CHECK(fixture->offlineSay("get levitate nan", 1) == kOverGrant);
+    fixture->save(0).progress().experience = kNearlyFull;
+    CHECK(fixture->offlineSay("get exp 1000000") ==
+          "That experience grant would exceed the character's counter.");
+    CHECK(fixture->save(0).experience() == kNearlyFull);
+    reopen();
+
+    // goto: a point, a level, a level and a point, the tower, a challenge, and a point that is
+    // not one.
+    CHECK(fixture->offlineSay("goto 1 2 3") == "Moved to 1.0 2.0 3.0");
+    CHECK(scene.actor(0)->position().x == Catch::Approx(1.0f));
+    CHECK(scene.actor(0)->position().z == Catch::Approx(3.0f));
+    CHECK(scene.actor(1)->position().x == Catch::Approx(3.0f));
+    CHECK(fixture->offlineSay("goto Z9") == "No map named Z9; list maps names them");
+    CHECK_FALSE(scene.consoleTravelRequest());
+    const auto g1 = fixture->catalog.byName("G1");
+    const auto s1 = fixture->catalog.byName("S1");
+    REQUIRE(g1);
+    REQUIRE(s1);
+    struct Travel {
+        std::string_view line;
+        std::string_view reply;
+        PlayScene::ConsoleTravelRequest request;
+        bool secret = false;
+    };
+    for (const Travel& travel : std::to_array<Travel>(
+             {{"goto G1", "Going to G1 (Fields)", {*g1, std::nullopt, std::nullopt}},
+              {"goto g1 4 5 6", "Going to G1 (Fields)", {*g1, Vec3{4, 5, 6}, std::nullopt}},
+              {"goto tower",
+               "Going to L1 (Tower)",
+               {LevelRef::tower(), std::nullopt, std::nullopt}},
+              {"goto S1", "Going to S1 (Lab)", {*s1, std::nullopt, std::nullopt}, true}})) {
+        CAPTURE(travel.line);
+        const auto stepped = fixture->offlineSayStep(std::string(travel.line));
+        CHECK(stepped.replies.front().text == travel.reply);
+        CHECK(stepped.outcome == PlayOutcome::Travel);
+        CHECK(scene.consoleTravelRequest() == travel.request);
+        CHECK(scene.secretTravel() == travel.secret);
+        reopen();
+    }
+    const Vec3 before = scene.actor(0)->position();
+    CHECK(fixture->offlineSay("goto nan 0 0") == kOutOfRange);
+    CHECK(fixture->offlineSay("goto 0 1e7 0") == kOutOfRange);
+    CHECK(scene.actor(0)->position() == before);
+    reopen();
+
+    // suicide fells everyone standing, then nobody; nobody is then moved.
+    CHECK(fixture->offlineSay("suicide x") == "suicide takes no arguments.");
+    CHECK_FALSE(scene.fallen(0));
+    CHECK(fixture->offlineSay("suicide") == "2 fallen");
+    CHECK(scene.fallen(0));
+    CHECK(scene.fallen(1));
+    CHECK(fixture->offlineSay("suicide") == "Nobody was standing.");
+    CHECK(fixture->offlineSay("goto 1 2 3") == "Nobody is standing to move.");
+    reopen();
+
+    // unlock_tower in a level opens every save still in and goes nowhere; one that left the game
+    // is neither opened nor counted.
+    CHECK(fixture->offlineSay("unlock_tower x") == "unlock_tower takes no arguments.");
+    CHECK(fixture->save(0).progress().relics.runeCount() == 0);
+    const auto unlocked = fixture->offlineSayStep("unlock_tower");
+    CHECK(unlocked.replies.front().text == "The tower stands open to 2 characters.");
+    CHECK(unlocked.outcome == PlayOutcome::Running);
+    CHECK_FALSE(scene.consoleTravelRequest());
+    for (s32 seat = 0; seat < kSeats; ++seat) {
+        CHECK(fixture->save(seat).progress().relics.runeCount() == Relics::kRuneCount);
+    }
+    reopen();
+    leave(*fixture, 1);
+    CHECK(fixture->offlineSay("unlock_tower") == "The tower stands open to 1 character.");
+    CHECK(fixture->save(0).progress().relics.runeCount() == Relics::kRuneCount);
+    CHECK(fixture->save(1).progress().relics.runeCount() == 0);
+    reopen();
+
+    // spawn: every kind, the words it cannot read and the ones a level refuses.
+    CHECK(fixture->offlineSay("spawn") == kSpawnUsage);
+    CHECK(fixture->offlineSay("spawn grunt 1 ZZ9") == kSpawnUsage);
+    CHECK(fixture->offlineSay("spawn gru 1 ZZ9") == "No map named ZZ9; list maps names them");
+    CHECK(fixture->offlineSay("spawn gru 4") == "A tier is 1 to 3");
+    CHECK(fixture->offlineSay("spawn gru 1 21") == "A count is 1 to 20");
+    CHECK(fixture->offlineSay("spawn enemy zz") ==
+          "No enemy kind named ZZ; list enemies names them");
+    const auto roster = [&scene] {
+        const LevelInfo* now = scene.opponents().levelNow();
+        REQUIRE(now != nullptr);
+        return now->enemies.size();
+    };
+    const usize enemies = scene.enemies().count();
+    const usize own = roster();
+    CHECK(fixture->offlineSay("spawn gru 2 3") == "Spawned 3 GRU at tier 2");
+    CHECK(scene.enemies().count() == enemies + 3);
+    CHECK(roster() == own);
+    CHECK(fixture->offlineSay("spawn enemy gru 2 2 G1") == "Spawned 2 GRU at tier 2");
+    CHECK(scene.enemies().count() == enemies + 5);
+    const std::vector<ConsoleAction> swarm(5, ConsoleAction{0, "spawn gru 1 20"});
+    const auto crowded = fixture->offlineStep(swarm);
+    REQUIRE(crowded.replies.size() == swarm.size());
+    CHECK(crowded.replies.back().text == "No room for GRU here, or its kind is missing");
+    CHECK(scene.enemies().count() == static_cast<usize>(scene.enemies().most()));
+    // A spawn that stands nothing borrows nothing of the map it names.
+    const usize crowdedRoster = roster();
+    CHECK(fixture->offlineSay("spawn gru 1 1 E1") ==
+          "No room for GRU here, or its kind is missing");
+    CHECK(roster() == crowdedRoster);
+    reopen();
+    const usize openedRoster = roster();
+    CHECK(fixture->offlineSay("spawn gru 1 1 E1") == "Spawned 1 GRU at tier 1");
+    CHECK(roster() > openedRoster);
+    reopen();
+    const usize critters = scene.critters().count();
+    CHECK(fixture->offlineSay("spawn golem") == "Spawned a golem");
+    CHECK(fixture->offlineSay("spawn general") == "Spawned a general");
+    CHECK(fixture->offlineSay("spawn gargoyle lion") == "Spawned a GAR_LION");
+    CHECK(fixture->offlineSay("spawn critter golem B1") == "Spawned a golem");
+    CHECK(scene.critters().count() == critters + 4);
+    CHECK(fixture->offlineSay("spawn critter dragon") ==
+          "A critter is a golem, a general or a gargoyle");
+    const std::vector<ConsoleAction> great(Critters::kMost, ConsoleAction{0, "spawn golem"});
+    const auto full = fixture->offlineStep(great);
+    REQUIRE(full.replies.size() == great.size());
+    CHECK(full.replies.back().text == "No room for a golem here, or its kind is missing");
+    reopen();
+    const usize generators = scene.generators().count();
+    CHECK(fixture->offlineSay("spawn generator rat 2") == "Stood a tier 2 RAT generator");
+    CHECK(scene.generators().count() == generators + 1);
+    CHECK(fixture->offlineSay("spawn generator special") ==
+          "A mixed brood is the temple's (E) or the underworld's (F); name a map of either");
+    const usize broodRoster = roster();
+    CHECK(fixture->offlineSay("spawn generator special E1") == "Stood a tier 1 SPECIAL generator");
+    CHECK(scene.generators().count() == generators + 2);
+    CHECK(scene.generators().kindOf(static_cast<s32>(scene.generators().count()) - 1) ==
+          Generators::kTempleBrood);
+    CHECK(roster() > broodRoster);
+    CHECK(fixture->offlineSay("spawn generator zz") ==
+          "No enemy kind named ZZ for a generator; list enemies names them");
+    reopen();
+    const std::string item = fixture->world.placedItems().item(0).name;
+    const std::string object = fixture->world.layout().objects().front().name;
+    const usize placed = fixture->world.placedItems().size();
+    CHECK(fixture->offlineSay("spawn item " + item) == "Dropped GAPPLE");
+    CHECK(fixture->world.placedItems().size() == placed + 1);
+    CHECK(fixture->offlineSay("spawn item " + item + " G1") ==
+          "Pickups come from the level in play alone; name one without a map");
+    CHECK(fixture->offlineSay("spawn item NOPE") ==
+          "No pickup record named NOPE here; list items names them");
+    CHECK(fixture->offlineSay("spawn " + item) == "Dropped GAPPLE");
+    CHECK(fixture->world.placedItems().size() == placed + 2);
+    CHECK(fixture->offlineSay("spawn " + object) == "Stood G2POLYSURF#000 of G2");
+    CHECK(fixture->offlineSay("spawn object " + object) == "Stood G2POLYSURF#000 of G2");
+    CHECK(scene.spawnedObjectCount() == 2);
+    CHECK(fixture->offlineSay("spawn object NOPE") ==
+          "Nothing named NOPE in G2; list objects G2 names what there is");
+    CHECK(fixture->offlineSay("spawn NOPE") ==
+          "Nothing named NOPE here; list items, objects, enemies or critters name what there is");
+    CHECK(fixture->offlineSay("spawn object NOPE G1") ==
+          "Nothing named NOPE in G1; list objects G1 names what there is");
+    CHECK(fixture->offlineSay("spawn " + item + " G1") ==
+          "Nothing named GAPPLE in G1; list objects G1 names what there is");
+    WorldLayout fieldsLayout;
+    REQUIRE(fieldsLayout.load(fixture->root / g1->directory));
+    const std::string borrowed = fieldsLayout.objects().front().name;
+    CHECK(fixture->offlineSay("spawn object " + borrowed + " G1") == "Stood G1POLYSET#0 of G1");
+    CHECK(scene.spawnedObjectCount() == 3);
+
+    // In the tower nobody falls, and unlock_tower reopens it where the asker stands.
+    fixture.reset();
+    auto tower = std::make_unique<Fixture>("L1");
+    CHECK(tower->offlineSay("suicide") == "Nobody falls in the tower.");
+    CHECK_FALSE(tower->scene.fallen(0));
+    const PlayerActor* asker = tower->scene.actor(1);
+    REQUIRE(asker != nullptr);
+    const Vec3 at = asker->position();
+    const f32 yaw = asker->yaw();
+    REQUIRE(tower->scene.actor(0)->position() != at);
+    const auto reopened = tower->offlineSayStep("unlock_tower", 1);
+    CHECK(reopened.replies.front().text == "The tower stands open to 2 characters.");
+    CHECK(reopened.outcome == PlayOutcome::Travel);
+    CHECK(tower->scene.consoleTravelRequest() ==
+          PlayScene::ConsoleTravelRequest{LevelRef::tower(), at, yaw});
+    CHECK_FALSE(tower->scene.secretTravel());
+    CHECK(tower->save(0).progress().relics.runeCount() == Relics::kRuneCount);
+}
+
+TEST_CASE("an offline step chooses offline play's reply where the shared game words its own",
+          "[native-console][assets]") {
+    test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    PlayScene::LocalSnapshot opened;
+    REQUIRE(scene.saveLocal(opened));
+    const std::string item = fixture->world.placedItems().item(0).name;
+    const auto on = [](ConsoleCheats cheats) {
+        return [cheats](Fixture& stage) { stage.scene.setCheats(0, cheats); };
+    };
+    const auto everyoneFallen = [](Fixture& stage) {
+        for (s32 seat = 0; seat < kSeats; ++seat) {
+            REQUIRE(stage.scene.kill(seat));
+        }
+    };
+    const auto swarmFull = [](Fixture& stage) {
+        const std::vector<ConsoleAction> swarm(5, ConsoleAction{0, "spawn gru 1 20"});
+        stage.sharedStep(swarm);
+        REQUIRE(stage.scene.enemies().count() == static_cast<usize>(stage.scene.enemies().most()));
+    };
+    const auto crittersFull = [](Fixture& stage) {
+        const std::vector<ConsoleAction> great(Critters::kMost, ConsoleAction{0, "spawn golem"});
+        stage.sharedStep(great);
+    };
+    struct Pair {
+        std::string line;
+        std::string_view offline;
+        std::string_view shared; ///< what the shared bodies have answered from the first
+        std::function<void(Fixture&)> setup;
+    };
+    const std::vector<Pair> pairs{
+        {"god", "God mode on", "god on", {}},
+        {"god", "God mode off", "god off", on({.god = true})},
+        {"notarget", "The enemies no longer see you", "notarget on", {}},
+        {"notarget", "The enemies see you again", "notarget off", on({.noTarget = true})},
+        {"noclip",
+         "Noclip on: the movement keys or left stick fly you as the camera looks, Q and E or the "
+         "right stick up and down, Shift slows",
+         "noclip on",
+         {}},
+        {"noclip", "Noclip off", "noclip off", on({.noclip = true})},
+        {"god x",
+         "This command toggles without arguments.",
+         "This command toggles without arguments.",
+         {}},
+        {"suicide", "2 fallen", "2 fallen", {}},
+        {"suicide", "Nobody was standing.", "0 fallen", everyoneFallen},
+        {"suicide x", "suicide takes no arguments.", "suicide takes no arguments.", {}},
+        {"unlock_tower",
+         "The tower stands open to 2 characters.",
+         "The tower stands open to the party.",
+         {}},
+        {"unlock_tower x",
+         "unlock_tower takes no arguments.",
+         "unlock_tower takes no arguments.",
+         {}},
+        {"goto 1 2 3", "Moved to 1.0 2.0 3.0", "Moved the party.", {}},
+        {"goto 1 2 3", "Nobody is standing to move.", "Nobody is standing.", everyoneFallen},
+        {"goto nan 0 0", kOutOfRange, kOutOfRange, {}},
+        {"goto Z9", "No map named Z9; list maps names them", "No map named Z9", {}},
+        {"goto G1", "Going to G1 (Fields)", "Going to G1 (Fields)", {}},
+        {"get gold 2147483647", kOverGrant, kOverGrant, {}},
+        {"spawn gru 1 ZZ9", "No map named ZZ9; list maps names them", "No map named ZZ9", {}},
+        {"spawn gru 2 3", "Spawned 3 GRU at tier 2", "Spawned 3 GRU at tier 2", {}},
+        {"spawn gru 1 1", "No room for GRU here, or its kind is missing", "Spawned 0 GRU at tier 1",
+         swarmFull},
+        {"spawn gargoyle lion", "Spawned a GAR_LION", "Spawned a gargoyle", {}},
+        {"spawn golem", "No room for a golem here, or its kind is missing",
+         "No room or artwork for golem", crittersFull},
+        {"spawn generator special",
+         "A mixed brood is the temple's (E) or the underworld's (F); name a map of either",
+         "A mixed brood needs a Temple (E) or Underworld (F) map.",
+         {}},
+        {"spawn item " + item + " G1",
+         "Pickups come from the level in play alone; name one without a map",
+         "Pickups come from the current level; omit the map.",
+         {}},
+        {"spawn item NOPE",
+         "No pickup record named NOPE here; list items names them",
+         "No pickup named NOPE",
+         {}},
+        {"spawn object NOPE",
+         "Nothing named NOPE in G2; list objects G2 names what there is",
+         "No object named NOPE in G2",
+         {}},
+        {"spawn NOPE",
+         "Nothing named NOPE here; list items, objects, enemies or critters name what there is",
+         "No object named NOPE in G2",
+         {}},
+        {"spawn " + item + " G1",
+         "Nothing named GAPPLE in G1; list objects G1 names what there is",
+         "No object named GAPPLE in G1",
+         {}},
+    };
+    for (const Pair& pair : pairs) {
+        CAPTURE(pair.line);
+        REQUIRE(scene.restoreLocal(opened));
+        if (pair.setup) {
+            pair.setup(*fixture);
+        }
+        CHECK(fixture->offlineSay(pair.line) == pair.offline);
+        REQUIRE(scene.restoreLocal(opened));
+        if (pair.setup) {
+            pair.setup(*fixture);
+        }
+        CHECK(fixture->say(pair.line) == pair.shared);
+    }
+}
+
 TEST_CASE("while the party is on its way every verb is refused", "[native-console][assets]") {
     auto fixture = std::make_unique<Fixture>("G2");
     auto& scene = fixture->scene;
@@ -560,6 +944,15 @@ TEST_CASE("while the party goes through an exit every verb is refused",
     const auto plain = fixture->sharedStep();
     CHECK(asked.outcome == plain.outcome);
     CHECK(scene.nativeAgreementDigest() == refused);
+    // Offline play refuses them alike, and travels nowhere.
+    REQUIRE(scene.restoreLocal(going));
+    std::vector<ConsoleAction> offline = every;
+    offline.push_back({0, "spawn grunt"});
+    offline.push_back({0, "goto G1"});
+    const auto local = fixture->offlineStep(offline);
+    checkRefusedAway(offline, local.replies);
+    CHECK_FALSE(scene.consoleTravelRequest());
+    CHECK_FALSE(scene.cheats(0).god);
 }
 
 TEST_CASE("every verb the wire admits reaches its branch", "[native-console][assets]") {
