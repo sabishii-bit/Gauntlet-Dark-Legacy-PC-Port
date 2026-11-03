@@ -52,7 +52,6 @@
 #include "game/scenes/MovieScene.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/PlayerSelectScene.h"
-#include "game/scenes/SceneSelection.h"
 #include "game/scenes/SmokeTestScene.h"
 #include "game/scenes/TitleScene.h"
 #include "game/tower/LevelExitSpeech.h"
@@ -143,9 +142,6 @@ private:
     /** Whether the console's screen, as far down as it has slid, lies under `cursor` (0 to
      * 1 across and down the window): the 2D layer's letterboxed frame, its top rows. */
     bool consoleCovers(Vec2 cursor);
-    /** What the console says of a thing selected or named: its token, name, place and
-     * what else is known of its kind. */
-    std::vector<std::string> consoleDescribe(const SceneSelection& selection);
     /** Carries the console's hidden HUD and free camera into the scene each tick. */
     void applyConsoleState(f64 deltaSeconds, bool consoleOpen);
     /** The noclip wish input slot `slot` flies this frame; none while its seat's noclip is off

@@ -6,9 +6,6 @@
 #include <utility>
 #include <vector>
 
-#include "engine/assets/ModelSet.h"
-#include "engine/assets/ObjectMaterial.h"
-#include "engine/assets/WorldLayout.h"
 #include "engine/core/Log.h"
 #include "engine/math/Math.h"
 #include "engine/world/WorldCamera.h"
@@ -17,19 +14,10 @@
 #include "game/app/ConsoleRoster.h"
 #include "game/app/Gauntlet.h"
 #include "game/characters/CharacterSave.h"
-#include "game/characters/ClassData.h"
-#include "game/characters/Progression.h"
 #include "game/console/ConsolePolicy.h"
-#include "game/console/FixtureRequest.h"
 #include "game/console/NoclipMotion.h"
-#include "game/critters/CombatantKind.h"
-#include "game/enemies/Enemies.h"
-#include "game/enemies/EnemyKinds.h"
-#include "game/enemies/Generators.h"
-#include "game/level/InstanceNames.h"
-#include "game/level/PlacedItems.h"
 #include "game/players/PlayerActor.h"
-#include "game/scenes/FixtureConsoleCommands.h"
+#include "game/scenes/SceneDescription.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/widgets/MenuInput.h"
 
@@ -81,8 +69,16 @@ void Gauntlet::setUpConsole() {
                 const PlayScene* scene = consoleScene();
                 return scene != nullptr ? scene->selection() : std::nullopt;
             },
-            .describe =
-                [this](const SceneSelection& selection) { return consoleDescribe(selection); }},
+            .describe = [this](const SceneSelection& selection) -> std::vector<std::string> {
+                const PlayScene* scene = consoleScene();
+                const LevelWorld* world = consoleWorld();
+                if (scene == nullptr || world == nullptr) {
+                    return {"Nothing is in play."};
+                }
+                // Online the scene is the shared game's, whose models are never decoded here.
+                return describeSelection(*scene, *world, selection,
+                                         m_online ? nullptr : &m_play->world);
+            }},
         .partyCount = {.count = m_partyCountOverride, .scene = playScene},
         .profile = {.saves = m_saves, .config = m_config, .scene = playScene},
     };
@@ -214,268 +210,6 @@ void Gauntlet::consoleSelect(std::optional<Vec2> cursor) {
         m_console.print(picked.has_value() ? std::format("Selected {}", picked->label())
                                            : "Nothing there to select");
     }
-}
-
-std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selection) {
-    using Kind = SceneSelection::Kind;
-    std::vector<std::string> lines;
-    const PlayScene* active = consoleScene();
-    if (active == nullptr) {
-        lines.emplace_back("Nothing is in play.");
-        return lines;
-    }
-    const PlayScene& scene = *active;
-    const auto place = [](const Vec3& at) {
-        return std::format("at {:.1f} {:.1f} {:.1f}", at.x, at.y, at.z);
-    };
-    const auto gone = [&] {
-        lines.push_back(std::format("{} is no longer there", selection.token()));
-    };
-    const s32 id = selection.id;
-    switch (selection.kind) {
-    case Kind::Switch: {
-        const auto switches = switchesInPlay(*consoleWorld());
-        if (id < 0 || static_cast<usize>(id) >= switches.size()) {
-            lines.push_back(std::format("{} names no switch of {}", selection.token(),
-                                        consoleWorld()->ref().name));
-            break;
-        }
-        const SwitchEntry& entry = switches[static_cast<usize>(id)];
-        const LevelTrigger& trigger = consoleWorld()->triggers().trigger(static_cast<usize>(id));
-        lines.push_back(std::format("{} {}: switch {} of {}", selection.token(), entry.name, id,
-                                    consoleWorld()->ref().name));
-        lines.push_back(
-            std::format("{}; id {}; drives {}; {}{}{}{}", place(Vec3{trigger.placement[3]}),
-                        entry.id, entry.target.empty() ? std::string("nothing") : entry.target,
-                        entry.fired ? "fired" : "waiting", entry.shootable ? ", shootable" : "",
-                        entry.chained ? ", fired through another" : "",
-                        entry.enabled ? "" : ", not for this party"));
-        lines.emplace_back("activate $SELECTED presses it");
-        break;
-    }
-    case Kind::Gate: {
-        const LockedGates& gates = scene.gates();
-        if (id < 0 || static_cast<usize>(id) >= gates.size()) {
-            lines.push_back(std::format("{} names no door of {}", selection.token(),
-                                        consoleWorld()->ref().name));
-            break;
-        }
-        const LockedGates::Gate& gate = gates.gate(static_cast<usize>(id));
-        const std::string name = instanceName(consoleWorld()->layout(), gate.instance);
-        lines.push_back(std::format("{} {}: door {} of {}", selection.token(), name, id,
-                                    consoleWorld()->ref().name));
-        lines.push_back(std::format("{}; {}", place(gate.figure.position()),
-                                    gate.state == LockedGates::kShut      ? "shut: a key opens it"
-                                    : gate.state == LockedGates::kOpening ? "swinging open"
-                                                                          : "open"));
-        lines.emplace_back("unlock $SELECTED opens it without a key; lock $SELECTED shuts it");
-        break;
-    }
-    case Kind::Chest: {
-        const Chests& chests = scene.chests();
-        if (id < 0 || static_cast<usize>(id) >= chests.size()) {
-            lines.push_back(std::format("{} names no chest of {}", selection.token(),
-                                        consoleWorld()->ref().name));
-            break;
-        }
-        const Chests::Chest& chest = chests.chest(static_cast<usize>(id));
-        const std::string name = instanceName(consoleWorld()->layout(), chest.instance);
-        lines.push_back(std::format("{} {}: chest {} of {}", selection.token(), name, id,
-                                    consoleWorld()->ref().name));
-        lines.push_back(std::format("{}; {}{}", place(chest.figure.position()),
-                                    chest.state == Chests::kShut
-                                        ? (chest.locked ? "shut: a key opens it" : "shut: unlocked")
-                                    : chest.state == Chests::kOpening ? "opening"
-                                                                      : "open",
-                                    chest.gone ? ", gone" : ""));
-        lines.emplace_back("unlock $SELECTED lets it open without a key; lock $SELECTED asks one");
-        break;
-    }
-    case Kind::Object: {
-        const LevelWorld& world = *consoleWorld();
-        if (const auto* imported = world.imported()) {
-            if (const auto object = imported->object(id)) {
-                lines.push_back(std::format("{} {}: object {} of {}", selection.token(),
-                                            object->name, id, world.ref().name));
-                lines.push_back(place(object->position));
-                lines.push_back(std::format("flags {:#x}; draw flags {:#x}; {} triangles; {}",
-                                            object->flags, object->drawFlags, object->triangles,
-                                            object->visible ? "shown" : "hidden"));
-            } else {
-                gone();
-            }
-            break;
-        }
-        const auto& objects = world.layout().objects();
-        if (id < 0 || static_cast<usize>(id) >= objects.size()) {
-            lines.push_back(
-                std::format("{} names no object of {}", selection.token(), world.ref().name));
-            break;
-        }
-        const auto index = static_cast<usize>(id);
-        const WorldObject& object = objects[index];
-        const WorldScene& view = world.scene();
-        lines.push_back(std::format("{} {}: object {} of {}", selection.token(), object.name, id,
-                                    world.ref().name));
-        const std::string parent =
-            object.parent >= 0 && static_cast<usize>(object.parent) < objects.size()
-                ? std::format("{} (object {})", objects[static_cast<usize>(object.parent)].name,
-                              object.parent)
-                : std::string("none");
-        lines.push_back(std::format("{}; radius {:.1f}; parent {}",
-                                    place(Vec3{view.worldTransform(index)[3]}), object.radius,
-                                    parent));
-        std::string flags;
-        for (const auto& [bit, word] :
-             {std::pair{WorldObject::kPrelit, "prelit"}, std::pair{WorldObject::kFloor, "floor"},
-              std::pair{WorldObject::kParticles, "particles"},
-              std::pair{WorldObject::kAnimated, "animated"},
-              std::pair{WorldObject::kReverse, "reverse"}, std::pair{WorldObject::kOnce, "once"}}) {
-            if ((object.flags & bit) != 0) {
-                flags += std::format(" {}", word);
-            }
-        }
-        const ObjectMaterial material = ObjectMaterial::fromFlags(object.objectFlags);
-        std::string look;
-        if (material.chrome) {
-            look += " chrome";
-        }
-        if (material.additive) {
-            look += " additive";
-        }
-        if (material.sorted) {
-            look += " sorted";
-        }
-        if (!material.depthWrite) {
-            look += " no-depth-write";
-        }
-        if (!material.depthTest) {
-            look += " no-depth-test";
-        }
-        if (material.facing != 0) {
-            look += std::format(" facing-{}", material.facing);
-        }
-        lines.push_back(std::format("flags {:#x}{}; object flags {:#x}{}", object.flags, flags,
-                                    object.objectFlags, look));
-        lines.push_back(std::format("{}; {}",
-                                    view.moving(index) ? "animated: placed every frame" : "static",
-                                    view.objectVisible(index) ? "shown" : "hidden"));
-        if (m_online) {
-            // Inspection must not lazily bind additional assets in a running shared scene.
-            break;
-        }
-        ModelSet& models = m_play->world.models();
-        const TextureSet& textures = m_play->world.textures();
-        const auto model = models.find(object.name);
-        if (!model.has_value()) {
-            lines.emplace_back("no mesh");
-            break;
-        }
-        const ModelSetEntry& entry = models.entry(*model);
-        try {
-            const Mesh& mesh = models.mesh(*model);
-            std::string names;
-            for (const MeshPart& part : mesh.parts) {
-                const std::string name = part.texture < textures.size()
-                                             ? textures.entry(part.texture).name
-                                             : std::format("texture {}", part.texture);
-                if (names.find(name) == std::string::npos) {
-                    names += (names.empty() ? "" : ", ") + name;
-                }
-            }
-            lines.push_back(std::format("mesh: {} triangles, {} part{}: {}", entry.triangles,
-                                        mesh.parts.size(), mesh.parts.size() == 1 ? "" : "s",
-                                        names));
-        } catch (const std::exception&) {
-            lines.push_back(std::format("mesh: {} triangles, not decoded", entry.triangles));
-        }
-        break;
-    }
-    case Kind::Enemy: {
-        const Enemies& swarm = scene.enemies();
-        if (id < 0 || id >= Enemies::kMost || !swarm.alive(id)) {
-            gone();
-            break;
-        }
-        const EnemyKind& kind = enemyKind(swarm.kindOf(id));
-        lines.push_back(std::format("{} {}: tier {}, health {:.0f}{}", selection.token(), kind.name,
-                                    swarm.tierOf(id), swarm.healthOf(id),
-                                    swarm.dying(id) ? ", dying" : ""));
-        lines.push_back(std::format("{}; radius {:.1f}, height {:.1f}", place(swarm.positionOf(id)),
-                                    swarm.radiusOf(id), swarm.heightOf(id)));
-        break;
-    }
-    case Kind::Critter: {
-        const Critters& critters = scene.critters();
-        if (id < 0 || static_cast<usize>(id) >= critters.count() || !critters.alive(id)) {
-            gone();
-            break;
-        }
-        const std::string form = critters.formOf(id);
-        lines.push_back(std::format(
-            "{} {}{}: health {:.0f}", selection.token(), combatantKindName(critters.kindOf(id)),
-            form.empty() ? "" : std::format(" {}", form), critters.healthOf(id)));
-        lines.push_back(std::format("{}; radius {:.1f}", place(critters.positionOf(id)),
-                                    critters.radiusOf(id)));
-        break;
-    }
-    case Kind::Generator: {
-        const Generators& generators = scene.generators();
-        if (id < 0 || static_cast<usize>(id) >= generators.count()) {
-            gone();
-            break;
-        }
-        const s32 kind = generators.kindOf(id);
-        lines.push_back(std::format("{} {}: tier {}, state {} of {}, health {:.0f}",
-                                    selection.token(), kind >= 0 ? enemyKind(kind).name : "brood",
-                                    generators.tierOf(id), generators.stateOf(id),
-                                    Generators::kStates, generators.healthOf(id)));
-        lines.push_back(place(generators.positionOf(id)));
-        break;
-    }
-    case Kind::Pickup: {
-        const PlacedItems& items = consoleWorld()->placedItems();
-        if (id < 0 || static_cast<usize>(id) >= items.size()) {
-            gone();
-            break;
-        }
-        const PlacedItems::Item& item = items.item(static_cast<usize>(id));
-        lines.push_back(std::format("{} {}: {}, worth {}{}{}", selection.token(), item.name,
-                                    pickupKindName(item.subtype), item.value,
-                                    item.taken ? ", taken" : "", item.visible ? "" : ", unseen"));
-        lines.push_back(std::format("{}; radius {:.1f}, height {:.1f}; instance {} of record {}",
-                                    place(item.position), item.radius, item.height, item.instance,
-                                    item.info));
-        break;
-    }
-    case Kind::Player: {
-        const PlayerActor* actor = scene.actor(id);
-        if (actor == nullptr) {
-            gone();
-            break;
-        }
-        const CharacterSave& save = actor->save();
-        lines.push_back(std::format("{} {}: {} of level {}, health {}", selection.token(),
-                                    save.name, classCode(save.character % kStartingClassCount),
-                                    experienceLevel(save.experience()), save.health()));
-        lines.push_back(std::format("{}; facing {:.0f} degrees; radius {:.1f}, height {:.1f}",
-                                    place(actor->position()), glm::degrees(actor->yaw()),
-                                    actor->radius(), actor->height()));
-        break;
-    }
-    case Kind::Spawned: {
-        const SpawnedObjects& spawned = scene.spawnedObjects();
-        if (id < 0 || static_cast<usize>(id) >= spawned.count()) {
-            gone();
-            break;
-        }
-        const SpawnedObjects::View view = spawned.view(static_cast<usize>(id));
-        lines.push_back(std::format("{} {}: stood by the console", selection.token(), view.name));
-        lines.push_back(std::format("{}; radius {:.1f}", place(view.position), view.radius));
-        break;
-    }
-    }
-    return lines;
 }
 
 void Gauntlet::applyConsoleState(f64 deltaSeconds, bool consoleOpen) {

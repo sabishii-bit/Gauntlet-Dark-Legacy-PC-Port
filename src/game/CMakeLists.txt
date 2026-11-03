@@ -484,6 +484,8 @@ add_library(game STATIC
     scenes/ConsoleStage.cpp
     scenes/ConsoleTravel.h
     scenes/ConsoleTravel.cpp
+    scenes/SceneDescription.h
+    scenes/SceneDescription.cpp
     scenes/PlaySceneTransport.cpp
     scenes/PlaySceneMotion.cpp
     scenes/PlaySceneHarm.cpp

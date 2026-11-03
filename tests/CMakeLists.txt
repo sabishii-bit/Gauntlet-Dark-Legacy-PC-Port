@@ -235,6 +235,7 @@ add_executable(tests
     game/scenes/FixtureConsoleCommandsTests.cpp
     game/scenes/ConsoleRepliesTests.cpp
     game/scenes/ConsoleTravelTests.cpp
+    game/scenes/SceneDescriptionTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp
     game/level/StaticSceneryTests.cpp
