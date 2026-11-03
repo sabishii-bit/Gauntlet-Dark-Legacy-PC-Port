@@ -209,6 +209,24 @@ TEST_CASE("a cue the imported level refuses reaches the native cues once, after 
                      "native released"});
 }
 
+TEST_CASE("an imported level is asked about Death's cue of every kind",
+          "[game][level-opponents][imported-opponent-cues]") {
+    const auto kind =
+        GENERATE(DeathEvent::Kind::Drain, DeathEvent::Kind::Return, DeathEvent::Kind::MagicHeal,
+                 DeathEvent::Kind::Killed, DeathEvent::Kind::Exhausted, DeathEvent::Kind::Awakened,
+                 DeathEvent::Kind::Unmoved);
+    const bool owns = GENERATE(false, true);
+    Log log;
+    RecordingCues native{log};
+    RecordingLevel level{log, owns};
+    ImportedOpponentCues cues{&level, native};
+    cues.deathCue(DeathEvent{.kind = kind});
+    const auto code = static_cast<s32>(kind);
+    CHECK(log ==
+          (owns ? Log{std::format("level death {}", code)}
+                : Log{std::format("level death {}", code), std::format("native death {}", code)}));
+}
+
 TEST_CASE("an imported level sounds only the lobber's bomb, the boss's shots and its named sounds",
           "[game][level-opponents][imported-opponent-cues]") {
     Log log;

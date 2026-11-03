@@ -39,7 +39,7 @@ public:
     virtual void missileLanded(std::string_view sound, f32 level, const Vec3& at) = 0;
     /** A suicide's bang. */
     virtual void suicideBang(std::string_view sound, const Vec3& at) = 0;
-    /** Own scope. */
+    /** A launched combatant effect's sound at one of its phases; own scope. */
     virtual void shotSound(const Shot& shot) = 0;
     /** One of the swarm hurt or slain. */
     virtual void enemyFeedback(const EnemyFeedback& feedback, std::string_view sound,
