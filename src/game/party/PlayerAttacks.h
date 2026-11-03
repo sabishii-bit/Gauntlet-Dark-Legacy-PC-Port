@@ -11,6 +11,7 @@
 #include "game/camera/CameraShake.h"
 #include "game/combat/StrikeHit.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/level/FixtureHost.h"
 #include "game/level/LevelFixtures.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/MeleeGeometry.h"
@@ -47,7 +48,7 @@ public:
     struct Targets {
         LevelOpponents& opponents;
         LevelFixtures& fixtures;
-        LevelFixtures::Events fixtureEvents;
+        FixtureHost& fixtureHost;
         MultiplayerMode multiplayer = MultiplayerMode::Normal;
         // Preserve world-only aggregate callers on compilers warning about omitted fields.
         std::span<const PlayerRuntime> players{}; // NOLINT(readability-redundant-member-init)

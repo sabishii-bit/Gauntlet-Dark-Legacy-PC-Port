@@ -24,6 +24,7 @@
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerAttacks.h"
 
 namespace {
@@ -749,7 +750,9 @@ TEST_CASE("Desecrated Temple authored portal receives weapons through its actual
     AmbientDimmer dimmer;
     PlayerAttacks attacks;
     attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
-    const PlayerAttacks::Targets targets{opponents, fixtures, {}, MultiplayerMode::Normal, players};
+    test::ScriptedFixtures fixtureHost;
+    const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, MultiplayerMode::Normal,
+                                         players};
     const auto& placement = imported->roster.front();
     const Vec3 outward{std::sin(placement.yaw), 0, std::cos(placement.yaw)};
     const Vec3 center = placement.position + Vec3{0, placement.body.height * .5f, 0};
@@ -875,7 +878,9 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
     AmbientDimmer dimmer;
     PlayerAttacks attacks;
     attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
-    const PlayerAttacks::Targets targets{opponents, fixtures, {}, MultiplayerMode::Normal, players};
+    test::ScriptedFixtures fixtureHost;
+    const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, MultiplayerMode::Normal,
+                                         players};
     auto& generators = opponents.generators();
     for (s32 character = 0; character < 4; ++character) {
         for (const s32 level : {1, 99}) {

@@ -677,7 +677,7 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
 PlayerAttacks::Targets PlayScene::attackTargets() {
     return {m_opponents,
             m_fixtures,
-            fixtureEvents(),
+            m_fixtureRouting,
             m_context.config != nullptr ? m_context.config->multiplayer.mode
                                         : MultiplayerMode::Normal,
             m_players,
@@ -689,27 +689,8 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
             &m_mechanics};
 }
 
-LevelFixtures::Events PlayScene::fixtureEvents() {
-    return {
-        .hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
-                       const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
-        .help = [this](s32 id, usize i) { return postHelp(id, i); },
-        .card = [this](s32 player,
-                       std::string_view name) { m_hud.pickups().addCard(player, name); },
-        .opponents =
-            [this](const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached,
-                   u32 flags) {
-                m_opponents.blast(position, radius, damage, reached, m_players, flags);
-            },
-        .releaseEnemy =
-            [this](s32 record, const Vec3& position, s32 count) {
-                return m_opponents.releaseDeath(record, position, count);
-            },
-        .shatterPotion = [this](s32 kind,
-                                const Vec3& position) { m_attacks.shatterPotion(kind, position); }};
-}
 void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
-    m_fixtures.update(ticks, seconds, m_players, fixtureEvents());
+    m_fixtures.update(ticks, seconds, m_players, m_fixtureRouting);
     const CameraFrame ear = CameraFrame::of(presentedCamera());
     const Vec3 attention = bossCameraOn() ? m_sim.bossCamera.attention() : m_camera.attention();
     for (const usize index : m_fixtures.traps().wakes()) {
@@ -729,10 +710,10 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     }
 }
 void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
-    m_fixtures.blast(position, radius, damage, m_players, fixtureEvents());
+    m_fixtures.blast(position, radius, damage, m_players, m_fixtureRouting);
 }
 void PlayScene::settleBlasts() {
-    m_fixtures.settleBlasts(m_players, fixtureEvents());
+    m_fixtures.settleBlasts(m_players, m_fixtureRouting);
 }
 /** A level gained heals and announces immediately; tower promotions award the new appearance. */
 void PlayScene::updateLevels() {
@@ -773,7 +754,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
                        m_fixtures.missileStops(), m_fixtures.critterObstacles());
     m_sim.opponentsAdvanced = seconds > 0;
     for (const Vec3& position : m_world->takeWorldExplosions()) {
-        m_fixtures.worldExplosion(position, m_players, fixtureEvents());
+        m_fixtures.worldExplosion(position, m_players, m_fixtureRouting);
     }
     for (const RockHit& hit : m_opponents.takeRockHits()) {
         if (auto* imported = m_world->imported(); imported && hit.rock >= kImportedArenaBase) {
@@ -784,13 +765,13 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     }
     for (const PickupBlastReach& blast : m_opponents.takePickupBlasts()) {
         m_fixtures.blastPickups(blast.position, blast.radius, blast.damage, blast.flags, m_players,
-                                fixtureEvents());
+                                m_fixtureRouting);
     }
     // A golem's or gargoyle's blow on a barrel is no one's (CritterCollideItems).
     const std::vector<CombatantRam> rams = m_opponents.takeBarrelRams();
     for (const CombatantRam& ram : rams) {
         m_fixtures.strikeBarrel(static_cast<usize>(ram.id), ram.damage, -1, m_players,
-                                fixtureEvents());
+                                m_fixtureRouting);
     }
     if (!rams.empty()) {
         settleBlasts();
@@ -915,7 +896,7 @@ LevelOpponents::Events PlayScene::opponentEvents() {
         .blastScenery =
             [this](const PickupBlastReach& reach, std::vector<s32>& reached) {
                 m_fixtures.blastScenery(reach.position, reach.radius, reach.damage, reach.flags,
-                                        m_players, fixtureEvents(), reached);
+                                        m_players, m_fixtureRouting, reached);
             }};
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {

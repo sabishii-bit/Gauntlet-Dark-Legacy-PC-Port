@@ -9,6 +9,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/level/ImportedLevel.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
 
@@ -109,7 +110,8 @@ struct Fixture {
     LevelFixtures fixtures;
     PlayerAttacks attacks;
     std::array<PlayerRuntime, 1> players;
-    PlayerAttacks::Targets targets{opponents, fixtures, {}};
+    test::ScriptedFixtures fixtureHost;
+    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
     std::shared_ptr<NativeTargets> imported = std::make_shared<NativeTargets>();
     std::filesystem::path root;
     Fixture() {
@@ -255,8 +257,10 @@ TEST_CASE("Imported ram combo and blast contacts use disjoint one-hit ledgers",
     }
     SECTION("blast") {
         std::vector<s32> reached;
-        f.fixtures.blastScenery({0, 0, 0}, 10, 20, EnemyHit::kKnockDown, f.players, {}, reached);
-        f.fixtures.blastScenery({0, 0, 0}, 10, 20, EnemyHit::kKnockDown, f.players, {}, reached);
+        f.fixtures.blastScenery({0, 0, 0}, 10, 20, EnemyHit::kKnockDown, f.players, f.fixtureHost,
+                                reached);
+        f.fixtures.blastScenery({0, 0, 0}, 10, 20, EnemyHit::kKnockDown, f.players, f.fixtureHost,
+                                reached);
         CHECK(reached == std::vector<s32>{kImportedTargetBase});
     }
     REQUIRE(f.imported->hits.size() == 1);
@@ -270,7 +274,7 @@ TEST_CASE("Imported closed containers block ordinary players and enemy missiles"
     CHECK(f.fixtures.missileStops().size() == 2);
     CHECK(f.fixtures.critterObstacles().size() == 2);
     f.players[0].actor.place({0, 0, 2});
-    f.fixtures.update(1, 1.0f / 30, f.players, {});
+    f.fixtures.update(1, 1.0f / 30, f.players, f.fixtureHost);
     const Vec3 position = f.players[0].actor.position();
     CHECK(glm::length(Vec2{position.x, position.z - 2}) >= Approx(1 + f.players[0].actor.radius()));
     // Native gameplay removes these bodies immediately once the opening starts.
@@ -304,12 +308,15 @@ TEST_CASE("Imported ram and blast contacts use authored faces instead of boundin
     }
     SECTION("blast") {
         std::vector<s32> reached;
-        f.fixtures.blastScenery({0, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, {}, reached);
+        f.fixtures.blastScenery({0, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, f.fixtureHost,
+                                reached);
         CHECK(f.imported->hits.empty());
         CHECK(reached.empty());
 
-        f.fixtures.blastScenery({19.5f, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, {}, reached);
-        f.fixtures.blastScenery({19.5f, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players, {}, reached);
+        f.fixtures.blastScenery({19.5f, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players,
+                                f.fixtureHost, reached);
+        f.fixtures.blastScenery({19.5f, 3, 0}, 2, 20, EnemyHit::kKnockDown, f.players,
+                                f.fixtureHost, reached);
         CHECK(reached == std::vector<s32>{kImportedTargetBase});
     }
     REQUIRE(f.imported->hits.size() == 1);

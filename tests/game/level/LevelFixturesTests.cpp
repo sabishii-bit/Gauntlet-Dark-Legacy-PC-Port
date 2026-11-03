@@ -37,6 +37,7 @@
 #include "game/level/LevelFixtures.h"
 #include "game/level/MissileStop.h"
 #include "game/level/SafeRocks.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/level/Traps.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/ItemPickup.h"
@@ -57,7 +58,7 @@ struct Fixture {
     LevelFixtures fixtures;
     std::array<PlayerRuntime, 3> players;
     std::vector<std::string> calls;
-    LevelFixtures::Events events{
+    test::FixtureScript events{
         .hurt =
             [this](usize i, f32 damage, HurtKind kind, bool directed, const PlayerImpact&) {
                 REQUIRE(damage == Catch::Approx(kFirstStep * 5));
@@ -79,6 +80,7 @@ struct Fixture {
             },
         .releaseEnemy = {},
         .shatterPotion = {}};
+    test::ScriptedFixtures host{events};
     Fixture() {
         fixtures.bind({device, world, weapons, effects, audio, 1});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
@@ -91,12 +93,12 @@ struct Fixture {
 TEST_CASE("fixture explosions resolve live nearby players before opponents and drain once",
           "[game][screens][level-fixtures]") {
     Fixture f;
-    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
+    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.host);
     REQUIRE(f.calls == std::vector<std::string>{"player0", "opponents"});
-    f.fixtures.settleBlasts(f.players, f.events);
+    f.fixtures.settleBlasts(f.players, f.host);
     REQUIRE(f.calls.size() == 2);
     f.fixtures.clear();
-    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
+    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.host);
     REQUIRE(f.calls.size() == 2);
 }
 
@@ -151,11 +153,11 @@ TEST_CASE("a blast reaches players, then scenery, then opponents",
             reached.push_back(kReached);
         }
     };
-    f.fixtures.blast(Vec3{0}, 6, 30, f.players, f.events);
+    f.fixtures.blast(Vec3{0}, 6, 30, f.players, f.host);
     CHECK_FALSE(f.fixtures.barrels().standing(0));
     CHECK(f.calls == std::vector<std::string>{"player0", "scenery", "opponents0"});
     f.calls.clear();
-    f.fixtures.update(2, 1.0f / 30, f.players, f.events);
+    f.fixtures.update(2, 1.0f / 30, f.players, f.host);
     CHECK(f.calls == std::vector<std::string>{"opponents1"});
     f.fixtures.clear();
 }
@@ -175,7 +177,7 @@ TEST_CASE("world explosion fallback keeps its retail radius damage and fire flag
         CHECK(damage == Catch::Approx(50 * kFirstStep));
         CHECK(flags == 0x21);
     };
-    f.fixtures.worldExplosion({}, f.players, f.events);
+    f.fixtures.worldExplosion({}, f.players, f.host);
     CHECK(hits == 1);
 }
 
@@ -210,7 +212,7 @@ TEST_CASE("ice world explosion uses its authored art and poison ring without kno
             ++opponentHits;
         }
     };
-    f.fixtures.worldExplosion(position, f.players, f.events);
+    f.fixtures.worldExplosion(position, f.players, f.host);
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "WORLD_EXP");
     CHECK(f.effects.effect(0).stretch == Vec3{1});
@@ -226,13 +228,13 @@ TEST_CASE("ice world explosion uses its authored art and poison ring without kno
     CHECK(glm::distance(f.device.draws.front().vertices.front().position, firstVertex) > 0.1f);
     f.device.draws.clear();
     CHECK(hits == 1);
-    f.fixtures.advanceBlasts(0.49f, f.players, f.events);
+    f.fixtures.advanceBlasts(0.49f, f.players, f.host);
     CHECK(hits == 1);
     CHECK(opponentHits == 1);
-    f.fixtures.advanceBlasts(0.02f, f.players, f.events);
+    f.fixtures.advanceBlasts(0.02f, f.players, f.host);
     CHECK(hits == 2);
     CHECK(opponentHits == 2);
-    f.fixtures.advanceBlasts(2, f.players, f.events);
+    f.fixtures.advanceBlasts(2, f.players, f.host);
     CHECK(hits == 2);
     // Exercise LevelWorld's real authored cart, not just a synthetic animation event.
     constexpr usize kCart = 709;
@@ -258,19 +260,20 @@ TEST_CASE("a blast's ring reaches the further out later and for less, each of th
     f.players[1].actor.place(Vec3{6, 0, 0}); // out of the first step's four, in the ring's twelve
     std::vector<std::pair<usize, f32>> hurts;
     std::vector<f32> reaches;
-    LevelFixtures::Events events = f.events;
+    test::FixtureScript events = f.events;
+    test::ScriptedFixtures host{events};
     events.hurt = [&](usize i, f32 damage, HurtKind, bool, const PlayerImpact&) {
         hurts.emplace_back(i, damage);
     };
     events.opponents = [&](const Vec3&, f32 radius, f32, std::vector<s32>&, u32) {
         reaches.push_back(radius);
     };
-    f.fixtures.blast(Vec3{0}, 12, 30, f.players, events, 1.0f);
+    f.fixtures.blast(Vec3{0}, 12, 30, f.players, host, 1.0f);
     REQUIRE(hurts.size() == 1);
     CHECK(hurts[0].first == 0);
     CHECK(hurts[0].second == Catch::Approx(kFirstStep * 30));
     for (s32 frame = 0; frame < 40; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, f.players, events);
+        f.fixtures.update(2, 1.0f / 30, f.players, host);
     }
     REQUIRE(hurts.size() == 2); // the second player once, the first never again
     CHECK(hurts[1].first == 1);
@@ -313,7 +316,7 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
     f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     const auto party = std::span{f.players}.first(1);
     SECTION("fixture explosion") {
-        f.fixtures.blast(origin, 12, 5, party, f.events);
+        f.fixtures.blast(origin, 12, 5, party, f.host);
     }
     SECTION("enemy explosion forwards its already expanded step") {
         EnemyMissiles missiles;
@@ -329,7 +332,7 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
         REQUIRE(reaches.size() == 1);
         const auto& reached = reaches.front();
         f.fixtures.blastPickups(reached.position, reached.radius, reached.damage, reached.flags,
-                                party, f.events);
+                                party, f.host);
         CHECK(missiles.takePickupBlasts().empty());
     }
     CHECK(f.world.placedItems().item(first).taken);
@@ -365,7 +368,7 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
     f.effects.update(0.1f);
     f.effects.draw(f.device, Mat4{1}, f.world.fullLighting());
     REQUIRE_FALSE(f.device.draws.empty());
-    f.fixtures.settleBlasts(party, f.events);
+    f.fixtures.settleBlasts(party, f.host);
     CHECK(f.effects.count() == 4);
     CHECK(helpCount == 1);
     f.fixtures.clear();
@@ -597,7 +600,7 @@ TEST_CASE("Courtyard tentacles damage a knight at the edge of their sweep only d
         REQUIRE_FALSE(trap.box.touchedBy(at, f.players[0].actor.radius(), 0));
         for (s32 frame = 0; frame < 600; ++frame) {
             const usize before = contacts;
-            f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.events);
+            f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.host);
             if (contacts > before) {
                 CHECK(trap.action == 2);
             }
@@ -668,7 +671,7 @@ TEST_CASE("fixture updates age per-player hazard cooldowns without reordering th
     f.players[0].hitSoundGap = 3;
     f.players[1].hitSoundGap = 1;
     f.players[0].cloudGap = 0.1f;
-    f.fixtures.update(2, 0.2f, f.players, f.events);
+    f.fixtures.update(2, 0.2f, f.players, f.host);
     REQUIRE(f.calls.empty());
     REQUIRE(f.players[0].hitSoundGap == 1);
     REQUIRE(f.players[1].hitSoundGap == 0);
@@ -699,11 +702,11 @@ TEST_CASE("barrel smoke belongs to detonations, not ordinary broken containers",
         }
         CAPTURE(kind);
         if (f.fixtures.barrels().barrel(i).health > 1) {
-            f.fixtures.strikeBarrel(i, 1, -1, {}, f.events);
+            f.fixtures.strikeBarrel(i, 1, -1, {}, f.host);
             REQUIRE(f.effects.count() == 0);
             REQUIRE(f.fixtures.barrels().standing(i));
         }
-        f.fixtures.strikeBarrel(i, 10000, -1, {}, f.events);
+        f.fixtures.strikeBarrel(i, 10000, -1, {}, f.host);
         REQUIRE_FALSE(f.fixtures.barrels().standing(i));
         if (kind == BreakableStrike::Kind::Exploding) {
             REQUIRE(f.effects.count() == 2);
@@ -762,7 +765,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
     f.players[0].actor.place(Vec3{10000, 0, 10000}); // well away
     const Vec3 at = f.fixtures.chests().chest(*plain).figure.position();
     const usize before = f.fixtures.rubble().size();
-    f.fixtures.blast(at, LevelFixtures::kBlastRadius, 30, party, f.events);
+    f.fixtures.blast(at, LevelFixtures::kBlastRadius, 30, party, f.host);
     CHECK(f.fixtures.chests().chest(*plain).gone);
     CHECK(f.fixtures.rubble().size() > before);
     CHECK(std::ranges::any_of(released, [](s32 record) { return record >= 0; }));
@@ -776,8 +779,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
         }
     }
     if (other.has_value()) {
-        f.fixtures.blast(f.fixtures.chests().chest(*other).figure.position(), 6, 4, party,
-                         f.events);
+        f.fixtures.blast(f.fixtures.chests().chest(*other).figure.position(), 6, 4, party, f.host);
         CHECK_FALSE(f.fixtures.chests().chest(*other).gone);
     }
     // A spent exploding barrel leaves its rubble as it breaks and goes once broken; a player
@@ -794,7 +796,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
     f.players[0].actor.place(cask + Vec3{20, 0, 0}); // outside the blast, inside nine? no
     const usize heaps = f.fixtures.rubble().size();
     const usize beforeEffects = f.effects.count();
-    f.fixtures.strikeBarrel(*red, 10000, -1, party, f.events);
+    f.fixtures.strikeBarrel(*red, 10000, -1, party, f.host);
     // StartExplosion(24): horizontal scale 1.75, raised 2 units (GC 80348168/80348150).
     // Fire and damage share the raised centre; debris smoke stays at the barrel's feet.
     REQUIRE(f.effects.count() == beforeEffects + 2);
@@ -815,7 +817,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
     helps.clear();
     f32 lowest = 1.0f;
     for (s32 frame = 0; frame < 300 && !f.fixtures.barrels().barrel(*red).gone; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        f.fixtures.update(2, 1.0f / 30, party, f.host);
         lowest = std::min(lowest, f.fixtures.barrels().opacityOf(*red));
     }
     CHECK(f.fixtures.barrels().barrel(*red).gone);
@@ -849,7 +851,7 @@ TEST_CASE(
     const EnemyMissiles::SceneryBlast scenery = [&](const PickupBlastReach& step,
                                                     std::vector<s32>& reached) {
         f.fixtures.blastScenery(step.position, step.radius, step.damage, step.flags, f.players,
-                                f.events, reached);
+                                f.host, reached);
     };
     EnemyBlast blast;
     blast.radius = 6;
@@ -919,7 +921,7 @@ TEST_CASE(
         f.events.opponents = [&](const Vec3& at, f32, f32, std::vector<s32>&, u32) {
             chain |= at == blast.position + Vec3(0, 2, 0);
         };
-        f.fixtures.settleBlasts(f.players, f.events);
+        f.fixtures.settleBlasts(f.players, f.host);
         CHECK(chain);
     }
     CHECK(missiles.burstCount() == 0);
@@ -954,7 +956,7 @@ TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pick
         return true; // as the level's opponents do for Death
     };
     const usize items = f.world.placedItems().size();
-    f.fixtures.strikeBarrel(*holding, 10000, -1, {}, f.events);
+    f.fixtures.strikeBarrel(*holding, 10000, -1, {}, f.host);
     CHECK(let >= 0);
     CHECK(f.world.placedItems().size() == items); // nothing dropped in his place
     f.fixtures.clear();
@@ -987,7 +989,7 @@ TEST_CASE("a barrel of more than one key lets out the key ring, as a chest does"
     const usize items = f.world.placedItems().size();
     // fn_8005E90C opens barrels as it opens chests: keys numbering more than one are the
     // KEYRING record.
-    f.fixtures.strikeBarrel(*keys, 10000, -1, {}, f.events);
+    f.fixtures.strikeBarrel(*keys, 10000, -1, {}, f.host);
     REQUIRE(f.world.placedItems().size() == items + 1);
     CHECK(f.world.placedItems().item(items).name == "KEYRING");
     f.fixtures.clear();
@@ -1094,7 +1096,8 @@ TEST_CASE("gas from anywhere spoils the food it reaches and tells the party once
     REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     std::vector<s32> helps;
-    LevelFixtures::Events events = f.events;
+    test::FixtureScript events = f.events;
+    test::ScriptedFixtures host{events};
     events.help = [&](s32 id, usize) {
         helps.push_back(id);
         return true;
@@ -1102,13 +1105,13 @@ TEST_CASE("gas from anywhere spoils the food it reaches and tells the party once
     const Vec3 spot{200, 0, 200};
     REQUIRE(f.world.placeItem(f.device, "APPLE", spot));
     const usize apple = f.world.placedItems().size() - 1;
-    f.fixtures.spoilFood(spot, 3, 2, f.players, events); // two or less spoils nothing
+    f.fixtures.spoilFood(spot, 3, 2, f.players, host); // two or less spoils nothing
     CHECK(f.world.placedItems().item(apple).name == "APPLE");
     CHECK(helps.empty());
-    f.fixtures.spoilFood(spot, 3, 10, f.players, events);
+    f.fixtures.spoilFood(spot, 3, 10, f.players, host);
     CHECK(f.world.placedItems().item(apple).name == "GAPPLE");
     CHECK(helps == std::vector<s32>{HelpMessages::kGasSpoils});
-    f.fixtures.spoilFood(spot, 3, 10, f.players, events); // spoiled already
+    f.fixtures.spoilFood(spot, 3, 10, f.players, host); // spoiled already
     CHECK(helps.size() == 1);
     f.fixtures.clear();
 }
@@ -1146,7 +1149,7 @@ TEST_CASE("a tent wall stops the swarm's missiles only while it is raised",
     bool seenDown = false;
     bool seenUp = false;
     for (s32 frame = 0; frame < 900 && !(seenDown && seenUp); ++frame) {
-        f.fixtures.update(2, 1.0f / 30, {}, f.events);
+        f.fixtures.update(2, 1.0f / 30, {}, f.host);
         CHECK(stopping() == raised());
         (raised() ? seenUp : seenDown) = true;
     }
@@ -1194,18 +1197,18 @@ TEST_CASE("Death leaves no pickup tether and his chest retires when its opening 
         });
     };
     REQUIRE(blocked());
-    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
     REQUIRE(released == 1);
     REQUIRE(chest.state == Chests::kOpening);
     CHECK_FALSE(chest.gone);
     CHECK(chest.held == -1);
     for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        f.fixtures.update(2, 1.0f / 30, party, f.host);
     }
     REQUIRE(chest.state == Chests::kOpen);
     CHECK(chest.gone);
     CHECK_FALSE(blocked());
-    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
     CHECK(released == 1);
     f.fixtures.clear();
 }
@@ -1247,10 +1250,10 @@ TEST_CASE("magic turns Death in a chest into the level's apple and rocks the che
         }
     }
     CHECK_FALSE(f.fixtures.enchantChest(*death, 10)); // he is gone
-    f.fixtures.update(2, 1.0f / 30, {}, f.events);
+    f.fixtures.update(2, 1.0f / 30, {}, f.host);
     CHECK(chests.chest(*death).figure.transform() != rest);
     for (s32 frame = 0; frame < 20; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, {}, f.events);
+        f.fixtures.update(2, 1.0f / 30, {}, f.host);
     }
     CHECK(chests.chest(*death).wobble == 0.0f);
     CHECK(chests.chest(*death).figure.transform() == rest);
@@ -1276,12 +1279,12 @@ TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and di
         ++barrel;
     }
     REQUIRE(barrel < f.fixtures.barrels().size());
-    f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.events);
+    f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.host);
     REQUIRE(f.effects.count() == 1);
     const u32 id = f.effects.effect(0).id;
     for (s32 frame = 0; frame < 119; ++frame) {
         f.effects.update(1.0f / 30);
-        f.fixtures.update(2, 1.0f / 30, {}, f.events);
+        f.fixtures.update(2, 1.0f / 30, {}, f.host);
         REQUIRE(f.effects.playing(id));
         if (frame > 30) {
             CHECK(f.effects.effect(0).name == "POISONEXP2");
@@ -1291,7 +1294,7 @@ TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and di
             REQUIRE_FALSE(f.device.draws.empty());
         }
     }
-    f.fixtures.update(6, 0.1f, {}, f.events);
+    f.fixtures.update(6, 0.1f, {}, f.host);
     CHECK_FALSE(f.effects.playing(id));
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "POISONEXP3");
@@ -1336,20 +1339,20 @@ TEST_CASE("breaking a gas barrel spoils nearby food and announces it only on a c
         return true;
     };
     const auto party = std::span{f.players}.first(1);
-    f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.events);
+    f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.host);
     CHECK(items.item(apple).name == "APPLE");
-    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
     CHECK(items.item(apple).name == "GAPPLE");
     CHECK(items.item(apple).value == -50);
     REQUIRE(announcements == 1);
     for (s32 frame = 0; frame < 150; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        f.fixtures.update(2, 1.0f / 30, party, f.host);
     }
     CHECK(announcements == 1);
     // The expired cloud must not poison food subsequently dropped in the same spot.
     const usize fresh = items.size();
     REQUIRE(f.world.placeItem(f.device, "CHICKEN", position));
-    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
     CHECK(items.item(fresh).name == "CHICKEN");
     CHECK(items.item(fresh).value == 100);
     f.fixtures.clear();
@@ -1394,18 +1397,18 @@ TEST_CASE("Temple platform chest contents can be collected after descending",
         const auto party = std::span{f.players}.first(1);
         const s32 gold = actor.save().gold;
         for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
-            f.fixtures.update(2, 1.0f / 30, party, f.events);
+            f.fixtures.update(2, 1.0f / 30, party, f.host);
         }
         REQUIRE(chest.state == Chests::kOpen);
         if (chest.subtype == Chests::kGoldChest) {
             REQUIRE(actor.save().gold == gold);
             REQUIRE_FALSE(chest.gone);
-            f.fixtures.update(2, 1.0f / 30, party, f.events);
+            f.fixtures.update(2, 1.0f / 30, party, f.host);
             const s32 amount =
                 f.world.layout().itemInfos()[static_cast<usize>(chest.contents)].value;
             REQUIRE(actor.save().gold == gold + amount);
             REQUIRE_FALSE(chest.gone);
-            f.fixtures.update(8, Chests::kCollectedSeconds, party, f.events);
+            f.fixtures.update(8, Chests::kCollectedSeconds, party, f.host);
             REQUIRE(chest.gone);
             CHECK(actor.save().gold == gold + amount);
             ++tested;
@@ -1471,7 +1474,7 @@ TEST_CASE("full players can walk through opened native food and gold chests with
     actor.save().progress().health = mostHealth(experienceLevel(actor.save().experience()));
     const auto party = std::span{f.players}.first(1);
     for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        f.fixtures.update(2, 1.0f / 30, party, f.host);
     }
     REQUIRE(chest.state == Chests::kOpen);
     const auto collectFood = [&] {
@@ -1493,7 +1496,7 @@ TEST_CASE("full players can walk through opened native food and gold chests with
         CHECK(collectFood().empty());
     }
     actor.place(chest.box.centre);
-    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
     CHECK(actor.position() == chest.box.centre);
     CHECK_FALSE(chest.gone);
     CHECK(cards.empty());
@@ -1504,12 +1507,12 @@ TEST_CASE("full players can walk through opened native food and gold chests with
     }));
     if (gold) {
         actor.save().gold -= 1;
-        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        f.fixtures.update(2, 1.0f / 30, party, f.host);
         CHECK(actor.save().gold == 99999);
         CHECK(actor.save().progress().lifetime.goldFound ==
               infos[static_cast<usize>(chest.contents)].value);
         CHECK(cards == std::vector<s32>{actor.player()});
-        f.fixtures.update(8, Chests::kCollectedSeconds, party, f.events);
+        f.fixtures.update(8, Chests::kCollectedSeconds, party, f.host);
         CHECK(chest.gone);
     } else {
         actor.save().progress().health -= 1;
@@ -1545,7 +1548,7 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     const auto& chest = f.fixtures.chests().chest(index);
     f.players[0].actor.place(chest.box.centre);
     f.players[0].actor.save().progress().inventory.keys = 9;
-    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.events);
+    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.host);
     REQUIRE(chest.state == Chests::kOpening);
     REQUIRE(chest.held >= 0);
     const auto held = static_cast<usize>(chest.held);
@@ -1554,7 +1557,7 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     const usize count = f.world.placedItems().size();
     REQUIRE_FALSE(f.world.placedItems().item(held).takeable());
     for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
-        f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.events);
+        f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.host);
         const auto socket = chest.figure.nodeTransform("NULL1");
         REQUIRE(socket);
         CHECK(glm::distance(f.world.placedItems().item(held).position, Vec3{(*socket)[3]}) <
@@ -1565,7 +1568,7 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     CHECK(f.world.placedItems().item(held).takeable());
     CHECK(glm::distance(f.world.placedItems().item(held).position, chest.figure.position()) > 1);
     const Vec3 openedPosition = f.world.placedItems().item(held).position;
-    f.fixtures.update(60, 1, std::span{f.players}.first(1), f.events);
+    f.fixtures.update(60, 1, std::span{f.players}.first(1), f.host);
     CHECK(f.world.placedItems().item(held).position == openedPosition);
     f.fixtures.clear();
 }
@@ -1611,7 +1614,7 @@ TEST_CASE("a trapped chest has a short raised fireball and independently animate
     const auto party = std::span{f.players}.first(1);
     for (s32 frame = 0; frame < 150 && !chest.gone; ++frame) {
         f.effects.update(1.0f / 30);
-        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        f.fixtures.update(2, 1.0f / 30, party, f.host);
     }
     REQUIRE(chest.gone);
     CHECK(f.world.placedItems().item(food).taken);
@@ -1641,11 +1644,11 @@ TEST_CASE("a trapped chest has a short raised fireball and independently animate
     f.effects.update(1.1f);
     CHECK(findEffect("EXPLOSION") == nullptr);
     CHECK(findEffect("EXPCHEST") != nullptr);
-    f.fixtures.advanceBlasts(0.75f, party, f.events);
+    f.fixtures.advanceBlasts(0.75f, party, f.host);
     const usize lateFood = f.world.placedItems().size();
     REQUIRE(f.world.placeItem(f.device, "APPLE", origin));
     f.world.attachItem(lateFood, glm::translate(Mat4{1}, origin), false);
-    f.fixtures.advanceBlasts(1.0f / 30, party, f.events);
+    f.fixtures.advanceBlasts(1.0f / 30, party, f.host);
     CHECK_FALSE(f.world.placedItems().item(lateFood).taken);
     f.device.draws.clear();
     f.fixtures.rubble().draw(f.device, Mat4{1}, f.world.fullLighting());
@@ -1688,17 +1691,17 @@ TEST_CASE("a trapped chest sounds its fuse once on opening, not on a keyless tou
     const auto& chest = f.fixtures.chests().chest(index);
     f.players[0].actor.place(chest.box.centre);
     const auto party = std::span{f.players}.first(1);
-    f.fixtures.update(1, 1.0f / 60, party, f.events);
+    f.fixtures.update(1, 1.0f / 60, party, f.host);
     CHECK(chest.state == Chests::kShut);
     CHECK(sounds.voiceCount() == 0);
     f.players[0].actor.save().progress().inventory.keys = 1;
-    f.fixtures.update(1, 1.0f / 60, party, f.events);
+    f.fixtures.update(1, 1.0f / 60, party, f.host);
     REQUIRE(chest.state == Chests::kOpening);
     CHECK(sounds.voiceCount() == 1);
     std::array<f32, 1024> output{};
     mixer.mix(output);
     CHECK(output.back() == Catch::Approx(0.25f * std::pow(10.0f, -38.0f / 200.0f)));
-    f.fixtures.update(1, 1.0f / 60, party, f.events);
+    f.fixtures.update(1, 1.0f / 60, party, f.host);
     CHECK(sounds.voiceCount() == 1);
     f.fixtures.clear();
     f.audio.close();
@@ -1772,7 +1775,7 @@ TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container
             CHECK(triangle.normal == Vec3{0, 1, 0});
         }
         f.players[0].actor.place(gate->position);
-        f.fixtures.update(1, 1.0f / 60, party, f.events);
+        f.fixtures.update(1, 1.0f / 60, party, f.host);
         CHECK(inventory.keys == 1);
     }
     SECTION("food, treasure and trapped chest previews actually draw") {
@@ -1796,7 +1799,7 @@ TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container
             CAPTURE(chest.instance, record.name);
             // Inside the ten-unit reveal radius, outside the chest's touch box.
             f.players[0].actor.place(chest.figure.position() + Vec3{0, 0, 4});
-            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            f.fixtures.update(1, 1.0f / 60, party, f.host);
             REQUIRE(chest.state == Chests::kShut);
             CHECK(chest.revealed);
             CHECK(chest.preview.hasFigure());
@@ -1806,7 +1809,7 @@ TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container
             CHECK(inventory.keys == 1);
             // Toggling off restores the container instead of leaving a stale reveal.
             inventory.powerups[0].on = false;
-            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            f.fixtures.update(1, 1.0f / 60, party, f.host);
             CHECK_FALSE(chest.revealed);
             inventory.powerups[0].on = true;
             checked[kind] = true;
@@ -1841,13 +1844,14 @@ TEST_CASE("a keyless touch of a silver chest falls back to its own hint",
         f.players[0].actor.spawn(0, {}, nullptr, chests.chest(silver).figure.position(), 0);
         f.players[1].life = PlayerLife::InTower;
         std::vector<s32> posted;
-        LevelFixtures::Events events = f.events;
+        test::FixtureScript events = f.events;
+        test::ScriptedFixtures host{events};
         events.help = [&](s32 id, usize) {
             posted.push_back(id);
             return id != HelpMessages::kChestNeedsKey || lessonShown;
         };
         for (s32 i = 0; i < 5 && posted.empty(); ++i) {
-            f.fixtures.update(2, 1.0f / 30, f.players, events);
+            f.fixtures.update(2, 1.0f / 30, f.players, host);
         }
         if (lessonShown) {
             CHECK(posted == std::vector<s32>{HelpMessages::kChestNeedsKey});
@@ -1881,11 +1885,12 @@ TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtur
                                                                       powerup::kLevitation, 0, 600);
         }
         s32 hurts = 0;
-        LevelFixtures::Events events = f.events;
+        test::FixtureScript events = f.events;
+        test::ScriptedFixtures host{events};
         events.hurt = [&hurts](usize, f32, HurtKind, bool, const PlayerImpact&) { ++hurts; };
         events.help = [](s32, usize) { return true; };
         for (s32 i = 0; i < 600; ++i) {
-            f.fixtures.update(2, 1.0f / 30, f.players, events);
+            f.fixtures.update(2, 1.0f / 30, f.players, host);
         }
         CHECK((hurts > 0) != levitating);
         f.fixtures.clear();
@@ -1948,13 +1953,13 @@ TEST_CASE("Castle light traps zap on contact, not activation or cooldown frames"
         };
         f.events.help = [](s32, usize) { return true; };
         for (s32 frame = 0; frame < 1200 && trap.action != 2; ++frame) {
-            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            f.fixtures.update(1, 1.0f / 60, party, f.host);
         }
         REQUIRE(trap.action == 2);
         CHECK(hits == 0);
         CHECK(sounds.voiceCount() == 0);
         player.actor.place(trap.box.centre);
-        f.fixtures.update(0, 0, party, f.events);
+        f.fixtures.update(0, 0, party, f.host);
         REQUIRE(hits == 1);
         CHECK((player.actor.save().health() < 1000) == !protectedBody);
         REQUIRE(sounds.voiceCount() == 1);
@@ -1964,11 +1969,11 @@ TEST_CASE("Castle light traps zap on contact, not activation or cooldown frames"
         sounds.stopAll();
         mixer.mix(output);
         sounds.update();
-        f.fixtures.update(0, 0, party, f.events);
+        f.fixtures.update(0, 0, party, f.host);
         CHECK(hits == 1);
         CHECK(sounds.voiceCount() == 0);
         for (s32 frame = 0; frame < 1200 && hits == 1; ++frame) {
-            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            f.fixtures.update(1, 1.0f / 60, party, f.host);
         }
         CHECK(hits == 2);
         CHECK(sounds.voiceCount() == 1);
@@ -2033,13 +2038,13 @@ TEST_CASE("Courtyard tentacles sound their own strike where the victim stands",
         };
         f.events.help = [](s32, usize) { return true; };
         for (s32 frame = 0; frame < 1200 && trap.action != 2; ++frame) {
-            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            f.fixtures.update(1, 1.0f / 60, party, f.host);
         }
         REQUIRE(trap.action == 2);
         CHECK(hits == 0);
         CHECK(sounds.voiceCount() == 0);
         player.actor.place(trap.box.centre);
-        f.fixtures.update(0, 0, party, f.events);
+        f.fixtures.update(0, 0, party, f.host);
         REQUIRE(hits == 1);
         CHECK(player.actor.save().health() < 1000); // a pierce, which no fire shield keeps off
         REQUIRE(sounds.voiceCount() == 1);
@@ -2049,11 +2054,11 @@ TEST_CASE("Courtyard tentacles sound their own strike where the victim stands",
         sounds.stopAll();
         mixer.mix(output);
         sounds.update();
-        f.fixtures.update(0, 0, party, f.events);
+        f.fixtures.update(0, 0, party, f.host);
         CHECK(hits == 1);
         CHECK(sounds.voiceCount() == 0);
         for (s32 frame = 0; frame < 1200 && hits == 1; ++frame) {
-            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            f.fixtures.update(1, 1.0f / 60, party, f.host);
         }
         CHECK(hits == 2);
         CHECK(sounds.voiceCount() == 1);
@@ -2126,7 +2131,7 @@ TEST_CASE("native trap properties reach player damage and reactions",
             };
             f.events.help = [](s32, usize) { return true; };
             for (s32 frame = 0; frame < 1200 && hits == 0; ++frame) {
-                f.fixtures.update(2, 1.0f / 30, f.players, f.events);
+                f.fixtures.update(2, 1.0f / 30, f.players, f.host);
             }
             REQUIRE(hits == 1);
             const bool heavy = trial.properties == damage::kKnockDown;
@@ -2176,7 +2181,7 @@ TEST_CASE("a barrel's blast neither floors nor pushes a player mid-turbo, and do
     REQUIRE(figure.animator().damageProtected());
     REQUIRE_FALSE(PlayerHealth::canBeDamaged(f.players[0]));
     const Vec3 barrel{0.5f, 0.0f, 0.0f}; // beside them, so there is a way to throw them
-    f.fixtures.blast(barrel, 2, 5, f.players, f.events);
+    f.fixtures.blast(barrel, 2, 5, f.players, f.host);
     CHECK(f.players[0].reaction == PlayerDeed::None);
     CHECK_FALSE(f.players[0].knockback.pending());
     s32 frames = 0;
@@ -2186,7 +2191,7 @@ TEST_CASE("a barrel's blast neither floors nor pushes a player mid-turbo, and do
     }
     REQUIRE(frames > 0);
     REQUIRE(PlayerHealth::canBeDamaged(f.players[0]));
-    f.fixtures.blast(barrel, 2, 5, f.players, f.events);
+    f.fixtures.blast(barrel, 2, 5, f.players, f.host);
     CHECK(f.players[0].reaction != PlayerDeed::None);
     CHECK(f.players[0].knockback.pending());
 }
@@ -2202,13 +2207,13 @@ TEST_CASE("armor items prevent fixture knockdown before the health callback",
     REQUIRE(level);
     REQUIRE(f.world.load(f.device, root, *level));
     REQUIRE_FALSE(f.world.isTower());
-    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
+    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.host);
     REQUIRE(f.players[0].reaction != PlayerDeed::None);
     for (const u32 flags : {0x10000U, 0x110000U, 0x40000U}) {
         f.players[0].actor.save().progress().inventory = {};
         f.players[0].actor.save().progress().inventory.addPowerup(6, flags, 0, 20);
         f.players[0].reaction = PlayerDeed::None;
-        f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
+        f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.host);
         CHECK(f.players[0].reaction == PlayerDeed::None);
     }
 }

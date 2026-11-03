@@ -13,6 +13,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerArsenalCheckpoint.h"
 #include "game/party/PlayerAttacksCheckpoint.h"
 
@@ -93,7 +94,9 @@ struct AttackCheckpointFixture {
     std::array<game::PlayerMissiles::Resource, 1> missileResources{
         {{1, &game::MissileSpec::of(0), nullptr, nullptr}}};
     std::vector<s32> helps;
-    game::PlayerAttacks::Targets targets{opponents, fixtures, {}};
+    FixtureScript fixtureEvents;
+    ScriptedFixtures fixtureHost{fixtureEvents};
+    game::PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
 
     explicit AttackCheckpointFixture(bool artwork = true) {
         REQUIRE(classes.load(root / "pdata"));
@@ -127,7 +130,7 @@ struct AttackCheckpointFixture {
         players[0].actor.spawn(3, {}, classes.stats(0), {}, 0);
         players[0].figure = game::PlayerFigure::load(device, root, players[0].actor.save(), false);
         REQUIRE(players[0].figure);
-        targets.fixtureEvents.help = [this](s32 id, usize actor) {
+        fixtureEvents.help = [this](s32 id, usize actor) {
             CHECK(actor == 0);
             helps.push_back(id);
             return true;

@@ -47,6 +47,7 @@
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/SafeRocks.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
@@ -949,7 +950,8 @@ TEST_CASE("area blasts and Thunder Hammer give gargoyles distance-independent ho
         }
         REQUIRE(player.figure->animator().itemReleased() == PlayerDeed::Hammer);
         attacks.useItemAttack(0, players);
-        const PlayerAttacks::Targets targets{opponents, fixtures, {}};
+        test::ScriptedFixtures fixtureHost;
+        const PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
         for (s32 frame = 0; frame < 180 && critters.healthOf(*id) == health; ++frame) {
             attacks.updateProjectiles(1.0f / 60, players, targets);
         }

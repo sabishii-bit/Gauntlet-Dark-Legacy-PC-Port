@@ -11,8 +11,9 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
-#include "game/party/PlayerAttacks.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
+#include "game/level/ScriptedFixtures.h"
+#include "game/party/PlayerAttacks.h"
 
 namespace {
 using namespace gdl;
@@ -31,7 +32,8 @@ struct ArenaCombatFixture {
     LevelFixtures fixtures;
     PlayerAttacks attacks;
     std::array<PlayerRuntime, 1> players;
-    PlayerAttacks::Targets targets{opponents, fixtures, {}};
+    test::ScriptedFixtures fixtureHost;
+    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
     std::shared_ptr<LegendsLevel> native;
     Vec3 cover{0};
 

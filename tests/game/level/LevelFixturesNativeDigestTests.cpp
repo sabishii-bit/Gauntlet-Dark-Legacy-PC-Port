@@ -18,6 +18,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/NativeStateResources.h"
+#include "game/level/ScriptedFixtures.h"
 
 namespace {
 using namespace gdl;
@@ -349,6 +350,7 @@ struct Coordinator {
     LevelFixtures fixtures;
     NativeStateResources resources;
     std::array<PlayerRuntime, 2> players;
+    test::ScriptedFixtures quiet;
 
     explicit Coordinator(const std::filesystem::path& directory = {}) {
         if (!directory.empty()) {
@@ -362,7 +364,7 @@ struct Coordinator {
         players[0].actor.spawn(3, {}, nullptr, {0, 0, 0}, 0);
         players[1].actor.spawn(1, {}, nullptr, {6, 0, 0}, 0);
     }
-    static LevelFixtures::Events events(s32 identity) {
+    static test::FixtureScript events(s32 identity) {
         return {.opponents = [identity](const Vec3&, f32, f32, std::vector<s32>& reached, u32) {
             if (std::ranges::find(reached, identity) == reached.end()) {
                 reached.push_back(identity);
@@ -382,7 +384,7 @@ TEST_CASE("fixture coordinator hashes poison clouds and pending trapped chest de
     const auto before = liveHash(f.fixtures, f.resources);
     Breakables::LocalSnapshot barrels;
     f.fixtures.barrels().saveLocal(barrels);
-    f.fixtures.strikeBarrel(1, 1000, -1, {}, {});
+    f.fixtures.strikeBarrel(1, 1000, -1, {}, f.quiet);
     REQUIRE_FALSE(f.fixtures.barrels().standing(1));
     // Isolate the cloud from its source barrel: otherwise a missing cloud visitor
     // could be hidden by the barrel's independently changed health/animation.
@@ -393,12 +395,12 @@ TEST_CASE("fixture coordinator hashes poison clouds and pending trapped chest de
     CHECK(savedHash(f.fixtures, initial, f.resources) == before);
     LevelFixtures::LocalSnapshot cloudState;
     f.fixtures.saveLocal(cloudState);
-    f.fixtures.update(1, kStep, {}, {});
+    f.fixtures.update(1, kStep, {}, f.quiet);
     const auto advanced = liveHash(f.fixtures, f.resources);
     CHECK(advanced != cloud);
     CHECK(savedHash(f.fixtures, cloudState, f.resources) == cloud);
     REQUIRE(f.fixtures.restoreLocal(cloudState));
-    f.fixtures.update(1, kStep, {}, {});
+    f.fixtures.update(1, kStep, {}, f.quiet);
     CHECK(liveHash(f.fixtures, f.resources) == advanced);
 
     REQUIRE(f.fixtures.restoreLocal(initial));
@@ -407,36 +409,42 @@ TEST_CASE("fixture coordinator hashes poison clouds and pending trapped chest de
     chest.subtype = Chests::kTrappedChest;
     const auto noPending = liveHash(f.fixtures, f.resources);
     std::vector<s32> reached;
-    f.fixtures.blastScenery(chest.figure.position(), 8, 30, 0x400, {}, {}, reached);
+    f.fixtures.blastScenery(chest.figure.position(), 8, 30, 0x400, {}, f.quiet, reached);
     REQUIRE_FALSE(chest.gone);
     CHECK(liveHash(f.fixtures, f.resources) != noPending);
     LevelFixtures::LocalSnapshot pending;
     f.fixtures.saveLocal(pending);
     const auto pendingHash = savedHash(f.fixtures, pending, f.resources);
-    f.fixtures.update(1, kStep, {}, {});
+    f.fixtures.update(1, kStep, {}, f.quiet);
     REQUIRE(f.fixtures.chests().chest(0).gone);
     const auto destroyed = liveHash(f.fixtures, f.resources);
     CHECK(savedHash(f.fixtures, pending, f.resources) == pendingHash);
     REQUIRE(f.fixtures.restoreLocal(pending));
-    f.fixtures.update(1, kStep, {}, {});
+    f.fixtures.update(1, kStep, {}, f.quiet);
     CHECK(liveHash(f.fixtures, f.resources) == destroyed);
 }
 
 TEST_CASE("fixture coordinator hashes blast hit identities clocks and confirmed-replay state",
           "[native-state-digest][fixtures-native-digest]") {
     Coordinator f;
+    const auto reaches17 = Coordinator::events(17);
+    const auto reaches19 = Coordinator::events(19);
+    const auto reaches31 = Coordinator::events(31);
+    test::ScriptedFixtures marks17{reaches17};
+    test::ScriptedFixtures marks19{reaches19};
+    test::ScriptedFixtures marks31{reaches31};
     LevelFixtures::LocalSnapshot initial;
     f.fixtures.saveLocal(initial);
     const auto before = liveHash(f.fixtures, f.resources);
-    f.fixtures.blast({0, 0, 0}, 12, 30, {}, Coordinator::events(17));
+    f.fixtures.blast({0, 0, 0}, 12, 30, {}, marks17);
     const auto first = liveHash(f.fixtures, f.resources);
     CHECK(first != before);
     CHECK(savedHash(f.fixtures, initial, f.resources) == before);
     REQUIRE(f.fixtures.restoreLocal(initial));
-    f.fixtures.blast({0, 0, 0}, 12, 30, {}, Coordinator::events(19));
+    f.fixtures.blast({0, 0, 0}, 12, 30, {}, marks19);
     CHECK(liveHash(f.fixtures, f.resources) != first);
     REQUIRE(f.fixtures.restoreLocal(initial));
-    f.fixtures.blast({0, 0, 0}, 12, 30, {}, Coordinator::events(17));
+    f.fixtures.blast({0, 0, 0}, 12, 30, {}, marks17);
     CHECK(liveHash(f.fixtures, f.resources) == first);
     for (u32 distance = 1; distance <= 8; ++distance) {
         CAPTURE(distance);
@@ -444,16 +452,16 @@ TEST_CASE("fixture coordinator hashes blast hit identities clocks and confirmed-
         f.fixtures.saveLocal(saved);
         std::array<Digest, 8> expected{};
         for (u32 tick = 0; tick < distance; ++tick) {
-            f.fixtures.advanceBlasts(kStep, {}, Coordinator::events(17));
+            f.fixtures.advanceBlasts(kStep, {}, marks17);
             expected[tick] = liveHash(f.fixtures, f.resources);
         }
         REQUIRE(f.fixtures.restoreLocal(saved));
-        f.fixtures.blast({7, 0, 0}, 18, 40, {}, Coordinator::events(31));
-        f.fixtures.advanceBlasts(0.2f, {}, Coordinator::events(31));
+        f.fixtures.blast({7, 0, 0}, 18, 40, {}, marks31);
+        f.fixtures.advanceBlasts(0.2f, {}, marks31);
         CHECK(liveHash(f.fixtures, f.resources) != expected[distance - 1]);
         REQUIRE(f.fixtures.restoreLocal(saved));
         for (u32 tick = 0; tick < distance; ++tick) {
-            f.fixtures.advanceBlasts(kStep, {}, Coordinator::events(17));
+            f.fixtures.advanceBlasts(kStep, {}, marks17);
             CHECK(liveHash(f.fixtures, f.resources) == expected[tick]);
         }
     }

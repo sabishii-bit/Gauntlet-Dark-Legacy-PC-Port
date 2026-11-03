@@ -14,6 +14,7 @@
 #include "TestSupport.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/level/StaticScenery.h"
 
 namespace {
@@ -236,7 +237,8 @@ TEST_CASE("G1 exit sign stops the player through the live fixture update",
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, {}, nullptr, sign.figure.position(), 0);
     players[0].life = PlayerLife::Standing;
-    fixtures.update(1, 1.0f / 60, players, {});
+    test::ScriptedFixtures quiet;
+    fixtures.update(1, 1.0f / 60, players, quiet);
     const auto at = players[0].actor.position();
     CHECK(glm::length(Vec2{at.x - sign.box.centre.x, at.z - sign.box.centre.z}) >=
           sign.box.cylinderRadius + players[0].actor.radius() - 0.01f);

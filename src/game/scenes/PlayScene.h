@@ -40,6 +40,7 @@
 #include "game/hud/PartyHud.h"
 #include "game/hud/RuneMeter.h"
 #include "game/level/ExitPortals.h"
+#include "game/level/FixtureHost.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelTransporters.h"
 #include "game/level/LevelWorld.h"
@@ -724,7 +725,23 @@ private:
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
     void updateSwitchCutscene(s32 ticks, f32 seconds);
-    LevelFixtures::Events fixtureEvents();
+    /** The scene's answers to what its fixtures report: harm to its members, lessons and cards
+     * on its HUD, blasts and releases to its opponents, broken bottles to its attacks. */
+    class FixtureRouting final : public FixtureHost {
+    public:
+        explicit FixtureRouting(PlayScene& scene) : m_scene(scene) {}
+        void hurtMember(usize member, f32 damage, HurtKind kind, bool directed,
+                        const PlayerImpact& impact) override;
+        bool lesson(s32 id, usize member) override;
+        void card(s32 seat, std::string_view name) override;
+        void blastOpponents(const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached,
+                            u32 flags) override;
+        bool releaseEnemy(s32 record, const Vec3& position, s32 count) override;
+        void shatterPotion(s32 kind, const Vec3& position) override;
+
+    private:
+        PlayScene& m_scene;
+    };
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
     void answerTowerPrompts(const Inputs& inputs);
@@ -811,6 +828,7 @@ private:
     LevelTransporters m_transporters;
     PlayerAttacks m_attacks;
     LevelFixtures m_fixtures;
+    FixtureRouting m_fixtureRouting{*this}; ///< what the fixtures report into
     LevelOpponents m_opponents;
     SpawnedObjects m_spawned; ///< world objects the developer console stood
     std::vector<std::pair<std::string, std::unique_ptr<LevelItemArchives>>>

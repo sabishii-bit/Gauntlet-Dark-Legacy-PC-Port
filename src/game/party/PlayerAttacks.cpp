@@ -279,7 +279,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         }
         rammed.push_back(barrel);
         targets.fixtures.strikeBarrel(barrel, kRamDamage, actor.player(), players,
-                                      targets.fixtureEvents);
+                                      targets.fixtureHost);
     }
     if (auto* imported = m_resources->world.imported()) {
         for (const auto& native : imported->targets()) {
@@ -342,7 +342,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
                              stood);
         });
     }
-    targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    targets.fixtures.settleBlasts(players, targets.fixtureHost);
 }
 
 void PlayerAttacks::comboStart(usize index, std::span<PlayerRuntime> players) {
@@ -405,7 +405,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
                                                                     actor.radius(), kRamReach)) {
             once(barrel, true, [&] {
                 targets.fixtures.strikeBarrel(barrel, blow, actor.player(), players,
-                                              targets.fixtureEvents);
+                                              targets.fixtureHost);
             });
         }
     }
@@ -832,7 +832,7 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
     for (const auto& hit : advanceStrikes(seconds, players)) {
         dispatchStrikeHit(hit, players, targets);
     }
-    targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    targets.fixtures.settleBlasts(players, targets.fixtureHost);
     finishStrikes();
 }
 
@@ -1390,7 +1390,7 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
         if (const auto perk =
                 MagicPerk::of(actor.save().character, experienceLevel(actor.save().experience()))) {
             targets.fixtures.bless(at, shield.radius, *perk, shield.actor, shield.blessed,
-                                   targets.fixtureEvents);
+                                   targets.fixtureHost);
         }
         for (const s32 id : targets.opponents.enemies().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
@@ -1450,7 +1450,7 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
                 fresh(kBarrel, static_cast<s32>(barrel))) {
                 targets.fixtures.strikeBarrel(barrel, shield.damage,
                                               players[shield.actor].actor.player(), players,
-                                              targets.fixtureEvents);
+                                              targets.fixtureHost);
             }
         }
         if (auto* imported = m_resources->world.imported()) {
@@ -1468,7 +1468,7 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             }
         }
     }
-    targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    targets.fixtures.settleBlasts(players, targets.fixtureHost);
     std::erase_if(m_sim.shields, [this](const PotionShield& shield) {
         if (shield.secondsLeft > 0.0f) {
             return false;
@@ -2302,9 +2302,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     f32 credit = 0.0f;
     if (id >= kWallTargetBase) {
         targets.fixtures.strikeWall(static_cast<usize>(id - kWallTargetBase), damage, flags);
-        if (targets.fixtureEvents.help) {
-            targets.fixtureEvents.help(HelpMessages::kSecretWalls, index);
-        }
+        targets.fixtureHost.lesson(HelpMessages::kSecretWalls, index);
     } else if (id >= kBossTargetBase) {
         EnemyHit hit{
             damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
@@ -2338,8 +2336,8 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
                        standing);
     } else {
         targets.fixtures.strikeBarrel(static_cast<usize>(id), damage, actor.player(), players,
-                                      targets.fixtureEvents);
-        targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+                                      targets.fixtureHost);
+        targets.fixtures.settleBlasts(players, targets.fixtureHost);
     }
     if (credit > 0.0f && targets.meleeHit) {
         targets.meleeHit(actor.player());
@@ -2462,7 +2460,7 @@ void PlayerAttacks::dispatchProjectileImpact(
                                         impact.owner);
         } else if (m_resources->world.explodeObject(impact.worldObject, impact.position)) {
             for (const Vec3& position : m_resources->world.takeWorldExplosions()) {
-                targets.fixtures.worldExplosion(position, players, targets.fixtureEvents);
+                targets.fixtures.worldExplosion(position, players, targets.fixtureHost);
             }
         }
     }
@@ -2570,8 +2568,8 @@ void PlayerAttacks::dispatchProjectileImpact(
         countEnemyBlow(targets, players, impact.owner, source, enemies, enemy, stood);
     } else if (impact.target >= 0) {
         targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
-                                      impact.owner, players, targets.fixtureEvents);
-        targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+                                      impact.owner, players, targets.fixtureHost);
+        targets.fixtures.settleBlasts(players, targets.fixtureHost);
     }
     healHit(impact.owner, impact.flags, credit, impact.position, players, targets);
 }
@@ -2605,9 +2603,7 @@ void PlayerAttacks::shootPotion(const MissileImpact& impact, std::span<PlayerRun
         own.flags = damage::magicHeal(experienceLevel(players[i].actor.save().experience()));
         m_resources->arsenal.burstPotion(colour, impact.position, own.potency, true);
         beginPotion(own);
-        if (targets.fixtureEvents.help) {
-            targets.fixtureEvents.help(HelpMessages::kShotMagic, i);
-        }
+        targets.fixtureHost.lesson(HelpMessages::kShotMagic, i);
     }
 }
 
@@ -2691,7 +2687,7 @@ void PlayerAttacks::bless(PotionBurst& burst, f32 radius, std::span<const Player
         if (const auto perk =
                 MagicPerk::of(actor.save().character, experienceLevel(actor.save().experience()))) {
             targets.fixtures.bless(burst.impact.position, radius, *perk, i, burst.blessed,
-                                   targets.fixtureEvents);
+                                   targets.fixtureHost);
         }
         return;
     }
@@ -2795,22 +2791,22 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                 healHit(byPlayer, flags, credit, target.base, players, targets);
             } else {
                 targets.fixtures.strikeBarrel(static_cast<usize>(target.id), power, byPlayer,
-                                              players, targets.fixtureEvents);
+                                              players, targets.fixtureHost);
             }
         }
         enchantChests(burst, radius, power, targets);
     }
-    // Broken bottles may append a new wave through the fixture callback, so
+    // Broken bottles may append a new wave through the fixtures' host, so
     // resolve barrel chains only after iteration over existing waves finishes.
-    targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    targets.fixtures.settleBlasts(players, targets.fixtureHost);
     // A caster's magic that struck nothing at all is wasted, and they are told so.
     for (const PotionBurst& burst : m_sim.potions) {
-        if (burst.elapsed < burst.duration || burst.struck || !targets.fixtureEvents.help) {
+        if (burst.elapsed < burst.duration || burst.struck) {
             continue;
         }
         for (usize i = 0; i < players.size(); ++i) {
             if (players[i].actor.player() == burst.impact.owner) {
-                targets.fixtureEvents.help(HelpMessages::kWastedMagic, i);
+                targets.fixtureHost.lesson(HelpMessages::kWastedMagic, i);
             }
         }
     }
@@ -2867,10 +2863,8 @@ void PlayerAttacks::healFrom(s32 owner, f32 harm, const Vec3& at, std::span<Play
     if (m_resources->weapons.loaded()) {
         m_resources->effects.start(m_resources->device, m_resources->weapons, kHealingEffect, at);
     }
-    if (targets.fixtureEvents.help) {
-        targets.fixtureEvents.help(HelpMessages::kHealingMagic,
-                                   static_cast<usize>(std::distance(players.begin(), caster)));
-    }
+    targets.fixtureHost.lesson(HelpMessages::kHealingMagic,
+                               static_cast<usize>(std::distance(players.begin(), caster)));
 }
 
 } // namespace gdl::game

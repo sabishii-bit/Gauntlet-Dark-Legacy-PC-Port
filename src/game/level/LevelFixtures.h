@@ -1,5 +1,4 @@
 #pragma once
-#include <functional>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -15,6 +14,7 @@
 #include "game/level/Chests.h"
 #include "game/level/CombatantObstacle.h"
 #include "game/level/FallingScenery.h"
+#include "game/level/FixtureHost.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/LockedGates.h"
 #include "game/level/MissileStop.h"
@@ -22,12 +22,13 @@
 #include "game/level/SafeRocks.h"
 #include "game/level/StaticScenery.h"
 #include "game/level/Traps.h"
-#include "game/party/PlayerHealth.h"
+#include "game/party/PlayerRuntime.h"
 #include "game/players/MagicPerks.h"
 namespace gdl::game {
 /** Owns interactive scenery and its hazard chains. Scene services are borrowed while bound.
- * Events are synchronous so health, help and opponent damage retain their original order.
- * No player span or callback is retained. Clear before world/archive/device teardown. */
+ * Reports go to the caller's FixtureHost at once, so health, help and opponent damage keep
+ * their order. No player span or host is retained. Clear before world/archive/device
+ * teardown. */
 class LevelFixtures {
 public:
     static constexpr f32 kBlastRadius = 12.0f;
@@ -39,17 +40,6 @@ public:
         EffectTrees& effects;
         LevelSoundscape& audio;
         f32 difficultyGain = 1;
-    };
-    struct Events {
-        std::function<void(usize, f32, HurtKind, bool, const PlayerImpact&)> hurt;
-        std::function<bool(s32, usize)> help; ///< whether the message went up
-        std::function<void(s32, std::string_view)> card;
-        /** A blast's ring reaching `radius` about a point with `damage`: the swarm, the
-         * great ones, the boss and the generators within it and not yet in the blast's
-         * `reached` (ids of the caller's), which a blow over two joins. */
-        std::function<void(const Vec3&, f32, f32, std::vector<s32>&, u32)> opponents;
-        std::function<bool(s32, const Vec3&, s32)> releaseEnemy;
-        std::function<void(s32, const Vec3&)> shatterPotion;
     };
     void bind(const Resources& resources);
     void clear();
@@ -72,7 +62,7 @@ public:
     void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const CameraFrame* camera = nullptr, f32 presentationAlpha = -1.0f) const;
     void capturePresentation();
-    void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
+    void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, FixtureHost& host);
     /** Carry fixtures and container children without advancing gameplay during a camera cut. */
     void syncFloors();
     void strikeSafeRock(usize index, f32 power);
@@ -85,44 +75,43 @@ public:
      * up or brought down. Each change shows its family's LEVELUP tree and teaches the caster
      * its lesson once. `reached` keeps what the wave has touched so each is touched once. */
     void bless(const Vec3& position, f32 radius, MagicPerk perk, usize caster,
-               std::vector<s32>& reached, const Events& events);
+               std::vector<s32>& reached, FixtureHost& host);
     void strikeWall(usize index, f32 power, u32 flags = 0);
     /** A player's shot or blow of `radius` at `position` (a missile in flight, a strike's
      * ring, a swing, a potion's wave) bringing down the level's SHOOTFALL scenery
      * (fn_8005EE18), which then sounds the realm's break. */
     void shootScenery(const Vec3& position, f32 radius);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
-                      const Events& events);
+                      FixtureHost& host);
     /** What a broken barrel held comes out: its enemy when one is let out, else one pickup of
      * the record and count; when something came out, the hitter is taught that barrels hold
      * things. */
     void releaseBarrelContents(const BreakableStrike& struck, s32 byPlayer,
-                               std::span<PlayerRuntime> players, const Events& events);
+                               std::span<PlayerRuntime> players, FixtureHost& host);
     /** An explosion: a ring over its effect's `seconds` (StartExplosion, ProcessEffects mode
      * 1) growing from a third of `radius` to the whole as its harm falls from one and a half
      * times `damage` (a third of the way in) to nothing two thirds through, reaching each
      * thing once as it gets to it. */
     void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,
-               const Events& events, f32 seconds = kExplosionSeconds);
-    void settleBlasts(std::span<PlayerRuntime> players, const Events& events);
+               FixtureHost& host, f32 seconds = kExplosionSeconds);
+    void settleBlasts(std::span<PlayerRuntime> players, FixtureHost& host);
     /** Applies an already-expanded blast to containers and breakable scenery only.
      * The source owns `reached` for the blast lifetime, preventing repeated damage. */
     void blastScenery(const Vec3& position, f32 radius, f32 damage, u32 flags,
-                      std::span<PlayerRuntime> players, const Events& events,
+                      std::span<PlayerRuntime> players, FixtureHost& host,
                       std::vector<s32>& reached);
     /** WorldExplosion: realm-specific art and damage, at an animated or shot world object. */
-    void worldExplosion(const Vec3& position, std::span<PlayerRuntime> players,
-                        const Events& events);
+    void worldExplosion(const Vec3& position, std::span<PlayerRuntime> players, FixtureHost& host);
     /** Gas reaching `radius` about a point with `damage` spoils the food lying there
      * (fn_8005C1DC's DMG_POISONGAS: over two), telling the party once it has. */
     void spoilFood(const Vec3& position, f32 radius, f32 damage,
-                   std::span<const PlayerRuntime> players, const Events& events);
+                   std::span<const PlayerRuntime> players, FixtureHost& host);
     /** Applies one already-expanded blast step to pickups, without advancing its clock or
      * hurting characters again. Explosion damage shortens the item radius by 1.5. */
     void blastPickups(const Vec3& position, f32 radius, f32 damage, u32 flags,
-                      std::span<const PlayerRuntime> players, const Events& events);
+                      std::span<const PlayerRuntime> players, FixtureHost& host);
     /** Grows the blasts under way by `seconds` (the update does, after the fixtures). */
-    void advanceBlasts(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
+    void advanceBlasts(f32 seconds, std::span<PlayerRuntime> players, FixtureHost& host);
     Chests& chests() { return m_chests; }
     const Chests& chests() const { return m_chests; }
     /** The developer console's hand on a gate: open without a key, sounding as it swings, or
@@ -149,21 +138,21 @@ private:
      * any pickup is placed in it (none when the pickup's art is missing), gold taken, or the
      * lessons of a refusal. */
     void dispatchChestEvent(const ChestEvent& /*event*/, std::span<PlayerRuntime> /*players*/,
-                            const Events& /*events*/);
+                            FixtureHost& /*host*/);
     /** Answers a gate event: a key spent and the gate heard as it opens, or the key lesson. */
     void dispatchGateEvent(const GateEvent& /*event*/, std::span<PlayerRuntime> /*players*/,
-                           const Events& /*events*/);
+                           FixtureHost& /*host*/);
     static Vec3 observePlayer(PlayerRuntime& player, const Vec3& position);
     static void advanceHitSounds(std::span<PlayerRuntime> players, s32 ticks);
     static void advanceCloudGaps(std::span<PlayerRuntime> players, f32 seconds);
     void syncChestContents();
-    void updateClouds(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
+    void updateClouds(f32 seconds, std::span<PlayerRuntime> players, FixtureHost& host);
     /** A trapped chest goes up: its burst, its bang and a blast of fifty at the trap scale;
      * whoever opened it, or else the nearest standing, is told chests may do this. */
     void detonateChest(usize chest, std::optional<usize> opener, std::span<PlayerRuntime> players,
-                       const Events& events);
+                       FixtureHost& host);
     /** An explosion's work on the chests and the shootable triggers within it. */
-    void blastFixtures(const Vec3& position, f32 reach, f32 damage, const Events& events,
+    void blastFixtures(const Vec3& position, f32 reach, f32 damage, FixtureHost& host,
                        std::vector<s32>& reached, bool destroysContainers);
     /** Leaves `object` as rubble placed by `transform`, from the level's items. */
     void leaveRubble(std::string_view object, const Mat4& transform);
@@ -210,7 +199,7 @@ private:
         }
     };
     /** One step of a blast's ring, as it stands `elapsed` into its life. */
-    void feel(Blast& ring, std::span<PlayerRuntime> players, const Events& events);
+    void feel(Blast& ring, std::span<PlayerRuntime> players, FixtureHost& host);
 
     struct Simulation {
         std::vector<GasCloud> clouds;

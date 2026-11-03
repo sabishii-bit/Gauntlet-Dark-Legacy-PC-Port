@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <vector>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 
 #include "game/hud/HelpMessages.h"
 #include "game/party/PartyDamage.h"
@@ -78,6 +80,32 @@ PlayerHealth::Events PlayScene::healthEvents(usize index, PlayerRuntime& runtime
             }};
 }
 
+void PlayScene::FixtureRouting::hurtMember(usize member, f32 damage, HurtKind kind, bool directed,
+                                           const PlayerImpact& impact) {
+    m_scene.hurt(member, damage, kind, directed, impact);
+}
+
+bool PlayScene::FixtureRouting::lesson(s32 id, usize member) {
+    return m_scene.postHelp(id, member);
+}
+
+void PlayScene::FixtureRouting::card(s32 seat, std::string_view name) {
+    m_scene.m_hud.pickups().addCard(seat, name);
+}
+
+void PlayScene::FixtureRouting::blastOpponents(const Vec3& position, f32 radius, f32 damage,
+                                               std::vector<s32>& reached, u32 flags) {
+    m_scene.m_opponents.blast(position, radius, damage, reached, m_scene.m_players, flags);
+}
+
+bool PlayScene::FixtureRouting::releaseEnemy(s32 record, const Vec3& position, s32 count) {
+    return m_scene.m_opponents.releaseDeath(record, position, count);
+}
+
+void PlayScene::FixtureRouting::shatterPotion(s32 kind, const Vec3& position) {
+    m_scene.m_attacks.shatterPotion(kind, position);
+}
+
 bool PlayScene::kill(s32 player) {
     if (m_world == nullptr || m_world->isTower()) {
         return false;
@@ -105,7 +133,7 @@ bool PlayScene::waitInTower(s32 player) {
             runtime.life = PlayerLife::InTower;
             perform(i, PartyMotion::Action::Fallen);
         }
-        runtime.towerPrompt = false; // nobody is left at that seat to answer it
+        runtime.towerPrompt = false;   // nobody is left at that seat to answer it
         m_sumnerVisit.release(player); // nor to read or put away a scroll it holds
         return true;
     }

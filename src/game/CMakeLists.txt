@@ -237,6 +237,7 @@ add_library(game STATIC
     level/ItemFigure.cpp
     level/MissileStop.h
     level/CombatantObstacle.h
+    level/FixtureHost.h
     level/ItemSupport.cpp
     party/BodyCollision.cpp
     party/MoveStrikes.h

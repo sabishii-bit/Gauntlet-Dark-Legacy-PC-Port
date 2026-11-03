@@ -32,6 +32,7 @@
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
 #include "game/level/SafeRocks.h"
+#include "game/level/ScriptedFixtures.h"
 #include "game/party/BodyCollision.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerAttacks.h"
@@ -61,7 +62,9 @@ struct Fixture {
     MultiplayerMode mode = MultiplayerMode::Normal;
     std::array<PlayerRuntime, 1> players;
     std::vector<s32> meleeHits;
-    PlayerAttacks::Targets targets{opponents, fixtures, {}};
+    test::FixtureScript fixtureEvents;
+    test::ScriptedFixtures fixtureHost{fixtureEvents};
+    PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost};
     Fixture() {
         arsenal.bind({device,
                       classes,
@@ -2792,7 +2795,7 @@ TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the sa
     f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
     REQUIRE(f.players[0].figure);
     std::vector<s32> helps;
-    f.targets.fixtureEvents.help = [&](s32 id, usize player) {
+    f.fixtureEvents.help = [&](s32 id, usize player) {
         CHECK(player == 0);
         helps.push_back(id);
         return true;
@@ -3044,7 +3047,7 @@ TEST_CASE("from level 75 magic heals its caster by a share of the harm it does",
         REQUIRE(f.classes.load(root / "pdata"));
         f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
         std::vector<s32> helps;
-        f.targets.fixtureEvents.help = [&](s32 id, usize player) {
+        f.fixtureEvents.help = [&](s32 id, usize player) {
             CHECK(player == 0);
             helps.push_back(id);
             return true;
@@ -3146,7 +3149,7 @@ TEST_CASE("only a hit carrying DMG_HEAL feeds the healing: the shield does, a tu
     REQUIRE(f.classes.load(root / "pdata"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     std::vector<s32> helps;
-    f.targets.fixtureEvents.help = [&](s32 id, usize) {
+    f.fixtureEvents.help = [&](s32 id, usize) {
         helps.push_back(id);
         return true;
     };
@@ -3235,7 +3238,7 @@ TEST_CASE("a caster whose magic strikes nothing is told not to waste it",
           "[game][screens][player-attacks][healing-magic]") {
     Fixture f;
     std::vector<s32> helps;
-    f.targets.fixtureEvents.help = [&](s32 id, usize) {
+    f.fixtureEvents.help = [&](s32 id, usize) {
         helps.push_back(id);
         return true;
     };
@@ -5522,17 +5525,15 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     auto& inventory = f.players[0].actor.save().progress().inventory;
     inventory.addPotions(1, 1);
     usize releases = 0;
-    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
-    f.targets.fixtureEvents.help = [](s32, usize) -> bool {
-        FAIL("A bottle is not destroyed food");
-    };
-    f.targets.fixtureEvents.shatterPotion = [&](s32 kind, const Vec3& position) {
+    f.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
+    f.fixtureEvents.help = [](s32, usize) -> bool { FAIL("A bottle is not destroyed food"); };
+    f.fixtureEvents.shatterPotion = [&](s32 kind, const Vec3& position) {
         CHECK(kind == 2);
         CHECK(position == origin);
         ++releases;
         f.attacks.shatterPotion(kind, position);
     };
-    f.fixtures.blast(origin, 12, 1, f.players, f.targets.fixtureEvents);
+    f.fixtures.blast(origin, 12, 1, f.players, f.fixtureHost);
     REQUIRE(releases == 1);
     REQUIRE(f.world.placedItems().item(bottle).taken);
     REQUIRE(f.effects.count() == 1);
@@ -5558,7 +5559,7 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     CHECK(enemies.healthOf(*enemy) == after); // no repeated damage/stunlock
     CHECK(enemies.healthOf(*farEnemy) == farBefore);
     REQUIRE_FALSE(f.device.draws.empty());
-    f.fixtures.blast(origin, 12, 50, f.players, f.targets.fixtureEvents);
+    f.fixtures.blast(origin, 12, 50, f.players, f.fixtureHost);
     CHECK(releases == 1);
     f.attacks.clear();
     f.fixtures.clear();
@@ -5582,7 +5583,7 @@ TEST_CASE("world bottles detonate on weapon shots but ignore companion shots",
     const std::vector<usize> lying = f.world.placedItems().shootablePotions();
     REQUIRE(std::ranges::find(lying, bottle) != lying.end());
     std::vector<s32> helps;
-    f.targets.fixtureEvents.help = [&](s32 id, usize player) {
+    f.fixtureEvents.help = [&](s32 id, usize player) {
         CHECK(player == 0);
         helps.push_back(id);
         return true;
@@ -5637,9 +5638,9 @@ TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but br
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
-    f.targets.fixtureEvents.help = [](s32, usize) { return true; };
-    f.targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
+    f.fixtureEvents.help = [](s32, usize) { return true; };
+    f.fixtureEvents.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    f.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     const Breakables& barrels = f.fixtures.barrels();
     for (const auto kind : {BreakableStrike::Kind::Plain, BreakableStrike::Kind::Exploding,
                             BreakableStrike::Kind::Poison, BreakableStrike::Kind::Holding}) {
@@ -5679,13 +5680,13 @@ struct PerkLevel : Fixture {
         auto& save = players[0].actor.save();
         save.character = *classIndexOf(code);
         save.progress().experience = levelExperience(level);
-        targets.fixtureEvents.help = [this](s32 id, usize player) {
+        fixtureEvents.help = [this](s32 id, usize player) {
             CHECK(player == 0);
             helps.push_back(id);
             return true;
         };
-        targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-        targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
+        fixtureEvents.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+        fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     }
     PerkLevel(const PerkLevel&) = delete;
     PerkLevel& operator=(const PerkLevel&) = delete;

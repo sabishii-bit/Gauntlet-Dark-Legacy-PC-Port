@@ -147,7 +147,7 @@ void PlayerAttacks::updateItems(f32 seconds, std::span<PlayerRuntime> players,
             }
         }
     }
-    targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    targets.fixtures.settleBlasts(players, targets.fixtureHost);
     std::erase_if(m_sim.items, [this](const ItemArea& area) {
         if (area.elapsed < area.lifetime) {
             return false;
@@ -219,7 +219,7 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
         countEnemyBlow(targets, players, owner.player(), source, enemies, enemy, stood);
     } else {
         targets.fixtures.strikeBarrel(static_cast<usize>(target.id), damage, owner.player(),
-                                      players, targets.fixtureEvents);
+                                      players, targets.fixtureHost);
     }
 }
 } // namespace gdl::game
