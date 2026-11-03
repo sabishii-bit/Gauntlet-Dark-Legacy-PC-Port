@@ -306,6 +306,36 @@ TEST_CASE("help lists the commands and an unknown name is refused the way DOS re
     CHECK(console.output().back() == "GDL>    "); // an empty line only echoes the prompt
 }
 
+TEST_CASE("a refused command says it is not available in this session",
+          "[dev-console][online-console]") {
+    DevConsole console;
+    Input input;
+    s32 calls = 0;
+    console.addCommand(
+        "party_count", "<1-4> or off: the party size the level sets itself up for",
+        [&](DevConsole& /*self*/, DevConsole::Arguments /*arguments*/) { ++calls; },
+        wordsCompleter({"1", "2", "3", "4", "off"}));
+    console.setPolicy([](std::string_view name) { return name != "party_count"; });
+    const auto output = [&] {
+        return std::vector<std::string>(console.output().begin(), console.output().end());
+    };
+    console.run("PARTY_COUNT 2");
+    CHECK(calls == 0);
+    CHECK(output() == std::vector<std::string>{"GDL> PARTY_COUNT 2",
+                                               "This command is not available in this session."});
+    console.run("help");
+    // help pads the names to the widest registered, the refused one's included.
+    CHECK(output() == std::vector<std::string>{"GDL> PARTY_COUNT 2",
+                                               "This command is not available in this session.",
+                                               "GDL> help", "help         lists the commands"});
+    press(console, input, Key::Grave);
+    REQUIRE(console.open());
+    type(console, input, "pa");
+    CHECK(console.suggestion().empty());
+    type(console, input, "rty_count o");
+    CHECK(console.suggestion().empty());
+}
+
 TEST_CASE("up and down walk the lines entered before and come back to the one being typed",
           "[dev-console]") {
     DevConsole console;

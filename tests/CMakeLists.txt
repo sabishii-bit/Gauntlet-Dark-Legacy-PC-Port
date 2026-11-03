@@ -125,6 +125,7 @@ add_executable(tests
     engine/app/ApplicationTimingTests.cpp
     engine/math/Mt19937Tests.cpp
     game/netplay/HostedRoomTests.cpp
+    game/rollback/ConsoleActionTests.cpp
     game/rollback/InputCommandTests.cpp
     game/rollback/InputTimelineTests.cpp
     game/rollback/ShotIdentityTests.cpp
@@ -787,7 +788,7 @@ if(GDL_ENABLE_NETPLAY)
         engine/audio/SoundPlayerTests.cpp
         game/app/OnlineRunTests.cpp game/netplay/NativeCampaignTransportTests.cpp
         game/scenes/TitleSceneTests.cpp
-        game/rollback/InputCommandTests.cpp
+        game/rollback/ConsoleActionTests.cpp game/rollback/InputCommandTests.cpp
         game/rollback/InputTimelineTests.cpp game/rollback/SessionInputsTests.cpp
         game/netplay/MatchSessionTests.cpp game/netplay/ShopSyncTests.cpp game/players/CursorAimTests.cpp
         game/party/PartyMotionTests.cpp game/party/PartyFiguresTests.cpp
@@ -933,7 +934,7 @@ if(GDL_ENABLE_NETPLAY)
         game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
         game/scenes/NativePresentationReadinessTests.cpp
         engine/app/ApplicationTimingTests.cpp
-        game/rollback/InputCommandTests.cpp
+        game/rollback/ConsoleActionTests.cpp game/rollback/InputCommandTests.cpp
         game/rollback/HintInputCommandTests.cpp game/rollback/NativeHintInputTests.cpp
         game/netplay/NativeAgreementSceneTests.cpp
         game/netplay/NativeAgreementTests.cpp

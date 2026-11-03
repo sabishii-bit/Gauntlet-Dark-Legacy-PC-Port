@@ -1,8 +1,12 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <limits>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -525,6 +529,42 @@ TEST_CASE("console packets keep their byte layout", "[netplay][match-session][co
     CHECK(test::hexBytes(request) == kRequest);
     CHECK(host.receive(1, request) == Admission::Accepted);
     CHECK(host.takeConsoleRequest() == std::optional{ConsoleAction{1, "get gold 50"}});
+}
+
+TEST_CASE("a request outside the shared verbs is never admitted",
+          "[netplay][match-session][console-input]") {
+    Room room({1, 2, 0, 0});
+    room.ready();
+    auto& host = room.sessions[1];
+    auto& guest = room.sessions[2];
+    REQUIRE(host.setConsolePermissions(true));
+    room.pump();
+    REQUIRE(guest.consolePermissions());
+    constexpr std::array<std::string_view, 4> kLines{"help", "get info", "list maps",
+                                                     "party_count 2"};
+    for (const std::string_view line : kLines) {
+        CAPTURE(line);
+        CHECK_FALSE(host.requestConsole({0, std::string(line)}));
+        CHECK_FALSE(guest.requestConsole({1, std::string(line)}));
+    }
+    CHECK_FALSE(host.takeConsoleRequest());
+    // Written into a guest's request in place of its line, each is refused on arrival.
+    REQUIRE(guest.requestConsole({1, "god"}));
+    guest.flush(room.wires[2]);
+    const auto request = consoleMessageFrom(room.wires[2], 1);
+    room.wires[2].sent.clear();
+    constexpr usize kLengthByte = 36; // the line's length follows the grant
+    for (const std::string_view line : kLines) {
+        CAPTURE(line);
+        std::vector<u8> forged(request.begin(),
+                               request.begin() + static_cast<std::ptrdiff_t>(kLengthByte));
+        forged.push_back(static_cast<u8>(line.size()));
+        forged.insert(forged.end(), line.begin(), line.end());
+        CHECK(host.receive(1, forged) == Admission::Invalid);
+    }
+    CHECK_FALSE(host.takeConsoleRequest());
+    CHECK(host.receive(1, request) == Admission::Accepted);
+    CHECK(host.takeConsoleRequest() == std::optional{ConsoleAction{1, "god"}});
 }
 
 TEST_CASE("secret result flags are bounded host context and secret entries have no movie votes",

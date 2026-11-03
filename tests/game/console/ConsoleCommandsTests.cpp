@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <format>
 #include <span>
@@ -9,9 +10,13 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/WorldData.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "game/characters/CharacterSave.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
@@ -540,8 +545,11 @@ TEST_CASE("spawn takes a category word first and a map before an object",
 
 TEST_CASE("usage lines put the forms in a column with what each does beside them",
           "[dev-console][commands]") {
-    for (const std::string& text : {ConsoleCommands::spawnUsage(), ConsoleCommands::getUsage(),
-                                    ConsoleCommands::listUsage(), ConsoleCommands::gotoUsage()}) {
+    for (const std::string& text :
+         {ConsoleCommands::spawnUsage(), ConsoleCommands::getUsage(), ConsoleCommands::listUsage(),
+          ConsoleCommands::gotoUsage(), ConsoleCommands::lockUsage("lock"),
+          ConsoleCommands::lockUsage("unlock"), ConsoleCommands::activateUsage(),
+          ConsoleCommands::partyCountUsage()}) {
         CAPTURE(text);
         std::vector<std::string> lines;
         for (usize start = 0; start <= text.size();) {
@@ -704,6 +712,345 @@ TEST_CASE("party_count takes a count from one to four, or off", "[dev-console][c
         CAPTURE(args.size());
         CHECK_FALSE(ConsoleCommands::parsePartyCount(args, error).has_value());
         CHECK(error == ConsoleCommands::partyCountUsage());
+    }
+}
+
+// What each command's usage says, word for word.
+constexpr std::string_view kListUsage =
+    "list maps              every level, by realm\n"
+    "list items [map]       what get knows, then a level's pickups\n"
+    "list inventory         what your character is and carries\n"
+    "list enemies [map]     the swarm's kinds, then a level's roster and generators\n"
+    "list critters [map]    the great ones, then those a level places\n"
+    "list generators [map]  a level's generators\n"
+    "list objects [map]     a level's objects\n"
+    "list switches [map]    a level's switches, for activate\n"
+    "list characters        every playable character, locked or hidden too";
+constexpr std::string_view kActivateUsage =
+    "activate $SELECTED     fires the switch selected, as if you stood on it\n"
+    "activate switch#N      the same, by the token list switches gives\n"
+    "activate <id or name>  the same, by a switch's id, its name or its target's\n"
+    "The camera follows what it opens, as it does for a player.";
+constexpr std::string_view kLockUsage =
+    "lock $SELECTED|gate#N|chest#N|<name>  a door shut again, or a chest wanting a key again\n"
+    "lock character <code>                 a character hidden again; the starting eight stay\n"
+    "list characters names the codes; list switches and get info name the rest.";
+constexpr std::string_view kUnlockUsage =
+    "unlock $SELECTED|gate#N|chest#N|<name>  a door or chest a key opens, opened without one\n"
+    "unlock character <code>                 a hidden character, for the select screen\n"
+    "list characters names the codes; list switches and get info name the rest.";
+constexpr std::string_view kGotoUsage =
+    "goto <map> [x y z]            travels to a level, standing at a point when given\n"
+    "goto x y z                    moves the party to that point here\n"
+    "goto <legends map> [preview]  walks an installed Legends map, or flies through it\n"
+    "goto n64|dreamcast <map>      the same, naming the map's platform\n"
+    "goto back                     returns from a Legends map to the level left for it\n"
+    "list maps names the levels and the Legends maps installed.";
+constexpr std::string_view kPartyCountUsage =
+    "party_count <1-4>  sets the level up for a party that size\n"
+    "party_count off    follows the players present again\n"
+    "party_count        says which it is";
+constexpr std::string_view kGetUsage =
+    "get <item> [amount]   keys, potions, gold, health or a powerup\n"
+    "get exp <points>      experience to add\n"
+    "get level <level>     the level to be, 1 to 99\n"
+    "get info [$SELECTED]  what the thing clicked in the view is\n"
+    "list items names the items.";
+constexpr std::string_view kSpawnUsage =
+    "spawn <enemy> [tier] [count] [map]            so many of the swarm's kind, at a tier\n"
+    "spawn generator <enemy>|special [tier] [map]  a generator breeding that kind, or the "
+    "temple's or underworld's mixed brood\n"
+    "spawn golem|general|gargoyle [form] [map]     a great one; a gargoyle's form is eagl, lion "
+    "or serp\n"
+    "spawn item <name>                             a pickup of this level, by its record\n"
+    "spawn object <name> [map]                     a copy of a level's object\n"
+    "A map (E2) brings the kind's voices, a great one's costume or the object from that level; "
+    "list enemies, critters, items and objects name what there is.";
+
+/** What list items says, a line an item. */
+constexpr std::array<std::string_view, 34> kItemLines{
+    "key [n]            keys for the doors (1)",
+    "potion [n] [kind]  potions: fire, electric, lightning or acid (1 fire)",
+    "gold [n]           gold for the shop (100)",
+    "health [n]         health, as food gives it (100)",
+    "exp <points>       experience to add",
+    "level <level>      the level to be, 1 to 99",
+    "levitate [s]       held above the ground (60 s; under nought for good)",
+    "invulnerable [s]   takes no harm (60 s; under nought for good)",
+    "goldinvulnerable [s] takes no harm, gilded (60 s; under nought for good)",
+    "antideath [s]      a halo Death cannot take (60 s; under nought for good)",
+    "reflectshield [s]  turns missiles back (60 s; under nought for good)",
+    "fireshield [s]     burns what it is against (60 s; under nought for good)",
+    "lightningshield [s] shocks what it is against (60 s; under nought for good)",
+    "supershot [n]      one huge shot a charge (10 charges)",
+    "threeway [s]       three shots at once (60 s; under nought for good)",
+    "fiveway [s]        five shots at once (60 s; under nought for good)",
+    "rapidfire [s]      shoots faster (60 s; under nought for good)",
+    "reflect [s]        shots that bounce off the walls (60 s; under nought for good)",
+    "thunderhammer [n]  a hammer blow of lightning a charge (10 charges)",
+    "firebreath [n]     breathes fire a charge (10 charges)",
+    "acidbreath [n]     breathes acid a charge (10 charges)",
+    "lightningbreath [n] breathes lightning a charge (10 charges)",
+    "phoenix [s]        a fire-spitting companion (60 s; under nought for good)",
+    "growth [s]         grows the character (60 s; under nought for good)",
+    "shrink [s]         shrinks the swarm (60 s; under nought for good)",
+    "invisible [s]      unseen by the enemies (60 s; under nought for good)",
+    "xray [s]           sees inside the nearest closed chest (60 s; under nought for good)",
+    "stoptime [s]       halts ordinary opponents and hazards (60 s; under nought for good)",
+    "turbo [s]          fills the turbo meter at once (60 s; under nought for good)",
+    "speed [s]          runs faster (60 s; under nought for good)",
+    "mikey [s]          a decoy the swarm chases (60 s; under nought for good)",
+    "handofdeath [s]    returns melee harm to the striker (60 s; under nought for good)",
+    "healthvamp [s]     melee harm heals the character (60 s; under nought for good)",
+    "pojo [s]           Pojo speaks for the character (60 s; under nought for good)",
+};
+
+/** Words for a command and what reading them says. */
+struct Refusal {
+    Args words;
+    std::string_view error;
+};
+
+TEST_CASE("each command's usage reads as it does today", "[dev-console][commands]") {
+    CHECK(ConsoleCommands::listUsage() == kListUsage);
+    CHECK(ConsoleCommands::activateUsage() == kActivateUsage);
+    CHECK(ConsoleCommands::lockUsage("lock") == kLockUsage);
+    CHECK(ConsoleCommands::lockUsage("unlock") == kUnlockUsage);
+    CHECK(ConsoleCommands::gotoUsage() == kGotoUsage);
+    CHECK(ConsoleCommands::partyCountUsage() == kPartyCountUsage);
+    CHECK(ConsoleCommands::getUsage() == kGetUsage);
+    CHECK(ConsoleCommands::spawnUsage() == kSpawnUsage);
+}
+
+TEST_CASE("words a command cannot read are refused as they are today", "[dev-console][commands]") {
+    std::string error;
+    for (const Refusal& refusal :
+         {Refusal{{}, kGetUsage},
+          Refusal{{"info", "a", "b"}, "get info [$SELECTED]: one thing, or what is selected"},
+          Refusal{{"exp"}, "get exp <points>: how much to add"},
+          Refusal{{"exp", "-5"}, "get exp <points>: how much to add"},
+          Refusal{{"level", "0"}, "get level <level>: 1 to 99"},
+          Refusal{{"level", "100"}, "get level <level>: 1 to 99"}, Refusal{{"key", "x"}, kGetUsage},
+          Refusal{{"key", "0"}, kGetUsage}, Refusal{{"gold", "1", "2"}, kGetUsage},
+          Refusal{{"potion", "slime"},
+                  "No potion kind named slime; fire, electric, lightning or acid"},
+          Refusal{{"sword"}, "No item named sword; list items names them"},
+          Refusal{{"supershot", "x"}, kGetUsage},
+          Refusal{{"levitate", "0"}, "get levitate [seconds]: how long for; under nought for good"},
+          Refusal{{"levitate", "x"},
+                  "get levitate [seconds]: how long for; under nought for good"}}) {
+        CAPTURE(refusal.words);
+        CHECK_FALSE(ConsoleCommands::parseGet(refusal.words, error).has_value());
+        CHECK(error == refusal.error);
+    }
+    for (const Refusal& refusal :
+         {Refusal{{}, kSpawnUsage}, Refusal{{"gru", "4"}, "A tier is 1 to 3"},
+          Refusal{{"gru", "1", "0"}, "A count is 1 to 20"},
+          Refusal{{"gru", "1", "2", "3"}, kSpawnUsage},
+          Refusal{{"gru", "1", "2", "e2", "x"}, kSpawnUsage},
+          Refusal{{"enemy", "golem"}, "No enemy kind named GOLEM; list enemies names them"},
+          Refusal{{"critter", "gru"}, "A critter is a golem, a general or a gargoyle"},
+          Refusal{{"gargoyle", "lion", "d1", "x"},
+                  "A gargoyle is an eagl, a lion or a serp, then a map at most"},
+          Refusal{{"golem", "f1", "x"}, kSpawnUsage},
+          Refusal{{"generator", "golem"},
+                  "No enemy kind named GOLEM for a generator; list enemies names them"},
+          Refusal{{"generator", "rat", "1", "2"}, kSpawnUsage},
+          Refusal{{"generator", "rat", "4"}, "A tier is 1 to 3"}, Refusal{{"object"}, kSpawnUsage},
+          Refusal{{"object", "a", "b", "c"}, kSpawnUsage}}) {
+        CAPTURE(refusal.words);
+        CHECK_FALSE(ConsoleCommands::parseSpawn(refusal.words, error).has_value());
+        CHECK(error == refusal.error);
+    }
+    for (const Args& words : {Args{}, Args{"a", "b"}, Args{"n64"}, Args{"G1", "1", "x", "3"}}) {
+        CAPTURE(words);
+        CHECK_FALSE(ConsoleCommands::parseGoto(words, error).has_value());
+        CHECK(error == kGotoUsage);
+    }
+    for (const Args& words : {Args{}, Args{"5"}}) {
+        CAPTURE(words);
+        CHECK_FALSE(ConsoleCommands::parsePartyCount(words, error).has_value());
+        CHECK(error == kPartyCountUsage);
+    }
+    CHECK_FALSE(ConsoleCommands::parseLockRequest(Args{"character"}, error, "lock").has_value());
+    CHECK(error == kLockUsage);
+    CHECK_FALSE(ConsoleCommands::parseLockRequest(Args{"character"}, error, "unlock").has_value());
+    CHECK(error == kUnlockUsage);
+}
+
+TEST_CASE("the item, kind, character and Legends listings read as they do today",
+          "[dev-console][commands]") {
+    CHECK(ConsoleCommands::itemLines() ==
+          std::vector<std::string>(kItemLines.begin(), kItemLines.end()));
+    CHECK(
+        ConsoleCommands::enemyKindLines() ==
+        std::vector<std::string>{
+            "Enemies (spawn <enemy> [tier 1-3] [count]): SCO, TRO, DEM, RAT, GRU, KNI, SNA, SOR, "
+            "MUM, SPI, LIZ, TRE, MAG, ZOM, PLA, WOL, ICE, WRM, DOG, SKE, GHO, ACI, HAN, IMP, WAR, "
+            "SKY, WIND, GRM, DEATH, IT"});
+    CHECK(ConsoleCommands::critterLines() ==
+          std::vector<std::string>{
+              "Critters (spawn <critter>): golem, general, gargoyle [eagl|lion|serp]"});
+    CHECK(ConsoleCommands::characterLines(0) ==
+          std::vector<std::string>{
+              "Starting: WAR, VAL, WIZ, ARC, DWF, KNI, SOR, JES",
+              "Unlockable (unlock character <code>): MIN locked, FAL locked, JAC locked, TIG "
+              "locked, OGR locked, UNI locked, MED locked, HYE locked, SUM hidden",
+              "Costumes by name, entered at the select screen: ICE600 (DWF GEI), NUD069 (DWF SNM), "
+              "STX222 (JES STK), KJH105 (JES KJH), PNK666 (JES PNK), BAT900 (KNI GEB), TAK118 (KNI "
+              "NIN), STG333 (KNI STG), KAO292 (KNI WTR), CSS222 (KNI CSS), RIZ721 (KNI RIZ), "
+              "ARV984 (KNI ARV), DIB626 (KNI DIB), SJB964 (KNI SJB), TWN300 (VAL GET), AYA555 (VAL "
+              "SCH), CEL721 (VAL CEL), CAS400 (WAR GEC), MTN200 (WAR GEM), RAT333 (WAR RAT), "
+              "GARM99 (WIZ GA2), GARM00 (WIZ GAM), DES700 (WIZ GED), SKY100 (WIZ GEP), SUM224 (WIZ "
+              "SUM), DARTHC (KNI DCY), CYBMOS (WAR HIR)"});
+    const std::vector<std::string> names{"castle", "forest"};
+    CHECK(ConsoleCommands::legendsMapLines(LegendsPlatform::Dreamcast, names) ==
+          std::vector<std::string>{"Dreamcast Legends maps (goto <name>): castle, forest"});
+    CHECK(ConsoleCommands::legendsMapLines(LegendsPlatform::N64, names) ==
+          std::vector<std::string>{"N64 Legends maps (goto <name>): castle, forest"});
+}
+
+TEST_CASE("the inventory and roster lines read as they do today", "[dev-console][commands]") {
+    CharacterSave save;
+    save.name = "AB";
+    save.character = 1;
+    save.gold = 55;
+    ClassProgress& progress = save.progress();
+    progress.experience = levelExperience(7);
+    progress.health = 321;
+    progress.inventory.keys = 2;
+    progress.inventory.potions = {1, 4};
+    progress.inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0.0f, 30.0f);
+    progress.inventory.addPowerup(powerup::kWeapon, damage::kSuperShot, 4.0f, -1.0f);
+    progress.inventory.powerups[0].on = false;
+    progress.relics.addRune(0);
+    progress.relics.addRune(5);
+    progress.relics.addShard(3);
+    progress.relics.addLegend(2);
+    progress.relics.gargoylePieces = {1, 2, 3};
+    progress.crystals[3] = 4;
+    progress.crystals[7] = 12;
+    CHECK(ConsoleCommands::inventoryLines(save) ==
+          std::vector<std::string>{
+              "AB the VAL at level 7 (7260 experience), health 321/1100, 55 gold",
+              "Keys 2/9, potions 2/9: fire, acid",
+              "Powerups: levitate 30 s (off), supershot for good x4",
+              "Runestones 2/13, boss shards 1, legend items 1, gargoyle pieces 1/12 2/20 3/28",
+              "Crystals: gate 3: 4, gate 7: 12"});
+    CharacterSave bare;
+    bare.name = "CD";
+    CHECK(ConsoleCommands::inventoryLines(bare) ==
+          std::vector<std::string>{
+              "CD the WAR at level 1 (0 experience), health 500/500, 0 gold",
+              "Keys 0/9, potions 0/9", "No powerups",
+              "Runestones 0/13, boss shards 0, legend items 0, gargoyle pieces 0/12 0/20 0/28",
+              "Crystals: none"});
+    const std::vector<LevelEnemy> roster{
+        LevelEnemy{.kind = kGruntKind, .subtype = 2}, LevelEnemy{.kind = kRatKind, .subtype = 1},
+        LevelEnemy{.kind = kGruntKind, .subtype = 4}, LevelEnemy{.kind = kRatKind, .subtype = 0},
+        LevelEnemy{.kind = -1, .subtype = 1}};
+    CHECK(ConsoleCommands::rosterLines(roster) ==
+          std::vector<std::string>{"Roster: medium GRU, small RAT, medium other GRU, RAT"});
+    CHECK(ConsoleCommands::rosterLines({}) == std::vector<std::string>{"Roster: none"});
+}
+
+TEST_CASE("get says what came of a full hand, a held item, a shown one and charges as today",
+          "[dev-console][commands]") {
+    std::string error;
+    const auto report = [&](const Args& words, ItemTaking::Outcome outcome, s32 count) {
+        const auto gift = ConsoleCommands::parseGet(words, error);
+        REQUIRE(gift.has_value());
+        ItemTaking taking;
+        taking.outcome = outcome;
+        taking.count = count;
+        return ConsoleCommands::report(*gift, taking);
+    };
+    CHECK(report({"health"}, ItemTaking::Outcome::HealthFull, 0) == "Health is full already");
+    CHECK(report({"gold"}, ItemTaking::Outcome::GoldFull, 0) == "No room for more gold");
+    CHECK(report({"potions"}, ItemTaking::Outcome::PotionsFull, 0) == "No room for more potions");
+    CHECK(report({"levitate"}, ItemTaking::Outcome::AlreadyHeld, 0) == "Already holding levitate");
+    CHECK(report({"key"}, ItemTaking::Outcome::Shown, 1) == "Got 1 key");
+    CHECK(report({"supershot"}, ItemTaking::Outcome::Taken, 1) == "Got supershot, 10 charges");
+}
+
+/** A level's layout as world.json: a pad that drives a door and fires a second pad driving a
+ * bridge, a target on the wall, generators of two kinds and tiers, placed enemies and great
+ * ones, pickup records (one named twice, one of no known kind) and an instance with no record. */
+WorldLayout syntheticLayout() {
+    const auto dir = test::scratchDirectory("console-commands-layout");
+    writeTextFile(dir / "world.json", R"({"objects":[
+        {"name":"GROUND","position":[0,0,0]},{"name":"E1DOOR","position":[0,0,0]},
+        {"name":"E1BRIDGE","position":[0,0,0]},{"name":"CANDLE","position":[0,0,0]},
+        {"name":"CANDLE","position":[0,0,0]}],
+      "itemInfos":[
+        {"type":5,"subtype":0,"name":"BRIDGEPAD"},{"type":5,"subtype":31,"name":"TARGET"},
+        {"type":3,"name":"GRU"},{"type":3,"name":"RAT"},{"type":4,"name":"GRU"},
+        {"type":4,"name":"GOLEM"},{"type":4,"name":"GAR_EAGL"},
+        {"type":1,"subtype":2,"name":"KEY"},{"type":1,"subtype":1,"name":"TREASURE"},
+        {"type":1,"subtype":2,"name":"KEY"},{"type":1,"subtype":99,"name":"ODDITY"},
+        {"type":4,"name":"RAT"}],
+      "itemInstances":[
+        {"info":0,"position":[0,0,0],"params":[1,0,0,0,0,0,10,11]},
+        {"info":0,"name":"LIFTPAD","position":[0,0,0],"params":[2,0,0,0,0,0,11,0]},
+        {"info":1,"position":[0,0,0],"params":[255,255,0,0,0,0,12,0]},
+        {"info":2,"position":[0,0,0],"params":[0]},{"info":2,"position":[0,0,0],"params":[3]},
+        {"info":3,"position":[0,0,0],"params":[2]},{"info":4,"position":[0,0,0]},
+        {"info":4,"position":[0,0,0]},{"info":11,"position":[0,0,0]},
+        {"info":5,"position":[0,0,0]},{"info":6,"position":[0,0,0]},
+        {"info":7,"position":[0,0,0]},{"info":-1,"position":[0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    return layout;
+}
+
+TEST_CASE("a level's lines read the same without the disc", "[dev-console][commands]") {
+    const WorldLayout layout = syntheticLayout();
+    auto switches = ConsoleCommands::switchesOf(layout);
+    REQUIRE(switches.size() == 3);
+    CHECK(switches[0] == ConsoleCommands::SwitchEntry{
+                             .index = 0, .id = 10, .name = "BRIDGEPAD", .target = "E1DOOR"});
+    CHECK(switches[1] ==
+          ConsoleCommands::SwitchEntry{
+              .index = 1, .id = 11, .name = "LIFTPAD", .target = "E1BRIDGE", .chained = true});
+    CHECK(switches[2] ==
+          ConsoleCommands::SwitchEntry{.index = 2, .id = 12, .name = "TARGET", .shootable = true});
+    CHECK(ConsoleCommands::switchLines(switches) ==
+          std::vector<std::string>{
+              "Switches (3; activate <switch#N|id|name>):",
+              "switch#0 BRIDGEPAD id 10 -> E1DOOR, waiting",
+              "switch#1 LIFTPAD id 11 -> E1BRIDGE, fired through another, waiting",
+              "switch#2 TARGET id 12, shootable, waiting"});
+    switches[1].fired = true;
+    switches[2].enabled = false;
+    CHECK(
+        ConsoleCommands::switchLines(switches) ==
+        std::vector<std::string>{"Switches (3; activate <switch#N|id|name>):",
+                                 "switch#0 BRIDGEPAD id 10 -> E1DOOR, waiting",
+                                 "switch#1 LIFTPAD id 11 -> E1BRIDGE, fired through another, fired",
+                                 "switch#2 TARGET id 12, shootable, not for this party, waiting"});
+    CHECK(ConsoleCommands::pickupLines(layout) ==
+          std::vector<std::string>{
+              "Pickups (spawn <name>): KEY (keys), TREASURE (gold), ODDITY (pickup)"});
+    CHECK(ConsoleCommands::objectLines(layout) ==
+          std::vector<std::string>{"Objects (5, 4 distinct): CANDLE x2, E1BRIDGE, E1DOOR, GROUND"});
+    CHECK(ConsoleCommands::generatorLines(layout) ==
+          std::vector<std::string>{"Generators: GRU x2 (tier 1, 3); RAT (tier 2)"});
+    CHECK(ConsoleCommands::placedEnemyLines(layout) ==
+          std::vector<std::string>{"Placed enemies: GRU x2, RAT"});
+    CHECK(ConsoleCommands::placedCritterLines(layout) ==
+          std::vector<std::string>{"Critters placed: GAR_EAGL, GOLEM"});
+    const ItemInfo* rats = ConsoleCommands::generatorRecord(layout, "rat");
+    REQUIRE(rats != nullptr);
+    CHECK(rats->name == "RAT");
+    CHECK(ConsoleCommands::generatorRecord(layout, "GOLEM") == nullptr);
+    CHECK(ConsoleCommands::instanceName(layout, 0) == "BRIDGEPAD");
+    CHECK(ConsoleCommands::instanceName(layout, 1) == "LIFTPAD");
+    CHECK(ConsoleCommands::instanceName(layout, 2) == "TARGET");
+    CHECK(ConsoleCommands::instanceName(layout, 3) == "GRU");
+    CHECK(ConsoleCommands::instanceName(layout, 11) == "KEY");
+    for (const s32 instance : {12, -1, 13}) {
+        CAPTURE(instance);
+        CHECK(ConsoleCommands::instanceName(layout, instance).empty());
     }
 }
 
