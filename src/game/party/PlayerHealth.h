@@ -9,20 +9,11 @@
 
 #include "game/characters/ClassData.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/HurtKind.h" // IWYU pragma: export
 #include "game/party/PlayInput.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerImpact.h"
 namespace gdl::game {
-/** What hurt a character, which picks how it cries out. */
-enum class HurtKind : u8 {
-    Blow,      ///< cries out once enough has been taken
-    Burn,      ///< always cries out
-    Pierce,    ///< groans
-    Gas,       ///< cloud damage: gas protection and queued pain, not the poison-trap voice
-    QuietBlow, ///< accumulates pain; the attacker supplies the impact sound, without a cry
-    DeathDrain ///< bypasses ordinary armor without knockback or impact audio
-};
-
 /** Health/death rules and pain/low-health cue selection. Owns the party-wide cry RNG
  * and alternating last-health announcements; rendering and audio are synchronous outputs.
  * Like the scene it replaces, this cue sequence persists across level reopenings. */

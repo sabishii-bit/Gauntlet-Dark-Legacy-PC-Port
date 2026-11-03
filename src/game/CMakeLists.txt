@@ -198,6 +198,7 @@ add_library(game STATIC
     combat/StrikeHit.h
     combat/StrikeHit.cpp
     combat/CombatArenaTarget.h
+    combat/HurtKind.h
     combat/PowerupFlags.h
     party/PlayerPowerups.h
     party/PlayerPowerups.cpp

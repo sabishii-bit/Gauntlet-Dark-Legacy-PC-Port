@@ -257,6 +257,7 @@ add_executable(tests
     game/combat/PowerupFlagsTests.cpp
     game/combat/StrikeHitTests.cpp
     game/combat/CombatArenaTargetTests.cpp
+    game/combat/HurtKindTests.cpp
     game/party/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
     game/widgets/MenuFontTests.cpp
