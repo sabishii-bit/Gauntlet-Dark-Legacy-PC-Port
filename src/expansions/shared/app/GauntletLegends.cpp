@@ -331,6 +331,7 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
 
 void Gauntlet::updateLegendsPreview(f64 deltaSeconds) {
     const bool wasOpen = m_console.open();
+    m_console.setSession(consoleSession());
     m_console.update(deltaSeconds, input(), m_config.menu.console);
     const bool captures = m_console.open() || wasOpen;
     if (m_legendsPreview.isOpen() && !captures && input().wasKeyPressed(Key::Escape)) {

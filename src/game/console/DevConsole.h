@@ -20,6 +20,9 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/console/ConsoleCommand.h"
+#include "game/console/ConsoleForm.h"
+#include "game/console/ConsolePolicy.h"
+#include "game/console/ConsoleReach.h"
 #include "game/hud/StatusBox.h"
 
 namespace gdl::game {
@@ -39,7 +42,6 @@ public:
     using Arguments = ConsoleCommand::Arguments;
     using Handler = LambdaCommand::Handler;
     using Completer = LambdaCommand::Completer;
-    using Gate = std::function<bool(std::string_view name)>;
     using Dispatch = std::function<bool(DevConsole&, std::string_view, Arguments)>;
 
     static constexpr s32 kLanes = 4;
@@ -67,7 +69,7 @@ public:
     /** Half a cell between the prompt and the line typed, so they do not read as one word. */
     static constexpr s32 kPromptGap = kCellWidth / 2;
     static constexpr std::string_view kBadCommand = "Bad command or file name";
-    static constexpr Color kInk = Color::rgba(170, 170, 170); ///< the text mode's light grey
+    static constexpr Color kInk = Color::rgba(170, 170, 170);   ///< the text mode's light grey
     static constexpr Color kGhostInk = Color::rgba(85, 85, 85); ///< a suggestion's, dimmer
     static constexpr Color kPaper = Color::rgba(0, 0, 0);
     static constexpr u8 kSeeThroughPaper = 112; ///< the screen's alpha while seen through
@@ -84,22 +86,27 @@ public:
 
     /** Registers a command object; one of the same name replaces the one held. */
     void addCommand(std::unique_ptr<ConsoleCommand> command);
-    /** Registers `name`, matched ignoring case; `summary` is what `help` says of it, and
-     * `completer` names the words the console may complete its arguments to. */
-    void addCommand(std::string name, std::string summary, Handler handler,
+    /** Registers `name`, matched ignoring case; `summary` is what `help` says of it, `reach`
+     * where it runs, and `completer` names the words the console may complete its arguments
+     * to. */
+    void addCommand(std::string name, std::string summary, ConsoleReach reach, Handler handler,
                     Completer completer = {});
+    /** Registers `form` on the command named `command`, tried before the command itself. */
+    void addForm(std::string_view command, std::unique_ptr<ConsoleForm> form);
     const ConsoleRegistry& commands() const { return m_commands; }
-    /** A session policy applies to help as well as execution. Dispatch may consume a
-     * parsed command (e.g. queue it for a shared tick) instead of invoking its handler. */
-    void setPolicy(Gate gate, Dispatch dispatch = {}) {
-        m_gate = std::move(gate);
-        m_dispatch = std::move(dispatch);
-    }
+    /** What the application is doing; the policy judges each command and form by it in help,
+     * in the suggestions and when a line runs. */
+    void setSession(ConsoleSession session) { m_session = session; }
+    /** Dispatch may consume an admitted command (e.g. queue it for a shared tick) instead of
+     * invoking its handler. A form's words are never dispatched. */
+    void setDispatch(Dispatch dispatch) { m_dispatch = std::move(dispatch); }
     /** Appends output, a line per line break, each wrapped to the screen's columns at
      * spaces where it can be. */
     void print(std::string_view text);
     /** Echoes `line` under the prompt and runs it: the first word names the command, the
-     * rest are its arguments. An unknown name is refused the way DOS refused one. */
+     * rest are its arguments, which the first of the command's forms to claim them answers
+     * instead of the command. An unknown name is refused the way DOS refused one, and one
+     * the session does not admit is refused in the policy's words. */
     void run(std::string_view line);
     /** What stands before the line being typed, such as the character's name and `>`. */
     void setPrompt(std::string prompt) { m_prompt = std::move(prompt); }
@@ -166,13 +173,14 @@ private:
     /** How many output lines show above the prompt. */
     usize shownLines() const;
     void help();
-    bool allowed(std::string_view name) const;
+    /** Whether the session runs `command` and offers it in help and the suggestions. */
+    bool admits(const ConsoleCommand& command) const;
 
     BitmapFont m_font;
     TextureSet m_textures;
     TextPainter m_text;
     ConsoleRegistry m_commands;
-    Gate m_gate;
+    ConsoleSession m_session;
     Dispatch m_dispatch;
     std::vector<std::string> m_output;
     std::vector<std::string> m_history;

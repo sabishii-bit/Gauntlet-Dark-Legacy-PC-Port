@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -18,6 +19,10 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
+#include "game/console/ConsoleCommand.h"
+#include "game/console/ConsoleForm.h"
+#include "game/console/ConsolePolicy.h"
+#include "game/console/ConsoleReach.h"
 #include "game/console/DevConsole.h"
 
 namespace {
@@ -31,17 +36,16 @@ constexpr f64 kTick = 1.0 / 60.0;
 TEST_CASE("console policy hides host commands and prevents their handlers running",
           "[console][online-console]") {
     DevConsole console;
-    bool host = false;
     s32 calls = 0;
-    console.addCommand("console_permissions", "host-only switch",
+    console.addCommand("console_permissions", "host-only switch", ConsoleReach::HostOnly,
                        [&](DevConsole&, DevConsole::Arguments) { ++calls; });
-    console.setPolicy([&](std::string_view name) { return host || name != "console_permissions"; });
+    console.setSession({.seat = ConsoleSeat::Guest});
     console.run("help");
     REQUIRE(std::ranges::none_of(
         console.output(), [](const auto& line) { return line.contains("host-only switch"); }));
     console.run("CONSOLE_PERMISSIONS 1");
     REQUIRE(calls == 0);
-    host = true;
+    console.setSession({.seat = ConsoleSeat::Host});
     console.run("console_permissions 1");
     REQUIRE(calls == 1);
 }
@@ -51,10 +55,10 @@ TEST_CASE("console dispatch routes expanded commands without mutating the local 
     DevConsole console;
     s32 localCalls = 0;
     std::string received;
-    console.addCommand("get", "give an item",
+    console.addCommand("get", "give an item", ConsoleReach::Local,
                        [&](DevConsole&, DevConsole::Arguments) { ++localCalls; });
     console.setVariable("ITEM", "gold");
-    console.setPolicy({}, [&](DevConsole&, std::string_view name, DevConsole::Arguments args) {
+    console.setDispatch([&](DevConsole&, std::string_view name, DevConsole::Arguments args) {
         REQUIRE(name == "get");
         REQUIRE(args.size() == 2);
         received = args[0] + " " + args[1];
@@ -63,6 +67,108 @@ TEST_CASE("console dispatch routes expanded commands without mutating the local 
     console.run("GET $ITEM 100");
     REQUIRE(received == "gold 100");
     REQUIRE(localCalls == 0);
+}
+
+/** A form of the test's own: it claims a command's words that begin with its word. */
+class StandInForm final : public ConsoleForm {
+public:
+    StandInForm(std::string word, ConsoleReach reach, std::string refusal = {})
+        : m_word(std::move(word)), m_reach(reach), m_refusal(std::move(refusal)) {}
+    bool claims(Arguments arguments) const override {
+        return !arguments.empty() && arguments.front() == m_word;
+    }
+    ConsoleReach reach() const override { return m_reach; }
+    void run(DevConsole& console, Arguments arguments) override {
+        runs += 1;
+        argumentCount = static_cast<s32>(arguments.size());
+        console.print(std::format("{} answered", m_word));
+    }
+    std::string_view refusal() const override { return m_refusal; }
+    s32 runs = 0;
+    s32 argumentCount = -1;
+
+private:
+    std::string m_word;
+    ConsoleReach m_reach;
+    std::string m_refusal;
+};
+
+TEST_CASE("a form that claims a command's words runs before the command, undispatched",
+          "[dev-console][online-console]") {
+    DevConsole console;
+    s32 commandCalls = 0;
+    s32 dispatched = 0;
+    console.addCommand("get", "gives", ConsoleReach::Local,
+                       [&](DevConsole&, DevConsole::Arguments) { ++commandCalls; });
+    console.setDispatch([&](DevConsole&, std::string_view, DevConsole::Arguments) {
+        ++dispatched;
+        return false;
+    });
+    auto first = std::make_unique<StandInForm>("info", ConsoleReach::Local);
+    auto second = std::make_unique<StandInForm>("info", ConsoleReach::Local);
+    StandInForm* info = first.get();
+    StandInForm* later = second.get();
+    console.addForm("GET", std::move(first));
+    console.addForm("get", std::move(second));
+    console.addForm("get", nullptr); // nothing is registered
+    const ConsoleRegistry& commands = console.commands();
+    CHECK(commands.forms("Get").size() == 2);
+    CHECK(commands.forms("goto").empty());
+    const std::vector<std::string> gold{"gold", "10"};
+    const std::vector<std::string> named{"info", "enemy#3"};
+    CHECK(commands.claimant("get", gold) == nullptr);
+    CHECK(commands.claimant("get", named) == info);
+    console.run("GET info enemy#3");
+    CHECK(info->runs == 1);
+    CHECK(info->argumentCount == 2);
+    CHECK(later->runs == 0);
+    CHECK(commandCalls == 0);
+    CHECK(dispatched == 0);
+    CHECK(console.output().back() == "info answered");
+    console.run("get gold 10");
+    CHECK(info->runs == 1);
+    CHECK(commandCalls == 1);
+    CHECK(dispatched == 1);
+    // A form on a name nobody registered answers nothing.
+    console.addForm("fly", std::make_unique<StandInForm>("high", ConsoleReach::Local));
+    console.run("fly high");
+    CHECK(console.output().back() == DevConsole::kBadCommand);
+}
+
+TEST_CASE("an offline-only form says its own refusal outside offline play",
+          "[dev-console][online-console]") {
+    DevConsole console;
+    s32 commandCalls = 0;
+    console.addCommand("goto", "travels", ConsoleReach::Local,
+                       [&](DevConsole&, DevConsole::Arguments) { ++commandCalls; });
+    auto own = std::make_unique<StandInForm>("lab", ConsoleReach::OfflineOnly,
+                                             "Stand-in maps are offline only.");
+    auto plain = std::make_unique<StandInForm>("cave", ConsoleReach::OfflineOnly);
+    StandInForm* lab = own.get();
+    StandInForm* cave = plain.get();
+    console.addForm("goto", std::move(own));
+    console.addForm("goto", std::move(plain));
+    const auto output = [&] {
+        return std::vector<std::string>(console.output().begin(), console.output().end());
+    };
+    console.setSession({.seat = ConsoleSeat::Guest});
+    console.run("goto lab");
+    console.run("goto cave");
+    console.run("goto G1");
+    CHECK(output() == std::vector<std::string>{
+                          "GDL> goto lab", "Stand-in maps are offline only.", "GDL> goto cave",
+                          "This command is not available in this session.", "GDL> goto G1"});
+    CHECK(lab->runs == 0);
+    CHECK(cave->runs == 0);
+    CHECK(commandCalls == 1);
+    // Offline, under a preview that admits nothing of goto's own, the form still runs.
+    constexpr std::array<std::string_view, 1> kHelpOnly{"help"};
+    console.setSession({.modal = kHelpOnly});
+    console.run("goto lab");
+    CHECK(lab->runs == 1);
+    console.run("goto G1");
+    CHECK(console.output().back() == "This command is not available in this session.");
+    CHECK(commandCalls == 1);
 }
 
 /** One poll of the keyboard: the keys held, the characters typed and the wheel's motion. */
@@ -261,7 +367,7 @@ TEST_CASE("typed characters build the line, backspace trims it and enter runs it
     CHECK(console.line() == "debug_info");
     bool shown = false;
     std::vector<std::string> given;
-    console.addCommand("debug_info", "shows or hides the level debug overlay",
+    console.addCommand("debug_info", "shows or hides the level debug overlay", ConsoleReach::Local,
                        [&](DevConsole& self, DevConsole::Arguments arguments) {
                            shown = !shown;
                            given.assign(arguments.begin(), arguments.end());
@@ -292,7 +398,7 @@ TEST_CASE("the prompt names whoever is at the keyboard", "[dev-console]") {
 TEST_CASE("help lists the commands and an unknown name is refused the way DOS refused one",
           "[dev-console]") {
     DevConsole console;
-    console.addCommand("debug_info", "shows or hides the level debug overlay",
+    console.addCommand("debug_info", "shows or hides the level debug overlay", ConsoleReach::Local,
                        [](DevConsole& /*self*/, DevConsole::Arguments /*arguments*/) {});
     console.run("help");
     CHECK(mentions(console.output(), "help        lists the commands"));
@@ -313,9 +419,10 @@ TEST_CASE("a refused command says it is not available in this session",
     s32 calls = 0;
     console.addCommand(
         "party_count", "<1-4> or off: the party size the level sets itself up for",
+        ConsoleReach::OfflineOnly,
         [&](DevConsole& /*self*/, DevConsole::Arguments /*arguments*/) { ++calls; },
         wordsCompleter({"1", "2", "3", "4", "off"}));
-    console.setPolicy([](std::string_view name) { return name != "party_count"; });
+    console.setSession({.seat = ConsoleSeat::Host});
     const auto output = [&] {
         return std::vector<std::string>(console.output().begin(), console.output().end());
     };
@@ -341,7 +448,7 @@ TEST_CASE("up and down walk the lines entered before and come back to the one be
     DevConsole console;
     Input input;
     console.toggle();
-    console.addCommand("second", "",
+    console.addCommand("second", "", ConsoleReach::Local,
                        [](DevConsole& /*self*/, DevConsole::Arguments /*arguments*/) {});
     enter(console, input, "first");
     enter(console, input, "second");
@@ -637,7 +744,7 @@ TEST_CASE("a line's $words stand for the console's variables, or the line is ref
     DevConsole console;
     Input input;
     std::vector<std::string> echoed;
-    console.addCommand("echo", "says its arguments back",
+    console.addCommand("echo", "says its arguments back", ConsoleReach::Local,
                        [&](DevConsole& self, DevConsole::Arguments arguments) {
                            for (const std::string& argument : arguments) {
                                echoed.push_back(argument);
@@ -672,6 +779,7 @@ public:
     explicit CountingCommand(std::string name) : m_name(std::move(name)) {}
     std::string_view name() const override { return m_name; }
     std::string_view summary() const override { return "counts its arguments"; }
+    ConsoleReach reach() const override { return ConsoleReach::Local; }
     void run(DevConsole& /*console*/, Arguments arguments) override {
         runs += 1;
         argumentCount = static_cast<s32>(arguments.size());
@@ -706,8 +814,10 @@ TEST_CASE("command objects register into the console and are found by name in an
     // The command's own words complete too.
     CHECK(commands.find("spin")->completions({}) == std::vector<std::string>{"one", "two"});
     // Registering the name again replaces the command where it stood, in help's order.
-    console.addCommand("later", "after it", [](DevConsole&, DevConsole::Arguments) {});
-    console.addCommand("spin", "replaced", [](DevConsole&, DevConsole::Arguments) {});
+    console.addCommand("later", "after it", ConsoleReach::Local,
+                       [](DevConsole&, DevConsole::Arguments) {});
+    console.addCommand("spin", "replaced", ConsoleReach::Local,
+                       [](DevConsole&, DevConsole::Arguments) {});
     REQUIRE(commands.size() == builtIn + 2);
     CHECK(commands.commands()[builtIn]->name() == "spin");
     CHECK(commands.commands()[builtIn]->summary() == "replaced");
@@ -719,10 +829,12 @@ TEST_CASE("the console suggests the rest of a word and Right at the end of the l
           "[dev-console][autocomplete]") {
     DevConsole console;
     Input input;
-    console.addCommand("goto", "travels", [](DevConsole&, DevConsole::Arguments) {});
-    console.addCommand("get", "gives", [](DevConsole&, DevConsole::Arguments) {});
+    console.addCommand("goto", "travels", ConsoleReach::OfflineOnly,
+                       [](DevConsole&, DevConsole::Arguments) {});
+    console.addCommand("get", "gives", ConsoleReach::Local,
+                       [](DevConsole&, DevConsole::Arguments) {});
     console.addCommand(
-        "list", "names", [](DevConsole&, DevConsole::Arguments) {},
+        "list", "names", ConsoleReach::Local, [](DevConsole&, DevConsole::Arguments) {},
         wordsCompleter({"maps", "items"}));
     press(console, input, Key::Grave);
     REQUIRE(console.open());
@@ -751,10 +863,10 @@ TEST_CASE("the console suggests the rest of a word and Right at the end of the l
     CHECK(console.line() == "list items");
     type(console, input, " x");
     CHECK(console.suggestion().empty());
-    // A command the session's policy hides is not offered.
+    // A command the session refuses is not offered.
     console.close();
     press(console, input, Key::Grave);
-    console.setPolicy([](std::string_view name) { return name != "goto"; });
+    console.setSession({.seat = ConsoleSeat::Guest});
     type(console, input, "g");
     CHECK(console.suggestion() == "et");
     type(console, input, "oto ma");

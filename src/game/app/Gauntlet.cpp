@@ -608,6 +608,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     if (const PlayerActor* actor = m_play->scene.actor(consolePlayer())) {
         m_console.setPrompt(actor->save().name + ">");
     }
+    m_console.setSession(consoleSession());
     m_console.update(deltaSeconds, input(), m_config.menu.console);
     if (m_legendsPreview.isOpen()) {
         return;
@@ -1194,6 +1195,8 @@ void Gauntlet::returnFromChallenge(std::span<const PartyMember> party) {
 }
 
 void Gauntlet::onRender(RenderDevice& device) {
+    // The console's suggestion is drawn by what the session admits now.
+    m_console.setSession(consoleSession());
     renderScene(device);
     if (m_online && m_online->consoleAllowed() && m_console.visible()) {
         const auto width = static_cast<f32>(m_config.display.frameWidth);

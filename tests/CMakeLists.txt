@@ -211,6 +211,7 @@ add_executable(tests
     game/app/BuildLabelTests.cpp
     game/app/LevelDebugOverlayTests.cpp
     game/console/DevConsoleTests.cpp
+    game/console/ConsolePolicyTests.cpp
     game/console/ConsoleCommandsTests.cpp
     game/app/OfflineConsoleCommandsTests.cpp
     game/app/OnlineConsoleRouteTests.cpp

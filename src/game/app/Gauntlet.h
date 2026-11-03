@@ -29,6 +29,7 @@
 #include "game/audio/MusicDuck.h"
 #include "game/camera/FreeCamera.h"
 #include "game/config/GameConfig.h"
+#include "game/console/ConsolePolicy.h"
 #include "game/console/DevConsole.h"
 #include "game/console/NoclipMotion.h"
 #include "game/context/GameContext.h"
@@ -86,6 +87,9 @@ private:
     std::vector<std::string> levelDebugLines() const;
     /** The developer console's font, banner and commands (GauntletConsole.cpp). */
     void setUpConsole();
+    /** What the console's policy judges by: who is at it, whether it may run commands, and
+     * the only words a Legends preview admits. Set before every console update and draw. */
+    ConsoleSession consoleSession() const;
     const PlayScene* consoleScene() const;
     const LevelWorld* consoleWorld() const;
     /** What the offline console commands read and change of the game. */

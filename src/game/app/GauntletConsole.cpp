@@ -1,6 +1,8 @@
+#include <array>
 #include <format>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -20,6 +22,8 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
 #include "game/console/ConsoleCommands.h"
+#include "game/console/ConsolePolicy.h"
+#include "game/console/ConsoleReach.h"
 #include "game/console/NoclipMotion.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
@@ -31,31 +35,24 @@
 
 namespace gdl::game {
 
+namespace {
+/** The only commands the console runs while a Legends map's preview holds the view. */
+constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
+} // namespace
+
 void Gauntlet::setUpConsole() {
     if (!m_console.load(renderDevice(), m_options.unpackedDirectory)) {
         log::warn("Developer console: the 8x8 font is missing; its screen will be blank");
     }
     m_console.print(std::format("CGaunt++ {}", m_buildLabel.text()));
     m_console.print("Type help for the commands.");
-    m_console.setPolicy(
-        [this](std::string_view name) {
-            if (name == "party_count" || name == "activate" || name == "unlock" || name == "lock") {
-                return !m_online && !m_netplay; // the level's own state: offline only
-            }
-            if (m_legendsPreview.isOpen()) {
-                return name == "help" || name == "goto";
-            }
-            if (name == "console_permissions") {
-                return m_online && m_online->consoleHost();
-            }
-            return !m_online || m_online->consoleAllowed();
-        },
+    m_console.setDispatch(
         [this](DevConsole& console, std::string_view name, DevConsole::Arguments arguments) {
             return dispatchOnlineConsole(console, name, arguments);
         });
     m_console.addCommand(
         "console_permissions", "0 or 1: host allows guests to use the console",
-        [this](DevConsole& console, DevConsole::Arguments arguments) {
+        ConsoleReach::HostOnly, [this](DevConsole& console, DevConsole::Arguments arguments) {
             if (arguments.size() != 1 || (arguments[0] != "0" && arguments[0] != "1")) {
                 console.print("Usage: console_permissions 0 or 1");
             } else if (m_online && m_online->consoleHost() &&
@@ -67,6 +64,7 @@ void Gauntlet::setUpConsole() {
             }
         });
     m_console.addCommand("debug_info", "shows or hides the level debug overlay",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              m_levelDebug.toggle();
                              console.print(m_levelDebug.visible() ? "Level debug overlay on"
@@ -78,7 +76,7 @@ void Gauntlet::setUpConsole() {
                              }
                          });
     m_console.addCommand(
-        "list", "maps, items or inventory: what there is",
+        "list", "maps, items or inventory: what there is", ConsoleReach::Local,
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             m_offlineConsole.list(console, arguments);
         },
@@ -86,6 +84,7 @@ void Gauntlet::setUpConsole() {
                         "objects", "switches", "characters"}));
     m_console.addCommand(
         "activate", "$SELECTED, switch#N, an id or a name: fires that switch as if stood on",
+        ConsoleReach::OfflineOnly,
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             m_offlineConsole.activate(console, arguments);
         },
@@ -94,66 +93,90 @@ void Gauntlet::setUpConsole() {
         });
     m_console.addCommand(
         "unlock", "a door or chest without a key, or character <code> for the select screen",
+        ConsoleReach::OfflineOnly,
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             m_offlineConsole.unlock(console, arguments);
         },
         [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
     m_console.addCommand(
         "lock", "a door shut or a chest wanting a key again, or character <code> hidden again",
+        ConsoleReach::OfflineOnly,
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             m_offlineConsole.lock(console, arguments);
         },
         [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
     m_console.addCommand(
         "goto", "<map> [x y z], x y z or <legends map> [preview]: brings the party there",
+        ConsoleReach::Local,
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             consoleGoto(console, arguments);
         },
         [this](DevConsole::Arguments arguments) { return m_offlineConsole.gotoWords(arguments); });
     m_console.addCommand(
         "party_count", "<1-4> or off: the party size the level sets itself up for",
+        ConsoleReach::OfflineOnly,
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             m_offlineConsole.partyCount(console, arguments);
         },
         wordsCompleter({"1", "2", "3", "4", "off"}));
     m_console.addCommand("unlock_tower", "opens every wing and portal of the tower",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              consoleUnlockTower(console);
                          });
     m_console.addCommand("get", "<item> [amount], exp <points> or level <level>: for you",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments arguments) {
                              consoleGet(console, arguments);
                          });
     m_console.addCommand("spawn",
                          "stands enemies, great ones, generators, pickups or objects before you; "
                          "spawn alone says how",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments arguments) {
                              m_offlineConsole.spawn(console, arguments);
                          });
-    m_console.addCommand("suicide", "fells everyone standing",
+    m_console.addCommand("suicide", "fells everyone standing", ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              m_offlineConsole.suicide(console);
                          });
     m_console.addCommand("notarget", "the enemies stop seeing you, or see you again",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              m_offlineConsole.noTarget(console);
                          });
-    m_console.addCommand("god", "nothing harms you, or everything does again",
+    m_console.addCommand("god", "nothing harms you, or everything does again", ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              m_offlineConsole.god(console);
                          });
-    m_console.addCommand("hidehud", "hides or shows every HUD element",
+    m_console.addCommand("hidehud", "hides or shows every HUD element", ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              consoleHideHud(console);
                          });
     m_console.addCommand("freecam", "lets the camera off the party to fly; you stand still",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              consoleFreeCam(console);
                          });
     m_console.addCommand("noclip", "flies you through everything, or sets you down again",
+                         ConsoleReach::Local,
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
                              m_offlineConsole.noclip(console);
                          });
+}
+
+ConsoleSession Gauntlet::consoleSession() const {
+    ConsoleSession session;
+    if (m_online) {
+        session.seat = m_online->consoleHost() ? ConsoleSeat::Host : ConsoleSeat::Guest;
+        session.access = m_online->consoleAllowed() ? ConsoleAccess::Open : ConsoleAccess::Closed;
+    } else if (m_netplay) {
+        session.seat = ConsoleSeat::NetplayMenus;
+    }
+    if (m_legendsPreview.isOpen()) {
+        session.modal = kPreviewWords;
+    }
+    return session;
 }
 
 const PlayScene* Gauntlet::consoleScene() const {
@@ -245,6 +268,7 @@ bool Gauntlet::updateOnlineConsole(f64 deltaSeconds, bool overlay) {
                 m_console.setPrompt(actor->save().name + ">");
             }
         }
+        m_console.setSession(consoleSession());
         m_console.update(deltaSeconds, input(), m_config.menu.console);
         if (m_console.open() && !wasOpen) {
             window().stopRumble();

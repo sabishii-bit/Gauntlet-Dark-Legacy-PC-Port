@@ -46,7 +46,7 @@ usize breakAt(std::string_view text, usize columns) {
 } // namespace
 
 DevConsole::DevConsole() {
-    addCommand("help", "lists the commands",
+    addCommand("help", "lists the commands", ConsoleReach::Local,
                [](DevConsole& console, Arguments /*arguments*/) { console.help(); });
 }
 
@@ -78,9 +78,14 @@ void DevConsole::addCommand(std::unique_ptr<ConsoleCommand> command) {
     m_commands.add(std::move(command));
 }
 
-void DevConsole::addCommand(std::string name, std::string summary, Handler handler,
-                            Completer completer) {
-    m_commands.add(std::move(name), std::move(summary), std::move(handler), std::move(completer));
+void DevConsole::addCommand(std::string name, std::string summary, ConsoleReach reach,
+                            Handler handler, Completer completer) {
+    m_commands.add(std::move(name), std::move(summary), reach, std::move(handler),
+                   std::move(completer));
+}
+
+void DevConsole::addForm(std::string_view command, std::unique_ptr<ConsoleForm> form) {
+    m_commands.addForm(command, std::move(form));
 }
 
 void DevConsole::print(std::string_view text) {
@@ -109,8 +114,8 @@ void DevConsole::printLine(std::string_view line) {
     } while (!line.empty());
 }
 
-bool DevConsole::allowed(std::string_view name) const {
-    return !m_gate || m_gate(name);
+bool DevConsole::admits(const ConsoleCommand& command) const {
+    return !ConsolePolicy::refusal(m_session, command.reach(), command.name()).has_value();
 }
 
 void DevConsole::run(std::string_view line) {
@@ -130,14 +135,25 @@ void DevConsole::run(std::string_view line) {
             return;
         }
     }
-    if (ConsoleCommand* command = m_commands.find(parts.front())) {
-        if (!allowed(command->name())) {
-            print("This command is not available in this session.");
-        } else if (!m_dispatch || !m_dispatch(*this, command->name(), Arguments{parts}.subspan(1))) {
-            command->run(*this, Arguments{parts}.subspan(1));
-        }
-    } else {
+    ConsoleCommand* command = m_commands.find(parts.front());
+    if (command == nullptr) {
         print(kBadCommand);
+        return;
+    }
+    const Arguments arguments = Arguments{parts}.subspan(1);
+    if (ConsoleForm* form = m_commands.claimant(command->name(), arguments)) {
+        if (const auto refused = ConsolePolicy::refusal(m_session, form->reach(), command->name(),
+                                                        form->refusal())) {
+            print(*refused);
+        } else {
+            form->run(*this, arguments);
+        }
+        return;
+    }
+    if (const auto refused = ConsolePolicy::refusal(m_session, command->reach(), command->name())) {
+        print(*refused);
+    } else if (!m_dispatch || !m_dispatch(*this, command->name(), arguments)) {
+        command->run(*this, arguments);
     }
 }
 
@@ -167,7 +183,7 @@ void DevConsole::help() {
         widest = std::max(widest, command->name().size());
     }
     for (const auto& command : m_commands.commands()) {
-        if (!allowed(command->name())) {
+        if (!admits(*command)) {
             continue;
         }
         print(std::format("{:<{}}  {}", command->name(), widest, command->summary()));
@@ -183,14 +199,17 @@ std::string DevConsole::suggestion() const {
         return {};
     }
     if (parts.size() == 1) {
-        // The command's name, among those the session allows.
-        const auto name = m_commands.completeName(
-            parts.front(), [this](std::string_view candidate) { return allowed(candidate); });
+        // The command's name, among those the session admits.
+        const auto name =
+            m_commands.completeName(parts.front(), [this](std::string_view candidate) {
+                const ConsoleCommand* named = m_commands.find(candidate);
+                return named != nullptr && admits(*named);
+            });
         return name ? name->substr(parts.front().size()) : std::string{};
     }
     // One of the command's own words, for the word being typed.
     const ConsoleCommand* command = m_commands.find(parts.front());
-    if (command == nullptr || !allowed(command->name())) {
+    if (command == nullptr || !admits(*command)) {
         return {};
     }
     const std::string& partial = parts.back();

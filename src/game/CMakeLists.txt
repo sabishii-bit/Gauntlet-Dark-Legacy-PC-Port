@@ -103,6 +103,10 @@ add_library(game STATIC
     app/LevelDebugOverlay.cpp
     console/ConsoleCommand.h
     console/ConsoleCommand.cpp
+    console/ConsoleForm.h
+    console/ConsolePolicy.h
+    console/ConsolePolicy.cpp
+    console/ConsoleReach.h
     console/DevConsole.h
     console/DevConsole.cpp
     console/ConsoleCommands.h
