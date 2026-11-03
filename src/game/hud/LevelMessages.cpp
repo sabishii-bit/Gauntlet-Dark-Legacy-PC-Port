@@ -86,7 +86,6 @@ void LevelMessages::clear() {
     m_localBinding = std::make_shared<const u8>(0);
     m_sim.message.reset();
     m_sim.firstPage = 0;
-    m_controlLabels = nullptr;
     setPresentation(nullptr);
     m_scroll.close();
     m_scroll.setArt({});

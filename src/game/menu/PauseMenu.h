@@ -43,7 +43,8 @@ public:
               std::span<const PartyMember> party, s32 player, LiveSettings* settings = nullptr,
               const LevelWorld* level = nullptr);
     /** The menu keeps the services it is opened with, so they may not be a temporary. */
-    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
+    bool open(RenderDevice&, const GameServices&&, std::span<const PartyMember>, s32,
+              LiveSettings* = nullptr, const LevelWorld* = nullptr) = delete;
     void close();
     bool isOpen() const { return m_open; }
     s32 player() const { return m_player; }

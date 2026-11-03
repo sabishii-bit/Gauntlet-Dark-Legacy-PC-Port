@@ -60,9 +60,10 @@ public:
     bool openAfterLevel(RenderDevice& device, const GameServices& services,
                         std::span<const PartyMember> party, LevelWorld* tower = nullptr);
     /** The screen keeps the services it is opened with, so they may not be a temporary. */
-    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
-    template <typename... Rest>
-    bool openAfterLevel(RenderDevice&, const GameServices&&, Rest&&...) = delete;
+    bool open(RenderDevice&, const GameServices&&, s32, std::span<const PartyMember> = {},
+              bool = false, SoundHandle = kNoSound, LevelWorld* = nullptr) = delete;
+    bool openAfterLevel(RenderDevice&, const GameServices&&, std::span<const PartyMember>,
+                        LevelWorld* = nullptr) = delete;
     /** Current characters, including those still choosing; dropped lanes are omitted. */
     std::vector<PartyMember> party() const;
     void close();

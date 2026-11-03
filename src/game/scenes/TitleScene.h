@@ -47,7 +47,7 @@ public:
      * The screen keeps reading `services`, which must outlive it. */
     bool open(RenderDevice& device, const GameServices& services, LiveSettings* settings = nullptr);
     /** The screen keeps the services it is opened with, so they may not be a temporary. */
-    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
+    bool open(RenderDevice&, const GameServices&&, LiveSettings* = nullptr) = delete;
     void close();
     bool isOpen() const { return m_open; }
 

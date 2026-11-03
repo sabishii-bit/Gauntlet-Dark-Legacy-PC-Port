@@ -218,6 +218,7 @@ TEST_CASE("native scene readiness includes Sumner only for the tower and revokes
         LevelWorld world;
         PlayScene scene;
     };
+    GameServices context;
     auto owners = std::make_unique<Owners>();
     const auto root =
         test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -227,7 +228,6 @@ TEST_CASE("native scene readiness includes Sumner only for the tower and revokes
     REQUIRE(level);
     REQUIRE(owners->world.load(owners->device, root, *level));
     CHECK_FALSE(owners->scene.nativePresentationReady());
-    GameServices context;
     context.config = &owners->config;
     context.levels = &owners->catalog;
     context.unpackedRoot = root;
@@ -267,6 +267,7 @@ TEST_CASE("native scene readiness rejects failed figure and action bindings for 
         LevelWorld world;
         PlayScene scene;
     };
+    GameServices context;
     auto owners = std::make_unique<Owners>();
     const auto root =
         test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -274,7 +275,6 @@ TEST_CASE("native scene readiness rejects failed figure and action bindings for 
     const auto level = owners->catalog.byName("G1");
     REQUIRE(level);
     REQUIRE(owners->world.load(owners->device, root, *level));
-    GameServices context;
     context.config = &owners->config;
     context.levels = &owners->catalog;
     context.unpackedRoot = root;

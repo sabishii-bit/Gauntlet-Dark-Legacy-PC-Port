@@ -27,7 +27,9 @@ public:
               const std::array<s32, 3>& maxima, std::string_view levelName,
               ShopVisit visit = ShopVisit::Level);
     /** The screen keeps the services it is opened with, so they may not be a temporary. */
-    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
+    bool open(RenderDevice&, const GameServices&&, std::span<const PartyMember>,
+              std::span<const LevelResults>, const std::array<s32, 3>&, std::string_view,
+              ShopVisit = ShopVisit::Level) = delete;
     void close();
     bool isOpen() const { return m_open; }
     /** True once every lane is done and its effects' simulation-time durations have elapsed. */

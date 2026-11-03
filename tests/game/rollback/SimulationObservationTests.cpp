@@ -176,13 +176,9 @@ TEST_CASE("diagnostic bindings expire when a scene closes or reopens",
     CHECK_FALSE(named(closed, "stage").digest);
     CHECK_FALSE(fixture->observer.bind());
 
-    GameServices context;
-    context.config = &fixture->config;
-    context.levels = &fixture->catalog;
-    context.unpackedRoot = fixture->root;
     PlayOptions options;
     options.welcome = false;
-    REQUIRE(fixture->scene.open(fixture->device, context, fixture->world, party, options));
+    REQUIRE(fixture->scene.open(fixture->device, fixture->context, fixture->world, party, options));
     const auto unbound = fixture->observer.observe();
     CHECK_FALSE(named(unbound, "party_combat").digest);
     CHECK_FALSE(named(unbound, "stage").digest);

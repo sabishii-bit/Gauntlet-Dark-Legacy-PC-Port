@@ -96,8 +96,6 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
             return imported->gameplayAnnouncement(lines, subject);
         });
     }
-    m_messages.setControlLabels(services.controlLabels);
-    m_hud.setControlLabels(services.controlLabels);
     m_names.load(device, m_services->unpackedRoot, m_staticTextures);
     m_weapons.load(services.unpackedRoot / kWeaponsArchive);
     m_figures.loadSkins(device, world.powerups(), m_weapons);

@@ -58,7 +58,6 @@ public:
     PartyHud& operator=(PartyHud&&) = delete;
     bool load(RenderDevice& device, const std::filesystem::path& root, const StringTable* strings);
     void clear();
-    void setControlLabels(const ControlLabels* labels) { m_boxes.setControlLabels(labels); }
     void setGlow(const Texture* texture) { m_glowSheet = texture; }
     void setCountTextures(TextureSet* textures) { m_boxes.setCountTextures(textures); }
     /** The optional shared total belongs to the application and survives level travel. */

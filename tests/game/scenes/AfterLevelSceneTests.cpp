@@ -302,8 +302,8 @@ TEST_CASE("shop plays the authored music through realm changes without retaining
 
 TEST_CASE("after-level screen fails safely without its portable catalog", "[shop][screens]") {
     test::FakeRenderDevice device;
-    AfterLevelScene scene;
     GameServices context;
+    AfterLevelScene scene;
     context.unpackedRoot = test::scratchDirectory("shop-screen-empty");
     REQUIRE_FALSE(scene.open(device, context, {}, {}, {}, "G1"));
     REQUIRE_FALSE(scene.isOpen());

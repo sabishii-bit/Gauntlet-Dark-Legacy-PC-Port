@@ -391,6 +391,7 @@ add_library(game STATIC
     menu/NameEntry.h
     menu/NameEntry.cpp
     context/GameServices.h
+    context/GameServices.cpp
     scenes/TitleScene.h
     scenes/TitleScene.cpp
     scenes/MovieScene.h

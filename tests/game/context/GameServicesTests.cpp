@@ -31,6 +31,12 @@ constexpr bool kOpens =
     requires(Screen& screen, RenderDevice& device, Services&& services, Args&... args) {
         screen.open(device, std::forward<Services>(services), args...);
     };
+/** As `kOpens`, with a braced list for the parameter after the `Args`, which deduces nothing. */
+template <typename Screen, typename Services, typename... Args>
+constexpr bool kOpensBraced =
+    requires(Screen& screen, RenderDevice& device, Services&& services, Args&... args) {
+        screen.open(device, std::forward<Services>(services), args..., {});
+    };
 template <typename Services>
 constexpr bool kAttractOpens =
     requires(AttractScene& screen, RenderDevice& device, Services&& services) {
@@ -41,6 +47,11 @@ constexpr bool kSelectReopens = requires(PlayerSelectScene& screen, RenderDevice
                                          Services&& services, std::span<const PartyMember> party) {
     screen.openAfterLevel(device, std::forward<Services>(services), party);
 };
+template <typename Services>
+constexpr bool kSelectReopensBraced =
+    requires(PlayerSelectScene& screen, RenderDevice& device, Services&& services) {
+        screen.openAfterLevel(device, std::forward<Services>(services), {});
+    };
 using Members = std::span<const PartyMember>;
 using Results = std::span<const LevelResults>;
 using Maxima = const std::array<s32, 3>;
@@ -61,6 +72,21 @@ static_assert(kAttractOpens<const GameServices&>);
 static_assert(!kAttractOpens<GameServices>);
 static_assert(kOpens<PlayScene, const GameServices&, LevelWorld, Members>);
 static_assert(!kOpens<PlayScene, GameServices, LevelWorld, Members>);
+// A braced list after the view still finds the deleted open.
+static_assert(kOpensBraced<TitleScene, const GameServices&>);
+static_assert(!kOpensBraced<TitleScene, GameServices>);
+static_assert(kOpensBraced<PauseMenu, const GameServices&, Members, s32>);
+static_assert(!kOpensBraced<PauseMenu, GameServices, Members, s32>);
+static_assert(kOpensBraced<PlayerSelectScene, const GameServices&, s32>);
+static_assert(!kOpensBraced<PlayerSelectScene, GameServices, s32>);
+static_assert(kSelectReopensBraced<const GameServices&>);
+static_assert(!kSelectReopensBraced<GameServices>);
+static_assert(
+    kOpensBraced<AfterLevelScene, const GameServices&, Members, Results, Maxima, std::string_view>);
+static_assert(
+    !kOpensBraced<AfterLevelScene, GameServices, Members, Results, Maxima, std::string_view>);
+static_assert(kOpensBraced<PlayScene, const GameServices&, LevelWorld, Members>);
+static_assert(!kOpensBraced<PlayScene, GameServices, LevelWorld, Members>);
 
 TEST_CASE("a screen not yet opened reads a view with nothing in it",
           "[game][context][game-services]") {

@@ -16,7 +16,6 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/characters/Inventory.h"
-#include "game/hud/ControlPrompts.h"
 #include "game/players/TurboMeter.h"
 
 namespace gdl::game {
@@ -114,7 +113,6 @@ public:
     void release();
     /** Warm the finite gameplay-card roster during client loading, not packet playback. */
     void preloadStatus();
-    void setControlLabels(const ControlLabels* labels) { m_controlLabels = labels; }
     bool loaded() const { return m_device != nullptr; }
     /** The small capitals the boxes' levels are written in, which the help messages share. */
     const TextPainter& smallCaps() const { return m_smallCaps; }
@@ -154,7 +152,6 @@ private:
 
     RenderDevice* m_device = nullptr;
     const StringTable* m_strings = nullptr;
-    const ControlLabels* m_controlLabels = nullptr;
     TextureSet m_select;
     TextureSet m_static;
     TextureSet* m_countTextures = nullptr; ///< borrowed level-specific pickup icons

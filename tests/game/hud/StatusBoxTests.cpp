@@ -15,7 +15,6 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
-#include "game/hud/ScriptedControlLabels.h"
 #include "game/hud/StatusBox.h"
 
 namespace {
@@ -89,14 +88,6 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     StatusBoxView fallen = view;
     fallen.inTower = true;
     fallen.towerPrompt = true;
-    std::vector<std::string> promptedActions;
-    test::ScriptedControlLabels labels;
-    labels.answer = [&](s32 player, std::string_view action) {
-        CHECK(player == 1);
-        promptedActions.emplace_back(action);
-        return std::string("F2");
-    };
-    painter.setControlLabels(&labels);
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
     painter.draw(canvas, 1, fallen, true);
@@ -105,7 +96,6 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
         const Vec2 corner = test::minCorner(draw);
         CHECK(corner != Vec2{128.0f + 8.0f, 323.0f}); // no key icon
     }
-    CHECK(promptedActions.empty()); // choices remain, button hints do not
     // Text batches by font, so a line's absence shows in the vertices, not the draws.
     const auto vertices = [&device] {
         usize count = 0;

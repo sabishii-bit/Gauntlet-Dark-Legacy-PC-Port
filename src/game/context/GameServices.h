@@ -28,10 +28,7 @@ struct GameServices {
     std::filesystem::path unpackedRoot;
 
     /** The view a screen reads before it is first opened: nothing set. */
-    static const GameServices& none() {
-        static const GameServices kNone;
-        return kNone;
-    }
+    static const GameServices& none();
 };
 
 } // namespace gdl::game

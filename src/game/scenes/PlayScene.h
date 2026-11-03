@@ -241,7 +241,8 @@ public:
               std::span<const PartyMember> party, const PlayOptions& options = {},
               const Links& links = {});
     /** The scene keeps the services it is opened with, so they may not be a temporary. */
-    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
+    bool open(RenderDevice&, const GameServices&&, LevelWorld&, std::span<const PartyMember>,
+              const PlayOptions& = {}, const Links& = {}) = delete;
     void close();
     bool isOpen() const { return m_open; }
     u64 loadGeneration() const { return m_openGeneration; }
