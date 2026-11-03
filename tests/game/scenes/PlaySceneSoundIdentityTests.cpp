@@ -133,10 +133,14 @@ TEST_CASE("the scene's own sounds keep their emitters", "[scene-sound-identity][
     turbo[3].attackPressed = true;
     turbo[3].turboAttackPressed = true;
     CHECK(f->until(turbo, kMotion, 3) == std::vector<std::string>{"32 0 1 3 cue 2"});
-    // A footfall is an action of the member's movement.
+    // A footfall is an action of the member's movement, under its seat rather than its place
+    // in the party: the second member sits at seat 1, the first at seat 3.
     PlayScene::Inputs walking{};
     walking[1].move = MoveInput{Vec2{0, 1}, 1};
     CHECK(f->until(walking, kAction, 1) == std::vector<std::string>{"33 0 1 1 cue 11"});
+    PlayScene::Inputs leading{};
+    leading[3].move = MoveInput{Vec2{0, 1}, 1};
+    CHECK(f->until(leading, kAction, 3) == std::vector<std::string>{"33 0 1 3 cue 11"});
     // The blow that takes a member past the warning names it from inside the hurt; the
     // spikes' next blow is a groan, by the hurt's kind.
     const auto& traps = f->scene.traps();

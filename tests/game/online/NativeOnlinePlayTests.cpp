@@ -36,6 +36,7 @@ constexpr s32 kHostDevice = 2;
 constexpr s32 kGuestDevice = 0;
 constexpr s32 kSecondHostDevice = 3;
 constexpr u8 kSecondHostSeat = 2;
+constexpr s32 kRumbleFrames = 10; ///< how long each presented damage rumble lasts
 
 /** A controller's rumble as a machine was asked for it. */
 std::string rumble(s32 device, s32 frames, ControlFeedback cue) {
@@ -45,12 +46,18 @@ std::string rumble(s32 device, s32 frames, ControlFeedback cue) {
 /** A seat's damage rumble as a scene's output ledger presents it for a tick. */
 PlayScene::OutputLedger::Action presented(u8 seat) {
     using Ledger = PlayScene::OutputLedger;
-    constexpr s32 kFrames = 10;
-    return {Ledger::ActionKind::Present,
-            {{1, 1, {1, seat, 1, seat}, static_cast<u32>(ControlFeedback::Damage) + 1, 0},
-             Ledger::Policy::OneShot,
-             PlayScene::RumbleOutput{seat, kFrames, ControlFeedback::Damage},
-             {}}};
+    return {
+        .kind = Ledger::ActionKind::Present,
+        .event = {.id = {.epoch = 1,
+                         .tick = 1,
+                         .emitter = {.nameSpace = 1, .entity = seat, .generation = 1, .seat = seat},
+                         .cue = static_cast<u32>(ControlFeedback::Damage) + 1,
+                         .occurrence = 0},
+                  .policy = Ledger::Policy::OneShot,
+                  .payload = PlayScene::RumbleOutput{.player = seat,
+                                                     .frames = kRumbleFrames,
+                                                     .feedback = ControlFeedback::Damage},
+                  .loop = std::nullopt}};
 }
 
 struct NativePair {
@@ -756,7 +763,9 @@ TEST_CASE("online rumble reaches only this machine's unpaused devices",
             }
         }
     };
-    const auto damage = [](s32 device) { return rumble(device, 10, ControlFeedback::Damage); };
+    const auto damage = [](s32 device) {
+        return rumble(device, kRumbleFrames, ControlFeedback::Damage);
+    };
     presentEverySeat();
     CHECK(pair->hostRumble ==
           std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
