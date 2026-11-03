@@ -40,9 +40,9 @@ public:
     const PlayerActor* actor(s32 seat) const;
     /** The experience `amount` comes to for `save` here, when its counter has room for it. */
     std::optional<s32> fittingAward(const CharacterSave& save, s32 amount) const;
-    /** The record of the partner `seat`'s character shares its experience with in a combo, or
-     * null. */
-    const CharacterSave* comboPartner(s32 seat) const;
+    /** The records of the partners `seat`'s characters share their experience with in a combo,
+     * in the party's order. */
+    std::vector<const CharacterSave*> comboPartners(s32 seat) const;
     /** Gives `seat`'s character experience won otherwise than by a kill. */
     void awardExperience(s32 seat, s32 amount);
     void restat(s32 seat);
@@ -50,6 +50,7 @@ public:
     std::vector<CharacterSave*> presentSaves();
     /** Fells everyone standing; how many fell. */
     s32 killEveryone();
+    /** Stands everyone standing at `position`; false when nobody stands to move. */
     bool relocate(const Vec3& position);
     /** Sends the party to `request`'s destination once the tick is confirmed; into a challenge,
      * the way back is where `seat`'s character stands. */
@@ -64,7 +65,10 @@ public:
     RenderDevice& device();
     /** Drops a pickup of the level in play by its record's name; false for none of that name. */
     bool placeItem(std::string_view name, const Vec3& position);
+    /** Stands a copy of `level`'s object `name` at `position` facing `yaw`; false when none
+     * stood. */
     bool spawnObject(const LevelRef& level, std::string_view name, const Vec3& position, f32 yaw);
+    /** `level`'s item archive, kept once loaded; null when it is not unpacked. */
     ItemArchive* borrowItems(const LevelRef& level);
     /** Lends the swarm `from`'s voices; false when that level lends none. */
     bool borrowVoices(const LevelRef& from);

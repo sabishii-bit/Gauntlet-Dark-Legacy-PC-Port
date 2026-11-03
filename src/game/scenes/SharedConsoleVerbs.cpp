@@ -136,9 +136,10 @@ public:
             if (!awarded) {
                 return "That experience grant would exceed the character's counter.";
             }
-            if (const CharacterSave* partner = stage.comboPartner(seat);
-                partner != nullptr && !stage.fittingAward(*partner, *awarded)) {
-                return "That experience grant would exceed the partner's counter.";
+            for (const CharacterSave* partner : stage.comboPartners(seat)) {
+                if (!stage.fittingAward(*partner, *awarded)) {
+                    return "That experience grant would exceed the partner's counter.";
+                }
             }
             stage.awardExperience(seat, gift->amount);
             stage.restat(seat);

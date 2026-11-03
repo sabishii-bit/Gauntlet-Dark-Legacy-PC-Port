@@ -1,5 +1,7 @@
 #include <array>
+#include <cmath>
 #include <format>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -10,6 +12,7 @@
 
 #include "engine/core/Expected.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 
 #include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleReach.h"
@@ -143,6 +146,27 @@ TEST_CASE("every peer judges a verb's words alike before they are sent",
           ConsoleRefusal{.kind = Kind::Message, .text = "A tier is 1 to 3"});
     CHECK(reachOf("spawn gru 2 3") == ConsoleReach::Shared);
     CHECK(verbNamed("spawn").offlineOnlyRefusal().empty());
+}
+
+TEST_CASE("console places and flights stay finite and within a million of the origin",
+          "[online-console][console-input]") {
+    constexpr f32 kFarthest = 1.0e6f;
+    constexpr f32 kInfinity = std::numeric_limits<f32>::infinity();
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const f32 beyond = std::nextafter(kFarthest, kInfinity);
+    CHECK(consolePointInRange(Vec3{0.0f}));
+    CHECK(consolePointInRange(Vec3{kFarthest}));
+    CHECK(consolePointInRange(Vec3{-kFarthest}));
+    CHECK(consolePointInRange(Vec3{kFarthest, -kFarthest, kFarthest}));
+    for (s32 axis = 0; axis < 3; ++axis) {
+        CAPTURE(axis);
+        for (const f32 outside : {beyond, -beyond, nan, kInfinity, -kInfinity}) {
+            CAPTURE(outside);
+            Vec3 point{0.0f};
+            point[axis] = outside;
+            CHECK_FALSE(consolePointInRange(point));
+        }
+    }
 }
 
 TEST_CASE("each verb's help reads as the console's", "[dev-console][online-console]") {

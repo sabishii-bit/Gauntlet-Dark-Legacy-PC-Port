@@ -15,10 +15,14 @@ namespace gdl::game {
 
 namespace {
 
+/** What `level` scales the experience of `save`'s character by; one outside any level. */
+f32 experienceScaleFor(const CharacterSave& save, const LevelInfo* level) {
+    return level != nullptr ? level->tuning.experienceScale(experienceLevel(save.experience()))
+                            : 1.0f;
+}
+
 s32 scaledExperience(s32 amount, const CharacterSave& save, const LevelInfo* level) {
-    const f32 scale =
-        level != nullptr ? level->tuning.experienceScale(experienceLevel(save.experience())) : 1.0f;
-    return static_cast<s32>(static_cast<f32>(amount) * scale);
+    return static_cast<s32>(static_cast<f32>(amount) * experienceScaleFor(save, level));
 }
 
 CharacterSave restoredSave(const PlayerRuntime& runtime) {
@@ -75,9 +79,7 @@ void PartyRecords::award(std::span<PlayerRuntime> players, s32 player, s32 amoun
 
 std::optional<s32> PartyRecords::fittingAward(const LevelInfo* level, const CharacterSave& save,
                                               s32 amount) {
-    const f32 scale =
-        level != nullptr ? level->tuning.experienceScale(experienceLevel(save.experience())) : 1.0f;
-    const f32 won = static_cast<f32>(amount) * scale;
+    const f32 won = static_cast<f32>(amount) * experienceScaleFor(save, level);
     if (!std::isfinite(won) || won < 0 ||
         static_cast<f64>(won) >= std::numeric_limits<s32>::max()) {
         return std::nullopt;

@@ -30,17 +30,18 @@ std::optional<s32> ConsoleStage::fittingAward(const CharacterSave& save, s32 amo
     return PartyRecords::fittingAward(m_scene.m_world->level(), save, amount);
 }
 
-const CharacterSave* ConsoleStage::comboPartner(s32 seat) const {
+std::vector<const CharacterSave*> ConsoleStage::comboPartners(s32 seat) const {
+    std::vector<const CharacterSave*> partners;
     for (const PlayerRuntime& runtime : m_scene.m_players) {
         if (runtime.actor.player() != seat || !runtime.combo.active()) {
             continue;
         }
         const s32 partner = runtime.combo.partner;
         if (partner >= 0 && static_cast<usize>(partner) < m_scene.m_players.size()) {
-            return &m_scene.m_players[static_cast<usize>(partner)].actor.save();
+            partners.push_back(&m_scene.m_players[static_cast<usize>(partner)].actor.save());
         }
     }
-    return nullptr;
+    return partners;
 }
 
 void ConsoleStage::awardExperience(s32 seat, s32 amount) {

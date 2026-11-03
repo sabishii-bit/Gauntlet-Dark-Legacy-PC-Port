@@ -19,8 +19,9 @@ struct ConsoleAction {
     std::string line;
 
     /** The words a console line may carry, whatever its length: a seat, printable characters
-     * and a shared verb, never one of its local forms (get info). It reads the words itself,
-     * as splitConsoleWords does, so a decoder built without the game library judges alike. */
+     * and a shared verb, never one of its local forms (get info), in any case. It splits the
+     * line on spaces itself, as splitConsoleWords does, and compares its words in lower case,
+     * so a decoder built without the game library judges alike. */
     bool admitted() const {
         if (seat >= 4 || line.empty() ||
             !std::ranges::all_of(line, [](unsigned char c) { return c >= 32 && c <= 126; })) {
