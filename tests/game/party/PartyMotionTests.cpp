@@ -1,8 +1,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 #include <numbers>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -78,6 +81,80 @@ struct Fixture {
         return PartyMotion::step(players, inputs, held, 0, 2, 1.0f / 30.0f, collision, events);
     }
 };
+
+/** The cues' names, by their place in PartyMotion::Action. */
+constexpr std::array<std::string_view, 16> kActionNames{
+    "NoPotion",   "Ram",          "ThrowWeapon", "FamiliarShot", "StrongThrow", "SuperShot",
+    "ItemAttack", "ShieldPotion", "UsePotion",   "ThrowPotion",  "FirstFoot",   "SecondFoot",
+    "Melee",      "Fallen",       "Tagged",      "ComboStart"};
+static_assert(kActionNames.size() == static_cast<usize>(PartyMotion::Action::ComboStart) + 1);
+
+/** Events that note every question and cue of a step in `log`, by name and party index, in
+ * the order the step makes them, each answering as a level with nothing in it would. */
+PartyMotion::Events orderLog(std::vector<std::string>& log) {
+    const auto note = [&log](std::string_view what, usize i) {
+        log.push_back(std::format("{}{}", what, i));
+    };
+    return {.perform =
+                [&log](usize i, PartyMotion::Action action) {
+                    log.push_back(
+                        std::format("perform{}:{}", i, kActionNames[static_cast<usize>(action)]));
+                },
+            .select = [note](usize i, const SelectorInput&, s32) { note("select", i); },
+            .advanceTurbo = [note](usize i, s32, f32) { note("advanceTurbo", i); },
+            .thrownImpact = [note](usize i, f32) { note("thrownImpact", i); },
+            .aim = [note](usize i) -> std::optional<Vec3> {
+                note("aim", i);
+                return std::nullopt;
+            },
+            .limitMovement =
+                [note](usize i, const Vec3&, const Vec3& after) {
+                    note("limitMovement", i);
+                    return after;
+                },
+            .attackDeed =
+                [note](usize i, bool strong, bool, const Vec3&) {
+                    note("attackDeed", i);
+                    return strong ? PlayerDeed::StrongAttack : PlayerDeed::Attack;
+                },
+            .automaticMeleeDeed =
+                [note](usize i, const Vec3&) {
+                    note("automaticMeleeDeed", i);
+                    return PlayerDeed::None;
+                },
+            .meleeSense =
+                [note](usize i, bool, const Vec3&) {
+                    note("meleeSense", i);
+                    return MeleeSense{};
+                },
+            .deathContact = [note](usize i) -> std::optional<Vec3> {
+                note("deathContact", i);
+                return std::nullopt;
+            },
+            .grabDeath = [note](usize i, s32, bool) -> std::optional<Vec3> {
+                note("grabDeath", i);
+                return std::nullopt;
+            },
+            .resolveMovement =
+                [note](usize i, const Vec3&, const Vec3& to) {
+                    note("resolveMovement", i);
+                    return to;
+                },
+            .startPoint = [&log]() -> std::optional<Vec3> {
+                log.emplace_back("startPoint");
+                return std::nullopt;
+            },
+            .comboImpact =
+                [note](usize i, usize, f32) {
+                    note("comboImpact", i);
+                    return false;
+                },
+            .flying =
+                [note](usize i) {
+                    note("flying", i);
+                    return false;
+                }};
+}
 
 TEST_CASE("attack contact segments belong only to the current player's motion invocation",
           "[party-motion][alpha-contact-target]") {
@@ -1616,6 +1693,69 @@ TEST_CASE("the combo button with half the meter lifts a warrior's partner ahead,
     }
     CHECK(f.players[1].figure->animator().action() != PlayerAnimator::Action::ComboWar3);
     CHECK(f.players[1].actor.position().x > landed + 0.5f); // its own stick again
+}
+
+TEST_CASE("a step asks the level in phase order", "[game][screens][party-motion][motion-order]") {
+    Fixture f;
+    std::vector<std::string> log;
+    f.events = orderLog(log);
+    // Moving with attack held, a potion asked for without one.
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.inputs[3].attack = true;
+    f.inputs[3].usePotion = true;
+    f.step();
+    CHECK(log == std::vector<std::string>{
+                     "deathContact0", "perform0:NoPotion", "attackDeed0", "select0", "flying0",
+                     "resolveMovement0", "limitMovement0", "grabDeath0", "deathContact1", "select1",
+                     "flying1", "resolveMovement1", "limitMovement1", "grabDeath1"});
+    // Standing still with attack held, the attack is aimed as well.
+    log.clear();
+    f.inputs[3] = {};
+    f.inputs[3].attack = true;
+    f.step();
+    CHECK(log == std::vector<std::string>{"deathContact0", "attackDeed0", "select0", "flying0",
+                                          "resolveMovement0", "limitMovement0", "grabDeath0",
+                                          "aim0", "deathContact1", "select1", "flying1",
+                                          "resolveMovement1", "limitMovement1", "grabDeath1"});
+}
+
+TEST_CASE("a figure's step asks its melee sense, then its turbo, then its releases",
+          "[game][screens][party-motion][motion-order][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+    REQUIRE(f.players[0].figure);
+    std::vector<std::string> log;
+    f.events = orderLog(log);
+    f.inputs[3].attack = true;
+    f.inputs[3].attackPressed = true;
+    f.step();
+    CHECK(log == std::vector<std::string>{"deathContact0", "attackDeed0", "select0", "flying0",
+                                          "resolveMovement0", "limitMovement0", "grabDeath0",
+                                          "aim0", "meleeSense0", "advanceTurbo0", "deathContact1",
+                                          "select1", "flying1", "resolveMovement1",
+                                          "limitMovement1", "grabDeath1"});
+    // Held on, the throw lets its weapon go.
+    f.inputs[3].attackPressed = false;
+    std::vector<std::string> released;
+    for (s32 frame = 0; frame < 120 && released.empty(); ++frame) {
+        log.clear();
+        f.step();
+        if (std::ranges::any_of(
+                log, [](const std::string& call) { return call.starts_with("perform0:"); })) {
+            released = log;
+        }
+    }
+    CHECK(released == std::vector<std::string>{
+                          "deathContact0", "attackDeed0", "select0", "flying0", "resolveMovement0",
+                          "limitMovement0", "grabDeath0", "aim0", "meleeSense0", "advanceTurbo0",
+                          "perform0:ThrowWeapon", "deathContact1", "select1", "flying1",
+                          "resolveMovement1", "limitMovement1", "grabDeath1"});
 }
 } // namespace
 

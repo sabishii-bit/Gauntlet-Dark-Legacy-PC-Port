@@ -2,10 +2,13 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <map>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -14,6 +17,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/config/ControlProfiles.h"
 #include "game/level/TowerAccess.h"
 #include "game/netplay/OnlinePair.h"
 #include "game/netplay/OnlineParty.h"
@@ -21,6 +25,7 @@
 #include "game/players/PlayerActor.h"
 #include "game/rollback/SimulationObserver.h"
 #include "game/scenes/AfterLevelScene.h"
+#include "game/scenes/PlayScene.h"
 
 namespace {
 using namespace gdl;
@@ -31,6 +36,22 @@ constexpr s32 kHostDevice = 2;
 constexpr s32 kGuestDevice = 0;
 constexpr s32 kSecondHostDevice = 3;
 constexpr u8 kSecondHostSeat = 2;
+
+/** A controller's rumble as a machine was asked for it. */
+std::string rumble(s32 device, s32 frames, ControlFeedback cue) {
+    return std::format("device {} frames {} cue {}", device, frames, static_cast<u32>(cue));
+}
+
+/** A seat's damage rumble as a scene's output ledger presents it for a tick. */
+PlayScene::OutputLedger::Action presented(u8 seat) {
+    using Ledger = PlayScene::OutputLedger;
+    constexpr s32 kFrames = 10;
+    return {Ledger::ActionKind::Present,
+            {{1, 1, {1, seat, 1, seat}, static_cast<u32>(ControlFeedback::Damage) + 1, 0},
+             Ledger::Policy::OneShot,
+             PlayScene::RumbleOutput{seat, kFrames, ControlFeedback::Damage},
+             {}}};
+}
 
 struct NativePair {
     std::filesystem::path root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
@@ -61,6 +82,7 @@ struct NativePair {
     bool manualSaveSucceeds = true;
     u32 hostAwards = 0, guestAwards = 0;
     u16 hostUnlocks = 0, guestUnlocks = 0;
+    std::vector<std::string> hostRumble, guestRumble; ///< what each machine's devices were asked
 
     explicit NativePair(const PlayOptions& options = {}, std::string_view beatenLevel = {},
                         std::optional<bool> autoSave = {}, std::string_view initialLevel = "L1",
@@ -124,6 +146,12 @@ struct NativePair {
         guestContext.unlockClasses = [&](u16 mask) {
             guestUnlocks |= mask;
             ++guestAwards;
+        };
+        hostContext.vibrate = [&](s32 device, s32 frames, ControlFeedback cue) {
+            hostRumble.push_back(rumble(device, frames, cue));
+        };
+        guestContext.vibrate = [&](s32 device, s32 frames, ControlFeedback cue) {
+            guestRumble.push_back(rumble(device, frames, cue));
         };
         const auto selected = [&](s32 device, s32 character, const std::string& name) {
             PartyMember result;
@@ -710,6 +738,38 @@ TEST_CASE("native online local pause fences only the owned device while agreed t
     REQUIRE(pair->host.resume(kHostDevice));
     CHECK(pair->host.phase() == NativeOnlinePlay::Phase::Playing);
     CHECK_FALSE(pair->host.resume(kHostDevice));
+}
+
+TEST_CASE("online rumble reaches only this machine's unpaused devices",
+          "[native-online-play][rumble][assets]") {
+    auto pair = std::make_unique<NativePair>(immediateTower(), "", false, "L1", false, 1, true);
+    pair->settle();
+    REQUIRE(pair->hostParty.device(pair->hostSession, kSeats[0]) == kHostDevice);
+    REQUIRE(pair->hostParty.device(pair->hostSession, kSecondHostSeat) == kSecondHostDevice);
+    // Each machine presents every seat's rumble, as its ledger hands a tick's outputs on.
+    const auto presentEverySeat = [&] {
+        pair->hostRumble.clear();
+        pair->guestRumble.clear();
+        for (const auto* play : {&pair->host, &pair->guest}) {
+            for (const u8 seat : {kSeats[0], kSecondHostSeat, kSeats[1]}) {
+                REQUIRE(play->scene()->dispatchOutput(presented(seat)));
+            }
+        }
+    };
+    const auto damage = [](s32 device) { return rumble(device, 10, ControlFeedback::Damage); };
+    presentEverySeat();
+    CHECK(pair->hostRumble ==
+          std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
+    CHECK(pair->guestRumble == std::vector<std::string>{damage(kGuestDevice)});
+    // A paused device feels nothing; the machine's other device still does.
+    REQUIRE(pair->host.pause(kHostDevice));
+    presentEverySeat();
+    CHECK(pair->hostRumble == std::vector<std::string>{damage(kSecondHostDevice)});
+    CHECK(pair->guestRumble == std::vector<std::string>{damage(kGuestDevice)});
+    REQUIRE(pair->host.resume(kHostDevice));
+    presentEverySeat();
+    CHECK(pair->hostRumble ==
+          std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
 }
 
 TEST_CASE(

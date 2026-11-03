@@ -2,9 +2,12 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
+#include <format>
 #include <optional>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -14,9 +17,11 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
@@ -28,6 +33,7 @@
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
 #include "game/level/CombatantObstacle.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/MissileStop.h"
 #include "game/level/SafeRocks.h"
@@ -92,6 +98,66 @@ TEST_CASE("fixture explosions resolve live nearby players before opponents and d
     f.fixtures.clear();
     f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
     REQUIRE(f.calls.size() == 2);
+}
+
+/** A level whose one barrel, at `at`, holds the level's key; its directory. */
+std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at) {
+    const auto directory = test::scratchDirectory(name);
+    writeTextFile(directory / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(directory / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(directory / "white.png", test::kTinyPng);
+    writeTextFile(directory / "textures.json", R"({"bitmaps":[
+      {"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(directory / "world.json", std::format(R"({{
+      "objects":[{{"name":"TRI","position":[0,0,0],"flags":4100}}],
+      "itemInfos":[
+        {{"type":2,"subtype":43,"name":"BARREL","radius":1,"height":3,"hitPoints":1}},
+        {{"type":1,"subtype":2,"name":"KEY","radius":1,"value":1}}],
+      "itemInstances":[
+        {{"info":0,"position":[{},{},{}],"params":[1,0,0,0,1,0,0,0,0,0,0,0]}}]}})",
+                                                        at.x, at.y, at.z));
+    writeTextFile(directory / "animations.json", R"({"trees":[{"name":"BARREL","nodes":[
+      {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"REST","frames":4,"frameRate":30},
+        {"name":"HIT","frames":6,"frameRate":30},
+        {"name":"BREAK","frames":5,"frameRate":30}]}]})");
+    test::convertModelFixture(directory);
+    return directory;
+}
+
+TEST_CASE("a blast reaches players, then scenery, then opponents",
+          "[game][screens][level-fixtures][blast-order]") {
+    // Within the ring's first reach, less the inset an explosion's item query takes off.
+    const auto directory = writeBarrelLevel("fixtures-blast-order", Vec3{1, 0, 0});
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, directory, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    REQUIRE(f.fixtures.barrels().size() == 1);
+    f.events.hurt = [&](usize i, f32, HurtKind, bool, const PlayerImpact&) {
+        f.calls.push_back("player" + std::to_string(i));
+    };
+    // The barrel the ring breaks lets out what it holds: the scenery's step.
+    f.events.releaseEnemy = [&](s32, const Vec3&, s32) {
+        f.calls.emplace_back("scenery");
+        return false;
+    };
+    // The opponents only add who they reached; the ring keeps it for its next step.
+    constexpr s32 kReached = 7;
+    f.events.opponents = [&](const Vec3&, f32, f32, std::vector<s32>& reached, u32) {
+        f.calls.push_back(std::format("opponents{}", reached.size()));
+        if (std::ranges::find(reached, kReached) == reached.end()) {
+            reached.push_back(kReached);
+        }
+    };
+    f.fixtures.blast(Vec3{0}, 6, 30, f.players, f.events);
+    CHECK_FALSE(f.fixtures.barrels().standing(0));
+    CHECK(f.calls == std::vector<std::string>{"player0", "scenery", "opponents0"});
+    f.calls.clear();
+    f.fixtures.update(2, 1.0f / 30, f.players, f.events);
+    CHECK(f.calls == std::vector<std::string>{"opponents1"});
+    f.fixtures.clear();
 }
 
 TEST_CASE("world explosion fallback keeps its retail radius damage and fire flags",

@@ -238,6 +238,7 @@ add_executable(tests
     game/scenes/SceneDescriptionTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp
+    game/scenes/PlaySceneSoundIdentityTests.cpp
     game/level/StaticSceneryTests.cpp
     game/config/ControlProfilesTests.cpp
     game/hud/ControlPromptsTests.cpp
@@ -949,7 +950,7 @@ if(GDL_ENABLE_NETPLAY)
         game/party/PowerupCompanionTests.cpp game/party/PlayerFamiliarTests.cpp
         game/rollback/LocalStateHistoryTests.cpp
         game/netplay/RollbackExchangeTests.cpp
-        game/audio/NativeSoundIdentityTests.cpp
+        game/audio/NativeSoundIdentityTests.cpp game/scenes/PlaySceneSoundIdentityTests.cpp
         game/rollback/RollbackInputsTests.cpp
         game/rollback/FrameEventLedgerTests.cpp
         game/party/PlayerLocalRewindTests.cpp

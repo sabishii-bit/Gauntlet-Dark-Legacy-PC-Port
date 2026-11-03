@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <format>
 #include <map>
 #include <memory>
 #include <numbers>
@@ -15,6 +16,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/audio/AudioMixer.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -33,6 +35,7 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFlags.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
@@ -2526,8 +2529,16 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .destroyedGenerator = [](s32) { FAIL("No generators"); },
         .blocksBreath = {},
         .blocksArea = {},
-        .arenaAnchors = {},
-        .arenaTargets = {},
+        .arenaAnchors =
+            [&] {
+                phases.emplace_back("arenaAnchors");
+                return std::vector<Mat4>{};
+            },
+        .arenaTargets =
+            [&] {
+                phases.emplace_back("arenaTargets");
+                return std::vector<CombatArenaTarget>{};
+            },
         .activateArena = {},
         .shake = {},
         .help = {},
@@ -2536,13 +2547,212 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
     opponents.update(6, 0.1f, {}, {}, events);
-    REQUIRE(phases == std::vector<std::string>{"blast", "legend", "victory", "levels"});
+    REQUIRE(phases == std::vector<std::string>{"blast", "arenaAnchors", "arenaTargets", "legend",
+                                               "victory", "levels"});
     opponents.close();
     opponents.close();
     opponents.update(6, 0.1f, {}, {}, events);
-    REQUIRE(phases.size() == 4);
+    REQUIRE(phases.size() == 6);
     REQUIRE_FALSE(opponents.bosses().present());
     REQUIRE_FALSE(opponents.meter().bound());
+}
+
+/** Opponent events that note each hook as a tick calls it, and keep every tick's hooks,
+ * joined, in the order a tick first showed them. */
+struct HookOrder {
+    std::vector<std::string> tick;   ///< the hooks of the tick under way, as they come
+    std::vector<std::string> orders; ///< each order a tick showed, first shown first
+    LevelOpponents::Events events{
+        .hurt = [this](usize, f32, HurtKind, bool, const PlayerImpact&) { note("hurt"); },
+        .settleBlasts = [] {},
+        .legend = [this](const LegendEvent&) { note("legend"); },
+        .advanceLegend = [this](f32) { note("advanceLegend"); },
+        .fallen = [this](const Vec3&) { note("fallen"); },
+        .spew = [this](const CombatSpew&) { note("spew"); },
+        .advanceVictory = [this](s32, f32) { note("advanceVictory"); },
+        .levels = [this] { note("levels"); },
+        .award = [this](s32, s32, bool) { note("award"); },
+        .destroyedGenerator = [this](s32) { note("destroyedGenerator"); },
+        .blocksBreath = {},
+        .blocksArea = {},
+        .arenaAnchors = {},
+        .arenaTargets = {},
+        .activateArena = [this](const CombatArenaActivation&) { note("activateArena"); },
+        .shake = [this] { note("shake"); },
+        .help =
+            [this](s32, usize) {
+                note("help");
+                return true;
+            },
+        .blastScenery = {}};
+
+    HookOrder() = default;
+    GDL_NON_COPYABLE_NON_MOVABLE(HookOrder);
+    ~HookOrder() = default;
+    void note(std::string_view hook) { tick.emplace_back(hook); }
+    /** Ends the tick under way, keeping its order unless a tick before showed it. */
+    void endTick() {
+        std::string order;
+        for (const std::string& hook : tick) {
+            order += order.empty() ? hook : " " + hook;
+        }
+        if (std::ranges::find(orders, order) == orders.end()) {
+            orders.push_back(order);
+        }
+        tick.clear();
+    }
+};
+
+/** A general of its own making, in the costume of `realm`, whose blow lands on what stands
+ * within ten of it, shaking the camera as it does; the root it is written under. */
+std::filesystem::path writeShakingGeneral(char realm) {
+    const auto root = test::scratchDirectory("level-opponents-shaking-general");
+    const auto archive = root / "MONSTERS/GENERAL" / std::format("LEVEL{}", realm);
+    std::filesystem::create_directories(root / "critter");
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3}]},
+      {"name":"IMPACT","nodes":[],"sequences":[{"name":"PLAY","frames":30,"rate":30}]}]})");
+    writeTextFile(root / "critter/GENERAL.json",
+                  std::format(R"({{
+      "descriptors":[{{"prefix":"BODY","name":"GENERAL","type":{}}}],
+      "types":[{{"moveCount":3,"maxHealth":100,"radius":1,"expValue":50}}],
+      "moves":[{{"name":"READY","anim":"STEP","type":32,"interrupt":60}},
+        {{"name":"ATTACK","anim":"STEP","type":128,"priority":20,"target":{{"maxDistance":5}},
+          "frameStart":0,"frameEnd":2,"damage0":0}},
+        {{"name":"DEATH","anim":"STEP","type":17,"priority":999}}],
+      "damages":[{{"type":0,"maxDistance":10,"damage":10,"sfxIndex":0}}],
+      "sounds":[{{"name":"IMPACT","flags":{}}}]}})",
+                              static_cast<s32>(CombatantKind::General), effect_flags::kShakes));
+    return root;
+}
+
+TEST_CASE("a great one's hooks keep their phase order", "[level-opponents]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    const auto root = writeShakingGeneral(world.ref().name.front());
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 3}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.critters().spawnGeneral(Vec3{0}, 0) == 0);
+    HookOrder hooks;
+    const auto advance = [&] {
+        opponents.update(2, 1.0f / 30, players, {}, hooks.events);
+        effects.update(1.0f / 30);
+        hooks.endTick();
+    };
+    // It strikes the party, the camera shaking.
+    for (s32 frame = 0; frame < 60; ++frame) {
+        advance();
+    }
+    // The party's blow on it is worth its share.
+    EnemyHit blow;
+    blow.damage = 5;
+    blow.player = 0;
+    opponents.critters().hurt(0, blow);
+    advance();
+    // A great one's shake and blow come after the victory, its worth before the levels.
+    CHECK(hooks.orders ==
+          std::vector<std::string>{"advanceLegend advanceVictory shake hurt levels",
+                                   "advanceLegend advanceVictory levels",
+                                   "advanceLegend advanceVictory shake levels",
+                                   "advanceLegend advanceVictory shake award levels"});
+    opponents.close();
+    effects.clear();
+}
+
+TEST_CASE("a boss level's hooks keep their phase order", "[level-opponents][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    CharacterSave save;
+    REQUIRE(save.progress().relics.addLegend(legendRealmOf(41)));
+    players[0].actor.spawn(0, save, nullptr, Vec3{0}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().view().kind == 41);
+    HookOrder hooks;
+    opponents.bosses().wake();
+    // Where the party stands from him, kept there every tick.
+    Vec3 away{0, 0, 12};
+    const auto advance = [&] {
+        if (const Vec3* boss = opponents.bosses().position()) {
+            players[0].actor.place(*boss + away);
+        }
+        opponents.update(2, 1.0f / 30, players, {}, hooks.events);
+        effects.update(1.0f / 30);
+        hooks.endTick();
+    };
+    // The rite runs its course and the fight goes on a while.
+    for (s32 frame = 0; frame < 900; ++frame) {
+        advance();
+    }
+    // A blow of the party's on him.
+    EnemyHit blow;
+    blow.damage = 1;
+    blow.player = 0;
+    opponents.bosses().hurt(blow);
+    advance();
+    // Hurt below half, he spits generators; the party's blow on one destroys it.
+    blow.damage = opponents.bosses().view().maxHealth * 0.6f;
+    opponents.bosses().hurt(blow);
+    away = Vec3{0, 0, 20};
+    s32 generator = -1;
+    for (s32 frame = 0; frame < 9000 && generator < 0; ++frame) {
+        advance();
+        generator = firstStandingGenerator(opponents.generators());
+    }
+    REQUIRE(generator >= 0);
+    opponents.strikeGenerator(generator, 1000, 0, players);
+    advance();
+    // A blow that fells him.
+    blow.damage = opponents.bosses().view().maxHealth * 10;
+    opponents.bosses().hurt(blow);
+    for (s32 frame = 0; frame < 900; ++frame) {
+        advance();
+    }
+    // The shots' harm comes before the rite, his blows' after it; his coins, his fall and
+    // his worth before the victory; the levels, then the generators' worth, last.
+    CHECK(hooks.orders ==
+          std::vector<std::string>{"advanceLegend advanceVictory levels",
+                                   "legend advanceLegend advanceVictory levels",
+                                   "legend advanceLegend award advanceVictory levels",
+                                   "hurt advanceLegend advanceVictory levels",
+                                   "hurt hurt advanceLegend advanceVictory levels",
+                                   "hurt advanceLegend hurt advanceVictory levels",
+                                   "advanceLegend hurt advanceVictory levels",
+                                   "advanceLegend award advanceVictory levels",
+                                   "advanceLegend advanceVictory levels award destroyedGenerator",
+                                   "advanceLegend award award advanceVictory levels",
+                                   "advanceLegend spew advanceVictory levels",
+                                   "advanceLegend fallen advanceVictory levels"});
+    opponents.close();
+    effects.clear();
 }
 
 TEST_CASE("area immunity counts down independently for each player's runtime",
