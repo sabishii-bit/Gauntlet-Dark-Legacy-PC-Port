@@ -646,6 +646,8 @@ add_executable(tests
     game/party/PartyPickupsTests.cpp
     game/level/FixtureHostTests.cpp
     game/level/CombatCoverTests.cpp
+    game/level/SafeRockCoverTests.cpp
+    game/level/ImportedCoverTests.cpp
     game/level/LevelFixturesTests.cpp
     game/enemies/OpponentHostTests.cpp
     game/enemies/BossEncounterHostTests.cpp

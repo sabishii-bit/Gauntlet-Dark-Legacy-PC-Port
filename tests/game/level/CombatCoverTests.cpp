@@ -17,6 +17,12 @@ static_assert(std::is_abstract_v<CombatCover>);
 static_assert(std::has_virtual_destructor_v<CombatCover>);
 static_assert(std::is_base_of_v<CombatCover, test::ScriptedOpponents>);
 
+TEST_CASE("breath is taken wider than a wide area's blow against every cover",
+          "[game][combat-cover]") {
+    STATIC_CHECK(CombatCover::kBreathProbeRadius == 0.5f);
+    STATIC_CHECK(CombatCover::kAreaProbeRadius == 0.1f);
+}
+
 TEST_CASE("cover with nothing scripted shelters nobody", "[game][combat-cover]") {
     const test::ScriptedOpponents scripted;
     const CombatCover& cover = scripted;

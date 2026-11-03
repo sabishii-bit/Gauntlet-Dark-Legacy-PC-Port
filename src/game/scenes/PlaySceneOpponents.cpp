@@ -13,7 +13,9 @@
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/OpponentHost.h"
 #include "game/level/CombatCover.h"
+#include "game/level/ImportedCover.h"
 #include "game/level/ImportedLevel.h"
+#include "game/level/SafeRockCover.h"
 #include "game/level/SafeRocks.h"
 #include "game/party/PartyRecords.h"
 #include "game/players/PlayerActor.h"
@@ -21,12 +23,6 @@
 #include "game/scenes/PlayScene.h"
 
 namespace gdl::game {
-namespace {
-
-constexpr f32 kBreathProbeRadius = 0.5f; ///< how wide breath is taken to be against cover
-constexpr f32 kAreaProbeRadius = 0.1f;   ///< how wide a wide area's blow is taken to be
-
-} // namespace
 
 /** The scene's answers to what its opponents report: harm to its members, the fixtures'
  * blasts and scenery bursts, experience and generators to its party, levels and lessons on
@@ -111,34 +107,18 @@ private:
     PlayScene& m_scene;
 };
 
-/** The scene's answers to what stands in a blow's way: an imported level's arena, otherwise
- * the level's safe rocks. */
-class PlayScene::CoverRouting final : public CombatCover {
-public:
-    explicit CoverRouting(PlayScene& scene) : m_scene(scene) {}
-    bool blocksBreath(const Vec3& from, const Vec3& to) const override {
-        if (const auto* imported = m_scene.m_world->imported()) {
-            return imported->arenaBlocksSegment(from, to, kBreathProbeRadius);
-        }
-        return m_scene.m_fixtures.safeRocks().blocksBreath(from, to);
-    }
-    bool blocksArea(const Vec3& from, const Vec3& to) const override {
-        if (const auto* imported = m_scene.m_world->imported()) {
-            return imported->arenaBlocksSegment(from, to, kAreaProbeRadius);
-        }
-        return m_scene.m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
-    }
-
-private:
-    PlayScene& m_scene;
-};
-
 void PlayScene::advanceOpponents(s32 ticks, f32 seconds) {
     OpponentRouting host{*this};
     BossRouting encounter{*this};
-    const CoverRouting cover{*this};
-    m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), host, encounter, cover,
-                       m_fixtures.missileStops(), m_fixtures.critterObstacles());
+    const auto advance = [&](const CombatCover& cover) {
+        m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), host, encounter,
+                           cover, m_fixtures.missileStops(), m_fixtures.critterObstacles());
+    };
+    if (const auto* imported = m_world->imported()) {
+        advance(ImportedCover{*imported});
+    } else {
+        advance(SafeRockCover{m_fixtures.safeRocks()});
+    }
 }
 
 void PlayScene::settleOpponentRewards() {

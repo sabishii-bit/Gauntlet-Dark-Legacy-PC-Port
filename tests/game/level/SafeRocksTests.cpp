@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/level/CombatCover.h"
 #include "game/level/SafeRocks.h"
 
 namespace {
@@ -113,6 +114,43 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE_FALSE(rocks.standing(0)); // an expired timer cannot reactivate it twice
     rocks.clear();
     REQUIRE(rocks.size() == 0);
+}
+
+TEST_CASE("safe rocks take breath as wide as every cover's breath probe",
+          "[game][world][safe-rocks][breath]") {
+    const auto dir = test::scratchDirectory("safe-rocks-breath");
+    writeTextFile(dir / "world.json", R"({
+      "objects": [{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+      "itemInfos": [
+        {"type":10,"subtype":41,"name":"ROCK","radius":2.3,"height":5,
+         "collisionType":1,"hitPoints":40,"armor":10}],
+      "itemInstances": [
+        {"info":0,"minPlayers":1,"position":[7,30,-1],"rotation":[0,0.4,0],
+         "params":[41,0,3,0,0,0,0,0,0,0,0,0]}]
+    })");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    test::FakeRenderDevice device;
+    ItemArchive missing;
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(device, layout, missing));
+    rocks.setPlayerCount(1);
+    REQUIRE(rocks.standing(0));
+    STATIC_CHECK(CombatCover::kBreathProbeRadius == 0.5f);
+    // From inside the rock, 2 from its centre, out to 0.9 past its side of 2.3.
+    constexpr s32 kSteps = 24;
+    constexpr f32 kStart = 9.0f;
+    constexpr f32 kStep = 0.05f;
+    for (s32 step = 0; step <= kSteps; ++step) {
+        const f32 x = kStart + kStep * static_cast<f32>(step);
+        const Vec3 from{x, 32, -10};
+        const Vec3 to{x, 32, 10};
+        CAPTURE(x);
+        CHECK(rocks.blocksBreath(from, to) ==
+              rocks.blocksSegment(from, to, CombatCover::kBreathProbeRadius));
+    }
+    CHECK(rocks.blocksBreath(Vec3{9.7f, 32, -10}, Vec3{9.7f, 32, 10}));       // 0.4 past its side
+    CHECK_FALSE(rocks.blocksBreath(Vec3{9.9f, 32, -10}, Vec3{9.9f, 32, 10})); // 0.6 past
 }
 
 TEST_CASE("Yeti ice rocks stay invisible until their eruption completes",

@@ -761,9 +761,8 @@ private:
     /** The scene's answers to what a boss encounter asks; one is made for each update or
      * settling. */
     class BossRouting;
-    /** The scene's answers to what stands in a blow's way; one is made for each update. */
-    class CoverRouting;
-    /** Runs the opponents for the tick against the fixtures, answered by the scene. */
+    /** Runs the opponents for the tick against the fixtures, answered by the scene; an imported
+     * level's arena gives the cover, otherwise the safe rocks do. */
     void advanceOpponents(s32 ticks, f32 seconds);
     /** Settles what the opponents still owe the party before it leaves the level. */
     void settleOpponentRewards();

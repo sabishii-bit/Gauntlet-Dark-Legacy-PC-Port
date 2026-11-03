@@ -255,6 +255,10 @@ add_library(game STATIC
     level/Rubble.cpp
     level/SafeRocks.h
     level/SafeRocks.cpp
+    level/SafeRockCover.h
+    level/SafeRockCover.cpp
+    level/ImportedCover.h
+    level/ImportedCover.cpp
     characters/LevelWatch.cpp
     enemies/EnemyKinds.cpp
     enemies/EnemyAnimator.cpp
