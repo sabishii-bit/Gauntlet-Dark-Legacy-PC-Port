@@ -93,10 +93,6 @@ const std::vector<LegendsMapEntry>& Gauntlet::foundLegendsMaps(LegendsPlatform p
     return *found;
 }
 
-std::vector<LegendsMapEntry> Gauntlet::legendsMapsOf(LegendsPlatform platform, bool rescan) const {
-    return foundLegendsMaps(platform, rescan);
-}
-
 bool Gauntlet::legendsMapsInstalled(bool rescan) const {
     bool installed = false;
     for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
@@ -180,7 +176,7 @@ Gauntlet::findLegendsMap(std::string_view name, std::optional<LegendsPlatform> p
         if (platform.has_value() && *platform != candidate) {
             continue;
         }
-        if (const auto directory = legendsMapPath(legendsMapsOf(candidate, true), name)) {
+        if (const auto directory = legendsMapPath(foundLegendsMaps(candidate, true), name)) {
             return std::pair{candidate, *directory};
         }
     }

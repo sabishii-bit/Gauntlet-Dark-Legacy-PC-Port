@@ -944,11 +944,15 @@ public:
     }
 };
 
+/** Whether a test form shows in help, the usage and the words. */
+enum class Listing : u8 { Listed, Unlisted };
+
 /** A form of the test's own that claims nothing and offers its words while listed. */
 class WordedForm final : public ConsoleForm {
 public:
-    WordedForm(bool listed, std::string keyword, std::string name)
-        : m_listed(listed), m_keyword(std::move(keyword)), m_name(std::move(name)) {}
+    WordedForm(Listing listing, std::string keyword, std::string name)
+        : m_listed(listing == Listing::Listed), m_keyword(std::move(keyword)),
+          m_name(std::move(name)) {}
     bool claims(Arguments /*arguments*/) const override { return false; }
     ConsoleReach reach() const override { return ConsoleReach::Local; }
     void run(DevConsole& /*console*/, Arguments /*arguments*/) override {}
@@ -968,9 +972,9 @@ TEST_CASE("a command's grammar words and its listed forms' come before the names
     using Words = std::vector<std::string>;
     DevConsole console;
     console.addCommand(std::make_unique<RankingCommand>());
-    console.addForm("fly", std::make_unique<WordedForm>(true, "under", "Uxbridge"));
-    console.addForm("fly", std::make_unique<WordedForm>(false, "unseen", "Ur"));
-    console.addForm("fly", std::make_unique<WordedForm>(true, "upward", "Uppsala"));
+    console.addForm("fly", std::make_unique<WordedForm>(Listing::Listed, "under", "Uxbridge"));
+    console.addForm("fly", std::make_unique<WordedForm>(Listing::Unlisted, "unseen", "Ur"));
+    console.addForm("fly", std::make_unique<WordedForm>(Listing::Listed, "upward", "Uppsala"));
     const ConsoleCommand* fly = console.commands().find("fly");
     REQUIRE(fly != nullptr);
     CHECK(console.commands().completions(*fly, Words{"u"}) ==

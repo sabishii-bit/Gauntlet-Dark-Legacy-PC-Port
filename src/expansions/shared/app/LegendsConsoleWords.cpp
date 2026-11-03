@@ -54,8 +54,7 @@ public:
         const auto found = path ? std::optional{std::pair{*platform, paths::fromUtf8(name)}}
                                 : m_access.find(name, platform);
         if (!found.has_value()) {
-            // A word that is neither a level nor an installed Legends map, as before the
-            // Legends maps were taken: the levels are what list maps names first.
+            // Neither a level nor an installed Legends map: list maps names both.
             console.print(
                 std::format("No level or Legends map named {}; list maps names them", name));
             return;

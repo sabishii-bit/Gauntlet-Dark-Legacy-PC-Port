@@ -112,16 +112,14 @@ private:
     std::optional<std::span<const std::string_view>> legendsConsoleHold() const;
     /** unlock_tower in a native Legends world walked: its own tower's unlocks for the party. */
     void consoleLegendsUnlockTower(DevConsole& console);
-    /** The Legends maps installed for a platform. The disk is walked on the first ask and
-     * whenever `rescan` asks (list maps, goto); the console's completion reads what was
-     * found, so typing costs nothing when there is no Legends content at all. */
-    std::vector<LegendsMapEntry> legendsMapsOf(LegendsPlatform platform, bool rescan = false) const;
-    /** Whether either platform has a Legends map installed, found as legendsMapsOf finds them;
-     * nothing is copied, so help and the suggestions may ask it every frame. */
-    bool legendsMapsInstalled(bool rescan) const;
-    /** What legendsMapsOf answers, as it is kept. */
+    /** The Legends maps installed for a platform, as they are kept. The disk is walked on the
+     * first ask and whenever `rescan` asks (list maps, goto); the console's completion reads
+     * what was found, so typing costs nothing when there is no Legends content at all. */
     const std::vector<LegendsMapEntry>& foundLegendsMaps(LegendsPlatform platform,
                                                          bool rescan) const;
+    /** Whether either platform has a Legends map installed, found as foundLegendsMaps finds
+     * them; nothing is copied, so help and the suggestions may ask it every frame. */
+    bool legendsMapsInstalled(bool rescan) const;
     /** The folder of the Legends map named `name`: on `platform`, or on whichever has it. */
     std::optional<std::pair<LegendsPlatform, std::filesystem::path>>
     findLegendsMap(std::string_view name, std::optional<LegendsPlatform> platform) const;

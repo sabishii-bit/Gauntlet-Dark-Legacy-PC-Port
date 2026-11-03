@@ -120,6 +120,9 @@ public:
     std::vector<std::string> lines;
 };
 
+/** Whether the Legends maps stand installed under the roster's console. */
+enum class Maps : u8 { Absent, Installed };
+
 /** The application's roster over made-up game state with nothing in play, and the Legends
  * expansion's words over made-up maps: castle1 and tower2 on the N64 when they are installed, and
  * the folder of lab whether they are or not. */
@@ -137,7 +140,7 @@ struct Roster {
     DevConsole console;
     bool legendsInstalled;
 
-    explicit Roster(bool installed = true) : legendsInstalled(installed) {
+    explicit Roster(Maps maps = Maps::Installed) : legendsInstalled(maps == Maps::Installed) {
         REQUIRE(saves.open(test::scratchDirectory("console-roster-saves"), 4));
         LegendsConsoleAccess legends{
             .visiting = [] { return false; },
@@ -374,7 +377,7 @@ TEST_CASE("a character's code after lock or unlock is the profile's form", "[dev
 
 TEST_CASE("without a Legends map installed, the console names none of their words",
           "[dev-console][online-console][legends]") {
-    Roster fixture{false};
+    Roster fixture{Maps::Absent};
     const std::string help = fixture.say("help");
     CHECK(help.contains(test::shownAs(std::format("{:<19}  {}", "goto", kBaseGotoSummary))));
     CHECK_FALSE(help.contains("legends"));
