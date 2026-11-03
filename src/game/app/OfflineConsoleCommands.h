@@ -52,7 +52,7 @@ public:
         std::function<s32()> consolePlayer;
         std::function<RenderDevice&()> device;
         const LevelCatalog& levels;
-        std::filesystem::path unpackedRoot;
+        const std::filesystem::path& unpackedRoot;
         const GameConfig& config;
         SaveSlots& saves;               ///< opened when first needed, for the class unlocks
         Cheats& cheats;                 ///< each player's, carried into the scene every tick
@@ -91,8 +91,12 @@ public:
     void unlockTower(DevConsole& console);
     /** activate: presses a switch of the level in play, named by token, id or name. */
     void activate(DevConsole& console, Arguments arguments);
-    /** lock and unlock: a character by its code, or a door or chest of the level in play. */
-    void lock(DevConsole& console, Arguments arguments, bool unlock);
+    /** lock: a door of the level in play shut or a chest wanting a key again, or a character
+     * hidden again by its code. */
+    void lock(DevConsole& console, Arguments arguments);
+    /** unlock: a door or chest of the level in play opened without a key, or a character
+     * offered by its code. */
+    void unlock(DevConsole& console, Arguments arguments);
     /** party_count: the party size the level sets itself up for, or off. */
     void partyCount(DevConsole& console, Arguments arguments);
     /** list: the maps, items, inventory, enemies, critters, generators, objects, switches or
@@ -129,6 +133,8 @@ private:
     s32 consolePlayer() const { return m_ports.consolePlayer(); }
     void toggleCheat(DevConsole& console, bool PlayScene::ConsoleCheats::*flag, std::string_view on,
                      std::string_view off);
+    /** lock's body, or unlock's when `unlock` is set. */
+    void changeLock(DevConsole& console, Arguments arguments, bool unlock);
     /** Lends the swarm `level`'s voices for the visitors brought in from it. */
     void consoleBorrowVoices(DevConsole& console, const LevelRef& level);
     /** Fills `level` for `map`, or for the level in play without one; false, having said

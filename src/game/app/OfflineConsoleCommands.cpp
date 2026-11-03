@@ -320,7 +320,15 @@ void OfflineConsoleCommands::activate(DevConsole& console, Arguments arguments) 
                                     entry.index, entry.name, entry.target));
 }
 
-void OfflineConsoleCommands::lock(DevConsole& console, Arguments arguments, bool unlock) {
+void OfflineConsoleCommands::lock(DevConsole& console, Arguments arguments) {
+    changeLock(console, arguments, false);
+}
+
+void OfflineConsoleCommands::unlock(DevConsole& console, Arguments arguments) {
+    changeLock(console, arguments, true);
+}
+
+void OfflineConsoleCommands::changeLock(DevConsole& console, Arguments arguments, bool unlock) {
     const std::string_view verb = unlock ? "unlock" : "lock";
     std::string error;
     const auto request = ConsoleCommands::parseLockRequest(arguments, error, verb);
@@ -349,7 +357,7 @@ void OfflineConsoleCommands::lock(DevConsole& console, Arguments arguments, bool
             unlock ? m_ports.saves.unlockClasses(mask) : m_ports.saves.lockClasses(mask);
         if (!unlock && playScene() != nullptr && playScene()->isOpen()) {
             // The party in play carries the old reward bits; they would bring it back.
-            for (s32 player = 0; player < 4; ++player) {
+            for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
                 if (CharacterSave* save = playScene()->liveSave(player)) {
                     save->classUnlock &= static_cast<u16>(~mask);
                 }

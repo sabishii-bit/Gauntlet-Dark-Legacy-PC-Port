@@ -258,12 +258,6 @@ struct Commands {
         return shown([&](DevConsole& console) { (commands.*handler)(console); });
     }
 
-    /** What lock, or unlock, shows for the words of `line`. */
-    std::string lock(std::string_view line, bool unlock) {
-        const Words words = wordsOf(line);
-        return shown([&](DevConsole& console) { commands.lock(console, words, unlock); });
-    }
-
     /** What goto shows for the words of `line`, which name a level, a point or the tower. */
     std::string goTo(std::string_view line) {
         const Words words = wordsOf(line);
@@ -293,7 +287,7 @@ struct Commands {
 };
 } // namespace
 
-TEST_CASE("with nothing in play each offline command says so as it does today", "[dev-console]") {
+TEST_CASE("with nothing in play each offline command answers in its own words", "[dev-console]") {
     Commands fixture;
     using C = OfflineConsoleCommands;
     CHECK(fixture.say(&C::god) == "Nobody is in.");
@@ -321,19 +315,20 @@ TEST_CASE("with nothing in play each offline command says so as it does today", 
     CHECK(fixture.say(&C::activate, "") == kActivateUsage);
     CHECK(fixture.say(&C::activate, "switch#0") == "Nothing is in play.");
     CHECK(
-        fixture.lock("", false) ==
+        fixture.say(&C::lock, "") ==
         "lock $SELECTED|gate#N|chest#N|<name>  a door shut again, or a chest wanting a key again\n"
         "lock character <code>                 a character hidden again; the starting eight stay\n"
         "list characters names the codes; list switches and get info name the rest.");
-    CHECK(fixture.lock("chest#0", false) == "Nothing is in play.");
-    CHECK(fixture.lock("gate#0", true) == "Nothing is in play.");
-    CHECK(fixture.lock("character XYZ", true) ==
+    CHECK(fixture.say(&C::lock, "chest#0") == "Nothing is in play.");
+    CHECK(fixture.say(&C::unlock, "gate#0") == "Nothing is in play.");
+    CHECK(fixture.say(&C::unlock, "character XYZ") ==
           "No character is coded XYZ; list characters names them");
-    CHECK(fixture.lock("character WAR", true) == "WAR is always there to choose");
+    CHECK(fixture.say(&C::unlock, "character WAR") == "WAR is always there to choose");
     const std::string code{classCode(kStartingClassCount)};
-    CHECK(fixture.lock("character " + code, true) == "MIN unlocked: the select screen offers it");
+    CHECK(fixture.say(&C::unlock, "character " + code) ==
+          "MIN unlocked: the select screen offers it");
     CHECK((fixture.saves.classUnlocks() & 1U) != 0);
-    CHECK(fixture.lock("character " + code, false) ==
+    CHECK(fixture.say(&C::lock, "character " + code) ==
           "MIN locked: the select screen hides it again");
     CHECK((fixture.saves.classUnlocks() & 1U) == 0);
 
@@ -383,8 +378,7 @@ TEST_CASE("with nothing in play each offline command says so as it does today", 
     CHECK(fixture.commands.gotoWords(Words{"x", "p", "q"}) == Words{});
 }
 
-TEST_CASE("every offline command answers in a level with its words today",
-          "[dev-console][assets]") {
+TEST_CASE("every offline command answers in a level in its own words", "[dev-console][assets]") {
     test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
     auto fixture = std::make_unique<Commands>("G2");
     auto& scene = fixture->scene;
@@ -640,27 +634,29 @@ TEST_CASE("every offline command answers in a level with its words today",
     CHECK(fixture->say(&C::activate, "triggers") ==
           "Pressed switch#30 TRIGGERS: G2BAR_WALL answers, the camera following");
     reopen();
-    CHECK(fixture->lock("NOPE", true) == "NOPE names no door or chest here; gate#N, chest#N, a "
-                                         "name or $SELECTED after a click does");
-    CHECK(fixture->lock("GATEB", true) ==
+    CHECK(fixture->say(&C::unlock, "NOPE") ==
+          "NOPE names no door or chest here; gate#N, chest#N, a name or $SELECTED after a click "
+          "does");
+    CHECK(fixture->say(&C::unlock, "GATEB") ==
           "GATEB names 2 things: gate#0, gate#1; say which by its token");
-    CHECK(fixture->lock("gate#0", true) == "gate#0 GATEB unlocked: it swings open");
-    CHECK(fixture->lock("gate#0", true) == "gate#0 GATEB is open already");
-    CHECK(fixture->lock("gate#0", false) == "gate#0 GATEB locked: shut until a key is spent");
-    CHECK(fixture->lock("gate#0", false) == "gate#0 GATEB is shut already");
-    CHECK(fixture->lock("gated", true) == "gate#2 GATED unlocked: it swings open");
-    CHECK(fixture->lock("chest#0", true) == "chest#0 CHEST unlocked: it opens without a key");
-    CHECK(fixture->lock("chest#0", false) == "chest#0 CHEST locked: a key opens it");
-    CHECK(fixture->lock("chest#0", false) == "chest#0 CHEST locked: a key opens it");
-    CHECK(fixture->lock("CHESTG1", true) == "chest#20 CHESTG1 unlocked: it opens without a key");
-    CHECK(fixture->lock("CHEST", false) ==
+    CHECK(fixture->say(&C::unlock, "gate#0") == "gate#0 GATEB unlocked: it swings open");
+    CHECK(fixture->say(&C::unlock, "gate#0") == "gate#0 GATEB is open already");
+    CHECK(fixture->say(&C::lock, "gate#0") == "gate#0 GATEB locked: shut until a key is spent");
+    CHECK(fixture->say(&C::lock, "gate#0") == "gate#0 GATEB is shut already");
+    CHECK(fixture->say(&C::unlock, "gated") == "gate#2 GATED unlocked: it swings open");
+    CHECK(fixture->say(&C::unlock, "chest#0") == "chest#0 CHEST unlocked: it opens without a key");
+    CHECK(fixture->say(&C::lock, "chest#0") == "chest#0 CHEST locked: a key opens it");
+    CHECK(fixture->say(&C::lock, "chest#0") == "chest#0 CHEST locked: a key opens it");
+    CHECK(fixture->say(&C::unlock, "CHESTG1") ==
+          "chest#20 CHESTG1 unlocked: it opens without a key");
+    CHECK(fixture->say(&C::lock, "CHEST") ==
           "CHEST names 12 things: chest#0, chest#1, chest#2, chest#4, chest#6, chest#7, chest#11, "
           "chest#13, chest#14, chest#16, chest#17,\n"
           "chest#18; say which by its token");
     reopen();
     const std::string code{classCode(kStartingClassCount)};
     fixture->save(0).classUnlock = 1U;
-    CHECK(fixture->lock("character " + code, false) ==
+    CHECK(fixture->say(&C::lock, "character " + code) ==
           "MIN locked: the select screen hides it again");
     CHECK(fixture->save(0).classUnlock == 0);
 

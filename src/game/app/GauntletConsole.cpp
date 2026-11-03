@@ -95,13 +95,13 @@ void Gauntlet::setUpConsole() {
     m_console.addCommand(
         "unlock", "a door or chest without a key, or character <code> for the select screen",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.lock(console, arguments, true);
+            m_offlineConsole.unlock(console, arguments);
         },
         [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
     m_console.addCommand(
         "lock", "a door shut or a chest wanting a key again, or character <code> hidden again",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.lock(console, arguments, false);
+            m_offlineConsole.lock(console, arguments);
         },
         [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
     m_console.addCommand(
