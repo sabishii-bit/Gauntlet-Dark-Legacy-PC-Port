@@ -10,6 +10,7 @@
 #include "engine/world/WorldCollision.h"
 
 #include "game/critters/CombatantAssets.h"
+#include "game/critters/CombatantDefinition.h"
 #include "game/critters/CritterData.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/level/HazardSurfaces.h"
@@ -53,6 +54,18 @@ NativeStateDigest identity(std::string_view kind) {
     digest.string("NativeStateResources.1");
     digest.string(kind);
     return digest;
+}
+
+/** What a family definition contributes to its identity: every field but its combat policies.
+ * Each policy is a function of the name and kind hashed here; a definition that set one apart
+ * from them would need it hashed too, and the identity's schema bumped with it. */
+void appendFamily(NativeStateDigest& digest, const CombatantDefinition& family) {
+    [[maybe_unused]] const auto& [name, kind, realmCostume, selection, boundsToHome,
+                                  projectileEndVisual, knockbackReduction, breaksItems, patrols,
+                                  healthBar, dropForm, targeting, seesInvisible, harmScale, shrinks,
+                                  shoved, tramplesSwarm, departure] = family;
+    digest.values(name, kind, realmCostume, selection, boundsToHome, projectileEndVisual,
+                  knockbackReduction, breaksItems, patrols, healthBar, dropForm);
 }
 
 } // namespace
@@ -368,7 +381,7 @@ bool NativeStateResources::registerCombatantAssets(const CombatantAssets& assets
     }
     auto value = identity("combatant-family");
     value.string(logicalKey);
-    value.fields<11>(assets.definition);
+    appendFamily(value, assets.definition);
     value.values(assets.cooldownStartsWithMove, assets.projectileLifetime, assets.wakeDelay,
                  assets.initialMoveBeforeWake);
     if (!bind(typeid(CombatantAssets), &assets, value.finish())) {

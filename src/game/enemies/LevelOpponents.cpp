@@ -2218,8 +2218,9 @@ void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerR
             carried.reset();
         }
     }
-    if (!bag.item && loss.kind == CombatantKind::Gargoyle && !loss.form.empty()) {
-        // A gargoyle carrying nothing leaves the piece its form is named by.
+    if (!bag.item && !loss.form.empty()) {
+        // A gargoyle carrying nothing leaves the piece its form is named by; only a
+        // gargoyle's family has a drop form.
         bag.name = "GARG" + loss.form;
     }
     if (!bag.item && bag.name.empty()) {

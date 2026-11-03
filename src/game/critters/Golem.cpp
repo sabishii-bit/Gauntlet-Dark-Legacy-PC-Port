@@ -15,6 +15,7 @@ CombatantDefinition Golem::definition(char realm) {
     out.realmCostume = true;
     out.knockbackReduction = 5.0f;
     out.breaksItems = true;
+    out.tramplesSwarm = true;
     return out;
 }
 } // namespace gdl::game

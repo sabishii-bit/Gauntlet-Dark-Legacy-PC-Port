@@ -105,12 +105,14 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
 void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) const {
     critter.targets.clear();
     critter.targetYaw = critter.yaw;
-    const bool boss = critter.definition->kind() == CombatantKind::Boss;
+    const CombatantDefinition& family = critter.stock->definition;
+    const bool angerRanked = family.targeting == CombatantDefinition::Targeting::AngerRanked;
     const TargetCriteria& sight = critter.definition->sight();
     const Vec3 origin = targetingOrigin(critter);
     for (const EnemyView& view : players) {
-        if (critter.state != State::Active || view.hidden || (!boss && view.invisible) ||
-            view.player < 0 || static_cast<usize>(view.player) >= kPlayerSlots) {
+        if (critter.state != State::Active || view.hidden ||
+            (!family.seesInvisible && view.invisible) || view.player < 0 ||
+            static_cast<usize>(view.player) >= kPlayerSlots) {
             continue;
         }
         // Sight measures the player's collision centre against the body's rotated
@@ -134,7 +136,8 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
             continue;
         }
         constexpr f32 kRecentlyHitPenalty = 1000.0f;
-        const f32 anger = boss ? inverseAnger(critter, static_cast<usize>(view.player)) : 1.0f;
+        const f32 anger =
+            angerRanked ? inverseAnger(critter, static_cast<usize>(view.player)) : 1.0f;
         critter.targets.push_back({view.player, distance,
                                    score * anger * (view.recentlyHit ? kRecentlyHitPenalty : 1),
                                    anger, direction});
@@ -142,7 +145,7 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
     std::ranges::sort(critter.targets, [](const Target& a, const Target& b) {
         return a.score != b.score ? a.score < b.score : a.player < b.player;
     });
-    if (!boss && critter.targets.size() > 1) {
+    if (!angerRanked && critter.targets.size() > 1) {
         critter.targets.resize(1);
     }
     selectFirstTarget(critter);
@@ -398,7 +401,7 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
     };
     // A hit shoves it by its flags, dead or alive, a golem less and a boss never.
     u32 flags = critter.hurtFlags;
-    if (critter.stock->definition.kind != CombatantKind::Boss) {
+    if (critter.stock->definition.shoved) {
         f32 scale = 0.0f;
         if (critter.state == State::Dying) {
             scale = kDeathPush;

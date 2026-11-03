@@ -15,8 +15,7 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
             if (actor.grabbed < 0) {
                 return;
             }
-            if (actor.definition->rules().pressureReferenceDamage > 0 &&
-                actor.definition->kind() == CombatantKind::Boss) {
+            if (actor.definition->rules().pressureReferenceDamage > 0) {
                 // Native boss release reaches the same raw contact tally as a
                 // node strike, before the player applies immunity or armor.
                 m_sim.pressure.note(actor.grabbed, damage.damage);

@@ -1697,6 +1697,25 @@ TEST_CASE("creature families supply distinct policies without duplicating move e
     REQUIRE_FALSE(golem.boundsToHome);
     REQUIRE_FALSE(general.boundsToHome);
     REQUIRE_FALSE(gargoyle.boundsToHome);
+    // The great ones take the best-scored player, are shrunk, shoved and scaled by their
+    // hitter's level, and leave a drop; only the golem tramples the swarm.
+    for (const CombatantDefinition* family : {&golem, &general, &gargoyle}) {
+        CAPTURE(family->name);
+        REQUIRE(family->targeting == CombatantDefinition::Targeting::Best);
+        REQUIRE_FALSE(family->seesInvisible);
+        REQUIRE(family->harmScale == CombatantDefinition::HarmScale::HitterLevel);
+        REQUIRE(family->shrinks);
+        REQUIRE(family->shoved);
+        REQUIRE(family->tramplesSwarm == (family == &golem));
+        REQUIRE(family->departure == CombatantDefinition::Departure::Drops);
+    }
+    REQUIRE(boss.targeting == CombatantDefinition::Targeting::AngerRanked);
+    REQUIRE(boss.seesInvisible);
+    REQUIRE(boss.harmScale == CombatantDefinition::HarmScale::PartySize);
+    REQUIRE_FALSE(boss.shrinks);
+    REQUIRE_FALSE(boss.shoved);
+    REQUIRE_FALSE(boss.tramplesSwarm);
+    REQUIRE(boss.departure == CombatantDefinition::Departure::Fades);
 }
 
 TEST_CASE("a great one lies its shadow only when its type says so", "[game][combatant][shadow]") {
@@ -2338,6 +2357,192 @@ TEST_CASE("a boss is never shoved by a hit's flags whether standing or falling",
         CHECK(actor.position().x ==
               Approx(boss ? 0.0f : struck + (kKnockOverShove * kShoveLeft + kDeathShove) / 30));
         CHECK(actor.position().z == 0.0f);
+    }
+}
+
+TEST_CASE("a family's own policies and not its kind decide how shared combat treats it",
+          "[game][combatant][combatant-policy]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    const CombatantDefinition boss = bossDefinition("LICH");
+    // The golem's own family, then the same family given the boss's answer to one policy: the
+    // golem's kind stays, so only the policy can make it fight as the boss does.
+    const auto golems = [](const auto& give) {
+        CombatantDefinition given = Golem::definition();
+        give(given);
+        return std::array{std::pair{Golem::definition(), false}, std::pair{given, true}};
+    };
+    const auto spawned = [&](CombatantAssets& assets, Combatant& actor,
+                             const CombatantDefinition& family, const EnemyScales& scales = {}) {
+        REQUIRE(assets.load(device, root, family, 'G'));
+        REQUIRE(actor.spawn(assets, 7, {}, 0, nullptr, scales, 'G'));
+    };
+    SECTION("unshoved, a knock-over leaves it where it stood") {
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.shoved = boss.shoved; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            spawned(assets, actor, family);
+            EnemyHit hit;
+            hit.damage = 10;
+            hit.flags = kKnockOver;
+            hit.direction = {1, 0, 0};
+            actor.hurt(hit);
+            actor.update(2, 1.0f / 30, {});
+            CHECK(actor.position().x ==
+                  Approx(given ? 0.0f : (10 - family.knockbackReduction) / 30));
+        }
+    }
+    SECTION("scaled by the party's size, it takes less, pays more and loses nothing to a level") {
+        EnemyScales scales;
+        scales.players = 3;
+        scales.playerLevel = 100;
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.harmScale = boss.harmScale; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            spawned(assets, actor, family, scales);
+            EnemyHit hit;
+            hit.player = 0;
+            hit.level = 80;
+            hit.damage = 20;
+            const f32 credited = given ? 6.0f : 20.0f;
+            CHECK(actor.hurt(hit) == Approx(credited));
+            CHECK(actor.health() == Approx(100.0f - (given ? credited : 12.0f)));
+            const auto losses = actor.takeLosses();
+            REQUIRE(losses.size() == 1);
+            CHECK(losses[0].experience ==
+                  Approx(credited / 101.0f * 50.0f * (given ? 3.0f : 1.0f)));
+        }
+    }
+    SECTION("never shrunk, it takes and deals its harm whole") {
+        writeTextFile(root / "critter/GOLEM.json", R"({
+          "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+          "types":[{"moveCount":2,"maxHealth":100,"radius":3}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+                   {"name":"CLAW","anim":"STEP","type":128,"priority":20,
+                    "colnode":"BODY","target":{"maxDistance":50},
+                    "frameStart":0,"frameEnd":2,"damage0":0}],
+          "damages":[{"type":0,"radius":3,"maxDistance":1,"damage":10,"offset":[0,0,8]}]})");
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.shrinks = boss.shrinks; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            REQUIRE(assets.load(device, root, family, 'G'));
+            REQUIRE(actor.spawn(assets, 7, {}, 3.14159265f, nullptr, {}, 'G'));
+            actor.setShrink(0.667f);
+            EnemyHit hit;
+            hit.damage = 12;
+            actor.hurt(hit);
+            CHECK(actor.health() == Approx(given ? 88.0f : 76.0f));
+            EnemyView player;
+            player.player = 0;
+            player.position = {0, 0, -8 * 0.667f};
+            player.radius = 0.75f;
+            player.height = 5.0f;
+            const std::array players{player};
+            std::vector<CombatBlow> blows;
+            for (s32 i = 0; i < 10 && blows.empty(); ++i) {
+                actor.update(2, 1.0f / 30, players);
+                blows = actor.takeBlows();
+            }
+            REQUIRE(blows.size() == 1);
+            CHECK(blows[0].damage == Approx(given ? 10.0f : 5.0f));
+        }
+    }
+    SECTION("fading at its death, it leaves no drop") {
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.departure = boss.departure; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            spawned(assets, actor, family);
+            EnemyHit hit;
+            hit.damage = 1000;
+            hit.direction = Vec3{0};
+            actor.hurt(hit);
+            REQUIRE(actor.dying());
+            usize drops = 0;
+            for (s32 frame = 0; frame < 90 && actor.present(); ++frame) {
+                actor.update(2, 1.0f / 30, {});
+                drops += static_cast<usize>(std::ranges::count_if(
+                    actor.takeLosses(), [](const CombatLoss& loss) { return loss.drop; }));
+            }
+            CHECK_FALSE(actor.present());
+            CHECK(drops == (given ? 0 : 1));
+        }
+    }
+    SECTION("ranking by anger, it turns on the player who hit it") {
+        writeTextFile(root / "critter/GOLEM.json", R"({
+          "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+          "types":[{"moveCount":1,"maxHealth":1000}],
+          "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.targeting = boss.targeting; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            spawned(assets, actor, family);
+            std::array<EnemyView, 2> players;
+            players[0].player = 3;
+            players[0].position = {0, 0, 4};
+            players[1].player = 1;
+            players[1].position = {0, 0, 10};
+            actor.update(1, 0.25f, players);
+            REQUIRE(actor.target() == 3);
+            EnemyHit hit;
+            hit.player = 1;
+            hit.damage = 10;
+            actor.hurt(hit);
+            actor.update(1, 0.25f, players);
+            CHECK(actor.target() == (given ? 1 : 3));
+        }
+    }
+    SECTION("seeing through invisibility, it takes a player the others cannot see") {
+        writeTextFile(root / "critter/GOLEM.json", R"({
+          "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+          "types":[{"moveCount":1,"maxHealth":1000}],
+          "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.seesInvisible = boss.seesInvisible; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            spawned(assets, actor, family);
+            std::array<EnemyView, 1> players;
+            players[0].player = 1;
+            players[0].position = {0, 0, 10};
+            players[0].invisible = true;
+            actor.update(1, 0.25f, players);
+            CHECK(actor.target() == (given ? 1 : -1));
+        }
+    }
+    SECTION("not trampling, it is stopped by a small swarm body") {
+        writeTextFile(root / "critter/GOLEM.json", R"({
+          "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+          "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+        const std::array swarm{EnemyBody{5, {1, 0, 0}, 1, 2}};
+        for (const auto& [family, given] :
+             golems([&](CombatantDefinition& f) { f.tramplesSwarm = boss.tramplesSwarm; })) {
+            CAPTURE(given);
+            CombatantAssets assets;
+            Combatant actor;
+            spawned(assets, actor, family);
+            actor.setSwarm(swarm);
+            EnemyHit hit;
+            hit.damage = 1;
+            hit.flags = kKnockOver;
+            hit.direction = {1, 0, 0};
+            actor.hurt(hit);
+            actor.update(2, 1.0f / 30, {});
+            CHECK(actor.position().x ==
+                  Approx(given ? 0.0f : (10 - family.knockbackReduction) / 30));
+            CHECK(actor.takeTramples().size() == (given ? 0 : 1));
+        }
     }
 }
 

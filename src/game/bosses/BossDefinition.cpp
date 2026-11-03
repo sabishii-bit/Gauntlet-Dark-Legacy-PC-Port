@@ -26,6 +26,12 @@ CombatantDefinition bossDefinition(std::string_view name) {
     out.selection = CombatantDefinition::Selection::Patterns;
     out.boundsToHome = true;
     out.projectileEndVisual = out.name == "YETI";
+    out.targeting = CombatantDefinition::Targeting::AngerRanked;
+    out.seesInvisible = true;
+    out.harmScale = CombatantDefinition::HarmScale::PartySize;
+    out.shrinks = false;
+    out.shoved = false;
+    out.departure = CombatantDefinition::Departure::Fades;
     return out;
 }
 

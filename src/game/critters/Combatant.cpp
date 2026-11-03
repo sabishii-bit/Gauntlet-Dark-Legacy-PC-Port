@@ -761,7 +761,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
             critter = Actor{};
         }
     } else if (critter.state == State::Dying &&
-               critter.stock->definition.kind != CombatantKind::Boss) {
+               critter.stock->definition.departure == CombatantDefinition::Departure::Drops) {
         if (move != nullptr && move->type == MoveDefinition::kDeath && !critter.moveDone) {
             const auto& sequence = critter.stock->tree->sequences[critter.player.sequence()];
             if (move->frameStart > 0 && sequence.frames > move->frameStart) {
@@ -839,8 +839,8 @@ f32 Combatant::hurtActor(const EnemyHit& hit) {
     flags = modified.flags;
     amount = modified.amount;
     // Shrunk, a great one takes double (CritterDamage); a boss never shrinks.
-    const bool boss = data.kind() == CombatantKind::Boss;
-    if (!boss) {
+    const CombatantDefinition& family = critter.stock->definition;
+    if (family.shrinks) {
         amount = EnemyShrink::harmTaken(critter.shrink, amount);
     }
     if (amount <= 0.0f) {
@@ -850,9 +850,10 @@ f32 Combatant::hurtActor(const EnemyHit& hit) {
     // (CritterDamage's damage_mul).
     const f32 counterDamage = amount;
     critter.roarOwed += counterDamage;
+    const bool partyScaled = family.harmScale == CombatantDefinition::HarmScale::PartySize;
     const s32 players =
         std::clamp(m_sim.scales.players, 0, static_cast<s32>(kBossShares.size()) - 1);
-    if (boss && !m_sim.fullHarm) {
+    if (partyScaled && !m_sim.fullHarm) {
         amount *= kBossShares[static_cast<usize>(players)];
     }
     // Every hit is worth its share of the creature's value to the one who dealt it (a boss's
@@ -865,10 +866,10 @@ f32 Combatant::hurtActor(const EnemyHit& hit) {
             rememberDamage(memory.dealt, memory.dealtTime, targetClock(critter), credited);
         }
         f32 share = std::min(credited / (1.0f + critter.maxHealth), 1.0f) * data.experience();
-        if (boss) {
+        if (partyScaled) {
             share *= static_cast<f32>(players);
         }
-        if (!boss && m_sim.scales.playerLevel > 0.0f &&
+        if (!partyScaled && m_sim.scales.playerLevel > 0.0f &&
             static_cast<f32>(hit.level) < m_sim.scales.playerLevel) {
             const f32 under = m_sim.scales.playerLevel - static_cast<f32>(hit.level);
             amount *= std::max(1.0f - kUnderLevelLoss * under, 0.1f);
@@ -1048,8 +1049,10 @@ void Combatant::setShrink(f32 scale) {
 }
 
 f32 Combatant::dealt(f32 amount) const {
-    return kind() == CombatantKind::Boss ? amount
-                                         : EnemyShrink::harmDealt(m_sim.actor.shrink, amount);
+    const CombatantAssets* stock = m_sim.actor.stock;
+    return stock != nullptr && !stock->definition.shrinks
+               ? amount
+               : EnemyShrink::harmDealt(m_sim.actor.shrink, amount);
 }
 
 void Combatant::hold(bool held) {

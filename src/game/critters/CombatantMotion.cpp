@@ -24,6 +24,7 @@ constexpr f32 kBlindTurnShare = 0.1f;
 constexpr f32 kSupportReach = 0.1f;
 constexpr u32 kReturnFacing = 0x20;
 constexpr u32 kNodeMovement = 0x100;
+constexpr f32 kTrampleHeight = 2.0f; ///< the tallest half-height of a swarm body trampled
 
 Vec3 travelWorld(const WorldCollision& collision, const Vec3& from, const Vec3& wanted,
                  f32 radius) {
@@ -94,9 +95,10 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                       std::span<const EnemyView> players, std::span<const Combatant> peers) {
     // Both native AIs translate using the previous facing, then turn. Only
     // CritterGolemAI (GC 0x800396a4) skips the turn on player contact;
-    // CritterBossAI (0x80039ad8) always turns after its home-clamped step.
+    // CritterBossAI (0x80039ad8) always turns after its home-clamped step,
+    // which never reports a contact.
     const bool playerContact = translate(critter, seconds, move, players, peers);
-    if (!playerContact || critter.stock->definition.kind == CombatantKind::Boss) {
+    if (!playerContact) {
         rotate(critter, seconds, move, players);
     }
 }
@@ -348,7 +350,7 @@ bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
     if (nearest == nullptr) {
         return false;
     }
-    if (critter.stock->definition.kind == CombatantKind::Golem && nearest->halfHeight <= 2) {
+    if (critter.stock->definition.tramplesSwarm && nearest->halfHeight <= kTrampleHeight) {
         m_sim.tramples.push_back(
             {nearest->id, critter.definition->itemDamage() * m_sim.scales.damage, contact});
         return false;
