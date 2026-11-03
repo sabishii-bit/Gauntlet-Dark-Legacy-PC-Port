@@ -44,10 +44,11 @@ constexpr std::array<Registered, 18> kCommands{{
 /** The words a Legends map's preview admits. */
 constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
 
-/** What the application is doing, the session it hands the console, and what that admits. */
+/** What the application is doing, the facts it makes the console's session from, and what
+ * that session admits. */
 struct Row {
     std::string_view label;
-    ConsoleSession session;
+    ConsoleSituation situation;
     std::vector<std::string_view> admitted;
 };
 
@@ -61,39 +62,38 @@ TEST_CASE("each session admits what it admits today", "[dev-console][online-cons
         "suicide", "notarget",   "god",  "hidehud", "freecam",      "noclip"};
     std::vector<std::string_view> everythingHosted = everythingOnline;
     everythingHosted.insert(everythingHosted.begin() + 1, "console_permissions");
-    const std::array<Row, 9> rows{{
-        {.label = "offline", .session = {}, .admitted = everythingOffline},
+    const std::array<Row, 8> rows{{
+        // Walking a level or a Legends map is offline play: neither is a fact of the session.
+        {.label = "offline, walking a level or a Legends map",
+         .situation = {},
+         .admitted = everythingOffline},
         // The level's own commands are judged before the preview's words, so they stay.
         {.label = "offline, a Legends preview open",
-         .session = {.modal = kPreviewWords},
+         .situation = {.preview = kPreviewWords},
          .admitted = {"help", "activate", "unlock", "lock", "goto", "party_count"}},
-        {.label = "offline, walking a Legends map", .session = {}, .admitted = everythingOffline},
         {.label = "online host",
-         .session = {.seat = ConsoleSeat::Host},
+         .situation = {.online = true, .host = true, .allowed = true},
          .admitted = everythingHosted},
         {.label = "online host, the match not running",
-         .session = {.seat = ConsoleSeat::Host, .access = ConsoleAccess::Closed},
+         .situation = {.online = true, .host = true},
          .admitted = {"console_permissions"}},
         {.label = "permitted guest",
-         .session = {.seat = ConsoleSeat::Guest},
+         .situation = {.online = true, .allowed = true},
          .admitted = everythingOnline},
-        {.label = "unpermitted guest",
-         .session = {.seat = ConsoleSeat::Guest, .access = ConsoleAccess::Closed},
-         .admitted = {}},
-        {.label = "netplay menus",
-         .session = {.seat = ConsoleSeat::NetplayMenus},
-         .admitted = everythingOnline},
+        {.label = "unpermitted guest", .situation = {.online = true}, .admitted = {}},
+        {.label = "netplay menus", .situation = {.netplay = true}, .admitted = everythingOnline},
         // The online game outranks the menus it was entered from.
         {.label = "netplay menus with an online host",
-         .session = {.seat = ConsoleSeat::Host},
+         .situation = {.online = true, .host = true, .allowed = true, .netplay = true},
          .admitted = everythingHosted},
     }};
     for (const Row& row : rows) {
+        const ConsoleSession session = ConsolePolicy::session(row.situation);
         for (const Registered& command : kCommands) {
             INFO(row.label << ": " << command.name);
             const bool admitted =
                 std::ranges::find(row.admitted, command.name) != row.admitted.end();
-            const auto refused = ConsolePolicy::refusal(row.session, command.reach, command.name);
+            const auto refused = ConsolePolicy::refusal(session, command.reach, command.name);
             CHECK(refused.has_value() != admitted);
             if (refused.has_value()) {
                 CHECK(*refused == "This command is not available in this session.");

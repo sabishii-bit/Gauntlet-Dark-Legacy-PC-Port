@@ -36,7 +36,7 @@
 namespace gdl::game {
 
 namespace {
-/** The only commands the console runs while a Legends map's preview holds the view. */
+/** The commands a Legends map's preview lets the console run, besides the offline-only ones. */
 constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
 } // namespace
 
@@ -166,17 +166,16 @@ void Gauntlet::setUpConsole() {
 }
 
 ConsoleSession Gauntlet::consoleSession() const {
-    ConsoleSession session;
+    ConsoleSituation situation{.netplay = m_netplay != nullptr};
     if (m_online) {
-        session.seat = m_online->consoleHost() ? ConsoleSeat::Host : ConsoleSeat::Guest;
-        session.access = m_online->consoleAllowed() ? ConsoleAccess::Open : ConsoleAccess::Closed;
-    } else if (m_netplay) {
-        session.seat = ConsoleSeat::NetplayMenus;
+        situation.online = true;
+        situation.host = m_online->consoleHost();
+        situation.allowed = m_online->consoleAllowed();
     }
     if (m_legendsPreview.isOpen()) {
-        session.modal = kPreviewWords;
+        situation.preview = kPreviewWords;
     }
-    return session;
+    return ConsolePolicy::session(situation);
 }
 
 const PlayScene* Gauntlet::consoleScene() const {

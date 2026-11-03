@@ -44,7 +44,7 @@ public:
 };
 
 /** A command made of a name, a summary, its reach and a function: the quick way to register
- * one. It never runs in the shared game: the shared verbs have commands of their own. */
+ * one. Its reach is never Shared. */
 class LambdaCommand final : public ConsoleCommand {
 public:
     using Handler = std::function<void(DevConsole& console, Arguments arguments)>;

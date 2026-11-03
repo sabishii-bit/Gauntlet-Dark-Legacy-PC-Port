@@ -88,7 +88,7 @@ private:
     /** The developer console's font, banner and commands (GauntletConsole.cpp). */
     void setUpConsole();
     /** What the console's policy judges by: who is at it, whether it may run commands, and
-     * the only words a Legends preview admits. Set before every console update and draw. */
+     * the words a Legends preview admits. Set before every console update and draw. */
     ConsoleSession consoleSession() const;
     const PlayScene* consoleScene() const;
     const LevelWorld* consoleWorld() const;
