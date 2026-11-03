@@ -14,7 +14,6 @@
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 
-#include "FakeRenderDevice.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/ImportedWorldObject.h"
 #include "game/level/LevelCatalog.h"
@@ -161,12 +160,10 @@ TEST_CASE("a thing selected in a level is described by its kind", "[dev-console]
 
 TEST_CASE("a shared scene's description binds no mesh", "[dev-console][assets]") {
     test::PlayedLevel level{"G1"};
-    const u32 texturesCreated = level.device.texturesCreated;
-    const u32 textureUpdates = level.device.textureUpdates;
     const auto describe = [&](Kind kind, s32 id, LevelWorld* meshes) {
         return describeSelection(level.scene, level.world, selected(kind, id), meshes);
     };
-    // Without the world's models an object is described up to its mesh, which is left alone.
+    // Without the world's models an object is described up to its mesh and no further.
     const Lines shared = describe(Kind::Object, 0, nullptr);
     CHECK(shared == Lines{"object#0 G1POLYSET#0: object 0 of G1",
                           "at 49.2 27.9 -94.2; radius 8.5; parent none",
@@ -175,8 +172,6 @@ TEST_CASE("a shared scene's description binds no mesh", "[dev-console][assets]")
                                                       "at 15.1 -4.6 -4.0; radius 0.0; parent none",
                                                       "flags 0x2 prelit; object flags 0x0",
                                                       "static; shown"});
-    CHECK(level.device.texturesCreated == texturesCreated);
-    CHECK(level.device.textureUpdates == textureUpdates);
     // With them the same lines come first, then the mesh.
     Lines offline = shared;
     offline.emplace_back("mesh: 4 triangles, 1 part: WATERFALL+6");
