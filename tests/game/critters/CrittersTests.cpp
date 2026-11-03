@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <numbers>
 #include <random>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
 #include "game/bosses/BossCoins.h"
+#include "game/bosses/BossDefinition.h"
 #include "game/characters/ClassData.h"
 #include "game/combat/EffectFlags.h"
 #include "game/critters/CombatantBreath.h"
@@ -1348,6 +1350,42 @@ TEST_CASE("unpacked boss patterns and health gates agree with the authored WAD",
             }
         }
     }
+}
+
+TEST_CASE("every boss of the unpacked critter data is a boss in each of its parts",
+          "[game][critters][unpacked]") {
+    const auto directory = test::unpackedOrSkip("critter");
+    constexpr s32 kFirstBossKind = 34; ///< the dragon
+    constexpr s32 kLastBossKind = 44;  ///< the garm
+    std::set<std::string> roster;
+    for (s32 kind = kFirstBossKind; kind <= kLastBossKind; ++kind) {
+        roster.emplace(bossNameOf(kind));
+    }
+    std::set<std::string> bosses;
+    usize parts = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.path().extension() != ".json") {
+            continue;
+        }
+        CAPTURE(entry.path().filename().string());
+        CritterData body;
+        REQUIRE(body.load(entry.path()));
+        if (body.kind() != CombatantKind::Boss) {
+            continue;
+        }
+        bosses.insert(entry.path().stem().string());
+        std::set<s32> visited{0};
+        for (s32 child = body.childIndex(); child >= 0;) {
+            REQUIRE(visited.insert(child).second);
+            CritterData part;
+            REQUIRE(part.load(entry.path(), static_cast<usize>(child)));
+            CHECK(part.kind() == CombatantKind::Boss);
+            child = part.childIndex();
+            ++parts;
+        }
+    }
+    CHECK(bosses == roster);
+    CHECK(parts == 3); // the chimera's eagle, lion and snake
 }
 
 TEST_CASE("move effects start at authored frames with distinct root node base and world placement",

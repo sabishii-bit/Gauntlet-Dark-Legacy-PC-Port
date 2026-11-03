@@ -3,6 +3,9 @@
 #include <cmath>
 #include <filesystem>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -1058,6 +1061,36 @@ TEST_CASE("combatant immutable timing policies participate in resource identity"
     CHECK(hash(imported) == original);
 }
 
+TEST_CASE("each family's combatant identity keeps its bytes",
+          "[game][combatant][native-state-digest][native-state-resources]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    // SHA-256 of a digest holding only the family's registered identity, which netplay peers
+    // must hash alike: a literal moves only when what the identity takes changes on purpose.
+    const std::array families{
+        std::pair{
+            bossDefinition("LICH"),
+            std::string_view{"40a15d9e20e67dc55a28cefd9327b1112ae784fb7547c926a65fff092fb5c383"}},
+        std::pair{
+            Golem::definition(),
+            std::string_view{"ce056bafbf1f747b9f266d72f1bcfb5d4c484759d3d9745c3107fdd3d13d6af7"}},
+        std::pair{
+            Gargoyle::definition(),
+            std::string_view{"4e38131b3b607d39f10837491f1c138dd614babbb57bd0084bedde4d37c421e3"}}};
+    for (const auto& [definition, expected] : families) {
+        CAPTURE(definition.name);
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        NativeStateResources resources;
+        REQUIRE(resources.registerCombatantAssets(assets, "critters/" + definition.name));
+        NativeStateDigest digest(resources.resources());
+        digest.resource(&assets);
+        const auto identity = digest.checkedFinish();
+        REQUIRE(identity);
+        CHECK(test::hexBytes(*identity) == expected);
+    }
+}
+
 TEST_CASE("native eagle gargoyle approaches a player beyond its attack ranges",
           "[combatant][critter-ready][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
@@ -1599,6 +1632,39 @@ TEST_CASE("boss healing credit includes the party's damage reduction",
     CHECK(actor.health() == Approx(90));
 }
 
+TEST_CASE("a boss takes harm by the party's size without the under-level loss a great one takes",
+          "[game][combatant][critter-damage]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
+        for (const bool rite : {false, true}) {
+            CAPTURE(definition.name, rite);
+            const bool boss = definition.kind == CombatantKind::Boss;
+            CombatantAssets assets;
+            REQUIRE(assets.load(device, root, definition, 'G'));
+            EnemyScales scales;
+            scales.players = 3;
+            scales.playerLevel = 100;
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+            actor.takeFullHarm(rite);
+            EnemyHit hit;
+            hit.player = 0;
+            hit.level = 80;
+            hit.damage = 20;
+            // With three playing a boss takes three tenths outside its legend item's rite and
+            // pays three times the share; a great one takes the whole hit, then a fiftieth less
+            // for each level its hitter is under the place's.
+            const f32 credited = boss && !rite ? 6.0f : 20.0f;
+            CHECK(actor.hurt(hit) == Approx(credited));
+            CHECK(actor.health() == Approx(100.0f - (boss ? credited : 12.0f)));
+            const auto losses = actor.takeLosses();
+            REQUIRE(losses.size() == 1);
+            CHECK(losses[0].experience == Approx(credited / 101.0f * 50.0f * (boss ? 3.0f : 1.0f)));
+        }
+    }
+}
+
 TEST_CASE("creature families supply distinct policies without duplicating move execution",
           "[game][combatant]") {
     const auto golem = Golem::definition();
@@ -1889,6 +1955,44 @@ TEST_CASE("boss damage and experience follow standing slots after players leave 
     checkHarm(40, 10, 0); // zero's damage multiplier is one, its experience multiplier zero
 }
 
+TEST_CASE("a fallen great one leaves its drop as its death ends; a fallen boss fades without one",
+          "[game][combatant][death]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {Golem::definition(), General::definition(),
+                                   Gargoyle::definition(), bossDefinition("LICH")}) {
+        CAPTURE(definition.name);
+        const bool boss = definition.kind == CombatantKind::Boss;
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 7, {3, 0, 4}, 0, nullptr, {}, 'G'));
+        EnemyHit hit;
+        hit.player = 0;
+        hit.damage = 1000;
+        hit.direction = Vec3{0}; // no shove, so the body falls where it stood
+        actor.hurt(hit);
+        REQUIRE(actor.dying());
+        std::vector<CombatLoss> drops;
+        for (s32 frame = 0; frame < 90 && actor.present(); ++frame) {
+            actor.update(2, 1.0f / 30, {});
+            for (const CombatLoss& loss : actor.takeLosses()) {
+                if (loss.drop) {
+                    drops.push_back(loss);
+                }
+            }
+        }
+        CHECK_FALSE(actor.present());
+        REQUIRE(drops.size() == (boss ? 0 : 1));
+        if (!boss) {
+            CHECK(drops[0].critter == 7);
+            CHECK(drops[0].kind == definition.kind);
+            CHECK(drops[0].form == definition.dropForm);
+            CHECK(drops[0].position == Vec3{3, 0, 4});
+        }
+    }
+}
+
 TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
           "[game][combatant]") {
     const auto root = familyAssets();
@@ -2115,6 +2219,45 @@ TEST_CASE("great ones stop at swarm bodies but golems trample small enemies",
     }
 }
 
+TEST_CASE("a gargoyle is stopped by the small swarm bodies a golem tramples",
+          "[game][combatant][critter-body-contact][critter-trample]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {Golem::definition(), Gargoyle::definition()}) {
+        CAPTURE(definition.name);
+        const bool golem = definition.kind == CombatantKind::Golem;
+        REQUIRE(definition.breaksItems); // both break the level's items; only one the swarm
+        const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
+                                   definition.name + R"(","type":)" +
+                                   std::to_string(static_cast<s32>(definition.kind)) + "}],";
+        writeTextFile(root / "critter" / (definition.name + ".json"), header + R"(
+          "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        Combatant actor;
+        EnemyScales scales;
+        scales.damage = 2;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+        const std::array swarm{EnemyBody{5, {1, 0, 0}, 1, 2}};
+        actor.setSwarm(swarm);
+        EnemyHit hit;
+        hit.damage = 1;
+        hit.flags = kKnockOver;
+        hit.direction = {1, 0, 0};
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.position().x ==
+              Approx(golem ? (10 - definition.knockbackReduction) / 30 : 0.0f));
+        const auto tramples = actor.takeTramples();
+        REQUIRE(tramples.size() == (golem ? 1 : 0));
+        if (golem) {
+            CHECK(tramples[0].enemy == 5);
+            CHECK(tramples[0].damage == 14);
+        }
+    }
+}
+
 TEST_CASE(
     "golem population delivers trample damage without player credit or a lingering corpse body",
     "[combatant][critter-trample][assets]") {
@@ -2183,6 +2326,47 @@ TEST_CASE("golem knockback resistance remains a family rule not a shared actor s
         actor.update(2, 1.0f / 30, {});
         actor.update(2, 1.0f / 30, {});
         REQUIRE(actor.position().x == Approx(shove * (1 + 0.8 + 0.64)));
+    }
+}
+
+TEST_CASE("a boss is never shoved by a hit's flags whether standing or falling",
+          "[game][combatant][knockback]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {General::definition(), bossDefinition("LICH")}) {
+        CAPTURE(definition.name);
+        const bool boss = definition.kind == CombatantKind::Boss;
+        // A home radius lets the boss move at all, so only its family keeps the shove off.
+        const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
+                                   definition.name + R"(","type":)" +
+                                   std::to_string(static_cast<s32>(definition.kind)) + "}],";
+        writeTextFile(root / "critter" / (definition.name + ".json"), header + R"(
+          "types":[{"moveCount":3,"maxHealth":100,"radius":1,"roamRadius":25}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+                   {"name":"KD","anim":"STEP","type":66,"priority":100},
+                   {"name":"DEATH","anim":"STEP","type":17,"priority":999}]})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        EnemyHit hit;
+        hit.player = 0;
+        hit.damage = 10;
+        hit.flags = kKnockOver;
+        hit.direction = {1, 0, 0};
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        REQUIRE(actor.health() == Approx(90));
+        CHECK(actor.position().x == Approx(boss ? 0.0f : 10.0f / 30));
+        // Falling, a great one is shoved twenty by the killing blow; a boss falls where it stood.
+        const f32 struck = actor.position().x;
+        hit.damage = 1000;
+        actor.hurt(hit);
+        REQUIRE(actor.dying());
+        actor.update(2, 1.0f / 30, {});
+        REQUIRE(actor.present());
+        CHECK(actor.position().x == Approx(boss ? 0.0f : struck + (8.0f + 20.0f) / 30));
+        CHECK(actor.position().z == 0.0f);
     }
 }
 

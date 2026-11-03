@@ -82,6 +82,7 @@ add_executable(tests
     expansions/n64/level/LegendsBossEruptionTests.cpp
     expansions/n64/formats/LegendsN64CritterTests.cpp
     expansions/n64/critters/LegendsCrittersTests.cpp
+    expansions/n64/critters/LegendsBossKindsTests.cpp
     expansions/shared/enemies/LegendsActorsTests.cpp
     expansions/n64/enemies/LevelOpponentsLegendsTests.cpp
     expansions/n64/scenes/LegendsLevelProgressTests.cpp
