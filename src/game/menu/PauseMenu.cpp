@@ -28,9 +28,10 @@ std::string PauseMenu::text(std::string_view id) const {
     return std::string(m_context.strings != nullptr ? m_context.strings->get(id) : id);
 }
 bool PauseMenu::open(RenderDevice& device, const GameContext& context,
-                     std::span<const PartyMember> party, s32 player) {
+                     std::span<const PartyMember> party, s32 player, LiveSettings* settings) {
     close();
     m_context = context;
+    m_liveSettings = settings;
     m_device = &device;
     m_party.assign(party.begin(), party.end());
     m_player = player;
@@ -308,10 +309,8 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
         m_page = Page::Options;
         m_settings.setMechanics(m_context.mechanics);
         m_settings.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
-                        m_context.strings, m_context.saveSettings, m_text, m_screen, backdrop(),
-                        m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level,
-                        m_context.previewAudio, {}, m_context.displayOptions,
-                        m_context.previewVideo, {}, m_context.renderer);
+                        m_context.strings, m_liveSettings, m_text, m_screen, backdrop(),
+                        m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level);
     } else if (event.code == 5) {
         return PauseOutcome::Manage;
     } else if (event.code == 6) {

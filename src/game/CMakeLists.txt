@@ -68,6 +68,7 @@ add_library(game STATIC
     level/DestructibleWalls.cpp
     combat/MissileTarget.h
     combat/MissileTarget.cpp
+    menu/LiveSettings.h
     menu/SettingsMenu.cpp
     menu/MainMenuFactory.cpp
     menu/SettingsRows.cpp

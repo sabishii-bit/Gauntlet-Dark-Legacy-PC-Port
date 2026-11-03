@@ -259,19 +259,6 @@ GameContext Gauntlet::context() {
     context.levels = &m_levels;
     context.mechanics = &m_mechanics;
     context.unpackedRoot = m_options.unpackedDirectory;
-    context.saveSettings = [this](const GameConfig& config) { return saveSettings(config); };
-    context.displayOptions = [this] { return window().displayOptions(); };
-    context.previewVideo = [this](const GameConfig& config) {
-        return applySettings(config, false);
-    };
-    context.renderer = activeRenderer();
-    context.previewAudio = [this](const AudioConfig& audio) {
-        m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
-        m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
-        m_sounds->setCategoryVolume(SoundCategory::Movie, audio.movieVolume);
-        m_movie.setVolume(audio.masterVolume * audio.movieVolume);
-        m_audio->mixer().setStereo(audio.stereo);
-    };
     return context;
 }
 
@@ -314,6 +301,30 @@ void Gauntlet::PartyRouting::autoSave(std::span<PartyMember> party) {
 
 bool Gauntlet::PartyRouting::saveParty(std::span<PartyMember> party) {
     return m_game.saveLocalParty(party);
+}
+
+bool Gauntlet::SettingsRouting::save(const GameConfig& next) {
+    return m_game.saveSettings(next);
+}
+
+bool Gauntlet::SettingsRouting::previewVideo(const GameConfig& trial) {
+    return m_game.applySettings(trial, false);
+}
+
+void Gauntlet::SettingsRouting::previewAudio(const AudioConfig& audio) {
+    m_game.m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
+    m_game.m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
+    m_game.m_sounds->setCategoryVolume(SoundCategory::Movie, audio.movieVolume);
+    m_game.m_movie.setVolume(audio.masterVolume * audio.movieVolume);
+    m_game.m_audio->mixer().setStereo(audio.stereo);
+}
+
+DisplayOptions Gauntlet::SettingsRouting::display() const {
+    return m_game.window().displayOptions();
+}
+
+GraphicsApi Gauntlet::SettingsRouting::renderer() const {
+    return m_game.activeRenderer();
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
@@ -693,7 +704,8 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const auto menu = readPlayerMenuInput(input(), m_config, player);
         if (!m_play->scene.leaving() &&
             ((menu.start && !menu.select) || menu.escape || input().wasKeyPressed(Key::Escape)) &&
-            m_pause.open(renderDevice(), context(), m_play->scene.party(), player)) {
+            m_pause.open(renderDevice(), context(), m_play->scene.party(), player,
+                         &m_liveSettings)) {
             m_play->scene.pauseGameplaySounds();
             m_play->scene.holdSounds();
             resetPlayInput();
@@ -1585,7 +1597,7 @@ bool Gauntlet::startTitleScreen() {
     m_freeCamera.stop();
     m_exitSpeech.close();
     setMaxFrameRate(m_config.display.maxFrameRate);
-    if (m_title.open(renderDevice(), context())) {
+    if (m_title.open(renderDevice(), context(), &m_liveSettings)) {
         m_attract.titleShown();
         return true;
     }

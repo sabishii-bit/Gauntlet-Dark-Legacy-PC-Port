@@ -1243,7 +1243,6 @@ bool NativeOnlinePlay::open(RenderDevice& device, const GameContext& context,
     data.context.config = &data.setup->config();
     data.context.stopTimeTotal = &data.setup->stopTimeTotal();
     data.context.tower = nullptr;
-    data.context.saveSettings = {};
     data.appHaptics = links.haptics;
     data.unlocks = links.unlocks;
     data.store = links.store;

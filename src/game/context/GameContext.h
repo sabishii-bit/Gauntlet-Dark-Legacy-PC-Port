@@ -1,13 +1,11 @@
 #pragma once
 
 #include <filesystem>
-#include <functional>
 
 #include "engine/assets/StringTable.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
-#include "engine/render/RenderTypes.h"
 
 #include "game/config/GameConfig.h"
 #include "game/hud/ControlPrompts.h"
@@ -32,15 +30,6 @@ struct GameContext {
     const MechanicCatalog* mechanics = nullptr; ///< what the build lays over play; none without
     f32* stopTimeTotal = nullptr; ///< optional application-owned timer total shared across visits
     std::filesystem::path unpackedRoot;
-    /** Applies and persists a settings edit; false leaves the active configuration unchanged. */
-    std::function<bool(const GameConfig&)> saveSettings;
-    /** Live audio preview while dragging a slider; persistence happens on release. */
-    std::function<void(const AudioConfig&)> previewAudio;
-    std::function<DisplayOptions()> displayOptions;
-    /** Applies a temporary Video trial without writing settings. */
-    std::function<bool(const GameConfig&)> previewVideo;
-    /** The graphics API drawing now; the Video page says a restart is needed for another. */
-    GraphicsApi renderer = GraphicsApi::Vulkan;
 };
 
 } // namespace gdl::game

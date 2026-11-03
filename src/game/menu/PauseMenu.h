@@ -12,6 +12,7 @@
 
 #include "game/characters/Party.h"
 #include "game/context/GameContext.h"
+#include "game/menu/LiveSettings.h"
 #include "game/menu/SettingsMenu.h"
 #include "game/widgets/BurnDialogueScroll.h"
 
@@ -33,8 +34,10 @@ public:
     PauseMenu() = default;
     ~PauseMenu();
     GDL_NON_COPYABLE_NON_MOVABLE(PauseMenu);
+    /** `settings` saves and previews what the Settings page changes; without it every change
+     * is refused. */
     bool open(RenderDevice& device, const GameContext& context, std::span<const PartyMember> party,
-              s32 player);
+              s32 player, LiveSettings* settings = nullptr);
     void close();
     bool isOpen() const { return m_open; }
     s32 player() const { return m_player; }
@@ -66,6 +69,7 @@ private:
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
     GameContext m_context;
+    LiveSettings* m_liveSettings = nullptr;
     TextureSet m_textures;
     TextureSet m_powerupTextures;
     ModelSet m_powerupModels;

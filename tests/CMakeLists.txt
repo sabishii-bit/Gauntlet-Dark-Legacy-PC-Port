@@ -265,6 +265,7 @@ add_executable(tests
     game/combat/HurtKindTests.cpp
     game/party/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
+    game/menu/LiveSettingsTests.cpp
     game/widgets/MenuFontTests.cpp
     game/menu/SettingsRowsTests.cpp
     game/menu/VideoSettingsTests.cpp

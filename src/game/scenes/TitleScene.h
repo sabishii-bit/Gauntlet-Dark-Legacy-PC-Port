@@ -19,6 +19,7 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/context/GameContext.h"
+#include "game/menu/LiveSettings.h"
 #include "game/menu/SettingsMenu.h"
 #include "game/widgets/BurnDialogueScroll.h"
 #include "game/widgets/MenuInput.h"
@@ -41,8 +42,9 @@ public:
     static constexpr s32 kGlowFrames = 10;
     static constexpr s32 kFont32SpaceWidth = 16;
 
-    /** Loads the unpacked title and shared assets; false (with a warning) when absent. */
-    bool open(RenderDevice& device, const GameContext& context);
+    /** Loads the unpacked title and shared assets; false (with a warning) when absent.
+     * `settings` saves and previews what Options changes; without it every change is refused. */
+    bool open(RenderDevice& device, const GameContext& context, LiveSettings* settings = nullptr);
     void close();
     bool isOpen() const { return m_open; }
 
@@ -94,6 +96,7 @@ private:
     std::string m_optionsLanguage; ///< the text language when the options opened
     RenderDevice* m_device = nullptr;
     GameContext m_context;
+    LiveSettings* m_liveSettings = nullptr;
     MenuScreen m_screen;
     s32 m_tickRate = 60;
     TextureSet m_titleTextures;

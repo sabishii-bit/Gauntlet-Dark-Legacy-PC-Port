@@ -11,6 +11,7 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/menu/PauseMenu.h"
@@ -433,11 +434,11 @@ TEST_CASE("pause loads the native axe and plays navigation and timed volume samp
     GameContext context;
     context.config = &config;
     context.sounds = &sounds;
-    context.saveSettings = [](const GameConfig&) { return true; };
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    test::FakeSettings settings;
     const std::array party{PartyMember{}};
     PauseMenu menu;
-    REQUIRE(menu.open(device, context, party, 0));
+    REQUIRE(menu.open(device, context, party, 0, &settings));
     REQUIRE(menu.arrowBound());
     CHECK(sounds.voiceCount() == 1); // opening select
     MenuInput choose;
@@ -535,18 +536,14 @@ TEST_CASE("pause menus route character management and preserve the live party", 
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
-    bool settingsSaved = false;
-    context.saveSettings = [&](const GameConfig& next) {
-        config = next;
-        settingsSaved = true;
-        return true;
-    };
+    test::FakeSettings settings;
+    settings.target = &config;
     std::array party{PartyMember{}};
     party[0].player = 2;
     party[0].save.name = "PAUSE";
     party[0].save.gold = 123;
     PauseMenu menu;
-    REQUIRE(menu.open(device, context, party, 2));
+    REQUIRE(menu.open(device, context, party, 2, &settings));
     CHECK(menu.player() == 2);
     CHECK(menu.menu().definition().parchmentFont);
     CHECK_FALSE(menu.menu().definition().prompts);
@@ -649,7 +646,7 @@ TEST_CASE("pause menus route character management and preserve the live party", 
         left.left = true;
         step(left);
         step({});
-        REQUIRE(settingsSaved);
+        REQUIRE(settings.writes > 0);
         CHECK(AudioSlider::value(config.audio.musicVolume) == 127);
         step(back);
         step(back);
@@ -666,7 +663,7 @@ TEST_CASE("pause menus route character management and preserve the live party", 
         REQUIRE_FALSE(config.combat.autoMelee);
         step(select);
         CHECK(config.combat.autoMelee);
-        CHECK(settingsSaved);
+        CHECK(settings.writes > 0);
         step(back); // Game Options
         step(back); // Settings
         step(back); // Start menu

@@ -10,6 +10,7 @@
 #include "engine/io/File.h"
 #include "engine/ui/TextPainter.h"
 
+#include "FakeGameServices.h"
 #include "FakeMechanic.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -27,23 +28,14 @@ struct Fixture {
     TextPainter painter;
     StringTable strings;
     GameConfig config;
+    test::FakeSettings settings; ///< writes its saves back into `config`
     SettingsMenu menu;
-    bool fail = false;
-    s32 writes = 0;
     explicit Fixture(const MechanicCatalog* mechanics = nullptr) {
         painter.setFont(&font, &texture);
         strings.load(test::dataDirectory() / "text", "en");
+        settings.target = &config;
         menu.setMechanics(mechanics);
-        menu.open(config, &strings,
-                  [this](const GameConfig& next) {
-                      if (fail) {
-                          return false;
-                      }
-                      config = next;
-                      ++writes;
-                      return true;
-                  },
-                  painter, {}, {});
+        menu.open(config, &strings, &settings, painter, {}, {});
     }
     void down() {
         MenuInput input;
@@ -101,10 +93,10 @@ TEST_CASE("Game Options exposes optional shop stock and autosaving", "[settings]
     f.right();
     CHECK(f.config.game.autoSave);
     f.release();
-    f.fail = true;
+    f.settings.fail = true;
     f.right();
     CHECK(f.config.game.autoSave);
-    CHECK(f.writes == 2);
+    CHECK(f.settings.writes == 2);
 }
 
 TEST_CASE("Game Options switches each mechanic the build carries, after its own switches",
@@ -129,7 +121,7 @@ TEST_CASE("Game Options switches each mechanic the build carries, after its own 
     f.focus(f.menu.menu().definition().items[6].code);
     f.right();
     CHECK_FALSE(MechanicCatalog::enabled(f.config.game, "rage"));
-    CHECK(f.writes == 2);
+    CHECK(f.settings.writes == 2);
 }
 
 TEST_CASE("mouse operates settings pages sliders and graphics without keyboard confirmation",
@@ -140,15 +132,9 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
         glyphs.push_back({c, 8, 0, 0});
     }
     f.font = BitmapFont::fromGlyphs(32, 8, std::move(glyphs));
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const GameConfig& next) {
-            f.config = next;
-            ++f.writes;
-            return true;
-        },
-        f.painter, {}, MenuDefinition::parchment(), SettingsMenu::Scope::Title, {}, {}, {},
-        [](const GameConfig&) { return true; });
+    f.settings.video = [](const GameConfig&) { return true; };
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment(),
+                SettingsMenu::Scope::Title);
     const auto click = [&](usize index) {
         const auto area = f.menu.menu().itemArea(index);
         MenuInput input;
@@ -158,7 +144,7 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
     };
     click(0);
     REQUIRE(f.menu.page() == SettingsMenu::Page::Audio);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     const auto track = AudioSlider::track(
         160, static_cast<f32>(f.menu.menu().itemY(0) + f.menu.menu().lineHeight()), 0.7f);
     MenuInput drag;
@@ -167,14 +153,14 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
     drag.pointerHeld = true;
     f.menu.update(drag, 1);
     CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 64);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     drag.pointerPressed = false;
     drag.pointer->x = track.x + track.width;
     f.menu.update(drag, 1);
     CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 255);
     drag.pointerHeld = false;
     f.menu.update(drag, 1);
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
     const auto stereo = f.menu.menu().itemArea(3);
     MenuInput mono;
     mono.pointer = Vec2{stereo.x + 1, stereo.y + 1};
@@ -190,13 +176,13 @@ TEST_CASE("mouse operates settings pages sliders and graphics without keyboard c
     const bool wasVsync = f.menu.config().display.vsync;
     click(1);
     CHECK(f.menu.config().display.vsync != wasVsync);
-    const s32 writesBeforeVideo = f.writes;
+    const s32 writesBeforeVideo = f.settings.writes;
     click(12);
     REQUIRE(f.menu.menu().definition().items.size() == 2);
-    CHECK(f.writes == writesBeforeVideo);
+    CHECK(f.settings.writes == writesBeforeVideo);
     click(0);
     REQUIRE(f.menu.menu().definition().items.size() == 14);
-    CHECK(f.writes == writesBeforeVideo + 1);
+    CHECK(f.settings.writes == writesBeforeVideo + 1);
     CHECK(f.config.display.vsync != wasVsync);
     // No Back row: the back control (the mouse's second button maps to it) leaves the page.
     MenuInput leave;
@@ -212,17 +198,17 @@ TEST_CASE("settings audio changes persist transactionally and stay bounded", "[s
     MenuInput left;
     left.left = true;
     f.menu.update(left, 1);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 127);
     f.release();
-    CHECK(f.writes == 1);
-    f.fail = true;
+    CHECK(f.settings.writes == 1);
+    f.settings.fail = true;
     f.menu.update(left, 1);
     f.release();
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
     CHECK(AudioSlider::value(f.config.audio.musicVolume) == 127);
     CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 126);
-    f.fail = false;
+    f.settings.fail = false;
     left.left = false;
     left.leftHeld = true;
     f.menu.update(left, 255);
@@ -273,11 +259,11 @@ TEST_CASE("options omit generic instructions but retain actionable notices", "[s
     };
     CHECK_FALSE(footerDrawn()); // options root
     f.select();
-    f.fail = true;
+    f.settings.fail = true;
     f.right();
     f.release();
     CHECK(footerDrawn()); // failed persistence remains visible
-    f.fail = false;
+    f.settings.fail = false;
     f.back();
     f.down();
     f.select();
@@ -299,7 +285,7 @@ TEST_CASE("multiplayer labels and both cursor representations fit the parchment"
     }
     const auto font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
     f.painter.setFont(&font, &f.texture);
-    f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment());
+    f.menu.open(f.config, &f.strings, nullptr, f.painter, {}, MenuDefinition::parchment());
     f.down();
     f.select();
     f.down();
@@ -357,7 +343,7 @@ TEST_CASE("difficulty and compass options survive a configuration save", "[setti
 TEST_CASE("Game Options are available in title tower and level settings", "[settings]") {
     Fixture f;
     const auto open = [&](SettingsMenu::Scope scope) {
-        f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, scope);
+        f.menu.open(f.config, &f.strings, nullptr, f.painter, {}, {}, scope);
         std::vector<s32> codes;
         for (const auto& item : f.menu.menu().definition().items) {
             codes.push_back(item.code);
@@ -374,17 +360,8 @@ TEST_CASE("Combat auto melee changes are shared persisted and reversible from ev
     for (const auto scope :
          {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
         Fixture f;
-        f.menu.open(
-            f.config, &f.strings,
-            [&](const GameConfig& next) {
-                if (f.fail) {
-                    return false;
-                }
-                f.config = next;
-                ++f.writes;
-                return true;
-            },
-            f.painter, {}, MenuDefinition::parchment(), scope);
+        f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment(),
+                    scope);
         f.choose(1);
         REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
         f.choose(2);
@@ -395,22 +372,22 @@ TEST_CASE("Combat auto melee changes are shared persisted and reversible from ev
         CHECK(f.menu.menu().definition().items[3].text == "Auto Aim");
         CHECK(f.menu.menu().definition().items[3].value == "On");
         CHECK(f.menu.menu().definition().items[0].value == "Off");
-        f.fail = true;
+        f.settings.fail = true;
         f.right();
         CHECK_FALSE(f.config.combat.autoMelee);
         CHECK(f.menu.menu().definition().items[0].value == "Off");
-        f.fail = false;
+        f.settings.fail = false;
         f.select();
         CHECK(f.config.combat.autoMelee);
         CHECK(f.menu.menu().definition().items[0].value == "On");
-        CHECK(f.writes == 1);
+        CHECK(f.settings.writes == 1);
         f.back();
         CHECK(f.menu.page() == SettingsMenu::Page::Game);
         CHECK(f.menu.menu().selection() == 2);
         f.select();
         f.right();
         CHECK_FALSE(f.config.combat.autoMelee);
-        CHECK(f.writes == 2);
+        CHECK(f.settings.writes == 2);
         f.choose(1);
         CHECK_FALSE(f.config.combat.enemyHealthBars);
         CHECK(f.menu.menu().definition().items[1].value == "Off");
@@ -418,10 +395,10 @@ TEST_CASE("Combat auto melee changes are shared persisted and reversible from ev
         f.choose(2);
         CHECK_FALSE(f.config.combat.autoActivateItems);
         CHECK(f.menu.menu().definition().items[2].value == "Off");
-        f.fail = true;
+        f.settings.fail = true;
         f.right();
         CHECK_FALSE(f.config.combat.autoActivateItems);
-        f.fail = false;
+        f.settings.fail = false;
         f.right();
         CHECK(f.config.combat.autoActivateItems);
         f.choose(1);
@@ -443,32 +420,25 @@ TEST_CASE("Combat auto melee changes are shared persisted and reversible from ev
 TEST_CASE("movie volume supports keys and mouse dragging without touching other volumes",
           "[settings][movie-volume][mouse]") {
     Fixture f;
-    AudioConfig preview;
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const GameConfig& next) {
-            if (f.fail) {
-                return false;
-            }
-            f.config = next;
-            ++f.writes;
-            return true;
-        },
-        f.painter, {}, MenuDefinition::parchment(), SettingsMenu::Scope::Level,
-        [&](const AudioConfig& audio) { preview = audio; });
+    const auto preview = [&] {
+        REQUIRE_FALSE(f.settings.audioPreviews.empty());
+        return f.settings.audioPreviews.back();
+    };
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment(),
+                SettingsMenu::Scope::Level);
     f.select();
     f.menu.menu().focus(2);
     MenuInput left;
     left.leftHeld = true;
     f.menu.update(left, 255);
     CHECK(f.menu.config().audio.movieVolume == 0);
-    CHECK(preview.movieVolume == 0);
+    CHECK(preview().movieVolume == 0);
     CHECK(f.config.audio.movieVolume == 1);
-    f.fail = true;
+    f.settings.fail = true;
     f.back();
     CHECK(f.menu.page() == SettingsMenu::Page::Audio);
     CHECK(f.config.audio.movieVolume == 1);
-    f.fail = false;
+    f.settings.fail = false;
     f.release();
     CHECK(f.config.audio.movieVolume == 0);
     const auto track = AudioSlider::track(
@@ -478,12 +448,12 @@ TEST_CASE("movie volume supports keys and mouse dragging without touching other 
     drag.pointerPressed = true;
     drag.pointerHeld = true;
     f.menu.update(drag, 1);
-    CHECK(std::abs(preview.movieVolume - 0.5f) <= 1.0f / 255);
+    CHECK(std::abs(preview().movieVolume - 0.5f) <= 1.0f / 255);
     CHECK(f.config.audio.movieVolume == 0);
     drag.pointerPressed = false;
     drag.pointer->x = track.x + track.width + 100;
     f.menu.update(drag, 1);
-    CHECK(preview.movieVolume == 1);
+    CHECK(preview().movieVolume == 1);
     drag.pointerHeld = false;
     f.menu.update(drag, 1);
     CHECK(f.config.audio.movieVolume == 1);
@@ -515,16 +485,16 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     CHECK(f.menu.menu().definition().items[2].value == "30");
     CHECK(f.menu.menu().definition().items[3].value == "Off");
     f.down();
-    f.fail = true;
+    f.settings.fail = true;
     f.select();
     CHECK(f.config.display.vsync);
     CHECK(f.menu.config().display.vsync);
-    CHECK(f.writes == 0);
-    f.fail = false;
+    CHECK(f.settings.writes == 0);
+    f.settings.fail = false;
     f.right();
     CHECK_FALSE(f.menu.config().display.vsync);
     CHECK(f.config.display.vsync);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     f.down();
     for (const u32 rate : {60U, 0U, 30U, 60U, 0U, 30U}) {
         f.right();
@@ -533,11 +503,11 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
         CHECK(f.menu.menu().definition().items[2].value ==
               (rate == 0 ? "Unlimited" : std::to_string(rate)));
     }
-    f.fail = true;
+    f.settings.fail = true;
     f.select();
     CHECK(f.config.display.maxFrameRate == 30);
     CHECK(f.menu.config().timing.gameplayFrameRate == 30);
-    f.fail = false;
+    f.settings.fail = false;
     MenuInput left;
     left.left = true;
     f.menu.update(left, 1);
@@ -547,7 +517,7 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
         f.right();
         CHECK(f.menu.config().display.sampleCount == samples);
     }
-    f.fail = true;
+    f.settings.fail = true;
     f.select();
     CHECK(f.config.display.sampleCount == 1);
     CHECK(f.menu.config().display.sampleCount == 1);
@@ -555,23 +525,15 @@ TEST_CASE("Video stages discrete choices until Apply and ignores Confirm on sett
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK(f.menu.menu().selection() == 3);
     CHECK(f.menu.config().display.vsync);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
 }
 
 TEST_CASE("Video chooses supported resolutions and borderless uses the desktop without losing the "
           "preference",
           "[settings][graphics]") {
     Fixture f;
-    f.menu.open(f.config, &f.strings,
-                [&](const auto& next) {
-                    if (f.fail) {
-                        return false;
-                    }
-                    f.config = next;
-                    return true;
-                },
-                f.painter, {}, {}, SettingsMenu::Scope::Level, {},
-                {{1920, 1080}, {{1280, 720}, {1920, 1080}}});
+    f.settings.displayOptions = {{1920, 1080}, {{1280, 720}, {1920, 1080}}};
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     REQUIRE(f.menu.menu().definition().title == "Video");
     f.down();
@@ -603,12 +565,8 @@ TEST_CASE("Video chooses supported resolutions and borderless uses the desktop w
 TEST_CASE("fullscreen replaces a custom window size with an advertised desktop mode",
           "[settings][graphics]") {
     Fixture f;
-    f.menu.open(f.config, &f.strings,
-                [&](const auto& next) {
-                    f.config = next;
-                    return true;
-                },
-                f.painter, {}, {}, SettingsMenu::Scope::Level, {}, {{1920, 1080}, {{1920, 1080}}});
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}};
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     f.down();
     f.down();
@@ -631,7 +589,8 @@ TEST_CASE("graphics page fits parchment and returns to its entry in every menu s
     f.painter.setFont(&font, &f.texture);
     for (const auto scope :
          {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
-        f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment(), scope);
+        f.menu.open(f.config, &f.strings, nullptr, f.painter, {}, MenuDefinition::parchment(),
+                    scope);
         const auto& rows = f.menu.menu().definition().items;
         const auto graphics = std::ranges::find(rows, 4, &MenuItem::code);
         REQUIRE(graphics != rows.end());
@@ -677,7 +636,7 @@ TEST_CASE("the expanded Video page keeps native font rows and its action bar sep
     const auto fontPath = test::assetOrSkip("FONTS/font32.fnt");
     REQUIRE(f.font.load(fontPath, 16));
     f.painter.setFont(&f.font, &f.texture);
-    f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment());
+    f.menu.open(f.config, &f.strings, nullptr, f.painter, {}, MenuDefinition::parchment());
     f.choose(4);
     const auto& definition = f.menu.menu().definition();
     REQUIRE(definition.items.size() == 14);
@@ -694,13 +653,7 @@ TEST_CASE("custom file frame rates are shown honestly until a supported choice i
           "[settings][graphics]") {
     Fixture f;
     f.config.timing.gameplayFrameRate = 24;
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const auto& next) {
-            f.config = next;
-            return true;
-        },
-        f.painter, {}, {}, SettingsMenu::Scope::Level);
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     CHECK(f.menu.menu().definition().items[2].value == "24");
     f.down();
@@ -712,18 +665,7 @@ TEST_CASE("custom file frame rates are shown honestly until a supported choice i
 
 TEST_CASE("audio previews held ticks and persists once on release", "[settings]") {
     Fixture f;
-    s32 previews = 0;
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const auto&) {
-            ++f.writes;
-            return true;
-        },
-        f.painter, {}, {}, SettingsMenu::Scope::Title,
-        [&](const AudioConfig& audio) {
-            ++previews;
-            CHECK(audio.masterVolume == 1);
-        });
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Title);
     f.select();
     REQUIRE(f.menu.menu().definition().items.size() == 4);
     CHECK(f.menu.menu().definition().items[0].text == "Music Volume");
@@ -731,16 +673,18 @@ TEST_CASE("audio previews held ticks and persists once on release", "[settings]"
     CHECK(f.menu.menu().definition().x == 160);
     CHECK(f.menu.menu().itemY(0) == 96);
     f.select();
-    CHECK(previews == 0);
+    CHECK(f.settings.audioPreviews.empty());
     MenuInput hold;
     hold.rightHeld = true;
     f.menu.update(hold, 2);
     f.menu.update(hold, 6);
     CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 136);
-    CHECK(previews == 2);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.audioPreviews.size() == 2);
+    CHECK(std::ranges::all_of(f.settings.audioPreviews,
+                              [](const AudioConfig& audio) { return audio.masterVolume == 1; }));
+    CHECK(f.settings.writes == 0);
     f.back();
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
 }
 
@@ -785,20 +729,13 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     GameConfig active = f.config;
     f64 now = 100;
     s32 previews = 0;
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const auto& next) {
-            ++f.writes;
-            f.config = next;
-            return true;
-        },
-        f.painter, {}, {}, SettingsMenu::Scope::Level, {}, {}, {},
-        [&](const auto& next) {
-            ++previews;
-            active = next;
-            return true;
-        },
-        [&] { return now; });
+    f.settings.video = [&](const auto& next) {
+        ++previews;
+        active = next;
+        return true;
+    };
+    f.menu.setClock([&] { return now; });
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     f.right();
     CHECK(active.display.vsync);
@@ -847,7 +784,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
     CHECK(active.display.textureFiltering == 16);
     CHECK(active.display.smoothSprites);
     CHECK(f.config.display.vsync);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     CHECK(previews == 1);
     CHECK(f.menu.menu().definition().body[1] == "Reverting in 15 seconds");
     SECTION("Save confirms the preview") {
@@ -861,7 +798,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(f.config.display.ambientOcclusion);
         CHECK(f.config.display.textureFiltering == 16);
         CHECK(f.config.display.smoothSprites);
-        CHECK(f.writes == 1);
+        CHECK(f.settings.writes == 1);
         now += 20;
         f.release();
         CHECK_FALSE(active.display.vsync);
@@ -875,7 +812,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         f.menu.update({}, 0);
         CHECK(active.display.vsync);
         CHECK(previews == 2);
-        CHECK(f.writes == 0);
+        CHECK(f.settings.writes == 0);
         CHECK(f.menu.menu().definition().items.size() == 14);
         CHECK_FALSE(active.display.smoothSprites);
         CHECK(active.display.textureFiltering == 8);
@@ -889,7 +826,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(active.display.textureFiltering == 8);
         CHECK(active.display.vsync);
         CHECK_FALSE(active.display.bloom);
-        CHECK(f.writes == 0);
+        CHECK(f.settings.writes == 0);
     }
     SECTION("Closing the owner restores the saved configuration") {
         f.menu.close();
@@ -897,7 +834,7 @@ TEST_CASE("Video preview requires confirmation and uses a wall-clock rollback de
         CHECK(active.display.textureFiltering == 8);
         CHECK(active.display.vsync);
         CHECK_FALSE(active.display.bloom);
-        CHECK(f.writes == 0);
+        CHECK(f.settings.writes == 0);
     }
 }
 
@@ -911,7 +848,7 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.config.display.textureFiltering = 16;
     f.config.display.smoothSprites = true;
     f.config.audio.effectsVolume = 0.25f;
-    f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level);
+    f.menu.open(f.config, &f.strings, nullptr, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     f.down();
     f.down();
@@ -945,17 +882,19 @@ TEST_CASE("Video defaults stay staged and the action row navigates horizontally"
     f.back();
     CHECK(f.menu.page() == SettingsMenu::Page::Root);
     CHECK_FALSE(f.menu.config().display.vsync);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
 }
 
 TEST_CASE("Video rollback preserves a manually resized window", "[settings][graphics]") {
     Fixture f;
     GameConfig active = f.config;
-    f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Level, {},
-                {{1920, 1080}, {{1920, 1080}}, {1152, 700}}, {}, [&](const auto& next) {
-                    active = next;
-                    return true;
-                });
+    f.settings.fail = true; // nothing is saved
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1152, 700}};
+    f.settings.video = [&](const auto& next) {
+        active = next;
+        return true;
+    };
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     CHECK(f.menu.menu().definition().items[4].value == "1152 x 700");
     f.down();
@@ -986,8 +925,10 @@ TEST_CASE("Video font and columns reserve the widest choices before selecting th
     }
     const auto font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
     f.painter.setFont(&font, &f.texture);
-    f.menu.open(f.config, &f.strings, {}, f.painter, {}, MenuDefinition::parchment(),
-                SettingsMenu::Scope::Level, {}, {{1920, 1080}, {{1280, 896}, {1920, 1080}}});
+    f.settings.fail = true; // nothing is saved
+    f.settings.displayOptions = {{1920, 1080}, {{1280, 896}, {1920, 1080}}};
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment(),
+                SettingsMenu::Scope::Level);
     f.choose(4);
     const auto initial = f.menu.menu().definition();
     CHECK(initial.scale < 0.7f);
@@ -1028,22 +969,15 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
     f.config.timing.gameplayFrameRate = 60;
     Extent2D actualSize{1600, 1000}; // saved dimensions still say 1280x896
     s32 resizes = 0;
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const auto& next) {
-            f.config = next;
-            ++f.writes;
-            return true;
-        },
-        f.painter, {}, {}, SettingsMenu::Scope::Level, {},
-        {{1920, 1080}, {{1920, 1080}}, actualSize}, {},
-        [&](const auto& next) {
-            if (!next.display.matchesWindow(WindowMode::Windowed, actualSize)) {
-                actualSize = {next.display.windowWidth, next.display.windowHeight};
-                ++resizes;
-            }
-            return true;
-        });
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, actualSize};
+    f.settings.video = [&](const auto& next) {
+        if (!next.display.matchesWindow(WindowMode::Windowed, actualSize)) {
+            actualSize = {next.display.windowWidth, next.display.windowHeight};
+            ++resizes;
+        }
+        return true;
+    };
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     for (s32 i = 0; i < 9; ++i) {
         f.down();
@@ -1057,18 +991,18 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
     CHECK(f.menu.config().display.maxFrameRate == 30);
     CHECK(f.menu.config().timing.gameplayFrameRate == 30);
     CHECK(actualSize == Extent2D{1600, 1000});
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     MenuInput left;
     left.left = true;
     f.menu.update(left, 1);
     f.select(); // Apply
     CHECK(actualSize == Extent2D{1280, 896});
     CHECK(resizes == 1);
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     SECTION("Save keeps defaults") {
         f.menu.update(left, 1);
         f.select();
-        CHECK(f.writes == 1);
+        CHECK(f.settings.writes == 1);
         CHECK(f.config.display.maxFrameRate == 30);
         CHECK(f.config.timing.gameplayFrameRate == 30);
         CHECK(actualSize == Extent2D{1280, 896});
@@ -1078,7 +1012,7 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
         CHECK(actualSize == Extent2D{1600, 1000});
         CHECK(f.menu.config().timing.gameplayFrameRate == 60);
         CHECK(resizes == 2);
-        CHECK(f.writes == 0);
+        CHECK(f.settings.writes == 0);
     }
 }
 
@@ -1112,7 +1046,7 @@ TEST_CASE("Controls is available in every scope and opening it does not mutate b
     Fixture f;
     for (const auto scope :
          {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
-        f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, scope);
+        f.menu.open(f.config, &f.strings, nullptr, f.painter, {}, {}, scope);
         const auto& items = f.menu.menu().definition().items;
         const auto controls = std::ranges::find(items, 3, &MenuItem::code);
         REQUIRE(controls != items.end());
@@ -1123,7 +1057,7 @@ TEST_CASE("Controls is available in every scope and opening it does not mutate b
         CHECK(f.menu.page() == SettingsMenu::Page::Controls);
         CHECK(f.menu.menu().definition().items.size() == 4);
         CHECK(f.config.toJson() == bindings);
-        CHECK(f.writes == 0);
+        CHECK(f.settings.writes == 0);
     }
 }
 
@@ -1168,7 +1102,7 @@ TEST_CASE("controls capture waits for release and binds the chosen player's mous
     physical.beginPoll();
     physical.setKey(Key::MouseRight, false);
     step();
-    f.fail = true;
+    f.settings.fail = true;
     f.focus(4);
     f.select();
     physical.beginPoll();
@@ -1233,21 +1167,21 @@ TEST_CASE("control drafts apply explicitly, discard on Back, and restore actual 
     f.right();
     SECTION("Back discards the pending device") {
         f.back();
-        CHECK(f.writes == 0);
+        CHECK(f.settings.writes == 0);
         CHECK(f.config.toJson() == original);
         f.select();
         CHECK(f.menu.menu().definition().items[0].value == "Automatic");
     }
     SECTION("Apply saves and Defaults remain staged") {
         f.applyControls();
-        CHECK(f.writes == 1);
+        CHECK(f.settings.writes == 1);
         CHECK(f.config.controls[0].device == "keyboard");
         f.right(); // Apply -> Restore Defaults
         f.select();
-        CHECK(f.writes == 1);
+        CHECK(f.settings.writes == 1);
         CHECK_FALSE(f.config.controls[0].customized);
         f.applyControls();
-        CHECK(f.writes == 2);
+        CHECK(f.settings.writes == 2);
         CHECK(f.config.controls[0].play.padUp == std::vector{PadButton::LeftStickUp});
         CHECK(f.config.controls[0].menu.padSelect == MenuBindings{}.padSelect);
     }
@@ -1275,12 +1209,12 @@ TEST_CASE("controller default rows expose stick directions and potion gestures b
     CHECK(f.menu.menu().definition().items[9].text == "Throw Potion");
     CHECK(f.menu.menu().definition().items[9].value == "X (hold)");
     CHECK(f.menu.menu().definition().items[10].value == "X (double tap)");
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     // An unplugged device cannot remove the last available input route.
     physical.setPad(0, {});
     f.menu.update(readPlayerMenuInput(physical, f.config, 0), 1);
     f.applyControls();
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     CHECK(f.config.controls[0].device.empty());
     CHECK(f.menu.menu().definition().body == std::vector<std::string>{"COULD NOT SAVE SETTINGS"});
 }
@@ -1478,17 +1412,17 @@ TEST_CASE("multiplayer radio choices use retail labels and persist only successf
     checkLabels();
     CHECK(f.menu.menu().definition().items[0].markedPart == 1);
     f.down();
-    f.fail = true;
+    f.settings.fail = true;
     f.select();
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     CHECK(f.config.multiplayer.mode == MultiplayerMode::Normal);
     CHECK(f.menu.config().multiplayer.mode == MultiplayerMode::Normal);
     CHECK(f.menu.menu().definition().items[0].markedPart == 1);
     CHECK(f.menu.menu().definition().items[1].markedPart == 0);
-    f.fail = false;
+    f.settings.fail = false;
     f.select();
     CHECK(f.config.multiplayer.mode == MultiplayerMode::Stun);
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
     CHECK(f.menu.menu().definition().items[1].markedPart == 1);
     f.down();
     f.select();
@@ -1559,7 +1493,7 @@ TEST_CASE("the Video page offers the renderer from the title, needing a restart,
     CHECK(f.menu.config().display.renderer == GraphicsApi::Vulkan);
     CHECK(items[7].enabled);
     CHECK_FALSE(f.menu.restartNeeded());
-    CHECK(f.writes == 0); // staged until Apply, like every Video row
+    CHECK(f.settings.writes == 0); // staged until Apply, like every Video row
     // Restore Defaults returns to Vulkan.
     f.right();
     REQUIRE(f.menu.config().display.renderer == GraphicsApi::OpenGl);
@@ -1568,8 +1502,9 @@ TEST_CASE("the Video page offers the renderer from the title, needing a restart,
     CHECK(f.menu.config().display.renderer == GraphicsApi::Vulkan);
     // Running on OpenGL, the saved choice shows as it is, with no restart needed.
     f.config.display.renderer = GraphicsApi::OpenGl;
-    f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, SettingsMenu::Scope::Title, {}, {}, {},
-                {}, {}, GraphicsApi::OpenGl);
+    f.settings.fail = true; // nothing is saved
+    f.settings.drawingApi = GraphicsApi::OpenGl;
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Title);
     f.choose(4);
     CHECK(f.menu.menu().definition().items[0].value == "OpenGL");
     CHECK_FALSE(f.menu.menu().definition().items[7].enabled);
@@ -1578,8 +1513,7 @@ TEST_CASE("the Video page offers the renderer from the title, needing a restart,
     // In play, the renderer cannot be swapped under the level: the row is greyed, skipped,
     // and left alone by Restore Defaults.
     for (const auto scope : {SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
-        f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, scope, {}, {}, {}, {}, {},
-                    GraphicsApi::OpenGl);
+        f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, scope);
         f.choose(4);
         const auto& rows = f.menu.menu().definition().items;
         CHECK(rows[0].text == "Renderer");
@@ -1599,16 +1533,9 @@ TEST_CASE("the Video page offers the renderer from the title, needing a restart,
 TEST_CASE("the Video page offers the display when more than one is attached",
           "[settings][graphics][display]") {
     Fixture f;
-    const DisplayOptions display{{1920, 1080}, {{1920, 1080}}, {1280, 896}, {"Left", "Right"}, 1};
-    f.menu.open(
-        f.config, &f.strings,
-        [&](const auto& next) {
-            f.config = next;
-            ++f.writes;
-            return true;
-        },
-        f.painter, {}, {}, SettingsMenu::Scope::Title, {}, display, {},
-        [&](const auto&) { return true; });
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1280, 896}, {"Left", "Right"}, 1};
+    f.settings.video = [](const auto&) { return true; };
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Title);
     f.choose(4);
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
     const auto& items = f.menu.menu().definition().items;
@@ -1637,6 +1564,30 @@ TEST_CASE("the Video page offers the display when more than one is attached",
     REQUIRE(greyed != alone.end());
     CHECK_FALSE(greyed->enabled);
     CHECK(greyed->value == "1");
+}
+
+TEST_CASE("the Video page takes the display the running game offers as it is entered",
+          "[settings][graphics][display]") {
+    Fixture f;
+    const auto displayRow = [&] {
+        const auto& items = f.menu.menu().definition().items;
+        const auto row = std::ranges::find(items, 13, &MenuItem::code);
+        REQUIRE(row != items.end());
+        return *row;
+    };
+    f.choose(4);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
+    CHECK_FALSE(displayRow().enabled);
+    // A second display attached while the menu is open shows once the page is entered again.
+    CHECK(f.menu.config().display.windowWidth == 1280);
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1600, 1000}, {"Left", "Right"}, 1};
+    f.back();
+    f.choose(4);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
+    CHECK(displayRow().enabled);
+    CHECK(displayRow().value == "2");
+    CHECK(f.menu.config().display.windowWidth == 1600); // the window as it stands now
+    CHECK(f.menu.config().display.windowHeight == 1000);
 }
 
 } // namespace
@@ -1711,7 +1662,7 @@ TEST_CASE("rumble is offered only for the controller assigned in the pending pro
     f.right();
     REQUIRE(f.menu.menu().definition().items[0].value == "XInput Controller 2");
     CHECK(shown());
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     f.applyControls();
     CHECK(f.config.controls[2].device == "twins");
     CHECK(f.config.controls[2].occurrence == 1);
@@ -1769,12 +1720,12 @@ TEST_CASE("rumble hardware changes preserve draft preferences and action bar foc
         CHECK_FALSE(shown());
         CHECK(selectedCode() == code);
     }
-    CHECK(f.writes == 0);
+    CHECK(f.settings.writes == 0);
     physical.setPad(player, pad);
     update();
     f.applyControls();
     CHECK_FALSE(f.config.controls[static_cast<usize>(player)].rumble);
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
 }
 
 TEST_CASE("the list of players in Controls reads at the choice pages' size",
@@ -1848,16 +1799,7 @@ TEST_CASE("Game Options turns the language through the tables the text directory
     Fixture f;
     StringTable strings;
     REQUIRE(strings.load(dir, "en"));
-    f.menu.open(f.config, &strings,
-                [&](const GameConfig& next) {
-                    if (f.fail) {
-                        return false;
-                    }
-                    f.config = next;
-                    ++f.writes;
-                    return true;
-                },
-                f.painter, {}, {});
+    f.menu.open(f.config, &strings, &f.settings, f.painter, {}, {});
     f.choose(1);
     REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
     const auto& items = f.menu.menu().definition().items;
@@ -1866,42 +1808,37 @@ TEST_CASE("Game Options turns the language through the tables the text directory
     f.focus(5);
     f.right();
     CHECK(f.config.text.language == "xx");
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
     CHECK(f.menu.menu().definition().items.back().value == "Testish");
     f.release();
     f.right();
     CHECK(f.config.text.language == "en");
-    CHECK(f.writes == 2);
+    CHECK(f.settings.writes == 2);
     f.release();
     MenuInput left;
     left.left = true;
     f.menu.update(left, 1);
     CHECK(f.config.text.language == "xx");
-    CHECK(f.writes == 3);
+    CHECK(f.settings.writes == 3);
     f.release();
     // Choosing the row turns it on as well; a failed write leaves the language alone.
-    f.fail = true;
+    f.settings.fail = true;
     f.select();
     CHECK(f.config.text.language == "xx");
-    CHECK(f.writes == 3);
+    CHECK(f.settings.writes == 3);
     // With one table there is nothing to turn to, and nothing is written.
     const auto lone = test::scratchDirectory("settings-one-language");
     writeTextFile(lone / "en.json", R"({"language.name": "English"})");
     StringTable one;
     REQUIRE(one.load(lone, "en"));
-    f.fail = false;
+    f.settings.fail = false;
     f.config.text.language = "en";
-    f.menu.open(f.config, &one,
-                [&](const GameConfig&) {
-                    ++f.writes;
-                    return true;
-                },
-                f.painter, {}, {});
+    f.menu.open(f.config, &one, &f.settings, f.painter, {}, {});
     f.choose(1);
     f.focus(5);
     f.right();
     CHECK(f.config.text.language == "en");
-    CHECK(f.writes == 3);
+    CHECK(f.settings.writes == 3);
 }
 
 TEST_CASE("a keyboard player's control scheme stands under its device, is turned and restored",
@@ -1923,7 +1860,7 @@ TEST_CASE("a keyboard player's control scheme stands under its device, is turned
     f.release();
     f.applyControls();
     CHECK(f.config.controls[0].scheme == KeyboardScheme::Robotron);
-    CHECK(f.writes == 1);
+    CHECK(f.settings.writes == 1);
     f.focus(106);
     f.select(); // choosing the row turns it too
     CHECK(f.menu.menu().definition().items[1].value == "Tank");

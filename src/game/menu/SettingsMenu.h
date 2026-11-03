@@ -1,6 +1,6 @@
 #pragma once
 
-#include <functional>
+#include <utility>
 
 #include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
@@ -9,6 +9,7 @@
 #include "game/config/GameConfig.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/ControlSettings.h"
+#include "game/menu/LiveSettings.h"
 #include "game/menu/VideoSettings.h"
 #include "game/widgets/OptionMenu.h"
 
@@ -29,15 +30,16 @@ public:
         Combat
     };
     enum class Scope : u8 { Title, Tower, Level };
-    using Persist = std::function<bool(const GameConfig&)>;
-    using PreviewAudio = std::function<void(const AudioConfig&)>;
-    /** `renderer` is the graphics API drawing now: the Video page offers the other from the
-     * title alone, and says a restart is needed while the choice differs from it. */
-    void open(const GameConfig& config, const StringTable* strings, Persist persist,
+    /** `settings` saves and previews the edits and says which displays the Video page offers
+     * and which graphics API draws now: the page offers the other from the title alone, and
+     * says a restart is needed while the choice differs from it. Without it nothing is saved
+     * or previewed, no display is offered and Vulkan is taken to be drawing. */
+    void open(const GameConfig& config, const StringTable* strings, LiveSettings* settings,
               const TextPainter& painter, const MenuScreen& screen, MenuDefinition backdrop,
-              Scope scope = Scope::Title, PreviewAudio preview = {}, DisplayOptions display = {},
-              std::function<DisplayOptions()> queryDisplay = {}, Persist previewVideo = {},
-              VideoSettings::Clock clock = {}, GraphicsApi renderer = GraphicsApi::Vulkan);
+              Scope scope = Scope::Title);
+    /** Test seam: the clock that times the Video page's confirmation; the steady clock until
+     * one is set. */
+    void setClock(VideoSettings::Clock clock) { m_clock = std::move(clock); }
     /** The mechanics the Game page offers, a switch each after its own; none until told. */
     void setMechanics(const MechanicCatalog* mechanics) { m_mechanics = mechanics; }
     MenuEvent update(const MenuInput& input, s32 ticks);
@@ -61,6 +63,8 @@ private:
     /** The row a list page opens on: its current choice, else the first. */
     s32 currentChoice() const;
     void change(s32 direction);
+    /** Takes the display the running game offers now, when there is one. */
+    void refreshDisplay();
     bool flushAudio();
     void commit(GameConfig next);
     f32& audioVolume(usize row);
@@ -76,10 +80,8 @@ private:
     const TextPainter* m_painter = nullptr;
     const StringTable* m_strings = nullptr;
     const MechanicCatalog* m_mechanics = nullptr;
-    Persist m_persist;
-    PreviewAudio m_previewAudio;
+    LiveSettings* m_settings = nullptr;
     DisplayOptions m_display;
-    std::function<DisplayOptions()> m_queryDisplay;
     std::vector<Extent2D> resolutions() const;
     /** The display the Video page shows: the one chosen, else the one the window is on. */
     s32 shownMonitor() const;
@@ -87,7 +89,6 @@ private:
     GameConfig m_config;
     std::string m_notice;
     VideoSettings m_video;
-    Persist m_previewVideo;
     VideoSettings::Clock m_clock;
     s32 m_countdown = 0;
     MenuScreen m_screen;

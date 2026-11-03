@@ -5,9 +5,13 @@
 #include <vector>
 
 #include "engine/core/Types.h"
+#include "engine/platform/DisplayMode.h"
+#include "engine/render/RenderTypes.h"
 
 #include "game/characters/Party.h"
 #include "game/config/ControlProfiles.h"
+#include "game/config/GameConfig.h"
+#include "game/menu/LiveSettings.h"
 #include "game/online/PartyStore.h"
 #include "game/scenes/ClassUnlocks.h"
 #include "game/scenes/Haptics.h"
@@ -72,5 +76,39 @@ public:
     u32 autoSaves = 0;
     u32 saves = 0;
     bool saveSucceeds = true;
+};
+
+/** A test's running settings: a save is refused while `fail` holds, else written back to
+ * `target` and counted, after `hook` has seen it; each audio preview is kept in turn; the
+ * Video trials answer through `video`, refused without one; the display and the renderer
+ * are what the test sets. */
+class FakeSettings final : public game::LiveSettings {
+public:
+    bool save(const game::GameConfig& next) override {
+        if (hook) {
+            hook(next);
+        }
+        if (fail) {
+            return false;
+        }
+        if (target != nullptr) {
+            *target = next;
+        }
+        ++writes;
+        return true;
+    }
+    bool previewVideo(const game::GameConfig& trial) override { return video && video(trial); }
+    void previewAudio(const game::AudioConfig& audio) override { audioPreviews.push_back(audio); }
+    DisplayOptions display() const override { return displayOptions; }
+    GraphicsApi renderer() const override { return drawingApi; }
+
+    game::GameConfig* target = nullptr; ///< where a save is written back; nowhere without one
+    std::function<void(const game::GameConfig&)> hook;  ///< runs first on every save
+    std::function<bool(const game::GameConfig&)> video; ///< answers each Video trial
+    std::vector<game::AudioConfig> audioPreviews;
+    DisplayOptions displayOptions;
+    GraphicsApi drawingApi = GraphicsApi::Vulkan;
+    s32 writes = 0;
+    bool fail = false;
 };
 } // namespace gdl::test

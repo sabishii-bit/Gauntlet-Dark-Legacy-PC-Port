@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
@@ -374,15 +375,13 @@ TEST_CASE("title options persist edits without beginning a game",
           "[game][title][settings][assets]") {
     test::FakeRenderDevice device;
     Fixture f;
-    auto context = f.context(nullptr);
+    const auto context = f.context(nullptr);
     const auto file = test::scratchDirectory("title-settings") / "settings.json";
-    context.saveSettings = [&](const GameConfig& next) {
-        next.saveFile(file);
-        f.config = next;
-        return true;
-    };
+    test::FakeSettings settings;
+    settings.target = &f.config;
+    settings.hook = [&](const GameConfig& next) { next.saveFile(file); };
     TitleScene scene;
-    REQUIRE(scene.open(device, context));
+    REQUIRE(scene.open(device, context, &settings));
     scene.step(1, press(true));
     scene.step(1, press(false, false, true));
     scene.step(1, press(false, true)); // root options

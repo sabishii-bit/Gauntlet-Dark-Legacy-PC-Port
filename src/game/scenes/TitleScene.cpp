@@ -70,9 +70,10 @@ std::string_view TitleScene::text(std::string_view id) const {
     return m_context.strings != nullptr ? m_context.strings->get(id) : id;
 }
 
-bool TitleScene::open(RenderDevice& device, const GameContext& context) {
+bool TitleScene::open(RenderDevice& device, const GameContext& context, LiveSettings* settings) {
     close();
     m_context = context;
+    m_liveSettings = settings;
     m_screen = MenuScreen{};
     if (m_context.config != nullptr) {
         m_screen.width = static_cast<s32>(m_context.config->display.virtualWidth);
@@ -428,9 +429,8 @@ void TitleScene::openOptionsMenu() {
     menu.burnArea = kOptionsBurnArea;
     m_optionsMenu.setMechanics(m_context.mechanics);
     m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
-                       m_context.strings, m_context.saveSettings, m_text, m_screen, menu,
-                       SettingsMenu::Scope::Title, m_context.previewAudio, {},
-                       m_context.displayOptions, m_context.previewVideo, {}, m_context.renderer);
+                       m_context.strings, m_liveSettings, m_text, m_screen, menu,
+                       SettingsMenu::Scope::Title);
 }
 
 /** Backing out hands the scroll to the burn effect while the text fades out. */

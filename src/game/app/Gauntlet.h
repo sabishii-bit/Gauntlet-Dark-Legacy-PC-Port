@@ -15,7 +15,9 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
+#include "engine/platform/DisplayMode.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
 
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
@@ -43,6 +45,7 @@
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/mechanics/MechanicCatalog.h"
+#include "game/menu/LiveSettings.h"
 #include "game/menu/PauseMenu.h"
 #include "game/online/PartyStore.h"
 #include "game/players/CursorAim.h"
@@ -105,6 +108,20 @@ private:
         explicit PartyRouting(Gauntlet& game) : m_game(game) {}
         void autoSave(std::span<PartyMember> party) override;
         bool saveParty(std::span<PartyMember> party) override;
+
+    private:
+        Gauntlet& m_game;
+    };
+    /** The settings the title and pause menus edit: written to the settings file and applied,
+     * tried on the window and heard through the mixers. */
+    class SettingsRouting final : public LiveSettings {
+    public:
+        explicit SettingsRouting(Gauntlet& game) : m_game(game) {}
+        bool save(const GameConfig& next) override;
+        bool previewVideo(const GameConfig& trial) override;
+        void previewAudio(const AudioConfig& audio) override;
+        DisplayOptions display() const override;
+        GraphicsApi renderer() const override;
 
     private:
         Gauntlet& m_game;
@@ -240,6 +257,7 @@ private:
     RumbleRouting m_rumble{*this}; ///< outlives every scene and online game that rumbles
     UnlockRouting m_unlocks{*this};
     PartyRouting m_partyStore{*this};
+    SettingsRouting m_liveSettings{*this}; ///< outlives the title and pause menus that edit it
     bool m_windowLive = true; ///< until shutdown has closed every screen; the window goes next
     std::unique_ptr<OnlineRun> m_online;
     struct NetplayNavigation {

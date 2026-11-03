@@ -374,6 +374,17 @@ void restoreRow(const VideoRow& row, GameConfig& config, const GameConfig& defau
         row.restore(config, defaults, view);
     }
 }
+/** An editor's save through the running game; refused without one. */
+VideoSettings::Apply saveThrough(LiveSettings* settings) {
+    return
+        [settings](const GameConfig& next) { return settings != nullptr && settings->save(next); };
+}
+/** A Video trial through the running game; refused without one. */
+VideoSettings::Apply previewThrough(LiveSettings* settings) {
+    return [settings](const GameConfig& trial) {
+        return settings != nullptr && settings->previewVideo(trial);
+    };
+}
 } // namespace
 std::string SettingsMenu::text(std::string_view id) const {
     return std::string(m_strings != nullptr ? m_strings->get(id) : id);
@@ -396,23 +407,17 @@ std::string SettingsMenu::languageName() const {
     }
     return m_config.text.language;
 }
-void SettingsMenu::open(const GameConfig& config, const StringTable* strings, Persist persist,
-                        const TextPainter& painter, const MenuScreen& screen,
-                        MenuDefinition backdrop, Scope scope, PreviewAudio preview,
-                        DisplayOptions display, std::function<DisplayOptions()> queryDisplay,
-                        Persist previewVideo, VideoSettings::Clock clock, GraphicsApi renderer) {
+void SettingsMenu::open(const GameConfig& config, const StringTable* strings,
+                        LiveSettings* settings, const TextPainter& painter,
+                        const MenuScreen& screen, MenuDefinition backdrop, Scope scope) {
     if (!m_video.revert()) {
         return;
     }
     m_config = config;
-    m_renderer = renderer;
+    m_renderer = settings != nullptr ? settings->renderer() : GraphicsApi::Vulkan;
     m_strings = strings;
-    m_persist = std::move(persist);
-    m_previewAudio = std::move(preview);
-    m_display = std::move(display);
-    m_queryDisplay = std::move(queryDisplay);
-    m_previewVideo = std::move(previewVideo);
-    m_clock = std::move(clock);
+    m_settings = settings;
+    m_display = {};
     m_confirmVideo = false;
     m_audioDirty = false;
     m_audioSampleTicks = 0;
@@ -432,6 +437,11 @@ void SettingsMenu::close() {
     if (m_video.revert()) {
         m_confirmVideo = false;
         m_menu.close();
+    }
+}
+void SettingsMenu::refreshDisplay() {
+    if (m_settings != nullptr) {
+        m_display = m_settings->display();
     }
 }
 s32 SettingsMenu::shownMonitor() const {
@@ -454,9 +464,7 @@ std::vector<Extent2D> SettingsMenu::resolutions() const {
     return result;
 }
 void SettingsMenu::rebuild(s32 selection) {
-    if (m_queryDisplay) {
-        m_display = m_queryDisplay();
-    }
+    refreshDisplay();
     auto definition = m_backdrop;
     definition.items.clear();
     definition.body.clear();
@@ -656,7 +664,7 @@ bool SettingsMenu::flushAudio() {
     if (!m_audioDirty) {
         return true;
     }
-    if (!m_persist || !m_persist(m_config)) {
+    if (m_settings == nullptr || !m_settings->save(m_config)) {
         m_notice = text("settings.failed");
         return false;
     }
@@ -665,7 +673,7 @@ bool SettingsMenu::flushAudio() {
     return true;
 }
 void SettingsMenu::commit(GameConfig next) {
-    if (m_persist && m_persist(next)) {
+    if (m_settings != nullptr && m_settings->save(next)) {
         m_config = std::move(next);
         m_notice.clear();
     } else {
@@ -680,9 +688,7 @@ f32& SettingsMenu::audioVolume(usize row) {
     return row == 1 ? m_config.audio.effectsVolume : m_config.audio.movieVolume;
 }
 void SettingsMenu::change(s32 direction) {
-    if (m_queryDisplay) {
-        m_display = m_queryDisplay();
-    }
+    refreshDisplay();
     const s32 code = m_menu.definition().items[static_cast<usize>(m_menu.selection())].code;
     auto next = m_config;
     if (m_page == Page::Audio) {
@@ -700,8 +706,8 @@ void SettingsMenu::change(s32 direction) {
         m_menu.markItem(kAudioSliders, m_config.audio.stereo ? 2 : 1);
         m_audioDirty = true;
         m_notice.clear();
-        if (m_previewAudio) {
-            m_previewAudio(m_config.audio);
+        if (m_settings != nullptr) {
+            m_settings->previewAudio(m_config.audio);
         }
         return;
     }
@@ -760,8 +766,9 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         return {};
     }
     if (m_page == Page::Controls) {
-        const auto result = m_controls.update(input, ticks, m_menu, m_config, m_persist,
-                                              [this](s32 selected) { rebuild(selected); });
+        const auto result =
+            m_controls.update(input, ticks, m_menu, m_config, saveThrough(m_settings),
+                              [this](s32 selected) { rebuild(selected); });
         if (result.closed) {
             m_page = Page::Root;
             rebuild();
@@ -923,15 +930,14 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
                 m_audioSampleTicks = 0;
             }
             if (m_page == Page::Graphics) {
-                if (m_queryDisplay) {
-                    m_display = m_queryDisplay();
-                }
+                refreshDisplay();
                 if (m_config.display.windowMode == WindowMode::Windowed &&
                     !m_display.window.isZero()) {
                     m_config.display.windowWidth = m_display.window.width;
                     m_config.display.windowHeight = m_display.window.height;
                 }
-                m_video.begin(m_config, m_previewVideo, m_persist, m_clock);
+                m_video.begin(m_config, previewThrough(m_settings), saveThrough(m_settings),
+                              m_clock);
             }
             m_notice.clear();
             rebuild(currentChoice());
