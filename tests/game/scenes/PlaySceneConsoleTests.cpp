@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -12,7 +13,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ItemArchive.h"
 #include "engine/assets/StringTable.h"
+#include "engine/assets/WorldData.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
@@ -23,7 +27,11 @@
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/console/NoclipMotion.h"
+#include "game/critters/CombatantKind.h"
 #include "game/critters/Critters.h"
+#include "game/enemies/Generators.h"
+#include "game/enemies/LevelOpponents.h"
+#include "game/level/ExitPortals.h"
 #include "game/players/ItemPickup.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/scenes/PlayScene.h"
@@ -34,12 +42,17 @@ using namespace gdl::game;
 
 constexpr f64 kStep = 1.0 / 60.0;
 constexpr s32 kSeats = 2;
+constexpr u8 kNobody = 3;                                        ///< a seat nobody holds
 constexpr s32 kNearlyFull = std::numeric_limits<s32>::max() - 5; ///< a counter with no room left
-constexpr f32 kChargeNearlyFull = 9999999.0f; ///< a powerup charge just under ten million
-constexpr f32 kForGood = -1.0f;               ///< a powerup's strength that never runs out
+constexpr f32 kChargeNearlyFull = 9999999.0f;   ///< a powerup charge just under ten million
+constexpr f32 kStrengthNearlyFull = 9999999.0f; ///< seconds of a powerup just under ten million
+constexpr f32 kForGood = -1.0f;                 ///< a powerup's strength that never runs out
+constexpr s32 kDeathTicks = 600; ///< long enough for a death to play out to its question
+constexpr s32 kExitTicks = 1200; ///< long enough for a portal to take a party standing on it
 constexpr std::string_view kOnItsWay = "The party is already on its way.";
 constexpr std::string_view kNoScene = "No active scene for that console command.";
 constexpr std::string_view kLegendsOffline = "Legends maps are offline only.";
+constexpr std::string_view kNotInParty = "That player is no longer in the party.";
 
 // What get, goto and spawn answer words they cannot read, word for word.
 constexpr std::string_view kGetUsage =
@@ -137,6 +150,27 @@ struct Fixture {
         return *live;
     }
 };
+
+/** Every verb's line, the same verbs with words they cannot read, and a seat nobody holds. */
+std::vector<ConsoleAction> awayLines() {
+    return {{0, "god"},        {0, "notarget"},       {0, "noclip"},
+            {0, "get gold 1"}, {0, "spawn gru"},      {0, "suicide"},
+            {0, "goto 1 2 3"}, {0, "unlock_tower"},   {0, "god x"},
+            {0, "get"},        {0, "spawn"},          {0, "suicide x"},
+            {0, "goto"},       {0, "unlock_tower x"}, {kNobody, "god"}};
+}
+
+/** A party on its way refuses every line once its seat is found, before the verb reads its
+ * words. */
+void checkRefusedAway(std::span<const ConsoleAction> lines,
+                      std::span<const PlayScene::ConsoleReply> replies) {
+    REQUIRE(replies.size() == lines.size());
+    for (usize i = 0; i < lines.size(); ++i) {
+        CAPTURE(lines[i].seat, lines[i].line);
+        CHECK(replies[i].seat == lines[i].seat);
+        CHECK(replies[i].text == (lines[i].seat == kNobody ? kNotInParty : kOnItsWay));
+    }
+}
 } // namespace
 
 TEST_CASE("every shared verb answers with its words today", "[native-console][assets]") {
@@ -191,6 +225,8 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
           "A console grant must be finite and no larger than 1000000.");
     CHECK(fixture->say("get levitate nan") ==
           "A console grant must be finite and no larger than 1000000.");
+    CHECK(fixture->say("get levitate 1000001") ==
+          "A console grant must be finite and no larger than 1000000.");
     CHECK(fixture->save(0).gold == gold + 37);
     // get info stays on the asking machine: the wire never carries it.
     CHECK(fixture->say("get info") == kNoScene);
@@ -214,6 +250,15 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(fixture->say("get supershot 10") ==
           "That item grant would exceed the powerup's counter.");
     CHECK(fixture->save(0).progress().inventory.powerups.front().charge == kChargeNearlyFull);
+    reopen();
+    fixture->save(0).progress().lifetime.goldFound = kNearlyFull;
+    CHECK(fixture->say("get gold 37") == "That item grant would exceed the character's counter.");
+    CHECK(fixture->save(0).gold == gold);
+    reopen();
+    fixture->save(0).progress().inventory.powerups.front() = {
+        .strength = kStrengthNearlyFull, .kind = powerup::kSpecial, .flags = powerup::kLevitation};
+    CHECK(fixture->say("get levitate 10") == "That item grant would exceed the powerup's counter.");
+    CHECK(fixture->save(0).progress().inventory.powerups.front().strength == kStrengthNearlyFull);
     reopen();
     CHECK(fixture->save(0).gold == gold);
 
@@ -268,6 +313,9 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     const auto s1 = fixture->catalog.byName("S1");
     REQUIRE(s1);
     const Vec3 asked = scene.actor(1)->position();
+    const Vec3 beside = scene.actor(0)->position();
+    // The asker stands apart from the first seat, so the way back shows whose spot it is.
+    REQUIRE((asked.x != beside.x || asked.z != beside.z));
     const auto toS1 = fixture->sayStep("goto S1", 1);
     CHECK(toS1.consoleReplies.front().text == "Going to S1 (Lab)");
     CHECK(scene.consoleTravelRequest() ==
@@ -291,9 +339,25 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     }
     reopen();
 
+    // A seat that left the game is passed over, though its own line still reaches the body.
+    REQUIRE(scene.kill(1));
+    for (s32 i = 0; i < kDeathTicks && !scene.status(1).towerPrompt; ++i) {
+        fixture->step();
+    }
+    REQUIRE(scene.status(1).towerPrompt);
+    PlayScene::Inputs quit{};
+    quit[1].menu.back = true;
+    fixture->step({}, quit);
+    REQUIRE(scene.runtime(1)->departed);
+    CHECK(fixture->say("unlock_tower") == "The tower stands open to the party.");
+    CHECK(fixture->save(0).progress().relics.runeCount() == Relics::kRuneCount);
+    CHECK(fixture->save(1).progress().relics.runeCount() == 0);
+    CHECK(fixture->say("god", 1) == "god on");
+    reopen();
+
     // A seat nobody holds, and lines the wire would not carry.
-    CHECK(fixture->say("god", 3) == "That player is no longer in the party.");
-    CHECK_FALSE(scene.cheats(3).god);
+    CHECK(fixture->say("god", kNobody) == kNotInParty);
+    CHECK_FALSE(scene.cheats(kNobody).god);
     CHECK(fixture->say("god", 4) == kNoScene);
     CHECK(fixture->say("god" + std::string(ConsoleAction::kMaxLine - 2, ' ')) == kNoScene);
     CHECK_FALSE(scene.cheats(0).god);
@@ -308,9 +372,17 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(fixture->say("spawn critter dragon") == "A critter is a golem, a general or a gargoyle");
     CHECK(fixture->say("spawn gargoyle eagl x y") ==
           "A gargoyle is an eagl, a lion or a serp, then a map at most");
+    // What a map lends the swarm's voices shows in the roster the level's sounds are found by.
+    const auto roster = [&scene] {
+        const LevelInfo* now = scene.opponents().levelNow();
+        REQUIRE(now != nullptr);
+        return now->enemies.size();
+    };
     const usize enemies = scene.enemies().count();
+    const usize own = roster();
     CHECK(fixture->say("spawn gru 2 3") == "Spawned 3 GRU at tier 2");
     CHECK(scene.enemies().count() == enemies + 3);
+    CHECK(roster() == own);
     CHECK(fixture->say("spawn enemy gru 2 2 G1") == "Spawned 2 GRU at tier 2");
     CHECK(scene.enemies().count() == enemies + 5);
     const std::vector<ConsoleAction> swarm(5, ConsoleAction{0, "spawn gru 1 20"});
@@ -319,12 +391,33 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(crowded.consoleReplies.front().text.starts_with("Spawned "));
     CHECK(crowded.consoleReplies.back().text == "Spawned 0 GRU at tier 1");
     CHECK(scene.enemies().count() == static_cast<usize>(scene.enemies().most()));
+    // A map whose spawn stands nothing lends nothing; one whose spawn stands lends its kinds.
+    const usize crowdedRoster = roster();
+    CHECK(fixture->say("spawn gru 1 1 E1") == "Spawned 0 GRU at tier 1");
+    CHECK(roster() == crowdedRoster);
     reopen();
+    const usize openedRoster = roster();
+    CHECK(fixture->say("spawn gru 1 1 E1") == "Spawned 1 GRU at tier 1");
+    CHECK(roster() > openedRoster);
+    reopen();
+    // Each realm letter dresses its golems from a stock of its own.
+    const auto golemCostumes = [&scene] {
+        std::set<const ItemArchive*> costumes;
+        for (s32 id = 0; id < Critters::kMost; ++id) {
+            const ItemArchive* costume = scene.critters().archiveOf(id);
+            if (costume != nullptr && scene.critters().kindOf(id) == CombatantKind::Golem) {
+                costumes.insert(costume);
+            }
+        }
+        return costumes.size();
+    };
     const usize critters = scene.critters().count();
     CHECK(fixture->say("spawn golem") == "Spawned a golem");
+    CHECK(golemCostumes() == 1);
     CHECK(fixture->say("spawn general") == "Spawned a general");
     CHECK(fixture->say("spawn gargoyle lion") == "Spawned a gargoyle");
     CHECK(fixture->say("spawn critter golem B1") == "Spawned a golem");
+    CHECK(golemCostumes() == 2);
     CHECK(scene.critters().count() == critters + 4);
     const std::vector<ConsoleAction> great(Critters::kMost, ConsoleAction{0, "spawn golem"});
     const auto full = fixture->step(great);
@@ -336,8 +429,12 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(scene.generators().count() == generators + 1);
     CHECK(fixture->say("spawn generator special") ==
           "A mixed brood needs a Temple (E) or Underworld (F) map.");
+    const usize before = roster();
     CHECK(fixture->say("spawn generator special E1") == "Stood a tier 1 SPECIAL generator");
     CHECK(scene.generators().count() == generators + 2);
+    CHECK(scene.generators().kindOf(static_cast<s32>(scene.generators().count()) - 1) ==
+          Generators::kTempleBrood);
+    CHECK(roster() > before);
     CHECK(fixture->say("spawn generator zz") ==
           "No enemy kind named ZZ for a generator; list enemies names them");
     reopen();
@@ -360,7 +457,13 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(fixture->say("spawn object NOPE") == "No object named NOPE in G2");
     CHECK(fixture->say("spawn NOPE") == "No object named NOPE in G2");
     CHECK(fixture->say("spawn object NOPE G1") == "No object named NOPE in G1");
+    CHECK(fixture->say("spawn " + item + " G1") == "No object named GAPPLE in G1");
     CHECK(scene.spawnedObjectCount() == 2);
+    WorldLayout fieldsLayout;
+    REQUIRE(fieldsLayout.load(fixture->root / g1->directory));
+    const std::string borrowed = fieldsLayout.objects().front().name;
+    CHECK(fixture->say("spawn object " + borrowed + " G1") == "Stood " + borrowed + " of G1");
+    CHECK(scene.spawnedObjectCount() == 3);
     reopen();
 
     // In the tower nobody falls, and unlock_tower reopens it where the asker stands.
@@ -372,6 +475,9 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     REQUIRE(owner != nullptr);
     const Vec3 at = owner->position();
     const f32 yaw = owner->yaw();
+    const PlayerActor* first = tower->scene.actor(0);
+    REQUIRE(first != nullptr);
+    REQUIRE(first->position() != at);
     const auto reopened = tower->sayStep("unlock_tower", 1);
     CHECK(reopened.consoleReplies.front().text == "The tower stands open to the party.");
     CHECK(reopened.outcome == PlayOutcome::Travel);
@@ -399,18 +505,47 @@ TEST_CASE("while the party is on its way every verb is refused", "[native-consol
     CHECK(fixture->save(0).gold == gold);
     const auto bound = scene.nativeAgreementDigest();
     REQUIRE(bound);
-    const std::array every{ConsoleAction{0, "god"},        ConsoleAction{0, "notarget"},
-                           ConsoleAction{0, "noclip"},     ConsoleAction{0, "get gold 1"},
-                           ConsoleAction{0, "spawn gru"},  ConsoleAction{0, "suicide"},
-                           ConsoleAction{0, "goto 1 2 3"}, ConsoleAction{0, "unlock_tower"}};
+    const auto every = awayLines();
     const auto later = fixture->step(every);
     CHECK(later.outcome == PlayOutcome::Travel);
-    REQUIRE(later.consoleReplies.size() == every.size());
-    for (const auto& reply : later.consoleReplies) {
-        CHECK(reply.text == kOnItsWay);
-    }
+    checkRefusedAway(every, later.consoleReplies);
     CHECK(scene.consoleTravelRequest()->destination.name == "G1");
     CHECK(scene.nativeAgreementDigest() == bound);
+}
+
+TEST_CASE("while the party goes through an exit every verb is refused",
+          "[native-console][assets]") {
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    const ExitPortals& portals = scene.portals();
+    std::optional<Vec3> exit;
+    for (usize i = 0; i < portals.size() && !exit; ++i) {
+        if (!portals.portal(i).secret) {
+            exit = portals.portal(i).position;
+        }
+    }
+    REQUIRE(exit);
+    REQUIRE(scene.relocate(*exit));
+    for (s32 i = 0; i < kExitTicks && !scene.leaving(); ++i) {
+        REQUIRE(fixture->step().outcome == PlayOutcome::Running);
+    }
+    REQUIRE(scene.leaving());
+    REQUIRE_FALSE(scene.consoleTravelRequest());
+    // The lines change nothing: the tick goes as one with no lines does.
+    PlayScene::LocalSnapshot going;
+    REQUIRE(scene.saveLocal(going));
+    const u64 tick = fixture->tick;
+    const auto every = awayLines();
+    const auto asked = fixture->step(every);
+    checkRefusedAway(every, asked.consoleReplies);
+    CHECK_FALSE(scene.consoleTravelRequest());
+    const auto refused = scene.nativeAgreementDigest();
+    REQUIRE(refused);
+    REQUIRE(scene.restoreLocal(going));
+    fixture->tick = tick;
+    const auto plain = fixture->step();
+    CHECK(asked.outcome == plain.outcome);
+    CHECK(scene.nativeAgreementDigest() == refused);
 }
 
 TEST_CASE("every verb the wire admits reaches its branch", "[native-console][assets]") {
@@ -418,17 +553,25 @@ TEST_CASE("every verb the wire admits reaches its branch", "[native-console][ass
     auto& scene = fixture->scene;
     PlayScene::LocalSnapshot opened;
     REQUIRE(scene.saveLocal(opened));
-    constexpr std::array<std::string_view, 8> kLines{"GOD",        "NoTarget",    "noclip",
-                                                     "Get gold 1", "spawn gru",   "Suicide",
-                                                     "goto 1 2 3", "UNLOCK_TOWER"};
-    for (const std::string_view line : kLines) {
-        CAPTURE(line);
+    struct Line {
+        std::string_view line;
+        std::string_view reply;
+    };
+    constexpr std::array<Line, 8> kLines{{{"GOD", "god on"},
+                                          {"NoTarget", "notarget on"},
+                                          {"noclip", "noclip on"},
+                                          {"Get gold 1", "Got 1 gold"},
+                                          {"spawn gru", "Spawned 1 GRU at tier 1"},
+                                          {"Suicide", "2 fallen"},
+                                          {"goto 1 2 3", "Moved the party."},
+                                          {"UNLOCK_TOWER", "The tower stands open to the party."}}};
+    for (const Line& line : kLines) {
+        CAPTURE(line.line);
         REQUIRE(scene.restoreLocal(opened));
-        REQUIRE(ConsoleAction{0, std::string{line}}.valid());
-        const std::string reply = fixture->say(std::string{line});
-        CAPTURE(reply);
+        REQUIRE(ConsoleAction{0, std::string{line.line}}.valid());
+        const std::string reply = fixture->say(std::string{line.line});
         CHECK(reply != "Unknown shared console command.");
-        CHECK(reply != kNoScene);
+        CHECK(reply == line.reply);
     }
 }
 
