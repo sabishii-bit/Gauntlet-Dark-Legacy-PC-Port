@@ -90,8 +90,8 @@ struct MotionScript {
 
 /** A movement level answering from a script it borrows, as the script stands at each
  * question, the way a level with nothing in it would where the script is unset: reports do
- * nothing, the attack buttons ask a plain attack, nothing is aimed at, sensed, held or struck,
- * nobody flies, and every step stands as it was taken. */
+ * nothing, the attack buttons ask a plain or strong attack, nothing is aimed at, sensed, held
+ * or struck, nobody flies, and every step stands as it was taken. */
 class ScriptedMotion final : public game::PartyMotion::Level {
 public:
     /** Answers from a script with nothing set. */

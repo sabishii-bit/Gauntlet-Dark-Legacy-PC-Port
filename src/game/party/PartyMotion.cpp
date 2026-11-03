@@ -487,6 +487,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             contacts[i] = PartyCollision::step(players, i, before, seconds, &collision);
             FloorRiding::land(players, i, before, collision);
         }
+        // The shared view's limit holds the step, which is then rechecked against world and
+        // creature collision.
         if (!down && !flying) {
             const Vec3 limited = level.limitMovement(i, before, actor.position());
             if (glm::distance(limited, actor.position()) > 1.0e-5f) {

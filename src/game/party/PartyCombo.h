@@ -31,8 +31,7 @@ public:
         /** Runs member `index`'s turbo move on through the step. */
         virtual void advanceTurbo(usize index, s32 ticks, f32 seconds) = 0;
         /** The shared view's limit on a step (camera_debug_supervisor): where `after` may
-         * end, given `before`, rechecked against world and creature collision; a pinball
-         * takes the view's edge for a hit. */
+         * end, given `before`; a pinball takes the view's edge for a hit. */
         virtual Vec3 limitMovement(usize index, const Vec3& before, const Vec3& after) const = 0;
     };
 
