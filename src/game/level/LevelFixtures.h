@@ -2,7 +2,6 @@
 #include <functional>
 #include <optional>
 #include <span>
-#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -52,38 +51,6 @@ public:
         std::function<bool(s32, const Vec3&, s32)> releaseEnemy;
         std::function<void(s32, const Vec3&)> shatterPotion;
     };
-    /** First scene-external boundary of a staged native update. Earlier local
-     * contacts/clocks may have advanced; the caller must rewind all participants. */
-    enum class Boundary {
-        InvalidStep,
-        Unbound,
-        WorldExplosion,
-        BarrelLesson,
-        DoomedChest,
-        FallingScenery,
-        Chest,
-        Xray,
-        Gate,
-        Trap,
-        TrapWake,
-        Cloud,
-        Blast
-    };
-    struct Output {
-        enum class Kind { NamedSound, Card };
-        Kind kind = Kind::NamedSound;
-        std::string name;
-        f32 volume = 1;
-        s32 player = -1; ///< input slot for a card, never a party-array index
-        bool operator==(const Output&) const = default;
-    };
-    struct Phase {
-        std::optional<Boundary> refusal;
-        usize index = 0;
-        /** Buffered private outputs, valid only after the enclosing tick commits.
-         * Native order spans chest cards and named, non-positional sounds. */
-        std::vector<Output> outputs;
-    };
     void bind(const Resources& resources);
     void clear();
     void setPlayerCount(s32 count);
@@ -126,22 +93,10 @@ public:
     void shootScenery(const Vec3& position, f32 radius);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);
-    /** Replaces the native post-strike outputs, not the strike itself. A false
-     * result may follow health/animation/drop-choice changes and requires the
-     * caller's complete fixture/world rewind. No callback is retained. */
-    using BarrelPublisher = std::function<bool(const BreakableStrike&, std::string_view sound)>;
-    bool strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
-                      const Events& events, const BarrelPublisher& publish);
-    /** Shared post-strike contents dispatch: first release an enemy, otherwise
-     * place one pickup with the native record/count, then ask the hitter's help
-     * callback only when something was released. A prepared pickup publisher
-     * returns nullopt to refuse, false for a native no-op, or true for a birth.
-     * Refusal can follow earlier native mutations and requires caller-owned undo. */
-    using BarrelPickupPublisher =
-        std::function<std::optional<bool>(s32 record, const Vec3& position, s32 count)>;
-    bool releaseBarrelContents(const BreakableStrike& struck, s32 byPlayer,
-                               std::span<PlayerRuntime> players, const Events& events,
-                               const BarrelPickupPublisher& pickup = {});
+    /** What a broken barrel held comes out: its enemy when one is let out, else one pickup of
+     * the record and count; the hitter is then taught that barrels hold things. */
+    void releaseBarrelContents(const BreakableStrike& struck, s32 byPlayer,
+                               std::span<PlayerRuntime> players, const Events& events);
     /** An explosion: a ring over its effect's `seconds` (StartExplosion, ProcessEffects mode
      * 1) growing from a third of `radius` to the whole as its harm falls from one and a half
      * times `damage` (a third of the way in) to nothing two thirds through, reaching each
@@ -189,25 +144,14 @@ public:
 
 private:
     friend class LevelFixturesCheckpoint;
-    using GatePublisher = std::function<bool(const GateEvent&)>;
-    using ChestPublisher = std::function<bool(const ChestEvent&)>;
-    using ChestPickupPublisher =
-        std::function<std::optional<usize>(s32 record, const Vec3& position, s32 count)>;
-    using NamedPublisher = std::function<void(std::string_view, f32)>;
-    Phase updatePhase(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
-                      const Events* events, const GatePublisher& gate = {},
-                      const ChestPublisher& publishChest = {});
-    /** Shared native chest dispatch. A supplied pickup publisher returns the
-     * actual appended item index, or refuses the enclosing transaction. The
-     * ordinary native path retains placeItemRecord's missing-art no-op. Key
-     * consumption, enemy-before-pickup ordering and contents links are shared. */
-    bool dispatchChestEvent(const ChestEvent& /*event*/, std::span<PlayerRuntime> /*players*/,
-                            const Events& /*events*/, const ChestPickupPublisher& pickup = {},
-                            const NamedPublisher& sound = {});
-    /** Shared native post-selection dispatch. The publisher replaces only audio;
-     * selected key consumption and help ordering remain the native operations. */
+    /** Answers a chest event: a key spent and the opening heard, its enemy let out before
+     * any pickup is placed in it (none when the pickup's art is missing), gold taken, or the
+     * lessons of a refusal. */
+    void dispatchChestEvent(const ChestEvent& /*event*/, std::span<PlayerRuntime> /*players*/,
+                            const Events& /*events*/);
+    /** Answers a gate event: a key spent and the gate heard as it opens, or the key lesson. */
     void dispatchGateEvent(const GateEvent& /*event*/, std::span<PlayerRuntime> /*players*/,
-                           const Events& /*events*/, const NamedPublisher& publish = {});
+                           const Events& /*events*/);
     static Vec3 observePlayer(PlayerRuntime& player, const Vec3& position);
     static void advanceHitSounds(std::span<PlayerRuntime> players, s32 ticks);
     static void advanceCloudGaps(std::span<PlayerRuntime> players, f32 seconds);
@@ -224,7 +168,7 @@ private:
     void leaveRubble(std::string_view object, const Mat4& transform);
     static std::optional<usize> nearestStanding(std::span<const PlayerRuntime> players,
                                                 const Vec3& position, f32 reach);
-    void playGateSound(s32 subtype, const NamedPublisher& publish = {});
+    void playGateSound(s32 subtype);
     void playRealmSound(std::string_view stem);
     /** Sounds the scenery that gave way (fn_8009D8CC, fn_8009D91C). */
     void playFallingCues(std::span<const FallingCue> cues);

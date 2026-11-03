@@ -47,7 +47,6 @@ LevelOpponents::Events safeEvents() {
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.fallen = [](const Vec3&) {};
     events.spew = [](const CombatSpew&) {};
     events.legend = [](const LegendEvent&) {};

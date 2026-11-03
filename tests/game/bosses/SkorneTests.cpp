@@ -236,7 +236,6 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     REQUIRE(opponents.bosses().view().kind == 42);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};

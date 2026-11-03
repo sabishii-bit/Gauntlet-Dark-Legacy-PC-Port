@@ -631,21 +631,11 @@ void LevelFixtures::advanceHitSounds(std::span<PlayerRuntime> players, s32 ticks
  * touches it or blows up; a trap that is out hurts whoever is in it. */
 void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                            const Events& events) {
-    updatePhase(ticks, seconds, players, &events);
-}
-
-LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
-                                                std::span<PlayerRuntime> players,
-                                                const Events* events, const GatePublisher& gate,
-                                                const ChestPublisher& publishChest) {
     if (!m_resources.has_value()) {
-        return {Boundary::Unbound};
+        return;
     }
     for (const Vec3& position : m_resources->world.takeWorldExplosions()) {
-        if (events == nullptr) {
-            return {Boundary::WorldExplosion};
-        }
-        worldExplosion(position, players, *events);
+        worldExplosion(position, players, events);
     }
     syncFloors();
     std::vector<Obstacle> boxes = m_chests.obstacles();
@@ -659,23 +649,17 @@ LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
         const Breakables::Barrel& barrel = m_barrels.barrel(spent);
         if (const auto near = nearestStanding(players, barrel.figure.position(), kBarrelWarning);
             near.has_value()) {
-            if (events == nullptr) {
-                return {Boundary::BarrelLesson, spent};
-            }
-            if (events->help) {
-                events->help(barrel.kind == BreakableStrike::Kind::Exploding
-                                 ? HelpMessages::kRedBarrels
-                                 : HelpMessages::kGreenBarrels,
-                             *near);
+            if (events.help) {
+                events.help(barrel.kind == BreakableStrike::Kind::Exploding
+                                ? HelpMessages::kRedBarrels
+                                : HelpMessages::kGreenBarrels,
+                            *near);
             }
         }
     }
     // Trapped chests a blast set off go up now, one setting off the next in turn.
     for (const usize chest : std::exchange(m_sim.doomedChests, {})) {
-        if (events == nullptr) {
-            return {Boundary::DoomedChest, chest};
-        }
-        detonateChest(chest, std::nullopt, players, *events);
+        detonateChest(chest, std::nullopt, players, events);
     }
     m_safeRocks.update(seconds);
     m_scenery.update(seconds);
@@ -707,9 +691,6 @@ LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
         }
         // The rocks and leaves that give way to a body brushing them (fn_8005D730's case 10).
         const auto falling = m_resources->world.fallingScenery().touch(position, actor.radius());
-        if (events == nullptr && !falling.empty()) {
-            return {Boundary::FallingScenery};
-        }
         playFallingCues(falling);
         const PowerupEffects worn = PowerupEffects::of(actor.save().progress().inventory);
         const Vec3 step = observePlayer(player, position);
@@ -728,20 +709,7 @@ LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
         if (event.visitor >= players.size()) {
             continue;
         }
-        // Chests::update only changes its bound figure and value state. The
-        // dispatch below can place new item resources, so refusal precedes it.
-        if (events == nullptr) {
-            if (!publishChest || !publishChest(event)) {
-                return {Boundary::Chest, event.chest};
-            }
-        } else {
-            dispatchChestEvent(event, players, *events);
-        }
-    }
-    // updateXray can bind a previously unseen preview before returning its cue.
-    // Do not enter that resource-creating path during a speculative transaction.
-    if (events == nullptr && std::ranges::any_of(visitors, &ChestVisitor::xray)) {
-        return {Boundary::Xray};
+        dispatchChestEvent(event, players, events);
     }
     const usize reveals = m_chests.updateXray(m_resources->device, m_resources->world.itemScope(),
                                               m_resources->world.powerups(), visitors);
@@ -753,29 +721,20 @@ LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
         if (event.visitor >= players.size()) {
             continue;
         }
-        if (events == nullptr) {
-            if (!gate || !gate(event)) {
-                return {Boundary::Gate, event.gate};
-            }
-        } else {
-            dispatchGateEvent(event, players, *events);
-        }
+        dispatchGateEvent(event, players, events);
     }
     for (const TrapHit& hit :
          m_traps.update(ticks, seconds, victims, PlayerPowerups::timeStopped(players))) {
         if (hit.victim >= players.size()) {
             continue;
         }
-        if (events == nullptr) {
-            return {Boundary::Trap, hit.trap};
-        }
         const auto audioScope = m_resources->audio.soundScope(
             {36, hit.trap, 1, static_cast<u8>(players[hit.victim].actor.player())}, 1);
         // ItemTouch passes the authored elements and impact flags through damage_player;
         // tentacles knock down along their facing, whereas spikes carry their own flinch.
         const bool directed = (hit.impact.flags & (damage::kKnockBack | damage::kKnockDown)) != 0;
-        events->hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn,
-                     directed, hit.impact);
+        events.hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn,
+                    directed, hit.impact);
         // The trap's own sound belongs to accepted contact, not its activation, and sounds
         // where the victim stands (AudioDamageTile); armor absorbing the damage does not
         // silence it.
@@ -786,27 +745,11 @@ LevelFixtures::Phase LevelFixtures::updatePhase(s32 ticks, f32 seconds,
             m_resources->audio.playAt(sound->first, players[hit.victim].actor.position(), 0,
                                       sound->second);
         }
-        events->help(HelpMessages::kTrapsHurt, hit.victim);
+        events.help(HelpMessages::kTrapsHurt, hit.victim);
     }
-    if (events == nullptr) {
-        for (const usize index : m_traps.wakes()) {
-            if (m_traps.trap(index).subtype == Traps::kBlades) {
-                return {Boundary::TrapWake, index};
-            }
-        }
-        if (!m_sim.clouds.empty()) {
-            return {Boundary::Cloud};
-        }
-        advanceCloudGaps(players, seconds);
-        if (!m_sim.blasts.empty()) {
-            return {Boundary::Blast};
-        }
-    } else {
-        updateClouds(seconds, players, *events);
-        advanceBlasts(seconds, players, *events);
-    }
+    updateClouds(seconds, players, events);
+    advanceBlasts(seconds, players, events);
     advanceHitSounds(players, ticks);
-    return {};
 }
 
 bool LevelFixtures::enchantChest(usize index, f32 power) {
@@ -1062,18 +1005,12 @@ void LevelFixtures::strikeWall(usize index, f32 power, u32 flags) {
  * lying, or it blows up, or its gas hangs where it stood. */
 void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
                                  std::span<PlayerRuntime> players, const Events& events) {
-    (void)strikeBarrel(barrel, power, byPlayer, players, events, {});
-}
-
-bool LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
-                                 std::span<PlayerRuntime> players, const Events& events,
-                                 const BarrelPublisher& publish) {
     if (!m_resources.has_value()) {
-        return true;
+        return;
     }
     const auto struck = m_barrels.strike(barrel, power);
     if (!struck.has_value()) {
-        return true;
+        return;
     }
     const auto audioScope = m_resources->audio.soundScope({39, barrel, 1}, 1);
     std::string sound{kWoodHitSound};
@@ -1087,12 +1024,9 @@ bool LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         const auto& level = m_resources->world.ref().name;
         sound = std::format("{}{}", stem, level.empty() ? 'G' : level.front());
     }
-    if (publish) {
-        return publish(*struck, sound);
-    }
     m_resources->audio.playNamed(sound);
     if (!struck->broken) {
-        return true;
+        return;
     }
     const auto effect = [&](std::string_view tree) -> std::optional<f32> {
         if (!m_resources->weapons.loaded()) {
@@ -1113,7 +1047,8 @@ bool LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
     switch (struck->kind) {
     case BreakableStrike::Kind::Plain:
     case BreakableStrike::Kind::Holding:
-        return releaseBarrelContents(*struck, byPlayer, players, events);
+        releaseBarrelContents(*struck, byPlayer, players, events);
+        break;
     case BreakableStrike::Kind::Exploding: {
         const f32 seconds = effect(kBarrelBlast).value_or(kExplosionSeconds);
         effect(kBarrelSmoke);
@@ -1147,14 +1082,12 @@ bool LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         break;
     }
     }
-    return true;
 }
 
-bool LevelFixtures::releaseBarrelContents(const BreakableStrike& struck, s32 byPlayer,
-                                          std::span<PlayerRuntime> players, const Events& events,
-                                          const BarrelPickupPublisher& pickup) {
+void LevelFixtures::releaseBarrelContents(const BreakableStrike& struck, s32 byPlayer,
+                                          std::span<PlayerRuntime> players, const Events& events) {
     if (!m_resources || !struck.broken || struck.contents < 0) {
-        return true;
+        return;
     }
     // What it held comes out: Death himself, or a pickup (fn_8005E90C, the same routine as a
     // chest's, so keys numbering more than one come out as the key ring).
@@ -1163,14 +1096,8 @@ bool LevelFixtures::releaseBarrelContents(const BreakableStrike& struck, s32 byP
     bool released =
         events.releaseEnemy && events.releaseEnemy(contents, struck.position, struck.count);
     if (!released) {
-        const auto placed =
-            pickup ? pickup(contents, struck.position, struck.count)
-                   : std::optional{m_resources->world.placeItemRecord(
-                         m_resources->device, contents, struck.position, struck.count)};
-        if (!placed) {
-            return false;
-        }
-        released = *placed;
+        released = m_resources->world.placeItemRecord(m_resources->device, contents,
+                                                      struck.position, struck.count);
     }
     if (released) {
         for (usize i = 0; i < players.size(); ++i) {
@@ -1179,7 +1106,6 @@ bool LevelFixtures::releaseBarrelContents(const BreakableStrike& struck, s32 byP
             }
         }
     }
-    return true;
 }
 
 /** Whoever is within a blast is hurt by it, and the barrels within it are struck by it (so
@@ -1532,29 +1458,21 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
     std::erase_if(m_sim.clouds, [](const GasCloud& cloud) { return cloud.secondsLeft <= 0.0f; });
 }
 
-/** The original chest event order, with output and birth seams for a caller-owned rewind. */
-bool LevelFixtures::dispatchChestEvent(const ChestEvent& event, std::span<PlayerRuntime> players,
-                                       const Events& events, const ChestPickupPublisher& pickup,
-                                       const NamedPublisher& sound) {
+/** The original chest event order. */
+void LevelFixtures::dispatchChestEvent(const ChestEvent& event, std::span<PlayerRuntime> players,
+                                       const Events& events) {
     const auto audioScope = m_resources->audio.soundScope(
         {37, event.chest, 1, static_cast<u8>(players[event.visitor].actor.player())},
         static_cast<u32>(event.kind) + 2);
-    const auto play = [&](std::string_view name, f32 volume = 1) {
-        if (sound) {
-            sound(name, volume);
-        } else {
-            m_resources->audio.playNamed(name, volume);
-        }
-    };
     PlayerActor& actor = players[event.visitor].actor;
     switch (event.kind) {
     case ChestEvent::Kind::Unlocked: {
         if (m_chests.chest(event.chest).locked) {
             actor.save().progress().inventory.spendKey();
         }
-        play(kChestSound);
+        m_resources->audio.playNamed(kChestSound);
         if (m_chests.chest(event.chest).subtype == Chests::kTrappedChest) {
-            play(kChestFuseSound, kChestFuseVolume);
+            m_resources->audio.playNamed(kChestFuseSound, kChestFuseVolume);
         }
         if (events.releaseEnemy && events.releaseEnemy(event.contents, event.position,
                                                        m_chests.chest(event.chest).count)) {
@@ -1563,20 +1481,11 @@ bool LevelFixtures::dispatchChestEvent(const ChestEvent& event, std::span<Player
         if (event.contents < 0) {
             break;
         }
-        std::optional<usize> held;
-        if (pickup) {
-            held = pickup(event.contents, event.position, m_chests.chest(event.chest).count);
-            if (!held) {
-                return false;
-            }
-        } else if (m_resources->world.placeItemRecord(m_resources->device, event.contents,
-                                                      event.position,
-                                                      m_chests.chest(event.chest).count)) {
-            held = m_resources->world.placedItems().size() - 1;
-        }
-        if (held) {
-            m_chests.hold(event.chest, static_cast<s32>(*held));
-            m_resources->world.setItemOpener(*held, actor.player());
+        if (m_resources->world.placeItemRecord(m_resources->device, event.contents, event.position,
+                                               m_chests.chest(event.chest).count)) {
+            const usize held = m_resources->world.placedItems().size() - 1;
+            m_chests.hold(event.chest, static_cast<s32>(held));
+            m_resources->world.setItemOpener(held, actor.player());
         }
         break;
     }
@@ -1593,7 +1502,7 @@ bool LevelFixtures::dispatchChestEvent(const ChestEvent& event, std::span<Player
     case ChestEvent::Kind::Collected:
         takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
         events.card(actor.player(), "GOLD");
-        play(kPickupSound);
+        m_resources->audio.playNamed(kPickupSound);
         if (event.gold >= 25 && events.help) {
             events.help(17, event.visitor); // ItemTouch's COLLECTGOLD lesson
         }
@@ -1606,33 +1515,28 @@ bool LevelFixtures::dispatchChestEvent(const ChestEvent& event, std::span<Player
         }
         break;
     }
-    return true;
 }
 
 /** A gate's opening sounds from the realm's own bank, named after the level's letter. */
 void LevelFixtures::dispatchGateEvent(const GateEvent& event, std::span<PlayerRuntime> players,
-                                      const Events& events, const NamedPublisher& publish) {
+                                      const Events& events) {
     const auto audioScope =
         m_resources->audio.soundScope({40, event.gate, 1}, static_cast<u32>(event.kind) + 1);
     if (event.kind == GateEvent::Kind::Unlocked) {
         players[event.visitor].actor.save().progress().inventory.spendKey();
-        playGateSound(m_gates.gate(event.gate).subtype, publish);
+        playGateSound(m_gates.gate(event.gate).subtype);
     } else if (event.kind == GateEvent::Kind::Refused) {
         events.help(HelpMessages::kDoorNeedsKey, event.visitor);
     }
 }
 
-void LevelFixtures::playGateSound(s32 subtype, const NamedPublisher& publish) {
+void LevelFixtures::playGateSound(s32 subtype) {
     if (!m_resources.has_value()) {
         return;
     }
     const auto sound = LockedGates::openingSound(m_resources->world.ref().realmId, subtype);
     if (!sound.empty()) {
-        if (publish) {
-            publish(sound, 127.0f / 255.0f);
-        } else {
-            m_resources->audio.playNamed(sound, 127.0f / 255.0f);
-        }
+        m_resources->audio.playNamed(sound, 127.0f / 255.0f);
     }
 }
 

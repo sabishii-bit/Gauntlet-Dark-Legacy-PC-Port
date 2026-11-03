@@ -197,7 +197,6 @@ TEST_CASE("Lich spit creates visible generators that breed the stage's maggots",
     opponents.bosses().hurt(phase);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -283,7 +282,6 @@ TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][asse
             ++hits;
         }
     };
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -344,7 +342,6 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
             ++hits;
         }
     };
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};

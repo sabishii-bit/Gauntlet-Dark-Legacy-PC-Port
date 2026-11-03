@@ -168,11 +168,6 @@ public:
                                    s32 player, BlowSource source, const Generators& huts, s32 id,
                                    bool stood);
     void melee(usize index, std::span<PlayerRuntime> players, const Targets& targets);
-    /** The same native contact, with generator presentation supplied by a
-     * transaction-local publisher. A refusal requires complete caller undo. */
-    bool melee(usize index, std::span<PlayerRuntime> players, const Targets& targets,
-               const LevelOpponents::GeneratorPublisher& generators,
-               const LevelFixtures::BarrelPublisher& barrels = {});
     const MoveStrikes& strikes() const { return m_strikes; }
     usize shieldCount() const { return m_sim.shields.size(); }
     /** Persistent outgoing damage not owned by ordinary-opponent replay. A
@@ -205,11 +200,9 @@ private:
      * impact-queue consumption. The caller owns any subsequent refusal/undo. */
     void stepProjectileFlights(f32 seconds, std::span<PlayerRuntime> players,
                                const Targets& targets);
-    bool dispatchProjectileImpact(
+    void dispatchProjectileImpact(
         const MissileImpact& impact, std::span<PlayerRuntime> players, const Targets& targets,
-        const std::function<void(const MissileImpact&, f32)>& presentation = {},
-        const LevelOpponents::GeneratorPublisher& generators = {},
-        const LevelFixtures::BarrelPublisher& barrels = {});
+        const std::function<void(const MissileImpact&, f32)>& presentation = {});
     /** A blow of `source` on whatever `target` is: the mechanics say whether it builds the
      * owner's run and whether a generator takes it. */
     void strikeTarget(const MissileTarget& target, f32 damage, u32 flags, const PlayerActor& owner,

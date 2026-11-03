@@ -863,10 +863,10 @@ void LevelOpponents::wakeStatueNear(const Vec3& spot) {
  * the realm's burst for its tier, GENFX1 to GENFX3 (generate_enemy). The level finds them
  * once, in the first loaded kind's archive holding them, kind by kind in order (InitEffects),
  * a tier without its own sharing the first's, and only the kinds up to that one are marked. */
-bool LevelOpponents::playBirths(const BirthPublisher& publish) {
+void LevelOpponents::playBirths() {
     const auto births = m_enemies.takeBirths();
     if (births.empty()) {
-        return true;
+        return;
     }
     std::array<ItemArchive*, kSwarmKindCount> archives{};
     for (s32 kind = 0; kind < kSwarmKindCount; ++kind) {
@@ -877,18 +877,12 @@ bool LevelOpponents::playBirths(const BirthPublisher& publish) {
         if (emission.archive == nullptr) {
             continue; // The native provider/size rule requests no artwork.
         }
-        const auto effect = publish ? publish(emission)
-                                    : std::optional{m_resources->effects.startSet(
-                                          m_resources->device, *emission.archive, emission.tree,
-                                          emission.position, {})};
-        if (!effect) {
-            return false; // The complete combat caller owns the queue/effect undo.
-        }
-        if (*effect != 0) {
-            m_sim.cueEffects.push_back(*effect);
+        const u32 effect = m_resources->effects.startSet(m_resources->device, *emission.archive,
+                                                         emission.tree, emission.position, {});
+        if (effect != 0) {
+            m_sim.cueEffects.push_back(effect);
         }
     }
-    return true;
 }
 
 void LevelOpponents::updateStatues(s32 ticks, f32 seconds, std::span<PlayerRuntime> players) {
@@ -1674,9 +1668,9 @@ void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const
     events.levels();
 }
 
-bool LevelOpponents::awardEnemyLosses(const Events& events, const FeedbackPublisher& publish) {
+void LevelOpponents::awardEnemyLosses(const Events& events) {
     if (!m_resources.has_value()) {
-        return true;
+        return;
     }
     for (const EnemyFeedback& feedback : m_enemies.takeFeedback()) {
         auto& audio = m_resources->audio;
@@ -1692,22 +1686,14 @@ bool LevelOpponents::awardEnemyLosses(const Events& events, const FeedbackPublis
         const auto emission = EnemyFeedbackEmission::resolve(
             feedback, m_enemies.archive(feedback.kind), m_resources->weapons, levelNow());
         u32 effect = 0;
-        if (publish) {
-            const auto emitted = publish(emission);
-            if (!emitted) {
-                return false;
-            }
-            effect = *emitted;
-        } else {
-            auto* imported = m_resources->world.imported();
-            if (!imported || !imported->playEnemyFeedback(feedback, feedback.remainingHealth)) {
-                playAt(emission.sound, kLoudSound, emission.position);
-            }
-            if (emission.archive != nullptr) {
-                effect = m_resources->effects.startSet(m_resources->device, *emission.archive,
-                                                       emission.tree, emission.position,
-                                                       emission.setting);
-            }
+        auto* imported = m_resources->world.imported();
+        if (!imported || !imported->playEnemyFeedback(feedback, feedback.remainingHealth)) {
+            playAt(emission.sound, kLoudSound, emission.position);
+        }
+        if (emission.archive != nullptr) {
+            effect =
+                m_resources->effects.startSet(m_resources->device, *emission.archive, emission.tree,
+                                              emission.position, emission.setting);
         }
         if (effect != 0) {
             m_sim.cueEffects.push_back(effect);
@@ -1733,7 +1719,6 @@ bool LevelOpponents::awardEnemyLosses(const Events& events, const FeedbackPublis
         }
     }
     m_sim.generatorRewards.clear();
-    return true;
 }
 
 /** A hit on one of the swarm, from a player or the world. */
@@ -1940,10 +1925,9 @@ bool LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
 /** Plays what one of the great ones (the boss with `ofBoss`) has set off: its tree from its
  * own archive (or the weapons', which holds the common marks of a hit) where it happened,
  * riding along with it when it follows, and its sound. */
-bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss,
-                                    const CritterPublisher& publish) {
+void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss) {
     if (!m_resources.has_value()) {
-        return true;
+        return;
     }
     if (cue.stopMoveEffect) {
         std::erase_if(m_sim.moveEffects, [&](const MoveEffect& previous) {
@@ -1953,7 +1937,7 @@ bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
             m_resources->effects.stop(previous.effect);
             return true;
         });
-        return true;
+        return;
     }
     if (cue.arena && m_bosses.present()) {
         if (ofBoss && m_bosses.view().kind == 42 && m_bosses.position() != nullptr) {
@@ -1973,14 +1957,9 @@ bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     const auto emission =
         CritterCueEmission::resolve(cue, archive, ownEffectsOnly ? *archive : m_resources->weapons);
     if (emission.archive != nullptr) {
-        const auto issued = publish ? publish(emission)
-                                    : std::optional{m_resources->effects.startSet(
-                                          m_resources->device, *emission.archive, emission.tree,
-                                          emission.position, emission.setting)};
-        if (!issued) {
-            return false;
-        }
-        const u32 effect = *issued;
+        const u32 effect =
+            m_resources->effects.startSet(m_resources->device, *emission.archive, emission.tree,
+                                          emission.position, emission.setting);
         if (effect != 0) {
             m_sim.cueEffects.push_back(effect);
             if (cue.untilNextMove) {
@@ -2001,14 +1980,13 @@ bool LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     // The great ones' sounds play at 224 of 255 as heard from where the players stand
     // (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten); a death's at that level whole.
     const bool nativeSound =
-        !publish && ofBoss && !cue.sound.empty() && m_resources->world.imported() != nullptr &&
+        ofBoss && !cue.sound.empty() && m_resources->world.imported() != nullptr &&
         m_resources->world.imported()->playOpponentSound(cue.sound, cue.soundPosition);
-    if (!publish && !nativeSound && !cue.sound.empty() && cue.attenuated) {
+    if (!nativeSound && !cue.sound.empty() && cue.attenuated) {
         playAt(cue.sound, kLoudSound, cue.soundPosition);
-    } else if (!publish && !nativeSound && !cue.sound.empty()) {
+    } else if (!nativeSound && !cue.sound.empty()) {
         m_resources->audio.playAt(cue.sound, cue.soundPosition, 0.0f, kLoudSound / kFullLevel);
     }
-    return true;
 }
 
 void LevelOpponents::finishSummons(std::span<const EnemyView> players) {

@@ -2229,14 +2229,8 @@ MeleeSense PlayerAttacks::senseOf(const PlayerActor& actor, bool held,
 }
 
 void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const Targets& targets) {
-    (void)melee(index, players, targets, {});
-}
-
-bool PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const Targets& targets,
-                          const LevelOpponents::GeneratorPublisher& generators,
-                          const LevelFixtures::BarrelPublisher& barrels) {
     if (!m_resources || index >= players.size() || players[index].figure == nullptr) {
-        return true;
+        return;
     }
     const PlayerActor& actor = players[index].actor;
     const PlayerAnimator& animator = players[index].figure->animator();
@@ -2249,7 +2243,7 @@ bool PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     // The swing's sweep brings down the SHOOTFALL scenery within it (combat.c's item query).
     targets.fixtures.shootScenery(actor.position(), actor.reach() + kStepReach);
     if (!selected) {
-        return true;
+        return;
     }
     const MissileTarget* target = &selected->body;
     f32 damage = meleeDamageOf(index, players);
@@ -2282,23 +2276,23 @@ bool PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         if (auto* imported = m_resources->world.imported()) {
             imported->strike(id - kImportedTargetBase, damage, flags, actor.player());
         }
-        return true;
+        return;
     }
     if (id >= kPlayerTargetBase) {
         if (targets.hurt) {
             targets.hurt(static_cast<usize>(id - kPlayerTargetBase), damage, HurtKind::Burn,
                          {flags, glm::normalize(target->base - actor.position())});
         }
-        return true;
+        return;
     }
     if (id >= kStatueTargetBase) {
         // fn_8005C1DC handles placed-enemy items separately from switches:
         // the blow sets their wake flag, without damaging the future creature.
         targets.opponents.wakeStatue(static_cast<usize>(id - kStatueTargetBase));
-        return true;
+        return;
     }
     if (strikeSwitch(id, flags)) {
-        return true;
+        return;
     }
     // PlayerMotion_DamageTarget (80086A24): use the player's forward basis
     // and a damage-scaled lift, not a vector toward an animated collision node.
@@ -2332,9 +2326,7 @@ bool PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         const s32 hut = id - kGeneratorTargetBase;
         const Generators& huts = targets.opponents.generators();
         const bool stood = huts.standing(hut);
-        if (!targets.opponents.strikeGenerator(hut, damage, actor.player(), players, generators)) {
-            return false;
-        }
+        targets.opponents.strikeGenerator(hut, damage, actor.player(), players);
         countGeneratorBlow(targets, players, actor.player(), BlowSource::Swing, huts, hut, stood);
     } else if (id >= kEnemyTargetBase) {
         const s32 enemy = id - kEnemyTargetBase;
@@ -2345,17 +2337,14 @@ bool PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         countEnemyBlow(targets, players, actor.player(), BlowSource::Swing, enemies, enemy,
                        standing);
     } else {
-        if (!targets.fixtures.strikeBarrel(static_cast<usize>(id), damage, actor.player(), players,
-                                           targets.fixtureEvents, barrels)) {
-            return false;
-        }
+        targets.fixtures.strikeBarrel(static_cast<usize>(id), damage, actor.player(), players,
+                                      targets.fixtureEvents);
         targets.fixtures.settleBlasts(players, targets.fixtureEvents);
     }
     if (credit > 0.0f && targets.meleeHit) {
         targets.meleeHit(actor.player());
     }
     healHit(actor.player(), flags, credit, point, players, targets);
-    return true;
 }
 
 void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players, s32 occupiedHand) {
@@ -2461,13 +2450,11 @@ void PlayerAttacks::stepProjectileFlights(f32 seconds, std::span<PlayerRuntime> 
                                            missilePlayers);
 }
 
-bool PlayerAttacks::dispatchProjectileImpact(
+void PlayerAttacks::dispatchProjectileImpact(
     const MissileImpact& impact, std::span<PlayerRuntime> players, const Targets& targets,
-    const std::function<void(const MissileImpact&, f32)>& presentation,
-    const LevelOpponents::GeneratorPublisher& generators,
-    const LevelFixtures::BarrelPublisher& barrels) {
+    const std::function<void(const MissileImpact&, f32)>& presentation) {
     if (!m_resources) {
-        return true;
+        return;
     }
     if (impact.worldObject >= 0) {
         if (auto* imported = m_resources->world.imported()) {
@@ -2504,32 +2491,32 @@ bool PlayerAttacks::dispatchProjectileImpact(
                 player->effectGap = impact.playerHitGap;
             }
         }
-        return true;
+        return;
     }
     if (impact.potion != 0) {
         beginPotion(impact);
-        return true;
+        return;
     }
     if (impact.target >= kImportedTargetBase) {
         if (auto* imported = m_resources->world.imported()) {
             imported->strike(impact.target - kImportedTargetBase, impact.damage, impact.flags,
                              impact.owner);
         }
-        return true;
+        return;
     }
     if (impact.target >= kStatueTargetBase) {
         targets.opponents.wakeStatue(static_cast<usize>(impact.target - kStatueTargetBase));
-        return true;
+        return;
     }
     if (impact.target >= kPotionTargetBase) {
         shootPotion(impact, players, targets);
-        return true;
+        return;
     }
     if (impact.target >= kItemStopBase) {
-        return true;
+        return;
     }
     if (strikeSwitch(impact.target, impact.flags)) {
-        return true;
+        return;
     }
     const BlowSource source =
         (impact.flags & damage::kSuperShot) != 0 ? BlowSource::SuperShot : BlowSource::Shot;
@@ -2571,10 +2558,7 @@ bool PlayerAttacks::dispatchProjectileImpact(
         const Generators& huts = targets.opponents.generators();
         const bool stood = huts.standing(hut);
         if (blowRulesOf(targets).generatorTakes(source)) {
-            if (!targets.opponents.strikeGenerator(hut, impact.damage, impact.owner, players,
-                                                   generators)) {
-                return false;
-            }
+            targets.opponents.strikeGenerator(hut, impact.damage, impact.owner, players);
             countGeneratorBlow(targets, players, impact.owner, source, huts, hut, stood);
         }
     } else if (impact.target >= kEnemyTargetBase) {
@@ -2585,14 +2569,11 @@ bool PlayerAttacks::dispatchProjectileImpact(
                                                impact.owner, players, false, impact.position);
         countEnemyBlow(targets, players, impact.owner, source, enemies, enemy, stood);
     } else if (impact.target >= 0) {
-        if (!targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
-                                           impact.owner, players, targets.fixtureEvents, barrels)) {
-            return false;
-        }
+        targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
+                                      impact.owner, players, targets.fixtureEvents);
         targets.fixtures.settleBlasts(players, targets.fixtureEvents);
     }
     healHit(impact.owner, impact.flags, credit, impact.position, players, targets);
-    return true;
 }
 
 /** A thrown weapon breaks a bottle lying about (fn_8005C1DC, PlayerDamagedItem): its own magic

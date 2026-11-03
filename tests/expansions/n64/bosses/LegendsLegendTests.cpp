@@ -433,7 +433,6 @@ TEST_CASE("The common opponent and boss sequence owners consume and apply a nati
     usize thrown = 0;
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [&](const LegendEvent& event) {
         CHECK(event.player == 1);

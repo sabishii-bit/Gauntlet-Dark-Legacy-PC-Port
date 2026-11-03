@@ -28,10 +28,7 @@
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerHealth.h"
 namespace gdl::game {
-struct EnemyFeedbackEmission;
-struct EnemyBirthEmission;
 struct GeneratorFeedbackEmission;
-struct CritterCueEmission;
 /** Level enemy population, damage/reward routing and following combat cues.
  * Owns enemy archives, missiles, generators and the boss meter. Borrowed level services
  * must outlive close(). Phase hooks synchronously interleave scene-level rites,
@@ -52,7 +49,6 @@ public:
     };
     struct Events {
         std::function<void(usize, f32, HurtKind, bool, const PlayerImpact&)> hurt;
-        std::function<void(const Vec3&, f32, f32)> blast;
         std::function<void()> settleBlasts;
         std::function<void(const LegendEvent&)> legend;
         std::function<void(f32)> advanceLegend;
@@ -247,16 +243,10 @@ private:
     void deliverLessons(std::span<const PlayerRuntime> players, const Events& events);
     void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
                         const Events& events);
-    using FeedbackPublisher = std::function<std::optional<u32>(const EnemyFeedbackEmission&)>;
-    /** A replay publisher uses trusted prepared artwork and buffers audio. A
-     * refusal belongs to the caller's complete combat undo; native callers use
-     * the default publisher and retain their original synchronous behavior. */
-    bool awardEnemyLosses(const Events& events, const FeedbackPublisher& publish = {});
+    void awardEnemyLosses(const Events& events);
     void awardBossLosses(std::span<const PlayerRuntime> players, const Events& events);
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
-    using CritterPublisher = std::function<std::optional<u32>(const CritterCueEmission&)>;
-    bool showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss,
-                        const CritterPublisher& publish = {});
+    void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
     void advanceCritters(s32 ticks, f32 seconds, std::span<const EnemyView> views, bool timeStopped,
                          std::span<const CombatantObstacle> walkedInto,
                          std::span<PlayerRuntime> players);
@@ -272,8 +262,7 @@ private:
     /** Stands the statues woken and seen whose ACTIVE has played out as the great ones they
      * are, and wakes what the triggers ask. */
     void updateStatues(s32 ticks, f32 seconds, std::span<PlayerRuntime> players);
-    using BirthPublisher = std::function<std::optional<u32>(const EnemyBirthEmission&)>;
-    bool playBirths(const BirthPublisher& publish = {});
+    void playBirths();
     PlacedEnemies m_placements;
     CritterStatues m_statues;
     struct Bag {

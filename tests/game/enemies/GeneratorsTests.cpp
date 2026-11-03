@@ -1312,7 +1312,6 @@ TEST_CASE("Genie whirlwind attacks leave visible animated generators that breed 
     opponents.bosses().hurt(phase);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};

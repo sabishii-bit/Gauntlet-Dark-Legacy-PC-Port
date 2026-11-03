@@ -276,7 +276,6 @@ TEST_CASE("a level gargoyle's fireball never lands on a reflective shield's wear
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.fallen = [](const Vec3&) {};
     events.spew = [](const CombatSpew&) {};
     events.legend = [](const LegendEvent&) {};
@@ -2036,7 +2035,6 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     events.hurt = [&](usize, f32 damage, HurtKind, bool, const PlayerImpact&) {
         landed += damage > 0 ? 1 : 0;
     };
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -2259,7 +2257,6 @@ TEST_CASE("Wraith entrance stops its persistent portal before the emergence effe
     REQUIRE(opponents.bosses().view().kind == 40);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -2324,7 +2321,6 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
     rocks.hideForEruptions();
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -2432,7 +2428,6 @@ TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
     REQUIRE(opponents.bosses().view().kind == 38);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -2511,7 +2506,6 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     std::vector<std::string> phases;
     const LevelOpponents::Events events{
         .hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) { FAIL("No combatants"); },
-        .blast = [](const Vec3&, f32, f32) { FAIL("No combatants"); },
         .settleBlasts = [&] { phases.emplace_back("blast"); },
         .legend = [](const LegendEvent&) { FAIL("No boss"); },
         .advanceLegend =
@@ -2783,7 +2777,6 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     REQUIRE(opponents.bosses().spawn(kind, Vec3{0}, 0));
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -2915,7 +2908,6 @@ TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
     players[0].actor.spawn(0, {}, nullptr, *opponents.bosses().position(), 0);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -3112,7 +3104,6 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
-    events.blast = [](const Vec3&, f32, f32) { FAIL("The suicide's blast is its own now"); };
     events.blastScenery = [&](const PickupBlastReach& reach, std::vector<s32>& reached) {
         CHECK(reach.radius <= 6.0f);
         CHECK(reach.damage > 0.0f);
@@ -3396,7 +3387,6 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
     events.hurt = [&](usize, f32, HurtKind kind, bool, const PlayerImpact&) {
         hurts.push_back(kind);
     };
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
@@ -3960,7 +3950,6 @@ TEST_CASE("the level's opponents answer to its mechanics: the runs go in, the tu
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.blast = [](const Vec3&, f32, f32) {};
     events.fallen = [](const Vec3&) {};
     events.spew = [](const CombatSpew&) {};
     events.legend = [](const LegendEvent&) {};

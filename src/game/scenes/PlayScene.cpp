@@ -838,8 +838,6 @@ LevelOpponents::Events PlayScene::opponentEvents() {
     return {
         .hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
                        const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
-        .blast = [this](const Vec3& position, f32 radius,
-                        f32 damage) { blast(position, radius, damage); },
         .settleBlasts = [this] { settleBlasts(); },
         .legend =
             [this](const LegendEvent& event) {

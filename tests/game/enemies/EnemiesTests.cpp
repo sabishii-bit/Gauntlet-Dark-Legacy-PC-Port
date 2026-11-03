@@ -3537,7 +3537,6 @@ TEST_CASE("Ghost Town native generators and player contacts preserve zombie floo
     LevelOpponents::Events events;
     s32 contacts = 0;
     events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++contacts; };
-    events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};

@@ -18,11 +18,11 @@ struct PlayerAttacksTestPeer {
                                               const PlayerAttacks::Targets& targets) {
         return attacks.projectileTargets(targets);
     }
-    static bool projectile(PlayerAttacks& attacks, const MissileImpact& impact,
+    static void projectile(PlayerAttacks& attacks, const MissileImpact& impact,
                            std::span<PlayerRuntime> players,
                            const PlayerAttacks::Targets& targets) {
-        return attacks.dispatchProjectileImpact(impact, players, targets,
-                                                [](const MissileImpact&, f32) {});
+        attacks.dispatchProjectileImpact(impact, players, targets,
+                                         [](const MissileImpact&, f32) {});
     }
     static void area(PlayerAttacks& attacks, const MissileTarget& target,
                      std::span<PlayerRuntime> players, const PlayerAttacks::Targets& targets,
@@ -165,7 +165,7 @@ TEST_CASE("Imported melee and projectile hits cannot fall through to player or s
         impact.owner = 3;
         impact.damage = 17;
         impact.flags = EnemyHit::kKnockDown;
-        REQUIRE(PlayerAttacksTestPeer::projectile(f.attacks, impact, f.players, f.targets));
+        PlayerAttacksTestPeer::projectile(f.attacks, impact, f.players, f.targets);
         REQUIRE(f.imported->hits.size() == 1);
         CHECK(f.imported->hits[0].damage == 17);
     }
