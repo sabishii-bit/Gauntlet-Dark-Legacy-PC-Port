@@ -21,9 +21,11 @@
 #include "game/characters/NameCheats.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
+#include "game/hud/PartyHud.h"
 #include "game/level/LevelCatalog.h"
 #include "game/party/PartyPickups.h"
 #include "game/party/PlayerPowerups.h"
+#include "game/party/RecordingPickupPresentation.h"
 #include "game/players/ItemPickup.h"
 #include "game/scenes/PlayScene.h"
 
@@ -44,6 +46,7 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
     LevelWorld world;
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     const ClassDataSet classes;
     const auto root = test::scratchDirectory("imported-pickup-feedback");
     test::FakeRenderDevice device;
@@ -76,7 +79,7 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
     std::vector<std::pair<s32, usize>> lessons;
     const PartyPickups::Services services{.world = world,
                                           .fixtures = fixtures,
-                                          .hud = hud,
+                                          .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
                                           .help = [&](s32 id, usize recipient) {
@@ -90,19 +93,25 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
     bool soundExpected = true;
     bool gag = false;
     bool campaign = false;
-    SECTION("ordinary inventory and HUD use the player's input slot") {}
+    std::vector<std::string> presented; // what the HUD is told, in turn
+    SECTION("ordinary inventory and HUD use the player's input slot") {
+        presented = {"card 3 KEY"};
+    }
     SECTION("partially collected keys do not grant the remainder again") {
         players[0].actor.save().progress().inventory.keys = 8;
         offer.amount = 4;
+        presented = {"card 3 KEY"};
     }
     SECTION("powerups focus the selector without activating or adding charges again") {
         offer = {static_cast<s32>(ItemKind::SpeedPowerup), 20, 0, 15};
+        presented = {"focus 3 7 0", "card 3 SPECIALS"};
     }
     SECTION("bad food gags without applying damage twice") {
         players[0].actor.save().progress().health = 200;
         offer = {static_cast<s32>(ItemKind::Food), -50};
         soundExpected = false; // This synthetic participant has no voice archive.
         gag = true;
+        presented = {"card 3 BADFRUIT"};
     }
     SECTION("native campaign awards never award or share GDL runestones") {
         offer = {};
@@ -111,6 +120,7 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
         taking = {.outcome = ItemTaking::Outcome::Taken, .count = 1, .sound = "S_PICKUPRUNE"};
         cardExpected = false;
         campaign = true;
+        presented = {};
     }
     if (!campaign) {
         taking = takeItem(players[0].actor.save(), offer, 1, false);
@@ -125,6 +135,7 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
                                  : gag    ? PlayerDeed::Gag
                                           : PlayerDeed::Pick));
     CHECK(players[1].gesture == PlayerDeed::None);
+    CHECK(presentation.log == presented);
     CHECK(hud.pickups().cards().size() == (cardExpected ? 1 : 0));
     if (cardExpected) {
         CHECK(hud.pickups().cards()[0].player == 3);
@@ -145,6 +156,7 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
     players[0].departed = true;
     pickups.presentTaken(offer, taking, "NATIVE_ITEM", 0, players, services);
     CHECK(hud.pickups().cards().size() == cards);
+    CHECK(presentation.log == presented);
     CHECK(lessons.size() == lessonCount);
     audio.close();
 }
@@ -202,10 +214,11 @@ TEST_CASE("native blue crystals beside Mausoleum and Cliffs walls can be collect
     REQUIRE(classes.load(root / "pdata"));
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const PartyPickups::Services services{.world = world,
                                           .fixtures = fixtures,
-                                          .hud = hud,
+                                          .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
                                           .sounds = nullptr,
@@ -314,11 +327,12 @@ TEST_CASE("with Auto-Use off a native Turbo Boost waits for its owner's selector
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     PartyPickups::Services services{.world = world,
                                     .fixtures = fixtures,
-                                    .hud = hud,
+                                    .presentation = presentation,
                                     .audio = audio,
                                     .classes = classes,
                                     .sounds = nullptr,
@@ -382,11 +396,12 @@ TEST_CASE("world pickups honor auto use and remain available in the selector",
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     PartyPickups::Services services{.world = world,
                                     .fixtures = fixtures,
-                                    .hud = hud,
+                                    .presentation = presentation,
                                     .audio = audio,
                                     .classes = classes,
                                     .sounds = nullptr,
@@ -442,11 +457,12 @@ TEST_CASE("Stop Time pickups honor the coin-stage restriction without being cons
     REQUIRE(world.load(device, root, level));
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     const PartyPickups::Services services{.world = world,
                                           .fixtures = fixtures,
-                                          .hud = hud,
+                                          .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
                                           .help = {},
@@ -480,6 +496,7 @@ TEST_CASE("tower crystal congratulations survive the in-level notice and acknowl
     LevelWorld world;
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     std::array<PlayerRuntime, 2> players;
@@ -487,7 +504,7 @@ TEST_CASE("tower crystal congratulations survive the in-level notice and acknowl
     bool canOpen = true;
     PartyPickups::Services services{.world = world,
                                     .fixtures = fixtures,
-                                    .hud = hud,
+                                    .presentation = presentation,
                                     .audio = audio,
                                     .classes = classes,
                                     .sounds = nullptr,
@@ -542,13 +559,14 @@ TEST_CASE("the tower congratulates the party on the gargoyles' pieces before the
     LevelWorld world;
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     std::array<PlayerRuntime, 2> players;
     std::vector<std::pair<std::string, usize>> opened;
     PartyPickups::Services services{.world = world,
                                     .fixtures = fixtures,
-                                    .hud = hud,
+                                    .presentation = presentation,
                                     .audio = audio,
                                     .classes = classes,
                                     .sounds = nullptr,
@@ -583,6 +601,7 @@ TEST_CASE("Sumner does not authorize a tower crystal ceremony",
     LevelWorld world;
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     std::array<PlayerRuntime, 1> players;
@@ -591,7 +610,7 @@ TEST_CASE("Sumner does not authorize a tower crystal ceremony",
     save.progress().crystals[2] = LevelTriggers::crystalsNeeded(2);
     const PartyPickups::Services services{.world = world,
                                           .fixtures = fixtures,
-                                          .hud = hud,
+                                          .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
                                           .help = {},
@@ -738,6 +757,7 @@ TEST_CASE("the party's pickups are shared, taught, gestured and handed to the sc
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     std::array<PlayerRuntime, 2> players;
@@ -753,7 +773,7 @@ TEST_CASE("the party's pickups are shared, taught, gestured and handed to the sc
     const PartyPickups::Services services{
         .world = world,
         .fixtures = fixtures,
-        .hud = hud,
+        .presentation = presentation,
         .audio = audio,
         .classes = classes,
         .sounds = nullptr,
@@ -775,6 +795,7 @@ TEST_CASE("the party's pickups are shared, taught, gestured and handed to the sc
         CHECK(players[0].actor.save().progress().relics.hasRune(7));
         CHECK(players[1].actor.save().progress().relics.hasRune(7));
         CHECK(players[0].gesture == PlayerDeed::None); // runestones are not stooped for
+        CHECK(presentation.log == std::vector<std::string>{"relics", "card 0 RUNESTONE"});
     }
     SECTION("gold goes to the challenge and is stooped for out of the tower") {
         REQUIRE(world.placeItem(device, "TREAS_GOLD", spot));
@@ -872,6 +893,9 @@ TEST_CASE("the party's pickups are shared, taught, gestured and handed to the sc
         CHECK(players[0].actor.save().progress().crystals[realm] == wanted);
         CHECK(players[1].actor.save().progress().crystals[realm] == 1);
         CHECK(messages == std::vector<std::pair<std::string, usize>>{{"UNLOCKLEVEL", realm}});
+        CHECK(presentation.log == std::vector<std::string>{"count 0 SM_CRYSTAL_BLU 150/150",
+                                                           "count 1 SM_CRYSTAL_BLU 1/150",
+                                                           "card 0 CRYSTAL"});
     }
     SECTION("a completed crystal record stays completed and does not announce again") {
         REQUIRE(world.placeItem(device, "GEMBLUE", spot));
@@ -963,10 +987,11 @@ TEST_CASE("the chest opener complains only about retail theft eligible pickups",
     audio.open(voiceRoot, &output, nullptr);
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     const ClassDataSet classes;
     const PartyPickups::Services services{.world = world,
                                           .fixtures = fixtures,
-                                          .hud = hud,
+                                          .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
                                           .sounds = nullptr,
@@ -1028,11 +1053,12 @@ TEST_CASE("golden idol pieces reward every living participant once and show pers
     players[3].departed = true;
     LevelFixtures fixtures;
     PartyHud hud;
+    test::RecordingPickupPresentation presentation{hud};
     LevelSoundscape audio;
     const ClassDataSet classes;
     const PartyPickups::Services services{.world = world,
                                           .fixtures = fixtures,
-                                          .hud = hud,
+                                          .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
                                           .sounds = nullptr,
@@ -1098,6 +1124,7 @@ TEST_CASE("native food selection and logical barks agree without an audio device
         LevelSoundscape audio;
         LevelFixtures fixtures;
         PartyHud hud;
+        test::RecordingPickupPresentation presentation{hud};
         PartyPickups pickups;
         std::array<PlayerRuntime, 1> players;
     };
@@ -1137,7 +1164,7 @@ TEST_CASE("native food selection and logical barks agree without an audio device
             REQUIRE(world->placedItems().item(item).value == amount);
             const PartyPickups::Services services{.world = *world,
                                                   .fixtures = collector.fixtures,
-                                                  .hud = collector.hud,
+                                                  .presentation = collector.presentation,
                                                   .audio = collector.audio,
                                                   .classes = classes,
                                                   .sounds = profile == 0 ? &output : nullptr,

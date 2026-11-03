@@ -530,7 +530,7 @@ void PlayScene::drawMechanicsHud() {
 PartyPickups::Services PlayScene::pickupServices() {
     return {.world = *m_world,
             .fixtures = m_fixtures,
-            .hud = m_hud,
+            .presentation = m_pickupRouting,
             .audio = m_audio,
             .classes = m_classes,
             .sounds = m_services->sounds,

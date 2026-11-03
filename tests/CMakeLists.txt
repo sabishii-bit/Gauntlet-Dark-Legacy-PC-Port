@@ -651,6 +651,7 @@ add_executable(tests
     game/level/TriggerCuesTests.cpp
     game/tower/TowerWelcomeTests.cpp
     game/party/PartyPickupsTests.cpp
+    game/party/PickupPresentationTests.cpp
     game/level/FixtureHostTests.cpp
     game/level/CombatCoverTests.cpp
     game/level/SafeRockCoverTests.cpp

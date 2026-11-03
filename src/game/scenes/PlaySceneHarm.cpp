@@ -106,6 +106,22 @@ void PlayScene::FixtureRouting::shatterPotion(s32 kind, const Vec3& position) {
     m_scene.m_attacks.shatterPotion(kind, position);
 }
 
+void PlayScene::PickupRouting::addCard(s32 seat, std::string_view texture) {
+    m_scene.m_hud.pickups().addCard(seat, texture);
+}
+
+void PlayScene::PickupRouting::showCount(s32 seat, std::string_view icon, s32 count, s32 total) {
+    m_scene.m_hud.pickups().showCount(seat, icon, count, total);
+}
+
+void PlayScene::PickupRouting::focusPickup(const PlayerActor& actor, s32 kind, u32 flags) {
+    m_scene.m_hud.focusPickup(actor, kind, flags);
+}
+
+void PlayScene::PickupRouting::showRelics() {
+    m_scene.m_hud.showRelics();
+}
+
 void PlayScene::AttackRouting::hurtByAttack(usize member, f32 damage, HurtKind kind,
                                             const PlayerImpact& impact) {
     m_scene.hurt(member, damage, kind, true, impact);

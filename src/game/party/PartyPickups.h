@@ -14,9 +14,9 @@
 
 #include "game/audio/LevelSoundscape.h"
 #include "game/characters/ClassData.h"
-#include "game/hud/PartyHud.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelWorld.h"
+#include "game/party/PickupPresentation.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PickupVoices.h"
@@ -50,7 +50,7 @@ public:
     struct Services {
         LevelWorld& world;
         LevelFixtures& fixtures;
-        PartyHud& hud;
+        PickupPresentation& presentation; ///< the cards, counts, selectors and keys
         LevelSoundscape& audio;
         const ClassDataSet& classes;
         SoundPlayer* sounds = nullptr;

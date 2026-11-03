@@ -57,6 +57,7 @@
 #include "game/party/PartyMotion.h"
 #include "game/party/PartyNames.h"
 #include "game/party/PartyPickups.h"
+#include "game/party/PickupPresentation.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerFigure.h"
@@ -738,6 +739,19 @@ private:
     /** Living floor occupants retain bridges even while a cinematic holds controls. */
     std::vector<s32> occupiedFloors() const;
     PartyPickups::Services pickupServices();
+    /** The scene's answers to what its pickups put up: cards, counts, selectors and the
+     * bosses' keys on its HUD. */
+    class PickupRouting final : public PickupPresentation {
+    public:
+        explicit PickupRouting(PlayScene& scene) : m_scene(scene) {}
+        void addCard(s32 seat, std::string_view texture) override;
+        void showCount(s32 seat, std::string_view icon, s32 count, s32 total) override;
+        void focusPickup(const PlayerActor& actor, s32 kind, u32 flags) override;
+        void showRelics() override;
+
+    private:
+        PlayScene& m_scene;
+    };
     void praiseStreaks(f32 seconds);
     /** Switches the level's mechanics as the settings say, every tick and at opening. */
     void syncMechanics();
@@ -847,6 +861,7 @@ private:
     CompassHud m_compass;
     ClassDataSet m_classes;
     PartyHud m_hud;
+    PickupRouting m_pickupRouting{*this}; ///< what the pickups put up
     Canvas m_canvas;
     TowerCamera m_camera;
     SeatCameras m_seats; ///< the seats' own cameras, under solo cameras

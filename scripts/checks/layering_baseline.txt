@@ -36,7 +36,6 @@ src/game/level/TriggerCues.cpp -> game/hud
 src/game/party/PartyDamage.h -> game/enemies
 src/game/party/PartyLighting.cpp -> game/enemies
 src/game/party/PartyPickups.cpp -> game/hud
-src/game/party/PartyPickups.h -> game/hud
 src/game/party/PlayInput.h -> game/hud
 src/game/party/PlayerAttacks.cpp -> game/bosses
 src/game/party/PlayerAttacks.cpp -> game/enemies

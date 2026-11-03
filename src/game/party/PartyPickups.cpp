@@ -11,6 +11,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/HelpMessages.h"
 #include "game/hud/PickupHud.h"
+#include "game/party/PickupPresentation.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 
@@ -258,14 +259,14 @@ void PartyPickups::collect(RenderDevice& device, std::span<PlayerRuntime> player
                     if (count >= 0 && (wanted <= 0 || count < wanted)) {
                         ++count;
                     }
-                    services.hud.pickups().showCount(
+                    services.presentation.showCount(
                         actor.player(), PickupHud::crystalIcon(pickup.realm), count, wanted);
                 }
                 enough = enough || (wanted > 0 && (count < 0 || count >= wanted));
             }
             if (pickup.collector < players.size()) {
-                services.hud.pickups().addCard(players[pickup.collector].actor.player(),
-                                               PickupHud::kCrystalCard);
+                services.presentation.addCard(players[pickup.collector].actor.player(),
+                                              PickupHud::kCrystalCard);
             }
             // TowerCheckMessages owns both the scroll and its persisted acknowledgement
             // in the tower. The immediate pickup notice is only for collections elsewhere.
@@ -283,7 +284,7 @@ void PartyPickups::beginTaking(const ItemOffer& offer, const ItemTaking& taking,
     // out of the tower; bad food is gagged on anywhere.
     const auto kind = static_cast<ItemKind>(offer.kind);
     if (kind >= ItemKind::WeaponPowerup && kind <= ItemKind::SpecialPowerup) {
-        services.hud.focusPickup(runtime.actor, offer.kind, offer.flags);
+        services.presentation.focusPickup(runtime.actor, offer.kind, offer.flags);
     }
     if (taking.hurt) {
         runtime.gesture = PlayerDeed::Gag;
@@ -298,7 +299,7 @@ void PartyPickups::finishTaking(const ItemTaking& taking, std::string_view itemN
     auto& runtime = players[recipient];
     auto& actor = runtime.actor;
     if (!taking.card.empty()) {
-        services.hud.pickups().addCard(actor.player(), taking.card);
+        services.presentation.addCard(actor.player(), taking.card);
     }
     if (taking.message >= 0 && services.help) {
         services.help(taking.message, recipient);
@@ -383,8 +384,8 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
                                     }
                                     break;
                                 case CurrencyEvent::Kind::Card:
-                                    services.hud.pickups().addCard(recipient.actor.player(),
-                                                                   event.name);
+                                    services.presentation.addCard(recipient.actor.player(),
+                                                                  event.name);
                                     break;
                                 case CurrencyEvent::Kind::NamedSound:
                                     services.audio.playNamed(event.name);
@@ -437,9 +438,9 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
             if (&member != &runtime) {
                 relics.addGargoylePiece(pickup.amount);
             }
-            services.hud.pickups().showCount(member.actor.player(), kGargoyleIcons[piece],
-                                             relics.gargoylePieces[piece],
-                                             Relics::kGargoyleNeeded[piece]);
+            services.presentation.showCount(member.actor.player(), kGargoyleIcons[piece],
+                                            relics.gargoylePieces[piece],
+                                            Relics::kGargoyleNeeded[piece]);
         }
         break;
     }
@@ -484,7 +485,7 @@ void PartyPickups::shareRune(s32 rune, std::span<PlayerRuntime> players, const S
         }
         held |= relics.runes;
     }
-    services.hud.showRelics(); // welcome_timer again (items.c 3402)
+    services.presentation.showRelics(); // welcome_timer again (items.c 3402)
     services.audio.duckMusic(services.audio.lengthOf("S_PICKUPRUNE") -
                                  LevelSoundscape::kRuneMusicLead,
                              LevelSoundscape::kRuneMusicScale);
