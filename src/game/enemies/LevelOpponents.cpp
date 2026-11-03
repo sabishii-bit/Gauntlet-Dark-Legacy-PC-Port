@@ -21,6 +21,7 @@
 #include "game/effects/DynamicLights.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/EnemyMissileEmission.h"
+#include "game/enemies/ImportedOpponentCues.h"
 #include "game/enemies/OpponentPlacements.h"
 #include "game/enemies/OpponentSimulation.h"
 #include "game/hud/HelpMessages.h"
@@ -201,6 +202,10 @@ SoundHandle LevelOpponents::playAt(std::string_view name, f32 level, const Vec3&
     return m_resources->audio.playAt(name, at, 0.0f, level / kFullLevel * heard);
 }
 
+ImportedOpponentCues LevelOpponents::cues() {
+    return {m_resources->world.imported(), m_nativeCues};
+}
+
 void LevelOpponents::lights(std::vector<PointLight>& out) const {
     m_enemyMissiles.lights(out);
 }
@@ -212,58 +217,59 @@ void LevelOpponents::playEnemyCues() {
         return;
     }
     for (const EnemyCue& cue : m_enemies.takeCues()) {
-        if (auto* imported = m_resources->world.imported();
-            imported && imported->playEnemyCue(cue)) {
-            continue;
+        cues().enemyCue(cue);
+    }
+}
+
+void LevelOpponents::NativeCues::enemyCue(const EnemyCue& cue) {
+    auto& audio = m_owner.m_resources->audio;
+    if (audio.recordingSounds() &&
+        (cue.enemy < 0 || cue.enemy >= Enemies::kMost || cue.instance == 0)) {
+        audio.recorder()->unsupported("enemy cue without its source lifetime");
+    }
+    const FrameEventEmitter emitter{20, static_cast<u64>(std::max(cue.enemy, 0)), cue.instance};
+    auto scope = audio.soundScope(emitter, static_cast<u32>(cue.kind) + 1);
+    switch (cue.kind) {
+    case EnemyCue::Kind::Arrow: m_owner.playAt(kArrowSound, kQuietSound, cue.position); break;
+    case EnemyCue::Kind::Bolt:
+        if (cue.enemyKind == kDemonKind) {
+            const std::string& level = m_owner.m_resources->world.ref().name;
+            const char realm = level.empty() ? ' ' : level.front();
+            m_owner.playAt(realm == 'C' || realm == 'D' || realm == 'F'
+                               ? std::format("{}{}", kDemonBoltSound, realm)
+                               : std::string{kDemonBoltSound},
+                           kQuietSound, cue.position);
+        } else {
+            m_owner.playAt(kBoltSound, kQuietSound, cue.position);
         }
-        auto& audio = m_resources->audio;
-        if (audio.recordingSounds() &&
-            (cue.enemy < 0 || cue.enemy >= Enemies::kMost || cue.instance == 0)) {
-            audio.recorder()->unsupported("enemy cue without its source lifetime");
-        }
-        const FrameEventEmitter emitter{20, static_cast<u64>(std::max(cue.enemy, 0)), cue.instance};
-        auto scope = audio.soundScope(emitter, static_cast<u32>(cue.kind) + 1);
-        switch (cue.kind) {
-        case EnemyCue::Kind::Arrow: playAt(kArrowSound, kQuietSound, cue.position); break;
-        case EnemyCue::Kind::Bolt:
-            if (cue.enemyKind == kDemonKind) {
-                const std::string& level = m_resources->world.ref().name;
-                const char realm = level.empty() ? ' ' : level.front();
-                playAt(realm == 'C' || realm == 'D' || realm == 'F'
-                           ? std::format("{}{}", kDemonBoltSound, realm)
-                           : std::string{kDemonBoltSound},
-                       kQuietSound, cue.position);
-            } else {
-                playAt(kBoltSound, kQuietSound, cue.position);
-            }
-            break;
-        case EnemyCue::Kind::Yell:
-            if (audio.recordingSounds()) {
-                const f32 volume =
-                    kLoudSound / kFullLevel * attenuation(cue.position, m_sim.hearers);
-                if (volume > 0) {
-                    const auto start = audio.beginNamedCue(kSuicideYellSound);
-                    if (start) {
-                        auto& clock = m_sim.yellClocks[static_cast<usize>(cue.enemy)];
-                        if (clock.source != cue.instance) {
-                            clock = {cue.instance, 1};
-                        }
-                        if (clock.next == 0) {
-                            audio.recorder()->unsupported("exhausted bomber cry lifetimes");
-                        }
-                        m_sim.yells.push_back({emitter, clock.next++, start,
-                                               audio.namedTiming(kSuicideYellSound), volume,
-                                               cue.position});
+        break;
+    case EnemyCue::Kind::Yell:
+        if (audio.recordingSounds()) {
+            const f32 volume =
+                kLoudSound / kFullLevel * attenuation(cue.position, m_owner.m_sim.hearers);
+            if (volume > 0) {
+                const auto start = audio.beginNamedCue(kSuicideYellSound);
+                if (start) {
+                    auto& clock = m_owner.m_sim.yellClocks[static_cast<usize>(cue.enemy)];
+                    if (clock.source != cue.instance) {
+                        clock = {cue.instance, 1};
                     }
-                }
-            } else {
-                if (const SoundHandle yell = playAt(kSuicideYellSound, kLoudSound, cue.position);
-                    yell != kNoSound) {
-                    m_yells.push_back(yell);
+                    if (clock.next == 0) {
+                        audio.recorder()->unsupported("exhausted bomber cry lifetimes");
+                    }
+                    m_owner.m_sim.yells.push_back({emitter, clock.next++, start,
+                                                   audio.namedTiming(kSuicideYellSound), volume,
+                                                   cue.position});
                 }
             }
-            break;
+        } else {
+            if (const SoundHandle yell =
+                    m_owner.playAt(kSuicideYellSound, kLoudSound, cue.position);
+                yell != kNoSound) {
+                m_owner.m_yells.push_back(yell);
+            }
         }
+        break;
     }
 }
 
@@ -333,12 +339,7 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
     if (effect != 0) {
         m_sim.cueEffects.push_back(effect);
     }
-    auto* imported = m_resources->world.imported();
-    const bool nativeBomb = emission.sound == "S_LOBBER_BOMB" && imported != nullptr &&
-                            imported->playOpponentSound(emission.sound, hit.position);
-    if (!nativeBomb) {
-        playAt(emission.sound, emission.level, hit.position);
-    }
+    cues().missileLanded(emission.sound, emission.level, hit.position);
     if (hit.ricochet) {
         return true;
     }
@@ -355,6 +356,10 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
                               life > 0.0f ? life : kUnseenBurst, hit.player);
     }
     return true;
+}
+
+void LevelOpponents::NativeCues::missileLanded(std::string_view sound, f32 level, const Vec3& at) {
+    m_owner.playAt(sound, level, at);
 }
 
 /** A suicide going up (SuicideExplosion): a burning blast of six with its ring and red light,
@@ -1166,14 +1171,10 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
         if (!impact) {
             continue;
         }
-        auto* imported = m_resources->world.imported();
-        const bool nativeSound =
-            imported != nullptr && imported->playEnemyMelee(blow.kind, blow.tier);
-        if (impact->sound && !nativeSound) {
-            m_resources->audio.playNamed(*impact->sound);
-        }
+        const CueOwner owner = cues().enemyMelee(blow.kind, blow.tier, impact->sound);
         if (blow.ward == EnemyMeleeWard::None) {
-            host.hurtMember(i, blow.damage, nativeSound ? HurtKind::Blow : impact->kind, true,
+            host.hurtMember(i, blow.damage,
+                            owner == CueOwner::Imported ? HurtKind::Blow : impact->kind, true,
                             impact->impact);
             continue;
         }
@@ -1194,6 +1195,14 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
             }
         }
     }
+}
+
+CueOwner LevelOpponents::NativeCues::enemyMelee(s32 /*kind*/, s32 /*tier*/,
+                                                const std::optional<std::string>& sound) {
+    if (sound) {
+        m_owner.m_resources->audio.playNamed(*sound);
+    }
+    return CueOwner::Native;
 }
 
 bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
@@ -1401,10 +1410,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             }
             m_sim.yells.clear();
         }
-        auto* const imported = m_resources->world.imported();
-        if (!imported || !imported->playOpponentSound(kSuicideBombSound, burst.position)) {
-            playAt(kSuicideBombSound, kLoudSound, burst.position);
-        }
+        cues().suicideBang(kSuicideBombSound, burst.position);
         explodeSuicide(burst);
     }
     advanceClouds();
@@ -1451,19 +1457,13 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         encounter.activateArena(activation);
     }
     const auto shotSound = [&](const CombatantProjectiles::SoundCue& cue) {
-        if (cue.ownerKind == CombatantKind::Boss) {
-            if (auto* imported = m_resources->world.imported();
-                imported && imported->playOpponentSound(cue.name, cue.position)) {
-                return;
-            }
-        }
-        auto& audio = m_resources->audio;
-        if (audio.recordingSounds() && (cue.instance == 0 || cue.effect < 0)) {
-            audio.recorder()->unsupported("combatant projectile cue without its source lifetime");
-        }
-        auto scope = audio.soundScope({23, static_cast<u64>(cue.effect) + 1, cue.instance},
-                                      static_cast<u32>(cue.phase));
-        audio.playNamed(cue.name);
+        cues().shotSound({.name = cue.name,
+                          .position = cue.position,
+                          .instance = cue.instance,
+                          .effect = cue.effect,
+                          .phase = static_cast<u32>(cue.phase),
+                          .owner = cue.ownerKind == CombatantKind::Boss ? CombatantPool::Boss
+                                                                        : CombatantPool::Critters});
     };
     for (const CombatShot& shot : m_bosses.takeShots()) {
         if (ItemArchive* archive = m_bosses.archive(); archive != nullptr) {
@@ -1644,6 +1644,20 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     awardEnemyLosses(host);
 }
 
+void LevelOpponents::NativeCues::suicideBang(std::string_view sound, const Vec3& at) {
+    m_owner.playAt(sound, kLoudSound, at);
+}
+
+void LevelOpponents::NativeCues::shotSound(const Shot& shot) {
+    auto& audio = m_owner.m_resources->audio;
+    if (audio.recordingSounds() && (shot.instance == 0 || shot.effect < 0)) {
+        audio.recorder()->unsupported("combatant projectile cue without its source lifetime");
+    }
+    auto scope =
+        audio.soundScope({23, static_cast<u64>(shot.effect) + 1, shot.instance}, shot.phase);
+    audio.playNamed(shot.name);
+}
+
 void LevelOpponents::deliverLessons(std::span<const PlayerRuntime> players, OpponentHost& host) {
     // PlayerDamagedEnemy posts message22 during combat. A queued hit must reach
     // the next normal update, not wait for the portal's final reward settlement.
@@ -1687,10 +1701,7 @@ void LevelOpponents::awardEnemyLosses(OpponentHost& host) {
         const auto emission = EnemyFeedbackEmission::resolve(
             feedback, m_enemies.archive(feedback.kind), m_resources->weapons, levelNow());
         u32 effect = 0;
-        auto* imported = m_resources->world.imported();
-        if (!imported || !imported->playEnemyFeedback(feedback, feedback.remainingHealth)) {
-            playAt(emission.sound, kLoudSound, emission.position);
-        }
+        cues().enemyFeedback(feedback, emission.sound, emission.position);
         if (emission.archive != nullptr) {
             effect =
                 m_resources->effects.startSet(m_resources->device, *emission.archive, emission.tree,
@@ -1720,6 +1731,11 @@ void LevelOpponents::awardEnemyLosses(OpponentHost& host) {
         }
     }
     m_sim.generatorRewards.clear();
+}
+
+void LevelOpponents::NativeCues::enemyFeedback(const EnemyFeedback& /*feedback*/,
+                                               std::string_view sound, const Vec3& at) {
+    m_owner.playAt(sound, kLoudSound, at);
 }
 
 /** A hit on one of the swarm, from a player or the world. */
@@ -1899,16 +1915,8 @@ bool LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
     if (effect != 0) {
         m_sim.cueEffects.push_back(effect);
     }
-    const bool nativeSound = !publish && m_resources->world.imported() != nullptr &&
-                             m_resources->world.imported()->playGeneratorFeedback(*event);
-    if (!publish && !nativeSound && !emission.sound.empty()) {
-        // Slots are append-only for a loaded level; the native birth serial
-        // distinguishes generated lifetimes and is restored with their state.
-        const auto audioScope = m_resources->audio.soundScope(
-            {46, static_cast<u64>(event->generator), event->instance}, event->destroyed      ? 3
-                                                                       : event->stateChanged ? 2
-                                                                                             : 1);
-        m_resources->audio.playNamed(emission.sound);
+    if (!publish) {
+        cues().generatorFeedback(*event, emission.sound);
     }
     if (byPlayer >= 0) {
         m_sim.generatorRewards.push_back(
@@ -1921,6 +1929,20 @@ bool LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
         }
     }
     return true;
+}
+
+void LevelOpponents::NativeCues::generatorFeedback(const GeneratorEvent& event,
+                                                   std::string_view sound) {
+    if (!sound.empty()) {
+        // Slots are append-only for a loaded level; the native birth serial
+        // distinguishes generated lifetimes and is restored with their state.
+        auto& audio = m_owner.m_resources->audio;
+        const auto audioScope = audio.soundScope(
+            {46, static_cast<u64>(event.generator), event.instance}, event.destroyed      ? 3
+                                                                     : event.stateChanged ? 2
+                                                                                          : 1);
+        audio.playNamed(sound);
+    }
 }
 
 /** Plays what one of the great ones (the boss with `ofBoss`) has set off: its tree from its
@@ -1978,15 +2000,18 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
                 cue.nodeOffset, cue.rootAttachment, cue.pitchYaw, cue.playerAttachment});
         }
     }
+    cues().combatantSound(cue.sound, cue.soundPosition, cue.attenuated,
+                          ofBoss ? CombatantPool::Boss : CombatantPool::Critters);
+}
+
+void LevelOpponents::NativeCues::combatantSound(std::string_view sound, const Vec3& at,
+                                                bool attenuated, CombatantPool /*pool*/) {
     // The great ones' sounds play at 224 of 255 as heard from where the players stand
     // (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten); a death's at that level whole.
-    const bool nativeSound =
-        ofBoss && !cue.sound.empty() && m_resources->world.imported() != nullptr &&
-        m_resources->world.imported()->playOpponentSound(cue.sound, cue.soundPosition);
-    if (!nativeSound && !cue.sound.empty() && cue.attenuated) {
-        playAt(cue.sound, kLoudSound, cue.soundPosition);
-    } else if (!nativeSound && !cue.sound.empty()) {
-        m_resources->audio.playAt(cue.sound, cue.soundPosition, 0.0f, kLoudSound / kFullLevel);
+    if (!sound.empty() && attenuated) {
+        m_owner.playAt(sound, kLoudSound, at);
+    } else if (!sound.empty()) {
+        m_owner.m_resources->audio.playAt(sound, at, 0.0f, kLoudSound / kFullLevel);
     }
 }
 

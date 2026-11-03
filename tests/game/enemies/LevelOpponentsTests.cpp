@@ -15,14 +15,19 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/render/RenderDevice.h"
 #include "engine/world/SampleLevel.h"
+#include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
+#include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
 #include "FakeMechanic.h"
@@ -44,6 +49,7 @@
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/ImportedLevel.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelWorld.h"
@@ -91,6 +97,22 @@ void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
                      {"name":"HIT1","frames":10,"rate":30},
                      {"name":"HIT2","frames":10,"rate":30}]}]})");
 }
+
+/** An imported level that may sound the swarm's melee itself, keeping the kind and tier of
+ * each blow it is asked about. */
+class MeleeSoundingLevel final : public ImportedLevel {
+public:
+    bool owns = false;
+    std::vector<std::pair<s32, s32>> asked;
+    void capturePresentation() override {}
+    void update(f32 /*seconds*/, bool /*timeStopped*/) override {}
+    void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
+              TreeModel::Pass /*pass*/, f32 /*presentationAlpha*/) const override {}
+    bool playEnemyMelee(s32 kind, s32 tier) override {
+        asked.emplace_back(kind, tier);
+        return owns;
+    }
+};
 
 TEST_CASE("opponent snapshots take block-provoking attacks from each player's active figure",
           "[level-opponents][critter-block][assets]") {
@@ -613,6 +635,58 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     }
     opponents.close();
     CHECK(effects.count() == 0);
+}
+
+TEST_CASE("an imported level that sounds an enemy's melee itself makes the hurt a plain blow",
+          "[level-opponents][enemy-melee][imported-opponent-cues]") {
+    const bool owned = GENERATE(false, true);
+    const auto root = test::scratchDirectory("enemy-melee-imported");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    auto imported = std::make_shared<MeleeSoundingLevel>();
+    imported->owns = owned;
+    CollisionTriangle floor;
+    floor.normal = {0, 1, 0};
+    floor.vertices = {{{-100, 0, -100}, {0, 0, 100}, {100, 0, -100}}};
+    floor.objectFlags = 4;
+    WorldCollision collision;
+    collision.build({floor});
+    LevelWorld world;
+    LevelRef ref;
+    ref.realmId = -1;
+    ref.name = "n64:imported-melee";
+    REQUIRE(world.loadImported(device, {}, ref,
+                               WorldLayout::fromDecoded({}, {}, {-100, 0, -100}, {100, 20, 100}),
+                               std::move(collision), imported));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, Vec3{0, 0, 2}, 0);
+    players[0].actor.save().progress().health = 1000;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    REQUIRE(
+        opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = 1, .placed = true}, {}));
+    std::vector<HurtKind> hurts;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    events.hurt = [&](usize i, f32 /*amount*/, HurtKind hurt, bool directed,
+                      const PlayerImpact& /*impact*/) {
+        CHECK(i == 0);
+        CHECK(directed);
+        hurts.push_back(hurt);
+    };
+    for (s32 frame = 0; frame < 300 && hurts.size() < 2; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
+    }
+    // A grunt's blow sounds S_PLYRDMG5 and so hurts quietly, unless the level sounded it.
+    REQUIRE(hurts.size() == 2);
+    CHECK(hurts == std::vector(2, owned ? HurtKind::Blow : HurtKind::QuietBlow));
+    CHECK(imported->asked == std::vector(2, std::pair{kGruntKind, 1}));
+    opponents.close();
 }
 
 TEST_CASE("enemy melee plays a dedicated impact on each contact including warded blows",

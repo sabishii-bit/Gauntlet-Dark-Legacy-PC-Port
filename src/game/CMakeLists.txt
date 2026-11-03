@@ -242,6 +242,8 @@ add_library(game STATIC
     party/AttackHost.h
     enemies/OpponentHost.h
     enemies/BossEncounterHost.h
+    enemies/OpponentPool.h
+    enemies/OpponentCues.h
     level/ItemSupport.cpp
     party/BodyCollision.cpp
     party/MoveStrikes.h
@@ -456,6 +458,8 @@ add_library(game STATIC
     party/PartyPickups.cpp
     level/LevelFixtures.cpp
     enemies/LevelOpponents.cpp
+    enemies/ImportedOpponentCues.h
+    enemies/ImportedOpponentCues.cpp
     enemies/OpponentSimulation.cpp
     enemies/OpponentPlacements.cpp
     party/PlayerAttacks.cpp

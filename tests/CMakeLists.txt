@@ -649,6 +649,9 @@ add_executable(tests
     game/level/LevelFixturesTests.cpp
     game/enemies/OpponentHostTests.cpp
     game/enemies/BossEncounterHostTests.cpp
+    game/enemies/OpponentPoolTests.cpp
+    game/enemies/OpponentCuesTests.cpp
+    game/enemies/ImportedOpponentCuesTests.cpp
     game/enemies/LevelOpponentsTests.cpp
     game/party/PlayerHealthTests.cpp
     game/party/AttackHostTests.cpp

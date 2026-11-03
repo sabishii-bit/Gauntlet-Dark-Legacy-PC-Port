@@ -6,9 +6,11 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 
 #include "expansions/shared/enemies/LegendsActors.h"
@@ -22,7 +24,9 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
+#include "game/enemies/OpponentCues.h"
 #include "game/enemies/OpponentHost.h"
+#include "game/enemies/OpponentPool.h"
 #include "game/enemies/PlacedEnemies.h"
 #include "game/hud/BossMeter.h"
 #include "game/level/CombatCover.h"
@@ -32,6 +36,7 @@
 #include "game/party/PlayerRuntime.h"
 namespace gdl::game {
 struct GeneratorFeedbackEmission;
+class ImportedOpponentCues;
 /** Level enemy population, damage/reward routing and following combat cues.
  * Owns enemy archives, missiles, generators and the boss meter. Borrowed level services
  * must outlive close(). Its hosts are answered synchronously at their phases, interleaving
@@ -39,6 +44,9 @@ struct GeneratorFeedbackEmission;
  * retained. */
 class LevelOpponents {
 public:
+    LevelOpponents() = default;
+    ~LevelOpponents() = default;
+    GDL_NON_COPYABLE_NON_MOVABLE(LevelOpponents);
     struct Resources {
         RenderDevice& device;
         LevelWorld& world;
@@ -277,6 +285,32 @@ private:
     private:
         LevelOpponents& m_owner;
     };
+    /** Sounds the opponents' cues from the level's own banks, the way the original does. */
+    class NativeCues final : public OpponentCues {
+    public:
+        explicit NativeCues(LevelOpponents& owner) : m_owner(owner) {}
+        void enemyCue(const EnemyCue& cue) override;
+        void missileLanded(std::string_view sound, f32 level, const Vec3& at) override;
+        void suicideBang(std::string_view sound, const Vec3& at) override;
+        void shotSound(const Shot& shot) override;
+        void enemyFeedback(const EnemyFeedback& feedback, std::string_view sound,
+                           const Vec3& at) override;
+        CueOwner enemyMelee(s32 kind, s32 tier, const std::optional<std::string>& sound) override;
+        void generatorFeedback(const GeneratorEvent& event, std::string_view sound) override;
+        void combatantSound(std::string_view sound, const Vec3& at, bool attenuated,
+                            CombatantPool pool) override;
+        void deathCue(const DeathEvent& cue) override;
+        CueOwner deathContact(bool contact) override;
+        /** Nothing to do: the drain's own sound is stopped by its caller. */
+        void deathContactReleased() override {}
+
+    private:
+        LevelOpponents& m_owner;
+    };
+    NativeCues m_nativeCues{*this};
+    /** Where the cues go on the level as it stands: an imported level's first, the rest to
+     * the native cues. Callers have checked the borrowed services. */
+    ImportedOpponentCues cues();
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
      * carried nothing (CritterDropItem), with the lesson its kind teaches. */
     void dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,

@@ -7,7 +7,9 @@
 
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
+#include "game/enemies/ImportedOpponentCues.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/OpponentCues.h"
 #include "game/hud/HelpMessages.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PickupVoices.h"
@@ -40,9 +42,7 @@ bool LevelOpponents::releaseDeath(s32 record, const Vec3& position, s32 count) {
 
 void LevelOpponents::stopDeathSound() {
     if (m_resources) {
-        if (auto* imported = m_resources->world.imported()) {
-            imported->setDeathContact(false);
-        }
+        cues().deathContactReleased();
     }
     if (m_resources.has_value() && !m_resources->audio.recordingSounds()) {
         m_resources->audio.stop(m_deathSound);
@@ -53,9 +53,7 @@ void LevelOpponents::stopDeathSound() {
 
 void LevelOpponents::clearDeaths() {
     if (m_resources.has_value()) {
-        if (auto* imported = m_resources->world.imported()) {
-            imported->setDeathContact(false);
-        }
+        cues().deathContactReleased();
         for (const u32 id : m_sim.deathEffects) {
             m_resources->effects.stop(id);
         }
@@ -109,25 +107,13 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, OpponentHost
         auto scope =
             resources.audio.soundScope({20, static_cast<u64>(std::max(cue.enemy, 0)), cue.instance},
                                        32 + static_cast<u32>(cue.kind));
-        auto* imported = resources.world.imported();
-        const bool nativeSound = imported != nullptr && imported->playDeathCue(cue);
+        cues().deathCue(cue);
         switch (cue.kind) {
-        case DeathEvent::Kind::Killed:
-            if (!nativeSound) {
-                resources.audio.playNamed("S_DEATHDIE");
-            }
-            return;
+        case DeathEvent::Kind::Killed: return;
         case DeathEvent::Kind::Exhausted:
-            if (!nativeSound) {
-                resources.audio.playNamed("S_DEATHLAUGH");
-            }
             teach(cue, HelpMessages::kDeathLeavesExperience, HelpMessages::kDeathLeavesHealth);
             return;
-        case DeathEvent::Kind::Awakened:
-            if (!nativeSound) {
-                resources.audio.playNamed("S_DEATHSHATTER");
-            }
-            return;
+        case DeathEvent::Kind::Awakened: return;
         case DeathEvent::Kind::Unmoved:
             teach(cue, HelpMessages::kUseMagicOnDeath, HelpMessages::kUseMagicOnDeath);
             return;
@@ -210,26 +196,41 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, OpponentHost
                                                 m_enemies.yawOf(i), Vec3{0, 1, 0});
         resources.effects.placeAt(effect, transform);
     }
-    auto* imported = resources.world.imported();
-    if (imported && imported->setDeathContact(contact)) {
+    if (cues().deathContact(contact) == CueOwner::Imported) {
         m_sim.deathSound = {};
-        m_resumeDeathSound = false;
-    } else if (resources.audio.recordingSounds()) {
-        if (contact && !m_sim.deathContact) {
-            auto scope = resources.audio.soundScope({20, Enemies::kMost, 1}, 1);
-            m_sim.deathSound = resources.audio.beginNamedCue("S_DEATHSUCK");
-        } else if (!contact) {
-            m_sim.deathSound = {};
-        }
-    } else {
-        if (contact && (!m_sim.deathContact || m_resumeDeathSound)) {
-            m_deathSound = resources.audio.playNamed("S_DEATHSUCK");
-        } else if (!contact && m_sim.deathContact) {
-            resources.audio.stop(m_deathSound);
-            m_deathSound = kNoSound;
-        }
         m_resumeDeathSound = false;
     }
     m_sim.deathContact = contact;
+}
+
+void LevelOpponents::NativeCues::deathCue(const DeathEvent& cue) {
+    auto& audio = m_owner.m_resources->audio;
+    switch (cue.kind) {
+    case DeathEvent::Kind::Killed: audio.playNamed("S_DEATHDIE"); break;
+    case DeathEvent::Kind::Exhausted: audio.playNamed("S_DEATHLAUGH"); break;
+    case DeathEvent::Kind::Awakened: audio.playNamed("S_DEATHSHATTER"); break;
+    default: break;
+    }
+}
+
+CueOwner LevelOpponents::NativeCues::deathContact(bool contact) {
+    auto& audio = m_owner.m_resources->audio;
+    if (audio.recordingSounds()) {
+        if (contact && !m_owner.m_sim.deathContact) {
+            auto scope = audio.soundScope({20, Enemies::kMost, 1}, 1);
+            m_owner.m_sim.deathSound = audio.beginNamedCue("S_DEATHSUCK");
+        } else if (!contact) {
+            m_owner.m_sim.deathSound = {};
+        }
+    } else {
+        if (contact && (!m_owner.m_sim.deathContact || m_owner.m_resumeDeathSound)) {
+            m_owner.m_deathSound = audio.playNamed("S_DEATHSUCK");
+        } else if (!contact && m_owner.m_sim.deathContact) {
+            audio.stop(m_owner.m_deathSound);
+            m_owner.m_deathSound = kNoSound;
+        }
+        m_owner.m_resumeDeathSound = false;
+    }
+    return CueOwner::Native;
 }
 } // namespace gdl::game
