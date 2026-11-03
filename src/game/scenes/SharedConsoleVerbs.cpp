@@ -48,19 +48,6 @@ ConsoleRefusal unreadable(std::string text, const std::string& usage) {
     return {.kind = kind, .text = std::move(text)};
 }
 
-/** `result` after the notes there are, a line each. */
-std::string afterNotes(std::span<const std::optional<std::string>> notes,
-                       const std::string& result) {
-    std::string reply;
-    for (const std::optional<std::string>& note : notes) {
-        if (note) {
-            reply += *note;
-            reply += '\n';
-        }
-    }
-    return reply + result;
-}
-
 /** A usage's constant rows as rows that own their words. */
 std::vector<std::pair<std::string, std::string>>
 ownedRows(std::span<const std::pair<std::string_view, std::string_view>> rows) {

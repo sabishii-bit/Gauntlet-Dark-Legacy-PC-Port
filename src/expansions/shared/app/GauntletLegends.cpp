@@ -28,6 +28,7 @@
 #include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleForm.h"
 #include "game/console/ConsoleReach.h"
+#include "game/scenes/SharedConsoleVerbs.h"
 
 namespace gdl::game {
 namespace {
@@ -116,9 +117,10 @@ std::vector<std::string> Gauntlet::legendsMapNames() const {
 
 void Gauntlet::addLegendsConsoleForms() {
     // goto's Legends words: every word parseGoto reads as a Legends map or the way back from one,
-    // whatever is installed. Online they are refused in their own words.
+    // whatever is installed. Online they are refused in the shared verb's words.
     m_console.addForm("goto", std::make_unique<LambdaForm>(
-                                  ConsoleReach::OfflineOnly, "Legends maps are offline only.",
+                                  ConsoleReach::OfflineOnly,
+                                  std::string(sharedConsoleVerb("goto")->offlineOnlyRefusal()),
                                   [](DevConsole::Arguments arguments) {
                                       const auto destination =
                                           ConsoleCommands::parseGoto(arguments);
@@ -127,8 +129,8 @@ void Gauntlet::addLegendsConsoleForms() {
                                   [this](DevConsole& console, DevConsole::Arguments arguments) {
                                       consoleLegendsGoto(console, arguments);
                                   }));
-    // unlock_tower in a native world walked offline opens that world's own tower; elsewhere, and
-    // under a preview, the shared verb answers it.
+    // unlock_tower in a native world walked offline opens that world's own tower; elsewhere the
+    // shared verb answers it, and under a preview the preview's words refuse it.
     m_console.addForm("unlock_tower",
                       std::make_unique<LambdaForm>(
                           ConsoleReach::OfflineOnly, std::string{},

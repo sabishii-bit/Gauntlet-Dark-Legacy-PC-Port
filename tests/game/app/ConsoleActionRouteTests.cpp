@@ -19,7 +19,7 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-constexpr usize kLongLine = 170; ///< a console line past the wire's ConsoleAction::kMaxLine
+constexpr usize kLongLine = ConsoleAction::kMaxLine + 10; ///< a line too long for the wire
 constexpr std::string_view kRequested = "Command requested for the shared game.";
 constexpr std::string_view kNotQueued =
     "Command not queued: permission denied, session busy, or request too long.";

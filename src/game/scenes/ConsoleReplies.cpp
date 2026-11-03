@@ -124,4 +124,16 @@ std::optional<std::string> notUnpackedNote(ConsolePlay play, std::string_view le
     return std::format("{} is not unpacked", level);
 }
 
+std::string afterNotes(std::span<const std::optional<std::string>> notes, std::string_view result) {
+    std::string reply;
+    for (const std::optional<std::string>& note : notes) {
+        if (note) {
+            reply += *note;
+            reply += '\n';
+        }
+    }
+    reply += result;
+    return reply;
+}
+
 } // namespace gdl::game

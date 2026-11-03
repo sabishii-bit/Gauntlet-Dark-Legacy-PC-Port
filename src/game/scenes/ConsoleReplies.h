@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -49,5 +50,7 @@ std::optional<std::string> voicesNote(PlayScene::ConsolePlay play, std::string_v
 /** The line offline play puts before a spawn's reply when `level`, the map named, is not
  * unpacked; the shared game says nothing of it. */
 std::optional<std::string> notUnpackedNote(PlayScene::ConsolePlay play, std::string_view level);
+/** A spawn's reply: `result` after the notes there are, a line each in their order. */
+std::string afterNotes(std::span<const std::optional<std::string>> notes, std::string_view result);
 
 } // namespace gdl::game

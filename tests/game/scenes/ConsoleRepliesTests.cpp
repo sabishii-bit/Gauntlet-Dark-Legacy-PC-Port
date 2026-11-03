@@ -1,5 +1,7 @@
+#include <array>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -92,6 +94,21 @@ TEST_CASE("offline play and the shared game each keep their own console replies"
     CHECK(voicesNote(Play::Shared, "E1") == std::nullopt);
     CHECK(notUnpackedNote(Play::Offline, "E1") == "E1 is not unpacked");
     CHECK(notUnpackedNote(Play::Shared, "E1") == std::nullopt);
+}
+
+TEST_CASE("offline play puts a spawn's notes before its reply, a line each",
+          "[dev-console][online-console]") {
+    constexpr std::string_view kStood = "Stood a tier 1 SPECIAL generator";
+    const std::array offline{voicesNote(Play::Offline, "E1"), notUnpackedNote(Play::Offline, "E1")};
+    CHECK(afterNotes(offline, kStood) ==
+          "(E1 lends no voices)\nE1 is not unpacked\nStood a tier 1 SPECIAL generator");
+    const std::array voices{voicesNote(Play::Offline, "E1")};
+    CHECK(afterNotes(voices, "Spawned 1 GRU at tier 1") ==
+          "(E1 lends no voices)\nSpawned 1 GRU at tier 1");
+    const std::array unpacked{std::optional<std::string>{}, notUnpackedNote(Play::Offline, "E1")};
+    CHECK(afterNotes(unpacked, kStood) == "E1 is not unpacked\nStood a tier 1 SPECIAL generator");
+    const std::array shared{voicesNote(Play::Shared, "E1"), notUnpackedNote(Play::Shared, "E1")};
+    CHECK(afterNotes(shared, kStood) == kStood);
 }
 
 } // namespace

@@ -57,7 +57,7 @@ constexpr f32 kStrengthNearlyFull = 9999999.0f; ///< seconds of a powerup just u
 constexpr f32 kForGood = -1.0f;                 ///< a powerup's strength that never runs out
 constexpr s32 kDeathTicks = 600; ///< long enough for a death to play out to its question
 constexpr s32 kExitTicks = 1200; ///< long enough for a portal to take a party standing on it
-constexpr usize kLongLine = 170; ///< a console line past the wire's ConsoleAction::kMaxLine
+constexpr usize kLongLine = ConsoleAction::kMaxLine + 10; ///< a line too long for the wire
 constexpr std::string_view kOnItsWay = "The party is already on its way.";
 constexpr std::string_view kNoScene = "No active scene for that console command.";
 constexpr std::string_view kLegendsOffline = "Legends maps are offline only.";
@@ -666,6 +666,18 @@ TEST_CASE("every shared verb answers offline in offline play's words", "[native-
     CHECK(fixture->save(0).progress().relics.runeCount() == Relics::kRuneCount);
     CHECK(fixture->save(1).progress().relics.runeCount() == 0);
     reopen();
+    // With everyone gone there is nobody to open it for, and nothing is opened.
+    for (s32 seat = 0; seat < kSeats; ++seat) {
+        leave(*fixture, seat);
+    }
+    const auto nobody = fixture->offlineSayStep("unlock_tower");
+    CHECK(nobody.replies.front().text == "Nobody is in to open it for.");
+    CHECK(nobody.outcome == PlayOutcome::Running);
+    CHECK_FALSE(scene.consoleTravelRequest());
+    for (s32 seat = 0; seat < kSeats; ++seat) {
+        CHECK(fixture->save(seat).progress().relics.runeCount() == 0);
+    }
+    reopen();
 
     // spawn: every kind, the words it cannot read and the ones a level refuses.
     CHECK(fixture->offlineSay("spawn") == kSpawnUsage);
@@ -792,6 +804,11 @@ TEST_CASE("an offline step chooses offline play's reply where the shared game wo
             REQUIRE(stage.scene.kill(seat));
         }
     };
+    const auto everyoneLeft = [](Fixture& stage) {
+        for (s32 seat = 0; seat < kSeats; ++seat) {
+            leave(stage, seat);
+        }
+    };
     const auto swarmFull = [](Fixture& stage) {
         const std::vector<ConsoleAction> swarm(5, ConsoleAction{0, "spawn gru 1 20"});
         stage.sharedStep(swarm);
@@ -829,6 +846,8 @@ TEST_CASE("an offline step chooses offline play's reply where the shared game wo
          "The tower stands open to 2 characters.",
          "The tower stands open to the party.",
          {}},
+        {"unlock_tower", "Nobody is in to open it for.", "The tower stands open to the party.",
+         everyoneLeft},
         {"unlock_tower x",
          "unlock_tower takes no arguments.",
          "unlock_tower takes no arguments.",
