@@ -204,6 +204,7 @@ add_executable(tests
     game/online/OnlineCompletionTests.cpp
     game/online/OnlineLevelEntryTests.cpp
     game/online/PartyStoreTests.cpp
+    game/online/OnlineLinksTests.cpp
     game/netplay/OnlineSessionTests.cpp
     game/characters/CharacterProfileTests.cpp
     game/characters/PartyCheckpointTests.cpp

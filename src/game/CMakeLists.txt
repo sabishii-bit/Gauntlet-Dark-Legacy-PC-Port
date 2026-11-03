@@ -45,6 +45,7 @@ add_library(game STATIC
     online/NativePlaySetup.cpp
     online/NativeOnlinePlay.cpp
     online/PartyStore.h
+    online/OnlineLinks.h
     netplay/OnlineParty.cpp
     online/OnlineLevelEntry.cpp
     online/OnlineCompletion.cpp

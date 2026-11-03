@@ -12,15 +12,13 @@
 #include "game/characters/Party.h"
 #include "game/hud/LinkIndicator.h"
 #include "game/online/NetplayMenu.h"
+#include "game/online/OnlineLinks.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/scenes/SceneSelection.h"
 
 namespace gdl::game {
-class ClassUnlocks;
 struct GameContext;
-class Haptics;
 struct LevelRef;
-class PartyStore;
 struct PlayOptions;
 class PlayScene;
 class LevelWorld;
@@ -36,14 +34,8 @@ public:
     OnlineRun& operator=(const OnlineRun&) = delete;
     OnlineRun(OnlineRun&&) = delete;
     OnlineRun& operator=(OnlineRun&&) = delete;
-    /** The application's owners the online game answers through: the controllers' rumble, the
-     * classes a won challenge grants and the local characters' saves. Any may be missing; each
-     * must outlive the run. */
-    struct Links {
-        Haptics* haptics = nullptr;
-        ClassUnlocks* unlocks = nullptr;
-        PartyStore* store = nullptr;
-    };
+    /** The run holds its links and hands them to the online game it opens. */
+    using Links = OnlineLinks;
     bool open(RenderDevice& device, const GameContext& context, const Links& links,
               const std::string& endpoint, const std::string& code, const std::string& build,
               const std::string& content, std::span<const PartyMember> local,

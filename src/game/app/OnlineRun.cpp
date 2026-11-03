@@ -32,7 +32,7 @@ struct OnlineRun::Impl {
 #if GDL_ENABLE_NETPLAY
     RenderDevice* device = nullptr;
     GameContext context;
-    NativeOnlinePlay::Links links;
+    OnlineLinks links;
     GameConfig config;
     LevelRef initial;
     PlayOptions options;
@@ -191,7 +191,7 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, const 
     auto next = std::make_unique<Impl>();
     next->device = &device;
     next->context = context;
-    next->links = {.haptics = links.haptics, .unlocks = links.unlocks, .store = links.store};
+    next->links = links;
     next->config = context.config != nullptr ? *context.config : GameConfig{};
     next->context.config = &next->config;
     next->initial = LevelRef::tower();

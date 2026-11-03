@@ -748,8 +748,11 @@ TEST_CASE("online rumble reaches only this machine's unpaused devices",
     CHECK(rumbles(pair->hostHaptics) ==
           std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
     CHECK(rumbles(pair->guestHaptics) == std::vector<std::string>{damage(kGuestDevice)});
-    // A paused device feels nothing; the machine's other device still does.
+    // A paused device feels nothing; the machine's other device still does. Pausing stops the
+    // machine's motors.
+    const s32 stopsBeforePause = pair->hostHaptics.stops;
     REQUIRE(pair->host.pause(kHostDevice));
+    CHECK(pair->hostHaptics.stops == stopsBeforePause + 1);
     presentEverySeat();
     CHECK(rumbles(pair->hostHaptics) == std::vector<std::string>{damage(kSecondHostDevice)});
     CHECK(rumbles(pair->guestHaptics) == std::vector<std::string>{damage(kGuestDevice)});
@@ -757,6 +760,13 @@ TEST_CASE("online rumble reaches only this machine's unpaused devices",
     presentEverySeat();
     CHECK(rumbles(pair->hostHaptics) ==
           std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
+    // Closing stops them as the scene's sounds pause, as the game quiets and as the scene
+    // closes; a closed game no longer borrows this machine's controllers.
+    const s32 stopsBeforeClose = pair->hostHaptics.stops;
+    pair->host.close();
+    CHECK(pair->hostHaptics.stops == stopsBeforeClose + 3);
+    pair->host.close();
+    CHECK(pair->hostHaptics.stops == stopsBeforeClose + 3);
 }
 
 TEST_CASE(
