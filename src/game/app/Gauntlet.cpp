@@ -25,6 +25,7 @@
 #include "game/app/Scenario.h"
 #include "game/characters/AutoSave.h"
 #include "game/config/ControlProfiles.h"
+#include "game/console/NoclipMotion.h"
 #include "game/enemies/Enemies.h"
 #include "game/players/PlayerControls.h"
 #include "game/scenes/ConsoleTravel.h"
@@ -1538,6 +1539,12 @@ bool Gauntlet::startMovie(std::string_view name) {
 
 bool Gauntlet::startTitleScreen() {
     m_parent.reset();
+    // The title begins a new game: no console cheat, noclip flight or free camera lasts past it.
+    m_consoleCheats = {};
+    for (NoclipMotion& flight : m_noclip) {
+        flight.reset();
+    }
+    m_freeCamera.stop();
     m_exitSpeech.close();
     setMaxFrameRate(m_config.display.maxFrameRate);
     if (m_title.open(renderDevice(), context())) {
