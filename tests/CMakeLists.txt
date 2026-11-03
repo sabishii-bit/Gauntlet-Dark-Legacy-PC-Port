@@ -863,6 +863,7 @@ if(GDL_ENABLE_NETPLAY)
         game/enemies/LevelOpponentsDeathTests.cpp
         engine/world/AnimationPlayerTests.cpp
         game/scenes/PlaySceneLocalRewindTests.cpp
+        game/scenes/PlaySceneConsoleTests.cpp
         game/scenes/PlaySceneOutputTests.cpp
         game/rollback/SimulationObserverBossTests.cpp
         game/rollback/NativeRollbackSceneTests.cpp
@@ -965,6 +966,7 @@ if(GDL_ENABLE_NETPLAY)
 endif()
 target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp
     game/scenes/PlaySceneLocalRewindTests.cpp
+    game/scenes/PlaySceneConsoleTests.cpp
     game/scenes/PlaySceneOutputTests.cpp
     game/rollback/SimulationObserverBossTests.cpp
     game/rollback/NativeRollbackSceneTests.cpp

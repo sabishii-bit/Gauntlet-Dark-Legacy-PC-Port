@@ -749,7 +749,8 @@ TEST_CASE(
         CHECK(play->world()->placedItems().size() == placed + 1);
     }
     CHECK(pair->host.takeConsoleReplies().empty());
-    CHECK(pair->guest.takeConsoleReplies().size() == 3);
+    CHECK(pair->guest.takeConsoleReplies() ==
+          std::vector<std::string>{"Got 321 gold", "god on", "Dropped KEY"});
     CHECK(pair->guest.takeConsoleReplies().empty());
 
     // The console captures the owner's devices, not shared time or remote controls.
