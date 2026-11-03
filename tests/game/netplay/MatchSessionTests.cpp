@@ -17,6 +17,7 @@
 #include "game/camera/CameraMovementLimit.h"
 #include "game/netplay/RollbackExchange.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/ScriptedMotion.h"
 #include "game/rollback/RollbackSessionHarness.h"
 #include "game/rollback/SessionInputs.h"
 
@@ -1381,7 +1382,8 @@ TEST_CASE("match lifecycle drives real four player movement events and one share
     camera.reset(subjects, {}, range, view);
     std::array<u32, 4> potions{};
     std::array<u32, 4> toggles{};
-    PartyMotion::Events events;
+    test::MotionScript events;
+    test::ScriptedMotion motionLevel{events};
     events.perform = [&](usize player, PartyMotion::Action action) {
         REQUIRE(action == PartyMotion::Action::NoPotion);
         ++potions[player];
@@ -1417,7 +1419,7 @@ TEST_CASE("match lifecycle drives real four player movement events and one share
             CHECK((*guestInputs)[seat].selector.up == (*inputs)[seat].selector.up);
         }
         const auto moved = PartyMotion::step(players, *inputs, false, camera.yaw(), 1, 1.0f / 60,
-                                             collision, events);
+                                             collision, motionLevel);
         camera.update(moved, {}, range, view, 1.0f / 60);
         REQUIRE(room.inputs[1].complete());
         REQUIRE(room.inputs[2].complete());

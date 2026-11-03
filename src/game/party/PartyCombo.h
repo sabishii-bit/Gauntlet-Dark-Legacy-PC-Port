@@ -1,5 +1,4 @@
 #pragma once
-#include <functional>
 #include <optional>
 #include <span>
 
@@ -18,17 +17,23 @@ namespace gdl::game {
  * combo passes): who may take hold of whom, where a held body rides (its partner's DUMMY
  * node), how a warrior's pinball flies and a dwarf's charger is steered, and when the pair
  * are let go. `ComboMove` decides; this applies its orders to the actors and figures. It
- * keeps nothing and knows no scene: what a flier strikes is asked of the caller.
+ * keeps nothing and knows no scene: what a flier strikes is asked of the level.
  */
 class PartyCombo {
 public:
-    struct Events {
-        /** A flier or charger against the level's items: true when it struck one. */
-        std::function<bool(usize, usize, f32)> impact;
-        std::function<void(usize, s32, f32)> advanceTurbo;
+    /** What a combo's flier or charger asks of the level as it goes; answered at once. */
+    class Level {
+    public:
+        virtual ~Level() = default;
+        /** A flier or charger (its index, its thrower's, the blow it deals) against the
+         * level's items: true when it struck one, which turns it. */
+        virtual bool comboImpact(usize body, usize thrower, f32 blow) = 0;
+        /** Runs member `index`'s turbo move on through the step. */
+        virtual void advanceTurbo(usize index, s32 ticks, f32 seconds) = 0;
         /** The shared view's limit on a step (camera_debug_supervisor): where `after` may
-         * end, given `before`; a pinball takes the view's edge for a hit. */
-        std::function<Vec3(usize, const Vec3&, const Vec3&)> limitMovement;
+         * end, given `before`, rechecked against world and creature collision; a pinball
+         * takes the view's edge for a hit. */
+        virtual Vec3 limitMovement(usize index, const Vec3& before, const Vec3& after) const = 0;
     };
 
     /** Whom `index` may take hold of now: the nearest other standing member ahead who is
@@ -46,7 +51,7 @@ public:
     /** Animates a body the combo has aside: its figure with the combo's deed, its turbo rows,
      * and for a grabber the pair's orders. */
     static void animate(std::span<PlayerRuntime> players, usize index, s32 ticks, f32 seconds,
-                        const Events& events);
+                        Level& level);
     /** One tick of a grabber's move once its figure has animated: attachments, releases and
      * the end of the combo, applied to both bodies. */
     static void advance(std::span<PlayerRuntime> players, usize grabber, s32 ticks);
@@ -54,12 +59,12 @@ public:
      * eighths round by an item or another member (not its thrower for a while), reflected
      * off walls, once in ten ticks. */
     static void fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f32 seconds,
-                    const WorldCollision& collision, const Events& events);
+                    const WorldCollision& collision, Level& level);
     /** A dwarf's charger for the frame: the dwarf's stick at half again the pace, turning
      * half way a frame, turned round by an item it strikes. */
     static void ride(std::span<PlayerRuntime> players, usize charger, const MoveInput& stick,
                      f32 cameraYaw, s32 ticks, f32 seconds, const WorldCollision& collision,
-                     const Events& events);
+                     Level& level);
     /** Sets every rider on its carrier's DUMMY node, once every figure has animated. */
     static void carry(std::span<PlayerRuntime> players);
     /** Where a rider hangs: its carrier's DUMMY node, else the carrier itself. */

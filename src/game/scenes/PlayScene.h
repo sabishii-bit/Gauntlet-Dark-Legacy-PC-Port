@@ -793,7 +793,12 @@ private:
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
     void handleTriggerEvents();
-    PartyMotion::Events motionEvents();
+    /** The scene's answers to what the party's movement asks as it steps; one is made for
+     * each step. */
+    class MotionRouting;
+    /** Moves the party for the tick, each member's stick read against its yaw in `yaws`. */
+    std::vector<CameraSubject> stepParty(std::span<const PlayInput> inputs, bool held,
+                                         std::span<const f32> yaws, s32 ticks, f32 seconds);
     ScenePicking::Scene pickingScene();
     TowerCeremonies::Scene ceremonyScene();
     void perform(usize index, PartyMotion::Action action);

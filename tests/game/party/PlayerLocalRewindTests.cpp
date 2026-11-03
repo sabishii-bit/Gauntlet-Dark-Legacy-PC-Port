@@ -18,6 +18,7 @@
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/ScriptedMotion.h"
 #include "game/rollback/LocalStateHistory.h"
 #include "game/rollback/NativeProbeTiming.h"
 
@@ -302,13 +303,15 @@ struct PartyRewind {
             player.hitSoundGap = std::max(player.hitSoundGap - 1, 0);
             PlayerHealth::advanceSurfaceGap(player, kStep);
         }
-        const auto subjects = PartyMotion::step(
-            players, inputs, false, camera.yaw(), 1, kStep, collision,
-            {.perform = [this](usize seat,
-                               PartyMotion::Action action) { actions.emplace_back(seat, action); },
-             .select = [](usize, const SelectorInput&, s32) {},
-             .advanceTurbo = [this](usize seat, s32 ticks,
-                                    f32) { players[seat].turbo.step(ticks); }});
+        const test::MotionScript events{
+            .perform = [this](usize seat,
+                              PartyMotion::Action action) { actions.emplace_back(seat, action); },
+            .select = [](usize, const SelectorInput&, s32) {},
+            .advanceTurbo = [this](usize seat, s32 ticks,
+                                   f32) { players[seat].turbo.step(ticks); }};
+        test::ScriptedMotion motionLevel{events};
+        const auto subjects = PartyMotion::step(players, inputs, false, camera.yaw(), 1, kStep,
+                                                collision, motionLevel);
         camera.update(subjects, {}, CameraRange{}, CameraView{}, kStep);
         PlayerHealth::heartbeat(players, 1, false);
     }

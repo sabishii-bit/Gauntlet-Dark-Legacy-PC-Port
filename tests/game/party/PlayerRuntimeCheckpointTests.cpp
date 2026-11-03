@@ -16,6 +16,7 @@
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/ScriptedMotion.h"
 
 namespace {
 using namespace gdl;
@@ -67,11 +68,12 @@ struct Fixture {
         }
         std::array<PlayInput, 1> input{};
         input[0].move = {Vec2{tick % 40 < 20 ? 0.6f : -0.6f, 0.4f}, 0.72f};
-        const PartyMotion::Events events{
+        const test::MotionScript events{
             .perform = [this](usize, PartyMotion::Action action) { actions.push_back(action); },
             .select = [](usize, const SelectorInput&, s32) {},
             .advanceTurbo = [](usize, s32, f32) {}};
-        PartyMotion::step(party, input, false, 0, 1, kStep, collision, events);
+        test::ScriptedMotion motionLevel{events};
+        PartyMotion::step(party, input, false, 0, 1, kStep, collision, motionLevel);
         runtime.hitSoundGap = std::max(runtime.hitSoundGap - 1, 0);
         PlayerHealth::heartbeat(party, 1, false);
     }

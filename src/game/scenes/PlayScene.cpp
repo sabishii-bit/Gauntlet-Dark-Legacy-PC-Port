@@ -1665,8 +1665,7 @@ std::vector<CameraSubject> PlayScene::advancePartyMotion(s32 ticks, f32 seconds,
                           : bossCameraOn()    ? m_sim.bossCamera.yaw()
                                               : m_camera.yaw();
     const std::vector<f32> yaws = movementYaws(sharedYaw);
-    std::vector<CameraSubject> subjects = PartyMotion::step(
-        m_players, inputs, held, yaws, ticks, seconds, m_world->collision(), motionEvents());
+    std::vector<CameraSubject> subjects = stepParty(inputs, held, yaws, ticks, seconds);
     if (auto* imported = m_world->imported()) {
         for (usize i = 0; i < m_players.size(); ++i) {
             auto& player = m_players[i];

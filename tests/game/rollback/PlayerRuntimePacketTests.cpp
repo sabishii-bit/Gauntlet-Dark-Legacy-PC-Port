@@ -16,6 +16,7 @@
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/ScriptedMotion.h"
 #include "game/rollback/PlayerHealthCheckpoint.h"
 #include "game/rollback/PlayerRuntimePacket.h"
 
@@ -322,11 +323,12 @@ TEST_CASE("participant packet restores exact native damage motion and random cue
         }
         std::array<PlayInput, 1> inputs{};
         inputs[0].move = {Vec2{0.4f, 0.6f}, 0.72f};
-        PartyMotion::Events events;
+        test::MotionScript events;
         events.perform = [](usize, PartyMotion::Action) {};
         events.select = [](usize, const SelectorInput&, s32) {};
         events.advanceTurbo = [](usize, s32, f32) {};
-        PartyMotion::step(players, inputs, false, 0, 1, kStepSeconds, collision, events);
+        test::ScriptedMotion motionLevel{events};
+        PartyMotion::step(players, inputs, false, 0, 1, kStepSeconds, collision, motionLevel);
         players[0].hitSoundGap = std::max(players[0].hitSoundGap - 1, 0);
     };
     for (s32 time = 0; time < 19; ++time) {

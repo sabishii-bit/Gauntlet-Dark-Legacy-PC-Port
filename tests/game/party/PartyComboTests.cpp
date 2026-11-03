@@ -2,6 +2,7 @@
 #include <cmath>
 #include <numbers>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -14,6 +15,7 @@
 #include "game/party/FloorRiding.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PlayerHealth.h"
+#include "game/party/ScriptedMotion.h"
 
 namespace {
 
@@ -23,6 +25,11 @@ using Catch::Approx;
 
 constexpr s32 kTicks = 2;
 constexpr f32 kStep = 1.0f / 30.0f;
+
+static_assert(std::is_abstract_v<PartyCombo::Level>);
+static_assert(std::has_virtual_destructor_v<PartyCombo::Level>);
+static_assert(!std::is_constructible_v<test::ScriptedCombo, test::ComboScript&&>,
+              "a scripted level borrows its script, so it may not be made from a temporary");
 
 /** A flat floor with a wall across it at z = 20, facing back the way the party comes. */
 WorldCollision arena() {
@@ -47,7 +54,7 @@ struct Fixture {
     WorldCollision collision = arena();
     std::vector<std::string> calls;
     bool struck = false;
-    PartyCombo::Events events{
+    test::ComboScript events{
         .impact =
             [this](usize flier, usize thrower, f32 blow) {
                 calls.push_back("impact" + std::to_string(flier) + "by" + std::to_string(thrower) +
@@ -56,6 +63,7 @@ struct Fixture {
             },
         .advanceTurbo = [this](usize i, s32, f32) { calls.push_back("turbo" + std::to_string(i)); },
         .limitMovement = {}};
+    test::ScriptedCombo level{events};
     Fixture() {
         players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 0}, 0);
         players[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 3}, 0);
@@ -64,6 +72,15 @@ struct Fixture {
         }
     }
 };
+
+TEST_CASE("a combo level with nothing scripted strikes nothing and holds no step back",
+          "[game][combo][combo-level]") {
+    test::ScriptedCombo scripted;
+    PartyCombo::Level& level = scripted;
+    level.advanceTurbo(1, kTicks, kStep);
+    CHECK_FALSE(level.comboImpact(1, 0, ComboMove::kWarriorBlow));
+    CHECK(level.limitMovement(1, Vec3{0}, Vec3{0, 0, 2}) == Vec3{0, 0, 2});
+}
 
 TEST_CASE("invalid combo pairs release both participants and restore attached positions",
           "[game][screens][combo][multiplayer]") {
@@ -178,13 +195,13 @@ TEST_CASE("a held partner spends thrower grace during the windup",
     Fixture f;
     PartyCombo::begin(f.players, 0, 1);
     ComboMove::advance(f.players[0].combo, f.players[1].combo, {true, false, 0}, kTicks);
-    PartyCombo::animate(f.players, 1, 60, 1.0f, f.events);
+    PartyCombo::animate(f.players, 1, 60, 1.0f, f.level);
     REQUIRE(f.players[1].combo.graceSeconds == Approx(0.5f));
     PartyCombo::advance(f.players, 0, kTicks);
     REQUIRE(ComboMove::flies(f.players[1].combo));
     f.players[1].actor.place(Vec3{0, 0, 0});
     f.players[0].actor.place(Vec3{0, 0, 2});
-    PartyCombo::fly(f.players, 1, 30, 0.5f, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, 30, 0.5f, f.collision, f.level);
     CHECK(f.players[1].combo.graceSeconds == 0.0f);
 }
 
@@ -195,12 +212,12 @@ TEST_CASE("a pinball flies thirty a second along its facing and reflects off a w
     f.players[1].combo.role = ComboRole::Thrown;
     f.players[1].actor.place(Vec3{0, 0, 10});
     f.players[1].actor.turnTo(0.0f); // along +z, at the wall
-    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     REQUIRE(f.players[1].actor.position().z == Approx(10.0f + ComboMove::kFlightSpeed * kStep));
     REQUIRE(f.calls == std::vector<std::string>{"impact1by0for50"});
     // Ten frames on it meets the wall and comes back the way it went.
     for (s32 i = 0; i < 12; ++i) {
-        PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+        PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     }
     REQUIRE(f.players[1].actor.position().z < 20.0f);
     REQUIRE(std::abs(f.players[1].actor.yaw()) == Approx(std::numbers::pi_v<f32>).margin(0.01f));
@@ -209,9 +226,9 @@ TEST_CASE("a pinball flies thirty a second along its facing and reflects off a w
     f.players[1].actor.place(Vec3{5, 0, 0});
     f.players[1].combo.turnTicks = 0;
     f.struck = true;
-    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     REQUIRE(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn));
-    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     REQUIRE(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn)); // too soon to turn again
 }
 
@@ -224,14 +241,14 @@ TEST_CASE("a pinball passes through its thrower for a while and then bounces off
     f.players[0].actor.place(Vec3{0, 0, 2});
     f.players[1].actor.place(Vec3{0, 0, 0});
     f.players[1].actor.turnTo(0.0f);
-    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     REQUIRE(f.players[1].actor.yaw() == Approx(0.0f)); // through the thrower, unturned
     CHECK(f.players[1].actor.position().z == Approx(ComboMove::kFlightSpeed * kStep));
     f.players[0].knockback.endFrame();
     CHECK_FALSE(f.players[0].knockback.pushed());
     f.players[1].combo.graceSeconds = 0.0f;
     f.players[1].actor.place(Vec3{0, 0, 0});
-    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     REQUIRE(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn));
     f.players[0].knockback.endFrame();
     CHECK(f.players[0].knockback.pushed());
@@ -246,7 +263,7 @@ TEST_CASE("a pinball stops at the floor's edge instead of flying off it",
     f.players[1].actor.place(Vec3{95, 0, 0});
     f.players[1].actor.turnTo(std::numbers::pi_v<f32> / 2); // along +x, at the floor's edge
     for (s32 frame = 0; frame < 30; ++frame) {
-        PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+        PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     }
     // PlayerCollideFloor refuses a step with no floor under its end: it stays its width
     // inside the edge, on the floor, facing the way it went (no hit, no turn).
@@ -268,7 +285,7 @@ TEST_CASE("the shared view's edge holds a pinball and turns it, and holds a char
     f.players[0].actor.place(Vec3{0, 0, -50});
     f.players[1].actor.place(Vec3{0, 0, 4.5f});
     f.players[1].actor.turnTo(0.0f);
-    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.events);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
     CHECK(f.players[1].actor.position().z == Approx(4.5f));
     CHECK(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn)); // the edge is a hit
     f.players[0].combo.grabberClass = ComboMove::kDwarf;
@@ -276,7 +293,7 @@ TEST_CASE("the shared view's edge holds a pinball and turns it, and holds a char
     f.players[1].actor.place(Vec3{0, 0, 10});
     f.players[1].actor.turnTo(0.0f);
     PartyCombo::ride(f.players, 1, MoveInput{Vec2{0, 1}, 1}, 0.0f, kTicks, kStep, f.collision,
-                     f.events);
+                     f.level);
     CHECK(f.players[1].actor.position().z == Approx(10.0f));
     CHECK(f.players[1].actor.yaw() == Approx(0.0f)); // held, not turned
 }
@@ -292,12 +309,12 @@ TEST_CASE("a charger goes where the dwarf's stick sends it at half again the pac
     f.players[1].actor.turnTo(0.0f);
     const f32 pace = f.players[1].actor.speed();
     PartyCombo::ride(f.players, 1, MoveInput{Vec2{0, 1}, 1}, 0.0f, kTicks, kStep, f.collision,
-                     f.events);
+                     f.level);
     REQUIRE(f.players[1].actor.position().z == Approx(10.0f + pace * ComboMove::kRidePace * kStep));
     REQUIRE(f.calls == std::vector<std::string>{"impact1by0for10"});
     // The stick across turns it only half way in a frame.
     PartyCombo::ride(f.players, 1, MoveInput{Vec2{1, 0}, 1}, 0.0f, kTicks, kStep, f.collision,
-                     f.events);
+                     f.level);
     REQUIRE(f.players[1].actor.yaw() > 0.0f);
     REQUIRE(f.players[1].actor.yaw() < std::numbers::pi_v<f32> / 2.0f);
 }
@@ -344,7 +361,7 @@ TEST_CASE("with the real warrior a partner ahead is taken hold of and rides its 
     REQUIRE(f.players[1].combo.saved == Vec3{0, 0, 3});
     // The restriction is on taking hold, not on continuing the carried move.
     f.players[1].floor = {};
-    PartyCombo::animate(f.players, 1, kTicks, kStep, f.events);
+    PartyCombo::animate(f.players, 1, kTicks, kStep, f.level);
     REQUIRE(f.players[1].figure->animator().action() == PlayerAnimator::Action::ComboWar1);
     CHECK(f.players[1].combo.graceSeconds == Approx(ComboMove::kThrowerGrace - kStep));
     PartyCombo::advance(f.players, 0, kTicks);

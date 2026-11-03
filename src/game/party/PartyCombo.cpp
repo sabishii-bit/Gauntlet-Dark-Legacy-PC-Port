@@ -116,7 +116,7 @@ PlayerDeed PartyCombo::deedOf(const PlayerRuntime& runtime) {
 }
 
 void PartyCombo::animate(std::span<PlayerRuntime> players, usize index, s32 ticks, f32 seconds,
-                         const Events& events) {
+                         Level& level) {
     if (index >= players.size()) {
         return;
     }
@@ -132,9 +132,7 @@ void PartyCombo::animate(std::span<PlayerRuntime> players, usize index, s32 tick
                 runtime.actor.transform(), runtime.actor.save(),
                 PowerupEffects::of(runtime.actor.save().progress().inventory)),
             ticks);
-        if (events.advanceTurbo) {
-            events.advanceTurbo(index, ticks, seconds);
-        }
+        level.advanceTurbo(index, ticks, seconds);
     }
     if (runtime.combo.role == ComboRole::Grabber) {
         advance(players, index, ticks);
@@ -197,7 +195,7 @@ void PartyCombo::advance(std::span<PlayerRuntime> players, usize grabber, s32 ti
 }
 
 void PartyCombo::fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f32 seconds,
-                     const WorldCollision& collision, const Events& events) {
+                     const WorldCollision& collision, Level& level) {
     if (flier >= players.size()) {
         return;
     }
@@ -234,7 +232,7 @@ void PartyCombo::fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f
     // What it strikes turns it: an item or another member three eighths round, a wall by
     // reflection; not its thrower until the grace is over (pmotion.c 1157).
     std::optional<f32> turned;
-    if (events.impact && events.impact(flier, thrower, ComboMove::kWarriorBlow)) {
+    if (level.comboImpact(flier, thrower, ComboMove::kWarriorBlow)) {
         turned = ComboMove::bounceYaw(actor.yaw());
     }
     if (other.has_value() && (*other != thrower || state.graceSeconds <= 0.0f)) {
@@ -244,13 +242,11 @@ void PartyCombo::fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f
         turned = ComboMove::reflectedYaw(actor.yaw(), pushed);
     }
     // The shared view's edge holds it like everyone, and counts as a hit (pmotion.c 1249).
-    if (events.limitMovement) {
-        const Vec3 limited = events.limitMovement(flier, before, actor.position());
-        if (glm::distance(limited, actor.position()) > 1.0e-5f) {
-            actor.place(before);
-            actor.slide(limited - before, collision.loaded() ? &collision : nullptr);
-            turned = ComboMove::bounceYaw(actor.yaw());
-        }
+    if (const Vec3 limited = level.limitMovement(flier, before, actor.position());
+        glm::distance(limited, actor.position()) > 1.0e-5f) {
+        actor.place(before);
+        actor.slide(limited - before, collision.loaded() ? &collision : nullptr);
+        turned = ComboMove::bounceYaw(actor.yaw());
     }
     if (turned.has_value() && ComboMove::takeTurn(state)) {
         actor.turnTo(*turned);
@@ -262,7 +258,7 @@ void PartyCombo::fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f
 
 void PartyCombo::ride(std::span<PlayerRuntime> players, usize charger, const MoveInput& stick,
                       f32 cameraYaw, s32 ticks, f32 seconds, const WorldCollision& collision,
-                      const Events& events) {
+                      Level& level) {
     if (charger >= players.size()) {
         return;
     }
@@ -283,16 +279,13 @@ void PartyCombo::ride(std::span<PlayerRuntime> players, usize charger, const Mov
                  ComboMove::kRidePace);
     PartyCollision::step(players, charger, before, seconds);
     // The shared view's edge holds it like everyone.
-    if (events.limitMovement) {
-        const Vec3 limited = events.limitMovement(charger, before, actor.position());
-        if (glm::distance(limited, actor.position()) > 1.0e-5f) {
-            actor.place(before);
-            actor.slide(limited - before, collision.loaded() ? &collision : nullptr);
-        }
+    if (const Vec3 limited = level.limitMovement(charger, before, actor.position());
+        glm::distance(limited, actor.position()) > 1.0e-5f) {
+        actor.place(before);
+        actor.slide(limited - before, collision.loaded() ? &collision : nullptr);
     }
     const auto dwarf = static_cast<usize>(std::max(state.partner, 0));
-    if (events.impact && events.impact(charger, dwarf, ComboMove::kDwarfBlow) &&
-        ComboMove::takeTurn(state)) {
+    if (level.comboImpact(charger, dwarf, ComboMove::kDwarfBlow) && ComboMove::takeTurn(state)) {
         actor.turnTo(ComboMove::bounceYaw(actor.yaw()));
     }
     if (collision.loaded()) {

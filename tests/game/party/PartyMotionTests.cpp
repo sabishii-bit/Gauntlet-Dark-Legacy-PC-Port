@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -21,6 +22,7 @@
 #include "game/enemies/LevelOpponents.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/ScriptedMotion.h"
 #include "game/players/ComboMove.h"
 #include "game/players/CursorAim.h"
 #include "game/rollback/SessionInputs.h"
@@ -36,7 +38,7 @@ struct Fixture {
     WorldCollision collision;
     std::vector<std::string> calls;
     std::vector<usize> fallen; ///< who the step reported gone
-    PartyMotion::Events events{
+    test::MotionScript events{
         .perform =
             [this](usize i, PartyMotion::Action action) {
                 if (action == PartyMotion::Action::Fallen) {
@@ -63,6 +65,7 @@ struct Fixture {
         .resolveMovement = {},
         .startPoint = {},
         .comboImpact = {}};
+    test::ScriptedMotion level{events};
 
     Fixture() {
         CollisionTriangle first;
@@ -78,7 +81,7 @@ struct Fixture {
         players[1].actor.spawn(1, {}, nullptr, Vec3{10, 0, 0}, 0);
     }
     std::vector<CameraSubject> step(bool held = false) {
-        return PartyMotion::step(players, inputs, held, 0, 2, 1.0f / 30.0f, collision, events);
+        return PartyMotion::step(players, inputs, held, 0, 2, 1.0f / 30.0f, collision, level);
     }
 };
 
@@ -89,9 +92,9 @@ constexpr std::array<std::string_view, 16> kActionNames{
     "Melee",      "Fallen",       "Tagged",      "ComboStart"};
 static_assert(kActionNames.size() == static_cast<usize>(PartyMotion::Action::ComboStart) + 1);
 
-/** Events that note every question and cue of a step in `log`, by name and party index, in
+/** A script that notes every question and cue of a step in `log`, by name and party index, in
  * the order the step makes them, each answering as a level with nothing in it would. */
-PartyMotion::Events orderLog(std::vector<std::string>& log) {
+test::MotionScript orderLog(std::vector<std::string>& log) {
     const auto note = [&log](std::string_view what, usize i) {
         log.push_back(std::format("{}{}", what, i));
     };
@@ -480,7 +483,7 @@ TEST_CASE("full turbo turns at a fixed native angular speed without wrapping or 
                 const f32 delta = std::remainder(turn.to - turn.from, glm::two_pi<f32>());
                 for (s32 tick = 1; tick <= rate / 30; ++tick) {
                     PartyMotion::step(f.players, f.inputs, false, 0, 1,
-                                      1.0f / static_cast<f32>(rate), f.collision, f.events);
+                                      1.0f / static_cast<f32>(rate), f.collision, f.level);
                     const f32 limit = glm::radians(900.0f) * 0.25f * static_cast<f32>(tick) /
                                       static_cast<f32>(rate);
                     const f32 expected = turn.from + std::clamp(delta, -limit, limit);
@@ -1429,11 +1432,11 @@ TEST_CASE("it passes to a player touched once it has been held a second, and not
     f.players[0].itTicks = 1;
     f.players[1].actor.place(Vec3{0.5f, 0.0f, 0.0f});
     std::array<std::optional<usize>, 2> contacts{1, std::nullopt};
-    PartyMotion::passIt(f.players, 2, f.events, contacts);
+    PartyMotion::passIt(f.players, 2, f.level, contacts);
     CHECK(tagged.empty()); // held too short a while to pass on
     CHECK(f.players[0].itTicks == 3);
     f.players[0].itTicks = PartyMotion::kItHold + 1;
-    PartyMotion::passIt(f.players, 2, f.events, contacts);
+    PartyMotion::passIt(f.players, 2, f.level, contacts);
     CHECK(tagged == std::vector<usize>{1});
     CHECK(f.players[0].itTicks == 0);
     CHECK(f.players[1].itTicks == 3);
@@ -1441,12 +1444,12 @@ TEST_CASE("it passes to a player touched once it has been held a second, and not
     f.players[1].actor.place(Vec3{10.0f, 0.0f, 0.0f});
     f.players[1].itTicks = 100;
     contacts = {};
-    PartyMotion::passIt(f.players, 2, f.events, contacts);
+    PartyMotion::passIt(f.players, 2, f.level, contacts);
     CHECK(tagged.size() == 1);
     CHECK(f.players[1].itTicks == 102);
     // The fallen are it no more.
     f.players[1].life = PlayerLife::InTower;
-    PartyMotion::passIt(f.players, 2, f.events, contacts);
+    PartyMotion::passIt(f.players, 2, f.level, contacts);
     CHECK(f.players[1].itTicks == 0);
 }
 
@@ -1756,6 +1759,65 @@ TEST_CASE("a figure's step asks its melee sense, then its turbo, then its releas
                           "limitMovement0", "grabDeath0", "aim0", "meleeSense0", "advanceTurbo0",
                           "perform0:ThrowWeapon", "deathContact1", "select1", "flying1",
                           "resolveMovement1", "limitMovement1", "grabDeath1"});
+}
+
+static_assert(std::is_abstract_v<PartyMotion::Level>);
+static_assert(std::is_base_of_v<PartyCombo::Level, PartyMotion::Level>);
+static_assert(!std::is_constructible_v<test::ScriptedMotion, test::MotionScript&&>,
+              "a scripted level borrows its script, so it may not be made from a temporary");
+
+TEST_CASE("a movement level with nothing scripted answers as a level with nothing in it",
+          "[game][party-motion][motion-level]") {
+    test::ScriptedMotion scripted;
+    PartyMotion::Level& level = scripted;
+    const Vec3 facing{0, 0, 1};
+    const Vec3 from{1, 0, 1};
+    const Vec3 to{2, 0, 3};
+    level.perform(0, PartyMotion::Action::Melee);
+    level.stepSelector(0, SelectorInput{}, 2);
+    level.thrownImpact(0, 5);
+    level.advanceTurbo(0, 2, 1.0f / 30);
+    CHECK_FALSE(level.aim(0));
+    CHECK(level.attackDeed(0, true, false, facing) == PlayerDeed::StrongAttack);
+    CHECK(level.attackDeed(0, false, true, facing) == PlayerDeed::Attack);
+    CHECK(level.automaticMeleeDeed(0, facing) == PlayerDeed::None);
+    CHECK_FALSE(level.meleeSense(0, true, facing));
+    CHECK_FALSE(level.deathContact(0));
+    CHECK_FALSE(level.grabDeath(0, 2, true));
+    CHECK_FALSE(level.chainsHeldMelee());
+    CHECK(level.resolveMovement(0, from, to) == to);
+    CHECK(level.limitMovement(0, from, to) == to);
+    CHECK_FALSE(level.startPoint());
+    CHECK_FALSE(level.flying(0));
+    CHECK_FALSE(level.comboImpact(0, 1, ComboMove::kWarriorBlow));
+}
+
+TEST_CASE("a scripted movement level asks its script as the script stands at each question",
+          "[game][party-motion][motion-level]") {
+    test::MotionScript script;
+    test::ScriptedMotion scripted{script};
+    PartyMotion::Level& level = scripted;
+    const Vec3 facing{1, 0, 0};
+    CHECK(level.attackDeed(1, false, true, facing) == PlayerDeed::Attack); // nothing scripted yet
+    script.attackDeed = [&](usize index, bool strong, bool moved, const Vec3& toward) {
+        CHECK(index == 1);
+        CHECK_FALSE(strong);
+        CHECK(moved);
+        CHECK(toward == facing);
+        return PlayerDeed::MeleeSlow;
+    };
+    script.meleeSense = [](usize, bool held, const Vec3&) {
+        return MeleeSense{.range = MeleeRange::Step, .low = held};
+    };
+    script.limitMovement = [](usize, const Vec3& before, const Vec3&) { return before; };
+    script.flying = [](usize index) { return index == 1; };
+    script.chainHeldMelee = true;
+    CHECK(level.attackDeed(1, false, true, facing) == PlayerDeed::MeleeSlow);
+    CHECK(level.meleeSense(1, true, facing) == MeleeSense{.range = MeleeRange::Step, .low = true});
+    CHECK(level.limitMovement(1, Vec3{0}, Vec3{0, 0, 2}) == Vec3{0});
+    CHECK(level.flying(1));
+    CHECK_FALSE(level.flying(0));
+    CHECK(level.chainsHeldMelee());
 }
 } // namespace
 

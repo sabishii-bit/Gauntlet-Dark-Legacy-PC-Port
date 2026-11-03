@@ -14,6 +14,7 @@
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/ScriptedMotion.h"
 
 namespace {
 using namespace gdl;
@@ -189,7 +190,7 @@ struct Fixture {
                 current.move = {Vec2{tick % 40 < 20 ? 0.6f : -0.6f, 0.4f}, 0.72f};
             }
         }
-        const PartyMotion::Events callbacks{
+        const test::MotionScript callbacks{
             .perform = [this](usize, PartyMotion::Action action) { actions.push_back(action); },
             .select = [](usize, const SelectorInput&, s32) {},
             .advanceTurbo =
@@ -197,7 +198,8 @@ struct Fixture {
                     attacks.updateTurbo(index, ticks, seconds, players,
                                         [this](s32, usize) { ++lessons; });
                 }};
-        PartyMotion::step(players, input, false, 0, 1, kStep, floor, callbacks);
+        test::ScriptedMotion motionLevel{callbacks};
+        PartyMotion::step(players, input, false, 0, 1, kStep, floor, motionLevel);
     }
 };
 

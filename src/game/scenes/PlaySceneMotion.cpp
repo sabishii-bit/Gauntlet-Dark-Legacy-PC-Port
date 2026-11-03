@@ -1,9 +1,18 @@
 #include <algorithm>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <vector>
+
+#include "engine/core/Types.h"
+#include "engine/math/Math.h"
 
 #include "game/camera/CameraMovementLimit.h"
+#include "game/combat/HurtKind.h"
 #include "game/hud/HelpMessages.h"
+#include "game/hud/PowerupSelector.h"
+#include "game/party/PartyMotion.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 
@@ -17,80 +26,100 @@ constexpr f32 kTaggedVolume = 180.0f / 255.0f; ///< fn_8009DCB4
 
 } // namespace
 
-/** What the party's movement asks of the scene as it steps. */
-PartyMotion::Events PlayScene::motionEvents() {
-    return {
-        .perform = [this](usize i, PartyMotion::Action action) { perform(i, action); },
-        .select =
-            [this](usize i, const SelectorInput& input, s32 elapsed) {
-                const auto audioScope =
-                    m_audio.soundScope({32, 0, 1, static_cast<u8>(m_players[i].actor.player())}, 1);
-                m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio,
-                                   m_world->ref().isSecret());
-            },
-        .advanceTurbo =
-            [this](usize i, s32 elapsed, f32 duration) {
-                const auto audioScope =
-                    m_audio.soundScope({32, 0, 1, static_cast<u8>(m_players[i].actor.player())}, 2);
-                m_attacks.updateTurbo(i, elapsed, duration, m_players, [this](s32 id, usize index) {
-                    // The meter full, the lesson waits for fifteen in
-                    // view (pmotion.c 1756); the combo's for a party
-                    // of more than one besides (pmotion.c 1760).
-                    const bool crowd = m_opponents.enemies().inView() >= kTurboCrowd;
-                    if (id == HelpMessages::kUseCombo) {
-                        if (crowd && standingCount() > 1) {
-                            postHelp(id, index);
-                        }
-                    } else if (id != HelpMessages::kUseTurbo || crowd) {
-                        postHelp(id, index);
+/** The scene's answers to what the party's movement asks as it steps: its cues, each seat's
+ * selector and turbo move under that seat's sound scope, the attacks' queries, the opponents'
+ * bodies, the shared view's hold, the level's start and the console's noclip. */
+class PlayScene::MotionRouting final : public PartyMotion::Level {
+public:
+    explicit MotionRouting(PlayScene& scene) : m_scene(scene) {}
+    void perform(usize i, PartyMotion::Action action) override { m_scene.perform(i, action); }
+    void stepSelector(usize i, const SelectorInput& input, s32 elapsed) override {
+        const auto audioScope = m_scene.m_audio.soundScope(
+            {32, 0, 1, static_cast<u8>(m_scene.m_players[i].actor.player())}, 1);
+        m_scene.m_hud.stepSelector(m_scene.m_players[i].actor, input, elapsed, m_scene.m_audio,
+                                   m_scene.m_world->ref().isSecret());
+    }
+    void advanceTurbo(usize i, s32 elapsed, f32 duration) override {
+        const auto audioScope = m_scene.m_audio.soundScope(
+            {32, 0, 1, static_cast<u8>(m_scene.m_players[i].actor.player())}, 2);
+        m_scene.m_attacks.updateTurbo(
+            i, elapsed, duration, m_scene.m_players, [this](s32 id, usize index) {
+                // The meter full, the lesson waits for fifteen in
+                // view (pmotion.c 1756); the combo's for a party
+                // of more than one besides (pmotion.c 1760).
+                const bool crowd = m_scene.m_opponents.enemies().inView() >= kTurboCrowd;
+                if (id == HelpMessages::kUseCombo) {
+                    if (crowd && m_scene.standingCount() > 1) {
+                        m_scene.postHelp(id, index);
                     }
-                });
-            },
-        .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); },
-        .aim = [this](usize i) { return assistedAim(i, m_players[i].actor.facing()); },
-        .limitMovement = [this](usize index, const Vec3& before,
-                                const Vec3& after) { return limitStep(index, before, after); },
-        .attackDeed =
-            [this](usize i, bool strong, bool moved, const Vec3& facing) {
-                const s32 chain = m_players[i].figure != nullptr
-                                      ? m_players[i].figure->animator().meleeChain()
-                                      : 0;
-                return m_attacks.attackDeed(m_players[i].actor, strong, attackTargets(), moved,
-                                            chain, facing);
-            },
-        .automaticMeleeDeed =
-            [this](usize i, const Vec3& facing) {
-                if (m_context.config == nullptr || !m_context.config->combat.autoMelee) {
-                    return PlayerDeed::None;
+                } else if (id != HelpMessages::kUseTurbo || crowd) {
+                    m_scene.postHelp(id, index);
                 }
-                return m_attacks.automaticMeleeDeed(m_players[i].actor, attackTargets(), facing);
-            },
-        .meleeSense =
-            [this](usize i, bool held, const Vec3& facing) {
-                return m_attacks.meleeSense(m_players[i].actor, held, attackTargets(), facing);
-            },
-        .deathContact =
-            [this](usize i) { return m_attacks.deathContact(i, m_players, attackTargets()); },
-        .grabDeath =
-            [this](usize i, s32 ticks, bool allowed) {
-                return m_attacks.grabDeath(i, ticks, allowed, m_players, attackTargets());
-            },
-        .resolveMovement =
-            [this](usize i, const Vec3& from, const Vec3& to) {
-                return m_opponents.resolveMovement(m_players[i].actor, from, to);
-            },
-        .startPoint = [this]() -> std::optional<Vec3> {
-            if (const WorldLocator* start = m_world->startPoint(0)) {
-                return start->position;
-            }
-            return std::nullopt;
-        },
-        .comboImpact =
-            [this](usize flier, usize thrower, f32 blow) {
-                return m_attacks.comboImpact(flier, thrower, blow, m_players, attackTargets());
-            },
-        .flying = [this](usize i) { return cheats(m_players[i].actor.player()).noclip; },
-        .chainHeldMelee = m_context.config != nullptr&& m_context.config->combat.autoMelee};
+            });
+    }
+    void thrownImpact(usize i, f32 damage) override {
+        m_scene.hurt(i, damage, HurtKind::Blow, true);
+    }
+    std::optional<Vec3> aim(usize i) const override {
+        return m_scene.assistedAim(i, m_scene.m_players[i].actor.facing());
+    }
+    Vec3 limitMovement(usize index, const Vec3& before, const Vec3& after) const override {
+        return m_scene.limitStep(index, before, after);
+    }
+    PlayerDeed attackDeed(usize i, bool strong, bool moved, const Vec3& facing) const override {
+        const s32 chain = m_scene.m_players[i].figure != nullptr
+                              ? m_scene.m_players[i].figure->animator().meleeChain()
+                              : 0;
+        return m_scene.m_attacks.attackDeed(m_scene.m_players[i].actor, strong,
+                                            m_scene.attackTargets(), moved, chain, facing);
+    }
+    PlayerDeed automaticMeleeDeed(usize i, const Vec3& facing) const override {
+        if (m_scene.m_context.config == nullptr || !m_scene.m_context.config->combat.autoMelee) {
+            return PlayerDeed::None;
+        }
+        return m_scene.m_attacks.automaticMeleeDeed(m_scene.m_players[i].actor,
+                                                    m_scene.attackTargets(), facing);
+    }
+    std::optional<MeleeSense> meleeSense(usize i, bool held, const Vec3& facing) const override {
+        return m_scene.m_attacks.meleeSense(m_scene.m_players[i].actor, held,
+                                            m_scene.attackTargets(), facing);
+    }
+    std::optional<Vec3> deathContact(usize i) const override {
+        return m_scene.m_attacks.deathContact(i, m_scene.m_players, m_scene.attackTargets());
+    }
+    std::optional<Vec3> grabDeath(usize i, s32 ticks, bool allowed) override {
+        return m_scene.m_attacks.grabDeath(i, ticks, allowed, m_scene.m_players,
+                                           m_scene.attackTargets());
+    }
+    bool chainsHeldMelee() const override {
+        return m_scene.m_context.config != nullptr && m_scene.m_context.config->combat.autoMelee;
+    }
+    Vec3 resolveMovement(usize i, const Vec3& from, const Vec3& to) const override {
+        return m_scene.m_opponents.resolveMovement(m_scene.m_players[i].actor, from, to);
+    }
+    std::optional<Vec3> startPoint() const override {
+        if (const WorldLocator* start = m_scene.m_world->startPoint(0)) {
+            return start->position;
+        }
+        return std::nullopt;
+    }
+    bool comboImpact(usize flier, usize thrower, f32 blow) override {
+        return m_scene.m_attacks.comboImpact(flier, thrower, blow, m_scene.m_players,
+                                             m_scene.attackTargets());
+    }
+    bool flying(usize i) const override {
+        return m_scene.cheats(m_scene.m_players[i].actor.player()).noclip;
+    }
+
+private:
+    PlayScene& m_scene;
+};
+
+std::vector<CameraSubject> PlayScene::stepParty(std::span<const PlayInput> inputs, bool held,
+                                                std::span<const f32> yaws, s32 ticks, f32 seconds) {
+    MotionRouting routing{*this};
+    return PartyMotion::step(m_players, inputs, held, yaws, ticks, seconds, m_world->collision(),
+                             routing);
 }
 
 /** How many of the party stand in the level. */

@@ -20,6 +20,7 @@
 #include "game/level/LevelWorld.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
+#include "game/party/ScriptedMotion.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerImpact.h"
 
@@ -240,7 +241,8 @@ TEST_CASE("native trolleys and minecarts knock players down without dragging the
         REQUIRE(runtime.figure);
         LevelOpponents opponents;
         opponents.open({device, world, weapons, effects, audio, root, 1, true}, players);
-        PartyMotion::Events events;
+        test::MotionScript events;
+        test::ScriptedMotion motionLevel{events};
         events.perform = [](usize, PartyMotion::Action) {};
         events.select = [](usize, const SelectorInput&, s32) {};
         events.advanceTurbo = [](usize, s32, f32) {};
@@ -270,7 +272,8 @@ TEST_CASE("native trolleys and minecarts knock players down without dragging the
                 CAPTURE(frame, rechecked.x, rechecked.y, rechecked.z);
                 CHECK(rechecked == crossing.position);
             }
-            PartyMotion::step(players, inputs, false, 0, 2, 1.0f / 30, world.collision(), events);
+            PartyMotion::step(players, inputs, false, 0, 2, 1.0f / 30, world.collision(),
+                              motionLevel);
             mostTravel = std::max(mostTravel, glm::distance(actor.position(), crossing.position));
             runtime.surfaceGap = std::max(runtime.surfaceGap - 1.0f / 30, 0.0f);
             if (runtime.figure->animator().reacting()) {

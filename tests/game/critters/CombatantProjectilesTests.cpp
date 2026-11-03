@@ -23,6 +23,7 @@
 #include "game/level/SafeRocks.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerHealth.h"
+#include "game/party/ScriptedMotion.h"
 
 namespace {
 using namespace gdl;
@@ -1403,7 +1404,8 @@ void checkWebEscape(s32 fps, bool animated) {
                                             .named = [](std::string_view, f32) {},
                                             .learnBlock = {},
                                             .vibrate = {}};
-    PartyMotion::Events motion;
+    test::MotionScript motion;
+    test::ScriptedMotion motionLevel{motion};
     motion.perform = [](usize, PartyMotion::Action) {};
     motion.select = [](usize, const SelectorInput&, s32) {};
     motion.advanceTurbo = [](usize, s32, f32) {};
@@ -1425,7 +1427,7 @@ void checkWebEscape(s32 fps, bool animated) {
                         {hit.flags, hit.direction});
         }
         const s32 ticks = (frame + 1) * 60 / fps - frame * 60 / fps;
-        PartyMotion::step(players, inputs, false, 0, ticks, dt, world, motion);
+        PartyMotion::step(players, inputs, false, 0, ticks, dt, world, motionLevel);
         if (frame == fps * 3) {
             healthAfterEscape = player.actor.save().health();
             REQUIRE(player.actor.position().z > 3);

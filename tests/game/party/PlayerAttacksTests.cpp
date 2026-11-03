@@ -39,6 +39,7 @@
 #include "game/party/PlayerHealth.h"
 #include "game/party/PotionEmission.h"
 #include "game/party/ScriptedAttacks.h"
+#include "game/party/ScriptedMotion.h"
 #include "game/players/ComboMove.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/PowerupEffects.h"
@@ -3882,7 +3883,8 @@ TEST_CASE("a halo wearer can catch and drain a retreating Death during resolved 
     }
     std::array<PlayInput, 4> inputs;
     inputs[3].move = {{0, 1}, 1};
-    PartyMotion::Events events{};
+    test::MotionScript events{};
+    test::ScriptedMotion motionLevel{events};
     events.perform = [](usize, PartyMotion::Action) {};
     events.select = [](usize, const SelectorInput&, s32) {};
     events.advanceTurbo = [](usize, s32, f32) {};
@@ -3900,7 +3902,7 @@ TEST_CASE("a halo wearer can catch and drain a retreating Death during resolved 
     std::optional<Vec3> caughtAt;
     for (s32 elapsed = 0; elapsed < 120; elapsed += ticks) {
         const f32 before = enemies.healthOf(*death);
-        PartyMotion::step(f.players, inputs, false, 0, ticks, seconds, floor, events);
+        PartyMotion::step(f.players, inputs, false, 0, ticks, seconds, floor, motionLevel);
         if (f.players[0].deathHeld == *death && !caughtAt) {
             caughtAt = enemies.positionOf(*death);
         }
@@ -3928,7 +3930,7 @@ TEST_CASE("a halo wearer can catch and drain a retreating Death during resolved 
         powerup.on = false;
     }
     for (s32 elapsed = 0; elapsed < 30; elapsed += ticks) {
-        PartyMotion::step(f.players, inputs, false, 0, ticks, seconds, floor, events);
+        PartyMotion::step(f.players, inputs, false, 0, ticks, seconds, floor, motionLevel);
         CHECK(f.players[0].deathHeld == -1);
         enemies.update(ticks, seconds, LevelOpponents::enemyViews(f.players));
     }
@@ -4463,7 +4465,8 @@ TEST_CASE("Pojo keeps attacking while approaching a golem with held mouse attack
     inputs[3].aimDirection = Vec3{0, 0, 1};
     s32 melee = 0;
     s32 throws = 0;
-    PartyMotion::Events events;
+    test::MotionScript events;
+    test::ScriptedMotion motionLevel{events};
     events.perform = [&](usize, PartyMotion::Action action) {
         melee += action == PartyMotion::Action::Melee ? 1 : 0;
         throws += action == PartyMotion::Action::ThrowWeapon ? 1 : 0;
@@ -4483,7 +4486,7 @@ TEST_CASE("Pojo keeps attacking while approaching a golem with held mouse attack
     events.chainHeldMelee = true;
     s32 initial = 0;
     for (s32 tick = 0; tick < 360; ++tick) {
-        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, floor, events);
+        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, floor, motionLevel);
         if (tick == 180) {
             initial = melee + throws;
         }
@@ -4496,7 +4499,7 @@ TEST_CASE("Pojo keeps attacking while approaching a golem with held mouse attack
     inputs[3].move = {{0, -1}, 1};
     const f32 before = player.actor.position().z;
     for (s32 tick = 0; tick < 90; ++tick) {
-        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, floor, events);
+        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, floor, motionLevel);
     }
     CHECK(player.actor.position().z < before - 5);
     f.opponents.close();
@@ -4566,7 +4569,8 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
     opponents.help = [](s32, usize) { return true; };
     s32 melee = 0;
     s32 throws = 0;
-    PartyMotion::Events motion;
+    test::MotionScript motion;
+    test::ScriptedMotion motionLevel{motion};
     motion.perform = [&](usize index, PartyMotion::Action action) {
         if (action == PartyMotion::Action::Melee) {
             ++melee;
@@ -4604,7 +4608,8 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
         inputs[0].attack = attacking;
         inputs[0].aimDirection = facing;
         inputs[0].move = {{0, movement}, std::abs(movement)};
-        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, f.world.collision(), motion);
+        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, f.world.collision(),
+                          motionLevel);
         f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
         f.opponents.update(2, 1.0f / 30, f.players, {}, opponents);
         f.effects.update(1.0f / 30);
