@@ -1,46 +1,30 @@
 #include "game/app/OnlineConsoleRoute.h"
 
-#include <format>
 #include <string>
 #include <utility>
 
-#include "game/console/ConsoleCommands.h"
-#include "game/console/GiftRequest.h"
-#include "game/console/SpawnRequest.h"
+#include "game/console/ConsoleReach.h"
+#include "game/scenes/PlayScene.h"
+#include "game/scenes/SharedConsoleVerbs.h"
 
 namespace gdl::game {
 
 OnlineConsoleRouting routeOnlineConsole(std::string_view name,
                                         ConsoleCommand::Arguments arguments) {
-    if (name == "console_permissions" || name == "help" || name == "list" || name == "debug_info" ||
-        name == "hidehud" || name == "freecam") {
+    const SharedConsoleVerb* verb = sharedConsoleVerb(name);
+    if (verb == nullptr) {
         return {};
     }
-    std::string error;
-    if (name == "get") {
-        const auto gift = parseGift(arguments);
-        if (gift && gift->kind == GiftRequest::Kind::Info) {
-            return {};
-        }
-        if (!gift) {
-            error = gift.error();
-        }
-    } else if (name == "goto") {
-        const auto destination = ConsoleCommands::parseGoto(arguments);
-        if (!destination) {
-            error = destination.error();
-        } else if (destination->offlineOnly()) {
-            error = "Legends maps are offline only.";
-        }
-    } else if (name == "spawn") {
-        if (const auto spawn = parseSpawn(arguments); !spawn) {
-            error = spawn.error();
-        }
-    } else if (!arguments.empty()) {
-        error = std::format("Usage: {}", name);
+    auto reach = verb->check(arguments, PlayScene::ConsolePlay::Shared);
+    if (!reach) {
+        return {.kind = OnlineConsoleRouting::Kind::Refused, .text = std::move(reach.error().text)};
     }
-    if (!error.empty()) {
-        return {.kind = OnlineConsoleRouting::Kind::Refused, .text = std::move(error)};
+    if (*reach == ConsoleReach::Local) {
+        return {};
+    }
+    if (*reach == ConsoleReach::OfflineOnly) {
+        return {.kind = OnlineConsoleRouting::Kind::Refused,
+                .text = std::string(verb->offlineOnlyRefusal())};
     }
     std::string line(name);
     for (const auto& argument : arguments) {

@@ -1,8 +1,10 @@
 #pragma once
+#include <array>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/core/Expected.h"
@@ -39,6 +41,16 @@ public:
         bool offlineOnly() const { return back || legends.has_value(); }
         bool operator==(const Destination&) const = default;
     };
+    /** goto's forms, each with what it does, in the order its usage lists them. */
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kGotoUsageRows{
+        {{"goto <map> [x y z]", "travels to a level, standing at a point when given"},
+         {"goto x y z", "moves the party to that point here"},
+         {"goto <legends map> [preview]", "walks an installed Legends map, or flies through it"},
+         {"goto n64|dreamcast <map>", "the same, naming the map's platform"},
+         {"goto back", "returns from a Legends map to the level left for it"}}};
+    /** What goto's usage says under its forms. */
+    static constexpr std::string_view kGotoUsageNote =
+        "list maps names the levels and the Legends maps installed.";
     static std::string gotoUsage();
     /** Reads `goto`'s arguments; the usage when they make no sense. */
     static gdl::Expected<Destination, std::string> parseGoto(Arguments arguments);

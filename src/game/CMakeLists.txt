@@ -125,6 +125,8 @@ add_library(game STATIC
     console/PartyCountRequest.cpp
     console/LevelListingLines.h
     console/LevelListingLines.cpp
+    rollback/SharedConsoleWords.h
+    rollback/SharedConsoleWords.cpp
     app/GauntletConsole.cpp
     app/OfflineConsoleCommands.h
     app/OfflineConsoleCommands.cpp
@@ -454,6 +456,10 @@ add_library(game STATIC
     scenes/PlayScene.cpp
     scenes/PlaySceneImported.cpp
     scenes/PlaySceneConsole.cpp
+    scenes/SharedConsoleVerbs.h
+    scenes/SharedConsoleVerbs.cpp
+    scenes/ConsoleStage.h
+    scenes/ConsoleStage.cpp
     scenes/PlaySceneTransport.cpp
     scenes/PlaySceneMotion.cpp
     scenes/PlaySceneHarm.cpp

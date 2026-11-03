@@ -1,5 +1,7 @@
 #include "game/party/PartyRecords.h"
 
+#include <cmath>
+#include <limits>
 #include <utility>
 
 #include "engine/core/Types.h"
@@ -23,7 +25,8 @@ CharacterSave restoredSave(const PlayerRuntime& runtime) {
     const CharacterSave& live = runtime.actor.save();
     const HiddenCostume* costume = hiddenCostume(live.name);
     if (live.character == kSumnerClass ||
-        (costume != nullptr && costume->character == live.character && costume->directory == "SUM")) {
+        (costume != nullptr && costume->character == live.character &&
+         costume->directory == "SUM")) {
         // PlayerRestoreState and restore_inactive_player refill the hidden Sumner's
         // health instead of unpacking the level-start image (player.c 3622/4195).
         CharacterSave restored = live;
@@ -68,6 +71,21 @@ void PartyRecords::award(std::span<PlayerRuntime> players, s32 player, s32 amoun
             shared.progress().experience += scaledExperience(won, shared, level);
         }
     }
+}
+
+std::optional<s32> PartyRecords::fittingAward(const LevelInfo* level, const CharacterSave& save,
+                                              s32 amount) {
+    const f32 scale =
+        level != nullptr ? level->tuning.experienceScale(experienceLevel(save.experience())) : 1.0f;
+    const f32 won = static_cast<f32>(amount) * scale;
+    if (!std::isfinite(won) || won < 0 ||
+        static_cast<f64>(won) >= std::numeric_limits<s32>::max()) {
+        return std::nullopt;
+    }
+    const auto points = static_cast<s32>(won);
+    return static_cast<s64>(save.experience()) + points <= std::numeric_limits<s32>::max()
+               ? std::optional{points}
+               : std::nullopt;
 }
 
 void PartyRecords::destroyedGenerator(std::span<PlayerRuntime> players, s32 player) {

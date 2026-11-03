@@ -2,6 +2,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "engine/core/Expected.h"
 #include "engine/core/Types.h"
@@ -22,6 +24,8 @@ struct GiftRequest {
     static constexpr s32 kDefaultHealth = 100;
     static constexpr s32 kDefaultCharges = 10;    ///< a charged powerup's, unless given
     static constexpr f32 kDefaultSeconds = 60.0f; ///< a timed powerup's, unless given
+    /** What get's usage says under its forms. */
+    static constexpr std::string_view kUsageNote = "list items names the items.";
 
     Kind kind = Kind::Item;
     ItemOffer offer;  ///< the item, as if it lay in the level
@@ -39,6 +43,8 @@ struct GiftPowerup {
     f32 charge;   ///< a stat boost, for one that has one
 };
 
+/** get's forms, each with what it does, in the order its usage lists them. */
+std::vector<std::pair<std::string, std::string>> giftUsageRows();
 std::string giftUsage();
 /** Reads `get`'s arguments; the usage or the reason for an unknown item or amount when they
  * make no sense. */

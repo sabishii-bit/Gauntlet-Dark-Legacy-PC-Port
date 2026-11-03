@@ -102,15 +102,19 @@ std::string counted(const GiftRequest& gift, s32 count) {
 }
 } // namespace
 
+std::vector<std::pair<std::string, std::string>> giftUsageRows() {
+    return {{"get <item> [amount]", "keys, potions, gold, health or a powerup"},
+            {"get exp <points>", "experience to add"},
+            {"get level <level>", std::format("the level to be, 1 to {}", kMaxLevel)},
+            {"get info [$SELECTED]", "what the thing clicked in the view is"}};
+}
+
 std::string giftUsage() {
-    const std::string level = std::format("the level to be, 1 to {}", kMaxLevel);
-    const std::array<std::pair<std::string_view, std::string_view>, 4> rows{
-        {{"get <item> [amount]", "keys, potions, gold, health or a powerup"},
-         {"get exp <points>", "experience to add"},
-         {"get level <level>", level},
-         {"get info [$SELECTED]", "what the thing clicked in the view is"}}};
-    constexpr std::array<std::string_view, 1> kNotes{"list items names the items."};
-    return consoleUsage(rows, kNotes);
+    const std::vector<std::pair<std::string, std::string>> rows = giftUsageRows();
+    const std::vector<std::pair<std::string_view, std::string_view>> views(rows.begin(),
+                                                                           rows.end());
+    constexpr std::array<std::string_view, 1> kNotes{GiftRequest::kUsageNote};
+    return consoleUsage(views, kNotes);
 }
 
 gdl::Expected<GiftRequest, std::string> parseGift(ConsoleCommand::Arguments arguments) {

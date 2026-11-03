@@ -1,4 +1,5 @@
 #include <array>
+#include <limits>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -241,6 +242,28 @@ TEST_CASE("direct boss travel retains the original tally checkpoint without awar
     party = PartyRecords::abandoned(players, PartyRecords::members(players));
     CHECK_FALSE(party[0].resultsCheckpoint);
     CHECK_FALSE(party[1].resultsCheckpoint);
+}
+
+TEST_CASE("an award fits only when it is a count the character's counter has room for",
+          "[party-records]") {
+    constexpr s32 kMost = std::numeric_limits<s32>::max();
+    constexpr s32 kLargestBelowMost = 2147483520; ///< the largest float under the s32 range
+    const CharacterSave fresh;
+    CHECK(PartyRecords::fittingAward(nullptr, fresh, 100) == 100);
+    CHECK(PartyRecords::fittingAward(nullptr, fresh, 0) == 0);
+    CHECK_FALSE(PartyRecords::fittingAward(nullptr, fresh, -1));
+    CHECK_FALSE(PartyRecords::fittingAward(nullptr, fresh, kMost));
+    CHECK(PartyRecords::fittingAward(nullptr, fresh, kLargestBelowMost) == kLargestBelowMost);
+    CharacterSave nearlyFull;
+    nearlyFull.progress().experience = kMost - 100;
+    CHECK(PartyRecords::fittingAward(nullptr, nearlyFull, 100) == 100);
+    CHECK_FALSE(PartyRecords::fittingAward(nullptr, nearlyFull, 101));
+    // The place's scale applies first, as award() applies it.
+    LevelInfo level;
+    level.tuning.experience = 2.85f;
+    CHECK(PartyRecords::fittingAward(&level, fresh, 100) == 285);
+    CHECK(PartyRecords::fittingAward(&level, fresh, 753496500) == 2147464960);
+    CHECK_FALSE(PartyRecords::fittingAward(&level, fresh, 800000000));
 }
 
 } // namespace

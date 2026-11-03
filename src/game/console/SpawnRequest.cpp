@@ -36,18 +36,8 @@ gdl::Expected<s32, std::string> tierOf(std::optional<std::string_view> argument)
 } // namespace
 
 std::string spawnUsage() {
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kRows{
-        {{"spawn <enemy> [tier] [count] [map]", "so many of the swarm's kind, at a tier"},
-         {"spawn generator <enemy>|special [tier] [map]",
-          "a generator breeding that kind, or the temple's or underworld's mixed brood"},
-         {"spawn golem|general|gargoyle [form] [map]",
-          "a great one; a gargoyle's form is eagl, lion or serp"},
-         {"spawn item <name>", "a pickup of this level, by its record"},
-         {"spawn object <name> [map]", "a copy of a level's object"}}};
-    constexpr std::array<std::string_view, 1> kNotes{
-        "A map (E2) brings the kind's voices, a great one's costume or the object from that "
-        "level; list enemies, critters, items and objects name what there is."};
-    return consoleUsage(kRows, kNotes);
+    constexpr std::array<std::string_view, 1> kNotes{SpawnRequest::kUsageNote};
+    return consoleUsage(SpawnRequest::kUsageRows, kNotes);
 }
 
 bool spawnableEnemy(s32 kind) {

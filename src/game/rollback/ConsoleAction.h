@@ -1,11 +1,12 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <string>
 #include <string_view>
 
 #include "engine/core/Types.h"
+
+#include "game/rollback/SharedConsoleWords.h"
 
 namespace gdl::game {
 
@@ -17,8 +18,11 @@ struct ConsoleAction {
     u8 seat = 0;
     std::string line;
 
-    bool valid() const {
-        if (seat >= 4 || line.empty() || line.size() > kMaxLine ||
+    /** The words a console line may carry, whatever its length: a seat, printable characters
+     * and a shared verb, never one of its local forms (get info). It reads the words itself,
+     * as splitConsoleWords does, so a decoder built without the game library judges alike. */
+    bool admitted() const {
+        if (seat >= 4 || line.empty() ||
             !std::ranges::all_of(line, [](unsigned char c) { return c >= 32 && c <= 126; })) {
             return false;
         }
@@ -40,12 +44,11 @@ struct ConsoleAction {
             }
             return word;
         };
-        const std::string verb = next();
-        constexpr std::array<std::string_view, 8> kVerbs{
-            "get", "goto", "unlock_tower", "suicide", "god", "notarget", "noclip", "spawn"};
-        return std::ranges::find(kVerbs, verb) != kVerbs.end() &&
-               (verb != "get" || next() != "info");
+        const SharedConsoleWord* verb = findSharedConsoleWord(next());
+        return verb != nullptr && (verb->localForm.empty() || next() != verb->localForm);
     }
+    /** What the wire carries: an admitted line of at most kMaxLine characters. */
+    bool valid() const { return line.size() <= kMaxLine && admitted(); }
     bool operator==(const ConsoleAction&) const = default;
 };
 

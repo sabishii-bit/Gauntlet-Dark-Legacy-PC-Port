@@ -10,6 +10,8 @@
 
 #include "engine/core/Log.h"
 
+#include "game/rollback/SharedConsoleWords.h"
+
 namespace gdl::game {
 
 namespace {
@@ -19,21 +21,6 @@ constexpr std::string_view kTextureName = "FONT8X8";
 constexpr s32 kSpaceWidth = 8;
 constexpr u32 kFirstTypable = 0x20;
 constexpr u32 kLastTypable = 0x7E;
-
-std::vector<std::string> words(std::string_view line) {
-    std::vector<std::string> result;
-    usize at = 0;
-    while (at < line.size()) {
-        const usize start = line.find_first_not_of(' ', at);
-        if (start == std::string_view::npos) {
-            break;
-        }
-        const usize end = std::min(line.find(' ', start), line.size());
-        result.emplace_back(line.substr(start, end - start));
-        at = end;
-    }
-    return result;
-}
 
 /** Where to break `text` for a line of `columns`: at the last space that fits, else hard. */
 usize breakAt(std::string_view text, usize columns) {
@@ -120,7 +107,7 @@ bool DevConsole::admits(const ConsoleCommand& command) const {
 
 void DevConsole::run(std::string_view line) {
     print(std::format("{} {}", m_prompt, line));
-    std::vector<std::string> parts = words(line);
+    std::vector<std::string> parts = splitConsoleWords(line);
     if (parts.empty()) {
         return;
     }
@@ -194,7 +181,7 @@ std::string DevConsole::suggestion() const {
     if (m_line.empty() || m_cursor != m_line.size() || m_line.back() == ' ') {
         return {};
     }
-    const std::vector<std::string> parts = words(m_line);
+    const std::vector<std::string> parts = splitConsoleWords(m_line);
     if (parts.empty()) {
         return {};
     }
@@ -227,7 +214,7 @@ bool DevConsole::acceptSuggestion() {
         return false;
     }
     const usize room = static_cast<usize>(kColumns) - m_prompt.size() - 1;
-    const bool commandWord = words(m_line).size() == 1;
+    const bool commandWord = splitConsoleWords(m_line).size() == 1;
     std::string completed = m_line + rest + (commandWord ? " " : "");
     if (completed.size() > room) {
         completed.resize(room);

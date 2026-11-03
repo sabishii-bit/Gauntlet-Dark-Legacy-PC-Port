@@ -16,9 +16,10 @@ struct OnlineConsoleRouting {
     std::string text; ///< the refusal, or the line to request
 };
 
-/** Where the online console sends command `name` with `arguments`: here for the commands that
- * only read or show this machine's view and for get info, refused for words the shared game
- * cannot read, else requested as one line of the name and the arguments as typed. */
+/** Where the online console sends command `name` with `arguments`: here for every command but
+ * the shared verbs, and for the words a shared verb keeps local (get info); refused for words
+ * the shared game cannot read or runs only offline; else requested as one line of the name and
+ * the arguments as typed. */
 OnlineConsoleRouting routeOnlineConsole(std::string_view name, ConsoleCommand::Arguments arguments);
 
 } // namespace gdl::game

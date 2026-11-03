@@ -126,6 +126,7 @@ add_executable(tests
     engine/math/Mt19937Tests.cpp
     game/netplay/HostedRoomTests.cpp
     game/rollback/ConsoleActionTests.cpp
+    game/rollback/SharedConsoleWordsTests.cpp
     game/rollback/InputCommandTests.cpp
     game/rollback/InputTimelineTests.cpp
     game/rollback/ShotIdentityTests.cpp
@@ -222,6 +223,7 @@ add_executable(tests
     game/console/LevelListingLinesTests.cpp
     game/app/OfflineConsoleCommandsTests.cpp
     game/app/OnlineConsoleRouteTests.cpp
+    game/scenes/SharedConsoleVerbsTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp
     game/level/StaticSceneryTests.cpp
@@ -800,7 +802,8 @@ if(GDL_ENABLE_NETPLAY)
         engine/audio/SoundPlayerTests.cpp
         game/app/OnlineRunTests.cpp game/netplay/NativeCampaignTransportTests.cpp
         game/scenes/TitleSceneTests.cpp
-        game/rollback/ConsoleActionTests.cpp game/rollback/InputCommandTests.cpp
+        game/rollback/ConsoleActionTests.cpp game/rollback/SharedConsoleWordsTests.cpp
+        game/rollback/InputCommandTests.cpp
         game/rollback/InputTimelineTests.cpp game/rollback/SessionInputsTests.cpp
         game/netplay/MatchSessionTests.cpp game/netplay/ShopSyncTests.cpp game/players/CursorAimTests.cpp
         game/party/PartyMotionTests.cpp game/party/PartyFiguresTests.cpp
@@ -876,6 +879,7 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/AnimationPlayerTests.cpp
         game/scenes/PlaySceneLocalRewindTests.cpp
         game/scenes/PlaySceneConsoleTests.cpp
+        game/scenes/ConsoleStageTests.cpp
         game/scenes/PlaySceneOutputTests.cpp
         game/rollback/SimulationObserverBossTests.cpp
         game/rollback/NativeRollbackSceneTests.cpp
@@ -947,7 +951,8 @@ if(GDL_ENABLE_NETPLAY)
         game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
         game/scenes/NativePresentationReadinessTests.cpp
         engine/app/ApplicationTimingTests.cpp
-        game/rollback/ConsoleActionTests.cpp game/rollback/InputCommandTests.cpp
+        game/rollback/ConsoleActionTests.cpp game/rollback/SharedConsoleWordsTests.cpp
+        game/rollback/InputCommandTests.cpp
         game/rollback/HintInputCommandTests.cpp game/rollback/NativeHintInputTests.cpp
         game/netplay/NativeAgreementSceneTests.cpp
         game/netplay/NativeAgreementTests.cpp
@@ -979,6 +984,7 @@ endif()
 target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestTests.cpp
     game/scenes/PlaySceneLocalRewindTests.cpp
     game/scenes/PlaySceneConsoleTests.cpp
+    game/scenes/ConsoleStageTests.cpp
     game/scenes/PlaySceneOutputTests.cpp
     game/rollback/SimulationObserverBossTests.cpp
     game/rollback/NativeRollbackSceneTests.cpp

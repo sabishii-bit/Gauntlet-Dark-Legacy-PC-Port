@@ -233,6 +233,9 @@ public:
         u8 seat = 0;
         std::string text;
     };
+    /** Which game a console action runs in: offline play on this machine alone, or the game
+     * every peer steps alike. It picks the reply's wording and the shared game's own limits. */
+    enum class ConsolePlay : u8 { Offline, Shared };
     struct RecordedStep {
         PlayOutcome outcome = PlayOutcome::Running;
         OutputLedger::Journal journal;
@@ -599,6 +602,7 @@ public:
 
 private:
     friend class SimulationObserver; // test-only read access, no restoration interface
+    friend class ConsoleStage;       // what the shared console verbs may change, within a tick
     u64 m_openGeneration = 0;
     Simulation m_sim;
     struct OutputFrame {
@@ -639,8 +643,9 @@ private:
     std::optional<PlayOutcome> advancePortals(s32 ticks, f32 seconds, const Inputs& inputs);
     void advanceCameras(f32 seconds, const std::vector<CameraSubject>& subjects);
     void advanceRuneMeter();
-    std::string applyConsoleAction(const ConsoleAction& action);
-    std::string spawnConsoleAction(s32 player, std::span<const std::string> arguments);
+    /** Runs `action`'s shared verb for its seat at the start of a tick, in `play`'s game, and
+     * says what came of it. */
+    std::string applyConsoleAction(const ConsoleAction& action, ConsolePlay play);
     void advanceConsoleFlight(f64 deltaSeconds, const Inputs& inputs);
     SimulationObservation::Digest simulationControlDigest() const;
     SimulationObservation::Digest opponentFollowupDigest() const;

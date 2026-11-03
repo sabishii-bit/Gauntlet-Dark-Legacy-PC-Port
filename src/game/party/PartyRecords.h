@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -26,6 +27,11 @@ public:
      * middle of a turbo move. The fallen win nothing. */
     static void award(std::span<PlayerRuntime> players, s32 player, s32 amount, bool kill,
                       const LevelInfo* level);
+    /** The experience `amount` comes to for `save`'s character in `level`, scaled as award()
+     * scales it; none when that is negative or not finite, or would overflow the character's
+     * counter. */
+    static std::optional<s32> fittingAward(const LevelInfo* level, const CharacterSave& save,
+                                           s32 amount);
     static void destroyedGenerator(std::span<PlayerRuntime> players, s32 player);
     /** Called only while players are in live gameplay, not paused or in a menu. */
     static void advanceTime(std::span<PlayerRuntime> players, f64 seconds);

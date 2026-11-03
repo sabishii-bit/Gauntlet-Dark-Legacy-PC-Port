@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <format>
-#include <utility>
 
 #include "engine/core/Strings.h"
 
@@ -30,15 +29,8 @@ std::optional<Vec3> point(ConsoleCommands::Arguments arguments) {
 } // namespace
 
 std::string ConsoleCommands::gotoUsage() {
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kRows{
-        {{"goto <map> [x y z]", "travels to a level, standing at a point when given"},
-         {"goto x y z", "moves the party to that point here"},
-         {"goto <legends map> [preview]", "walks an installed Legends map, or flies through it"},
-         {"goto n64|dreamcast <map>", "the same, naming the map's platform"},
-         {"goto back", "returns from a Legends map to the level left for it"}}};
-    constexpr std::array<std::string_view, 1> kNotes{
-        "list maps names the levels and the Legends maps installed."};
-    return consoleUsage(kRows, kNotes);
+    constexpr std::array<std::string_view, 1> kNotes{kGotoUsageNote};
+    return consoleUsage(kGotoUsageRows, kNotes);
 }
 
 std::optional<LegendsPlatform> ConsoleCommands::platformOf(std::string_view word) {

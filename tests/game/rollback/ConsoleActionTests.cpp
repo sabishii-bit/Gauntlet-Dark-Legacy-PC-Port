@@ -62,6 +62,27 @@ TEST_CASE("the shared console admits exactly its eight verbs, in any case",
     CHECK_FALSE(valid("god", kSeatCount));
 }
 
+TEST_CASE("an admitted line longer than the wire's is admitted but not valid",
+          "[netplay][console-input][online-console]") {
+    std::string longer = "god";
+    longer.resize(kLongestLine + 1, ' ');
+    CHECK(ConsoleAction{0, longer}.admitted());
+    CHECK_FALSE(ConsoleAction{0, longer}.valid());
+    // Every refusal but the length holds at any length.
+    std::string localLonger = "get info";
+    localLonger.resize(kLongestLine + 1, ' ');
+    CHECK_FALSE(ConsoleAction{0, localLonger}.admitted());
+    CHECK_FALSE(ConsoleAction{kSeatCount, longer}.admitted());
+    for (const std::string_view line : {"", "   ", "get info", "god\tx", "noclipx"}) {
+        CAPTURE(line);
+        CHECK_FALSE(ConsoleAction{0, std::string(line)}.admitted());
+    }
+    for (const std::string_view line : kLocalLines) {
+        CAPTURE(line);
+        CHECK_FALSE(ConsoleAction{0, std::string(line)}.admitted());
+    }
+}
+
 TEST_CASE("a console line's packet bytes stay as they are",
           "[netplay][console-input][online-console]") {
     InputCommand command;

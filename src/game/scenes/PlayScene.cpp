@@ -1117,7 +1117,8 @@ PlayScene::RecordedStep PlayScene::recordStep(u64 epoch, u64 tick, f64 deltaSeco
     {
         const auto sharedAudio = m_audio.soundScope({30, 0, 1, FrameEventEmitter::kNoSeat}, 1);
         for (const auto& action : actions) {
-            result.consoleReplies.push_back({action.seat, applyConsoleAction(action)});
+            result.consoleReplies.push_back(
+                {action.seat, applyConsoleAction(action, ConsolePlay::Shared)});
         }
         if (m_sim.consoleTravel) {
             result.outcome = PlayOutcome::Travel;

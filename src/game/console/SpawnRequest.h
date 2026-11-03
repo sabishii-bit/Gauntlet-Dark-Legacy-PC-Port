@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Expected.h"
@@ -28,6 +29,19 @@ struct SpawnRequest {
     static constexpr std::string_view kGargoylePrefix = "GAR_";
     /** A gargoyle's forms, the first the one it takes unless another is named. */
     static constexpr std::array<std::string_view, 3> kGargoyleForms{"EAGL", "LION", "SERP"};
+    /** spawn's forms, each with what it does, in the order its usage lists them. */
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kUsageRows{
+        {{"spawn <enemy> [tier] [count] [map]", "so many of the swarm's kind, at a tier"},
+         {"spawn generator <enemy>|special [tier] [map]",
+          "a generator breeding that kind, or the temple's or underworld's mixed brood"},
+         {"spawn golem|general|gargoyle [form] [map]",
+          "a great one; a gargoyle's form is eagl, lion or serp"},
+         {"spawn item <name>", "a pickup of this level, by its record"},
+         {"spawn object <name> [map]", "a copy of a level's object"}}};
+    /** What spawn's usage says under its forms. */
+    static constexpr std::string_view kUsageNote =
+        "A map (E2) brings the kind's voices, a great one's costume or the object from that "
+        "level; list enemies, critters, items and objects name what there is.";
 
     Kind kind = Kind::Thing;
     s32 enemyKind = -1;
