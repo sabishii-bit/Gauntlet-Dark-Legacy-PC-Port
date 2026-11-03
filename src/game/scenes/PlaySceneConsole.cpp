@@ -60,8 +60,8 @@ void PlayScene::advanceConsoleFlight(f64 deltaSeconds, const Inputs& inputs) {
         if (length > 1) {
             wish /= length;
         }
-        // World-space, quantized local intent crosses the input protocol, never
-        // a local render delta, camera transform or already-integrated position.
+        // A world-space wish, the flier's eased velocity over kSpeed (quantized when it
+        // crossed the wire), never a render delta, camera transform or integrated position.
         const Vec3 offset = wish * NoclipMotion::kSpeed * static_cast<f32>(deltaSeconds);
         const std::optional<f32> yaw = wish.x * wish.x + wish.z * wish.z > 1.0e-6f
                                            ? std::optional{portable::atan2(wish.x, wish.z)}

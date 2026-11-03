@@ -653,11 +653,12 @@ Vec3 Gauntlet::consoleFlight(s32 slot, f64 seconds, bool consoleOpen) {
             m_online ? m_online->consoleSeat(slot) : std::optional{static_cast<u8>(slot)};
         flying = seat.has_value() && scene->cheats(*seat).noclip;
     }
-    // Noclip flies a character as the camera looks, the console's keys left alone.
+    // No flight while its seat's noclip is off or the console is down.
     if (!flying || consoleOpen) {
         flight.reset();
         return Vec3{0.0f};
     }
+    // Noclip flies a character as the camera looks, the console's keys left alone.
     const MenuInputSource source = playerInputSource(input(), m_config, slot);
     const NoclipMotion::Wish wish = NoclipMotion::wish(
         input(), playBindings(m_config, slot), source.keyboard, source.pad, scene->viewCamera());

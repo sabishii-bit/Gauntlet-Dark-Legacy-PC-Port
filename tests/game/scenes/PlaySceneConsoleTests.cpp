@@ -659,6 +659,18 @@ TEST_CASE("noclip flown through the scene moves by the eased velocity",
             glm::abs(inputs[1].consoleFlight - flight.velocity() / NoclipMotion::kSpeed),
             Vec3{kWireStep})));
     }
+    // Straight up from rest it rises and keeps its facing.
+    flight.reset();
+    const Vec3 start = scene.actor(1)->position();
+    const f32 facing = scene.actor(1)->yaw();
+    PlayScene::Inputs inputs;
+    inputs[1].consoleFlight =
+        flight.fly(NoclipMotion::Wish{.direction = Vec3{0.0f, 1.0f, 0.0f}}, seconds);
+    REQUIRE(fixture->offlineStep({}, inputs).outcome == PlayOutcome::Running);
+    CHECK(scene.actor(1)->position() ==
+          start + inputs[1].consoleFlight * NoclipMotion::kSpeed * seconds);
+    CHECK(scene.actor(1)->position().y > start.y);
+    CHECK(scene.actor(1)->yaw() == facing);
 }
 
 TEST_CASE("the console's effects equal the same effects applied directly",

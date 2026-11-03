@@ -11,7 +11,7 @@ namespace gdl::game {
 /** One player's input for a simulation update. Local UI fields are never serialized. */
 struct PlayInput {
     MoveInput move;
-    Vec3 consoleFlight{0}; ///< world-space noclip wish; ignored unless the shared cheat is on
+    Vec3 consoleFlight{0}; ///< world-space noclip wish; ignored unless the seat's noclip is on
     std::optional<Vec3>
         aimDirection; ///< horizontal world facing; zero retains yaw, absent for a stick
     MenuInput menu;
