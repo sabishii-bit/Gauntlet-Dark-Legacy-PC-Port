@@ -213,6 +213,13 @@ add_executable(tests
     game/console/DevConsoleTests.cpp
     game/console/ConsolePolicyTests.cpp
     game/console/ConsoleCommandsTests.cpp
+    game/console/ConsoleArgumentsTests.cpp
+    game/console/ConsoleUsageTests.cpp
+    game/console/GiftRequestTests.cpp
+    game/console/SpawnRequestTests.cpp
+    game/console/FixtureRequestTests.cpp
+    game/console/PartyCountRequestTests.cpp
+    game/console/LevelListingLinesTests.cpp
     game/app/OfflineConsoleCommandsTests.cpp
     game/app/OnlineConsoleRouteTests.cpp
     game/app/GameCursorTests.cpp
@@ -261,6 +268,7 @@ add_executable(tests
     engine/core/TypesTests.cpp
     engine/core/LogTests.cpp
     engine/core/AssertTests.cpp
+    engine/core/ExpectedTests.cpp
     engine/core/ClockTests.cpp
     engine/math/MathTests.cpp
     engine/math/PortableMathTests.cpp
@@ -526,6 +534,7 @@ add_executable(tests
     game/level/LevelCatalogTests.cpp
     game/level/LevelItemArchivesTests.cpp
     game/level/TowerAccessTests.cpp
+    game/level/InstanceNamesTests.cpp
     game/characters/LevelRecordTests.cpp
     game/level/ExitPortalsTests.cpp
     game/level/LevelTransportersTests.cpp

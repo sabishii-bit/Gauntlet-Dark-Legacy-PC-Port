@@ -8,6 +8,8 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/ClassData.h"
+#include "game/characters/LevelRecord.h"
+#include "game/characters/Relics.h"
 #include "game/level/LevelTriggers.h"
 
 namespace gdl::game {
@@ -143,6 +145,38 @@ s32 TowerAccess::worldOfLetter(char letter) {
         letter >= 'a' && letter <= 'z' ? static_cast<char>(letter - 'a' + 'A') : letter;
     const s32 world = upper - kWorldLetterBase;
     return world >= 1 && world <= kMostLetteredWorld ? world : -1;
+}
+
+void TowerAccess::openEverything(CharacterSave& save) {
+    ClassProgress& progress = save.progress();
+    for (s32 realm = 0; realm < static_cast<s32>(LevelRecord::kRealmCount); ++realm) {
+        for (s32 level = 0; level < LevelRecord::kLevelsPerRealm; ++level) {
+            progress.levels.recordBeaten(realm, level);
+        }
+    }
+    for (s32 rune = 0; rune < Relics::kRuneCount; ++rune) {
+        progress.relics.addRune(rune);
+    }
+    // The bosses' shards by their realms' places in the tower's order: the eight realms',
+    // the temple's and the underworld's (TowerAccess::kBattlefieldShards).
+    for (s32 order = 1; (TowerAccess::kBattlefieldShards >> order) != 0; ++order) {
+        if ((TowerAccess::kBattlefieldShards & (1U << order)) != 0) {
+            progress.relics.addShard(order);
+        }
+    }
+    progress.relics.pendingRunes = 0;
+    progress.relics.pendingShards = 0;
+    progress.relics.pendingCeremonies = 0;
+    // The gargoyle statues' wings: each kind's pieces kept as the tower keeps them once it
+    // has congratulated the collector, so no ceremony waits.
+    progress.relics.gargoylePieces.fill(-1);
+    for (const s32 gate : TowerAccess::kWorldGates) {
+        if (gate != 0) {
+            progress.crystals[static_cast<usize>(gate)] = std::max(
+                progress.crystals[static_cast<usize>(gate)], LevelTriggers::crystalsNeeded(gate));
+        }
+    }
+    progress.unlocked = (1U << static_cast<u32>(kRealmCount)) - 1U;
 }
 
 } // namespace gdl::game

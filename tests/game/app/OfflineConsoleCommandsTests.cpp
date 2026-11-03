@@ -29,6 +29,8 @@
 #include "game/characters/Relics.h"
 #include "game/console/ConsoleCommands.h"
 #include "game/console/DevConsole.h"
+#include "game/console/FixtureRequest.h"
+#include "game/console/LevelListingLines.h"
 #include "game/console/NoclipMotion.h"
 #include "game/context/GameContext.h"
 #include "game/critters/Critters.h"
@@ -261,8 +263,7 @@ struct Commands {
     /** What goto shows for the words of `line`, which name a level, a point or the tower. */
     std::string goTo(std::string_view line) {
         const Words words = wordsOf(line);
-        std::string error;
-        const auto destination = ConsoleCommands::parseGoto(words, error);
+        const auto destination = ConsoleCommands::parseGoto(words);
         REQUIRE(destination.has_value());
         REQUIRE_FALSE(destination->offlineOnly());
         return shown([&](DevConsole& console) { commands.gotoPlace(console, *destination); });
@@ -352,8 +353,7 @@ TEST_CASE("with nothing in play each offline command answers in its own words", 
     CHECK(fixture.say(&C::list, "generators") == "Nothing is in play.");
     CHECK(fixture.say(&C::list, "items G1") == "No map named G1; list maps names them");
     CHECK(fixture.say(&C::list, "objects TOWER") == "L1 is not unpacked");
-    CHECK(fixture.say(&C::list, "items") ==
-          printed(lines({ConsoleCommands::itemLines(), {"Nothing is in play."}})));
+    CHECK(fixture.say(&C::list, "items") == printed(lines({itemLines(), {"Nothing is in play."}})));
     CHECK(fixture.say(&C::list, "enemies") ==
           "Enemies (spawn <enemy> [tier 1-3] [count]): SCO, TRO, DEM, RAT, GRU, KNI, SNA, SOR, "
           "MUM, SPI, LIZ, TRE, MAG, ZOM, PLA, WOL,\n"
@@ -363,7 +363,7 @@ TEST_CASE("with nothing in play each offline command answers in its own words", 
           "Critters (spawn <critter>): golem, general, gargoyle [eagl|lion|serp]\n"
           "Nothing is in play.");
     CHECK(fixture.say(&C::list, "characters") ==
-          printed(ConsoleCommands::characterLines(fixture.saves.classUnlocks())));
+          printed(characterLines(fixture.saves.classUnlocks())));
 
     CHECK(fixture.commands.activateWords(Words{"s"}) == Words{});
     CHECK(fixture.commands.lockWords(Words{"c"}) == Words{"character"});
@@ -707,24 +707,19 @@ TEST_CASE("every offline command answers in a level in its own words", "[dev-con
           "Generators: GRU (tier 3); KNI x72 (tier 1, 2, 3); RAT x41 (tier 1, 2)\n"
           "spawn generator <enemy> [tier] stands another");
     CHECK(fixture->say(&C::list, "items Z9") == "No map named Z9; list maps names them");
-    // The longest listings are ConsoleCommands' own lines, under the level's name.
+    // The longest listings are the listing lines themselves, under the level's name.
     const WorldLayout& layout = fixture->world.layout();
     CHECK(fixture->say(&C::list, "switches") ==
-          printed(lines(
-              {{"In G2:"}, ConsoleCommands::switchLines(fixture->commands.consoleSwitches())})));
-    CHECK(
-        fixture->say(&C::list, "switches G1") ==
-        printed(lines({{"In G1:"},
-                       ConsoleCommands::switchLines(ConsoleCommands::switchesOf(fieldsLayout))})));
+          printed(lines({{"In G2:"}, switchLines(fixture->commands.consoleSwitches())})));
+    CHECK(fixture->say(&C::list, "switches G1") ==
+          printed(lines({{"In G1:"}, switchLines(switchesOf(fieldsLayout))})));
     CHECK(fixture->say(&C::list, "items G1") ==
-          printed(lines({{"In G1:"}, ConsoleCommands::pickupLines(fieldsLayout)})));
+          printed(lines({{"In G1:"}, pickupLines(fieldsLayout)})));
     CHECK(fixture->say(&C::list, "characters") ==
-          printed(ConsoleCommands::characterLines(fixture->saves.classUnlocks())));
+          printed(characterLines(fixture->saves.classUnlocks())));
     CHECK(fixture->say(&C::list, "items") ==
-          printed(lines(
-              {ConsoleCommands::itemLines(), {"In G2:"}, ConsoleCommands::pickupLines(layout)})));
-    CHECK(fixture->say(&C::list, "objects") ==
-          printed(lines({{"In G2:"}, ConsoleCommands::objectLines(layout)})));
+          printed(lines({itemLines(), {"In G2:"}, pickupLines(layout)})));
+    CHECK(fixture->say(&C::list, "objects") == printed(lines({{"In G2:"}, objectLines(layout)})));
     CHECK(fixture->commands.gotoWords(Words{"t"}) ==
           Words{"tower", "back", "T1", "T2", "T3", "A1", "A6", "A2",      "A3",    "A4", "A5", "B1",
                 "B2",    "B3",   "B4", "B5", "B6", "C1", "C2", "C3",      "C4",    "C5", "D1", "D2",

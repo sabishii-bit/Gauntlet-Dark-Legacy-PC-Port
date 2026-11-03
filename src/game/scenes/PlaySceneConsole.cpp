@@ -8,7 +8,10 @@
 
 #include "game/characters/Progression.h"
 #include "game/console/ConsoleCommands.h"
+#include "game/console/GiftRequest.h"
 #include "game/console/NoclipMotion.h"
+#include "game/console/SpawnRequest.h"
+#include "game/level/TowerAccess.h"
 #include "game/scenes/PlayScene.h"
 
 namespace gdl::game {
@@ -70,10 +73,9 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
         return std::format("{} {}", verb, enabled ? "on" : "off");
     }
     if (verb == "get") {
-        std::string error;
-        const auto gift = ConsoleCommands::parseGet(arguments, error);
+        const auto gift = parseGift(arguments);
         if (!gift) {
-            return error;
+            return gift.error();
         }
         constexpr s32 kMaximumGrant = 1000000;
         if (gift->amount > kMaximumGrant || gift->offer.amount > kMaximumGrant ||
@@ -81,7 +83,7 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
             return "A console grant must be finite and no larger than 1000000.";
         }
         switch (gift->kind) {
-        case ConsoleCommands::Gift::Kind::Experience: {
+        case GiftRequest::Kind::Experience: {
             // PartyRecords applies native stage scaling and can share the award
             // with a combo partner. Check both additions before entering its s32
             // arithmetic; an untrusted console amount must never overflow it.
@@ -121,11 +123,11 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
             return std::format("{} experience: level {}", gift->amount,
                                experienceLevel(save->experience()));
         }
-        case ConsoleCommands::Gift::Kind::Level:
+        case GiftRequest::Kind::Level:
             save->progress().experience = levelExperience(gift->amount);
             restat(player);
             return std::format("Level {}", gift->amount);
-        case ConsoleCommands::Gift::Kind::Item: {
+        case GiftRequest::Kind::Item: {
             const auto& offer = gift->offer;
             const s64 amount = offer.amount;
             const s64 maximum = std::numeric_limits<s32>::max();
@@ -145,9 +147,9 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
                     return "That item grant would exceed the powerup's counter.";
                 }
             }
-            return ConsoleCommands::report(*gift, takeItem(*save, gift->offer, 1.0f, true));
+            return giftReport(*gift, takeItem(*save, gift->offer, 1.0f, true));
         }
-        case ConsoleCommands::Gift::Kind::Info: return "get info is a local inspection command.";
+        case GiftRequest::Kind::Info: return "get info is a local inspection command.";
         }
     }
     if (verb == "spawn") {
@@ -167,10 +169,9 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
         return std::format("{} fallen", fallen);
     }
     if (verb == "goto") {
-        std::string error;
-        const auto destination = ConsoleCommands::parseGoto(arguments, error);
+        const auto destination = ConsoleCommands::parseGoto(arguments);
         if (!destination) {
-            return error;
+            return destination.error();
         }
         // Every peer refuses alike what the shared game cannot go to.
         if (destination->offlineOnly()) {
@@ -210,7 +211,7 @@ std::string PlayScene::applyConsoleAction(const ConsoleAction& action) {
         }
         for (auto& runtime : m_players) {
             if (!runtime.departed) {
-                ConsoleCommands::unlockTower(runtime.actor.save());
+                TowerAccess::openEverything(runtime.actor.save());
             }
         }
         if (m_world->isTower()) {
@@ -231,10 +232,9 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
     if (owner == nullptr) {
         return "Nobody is in to spawn before.";
     }
-    std::string error;
-    const auto spawn = ConsoleCommands::parseSpawn(arguments, error);
+    const auto spawn = parseSpawn(arguments);
     if (!spawn) {
-        return error;
+        return spawn.error();
     }
     constexpr u32 kMaximumConsoleSpawns = 256;
     if (m_sim.consoleSpawns >= kMaximumConsoleSpawns) {
@@ -269,7 +269,7 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
             }
         }
     };
-    using Kind = ConsoleCommands::Spawn::Kind;
+    using Kind = SpawnRequest::Kind;
     switch (spawn->kind) {
     case Kind::Enemy: {
         const auto views = m_opponents.views(m_players);
@@ -324,7 +324,7 @@ std::string PlayScene::spawnConsoleAction(s32 player, std::span<const std::strin
                     return std::format("{} lends no item archive", from->name);
                 }
                 if (layout.load(m_context.unpackedRoot / from->directory)) {
-                    record = ConsoleCommands::generatorRecord(layout, "SPECIAL");
+                    record = generatorRecord(layout, "SPECIAL");
                 }
             }
         }

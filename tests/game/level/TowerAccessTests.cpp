@@ -1,4 +1,5 @@
 #include <array>
+#include <span>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -7,8 +8,10 @@
 
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
+#include "game/characters/LevelRecord.h"
 #include "game/characters/Party.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Relics.h"
 #include "game/level/TowerAccess.h"
 
 namespace {
@@ -173,6 +176,34 @@ TEST_CASE("the tower's portal glows are named by world letter and level",
     REQUIRE(TowerAccess::worldOfLetter('k') == 11);
     REQUIRE(TowerAccess::worldOfLetter('L') == -1);
     REQUIRE(TowerAccess::worldOfLetter('@') == -1);
+}
+
+TEST_CASE("unlock_tower opens every wing and portal to the character",
+          "[dev-console][commands][tower-access]") {
+    CharacterSave save;
+    save.progress().relics.pendingRunes = 0x3;
+    TowerAccess::openEverything(save);
+    const TowerAccess access(std::span<const CharacterSave>(&save, 1));
+    for (s32 world = 1; world <= 11; ++world) {
+        CHECK(access.worldOpen(world));
+        for (s32 gate = 0; gate < LevelRecord::kLevelsPerRealm; ++gate) {
+            CHECK(access.portalOpen(world, gate));
+        }
+    }
+    CHECK(access.worldOpen(TowerAccess::kTowerWorld));
+    CHECK(access.liftsOpen());
+    const Relics& relics = save.progress().relics;
+    CHECK(relics.runeCount() == Relics::kRuneCount);
+    CHECK(relics.pendingRunes == 0);
+    CHECK(relics.pendingShards == 0);
+    CHECK(relics.legends == 0); // the bosses' items are left to be found
+    // The gargoyle statues' wings open too: every kind's pieces are kept as collected and
+    // congratulated, so no ceremony waits.
+    for (s32 kind = 0; kind < static_cast<s32>(Relics::kGargoyleKinds); ++kind) {
+        CHECK(relics.gargoyleComplete(kind));
+        CHECK(relics.gargoylePieces[static_cast<usize>(kind)] < 0);
+    }
+    CHECK(relics.pendingCeremonies == 0);
 }
 
 } // namespace

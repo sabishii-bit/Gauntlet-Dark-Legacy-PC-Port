@@ -82,6 +82,10 @@ public:
     static bool isGlowObject(std::string_view name);
     /** The world an exit's letter names ('g' the town), or -1 for none. */
     static s32 worldOfLetter(char letter);
+    /** Opens the tower in a character's record: every level of every realm beaten, every
+     * runestone and every boss's shard held, every crystal gate met and every gate's opening
+     * already announced, nothing left to present. The legend items are not touched. */
+    static void openEverything(CharacterSave& save);
 
 private:
     void add(const ClassProgress& progress, bool sumner);

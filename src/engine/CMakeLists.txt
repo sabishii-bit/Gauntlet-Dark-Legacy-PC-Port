@@ -30,6 +30,7 @@ add_library(engine STATIC
     core/Types.h
     core/SpecialMembers.h
     core/Error.h
+    core/Expected.h
     core/Log.h
     core/Assert.h
     core/Clock.h

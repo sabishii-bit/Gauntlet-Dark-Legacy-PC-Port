@@ -24,11 +24,14 @@
 #include "game/console/ConsoleCommands.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
+#include "game/console/FixtureRequest.h"
+#include "game/console/GiftRequest.h"
 #include "game/console/NoclipMotion.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/Generators.h"
+#include "game/level/InstanceNames.h"
 #include "game/level/PlacedItems.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/widgets/MenuInput.h"
@@ -367,7 +370,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
                                         consoleWorld()->ref().name));
             break;
         }
-        const ConsoleCommands::SwitchEntry& entry = switches[static_cast<usize>(id)];
+        const SwitchEntry& entry = switches[static_cast<usize>(id)];
         const LevelTrigger& trigger = consoleWorld()->triggers().trigger(static_cast<usize>(id));
         lines.push_back(std::format("{} {}: switch {} of {}", selection.token(), entry.name, id,
                                     consoleWorld()->ref().name));
@@ -388,8 +391,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
             break;
         }
         const LockedGates::Gate& gate = gates.gate(static_cast<usize>(id));
-        const std::string name =
-            ConsoleCommands::instanceName(consoleWorld()->layout(), gate.instance);
+        const std::string name = instanceName(consoleWorld()->layout(), gate.instance);
         lines.push_back(std::format("{} {}: door {} of {}", selection.token(), name, id,
                                     consoleWorld()->ref().name));
         lines.push_back(std::format("{}; {}", place(gate.figure.position()),
@@ -407,8 +409,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
             break;
         }
         const Chests::Chest& chest = chests.chest(static_cast<usize>(id));
-        const std::string name =
-            ConsoleCommands::instanceName(consoleWorld()->layout(), chest.instance);
+        const std::string name = instanceName(consoleWorld()->layout(), chest.instance);
         lines.push_back(std::format("{} {}: chest {} of {}", selection.token(), name, id,
                                     consoleWorld()->ref().name));
         lines.push_back(std::format("{}; {}{}", place(chest.figure.position()),
@@ -570,7 +571,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
         }
         const PlacedItems::Item& item = items.item(static_cast<usize>(id));
         lines.push_back(std::format("{} {}: {}, worth {}{}{}", selection.token(), item.name,
-                                    ConsoleCommands::pickupKindName(item.subtype), item.value,
+                                    pickupKindName(item.subtype), item.value,
                                     item.taken ? ", taken" : "", item.visible ? "" : ", unseen"));
         lines.push_back(std::format("{}; radius {:.1f}, height {:.1f}; instance {} of record {}",
                                     place(item.position), item.radius, item.height, item.instance,
@@ -692,10 +693,9 @@ s32 Gauntlet::consolePlayer() {
 }
 
 void Gauntlet::consoleGoto(DevConsole& console, DevConsole::Arguments arguments) {
-    std::string error;
-    const auto destination = ConsoleCommands::parseGoto(arguments, error);
+    const auto destination = ConsoleCommands::parseGoto(arguments);
     if (!destination.has_value()) {
-        console.print(error);
+        console.print(destination.error());
         return;
     }
     if (destination->back) {
@@ -782,9 +782,8 @@ void Gauntlet::consoleUnlockTower(DevConsole& console) {
 }
 
 void Gauntlet::consoleGet(DevConsole& console, DevConsole::Arguments arguments) {
-    std::string error;
-    const auto gift = ConsoleCommands::parseGet(arguments, error);
-    if (gift.has_value() && gift->kind == ConsoleCommands::Gift::Kind::Info) {
+    const auto gift = parseGift(arguments);
+    if (gift.has_value() && gift->kind == GiftRequest::Kind::Info) {
         const std::optional<SceneSelection> what =
             gift->name.empty() ? (consoleScene() ? consoleScene()->selection() : std::nullopt)
                                : SceneSelection::parse(gift->name);

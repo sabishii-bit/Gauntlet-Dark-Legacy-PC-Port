@@ -13,11 +13,11 @@
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldScene.h"
 
-#include "game/console/ConsoleCommands.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/ImportedLevel.h"
+#include "game/level/InstanceNames.h"
 #include "game/level/LevelFixtures.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/PlacedItems.h"
@@ -239,7 +239,7 @@ std::optional<SceneSelection> ScenePicking::pick(const Scene& scene, Vec2 cursor
                  std::max(trigger.height, kPickupReach));
         consider(hit, size,
                  SceneSelection{SceneSelection::Kind::Switch, static_cast<s32>(i),
-                                ConsoleCommands::instanceName(layout, trigger.instance)});
+                                instanceName(layout, trigger.instance)});
     }
     const LockedGates& gates = scene.fixtures.gates();
     for (usize i = 0; i < gates.size(); ++i) {
@@ -251,7 +251,7 @@ std::optional<SceneSelection> ScenePicking::pick(const Scene& scene, Vec2 cursor
         const auto [hit, size] = body(gate.figure.position(), reach, reach * 2.0f);
         consider(hit, size,
                  SceneSelection{SceneSelection::Kind::Gate, static_cast<s32>(i),
-                                ConsoleCommands::instanceName(layout, gate.instance)});
+                                instanceName(layout, gate.instance)});
     }
     const Chests& chests = scene.fixtures.chests();
     for (usize i = 0; i < chests.size(); ++i) {
@@ -263,7 +263,7 @@ std::optional<SceneSelection> ScenePicking::pick(const Scene& scene, Vec2 cursor
         const auto [hit, size] = body(chest.figure.position(), reach, reach * 2.0f);
         consider(hit, size,
                  SceneSelection{SceneSelection::Kind::Chest, static_cast<s32>(i),
-                                ConsoleCommands::instanceName(layout, chest.instance)});
+                                instanceName(layout, chest.instance)});
     }
     for (const PlayerRuntime& runtime : scene.players) {
         if (runtime.departed || runtime.life != PlayerLife::Standing) {

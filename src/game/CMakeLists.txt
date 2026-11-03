@@ -111,6 +111,20 @@ add_library(game STATIC
     console/DevConsole.cpp
     console/ConsoleCommands.h
     console/ConsoleCommands.cpp
+    console/ConsoleArguments.h
+    console/ConsoleArguments.cpp
+    console/ConsoleUsage.h
+    console/ConsoleUsage.cpp
+    console/GiftRequest.h
+    console/GiftRequest.cpp
+    console/SpawnRequest.h
+    console/SpawnRequest.cpp
+    console/FixtureRequest.h
+    console/FixtureRequest.cpp
+    console/PartyCountRequest.h
+    console/PartyCountRequest.cpp
+    console/LevelListingLines.h
+    console/LevelListingLines.cpp
     app/GauntletConsole.cpp
     app/OfflineConsoleCommands.h
     app/OfflineConsoleCommands.cpp
@@ -266,6 +280,8 @@ add_library(game STATIC
     level/Traps.cpp
     level/TowerAccess.h
     level/TowerAccess.cpp
+    level/InstanceNames.h
+    level/InstanceNames.cpp
     level/ExitPortals.h
     level/ExitPortals.cpp
     level/LevelTransporters.h

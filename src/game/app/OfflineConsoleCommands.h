@@ -19,6 +19,7 @@
 #include "game/console/ConsoleCommand.h"
 #include "game/console/ConsoleCommands.h"
 #include "game/console/DevConsole.h"
+#include "game/console/FixtureRequest.h"
 #include "game/console/NoclipMotion.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
@@ -108,14 +109,14 @@ public:
      * installed and the way back from one. */
     std::vector<std::string> gotoWords(Arguments arguments) const;
     /** The switches of the world in play, with their state. */
-    std::vector<ConsoleCommands::SwitchEntry> consoleSwitches() const;
+    std::vector<SwitchEntry> consoleSwitches() const;
 
 private:
     /** A door or chest of the level in play the console can name. */
     struct ConsoleFixture {
         SceneSelection::Kind kind = SceneSelection::Kind::Gate;
         usize index = 0;
-        ConsoleCommands::NamedEntry entry;
+        NamedEntry entry;
     };
     /** What `list` reads of a level: the one in play's, or a named map's loaded for it. */
     struct ConsoleLevel {

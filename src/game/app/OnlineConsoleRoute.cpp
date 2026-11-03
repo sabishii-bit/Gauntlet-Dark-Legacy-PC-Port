@@ -5,6 +5,8 @@
 #include <utility>
 
 #include "game/console/ConsoleCommands.h"
+#include "game/console/GiftRequest.h"
+#include "game/console/SpawnRequest.h"
 
 namespace gdl::game {
 
@@ -16,20 +18,23 @@ OnlineConsoleRouting routeOnlineConsole(std::string_view name,
     }
     std::string error;
     if (name == "get") {
-        const auto gift = ConsoleCommands::parseGet(arguments, error);
-        if (gift && gift->kind == ConsoleCommands::Gift::Kind::Info) {
+        const auto gift = parseGift(arguments);
+        if (gift && gift->kind == GiftRequest::Kind::Info) {
             return {};
         }
-        if (gift) {
-            error.clear();
+        if (!gift) {
+            error = gift.error();
         }
     } else if (name == "goto") {
-        if (const auto destination = ConsoleCommands::parseGoto(arguments, error)) {
-            error = destination->offlineOnly() ? "Legends maps are offline only." : "";
+        const auto destination = ConsoleCommands::parseGoto(arguments);
+        if (!destination) {
+            error = destination.error();
+        } else if (destination->offlineOnly()) {
+            error = "Legends maps are offline only.";
         }
     } else if (name == "spawn") {
-        if (ConsoleCommands::parseSpawn(arguments, error)) {
-            error.clear();
+        if (const auto spawn = parseSpawn(arguments); !spawn) {
+            error = spawn.error();
         }
     } else if (!arguments.empty()) {
         error = std::format("Usage: {}", name);

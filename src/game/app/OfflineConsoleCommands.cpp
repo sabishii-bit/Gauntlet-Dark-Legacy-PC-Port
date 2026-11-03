@@ -19,12 +19,17 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
+#include "game/console/GiftRequest.h"
+#include "game/console/LevelListingLines.h"
+#include "game/console/PartyCountRequest.h"
+#include "game/console/SpawnRequest.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/Critters.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/Chests.h"
+#include "game/level/InstanceNames.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LockedGates.h"
 #include "game/level/TowerAccess.h"
@@ -105,17 +110,16 @@ bool OfflineConsoleCommands::consoleLevel(DevConsole& console,
 }
 
 void OfflineConsoleCommands::list(DevConsole& console, Arguments arguments) {
-    using Listing = ConsoleCommands::Listing;
     const auto say = [&](const std::vector<std::string>& lines) {
         for (const std::string& line : lines) {
             console.print(line);
         }
     };
-    const Listing listing = ConsoleCommands::listingOf(arguments);
-    const std::optional<std::string> map = ConsoleCommands::listedMap(arguments);
+    const Listing listing = listingOf(arguments);
+    const std::optional<std::string> map = listedMap(arguments);
     switch (listing) {
     case Listing::Maps:
-        say(ConsoleCommands::mapLines(m_ports.levels));
+        say(mapLines(m_ports.levels));
         // The Legends maps installed stand with them, each platform's on a line; nothing is
         // said of a platform without any.
         say(m_ports.legendsMapLines());
@@ -123,16 +127,16 @@ void OfflineConsoleCommands::list(DevConsole& console, Arguments arguments) {
     case Listing::Inventory:
         if (const PlayerActor* actor =
                 consoleScene() ? consoleScene()->actor(consolePlayer()) : nullptr) {
-            say(ConsoleCommands::inventoryLines(actor->save()));
+            say(inventoryLines(actor->save()));
         } else {
             console.print("Nobody is in.");
         }
         return;
-    case Listing::Unknown: console.print(ConsoleCommands::listUsage()); return;
+    case Listing::Unknown: console.print(listUsage()); return;
     case Listing::Characters:
         if (m_ports.saves.opened() ||
             m_ports.saves.open(m_ports.config.saveDirectory(), m_ports.config.save.slots)) {
-            say(ConsoleCommands::characterLines(m_ports.saves.classUnlocks()));
+            say(characterLines(m_ports.saves.classUnlocks()));
         } else {
             console.print("The saves cannot be opened, so what is unlocked is unknown.");
         }
@@ -140,21 +144,21 @@ void OfflineConsoleCommands::list(DevConsole& console, Arguments arguments) {
     case Listing::Switches:
         if (!map.has_value() && consoleWorld() != nullptr) {
             console.print(std::format("In {}:", consoleWorld()->ref().name));
-            say(ConsoleCommands::switchLines(consoleSwitches()));
+            say(switchLines(consoleSwitches()));
             return;
         }
         break;
     case Listing::Items:
         if (!map.has_value()) {
-            say(ConsoleCommands::itemLines());
+            say(itemLines());
         }
         break;
     case Listing::Enemies:
         if (!map.has_value()) {
-            say(ConsoleCommands::enemyKindLines());
+            say(enemyKindLines());
         }
         break;
-    case Listing::Critters: say(ConsoleCommands::critterLines()); break;
+    case Listing::Critters: say(critterLines()); break;
     case Listing::Generators:
     case Listing::Objects: break;
     }
@@ -164,21 +168,19 @@ void OfflineConsoleCommands::list(DevConsole& console, Arguments arguments) {
     }
     console.print(std::format("In {}:", level.name));
     switch (listing) {
-    case Listing::Items: say(ConsoleCommands::pickupLines(*level.layout)); break;
+    case Listing::Items: say(pickupLines(*level.layout)); break;
     case Listing::Enemies:
-        say(ConsoleCommands::rosterLines(level.roster));
-        say(ConsoleCommands::generatorLines(*level.layout));
-        say(ConsoleCommands::placedEnemyLines(*level.layout));
+        say(rosterLines(level.roster));
+        say(generatorLines(*level.layout));
+        say(placedEnemyLines(*level.layout));
         break;
-    case Listing::Critters: say(ConsoleCommands::placedCritterLines(*level.layout)); break;
+    case Listing::Critters: say(placedCritterLines(*level.layout)); break;
     case Listing::Generators:
-        say(ConsoleCommands::generatorLines(*level.layout));
+        say(generatorLines(*level.layout));
         console.print("spawn generator <enemy> [tier] stands another");
         break;
-    case Listing::Objects: say(ConsoleCommands::objectLines(*level.layout)); break;
-    case Listing::Switches:
-        say(ConsoleCommands::switchLines(ConsoleCommands::switchesOf(*level.layout)));
-        break;
+    case Listing::Objects: say(objectLines(*level.layout)); break;
+    case Listing::Switches: say(switchLines(switchesOf(*level.layout))); break;
     case Listing::Maps:
     case Listing::Inventory:
     case Listing::Characters:
@@ -186,8 +188,8 @@ void OfflineConsoleCommands::list(DevConsole& console, Arguments arguments) {
     }
 }
 
-std::vector<ConsoleCommands::SwitchEntry> OfflineConsoleCommands::consoleSwitches() const {
-    std::vector<ConsoleCommands::SwitchEntry> switches;
+std::vector<SwitchEntry> OfflineConsoleCommands::consoleSwitches() const {
+    std::vector<SwitchEntry> switches;
     const LevelWorld* world = consoleWorld();
     if (world == nullptr) {
         return switches;
@@ -196,10 +198,10 @@ std::vector<ConsoleCommands::SwitchEntry> OfflineConsoleCommands::consoleSwitche
     const LevelTriggers& triggers = world->triggers();
     for (usize i = 0; i < triggers.size(); ++i) {
         const LevelTrigger& trigger = triggers.trigger(i);
-        ConsoleCommands::SwitchEntry entry;
+        SwitchEntry entry;
         entry.index = static_cast<s32>(i);
         entry.id = trigger.id;
-        entry.name = ConsoleCommands::instanceName(layout, trigger.instance);
+        entry.name = instanceName(layout, trigger.instance);
         if (trigger.target >= 0 && static_cast<usize>(trigger.target) < layout.objects().size()) {
             entry.target = layout.objects()[static_cast<usize>(trigger.target)].name;
         }
@@ -224,19 +226,19 @@ OfflineConsoleCommands::consoleFixtures() const {
     const LockedGates& gates = scene->gates();
     for (usize i = 0; i < gates.size(); ++i) {
         if (gates.gate(i).shown) {
-            fixtures.push_back({SceneSelection::Kind::Gate,
-                                i,
-                                {std::format("gate#{}", i),
-                                 ConsoleCommands::instanceName(layout, gates.gate(i).instance)}});
+            fixtures.push_back(
+                {SceneSelection::Kind::Gate,
+                 i,
+                 {std::format("gate#{}", i), instanceName(layout, gates.gate(i).instance)}});
         }
     }
     const Chests& chests = scene->chests();
     for (usize i = 0; i < chests.size(); ++i) {
         if (chests.chest(i).shown && !chests.chest(i).gone) {
-            fixtures.push_back({SceneSelection::Kind::Chest,
-                                i,
-                                {std::format("chest#{}", i),
-                                 ConsoleCommands::instanceName(layout, chests.chest(i).instance)}});
+            fixtures.push_back(
+                {SceneSelection::Kind::Chest,
+                 i,
+                 {std::format("chest#{}", i), instanceName(layout, chests.chest(i).instance)}});
         }
     }
     return fixtures;
@@ -247,8 +249,7 @@ std::vector<std::string> OfflineConsoleCommands::activateWords(Arguments argumen
     if (arguments.size() > 1) {
         return words;
     }
-    for (const ConsoleCommands::NamedEntry& entry :
-         ConsoleCommands::switchEntries(consoleSwitches())) {
+    for (const NamedEntry& entry : switchEntries(consoleSwitches())) {
         words.push_back(entry.token);
         if (!entry.name.empty()) {
             words.push_back(entry.name);
@@ -282,7 +283,7 @@ std::vector<std::string> OfflineConsoleCommands::lockWords(Arguments arguments) 
 
 void OfflineConsoleCommands::activate(DevConsole& console, Arguments arguments) {
     if (arguments.size() != 1) {
-        console.print(ConsoleCommands::activateUsage());
+        console.print(activateUsage());
         return;
     }
     if (consoleScene() == nullptr || playScene() == nullptr || !playScene()->isOpen()) {
@@ -290,8 +291,8 @@ void OfflineConsoleCommands::activate(DevConsole& console, Arguments arguments) 
         return;
     }
     const auto switches = consoleSwitches();
-    const auto entries = ConsoleCommands::switchEntries(switches);
-    const std::vector<usize> found = ConsoleCommands::entriesNamed(entries, arguments[0]);
+    const auto entries = switchEntries(switches);
+    const std::vector<usize> found = entriesNamed(entries, arguments[0]);
     if (found.empty()) {
         console.print(std::format("{} names no switch here; list switches names them, or click "
                                   "a pad and activate $SELECTED",
@@ -308,7 +309,7 @@ void OfflineConsoleCommands::activate(DevConsole& console, Arguments arguments) 
                                   found.size(), tokens));
         return;
     }
-    const ConsoleCommands::SwitchEntry& entry = switches[found[0]];
+    const SwitchEntry& entry = switches[found[0]];
     if (!playScene()->pressSwitch(static_cast<usize>(entry.index))) {
         console.print(std::format("switch#{} {} is not for this party, or stands open for good",
                                   entry.index, entry.name));
@@ -329,11 +330,9 @@ void OfflineConsoleCommands::unlock(DevConsole& console, Arguments arguments) {
 }
 
 void OfflineConsoleCommands::changeLock(DevConsole& console, Arguments arguments, bool unlock) {
-    const std::string_view verb = unlock ? "unlock" : "lock";
-    std::string error;
-    const auto request = ConsoleCommands::parseLockRequest(arguments, error, verb);
+    const auto request = parseLockRequest(arguments, unlock ? LockVerb::Unlock : LockVerb::Lock);
     if (!request.has_value()) {
-        console.print(error);
+        console.print(request.error());
         return;
     }
     if (request->character) {
@@ -375,12 +374,12 @@ void OfflineConsoleCommands::changeLock(DevConsole& console, Arguments arguments
         return;
     }
     const auto fixtures = consoleFixtures();
-    std::vector<ConsoleCommands::NamedEntry> entries;
+    std::vector<NamedEntry> entries;
     entries.reserve(fixtures.size());
     for (const ConsoleFixture& fixture : fixtures) {
         entries.push_back(fixture.entry);
     }
-    const std::vector<usize> found = ConsoleCommands::entriesNamed(entries, request->what);
+    const std::vector<usize> found = entriesNamed(entries, request->what);
     if (found.empty()) {
         console.print(std::format("{} names no door or chest here; gate#N, chest#N, a name or "
                                   "$SELECTED after a click does",
@@ -440,10 +439,9 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
         console.print("Nobody is in to spawn before.");
         return;
     }
-    std::string error;
-    const auto spawn = ConsoleCommands::parseSpawn(arguments, error);
+    const auto spawn = parseSpawn(arguments);
     if (!spawn.has_value()) {
-        console.print(error);
+        console.print(spawn.error());
         return;
     }
     // The map named, when one is: where a visitor's voices, costume or object come from.
@@ -468,7 +466,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
     };
     PlayScene& scene = *playScene();
     switch (spawn->kind) {
-    case ConsoleCommands::Spawn::Kind::Enemy: {
+    case SpawnRequest::Kind::Enemy: {
         if (from.has_value()) {
             consoleBorrowVoices(console, *from);
         }
@@ -492,7 +490,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
                       : std::format("No room for {} here, or its kind is missing", spawn->name));
         break;
     }
-    case ConsoleCommands::Spawn::Kind::Critter: {
+    case SpawnRequest::Kind::Critter: {
         const char realm =
             from.has_value() && !from->name.empty()
                 ? static_cast<char>(std::toupper(static_cast<unsigned char>(from->name.front())))
@@ -517,7 +515,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
                           : std::format("No room for a {} here, or its kind is missing", what));
         break;
     }
-    case ConsoleCommands::Spawn::Kind::Generator: {
+    case SpawnRequest::Kind::Generator: {
         if (from.has_value()) {
             consoleBorrowVoices(console, *from);
         }
@@ -543,7 +541,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
                     break;
                 }
                 if (consoleLevel(console, spawn->map, source)) {
-                    record = ConsoleCommands::generatorRecord(*source.layout, "SPECIAL");
+                    record = generatorRecord(*source.layout, "SPECIAL");
                 }
             }
         }
@@ -555,7 +553,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
                           : std::format("No {} generator could stand here", spawn->name));
         break;
     }
-    case ConsoleCommands::Spawn::Kind::Item:
+    case SpawnRequest::Kind::Item:
         if (from.has_value()) {
             console.print("Pickups come from the level in play alone; name one without a map");
         } else if (playWorld()->placeItem(m_ports.device(), spawn->name, spotAt(0))) {
@@ -565,7 +563,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
                 std::format("No pickup record named {} here; list items names them", spawn->name));
         }
         break;
-    case ConsoleCommands::Spawn::Kind::Object: {
+    case SpawnRequest::Kind::Object: {
         const LevelRef source = from.has_value() ? *from : playWorld()->ref();
         if (scene.spawnObject(source, spawn->name, spotAt(0), yawToPlayer)) {
             console.print(std::format("Stood {} of {}", spawn->name, source.name));
@@ -575,7 +573,7 @@ void OfflineConsoleCommands::spawn(DevConsole& console, Arguments arguments) {
         }
         break;
     }
-    case ConsoleCommands::Spawn::Kind::Thing: {
+    case SpawnRequest::Kind::Thing: {
         if (!from.has_value() && playWorld()->placeItem(m_ports.device(), spawn->name, spotAt(0))) {
             console.print(std::format("Dropped {}", spawn->name));
             break;
@@ -634,13 +632,14 @@ void OfflineConsoleCommands::partyCount(DevConsole& console, Arguments arguments
         console.print(describe());
         return;
     }
-    std::string error;
-    const auto parsed = ConsoleCommands::parsePartyCount(arguments, error);
+    const auto parsed = parsePartyCount(arguments);
     if (!parsed.has_value()) {
-        console.print(error);
+        console.print(parsed.error());
         return;
     }
-    m_ports.partyCount = *parsed;
+    m_ports.partyCount = parsed->mode == PartyCountRequest::Mode::Fixed
+                             ? std::optional{parsed->players}
+                             : std::nullopt;
     if (playScene()->isOpen()) {
         playScene()->setPartyCountOverride(m_ports.partyCount);
     }
@@ -677,7 +676,7 @@ void OfflineConsoleCommands::unlockTower(DevConsole& console) {
     s32 opened = 0;
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         if (CharacterSave* save = playScene()->liveSave(player)) {
-            ConsoleCommands::unlockTower(*save);
+            TowerAccess::openEverything(*save);
             ++opened;
         }
     }
@@ -698,14 +697,12 @@ void OfflineConsoleCommands::unlockTower(DevConsole& console) {
 }
 
 void OfflineConsoleCommands::get(DevConsole& console, Arguments arguments) {
-    std::string error;
-    const auto gift = ConsoleCommands::parseGet(arguments, error);
+    const auto gift = parseGift(arguments);
     if (!gift.has_value()) {
-        console.print(error);
+        console.print(gift.error());
         return;
     }
-    GDL_VERIFY(gift->kind != ConsoleCommands::Gift::Kind::Info,
-               "get info is answered before the gifts");
+    GDL_VERIFY(gift->kind != GiftRequest::Kind::Info, "get info is answered before the gifts");
     const s32 player = consolePlayer();
     CharacterSave* save = playScene()->liveSave(player);
     if (save == nullptr) {
@@ -713,20 +710,20 @@ void OfflineConsoleCommands::get(DevConsole& console, Arguments arguments) {
         return;
     }
     switch (gift->kind) {
-    case ConsoleCommands::Gift::Kind::Experience:
+    case GiftRequest::Kind::Experience:
         playScene()->awardExperience(player, gift->amount, false);
         playScene()->restat(player);
         console.print(std::format("{} experience: level {}", gift->amount,
                                   experienceLevel(save->experience())));
         break;
-    case ConsoleCommands::Gift::Kind::Level:
+    case GiftRequest::Kind::Level:
         save->progress().experience = levelExperience(gift->amount);
         playScene()->restat(player);
         console.print(std::format("Level {}", gift->amount));
         break;
-    case ConsoleCommands::Gift::Kind::Item:
+    case GiftRequest::Kind::Item:
         // At one times the strength: the seconds asked for are the seconds given.
-        console.print(ConsoleCommands::report(*gift, takeItem(*save, gift->offer, 1.0f, true)));
+        console.print(giftReport(*gift, takeItem(*save, gift->offer, 1.0f, true)));
         break;
     }
 }
