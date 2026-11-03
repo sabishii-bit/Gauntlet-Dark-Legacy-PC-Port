@@ -10,8 +10,6 @@
 
 #include "engine/app/Application.h"
 #include "engine/assets/StringTable.h"
-#include "engine/assets/WorldData.h"
-#include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioDevice.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
@@ -26,11 +24,11 @@
 #include "game/app/CommandLine.h"
 #include "game/app/LevelCompletion.h"
 #include "game/app/LevelDebugOverlay.h"
+#include "game/app/OfflineConsoleCommands.h"
 #include "game/app/OnlineRun.h"
 #include "game/audio/MusicDuck.h"
 #include "game/camera/FreeCamera.h"
 #include "game/config/GameConfig.h"
-#include "game/console/ConsoleCommands.h"
 #include "game/console/DevConsole.h"
 #include "game/console/NoclipMotion.h"
 #include "game/context/GameContext.h"
@@ -90,38 +88,20 @@ private:
     void setUpConsole();
     const PlayScene* consoleScene() const;
     const LevelWorld* consoleWorld() const;
+    /** What the offline console commands read and change of the game. */
+    OfflineConsoleCommands::Ports offlineConsolePorts();
     bool dispatchOnlineConsole(DevConsole& console, std::string_view name,
                                DevConsole::Arguments arguments);
     bool updateOnlineConsole(f64 deltaSeconds, bool overlay = false);
     /** The player the console speaks for: the one at the keyboard, else the first in; -1
      * with nobody in. */
     s32 consolePlayer();
-    void consoleList(DevConsole& console, DevConsole::Arguments arguments);
     void consoleGoto(DevConsole& console, DevConsole::Arguments arguments);
-    std::vector<std::string> gotoWords(DevConsole::Arguments arguments) const;
-    /** `party_count`: the party size the level sets itself up for, or off. */
-    void consolePartyCount(DevConsole& console, DevConsole::Arguments arguments);
-    /** activate: presses a switch of the level in play, named by token, id or name. */
-    void consoleActivate(DevConsole& console, DevConsole::Arguments arguments);
-    /** lock and unlock: a character by its code, or a door or chest of the level in play. */
-    void consoleLock(DevConsole& console, DevConsole::Arguments arguments, bool unlock);
-    /** The switches of the world in play, with their state. */
-    std::vector<ConsoleCommands::SwitchEntry> consoleSwitches() const;
-    /** A door or chest of the level in play the console can name. */
-    struct ConsoleFixture {
-        SceneSelection::Kind kind = SceneSelection::Kind::Gate;
-        usize index = 0;
-        ConsoleCommands::NamedEntry entry;
-    };
-    std::vector<ConsoleFixture> consoleFixtures() const;
-    std::vector<std::string> activateWords(DevConsole::Arguments arguments) const;
-    std::vector<std::string> lockWords(DevConsole::Arguments arguments) const;
     /** The installed Legends maps of a platform, found as the catalogue finds them. */
     /** The Legends maps installed for a platform. The disk is walked on the first ask and
      * whenever `rescan` asks (list maps, goto); the console's completion reads what was
      * found, so typing costs nothing when there is no Legends content at all. */
-    std::vector<LegendsMapEntry> legendsMapsOf(LegendsPlatform platform,
-                                               bool rescan = false) const;
+    std::vector<LegendsMapEntry> legendsMapsOf(LegendsPlatform platform, bool rescan = false) const;
     /** The folder of the Legends map named `name`: on `platform`, or on whichever has it. */
     std::optional<std::pair<LegendsPlatform, std::filesystem::path>>
     findLegendsMap(std::string_view name, std::optional<LegendsPlatform> platform) const;
@@ -140,27 +120,8 @@ private:
     void finishLegendsTravel();
     void consoleUnlockTower(DevConsole& console);
     void consoleGet(DevConsole& console, DevConsole::Arguments arguments);
-    void consoleSpawn(DevConsole& console, DevConsole::Arguments arguments);
-    void consoleSuicide(DevConsole& console);
-    /** Lends the swarm `level`'s voices for the visitors brought in from it. */
-    void consoleBorrowVoices(DevConsole& console, const LevelRef& level);
-    /** What `list` reads of a level: the one in play's, or a named map's loaded for it. */
-    struct ConsoleLevel {
-        std::string name;
-        const WorldLayout* layout = nullptr;
-        std::span<const LevelEnemy> roster;
-        WorldLayout loaded; ///< a named map's, when it is not the one in play
-        WorldData data;
-    };
-    /** Fills `level` for `map`, or for the level in play without one; false, having said
-     * why, for a map unknown or not unpacked. */
-    bool consoleLevel(DevConsole& console, const std::optional<std::string>& map,
-                      ConsoleLevel& level);
-    void consoleToggleCheat(DevConsole& console, bool PlayScene::ConsoleCheats::*flag,
-                            std::string_view on, std::string_view off);
     void consoleHideHud(DevConsole& console);
     void consoleFreeCam(DevConsole& console);
-    void consoleNoclip(DevConsole& console);
     /** Picks what stands under `cursor` in the view for the console, or lets the selection
      * go without one; the console's $SELECTED follows. */
     void consoleSelect(std::optional<Vec2> cursor);
@@ -264,7 +225,7 @@ private:
     std::unique_ptr<PlaySession>
         m_legendsOrigin; ///< paused GDL scene during an offline native visit
     std::vector<PartyMember> m_legendsEntryParty;
-    std::vector<PartyMember> m_legendsTowerParty; ///< last installed native Tower collection
+    std::vector<PartyMember> m_legendsTowerParty;        ///< last installed native Tower collection
     std::shared_ptr<LegendsAdviceState> m_legendsAdvice; ///< native new-party advice scope
     PauseMenu m_pause;
     MusicDuck m_musicDuck; ///< the music under the pause menu
@@ -295,6 +256,7 @@ private:
     std::optional<Journey> m_journey;
     void returnFromChallenge(std::span<const PartyMember> party);
     SaveSlots m_saves; ///< where the party in play is kept
+    OfflineConsoleCommands m_offlineConsole{offlineConsolePorts()};
     TransitionScreen m_loadingPicture;
     LevelLoadingScreen m_levelLoading;
     Canvas m_canvas;

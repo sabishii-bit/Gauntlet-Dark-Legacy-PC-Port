@@ -1,4 +1,3 @@
-#include <cctype>
 #include <format>
 #include <optional>
 #include <string>
@@ -7,7 +6,6 @@
 
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/ObjectMaterial.h"
-#include "engine/assets/WorldData.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Log.h"
 #include "engine/io/File.h"
@@ -17,6 +15,8 @@
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "game/app/Gauntlet.h"
+#include "game/app/OfflineConsoleCommands.h"
+#include "game/app/OnlineConsoleRoute.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
 #include "game/console/ConsoleCommands.h"
@@ -26,8 +26,6 @@
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/Generators.h"
 #include "game/level/PlacedItems.h"
-#include "game/level/TowerAccess.h"
-#include "game/players/ItemPickup.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/widgets/MenuInput.h"
 
@@ -82,38 +80,40 @@ void Gauntlet::setUpConsole() {
     m_console.addCommand(
         "list", "maps, items or inventory: what there is",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            consoleList(console, arguments);
+            m_offlineConsole.list(console, arguments);
         },
         wordsCompleter({"maps", "items", "inventory", "enemies", "critters", "generators",
                         "objects", "switches", "characters"}));
     m_console.addCommand(
         "activate", "$SELECTED, switch#N, an id or a name: fires that switch as if stood on",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            consoleActivate(console, arguments);
+            m_offlineConsole.activate(console, arguments);
         },
-        [this](DevConsole::Arguments arguments) { return activateWords(arguments); });
+        [this](DevConsole::Arguments arguments) {
+            return m_offlineConsole.activateWords(arguments);
+        });
     m_console.addCommand(
         "unlock", "a door or chest without a key, or character <code> for the select screen",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            consoleLock(console, arguments, true);
+            m_offlineConsole.lock(console, arguments, true);
         },
-        [this](DevConsole::Arguments arguments) { return lockWords(arguments); });
+        [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
     m_console.addCommand(
         "lock", "a door shut or a chest wanting a key again, or character <code> hidden again",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            consoleLock(console, arguments, false);
+            m_offlineConsole.lock(console, arguments, false);
         },
-        [this](DevConsole::Arguments arguments) { return lockWords(arguments); });
+        [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
     m_console.addCommand(
         "goto", "<map> [x y z], x y z or <legends map> [preview]: brings the party there",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
             consoleGoto(console, arguments);
         },
-        [this](DevConsole::Arguments arguments) { return gotoWords(arguments); });
+        [this](DevConsole::Arguments arguments) { return m_offlineConsole.gotoWords(arguments); });
     m_console.addCommand(
         "party_count", "<1-4> or off: the party size the level sets itself up for",
         [this](DevConsole& console, DevConsole::Arguments arguments) {
-            consolePartyCount(console, arguments);
+            m_offlineConsole.partyCount(console, arguments);
         },
         wordsCompleter({"1", "2", "3", "4", "off"}));
     m_console.addCommand("unlock_tower", "opens every wing and portal of the tower",
@@ -128,22 +128,19 @@ void Gauntlet::setUpConsole() {
                          "stands enemies, great ones, generators, pickups or objects before you; "
                          "spawn alone says how",
                          [this](DevConsole& console, DevConsole::Arguments arguments) {
-                             consoleSpawn(console, arguments);
+                             m_offlineConsole.spawn(console, arguments);
                          });
     m_console.addCommand("suicide", "fells everyone standing",
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             consoleSuicide(console);
+                             m_offlineConsole.suicide(console);
                          });
     m_console.addCommand("notarget", "the enemies stop seeing you, or see you again",
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             consoleToggleCheat(console, &PlayScene::ConsoleCheats::noTarget,
-                                                "The enemies no longer see you",
-                                                "The enemies see you again");
+                             m_offlineConsole.noTarget(console);
                          });
     m_console.addCommand("god", "nothing harms you, or everything does again",
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             consoleToggleCheat(console, &PlayScene::ConsoleCheats::god,
-                                                "God mode on", "God mode off");
+                             m_offlineConsole.god(console);
                          });
     m_console.addCommand("hidehud", "hides or shows every HUD element",
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
@@ -155,7 +152,7 @@ void Gauntlet::setUpConsole() {
                          });
     m_console.addCommand("noclip", "flies you through everything, or sets you down again",
                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             consoleNoclip(console);
+                             m_offlineConsole.noclip(console);
                          });
 }
 
@@ -169,43 +166,65 @@ const LevelWorld* Gauntlet::consoleWorld() const {
                     : (m_play->scene.isOpen() ? &m_play->world : nullptr);
 }
 
+OfflineConsoleCommands::Ports Gauntlet::offlineConsolePorts() {
+    return {
+        .playScene = [this] { return m_play ? &m_play->scene : nullptr; },
+        .playWorld = [this] { return m_play ? &m_play->world : nullptr; },
+        .consoleScene = [this] { return consoleScene(); },
+        .consoleWorld = [this] { return consoleWorld(); },
+        .consolePlayer = [this] { return consolePlayer(); },
+        .device = [this]() -> RenderDevice& { return renderDevice(); },
+        .levels = m_levels,
+        .unpackedRoot = m_options.unpackedDirectory,
+        .config = m_config,
+        .saves = m_saves,
+        .cheats = m_consoleCheats,
+        .noclip = m_noclip,
+        .partyCount = m_partyCountOverride,
+        .travel = [this](const LevelRef& level, std::optional<Vec3> position,
+                         std::optional<f32> yaw) { consoleTravel(level, position, yaw); },
+        .legendsMapLines =
+            [this] {
+                std::vector<std::string> lines;
+                for (const LegendsPlatform platform :
+                     {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
+                    std::vector<std::string> names;
+                    for (const LegendsMapEntry& map : legendsMapsOf(platform, true)) {
+                        names.push_back(map.name);
+                    }
+                    const std::vector<std::string> platformLines =
+                        ConsoleCommands::legendsMapLines(platform, names);
+                    lines.insert(lines.end(), platformLines.begin(), platformLines.end());
+                }
+                return lines;
+            },
+        .legendsMapNames =
+            [this] {
+                std::vector<std::string> names;
+                for (const LegendsPlatform platform :
+                     {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
+                    for (const LegendsMapEntry& map : legendsMapsOf(platform)) {
+                        names.push_back(map.name);
+                    }
+                }
+                return names;
+            },
+    };
+}
+
 bool Gauntlet::dispatchOnlineConsole(DevConsole& console, std::string_view name,
                                      DevConsole::Arguments arguments) {
-    if (!m_online || name == "console_permissions" || name == "help" || name == "list" ||
-        name == "debug_info" || name == "hidehud" || name == "freecam") {
+    if (!m_online) {
         return false;
     }
-    std::string error;
-    if (name == "get") {
-        const auto gift = ConsoleCommands::parseGet(arguments, error);
-        if (gift && gift->kind == ConsoleCommands::Gift::Kind::Info) {
-            return false;
-        }
-        if (gift) {
-            error.clear();
-        }
-    } else if (name == "goto") {
-        if (const auto destination = ConsoleCommands::parseGoto(arguments, error)) {
-            error = destination->offlineOnly() ? "Legends maps are offline only." : "";
-        }
-    } else if (name == "spawn") {
-        if (ConsoleCommands::parseSpawn(arguments, error)) {
-            error.clear();
-        }
-    } else if (!arguments.empty()) {
-        error = std::format("Usage: {}", name);
-    }
-    if (!error.empty()) {
-        console.print(error);
-        return true;
+    OnlineConsoleRouting routing = routeOnlineConsole(name, arguments);
+    switch (routing.kind) {
+    case OnlineConsoleRouting::Kind::Local: return false;
+    case OnlineConsoleRouting::Kind::Refused: console.print(routing.text); return true;
+    case OnlineConsoleRouting::Kind::Requested: break;
     }
     const s32 seat = consolePlayer();
-    std::string line(name);
-    for (const auto& argument : arguments) {
-        line += ' ';
-        line += argument;
-    }
-    if (seat < 0 || !m_online->consoleCommand(static_cast<u8>(seat), std::move(line))) {
+    if (seat < 0 || !m_online->consoleCommand(static_cast<u8>(seat), std::move(routing.text))) {
         console.print("Command not queued: permission denied, session busy, or request too long.");
     } else {
         console.print("Command requested for the shared game.");
@@ -259,18 +278,6 @@ bool Gauntlet::updateOnlineConsole(f64 deltaSeconds, bool overlay) {
         }
     }
     return m_console.open() || wasOpen;
-}
-
-void Gauntlet::consoleNoclip(DevConsole& console) {
-    const s32 player = consolePlayer();
-    if (player < 0) {
-        console.print("Nobody is in.");
-        return;
-    }
-    bool& flying = m_consoleCheats[static_cast<usize>(player)].noclip;
-    flying = !flying;
-    m_noclip[static_cast<usize>(player)].reset();
-    console.print(flying ? std::format("Noclip on: {}", NoclipMotion::kHelp) : "Noclip off");
 }
 
 bool Gauntlet::consoleCovers(Vec2 cursor) {
@@ -331,7 +338,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
     const s32 id = selection.id;
     switch (selection.kind) {
     case Kind::Switch: {
-        const auto switches = consoleSwitches();
+        const auto switches = m_offlineConsole.consoleSwitches();
         if (id < 0 || static_cast<usize>(id) >= switches.size()) {
             lines.push_back(std::format("{} names no switch of {}", selection.token(),
                                         consoleWorld()->ref().name));
@@ -577,18 +584,6 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
     return lines;
 }
 
-void Gauntlet::consoleToggleCheat(DevConsole& console, bool PlayScene::ConsoleCheats::*flag,
-                                  std::string_view on, std::string_view off) {
-    const s32 player = consolePlayer();
-    if (player < 0) {
-        console.print("Nobody is in.");
-        return;
-    }
-    bool& granted = m_consoleCheats[static_cast<usize>(player)].*flag;
-    granted = !granted;
-    console.print(granted ? on : off);
-}
-
 void Gauntlet::consoleHideHud(DevConsole& console) {
     m_hudHidden = !m_hudHidden;
     console.print(m_hudHidden ? "HUD hidden" : "HUD shown");
@@ -673,583 +668,6 @@ s32 Gauntlet::consolePlayer() {
     return first;
 }
 
-bool Gauntlet::consoleLevel(DevConsole& console, const std::optional<std::string>& map,
-                            ConsoleLevel& level) {
-    if (!map.has_value()) {
-        const auto* world = consoleWorld();
-        if (world == nullptr) {
-            console.print("Nothing is in play.");
-            return false;
-        }
-        level.name = world->ref().name;
-        level.layout = &world->layout();
-        if (const LevelInfo* info = world->level()) {
-            level.roster = info->enemies;
-        }
-        return true;
-    }
-    const std::optional<LevelRef> ref =
-        *map == "TOWER" ? std::optional{LevelRef::tower()} : m_levels.byName(*map);
-    if (!ref.has_value()) {
-        console.print(std::format("No map named {}; list maps names them", *map));
-        return false;
-    }
-    if (!level.loaded.load(m_options.unpackedDirectory / ref->directory)) {
-        console.print(std::format("{} is not unpacked", ref->name));
-        return false;
-    }
-    level.name = ref->name;
-    level.layout = &level.loaded;
-    if (level.data.load(m_options.unpackedDirectory / ref->worldDataFile())) {
-        if (const LevelInfo* info = level.data.level(ref->name)) {
-            level.roster = info->enemies;
-        }
-    }
-    return true;
-}
-
-void Gauntlet::consoleList(DevConsole& console, DevConsole::Arguments arguments) {
-    using Listing = ConsoleCommands::Listing;
-    const auto say = [&](const std::vector<std::string>& lines) {
-        for (const std::string& line : lines) {
-            console.print(line);
-        }
-    };
-    const Listing listing = ConsoleCommands::listingOf(arguments);
-    const std::optional<std::string> map = ConsoleCommands::listedMap(arguments);
-    switch (listing) {
-    case Listing::Maps:
-        say(ConsoleCommands::mapLines(m_levels));
-        // The Legends maps installed stand with them, each platform's on a line; nothing is
-        // said of a platform without any.
-        for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
-            std::vector<std::string> names;
-            for (const LegendsMapEntry& map : legendsMapsOf(platform, true)) {
-                names.push_back(map.name);
-            }
-            say(ConsoleCommands::legendsMapLines(platform, names));
-        }
-        return;
-    case Listing::Inventory:
-        if (const PlayerActor* actor =
-                consoleScene() ? consoleScene()->actor(consolePlayer()) : nullptr) {
-            say(ConsoleCommands::inventoryLines(actor->save()));
-        } else {
-            console.print("Nobody is in.");
-        }
-        return;
-    case Listing::Unknown: console.print(ConsoleCommands::listUsage()); return;
-    case Listing::Characters:
-        if (m_saves.opened() || m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
-            say(ConsoleCommands::characterLines(m_saves.classUnlocks()));
-        } else {
-            console.print("The saves cannot be opened, so what is unlocked is unknown.");
-        }
-        return;
-    case Listing::Switches:
-        if (!map.has_value() && consoleWorld() != nullptr) {
-            console.print(std::format("In {}:", consoleWorld()->ref().name));
-            say(ConsoleCommands::switchLines(consoleSwitches()));
-            return;
-        }
-        break;
-    case Listing::Items:
-        if (!map.has_value()) {
-            say(ConsoleCommands::itemLines());
-        }
-        break;
-    case Listing::Enemies:
-        if (!map.has_value()) {
-            say(ConsoleCommands::enemyKindLines());
-        }
-        break;
-    case Listing::Critters: say(ConsoleCommands::critterLines()); break;
-    case Listing::Generators:
-    case Listing::Objects: break;
-    }
-    ConsoleLevel level;
-    if (!consoleLevel(console, map, level)) {
-        return;
-    }
-    console.print(std::format("In {}:", level.name));
-    switch (listing) {
-    case Listing::Items: say(ConsoleCommands::pickupLines(*level.layout)); break;
-    case Listing::Enemies:
-        say(ConsoleCommands::rosterLines(level.roster));
-        say(ConsoleCommands::generatorLines(*level.layout));
-        say(ConsoleCommands::placedEnemyLines(*level.layout));
-        break;
-    case Listing::Critters: say(ConsoleCommands::placedCritterLines(*level.layout)); break;
-    case Listing::Generators:
-        say(ConsoleCommands::generatorLines(*level.layout));
-        console.print("spawn generator <enemy> [tier] stands another");
-        break;
-    case Listing::Objects: say(ConsoleCommands::objectLines(*level.layout)); break;
-    case Listing::Switches:
-        say(ConsoleCommands::switchLines(ConsoleCommands::switchesOf(*level.layout)));
-        break;
-    case Listing::Maps:
-    case Listing::Inventory:
-    case Listing::Characters:
-    case Listing::Unknown: break;
-    }
-}
-
-std::vector<ConsoleCommands::SwitchEntry> Gauntlet::consoleSwitches() const {
-    std::vector<ConsoleCommands::SwitchEntry> switches;
-    const LevelWorld* world = consoleWorld();
-    if (world == nullptr) {
-        return switches;
-    }
-    const WorldLayout& layout = world->layout();
-    const LevelTriggers& triggers = world->triggers();
-    for (usize i = 0; i < triggers.size(); ++i) {
-        const LevelTrigger& trigger = triggers.trigger(i);
-        ConsoleCommands::SwitchEntry entry;
-        entry.index = static_cast<s32>(i);
-        entry.id = trigger.id;
-        entry.name = ConsoleCommands::instanceName(layout, trigger.instance);
-        if (trigger.target >= 0 && static_cast<usize>(trigger.target) < layout.objects().size()) {
-            entry.target = layout.objects()[static_cast<usize>(trigger.target)].name;
-        }
-        entry.shootable = trigger.shootable;
-        entry.chained = trigger.chained;
-        entry.fired = trigger.fired;
-        entry.enabled = trigger.enabled;
-        switches.push_back(std::move(entry));
-    }
-    return switches;
-}
-
-std::vector<Gauntlet::ConsoleFixture> Gauntlet::consoleFixtures() const {
-    std::vector<ConsoleFixture> fixtures;
-    const PlayScene* scene = consoleScene();
-    const LevelWorld* world = consoleWorld();
-    if (scene == nullptr || world == nullptr) {
-        return fixtures;
-    }
-    const WorldLayout& layout = world->layout();
-    const LockedGates& gates = scene->gates();
-    for (usize i = 0; i < gates.size(); ++i) {
-        if (gates.gate(i).shown) {
-            fixtures.push_back({SceneSelection::Kind::Gate,
-                                i,
-                                {std::format("gate#{}", i),
-                                 ConsoleCommands::instanceName(layout, gates.gate(i).instance)}});
-        }
-    }
-    const Chests& chests = scene->chests();
-    for (usize i = 0; i < chests.size(); ++i) {
-        if (chests.chest(i).shown && !chests.chest(i).gone) {
-            fixtures.push_back({SceneSelection::Kind::Chest,
-                                i,
-                                {std::format("chest#{}", i),
-                                 ConsoleCommands::instanceName(layout, chests.chest(i).instance)}});
-        }
-    }
-    return fixtures;
-}
-
-std::vector<std::string> Gauntlet::activateWords(DevConsole::Arguments arguments) const {
-    std::vector<std::string> words;
-    if (arguments.size() > 1) {
-        return words;
-    }
-    for (const ConsoleCommands::NamedEntry& entry :
-         ConsoleCommands::switchEntries(consoleSwitches())) {
-        words.push_back(entry.token);
-        if (!entry.name.empty()) {
-            words.push_back(entry.name);
-        }
-    }
-    return words;
-}
-
-std::vector<std::string> Gauntlet::lockWords(DevConsole::Arguments arguments) const {
-    std::vector<std::string> words;
-    if (arguments.size() > 2) {
-        return words;
-    }
-    if (arguments.size() == 2) {
-        if (arguments[0] == "character" || arguments[0] == "CHARACTER") {
-            for (s32 i = kStartingClassCount; i < kClassCount; ++i) {
-                words.emplace_back(classCode(i));
-            }
-        }
-        return words;
-    }
-    words.emplace_back("character");
-    for (const ConsoleFixture& fixture : consoleFixtures()) {
-        words.push_back(fixture.entry.token);
-        if (!fixture.entry.name.empty()) {
-            words.push_back(fixture.entry.name);
-        }
-    }
-    return words;
-}
-
-void Gauntlet::consoleActivate(DevConsole& console, DevConsole::Arguments arguments) {
-    if (arguments.size() != 1) {
-        console.print(ConsoleCommands::activateUsage());
-        return;
-    }
-    if (consoleScene() == nullptr || !m_play || !m_play->scene.isOpen()) {
-        console.print("Nothing is in play.");
-        return;
-    }
-    const auto switches = consoleSwitches();
-    const auto entries = ConsoleCommands::switchEntries(switches);
-    const std::vector<usize> found = ConsoleCommands::entriesNamed(entries, arguments[0]);
-    if (found.empty()) {
-        console.print(std::format("{} names no switch here; list switches names them, or click "
-                                  "a pad and activate $SELECTED",
-                                  arguments[0]));
-        return;
-    }
-    if (found.size() > 1) {
-        std::string tokens;
-        for (const usize index : found) {
-            tokens += tokens.empty() ? "" : ", ";
-            tokens += entries[index].token;
-        }
-        console.print(std::format("{} names {} switches: {}; say which by its token", arguments[0],
-                                  found.size(), tokens));
-        return;
-    }
-    const ConsoleCommands::SwitchEntry& entry = switches[found[0]];
-    if (!m_play->scene.pressSwitch(static_cast<usize>(entry.index))) {
-        console.print(std::format("switch#{} {} is not for this party, or stands open for good",
-                                  entry.index, entry.name));
-        return;
-    }
-    console.print(entry.target.empty()
-                      ? std::format("Pressed switch#{} {}", entry.index, entry.name)
-                      : std::format("Pressed switch#{} {}: {} answers, the camera following",
-                                    entry.index, entry.name, entry.target));
-}
-
-void Gauntlet::consoleLock(DevConsole& console, DevConsole::Arguments arguments, bool unlock) {
-    const std::string_view verb = unlock ? "unlock" : "lock";
-    std::string error;
-    const auto request = ConsoleCommands::parseLockRequest(arguments, error, verb);
-    if (!request.has_value()) {
-        console.print(error);
-        return;
-    }
-    if (request->character) {
-        const auto index = classIndexOf(request->what);
-        if (!index.has_value()) {
-            console.print(
-                std::format("No character is coded {}; list characters names them", request->what));
-            return;
-        }
-        if (*index < kStartingClassCount) {
-            console.print(std::format("{} is always there to choose", classCode(*index)));
-            return;
-        }
-        if (!m_saves.opened() && !m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
-            console.print("The saves cannot be opened.");
-            return;
-        }
-        const auto mask = static_cast<u16>(1U << (*index - kStartingClassCount));
-        const bool written = unlock ? m_saves.unlockClasses(mask) : m_saves.lockClasses(mask);
-        if (!unlock && m_play && m_play->scene.isOpen()) {
-            // The party in play carries the old reward bits; they would bring it back.
-            for (s32 player = 0; player < 4; ++player) {
-                if (CharacterSave* save = m_play->scene.liveSave(player)) {
-                    save->classUnlock &= static_cast<u16>(~mask);
-                }
-            }
-        }
-        console.print(
-            std::format("{} {}{}", classCode(*index),
-                        unlock ? "unlocked: the select screen offers it"
-                               : "locked: the select screen hides it again",
-                        written ? "" : " (for this session; the profile was not written)"));
-        return;
-    }
-    if (consoleScene() == nullptr || !m_play || !m_play->scene.isOpen()) {
-        console.print("Nothing is in play.");
-        return;
-    }
-    const auto fixtures = consoleFixtures();
-    std::vector<ConsoleCommands::NamedEntry> entries;
-    entries.reserve(fixtures.size());
-    for (const ConsoleFixture& fixture : fixtures) {
-        entries.push_back(fixture.entry);
-    }
-    const std::vector<usize> found = ConsoleCommands::entriesNamed(entries, request->what);
-    if (found.empty()) {
-        console.print(std::format("{} names no door or chest here; gate#N, chest#N, a name or "
-                                  "$SELECTED after a click does",
-                                  request->what));
-        return;
-    }
-    if (found.size() > 1) {
-        std::string tokens;
-        for (const usize index : found) {
-            tokens += tokens.empty() ? "" : ", ";
-            tokens += entries[index].token;
-        }
-        console.print(std::format("{} names {} things: {}; say which by its token", request->what,
-                                  found.size(), tokens));
-        return;
-    }
-    const ConsoleFixture& fixture = fixtures[found[0]];
-    const std::string label = fixture.entry.name.empty()
-                                  ? fixture.entry.token
-                                  : std::format("{} {}", fixture.entry.token, fixture.entry.name);
-    if (fixture.kind == SceneSelection::Kind::Gate) {
-        const bool done = unlock ? m_play->scene.unlockGate(fixture.index)
-                                 : m_play->scene.lockGate(fixture.index);
-        if (!done) {
-            console.print(std::format("{} is {} already", label, unlock ? "open" : "shut"));
-        } else {
-            console.print(unlock ? std::format("{} unlocked: it swings open", label)
-                                 : std::format("{} locked: shut until a key is spent", label));
-        }
-        return;
-    }
-    if (!m_play->scene.setChestLocked(fixture.index, !unlock)) {
-        console.print(std::format("{} is open already", label));
-        return;
-    }
-    console.print(unlock ? std::format("{} unlocked: it opens without a key", label)
-                         : std::format("{} locked: a key opens it", label));
-}
-
-void Gauntlet::consoleBorrowVoices(DevConsole& console, const LevelRef& level) {
-    WorldData data;
-    const LevelInfo* info = data.load(m_options.unpackedDirectory / level.worldDataFile())
-                                ? data.level(level.name)
-                                : nullptr;
-    if (info == nullptr ||
-        !m_play->scene.borrowOpponentSounds(*info, data.audio(info->audioIndex))) {
-        console.print(std::format("({} lends no voices)", level.name));
-    }
-}
-
-void Gauntlet::consoleSpawn(DevConsole& console, DevConsole::Arguments arguments) {
-    constexpr f32 kAhead = 6.0f; ///< units before the character
-    constexpr f32 kApart = 3.0f; ///< between several
-    constexpr f32 kProbeAbove = 3.0f;
-    constexpr f32 kProbeBelow = 10.0f;
-    const PlayerActor* actor = m_play->scene.actor(consolePlayer());
-    if (actor == nullptr) {
-        console.print("Nobody is in to spawn before.");
-        return;
-    }
-    std::string error;
-    const auto spawn = ConsoleCommands::parseSpawn(arguments, error);
-    if (!spawn.has_value()) {
-        console.print(error);
-        return;
-    }
-    // The map named, when one is: where a visitor's voices, costume or object come from.
-    std::optional<LevelRef> from;
-    if (spawn->map.has_value()) {
-        from = *spawn->map == "TOWER" ? std::optional{LevelRef::tower()}
-                                      : m_levels.byName(*spawn->map);
-        if (!from.has_value()) {
-            console.print(std::format("No map named {}; list maps names them", *spawn->map));
-            return;
-        }
-    }
-    const Vec3 facing = actor->facing();
-    const f32 yawToPlayer = actor->yaw() + kPi;
-    const auto spotAt = [&](s32 index) {
-        Vec3 spot = actor->position() + facing * (kAhead + kApart * static_cast<f32>(index));
-        if (const auto floor = m_play->world.collision().floorAt(
-                spot + Vec3{0.0f, kProbeAbove, 0.0f}, kProbeAbove, kProbeBelow)) {
-            spot.y = floor->y;
-        }
-        return spot;
-    };
-    PlayScene& scene = m_play->scene;
-    switch (spawn->kind) {
-    case ConsoleCommands::Spawn::Kind::Enemy: {
-        if (from.has_value()) {
-            consoleBorrowVoices(console, *from);
-        }
-        s32 stood = 0;
-        const std::vector<EnemyView> views = scene.opponents().views(scene.participants());
-        for (s32 i = 0; i < spawn->count; ++i) {
-            if (scene.enemies().loadKind(spawn->enemyKind) &&
-                scene.enemies()
-                    .spawn(EnemySpawn{.kind = spawn->enemyKind,
-                                      .tier = spawn->tier,
-                                      .position = spotAt(i),
-                                      .direction = -facing,
-                                      .placed = true},
-                           views)
-                    .has_value()) {
-                ++stood;
-            }
-        }
-        console.print(
-            stood > 0 ? std::format("Spawned {} {} at tier {}", stood, spawn->name, spawn->tier)
-                      : std::format("No room for {} here, or its kind is missing", spawn->name));
-        break;
-    }
-    case ConsoleCommands::Spawn::Kind::Critter: {
-        const char realm =
-            from.has_value() && !from->name.empty()
-                ? static_cast<char>(std::toupper(static_cast<unsigned char>(from->name.front())))
-                : '\0';
-        std::optional<s32> id;
-        switch (spawn->critter) {
-        case CombatantKind::Golem:
-            id = scene.critters().spawnGolem(spotAt(0), yawToPlayer, realm);
-            break;
-        case CombatantKind::General:
-            id = scene.critters().spawnGeneral(spotAt(0), yawToPlayer, 0.0f, realm);
-            break;
-        case CombatantKind::Gargoyle:
-            id = scene.critters().spawnGargoyle(spotAt(0), yawToPlayer, spawn->form, realm);
-            break;
-        case CombatantKind::Unknown:
-        case CombatantKind::Boss: break;
-        }
-        const std::string& what = spawn->form.empty() ? spawn->name : spawn->form;
-        console.print(id.has_value()
-                          ? std::format("Spawned a {}", what)
-                          : std::format("No room for a {} here, or its kind is missing", what));
-        break;
-    }
-    case ConsoleCommands::Spawn::Kind::Generator: {
-        if (from.has_value()) {
-            consoleBorrowVoices(console, *from);
-        }
-        s32 kind = spawn->enemyKind;
-        ItemArchive* realmItems = nullptr;
-        const ItemInfo* record = nullptr;
-        ConsoleLevel source;
-        if (spawn->brood) {
-            // A mixed brood is its realm's: its bodies and record come from that realm's
-            // level, the one in play when it is one of them.
-            const s32 realm = from.has_value() ? from->realmId : m_play->world.ref().realmId;
-            if (realm != TowerAccess::kTempleWorld && realm != TowerAccess::kUnderworldWorld) {
-                console.print("A mixed brood is the temple's (E) or the underworld's (F); name "
-                              "a map of either");
-                break;
-            }
-            kind = realm == TowerAccess::kTempleWorld ? Generators::kTempleBrood
-                                                      : Generators::kHellBrood;
-            if (from.has_value()) {
-                realmItems = scene.borrowItems(*from);
-                if (realmItems == nullptr) {
-                    console.print(std::format("{} lends no item archive", from->name));
-                    break;
-                }
-                if (consoleLevel(console, spawn->map, source)) {
-                    record = ConsoleCommands::generatorRecord(*source.layout, "SPECIAL");
-                }
-            }
-        }
-        const auto id = scene.generators().spawn(renderDevice(), scene.enemies(), kind, spawn->tier,
-                                                 spotAt(0), yawToPlayer, realmItems, record);
-        console.print(id.has_value()
-                          ? std::format("Stood a tier {} {} generator", spawn->tier, spawn->name)
-                          : std::format("No {} generator could stand here", spawn->name));
-        break;
-    }
-    case ConsoleCommands::Spawn::Kind::Item:
-        if (from.has_value()) {
-            console.print("Pickups come from the level in play alone; name one without a map");
-        } else if (m_play->world.placeItem(renderDevice(), spawn->name, spotAt(0))) {
-            console.print(std::format("Dropped {}", spawn->name));
-        } else {
-            console.print(
-                std::format("No pickup record named {} here; list items names them", spawn->name));
-        }
-        break;
-    case ConsoleCommands::Spawn::Kind::Object: {
-        const LevelRef source = from.has_value() ? *from : m_play->world.ref();
-        if (scene.spawnObject(source, spawn->name, spotAt(0), yawToPlayer)) {
-            console.print(std::format("Stood {} of {}", spawn->name, source.name));
-        } else {
-            console.print(std::format("Nothing named {} in {}; list objects {} names what there is",
-                                      spawn->name, source.name, source.name));
-        }
-        break;
-    }
-    case ConsoleCommands::Spawn::Kind::Thing: {
-        if (!from.has_value() && m_play->world.placeItem(renderDevice(), spawn->name, spotAt(0))) {
-            console.print(std::format("Dropped {}", spawn->name));
-            break;
-        }
-        const LevelRef source = from.has_value() ? *from : m_play->world.ref();
-        if (scene.spawnObject(source, spawn->name, spotAt(0), yawToPlayer)) {
-            console.print(std::format("Stood {} of {}", spawn->name, source.name));
-        } else if (from.has_value()) {
-            console.print(std::format("Nothing named {} in {}; list objects {} names what there is",
-                                      spawn->name, from->name, from->name));
-        } else {
-            console.print(std::format("Nothing named {} here; list items, objects, enemies or "
-                                      "critters name what there is",
-                                      spawn->name));
-        }
-        break;
-    }
-    }
-}
-
-void Gauntlet::consoleSuicide(DevConsole& console) {
-    if (m_play->world.isTower()) {
-        console.print("Nobody falls in the tower.");
-        return;
-    }
-    s32 fallen = 0;
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        if (m_play->scene.kill(player)) {
-            ++fallen;
-        }
-    }
-    console.print(fallen > 0 ? std::format("{} fallen", fallen) : "Nobody was standing.");
-}
-
-/** The words `goto` takes, for completion: the levels, the tower, the Legends maps installed
- * and the way back from one. */
-std::vector<std::string> Gauntlet::gotoWords(DevConsole::Arguments arguments) const {
-    if (arguments.size() > 1) {
-        return arguments.size() == 2 ? std::vector<std::string>{"preview"}
-                                     : std::vector<std::string>{};
-    }
-    std::vector<std::string> words{"tower", "back"};
-    for (const LevelCatalog::Realm& realm : m_levels.realms()) {
-        words.insert(words.end(), realm.levels.begin(), realm.levels.end());
-    }
-    for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
-        for (const LegendsMapEntry& map : legendsMapsOf(platform)) {
-            words.push_back(map.name);
-        }
-    }
-    return words;
-}
-
-void Gauntlet::consolePartyCount(DevConsole& console, DevConsole::Arguments arguments) {
-    const auto describe = [&] {
-        return m_partyCountOverride.has_value()
-                   ? std::format("The level is set up for a party of {}", *m_partyCountOverride)
-                   : std::string("The level is set up for the players present");
-    };
-    if (arguments.empty()) {
-        console.print(describe());
-        return;
-    }
-    std::string error;
-    const auto parsed = ConsoleCommands::parsePartyCount(arguments, error);
-    if (!parsed.has_value()) {
-        console.print(error);
-        return;
-    }
-    m_partyCountOverride = *parsed;
-    if (m_play->scene.isOpen()) {
-        m_play->scene.setPartyCountOverride(m_partyCountOverride);
-    }
-    console.print(describe());
-}
-
 void Gauntlet::consoleGoto(DevConsole& console, DevConsole::Arguments arguments) {
     std::string error;
     const auto destination = ConsoleCommands::parseGoto(arguments, error);
@@ -1285,28 +703,7 @@ void Gauntlet::consoleGoto(DevConsole& console, DevConsole::Arguments arguments)
         consoleLegendsOpen(console, found->first, found->second, !destination->preview);
         return;
     }
-    if (m_play->scene.leaving()) {
-        console.print("The party is already on its way.");
-        return;
-    }
-    if (!destination->level.has_value()) {
-        const Vec3& at = *destination->position;
-        if (m_play->scene.relocate(at)) {
-            console.print(std::format("Moved to {:.1f} {:.1f} {:.1f}", at.x, at.y, at.z));
-        } else {
-            console.print("Nobody is standing to move.");
-        }
-        return;
-    }
-    const std::optional<LevelRef> level = *destination->level == "TOWER"
-                                              ? std::optional{LevelRef::tower()}
-                                              : m_levels.byName(*destination->level);
-    if (!level.has_value()) {
-        console.print(std::format("No map named {}; list maps names them", *destination->level));
-        return;
-    }
-    console.print(std::format("Going to {} ({})", level->name, level->title));
-    consoleTravel(*level, destination->position, std::nullopt);
+    m_offlineConsole.gotoPlace(console, *destination);
 }
 
 /** Takes the party to `level` through the loading picture, as an exit portal would, standing
@@ -1358,37 +755,13 @@ void Gauntlet::consoleUnlockTower(DevConsole& console) {
         }
         return;
     }
-    s32 opened = 0;
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        if (CharacterSave* save = m_play->scene.liveSave(player)) {
-            ConsoleCommands::unlockTower(*save);
-            ++opened;
-        }
-    }
-    if (opened == 0) {
-        console.print("Nobody is in to open it for.");
-        return;
-    }
-    console.print(
-        std::format("The tower stands open to {} character{}.", opened, opened == 1 ? "" : "s"));
-    if (m_play->world.isTower()) {
-        // The portals read the party's progress as the tower opens: open it again, where
-        // the party stands.
-        const PlayerActor* actor = m_play->scene.actor(consolePlayer());
-        consoleTravel(LevelRef::tower(),
-                      actor != nullptr ? std::optional{actor->position()} : std::nullopt,
-                      actor != nullptr ? std::optional{actor->yaw()} : std::nullopt);
-    }
+    m_offlineConsole.unlockTower(console);
 }
 
 void Gauntlet::consoleGet(DevConsole& console, DevConsole::Arguments arguments) {
     std::string error;
     const auto gift = ConsoleCommands::parseGet(arguments, error);
-    if (!gift.has_value()) {
-        console.print(error);
-        return;
-    }
-    if (gift->kind == ConsoleCommands::Gift::Kind::Info) {
+    if (gift.has_value() && gift->kind == ConsoleCommands::Gift::Kind::Info) {
         const std::optional<SceneSelection> what =
             gift->name.empty() ? (consoleScene() ? consoleScene()->selection() : std::nullopt)
                                : SceneSelection::parse(gift->name);
@@ -1406,29 +779,7 @@ void Gauntlet::consoleGet(DevConsole& console, DevConsole::Arguments arguments) 
         }
         return;
     }
-    const s32 player = consolePlayer();
-    CharacterSave* save = m_play->scene.liveSave(player);
-    if (save == nullptr) {
-        console.print("Nobody is in to give it to.");
-        return;
-    }
-    switch (gift->kind) {
-    case ConsoleCommands::Gift::Kind::Experience:
-        m_play->scene.awardExperience(player, gift->amount, false);
-        m_play->scene.restat(player);
-        console.print(std::format("{} experience: level {}", gift->amount,
-                                  experienceLevel(save->experience())));
-        break;
-    case ConsoleCommands::Gift::Kind::Level:
-        save->progress().experience = levelExperience(gift->amount);
-        m_play->scene.restat(player);
-        console.print(std::format("Level {}", gift->amount));
-        break;
-    case ConsoleCommands::Gift::Kind::Item:
-        // At one times the strength: the seconds asked for are the seconds given.
-        console.print(ConsoleCommands::report(*gift, takeItem(*save, gift->offer, 1.0f, true)));
-        break;
-    }
+    m_offlineConsole.get(console, arguments);
 }
 
 } // namespace gdl::game

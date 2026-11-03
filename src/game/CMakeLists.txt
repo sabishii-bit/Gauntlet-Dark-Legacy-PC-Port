@@ -108,6 +108,10 @@ add_library(game STATIC
     console/ConsoleCommands.h
     console/ConsoleCommands.cpp
     app/GauntletConsole.cpp
+    app/OfflineConsoleCommands.h
+    app/OfflineConsoleCommands.cpp
+    app/OnlineConsoleRoute.h
+    app/OnlineConsoleRoute.cpp
     app/LevelCompletion.h
     audio/MusicDuck.h
     audio/MusicDuck.cpp

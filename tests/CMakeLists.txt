@@ -212,6 +212,8 @@ add_executable(tests
     game/app/LevelDebugOverlayTests.cpp
     game/console/DevConsoleTests.cpp
     game/console/ConsoleCommandsTests.cpp
+    game/app/OfflineConsoleCommandsTests.cpp
+    game/app/OnlineConsoleRouteTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp
     game/level/StaticSceneryTests.cpp
