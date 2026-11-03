@@ -10,6 +10,7 @@
 #include "engine/math/Math.h"
 
 #include "game/console/ConsoleReach.h"
+#include "game/console/ConsoleWords.h"
 #include "game/level/LevelCatalog.h"
 #include "game/scenes/PlayScene.h"
 
@@ -54,8 +55,7 @@ public:
     /** What the usage says under the forms. */
     virtual std::string_view usageNote() const { return {}; }
     /** The words the last of `arguments`, the one being typed, may complete to. */
-    virtual std::vector<std::string> completions(Arguments /*arguments*/,
-                                                 const LevelCatalog& /*levels*/) const {
+    virtual ConsoleWords words(Arguments /*arguments*/, const LevelCatalog& /*levels*/) const {
         return {};
     }
     /** Whether the command reads any words after its name. */

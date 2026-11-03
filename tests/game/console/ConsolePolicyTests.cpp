@@ -42,10 +42,10 @@ TEST_CASE("each session admits what it admits today", "[dev-console][online-cons
         {.label = "offline, walking a level or a Legends map",
          .situation = {},
          .admitted = everythingOffline},
-        // The level's own commands are judged before the preview's words, so they stay.
+        // The preview's words alone run under it, not even the level's own commands.
         {.label = "offline, a Legends preview open",
          .situation = {.preview = kPreviewWords},
-         .admitted = {"help", "activate", "unlock", "lock", "goto", "party_count"}},
+         .admitted = {"help", "goto"}},
         {.label = "online host",
          .situation = {.online = true, .host = true, .allowed = true},
          .admitted = everythingHosted},
@@ -85,9 +85,12 @@ TEST_CASE("an offline-only form refuses in its own words, and nothing else does"
     CHECK(ConsolePolicy::refusal(guest, ConsoleReach::OfflineOnly, "goto") ==
           ConsolePolicy::kRefused);
     CHECK(ConsolePolicy::refusal({}, ConsoleReach::OfflineOnly, "goto", kOwn) == std::nullopt);
-    // Under a preview an offline-only form still runs, and its own words are not needed.
-    CHECK(ConsolePolicy::refusal({.modal = kPreviewWords}, ConsoleReach::OfflineOnly, "get",
+    // Under a preview an offline-only form runs only on a word the preview admits, and is
+    // refused otherwise in the preview's words, not its own.
+    CHECK(ConsolePolicy::refusal({.modal = kPreviewWords}, ConsoleReach::OfflineOnly, "goto",
                                  kOwn) == std::nullopt);
+    CHECK(ConsolePolicy::refusal({.modal = kPreviewWords}, ConsoleReach::OfflineOnly, "get",
+                                 kOwn) == ConsolePolicy::kRefused);
     const ConsoleSession closed{.seat = ConsoleSeat::Guest, .access = ConsoleAccess::Closed};
     CHECK(ConsolePolicy::refusal(closed, ConsoleReach::Local, "goto", kOwn) ==
           ConsolePolicy::kRefused);

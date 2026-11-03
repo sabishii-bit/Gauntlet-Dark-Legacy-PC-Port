@@ -27,6 +27,10 @@ std::vector<std::string> ConsoleCommand::completions(Arguments /*arguments*/) co
     return {};
 }
 
+ConsoleWords ConsoleCommand::words(Arguments arguments) const {
+    return {.keywords = {}, .names = completions(arguments)};
+}
+
 LambdaCommand::LambdaCommand(std::string name, std::string summary, ConsoleReach reach,
                              Handler handler, Completer completer)
     : m_name(std::move(name)), m_summary(std::move(summary)), m_reach(reach),
@@ -120,6 +124,26 @@ ConsoleRegistry::forms(std::string_view command) const {
         return {};
     }
     return held->forms;
+}
+
+std::vector<std::string> ConsoleRegistry::completions(const ConsoleCommand& command,
+                                                      ConsoleCommand::Arguments arguments) const {
+    const ConsoleWords own = command.words(arguments);
+    std::vector<ConsoleWords> listed;
+    for (const auto& form : forms(command.name())) {
+        if (form->listed()) {
+            listed.push_back(form->words(arguments));
+        }
+    }
+    std::vector<std::string> words = own.keywords;
+    for (const ConsoleWords& offered : listed) {
+        words.insert(words.end(), offered.keywords.begin(), offered.keywords.end());
+    }
+    words.insert(words.end(), own.names.begin(), own.names.end());
+    for (const ConsoleWords& offered : listed) {
+        words.insert(words.end(), offered.names.begin(), offered.names.end());
+    }
+    return words;
 }
 
 std::optional<std::string>

@@ -141,8 +141,8 @@ public:
     /** How many lines above the newest the output is scrolled to. */
     usize scroll() const { return m_scroll; }
     /** The rest of the word being typed, as the console would complete it: a command's
-     * name while the first word is typed, else one of the command's own words; nothing
-     * when there is none or the caret is not at the end of the line. */
+     * name while the first word is typed, else one of the words of the command and its forms;
+     * nothing when there is none or the caret is not at the end of the line. */
     std::string suggestion() const;
     /** Takes the suggestion into the line, with a space after a completed command name. */
     bool acceptSuggestion();

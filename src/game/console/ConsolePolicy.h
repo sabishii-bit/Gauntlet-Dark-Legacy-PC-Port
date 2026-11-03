@@ -21,7 +21,7 @@ struct ConsoleSession {
     ConsoleSeat seat = ConsoleSeat::Offline;
     ConsoleAccess access = ConsoleAccess::Open;
     SceneHold hold = SceneHold::Live;
-    /** While not empty, the only names admitted besides offline-only ones. */
+    /** While not empty, the only names admitted. */
     std::span<const std::string_view> modal;
 };
 

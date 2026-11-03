@@ -173,6 +173,8 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsWorldPresentation.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsWorldPresentation.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/GauntletLegends.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsConsoleWords.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsConsoleWords.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsVisit.cpp"

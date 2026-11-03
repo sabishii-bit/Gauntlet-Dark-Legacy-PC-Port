@@ -16,6 +16,8 @@
 #include "engine/world/WorldCamera.h"
 
 #include "TestSupport.h"
+#include "expansions/shared/app/LegendsConsoleWords.h"
+#include "expansions/shared/characters/LegendsProgress.h"
 #include "game/app/ConsoleRoster.h"
 #include "game/app/LevelDebugOverlay.h"
 #include "game/camera/FreeCamera.h"
@@ -40,9 +42,6 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Words = std::vector<std::string>;
-
-/** The words a Legends map's preview admits. */
-constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
 
 /** The roster's commands after the console's help in a second order: party_count after goto,
  * hidehud and freecam after god. Each group of names sharing a first letter keeps the roster's
@@ -104,6 +103,12 @@ constexpr std::array<Summary, 18> kSummaries{{
     {"party_count", "<1-4> or off: the party size the level sets itself up for"},
 }};
 
+/** What help says of goto, and its usage, with no Legends map installed or visited. */
+constexpr std::string_view kBaseGotoSummary = "<map> [x y z] or x y z: brings the party there";
+constexpr std::string_view kBaseGotoUsage =
+    "goto <map> [x y z]  travels to a level, standing at a point when given\n"
+    "goto x y z          moves the party to that point here";
+
 /** A sink of the test's own: it keeps the lines it is given. */
 class RecordingSink final : public ConsoleActionSink {
 public:
@@ -115,8 +120,9 @@ public:
     std::vector<std::string> lines;
 };
 
-/** The application's roster over made-up game state with nothing in play, and an expansion of
- * the test's own: a Legends maps line for list maps and a goto form for one word. */
+/** The application's roster over made-up game state with nothing in play, and the Legends
+ * expansion's words over made-up maps: castle1 and tower2 on the N64 when they are installed, and
+ * the folder of lab whether they are or not. */
 struct Roster {
     LevelDebugOverlay levelDebug;
     bool hudHidden = false;
@@ -129,9 +135,32 @@ struct Roster {
     std::optional<s32> partyCount;
     ConsoleListings listings;
     DevConsole console;
+    bool legendsInstalled;
 
-    Roster() {
+    explicit Roster(bool installed = true) : legendsInstalled(installed) {
         REQUIRE(saves.open(test::scratchDirectory("console-roster-saves"), 4));
+        LegendsConsoleAccess legends{
+            .visiting = [] { return false; },
+            .installed = [this](bool /*rescan*/) { return legendsInstalled; },
+            .mapNames =
+                [this](LegendsPlatform platform) {
+                    return legendsInstalled && platform == LegendsPlatform::N64
+                               ? Words{"castle1", "tower2"}
+                               : Words{};
+                },
+            .find = [](std::string_view name, std::optional<LegendsPlatform> /*platform*/)
+                -> std::optional<std::pair<LegendsPlatform, std::filesystem::path>> {
+                if (name != "lab") {
+                    return std::nullopt;
+                }
+                return std::pair{LegendsPlatform::N64, std::filesystem::path{"maps/lab"}};
+            },
+            .open = [](DevConsole& shown, LegendsPlatform /*platform*/,
+                       const std::filesystem::path& /*directory*/,
+                       bool walk) { shown.print(walk ? "walked" : "previewed"); },
+            .close = [](DevConsole& shown) { shown.print("came back"); },
+            .walkingNative = [] { return false; },
+            .unlockTower = [](DevConsole& /*shown*/) {}};
         const ConsoleRosterAccess access{
             .online = {.permitGuests = [](bool /*allow*/) { return false; }},
             .view = {.levelDebug = levelDebug,
@@ -145,9 +174,7 @@ struct Roster {
                          .save = []() -> const CharacterSave* { return nullptr; }},
             .fixtures = {.scene = []() -> PlayScene* { return nullptr; },
                          .world = []() -> const LevelWorld* { return nullptr; }},
-            .shared = {.sink = sink,
-                       .levels = levels,
-                       .legendsMapNames = [] { return Words{"castle1", "tower2"}; }},
+            .shared = {.sink = sink, .levels = levels},
             .inspect = {.selected = [] { return std::optional<SceneSelection>{}; },
                         .describe = [](const SceneSelection& /*selection*/) { return Words{}; }},
             .partyCount = {.count = partyCount, .scene = []() -> PlayScene* { return nullptr; }},
@@ -155,23 +182,10 @@ struct Roster {
                         .config = config,
                         .scene = []() -> PlayScene* { return nullptr; }},
         };
-        registerConsoleRoster(
-            console.host(), console.commands(), listings, access,
-            [](ConsoleHost& host, ConsoleListings& more) {
-                more.add(std::make_unique<LambdaListing>("maps", std::nullopt,
-                                                         [](ConsoleListing::Arguments /*rest*/) {
-                                                             return Words{"n64: castle1 tower2"};
-                                                         }));
-                host.addForm("goto",
-                             std::make_unique<LambdaForm>(
-                                 ConsoleReach::OfflineOnly, "Legends maps are offline only.",
-                                 [](ConsoleForm::Arguments arguments) {
-                                     return arguments.size() == 1 && arguments[0] == "lab";
-                                 },
-                                 [](DevConsole& shown, ConsoleForm::Arguments /*words*/) {
-                                     shown.print("walked");
-                                 }));
-            });
+        registerConsoleRoster(console.host(), console.commands(), listings, access,
+                              [&legends](ConsoleHost& host, ConsoleListings& more) {
+                                  registerLegendsConsoleWords(host, more, std::move(legends));
+                              });
     }
 
     std::string say(std::string_view line, const ConsoleSession& session = {}) {
@@ -263,8 +277,10 @@ TEST_CASE("help lists the commands in the order they are registered",
     CHECK(fixture.say("help", {.seat = ConsoleSeat::Host}) ==
           helpOf({"help", "console_permissions", "debug_info", "hidehud", "freecam", "list", "goto",
                   "unlock_tower", "get", "spawn", "suicide", "notarget", "god", "noclip"}));
-    CHECK(fixture.say("help", ConsolePolicy::session({.preview = kPreviewWords, .parked = true})) ==
-          helpOf({"help", "activate", "unlock", "lock", "goto", "party_count"}));
+    // A Legends map's preview runs its own words alone.
+    CHECK(fixture.say("help",
+                      ConsolePolicy::session({.preview = kLegendsPreviewWords, .parked = true})) ==
+          helpOf({"help", "goto"}));
 }
 
 TEST_CASE("a name prefix completes to the first admitted name it begins, whatever help's order",
@@ -295,9 +311,9 @@ TEST_CASE("a name prefix completes to the first admitted name it begins, whateve
          .rests = {"",     "ebug_info", "reecam",      "",           "oto",     "to",     "t",
                    "elp",  "dehud",     "ist",         "",           "otarget", "target", "lip",
                    "pawn", "icide",     "nlock_tower", "lock_tower", "_tower",  ""}},
-        {.session = ConsolePolicy::session({.preview = kPreviewWords, .parked = true}),
-         .rests = {"ctivate", "", "", "arty_count", "oto", "to", "",      "elp",  "", "ock",
-                   "ck",      "", "", "",           "",    "",   "nlock", "lock", "", ""}},
+        {.session = ConsolePolicy::session({.preview = kLegendsPreviewWords, .parked = true}),
+         .rests = {"", "", "", "", "oto", "to", "", "elp", "", "",
+                   "", "", "", "", "",    "",   "", "",    "", ""}},
     }};
     for (const Expected& row : rows) {
         fixture.console.setSession(row.session);
@@ -318,11 +334,12 @@ TEST_CASE("lock, unlock, goto, list and party_count complete their words",
     CHECK(test::suggestionAfter(fixture.console, "lock character M") == "IN");
     // character in another case is not completed.
     CHECK(test::suggestionAfter(fixture.console, "lock Character M").empty());
-    const ConsoleCommand* go = fixture.console.commands().find("goto");
+    const ConsoleRegistry& commands = fixture.console.commands();
+    const ConsoleCommand* go = commands.find("goto");
     REQUIRE(go != nullptr);
-    CHECK(go->completions(Words{"t"}) == Words{"tower", "back", "castle1", "tower2"});
-    CHECK(go->completions(Words{"x", "p"}) == Words{"preview"});
-    CHECK(go->completions(Words{"x", "p", "q"}) == Words{});
+    CHECK(commands.completions(*go, Words{"t"}) == Words{"tower", "back", "castle1", "tower2"});
+    CHECK(commands.completions(*go, Words{"x", "p"}) == Words{"preview"});
+    CHECK(commands.completions(*go, Words{"x", "p", "q"}) == Words{});
     CHECK(test::suggestionAfter(fixture.console, "goto b") == "ack");
     CHECK(test::suggestionAfter(fixture.console, "list c") == "ritters");
     CHECK(test::suggestionAfter(fixture.console, "list ch") == "aracters");
@@ -338,7 +355,7 @@ TEST_CASE(
     CHECK(fixture.listings.words() == Words{"maps", "items", "inventory", "enemies", "critters",
                                             "generators", "objects", "switches", "characters"});
     // With no level catalogued, list maps says only what the expansion adds.
-    CHECK(fixture.say("list maps") == "n64: castle1 tower2");
+    CHECK(fixture.say("list maps") == "N64 Legends maps (goto <name>): castle1, tower2");
     // The expansion's goto form answers its own words offline, and is refused online.
     CHECK(fixture.say("goto lab") == "walked");
     CHECK(fixture.say("goto lab", {.seat = ConsoleSeat::Guest}) ==
@@ -355,6 +372,32 @@ TEST_CASE("a character's code after lock or unlock is the profile's form", "[dev
     CHECK(fixture.say("lock CHARACTER WAR") == "WAR is always there to choose");
 }
 
+TEST_CASE("without a Legends map installed, the console names none of their words",
+          "[dev-console][online-console][legends]") {
+    Roster fixture{false};
+    const std::string help = fixture.say("help");
+    CHECK(help.contains(test::shownAs(std::format("{:<19}  {}", "goto", kBaseGotoSummary))));
+    CHECK_FALSE(help.contains("legends"));
+    CHECK(fixture.say("goto") == test::shownAs(kBaseGotoUsage));
+    CHECK(fixture.say("goto 1 2", {.seat = ConsoleSeat::Guest}) == test::shownAs(kBaseGotoUsage));
+    const ConsoleRegistry& commands = fixture.console.commands();
+    const ConsoleCommand* go = commands.find("goto");
+    REQUIRE(go != nullptr);
+    CHECK(commands.completions(*go, Words{"t"}) == Words{"tower"});
+    CHECK(commands.completions(*go, Words{"x", "p"}).empty());
+    CHECK(test::suggestionAfter(fixture.console, "goto b").empty());
+    CHECK(fixture.say("list maps").empty());
+    // The words are still the expansion's, and answered as they were.
+    CHECK(fixture.say("goto lab") == "walked");
+    CHECK(fixture.say("goto lab preview") == "previewed");
+    CHECK(fixture.say("goto back") == "came back");
+    CHECK(fixture.say("goto castle") ==
+          "No level or Legends map named castle; list maps names them");
+    CHECK(fixture.say("goto castle", {.seat = ConsoleSeat::Guest}) ==
+          "Legends maps are offline only.");
+    CHECK(fixture.sink.lines.empty());
+}
+
 TEST_CASE("goto completes to the catalogue's levels after the tower", "[dev-console][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -362,7 +405,7 @@ TEST_CASE("goto completes to the catalogue's levels after the tower", "[dev-cons
     REQUIRE(fixture.levels.load(root));
     const ConsoleCommand* go = fixture.console.commands().find("goto");
     REQUIRE(go != nullptr);
-    CHECK(go->completions(Words{"t"}) ==
+    CHECK(fixture.console.commands().completions(*go, Words{"t"}) ==
           Words{"tower", "back", "T1", "T2", "T3", "A1", "A6", "A2",      "A3",    "A4", "A5", "B1",
                 "B2",    "B3",   "B4", "B5", "B6", "C1", "C2", "C3",      "C4",    "C5", "D1", "D2",
                 "D3",    "D4",   "D5", "E1", "E2", "F1", "F2", "G1",      "G2",    "G3", "G4", "G5",

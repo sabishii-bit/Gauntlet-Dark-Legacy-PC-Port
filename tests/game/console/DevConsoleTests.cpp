@@ -24,6 +24,8 @@
 #include "game/console/ConsoleHost.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
+#include "game/console/ConsoleTranscript.h"
+#include "game/console/ConsoleWords.h"
 #include "game/console/DevConsole.h"
 
 namespace {
@@ -136,14 +138,20 @@ TEST_CASE("an offline-only form says its own refusal outside offline play",
     CHECK(lab->runs == 0);
     CHECK(cave->runs == 0);
     CHECK(commandCalls == 1);
-    // Offline, under a preview that admits nothing of goto's own, the form still runs.
+    // Offline, under a preview that does not admit goto, its forms are refused as it is.
     constexpr std::array<std::string_view, 1> kHelpOnly{"help"};
     console.setSession({.modal = kHelpOnly});
     console.run("goto lab");
-    CHECK(lab->runs == 1);
+    CHECK(lab->runs == 0);
+    CHECK(console.output().back() == "This command is not available in this session.");
     console.run("goto G1");
     CHECK(console.output().back() == "This command is not available in this session.");
     CHECK(commandCalls == 1);
+    // Under one that admits goto, its offline-only form runs.
+    constexpr std::array<std::string_view, 2> kHelpAndGoto{"help", "goto"};
+    console.setSession({.modal = kHelpAndGoto});
+    console.run("goto lab");
+    CHECK(lab->runs == 1);
 }
 
 TEST_CASE("a form made of functions claims, runs and refuses as they say",
@@ -922,6 +930,67 @@ TEST_CASE("the console suggests the rest of a word and Right at the end of the l
     CHECK(console.suggestion() == "et");
     type(console, input, "oto ma");
     CHECK(console.suggestion().empty());
+}
+
+/** A command of the test's own that ranks its words: a grammar word, then names. */
+class RankingCommand final : public ConsoleCommand {
+public:
+    std::string_view name() const override { return "fly"; }
+    std::string summary() const override { return "ranks its words"; }
+    ConsoleReach reach() const override { return ConsoleReach::Local; }
+    void run(DevConsole& /*console*/, Arguments /*arguments*/) override {}
+    ConsoleWords words(Arguments /*arguments*/) const override {
+        return {.keywords = {"up"}, .names = {"Upton", "Ulm"}};
+    }
+};
+
+/** A form of the test's own that claims nothing and offers its words while listed. */
+class WordedForm final : public ConsoleForm {
+public:
+    WordedForm(bool listed, std::string keyword, std::string name)
+        : m_listed(listed), m_keyword(std::move(keyword)), m_name(std::move(name)) {}
+    bool claims(Arguments /*arguments*/) const override { return false; }
+    ConsoleReach reach() const override { return ConsoleReach::Local; }
+    void run(DevConsole& /*console*/, Arguments /*arguments*/) override {}
+    ConsoleWords words(Arguments /*arguments*/) const override {
+        return {.keywords = {m_keyword}, .names = {m_name}};
+    }
+    bool listed() const override { return m_listed; }
+
+private:
+    bool m_listed;
+    std::string m_keyword;
+    std::string m_name;
+};
+
+TEST_CASE("a command's grammar words and its listed forms' come before the names they know",
+          "[dev-console][autocomplete]") {
+    using Words = std::vector<std::string>;
+    DevConsole console;
+    console.addCommand(std::make_unique<RankingCommand>());
+    console.addForm("fly", std::make_unique<WordedForm>(true, "under", "Uxbridge"));
+    console.addForm("fly", std::make_unique<WordedForm>(false, "unseen", "Ur"));
+    console.addForm("fly", std::make_unique<WordedForm>(true, "upward", "Uppsala"));
+    const ConsoleCommand* fly = console.commands().find("fly");
+    REQUIRE(fly != nullptr);
+    CHECK(console.commands().completions(*fly, Words{"u"}) ==
+          Words{"up", "under", "upward", "Upton", "Ulm", "Uxbridge", "Uppsala"});
+    // The console suggests the first that fits, and nothing of a form not listed.
+    CHECK(test::suggestionAfter(console, "fly u") == "p");
+    CHECK(test::suggestionAfter(console, "fly upw") == "ard");
+    CHECK(test::suggestionAfter(console, "fly upt") == "on");
+    CHECK(test::suggestionAfter(console, "fly ux") == "bridge");
+    CHECK(test::suggestionAfter(console, "fly uns").empty());
+    CHECK(test::suggestionAfter(console, "fly ur").empty());
+    // A command that ranks nothing offers its completions as names.
+    console.addCommand(
+        "list", "names", ConsoleReach::Local, [](DevConsole&, DevConsole::Arguments) {},
+        wordsCompleter({"maps", "items"}));
+    const ConsoleCommand* list = console.commands().find("list");
+    REQUIRE(list != nullptr);
+    CHECK(list->words(Words{"m"}).keywords.empty());
+    CHECK(list->words(Words{"m"}).names == Words{"maps", "items"});
+    CHECK(console.commands().completions(*list, Words{"m"}) == Words{"maps", "items"});
 }
 
 } // namespace

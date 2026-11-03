@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "game/console/ConsoleReach.h"
+#include "game/console/ConsoleWords.h"
 
 namespace gdl::game {
 
@@ -40,6 +41,11 @@ public:
     virtual std::string_view usageNote() const { return {}; }
     /** What the console says when the form is refused for running only offline. */
     virtual std::string_view refusal() const { return {}; }
+    /** The words the form offers for the last of `arguments`, the one being typed. */
+    virtual ConsoleWords words(Arguments /*arguments*/) const { return {}; }
+    /** Whether help, the command's usage and its words show the form now; it claims and runs
+     * its words whether shown or not. */
+    virtual bool listed() const { return true; }
 };
 
 /** A form made of its reach, its refusal and two functions: the quick way to register one. */

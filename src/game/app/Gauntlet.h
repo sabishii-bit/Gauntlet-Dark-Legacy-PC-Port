@@ -103,23 +103,25 @@ private:
     /** The player the console speaks for: the one at the keyboard, else the first in; -1
      * with nobody in. */
     s32 consolePlayer();
-    /** Registers the console words the Legends maps answer offline: goto's maps and the way
-     * back from one, unlock_tower in a native world walked, and list maps' Legends lines
-     * (GauntletLegends.cpp). */
+    /** Registers the Legends expansion's console words over this application: goto's maps
+     * and the way back from one, unlock_tower in a native world walked, and list maps' Legends
+     * lines (GauntletLegends.cpp). */
     void registerLegendsConsole(ConsoleHost& host, ConsoleListings& listings);
-    /** goto's Legends words: walks or previews a map, or goes back from one. */
-    void consoleLegendsGoto(DevConsole& console, DevConsole::Arguments arguments);
+    /** The only words the console runs while a Legends map's preview holds the scene; nothing
+     * while no preview is open. */
+    std::optional<std::span<const std::string_view>> legendsConsoleHold() const;
     /** unlock_tower in a native Legends world walked: its own tower's unlocks for the party. */
     void consoleLegendsUnlockTower(DevConsole& console);
-    /** list maps' lines for the Legends maps installed, each platform's found afresh. */
-    std::vector<std::string> legendsMapLines() const;
-    /** The Legends maps' names goto completes to: the N64's, then the Dreamcast's. */
-    std::vector<std::string> legendsMapNames() const;
-    /** The installed Legends maps of a platform, found as the catalogue finds them. */
     /** The Legends maps installed for a platform. The disk is walked on the first ask and
      * whenever `rescan` asks (list maps, goto); the console's completion reads what was
      * found, so typing costs nothing when there is no Legends content at all. */
     std::vector<LegendsMapEntry> legendsMapsOf(LegendsPlatform platform, bool rescan = false) const;
+    /** Whether either platform has a Legends map installed, found as legendsMapsOf finds them;
+     * nothing is copied, so help and the suggestions may ask it every frame. */
+    bool legendsMapsInstalled(bool rescan) const;
+    /** What legendsMapsOf answers, as it is kept. */
+    const std::vector<LegendsMapEntry>& foundLegendsMaps(LegendsPlatform platform,
+                                                         bool rescan) const;
     /** The folder of the Legends map named `name`: on `platform`, or on whichever has it. */
     std::optional<std::pair<LegendsPlatform, std::filesystem::path>>
     findLegendsMap(std::string_view name, std::optional<LegendsPlatform> platform) const;

@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <array>
 #include <format>
 #include <memory>
@@ -14,16 +13,16 @@
 
 #include "game/console/ConsoleActionSink.h"
 #include "game/console/ConsoleCommand.h"
-#include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleForm.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
+#include "game/console/ConsoleWords.h"
 #include "game/console/DevConsole.h"
 #include "game/console/GiftRequest.h"
+#include "game/console/GotoRequest.h"
 #include "game/level/LevelCatalog.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SharedConsoleCommand.h"
-#include "game/scenes/SharedConsoleVerbs.h"
 
 namespace {
 using namespace gdl;
@@ -39,13 +38,10 @@ constexpr std::string_view kGetUsage =
     "get level <level>     the level to be, 1 to 99\n"
     "get info [$SELECTED]  what the thing clicked in the view is\n"
     "list items names the items.";
+/** goto's usage with no form listing the Legends maps: its own forms alone. */
 constexpr std::string_view kGotoUsage =
-    "goto <map> [x y z]            travels to a level, standing at a point when given\n"
-    "goto x y z                    moves the party to that point here\n"
-    "goto <legends map> [preview]  walks an installed Legends map, or flies through it\n"
-    "goto n64|dreamcast <map>      the same, naming the map's platform\n"
-    "goto back                     returns from a Legends map to the level left for it\n"
-    "list maps names the levels and the Legends maps installed.";
+    "goto <map> [x y z]  travels to a level, standing at a point when given\n"
+    "goto x y z          moves the party to that point here";
 constexpr std::string_view kSpawnUsage =
     "spawn <enemy> [tier] [count] [map]            so many of the swarm's kind, at a tier\n"
     "spawn generator <enemy>|special [tier] [map]  a generator breeding that kind, or the "
@@ -80,7 +76,8 @@ public:
 
 /** The application's console as it registers its commands, in help's order: stand-ins for the
  * local ones, the shared verbs over the test's sink, and the forms of get and goto, which keep
- * count of the words they answer. */
+ * count of the words they answer. goto's form lists nothing, as on a machine without the
+ * Legends maps. */
 struct Console {
     DevConsole console;
     const LevelCatalog levels;
@@ -115,8 +112,7 @@ struct Console {
         console.addForm("goto", std::make_unique<LambdaForm>(
                                     ConsoleReach::OfflineOnly, std::string{kLegendsOffline},
                                     [](DevConsole::Arguments arguments) {
-                                        const auto destination =
-                                            ConsoleCommands::parseGoto(arguments);
+                                        const auto destination = parseGoto(arguments);
                                         return destination && destination->offlineOnly();
                                     },
                                     [this](DevConsole&, DevConsole::Arguments arguments) {
@@ -157,9 +153,10 @@ std::string shownAs(std::string_view text) {
     return shown;
 }
 
-/** A form of the test's own on goto, adding to help and the usage. */
+/** A form of the test's own on goto, adding to help, the usage and the words while listed. */
 class ListedForm final : public ConsoleForm {
 public:
+    explicit ListedForm(bool listed) : m_listed(listed) {}
     bool claims(Arguments arguments) const override {
         return !arguments.empty() && arguments.front() == "thing";
     }
@@ -170,6 +167,13 @@ public:
         return {{"goto thing", "goes to the thing"}};
     }
     std::string_view usageNote() const override { return "list things names them."; }
+    ConsoleWords words(Arguments /*arguments*/) const override {
+        return {.keywords = {"thing"}, .names = {"stuff"}};
+    }
+    bool listed() const override { return m_listed; }
+
+private:
+    bool m_listed;
 };
 
 TEST_CASE("a shared command sends its words as they were typed, after its name",
@@ -306,7 +310,7 @@ TEST_CASE("the shared commands' help, usage and words read as they do today",
         {"activate", "stands in"},
         {"unlock", "stands in"},
         {"lock", "stands in"},
-        {"goto", "<map> [x y z], x y z or <legends map> [preview]: brings the party there"},
+        {"goto", "<map> [x y z] or x y z: brings the party there"},
         {"unlock_tower", "opens every wing and portal of the tower"},
         {"get", "<item> [amount], exp <points> or level <level>: for you"},
         {"spawn", "stands enemies, great ones, generators, pickups or objects before you; spawn "
@@ -327,41 +331,49 @@ TEST_CASE("the shared commands' help, usage and words read as they do today",
     CHECK(fixture.command("goto").usage() == kGotoUsage);
     CHECK(fixture.command("spawn").usage() == kSpawnUsage);
     CHECK(fixture.command("god").reach() == ConsoleReach::Shared);
-    // goto completes its first word to the tower and the catalogue's levels, or by the
-    // completer it was registered with.
+    // goto completes its first word to the tower and the catalogue's levels; the verbs that
+    // read no words offer none.
     const std::vector<std::string> typing{""};
-    CHECK(fixture.command("goto").completions(typing) == std::vector<std::string>{"tower"});
-    CHECK(fixture.command("god").completions(typing).empty());
-    DevConsole console;
-    RecordingSink sink;
-    const LevelCatalog levels;
-    registerSharedConsoleCommands(
-        console.host(), console.commands(), sink, levels,
-        [](DevConsole::Arguments) { return std::vector<std::string>{"x"}; });
-    CHECK(console.commands().find("goto")->completions(typing) == std::vector<std::string>{"x"});
-    CHECK(console.commands().find("god")->completions(typing).empty());
+    const ConsoleRegistry& commands = fixture.console.commands();
+    CHECK(commands.completions(fixture.command("goto"), typing) ==
+          std::vector<std::string>{"tower"});
+    CHECK(fixture.command("goto").words(typing).keywords == std::vector<std::string>{"tower"});
+    CHECK(commands.completions(fixture.command("god"), typing).empty());
 }
 
-TEST_CASE("the forms registered on a shared verb join its help and its usage",
+TEST_CASE("the forms listed on a shared verb join its help, its usage and its words",
           "[dev-console][online-console]") {
-    DevConsole console;
-    RecordingSink sink;
-    const LevelCatalog levels;
-    registerSharedConsoleCommands(console.host(), console.commands(), sink, levels);
-    console.addForm("goto", std::make_unique<ListedForm>());
-    const auto* command =
-        dynamic_cast<const SharedConsoleCommand*>(console.commands().find("goto"));
-    REQUIRE(command != nullptr);
-    CHECK(command->summary() ==
-          "<map> [x y z], x y z, <legends map> [preview] or <thing>: brings the party there");
-    CHECK(command->usage() ==
-          "goto <map> [x y z]            travels to a level, standing at a point when given\n"
-          "goto x y z                    moves the party to that point here\n"
-          "goto <legends map> [preview]  walks an installed Legends map, or flies through it\n"
-          "goto n64|dreamcast <map>      the same, naming the map's platform\n"
-          "goto back                     returns from a Legends map to the level left for it\n"
-          "goto thing                    goes to the thing\n"
-          "list things names them.");
+    for (const bool listed : {true, false}) {
+        CAPTURE(listed);
+        DevConsole console;
+        RecordingSink sink;
+        const LevelCatalog levels;
+        registerSharedConsoleCommands(console.host(), console.commands(), sink, levels);
+        console.addForm("goto", std::make_unique<ListedForm>(listed));
+        const auto* command =
+            dynamic_cast<const SharedConsoleCommand*>(console.commands().find("goto"));
+        REQUIRE(command != nullptr);
+        const std::vector<std::string> typing{""};
+        if (listed) {
+            CHECK(command->summary() == "<map> [x y z], x y z or <thing>: brings the party there");
+            CHECK(command->usage() ==
+                  "goto <map> [x y z]  travels to a level, standing at a point when given\n"
+                  "goto x y z          moves the party to that point here\n"
+                  "goto thing          goes to the thing\n"
+                  "list things names them.");
+            // The verb's grammar words, the form's, the verb's names, then the form's.
+            CHECK(console.commands().completions(*command, typing) ==
+                  std::vector<std::string>{"tower", "thing", "stuff"});
+        } else {
+            CHECK(command->summary() == "<map> [x y z] or x y z: brings the party there");
+            CHECK(command->usage() == kGotoUsage);
+            CHECK(console.commands().completions(*command, typing) ==
+                  std::vector<std::string>{"tower"});
+        }
+        // Listed or not, the form claims its words.
+        const std::vector<std::string> thing{"thing"};
+        CHECK(console.commands().claimant("goto", thing) != nullptr);
+    }
 }
 
 TEST_CASE("the console's session says which game its lines run in",

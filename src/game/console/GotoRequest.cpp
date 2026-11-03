@@ -1,8 +1,7 @@
-#include "game/console/ConsoleCommands.h"
+#include "game/console/GotoRequest.h"
 
 #include <algorithm>
-#include <array>
-#include <format>
+#include <vector>
 
 #include "engine/core/Strings.h"
 
@@ -12,9 +11,11 @@
 namespace gdl::game {
 
 namespace {
+using Arguments = ConsoleCommand::Arguments;
+
 constexpr std::string_view kPreviewWord = "preview";
 
-std::optional<Vec3> point(ConsoleCommands::Arguments arguments) {
+std::optional<Vec3> point(Arguments arguments) {
     if (arguments.size() != 3) {
         return std::nullopt;
     }
@@ -26,29 +27,21 @@ std::optional<Vec3> point(ConsoleCommands::Arguments arguments) {
     }
     return Vec3{*x, *y, *z};
 }
-} // namespace
 
-std::string ConsoleCommands::gotoUsage() {
-    constexpr std::array<std::string_view, 1> kNotes{kGotoUsageNote};
-    return consoleUsage(kGotoUsageRows, kNotes);
-}
-
-std::optional<LegendsPlatform> ConsoleCommands::platformOf(std::string_view word) {
+/** The platform a word names, in any case: "n64", or "dreamcast" for dreamcast or dc. */
+std::optional<std::string> platformWord(std::string_view word) {
     const std::string name = toLowerAscii(word);
     if (name == "n64") {
-        return LegendsPlatform::N64;
+        return "n64";
     }
     if (name == "dreamcast" || name == "dc") {
-        return LegendsPlatform::Dreamcast;
+        return "dreamcast";
     }
     return std::nullopt;
 }
+} // namespace
 
-std::string_view ConsoleCommands::platformName(LegendsPlatform platform) {
-    return platform == LegendsPlatform::N64 ? "N64" : "Dreamcast";
-}
-
-bool ConsoleCommands::looksLikeMap(std::string_view word) {
+bool looksLikeMap(std::string_view word) {
     const std::string name = upperArgument(word);
     if (name == "TOWER") {
         return true;
@@ -59,13 +52,21 @@ bool ConsoleCommands::looksLikeMap(std::string_view word) {
     return std::ranges::all_of(name.substr(1), [](char c) { return c >= '0' && c <= '9'; });
 }
 
-gdl::Expected<ConsoleCommands::Destination, std::string>
-ConsoleCommands::parseGoto(Arguments arguments) {
+std::string sharedGotoUsage() {
+    std::vector<std::pair<std::string_view, std::string_view>> rows(GotoRequest::kUsageRows.begin(),
+                                                                    GotoRequest::kUsageRows.end());
+    rows.insert(rows.end(), GotoRequest::kLegendsUsageRows.begin(),
+                GotoRequest::kLegendsUsageRows.end());
+    constexpr std::array<std::string_view, 1> kNotes{GotoRequest::kLegendsUsageNote};
+    return consoleUsage(rows, kNotes);
+}
+
+gdl::Expected<GotoRequest, std::string> parseGoto(Arguments arguments) {
     // A Legends map: by its platform, or by name alone, flown through with "preview".
     Arguments rest = arguments;
-    Destination legends;
+    GotoRequest legends;
     if (!rest.empty()) {
-        legends.platform = platformOf(rest[0]);
+        legends.platform = platformWord(rest[0]);
         if (legends.platform.has_value()) {
             rest = rest.subspan(1);
         }
@@ -75,9 +76,9 @@ ConsoleCommands::parseGoto(Arguments arguments) {
         const std::string word = toLowerAscii(rest[0]);
         if (word == "back" || word == "return") {
             if (rest.size() == 1 && !legends.platform.has_value()) {
-                return Destination{.back = true};
+                return GotoRequest{.back = true};
             }
-            return gdl::Unexpected(gotoUsage());
+            return gdl::Unexpected(sharedGotoUsage());
         }
         if (legends.platform.has_value() || !looksLikeMap(word)) {
             legends.legends = std::string(rest[0]);
@@ -86,36 +87,23 @@ ConsoleCommands::parseGoto(Arguments arguments) {
         }
     }
     if (legends.platform.has_value()) {
-        return gdl::Unexpected(gotoUsage());
+        return gdl::Unexpected(sharedGotoUsage());
     }
     if (arguments.size() == 1) {
-        return Destination{.level = upperArgument(arguments[0])};
+        return GotoRequest{.level = upperArgument(arguments[0])};
     }
     if (arguments.size() == 3) {
         if (const auto at = point(arguments)) {
-            return Destination{.position = at};
+            return GotoRequest{.position = at};
         }
-        return gdl::Unexpected(gotoUsage());
+        return gdl::Unexpected(sharedGotoUsage());
     }
     if (arguments.size() == 4) {
         if (const auto at = point(arguments.subspan(1))) {
-            return Destination{.level = upperArgument(arguments[0]), .position = at};
+            return GotoRequest{.level = upperArgument(arguments[0]), .position = at};
         }
     }
-    return gdl::Unexpected(gotoUsage());
-}
-
-std::vector<std::string> ConsoleCommands::legendsMapLines(LegendsPlatform platform,
-                                                          std::span<const std::string> names) {
-    if (names.empty()) {
-        return {};
-    }
-    std::string joined;
-    for (const std::string& name : names) {
-        joined += joined.empty() ? "" : ", ";
-        joined += name;
-    }
-    return {std::format("{} Legends maps (goto <name>): {}", platformName(platform), joined)};
+    return gdl::Unexpected(sharedGotoUsage());
 }
 
 } // namespace gdl::game

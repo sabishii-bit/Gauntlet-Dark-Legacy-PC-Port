@@ -111,16 +111,17 @@ add_library(game STATIC
     console/ConsolePolicy.h
     console/ConsolePolicy.cpp
     console/ConsoleReach.h
+    console/ConsoleWords.h
     console/DevConsole.h
     console/DevConsole.cpp
-    console/ConsoleCommands.h
-    console/ConsoleCommands.cpp
     console/ConsoleArguments.h
     console/ConsoleArguments.cpp
     console/ConsoleUsage.h
     console/ConsoleUsage.cpp
     console/GiftRequest.h
     console/GiftRequest.cpp
+    console/GotoRequest.h
+    console/GotoRequest.cpp
     console/SpawnRequest.h
     console/SpawnRequest.cpp
     console/FixtureRequest.h

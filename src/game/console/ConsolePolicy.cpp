@@ -20,18 +20,21 @@ ConsoleSession ConsolePolicy::session(const ConsoleSituation& situation) {
 std::optional<std::string_view> ConsolePolicy::refusal(const ConsoleSession& session,
                                                        ConsoleReach reach, std::string_view name,
                                                        std::string_view formRefusal) {
-    // The level's own state is offline play's alone, whatever view holds the scene.
+    // Under a modal view, such as a Legends map's preview, only its words run, not even the
+    // level's own.
+    const bool modal = !session.modal.empty();
+    if (modal && std::ranges::find(session.modal, name) == session.modal.end()) {
+        return kRefused;
+    }
+    // The level's own state is offline play's alone.
     if (reach == ConsoleReach::OfflineOnly) {
         if (session.seat == ConsoleSeat::Offline) {
             return std::nullopt;
         }
         return formRefusal.empty() ? kRefused : formRefusal;
     }
-    if (!session.modal.empty()) {
-        if (std::ranges::find(session.modal, name) != session.modal.end()) {
-            return std::nullopt;
-        }
-        return kRefused;
+    if (modal) {
+        return std::nullopt;
     }
     if (reach == ConsoleReach::HostOnly) {
         if (session.seat == ConsoleSeat::Host) {

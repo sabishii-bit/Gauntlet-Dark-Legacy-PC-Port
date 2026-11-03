@@ -194,13 +194,13 @@ std::string DevConsole::suggestion() const {
             });
         return name ? name->substr(parts.front().size()) : std::string{};
     }
-    // One of the command's own words, for the word being typed.
+    // One of the words of the command and its forms, for the word being typed.
     const ConsoleCommand* command = m_commands.find(parts.front());
     if (command == nullptr || !admits(*command)) {
         return {};
     }
     const std::string& partial = parts.back();
-    for (const std::string& word : command->completions(Arguments{parts}.subspan(1))) {
+    for (const std::string& word : m_commands.completions(*command, Arguments{parts}.subspan(1))) {
         if (word.size() > partial.size() && startsWithIgnoringCase(word, partial)) {
             return word.substr(partial.size());
         }

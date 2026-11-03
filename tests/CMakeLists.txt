@@ -213,7 +213,7 @@ add_executable(tests
     game/app/LevelDebugOverlayTests.cpp
     game/console/DevConsoleTests.cpp
     game/console/ConsolePolicyTests.cpp
-    game/console/ConsoleCommandsTests.cpp
+    game/console/GotoRequestTests.cpp
     game/console/ConsoleArgumentsTests.cpp
     game/console/ConsoleUsageTests.cpp
     game/console/GiftRequestTests.cpp
@@ -1018,6 +1018,7 @@ target_link_libraries(tests PRIVATE Vulkan::Headers volk::volk GPUOpen::VulkanMe
 target_link_libraries(tests PRIVATE gdl::expansion_formats gdl::expansion_audio)
 target_sources(tests PRIVATE
     expansions/ExpansionIsolationTests.cpp
+    expansions/shared/app/LegendsConsoleWordsTests.cpp
     expansions/shared/audio/RestoredSpeechTests.cpp
     expansions/n64/audio/LegendsAnnouncementsTests.cpp
     expansions/n64/audio/LegendsAnnouncementIntegrationTests.cpp

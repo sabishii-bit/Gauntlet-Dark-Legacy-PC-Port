@@ -1,7 +1,5 @@
 #pragma once
 #include <functional>
-#include <string>
-#include <vector>
 
 #include "game/app/InspectConsoleForm.h"
 #include "game/app/OnlineConsoleCommands.h"
@@ -23,8 +21,6 @@ class LevelCatalog;
 struct SharedVerbAccess {
     ConsoleActionSink& sink; ///< where their checked lines go
     const LevelCatalog& levels;
-    /** The Legends maps' names goto completes to: the N64's, then the Dreamcast's. */
-    std::function<std::vector<std::string>()> legendsMapNames;
 };
 
 /** What every owner of the console's words reads and changes of the game. */

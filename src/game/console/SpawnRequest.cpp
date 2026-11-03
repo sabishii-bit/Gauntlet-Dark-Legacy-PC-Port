@@ -7,8 +7,8 @@
 #include "engine/core/Strings.h"
 
 #include "game/console/ConsoleArguments.h"
-#include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleUsage.h"
+#include "game/console/GotoRequest.h"
 #include "game/enemies/EnemyKinds.h"
 
 namespace gdl::game {
@@ -180,8 +180,7 @@ gdl::Expected<SpawnRequest, std::string> parseSpawn(ConsoleCommand::Arguments ar
         return gdl::Unexpected(spawnUsage());
     }
     // An object may be named after its map: spawn object E1 E1XLNSNC_CNDL01.
-    if (spawn.map.has_value() && ConsoleCommands::looksLikeMap(name) &&
-        !ConsoleCommands::looksLikeMap(*spawn.map)) {
+    if (spawn.map.has_value() && looksLikeMap(name) && !looksLikeMap(*spawn.map)) {
         std::swap(name, *spawn.map);
     }
     spawn.kind = category == Category::Item     ? SpawnRequest::Kind::Item

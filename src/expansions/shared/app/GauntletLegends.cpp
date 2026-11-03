@@ -3,7 +3,9 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -20,17 +22,14 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/n64/scenes/LegendsN64Music.h"
+#include "expansions/shared/app/LegendsConsoleWords.h"
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/formats/LegendsMap.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "game/app/Gauntlet.h"
-#include "game/console/ConsoleCommands.h"
-#include "game/console/ConsoleForm.h"
 #include "game/console/ConsoleHost.h"
 #include "game/console/ConsoleListings.h"
-#include "game/console/ConsoleReach.h"
-#include "game/scenes/SharedConsoleVerbs.h"
 
 namespace gdl::game {
 namespace {
@@ -84,7 +83,8 @@ std::unique_ptr<SoundPlayer> openLegendsMusic(const std::filesystem::path& level
 }
 } // namespace
 
-std::vector<LegendsMapEntry> Gauntlet::legendsMapsOf(LegendsPlatform platform, bool rescan) const {
+const std::vector<LegendsMapEntry>& Gauntlet::foundLegendsMaps(LegendsPlatform platform,
+                                                               bool rescan) const {
     auto& found = m_legendsMaps[platform == LegendsPlatform::N64 ? 0 : 1];
     if (rescan || !found.has_value()) {
         found = legendsMaps(platform, m_options.unpackedDirectory, paths::executableDirectory(),
@@ -93,87 +93,53 @@ std::vector<LegendsMapEntry> Gauntlet::legendsMapsOf(LegendsPlatform platform, b
     return *found;
 }
 
-std::vector<std::string> Gauntlet::legendsMapLines() const {
-    std::vector<std::string> lines;
-    for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
-        std::vector<std::string> names;
-        for (const LegendsMapEntry& map : legendsMapsOf(platform, true)) {
-            names.push_back(map.name);
-        }
-        const std::vector<std::string> platformLines =
-            ConsoleCommands::legendsMapLines(platform, names);
-        lines.insert(lines.end(), platformLines.begin(), platformLines.end());
-    }
-    return lines;
+std::vector<LegendsMapEntry> Gauntlet::legendsMapsOf(LegendsPlatform platform, bool rescan) const {
+    return foundLegendsMaps(platform, rescan);
 }
 
-std::vector<std::string> Gauntlet::legendsMapNames() const {
-    std::vector<std::string> names;
+bool Gauntlet::legendsMapsInstalled(bool rescan) const {
+    bool installed = false;
     for (const LegendsPlatform platform : {LegendsPlatform::N64, LegendsPlatform::Dreamcast}) {
-        for (const LegendsMapEntry& map : legendsMapsOf(platform)) {
-            names.push_back(map.name);
-        }
+        const bool any = !foundLegendsMaps(platform, rescan).empty();
+        installed = installed || any;
     }
-    return names;
+    return installed;
+}
+
+std::optional<std::span<const std::string_view>> Gauntlet::legendsConsoleHold() const {
+    if (!m_legendsPreview.isOpen()) {
+        return std::nullopt;
+    }
+    return kLegendsPreviewWords;
 }
 
 void Gauntlet::registerLegendsConsole(ConsoleHost& host, ConsoleListings& listings) {
-    // goto's Legends words: every word parseGoto reads as a Legends map or the way back from one,
-    // whatever is installed. Online they are refused in the shared verb's words.
-    host.addForm("goto", std::make_unique<LambdaForm>(
-                             ConsoleReach::OfflineOnly,
-                             std::string(sharedConsoleVerb("goto")->offlineOnlyRefusal()),
-                             [](DevConsole::Arguments arguments) {
-                                 const auto destination = ConsoleCommands::parseGoto(arguments);
-                                 return destination.has_value() && destination->offlineOnly();
-                             },
-                             [this](DevConsole& console, DevConsole::Arguments arguments) {
-                                 consoleLegendsGoto(console, arguments);
-                             }));
-    // unlock_tower in a native world walked offline opens that world's own tower; elsewhere the
-    // shared verb answers it, and under a preview the preview's words refuse it.
-    host.addForm("unlock_tower",
-                 std::make_unique<LambdaForm>(
-                     ConsoleReach::OfflineOnly, std::string{},
-                     [this](DevConsole::Arguments /*arguments*/) {
-                         return m_online == nullptr && !m_legendsPreview.isOpen() &&
-                                dynamic_cast<const LegendsLevel*>(m_play->world.imported()) !=
-                                    nullptr;
-                     },
-                     [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                         consoleLegendsUnlockTower(console);
-                     }));
-    // list maps names the Legends maps installed after the levels, each platform's on a line;
-    // nothing is said of a platform without any.
-    listings.add(std::make_unique<LambdaListing>(
-        "maps", std::nullopt,
-        [this](ConsoleListing::Arguments /*rest*/) { return legendsMapLines(); }));
-}
-
-void Gauntlet::consoleLegendsGoto(DevConsole& console, DevConsole::Arguments arguments) {
-    const auto destination = ConsoleCommands::parseGoto(arguments);
-    GDL_VERIFY(destination.has_value() && destination->offlineOnly(),
-               "goto's Legends form claims its own words alone");
-    if (destination->back) {
-        consoleLegendsClose(console);
-        return;
-    }
-    const std::string& name = *destination->legends;
-    const bool path = name.find_first_of("/\\") != std::string::npos;
-    if (path && !destination->platform.has_value()) {
-        console.print("Name the platform with a path: goto n64|dreamcast <path>");
-        return;
-    }
-    const auto found = path
-                           ? std::optional{std::pair{*destination->platform, paths::fromUtf8(name)}}
-                           : findLegendsMap(name, destination->platform);
-    if (!found.has_value()) {
-        // A word that is neither a level nor an installed Legends map, as before the
-        // Legends maps were taken: the levels are what list maps names first.
-        console.print(std::format("No level or Legends map named {}; list maps names them", name));
-        return;
-    }
-    consoleLegendsOpen(console, found->first, found->second, !destination->preview);
+    registerLegendsConsoleWords(
+        host, listings,
+        {.visiting = [this] { return m_legendsPreview.isOpen() || m_legendsOrigin != nullptr; },
+         .installed = [this](bool rescan) { return legendsMapsInstalled(rescan); },
+         .mapNames =
+             [this](LegendsPlatform platform) {
+                 std::vector<std::string> names;
+                 for (const LegendsMapEntry& map : foundLegendsMaps(platform, false)) {
+                     names.push_back(map.name);
+                 }
+                 return names;
+             },
+         .find =
+             [this](std::string_view name, std::optional<LegendsPlatform> platform) {
+                 return findLegendsMap(name, platform);
+             },
+         .open = [this](DevConsole& console, LegendsPlatform platform,
+                        const std::filesystem::path& directory,
+                        bool walk) { consoleLegendsOpen(console, platform, directory, walk); },
+         .close = [this](DevConsole& console) { consoleLegendsClose(console); },
+         .walkingNative =
+             [this] {
+                 return m_online == nullptr &&
+                        dynamic_cast<const LegendsLevel*>(m_play->world.imported()) != nullptr;
+             },
+         .unlockTower = [this](DevConsole& console) { consoleLegendsUnlockTower(console); }});
 }
 
 void Gauntlet::consoleLegendsUnlockTower(DevConsole& console) {
@@ -368,7 +334,7 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             auto next = std::make_unique<PlaySession>();
             LevelRef ref;
             ref.realmId = -1; // native realm IDs must never index the GDL campaign
-            ref.realm = std::string(ConsoleCommands::platformName(platform));
+            ref.realm = std::string(legendsPlatformName(platform));
             ref.name = paths::utf8(native->directory().filename());
             ref.title = ref.name;
             ref.directory = paths::utf8(files.root());

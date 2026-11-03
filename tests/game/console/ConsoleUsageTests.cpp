@@ -10,10 +10,10 @@
 
 #include "engine/core/Types.h"
 
-#include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleUsage.h"
 #include "game/console/FixtureRequest.h"
 #include "game/console/GiftRequest.h"
+#include "game/console/GotoRequest.h"
 #include "game/console/PartyCountRequest.h"
 #include "game/console/SpawnRequest.h"
 
@@ -25,7 +25,7 @@ using Row = std::pair<std::string_view, std::string_view>;
 TEST_CASE("usage lines put the forms in a column with what each does beside them",
           "[dev-console][commands]") {
     for (const std::string& text :
-         {spawnUsage(), giftUsage(), ConsoleCommands::gotoUsage(), lockUsage(LockVerb::Lock),
+         {spawnUsage(), giftUsage(), sharedGotoUsage(), lockUsage(LockVerb::Lock),
           lockUsage(LockVerb::Unlock), activateUsage(), partyCountUsage()}) {
         CAPTURE(text);
         std::vector<std::string> lines;

@@ -1,8 +1,6 @@
-#include <array>
 #include <format>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -22,11 +20,6 @@
 #include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
-
-namespace {
-/** The commands a Legends map's preview lets the console run, besides the offline-only ones. */
-constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
-} // namespace
 
 void Gauntlet::setUpConsole() {
     if (!m_console.load(renderDevice(), m_options.unpackedDirectory)) {
@@ -61,9 +54,7 @@ void Gauntlet::setUpConsole() {
                          return actor != nullptr ? &actor->save() : nullptr;
                      }},
         .fixtures = {.scene = playScene, .world = [this] { return consoleWorld(); }},
-        .shared = {.sink = m_consoleRoute,
-                   .levels = m_levels,
-                   .legendsMapNames = [this] { return legendsMapNames(); }},
+        .shared = {.sink = m_consoleRoute, .levels = m_levels},
         .inspect = {
             .selected = [this]() -> std::optional<SceneSelection> {
                 const PlayScene* scene = consoleScene();
@@ -95,8 +86,8 @@ ConsoleSession Gauntlet::consoleSession() const {
         situation.host = m_online->consoleHost();
         situation.allowed = m_online->consoleAllowed();
     }
-    if (m_legendsPreview.isOpen()) {
-        situation.preview = kPreviewWords;
+    if (const auto hold = legendsConsoleHold()) {
+        situation.preview = *hold;
         situation.parked = true; // the preview holds the scene it was opened over
     }
     return ConsolePolicy::session(situation);

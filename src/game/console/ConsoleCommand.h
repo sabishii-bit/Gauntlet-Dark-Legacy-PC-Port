@@ -12,6 +12,7 @@
 #include "game/console/ConsoleForm.h"
 #include "game/console/ConsoleHost.h"
 #include "game/console/ConsoleReach.h"
+#include "game/console/ConsoleWords.h"
 
 namespace gdl::game {
 
@@ -41,8 +42,12 @@ public:
     virtual ConsoleReach reach() const = 0;
     virtual void run(DevConsole& console, Arguments arguments) = 0;
     /** The words the console may complete the last of `arguments` to (the word being typed,
-     * which may be empty); none for a command that takes free text. */
+     * which may be empty), none ranked before another; none for a command that takes free
+     * text. */
     virtual std::vector<std::string> completions(Arguments arguments) const;
+    /** The words the console may complete the last of `arguments` to, ranked: the grammar's
+     * words, then the names known. By default the completions, as names. */
+    virtual ConsoleWords words(Arguments arguments) const;
 };
 
 /** A command made of a name, a summary, its reach and a function: the quick way to register
@@ -93,6 +98,11 @@ public:
     ConsoleForm* claimant(std::string_view command, ConsoleCommand::Arguments arguments) const;
     /** The forms registered on `command`, in their order; none for a name without forms. */
     std::span<const std::unique_ptr<ConsoleForm>> forms(std::string_view command) const;
+    /** The words the console may complete the last of `arguments` to after `command`: the
+     * command's grammar words, then those of its listed forms, then the command's names, then
+     * its listed forms' names, each in the order registered. */
+    std::vector<std::string> completions(const ConsoleCommand& command,
+                                         ConsoleCommand::Arguments arguments) const;
     /** The first registered name (among those `allowed`, when given) that begins with
      * `prefix` in any case and is longer than it: what the console completes the word to. */
     std::optional<std::string>

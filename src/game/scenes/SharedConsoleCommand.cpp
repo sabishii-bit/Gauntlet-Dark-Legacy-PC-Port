@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Types.h"
@@ -17,15 +18,13 @@ namespace gdl::game {
 
 SharedConsoleCommand::SharedConsoleCommand(const SharedConsoleVerb& verb, ConsoleActionSink& sink,
                                            const LevelCatalog& levels,
-                                           const ConsoleRegistry& registry,
-                                           LambdaCommand::Completer completer)
-    : m_verb(verb), m_sink(sink), m_levels(levels), m_registry(registry),
-      m_completer(std::move(completer)) {}
+                                           const ConsoleRegistry& registry)
+    : m_verb(verb), m_sink(sink), m_levels(levels), m_registry(registry) {}
 
 std::string SharedConsoleCommand::summary() const {
     std::vector<std::string_view> forms = m_verb.summaryForms();
     for (const auto& form : m_registry.forms(m_verb.name())) {
-        if (!form->summaryForm().empty()) {
+        if (form->listed() && !form->summaryForm().empty()) {
             forms.push_back(form->summaryForm());
         }
     }
@@ -44,6 +43,9 @@ std::string SharedConsoleCommand::usage() const {
     std::vector<std::pair<std::string, std::string>> rows = m_verb.usageRows();
     std::string_view note = m_verb.usageNote();
     for (const auto& form : m_registry.forms(m_verb.name())) {
+        if (!form->listed()) {
+            continue;
+        }
         const std::vector<std::pair<std::string, std::string>> formRows = form->usageRows();
         rows.insert(rows.end(), formRows.begin(), formRows.end());
         if (!form->usageNote().empty()) {
@@ -59,8 +61,8 @@ std::string SharedConsoleCommand::usage() const {
     return consoleUsage(views, notes);
 }
 
-std::vector<std::string> SharedConsoleCommand::completions(Arguments arguments) const {
-    return m_completer ? m_completer(arguments) : m_verb.completions(arguments, m_levels);
+ConsoleWords SharedConsoleCommand::words(Arguments arguments) const {
+    return m_verb.words(arguments, m_levels);
 }
 
 void SharedConsoleCommand::run(DevConsole& console, Arguments arguments) {
@@ -92,12 +94,9 @@ void SharedConsoleCommand::run(DevConsole& console, Arguments arguments) {
 }
 
 void registerSharedConsoleCommands(ConsoleHost& host, const ConsoleRegistry& registry,
-                                   ConsoleActionSink& sink, const LevelCatalog& levels,
-                                   const LambdaCommand::Completer& gotoWords) {
+                                   ConsoleActionSink& sink, const LevelCatalog& levels) {
     for (const SharedConsoleVerb* verb : sharedConsoleVerbs()) {
-        host.add(std::make_unique<SharedConsoleCommand>(
-            *verb, sink, levels, registry,
-            verb->name() == "goto" ? gotoWords : LambdaCommand::Completer{}));
+        host.add(std::make_unique<SharedConsoleCommand>(*verb, sink, levels, registry));
     }
 }
 

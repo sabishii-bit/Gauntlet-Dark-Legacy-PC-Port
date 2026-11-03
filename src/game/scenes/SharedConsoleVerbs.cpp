@@ -13,8 +13,8 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/Progression.h"
-#include "game/console/ConsoleCommands.h"
 #include "game/console/GiftRequest.h"
+#include "game/console/GotoRequest.h"
 #include "game/console/SpawnRequest.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
@@ -181,39 +181,38 @@ public:
     }
 };
 
-/** goto: the party to a point here, or on to a level and a point there. */
+/** goto: the party to a point here, or on to a level and a point there. The words that name a
+ * Legends map are read, to be refused: the shared game never goes to one. */
 class GotoVerb final : public SharedConsoleVerb {
 public:
     std::string_view name() const override { return "goto"; }
     std::vector<std::string_view> summaryForms() const override {
-        return {"<map> [x y z]", "x y z", "<legends map> [preview]"};
+        return {"<map> [x y z]", "x y z"};
     }
     std::string_view summaryTail() const override { return "brings the party there"; }
     std::vector<std::pair<std::string, std::string>> usageRows() const override {
-        return ownedRows(ConsoleCommands::kGotoUsageRows);
+        return ownedRows(GotoRequest::kUsageRows);
     }
-    std::string_view usageNote() const override { return ConsoleCommands::kGotoUsageNote; }
-    std::vector<std::string> completions(Arguments arguments,
-                                         const LevelCatalog& levels) const override {
+    ConsoleWords words(Arguments arguments, const LevelCatalog& levels) const override {
         if (arguments.size() > 1) {
             return {};
         }
-        std::vector<std::string> words{"tower"};
+        ConsoleWords offered{.keywords = {"tower"}, .names = {}};
         for (const LevelCatalog::Realm& realm : levels.realms()) {
-            words.insert(words.end(), realm.levels.begin(), realm.levels.end());
+            offered.names.insert(offered.names.end(), realm.levels.begin(), realm.levels.end());
         }
-        return words;
+        return offered;
     }
     bool takesArguments() const override { return true; }
     Reach check(Arguments arguments, ConsolePlay /*play*/) const override {
-        const auto destination = ConsoleCommands::parseGoto(arguments);
+        const auto destination = parseGoto(arguments);
         if (!destination) {
-            return gdl::Unexpected(unreadable(destination.error(), ConsoleCommands::gotoUsage()));
+            return gdl::Unexpected(unreadable(destination.error(), sharedGotoUsage()));
         }
         return destination->offlineOnly() ? ConsoleReach::OfflineOnly : ConsoleReach::Shared;
     }
     std::string apply(ConsoleStage& stage, s32 seat, Arguments arguments) const override {
-        const auto destination = ConsoleCommands::parseGoto(arguments);
+        const auto destination = parseGoto(arguments);
         if (!destination) {
             return destination.error();
         }
@@ -226,7 +225,7 @@ public:
         }
         if (!destination->level) {
             if (!destination->position) {
-                return ConsoleCommands::gotoUsage();
+                return sharedGotoUsage();
             }
             const Vec3& at = *destination->position;
             return movedReply(stage.play(), stage.relocate(at) ? std::optional{at} : std::nullopt);

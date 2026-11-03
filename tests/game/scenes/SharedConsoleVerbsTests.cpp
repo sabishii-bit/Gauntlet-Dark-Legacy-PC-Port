@@ -14,10 +14,11 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
-#include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleReach.h"
 #include "game/console/ConsoleUsage.h"
+#include "game/console/ConsoleWords.h"
 #include "game/console/GiftRequest.h"
+#include "game/console/GotoRequest.h"
 #include "game/console/SpawnRequest.h"
 #include "game/level/LevelCatalog.h"
 #include "game/rollback/ConsoleAction.h"
@@ -129,10 +130,10 @@ TEST_CASE("every peer judges a verb's words alike before they are sent",
     CHECK(reachOf("get info") == ConsoleReach::Local);
     CHECK(reachOf("get info enemy#3") == ConsoleReach::Local);
     // goto: its usage, and the Legends maps only offline.
-    CHECK(refusalOf("goto") ==
-          ConsoleRefusal{.kind = Kind::Usage, .text = ConsoleCommands::gotoUsage()});
-    CHECK(refusalOf("goto 1 2") ==
-          ConsoleRefusal{.kind = Kind::Usage, .text = ConsoleCommands::gotoUsage()});
+    CHECK(refusalOf("goto") == ConsoleRefusal{.kind = Kind::Usage, .text = sharedGotoUsage()});
+    CHECK(refusalOf("goto 1 2") == ConsoleRefusal{.kind = Kind::Usage, .text = sharedGotoUsage()});
+    CHECK(refusalOf("goto n64 1 2 3") ==
+          ConsoleRefusal{.kind = Kind::Usage, .text = sharedGotoUsage()});
     CHECK(reachOf("goto lab") == ConsoleReach::OfflineOnly);
     CHECK(reachOf("goto back") == ConsoleReach::OfflineOnly);
     CHECK(reachOf("goto n64 castle") == ConsoleReach::OfflineOnly);
@@ -205,8 +206,9 @@ TEST_CASE("each verb's help reads as the console's", "[dev-console][online-conso
         std::string_view name;
         std::string_view summary;
     };
+    // goto names its own forms; the Legends maps' form adds its own where it is listed.
     constexpr std::array<Help, 8> kHelp{
-        {{"goto", "<map> [x y z], x y z or <legends map> [preview]: brings the party there"},
+        {{"goto", "<map> [x y z] or x y z: brings the party there"},
          {"unlock_tower", "opens every wing and portal of the tower"},
          {"get", "<item> [amount], exp <points> or level <level>: for you"},
          {"spawn", "stands enemies, great ones, generators, pickups or objects before you; spawn "
@@ -220,24 +222,33 @@ TEST_CASE("each verb's help reads as the console's", "[dev-console][online-conso
         CHECK(summaryOf(verbNamed(help.name)) == help.summary);
     }
     CHECK(usageOf(verbNamed("get")) == giftUsage());
-    CHECK(usageOf(verbNamed("goto")) == ConsoleCommands::gotoUsage());
     CHECK(usageOf(verbNamed("spawn")) == spawnUsage());
+    const std::vector<std::pair<std::string, std::string>> gotoRows(GotoRequest::kUsageRows.begin(),
+                                                                    GotoRequest::kUsageRows.end());
+    CHECK(verbNamed("goto").usageRows() == gotoRows);
+    CHECK(verbNamed("goto").usageNote().empty());
     for (const std::string_view name : {"god", "notarget", "noclip", "suicide", "unlock_tower"}) {
         CAPTURE(name);
         CHECK(verbNamed(name).usageRows().empty());
         CHECK(verbNamed(name).usageNote().empty());
     }
-    // goto completes its first word to the tower and the catalogue's levels; nothing else
-    // completes.
+    // goto offers the tower for its first word, then the catalogue's levels; nothing else
+    // offers a word.
     const LevelCatalog levels;
     const std::vector<std::string> typing{""};
     const std::vector<std::string> second{"G1", ""};
-    CHECK(verbNamed("goto").completions(typing, levels) == std::vector<std::string>{"tower"});
-    CHECK(verbNamed("goto").completions(second, levels).empty());
+    const ConsoleWords first = verbNamed("goto").words(typing, levels);
+    CHECK(first.keywords == std::vector<std::string>{"tower"});
+    CHECK(first.names.empty());
+    const ConsoleWords after = verbNamed("goto").words(second, levels);
+    CHECK(after.keywords.empty());
+    CHECK(after.names.empty());
     for (const SharedConsoleVerb* verb : sharedConsoleVerbs()) {
         if (verb->name() != "goto") {
             CAPTURE(verb->name());
-            CHECK(verb->completions(typing, levels).empty());
+            const ConsoleWords none = verb->words(typing, levels);
+            CHECK(none.keywords.empty());
+            CHECK(none.names.empty());
         }
     }
 }
