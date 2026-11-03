@@ -1578,10 +1578,10 @@ TEST_CASE("the Video page takes the display the running game offers as it is ent
     f.choose(4);
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
     CHECK_FALSE(displayRow().enabled);
-    // A second display attached while the menu is open shows once the page is entered again.
+    // A second display attached after leaving the page shows once the page is entered again.
     CHECK(f.menu.config().display.windowWidth == 1280);
-    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1600, 1000}, {"Left", "Right"}, 1};
     f.back();
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1600, 1000}, {"Left", "Right"}, 1};
     f.choose(4);
     REQUIRE(f.menu.page() == SettingsMenu::Page::Graphics);
     CHECK(displayRow().enabled);
