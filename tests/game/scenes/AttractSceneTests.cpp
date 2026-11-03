@@ -136,7 +136,7 @@ TEST_CASE("attract presentation keeps the rail speed at different render rates",
 TEST_CASE("attract scene fails cleanly when no level catalog is supplied", "[game][attract]") {
     test::FakeRenderDevice device;
     AttractScene scene;
-    REQUIRE_FALSE(scene.openNext(device, {}));
+    REQUIRE_FALSE(scene.openNext(device, GameServices::none()));
     REQUIRE(scene.update(1.0, {}) == AttractOutcome::Finished);
 }
 
@@ -152,7 +152,7 @@ TEST_CASE("attract scene cycles eligible levels and returns to title on input",
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const AssetLocator assets(root);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.levels = &levels;

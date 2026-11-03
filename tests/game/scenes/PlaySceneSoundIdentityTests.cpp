@@ -43,7 +43,7 @@ struct SceneSounds {
     GameConfig config;
     LevelCatalog catalog;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     PlayScene scene;
     u64 tick = 0;
 

@@ -19,7 +19,7 @@
 #include "game/characters/Party.h"
 #include "game/characters/Progression.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/party/PlayerFigure.h"
@@ -59,11 +59,10 @@ TEST_CASE("native tower gameplay loads player tuning and responds to movement an
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.assets = &assets;
-    context.tower = &world;
     context.levels = &catalog;
     context.unpackedRoot = root;
     const std::array party{PartyMember{0, CharacterSave{}}};
@@ -142,11 +141,10 @@ TEST_CASE("native Courtyard tentacle knocks down the knight on the water-side sw
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.assets = &assets;
-    context.tower = &world;
     context.levels = &catalog;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -283,7 +281,7 @@ TEST_CASE("native shop screen opens with retail catalog tuning fonts and artwork
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;

@@ -7,7 +7,7 @@
 # (the party in a level, frame by frame), hud (what the party sees in play: status boxes,
 # messages, meters), enemies (the swarm and the level's opponents), critters, bosses, tower
 # (between levels, with Sumner and his scrolls), shop (the shop and the inventory panel),
-# context (GameContext: the settings, text, sound, files and callbacks every screen is handed),
+# context (GameServices: the settings, text, sound and files every screen reads from the game),
 # menu (the title, pause, save and settings menus and the name picker), rollback (commands,
 # timelines and checkpoints), netplay (rooms, sessions and keeping the peers in step), console
 # (the developer console, its command objects and their parsers), scenes (the full screens),
@@ -390,7 +390,7 @@ add_library(game STATIC
     widgets/BurnDialogueScroll.cpp
     menu/NameEntry.h
     menu/NameEntry.cpp
-    context/GameContext.h
+    context/GameServices.h
     scenes/TitleScene.h
     scenes/TitleScene.cpp
     scenes/MovieScene.h

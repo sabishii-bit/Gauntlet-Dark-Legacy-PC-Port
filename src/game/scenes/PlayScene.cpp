@@ -66,43 +66,43 @@ void PlayScene::pauseGameplaySounds() {
     }
 }
 
-bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorld& world,
+bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWorld& world,
                      std::span<const PartyMember> party, const PlayOptions& options,
                      const Links& links) {
     close();
-    m_context = context;
+    m_services = &services;
     m_links = links;
-    m_mechanics.open(context.mechanics, {.tower = world.isTower()});
+    m_mechanics.open(services.mechanics, {.tower = world.isTower()});
     syncMechanics();
     m_sim.partyCountOverride = options.partyCount;
     m_device = &device;
     m_world = &world;
     // A character menu can replace the party without replacing the shared tower.
     // Rebuild its initial pickups and gates before applying the new party's progress.
-    if ((!world.built() || world.isTower()) && !world.load(device, context.unpackedRoot)) {
+    if ((!world.built() || world.isTower()) && !world.load(device, services.unpackedRoot)) {
         return false;
     }
-    if (!m_hud.load(device, context.unpackedRoot, context.strings)) {
+    if (!m_hud.load(device, services.unpackedRoot, services.strings)) {
         return false;
     }
-    m_classes.load(context.unpackedRoot / kClassDataDirectory);
-    m_audio.open(context.unpackedRoot, context.sounds, world.audio(),
+    m_classes.load(services.unpackedRoot / kClassDataDirectory);
+    m_audio.open(services.unpackedRoot, services.sounds, world.audio(),
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
-    m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
+    m_messages.load(device, m_staticTextures, m_services->unpackedRoot, m_services->strings);
     if (const auto* imported = world.imported()) {
         m_messages.setPresentation(imported->messagePresentation());
         m_audio.bindAnnouncements([imported](auto lines, auto subject) {
             return imported->gameplayAnnouncement(lines, subject);
         });
     }
-    m_messages.setControlLabels(context.controlLabels);
-    m_hud.setControlLabels(context.controlLabels);
-    m_names.load(device, m_context.unpackedRoot, m_staticTextures);
-    m_weapons.load(context.unpackedRoot / kWeaponsArchive);
+    m_messages.setControlLabels(services.controlLabels);
+    m_hud.setControlLabels(services.controlLabels);
+    m_names.load(device, m_services->unpackedRoot, m_staticTextures);
+    m_weapons.load(services.unpackedRoot / kWeaponsArchive);
     m_figures.loadSkins(device, world.powerups(), m_weapons);
     m_compass.bind(device, world.powerups());
-    m_hud.bindHourglass(device, world.powerups(), context.stopTimeTotal);
+    m_hud.bindHourglass(device, world.powerups(), links.stopTimeTotal);
     const std::array<TextureSet*, 5> effectTextures{&m_weapons.textures, &world.items().textures,
                                                     &world.realmItems().textures,
                                                     &world.powerups().textures, &m_staticTextures};
@@ -114,8 +114,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // Imported residents reuse the menu artwork, not the GC tower figure or
     // its campaign advice. Bind it now, never during an interactive frame.
     if (world.isTower() || world.imported()) {
-        m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(), m_context.unpackedRoot,
-                           m_context.strings);
+        m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(), m_services->unpackedRoot,
+                           m_services->strings);
     }
     if (world.isTower()) {
         m_sumner.load(device, world.items(), world.layout());
@@ -123,21 +123,21 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // What the tower opens to this party: its portals, their glows, its lifts and where it
     // stands coming back (fn_8005B5B8, SetPlayerStartPos).
     m_sim.towerAccess = world.isTower() ? TowerAccess{party} : TowerAccess{};
-    if (context.levels != nullptr) {
-        m_portals.bind(device, world.layout(), world.itemScope(), *context.levels,
+    if (services.levels != nullptr) {
+        m_portals.bind(device, world.layout(), world.itemScope(), *services.levels,
                        &world.collision(), world.isTower() ? &m_sim.towerAccess : nullptr);
         for (const ExitPortals::ShutGate& gate : m_portals.shutGates()) {
             world.shutPortalGlow(gate.world, gate.gate);
         }
     }
     m_fixtures.bind({device, world, m_weapons, m_effects, m_audio,
-                     context.config != nullptr ? context.config->difficulty.gain() : 1.0f});
+                     services.config != nullptr ? services.config->difficulty.gain() : 1.0f});
     m_sim.refusedPortal = -1;
     m_sim.leaving = false;
     // The level cuts in: the original wipes the map, the movie's last frame or the transition
     // picture the moment the level has loaded (fn_8005351C, delete_map_blits), never fading
     // one out, so nothing is put up over an arriving party.
-    m_transition.load(device, context.unpackedRoot);
+    m_transition.load(device, services.unpackedRoot);
     // The window light is restored from the collection after the party has been loaded.
     for (usize i = 0; i < world.layout().objects().size(); ++i) {
         if (world.layout().objects()[i].name == kTempleLight) {
@@ -184,8 +184,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         return false;
     }
     m_fixtures.setPlayerCount(partySize);
-    m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
-                      context.config != nullptr ? context.config->difficulty.gain() : 1.0f, true},
+    m_opponents.open({device, world, m_weapons, m_effects, m_audio, services.unpackedRoot,
+                      services.config != nullptr ? services.config->difficulty.gain() : 1.0f, true},
                      m_players);
     m_opponents.setMechanics(&m_mechanics);
     m_opponents.setPartyCount(m_sim.partyCountOverride);
@@ -213,7 +213,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     std::vector<CameraSubject> subjects;
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
-        runtime.figure = PlayerFigure::load(device, m_context.unpackedRoot, runtime.actor.save());
+        runtime.figure = PlayerFigure::load(device, m_services->unpackedRoot, runtime.actor.save());
         if (runtime.figure != nullptr) {
             runtime.figure->setCompanionPowerups(
                 device, world.powerups(), runtime.actor.save().progress().inventory, &m_weapons);
@@ -231,7 +231,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_sim.bossCamera.reset(bossSubject(), subjects, *level->bossCamera, cameraView(),
                                world.cameraMarkers());
     }
-    m_audio.startMusic(context.assets,
+    m_audio.startMusic(services.assets,
                        world.level() != nullptr ? world.level()->musicVolume : 1.0f);
     // The party materialises first; Sumner's welcome, when it is due, follows.
     m_sim.welcome.open(world, world.isTower() &&
@@ -248,24 +248,25 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         };
     }
     m_arsenal.bind(
-        {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, context.sounds,
+        {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, services.sounds,
          world.wallHitSound(), world.isTower(),
          (world.level() != nullptr && world.level()->bossType >= 0) ||
              (world.imported() != nullptr && world.imported()->importedBoss() != nullptr),
-         &world.powerups(), context.config != nullptr ? &context.config->multiplayer.mode : nullptr,
+         &world.powerups(),
+         services.config != nullptr ? &services.config->multiplayer.mode : nullptr,
          std::move(strikeMuzzleObject)},
         effectTextures);
-    m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
+    m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, services.sounds,
                     m_arsenal, m_sim.dimmer, &m_sim.shake,
-                    context.config != nullptr ? &context.config->multiplayer.mode : nullptr,
-                    context.config != nullptr && context.config->difficulty.level == "easy"
+                    services.config != nullptr ? &services.config->multiplayer.mode : nullptr,
+                    services.config != nullptr && services.config->difficulty.level == "easy"
                         ? TargetAssist::kEasyFacingDot
                         : TargetAssist::kFacingDot,
                     [this](s32 player) {
                         emitOutput(RumbleOutput{player, 0, ControlFeedback::ThunderHammer});
                     }});
     m_bossSequence.bind(
-        {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
+        {device, world, m_weapons, m_staticTextures, m_effects, m_audio, services.levels});
     m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
     m_open = true;
     if (world.isTower()) {
@@ -435,7 +436,7 @@ void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool
 std::optional<Vec3> PlayScene::assistedAim(usize index, const Vec3& direction) {
     // Auto Aim off (the original's per-pad control option): shots, the familiar's spit and
     // the standing attack keep the way the player faces; touch and melee reach are unaffected.
-    if (m_context.config != nullptr && !m_context.config->combat.autoAim) {
+    if (m_services->config != nullptr && !m_services->config->combat.autoAim) {
         return std::nullopt;
     }
     // Retail PlayerGetTarget/ModifyPlayerDpos retain target-height correction
@@ -482,8 +483,8 @@ s32 PlayScene::partyCount(s32 present) const {
 /** The mechanics follow the settings as they stand, so one switched in the menu answers from
  * the next tick; online every peer reads the same agreed rules. */
 void PlayScene::syncMechanics() {
-    m_mechanics.configure(m_context.config != nullptr ? m_context.config->game
-                                                      : GameOptionsConfig{});
+    m_mechanics.configure(m_services->config != nullptr ? m_services->config->game
+                                                        : GameOptionsConfig{});
 }
 
 /** A run of close blows is praised once it pauses (player.c 2553), unless the boss's wizard
@@ -524,7 +525,7 @@ void PlayScene::drawMechanicsHud() {
     m_mechanics.drawHud({.canvas = m_canvas,
                          .text = m_messages.text(),
                          .glow = m_glowSheet,
-                         .strings = m_context.strings,
+                         .strings = m_services->strings,
                          .runs = std::span(runs).first(watched)});
 }
 
@@ -534,13 +535,13 @@ PartyPickups::Services PlayScene::pickupServices() {
             .hud = m_hud,
             .audio = m_audio,
             .classes = m_classes,
-            .sounds = m_context.sounds,
+            .sounds = m_services->sounds,
             .help = [this](s32 id, usize index) { return postHelp(id, index); },
             .openMessage = [this](std::string_view name,
                                   usize page) { return openMessage(name, page); },
             .challengeCoin = [this](usize item) { collectChallengeCoin(item); },
             .autoActivateItems =
-                m_context.config == nullptr || m_context.config->combat.autoActivateItems};
+                m_services->config == nullptr || m_services->config->combat.autoActivateItems};
 }
 
 bool PlayScene::fallen(s32 player) const {
@@ -640,7 +641,7 @@ bool PlayScene::spawnObject(const LevelRef& level, std::string_view name, const 
     }
     const Mat4 transform =
         portable::rotate(glm::translate(Mat4{1.0f}, position), yaw, Vec3{0.0f, 1.0f, 0.0f});
-    return m_spawned.spawn(*m_device, m_context.unpackedRoot, level, name, transform);
+    return m_spawned.spawn(*m_device, m_services->unpackedRoot, level, name, transform);
 }
 
 ItemArchive* PlayScene::borrowItems(const LevelRef& level) {
@@ -650,7 +651,7 @@ ItemArchive* PlayScene::borrowItems(const LevelRef& level) {
         }
     }
     auto archives = std::make_unique<LevelItemArchives>();
-    if (!archives->load(m_context.unpackedRoot, level)) {
+    if (!archives->load(m_services->unpackedRoot, level)) {
         return nullptr;
     }
     m_borrowedItems.emplace_back(level.name, std::move(archives));
@@ -663,7 +664,7 @@ bool PlayScene::borrowOpponentSounds(const LevelInfo& source, const LevelAudioIn
     }
     m_opponents.borrowRoster(source.enemies);
     return audio != nullptr && !audio->bank.empty() &&
-           m_audio.borrowBank(m_context.unpackedRoot / "audio" / audio->bank);
+           m_audio.borrowBank(m_services->unpackedRoot / "audio" / audio->bank);
 }
 
 /** Puts a help message up over a character, the narrator saying it, unless the party has
@@ -680,8 +681,8 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
             m_fixtures,
             m_fixtureRouting,
             m_attackRouting,
-            m_context.config != nullptr ? m_context.config->multiplayer.mode
-                                        : MultiplayerMode::Normal,
+            m_services->config != nullptr ? m_services->config->multiplayer.mode
+                                          : MultiplayerMode::Normal,
             m_players,
             m_bossSequence.occupiedHand(),
             &m_mechanics};
@@ -824,7 +825,7 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
 }
 
 void PlayScene::startGameOver() {
-    m_sim.gameOver.begin(GameOver::captionFor(m_hud.strings(), m_context.strings));
+    m_sim.gameOver.begin(GameOver::captionFor(m_hud.strings(), m_services->strings));
     m_audio.stopCues();
     log::info("The game is being quit; game over");
 }
@@ -839,7 +840,7 @@ bool PlayScene::leaveBy(usize portal) {
         return true;
     }
     const bool reachable = exit.destination.has_value() &&
-                           LevelCatalog::unpacked(m_context.unpackedRoot, *exit.destination);
+                           LevelCatalog::unpacked(m_services->unpackedRoot, *exit.destination);
     if (reachable) {
         m_sim.destination = *exit.destination;
         log::info("Portal {}: on to {} ({})", exit.tag, m_sim.destination.name,
@@ -875,8 +876,8 @@ std::vector<PartyMember> PlayScene::abandonedParty(std::span<const PartyMember> 
 
 void PlayScene::updateSumnerVisit(f32 seconds) {
     const std::optional<s32> player = TowerWelcome::visitorOf(m_world->triggers(), m_players);
-    if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(), m_context.config,
-                            m_context.strings)) {
+    if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(),
+                            m_services->config, m_services->strings)) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
     }
 }
@@ -901,7 +902,7 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
         for (const PlayerRuntime& runtime : m_players) {
             party.push_back(runtime.actor.save().progress());
         }
-        m_sumnerVisit.answer(event.topic, m_messages.text(), m_context.strings,
+        m_sumnerVisit.answer(event.topic, m_messages.text(), m_services->strings,
                              HintKnowledge::ofParty(party));
         break;
     }
@@ -972,10 +973,10 @@ PlayScene::LocalStep PlayScene::step(f64 deltaSeconds, const Inputs& inputs,
     // Offline play owns no timeline/ledger. These labels are only meaningful to
     // explicit recordStep callers; every fresh offline journal dispatches once.
     auto recorded = advanceStep(1, 1, deltaSeconds, inputs, actions, ConsolePlay::Offline);
-    if (m_world && m_context.sounds && m_world->imported()) {
+    if (m_world && m_services->sounds && m_world->imported()) {
         const Vec3 listener =
             m_players.empty() ? simulationCamera().position : m_players.front().actor.position();
-        m_world->imported()->playSounds(*m_context.sounds, listener);
+        m_world->imported()->playSounds(*m_services->sounds, listener);
     }
     for (const auto& event : recorded.journal.events) {
         const auto kind = event.policy == OutputLedger::Policy::Confirmed
@@ -1064,7 +1065,7 @@ bool PlayScene::beginRecordedAudio(u64 epoch) {
         })) {
         return false;
     }
-    m_recordedAudio.open(epoch, m_context.sounds);
+    m_recordedAudio.open(epoch, m_services->sounds);
     m_audio.recordTo(&m_recordedAudio);
     return true;
 }
@@ -1271,8 +1272,9 @@ PlayScene::TickClock PlayScene::beginTick(f64 deltaSeconds) {
         soloViewActive() && !scriptedCamera() ? std::optional{presentedCamera()} : std::nullopt;
     m_previousBossCamera = bossCameraOn();
     // Application supplies fixed simulation ticks independently of rendered frames.
-    const f32 tickRate =
-        m_context.config != nullptr ? static_cast<f32>(m_context.config->timing.tickRate) : 60.0f;
+    const f32 tickRate = m_services->config != nullptr
+                             ? static_cast<f32>(m_services->config->timing.tickRate)
+                             : 60.0f;
     const auto ticks =
         std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
@@ -1465,7 +1467,7 @@ void PlayScene::advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs) {
                 // GDL's follow-camera warm-up must not fast-forward them.
             }
         }
-        m_sim.welcome.arrived(*m_device, m_messages, m_context.strings, m_world->layout(),
+        m_sim.welcome.arrived(*m_device, m_messages, m_services->strings, m_world->layout(),
                               m_sumner);
     }
 }
@@ -1909,10 +1911,10 @@ bool PlayScene::cinematicBars() const {
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                        f32 frameHeight, bool optionsOpen, f32 frameBlend) {
-    if (!m_open || m_world == nullptr || m_context.config == nullptr) {
+    if (!m_open || m_world == nullptr || m_services->config == nullptr) {
         return;
     }
-    const GameConfig& config = *m_context.config;
+    const GameConfig& config = *m_services->config;
     m_messages.prepare(device);
     m_sumnerVisit.prepare(device);
     gatherLights();
@@ -1971,7 +1973,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
                                &effectCamera, opponentBlend, TreeModel::Pass::DepthWriting);
     m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera,
-                                opponentBlend, m_context.config->combat.enemyHealthBars);
+                                opponentBlend, m_services->config->combat.enemyHealthBars);
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
@@ -2146,7 +2148,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         drawCinematicBars(m_canvas, height);
     }
     if (!cut) {
-        m_hud.drawSelectors(m_canvas, m_messages.text(), m_context.strings, m_players);
+        m_hud.drawSelectors(m_canvas, m_messages.text(), m_services->strings, m_players);
         m_hud.drawHelp(m_canvas, device, m_staticTextures, m_players, clip, canvasProjection, width,
                        height);
     }
@@ -2213,7 +2215,7 @@ const PlayerAnimator* PlayScene::animator(s32 player) const {
  * realm's entering sound belongs to the loading screen, not to this.) */
 void PlayScene::beginSpawn(RenderDevice& device, const std::optional<WorldCamera>& marker) {
     if (!m_weapons.loaded()) {
-        m_weapons.load(m_context.unpackedRoot / kWeaponsArchive);
+        m_weapons.load(m_services->unpackedRoot / kWeaponsArchive);
     }
     std::vector<Vec3> positions;
     positions.reserve(m_players.size());
@@ -2235,7 +2237,7 @@ void PlayScene::beginSpawn(RenderDevice& device, const std::optional<WorldCamera
 
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */
 bool PlayScene::openMessage(std::string_view name, usize page) {
-    return m_device != nullptr && m_messages.open(*m_device, name, m_context.strings, page);
+    return m_device != nullptr && m_messages.open(*m_device, name, m_services->strings, page);
 }
 
 /** Tells a refused party what a gate wants; a target opening before them (a gate's field, a
@@ -2244,7 +2246,7 @@ bool PlayScene::openMessage(std::string_view name, usize page) {
  * metal in the mines, nothing elsewhere. */
 void PlayScene::handleTriggerEvents() {
     m_triggerCues.handle(
-        *m_world, m_audio, m_context.sounds, m_sim.switchCutscene,
+        *m_world, m_audio, m_services->sounds, m_sim.switchCutscene,
         {.help = [this](s32 id, usize index) { return postHelp(id, index); },
          .openMessage = [this](std::string_view name,
                                usize page) { return openMessage(name, page); },

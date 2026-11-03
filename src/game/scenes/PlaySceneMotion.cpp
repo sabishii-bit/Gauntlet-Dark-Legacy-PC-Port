@@ -74,7 +74,8 @@ public:
                                             m_scene.attackTargets(), moved, chain, facing);
     }
     PlayerDeed automaticMeleeDeed(usize i, const Vec3& facing) const override {
-        if (m_scene.m_context.config == nullptr || !m_scene.m_context.config->combat.autoMelee) {
+        if (m_scene.m_services->config == nullptr ||
+            !m_scene.m_services->config->combat.autoMelee) {
             return PlayerDeed::None;
         }
         return m_scene.m_attacks.automaticMeleeDeed(m_scene.m_players[i].actor,
@@ -92,7 +93,8 @@ public:
                                            m_scene.attackTargets());
     }
     bool chainsHeldMelee() const override {
-        return m_scene.m_context.config != nullptr && m_scene.m_context.config->combat.autoMelee;
+        return m_scene.m_services->config != nullptr &&
+               m_scene.m_services->config->combat.autoMelee;
     }
     Vec3 resolveMovement(usize i, const Vec3& from, const Vec3& to) const override {
         return m_scene.m_opponents.resolveMovement(m_scene.m_players[i].actor, from, to);

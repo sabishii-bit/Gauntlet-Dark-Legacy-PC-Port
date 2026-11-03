@@ -212,7 +212,7 @@ struct Fixture {
     GameConfig config;
     LevelCatalog levels;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     std::array<PartyMember, 1> party;
     PlayScene scene;
 

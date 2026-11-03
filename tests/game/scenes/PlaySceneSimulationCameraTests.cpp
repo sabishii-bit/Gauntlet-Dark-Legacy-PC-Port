@@ -24,6 +24,7 @@ struct CameraFixture {
     GameConfig config;
     LevelCatalog catalog;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     SimulationObserver observer{scene};
 
@@ -38,7 +39,6 @@ struct CameraFixture {
         const auto level = catalog.byName("G1");
         REQUIRE(level);
         REQUIRE(world.load(device, root, *level));
-        GameContext context;
         context.config = &config;
         context.levels = &catalog;
         context.unpackedRoot = root;

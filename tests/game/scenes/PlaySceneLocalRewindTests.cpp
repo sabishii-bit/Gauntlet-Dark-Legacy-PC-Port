@@ -62,9 +62,9 @@ struct Fixture {
     StringTable strings;
     f32 stopTimeTotal = 0;
     LevelWorld world;
+    GameServices context;
     PlayScene scene;
     SimulationObserver observer{scene};
-    GameContext context;
     std::vector<PartyMember> initialParty;
     u32 tick = 0;
     bool bindLegacyObserver = true;
@@ -83,7 +83,6 @@ struct Fixture {
         context.levels = &catalog;
         context.strings = &strings;
         context.unpackedRoot = root;
-        context.stopTimeTotal = &stopTimeTotal;
         for (s32 seat = 0; seat < seats; ++seat) {
             CharacterSave save;
             save.name = "REWIND";
@@ -100,7 +99,8 @@ struct Fixture {
     void open() {
         PlayOptions options;
         options.welcome = false;
-        REQUIRE(scene.open(device, context, world, initialParty, options));
+        REQUIRE(scene.open(device, context, world, initialParty, options,
+                           {.stopTimeTotal = &stopTimeTotal}));
         if (bindLegacyObserver) {
             REQUIRE(observer.bind());
         } else {

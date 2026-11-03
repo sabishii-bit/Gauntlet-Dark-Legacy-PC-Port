@@ -78,12 +78,13 @@ std::string boundControlLabel(const GameConfig& config, s32 player, bool keyboar
     return "Unbound";
 }
 
-std::string controlLabel(const ControlLabels& labels, s32 player, std::string_view action) {
-    return labels ? labels(player, action)
-                  : boundControlLabel(GameConfig{}, std::max(0, player), player <= 0, action);
+std::string controlLabel(const ControlLabels* labels, s32 player, std::string_view action) {
+    return labels != nullptr
+               ? labels->label(player, action)
+               : boundControlLabel(GameConfig{}, std::max(0, player), player <= 0, action);
 }
 
-std::string controlText(std::string_view text, const ControlLabels& labels, s32 player) {
+std::string controlText(std::string_view text, const ControlLabels* labels, s32 player) {
     constexpr std::string_view kPrefix = "{bind:";
     std::string result;
     while (!text.empty()) {

@@ -284,7 +284,7 @@ TEST_CASE("tower return routes relic ceremonies before releasing player controls
     const auto scenario = Scenario::fromJson(R"({"welcome":false,"arrivalWorld":7,
         "party":[{"class":"WAR","level":20,"newRunes":[0],"newShards":[1]}]})");
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     PlayScene scene;
@@ -322,7 +322,7 @@ TEST_CASE("fully unlocked tower carries Garm's usable portal up with its reveale
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/tower-fully-unlocked.json");
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -438,7 +438,7 @@ TEST_CASE("Garm victory returns above the lowered battlefield bridge",
         LevelCatalog levels;
         REQUIRE(levels.load(root));
         const GameConfig config;
-        GameContext context;
+        GameServices context;
         context.config = &config;
         context.levels = &levels;
         context.unpackedRoot = root;

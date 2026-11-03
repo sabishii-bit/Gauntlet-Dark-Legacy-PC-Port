@@ -28,7 +28,7 @@
 #include "game/characters/Party.h"
 #include "game/characters/Progression.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/level/LevelCatalog.h"
@@ -267,9 +267,8 @@ TEST_CASE("mountain spouts survive complete tower updates and draw submission",
     LevelWorld world;
     REQUIRE(world.load(device, root));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/tower-mountain-spouts.json");
@@ -905,10 +904,9 @@ TEST_CASE("reopening the shared tower rebuilds crystals and gates for the select
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
-    context.tower = &tower;
     context.levels = &catalog;
     PlayOptions options;
     options.welcome = false;
@@ -1277,10 +1275,9 @@ TEST_CASE("the console's party count sets the level up for that many until it is
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
-    context.tower = &tower;
     context.levels = &catalog;
     PlayOptions options;
     options.welcome = false;

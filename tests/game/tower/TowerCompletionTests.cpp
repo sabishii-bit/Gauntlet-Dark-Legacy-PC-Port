@@ -229,7 +229,7 @@ TEST_CASE("tower completion runs after arrival and promotions and releases contr
     auto party = scenario.partyMembers();
     party[0].save.progress().promotedLevel = 19;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -342,7 +342,7 @@ TEST_CASE("saving between final shard placement and speech resumes only the foll
     const auto scenario = Scenario::fromJson(R"({"welcome":false,"arrivalWorld":7,
         "party":[{"class":"WAR","level":20,"shards":[1,2,3,4,5,6,7],"newShards":[8]}]})");
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     PlayScene scene;

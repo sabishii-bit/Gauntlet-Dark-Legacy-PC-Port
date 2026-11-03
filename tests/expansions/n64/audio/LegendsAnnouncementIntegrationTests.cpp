@@ -38,6 +38,7 @@ struct AnnouncementScene {
     AssetLocator assets{common};
     std::shared_ptr<LegendsLevel> level;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
 
     explicit AnnouncementScene(s32 character) {
@@ -83,7 +84,6 @@ struct AnnouncementScene {
         ref.name = "n64:ice1";
         REQUIRE(world.loadImported(device, common, ref, std::move(layout), traversal.collision(),
                                    level));
-        GameContext context;
         context.config = &config;
         context.strings = &strings;
         context.assets = &assets;

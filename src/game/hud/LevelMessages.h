@@ -62,7 +62,7 @@ public:
         m_presentation = presentation;
         m_scroll.setPresentation(presentation);
     }
-    void setControlLabels(const ControlLabels& labels) { m_controlLabels = labels; }
+    void setControlLabels(const ControlLabels* labels) { m_controlLabels = labels; }
     /** With no page, shows the whole message (the welcome); otherwise just that page. */
     bool open(RenderDevice& device, std::string_view name, const StringTable* strings,
               std::optional<usize> page = std::nullopt);
@@ -88,7 +88,7 @@ public:
 private:
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     BitmapFont m_font32;
-    ControlLabels m_controlLabels;
+    const ControlLabels* m_controlLabels = nullptr;
     TextPainter m_text;
     MessageTable m_scrollText;
     ScrollBox m_scroll; ///< references our painter, so this owner must not move

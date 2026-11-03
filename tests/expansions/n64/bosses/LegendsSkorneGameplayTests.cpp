@@ -40,6 +40,7 @@ struct SkorneScene {
     GameConfig config;
     StringTable strings;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     std::shared_ptr<LegendsLevel> imported;
     std::vector<usize> capObjects;
@@ -108,10 +109,8 @@ struct SkorneScene {
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
         config.camera.compass = false;
         config.combat.autoMelee = false;
-        GameContext context;
         context.config = &config;
         context.strings = &strings;
-        context.tower = &world;
         context.unpackedRoot = root;
         PlayOptions options;
         options.position = traversal.start();

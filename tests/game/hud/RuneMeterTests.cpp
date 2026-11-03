@@ -121,7 +121,7 @@ TEST_CASE("the level scene binds its authored runestone and stops the finder whe
     REQUIRE(world.load(device, root, *ref));
     GameConfig config;
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.levels = &catalog;

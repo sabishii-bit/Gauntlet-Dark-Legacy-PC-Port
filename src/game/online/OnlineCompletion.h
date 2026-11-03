@@ -8,7 +8,7 @@
 #include "game/shop/ShopSession.h"
 
 namespace gdl::game {
-struct GameContext;
+struct GameServices;
 
 /** Local ending presentation inside the shared results-loading barrier. This owns
  * neither rewards, saves nor the party: Ready permits the caller to load results,
@@ -35,11 +35,11 @@ public:
 
     /** Source and boss state are locally validated campaign data, not network paths. */
     static Route route(const LevelRef& source, s32 bossKind, bool defeated);
-    void open(RenderDevice& device, const GameContext& context, const LevelRef& source,
+    void open(RenderDevice& device, const GameServices& services, const LevelRef& source,
               s32 bossKind, bool defeated);
     void close();
     /** A confirmed unanimous vote cannot skip an unskippable retail ending. */
-    void update(const GameContext& context, bool unanimousSkip = false);
+    void update(const GameServices& services, bool unanimousSkip = false);
     /** First draw of the frame; the final frame remains visible while peers finish. */
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
 

@@ -8,6 +8,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/level/LevelWorld.h"
 #include "game/widgets/MenuFont.h"
 
 namespace gdl::game {
@@ -25,28 +26,29 @@ PauseMenu::~PauseMenu() {
 }
 
 std::string PauseMenu::text(std::string_view id) const {
-    return std::string(m_context.strings != nullptr ? m_context.strings->get(id) : id);
+    return std::string(m_services->strings != nullptr ? m_services->strings->get(id) : id);
 }
-bool PauseMenu::open(RenderDevice& device, const GameContext& context,
-                     std::span<const PartyMember> party, s32 player, LiveSettings* settings) {
+bool PauseMenu::open(RenderDevice& device, const GameServices& services,
+                     std::span<const PartyMember> party, s32 player, LiveSettings* settings,
+                     const LevelWorld* level) {
     close();
-    m_context = context;
+    m_services = &services;
     m_liveSettings = settings;
     m_device = &device;
     m_party.assign(party.begin(), party.end());
     m_player = player;
-    m_inTower = context.tower == nullptr || context.tower->isTower();
-    m_inSecretWorld = context.tower != nullptr && context.tower->ref().isSecret();
+    m_inTower = level == nullptr || level->isTower();
+    m_inSecretWorld = level != nullptr && level->ref().isSecret();
     if (std::ranges::none_of(party,
                              [player](const auto& member) { return member.player == player; })) {
         return false;
     }
-    const auto config = context.config != nullptr ? *context.config : GameConfig{};
+    const auto config = services.config != nullptr ? *services.config : GameConfig{};
     m_screen = {static_cast<s32>(config.display.virtualWidth),
                 static_cast<s32>(config.display.virtualHeight), config.horizontalFovRadians()};
     try {
-        if (!m_textures.load(context.unpackedRoot / "STATIC") ||
-            !loadMenuFont(m_font, context.unpackedRoot, 16)) {
+        if (!m_textures.load(services.unpackedRoot / "STATIC") ||
+            !loadMenuFont(m_font, services.unpackedRoot, 16)) {
             return false;
         }
         const auto font = m_textures.find("FONT32");
@@ -71,8 +73,8 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
         }
         loadDecorations(device);
         loadFireFrames(device);
-        if (m_context.sounds != nullptr) {
-            m_commonSounds.load(context.unpackedRoot / "audio/COMMON");
+        if (m_services->sounds != nullptr) {
+            m_commonSounds.load(services.unpackedRoot / "audio/COMMON");
         }
         showMain();
         m_open = true;
@@ -114,7 +116,7 @@ void PauseMenu::loadDecorations(RenderDevice& device) {
             m_art.burn[frame] = &m_textures.texture(device, *seal + static_cast<u32>(frame));
         }
     }
-    const auto directory = m_context.unpackedRoot / "POWERUPS";
+    const auto directory = m_services->unpackedRoot / "POWERUPS";
     if (m_powerupTextures.load(directory) && m_powerupModels.load(directory) &&
         m_powerupTrees.load(directory)) {
         if (const auto tree = m_powerupTrees.find("ICON_ARROW");
@@ -125,7 +127,7 @@ void PauseMenu::loadDecorations(RenderDevice& device) {
     }
 }
 void PauseMenu::playSound(std::string_view name) {
-    if (m_context.sounds == nullptr || !m_commonSounds.loaded()) {
+    if (m_services->sounds == nullptr || !m_commonSounds.loaded()) {
         return;
     }
     const auto index = m_commonSounds.find(name);
@@ -134,9 +136,9 @@ void PauseMenu::playSound(std::string_view name) {
     }
     try {
         std::erase_if(m_soundHandles,
-                      [&](SoundHandle handle) { return !m_context.sounds->isPlaying(handle); });
+                      [&](SoundHandle handle) { return !m_services->sounds->isPlaying(handle); });
         const auto handle =
-            m_context.sounds->play(m_commonSounds.sequence(*index), 1, SoundCategory::Effects);
+            m_services->sounds->play(m_commonSounds.sequence(*index), 1, SoundCategory::Effects);
         if (handle != kNoSound) {
             m_soundHandles.push_back(handle);
         }
@@ -147,14 +149,13 @@ void PauseMenu::playSound(std::string_view name) {
 
 void PauseMenu::stopSounds() {
     // Queued sequences borrow COMMON's samples. Stop only this menu's voices before reloading
-    // or destroying its bank, and detach the output so a later close is harmless.
-    if (m_context.sounds != nullptr) {
+    // or destroying its bank.
+    if (m_services->sounds != nullptr) {
         for (const auto handle : m_soundHandles) {
-            m_context.sounds->stop(handle);
+            m_services->sounds->stop(handle);
         }
     }
     m_soundHandles.clear();
-    m_context.sounds = nullptr;
 }
 
 void PauseMenu::loadFireFrames(RenderDevice& device) {
@@ -244,8 +245,8 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
         return PauseOutcome::Running;
     }
     const auto input = mapMenuPointer(rawInput, m_pointerTransform);
-    const auto rate =
-        m_context.config != nullptr ? m_context.config->timing.tickRate : TimingConfig{}.tickRate;
+    const auto rate = m_services->config != nullptr ? m_services->config->timing.tickRate
+                                                    : TimingConfig{}.tickRate;
     m_tickRemainder += std::max(seconds, 0.0) * rate;
     constexpr f64 kRoundingTolerance = 1.0e-9;
     const auto ticks = static_cast<s32>(std::floor(m_tickRemainder + kRoundingTolerance));
@@ -307,9 +308,9 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     }
     if (event.code == 3) {
         m_page = Page::Options;
-        m_settings.setMechanics(m_context.mechanics);
-        m_settings.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
-                        m_context.strings, m_liveSettings, m_text, m_screen, backdrop(),
+        m_settings.setMechanics(m_services->mechanics);
+        m_settings.open(m_services->config != nullptr ? *m_services->config : GameConfig{},
+                        m_services->strings, m_liveSettings, m_text, m_screen, backdrop(),
                         m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level);
     } else if (event.code == 5) {
         return PauseOutcome::Manage;

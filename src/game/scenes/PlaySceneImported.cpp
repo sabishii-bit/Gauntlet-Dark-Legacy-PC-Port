@@ -27,11 +27,11 @@ void PlayScene::openImportedDialogue() {
     if (!request) {
         return;
     }
-    if (!m_context.strings || !m_context.config) {
+    if (!m_services->strings || !m_services->config) {
         imported->dismissDialogue();
         return;
     }
-    const auto& strings = *m_context.strings;
+    const auto& strings = *m_services->strings;
     HintMenuLabels labels;
     labels.title = strings.get(request->title);
     labels.player = strings.get("menu.player");
@@ -41,7 +41,7 @@ void PlayScene::openImportedDialogue() {
     for (const auto& topic : request->topics) {
         labels.topics.push_back({std::string{strings.get(topic.label)}, topic.code});
     }
-    const auto& config = *m_context.config;
+    const auto& config = *m_services->config;
     MenuScreen screen;
     screen.width = static_cast<s32>(config.display.virtualWidth);
     screen.height = static_cast<s32>(config.display.virtualHeight);
@@ -74,14 +74,14 @@ void PlayScene::updateImportedDialogue(const Inputs& inputs, s32 ticks) {
     if (event.kind == HintMenuEvent::Kind::Asked) {
         const auto keys = imported->answerDialogue(event.topic);
         m_sumnerVisit.closeTopics();
-        if (m_context.strings) {
+        if (m_services->strings) {
             std::vector<std::string> pages;
             pages.reserve(keys.size());
             for (const auto& key : keys) {
-                pages.emplace_back(m_context.strings->get(key));
+                pages.emplace_back(m_services->strings->get(key));
             }
             if (!pages.empty()) {
-                m_messages.openImported(*m_device, pages, m_context.strings);
+                m_messages.openImported(*m_device, pages, m_services->strings);
             }
         }
         imported->dismissDialogue();
@@ -110,8 +110,8 @@ void PlayScene::advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& su
         }
     }
     imported->updateParty(standing, seconds,
-                          m_context.config == nullptr ||
-                              m_context.config->combat.autoActivateItems);
+                          m_services->config == nullptr ||
+                              m_services->config->combat.autoActivateItems);
     openImportedDialogue();
     imported->affectArea(
         [&](const Vec3& position, f32 radius, f32 damage, u32 flags, std::vector<s32>& opponents) {
@@ -162,15 +162,15 @@ void PlayScene::presentImportedPickups(ImportedLevel& imported) {
             m_players, [&](const auto& player) { return player.actor.player() == receipt.player; });
         if (recipient != m_players.end()) {
             if (!receipt.scrollPages.empty()) {
-                if (receipt.scrollKeys && m_context.strings) {
+                if (receipt.scrollKeys && m_services->strings) {
                     std::vector<std::string> pages;
                     pages.reserve(receipt.scrollPages.size());
                     for (const auto& key : receipt.scrollPages) {
-                        pages.emplace_back(m_context.strings->get(key));
+                        pages.emplace_back(m_services->strings->get(key));
                     }
-                    m_messages.openImported(*m_device, pages, m_context.strings);
+                    m_messages.openImported(*m_device, pages, m_services->strings);
                 } else if (!receipt.scrollKeys) {
-                    m_messages.openImported(*m_device, receipt.scrollPages, m_context.strings);
+                    m_messages.openImported(*m_device, receipt.scrollPages, m_services->strings);
                 }
             }
             // Native collection already granted the item. Reuse only the

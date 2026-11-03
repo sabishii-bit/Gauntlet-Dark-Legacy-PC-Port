@@ -88,7 +88,7 @@ struct NativePair {
     GameConfig hostConfig, guestConfig;
     StringTable strings;
     LevelCatalog catalog;
-    GameContext hostContext, guestContext;
+    GameServices hostContext, guestContext;
     test::RecordingHaptics hostHaptics, guestHaptics; ///< what each machine's devices were asked
     test::RecordingUnlocks hostUnlocks, guestUnlocks;
     test::RecordingPartyStore hostStore, guestStore;

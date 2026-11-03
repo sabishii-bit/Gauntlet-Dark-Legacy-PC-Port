@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <array>
-#include <span>
 #include <format>
+#include <span>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -46,7 +46,7 @@ TEST_CASE("travel keeps a map before the stage preview and skips both for tower 
         test::assetOrSkip("MAPS/LEVELG1/textures.ngc").parent_path().parent_path().parent_path();
     test::assetOrSkip("WDATA/TOWN.WAD");
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -98,7 +98,7 @@ TEST_CASE("loading pictures retain complete native HUD tops through crossfades a
     test::assetOrSkip("STATIC/textures.ngc");
     test::assetOrSkip("SELECT/textures.ngc");
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -228,7 +228,7 @@ TEST_CASE("secret entry and return hold the transition picture above the HUD wit
     test::assetOrSkip("WDATA/TOWN.WAD");
     test::assetOrSkip("WDATA/SECRET.WAD");
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -306,7 +306,7 @@ TEST_CASE("stage map music narration and route dots obey only the movie volume",
     sounds.setCategoryVolume(SoundCategory::Movie, muted ? 0.0f : 1.0f);
     sounds.setCategoryVolume(SoundCategory::Effects, muted ? 1.0f : 0.0f);
     sounds.setCategoryVolume(SoundCategory::Music, muted ? 1.0f : 0.0f);
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.sounds = &sounds;
     LevelCatalog catalog;

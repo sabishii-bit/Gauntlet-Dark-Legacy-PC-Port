@@ -169,8 +169,7 @@ std::optional<usize> SelectLane::reservedSlot() const {
 std::string SelectLane::text(std::string_view id) const {
     const auto value =
         m_services != nullptr && m_services->strings != nullptr ? m_services->strings->get(id) : id;
-    return controlText(value, m_services != nullptr ? m_services->controlLabels : ControlLabels{},
-                       m_index);
+    return controlText(value, m_services != nullptr ? m_services->controlLabels : nullptr, m_index);
 }
 
 bool SelectLane::classKnown(s32 classIndex) const {

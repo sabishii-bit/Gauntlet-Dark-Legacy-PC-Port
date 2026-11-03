@@ -76,9 +76,9 @@ SimulationObservation::Digest PlayScene::simulationControlDigest() const {
     m_camera.appendNativeDigest(control);
     m_seats.appendNativeDigest(control); // the seats' own cameras, solo or not
     control.flag(PlayerPowerups::timeStopped(m_players));
-    control.flag(m_context.stopTimeTotal != nullptr);
-    if (m_context.stopTimeTotal != nullptr) {
-        control.real(*m_context.stopTimeTotal);
+    control.flag(m_links.stopTimeTotal != nullptr);
+    if (m_links.stopTimeTotal != nullptr) {
+        control.real(*m_links.stopTimeTotal);
     }
     control.flag(m_arrival.active());
     control.real(m_arrival.titleScale());

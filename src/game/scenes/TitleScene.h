@@ -18,7 +18,7 @@
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/menu/LiveSettings.h"
 #include "game/menu/SettingsMenu.h"
 #include "game/widgets/BurnDialogueScroll.h"
@@ -43,8 +43,11 @@ public:
     static constexpr s32 kFont32SpaceWidth = 16;
 
     /** Loads the unpacked title and shared assets; false (with a warning) when absent.
-     * `settings` saves and previews what Options changes; without it every change is refused. */
-    bool open(RenderDevice& device, const GameContext& context, LiveSettings* settings = nullptr);
+     * `settings` saves and previews what Options changes; without it every change is refused.
+     * The screen keeps reading `services`, which must outlive it. */
+    bool open(RenderDevice& device, const GameServices& services, LiveSettings* settings = nullptr);
+    /** The screen keeps the services it is opened with, so they may not be a temporary. */
+    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
     void close();
     bool isOpen() const { return m_open; }
 
@@ -95,7 +98,7 @@ private:
     bool m_quitConfirm = false;    ///< the title menu is the quit dialog
     std::string m_optionsLanguage; ///< the text language when the options opened
     RenderDevice* m_device = nullptr;
-    GameContext m_context;
+    const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
     LiveSettings* m_liveSettings = nullptr;
     MenuScreen m_screen;
     s32 m_tickRate = 60;

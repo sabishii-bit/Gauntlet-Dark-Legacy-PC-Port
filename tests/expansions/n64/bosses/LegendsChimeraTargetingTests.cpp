@@ -27,6 +27,7 @@ struct ChimeraTargetingScene {
     GameConfig config;
     StringTable strings;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     std::shared_ptr<LegendsLevel> native;
     // A read-only acquisition query bound to the actual scene's world and
@@ -77,10 +78,8 @@ struct ChimeraTargetingScene {
         REQUIRE(world.loadImported(device, root, ref, std::move(layout), traversal.collision(),
                                    native));
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-        GameContext context;
         context.config = &config;
         context.strings = &strings;
-        context.tower = &world;
         context.unpackedRoot = root;
         PlayOptions options;
         options.position = traversal.start();

@@ -33,7 +33,7 @@ ENGINE_ORDER = ("core", "math", "io", "net", "platform", "render", "codec", "aud
 # Lowest first. `widgets` are what every screen reads and draws with (menu input, fonts,
 # option lists, scrolls); `mechanics` is the seam additive mechanics answer through, below
 # everything that asks it; `hud` lies over the party, under the opponents, tower and shop that
-# report through it; `context` is GameContext, what every screen is handed; `console` is
+# report through it; `context` is GameServices, what every screen reads; `console` is
 # the developer console, below the scenes; `online` plays a room's stages over the scenes,
 # which `netplay` keeps in step.
 GAME_ORDER = ("config", "widgets", "combat", "mechanics", "characters", "players", "camera",

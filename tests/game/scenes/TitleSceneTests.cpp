@@ -14,7 +14,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
+#include "game/hud/ScriptedControlLabels.h"
 #include "game/menu/MainMenuFactory.h"
 #include "game/scenes/TitleScene.h"
 #include "game/widgets/MenuInput.h"
@@ -43,8 +44,8 @@ struct Fixture {
 
     Fixture() { strings.load(test::dataDirectory() / "text", config.text.language); }
 
-    GameContext context(SoundPlayer* sounds, std::filesystem::path root = unpackedRoot()) const {
-        GameContext out;
+    GameServices context(SoundPlayer* sounds, std::filesystem::path root = unpackedRoot()) const {
+        GameServices out;
         out.config = &config;
         out.strings = &strings;
         out.sounds = sounds;
@@ -57,8 +58,8 @@ TEST_CASE("title mouse click opens options and right click leaves them",
           "[game][title][mouse][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(nullptr); // Resolve SKIP before entering an assertion.
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
     scene.render(device, projection, 640, 448);
@@ -85,8 +86,9 @@ TEST_CASE("title mouse click opens options and right click leaves them",
 TEST_CASE("the title screen refuses to open without unpacked data", "[game][title]") {
     test::FakeRenderDevice device;
     const Fixture f;
+    const auto context = f.context(nullptr, test::scratchDirectory("title-empty"));
     TitleScene scene;
-    REQUIRE_FALSE(scene.open(device, f.context(nullptr, test::scratchDirectory("title-empty"))));
+    REQUIRE_FALSE(scene.open(device, context));
     REQUIRE_FALSE(scene.isOpen());
     REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
 }
@@ -99,8 +101,9 @@ TEST_CASE("the title menu renders and plays music directly from the retail tree"
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
     const Fixture fixture;
+    const auto context = fixture.context(&player, root);
     TitleScene scene;
-    REQUIRE(scene.open(device, fixture.context(&player, root)));
+    REQUIRE(scene.open(device, context));
     REQUIRE(scene.arrowBound());
     REQUIRE(scene.musicPlaying());
     REQUIRE(player.voiceCount() == 1);
@@ -122,8 +125,8 @@ TEST_CASE("the title menu renders and plays music directly from the retail tree"
 TEST_CASE("the glow fades in and the screen times out when idle", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(nullptr);
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     REQUIRE(scene.isOpen());
     REQUIRE(scene.arrowBound());
@@ -145,8 +148,8 @@ TEST_CASE("Start opens Local and Netplay and Local leads into story mode",
           "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(nullptr);
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     scene.step(100, MenuInput{});
     REQUIRE_FALSE(scene.menuOpen());
@@ -182,8 +185,8 @@ TEST_CASE("Start opens Local and Netplay and Local leads into story mode",
 TEST_CASE("Quit to Desktop asks first and quits on Yes", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(nullptr); // Resolve SKIP before entering an assertion.
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     scene.step(1, press(true));
     REQUIRE(scene.menuOpen());
@@ -222,8 +225,8 @@ TEST_CASE("Quit to Desktop asks first and quits on Yes", "[game][title][assets]"
 TEST_CASE("the options menu opens over the title menu and fades away", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(nullptr);
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     scene.step(1, press(true));
     scene.step(1, press(false, false, true));
@@ -244,15 +247,17 @@ TEST_CASE("the options menu opens over the title menu and fades away", "[game][t
 TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     auto context = f.context(nullptr);
+    TitleScene scene;
     bool prompted = false;
-    context.controlLabels = [&](s32 player, std::string_view action) {
+    test::ScriptedControlLabels labels;
+    labels.answer = [&](s32 player, std::string_view action) {
         CHECK(player == -1);
         CHECK(action == "menuStart");
         prompted = true;
-        return "F2";
+        return std::string("F2");
     };
+    context.controlLabels = &labels;
     REQUIRE(scene.open(device, context));
     scene.step(30, MenuInput{});
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
@@ -284,8 +289,8 @@ TEST_CASE("the title screen plays its music and menu sounds", "[game][title][ass
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(&player);
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     REQUIRE(scene.musicPlaying());
     REQUIRE(player.voiceCount() == 1);
@@ -323,8 +328,8 @@ TEST_CASE("backing out of the options burns the scroll and blanks the controls",
           "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
-    TitleScene scene;
     const auto context = f.context(nullptr);
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     scene.step(1, press(true));
     scene.step(1, press(false, false, true));
@@ -360,8 +365,8 @@ TEST_CASE("the clock and screen come from the configuration", "[game][title][ass
     Fixture f;
     f.config.timing.tickRate = 120;
     f.config.display.virtualWidth = 1024;
-    TitleScene scene;
     const auto context = f.context(nullptr);
+    TitleScene scene;
     REQUIRE(scene.open(device, context));
     REQUIRE(scene.tickRate() == 120);
     REQUIRE(scene.screen().width == 1024);

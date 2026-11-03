@@ -14,6 +14,8 @@
 #include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/context/GameServices.h"
+#include "game/level/LevelWorld.h"
 #include "game/menu/PauseMenu.h"
 
 namespace {
@@ -62,7 +64,7 @@ protected:
 
 private:
     const GameConfig m_config;
-    GameContext m_context;
+    GameServices m_context;
     const std::array<PartyMember, 1> m_party{};
     PauseMenu m_menu;
     Canvas m_background;
@@ -89,7 +91,7 @@ TEST_CASE("pause dismissal never uploads texture pixels after the background is 
           "[pause][pause-dismiss][pause-upload-order][assets]") {
     test::FakeRenderDevice device;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     const std::array party{PartyMember{}};
@@ -117,7 +119,7 @@ TEST_CASE("resuming waits for the native acid scroll and blocks all menu input d
     const bool useStart = GENERATE(false, true);
     test::FakeRenderDevice device;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     TextureSet reference;
@@ -196,7 +198,7 @@ TEST_CASE("resuming plays only the scroll dismissal without a navigation ding",
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
@@ -242,7 +244,7 @@ TEST_CASE("the Controls page is heard like the other settings pages",
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
@@ -281,7 +283,7 @@ TEST_CASE("pause acid dismissal retains fractional ticks at different update rat
     const s32 rate = GENERATE(30, 60, 144, 240);
     test::FakeRenderDevice device;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     const std::array party{PartyMember{}};
@@ -309,7 +311,7 @@ TEST_CASE("pause reopening or destruction stops its borrowed bank voices but not
     const auto unrelated = sounds.play(unrelatedSequence);
     REQUIRE(sounds.isPlaying(unrelated));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
@@ -355,7 +357,7 @@ TEST_CASE("pause draws the five native rune seal frames on the menus that reques
           "[pause][pause-seal][assets]") {
     test::FakeRenderDevice device;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     TextureSet reference;
@@ -431,7 +433,7 @@ TEST_CASE("pause loads the native axe and plays navigation and timed volume samp
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
@@ -470,7 +472,7 @@ TEST_CASE("pause mouse targets work after letterboxing for controller-owned paus
     const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
@@ -496,8 +498,8 @@ TEST_CASE("pause mouse targets work after letterboxing for controller-owned paus
 
 TEST_CASE("pause menu refuses absent artwork or a player outside the party", "[pause]") {
     test::FakeRenderDevice device;
+    GameServices context;
     PauseMenu menu;
-    GameContext context;
     context.unpackedRoot = test::scratchDirectory("pause-empty");
     const std::array party{PartyMember{}};
     CHECK_FALSE(menu.open(device, context, party, 3));
@@ -509,7 +511,7 @@ TEST_CASE("pause menu time retains fractions across thirty sixty and uncapped up
           "[pause][graphics][assets]") {
     test::FakeRenderDevice device;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     const std::array party{PartyMember{}};
@@ -532,7 +534,7 @@ TEST_CASE("pause menus route character management and preserve the live party", 
     config.save.directory = test::scratchDirectory("pause-files").string();
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
@@ -698,13 +700,12 @@ TEST_CASE("level abort uses the retail parchment dialog without character-file w
     REQUIRE(level);
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
-    GameContext context;
-    context.tower = &world;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     const std::array party{PartyMember{}};
     PauseMenu menu;
-    REQUIRE(menu.open(device, context, party, 0));
+    REQUIRE(menu.open(device, context, party, 0, nullptr, &world));
     // A level's menu: its settings and Quit Level, back to the tower, nothing more.
     REQUIRE(menu.menu().definition().items.size() == 2);
     CHECK(menu.menu().definition().items[0].text == strings.get("pause.settings"));
@@ -756,13 +757,12 @@ TEST_CASE("the secret world cannot be quit from its menu", "[pause][assets]") {
     LevelWorld world;
     REQUIRE_FALSE(world.load(device, root, secret));
     REQUIRE(world.ref().isSecret());
-    GameContext context;
-    context.tower = &world;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     const std::array party{PartyMember{}};
     PauseMenu menu;
-    REQUIRE(menu.open(device, context, party, 0));
+    REQUIRE(menu.open(device, context, party, 0, nullptr, &world));
     const auto& items = menu.menu().definition().items;
     REQUIRE(items.size() == 2);
     CHECK(items[0].text == strings.get("pause.settings"));

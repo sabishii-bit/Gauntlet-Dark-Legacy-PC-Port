@@ -30,7 +30,7 @@ TEST_CASE("S8 arrival plays the native entrance cue",
     REQUIRE(world.load(device, root, *ref));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.sounds = &sounds;
     context.unpackedRoot = root;
     context.levels = &catalog;
@@ -66,7 +66,7 @@ TEST_CASE("the castle transporter moves a player without leaving the level or bo
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.levels = &catalog;
     PlayOptions options;
@@ -111,11 +111,10 @@ TEST_CASE("a tower portal reads the sparse player's held direction even during a
     // sound player; silent scenes cannot create that handle.
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.sounds = &sounds;
     context.unpackedRoot = root;
     context.levels = &catalog;
-    context.tower = &world;
     PlayOptions options;
     options.welcome = false;
     options.position = Vec3{45.1f, -6.5f, -112.7f};

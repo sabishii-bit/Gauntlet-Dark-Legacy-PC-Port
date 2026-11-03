@@ -58,7 +58,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
             (m_world->imported() != nullptr && m_world->imported()->importedBoss() != nullptr),
         .cutscene = m_sim.switchCutscene.active(),
         .lastRealmLevel =
-            m_context.levels != nullptr && m_context.levels->isLastLevel(m_world->ref()),
+            m_services->levels != nullptr && m_services->levels->isLastLevel(m_world->ref()),
         .realm = m_world->ref().realmId,
         .playSeconds = m_sim.playSeconds};
     PartyDamage::hurt(m_sim.health, runtime, damage, kind, directed, context,

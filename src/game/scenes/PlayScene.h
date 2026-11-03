@@ -31,7 +31,7 @@
 #include "game/characters/LevelWatch.h"
 #include "game/characters/Party.h"
 #include "game/config/ControlProfiles.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/hud/ChallengeHud.h"
@@ -122,11 +122,15 @@ struct PlayOptions {
     std::array<ConsoleCheats, kSeats> consoleCheats{};
 };
 
-/** The application's owners an open scene answers through: the controllers' rumble and the
- * classes a won challenge grants. Either may be missing; closing the scene lets both go. */
+/** The application's owners an open scene answers through: the controllers' rumble, the
+ * classes a won challenge grants and the Stop Time total. Any may be missing; closing the scene
+ * lets them all go. */
 struct PlaySceneLinks {
     Haptics* haptics = nullptr;
     ClassUnlocks* unlocks = nullptr;
+    /** The most recent Stop Time pickup's total, shared across the levels a run visits; without
+     * it the scene keeps its own. */
+    f32* stopTimeTotal = nullptr;
 };
 
 enum class PlayOutcome : u8 {
@@ -231,10 +235,13 @@ public:
     using Links = PlaySceneLinks;
 
     /** Brings the party into `world` (loading it when needed); false when the level or the
-     * status boxes are not unpacked. */
-    bool open(RenderDevice& device, const GameContext& context, LevelWorld& world,
+     * status boxes are not unpacked. The scene keeps reading `services`, which must outlive
+     * it. */
+    bool open(RenderDevice& device, const GameServices& services, LevelWorld& world,
               std::span<const PartyMember> party, const PlayOptions& options = {},
               const Links& links = {});
+    /** The scene keeps the services it is opened with, so they may not be a temporary. */
+    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
     void close();
     bool isOpen() const { return m_open; }
     u64 loadGeneration() const { return m_openGeneration; }
@@ -372,7 +379,7 @@ public:
     /** Hard-cut rule used by local render interpolation. */
     bool cameraContinuous() const;
     u32 simulationTickRate() const {
-        return m_context.config != nullptr ? m_context.config->timing.tickRate : 60;
+        return m_services->config != nullptr ? m_services->config->timing.tickRate : 60;
     }
     /** The character driven by `player`, or null when that player is not in the party. */
     const PlayerActor* actor(s32 player) const;
@@ -833,7 +840,7 @@ private:
     void updateImportedDialogue(const Inputs& inputs, s32 ticks);
 
     RenderDevice* m_device = nullptr;
-    GameContext m_context;
+    const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
     Links m_links;
     LevelWorld* m_world = nullptr;
     CompassHud m_compass;

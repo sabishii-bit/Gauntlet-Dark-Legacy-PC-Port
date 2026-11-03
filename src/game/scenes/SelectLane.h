@@ -41,7 +41,7 @@ struct LaneServices {
     SaveSlots* slots = nullptr; ///< null when saving is unavailable
     const ClassDataSet* classes = nullptr;
     const StringTable* strings = nullptr;
-    ControlLabels controlLabels;
+    const ControlLabels* controlLabels = nullptr;
     const TextPainter* menuPainter = nullptr; ///< lays the menus out
     MenuScreen screen;
     std::function<void(SelectSound, const SelectLane&)> playSound; ///< the lane, for greetings

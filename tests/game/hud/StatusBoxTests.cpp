@@ -15,6 +15,7 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/hud/ScriptedControlLabels.h"
 #include "game/hud/StatusBox.h"
 
 namespace {
@@ -89,11 +90,13 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     fallen.inTower = true;
     fallen.towerPrompt = true;
     std::vector<std::string> promptedActions;
-    painter.setControlLabels([&](s32 player, std::string_view action) {
+    test::ScriptedControlLabels labels;
+    labels.answer = [&](s32 player, std::string_view action) {
         CHECK(player == 1);
         promptedActions.emplace_back(action);
-        return "F2";
-    });
+        return std::string("F2");
+    };
+    painter.setControlLabels(&labels);
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
     painter.draw(canvas, 1, fallen, true);

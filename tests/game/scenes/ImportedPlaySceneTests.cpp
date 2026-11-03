@@ -138,7 +138,7 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
     const bool loaded =
         world.loadImported(device, root, ref, std::move(layout), std::move(collision), imported);
     REQUIRE(loaded);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.assets = &assets;

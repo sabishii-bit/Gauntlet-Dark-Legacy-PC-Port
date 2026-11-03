@@ -40,8 +40,9 @@
 #include "game/console/ConsolePolicy.h"
 #include "game/console/DevConsole.h"
 #include "game/console/NoclipMotion.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/hud/AutoSaveIcon.h"
+#include "game/hud/ControlPrompts.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/mechanics/MechanicCatalog.h"
@@ -108,6 +109,18 @@ private:
         explicit PartyRouting(Gauntlet& game) : m_game(game) {}
         void autoSave(std::span<PartyMember> party) override;
         bool saveParty(std::span<PartyMember> party) override;
+
+    private:
+        Gauntlet& m_game;
+    };
+    /** The controls' names every screen's prompts show, from the bindings and the device each
+     * player last used. A shared prompt (-1) speaks to the player who last pressed something,
+     * or, when the offline level in play has no body for them, to its first who has one: that
+     * fallback consults the offline scene for every asker, the online game's screens too. */
+    class LabelRouting final : public ControlLabels {
+    public:
+        explicit LabelRouting(Gauntlet& game) : m_game(game) {}
+        std::string label(s32 player, std::string_view action) const override;
 
     private:
         Gauntlet& m_game;
@@ -228,8 +241,9 @@ private:
     /** `player` joins the party in the tower by way of the select screen. */
     bool joinTower(const PlayerSelectScene::Inputs& joining);
     s32 playerPressingStart() const;
-    GameContext context();
-    /** What a play scene answers its rumble and won classes through. */
+    /** The view every screen is opened with, its levels read on the first ask. */
+    const GameServices& services();
+    /** What a play scene answers its rumble, won classes and Stop Time total through. */
     PlayScene::Links playLinks();
     /** What the online game answers its rumble, won classes and saves through. */
     OnlineRun::Links onlineLinks();
@@ -258,6 +272,16 @@ private:
     UnlockRouting m_unlocks{*this};
     PartyRouting m_partyStore{*this};
     SettingsRouting m_liveSettings{*this}; ///< outlives the title and pause menus that edit it
+    LabelRouting m_controlLabels{*this};   ///< outlives every screen that shows a prompt
+    /** What every screen reads, held by each from its opening: declared before them all. The
+     * sounds, movie mixer and files are filled in as onInit makes them, and let go before
+     * onShutdown releases them. */
+    GameServices m_services{.config = &m_config,
+                            .strings = &m_strings,
+                            .controlLabels = &m_controlLabels,
+                            .levels = &m_levels,
+                            .mechanics = &m_mechanics,
+                            .unpackedRoot = m_options.unpackedDirectory};
     bool m_windowLive = true; ///< until shutdown has closed every screen; the window goes next
     std::unique_ptr<OnlineRun> m_online;
     struct NetplayNavigation {

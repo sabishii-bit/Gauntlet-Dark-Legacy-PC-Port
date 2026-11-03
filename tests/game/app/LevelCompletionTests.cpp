@@ -32,7 +32,7 @@ TEST_CASE("Garm death reaches the wizard farewell and hands travel to the victor
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.levels = &levels;
@@ -138,7 +138,7 @@ TEST_CASE("Garm results retain victory rewards and offer saving without a shoppi
     test::FakeRenderDevice device;
     GameConfig config;
     config.save.directory = test::scratchDirectory("garm-ending-save").string();
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     AfterLevelScene results;

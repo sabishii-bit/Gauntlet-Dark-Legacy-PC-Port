@@ -248,7 +248,7 @@ struct NativeOnlinePlay::Data {
     OnlineSession* session = nullptr;
     OnlineParty* selection = nullptr;
     std::unique_ptr<NativePlaySetup> setup;
-    GameContext context;
+    GameServices services;
     Haptics* appHaptics = nullptr; ///< this machine's controllers, by local device
     ClassUnlocks* unlocks = nullptr;
     PartyStore* store = nullptr;
@@ -308,7 +308,7 @@ struct NativeOnlinePlay::Data {
         current.reset();
         secretParent.reset();
         shopSetup.reset();
-        context = {};
+        services = {};
         setup.reset();
         device = nullptr;
         session = nullptr;
@@ -390,7 +390,7 @@ struct NativeOnlinePlay::Data {
             return false;
         }
         const auto destination = returning ? *secretParent : scene.destination();
-        const auto id = NativeOnlinePlay::sceneId(*context.levels, destination);
+        const auto id = NativeOnlinePlay::sceneId(*services.levels, destination);
         if (!id) {
             fail(Failure::Scene);
             return false;
@@ -417,7 +417,7 @@ struct NativeOnlinePlay::Data {
                 entering ? MatchTransition::SecretEnter : MatchTransition::SecretReturn;
             next.challengeWon = !consoleTravel && returning && scene.challenge().won();
         } else if (!consoleTravel && !world.isTower() && destination.isTower()) {
-            const auto source = NativeOnlinePlay::sceneId(*context.levels, world.ref());
+            const auto source = NativeOnlinePlay::sceneId(*services.levels, world.ref());
             if (!source) {
                 fail(Failure::Scene);
                 return false;
@@ -427,7 +427,7 @@ struct NativeOnlinePlay::Data {
             ShopSetup shopState;
             shopState.source = next.scene;
             shopState.destination = *id;
-            shopState.expanded = context.config->game.expandedShop;
+            shopState.expanded = services.config->game.expandedShop;
             shopState.ending = info != nullptr && (info->bossType == 43 || info->bossType == 44) &&
                                scene.victory().finished();
             shopState.maxima =
@@ -487,7 +487,7 @@ struct NativeOnlinePlay::Data {
             return false;
         }
         completedProgress = true;
-        if (save && context.config->game.autoSave && store != nullptr) {
+        if (save && services.config->game.autoSave && store != nullptr) {
             store->autoSave(selection->localMembers());
         }
         // Local save slots never flow back into the canonical native party.
@@ -504,8 +504,8 @@ struct NativeOnlinePlay::Data {
             fail(Failure::Scene);
             return false;
         }
-        const auto source = NativeOnlinePlay::levelOf(*context.levels, received->source);
-        const auto destination = NativeOnlinePlay::levelOf(*context.levels, received->destination);
+        const auto source = NativeOnlinePlay::levelOf(*services.levels, received->source);
+        const auto destination = NativeOnlinePlay::levelOf(*services.levels, received->destination);
         if (!source || !destination || source->isTower() || source->isSecret() ||
             !destination->isTower() || secretParent) {
             fail(Failure::Scene);
@@ -520,10 +520,10 @@ struct NativeOnlinePlay::Data {
             quiet();
             level.reset();
             entry.close();
-            completion.open(*device, context, *source, boss, received->ending);
+            completion.open(*device, services, *source, boss, received->ending);
             completionEpoch = match.context().epoch;
         } else {
-            completion.update(context);
+            completion.update(services);
         }
         if (completion.phase() == OnlineCompletion::Phase::Failed) {
             fail(Failure::Assets);
@@ -537,8 +537,8 @@ struct NativeOnlinePlay::Data {
             results.push_back({member.player, received->totals[static_cast<usize>(member.player)]});
         }
         const auto visit = completion.selection().visit;
-        if (!shop.open(*device, context, boundary->members, results, received->maxima, source->name,
-                       visit)) {
+        if (!shop.open(*device, services, boundary->members, results, received->maxima,
+                       source->name, visit)) {
             fail(Failure::Assets);
             return false;
         }
@@ -578,7 +578,7 @@ struct NativeOnlinePlay::Data {
         if (next.transition == MatchTransition::Shop) {
             return loadShop();
         }
-        const auto destination = NativeOnlinePlay::levelOf(*context.levels, next.scene);
+        const auto destination = NativeOnlinePlay::levelOf(*services.levels, next.scene);
         if (!destination || next.transition == MatchTransition::Resume) {
             fail(Failure::Scene);
             return false;
@@ -616,7 +616,7 @@ struct NativeOnlinePlay::Data {
                     if (unlocks != nullptr) {
                         unlocks->unlockClasses(reward);
                     }
-                    if (context.config->game.autoSave && store != nullptr) {
+                    if (services.config->game.autoSave && store != nullptr) {
                         store->autoSave(selection->localMembers());
                     }
                 }
@@ -642,7 +642,7 @@ struct NativeOnlinePlay::Data {
             }
             level.reset();
             completion.close();
-            entry.open(*device, context, *destination, members, returning);
+            entry.open(*device, services, *destination, members, returning);
             entryEpoch = next.epoch;
         } else {
             const auto local = selection->inputs(*session, devices);
@@ -659,7 +659,7 @@ struct NativeOnlinePlay::Data {
                     }
                 }
             }
-            entry.update(*device, context, match.movieSkipReady());
+            entry.update(*device, services, match.movieSkipReady());
         }
         if (entry.phase() == OnlineLevelEntry::Phase::Failed) {
             fail(Failure::Assets);
@@ -689,15 +689,17 @@ struct NativeOnlinePlay::Data {
             auto candidate = std::make_unique<Level>();
             PlayOptions opened = options;
             opened.consoleCheats = consoleCheats;
-            if (!candidate->world.load(*device, context.unpackedRoot, *destination) ||
-                !candidate->scene.open(*device, context, candidate->world, members, opened,
-                                       {.haptics = &seatRumble, .unlocks = nullptr})) {
+            if (!candidate->world.load(*device, services.unpackedRoot, *destination) ||
+                !candidate->scene.open(*device, services, candidate->world, members, opened,
+                                       {.haptics = &seatRumble,
+                                        .unlocks = nullptr,
+                                        .stopTimeTotal = &setup->stopTimeTotal()})) {
                 fail(Failure::Assets);
                 return false;
             }
             candidate->scene.setLocalSeats(seatMask(session->seats()));
-            candidate->scene.setSoloCameras(context.config != nullptr &&
-                                            context.config->multiplayer.soloCamera);
+            candidate->scene.setSoloCameras(services.config != nullptr &&
+                                            services.config->multiplayer.soloCamera);
             candidate->scene.setFixedRoster(true);
             candidate->scene.setViewSeat(lowestSeat(session->seats()));
             if (!candidate->scene.nativePresentationReady() || !candidate->bind(match)) {
@@ -829,14 +831,16 @@ struct NativeOnlinePlay::Data {
             candidate = std::make_unique<Level>();
             PlayOptions reopened = options;
             reopened.consoleCheats = levelConsoleCheats;
-            if (!candidate->world.load(*device, context.unpackedRoot, *current) ||
-                !candidate->scene.open(*device, context, candidate->world, levelMembers, reopened,
-                                       {.haptics = &seatRumble, .unlocks = nullptr})) {
+            if (!candidate->world.load(*device, services.unpackedRoot, *current) ||
+                !candidate->scene.open(*device, services, candidate->world, levelMembers, reopened,
+                                       {.haptics = &seatRumble,
+                                        .unlocks = nullptr,
+                                        .stopTimeTotal = &setup->stopTimeTotal()})) {
                 return fail(Failure::Assets);
             }
             candidate->scene.setLocalSeats(seatMask(session->seats()));
-            candidate->scene.setSoloCameras(context.config != nullptr &&
-                                            context.config->multiplayer.soloCamera);
+            candidate->scene.setSoloCameras(services.config != nullptr &&
+                                            services.config->multiplayer.soloCamera);
             candidate->scene.setFixedRoster(true);
             candidate->scene.setViewSeat(lowestSeat(session->seats()));
         }
@@ -908,7 +912,8 @@ struct NativeOnlinePlay::Data {
                     if (!localDevice) {
                         return fail(Failure::Input);
                     }
-                    input = AfterLevelScene::captureShopInput(input, *context.config, *localDevice);
+                    input =
+                        AfterLevelScene::captureShopInput(input, *services.config, *localDevice);
                 }
                 const auto focus = shop.captureOnlinePointer(static_cast<s32>(seat), input);
                 if (!sync.sample(seat, input, focus ? static_cast<s32>(*focus) : -1,
@@ -1203,7 +1208,7 @@ std::optional<LevelRef> NativeOnlinePlay::levelOf(const LevelCatalog& catalog, u
     }
     return std::nullopt;
 }
-bool NativeOnlinePlay::open(RenderDevice& device, const GameContext& context,
+bool NativeOnlinePlay::open(RenderDevice& device, const GameServices& services,
                             OnlineSession& session, OnlineParty& selection,
                             std::unique_ptr<NativePlaySetup> setup, const Links& links) {
     auto& data = *m_data;
@@ -1213,8 +1218,8 @@ bool NativeOnlinePlay::open(RenderDevice& device, const GameContext& context,
     if (data.phase != Phase::Closed || !setup || !match.nativeInputs() ||
         setup->digest() != session.confirmedNativeSetup() ||
         session.phase() != OnlineSession::Phase::Active ||
-        (match.phase() != MatchSession::Phase::Lobby && !starting) || context.levels == nullptr ||
-        !context.levels->loaded() || !levelOf(*context.levels, setup->scene()) ||
+        (match.phase() != MatchSession::Phase::Lobby && !starting) || services.levels == nullptr ||
+        !services.levels->loaded() || !levelOf(*services.levels, setup->scene()) ||
         session.party() == nullptr) {
         return false;
     }
@@ -1239,10 +1244,8 @@ bool NativeOnlinePlay::open(RenderDevice& device, const GameContext& context,
     data.selection = &selection;
     data.options = setup->options();
     data.setup = std::move(setup);
-    data.context = context;
-    data.context.config = &data.setup->config();
-    data.context.stopTimeTotal = &data.setup->stopTimeTotal();
-    data.context.tower = nullptr;
+    data.services = services;
+    data.services.config = &data.setup->config();
     data.appHaptics = links.haptics;
     data.unlocks = links.unlocks;
     data.store = links.store;

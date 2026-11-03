@@ -628,7 +628,7 @@ TEST_CASE("returning to the tower opens the pending crystal scroll after arrival
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.levels = &catalog;
@@ -670,7 +670,7 @@ TEST_CASE("collecting the last orange crystal congratulates a new character only
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.sounds = &sounds;

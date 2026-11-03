@@ -9,7 +9,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/Party.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/level/LevelCatalog.h"
 #include "game/online/OnlineLevelEntry.h"
 
@@ -22,7 +22,7 @@ struct G1Entry {
     std::filesystem::path root =
         test::assetOrSkip("MAPS/LEVELG1/textures.ngc").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
-    GameContext context;
+    GameServices context;
     G1Entry() {
         test::assetOrSkip("WDATA/TOWN.WAD");
         REQUIRE(catalog.load(root));

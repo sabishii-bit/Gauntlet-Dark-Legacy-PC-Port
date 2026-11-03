@@ -85,6 +85,7 @@ struct GameplayFixture {
     GameConfig config;
     StringTable strings;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
 
     GameplayFixture() {
@@ -107,10 +108,8 @@ struct GameplayFixture {
         const bool loaded = world.loadImported(device, root, ref, std::move(layout),
                                                std::move(collision), std::move(imported));
         REQUIRE(loaded);
-        GameContext context;
         context.config = &config;
         context.strings = &strings;
-        context.tower = &world;
         context.unpackedRoot = root;
         PlayOptions options;
         options.position = start;

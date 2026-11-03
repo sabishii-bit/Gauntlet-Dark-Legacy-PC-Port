@@ -20,6 +20,7 @@
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/config/GameConfig.h"
+#include "game/hud/ScriptedControlLabels.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/SelectLane.h"
 #include "game/widgets/MenuInput.h"
@@ -310,11 +311,13 @@ TEST_CASE("select lanes retain actions without drawing mapped button prompts",
           "[game][select][prompts]") {
     Fixture f;
     std::vector<std::string> actions;
-    f.services.controlLabels = [&](s32 player, std::string_view action) {
+    test::ScriptedControlLabels labels;
+    labels.answer = [&](s32 player, std::string_view action) {
         CHECK(player == 1);
         actions.emplace_back(action);
-        return "F2";
+        return std::string("F2");
     };
+    f.services.controlLabels = &labels;
     f.services.staticTexture = {};
     f.lane.activate();
     test::FakeRenderDevice device;

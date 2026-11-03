@@ -72,12 +72,12 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(self.found({
             "src/game/hud/PartyHud.cpp": '#include "game/widgets/MenuFont.h"\n',
             "src/game/widgets/OptionMenu.cpp": '#include "game/menu/PauseMenu.h"\n',
-            "src/game/menu/PauseMenu.h": '#include "game/context/GameContext.h"\n',
-            "src/game/context/GameContext.h": '#include "game/scenes/PlayScene.h"\n',
+            "src/game/menu/PauseMenu.h": '#include "game/context/GameServices.h"\n',
+            "src/game/context/GameServices.h": '#include "game/scenes/PlayScene.h"\n',
             "src/game/online/NativeOnlinePlay.cpp": '#include "game/scenes/PlayScene.h"\n',
             "src/game/netplay/MatchSession.cpp": '#include "game/online/NativePlaySetup.h"\n',
         }), {"src/game/widgets/OptionMenu.cpp -> game/menu",
-             "src/game/context/GameContext.h -> game/scenes",
+             "src/game/context/GameServices.h -> game/scenes",
              "src/game/netplay/MatchSession.cpp -> game/online"})
 
     def test_the_hud_lies_over_the_party_and_under_what_reports_through_it(self):

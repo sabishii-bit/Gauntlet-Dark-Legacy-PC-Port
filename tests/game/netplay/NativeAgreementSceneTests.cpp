@@ -29,6 +29,7 @@ struct Fixture {
     GameConfig config;
     LevelCatalog catalog;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
 
     explicit Fixture(std::string_view name = "G1", s32 players = 1,
@@ -37,10 +38,8 @@ struct Fixture {
         const auto level = catalog.byName(name);
         REQUIRE(level);
         REQUIRE(world.load(device, root, *level));
-        GameContext context;
         context.config = &config;
         context.levels = &catalog;
-        context.tower = world.isTower() ? &world : nullptr;
         context.unpackedRoot = root;
         CharacterSave save = initial.value_or(CharacterSave{});
         save.name = "WATCH";

@@ -41,7 +41,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/critters/Critters.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyAnimator.h"
@@ -121,7 +121,7 @@ TEST_CASE("D1 bridge occupancy follows living enemy support and replays its deat
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -242,7 +242,7 @@ TEST_CASE("G2 gold pad wakes Death at the native item-contact reach",
         wakes = false;
     }
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -293,7 +293,7 @@ TEST_CASE("gameplay status panels retain the fitted card size across window shap
     test::FakeRenderDevice device;
     LevelWorld world;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = unpackedRoot();
     PlayScene scene;
@@ -343,7 +343,7 @@ TEST_CASE("the native compass follows its preference and is hidden behind option
     test::FakeRenderDevice device;
     LevelWorld world;
     GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = unpackedRoot();
     PlayScene scene;
@@ -392,11 +392,10 @@ TEST_CASE("Stop Time draws the native hourglass and retains its total across sce
     test::FakeRenderDevice device;
     LevelWorld world;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = unpackedRoot();
     f32 sharedTotal = 60;
-    context.stopTimeTotal = &sharedTotal;
     CharacterSave save;
     save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 20);
     const std::vector<PartyMember> party{PartyMember{0, save}};
@@ -405,7 +404,8 @@ TEST_CASE("Stop Time draws the native hourglass and retains its total across sce
     PlayScene scene;
     for (s32 visit = 0; visit < 2; ++visit) {
         CAPTURE(visit);
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(
+            scene.open(device, context, world, party, options, {.stopTimeTotal = &sharedTotal}));
         const auto timer = world.powerups().textures.find("TIMER");
         const auto sand = world.powerups().textures.find("TIMER_SAND");
         REQUIRE(timer);
@@ -434,7 +434,7 @@ TEST_CASE("a rendered tower camera directs a real player's cursor facing after a
     test::FakeRenderDevice device;
     LevelWorld world;
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = unpackedRoot();
     PlayScene scene;
@@ -471,7 +471,7 @@ TEST_CASE("optional bloom and depth of field run after the world and before the 
     test::FakeRenderDevice device;
     LevelWorld world;
     GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = unpackedRoot();
     PlayScene scene;
@@ -535,9 +535,8 @@ TEST_CASE("Temple switch cutscene carries its chest and enemy continuously",
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("E1")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     PlayOptions options;
@@ -633,11 +632,10 @@ TEST_CASE("Temple organist remains audible over three loops in the scenario scen
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.sounds = &sounds;
-    context.tower = &world;
     context.unpackedRoot = root;
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/level-e1-organist.json");
@@ -706,10 +704,9 @@ TEST_CASE("normal attack input emits visible weapon and amulet streaks on succes
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &catalog;
-    context.tower = &world;
     context.unpackedRoot = root;
     PlayScene scene;
     auto party = scenario.partyMembers();
@@ -780,10 +777,9 @@ TEST_CASE("Temple floor pickups can be switched off through mapped D-pad presses
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.character = 7;
@@ -843,9 +839,8 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     REQUIRE(world.level() != nullptr);
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave first;
@@ -1002,12 +997,11 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const AssetLocator assets(GDL_TEST_ASSET_DIR);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.sounds = &sounds;
     context.assets = &assets;
-    context.tower = &world;
     context.unpackedRoot = root;
 
     CharacterSave save;
@@ -1208,12 +1202,11 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const AssetLocator assets(GDL_TEST_ASSET_DIR);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.sounds = &sounds;
     context.assets = &assets;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -1320,12 +1313,11 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const AssetLocator assets(GDL_TEST_ASSET_DIR);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.sounds = &sounds;
     context.assets = &assets;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -1456,9 +1448,8 @@ TEST_CASE("a character takes what lies in its way by the original's rules",
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -1512,10 +1503,9 @@ TEST_CASE("in the fields runestones and gargoyle pieces belong to everyone, and 
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave first;
@@ -1579,10 +1569,9 @@ TEST_CASE("tower play does not consume the first level's gameplay lessons",
     LevelCatalog levels;
     REQUIRE(levels.load(root));
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -1619,9 +1608,8 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
     LevelCatalog levels;
     REQUIRE(levels.load(root));
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -1723,7 +1711,7 @@ TEST_CASE("G1 departure dismisses a gameplay lesson without waiting for its disp
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -1770,9 +1758,8 @@ TEST_CASE("portal departure finishes a teammate's death and accepts that player'
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -1839,10 +1826,9 @@ TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
     REQUIRE(world.load(device, root, *levels.byName(stage)));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -1920,9 +1906,8 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -2003,9 +1988,8 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     REQUIRE(world.level() != nullptr);
     REQUIRE(world.level()->tuning.trapDamage == 0.5f);
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -2111,9 +2095,8 @@ TEST_CASE("a fallen player's keys lie where they fell for the rest of the party"
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     for (const s32 keys : {1, 3}) {
@@ -2158,9 +2141,8 @@ TEST_CASE("the fallen are asked to wait in the tower or quit, and the last to qu
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave first;
@@ -2229,9 +2211,8 @@ TEST_CASE("spikes make whoever they catch flinch where they stand",
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -2293,9 +2274,8 @@ TEST_CASE("a party back from a realm descends from that wing's entrance camera",
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -2384,10 +2364,9 @@ TEST_CASE("what the level tells the party is in the string table's language",
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -2414,9 +2393,8 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -2532,9 +2510,8 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -2678,9 +2655,8 @@ TEST_CASE("in hurt mode a player's blow on another comes from somewhere, so a gu
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     constexpr s32 kStriker = 3;
@@ -2737,9 +2713,8 @@ TEST_CASE("every class has its turbo attacks: they show, strike and are paid for
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     PlayOptions options;
     options.welcome = false;
@@ -2793,9 +2768,8 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -2848,7 +2822,7 @@ TEST_CASE("walking into a grunt deals automatic melee damage without firing equi
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -2946,9 +2920,8 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -3039,10 +3012,9 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -3106,10 +3078,9 @@ TEST_CASE("tower returns award permanent familiars with locked controls and pers
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("L1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave first;
@@ -3190,9 +3161,8 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -3300,9 +3270,8 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -3438,9 +3407,8 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
     REQUIRE(arena.has_value());
     LevelWorld world;
     REQUIRE(world.load(device, root, *arena));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     PlayScene scene;
@@ -3534,9 +3502,8 @@ TEST_CASE("the Peak's placed enemies stand during the entrance while nothing bre
     REQUIRE(world.load(device, root, *level));
     REQUIRE(world.level() != nullptr);
     REQUIRE(world.level()->earlyEnemies == early);
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -3582,9 +3549,8 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     REQUIRE(chamber.has_value());
     LevelWorld world;
     REQUIRE(world.load(device, root, *chamber));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -3654,9 +3620,8 @@ TEST_CASE("Lich entrance uses its authored camera and seals the walkway before w
     REQUIRE(level);
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     PlayScene scene;
@@ -3723,9 +3688,8 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(world.load(device, root, *crypt));
     REQUIRE(world.level() != nullptr);
     REQUIRE(world.level()->bossType == 41);
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -4035,9 +3999,8 @@ TEST_CASE("the Plague Fiend scene lends its boss frames to the arena rocks and a
     REQUIRE(arena.has_value());
     LevelWorld world;
     REQUIRE(world.load(device, root, *arena));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -4099,9 +4062,8 @@ TEST_CASE("the Plague javelin is carried before rising and flies at retail speed
     REQUIRE(arena);
     LevelWorld world;
     REQUIRE(world.load(device, root, *arena));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     const Scenario scenario = Scenario::load("tests/scenarios/level-k5-plague-javelin.json");
@@ -4180,9 +4142,8 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     REQUIRE(world.load(device, root, *lair));
     REQUIRE(world.level() != nullptr);
     REQUIRE(world.level()->bossType == 34);
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -4334,6 +4295,7 @@ TEST_CASE("native low-health narration advances identically with absent and stop
     SoundPlayer sounds(mixer);
     struct SceneState {
         LevelWorld world;
+        GameServices context; ///< what the scene reads while it stands
         PlayScene scene;
     };
     std::array<std::unique_ptr<SceneState>, 2> fixtures;
@@ -4345,10 +4307,9 @@ TEST_CASE("native low-health narration advances identically with absent and stop
         fixtures[profile] = std::make_unique<SceneState>();
         auto& fixture = *fixtures[profile];
         REQUIRE(fixture.world.load(device, root, *levels.byName("G1")));
-        GameContext context;
+        auto& context = fixture.context;
         context.config = &config;
         context.sounds = profile == 0 ? &sounds : nullptr;
-        context.tower = &fixture.world;
         context.levels = &levels;
         context.unpackedRoot = root;
         PlayOptions options;
@@ -4408,10 +4369,9 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -4499,10 +4459,9 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     strings.load(test::dataDirectory() / "text", config.text.language);
     test::FakeRenderDevice device;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -4609,9 +4568,8 @@ TEST_CASE("Archer attack releases her arrow and both companion shots through the
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.character = 3;
@@ -4685,10 +4643,9 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
     LevelWorld world;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.sounds = &sounds;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -4753,10 +4710,9 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     strings.load(test::dataDirectory() / "text", config.text.language);
     test::FakeRenderDevice device;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
@@ -4869,9 +4825,8 @@ TEST_CASE("quitting a level gives up what it gave, keeping lessons and save slot
     REQUIRE(level.has_value());
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave entering;
@@ -4904,9 +4859,8 @@ TEST_CASE("the tower scene refuses to open without the level", "[game][screens]"
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.unpackedRoot = test::scratchDirectory("tower-scene-none");
     PlayScene scene;
     REQUIRE_FALSE(scene.open(device, context, world, {}));
@@ -4928,11 +4882,10 @@ TEST_CASE("the runestone ceremony sounds the stone's fall and its landing",
     REQUIRE(world.load(device, root, *levels.byName("L1")));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.sounds = &sounds;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -4986,10 +4939,9 @@ TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("L1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5092,9 +5044,8 @@ TEST_CASE("G4 ghosts stay on their own side of the trapped-chest fence",
     REQUIRE(world.textures().entry(*fenceSlot).translucent());
     const Texture* fenceTexture = &world.textures().texture(device, *fenceSlot);
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     PlayOptions options;
@@ -5292,9 +5243,8 @@ TEST_CASE("tower portal columns draw after horizon sheets while retaining wall o
         }
     }
     REQUIRE(position.has_value());
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5379,9 +5329,8 @@ TEST_CASE("fire shield flames composite after gates and deferred scenery",
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5485,11 +5434,10 @@ TEST_CASE("fully unlocked character walks both tower wing gates in both directio
     const GameConfig config;
     LevelCatalog levels;
     REQUIRE(levels.load(root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
-    context.tower = &tower;
     PlayOptions options;
     options.welcome = false;
     options.position = start;
@@ -5533,9 +5481,8 @@ TEST_CASE("the swamp's lizards play their whole entrance in the scene before wal
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("D1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5633,9 +5580,8 @@ TEST_CASE("the lich comes for a party that waits by the crypt's gate",
     REQUIRE(crypt.has_value());
     LevelWorld world;
     REQUIRE(world.load(device, root, *crypt));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5708,7 +5654,7 @@ TEST_CASE("auto aim off keeps a standing throw on the player's facing",
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -5779,9 +5725,8 @@ TEST_CASE("the console moves the party to a point, stands the camera over it and
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, LevelRef::tower()));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5827,9 +5772,8 @@ TEST_CASE(
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("A1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5893,9 +5837,8 @@ TEST_CASE("the console stands the swarm, the great ones, generators and pickups 
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("A1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -5958,9 +5901,8 @@ TEST_CASE("in the tower the console stands visitors from other levels: the swarm
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, LevelRef::tower()));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -6038,9 +5980,8 @@ TEST_CASE("the console picks what stands under the cursor, marks it out while se
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("A1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -6126,9 +6067,8 @@ TEST_CASE("a timed powerup drains and a potion is spent while the console's chea
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("A1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     CharacterSave save;

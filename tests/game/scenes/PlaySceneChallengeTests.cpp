@@ -35,7 +35,7 @@ TEST_CASE("coin stages retain Stop Time but reject entry activation and selector
     REQUIRE(ref);
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
-    GameContext context;
+    GameServices context;
     context.levels = &levels;
     context.unpackedRoot = root;
     std::array party{PartyMember{0, CharacterSave{}}, PartyMember{2, CharacterSave{}}};
@@ -90,7 +90,7 @@ TEST_CASE("the secret coin hunt persists earned unlocks for regular and unsaved 
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -189,7 +189,7 @@ TEST_CASE("running out of secret-world time sounds every warning and returns wit
     REQUIRE(ref);
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
-    GameContext context;
+    GameServices context;
     context.levels = &levels;
     context.unpackedRoot = root;
     AudioMixer mixer{48000};
@@ -248,7 +248,7 @@ TEST_CASE("a consumed secret portal stays gone when the party returns to the par
     REQUIRE(world.load(device, root, *ref));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.sounds = &sounds;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -322,7 +322,7 @@ TEST_CASE("secret visits retain the parent run's gold kills and experience throu
     LevelWorld challengeWorld;
     REQUIRE(parentWorld.load(device, root, *levels.byName("B2")));
     REQUIRE(challengeWorld.load(device, root, *levels.byName("S4")));
-    GameContext context;
+    GameServices context;
     context.levels = &levels;
     context.unpackedRoot = root;
     std::array party{PartyMember{3, CharacterSave{}, 1}, PartyMember{1, CharacterSave{}, 0}};

@@ -51,6 +51,7 @@ struct Peer {
     GameConfig config;
     StringTable strings;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     MatchContext match;
     u8 id;
@@ -65,10 +66,8 @@ struct Peer {
                               .parent_path();
         REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
         config.camera.horizontalFovDegrees = peer == 1 ? 42.0f : 97.0f;
-        GameContext context;
         context.config = &config;
         context.strings = &strings;
-        context.tower = &world;
         context.unpackedRoot = root;
         std::array<PartyMember, 2> party;
         party[0].player = 1;

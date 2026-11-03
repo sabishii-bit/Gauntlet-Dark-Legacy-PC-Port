@@ -25,11 +25,11 @@ void PlayScene::beginChallenge() {
         return;
     }
     PlayerPowerups::restrictToChallenge(m_players);
-    if (m_context.levels == nullptr) {
+    if (m_services->levels == nullptr) {
         return;
     }
     s32 index = -1;
-    for (const auto& realm : m_context.levels->realms()) {
+    for (const auto& realm : m_services->levels->realms()) {
         if (realm.id == LevelRef::kSecretRealm) {
             const auto found = std::ranges::find(realm.levels, m_world->ref().name);
             if (found != realm.levels.end()) {
@@ -53,7 +53,7 @@ void PlayScene::beginChallenge() {
         return;
     }
     // The eight-second warning belongs to SELECT; the numbered voices are VOICE2.
-    m_audio.borrowBank(m_context.unpackedRoot / "audio/SELECT");
+    m_audio.borrowBank(m_services->unpackedRoot / "audio/SELECT");
     m_challengeHud.bind(*m_device, m_world->powerups());
     m_hud.setCountTextures(&m_world->items().textures);
 }
@@ -138,7 +138,7 @@ void PlayScene::resumeAfterImportedLevel() {
     if (!m_open || m_world == nullptr) {
         return;
     }
-    m_audio.startMusic(m_context.assets,
+    m_audio.startMusic(m_services->assets,
                        m_world->level() != nullptr ? m_world->level()->musicVolume : 1.0f);
     m_audio.releaseSounds();
 }
@@ -181,7 +181,7 @@ void PlayScene::resumeFromChallenge(std::span<const PartyMember> party) {
             runtime.actor.settle(m_world->collision());
         }
     }
-    m_audio.startMusic(m_context.assets,
+    m_audio.startMusic(m_services->assets,
                        m_world->level() != nullptr ? m_world->level()->musicVolume : 1.0f);
     m_sim.secretTravel = false;
     // A hard cut back to the level, as the original's sub-level return is.

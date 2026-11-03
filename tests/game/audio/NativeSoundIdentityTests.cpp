@@ -128,7 +128,7 @@ struct PartySounds {
     GameConfig config;
     LevelCatalog catalog;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     PlayScene scene;
 
     PartySounds() {

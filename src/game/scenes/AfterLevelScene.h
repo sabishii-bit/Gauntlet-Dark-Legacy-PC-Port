@@ -13,7 +13,7 @@
 
 #include "game/audio/SpeechTiming.h"
 #include "game/characters/Party.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/hud/StatusBox.h"
 #include "game/shop/ShopSession.h"
 
@@ -21,9 +21,13 @@ namespace gdl::game {
 /** Presentation and sound for the tally/shop; ShopSession owns transactions and flow. */
 class AfterLevelScene {
 public:
-    bool open(RenderDevice& device, const GameContext& context, std::span<const PartyMember> party,
-              std::span<const LevelResults> results, const std::array<s32, 3>& maxima,
-              std::string_view levelName, ShopVisit visit = ShopVisit::Level);
+    /** The screen keeps reading `services`, which must outlive it. */
+    bool open(RenderDevice& device, const GameServices& services,
+              std::span<const PartyMember> party, std::span<const LevelResults> results,
+              const std::array<s32, 3>& maxima, std::string_view levelName,
+              ShopVisit visit = ShopVisit::Level);
+    /** The screen keeps the services it is opened with, so they may not be a temporary. */
+    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
     void close();
     bool isOpen() const { return m_open; }
     /** True once every lane is done and its effects' simulation-time durations have elapsed. */
@@ -90,7 +94,7 @@ private:
     void advanceEffects(f64 seconds);
     void updateTallySound();
     bool m_open = false;
-    GameContext m_context;
+    const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
     RenderDevice* m_device = nullptr;
     ShopSession m_session;
     TextureSet m_select;

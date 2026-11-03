@@ -5,10 +5,11 @@
 #include "engine/core/Log.h"
 
 namespace gdl::game {
-void OnlineLevelEntry::open(RenderDevice& device, const GameContext& context, const LevelRef& level,
-                            std::span<const PartyMember> party, bool transitionOnly) {
+void OnlineLevelEntry::open(RenderDevice& device, const GameServices& services,
+                            const LevelRef& level, std::span<const PartyMember> party,
+                            bool transitionOnly) {
     close();
-    m_loading.open(device, context, level, party, transitionOnly);
+    m_loading.open(device, services, level, party, transitionOnly);
     m_wantsMovie = LevelLoadingScreen::movieWanted(m_loading.movie(), party);
     m_phase = m_loading.active() ? Phase::Map : Phase::Ready;
     log::info("Online entry: {} {}", level.name, m_loading.active() ? "map" : "ready");
@@ -21,7 +22,7 @@ void OnlineLevelEntry::close() {
     m_unshown = 0;
     m_wantsMovie = false;
 }
-void OnlineLevelEntry::update(RenderDevice& device, const GameContext& context, bool skipMovie) {
+void OnlineLevelEntry::update(RenderDevice& device, const GameServices& services, bool skipMovie) {
     if (!m_shown && ++m_unshown < kUnshownTicks) {
         return; // Present the map/first movie frame before advancing its clock.
     }
@@ -37,17 +38,17 @@ void OnlineLevelEntry::update(RenderDevice& device, const GameContext& context, 
             m_phase = Phase::Ready;
             return;
         }
-        const AssetLocator fallback(context.unpackedRoot);
-        const auto& assets = context.assets != nullptr ? *context.assets : fallback;
+        const AssetLocator fallback(services.unpackedRoot);
+        const auto& assets = services.assets != nullptr ? *services.assets : fallback;
         const auto file = assets.find(std::format("VQMOVIES/{}.avi", m_loading.movie()));
-        if (!file || !m_movie.open(device, context.movieMixer, *file)) {
+        if (!file || !m_movie.open(device, services.movieMixer, *file)) {
             log::error("Online entry movie unavailable: {}", m_loading.movie());
             m_phase = Phase::Failed;
             return;
         }
-        m_movie.setVolume(context.config != nullptr ? context.config->audio.masterVolume *
-                                                          context.config->audio.movieVolume
-                                                    : 1);
+        m_movie.setVolume(services.config != nullptr ? services.config->audio.masterVolume *
+                                                           services.config->audio.movieVolume
+                                                     : 1);
         log::info("Online entry: movie {}", m_loading.movie());
         m_loading.close();
         m_phase = Phase::Movie;

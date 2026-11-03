@@ -1,10 +1,21 @@
+#include <string>
+#include <string_view>
+#include <type_traits>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/hud/ControlPrompts.h"
+#include "game/hud/ScriptedControlLabels.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+static_assert(std::is_abstract_v<ControlLabels>);
+static_assert(std::has_virtual_destructor_v<ControlLabels>);
+static_assert(std::is_base_of_v<ControlLabels, test::ScriptedControlLabels>);
 
 TEST_CASE("control prompts resolve the actual per-player primary binding", "[controls][prompts]") {
     GameConfig config;
@@ -46,15 +57,29 @@ TEST_CASE("potion prompts preserve hold and double-tap gestures unless directly 
 
 TEST_CASE("action tokens do not rewrite ordinary letters or action names", "[controls][prompts]") {
     s32 owner = -1;
-    const ControlLabels labels = [&](s32 player, std::string_view action) {
+    test::ScriptedControlLabels labels;
+    labels.answer = [&](s32 player, std::string_view action) {
         owner = player;
-        return action == "menuStart" ? "F2" : "RMB";
+        return std::string(action == "menuStart" ? "F2" : "RMB");
     };
-    CHECK(controlText("Press {bind:menuStart}, then {bind:menuSelect}", labels, 2) ==
+    CHECK(controlText("Press {bind:menuStart}, then {bind:menuSelect}", &labels, 2) ==
           "Press F2, then RMB");
     CHECK(owner == 2);
-    CHECK(controlText("A key, B: buy, START, X-Ray", labels, 1) == "A key, B: buy, START, X-Ray");
-    CHECK(controlText("Press {bind:unfinished", labels, 1) == "Press {bind:unfinished");
+    CHECK(controlText("A key, B: buy, START, X-Ray", &labels, 1) == "A key, B: buy, START, X-Ray");
+    CHECK(controlText("Press {bind:unfinished", &labels, 1) == "Press {bind:unfinished");
+}
+
+TEST_CASE("without live labels a prompt names the default bindings", "[controls][prompts]") {
+    const GameConfig defaults;
+    // A shared prompt and the first player read the keyboard's; the others their pads'.
+    CHECK(controlLabel(nullptr, -1, "attack") == boundControlLabel(defaults, 0, true, "attack"));
+    CHECK(controlLabel(nullptr, 0, "attack") == boundControlLabel(defaults, 0, true, "attack"));
+    CHECK(controlLabel(nullptr, 2, "attack") == boundControlLabel(defaults, 2, false, "attack"));
+    CHECK(controlText("Press {bind:menuSelect}", nullptr, 0) ==
+          "Press " + boundControlLabel(defaults, 0, true, "menuSelect"));
+    // Labels a test leaves unanswered name nothing, rather than the defaults.
+    const test::ScriptedControlLabels silent;
+    CHECK(controlLabel(&silent, 0, "attack").empty());
 }
 
 TEST_CASE("prompt device follows input and keeps multiplayer bindings separate",

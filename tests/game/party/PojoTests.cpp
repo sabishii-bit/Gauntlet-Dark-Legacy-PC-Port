@@ -131,7 +131,7 @@ TEST_CASE("Pojo is present before the entrance camera and throughout its pan",
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
@@ -251,7 +251,7 @@ TEST_CASE("Pojo survives the figure replacement during a tower promotion",
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("L1")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;

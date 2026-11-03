@@ -55,8 +55,8 @@ struct Fixture {
     LevelCatalog catalog;
     StringTable strings;
     LevelWorld world;
+    GameServices context;
     PlayScene scene;
-    GameContext context;
     std::vector<PartyMember> party;
     PlayOptions options;
     u32 tick = 0;
@@ -73,7 +73,6 @@ struct Fixture {
         context.config = &config;
         context.levels = &catalog;
         context.strings = &strings;
-        context.tower = world.isTower() ? &world : nullptr;
         context.unpackedRoot = root;
         for (s32 seat = 0; seat < seats; ++seat) {
             CharacterSave save = seat == 0 && first ? *first : CharacterSave{};

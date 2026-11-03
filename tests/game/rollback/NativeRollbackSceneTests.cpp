@@ -110,6 +110,7 @@ struct NativeScene {
     std::unique_ptr<SoundPlayer::Capture> soundWatch;
     test::RecordingHaptics haptics;
     test::RecordingUnlocks unlocks;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     SimulationObserver observer{scene};
 
@@ -122,7 +123,6 @@ struct NativeScene {
         REQUIRE(ref);
         REQUIRE(world.load(device, root, *ref));
         config.timing.tickRate = 60;
-        GameContext context;
         context.config = &config;
         context.levels = &levels;
         context.strings = &strings;

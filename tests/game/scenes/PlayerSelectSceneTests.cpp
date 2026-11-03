@@ -22,7 +22,7 @@
 #include "TestSupport.h"
 #include "game/characters/Party.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/scenes/PlayerSelectScene.h"
 #include "game/scenes/TitleScene.h"
 #include "game/widgets/MenuInput.h"
@@ -46,9 +46,9 @@ struct Fixture {
         strings.load(test::dataDirectory() / "text", config.text.language);
     }
 
-    GameContext context(std::filesystem::path root = unpackedRoot(),
-                        SoundPlayer* sounds = nullptr) const {
-        GameContext out;
+    GameServices context(std::filesystem::path root = unpackedRoot(),
+                         SoundPlayer* sounds = nullptr) const {
+        GameServices out;
         out.config = &config;
         out.strings = &strings;
         out.sounds = sounds;
@@ -81,8 +81,8 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
     saved.name = "MOUSE";
     saved.gold = 321;
     REQUIRE(slots.write(0, saved));
-    PlayerSelectScene scene;
     const auto context = f.context(); // Missing retail assets must skip outside REQUIRE.
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
     const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
@@ -151,8 +151,9 @@ TEST_CASE("letterboxed mouse loads a character and creates another in only its h
 TEST_CASE("the select screen refuses to open without unpacked data", "[game][select]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-empty");
+    const auto context = f.context(test::scratchDirectory("select-none"));
     PlayerSelectScene scene;
-    REQUIRE_FALSE(scene.open(device, f.context(test::scratchDirectory("select-none")), 0));
+    REQUIRE_FALSE(scene.open(device, context, 0));
     REQUIRE_FALSE(scene.isOpen());
 }
 
@@ -163,8 +164,8 @@ TEST_CASE("a remapped mouse click joins only the pointed character lane",
     f.config.controls[0].customized = true;
     f.config.controls[0].menu.select = {Key::MouseLeft};
     f.config.controls[0].menu.start = {Key::MouseLeft};
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
     const auto transform = makeVirtualScreenTransform(projection, 512, 384, 640, 448);
@@ -190,8 +191,8 @@ TEST_CASE("controller players can type names without steering other lanes",
     Fixture f("select-controller-typing");
     f.config.controls[0].device = "test-pad";
     f.config.controls[1].device = "keyboard";
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     scene.step(1, player(1, false, false, true));
     scene.step(1, player(1, true));
@@ -306,8 +307,8 @@ TEST_CASE("character selection continues the title music at its existing playbac
 TEST_CASE("the starting player joins and others join on Start", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-join");
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 2));
     REQUIRE(scene.lane(2).active());
     REQUIRE_FALSE(scene.lane(0).active());
@@ -340,7 +341,6 @@ TEST_CASE("Manage Character opens its player's save menu with the rest of the pa
           "[game][select][pause][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-manage");
-    PlayerSelectScene scene;
     CharacterSave first;
     first.name = "FIRST";
     first.gold = 123;
@@ -349,6 +349,7 @@ TEST_CASE("Manage Character opens its player's save menu with the rest of the pa
     second.gold = 456;
     const std::array party{PartyMember{1, first, 0}, PartyMember{3, second, 2}};
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 3, party, true));
     REQUIRE(scene.lane(1).lockedIn());
     REQUIRE(scene.lane(1).save().toJson() == first.toJson());
@@ -364,8 +365,8 @@ TEST_CASE("Manage Character opens its player's save menu with the rest of the pa
 TEST_CASE("backing out of the last lane cancels the screen", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-cancel");
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     REQUIRE(scene.step(1, player(0, false, true)) == SelectOutcome::Cancelled);
 }
@@ -377,7 +378,6 @@ TEST_CASE("Manage Character Game Over removes only that player from the returned
     CAPTURE(saved, withTeammate);
     test::FakeRenderDevice device;
     const Fixture f("select-scene-game-over");
-    PlayerSelectScene scene;
     CharacterSave leaving;
     leaving.name = "LEAVING";
     const auto slot = saved ? std::optional<usize>{0} : std::nullopt;
@@ -389,6 +389,7 @@ TEST_CASE("Manage Character Game Over removes only that player from the returned
         party.push_back(PartyMember{2, staying});
     }
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0, party, true));
     REQUIRE(scene.lane(0).state() == SelectLane::State::SaveMenu);
     auto up = nobody();
@@ -421,8 +422,8 @@ TEST_CASE("Manage Character Game Over removes only that player from the returned
 TEST_CASE("the screen finishes once every player is locked in", "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-done");
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     scene.step(1, player(0, true)); // New
     REQUIRE(scene.lane(0).state() == SelectLane::State::NameEntry);
@@ -447,8 +448,8 @@ TEST_CASE("a player joining a game in progress finds the party locked in beside 
           "[game][select][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-join");
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     CharacterSave playing;
     playing.name = "ALREADY";
     playing.character = 1;
@@ -477,9 +478,9 @@ TEST_CASE("selection entry keeps every simultaneous joining Start without advanc
     const Fixture f("select-simultaneous-join");
     CharacterSave existing;
     existing.name = "HERE";
-    PlayerSelectScene scene;
     bool inTower = false;
     const auto context = f.context();
+    PlayerSelectScene scene;
     SECTION("from the tower") {
         const std::array party{PartyMember{2, existing, 1, false, 0, {14}}};
         REQUIRE(scene.open(device, context, -1, party));
@@ -517,8 +518,8 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
     const Fixture f("select-scene-greeting");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    PlayerSelectScene scene;
     const auto context = f.context(unpackedRoot(), &sounds);
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     REQUIRE_FALSE(scene.speaking());
     const usize before = sounds.voiceCount(); // the music, when the bank is there
@@ -561,8 +562,8 @@ TEST_CASE("selection waits for the complete queued greetings before entering pla
     const Fixture f("select-welcome-completion");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    PlayerSelectScene scene;
     const auto context = f.context(unpackedRoot(), &sounds);
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 0));
     scene.step(1, player(2, false, false, true));
     PlayerSelectScene::Inputs choose{};
@@ -711,8 +712,8 @@ TEST_CASE("the native character preview panel follows highlighted costume colors
     // BK_RUNE_STONE_02 strip are separate artwork, not additional tint recipients.
     test::FakeRenderDevice device;
     const Fixture f("select-banner");
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.open(device, context, 2));
     scene.step(1, player(2, true));
     scene.step(1, player(2, true));
@@ -752,7 +753,6 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
           "[game][select][post-shop][assets][multiplayer]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop");
-    PlayerSelectScene scene;
     CharacterSave alive;
     alive.name = "ALIVE";
     alive.gold = 4321;
@@ -764,6 +764,7 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
     REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
     REQUIRE(slots.write(2, fallen));
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.openAfterLevel(device, context, party));
     CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
     CHECK(scene.lane(2).state() == SelectLane::State::SaveMenu);
@@ -805,7 +806,6 @@ TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
           "[game][select][post-shop][assets]") {
     test::FakeRenderDevice device;
     const Fixture f("select-after-shop-reservations");
-    PlayerSelectScene scene;
     CharacterSave first;
     first.name = "FIRST";
     CharacterSave second;
@@ -813,6 +813,7 @@ TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
     const std::array party{PartyMember{0, first, std::nullopt, false, 0, {14}},
                            PartyMember{1, second}};
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.openAfterLevel(device, context, party));
     PlayerSelectScene::Inputs both{};
     both[0].up = both[1].up = true;
@@ -850,8 +851,8 @@ TEST_CASE("post-shop keeps Done selected and protects an existing save when over
     REQUIRE(slots.write(0, save));
     save.gold = 4567;
     const std::array party{PartyMember{0, save, 0}};
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.openAfterLevel(device, context, party));
     // The GameCube card-directory probe returns at most one, selecting Done.
     PlayerSelectScene::Inputs up{};
@@ -883,8 +884,8 @@ TEST_CASE("post-shop snapshots follow a loaded character rather than the pending
     CharacterSave live = saved;
     live.gold = 600;
     const std::array party{PartyMember{0, live, 0, false, 0, {14}}};
-    PlayerSelectScene scene;
     const auto context = f.context();
+    PlayerSelectScene scene;
     REQUIRE(scene.openAfterLevel(device, context, party));
     PlayerSelectScene::Inputs up{};
     up[0].up = true;

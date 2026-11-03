@@ -221,7 +221,7 @@ TEST_CASE("Native level camera advances during ordinary PlayScene materialisatio
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
     const AssetLocator assets{characters};
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.assets = &assets;

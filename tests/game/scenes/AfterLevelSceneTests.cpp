@@ -21,6 +21,7 @@
 #include "TestSupport.h"
 #include "game/audio/ShopMusic.h"
 #include "game/effects/ShopFrameLight.h"
+#include "game/hud/ScriptedControlLabels.h"
 #include "game/players/PickupVoices.h"
 #include "game/scenes/AfterLevelScene.h"
 #include "game/shop/ShopLayout.h"
@@ -34,7 +35,7 @@ TEST_CASE("expanded shop option changes only the enabled native shop catalog", "
     GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
@@ -97,7 +98,7 @@ TEST_CASE("retail frame sweep travels across corners every 150 ticks", "[shop][r
 TEST_CASE("only the end of H4 selects Final Stats in the production screen", "[shop][assets]") {
     const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     const std::array<PartyMember, 1> party{{{0, CharacterSave{}}}};
     AfterLevelScene scene;
@@ -136,7 +137,7 @@ TEST_CASE("Final Stats renders retail captions and staggered lifetime totals",
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     CharacterSave save;
@@ -207,7 +208,7 @@ TEST_CASE("frame lighting varies at corners without fading alpha or illuminating
           "[shop][render][assets]") {
     const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     const std::array<PartyMember, 1> party{{{0, CharacterSave{}}}};
     AfterLevelScene scene;
@@ -243,7 +244,7 @@ TEST_CASE("shop plays the authored music through realm changes without retaining
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.sounds = &sounds;
     const std::array<PartyMember, 1> party{{{0, CharacterSave{}}}};
@@ -302,7 +303,7 @@ TEST_CASE("shop plays the authored music through realm changes without retaining
 TEST_CASE("after-level screen fails safely without its portable catalog", "[shop][screens]") {
     test::FakeRenderDevice device;
     AfterLevelScene scene;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = test::scratchDirectory("shop-screen-empty");
     REQUIRE_FALSE(scene.open(device, context, {}, {}, {}, "G1"));
     REQUIRE_FALSE(scene.isOpen());
@@ -322,8 +323,10 @@ TEST_CASE("shop completion follows native phrase durations without a draining au
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer output(mixer);
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
+    GameServices audibleContext = context;
+    audibleContext.sounds = &output;
     CharacterSave save;
     save.name = "SHOP";
     save.progress().health = 100;
@@ -333,8 +336,7 @@ TEST_CASE("shop completion follows native phrase durations without a draining au
     AfterLevelScene silent;
     AfterLevelScene audible;
     REQUIRE(silent.open(device, context, party, results, {1, 1, levelExperience(2)}, "G1"));
-    context.sounds = &output;
-    REQUIRE(audible.open(device, context, party, results, {1, 1, levelExperience(2)}, "G1"));
+    REQUIRE(audible.open(device, audibleContext, party, results, {1, 1, levelExperience(2)}, "G1"));
 
     SoundSet common;
     SoundSet character;
@@ -435,8 +437,12 @@ TEST_CASE("unheard shop cues keep their timing, and level-ups are still said",
     AudioMixer mutedMixer(48000);
     SoundPlayer heardOutput(heardMixer);
     SoundPlayer mutedOutput(mutedMixer);
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
+    GameServices heardContext = context;
+    heardContext.sounds = &heardOutput;
+    GameServices mutedContext = context;
+    mutedContext.sounds = &mutedOutput;
     CharacterSave save;
     save.name = "SHOP";
     save.progress().health = 100;
@@ -445,10 +451,8 @@ TEST_CASE("unheard shop cues keep their timing, and level-ups are still said",
     const std::array<LevelResults, 1> results{{{0, {0, 0, levelExperience(2)}}}};
     AfterLevelScene heard;
     AfterLevelScene muted;
-    context.sounds = &heardOutput;
-    REQUIRE(heard.open(device, context, party, results, {1, 1, levelExperience(2)}, "G1"));
-    context.sounds = &mutedOutput;
-    REQUIRE(muted.open(device, context, party, results, {1, 1, levelExperience(2)}, "G1"));
+    REQUIRE(heard.open(device, heardContext, party, results, {1, 1, levelExperience(2)}, "G1"));
+    REQUIRE(muted.open(device, mutedContext, party, results, {1, 1, levelExperience(2)}, "G1"));
     muted.setCuesHeard(false);
     SoundSet common;
     REQUIRE(common.load(root / "audio/COMMON"));
@@ -503,7 +507,7 @@ TEST_CASE("shop lane borders retain retail brightness and opacity in every colum
     test::assetOrSkip("PDATA/WAR.WAD");
     const auto visit = GENERATE(ShopVisit::Level, ShopVisit::Shop, ShopVisit::Inventory);
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     const std::array<PartyMember, 1> party{{{2, CharacterSave{}}}};
     AfterLevelScene scene;
@@ -545,7 +549,7 @@ TEST_CASE("shop header uses the retail caption scale and native marquee extent",
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     std::array<PartyMember, 4> party;
@@ -604,7 +608,7 @@ TEST_CASE("shop ignores transaction presses during scrolling without queuing a l
     test::assetOrSkip("SELECT/textures.ngc");
     test::assetOrSkip("PDATA/WAR.WAD");
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     CharacterSave save;
     save.gold = 5000;
@@ -664,7 +668,7 @@ TEST_CASE("shop commands use separate sell and exit bindings and retain the reta
     if (keyboard) {
         config.controls[2].device = "keyboard";
     }
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     CharacterSave save;
@@ -730,7 +734,7 @@ TEST_CASE("shop mouse targets rendered rows prices arrows and wheel in only the 
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     CharacterSave save;
@@ -927,7 +931,7 @@ TEST_CASE("mouse continues through tally exit stats inventory and final stats wi
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     const std::array<PartyMember, 2> party{{{2, CharacterSave{}}, {0, CharacterSave{}}}};
@@ -1038,16 +1042,18 @@ TEST_CASE("after-level screen renders every phase with retail assets", "[shop][s
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     bool prompted = false;
-    context.controlLabels = [&](s32 player, std::string_view action) {
+    test::ScriptedControlLabels labels;
+    labels.answer = [&](s32 player, std::string_view action) {
         CHECK(player == 2);
         CHECK(action == "menuSelect");
         prompted = true;
-        return "RB";
+        return std::string("RB");
     };
+    context.controlLabels = &labels;
     AfterLevelScene scene;
     CharacterSave save;
     save.gold = 5000;
@@ -1245,7 +1251,7 @@ TEST_CASE("the level panel names a level gained, shows the magic perks' line at 
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.strings = &strings;
     CharacterSave save;
@@ -1352,7 +1358,7 @@ TEST_CASE("retail realm tally loop is shared, audible, and stopped when piles se
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     sounds.setCategoryVolume(SoundCategory::Music, 0);
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.sounds = &sounds;
     CharacterSave save;
@@ -1421,7 +1427,7 @@ TEST_CASE("Sumner announces one gained level after another, never two at once",
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer output(mixer);
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     context.sounds = &output;
     CharacterSave save;

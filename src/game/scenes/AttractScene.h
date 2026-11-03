@@ -9,7 +9,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/level/LevelWorld.h"
 #include "game/widgets/MenuInput.h"
 
@@ -44,7 +44,10 @@ enum class AttractOutcome : u8 { Running, Finished, Title };
 /** Silent level demonstrations with their own world, never a saved party. */
 class AttractScene {
 public:
-    bool openNext(RenderDevice& device, const GameContext& context);
+    /** The screen keeps reading `services`, which must outlive it. */
+    bool openNext(RenderDevice& device, const GameServices& services);
+    /** The screen keeps the services it is opened with, so they may not be a temporary. */
+    bool openNext(RenderDevice&, const GameServices&&) = delete;
     void close();
     bool isOpen() const { return m_open; }
     AttractOutcome update(f64 seconds, const MenuInput& input);
@@ -56,7 +59,7 @@ public:
 private:
     LevelWorld m_world;
     AttractCamera m_rail;
-    GameContext m_context;
+    const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
     BitmapFont m_font;
     TextureSet m_textures;
     TextPainter m_text;

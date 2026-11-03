@@ -28,7 +28,7 @@ bool LevelLoadingScreen::movieWanted(std::string_view movie, std::span<const Par
            std::ranges::any_of(party, [](const PartyMember& member) { return !member.fallen; });
 }
 
-void LevelLoadingScreen::open(RenderDevice& device, const GameContext& context,
+void LevelLoadingScreen::open(RenderDevice& device, const GameServices& services,
                               const LevelRef& level, std::span<const PartyMember> party,
                               bool transitionOnly) {
     close();
@@ -36,7 +36,7 @@ void LevelLoadingScreen::open(RenderDevice& device, const GameContext& context,
         return;
     }
     m_active = true;
-    m_boxes.load(device, context.unpackedRoot, context.strings);
+    m_boxes.load(device, services.unpackedRoot, services.strings);
     for (const auto& member : party) {
         if (member.player < 0 || static_cast<usize>(member.player) >= m_status.size()) {
             continue;
@@ -60,23 +60,23 @@ void LevelLoadingScreen::open(RenderDevice& device, const GameContext& context,
     }
     m_transitionOnly = transitionOnly || level.isSecret();
     if (m_transitionOnly) {
-        m_transition.load(device, context.unpackedRoot);
+        m_transition.load(device, services.unpackedRoot);
         m_transition.cover();
         return;
     }
     m_name = level.name;
-    m_sounds = context.sounds;
-    m_textures.load(context.unpackedRoot / "MAPS" / ("LEVEL" + level.name));
+    m_sounds = services.sounds;
+    m_textures.load(services.unpackedRoot / "MAPS" / ("LEVEL" + level.name));
     m_map = join(device, "MAP_" + m_name);
     m_preview = join(device, "LDMAP_" + m_name);
     WorldData data;
-    if (data.load(context.unpackedRoot / level.worldDataFile())) {
+    if (data.load(services.unpackedRoot / level.worldDataFile())) {
         if (const auto* info = data.level(level.name)) {
             m_movie = info->movie;
             m_points = info->mapPoints;
             const auto* audio = data.audio(info->audioIndex);
             if (!level.name.empty() &&
-                m_bank.load(context.unpackedRoot / "audio" / ("MAP_" + level.name.substr(0, 1)))) {
+                m_bank.load(services.unpackedRoot / "audio" / ("MAP_" + level.name.substr(0, 1)))) {
                 play("S_MAP_" + level.name.substr(0, 1));
                 const auto entering =
                     audio != nullptr ? play(data.soundName(audio->enterSound)) : kNoSound;

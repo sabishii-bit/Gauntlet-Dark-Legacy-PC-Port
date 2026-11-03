@@ -17,7 +17,7 @@
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/TowerAccess.h"
@@ -52,7 +52,7 @@ TEST_CASE("online completion selects only defeated final boss movies and final r
 TEST_CASE("online completion fails closed for absent or corrupt ending media",
           "[online-completion]") {
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = test::scratchDirectory("online-completion-missing");
     LevelRef source;
     source.realmId = 8;
@@ -126,7 +126,7 @@ TEST_CASE("native online endings ignore unanimous skips and retain their last fr
         config.game.autoSave = true;
         config.save.directory =
             (test::scratchDirectory("online-completion-no-save") / "characters").string();
-        GameContext context;
+        GameServices context;
         context.unpackedRoot = file.parent_path().parent_path();
         context.config = &config;
         LevelRef source;
@@ -212,11 +212,11 @@ TEST_CASE("online ending volume is local and live while movie geometry ignores g
     quietConfig.audio.effectsVolume = 1;
     quietConfig.camera.horizontalFovDegrees = 110;
     const AssetLocator assets(file.parent_path().parent_path());
-    GameContext fullContext;
+    GameServices fullContext;
     fullContext.assets = &assets; // Explicit native locator takes precedence over fallback.
     fullContext.config = &fullConfig;
     fullContext.movieMixer = &fullMixer;
-    GameContext quietContext = fullContext;
+    GameServices quietContext = fullContext;
     quietContext.config = &quietConfig;
     quietContext.movieMixer = &quietMixer;
     OnlineCompletion full;

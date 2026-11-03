@@ -100,7 +100,7 @@ std::optional<LevelRef> ConsoleStage::levelNamed(std::string_view name) const {
     if (name == "TOWER") {
         return LevelRef::tower();
     }
-    const LevelCatalog* levels = m_scene.m_context.levels;
+    const LevelCatalog* levels = m_scene.m_services->levels;
     return levels != nullptr ? levels->byName(name) : std::nullopt;
 }
 
@@ -127,7 +127,7 @@ ItemArchive* ConsoleStage::borrowItems(const LevelRef& level) {
 
 bool ConsoleStage::borrowVoices(const LevelRef& from) {
     WorldData data;
-    if (!data.load(m_scene.m_context.unpackedRoot / from.worldDataFile())) {
+    if (!data.load(m_scene.m_services->unpackedRoot / from.worldDataFile())) {
         return false;
     }
     const LevelInfo* level = data.level(from.name);
@@ -135,7 +135,7 @@ bool ConsoleStage::borrowVoices(const LevelRef& from) {
 }
 
 bool ConsoleStage::loadLayout(const LevelRef& from, WorldLayout& layout) const {
-    return layout.load(m_scene.m_context.unpackedRoot / from.directory);
+    return layout.load(m_scene.m_services->unpackedRoot / from.directory);
 }
 
 bool ConsoleStage::spawnRoom() const {

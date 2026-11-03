@@ -11,12 +11,14 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/characters/Party.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/menu/LiveSettings.h"
 #include "game/menu/SettingsMenu.h"
 #include "game/widgets/BurnDialogueScroll.h"
 
 namespace gdl::game {
+class LevelWorld;
+
 enum class PauseOutcome : u8 {
     Running,
     Resume,
@@ -35,9 +37,13 @@ public:
     ~PauseMenu();
     GDL_NON_COPYABLE_NON_MOVABLE(PauseMenu);
     /** `settings` saves and previews what the Settings page changes; without it every change
-     * is refused. */
-    bool open(RenderDevice& device, const GameContext& context, std::span<const PartyMember> party,
-              s32 player, LiveSettings* settings = nullptr);
+     * is refused. `level` is the one paused, the tower's menu without it. The menu keeps
+     * reading `services`, which must outlive it. */
+    bool open(RenderDevice& device, const GameServices& services,
+              std::span<const PartyMember> party, s32 player, LiveSettings* settings = nullptr,
+              const LevelWorld* level = nullptr);
+    /** The menu keeps the services it is opened with, so they may not be a temporary. */
+    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
     void close();
     bool isOpen() const { return m_open; }
     s32 player() const { return m_player; }
@@ -68,7 +74,7 @@ private:
     void playMenuSound(const MenuEvent& event, bool horizontal);
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
-    GameContext m_context;
+    const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
     LiveSettings* m_liveSettings = nullptr;
     TextureSet m_textures;
     TextureSet m_powerupTextures;

@@ -37,7 +37,7 @@ TEST_CASE("Stop Time holds native looping platforms through entry and switch cam
     LevelWorld world;
     REQUIRE(world.load(device, root, *catalog.byName("G1")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.levels = &catalog;
@@ -141,7 +141,7 @@ TEST_CASE("walking onto Ice Camp's runestone switch raises its lift during the c
     LevelWorld world;
     REQUIRE(world.load(device, root, *catalog.byName("I2")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.levels = &catalog;
@@ -204,7 +204,7 @@ TEST_CASE("a player activates and crosses the first Underworld descending pillar
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
@@ -252,7 +252,7 @@ TEST_CASE("the Fields elevators carry a standing player through the gameplay loo
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
@@ -298,7 +298,7 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
@@ -483,7 +483,7 @@ TEST_CASE("Fields bridge camera reveals its placed general without advancing com
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
@@ -617,7 +617,7 @@ TEST_CASE("the developer console presses Ice Camp's runestone switch, camera sho
     LevelWorld world;
     REQUIRE(world.load(device, root, *catalog.byName("I2")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.levels = &catalog;
@@ -676,7 +676,7 @@ TEST_CASE("the developer console opens a gate without a key and shuts it again",
     LevelWorld world;
     REQUIRE(world.load(device, root, *catalog.byName("G1")));
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.levels = &catalog;

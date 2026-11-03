@@ -215,7 +215,7 @@ TEST_CASE("entry cameras hide party nametags without spending their display time
     REQUIRE(initials);
     const auto& image = statics.image(*initials);
     const GameConfig config;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     CharacterSave first;

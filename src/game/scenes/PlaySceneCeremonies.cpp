@@ -11,7 +11,8 @@ bool PlayScene::relicCeremonyOn() const {
 }
 
 TowerCeremonies::Scene PlayScene::ceremonyScene() {
-    return {*m_device, *m_world, m_players, m_audio, m_effects, m_weapons, m_context.unpackedRoot};
+    return {
+        *m_device, *m_world, m_players, m_audio, m_effects, m_weapons, m_services->unpackedRoot};
 }
 
 s32 PlayScene::familiarTier(s32 player) const {

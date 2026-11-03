@@ -93,7 +93,7 @@ void StatusBoxPainter::preloadStatus() {
 }
 
 void StatusBoxPainter::release() {
-    m_controlLabels = {};
+    m_controlLabels = nullptr;
     m_countTextures = nullptr;
     m_initials.setFont(nullptr, nullptr);
     m_score.setFont(nullptr, nullptr);

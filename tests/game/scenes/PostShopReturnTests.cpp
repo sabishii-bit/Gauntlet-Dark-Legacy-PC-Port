@@ -46,10 +46,9 @@ TEST_CASE("new shop powerups stay inactive through the Tower arrival with either
     config.combat.autoActivateItems = GENERATE(false, true);
     LevelWorld world;
     REQUIRE(world.load(device, root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
-    context.tower = &world;
     PlayOptions options;
     options.welcome = false;
     options.arriving = true;
@@ -83,11 +82,10 @@ TEST_CASE("completed shop saves its character before returning to the province w
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     LevelWorld world;
     REQUIRE(world.load(device, root));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
-    context.tower = &world;
     AfterLevelScene shop;
     REQUIRE(shop.open(device, context, initial, scenario.results, {1000, 100, 1000}, "G1"));
     bool visitedShop = false;
@@ -110,7 +108,7 @@ TEST_CASE("completed shop saves its character before returning to the province w
     shop.close();
 
     PlayerSelectScene select;
-    REQUIRE(select.openAfterLevel(device, context, afterShop));
+    REQUIRE(select.openAfterLevel(device, context, afterShop, &world));
     REQUIRE(select.lane(0).state() == SelectLane::State::SaveMenu);
     REQUIRE(select.step(60, {}) == SelectOutcome::Running);
     const auto input = [&](const MenuInput& buttons) {

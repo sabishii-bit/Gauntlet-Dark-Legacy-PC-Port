@@ -53,6 +53,7 @@ struct SumnerScene {
     GameConfig config;
     StringTable strings;
     AssetLocator assets;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
 
     SumnerScene()
@@ -101,7 +102,6 @@ struct SumnerScene {
                                    traversal.collision(), level));
         config.camera.compass = false;
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-        GameContext context;
         context.config = &config;
         context.strings = &strings;
         context.assets = &assets;

@@ -6,13 +6,13 @@
 #include "engine/core/Log.h"
 #include "engine/platform/Paths.h"
 
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 
 namespace gdl::game {
 namespace {
-f32 movieVolume(const GameContext& context) {
-    return context.config != nullptr
-               ? context.config->audio.masterVolume * context.config->audio.movieVolume
+f32 movieVolume(const GameServices& services) {
+    return services.config != nullptr
+               ? services.config->audio.masterVolume * services.config->audio.movieVolume
                : 1;
 }
 } // namespace
@@ -38,7 +38,7 @@ OnlineCompletion::Route OnlineCompletion::route(const LevelRef& source, s32 boss
     return result;
 }
 
-void OnlineCompletion::open(RenderDevice& device, const GameContext& context,
+void OnlineCompletion::open(RenderDevice& device, const GameServices& services,
                             const LevelRef& source, s32 bossKind, bool defeated) {
     close();
     m_route = route(source, bossKind, defeated);
@@ -46,8 +46,8 @@ void OnlineCompletion::open(RenderDevice& device, const GameContext& context,
         m_phase = Phase::Ready;
         return;
     }
-    const AssetLocator fallback(context.unpackedRoot);
-    const auto& assets = context.assets != nullptr ? *context.assets : fallback;
+    const AssetLocator fallback(services.unpackedRoot);
+    const auto& assets = services.assets != nullptr ? *services.assets : fallback;
     const auto file = assets.find(std::format("VQMOVIES/{}.avi", m_route.movie));
     if (!file) {
         log::error("Online completion movie unavailable: {}", m_route.movie);
@@ -55,12 +55,12 @@ void OnlineCompletion::open(RenderDevice& device, const GameContext& context,
         return;
     }
     m_path = *file;
-    if (!m_movie.open(device, context.movieMixer, m_path)) {
+    if (!m_movie.open(device, services.movieMixer, m_path)) {
         log::error("Online completion movie could not open: {}", paths::utf8(m_path));
         m_phase = Phase::Failed;
         return;
     }
-    m_movie.setVolume(movieVolume(context));
+    m_movie.setVolume(movieVolume(services));
     m_phase = Phase::Movie;
     log::info("Online completion: movie {}", m_route.movie);
 }
@@ -74,11 +74,11 @@ void OnlineCompletion::close() {
     m_unshown = 0;
 }
 
-void OnlineCompletion::update(const GameContext& context, bool unanimousSkip) {
+void OnlineCompletion::update(const GameServices& services, bool unanimousSkip) {
     if (m_phase != Phase::Movie || (!m_shown && ++m_unshown < kUnshownTicks)) {
         return;
     }
-    m_movie.setVolume(movieVolume(context));
+    m_movie.setVolume(movieVolume(services));
     // init_gamemovie sets movie_state=2 for both endings (80019D48-80019D80).
     // do_gamemovie permits a skip only for state 1 (80019C68-80019C78).
     if ((unanimousSkip && m_route.skippable) || !m_movie.update(1.0 / 60)) {

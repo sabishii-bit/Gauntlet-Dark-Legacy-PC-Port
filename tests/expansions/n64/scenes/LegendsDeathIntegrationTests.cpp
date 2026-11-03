@@ -270,7 +270,7 @@ TEST_CASE("Death advice enters the normal PlayScene scroll and holds party contr
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
     AssetLocator assets{characters};
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.assets = &assets;

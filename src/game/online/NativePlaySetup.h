@@ -16,8 +16,8 @@ namespace gdl::game {
 /** Owned, canonical starting inputs for a native online campaign. This is not a
  * handshake: the caller must agree the digest and scene roster before opening
  * any scene. Local device bindings, disk authority and outputs stay outside it.
- * Keep this owner alive while a GameContext borrows config()/stopTimeTotal(),
- * including while a secret level retains its parent scene. */
+ * Keep this owner alive while the online game's services borrow config() and its
+ * scenes stopTimeTotal(), including while a secret level retains its parent scene. */
 class NativePlaySetup {
 public:
     static constexpr u32 kDigestVersion = 4;

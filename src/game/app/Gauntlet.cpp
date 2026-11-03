@@ -109,6 +109,9 @@ void Gauntlet::onInit() {
     m_sounds->setCategoryVolume(SoundCategory::Effects, m_config.audio.effectsVolume);
     m_sounds->setCategoryVolume(SoundCategory::Movie, m_config.audio.movieVolume);
     m_assets = std::make_unique<AssetLocator>(assetDirectory());
+    m_services.sounds = m_sounds.get();
+    m_services.movieMixer = &m_audio->mixer();
+    m_services.assets = m_assets.get();
     m_smokeTest.init(renderDevice());
 
     if (!m_options.netplayTest.empty()) {
@@ -116,7 +119,7 @@ void Gauntlet::onInit() {
         m_online = std::make_unique<OnlineRun>();
         try {
             const auto scenario = Scenario::load(m_options.scenario);
-            const auto game = context();
+            const auto& game = services();
             const auto level = scenario.level.empty() ? std::optional{LevelRef::tower()}
                                                       : m_levels.byName(scenario.level);
             if (scenario.afterLevel || scenario.ending || !level ||
@@ -172,7 +175,7 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
         const Scenario scenario = Scenario::load(file);
         log::info("Scenario {}: {} in the party", paths::utf8(file), scenario.party.size());
         if (scenario.afterLevel) {
-            const auto sceneContext = context();
+            const auto& game = services();
             const auto levelName = scenario.level.empty() ? "G1" : scenario.level;
             const auto reference = m_levels.byName(levelName);
             WorldData world;
@@ -202,9 +205,8 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
                                   level->legend);
                 journey.completion =
                     Journey::Completion{flow, scenario.results, level->shopMaxima, levelName};
-            } else if (!m_afterLevel.open(renderDevice(), sceneContext, journey.party,
-                                          scenario.results, level->shopMaxima, levelName,
-                                          scenario.shopVisit)) {
+            } else if (!m_afterLevel.open(renderDevice(), game, journey.party, scenario.results,
+                                          level->shopMaxima, levelName, scenario.shopVisit)) {
                 return false;
             }
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
@@ -230,40 +232,30 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
     }
 }
 
-GameContext Gauntlet::context() {
-    GameContext context;
-    context.config = &m_config;
-    context.strings = &m_strings;
-    context.controlLabels = [this](s32 player, std::string_view action) {
-        if (player < 0) {
-            player = m_promptDevices.lastPlayer();
-            if (m_play->scene.isOpen() && m_play->scene.actor(player) == nullptr) {
-                for (s32 candidate = 0; candidate < PlayScene::kPlayerCount; ++candidate) {
-                    if (m_play->scene.actor(candidate) != nullptr) {
-                        player = candidate;
-                        break;
-                    }
-                }
-            }
-        }
-        return m_promptDevices.label(input(), m_config, player, action);
-    };
-    context.sounds = m_sounds.get();
-    context.movieMixer = &m_audio->mixer();
-    context.assets = m_assets.get();
-    context.tower = &m_play->world;
-    context.stopTimeTotal = &m_stopTimeTotal;
+const GameServices& Gauntlet::services() {
     if (!m_levels.loaded()) {
         m_levels.load(m_options.unpackedDirectory);
     }
-    context.levels = &m_levels;
-    context.mechanics = &m_mechanics;
-    context.unpackedRoot = m_options.unpackedDirectory;
-    return context;
+    return m_services;
+}
+
+std::string Gauntlet::LabelRouting::label(s32 player, std::string_view action) const {
+    if (player < 0) {
+        player = m_game.m_promptDevices.lastPlayer();
+        if (m_game.m_play->scene.isOpen() && m_game.m_play->scene.actor(player) == nullptr) {
+            for (s32 candidate = 0; candidate < PlayScene::kPlayerCount; ++candidate) {
+                if (m_game.m_play->scene.actor(candidate) != nullptr) {
+                    player = candidate;
+                    break;
+                }
+            }
+        }
+    }
+    return m_game.m_promptDevices.label(m_game.input(), m_game.m_config, player, action);
 }
 
 PlayScene::Links Gauntlet::playLinks() {
-    return {.haptics = &m_rumble, .unlocks = &m_unlocks};
+    return {.haptics = &m_rumble, .unlocks = &m_unlocks, .stopTimeTotal = &m_stopTimeTotal};
 }
 
 OnlineRun::Links Gauntlet::onlineLinks() {
@@ -509,8 +501,8 @@ s32 Gauntlet::playerPressingStart() const {
 
 bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party,
                                  bool manage) {
-    if (m_select.open(renderDevice(), context(), startingPlayer, party, manage,
-                      m_title.musicHandle())) {
+    if (m_select.open(renderDevice(), services(), startingPlayer, party, manage,
+                      m_title.musicHandle(), &m_play->world)) {
         // Native game-main state8 calls e0070d2c on entering player selection.
         // Failed selection loads and ordinary map/quit transitions do not reset it.
         if (m_legendsAdvice) {
@@ -590,7 +582,7 @@ bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> pa
     PlayOptions opened = options;
     opened.partyCount = m_partyCountOverride; // the console's party count outlasts a level
     opened.consoleCheats = m_consoleCheats;   // and so do its cheats
-    if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened, playLinks())) {
+    if (m_play->scene.open(renderDevice(), services(), m_play->world, party, opened, playLinks())) {
         resetPlayInput();
         log::info("Entering {} ({})", level.name, level.title);
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
@@ -609,7 +601,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
     PlayOptions opened = options;
     opened.partyCount = m_partyCountOverride;
     opened.consoleCheats = m_consoleCheats;
-    if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened, playLinks())) {
+    if (m_play->scene.open(renderDevice(), services(), m_play->world, party, opened, playLinks())) {
         resetPlayInput();
         log::info("Every player is ready; entering the tower");
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
@@ -704,8 +696,8 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const auto menu = readPlayerMenuInput(input(), m_config, player);
         if (!m_play->scene.leaving() &&
             ((menu.start && !menu.select) || menu.escape || input().wasKeyPressed(Key::Escape)) &&
-            m_pause.open(renderDevice(), context(), m_play->scene.party(), player,
-                         &m_liveSettings)) {
+            m_pause.open(renderDevice(), services(), m_play->scene.party(), player, &m_liveSettings,
+                         &m_play->world)) {
             m_play->scene.pauseGameplaySounds();
             m_play->scene.holdSounds();
             resetPlayInput();
@@ -1031,7 +1023,7 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
             journey.options.position = actor->position();
         }
         if (m_afterLevel.open(
-                renderDevice(), context(), party, {}, {1000, 100, 1000}, m_play->world.ref().name,
+                renderDevice(), services(), party, {}, {1000, 100, 1000}, m_play->world.ref().name,
                 outcome == PauseOutcome::Shop ? ShopVisit::Shop : ShopVisit::Inventory)) {
             m_play->scene.close();
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
@@ -1072,7 +1064,7 @@ bool Gauntlet::openImportedShop(ShopVisit visit) {
     journey.destination = m_play->world.ref();
     journey.party = m_play->scene.party();
     journey.resumeImported = true;
-    if (!m_afterLevel.open(renderDevice(), context(), journey.party, {}, {1000, 100, 1000},
+    if (!m_afterLevel.open(renderDevice(), services(), journey.party, {}, {1000, 100, 1000},
                            m_play->world.ref().name, visit)) {
         return false;
     }
@@ -1133,7 +1125,8 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
             finishJourney();
             return;
         }
-        if (!m_select.openAfterLevel(renderDevice(), context(), m_journey->party)) {
+        if (!m_select.openAfterLevel(renderDevice(), services(), m_journey->party,
+                                     &m_play->world)) {
             log::warn("Post-level character menu unavailable; keeping rewards and returning.");
         }
     }
@@ -1165,14 +1158,14 @@ bool Gauntlet::updateCompletion(f64 deltaSeconds) {
         completion.flow.advance();
         return true;
     case LevelCompletion::Stage::Results:
-        if (!m_afterLevel.open(renderDevice(), context(), journey.party, completion.results,
+        if (!m_afterLevel.open(renderDevice(), services(), journey.party, completion.results,
                                completion.maxima, completion.levelName, completion.flow.visit())) {
             log::warn("Completion results unavailable; preserving rewards and offering save.");
             completion.flow.advance();
         }
         return true;
     case LevelCompletion::Stage::Characters:
-        if (!m_select.openAfterLevel(renderDevice(), context(), journey.party)) {
+        if (!m_select.openAfterLevel(renderDevice(), services(), journey.party, &m_play->world)) {
             log::warn("Post-level character menu unavailable; keeping rewards and returning.");
             completion.flow.advance();
         }
@@ -1193,7 +1186,7 @@ void Gauntlet::updateJourney(f64 deltaSeconds) {
     }
     if (!journey.presentationStarted) {
         journey.presentationStarted = true;
-        m_levelLoading.open(renderDevice(), context(), journey.destination, journey.party,
+        m_levelLoading.open(renderDevice(), services(), journey.destination, journey.party,
                             journey.secret);
         journey.movie = m_levelLoading.movie();
         // Present at least one frame of the map before advancing its clock.
@@ -1569,6 +1562,10 @@ void Gauntlet::onShutdown() {
     m_journey.reset();
     m_play->world.clear();
     m_smokeTest.shutdown();
+    // Every screen still holding the view finds no sound, movie mixer or files from here on.
+    m_services.assets = nullptr;
+    m_services.sounds = nullptr;
+    m_services.movieMixer = nullptr;
     m_assets.reset();
     m_sounds.reset();
     m_audio.reset();
@@ -1597,7 +1594,7 @@ bool Gauntlet::startTitleScreen() {
     m_freeCamera.stop();
     m_exitSpeech.close();
     setMaxFrameRate(m_config.display.maxFrameRate);
-    if (m_title.open(renderDevice(), context(), &m_liveSettings)) {
+    if (m_title.open(renderDevice(), services(), &m_liveSettings)) {
         m_attract.titleShown();
         return true;
     }
@@ -1613,7 +1610,7 @@ void Gauntlet::startNextAttractScreen() {
     for (usize attempts = 0; attempts < AttractSequencer::kScreenTable.size(); ++attempts) {
         const AttractStep step = m_attract.next();
         if (step.screen == AttractScreen::Flyby || step.screen == AttractScreen::Demo) {
-            if (m_demo.openNext(renderDevice(), context())) {
+            if (m_demo.openNext(renderDevice(), services())) {
                 setMaxFrameRate(m_config.timing.gameplayFrameRate);
                 return;
             }

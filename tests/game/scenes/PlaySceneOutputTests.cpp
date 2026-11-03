@@ -32,7 +32,7 @@ struct Fixture {
     GameConfig config;
     LevelCatalog levels;
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     AudioMixer mixer{48000};
     SoundPlayer sounds{mixer};
     test::RecordingHaptics haptics;

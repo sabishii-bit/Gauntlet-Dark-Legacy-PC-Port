@@ -12,7 +12,7 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Party.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/level/LevelWorld.h"
 #include "game/scenes/PlayScene.h"
 
@@ -40,11 +40,10 @@ TEST_CASE("Castle Treasury coffin audio obeys the native party restriction and a
     const GameConfig config;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.sounds = &sounds;
-    context.tower = &world;
     context.unpackedRoot = root;
     PlayOptions options;
     options.welcome = false;
@@ -93,7 +92,7 @@ TEST_CASE("pausing a native moving crossing silences its loop until gameplay res
     const GameConfig config;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.sounds = &sounds;

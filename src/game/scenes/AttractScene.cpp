@@ -100,19 +100,19 @@ WorldCamera AttractCamera::presentedCamera(f32 alpha) const {
                                           : m_camera;
 }
 
-bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
+bool AttractScene::openNext(RenderDevice& device, const GameServices& services) {
     close();
-    if (context.levels == nullptr) {
+    if (services.levels == nullptr) {
         return false;
     }
-    m_context = context;
-    const auto& realms = context.levels->realms();
+    m_services = &services;
+    const auto& realms = services.levels->realms();
     m_nextLevel.resize(realms.size());
     for (usize attempt = 0; attempt < realms.size(); ++attempt) {
         const usize realmIndex = m_nextRealm++ % realms.size();
         const auto& realm = realms[realmIndex];
         WorldData data;
-        if (!data.load(context.unpackedRoot / "wdata" / (realm.file + ".json"))) {
+        if (!data.load(services.unpackedRoot / "wdata" / (realm.file + ".json"))) {
             continue;
         }
         for (usize n = 0; n < realm.levels.size(); ++n) {
@@ -121,24 +121,24 @@ bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
             if (info == nullptr || (info->selectionFlags & LevelInfo::kInAttract) == 0) {
                 continue;
             }
-            const auto level = context.levels->byName(realm.levels[index]);
-            if (!level || !LevelCatalog::unpacked(context.unpackedRoot, *level)) {
+            const auto level = services.levels->byName(realm.levels[index]);
+            if (!level || !LevelCatalog::unpacked(services.unpackedRoot, *level)) {
                 continue;
             }
             WorldLayout layout;
-            if (!layout.load(context.unpackedRoot / level->directory) ||
+            if (!layout.load(services.unpackedRoot / level->directory) ||
                 !m_rail.start(layout.locators())) {
                 continue;
             }
-            if (!m_world.load(device, context.unpackedRoot, *level)) {
+            if (!m_world.load(device, services.unpackedRoot, *level)) {
                 continue;
             }
             m_world.setPlayerCount(1);
             // init_attract_mode clears sAudioOverride for flybys; sndFxPaused then
             // silences both the level music and effects. Do not change shared mixer
             // volumes: title music and movies resume normally on the next screen.
-            m_textures.load(context.unpackedRoot / "STATIC");
-            if (loadMenuFont(m_font, context.unpackedRoot, 16)) {
+            m_textures.load(services.unpackedRoot / "STATIC");
+            if (loadMenuFont(m_font, services.unpackedRoot, 16)) {
                 if (const auto font = m_textures.find("FONT32"); font.has_value()) {
                     m_text.setFont(&m_font, &m_textures.texture(device, *font));
                 }
@@ -186,24 +186,25 @@ void AttractScene::render(RenderDevice& device, const Mat4& projection, f32 widt
         return;
     }
     const f32 fov = glm::radians(
-        m_context.config != nullptr ? m_context.config->camera.horizontalFovDegrees : 60.0f);
+        m_services->config != nullptr ? m_services->config->camera.horizontalFovDegrees : 60.0f);
     const WorldCamera camera = m_rail.presentedCamera(presentationAlpha);
     const Mat4 clip = camera.clipTransform(fov, width, height, projection);
     m_world.drawOpaque(device, clip, camera, presentationAlpha);
-    if (m_context.config != nullptr && m_context.config->display.ambientOcclusion) {
+    if (m_services->config != nullptr && m_services->config->display.ambientOcclusion) {
         AmbientOcclusion occlusion;
         occlusion.clipToView = camera.view() * glm::inverse(clip);
         device.applyAmbientOcclusion(occlusion);
     }
     m_world.drawDeferred(device, clip, camera, presentationAlpha);
-    if (m_context.config != nullptr && m_context.config->display.bloom) {
+    if (m_services->config != nullptr && m_services->config->display.bloom) {
         device.applyBloom();
     }
     // do_flyby draws the same centered prompt as the title, at (-256, 320)
     // in the 512x384 menu space. Keep it out of the world's post-processing.
     m_canvas.begin(device, makeVirtualScreenTransform(projection, 512, 384, width, height));
-    const std::string_view label =
-        m_context.strings != nullptr ? m_context.strings->get("title.pressStart") : "Press Start";
+    const std::string_view label = m_services->strings != nullptr
+                                       ? m_services->strings->get("title.pressStart")
+                                       : "Press Start";
     TextStyle glow;
     glow.color =
         Color::rgba(130, 0, 234).withAlpha(pulseOpacity(static_cast<s32>(m_elapsed * 60.0), 40, 5));

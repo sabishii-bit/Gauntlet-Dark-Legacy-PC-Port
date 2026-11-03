@@ -98,7 +98,7 @@ struct CampaignPeer {
     OnlineSession session;
     test::FakeRenderDevice device;
     GameConfig config;
-    GameContext context;
+    GameServices context;
     OnlineParty selection;
     std::unique_ptr<NativePlaySetup> setup;
     s32 localDevice;

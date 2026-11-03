@@ -21,7 +21,7 @@
 #include "game/app/NativeOnlineIdentity.h"
 #include "game/app/OnlineRun.h"
 #include "game/characters/Party.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -34,7 +34,7 @@ void exerciseLobby(RenderDevice& hostDevice, RenderDevice& guestDevice,
     const GameConfig config;
     LevelCatalog levels;
     REQUIRE(levels.load(root));
-    GameContext context;
+    GameServices context;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     context.strings = &strings;
@@ -195,7 +195,7 @@ TEST_CASE("three real iroh menu peers run four split-seat players and play on wh
     REQUIRE(levels.load(root));
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     std::array<GameConfig, 3> configs;
-    std::array<GameContext, 3> contexts;
+    std::array<GameServices, 3> contexts;
     std::array<test::RecordingPartyStore, 3> stores;
     std::array<test::RecordingUnlocks, 3> unlocks;
     std::array<std::unique_ptr<test::FakeRenderDevice>, 3> devices;
@@ -366,7 +366,7 @@ TEST_CASE("development iroh launcher retains explicit native setup and automatic
     REQUIRE(levels.load(root));
     const auto initial = levels.byName("G1");
     REQUIRE(initial);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.levels = &levels;

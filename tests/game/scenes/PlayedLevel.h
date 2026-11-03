@@ -15,7 +15,7 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Party.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/players/PlayerActor.h"
@@ -38,8 +38,8 @@ struct PlayedLevel {
     StringTable strings;
     f32 stopTimeTotal = 0;
     game::LevelWorld world;
+    game::GameServices context;
     game::PlayScene scene;
-    game::GameContext context;
 
     /** Nothing in play: an empty folder is taken as the unpacked data. */
     PlayedLevel() : root(scratchDirectory("played-level-unpacked")) {}
@@ -59,7 +59,6 @@ struct PlayedLevel {
         context.levels = &catalog;
         context.strings = &strings;
         context.unpackedRoot = root;
-        context.stopTimeTotal = &stopTimeTotal;
         std::vector<game::PartyMember> party;
         for (s32 seat = 0; seat < kSeats; ++seat) {
             game::CharacterSave save;
@@ -71,7 +70,8 @@ struct PlayedLevel {
         }
         game::PlayOptions options;
         options.welcome = false;
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(
+            scene.open(device, context, world, party, options, {.stopTimeTotal = &stopTimeTotal}));
     }
 
     /** The scene while it is open, as offline play's console reads it; else null. */

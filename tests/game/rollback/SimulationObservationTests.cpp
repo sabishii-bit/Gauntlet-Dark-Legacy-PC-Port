@@ -58,6 +58,7 @@ struct Fixture {
     StringTable strings;
     f32 stopTimeTotal = 0;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     SimulationObserver observer{scene};
 
@@ -66,16 +67,16 @@ struct Fixture {
         const auto level = name == "L1" ? std::optional{LevelRef::tower()} : catalog.byName(name);
         REQUIRE(level);
         REQUIRE(world.load(device, root, *level));
-        GameContext context;
         context.config = &config;
         context.levels = &catalog;
         context.unpackedRoot = root;
         std::vector<PartyMember> party;
+        PlayScene::Links links;
         if (probeParty) {
             config.timing.tickRate = 60;
             REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
             context.strings = &strings;
-            context.stopTimeTotal = &stopTimeTotal;
+            links.stopTimeTotal = &stopTimeTotal;
             for (s32 seat = 0; seat < 2; ++seat) {
                 CharacterSave save;
                 save.name = "PROBE";
@@ -97,7 +98,7 @@ struct Fixture {
         }
         PlayOptions options;
         options.welcome = false;
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(scene.open(device, context, world, party, options, links));
     }
     void bind() { REQUIRE(observer.bind()); }
 };
@@ -175,7 +176,7 @@ TEST_CASE("diagnostic bindings expire when a scene closes or reopens",
     CHECK_FALSE(named(closed, "stage").digest);
     CHECK_FALSE(fixture->observer.bind());
 
-    GameContext context;
+    GameServices context;
     context.config = &fixture->config;
     context.levels = &fixture->catalog;
     context.unpackedRoot = fixture->root;

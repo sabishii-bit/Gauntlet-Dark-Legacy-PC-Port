@@ -36,7 +36,7 @@ struct Fixture {
     LevelCatalog levels;
     StringTable strings;
     LevelWorld world;
-    GameContext game;
+    GameServices game;
     MatchContext match;
     std::vector<PartyMember> party;
     test::RecordingHaptics physicalRumbles;

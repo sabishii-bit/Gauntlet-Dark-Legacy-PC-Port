@@ -18,7 +18,8 @@ class OnlineSession;
  * the actual PlayScene, predicting missing remote controls with bounded native
  * rewind. update() pumps transport once per 60 Hz application tick, even when
  * inputs are held, a local menu is open, or a terminal scene awaits departure.
- * The device, session, selection and borrowed context services must outlive us. */
+ * The device, session, selection and the services it copies its view from must outlive
+ * us. */
 class NativeOnlinePlay {
 public:
     enum class Phase : u8 {
@@ -52,7 +53,7 @@ public:
     /** setup is the same owner whose digest the session already agreed before
      * becoming Active. It remains alive across ordinary travel and secret-parent
      * suspension. This method does not replace the setup agreement handshake. */
-    bool open(RenderDevice& device, const GameContext& context, OnlineSession& session,
+    bool open(RenderDevice& device, const GameServices& services, OnlineSession& session,
               OnlineParty& selection, std::unique_ptr<NativePlaySetup> setup, const Links& links);
     void close();
     Phase update(const SessionInputs::Frame& devices);

@@ -17,7 +17,7 @@
 #include "game/scenes/SceneSelection.h"
 
 namespace gdl::game {
-struct GameContext;
+struct GameServices;
 struct LevelRef;
 struct PlayOptions;
 class PlayScene;
@@ -36,13 +36,13 @@ public:
     OnlineRun& operator=(OnlineRun&&) = delete;
     /** The run holds its links and hands them to the online game it opens. */
     using Links = OnlineLinks;
-    bool open(RenderDevice& device, const GameContext& context, const Links& links,
+    bool open(RenderDevice& device, const GameServices& services, const Links& links,
               const std::string& endpoint, const std::string& code, const std::string& build,
               const std::string& content, std::span<const PartyMember> local,
               const LevelRef& initial, const PlayOptions& options, bool autoStart = false,
               const std::filesystem::path& invitationOutput = {});
     void update(const SessionInputs::Frame& devices, const MenuInput& menu);
-    bool openLobby(RenderDevice& device, const GameContext& context, const Links& links,
+    bool openLobby(RenderDevice& device, const GameServices& services, const Links& links,
                    const std::string& invitation, const std::string& build,
                    const std::string& content, u8 localPlayers, bool localOnly = false);
     bool select(std::span<const PartyMember> local);
@@ -91,7 +91,7 @@ public:
     static std::optional<std::string> stallNotice(f64 stalledSeconds);
 
 private:
-    bool connect(RenderDevice& device, const GameContext& context, const Links& links,
+    bool connect(RenderDevice& device, const GameServices& services, const Links& links,
                  bool localOnly, const std::string& invitation, const std::string& build,
                  const std::string& content, u8 localPlayers);
     void status(RenderDevice& device, std::string message);

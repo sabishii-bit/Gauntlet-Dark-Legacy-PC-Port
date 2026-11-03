@@ -10,6 +10,7 @@
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/hud/LevelMessages.h"
+#include "game/hud/ScriptedControlLabels.h"
 
 namespace {
 
@@ -144,12 +145,14 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
     f.messages.clear();
     f.messages.load(f.device, f.textures, f.root, &strings);
     bool resolved = false;
-    f.messages.setControlLabels([&](s32 player, std::string_view action) {
+    test::ScriptedControlLabels labels;
+    labels.answer = [&](s32 player, std::string_view action) {
         CHECK(player == -1);
         CHECK(action == "menuSelect");
         resolved = true;
-        return "AB";
-    });
+        return std::string("AB");
+    };
+    f.messages.setControlLabels(&labels);
     REQUIRE(f.messages.open(f.device, "WELCOME", &strings));
     CHECK_FALSE(resolved);
     REQUIRE(f.messages.scroll().lines() == std::vector<std::string>{"B"});

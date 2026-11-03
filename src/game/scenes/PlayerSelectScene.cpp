@@ -56,23 +56,23 @@ PlayerSelectScene::~PlayerSelectScene() {
 }
 
 std::string_view PlayerSelectScene::text(std::string_view id) const {
-    return m_context.strings != nullptr ? m_context.strings->get(id) : id;
+    return m_gameServices->strings != nullptr ? m_gameServices->strings->get(id) : id;
 }
 
-bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
+bool PlayerSelectScene::open(RenderDevice& device, const GameServices& services, s32 startingPlayer,
                              std::span<const PartyMember> party, bool manage,
-                             SoundHandle continuingMusic) {
+                             SoundHandle continuingMusic, LevelWorld* tower) {
     close();
-    m_context = context;
+    m_gameServices = &services;
     m_screen = MenuScreen{};
-    if (m_context.config != nullptr) {
-        m_screen.width = static_cast<s32>(m_context.config->display.virtualWidth);
-        m_screen.height = static_cast<s32>(m_context.config->display.virtualHeight);
-        m_screen.horizontalFov = m_context.config->horizontalFovRadians();
-        m_tickRate = static_cast<s32>(m_context.config->timing.tickRate);
+    if (m_gameServices->config != nullptr) {
+        m_screen.width = static_cast<s32>(m_gameServices->config->display.virtualWidth);
+        m_screen.height = static_cast<s32>(m_gameServices->config->display.virtualHeight);
+        m_screen.horizontalFov = m_gameServices->config->horizontalFovRadians();
+        m_tickRate = static_cast<s32>(m_gameServices->config->timing.tickRate);
     }
     try {
-        if (!loadResources(device, m_context.unpackedRoot)) {
+        if (!loadResources(device, m_gameServices->unpackedRoot)) {
             return false;
         }
     } catch (const std::exception& e) {
@@ -82,7 +82,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
         return false;
     }
     m_device = &device;
-    if (!m_boxes.load(device, m_context.unpackedRoot, m_context.strings)) {
+    if (!m_boxes.load(device, m_gameServices->unpackedRoot, m_gameServices->strings)) {
         log::warn("Player select: the status boxes are unavailable");
     }
     m_open = true;
@@ -90,15 +90,15 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_time = 0;
     m_idleFrames = 0;
     m_entryParty.assign(party.begin(), party.end());
-    loadSounds(m_context.unpackedRoot);
-    loadTower(device);
+    loadSounds(m_gameServices->unpackedRoot);
+    loadTower(device, tower);
 
-    if (!m_classes.load(m_context.unpackedRoot / kClassDataDirectory)) {
+    if (!m_classes.load(m_gameServices->unpackedRoot / kClassDataDirectory)) {
         log::warn("Player select: class stats are unavailable (run gdlunpack)");
     }
-    if (m_context.config != nullptr) {
-        const usize slots = m_context.config->save.slots;
-        if (!m_saves.open(m_context.config->saveDirectory(), slots)) {
+    if (m_gameServices->config != nullptr) {
+        const usize slots = m_gameServices->config->save.slots;
+        if (!m_saves.open(m_gameServices->config->saveDirectory(), slots)) {
             log::warn("Player select: saving is unavailable");
         }
     }
@@ -106,8 +106,8 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services = LaneServices{};
     m_services.slots = m_saves.opened() ? &m_saves : nullptr;
     m_services.classes = &m_classes;
-    m_services.strings = m_context.strings;
-    m_services.controlLabels = m_context.controlLabels;
+    m_services.strings = m_gameServices->strings;
+    m_services.controlLabels = m_gameServices->controlLabels;
     m_services.menuPainter = &m_large;
     m_services.smallPainter = &m_small;
     m_services.initialsPainter = &m_initials;
@@ -120,9 +120,9 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services.staticTexture = [this](std::string_view name) { return staticTexture(name); };
     m_services.glowSheet = staticTexture("FONT32_GLOW");
     m_services.keyboardLane = MenuInputSource::kKeyboardPlayer;
-    if (m_context.config != nullptr) {
-        for (usize player = 0; player < m_context.config->controls.size(); ++player) {
-            if (m_context.config->controls[player].device == "keyboard") {
+    if (m_gameServices->config != nullptr) {
+        for (usize player = 0; player < m_gameServices->config->controls.size(); ++player) {
+            if (m_gameServices->config->controls[player].device == "keyboard") {
                 m_services.keyboardLane = static_cast<s32>(player);
             }
         }
@@ -143,7 +143,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
             m_lanes[static_cast<usize>(startingPlayer)].manage();
         }
     }
-    if (m_context.sounds != nullptr && m_context.sounds->isPlaying(continuingMusic)) {
+    if (m_gameServices->sounds != nullptr && m_gameServices->sounds->isPlaying(continuingMusic)) {
         m_music = continuingMusic;
     } else {
         startMusic();
@@ -151,9 +151,9 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     return true;
 }
 
-bool PlayerSelectScene::openAfterLevel(RenderDevice& device, const GameContext& context,
-                                       std::span<const PartyMember> party) {
-    if (!open(device, context, -1, party)) {
+bool PlayerSelectScene::openAfterLevel(RenderDevice& device, const GameServices& services,
+                                       std::span<const PartyMember> party, LevelWorld* tower) {
+    if (!open(device, services, -1, party, false, kNoSound, tower)) {
         return false;
     }
     for (const PartyMember& member : party) {
@@ -237,7 +237,7 @@ bool PlayerSelectScene::loadResources(RenderDevice& device,
 }
 
 void PlayerSelectScene::loadSounds(const std::filesystem::path& unpackedRoot) {
-    if (m_context.sounds == nullptr) {
+    if (m_gameServices->sounds == nullptr) {
         return;
     }
     if (!m_commonSounds.load(unpackedRoot / kCommonSounds) ||
@@ -250,15 +250,15 @@ void PlayerSelectScene::loadSounds(const std::filesystem::path& unpackedRoot) {
 
 /** The tower hub stands behind the lanes, seen from its entrance camera. */
 /** Looks into the shared tower from its entrance camera, loading it the first time. */
-void PlayerSelectScene::loadTower(RenderDevice& device) {
+void PlayerSelectScene::loadTower(RenderDevice& device, LevelWorld* tower) {
     m_camera.reset();
-    m_tower = m_context.tower;
+    m_tower = tower;
     if (m_tower == nullptr) {
         return;
     }
     // The select screen looks into the tower, whatever level was last played.
     if ((!m_tower->built() || !m_tower->isTower()) &&
-        !m_tower->load(device, m_context.unpackedRoot)) {
+        !m_tower->load(device, m_gameServices->unpackedRoot)) {
         return;
     }
     m_camera = m_tower->entranceCamera();
@@ -312,7 +312,7 @@ const Texture* PlayerSelectScene::staticTexture(std::string_view name) {
 }
 
 void PlayerSelectScene::playSound(SelectSound sound, const SelectLane& lane) {
-    if (m_context.sounds == nullptr) {
+    if (m_gameServices->sounds == nullptr) {
         return;
     }
     const std::string_view name = soundName(sound);
@@ -326,10 +326,11 @@ void PlayerSelectScene::playSound(SelectSound sound, const SelectLane& lane) {
         return;
     }
     try {
-        std::erase_if(m_soundHandles,
-                      [this](SoundHandle handle) { return !m_context.sounds->isPlaying(handle); });
+        std::erase_if(m_soundHandles, [this](SoundHandle handle) {
+            return !m_gameServices->sounds->isPlaying(handle);
+        });
         // AudioWithName puts every player's welcome and name in the same narration queue.
-        const SoundHandle handle = m_context.sounds->playAfter(
+        const SoundHandle handle = m_gameServices->sounds->playAfter(
             greeting ? m_greeting : kNoSound, bank->sequence(*index), 1.0f, SoundCategory::Effects);
         if (handle == kNoSound) {
             return;
@@ -356,8 +357,8 @@ void PlayerSelectScene::greetCharacter(SoundHandle greeting, const CharacterSave
     if (!index.has_value()) {
         return;
     }
-    const auto name =
-        m_context.sounds->playAfter(greeting, bank.sequence(*index), 1.0f, SoundCategory::Effects);
+    const auto name = m_gameServices->sounds->playAfter(greeting, bank.sequence(*index), 1.0f,
+                                                        SoundCategory::Effects);
     if (name != kNoSound) {
         m_greeting = name;
         m_soundHandles.push_back(name);
@@ -366,25 +367,24 @@ void PlayerSelectScene::greetCharacter(SoundHandle greeting, const CharacterSave
 
 void PlayerSelectScene::stopSounds() {
     // Pending sequences borrow the banks. Cancel only this screen's audio before the
-    // banks reload or die, then detach the output so a later close is harmless.
-    if (m_context.sounds != nullptr) {
-        m_context.sounds->stop(m_music);
+    // banks reload or die.
+    if (m_gameServices->sounds != nullptr) {
+        m_gameServices->sounds->stop(m_music);
         for (const auto handle : m_soundHandles) {
-            m_context.sounds->stop(handle);
+            m_gameServices->sounds->stop(handle);
         }
     }
     m_soundHandles.clear();
     m_music = kNoSound;
     m_greeting = kNoSound;
-    m_context.sounds = nullptr;
 }
 
 bool PlayerSelectScene::speaking() const {
-    return m_context.sounds != nullptr && m_context.sounds->isPlaying(m_greeting);
+    return m_gameServices->sounds != nullptr && m_gameServices->sounds->isPlaying(m_greeting);
 }
 
 void PlayerSelectScene::startMusic() {
-    if (m_context.sounds == nullptr || !m_selectSounds.loaded()) {
+    if (m_gameServices->sounds == nullptr || !m_selectSounds.loaded()) {
         return;
     }
     const auto index = m_selectSounds.find(kSoundMusic);
@@ -392,16 +392,16 @@ void PlayerSelectScene::startMusic() {
         return;
     }
     try {
-        m_music =
-            m_context.sounds->play(m_selectSounds.sequence(*index), 1.0f, SoundCategory::Music);
+        m_music = m_gameServices->sounds->play(m_selectSounds.sequence(*index), 1.0f,
+                                               SoundCategory::Music);
     } catch (const std::exception& e) {
         log::warn("Player select: cannot play {}: {}", kSoundMusic, e.what());
     }
 }
 
 bool PlayerSelectScene::musicPlaying() const {
-    return m_context.sounds != nullptr && m_music != kNoSound &&
-           m_context.sounds->isPlaying(m_music);
+    return m_gameServices->sounds != nullptr && m_music != kNoSound &&
+           m_gameServices->sounds->isPlaying(m_music);
 }
 
 PlayerSelectScene::Inputs PlayerSelectScene::readInputs(const Input& input) const {
@@ -413,16 +413,17 @@ PlayerSelectScene::Inputs PlayerSelectScene::readInputs(const Input& input) cons
     }
     Inputs inputs;
     for (s32 index = 0; index < kLaneCount; ++index) {
-        auto source = m_context.config != nullptr
-                          ? playerInputSource(input, *m_context.config, index)
+        auto source = m_gameServices->config != nullptr
+                          ? playerInputSource(input, *m_gameServices->config, index)
                           : MenuInputSource::forPlayer(index);
         if (textOwner >= 0) {
             // Text entry temporarily borrows the keyboard; gameplay assignments stay intact.
             source.keyboard = index == textOwner;
             source.text = index == textOwner;
         }
-        const auto bindings =
-            m_context.config != nullptr ? menuBindings(*m_context.config, index) : MenuBindings{};
+        const auto bindings = m_gameServices->config != nullptr
+                                  ? menuBindings(*m_gameServices->config, index)
+                                  : MenuBindings{};
         inputs[static_cast<usize>(index)] = readMenuInput(input, bindings, source);
     }
     return inputs;

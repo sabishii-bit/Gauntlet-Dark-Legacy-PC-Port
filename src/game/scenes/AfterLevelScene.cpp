@@ -62,38 +62,38 @@ MenuInput shopInput(MenuInput input, const GameConfig& config, s32 player) {
 MenuInput AfterLevelScene::captureShopInput(MenuInput input, const GameConfig& config, s32 player) {
     return shopInput(std::move(input), config, player);
 }
-bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
+bool AfterLevelScene::open(RenderDevice& device, const GameServices& services,
                            std::span<const PartyMember> party,
                            std::span<const LevelResults> results, const std::array<s32, 3>& maxima,
                            std::string_view levelName, ShopVisit visit) {
     close();
-    m_context = context;
+    m_services = &services;
     m_device = &device;
     m_time = 0;
     m_frameTime = 0;
     try {
         ShopCatalog catalog;
         ClassDataSet classes;
-        if (!catalog.loadRoot(context.unpackedRoot) ||
-            !classes.load(context.unpackedRoot / "pdata") ||
-            !m_select.load(context.unpackedRoot / "SELECT") ||
-            !m_inventory.load(context.unpackedRoot / "INVENTORY") ||
-            !m_static.load(context.unpackedRoot / "STATIC") ||
-            !loadMenuFont(m_font, context.unpackedRoot, 16) ||
-            !m_titles.load(context.unpackedRoot / "text/english.json")) {
+        if (!catalog.loadRoot(services.unpackedRoot) ||
+            !classes.load(services.unpackedRoot / "pdata") ||
+            !m_select.load(services.unpackedRoot / "SELECT") ||
+            !m_inventory.load(services.unpackedRoot / "INVENTORY") ||
+            !m_static.load(services.unpackedRoot / "STATIC") ||
+            !loadMenuFont(m_font, services.unpackedRoot, 16) ||
+            !m_titles.load(services.unpackedRoot / "text/english.json")) {
             close();
             return false;
         }
-        if (context.strings != nullptr) {
-            m_titles.translate(*context.strings, kHelpTextPrefix);
-            if (context.config != nullptr && context.config->game.expandedShop) {
-                expandShopCatalog(catalog, *context.strings);
+        if (services.strings != nullptr) {
+            m_titles.translate(*services.strings, kHelpTextPrefix);
+            if (services.config != nullptr && services.config->game.expandedShop) {
+                expandShopCatalog(catalog, *services.strings);
             }
         }
         const auto* font = texture("FONT32");
         m_glow = texture("FONT32_GLOW");
         if (font == nullptr || m_glow == nullptr ||
-            !m_boxes.load(device, context.unpackedRoot, context.strings)) {
+            !m_boxes.load(device, services.unpackedRoot, services.strings)) {
             close();
             return false;
         }
@@ -135,19 +135,19 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
     // Confirmation and spoken-phrase durations participate in shop completion,
     // including on peers without an audio device. Music and tally loops do not.
     try {
-        m_common.load(context.unpackedRoot / kSoundDirectory / "COMMON");
+        m_common.load(services.unpackedRoot / kSoundDirectory / "COMMON");
         loadVoices(party);
     } catch (const std::exception& e) {
         log::warn("Shop sound sources: {}", e.what());
     }
-    if (m_context.sounds != nullptr) {
+    if (m_services->sounds != nullptr) {
         try {
             const std::string bank = std::format("SHOP_{}", shopMusicRealm(levelName));
-            if (m_musicBank.load(context.unpackedRoot / kSoundDirectory / bank)) {
+            if (m_musicBank.load(services.unpackedRoot / kSoundDirectory / bank)) {
                 m_tallyCue = m_musicBank.find(std::format("S_TALLYSFX{}", bank.back()));
                 if (const auto music = m_musicBank.find("S_" + bank); music.has_value()) {
-                    m_music = m_context.sounds->play(m_musicBank.sequence(*music), 1,
-                                                     SoundCategory::Music);
+                    m_music = m_services->sounds->play(m_musicBank.sequence(*music), 1,
+                                                       SoundCategory::Music);
                 }
             }
         } catch (const std::exception& e) {
@@ -163,8 +163,8 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
     return true;
 }
 void AfterLevelScene::loadVoices(std::span<const PartyMember> party) {
-    m_narrator.load(m_context.unpackedRoot / kSoundDirectory / "VOICE1");
-    m_narratorSecond.load(m_context.unpackedRoot / kSoundDirectory / "VOICE2");
+    m_narrator.load(m_services->unpackedRoot / kSoundDirectory / "VOICE1");
+    m_narratorSecond.load(m_services->unpackedRoot / kSoundDirectory / "VOICE2");
     for (const auto& member : party) {
         // The unlockable classes speak with the voice of the class they shadow.
         const s32 named = member.save.character < kSumnerClass
@@ -172,23 +172,23 @@ void AfterLevelScene::loadVoices(std::span<const PartyMember> party) {
                               : member.save.character % kStartingClassCount;
         auto& bank = m_voices[static_cast<usize>(std::clamp(member.player, 0, 3))];
         bank = SoundSet{};
-        bank.load(m_context.unpackedRoot / kSoundDirectory / classCode(named));
+        bank.load(m_services->unpackedRoot / kSoundDirectory / classCode(named));
     }
 }
 void AfterLevelScene::close() {
-    if (m_context.sounds != nullptr) {
+    if (m_services->sounds != nullptr) {
         for (const auto handle : m_outputEffects) {
-            m_context.sounds->stop(handle);
+            m_services->sounds->stop(handle);
         }
     }
     m_outputEffects.clear();
-    if (m_context.sounds != nullptr && m_tallySound != kNoSound) {
-        m_context.sounds->stop(m_tallySound);
+    if (m_services->sounds != nullptr && m_tallySound != kNoSound) {
+        m_services->sounds->stop(m_tallySound);
     }
     m_tallySound = kNoSound;
     m_tallyCue.reset();
-    if (m_context.sounds != nullptr && m_music != kNoSound) {
-        m_context.sounds->stop(m_music);
+    if (m_services->sounds != nullptr && m_music != kNoSound) {
+        m_services->sounds->stop(m_music);
     }
     m_music = kNoSound;
     m_effects.clear();
@@ -208,7 +208,7 @@ void AfterLevelScene::close() {
     m_open = false;
 }
 std::string_view AfterLevelScene::text(std::string_view id) const {
-    return m_context.strings != nullptr ? m_context.strings->get(id) : std::string_view{};
+    return m_services->strings != nullptr ? m_services->strings->get(id) : std::string_view{};
 }
 const Texture* AfterLevelScene::texture(std::string_view name) {
     for (auto* bank : {&m_select, &m_inventory, &m_static}) {
@@ -218,8 +218,7 @@ const Texture* AfterLevelScene::texture(std::string_view name) {
     }
     return nullptr;
 }
-AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view name,
-                                                bool heard) {
+AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view name, bool heard) {
     return effect(bank, name, Effect{}, heard);
 }
 AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view name,
@@ -241,9 +240,9 @@ AfterLevelScene::Effect AfterLevelScene::effect(SoundSet& bank, std::string_view
     if (result.timing.playing()) {
         m_effects.push_back(result.timing);
     }
-    if (heard && m_context.sounds != nullptr) {
+    if (heard && m_services->sounds != nullptr) {
         try {
-            result.handle = m_context.sounds->playAfter(after.handle, sequence);
+            result.handle = m_services->sounds->playAfter(after.handle, sequence);
             if (result.handle != kNoSound) {
                 m_outputEffects.push_back(result.handle);
             }
@@ -259,9 +258,10 @@ void AfterLevelScene::advanceEffects(f64 seconds) {
     }
     m_announcement.timing.advance(seconds);
     std::erase_if(m_effects, [](const SpeechTiming& effect) { return !effect.playing(); });
-    if (m_context.sounds != nullptr) {
-        std::erase_if(m_outputEffects,
-                      [this](SoundHandle handle) { return !m_context.sounds->isPlaying(handle); });
+    if (m_services->sounds != nullptr) {
+        std::erase_if(m_outputEffects, [this](SoundHandle handle) {
+            return !m_services->sounds->isPlaying(handle);
+        });
     }
 }
 void AfterLevelScene::announceLevel(s32 player) {
@@ -314,8 +314,8 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs,
     auto heard = inputs;
     for (const auto& lane : m_session.lanes()) {
         const auto player = static_cast<usize>(lane.member.player);
-        if (!committed && lane.phase == ShopPhase::Shopping && m_context.config != nullptr) {
-            heard[player] = shopInput(heard[player], *m_context.config, lane.member.player);
+        if (!committed && lane.phase == ShopPhase::Shopping && m_services->config != nullptr) {
+            heard[player] = shopInput(heard[player], *m_services->config, lane.member.player);
         }
         const auto layout =
             ShopLayout::make(m_session.catalog().items(), lane.cursor, m_font.height());
@@ -482,7 +482,7 @@ void AfterLevelScene::pointerInput(ShopSession::Inputs& inputs,
     }
 }
 void AfterLevelScene::updateTallySound() {
-    if (m_context.sounds == nullptr || !m_tallyCue.has_value()) {
+    if (m_services->sounds == nullptr || !m_tallyCue.has_value()) {
         return;
     }
     const bool growing = std::ranges::any_of(m_session.lanes(), [](const ShopLane& lane) {
@@ -491,12 +491,12 @@ void AfterLevelScene::updateTallySound() {
     // One shared realm-specific loop, not a new voice per pile or player.
     if (!growing) {
         if (m_tallySound != kNoSound) {
-            m_context.sounds->stop(m_tallySound);
+            m_services->sounds->stop(m_tallySound);
             m_tallySound = kNoSound;
         }
-    } else if (!m_context.sounds->isPlaying(m_tallySound)) {
+    } else if (!m_services->sounds->isPlaying(m_tallySound)) {
         try {
-            m_tallySound = m_context.sounds->play(m_musicBank.sequence(*m_tallyCue));
+            m_tallySound = m_services->sounds->play(m_musicBank.sequence(*m_tallyCue));
         } catch (const std::exception& e) {
             log::warn("Shop tally audio: {}", e.what());
             m_tallyCue.reset();

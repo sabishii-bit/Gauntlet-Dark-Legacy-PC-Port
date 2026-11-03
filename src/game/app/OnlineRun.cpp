@@ -31,7 +31,7 @@ constexpr s64 kNoticeSeconds = 5; ///< how long a one-off message such as a drop
 struct OnlineRun::Impl {
 #if GDL_ENABLE_NETPLAY
     RenderDevice* device = nullptr;
-    GameContext context;
+    GameServices services;
     OnlineLinks links;
     GameConfig config;
     LevelRef initial;
@@ -134,7 +134,7 @@ void OnlineRun::status(RenderDevice& device, std::string message) {
         log::warn("Online status: {}", error.what());
     }
 }
-bool OnlineRun::open(RenderDevice& device, const GameContext& context, const Links& links,
+bool OnlineRun::open(RenderDevice& device, const GameServices& services, const Links& links,
                      const std::string& endpoint, const std::string& code, const std::string& build,
                      const std::string& content, std::span<const PartyMember> local,
                      const LevelRef& initial, const PlayOptions& options, bool autoStart,
@@ -159,7 +159,7 @@ bool OnlineRun::open(RenderDevice& device, const GameContext& context, const Lin
         const auto bytes = file.readExact(static_cast<usize>(file.size()));
         invitation.assign(bytes.begin(), bytes.end());
     }
-    if (!connect(device, context, links, endpoint == "local", invitation, build, content,
+    if (!connect(device, services, links, endpoint == "local", invitation, build, content,
                  static_cast<u8>(local.size()))) {
         return false;
     }
@@ -176,10 +176,10 @@ bool OnlineRun::open(RenderDevice& device, const GameContext& context, const Lin
     (void)options;
     (void)autoStart;
     (void)invitationOutput;
-    return connect(device, context, links, false, {}, build, content, 1);
+    return connect(device, services, links, false, {}, build, content, 1);
 #endif
 }
-bool OnlineRun::connect(RenderDevice& device, const GameContext& context, const Links& links,
+bool OnlineRun::connect(RenderDevice& device, const GameServices& services, const Links& links,
                         bool localOnly, const std::string& invitation, const std::string& build,
                         const std::string& content, u8 localPlayers) {
     close();
@@ -190,18 +190,18 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, const 
     }
     auto next = std::make_unique<Impl>();
     next->device = &device;
-    next->context = context;
+    next->services = services;
     next->links = links;
-    next->config = context.config != nullptr ? *context.config : GameConfig{};
-    next->context.config = &next->config;
+    next->config = services.config != nullptr ? *services.config : GameConfig{};
+    next->services.config = &next->config;
     next->initial = LevelRef::tower();
     next->localPlayers = localPlayers;
-    if (context.strings == nullptr || context.levels == nullptr || !context.levels->loaded()) {
+    if (services.strings == nullptr || services.levels == nullptr || !services.levels->loaded()) {
         status(device, "Online simulation requires loaded game text and levels.");
         return false;
     }
     std::string identityError;
-    next->identityInputs = NativeOnlineIdentity::snapshot(*context.strings, &identityError);
+    next->identityInputs = NativeOnlineIdentity::snapshot(*services.strings, &identityError);
     if (!next->identityInputs) {
         status(device, "Online compatibility check failed: " + identityError);
         return false;
@@ -227,14 +227,14 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, const 
         RoomSettings seeded;
         seeded.camera = next->config.multiplayer.soloCamera ? 1 : 0;
         seeded.mechanics =
-            context.mechanics != nullptr ? context.mechanics->roomBits(next->config.game) : 0;
+            services.mechanics != nullptr ? services.mechanics->roomBits(next->config.game) : 0;
         next->service->settings(seeded);
     }
     m_impl = std::move(next);
     status(device, "Connecting...");
     return true;
 #else
-    (void)context;
+    (void)services;
     (void)links;
     (void)localOnly;
     (void)invitation;
@@ -245,10 +245,10 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, const 
     return false;
 #endif
 }
-bool OnlineRun::openLobby(RenderDevice& device, const GameContext& context, const Links& links,
+bool OnlineRun::openLobby(RenderDevice& device, const GameServices& services, const Links& links,
                           const std::string& invitation, const std::string& build,
                           const std::string& content, u8 localPlayers, bool localOnly) {
-    if (!connect(device, context, links, localOnly, invitation, build, content, localPlayers)) {
+    if (!connect(device, services, links, localOnly, invitation, build, content, localPlayers)) {
         return false;
     }
 #if GDL_ENABLE_NETPLAY
@@ -288,7 +288,7 @@ bool OnlineRun::settings(const RoomSettings& value) {
     if (!m_impl) {
         return false;
     }
-    const auto* offered = m_impl->context.mechanics;
+    const auto* offered = m_impl->services.mechanics;
     const u8 rules = offered != nullptr ? offered->knownRoomBits() : 0;
     return (value.mechanics & ~rules) == 0 && m_impl->service->settings(value);
 #else
@@ -318,9 +318,9 @@ NetplayMenu::View OnlineRun::lobby() const {
         if (run.session->host() && run.transport->phase() == SessionTransport::Phase::Ready) {
             view.invitation = run.transport->invitation();
         }
-        if (run.context.mechanics != nullptr && run.context.strings != nullptr) {
-            for (const MechanicDescriptor* rule : run.context.mechanics->roomRules()) {
-                view.rules.emplace_back(run.context.strings->get(rule->label));
+        if (run.services.mechanics != nullptr && run.services.strings != nullptr) {
+            for (const MechanicDescriptor* rule : run.services.mechanics->roomRules()) {
+                view.rules.emplace_back(run.services.strings->get(rule->label));
             }
         }
         if (const auto* room = run.session->room()) {
@@ -452,7 +452,7 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
             std::optional<OnlineSession::NativeRules> rules;
             if (session.host()) {
                 rules = OnlineSession::NativeRules{};
-                const auto scene = NativeOnlinePlay::sceneId(*run.context.levels, run.initial);
+                const auto scene = NativeOnlinePlay::sceneId(*run.services.levels, run.initial);
                 if (!scene) {
                     status(*run.device, "Online initial stage is not in the native catalog.");
                     session.leave();
@@ -490,7 +490,7 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
                     run.config, session.room()->settings, *profiles, run.options,
                     {rules.scene, rules.autoMelee, rules.autoActivateItems, rules.expandedShop,
                      rules.autoAim, identity.build, identity.content, identity.data,
-                     run.context.mechanics});
+                     run.services.mechanics});
             }
             if (!run.nativeSetup || !session.confirmNativeSetup(run.nativeSetup->digest())) {
                 status(*run.device, "Online party setup disagrees. Escape exits.");
@@ -540,10 +540,10 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
             run.config.difficulty.level = DifficultyConfig::kNames[rules.difficulty];
             run.config.multiplayer.mode = static_cast<MultiplayerMode>(rules.friendlyFire);
             run.config.multiplayer.soloCamera = rules.camera == 1;
-            applyRoomRules(run.context.mechanics, rules.mechanics, run.config.game);
+            applyRoomRules(run.services.mechanics, rules.mechanics, run.config.game);
             const bool opened =
                 run.identityInputs && NativeOnlineIdentity::numericMatches(*run.identityInputs) &&
-                run.nativePlay.open(*run.device, run.context, session, run.selection,
+                run.nativePlay.open(*run.device, run.services, session, run.selection,
                                     std::move(run.nativeSetup), run.links);
             if (!opened) {
                 status(*run.device, "Online scene setup failed. Escape exits.");

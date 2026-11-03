@@ -30,9 +30,8 @@ TEST_CASE("scene damage vibrates the actual input player and pause or close stop
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     test::RecordingHaptics haptics;
@@ -82,9 +81,8 @@ TEST_CASE("a real melee animation gives one hit pulse to its attacker's input sl
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     test::RecordingHaptics haptics;
@@ -145,9 +143,8 @@ TEST_CASE("shooting a generator gives its destroying player one pulse rather tha
     REQUIRE(levels.load(root));
     LevelWorld world;
     REQUIRE(world.load(device, root, *levels.byName("G1")));
-    GameContext context;
+    GameServices context;
     context.config = &config;
-    context.tower = &world;
     context.levels = &levels;
     context.unpackedRoot = root;
     test::RecordingHaptics haptics;

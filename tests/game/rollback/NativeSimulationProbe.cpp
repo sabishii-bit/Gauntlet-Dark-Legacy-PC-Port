@@ -393,14 +393,13 @@ void run(const Options& options) {
     device.recordDraws = false;
     LevelWorld world;
     require(world.load(device, options.assets, *level), "Could not load native stage");
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.levels = &levels;
     context.mechanics = &mechanics;
     context.strings = &strings;
     context.unpackedRoot = options.assets;
     f32 stopTimeTotal = 0;
-    context.stopTimeTotal = &stopTimeTotal;
     // No save slots, persisted settings, audio devices or other external side
     // effects. Their exclusion is part of the observation's coverage contract.
     std::vector<PartyMember> party;
@@ -417,7 +416,9 @@ void run(const Options& options) {
     PlayScene scene;
     PlayOptions openOptions;
     openOptions.welcome = false;
-    require(scene.open(device, context, world, party, openOptions), "Could not open native scene");
+    require(
+        scene.open(device, context, world, party, openOptions, {.stopTimeTotal = &stopTimeTotal}),
+        "Could not open native scene");
     std::ofstream report(options.report, std::ios::binary);
     require(report.is_open(), "Could not open report");
     const auto write = [&](const Json& row) {

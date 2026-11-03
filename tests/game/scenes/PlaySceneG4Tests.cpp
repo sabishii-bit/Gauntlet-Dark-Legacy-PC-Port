@@ -38,7 +38,7 @@ TEST_CASE("G4 exit scenario walks both prerequisite switches and climbs the fina
     REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.levels = &catalog;

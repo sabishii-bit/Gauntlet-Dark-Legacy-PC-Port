@@ -41,7 +41,7 @@ TEST_CASE("four controllers retain distinct characters through death shop save a
     LevelCatalog levels;
     REQUIRE(levels.load(root));
     LevelWorld world;
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;

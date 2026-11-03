@@ -19,6 +19,7 @@ struct NativePeer {
     GameConfig config;
     LevelCatalog catalog;
     LevelWorld world;
+    GameServices game; ///< what the scene reads while it stands
     PlayScene scene;
     MatchContext context;
     u8 id;
@@ -36,7 +37,6 @@ struct NativePeer {
         const auto level = catalog.byName("G1");
         REQUIRE(level);
         REQUIRE(world.load(device, root, *level));
-        GameContext game;
         game.config = &config;
         game.unpackedRoot = root;
         game.levels = &catalog;

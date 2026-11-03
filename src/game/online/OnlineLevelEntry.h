@@ -19,11 +19,11 @@ public:
     OnlineLevelEntry(OnlineLevelEntry&&) = delete;
     OnlineLevelEntry& operator=(OnlineLevelEntry&&) = delete;
     ~OnlineLevelEntry() { close(); }
-    void open(RenderDevice& device, const GameContext& context, const LevelRef& level,
+    void open(RenderDevice& device, const GameServices& services, const LevelRef& level,
               std::span<const PartyMember> party, bool transitionOnly = false);
     void close();
     /** skipMovie is the host-confirmed unanimous result, never a local button press. */
-    void update(RenderDevice& device, const GameContext& context, bool skipMovie);
+    void update(RenderDevice& device, const GameServices& services, bool skipMovie);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
     Phase phase() const { return m_phase; }
     bool visible() const { return m_loading.active() || m_movie.isOpen(); }

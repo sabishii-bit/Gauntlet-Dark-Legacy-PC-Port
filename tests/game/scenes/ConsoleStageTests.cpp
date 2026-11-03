@@ -38,8 +38,8 @@ struct Fixture {
     StringTable strings;
     f32 stopTimeTotal = 0;
     LevelWorld world;
+    GameServices context;
     PlayScene scene;
-    GameContext context;
     u64 tick = 0;
 
     explicit Fixture(std::string_view levelName) {
@@ -55,7 +55,6 @@ struct Fixture {
         context.levels = &catalog;
         context.strings = &strings;
         context.unpackedRoot = root;
-        context.stopTimeTotal = &stopTimeTotal;
         std::vector<PartyMember> party;
         for (s32 seat = 0; seat < kSeats; ++seat) {
             CharacterSave save;
@@ -66,7 +65,8 @@ struct Fixture {
         }
         PlayOptions options;
         options.welcome = false;
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(
+            scene.open(device, context, world, party, options, {.stopTimeTotal = &stopTimeTotal}));
     }
 
     /** One tick carrying `line` for `seat`; what the scene answers it. */

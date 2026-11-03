@@ -12,7 +12,7 @@
 #include "engine/ui/Canvas.h"
 
 #include "game/characters/Party.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/hud/StatusBox.h"
 #include "game/scenes/TransitionScreen.h"
 
@@ -27,7 +27,7 @@ public:
     static constexpr f32 kCrossfadeSeconds = 255.0f / 240.0f;
     static constexpr f32 kTransitionSeconds = 2.0f;
     /** Secret visits use the static picture; transitionOnly also selects it on return. */
-    void open(RenderDevice& device, const GameContext& context, const LevelRef& level,
+    void open(RenderDevice& device, const GameServices& services, const LevelRef& level,
               std::span<const PartyMember> party = {}, bool transitionOnly = false);
     void close();
     bool update(f32 seconds);

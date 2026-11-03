@@ -67,22 +67,22 @@ std::string fillPlaceholder(std::string_view pattern, s32 value) {
 } // namespace
 
 std::string_view TitleScene::text(std::string_view id) const {
-    return m_context.strings != nullptr ? m_context.strings->get(id) : id;
+    return m_services->strings != nullptr ? m_services->strings->get(id) : id;
 }
 
-bool TitleScene::open(RenderDevice& device, const GameContext& context, LiveSettings* settings) {
+bool TitleScene::open(RenderDevice& device, const GameServices& services, LiveSettings* settings) {
     close();
-    m_context = context;
+    m_services = &services;
     m_liveSettings = settings;
     m_screen = MenuScreen{};
-    if (m_context.config != nullptr) {
-        m_screen.width = static_cast<s32>(m_context.config->display.virtualWidth);
-        m_screen.height = static_cast<s32>(m_context.config->display.virtualHeight);
-        m_screen.horizontalFov = m_context.config->horizontalFovRadians();
-        m_tickRate = static_cast<s32>(m_context.config->timing.tickRate);
+    if (m_services->config != nullptr) {
+        m_screen.width = static_cast<s32>(m_services->config->display.virtualWidth);
+        m_screen.height = static_cast<s32>(m_services->config->display.virtualHeight);
+        m_screen.horizontalFov = m_services->config->horizontalFovRadians();
+        m_tickRate = static_cast<s32>(m_services->config->timing.tickRate);
     }
     try {
-        if (!loadResources(device, m_context.unpackedRoot)) {
+        if (!loadResources(device, m_services->unpackedRoot)) {
             return false;
         }
     } catch (const std::exception& e) {
@@ -99,16 +99,16 @@ bool TitleScene::open(RenderDevice& device, const GameContext& context, LiveSett
     m_loadingTimer = 0;
     m_glowOpacity = 0;
     m_glowHidden = false;
-    loadSounds(m_context.unpackedRoot);
-    loadArrow(device, m_context.unpackedRoot);
+    loadSounds(m_services->unpackedRoot);
+    loadArrow(device, m_services->unpackedRoot);
     loadFireFrames(device);
     startMusic();
     return true;
 }
 
 void TitleScene::close() {
-    if (m_context.sounds != nullptr && m_music != kNoSound) {
-        m_context.sounds->stop(m_music);
+    if (m_services->sounds != nullptr && m_music != kNoSound) {
+        m_services->sounds->stop(m_music);
     }
     m_music = kNoSound;
     m_titleMenu.close();
@@ -183,7 +183,7 @@ bool TitleScene::loadResources(RenderDevice& device, const std::filesystem::path
 }
 
 void TitleScene::loadSounds(const std::filesystem::path& unpackedRoot) {
-    if (m_context.sounds == nullptr) {
+    if (m_services->sounds == nullptr) {
         return;
     }
     if (!m_commonSounds.load(unpackedRoot / kCommonSounds) ||
@@ -247,7 +247,7 @@ const Texture* TitleScene::staticTexture(std::string_view name, u32 frame) {
 }
 
 void TitleScene::startMusic() {
-    if (m_context.sounds == nullptr || !m_selectSounds.loaded()) {
+    if (m_services->sounds == nullptr || !m_selectSounds.loaded()) {
         return;
     }
     const auto index = m_selectSounds.find(kSoundMusic);
@@ -256,14 +256,14 @@ void TitleScene::startMusic() {
     }
     try {
         m_music =
-            m_context.sounds->play(m_selectSounds.sequence(*index), 1.0f, SoundCategory::Music);
+            m_services->sounds->play(m_selectSounds.sequence(*index), 1.0f, SoundCategory::Music);
     } catch (const std::exception& e) {
         log::warn("Title screen: cannot play {}: {}", kSoundMusic, e.what());
     }
 }
 
 void TitleScene::playMenuSound(std::string_view name) {
-    if (m_context.sounds == nullptr || !m_commonSounds.loaded()) {
+    if (m_services->sounds == nullptr || !m_commonSounds.loaded()) {
         return;
     }
     const auto index = m_commonSounds.find(name);
@@ -271,15 +271,15 @@ void TitleScene::playMenuSound(std::string_view name) {
         return;
     }
     try {
-        m_context.sounds->play(m_commonSounds.sequence(*index), 1.0f, SoundCategory::Effects);
+        m_services->sounds->play(m_commonSounds.sequence(*index), 1.0f, SoundCategory::Effects);
     } catch (const std::exception& e) {
         log::warn("Title screen: cannot play {}: {}", name, e.what());
     }
 }
 
 bool TitleScene::musicPlaying() const {
-    return m_context.sounds != nullptr && m_music != kNoSound &&
-           m_context.sounds->isPlaying(m_music);
+    return m_services->sounds != nullptr && m_music != kNoSound &&
+           m_services->sounds->isPlaying(m_music);
 }
 
 TitleOutcome TitleScene::update(f64 deltaSeconds, const MenuInput& input) {
@@ -417,7 +417,7 @@ void TitleScene::openQuitConfirm() {
 }
 
 void TitleScene::openOptionsMenu() {
-    m_optionsLanguage = m_context.strings != nullptr ? m_context.strings->language() : "";
+    m_optionsLanguage = m_services->strings != nullptr ? m_services->strings->language() : "";
     auto menu = MenuDefinition::parchment();
     menu.title = std::string(text("menu.options"));
     menu.fades = true;
@@ -427,9 +427,9 @@ void TitleScene::openOptionsMenu() {
     menu.backdropX = -1;
     menu.burn = "LOGO_BURN1";
     menu.burnArea = kOptionsBurnArea;
-    m_optionsMenu.setMechanics(m_context.mechanics);
-    m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
-                       m_context.strings, m_liveSettings, m_text, m_screen, menu,
+    m_optionsMenu.setMechanics(m_services->mechanics);
+    m_optionsMenu.open(m_services->config != nullptr ? *m_services->config : GameConfig{},
+                       m_services->strings, m_liveSettings, m_text, m_screen, menu,
                        SettingsMenu::Scope::Title);
 }
 
@@ -444,7 +444,7 @@ void TitleScene::closeOptionsMenu() {
     }
     m_optionsMenu.close();
     // The title menu is written again in a language chosen while it waited.
-    if (m_context.strings != nullptr && m_context.strings->language() != m_optionsLanguage &&
+    if (m_services->strings != nullptr && m_services->strings->language() != m_optionsLanguage &&
         m_titleMenu.isOpen()) {
         const auto selected = m_titleMenu.selection();
         openTitleMenu(m_startMenu);

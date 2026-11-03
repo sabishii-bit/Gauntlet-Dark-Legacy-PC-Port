@@ -82,7 +82,7 @@ TEST_CASE("selection greets EGG911 with the native trailing Pojo name on new and
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.strings = &strings;
     context.unpackedRoot = root;
@@ -172,7 +172,7 @@ TEST_CASE("Tower promotion speaks Pojo instead of the underlying class name",
     const GameConfig config;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
-    GameContext context;
+    GameServices context;
     context.config = &config;
     context.unpackedRoot = root;
     context.sounds = &sounds;
@@ -263,7 +263,7 @@ TEST_CASE("shop level announcements retain Pojo's name after saving and loading 
     const std::array party{PartyMember{2, save}};
     const std::array results{LevelResults{2, {0, 0, levelExperience(2)}}};
     test::FakeRenderDevice device;
-    GameContext context;
+    GameServices context;
     context.unpackedRoot = root;
     AfterLevelScene scene;
     REQUIRE(scene.open(device, context, party, results, {1000, 100, 1000}, "G1"));

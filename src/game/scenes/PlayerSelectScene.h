@@ -22,7 +22,7 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Party.h"
-#include "game/context/GameContext.h"
+#include "game/context/GameServices.h"
 #include "game/hud/StatusBox.h"
 #include "game/level/LevelWorld.h"
 #include "game/scenes/SelectLane.h"
@@ -49,13 +49,20 @@ public:
     PlayerSelectScene& operator=(const PlayerSelectScene&) = delete;
 
     /** Loads the unpacked select assets; `startingPlayer` joins at once, and the characters
-     * of `party` (a game in progress) stand locked in their lanes. False when absent. */
-    bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
+     * of `party` (a game in progress) stand locked in their lanes. False when absent. The
+     * lanes stand in `tower`, loaded as the tower when it holds another level; without it
+     * there is nothing behind them. The screen keeps reading `services`, which must outlive
+     * it. */
+    bool open(RenderDevice& device, const GameServices& services, s32 startingPlayer,
               std::span<const PartyMember> party = {}, bool manage = false,
-              SoundHandle continuingMusic = kNoSound);
+              SoundHandle continuingMusic = kNoSound, LevelWorld* tower = nullptr);
     /** After a level, every surviving character gets Save/Change/Load/Quit/Done. */
-    bool openAfterLevel(RenderDevice& device, const GameContext& context,
-                        std::span<const PartyMember> party);
+    bool openAfterLevel(RenderDevice& device, const GameServices& services,
+                        std::span<const PartyMember> party, LevelWorld* tower = nullptr);
+    /** The screen keeps the services it is opened with, so they may not be a temporary. */
+    template <typename... Rest> bool open(RenderDevice&, const GameServices&&, Rest&&...) = delete;
+    template <typename... Rest>
+    bool openAfterLevel(RenderDevice&, const GameServices&&, Rest&&...) = delete;
     /** Current characters, including those still choosing; dropped lanes are omitted. */
     std::vector<PartyMember> party() const;
     void close();
@@ -93,7 +100,7 @@ public:
 private:
     bool loadResources(RenderDevice& device, const std::filesystem::path& unpackedRoot);
     void loadSounds(const std::filesystem::path& unpackedRoot);
-    void loadTower(RenderDevice& device);
+    void loadTower(RenderDevice& device, LevelWorld* tower);
     void drawStatusBox(const SelectLane& lane);
     std::string_view text(std::string_view id) const;
     const Texture* selectTexture(std::string_view name);
@@ -105,7 +112,7 @@ private:
 
     bool m_open = false;
     RenderDevice* m_device = nullptr;
-    GameContext m_context;
+    const GameServices* m_gameServices = &GameServices::none(); ///< the game's, from open on
     MenuScreen m_screen;
     s32 m_tickRate = 60;
     TextureSet m_selectTextures;

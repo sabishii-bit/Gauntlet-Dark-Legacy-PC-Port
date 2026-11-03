@@ -51,6 +51,7 @@ struct Fixture {
     StringTable strings;
     f32 stopTimeTotal = 0;
     LevelWorld world;
+    GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
     SimulationObserver observer{scene};
 
@@ -62,12 +63,10 @@ struct Fixture {
         const auto level = levels.byName(name);
         REQUIRE(level);
         REQUIRE(world.load(device, root, *level));
-        GameContext context;
         context.config = &config;
         context.levels = &levels;
         context.strings = &strings;
         context.unpackedRoot = root;
-        context.stopTimeTotal = &stopTimeTotal;
         std::vector<PartyMember> party;
         for (s32 seat = 0; seat < 4; ++seat) {
             CharacterSave character;
@@ -81,7 +80,8 @@ struct Fixture {
         }
         PlayOptions options;
         options.welcome = false;
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(
+            scene.open(device, context, world, party, options, {.stopTimeTotal = &stopTimeTotal}));
         REQUIRE(observer.bind());
     }
 };

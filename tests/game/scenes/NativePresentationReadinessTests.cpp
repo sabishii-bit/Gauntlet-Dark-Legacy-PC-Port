@@ -227,7 +227,7 @@ TEST_CASE("native scene readiness includes Sumner only for the tower and revokes
     REQUIRE(level);
     REQUIRE(owners->world.load(owners->device, root, *level));
     CHECK_FALSE(owners->scene.nativePresentationReady());
-    GameContext context;
+    GameServices context;
     context.config = &owners->config;
     context.levels = &owners->catalog;
     context.unpackedRoot = root;
@@ -274,7 +274,7 @@ TEST_CASE("native scene readiness rejects failed figure and action bindings for 
     const auto level = owners->catalog.byName("G1");
     REQUIRE(level);
     REQUIRE(owners->world.load(owners->device, root, *level));
-    GameContext context;
+    GameServices context;
     context.config = &owners->config;
     context.levels = &owners->catalog;
     context.unpackedRoot = root;
