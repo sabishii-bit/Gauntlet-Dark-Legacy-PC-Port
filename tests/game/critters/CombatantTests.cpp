@@ -1062,7 +1062,7 @@ TEST_CASE("combatant immutable timing policies participate in resource identity"
 }
 
 TEST_CASE("each family's combatant identity keeps its bytes",
-          "[game][combatant][native-state-digest][native-state-resources]") {
+          "[game][combatant][native-state-digest][native-state-resources][native-digest-pin]") {
     const auto root = familyAssets();
     test::FakeRenderDevice device;
     // SHA-256 of a digest holding only the family's registered identity, which netplay peers
@@ -2170,7 +2170,26 @@ TEST_CASE("great ones stop at swarm bodies but golems trample small enemies",
           "[combatant][critter-body-contact][critter-trample]") {
     const auto root = familyAssets();
     test::FakeRenderDevice device;
-    for (const auto& definition : {General::definition(), Golem::definition()}) {
+    std::array swarm{EnemyBody{5, {1, 0, 0}, 1, 2}, EnemyBody{9, {100, 0, 0}, 1, 1}};
+    bool touches = true;
+    SECTION("small body at the inclusive crush threshold") {}
+    SECTION("tall bodies stop even golems") {
+        swarm[0].halfHeight = 2.1f;
+    }
+    SECTION("another floor is clear") {
+        swarm[0].centre.y = 20;
+        touches = false;
+    }
+    SECTION("overlapping bodies may separate") {
+        swarm[0].centre.x = -1;
+        touches = false;
+    }
+    for (const auto& definition :
+         {General::definition(), Golem::definition(), Gargoyle::definition()}) {
+        CAPTURE(definition.name);
+        if (definition.kind != CombatantKind::General) {
+            REQUIRE(definition.breaksItems); // both break the level's items; only one the swarm
+        }
         const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
                                    definition.name + R"(","type":)" +
                                    std::to_string(static_cast<s32>(definition.kind)) + "}],";
@@ -2183,20 +2202,6 @@ TEST_CASE("great ones stop at swarm bodies but golems trample small enemies",
         EnemyScales scales;
         scales.damage = 2;
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
-        std::array swarm{EnemyBody{5, {1, 0, 0}, 1, 2}, EnemyBody{9, {100, 0, 0}, 1, 1}};
-        bool touches = true;
-        SECTION("small body at the inclusive crush threshold") {}
-        SECTION("tall bodies stop even golems") {
-            swarm[0].halfHeight = 2.1f;
-        }
-        SECTION("another floor is clear") {
-            swarm[0].centre.y = 20;
-            touches = false;
-        }
-        SECTION("overlapping bodies may separate") {
-            swarm[0].centre.x = -1;
-            touches = false;
-        }
         actor.setSwarm(swarm);
         EnemyHit hit;
         hit.damage = 1;
@@ -2216,45 +2221,6 @@ TEST_CASE("great ones stop at swarm bodies but golems trample small enemies",
             CHECK(tramples[0].damage == 14);
         }
         CHECK(actor.takeTramples().empty());
-    }
-}
-
-TEST_CASE("a gargoyle is stopped by the small swarm bodies a golem tramples",
-          "[game][combatant][critter-body-contact][critter-trample]") {
-    const auto root = familyAssets();
-    test::FakeRenderDevice device;
-    for (const auto& definition : {Golem::definition(), Gargoyle::definition()}) {
-        CAPTURE(definition.name);
-        const bool golem = definition.kind == CombatantKind::Golem;
-        REQUIRE(definition.breaksItems); // both break the level's items; only one the swarm
-        const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
-                                   definition.name + R"(","type":)" +
-                                   std::to_string(static_cast<s32>(definition.kind)) + "}],";
-        writeTextFile(root / "critter" / (definition.name + ".json"), header + R"(
-          "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
-          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
-        CombatantAssets assets;
-        REQUIRE(assets.load(device, root, definition, 'G'));
-        Combatant actor;
-        EnemyScales scales;
-        scales.damage = 2;
-        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
-        const std::array swarm{EnemyBody{5, {1, 0, 0}, 1, 2}};
-        actor.setSwarm(swarm);
-        EnemyHit hit;
-        hit.damage = 1;
-        hit.flags = kKnockOver;
-        hit.direction = {1, 0, 0};
-        actor.hurt(hit);
-        actor.update(2, 1.0f / 30, {});
-        CHECK(actor.position().x ==
-              Approx(golem ? (10 - definition.knockbackReduction) / 30 : 0.0f));
-        const auto tramples = actor.takeTramples();
-        REQUIRE(tramples.size() == (golem ? 1 : 0));
-        if (golem) {
-            CHECK(tramples[0].enemy == 5);
-            CHECK(tramples[0].damage == 14);
-        }
     }
 }
 
@@ -2333,6 +2299,9 @@ TEST_CASE("a boss is never shoved by a hit's flags whether standing or falling",
           "[game][combatant][knockback]") {
     const auto root = familyAssets();
     test::FakeRenderDevice device;
+    constexpr f32 kKnockOverShove = 10.0f; // what a knock-over pushes a great one
+    constexpr f32 kShoveLeft = 0.8f;       // what a frame leaves of a shove
+    constexpr f32 kDeathShove = 20.0f;     // what the killing blow adds
     for (const auto& definition : {General::definition(), bossDefinition("LICH")}) {
         CAPTURE(definition.name);
         const bool boss = definition.kind == CombatantKind::Boss;
@@ -2357,15 +2326,17 @@ TEST_CASE("a boss is never shoved by a hit's flags whether standing or falling",
         actor.hurt(hit);
         actor.update(2, 1.0f / 30, {});
         REQUIRE(actor.health() == Approx(90));
-        CHECK(actor.position().x == Approx(boss ? 0.0f : 10.0f / 30));
-        // Falling, a great one is shoved twenty by the killing blow; a boss falls where it stood.
+        CHECK(actor.position().x == Approx(boss ? 0.0f : kKnockOverShove / 30));
+        // Falling, a great one keeps what a frame left of the first shove and is shoved twenty
+        // more by the killing blow; a boss falls where it stood.
         const f32 struck = actor.position().x;
         hit.damage = 1000;
         actor.hurt(hit);
         REQUIRE(actor.dying());
         actor.update(2, 1.0f / 30, {});
         REQUIRE(actor.present());
-        CHECK(actor.position().x == Approx(boss ? 0.0f : struck + (8.0f + 20.0f) / 30));
+        CHECK(actor.position().x ==
+              Approx(boss ? 0.0f : struck + (kKnockOverShove * kShoveLeft + kDeathShove) / 30));
         CHECK(actor.position().z == 0.0f);
     }
 }
