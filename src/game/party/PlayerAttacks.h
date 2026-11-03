@@ -192,12 +192,12 @@ private:
     void beginPotion(const MissileImpact& impact);
     void updatePotions(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateItems(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
-    /** The native projectile phase split at its output queue. Ordinary replay
-     * checks the complete batch before invoking any impact-side world owner. */
+    /** Flies the party's weapons one step, lets those still flying bring down the scenery
+     * they pass, and returns the impacts the step took. */
     std::vector<MissileImpact>
     advanceProjectileFlights(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
-    /** Shared native flight phase before surviving-endpoint scenery/audio and
-     * impact-queue consumption. The caller owns any subsequent refusal/undo. */
+    /** One flight step of the party's weapons against what a blow can strike, the potion
+     * bottles lying about, the inert stops and the standing players. */
     void stepProjectileFlights(f32 seconds, std::span<PlayerRuntime> players,
                                const Targets& targets);
     void dispatchProjectileImpact(

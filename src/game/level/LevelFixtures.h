@@ -94,7 +94,8 @@ public:
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);
     /** What a broken barrel held comes out: its enemy when one is let out, else one pickup of
-     * the record and count; the hitter is then taught that barrels hold things. */
+     * the record and count; when something came out, the hitter is taught that barrels hold
+     * things. */
     void releaseBarrelContents(const BreakableStrike& struck, s32 byPlayer,
                                std::span<PlayerRuntime> players, const Events& events);
     /** An explosion: a ring over its effect's `seconds` (StartExplosion, ProcessEffects mode
