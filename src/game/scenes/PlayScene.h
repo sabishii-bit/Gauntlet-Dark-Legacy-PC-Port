@@ -84,8 +84,23 @@ struct DroppedItem {
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
+/** What the developer console grants a seat. Native values, not local console-window
+ * preferences: rewound with the scene. */
+struct ConsoleCheats {
+    bool god = false;
+    bool noTarget = false;
+    bool noclip = false;
+    template <class Visitor>
+    friend void visitNativeState(Visitor& visitor, const ConsoleCheats& value) {
+        visitor.template fields<3>(value);
+    }
+    bool operator==(const ConsoleCheats&) const = default;
+};
+
 /** How the tower may open other than as the game does, for tests and scenarios. */
 struct PlayOptions {
+    static constexpr usize kSeats = 4; ///< the seats a scene plays (PlayScene::kPlayerCount)
+
     std::optional<Vec3> position;   ///< where the party stands instead of the entrance (the
                                     ///< start camera then does not ride in from its marker)
     std::optional<f32> yaw;         ///< the way it faces, instead of the entrance's
@@ -98,6 +113,8 @@ struct PlayOptions {
     /** The party size the level sets itself up for (its items, gates and generators) instead
      * of the players present: the console's party count; none follows the players. */
     std::optional<s32> partyCount;
+    /** Each seat's console cheats, which the scene holds from its first tick. */
+    std::array<ConsoleCheats, kSeats> consoleCheats{};
 };
 
 enum class PlayOutcome : u8 {
@@ -136,17 +153,8 @@ enum class PlayOutcome : u8 {
 class PlayScene {
 public:
     static constexpr s32 kPlayerCount = 4;
-    /** Native values, not local console-window preferences: rewound with the scene. */
-    struct ConsoleCheats {
-        bool god = false;
-        bool noTarget = false;
-        bool noclip = false;
-        template <class Visitor>
-        friend void visitNativeState(Visitor& visitor, const ConsoleCheats& value) {
-            visitor.template fields<3>(value);
-        }
-        bool operator==(const ConsoleCheats&) const = default;
-    };
+    static_assert(static_cast<usize>(kPlayerCount) == PlayOptions::kSeats);
+    using ConsoleCheats = game::ConsoleCheats;
     struct ConsoleTravelRequest {
         LevelRef destination;
         std::optional<Vec3> position;
@@ -216,6 +224,7 @@ public:
     bool isOpen() const { return m_open; }
     u64 loadGeneration() const { return m_openGeneration; }
 
+    /** Offline play's tick with no console actions: step()'s outcome. */
     PlayOutcome update(f64 deltaSeconds, const Inputs& inputs);
     struct RumbleOutput {
         s32 player = 0;
@@ -247,9 +256,18 @@ public:
      * Epoch/tick must be nonzero; invalid or nested calls throw before advancing.
      * The caller owns the fixed-roster epoch and supplies the completed tick.
      * Audio is journaled only after beginRecordedAudio; otherwise the offline
-     * sound path remains immediate. Callers must explicitly select that boundary. */
+     * sound path remains immediate. Callers must explicitly select that boundary.
+     * The console actions run in the shared game. */
     RecordedStep recordStep(u64 epoch, u64 tick, f64 deltaSeconds, const Inputs& inputs,
                             std::span<const ConsoleAction> actions = {});
+    /** What an offline tick came to, with the replies to its console actions in their order. */
+    struct LocalStep {
+        PlayOutcome outcome = PlayOutcome::Running;
+        std::vector<ConsoleReply> replies;
+    };
+    /** Offline play's tick: the console actions run first, in offline play's game, and the
+     * tick's outputs are dispatched here. Throws while the scene records its audio. */
+    LocalStep step(f64 deltaSeconds, const Inputs& inputs, std::span<const ConsoleAction> actions);
     /** Native audio gate, before the first snapshot of a loaded online epoch.
      * Rollback requires this dispatcher; offline play keeps immediate audio. */
     bool beginRecordedAudio(u64 epoch);
@@ -646,6 +664,10 @@ private:
     /** Runs `action`'s shared verb for its seat at the start of a tick, in `play`'s game, and
      * says what came of it. */
     std::string applyConsoleAction(const ConsoleAction& action, ConsolePlay play);
+    /** One tick of either game: `actions` for their seats in `play`'s game first, then the
+     * tick itself, its outputs collected under `epoch` and `tick`. */
+    RecordedStep advanceStep(u64 epoch, u64 tick, f64 deltaSeconds, const Inputs& inputs,
+                             std::span<const ConsoleAction> actions, ConsolePlay play);
     void advanceConsoleFlight(f64 deltaSeconds, const Inputs& inputs);
     SimulationObservation::Digest simulationControlDigest() const;
     SimulationObservation::Digest opponentFollowupDigest() const;

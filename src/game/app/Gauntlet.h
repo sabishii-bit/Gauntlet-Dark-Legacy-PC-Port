@@ -140,6 +140,11 @@ private:
     /** Takes the party to `level` through the loading picture, standing it at `position`
      * facing `yaw` when given; the scene closes at once. */
     void consoleTravel(const LevelRef& level, std::optional<Vec3> position, std::optional<f32> yaw);
+    /** Takes the party where the stepped scene's console travel request leads, by the rule
+     * both play modes share: into a challenge the level left waits as its parent, back to that
+     * parent it takes up again at the request's place, anywhere else the scene closes behind
+     * the loading picture. Nothing is won, saved or recorded. */
+    void travelByConsole();
     void resetPlayInput();
     void updatePause(f64 deltaSeconds);
     bool saveSettings(const GameConfig& config);

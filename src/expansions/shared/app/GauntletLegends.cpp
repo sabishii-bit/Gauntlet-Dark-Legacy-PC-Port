@@ -258,6 +258,7 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             options.yaw = entrance.actor().yaw();
             options.welcome = false;
             options.partyCount = m_partyCountOverride;
+            options.consoleCheats = m_consoleCheats;
             // Keep an admitted exit phrase alive until the successfully opened
             // destination takes ownership. A console jump still stops it.
             m_play->scene.suspendForImportedLevel(internalTravel);

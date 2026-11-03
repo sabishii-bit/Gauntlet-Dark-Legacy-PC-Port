@@ -273,6 +273,11 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
               m_portals.size());
     gatherLights();
+    // The carried cheats go on once every owner they reach is bound: the opponents' open
+    // forgets who is unseen, and only a party standing can be made ghosts.
+    for (s32 seat = 0; seat < kPlayerCount; ++seat) {
+        setCheats(seat, options.consoleCheats[static_cast<usize>(seat)]);
+    }
     return true;
 }
 
@@ -1064,29 +1069,41 @@ bool PlayScene::anyButton(const Inputs& inputs) const {
 }
 
 PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
+    return step(deltaSeconds, inputs, {}).outcome;
+}
+
+PlayScene::LocalStep PlayScene::step(f64 deltaSeconds, const Inputs& inputs,
+                                     std::span<const ConsoleAction> actions) {
     if (m_audio.recordingSounds()) {
         throw std::logic_error("Recorded scene audio requires explicit tick and output ownership");
     }
     // Offline play owns no timeline/ledger. These labels are only meaningful to
     // explicit recordStep callers; every fresh offline journal dispatches once.
-    const auto step = recordStep(1, 1, deltaSeconds, inputs);
+    auto recorded = advanceStep(1, 1, deltaSeconds, inputs, actions, ConsolePlay::Offline);
     if (m_world && m_context.sounds && m_world->imported()) {
         const Vec3 listener =
             m_players.empty() ? simulationCamera().position : m_players.front().actor.position();
         m_world->imported()->playSounds(*m_context.sounds, listener);
     }
-    for (const auto& event : step.journal.events) {
+    for (const auto& event : recorded.journal.events) {
         const auto kind = event.policy == OutputLedger::Policy::Confirmed
                               ? OutputLedger::ActionKind::Commit
                               : OutputLedger::ActionKind::Present;
         dispatchOutput({kind, event});
     }
-    return step.outcome;
+    return {recorded.outcome, std::move(recorded.consoleReplies)};
 }
 
 PlayScene::RecordedStep PlayScene::recordStep(u64 epoch, u64 tick, f64 deltaSeconds,
                                               const Inputs& inputs,
                                               std::span<const ConsoleAction> actions) {
+    return advanceStep(epoch, tick, deltaSeconds, inputs, actions, ConsolePlay::Shared);
+}
+
+PlayScene::RecordedStep PlayScene::advanceStep(u64 epoch, u64 tick, f64 deltaSeconds,
+                                               const Inputs& inputs,
+                                               std::span<const ConsoleAction> actions,
+                                               ConsolePlay play) {
     if (epoch == 0 || tick == 0) {
         throw std::invalid_argument("Recorded native output needs a nonzero epoch and tick");
     }
@@ -1117,8 +1134,7 @@ PlayScene::RecordedStep PlayScene::recordStep(u64 epoch, u64 tick, f64 deltaSeco
     {
         const auto sharedAudio = m_audio.soundScope({30, 0, 1, FrameEventEmitter::kNoSeat}, 1);
         for (const auto& action : actions) {
-            result.consoleReplies.push_back(
-                {action.seat, applyConsoleAction(action, ConsolePlay::Shared)});
+            result.consoleReplies.push_back({action.seat, applyConsoleAction(action, play)});
         }
         if (m_sim.consoleTravel) {
             result.outcome = PlayOutcome::Travel;

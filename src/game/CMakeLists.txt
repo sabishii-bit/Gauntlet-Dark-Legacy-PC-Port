@@ -460,6 +460,8 @@ add_library(game STATIC
     scenes/SharedConsoleVerbs.cpp
     scenes/ConsoleStage.h
     scenes/ConsoleStage.cpp
+    scenes/ConsoleTravel.h
+    scenes/ConsoleTravel.cpp
     scenes/PlaySceneTransport.cpp
     scenes/PlaySceneMotion.cpp
     scenes/PlaySceneHarm.cpp

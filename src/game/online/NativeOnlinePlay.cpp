@@ -11,6 +11,7 @@
 
 #include "game/netplay/OnlineParty.h"
 #include "game/scenes/AfterLevelScene.h"
+#include "game/scenes/ConsoleTravel.h"
 
 namespace {
 
@@ -344,12 +345,14 @@ struct NativeOnlinePlay::Data {
             consoleCheats[seat] = scene.cheats(static_cast<s32>(seat));
         }
         const auto& consoleTravel = scene.consoleTravelRequest();
-        const bool returning = consoleTravel ? world.ref().isSecret() && secretParent &&
-                                                   consoleTravel->destination == *secretParent
-                                             : scene.secretTravel() && world.ref().isSecret();
-        const bool entering = consoleTravel
-                                  ? consoleTravel->destination.isSecret() && !world.ref().isSecret()
-                                  : scene.secretTravel() && !returning;
+        const auto consoleKind =
+            consoleTravel ? std::optional{consoleTravelKind(world.ref(), consoleTravel->destination,
+                                                            secretParent)}
+                          : std::nullopt;
+        const bool returning = consoleKind ? *consoleKind == ConsoleTravelKind::ReturnToParent
+                                           : scene.secretTravel() && world.ref().isSecret();
+        const bool entering = consoleKind ? *consoleKind == ConsoleTravelKind::EnterChallenge
+                                          : scene.secretTravel() && !returning;
         if (returning && (!parent || !secretParent)) {
             fail(Failure::Scene);
             return false;
@@ -652,8 +655,10 @@ struct NativeOnlinePlay::Data {
             }
         } else {
             auto candidate = std::make_unique<Level>();
+            PlayOptions opened = options;
+            opened.consoleCheats = consoleCheats;
             if (!candidate->world.load(*device, context.unpackedRoot, *destination) ||
-                !candidate->scene.open(*device, context, candidate->world, members, options)) {
+                !candidate->scene.open(*device, context, candidate->world, members, opened)) {
                 fail(Failure::Assets);
                 return false;
             }
@@ -662,9 +667,6 @@ struct NativeOnlinePlay::Data {
                                             context.config->multiplayer.soloCamera);
             candidate->scene.setFixedRoster(true);
             candidate->scene.setViewSeat(lowestSeat(session->seats()));
-            for (usize seat = 0; seat < consoleCheats.size(); ++seat) {
-                candidate->scene.setCheats(static_cast<s32>(seat), consoleCheats[seat]);
-            }
             if (!candidate->scene.nativePresentationReady() || !candidate->bind(match)) {
                 fail(Failure::Assets);
                 return false;
@@ -792,8 +794,11 @@ struct NativeOnlinePlay::Data {
             // predicted or diverged); the stage opens again with the one its epoch opened with.
             setup->stopTimeTotal() = levelStopTimeTotal;
             candidate = std::make_unique<Level>();
+            PlayOptions reopened = options;
+            reopened.consoleCheats = levelConsoleCheats;
             if (!candidate->world.load(*device, context.unpackedRoot, *current) ||
-                !candidate->scene.open(*device, context, candidate->world, levelMembers, options)) {
+                !candidate->scene.open(*device, context, candidate->world, levelMembers,
+                                       reopened)) {
                 return fail(Failure::Assets);
             }
             candidate->scene.setLocalSeats(seatMask(session->seats()));
@@ -801,9 +806,6 @@ struct NativeOnlinePlay::Data {
                                             context.config->multiplayer.soloCamera);
             candidate->scene.setFixedRoster(true);
             candidate->scene.setViewSeat(lowestSeat(session->seats()));
-            for (usize seat = 0; seat < levelConsoleCheats.size(); ++seat) {
-                candidate->scene.setCheats(static_cast<s32>(seat), levelConsoleCheats[seat]);
-            }
         }
         if (!candidate->scene.nativePresentationReady() ||
             !(levelResumed ? candidate->rebindDriver(match) : candidate->bindDriver(match)) ||

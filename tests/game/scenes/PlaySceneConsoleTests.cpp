@@ -32,8 +32,10 @@
 #include "game/enemies/Generators.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/level/ExitPortals.h"
+#include "game/level/SpawnedObjects.h"
 #include "game/players/ItemPickup.h"
 #include "game/rollback/ConsoleAction.h"
+#include "game/scenes/ConsoleStage.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -49,6 +51,7 @@ constexpr f32 kStrengthNearlyFull = 9999999.0f; ///< seconds of a powerup just u
 constexpr f32 kForGood = -1.0f;                 ///< a powerup's strength that never runs out
 constexpr s32 kDeathTicks = 600; ///< long enough for a death to play out to its question
 constexpr s32 kExitTicks = 1200; ///< long enough for a portal to take a party standing on it
+constexpr usize kLongLine = 170; ///< a console line past the wire's ConsoleAction::kMaxLine
 constexpr std::string_view kOnItsWay = "The party is already on its way.";
 constexpr std::string_view kNoScene = "No active scene for that console command.";
 constexpr std::string_view kLegendsOffline = "Legends maps are offline only.";
@@ -94,7 +97,8 @@ struct Fixture {
     GameContext context;
     u64 tick = 0;
 
-    explicit Fixture(std::string_view levelName) {
+    explicit Fixture(std::string_view levelName,
+                     const std::array<ConsoleCheats, PlayOptions::kSeats>& cheats = {}) {
         test::assetOrSkip(std::format("LEVELS/LEVEL{}/WORLDS.PS2", levelName));
         config.timing.tickRate = 60;
         REQUIRE(catalog.load(root));
@@ -121,19 +125,27 @@ struct Fixture {
         }
         PlayOptions options;
         options.welcome = false;
+        options.consoleCheats = cheats;
         REQUIRE(scene.open(device, context, world, party, options));
         REQUIRE(scene.nativeAgreementDigest());
     }
 
-    PlayScene::RecordedStep step(std::span<const ConsoleAction> actions = {},
-                                 const PlayScene::Inputs& inputs = {}) {
+    /** One tick of the shared game, with `actions` run in it. */
+    PlayScene::RecordedStep sharedStep(std::span<const ConsoleAction> actions = {},
+                                       const PlayScene::Inputs& inputs = {}) {
         return scene.recordStep(1, ++tick, kStep, inputs, actions);
+    }
+
+    /** One tick of offline play, with `actions` run in it. */
+    PlayScene::LocalStep offlineStep(std::span<const ConsoleAction> actions = {},
+                                     const PlayScene::Inputs& inputs = {}) {
+        return scene.step(kStep, inputs, actions);
     }
 
     /** One tick carrying `line` for `seat` alone. */
     PlayScene::RecordedStep sayStep(std::string line, u8 seat = 0) {
         const std::array actions{ConsoleAction{seat, std::move(line)}};
-        auto result = step(actions);
+        auto result = sharedStep(actions);
         REQUIRE(result.consoleReplies.size() == 1);
         CHECK(result.consoleReplies.front().seat == seat);
         return result;
@@ -342,12 +354,12 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     // A seat that left the game is passed over, though its own line still reaches the body.
     REQUIRE(scene.kill(1));
     for (s32 i = 0; i < kDeathTicks && !scene.status(1).towerPrompt; ++i) {
-        fixture->step();
+        fixture->sharedStep();
     }
     REQUIRE(scene.status(1).towerPrompt);
     PlayScene::Inputs quit{};
     quit[1].menu.back = true;
-    fixture->step({}, quit);
+    fixture->sharedStep({}, quit);
     REQUIRE(scene.runtime(1)->departed);
     CHECK(fixture->say("unlock_tower") == "The tower stands open to the party.");
     CHECK(fixture->save(0).progress().relics.runeCount() == Relics::kRuneCount);
@@ -386,7 +398,7 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(fixture->say("spawn enemy gru 2 2 G1") == "Spawned 2 GRU at tier 2");
     CHECK(scene.enemies().count() == enemies + 5);
     const std::vector<ConsoleAction> swarm(5, ConsoleAction{0, "spawn gru 1 20"});
-    const auto crowded = fixture->step(swarm);
+    const auto crowded = fixture->sharedStep(swarm);
     REQUIRE(crowded.consoleReplies.size() == swarm.size());
     CHECK(crowded.consoleReplies.front().text.starts_with("Spawned "));
     CHECK(crowded.consoleReplies.back().text == "Spawned 0 GRU at tier 1");
@@ -420,7 +432,7 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(golemCostumes() == 2);
     CHECK(scene.critters().count() == critters + 4);
     const std::vector<ConsoleAction> great(Critters::kMost, ConsoleAction{0, "spawn golem"});
-    const auto full = fixture->step(great);
+    const auto full = fixture->sharedStep(great);
     REQUIRE(full.consoleReplies.size() == great.size());
     CHECK(full.consoleReplies.back().text == "No room or artwork for golem");
     reopen();
@@ -494,7 +506,7 @@ TEST_CASE("while the party is on its way every verb is refused", "[native-consol
     const s32 gold = fixture->save(0).gold;
     const std::array leaving{ConsoleAction{0, "goto G1"}, ConsoleAction{1, "god"},
                              ConsoleAction{0, "get gold 1"}};
-    const auto first = fixture->step(leaving);
+    const auto first = fixture->sharedStep(leaving);
     CHECK(first.outcome == PlayOutcome::Travel);
     REQUIRE(first.consoleReplies.size() == leaving.size());
     CHECK(first.consoleReplies[0].text == "Going to G1 (Fields)");
@@ -506,7 +518,7 @@ TEST_CASE("while the party is on its way every verb is refused", "[native-consol
     const auto bound = scene.nativeAgreementDigest();
     REQUIRE(bound);
     const auto every = awayLines();
-    const auto later = fixture->step(every);
+    const auto later = fixture->sharedStep(every);
     CHECK(later.outcome == PlayOutcome::Travel);
     checkRefusedAway(every, later.consoleReplies);
     CHECK(scene.consoleTravelRequest()->destination.name == "G1");
@@ -527,7 +539,7 @@ TEST_CASE("while the party goes through an exit every verb is refused",
     REQUIRE(exit);
     REQUIRE(scene.relocate(*exit));
     for (s32 i = 0; i < kExitTicks && !scene.leaving(); ++i) {
-        REQUIRE(fixture->step().outcome == PlayOutcome::Running);
+        REQUIRE(fixture->sharedStep().outcome == PlayOutcome::Running);
     }
     REQUIRE(scene.leaving());
     REQUIRE_FALSE(scene.consoleTravelRequest());
@@ -536,14 +548,14 @@ TEST_CASE("while the party goes through an exit every verb is refused",
     REQUIRE(scene.saveLocal(going));
     const u64 tick = fixture->tick;
     const auto every = awayLines();
-    const auto asked = fixture->step(every);
+    const auto asked = fixture->sharedStep(every);
     checkRefusedAway(every, asked.consoleReplies);
     CHECK_FALSE(scene.consoleTravelRequest());
     const auto refused = scene.nativeAgreementDigest();
     REQUIRE(refused);
     REQUIRE(scene.restoreLocal(going));
     fixture->tick = tick;
-    const auto plain = fixture->step();
+    const auto plain = fixture->sharedStep();
     CHECK(asked.outcome == plain.outcome);
     CHECK(scene.nativeAgreementDigest() == refused);
 }
@@ -584,12 +596,12 @@ TEST_CASE("shared noclip flies at full speed from the first tick", "[native-cons
     PlayScene::Inputs inputs;
     inputs[1].consoleFlight = wish;
     const std::array actions{ConsoleAction{1, "noclip"}};
-    REQUIRE(fixture->step(actions, inputs).outcome == PlayOutcome::Running);
+    REQUIRE(fixture->sharedStep(actions, inputs).outcome == PlayOutcome::Running);
     const Vec3 offset = wish * NoclipMotion::kSpeed * static_cast<f32>(kStep);
     CHECK(scene.actor(1)->position() == start + offset);
     CHECK(scene.actor(1)->yaw() == Catch::Approx(portable::atan2(wish.x, wish.z)));
     CHECK(scene.actor(0)->position() == still);
-    REQUIRE(fixture->step({}, inputs).outcome == PlayOutcome::Running);
+    REQUIRE(fixture->sharedStep({}, inputs).outcome == PlayOutcome::Running);
     CHECK(scene.actor(1)->position() == start + offset + offset);
 }
 
@@ -640,11 +652,11 @@ TEST_CASE("the console's effects equal the same effects applied directly",
     for (const Effect& effect : script) {
         CAPTURE(effect.action.line);
         const std::array actions{effect.action};
-        const auto stepped = console->step(actions);
+        const auto stepped = console->sharedStep(actions);
         REQUIRE(stepped.consoleReplies.size() == 1);
         CAPTURE(stepped.consoleReplies.front().text);
         effect.apply(direct->scene);
-        const auto applied = direct->step();
+        const auto applied = direct->sharedStep();
         CHECK(stepped.outcome == applied.outcome);
         const auto expected = direct->scene.nativeAgreementDigest();
         REQUIRE(expected);
@@ -652,4 +664,138 @@ TEST_CASE("the console's effects equal the same effects applied directly",
     }
     CHECK(console->scene.cheats(0).god);
     CHECK(console->scene.fallen(1));
+}
+
+TEST_CASE("an offline step applies the effects the shared step applies",
+          "[native-console][assets]") {
+    auto offline = std::make_unique<Fixture>("G2");
+    auto shared = std::make_unique<Fixture>("G2");
+    REQUIRE(offline->scene.nativeAgreementDigest() == shared->scene.nativeAgreementDigest());
+    const std::string item = offline->world.placedItems().item(0).name;
+    const std::string object = offline->world.layout().objects().front().name;
+    const Vec3 spot = offline->scene.actor(0)->position() + Vec3{2.0f, 0.0f, 0.0f};
+    const std::vector<std::vector<ConsoleAction>> script{
+        {{0, "god"}, {1, "notarget"}, {1, "noclip"}},
+        {{1, "get gold 37"}, {0, "get exp 10"}, {0, "get supershot 3"}, {1, "unlock_tower"}},
+        {{0, std::format("goto {} {} {}", spot.x, spot.y, spot.z)}},
+        {{0, "spawn gru 2 3"},
+         {1, "spawn item " + item},
+         {0, "spawn object " + object},
+         {0, "spawn golem"}},
+        {{1, "suicide"}},
+        {{0, "goto G1"}},
+    };
+    // After every tick both scenes are alike to the digest the peers compare, and bound alike.
+    for (const std::vector<ConsoleAction>& actions : script) {
+        CAPTURE(actions.front().line);
+        const auto local = offline->offlineStep(actions);
+        const auto recorded = shared->sharedStep(actions);
+        CHECK(local.outcome == recorded.outcome);
+        REQUIRE(local.replies.size() == actions.size());
+        REQUIRE(recorded.consoleReplies.size() == actions.size());
+        for (usize i = 0; i < actions.size(); ++i) {
+            CHECK(local.replies[i].seat == actions[i].seat);
+            CHECK(recorded.consoleReplies[i].seat == actions[i].seat);
+        }
+        CHECK(offline->scene.consoleTravelRequest() == shared->scene.consoleTravelRequest());
+        const auto expected = shared->scene.nativeAgreementDigest();
+        REQUIRE(expected);
+        CHECK(offline->scene.nativeAgreementDigest() == expected);
+    }
+    CHECK(offline->scene.consoleTravelRequest());
+}
+
+TEST_CASE("an offline step has no console spawn budget",
+          "[native-console][native-console-spawn-limit][assets]") {
+    auto offline = std::make_unique<Fixture>("G2");
+    auto shared = std::make_unique<Fixture>("G2");
+    const std::string object = offline->world.layout().objects().front().name;
+    const std::string item = offline->world.placedItems().item(0).name;
+    std::vector<ConsoleAction> crowded(ConsoleStage::kMaximumConsoleSpawns,
+                                       ConsoleAction{0, "spawn object " + object});
+    crowded.push_back({0, "spawn item " + item});
+    // Offline every spawn stands while there is room for it: the objects' room, then the item.
+    const auto local = offline->offlineStep(crowded);
+    REQUIRE(local.replies.size() == crowded.size());
+    CHECK(offline->scene.spawnedObjectCount() == SpawnedObjects::kMaxObjects);
+    CHECK(local.replies.back().text.starts_with("Dropped "));
+    // The shared game stops at its budget.
+    const auto recorded = shared->sharedStep(crowded);
+    REQUIRE(recorded.consoleReplies.size() == crowded.size());
+    CHECK(shared->scene.spawnedObjectCount() == SpawnedObjects::kMaxObjects);
+    CHECK(recorded.consoleReplies.back().text == "The stage's console spawn limit is reached.");
+}
+
+TEST_CASE("an offline step takes a console line the wire would not carry",
+          "[native-console][assets]") {
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    const std::array actions{ConsoleAction{0, "god" + std::string(kLongLine - 3, ' ')}};
+    REQUIRE(actions.front().admitted());
+    REQUIRE_FALSE(actions.front().valid());
+    PlayScene::LocalSnapshot opened;
+    REQUIRE(scene.saveLocal(opened));
+    const u64 tick = fixture->tick;
+    // The shared game refuses it whole: the tick goes as one with no line does.
+    const auto refused = fixture->sharedStep(actions);
+    REQUIRE(refused.consoleReplies.size() == 1);
+    CHECK(refused.consoleReplies.front().text == kNoScene);
+    CHECK_FALSE(scene.cheats(0).god);
+    const auto digest = scene.nativeAgreementDigest();
+    REQUIRE(digest);
+    REQUIRE(scene.restoreLocal(opened));
+    fixture->tick = tick;
+    REQUIRE(fixture->sharedStep().outcome == PlayOutcome::Running);
+    CHECK(scene.nativeAgreementDigest() == digest);
+    // Offline play runs it.
+    REQUIRE(scene.restoreLocal(opened));
+    const auto taken = fixture->offlineStep(actions);
+    REQUIRE(taken.replies.size() == 1);
+    CHECK(taken.replies.front().seat == 0);
+    CHECK(scene.cheats(0).god);
+}
+
+TEST_CASE("a scene opened with carried cheats holds them from its first tick",
+          "[native-console][assets]") {
+    const ConsoleCheats every{.god = true, .noTarget = true, .noclip = true};
+    std::array<ConsoleCheats, PlayOptions::kSeats> carried{};
+    carried[0] = every;
+    auto fixture = std::make_unique<Fixture>("G2", carried);
+    auto& scene = fixture->scene;
+    // Seat 0 is a ghost the swarm does not see; seat 1 is as it came.
+    const auto holds = [&scene, &every] {
+        CHECK(scene.cheats(0) == every);
+        CHECK(scene.runtime(0)->ghost);
+        CHECK(scene.opponents().unseen(0));
+        CHECK(scene.cheats(1) == ConsoleCheats{});
+        CHECK_FALSE(scene.runtime(1)->ghost);
+        CHECK_FALSE(scene.opponents().unseen(1));
+    };
+    holds();
+    REQUIRE(fixture->offlineStep().outcome == PlayOutcome::Running);
+    holds();
+}
+
+TEST_CASE("cheats set on a scene resumed from a challenge hold", "[native-console][assets]") {
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    CHECK(fixture->say("god") == "god on");
+    REQUIRE(fixture->sayStep("goto S1", 1).outcome == PlayOutcome::Travel);
+    REQUIRE(scene.secretTravel());
+    scene.suspendForChallenge();
+    scene.resumeFromChallenge(scene.party());
+    CHECK_FALSE(scene.consoleTravelRequest());
+    // What the scene held through the challenge it still holds; what is set on its return holds.
+    const ConsoleCheats every{.god = true, .noTarget = true, .noclip = true};
+    scene.setCheats(1, every);
+    const auto holds = [&scene, &every] {
+        CHECK(scene.cheats(0) == ConsoleCheats{.god = true});
+        CHECK_FALSE(scene.runtime(0)->ghost);
+        CHECK(scene.cheats(1) == every);
+        CHECK(scene.runtime(1)->ghost);
+        CHECK(scene.opponents().unseen(1));
+    };
+    holds();
+    REQUIRE(fixture->sharedStep().outcome == PlayOutcome::Running);
+    holds();
 }

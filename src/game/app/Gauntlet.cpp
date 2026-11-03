@@ -27,6 +27,7 @@
 #include "game/config/ControlProfiles.h"
 #include "game/enemies/Enemies.h"
 #include "game/players/PlayerControls.h"
+#include "game/scenes/ConsoleTravel.h"
 #include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
@@ -549,6 +550,7 @@ bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> pa
     }
     PlayOptions opened = options;
     opened.partyCount = m_partyCountOverride; // the console's party count outlasts a level
+    opened.consoleCheats = m_consoleCheats;   // and so do its cheats
     if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened)) {
         resetPlayInput();
         log::info("Entering {} ({})", level.name, level.title);
@@ -567,6 +569,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
     }
     PlayOptions opened = options;
     opened.partyCount = m_partyCountOverride;
+    opened.consoleCheats = m_consoleCheats;
     if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened)) {
         resetPlayInput();
         log::info("Every player is ready; entering the tower");
@@ -696,6 +699,10 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
                            m_play->scene.party());
     }
     if (outcome == PlayOutcome::Travel) {
+        if (m_play->scene.consoleTravelRequest()) {
+            travelByConsole();
+            return;
+        }
         if (m_play->world.imported()) {
             finishLegendsTravel();
             return;
@@ -1184,6 +1191,43 @@ void Gauntlet::finishJourney() {
     if (!startLevel(LevelRef::tower(), journey.party, journey.options) && !startTitleScreen()) {
         startNextAttractScreen();
     }
+}
+
+void Gauntlet::travelByConsole() {
+    const auto& request = m_play->scene.consoleTravelRequest();
+    GDL_VERIFY(request.has_value(), "Console travel needs the stepped scene's request");
+    const std::optional<LevelRef> parent =
+        m_parent ? std::optional{m_parent->world.ref()} : std::nullopt;
+    const ConsoleJourney plan = consoleJourney(*request, m_play->world.ref(), parent);
+    m_freeCamera.stop(); // its place means nothing in another level
+    if (plan.kind == ConsoleTravelKind::ReturnToParent) {
+        // Nothing is won or recorded by the console: the parent takes up where it waited, and
+        // the challenge that asked goes with its session.
+        const std::vector<PartyMember> party = m_play->scene.party();
+        m_play->scene.close();
+        returnFromChallenge(party);
+        if (plan.options.position) {
+            m_play->scene.relocate(*plan.options.position);
+        }
+        return;
+    }
+    Journey journey;
+    journey.destination = request->destination;
+    journey.party = m_play->scene.party();
+    journey.options = plan.options;
+    journey.secret = plan.secret;
+    if (plan.kind == ConsoleTravelKind::EnterChallenge) {
+        m_play->scene.suspendForChallenge();
+        m_parent = std::move(m_play);
+        m_play = std::make_unique<PlaySession>();
+    } else {
+        m_play->scene.close();
+    }
+    GDL_VERIFY(!plan.closesScene || !m_play->scene.isOpen(),
+               "Console travel left the scene that asked for it open");
+    m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+    m_loadingPicture.cover();
+    m_journey = std::move(journey);
 }
 
 void Gauntlet::returnFromChallenge(std::span<const PartyMember> party) {
