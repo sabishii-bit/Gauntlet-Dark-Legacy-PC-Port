@@ -27,6 +27,8 @@
 #include "game/app/Gauntlet.h"
 #include "game/console/ConsoleCommands.h"
 #include "game/console/ConsoleForm.h"
+#include "game/console/ConsoleHost.h"
+#include "game/console/ConsoleListings.h"
 #include "game/console/ConsoleReach.h"
 #include "game/scenes/SharedConsoleVerbs.h"
 
@@ -115,33 +117,37 @@ std::vector<std::string> Gauntlet::legendsMapNames() const {
     return names;
 }
 
-void Gauntlet::addLegendsConsoleForms() {
+void Gauntlet::registerLegendsConsole(ConsoleHost& host, ConsoleListings& listings) {
     // goto's Legends words: every word parseGoto reads as a Legends map or the way back from one,
     // whatever is installed. Online they are refused in the shared verb's words.
-    m_console.addForm("goto", std::make_unique<LambdaForm>(
-                                  ConsoleReach::OfflineOnly,
-                                  std::string(sharedConsoleVerb("goto")->offlineOnlyRefusal()),
-                                  [](DevConsole::Arguments arguments) {
-                                      const auto destination =
-                                          ConsoleCommands::parseGoto(arguments);
-                                      return destination.has_value() && destination->offlineOnly();
-                                  },
-                                  [this](DevConsole& console, DevConsole::Arguments arguments) {
-                                      consoleLegendsGoto(console, arguments);
-                                  }));
+    host.addForm("goto", std::make_unique<LambdaForm>(
+                             ConsoleReach::OfflineOnly,
+                             std::string(sharedConsoleVerb("goto")->offlineOnlyRefusal()),
+                             [](DevConsole::Arguments arguments) {
+                                 const auto destination = ConsoleCommands::parseGoto(arguments);
+                                 return destination.has_value() && destination->offlineOnly();
+                             },
+                             [this](DevConsole& console, DevConsole::Arguments arguments) {
+                                 consoleLegendsGoto(console, arguments);
+                             }));
     // unlock_tower in a native world walked offline opens that world's own tower; elsewhere the
     // shared verb answers it, and under a preview the preview's words refuse it.
-    m_console.addForm("unlock_tower",
-                      std::make_unique<LambdaForm>(
-                          ConsoleReach::OfflineOnly, std::string{},
-                          [this](DevConsole::Arguments /*arguments*/) {
-                              return m_online == nullptr && !m_legendsPreview.isOpen() &&
-                                     dynamic_cast<const LegendsLevel*>(m_play->world.imported()) !=
-                                         nullptr;
-                          },
-                          [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                              consoleLegendsUnlockTower(console);
-                          }));
+    host.addForm("unlock_tower",
+                 std::make_unique<LambdaForm>(
+                     ConsoleReach::OfflineOnly, std::string{},
+                     [this](DevConsole::Arguments /*arguments*/) {
+                         return m_online == nullptr && !m_legendsPreview.isOpen() &&
+                                dynamic_cast<const LegendsLevel*>(m_play->world.imported()) !=
+                                    nullptr;
+                     },
+                     [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
+                         consoleLegendsUnlockTower(console);
+                     }));
+    // list maps names the Legends maps installed after the levels, each platform's on a line;
+    // nothing is said of a platform without any.
+    listings.add(std::make_unique<LambdaListing>(
+        "maps", std::nullopt,
+        [this](ConsoleListing::Arguments /*rest*/) { return legendsMapLines(); }));
 }
 
 void Gauntlet::consoleLegendsGoto(DevConsole& console, DevConsole::Arguments arguments) {

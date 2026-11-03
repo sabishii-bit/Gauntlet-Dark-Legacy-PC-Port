@@ -1,5 +1,4 @@
 #pragma once
-#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -9,29 +8,10 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/CharacterSave.h"
-#include "game/console/ConsoleCommand.h"
 #include "game/console/FixtureRequest.h"
 #include "game/level/LevelCatalog.h"
 
 namespace gdl::game {
-
-/** What `list` is asked for; a map's name may follow it. */
-enum class Listing : u8 {
-    Maps,
-    Items,
-    Inventory,
-    Enemies,
-    Critters,
-    Generators,
-    Objects,
-    Switches,
-    Characters,
-    Unknown
-};
-Listing listingOf(ConsoleCommand::Arguments arguments);
-/** The map named after the listing ("G1"), when one is. */
-std::optional<std::string> listedMap(ConsoleCommand::Arguments arguments);
-std::string listUsage();
 
 /** Every item `get` knows, one line each with what it does. */
 std::vector<std::string> itemLines();

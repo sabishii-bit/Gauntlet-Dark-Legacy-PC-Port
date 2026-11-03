@@ -14,7 +14,6 @@
 #include "game/console/ConsoleUsage.h"
 #include "game/console/FixtureRequest.h"
 #include "game/console/GiftRequest.h"
-#include "game/console/LevelListingLines.h"
 #include "game/console/PartyCountRequest.h"
 #include "game/console/SpawnRequest.h"
 
@@ -26,9 +25,8 @@ using Row = std::pair<std::string_view, std::string_view>;
 TEST_CASE("usage lines put the forms in a column with what each does beside them",
           "[dev-console][commands]") {
     for (const std::string& text :
-         {spawnUsage(), giftUsage(), listUsage(), ConsoleCommands::gotoUsage(),
-          lockUsage(LockVerb::Lock), lockUsage(LockVerb::Unlock), activateUsage(),
-          partyCountUsage()}) {
+         {spawnUsage(), giftUsage(), ConsoleCommands::gotoUsage(), lockUsage(LockVerb::Lock),
+          lockUsage(LockVerb::Unlock), activateUsage(), partyCountUsage()}) {
         CAPTURE(text);
         std::vector<std::string> lines;
         for (usize start = 0; start <= text.size();) {
@@ -54,7 +52,6 @@ TEST_CASE("usage lines put the forms in a column with what each does beside them
     }
     CHECK(spawnUsage().contains("spawn object <name> [map]"));
     CHECK(spawnUsage().contains("spawn item <name>"));
-    CHECK(listUsage().contains("list objects [map]"));
 }
 
 TEST_CASE("a usage pads every form to the widest and sets its notes beneath",

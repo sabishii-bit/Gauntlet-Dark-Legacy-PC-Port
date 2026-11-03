@@ -13,7 +13,6 @@
 #include "game/level/LevelCatalog.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/scenes/SharedConsoleCommand.h"
-#include "game/scenes/SharedConsoleVerbs.h"
 
 namespace {
 using namespace gdl;
@@ -123,9 +122,7 @@ TEST_CASE("offline with nobody in every shared verb says so once its words are r
     DevConsole console;
     const LevelCatalog levels;
     ConsoleActionRoute route{noOnlineGame, [] { return -1; }};
-    for (const SharedConsoleVerb* verb : sharedConsoleVerbs()) {
-        registerSharedConsoleCommand(console, verb->name(), route, levels);
-    }
+    registerSharedConsoleCommands(console.host(), console.commands(), route, levels);
     // Words a verb cannot read are answered first, as they are with somebody in.
     CHECK(said(console, "get") == shownAs(kGetUsage));
     CHECK(said(console, "get banana") == "No item named banana; list items names them");

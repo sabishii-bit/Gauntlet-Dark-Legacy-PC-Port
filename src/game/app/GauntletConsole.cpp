@@ -1,6 +1,5 @@
 #include <array>
 #include <format>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -10,20 +9,18 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/ObjectMaterial.h"
 #include "engine/assets/WorldLayout.h"
-#include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 #include "engine/math/Math.h"
+#include "engine/world/WorldCamera.h"
 
 #include "game/app/ConsoleActionRoute.h"
+#include "game/app/ConsoleRoster.h"
 #include "game/app/Gauntlet.h"
-#include "game/app/OfflineConsoleCommands.h"
+#include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
-#include "game/console/ConsoleForm.h"
 #include "game/console/ConsolePolicy.h"
-#include "game/console/ConsoleReach.h"
 #include "game/console/FixtureRequest.h"
-#include "game/console/GiftRequest.h"
 #include "game/console/NoclipMotion.h"
 #include "game/critters/CombatantKind.h"
 #include "game/enemies/Enemies.h"
@@ -31,8 +28,9 @@
 #include "game/enemies/Generators.h"
 #include "game/level/InstanceNames.h"
 #include "game/level/PlacedItems.h"
+#include "game/players/PlayerActor.h"
+#include "game/scenes/FixtureConsoleCommands.h"
 #include "game/scenes/SceneSelection.h"
-#include "game/scenes/SharedConsoleCommand.h"
 #include "game/widgets/MenuInput.h"
 
 namespace gdl::game {
@@ -48,99 +46,50 @@ void Gauntlet::setUpConsole() {
     }
     m_console.print(std::format("CGaunt++ {}", m_buildLabel.text()));
     m_console.print("Type help for the commands.");
-    m_console.addCommand(
-        "console_permissions", "0 or 1: host allows guests to use the console",
-        ConsoleReach::HostOnly, [this](DevConsole& console, DevConsole::Arguments arguments) {
-            if (arguments.size() != 1 || (arguments[0] != "0" && arguments[0] != "1")) {
-                console.print("Usage: console_permissions 0 or 1");
-            } else if (m_online && m_online->consoleHost() &&
-                       m_online->setConsolePermissions(arguments[0] == "1")) {
-                console.print(arguments[0] == "1" ? "Guest consoles enabled"
-                                                  : "Guest consoles disabled");
-            } else {
-                console.print("Only the online host can change console permissions.");
-            }
-        });
-    m_console.addCommand("debug_info", "shows or hides the level debug overlay",
-                         ConsoleReach::Local,
-                         [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             m_levelDebug.toggle();
-                             console.print(m_levelDebug.visible() ? "Level debug overlay on"
-                                                                  : "Level debug overlay off");
-                             if (m_levelDebug.visible() && consoleScene()) {
-                                 for (const std::string& line : levelDebugLines()) {
-                                     log::info("Level debug: {}", line);
-                                 }
-                             }
-                         });
-    m_console.addCommand(
-        "list", "maps, items or inventory: what there is", ConsoleReach::Local,
-        [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.list(console, arguments);
-        },
-        wordsCompleter({"maps", "items", "inventory", "enemies", "critters", "generators",
-                        "objects", "switches", "characters"}));
-    m_console.addCommand(
-        "activate", "$SELECTED, switch#N, an id or a name: fires that switch as if stood on",
-        ConsoleReach::OfflineOnly,
-        [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.activate(console, arguments);
-        },
-        [this](DevConsole::Arguments arguments) {
-            return m_offlineConsole.activateWords(arguments);
-        });
-    m_console.addCommand(
-        "unlock", "a door or chest without a key, or character <code> for the select screen",
-        ConsoleReach::OfflineOnly,
-        [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.unlock(console, arguments);
-        },
-        [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
-    m_console.addCommand(
-        "lock", "a door shut or a chest wanting a key again, or character <code> hidden again",
-        ConsoleReach::OfflineOnly,
-        [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.lock(console, arguments);
-        },
-        [this](DevConsole::Arguments arguments) { return m_offlineConsole.lockWords(arguments); });
-    registerSharedConsoleCommand(
-        m_console, "goto", m_consoleRoute, m_levels,
-        [this](DevConsole::Arguments arguments) { return m_offlineConsole.gotoWords(arguments); });
-    m_console.addCommand(
-        "party_count", "<1-4> or off: the party size the level sets itself up for",
-        ConsoleReach::OfflineOnly,
-        [this](DevConsole& console, DevConsole::Arguments arguments) {
-            m_offlineConsole.partyCount(console, arguments);
-        },
-        wordsCompleter({"1", "2", "3", "4", "off"}));
-    registerSharedConsoleCommand(m_console, "unlock_tower", m_consoleRoute, m_levels);
-    registerSharedConsoleCommand(m_console, "get", m_consoleRoute, m_levels);
-    // get info says what a thing is on the asking machine alone.
-    m_console.addForm("get", std::make_unique<LambdaForm>(
-                                 ConsoleReach::Local, std::string{},
-                                 [](DevConsole::Arguments arguments) {
-                                     const auto gift = parseGift(arguments);
-                                     return gift.has_value() &&
-                                            gift->kind == GiftRequest::Kind::Info;
-                                 },
-                                 [this](DevConsole& console, DevConsole::Arguments arguments) {
-                                     consoleInfo(console, arguments);
-                                 }));
-    registerSharedConsoleCommand(m_console, "spawn", m_consoleRoute, m_levels);
-    registerSharedConsoleCommand(m_console, "suicide", m_consoleRoute, m_levels);
-    registerSharedConsoleCommand(m_console, "notarget", m_consoleRoute, m_levels);
-    registerSharedConsoleCommand(m_console, "god", m_consoleRoute, m_levels);
-    m_console.addCommand("hidehud", "hides or shows every HUD element", ConsoleReach::Local,
-                         [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             consoleHideHud(console);
-                         });
-    m_console.addCommand("freecam", "lets the camera off the party to fly; you stand still",
-                         ConsoleReach::Local,
-                         [this](DevConsole& console, DevConsole::Arguments /*arguments*/) {
-                             consoleFreeCam(console);
-                         });
-    registerSharedConsoleCommand(m_console, "noclip", m_consoleRoute, m_levels);
-    addLegendsConsoleForms();
+    const auto playScene = [this]() -> PlayScene* {
+        return m_play->scene.isOpen() ? &m_play->scene : nullptr;
+    };
+    const ConsoleRosterAccess access{
+        .online = {.permitGuests =
+                       [this](bool allow) {
+                           return m_online && m_online->consoleHost() &&
+                                  m_online->setConsolePermissions(allow);
+                       }},
+        .view = {.levelDebug = m_levelDebug,
+                 .hudHidden = m_hudHidden,
+                 .freeCamera = m_freeCamera,
+                 .view = [this]() -> std::optional<WorldCamera> {
+                     const PlayScene* scene = consoleScene();
+                     return scene != nullptr ? std::optional{scene->viewCamera()} : std::nullopt;
+                 },
+                 .levelDebugLines = [this] { return levelDebugLines(); }},
+        .listings = {.viewed = [this] { return consoleWorld(); },
+                     .levels = m_levels,
+                     .unpackedRoot = m_options.unpackedDirectory,
+                     .save = [this]() -> const CharacterSave* {
+                         const PlayScene* scene = consoleScene();
+                         const PlayerActor* actor =
+                             scene != nullptr ? scene->actor(consolePlayer()) : nullptr;
+                         return actor != nullptr ? &actor->save() : nullptr;
+                     }},
+        .fixtures = {.scene = playScene, .world = [this] { return consoleWorld(); }},
+        .shared = {.sink = m_consoleRoute,
+                   .levels = m_levels,
+                   .legendsMapNames = [this] { return legendsMapNames(); }},
+        .inspect = {
+            .selected = [this]() -> std::optional<SceneSelection> {
+                const PlayScene* scene = consoleScene();
+                return scene != nullptr ? scene->selection() : std::nullopt;
+            },
+            .describe =
+                [this](const SceneSelection& selection) { return consoleDescribe(selection); }},
+        .partyCount = {.count = m_partyCountOverride, .scene = playScene},
+        .profile = {.saves = m_saves, .config = m_config, .scene = playScene},
+    };
+    registerConsoleRoster(m_console.host(), m_console.commands(), m_consoleListings, access,
+                          [this](ConsoleHost& host, ConsoleListings& listings) {
+                              registerLegendsConsole(host, listings);
+                          });
 }
 
 ConsoleSession Gauntlet::consoleSession() const {
@@ -165,22 +114,6 @@ const PlayScene* Gauntlet::consoleScene() const {
 const LevelWorld* Gauntlet::consoleWorld() const {
     return m_online ? m_online->consoleWorld()
                     : (m_play->scene.isOpen() ? &m_play->world : nullptr);
-}
-
-OfflineConsoleCommands::Ports Gauntlet::offlineConsolePorts() {
-    return {
-        .playScene = [this] { return m_play ? &m_play->scene : nullptr; },
-        .consoleScene = [this] { return consoleScene(); },
-        .consoleWorld = [this] { return consoleWorld(); },
-        .consolePlayer = [this] { return consolePlayer(); },
-        .levels = m_levels,
-        .unpackedRoot = m_options.unpackedDirectory,
-        .config = m_config,
-        .saves = m_saves,
-        .partyCount = m_partyCountOverride,
-        .legendsMapLines = [this] { return legendsMapLines(); },
-        .legendsMapNames = [this] { return legendsMapNames(); },
-    };
 }
 
 ConsoleActionRoute Gauntlet::consoleActionRoute() {
@@ -301,7 +234,7 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
     const s32 id = selection.id;
     switch (selection.kind) {
     case Kind::Switch: {
-        const auto switches = m_offlineConsole.consoleSwitches();
+        const auto switches = switchesInPlay(*consoleWorld());
         if (id < 0 || static_cast<usize>(id) >= switches.size()) {
             lines.push_back(std::format("{} names no switch of {}", selection.token(),
                                         consoleWorld()->ref().name));
@@ -545,25 +478,6 @@ std::vector<std::string> Gauntlet::consoleDescribe(const SceneSelection& selecti
     return lines;
 }
 
-void Gauntlet::consoleHideHud(DevConsole& console) {
-    m_hudHidden = !m_hudHidden;
-    console.print(m_hudHidden ? "HUD hidden" : "HUD shown");
-}
-
-void Gauntlet::consoleFreeCam(DevConsole& console) {
-    if (m_freeCamera.active()) {
-        m_freeCamera.stop();
-        console.print("Free camera off");
-        return;
-    }
-    if (consoleScene() == nullptr) {
-        console.print("Nothing is in play.");
-        return;
-    }
-    m_freeCamera.start(consoleScene()->viewCamera());
-    console.print(std::format("Free camera on: {}", FreeCamera::kHelp));
-}
-
 void Gauntlet::applyConsoleState(f64 deltaSeconds, bool consoleOpen) {
     m_play->scene.setHudHidden(m_hudHidden);
     if (m_freeCamera.active() && !consoleOpen) {
@@ -636,27 +550,6 @@ s32 Gauntlet::consolePlayer() {
         }
     }
     return first;
-}
-
-void Gauntlet::consoleInfo(DevConsole& console, DevConsole::Arguments arguments) {
-    const auto gift = parseGift(arguments);
-    GDL_VERIFY(gift.has_value() && gift->kind == GiftRequest::Kind::Info,
-               "get info's form claims its own words alone");
-    const std::optional<SceneSelection> what =
-        gift->name.empty() ? (consoleScene() ? consoleScene()->selection() : std::nullopt)
-                           : SceneSelection::parse(gift->name);
-    if (!what.has_value()) {
-        console.print(gift->name.empty()
-                          ? "Nothing is selected: click something in the view while the "
-                            "console is down, then get info $SELECTED"
-                          : std::format("{} names nothing; $SELECTED or a token such as "
-                                        "object#12 or enemy#3 does",
-                                        gift->name));
-        return;
-    }
-    for (const std::string& line : consoleDescribe(*what)) {
-        console.print(line);
-    }
 }
 
 } // namespace gdl::game

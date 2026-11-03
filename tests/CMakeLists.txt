@@ -221,10 +221,18 @@ add_executable(tests
     game/console/FixtureRequestTests.cpp
     game/console/PartyCountRequestTests.cpp
     game/console/LevelListingLinesTests.cpp
-    game/app/OfflineConsoleCommandsTests.cpp
+    game/console/ConsoleListingsTests.cpp
     game/app/ConsoleActionRouteTests.cpp
+    game/app/ConsoleRosterTests.cpp
+    game/app/OnlineConsoleCommandsTests.cpp
+    game/app/ViewConsoleCommandsTests.cpp
+    game/app/InspectConsoleFormTests.cpp
+    game/app/PartyCountCommandTests.cpp
+    game/app/ProfileConsoleCommandsTests.cpp
     game/scenes/SharedConsoleVerbsTests.cpp
     game/scenes/SharedConsoleCommandTests.cpp
+    game/scenes/LevelListingsTests.cpp
+    game/scenes/FixtureConsoleCommandsTests.cpp
     game/scenes/ConsoleRepliesTests.cpp
     game/scenes/ConsoleTravelTests.cpp
     game/app/GameCursorTests.cpp

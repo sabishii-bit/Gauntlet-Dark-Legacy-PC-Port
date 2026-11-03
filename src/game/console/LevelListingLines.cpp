@@ -17,8 +17,6 @@
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
 #include "game/characters/Relics.h"
-#include "game/console/ConsoleArguments.h"
-#include "game/console/ConsoleUsage.h"
 #include "game/console/GiftRequest.h"
 #include "game/console/SpawnRequest.h"
 #include "game/enemies/EnemyKinds.h"
@@ -48,59 +46,6 @@ bool critterName(std::string_view name) {
            name.starts_with(SpawnRequest::kGargoylePrefix) || name == "GAR";
 }
 } // namespace
-
-Listing listingOf(ConsoleCommand::Arguments arguments) {
-    if (arguments.empty()) {
-        return Listing::Unknown;
-    }
-    const std::string what = toLowerAscii(arguments[0]);
-    if (what == "maps") {
-        return Listing::Maps;
-    }
-    if (what == "items") {
-        return Listing::Items;
-    }
-    if (what == "inventory") {
-        return Listing::Inventory;
-    }
-    if (what == "enemies") {
-        return Listing::Enemies;
-    }
-    if (what == "critters") {
-        return Listing::Critters;
-    }
-    if (what == "generators") {
-        return Listing::Generators;
-    }
-    if (what == "objects") {
-        return Listing::Objects;
-    }
-    if (what == "switches") {
-        return Listing::Switches;
-    }
-    if (what == "characters") {
-        return Listing::Characters;
-    }
-    return Listing::Unknown;
-}
-
-std::optional<std::string> listedMap(ConsoleCommand::Arguments arguments) {
-    return arguments.size() >= 2 ? std::optional{upperArgument(arguments[1])} : std::nullopt;
-}
-
-std::string listUsage() {
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 9> kRows{
-        {{"list maps", "every level, by realm"},
-         {"list items [map]", "what get knows, then a level's pickups"},
-         {"list inventory", "what your character is and carries"},
-         {"list enemies [map]", "the swarm's kinds, then a level's roster and generators"},
-         {"list critters [map]", "the great ones, then those a level places"},
-         {"list generators [map]", "a level's generators"},
-         {"list objects [map]", "a level's objects"},
-         {"list switches [map]", "a level's switches, for activate"},
-         {"list characters", "every playable character, locked or hidden too"}}};
-    return consoleUsage(kRows);
-}
 
 std::vector<std::string> itemLines() {
     constexpr s32 kNameColumn = 18;

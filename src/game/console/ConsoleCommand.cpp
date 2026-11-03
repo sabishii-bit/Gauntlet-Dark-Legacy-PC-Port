@@ -7,6 +7,8 @@
 #include "engine/core/Assert.h"
 #include "engine/core/Types.h"
 
+#include "game/rollback/SharedConsoleWords.h"
+
 namespace gdl::game {
 
 bool sameNameIgnoringCase(std::string_view a, std::string_view b) {
@@ -52,6 +54,13 @@ void ConsoleRegistry::add(std::unique_ptr<ConsoleCommand> command) {
     if (command == nullptr) {
         return;
     }
+    // The wire carries the shared words alone, so a command of the shared game is one of them.
+    GDL_VERIFY(command->reach() != ConsoleReach::Shared ||
+                   std::ranges::any_of(kSharedConsoleWords,
+                                       [&](const SharedConsoleWord& word) {
+                                           return sameNameIgnoringCase(word.name, command->name());
+                                       }),
+               "a command of the shared game is one of the wire's shared words");
     // A name registered again replaces the command that held it, where it stood.
     const auto held = std::ranges::find_if(m_commands, [&](const auto& other) {
         return sameNameIgnoringCase(other->name(), command->name());

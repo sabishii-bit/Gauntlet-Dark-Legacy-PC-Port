@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 
 #include "game/console/ConsoleForm.h"
+#include "game/console/ConsoleHost.h"
 #include "game/console/ConsoleReach.h"
 
 namespace gdl::game {
@@ -74,16 +75,16 @@ LambdaCommand::Completer wordsCompleter(std::vector<std::string> words);
  * The console's commands: kept in the order they were registered (the order `help` lists
  * them), found by name ignoring case, and the first whose name begins with a prefix, for
  * completing the word being typed. Beside them it keeps the forms other modules answer
- * of a command's words, in the order they were registered.
+ * of a command's words, in the order they were registered. It is the host modules register
+ * their words through.
  */
-class ConsoleRegistry {
+class ConsoleRegistry final : public ConsoleHost {
 public:
-    void add(std::unique_ptr<ConsoleCommand> command);
+    void add(std::unique_ptr<ConsoleCommand> command) override;
     /** Registers a command made of a name, a summary, its reach and a function. */
     void add(std::string name, std::string summary, ConsoleReach reach,
              LambdaCommand::Handler handler, LambdaCommand::Completer completer = {});
-    /** Registers `form` on the command named `command` in any case, after its other forms. */
-    void addForm(std::string_view command, std::unique_ptr<ConsoleForm> form);
+    void addForm(std::string_view command, std::unique_ptr<ConsoleForm> form) override;
     std::span<const std::unique_ptr<ConsoleCommand>> commands() const { return m_commands; }
     usize size() const { return m_commands.size(); }
     /** The command named `name` in any case, or null. */

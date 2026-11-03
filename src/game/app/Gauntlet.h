@@ -26,16 +26,19 @@
 #include "game/app/ConsoleActionRoute.h"
 #include "game/app/LevelCompletion.h"
 #include "game/app/LevelDebugOverlay.h"
-#include "game/app/OfflineConsoleCommands.h"
 #include "game/app/OnlineRun.h"
 #include "game/audio/MusicDuck.h"
 #include "game/camera/FreeCamera.h"
+#include "game/characters/CharacterSave.h"
 #include "game/config/GameConfig.h"
+#include "game/console/ConsoleHost.h"
+#include "game/console/ConsoleListings.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/DevConsole.h"
 #include "game/console/NoclipMotion.h"
 #include "game/context/GameContext.h"
 #include "game/hud/AutoSaveIcon.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/PauseMenu.h"
@@ -94,8 +97,6 @@ private:
     ConsoleSession consoleSession() const;
     const PlayScene* consoleScene() const;
     const LevelWorld* consoleWorld() const;
-    /** What the offline console commands read and change of the game. */
-    OfflineConsoleCommands::Ports offlineConsolePorts();
     /** Where the shared console verbs' lines go: the online game's request for the console's
      * seat, else the next offline step. */
     ConsoleActionRoute consoleActionRoute();
@@ -104,8 +105,9 @@ private:
      * with nobody in. */
     s32 consolePlayer();
     /** Registers the console words the Legends maps answer offline: goto's maps and the way
-     * back from one, and unlock_tower in a native world walked (GauntletLegends.cpp). */
-    void addLegendsConsoleForms();
+     * back from one, unlock_tower in a native world walked, and list maps' Legends lines
+     * (GauntletLegends.cpp). */
+    void registerLegendsConsole(ConsoleHost& host, ConsoleListings& listings);
     /** goto's Legends words: walks or previews a map, or goes back from one. */
     void consoleLegendsGoto(DevConsole& console, DevConsole::Arguments arguments);
     /** unlock_tower in a native Legends world walked: its own tower's unlocks for the party. */
@@ -135,10 +137,6 @@ private:
     bool closeLegendsLevel(bool keepProgress = true);
     bool quitLegendsLevel();
     void finishLegendsTravel();
-    /** get info: what the thing selected, or named by its token, is. */
-    void consoleInfo(DevConsole& console, DevConsole::Arguments arguments);
-    void consoleHideHud(DevConsole& console);
-    void consoleFreeCam(DevConsole& console);
     /** Picks what stands under `cursor` in the view for the console, or lets the selection
      * go without one; the console's $SELECTED follows. */
     void consoleSelect(std::optional<Vec2> cursor);
@@ -190,6 +188,7 @@ private:
     BuildLabel m_buildLabel;
     LevelDebugOverlay m_levelDebug;
     ConsoleActionRoute m_consoleRoute{consoleActionRoute()}; ///< outlives the console's commands
+    ConsoleListings m_consoleListings; ///< what list names; outlives the console's commands
     DevConsole m_console;
     FreeCamera m_freeCamera;
     LegendsPreview m_legendsPreview;
@@ -283,7 +282,6 @@ private:
     std::optional<Journey> m_journey;
     void returnFromChallenge(std::span<const PartyMember> party);
     SaveSlots m_saves; ///< where the party in play is kept
-    OfflineConsoleCommands m_offlineConsole{offlineConsolePorts()};
     TransitionScreen m_loadingPicture;
     LevelLoadingScreen m_levelLoading;
     Canvas m_canvas;

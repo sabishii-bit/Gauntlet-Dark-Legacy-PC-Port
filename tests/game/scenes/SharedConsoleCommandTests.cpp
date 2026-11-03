@@ -93,19 +93,15 @@ struct Console {
             console.addCommand(std::move(name), "stands in", reach,
                                [](DevConsole&, DevConsole::Arguments) {});
         };
-        const auto shared = [this](std::string_view name) {
-            registerSharedConsoleCommand(console, name, sink, levels);
-        };
         local("console_permissions", ConsoleReach::HostOnly);
         local("debug_info", ConsoleReach::Local);
+        local("hidehud", ConsoleReach::Local);
+        local("freecam", ConsoleReach::Local);
         local("list", ConsoleReach::Local);
         local("activate", ConsoleReach::OfflineOnly);
         local("unlock", ConsoleReach::OfflineOnly);
         local("lock", ConsoleReach::OfflineOnly);
-        shared("goto");
-        local("party_count", ConsoleReach::OfflineOnly);
-        shared("unlock_tower");
-        shared("get");
+        registerSharedConsoleCommands(console.host(), console.commands(), sink, levels);
         console.addForm("get", std::make_unique<LambdaForm>(
                                    ConsoleReach::Local, std::string{},
                                    [](DevConsole::Arguments arguments) {
@@ -115,13 +111,7 @@ struct Console {
                                    [this](DevConsole&, DevConsole::Arguments arguments) {
                                        informed.push_back(parseGift(arguments)->name);
                                    }));
-        shared("spawn");
-        shared("suicide");
-        shared("notarget");
-        shared("god");
-        local("hidehud", ConsoleReach::Local);
-        local("freecam", ConsoleReach::Local);
-        shared("noclip");
+        local("party_count", ConsoleReach::OfflineOnly);
         console.addForm("goto", std::make_unique<LambdaForm>(
                                     ConsoleReach::OfflineOnly, std::string{kLegendsOffline},
                                     [](DevConsole::Arguments arguments) {
@@ -310,12 +300,13 @@ TEST_CASE("the shared commands' help, usage and words read as they do today",
     constexpr std::array<Help, 17> kHelp{{
         {"help", "lists the commands"},
         {"debug_info", "stands in"},
+        {"hidehud", "stands in"},
+        {"freecam", "stands in"},
         {"list", "stands in"},
         {"activate", "stands in"},
         {"unlock", "stands in"},
         {"lock", "stands in"},
         {"goto", "<map> [x y z], x y z or <legends map> [preview]: brings the party there"},
-        {"party_count", "stands in"},
         {"unlock_tower", "opens every wing and portal of the tower"},
         {"get", "<item> [amount], exp <points> or level <level>: for you"},
         {"spawn", "stands enemies, great ones, generators, pickups or objects before you; spawn "
@@ -323,9 +314,8 @@ TEST_CASE("the shared commands' help, usage and words read as they do today",
         {"suicide", "fells everyone standing"},
         {"notarget", "the enemies stop seeing you, or see you again"},
         {"god", "nothing harms you, or everything does again"},
-        {"hidehud", "stands in"},
-        {"freecam", "stands in"},
         {"noclip", "flies you through everything, or sets you down again"},
+        {"party_count", "stands in"},
     }};
     std::string expected;
     for (const Help& help : kHelp) {
@@ -345,10 +335,11 @@ TEST_CASE("the shared commands' help, usage and words read as they do today",
     DevConsole console;
     RecordingSink sink;
     const LevelCatalog levels;
-    registerSharedConsoleCommand(console, "goto", sink, levels, [](DevConsole::Arguments) {
-        return std::vector<std::string>{"x"};
-    });
+    registerSharedConsoleCommands(
+        console.host(), console.commands(), sink, levels,
+        [](DevConsole::Arguments) { return std::vector<std::string>{"x"}; });
     CHECK(console.commands().find("goto")->completions(typing) == std::vector<std::string>{"x"});
+    CHECK(console.commands().find("god")->completions(typing).empty());
 }
 
 TEST_CASE("the forms registered on a shared verb join its help and its usage",
@@ -356,7 +347,7 @@ TEST_CASE("the forms registered on a shared verb join its help and its usage",
     DevConsole console;
     RecordingSink sink;
     const LevelCatalog levels;
-    registerSharedConsoleCommand(console, "goto", sink, levels);
+    registerSharedConsoleCommands(console.host(), console.commands(), sink, levels);
     console.addForm("goto", std::make_unique<ListedForm>());
     const auto* command =
         dynamic_cast<const SharedConsoleCommand*>(console.commands().find("goto"));

@@ -20,6 +20,7 @@
 
 #include "game/console/ConsoleCommand.h"
 #include "game/console/ConsoleForm.h"
+#include "game/console/ConsoleHost.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
 #include "game/hud/StatusBox.h"
@@ -91,6 +92,8 @@ public:
                     Completer completer = {});
     /** Registers `form` on the command named `command`, tried before the command itself. */
     void addForm(std::string_view command, std::unique_ptr<ConsoleForm> form);
+    /** What the modules that own commands and forms register them through. */
+    ConsoleHost& host() { return m_commands; }
     const ConsoleRegistry& commands() const { return m_commands; }
     /** What the application is doing; the policy judges each command and form by it in help,
      * in the suggestions and when a line runs. */

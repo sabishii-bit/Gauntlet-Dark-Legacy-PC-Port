@@ -5,9 +5,9 @@
 
 #include "game/console/ConsoleActionSink.h"
 #include "game/console/ConsoleCommand.h"
+#include "game/console/ConsoleHost.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
-#include "game/console/DevConsole.h"
 #include "game/level/LevelCatalog.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SharedConsoleVerbs.h"
@@ -47,10 +47,12 @@ private:
     LambdaCommand::Completer m_completer;
 };
 
-/** Registers the shared verb `name` with `console`, its lines going to `sink`. */
-void registerSharedConsoleCommand(DevConsole& console, std::string_view name,
-                                  ConsoleActionSink& sink, const LevelCatalog& levels,
-                                  LambdaCommand::Completer completer = {});
+/** Registers every shared verb with `host` in the wire's order, their lines going to `sink`;
+ * `registry` is the console's, whose forms help and the usage read, and `gotoWords`, when
+ * given, completes goto's words instead of the verb. */
+void registerSharedConsoleCommands(ConsoleHost& host, const ConsoleRegistry& registry,
+                                   ConsoleActionSink& sink, const LevelCatalog& levels,
+                                   const LambdaCommand::Completer& gotoWords = {});
 
 /** The game a console session's lines run in: offline play for the offline seat, else the
  * shared game. The netplay menus run no line: the console is held closed there. */

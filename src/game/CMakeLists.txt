@@ -105,6 +105,9 @@ add_library(game STATIC
     console/ConsoleCommand.h
     console/ConsoleCommand.cpp
     console/ConsoleForm.h
+    console/ConsoleHost.h
+    console/ConsoleListings.h
+    console/ConsoleListings.cpp
     console/ConsolePolicy.h
     console/ConsolePolicy.cpp
     console/ConsoleReach.h
@@ -129,10 +132,20 @@ add_library(game STATIC
     rollback/SharedConsoleWords.h
     rollback/SharedConsoleWords.cpp
     app/GauntletConsole.cpp
-    app/OfflineConsoleCommands.h
-    app/OfflineConsoleCommands.cpp
     app/ConsoleActionRoute.h
     app/ConsoleActionRoute.cpp
+    app/ConsoleRoster.h
+    app/ConsoleRoster.cpp
+    app/OnlineConsoleCommands.h
+    app/OnlineConsoleCommands.cpp
+    app/ViewConsoleCommands.h
+    app/ViewConsoleCommands.cpp
+    app/InspectConsoleForm.h
+    app/InspectConsoleForm.cpp
+    app/PartyCountCommand.h
+    app/PartyCountCommand.cpp
+    app/ProfileConsoleCommands.h
+    app/ProfileConsoleCommands.cpp
     app/LevelCompletion.h
     audio/MusicDuck.h
     audio/MusicDuck.cpp
@@ -461,6 +474,10 @@ add_library(game STATIC
     scenes/SharedConsoleVerbs.cpp
     scenes/SharedConsoleCommand.h
     scenes/SharedConsoleCommand.cpp
+    scenes/LevelListings.h
+    scenes/LevelListings.cpp
+    scenes/FixtureConsoleCommands.h
+    scenes/FixtureConsoleCommands.cpp
     scenes/ConsoleReplies.h
     scenes/ConsoleReplies.cpp
     scenes/ConsoleStage.h

@@ -9,37 +9,12 @@
 
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
+#include "game/console/RegisteredCommands.h"
 
 namespace {
 using namespace gdl::game;
-
-/** A command the application registers, at the reach it registers it with. */
-struct Registered {
-    std::string_view name;
-    ConsoleReach reach;
-};
-
-/** The application's commands in help's order, the console's own help first. */
-constexpr std::array<Registered, 18> kCommands{{
-    {.name = "help", .reach = ConsoleReach::Local},
-    {.name = "console_permissions", .reach = ConsoleReach::HostOnly},
-    {.name = "debug_info", .reach = ConsoleReach::Local},
-    {.name = "list", .reach = ConsoleReach::Local},
-    {.name = "activate", .reach = ConsoleReach::OfflineOnly},
-    {.name = "unlock", .reach = ConsoleReach::OfflineOnly},
-    {.name = "lock", .reach = ConsoleReach::OfflineOnly},
-    {.name = "goto", .reach = ConsoleReach::Shared},
-    {.name = "party_count", .reach = ConsoleReach::OfflineOnly},
-    {.name = "unlock_tower", .reach = ConsoleReach::Shared},
-    {.name = "get", .reach = ConsoleReach::Shared},
-    {.name = "spawn", .reach = ConsoleReach::Shared},
-    {.name = "suicide", .reach = ConsoleReach::Shared},
-    {.name = "notarget", .reach = ConsoleReach::Shared},
-    {.name = "god", .reach = ConsoleReach::Shared},
-    {.name = "hidehud", .reach = ConsoleReach::Local},
-    {.name = "freecam", .reach = ConsoleReach::Local},
-    {.name = "noclip", .reach = ConsoleReach::Shared},
-}};
+using gdl::test::kRegisteredCommands;
+using gdl::test::RegisteredCommand;
 
 /** The words a Legends map's preview admits. */
 constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
@@ -89,7 +64,7 @@ TEST_CASE("each session admits what it admits today", "[dev-console][online-cons
     }};
     for (const Row& row : rows) {
         const ConsoleSession session = ConsolePolicy::session(row.situation);
-        for (const Registered& command : kCommands) {
+        for (const RegisteredCommand& command : kRegisteredCommands) {
             INFO(row.label << ": " << command.name);
             const bool admitted =
                 std::ranges::find(row.admitted, command.name) != row.admitted.end();
@@ -134,7 +109,7 @@ TEST_CASE("shared words are judged as local ones, and a parked scene changes no 
             CHECK(ConsolePolicy::refusal(session, ConsoleReach::Shared, name) ==
                   ConsolePolicy::refusal(session, ConsoleReach::Local, name));
         }
-        for (const Registered& command : kCommands) {
+        for (const RegisteredCommand& command : kRegisteredCommands) {
             ConsoleSession parked = session;
             parked.hold = SceneHold::Parked;
             CHECK(ConsolePolicy::refusal(parked, command.reach, command.name) ==

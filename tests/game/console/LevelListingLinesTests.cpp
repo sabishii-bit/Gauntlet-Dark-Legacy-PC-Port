@@ -34,18 +34,6 @@ bool mentions(std::span<const std::string> lines, std::string_view text) {
     return std::ranges::any_of(lines, [&](const std::string& line) { return line.contains(text); });
 }
 
-/** What list answers words it cannot read. */
-constexpr std::string_view kListUsage =
-    "list maps              every level, by realm\n"
-    "list items [map]       what get knows, then a level's pickups\n"
-    "list inventory         what your character is and carries\n"
-    "list enemies [map]     the swarm's kinds, then a level's roster and generators\n"
-    "list critters [map]    the great ones, then those a level places\n"
-    "list generators [map]  a level's generators\n"
-    "list objects [map]     a level's objects\n"
-    "list switches [map]    a level's switches, for activate\n"
-    "list characters        every playable character, locked or hidden too";
-
 /** What list items says, a line an item. */
 constexpr std::array<std::string_view, 34> kItemLines{
     "key [n]            keys for the doors (1)",
@@ -83,18 +71,6 @@ constexpr std::array<std::string_view, 34> kItemLines{
     "healthvamp [s]     melee harm heals the character (60 s; under nought for good)",
     "pojo [s]           Pojo speaks for the character (60 s; under nought for good)",
 };
-
-TEST_CASE("list knows maps, items and inventory in any case", "[dev-console][commands]") {
-    CHECK(listingOf(Args{"maps"}) == Listing::Maps);
-    CHECK(listingOf(Args{"ITEMS"}) == Listing::Items);
-    CHECK(listingOf(Args{"Inventory"}) == Listing::Inventory);
-    CHECK(listingOf(Args{}) == Listing::Unknown);
-    CHECK(listingOf(Args{"shops"}) == Listing::Unknown);
-    CHECK(listingOf(Args{"Switches"}) == Listing::Switches);
-    CHECK(listingOf(Args{"characters"}) == Listing::Characters);
-    CHECK(listUsage().contains("list switches"));
-    CHECK(listUsage().contains("list characters"));
-}
 
 TEST_CASE("list characters names every class with its standing and the name costumes",
           "[dev-console][commands][characters]") {
@@ -174,15 +150,6 @@ TEST_CASE("the map list names every level of every realm", "[dev-console][comman
     }
 }
 
-TEST_CASE("list knows what a level holds and the map named after it", "[dev-console][commands]") {
-    CHECK(listingOf(Args{"enemies"}) == Listing::Enemies);
-    CHECK(listingOf(Args{"Critters"}) == Listing::Critters);
-    CHECK(listingOf(Args{"generators"}) == Listing::Generators);
-    CHECK(listingOf(Args{"OBJECTS", "g1"}) == Listing::Objects);
-    CHECK(listedMap(Args{"objects", "g1"}) == "G1");
-    CHECK_FALSE(listedMap(Args{"objects"}).has_value());
-}
-
 TEST_CASE("the enemy, critter and roster lines name what spawn takes", "[dev-console][commands]") {
     const auto enemies = enemyKindLines();
     REQUIRE(enemies.size() == 1);
@@ -241,10 +208,6 @@ TEST_CASE("the layout lines count a level's generators, placed enemies, pickups 
     CHECK(switchLines({}) == std::vector<std::string>{"Switches: none"});
     CHECK(instanceName(layout, -1).empty());
     CHECK(objects[0].contains(" distinct): "));
-}
-
-TEST_CASE("list's usage reads as it does today", "[dev-console][commands]") {
-    CHECK(listUsage() == kListUsage);
 }
 
 TEST_CASE("the item, kind and character listings read as they do today",

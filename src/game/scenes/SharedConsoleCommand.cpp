@@ -11,6 +11,7 @@
 
 #include "game/console/ConsoleForm.h"
 #include "game/console/ConsoleUsage.h"
+#include "game/console/DevConsole.h"
 
 namespace gdl::game {
 
@@ -90,13 +91,14 @@ void SharedConsoleCommand::run(DevConsole& console, Arguments arguments) {
     }
 }
 
-void registerSharedConsoleCommand(DevConsole& console, std::string_view name,
-                                  ConsoleActionSink& sink, const LevelCatalog& levels,
-                                  LambdaCommand::Completer completer) {
-    const SharedConsoleVerb* verb = sharedConsoleVerb(name);
-    GDL_VERIFY(verb != nullptr, "only a shared verb registers as a shared command");
-    console.addCommand(std::make_unique<SharedConsoleCommand>(
-        *verb, sink, levels, console.commands(), std::move(completer)));
+void registerSharedConsoleCommands(ConsoleHost& host, const ConsoleRegistry& registry,
+                                   ConsoleActionSink& sink, const LevelCatalog& levels,
+                                   const LambdaCommand::Completer& gotoWords) {
+    for (const SharedConsoleVerb* verb : sharedConsoleVerbs()) {
+        host.add(std::make_unique<SharedConsoleCommand>(
+            *verb, sink, levels, registry,
+            verb->name() == "goto" ? gotoWords : LambdaCommand::Completer{}));
+    }
 }
 
 PlayScene::ConsolePlay consolePlayOf(const ConsoleSession& session) {

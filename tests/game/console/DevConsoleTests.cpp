@@ -21,6 +21,7 @@
 #include "game/config/GameConfig.h"
 #include "game/console/ConsoleCommand.h"
 #include "game/console/ConsoleForm.h"
+#include "game/console/ConsoleHost.h"
 #include "game/console/ConsolePolicy.h"
 #include "game/console/ConsoleReach.h"
 #include "game/console/DevConsole.h"
@@ -832,6 +833,47 @@ TEST_CASE("command objects register into the console and are found by name in an
     CHECK(commands.commands()[builtIn]->summary() == "replaced");
     CHECK(commands.commands()[builtIn + 1]->name() == "later");
     CHECK(commands.find("spin")->completions({}).empty());
+}
+
+/** A command object of the test's own that says it runs in the shared game. */
+class SharedStandIn final : public ConsoleCommand {
+public:
+    explicit SharedStandIn(std::string name) : m_name(std::move(name)) {}
+    std::string_view name() const override { return m_name; }
+    std::string summary() const override { return "stands in"; }
+    ConsoleReach reach() const override { return ConsoleReach::Shared; }
+    void run(DevConsole& /*console*/, Arguments /*arguments*/) override {}
+
+private:
+    std::string m_name;
+};
+
+TEST_CASE("modules register their commands and forms through the console's host",
+          "[dev-console][autocomplete]") {
+    DevConsole console;
+    ConsoleHost& host = console.host();
+    auto owned = std::make_unique<CountingCommand>("Spin");
+    CountingCommand* spin = owned.get();
+    host.add(std::move(owned));
+    host.addForm("SPIN", std::make_unique<LambdaForm>(
+                             ConsoleReach::Local, std::string{},
+                             [](ConsoleForm::Arguments arguments) {
+                                 return !arguments.empty() && arguments.front() == "twice";
+                             },
+                             [](DevConsole& shown, ConsoleForm::Arguments /*arguments*/) {
+                                 shown.print("spun twice");
+                             }));
+    CHECK(console.commands().find("spin") == spin);
+    console.run("spin once");
+    CHECK(spin->runs == 1);
+    console.run("spin twice");
+    CHECK(spin->runs == 1);
+    CHECK(console.output().back() == "spun twice");
+    // A command of the shared game registers under one of the wire's shared words.
+    host.add(std::make_unique<SharedStandIn>("God"));
+    const ConsoleCommand* god = console.commands().find("god");
+    REQUIRE(god != nullptr);
+    CHECK(god->reach() == ConsoleReach::Shared);
 }
 
 TEST_CASE("the console suggests the rest of a word and Right at the end of the line takes it",
