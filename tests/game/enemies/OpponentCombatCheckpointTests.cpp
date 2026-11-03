@@ -12,6 +12,7 @@
 
 #include "game/enemies/OpponentCombatCheckpoint.h"
 #include "game/enemies/PlacedEnemiesCheckpoint.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/LevelCatalog.h"
 #include "game/party/AttackCheckpointFixture.h"
@@ -269,7 +270,8 @@ TEST_CASE("native hit streak and generator rewards replay in their original sett
     const auto swarm = fixture.opponents.enemies().checkpoint();
     REQUIRE(swarm);
     std::vector<std::string> events;
-    LevelOpponents::Events callbacks;
+    test::OpponentScript callbacks;
+    test::ScriptedOpponents opponentHost{callbacks};
     callbacks.help = [&](s32 lesson, usize player) {
         CHECK(lesson == HelpMessages::kDestroyGenerators);
         CHECK(player == 0); // identity 2 is the sole party entry
@@ -284,7 +286,7 @@ TEST_CASE("native hit streak and generator rewards replay in their original sett
         events.push_back("generator:" + std::to_string(player));
     };
     callbacks.levels = [&] { events.emplace_back("levels"); };
-    fixture.opponents.settleRewards(fixture.players, callbacks);
+    fixture.opponents.settleRewards(fixture.players, opponentHost, opponentHost);
     REQUIRE(events.size() >= 5);
     CHECK(events.front() == "lesson");
     CHECK(events[events.size() - 2] == "generator:2");
@@ -296,10 +298,10 @@ TEST_CASE("native hit streak and generator rewards replay in their original sett
     REQUIRE(fixture.opponents.enemies().restore(*swarm));
     REQUIRE(fixture.adapter.commitRestore(std::move(*prepared)));
     CHECK(events.empty());
-    fixture.opponents.settleRewards(fixture.players, callbacks);
+    fixture.opponents.settleRewards(fixture.players, opponentHost, opponentHost);
     CHECK(events == expected);
     events.clear();
-    fixture.opponents.settleRewards(fixture.players, callbacks);
+    fixture.opponents.settleRewards(fixture.players, opponentHost, opponentHost);
     CHECK(events == std::vector<std::string>{"levels"});
 }
 
@@ -606,7 +608,8 @@ TEST_CASE("native opponent owner replays wrong branches through pools queues and
     auto actual = std::make_unique<LevelOpponents::LocalSnapshot>();
     EffectTrees::LocalSnapshot effects;
     usize callbacks = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -630,7 +633,7 @@ TEST_CASE("native opponent owner replays wrong branches through pools queues and
         }
         // Empty players keep the test's external player owner immutable. Native
         // population clocks, deaths, effects and coordinator output still advance.
-        f.opponents.update(1, 1.0f / 60, {}, {}, events);
+        f.opponents.update(1, 1.0f / 60, {}, {}, opponentHost, opponentHost, opponentHost);
         if (wrong || tick % 7 == 0) {
             f.opponents.strikeGenerator(0, wrong ? 100000.0f : 1.0f, 2, f.players);
             f.opponents.strikeEnemy(0, wrong ? 100000.0f : 1.0f, 0, {0, 0, wrong ? -1.0f : 1.0f}, 2,
@@ -660,7 +663,7 @@ TEST_CASE("native opponent owner replays wrong branches through pools queues and
         }
         predicted->opponents.takeRockHits();
         predicted->opponents.takeBarrelRams();
-        predicted->opponents.settleRewards({}, events);
+        predicted->opponents.settleRewards({}, opponentHost, opponentHost);
         const auto calls = callbacks;
         REQUIRE(predicted->opponents.restoreLocal(*saved));
         REQUIRE(predicted->effects.restoreLocal(effects));
@@ -742,10 +745,11 @@ TEST_CASE("native opponent equality includes undispatched coordinator rewards",
     REQUIRE(fixture->opponents.enemies().saveLocal(*enemiesBefore));
     fixture->opponents.generators().saveLocal(generatorsBefore);
     usize awards = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     events.award = [&](s32, s32, bool) { ++awards; };
     events.levels = [] {};
-    fixture->opponents.settleRewards({}, events);
+    fixture->opponents.settleRewards({}, opponentHost, opponentHost);
     CHECK(awards > 0);
     REQUIRE(fixture->opponents.saveLocal(*after));
     CHECK_FALSE(fixture->opponents.equalLocal(*before, *after));

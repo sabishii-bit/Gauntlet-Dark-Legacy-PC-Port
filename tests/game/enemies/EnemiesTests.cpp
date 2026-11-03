@@ -25,6 +25,7 @@
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
@@ -3534,7 +3535,8 @@ TEST_CASE("Ghost Town native generators and player contacts preserve zombie floo
     overhead.position = focus + Vec3{0, 60, 0};
     overhead.forward = {0, -1, 0};
     overhead.up = {0, 0, 1};
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 contacts = 0;
     events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++contacts; };
     events.settleBlasts = [] {};
@@ -3557,7 +3559,7 @@ TEST_CASE("Ghost Town native generators and player contacts preserve zombie floo
         }
         world.update(kStep);
         opponents.watch(overhead, players[0].actor.position());
-        opponents.update(2, kStep, players, fixtures.obstacles(), events);
+        opponents.update(2, kStep, players, fixtures.obstacles(), host, host, host);
         auto& enemies = opponents.enemies();
         for (s32 id = 0; id < Enemies::kMost; ++id) {
             if (!enemies.alive(id) || enemies.kindOf(id) != 13) {

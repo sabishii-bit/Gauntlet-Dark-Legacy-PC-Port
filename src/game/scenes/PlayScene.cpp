@@ -747,8 +747,7 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     watchOpponents();
-    m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents(),
-                       m_fixtures.missileStops(), m_fixtures.critterObstacles());
+    advanceOpponents(ticks, seconds);
     m_sim.opponentsAdvanced = seconds > 0;
     for (const Vec3& position : m_world->takeWorldExplosions()) {
         m_fixtures.worldExplosion(position, m_players, m_fixtureRouting);
@@ -812,90 +811,6 @@ void PlayScene::watchOpponents(bool standPlaced) {
     m_opponents.watch(volume, attention, standPlaced);
 }
 
-LevelOpponents::Events PlayScene::opponentEvents() {
-    return {
-        .hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
-                       const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
-        .settleBlasts = [this] { settleBlasts(); },
-        .legend =
-            [this](const LegendEvent& event) {
-                m_bossSequence.showLegend(event, m_opponents.bosses(), m_players);
-            },
-        .advanceLegend =
-            [this](f32 duration) {
-                m_bossSequence.advanceLegend(duration, m_opponents.bosses(), m_players);
-            },
-        .fallen =
-            [this](const Vec3& position) {
-                if (auto* imported = m_world->imported()) {
-                    std::vector<PlayerActor*> survivors;
-                    for (auto& player : m_players) {
-                        if (!player.departed && player.life == PlayerLife::Standing) {
-                            survivors.push_back(&player.actor);
-                        }
-                    }
-                    imported->bossDefeated(position + m_opponents.bosses().rewardOffset(),
-                                           survivors);
-                } else {
-                    m_bossSequence.fallen(position, m_opponents.bosses(), m_players);
-                }
-            },
-        .spew =
-            [this](const CombatSpew& spew) {
-                m_bossSequence.spewCoins(spew, m_opponents, m_fixtures, m_players);
-            },
-        .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
-        .levels = [this] { updateLevels(); },
-        .award = [this](s32 player, s32 amount,
-                        bool kill) { awardExperience(player, amount, kill); },
-        .destroyedGenerator =
-            [this](s32 player) {
-                PartyRecords::destroyedGenerator(m_players, player);
-                if (actor(player) != nullptr) {
-                    emitOutput(RumbleOutput{player, 0, ControlFeedback::GeneratorDestroyed});
-                }
-            },
-        .blocksBreath =
-            [this](const Vec3& from, const Vec3& to) {
-                if (const auto* imported = m_world->imported()) {
-                    return imported->arenaBlocksSegment(from, to, 0.5f);
-                }
-                return m_fixtures.safeRocks().blocksBreath(from, to);
-            },
-        .blocksArea =
-            [this](const Vec3& from, const Vec3& to) {
-                constexpr f32 kAreaProbeRadius = 0.1f;
-                if (const auto* imported = m_world->imported()) {
-                    return imported->arenaBlocksSegment(from, to, kAreaProbeRadius);
-                }
-                return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
-            },
-        .arenaAnchors =
-            [this] {
-                return m_world->imported() ? m_world->imported()->arenaAnchors()
-                                           : m_fixtures.safeRocks().attackAnchors();
-            },
-        .arenaTargets =
-            [this] {
-                return m_world->imported() ? m_world->imported()->arenaTargets()
-                                           : m_fixtures.safeRocks().arenaTargets();
-            },
-        .activateArena =
-            [this](const CombatArenaActivation& activation) {
-                if (auto* imported = m_world->imported()) {
-                    imported->activateArena(activation);
-                } else {
-                    m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
-                }
-            },
-        .shake = [this] { m_sim.shake.start(); },
-        .help = [this](s32 id, usize i) { return postHelp(id, i); },
-        .blastScenery =
-            [this](const PickupBlastReach& reach, std::vector<s32>& reached) {
-                m_fixtures.blastScenery(reach.position, reach.radius, reach.damage, reach.flags,
-                                        m_players, m_fixtureRouting, reached);
-            }};
-}
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
 }
@@ -1790,7 +1705,7 @@ std::optional<PlayOutcome> PlayScene::advancePortals(s32 ticks, f32 seconds, con
         // The leaving branch no longer updates waiting visitors. Release their
         // activation loop before S_TUNNEL takes over for the descent.
         m_audio.updateExitFlame(std::nullopt, {});
-        m_opponents.settleRewards(m_players, opponentEvents());
+        settleOpponentRewards();
         if (m_portals.portal(*portal).secret) {
             m_sim.secretTravel = true;
             m_sim.secretReturnPosition = m_portals.portal(*portal).departurePosition.value_or(

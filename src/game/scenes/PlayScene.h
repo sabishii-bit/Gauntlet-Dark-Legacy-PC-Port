@@ -755,7 +755,15 @@ private:
     private:
         PlayScene& m_scene;
     };
-    LevelOpponents::Events opponentEvents();
+    /** The scene's answers to what its opponents report, to what a boss encounter asks and to
+     * what stands in a blow's way; one of each is made for each update or settling. */
+    class OpponentRouting;
+    class BossRouting;
+    class CoverRouting;
+    /** Runs the opponents for the tick against the fixtures, answered by the scene. */
+    void advanceOpponents(s32 ticks, f32 seconds);
+    /** Settles what the opponents still owe the party before it leaves the level. */
+    void settleOpponentRewards();
     PlayerAttacks::Targets attackTargets();
     void answerTowerPrompts(const Inputs& inputs);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,

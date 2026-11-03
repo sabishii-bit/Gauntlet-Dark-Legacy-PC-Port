@@ -14,6 +14,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 
 namespace {
 using namespace gdl;
@@ -195,7 +196,8 @@ TEST_CASE("Lich spit creates visible generators that breed the stage's maggots",
     const f32 damageFraction = GENERATE(0.1f, 0.6f);
     phase.damage = opponents.bosses().view().maxHealth * damageFraction;
     opponents.bosses().hurt(phase);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -211,7 +213,7 @@ TEST_CASE("Lich spit creates visible generators that breed the stage's maggots",
     std::set<std::string> visuals;
     for (s32 frame = 0; frame < 9000 && !bred; ++frame) {
         players[0].actor.place(*opponents.bosses().position() + Vec3{0, 0, 20});
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         moves.emplace(opponents.bosses().moveName());
         for (usize i = 0; i < effects.count(); ++i) {
             visuals.emplace(effects.effect(i).name);
@@ -275,7 +277,8 @@ TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][asse
     players[0].actor.spawn(0, {}, nullptr, {0, 0, 12}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     opponents.bosses().wake();
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 hits = 0;
     events.hurt = [&](usize, f32 damage, HurtKind, bool, const PlayerImpact&) {
         if (opponents.bosses().moveName() == "CHAIN" && damage > 0) {
@@ -297,7 +300,7 @@ TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][asse
         const auto floor = world.collision().floorAt(position, 5, 5);
         REQUIRE(floor);
         players[0].actor.place({position.x, floor->y, position.z});
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         effects.update(1.0f / 30);
         if (opponents.bosses().moveName() == "CHAIN") {
             chain = true;
@@ -332,7 +335,8 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
     EnemyHit phase;
     phase.damage = opponents.bosses().view().maxHealth * 0.6f;
     opponents.bosses().hurt(phase);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 hits = 0;
     events.hurt = [&](usize, f32 damage, HurtKind kind, bool, const PlayerImpact& impact) {
         if ((impact.flags & damage::kSticky) != 0) {
@@ -356,7 +360,7 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
         if (!hands) {
             players[0].actor.place(*opponents.bosses().position() + Vec3{0, 0.2f, 45});
         }
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         moves.emplace(opponents.bosses().moveName());
         for (usize i = 0; i < effects.count(); ++i) {
             if (effects.effect(i).name == "ATK14GENFX") {

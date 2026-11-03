@@ -12,6 +12,7 @@
 #include "game/bosses/Bosses.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 
 namespace {
 using namespace gdl;
@@ -100,7 +101,8 @@ TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spi
     phase.damage = opponents.bosses().view().maxHealth * 0.2f;
     opponents.bosses().wake();
     opponents.bosses().hurt(phase);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -117,7 +119,7 @@ TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spi
     std::set<std::string> visuals;
     for (s32 frame = 0; frame < 3600 && !bred; ++frame) {
         players[0].actor.place(kHome + Vec3{0, 0, 45});
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         moves.emplace(opponents.bosses().moveName());
         for (usize i = 0; i < effects.count(); ++i) {
             visuals.emplace(effects.effect(i).name);
@@ -148,7 +150,7 @@ TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spi
     opponents.bosses().hurt(hit);
     REQUIRE(defeats == 0);
     for (s32 frame = 0; frame < 900; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         effects.update(1.0f / 30);
     }
     REQUIRE(defeats == 1);

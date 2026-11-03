@@ -27,6 +27,7 @@
 #include "game/level/SimulationSeed.h"
 #include "game/party/BodyCollision.h"
 #include "game/party/PartyDamage.h"
+#include "game/party/PlayerHealth.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/players/EnemyShrink.h"
 #include "game/players/ItemPickup.h"
@@ -293,18 +294,17 @@ void LevelOpponents::strikeSwarm(s32 id, f32 damage, u32 flags, const Vec3& dire
  * item a shot leaves its element's spark; sent back, it hurts the swarm; a lob bursts where
  * it ends, and the burst grows over its effect's life. A blast's reach hurts whoever it
  * finds, gas as gas. */
-void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const Events& events) {
+void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, OpponentHost& host) {
     if (!m_resources.has_value()) {
         return;
     }
     for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
-        (void)dispatchEnemyMissileHit(hit, players, events);
+        (void)dispatchEnemyMissileHit(hit, players, host);
     }
 }
 
 bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
-                                             std::span<PlayerRuntime> players,
-                                             const Events& events) {
+                                             std::span<PlayerRuntime> players, OpponentHost& host) {
     if (!m_resources) {
         return false;
     }
@@ -346,7 +346,7 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
     for (usize i = 0; i < players.size(); ++i) {
         if (hit.player >= 0 && players[i].actor.player() == hit.player &&
             players[i].life == PlayerLife::Standing) {
-            events.hurt(i, hit.damage, kind, true, {hit.flags, hit.direction});
+            host.hurtMember(i, hit.damage, kind, true, {hit.flags, hit.direction});
         }
     }
     if (hit.burstRadius > 0.0f) {
@@ -1151,7 +1151,7 @@ bool LevelOpponents::unseen(s32 player) const {
 }
 
 void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
-                                    const Events& events) {
+                                    OpponentHost& host) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -1173,8 +1173,8 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
             m_resources->audio.playNamed(*impact->sound);
         }
         if (blow.ward == EnemyMeleeWard::None) {
-            events.hurt(i, blow.damage, nativeSound ? HurtKind::Blow : impact->kind, true,
-                        impact->impact);
+            host.hurtMember(i, blow.damage, nativeSound ? HurtKind::Blow : impact->kind, true,
+                            impact->impact);
             continue;
         }
         if (blow.ward == EnemyMeleeWard::HealthVamp && blow.damage > 0) {
@@ -1197,7 +1197,7 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
 }
 
 bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
-                                      const Events& events) {
+                                      OpponentHost& host, const CombatCover& cover) {
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
         if (player.actor.player() != blow.player || !PlayerHealth::canBeDamaged(player) ||
@@ -1207,7 +1207,7 @@ bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
         }
         if (blow.breath) {
             const Vec3 centre = player.actor.followPoint();
-            if (events.blocksBreath && events.blocksBreath(blow.origin, centre)) {
+            if (cover.blocksBreath(blow.origin, centre)) {
                 continue;
             }
         }
@@ -1217,14 +1217,14 @@ bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
         if (blow.area) {
             const Vec3 centre = player.actor.position() + Vec3{0, player.actor.height() * 0.5f, 0};
             const Vec3 delta = centre - blow.origin;
-            if (glm::length(Vec2{delta.x, delta.z}) > 10.0f && events.blocksArea &&
-                events.blocksArea(blow.origin, centre)) {
+            if (glm::length(Vec2{delta.x, delta.z}) > 10.0f &&
+                cover.blocksArea(blow.origin, centre)) {
                 continue;
             }
             player.effectGap = blow.repeatGap;
         }
-        events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,
-                    {blow.flags, blow.direction});
+        host.hurtMember(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,
+                        {blow.flags, blow.direction});
         return true;
     }
     return false;
@@ -1326,7 +1326,8 @@ void LevelOpponents::setMechanics(MechanicsFacade* mechanics) {
 }
 
 void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
-                            std::span<const Obstacle> fixtures, const Events& events,
+                            std::span<const Obstacle> fixtures, OpponentHost& host,
+                            BossEncounterHost& encounter, const CombatCover& cover,
                             std::span<const MissileStop> stops,
                             std::span<const CombatantObstacle> walkedInto) {
     if (!m_resources.has_value()) {
@@ -1371,12 +1372,15 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     const auto bosses = m_bosses.targets(true);
     combatants.insert(combatants.end(), bosses.begin(), bosses.end());
     m_enemies.setCombatantBodies(combatants);
+    const auto blastScenery = [&host](const PickupBlastReach& reach, std::vector<s32>& reached) {
+        host.blastScenery(reach, reached);
+    };
     auto inTheWay = OpponentSimulation{m_generators, m_enemies, m_enemyMissiles}.advance(
         {ticks, seconds, views, fixtures, stops, m_critters.targets(true), m_bosses.targets(),
          &m_resources->world.collision(), missileSpeed, timeStopped, tuning},
-        events.blastScenery, [this] { playBirths(); });
+        blastScenery, [this] { playBirths(); });
     m_importedActors.syncLive(m_enemies);
-    landEnemyMissiles(players, events);
+    landEnemyMissiles(players, host);
     playEnemyCues();
     // What blows itself up goes up with the bomb's bang; one struck down stops crying out
     // (enemy_dies, AudioKillBySound).
@@ -1408,7 +1412,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         fireDeathShot(shot);
     }
     advanceDeathShots();
-    events.settleBlasts();
+    host.settleBlasts();
     updateStatues(ticks, seconds, players);
     advanceCritters(ticks, seconds, views, timeStopped, walkedInto, players);
     for (const CombatantRam& ram : m_critters.takeRams()) {
@@ -1419,9 +1423,8 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
     }
     // Boss AI is independent of Stop Time; fired missiles likewise keep moving.
-    m_bosses.setArenaAnchors(events.arenaAnchors ? events.arenaAnchors() : std::vector<Mat4>{});
-    m_bosses.setArenaTargets(events.arenaTargets ? events.arenaTargets()
-                                                 : std::vector<CombatArenaTarget>{});
+    m_bosses.setArenaAnchors(encounter.arenaAnchors());
+    m_bosses.setArenaTargets(encounter.arenaTargets());
     auto* importedArena = m_resources->world.imported();
     const bool bossWasAwake = importedArena != nullptr && m_bosses.view().awake;
     m_bosses.update(ticks, seconds, views);
@@ -1445,9 +1448,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
     }
     for (const auto& activation : m_bosses.takeArenaActivations()) {
-        if (events.activateArena) {
-            events.activateArena(activation);
-        }
+        encounter.activateArena(activation);
     }
     const auto shotSound = [&](const CombatantProjectiles::SoundCue& cue) {
         if (cue.ownerKind == CombatantKind::Boss) {
@@ -1559,7 +1560,8 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                 // ProcessEffects (80094BE0) calls damage_player with mode 1
                 // for both missiles and lingering contact effects. Mode 3's
                 // piercing-trap groan does not belong to these attacks.
-                events.hurt(player, hit.damage, HurtKind::Blow, true, {hit.flags, hit.direction});
+                host.hurtMember(player, hit.damage, HurtKind::Blow, true,
+                                {hit.flags, hit.direction});
                 players[player].effectGap = hit.repeatGap;
                 if (hit.ownerKind == CombatantKind::Boss) {
                     m_bosses.damagedPlayer(hit.player, hit.damage, hit.critter);
@@ -1588,42 +1590,42 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                 }
             }
         }
-        events.legend(event);
+        encounter.legend(event);
     }
-    events.advanceLegend(seconds);
+    encounter.advanceLegend(seconds);
     for (const CombatBlow& blow : m_bosses.takeBlows()) {
-        if (applyCritterBlow(blow, players, events)) {
+        if (applyCritterBlow(blow, players, host, cover)) {
             m_bosses.damagedPlayer(blow.player, blow.damage, blow.critter);
         }
     }
-    awardBossLosses(players, events);
-    events.advanceVictory(ticks, seconds);
+    awardBossLosses(players, host, encounter);
+    encounter.advanceVictory(ticks, seconds);
     // The great ones' effects and sounds: a move's, a strike's, a hit's.
     for (const CombatCue& cue : m_bosses.takeCues()) {
-        if (cue.shakes && events.shake) {
-            events.shake();
+        if (cue.shakes) {
+            host.shake();
         }
         showCritterCue(cue, m_bosses.archive(), true);
     }
     for (const CombatCue& cue : m_critters.takeCues()) {
-        if (cue.shakes && events.shake) {
-            events.shake();
+        if (cue.shakes) {
+            host.shake();
         }
         showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
     }
     followCritterEffects(players);
     finishSummons(views);
     for (const CombatBlow& blow : m_critters.takeBlows()) {
-        if (applyCritterBlow(blow, players, events)) {
+        if (applyCritterBlow(blow, players, host, cover)) {
             m_critters.damagedPlayer(blow.critter, blow.player, blow.damage);
         }
     }
-    awardCritterLosses(players, events);
-    events.levels();
+    awardCritterLosses(players, host);
+    host.updateLevels();
     for (const EnemyBlow& blow : m_enemies.takeBlows()) {
-        applyEnemyBlow(blow, players, events);
+        applyEnemyBlow(blow, players, host);
     }
-    updateDeaths(players, events);
+    updateDeaths(players, host);
     // IT's touch makes its player it, whoever was before (fn_80046140).
     for (const s32 tagged : m_enemies.takeTagged()) {
         for (usize i = 0; i < players.size(); ++i) {
@@ -1635,40 +1637,39 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             }
             players[i].itTicks = 1;
             log::info("Player {} is now it", tagged + 1);
-            if (events.help) {
-                events.help(HelpMessages::kNowIt, i);
-            }
+            host.lesson(HelpMessages::kNowIt, i);
         }
     }
-    deliverLessons(players, events);
-    awardEnemyLosses(events);
+    deliverLessons(players, host);
+    awardEnemyLosses(host);
 }
 
-void LevelOpponents::deliverLessons(std::span<const PlayerRuntime> players, const Events& events) {
+void LevelOpponents::deliverLessons(std::span<const PlayerRuntime> players, OpponentHost& host) {
     // PlayerDamagedEnemy posts message22 during combat. A queued hit must reach
     // the next normal update, not wait for the portal's final reward settlement.
     for (const auto& [lesson, player] : std::exchange(m_sim.lessons, {})) {
-        for (usize i = 0; i < players.size() && events.help; ++i) {
+        for (usize i = 0; i < players.size(); ++i) {
             if (players[i].actor.player() == player) {
-                events.help(lesson, i);
+                host.lesson(lesson, i);
             }
         }
     }
 }
 
-void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const Events& events) {
+void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, OpponentHost& host,
+                                   BossEncounterHost& encounter) {
     if (!m_resources.has_value()) {
         return;
     }
-    deliverLessons(players, events);
+    deliverLessons(players, host);
     hearFrom(players);
-    awardBossLosses(players, events);
-    awardCritterLosses(players, events);
-    awardEnemyLosses(events);
-    events.levels();
+    awardBossLosses(players, host, encounter);
+    awardCritterLosses(players, host);
+    awardEnemyLosses(host);
+    host.updateLevels();
 }
 
-void LevelOpponents::awardEnemyLosses(const Events& events) {
+void LevelOpponents::awardEnemyLosses(OpponentHost& host) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -1701,7 +1702,7 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
     }
     BagThrow drops{*this};
     for (const EnemyLoss& loss : m_enemies.takeLosses()) {
-        events.award(loss.player, loss.experience, loss.killed);
+        host.award(loss.player, loss.experience, loss.killed);
         if (m_mechanics != nullptr) {
             m_mechanics->fell({.kind = loss.kind,
                                .affinity = loss.affinity,
@@ -1713,9 +1714,9 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
     }
     for (const GeneratorReward& reward : m_sim.generatorRewards) {
         // combat.c awards generator experience with AddExp's kill flag clear.
-        events.award(reward.player, reward.experience, false);
-        if (reward.destroyed && events.destroyedGenerator) {
-            events.destroyedGenerator(reward.player);
+        host.award(reward.player, reward.experience, false);
+        if (reward.destroyed) {
+            host.destroyedGenerator(reward.player);
         }
     }
     m_sim.generatorRewards.clear();
@@ -2108,17 +2109,18 @@ void LevelOpponents::followCritterEffects(std::span<const PlayerRuntime> players
 }
 
 /** The boss's worth goes the great ones' way: shares to the hitter, a kill's to everyone. */
-void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, const Events& events) {
+void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, OpponentHost& host,
+                                     BossEncounterHost& encounter) {
     if (!m_resources.has_value()) {
         return;
     }
     for (const CombatSpew& spew : m_bosses.takeSpews()) {
-        events.spew(spew);
+        encounter.spew(spew);
     }
     // CritterDelInst calls BossDeath after the animation/hold, independently
     // of the hit and kill experience awarded below.
     if (const auto defeated = m_bosses.takeDefeat(); defeated.has_value()) {
-        events.fallen(*defeated);
+        encounter.fallen(*defeated);
     }
     for (const CombatLoss& loss : m_bosses.takeLosses()) {
         for (const PlayerRuntime& runtime : players) {
@@ -2133,7 +2135,7 @@ void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, con
             const auto whole = static_cast<s32>(std::floor(owed));
             if (whole > 0 || loss.killed) {
                 owed -= static_cast<f32>(whole);
-                events.award(player, whole, loss.killed);
+                host.award(player, whole, loss.killed);
             }
         }
     }
@@ -2180,7 +2182,7 @@ std::vector<SwarmBodyView> LevelOpponents::swarmBodies() const {
 }
 
 void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,
-                                 const Events& events) {
+                                 OpponentHost& host) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -2201,9 +2203,6 @@ void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerR
         return;
     }
     throwBag(bag);
-    if (!events.help) {
-        return;
-    }
     s32 lesson = 0;
     if (loss.kind == CombatantKind::General) {
         lesson = HelpMessages::kGeneralsCarry;
@@ -2214,7 +2213,7 @@ void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerR
     }
     for (usize i = 0; i < players.size(); ++i) {
         if (players[i].life == PlayerLife::Standing) {
-            events.help(lesson, i);
+            host.lesson(lesson, i);
             return;
         }
     }
@@ -2223,13 +2222,13 @@ void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerR
 /** What the great ones are worth: a share to whoever hurt one, whole points as they add
  * up, and a kill's share to everyone. */
 void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
-                                        const Events& events) {
+                                        OpponentHost& host) {
     if (!m_resources.has_value()) {
         return;
     }
     for (const CombatLoss& loss : m_critters.takeLosses()) {
         if (loss.drop) {
-            dropCarried(loss, players, events);
+            dropCarried(loss, players, host);
             continue;
         }
         for (const PlayerRuntime& runtime : players) {
@@ -2246,7 +2245,7 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
             const auto whole = static_cast<s32>(std::floor(owed));
             if (whole > 0 || loss.killed) {
                 owed -= static_cast<f32>(whole);
-                events.award(player, whole, loss.killed);
+                host.award(player, whole, loss.killed);
             }
         }
     }

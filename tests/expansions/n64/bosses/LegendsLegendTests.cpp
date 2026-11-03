@@ -16,6 +16,7 @@
 #include "game/bosses/BossSequence.h"
 #include "game/bosses/LegendPresentation.h"
 #include "game/critters/CombatantCheckpoint.h"
+#include "game/enemies/ScriptedOpponents.h"
 
 namespace {
 using namespace gdl;
@@ -431,7 +432,8 @@ TEST_CASE("The common opponent and boss sequence owners consume and apply a nati
     sequence.bind({device, world, weapons, world.textures(), effects, audio});
     usize brandished = 0;
     usize thrown = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [&](const LegendEvent& event) {
@@ -459,7 +461,7 @@ TEST_CASE("The common opponent and boss sequence owners consume and apply a nati
     bool frozen = false;
     for (s32 frame = 0; frame < 1800 && !frozen; ++frame) {
         effects.update(1.f / 60);
-        opponents.update(1, 1.f / 60, players, {}, events);
+        opponents.update(1, 1.f / 60, players, {}, host, host, host);
         frozen = opponents.bosses().frozen();
     }
     REQUIRE(brandished == 1);

@@ -23,6 +23,7 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/Breakables.h"
 #include "game/level/Chests.h"
 #include "game/level/LevelCatalog.h"
@@ -1310,7 +1311,8 @@ TEST_CASE("Genie whirlwind attacks leave visible animated generators that breed 
     EnemyHit phase;
     phase.damage = opponents.bosses().view().maxHealth * 0.1f;
     opponents.bosses().hurt(phase);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -1323,7 +1325,7 @@ TEST_CASE("Genie whirlwind attacks leave visible animated generators that breed 
     REQUIRE(opponents.generators().count() == 0);
     bool bred = false;
     for (s32 frame = 0; frame < 9000 && !bred; ++frame) {
-        opponents.update(2, kStep, players, {}, events);
+        opponents.update(2, kStep, players, {}, host, host, host);
         effects.update(kStep);
         for (usize i = 0; i < opponents.generators().count(); ++i) {
             bred |= opponents.generators().bredOf(static_cast<s32>(i)) > 0;

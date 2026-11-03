@@ -18,21 +18,25 @@
 #include "game/critters/CritterStatues.h"
 #include "game/critters/Critters.h"
 #include "game/effects/EffectTrees.h"
+#include "game/enemies/BossEncounterHost.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
+#include "game/enemies/OpponentHost.h"
 #include "game/enemies/PlacedEnemies.h"
 #include "game/hud/BossMeter.h"
+#include "game/level/CombatCover.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/MissileStop.h"
 #include "game/mechanics/MechanicsFacade.h"
-#include "game/party/PlayerHealth.h"
+#include "game/party/PlayerRuntime.h"
 namespace gdl::game {
 struct GeneratorFeedbackEmission;
 /** Level enemy population, damage/reward routing and following combat cues.
  * Owns enemy archives, missiles, generators and the boss meter. Borrowed level services
- * must outlive close(). Phase hooks synchronously interleave scene-level rites,
- * victories and player progression; no party spans or callbacks are retained. */
+ * must outlive close(). Its hosts are answered synchronously at their phases, interleaving
+ * scene-level rites, victories and player progression; no party spans or hosts are
+ * retained. */
 class LevelOpponents {
 public:
     struct Resources {
@@ -46,27 +50,6 @@ public:
         /** Whether the level's placed enemies wait to be seen (watch) before they stand;
          * otherwise they all stand as it opens. */
         bool standOnSight = false;
-    };
-    struct Events {
-        std::function<void(usize, f32, HurtKind, bool, const PlayerImpact&)> hurt;
-        std::function<void()> settleBlasts;
-        std::function<void(const LegendEvent&)> legend;
-        std::function<void(f32)> advanceLegend;
-        std::function<void(const Vec3&)> fallen;
-        std::function<void(const CombatSpew&)> spew;
-        std::function<void(s32, f32)> advanceVictory;
-        std::function<void()> levels;
-        std::function<void(s32, s32, bool)> award;
-        std::function<void(s32)> destroyedGenerator;
-        std::function<bool(const Vec3&, const Vec3&)> blocksBreath;
-        std::function<bool(const Vec3&, const Vec3&)> blocksArea;
-        std::function<std::vector<Mat4>()> arenaAnchors;
-        std::function<std::vector<CombatArenaTarget>()> arenaTargets;
-        std::function<void(const CombatArenaActivation&)> activateArena;
-        std::function<void()> shake;
-        /** A lesson for the whole party, over the first standing player. */
-        std::function<bool(s32, usize)> help;
-        EnemyMissiles::SceneryBlast blastScenery;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
@@ -114,7 +97,8 @@ public:
     /** Follows moving scenery without advancing AI, attacks or animation. */
     void syncFloors();
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
-                std::span<const Obstacle> fixtures, const Events& events,
+                std::span<const Obstacle> fixtures, OpponentHost& host,
+                BossEncounterHost& encounter, const CombatCover& cover,
                 std::span<const MissileStop> stops = {},
                 std::span<const CombatantObstacle> walkedInto = {});
     /** The great ones' blows on barrels they walked into since the last call (by index). */
@@ -125,7 +109,8 @@ public:
     std::vector<PickupBlastReach> takePickupBlasts() { return m_enemyMissiles.takePickupBlasts(); }
     /** Drain hits from the last projectile/attack phase before a level transition freezes
      * simulation. No AI, collision, or time advances, and each reward is consumed once. */
-    void settleRewards(std::span<const PlayerRuntime> players, const Events& events);
+    void settleRewards(std::span<const PlayerRuntime> players, OpponentHost& host,
+                       BossEncounterHost& encounter);
     /** Releases a chest's Death record; count distinguishes red from black. */
     bool releaseDeath(s32 record, const Vec3& position, s32 count);
     /** Stops the contact-drain loop while simulation is paused. */
@@ -147,7 +132,7 @@ public:
     Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
     static bool applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
-                                 const Events& events);
+                                 OpponentHost& host, const CombatCover& cover);
     static void applyGrab(const CombatGrab& grab, bool boss, std::span<PlayerRuntime> players);
     /** Returns the swarm's healing credit, before level/armor adjustments. */
     f32 strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
@@ -209,10 +194,10 @@ private:
     u64 m_bindingGeneration = 1;
     /** Plays `name` at `level` of 255 as heard from where the players stand. */
     SoundHandle playAt(std::string_view name, f32 level, const Vec3& at);
-    void landEnemyMissiles(std::span<PlayerRuntime> players, const Events& events);
+    void landEnemyMissiles(std::span<PlayerRuntime> players, OpponentHost& host);
     /** One native landing in world/target/effect/sound/hurt/burst order. */
     bool dispatchEnemyMissileHit(const EnemyMissileHit& /*hit*/,
-                                 std::span<PlayerRuntime> /*players*/, const Events& /*events*/);
+                                 std::span<PlayerRuntime> /*players*/, OpponentHost& /*host*/);
     void playEnemyCues();
     std::vector<MissileTarget> swarmTargets() const;
     void strikeSwarm(s32 id, f32 damage, u32 flags, const Vec3& direction,
@@ -240,18 +225,19 @@ private:
     void hearFrom(std::span<const PlayerRuntime> players);
     void beginOrdinaryFrame(f32 seconds, std::span<PlayerRuntime> players);
     void countOrdinaryPlayers(std::span<const PlayerRuntime> players);
-    void deliverLessons(std::span<const PlayerRuntime> players, const Events& events);
+    void deliverLessons(std::span<const PlayerRuntime> players, OpponentHost& host);
     void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
-                        const Events& events);
-    void awardEnemyLosses(const Events& events);
-    void awardBossLosses(std::span<const PlayerRuntime> players, const Events& events);
-    void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
+                        OpponentHost& host);
+    void awardEnemyLosses(OpponentHost& host);
+    void awardBossLosses(std::span<const PlayerRuntime> players, OpponentHost& host,
+                         BossEncounterHost& encounter);
+    void awardCritterLosses(std::span<const PlayerRuntime> players, OpponentHost& host);
     void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
     void advanceCritters(s32 ticks, f32 seconds, std::span<const EnemyView> views, bool timeStopped,
                          std::span<const CombatantObstacle> walkedInto,
                          std::span<PlayerRuntime> players);
     void followCritterEffects(std::span<const PlayerRuntime> players);
-    void updateDeaths(std::span<PlayerRuntime> players, const Events& events);
+    void updateDeaths(std::span<PlayerRuntime> players, OpponentHost& host);
     void clearDeaths();
     void finishSummons(std::span<const EnemyView> players);
     using Placement = PlacedEnemies::Placement;
@@ -294,7 +280,7 @@ private:
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
      * carried nothing (CritterDropItem), with the lesson its kind teaches. */
     void dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,
-                     const Events& events);
+                     OpponentHost& host);
     std::optional<Resources> m_resources;
     void refreshBorrowedRoster();
     void bindImportedSounds();

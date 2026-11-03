@@ -22,6 +22,7 @@
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/critters/CombatantAssets.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 
 namespace {
 using namespace gdl;
@@ -42,8 +43,8 @@ formats::LegendsMap nativeMap(const std::filesystem::path& directory) {
     return map;
 }
 
-LevelOpponents::Events noPlayerDamage() {
-    LevelOpponents::Events events;
+test::OpponentScript noPlayerDamage() {
+    test::OpponentScript events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -270,6 +271,7 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
             opponents.bosses().hurt(hit);
             CHECK(opponents.bosses().view().health == initial);
             auto events = noPlayerDamage();
+            test::ScriptedOpponents host{events};
             events.arenaAnchors = [&] { return imported->arenaAnchors(); };
             events.arenaTargets = [&] { return imported->arenaTargets(); };
             events.activateArena = [&](const CombatArenaActivation& action) {
@@ -297,7 +299,7 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
                 imported->capturePresentation();
                 imported->update(kStep, false);
                 const bool wasAwake = opponents.bosses().view().awake;
-                opponents.update(1, kStep, players, {}, events);
+                opponents.update(1, kStep, players, {}, host, host, host);
                 if (!wasAwake) {
                     const bool waking = opponents.bosses().view().awake;
                     witnessedWake |= waking;
@@ -348,7 +350,7 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
                 for (; ageFrames < lifetimeFrames;) {
                     imported->capturePresentation();
                     imported->update(kStep, false);
-                    opponents.update(1, kStep, players, {}, events);
+                    opponents.update(1, kStep, players, {}, host, host, host);
                     ++ageFrames;
                     const bool alive =
                         static_cast<f64>(ageFrames) * kStep < LegendsBossEruption::kLifetime;
@@ -369,7 +371,7 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
                 opponents.bosses().hurt(hit);
                 damaged = opponents.bosses().view().health < initial;
                 if (!damaged) {
-                    opponents.update(1, kStep, players, {}, events);
+                    opponents.update(1, kStep, players, {}, host, host, host);
                 }
             }
             CHECK(damaged);
@@ -406,13 +408,13 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
                     opponents.bosses().hurt(hit);
                 }
                 imported->update(kStep, false);
-                opponents.update(1, kStep, players, {}, events);
+                opponents.update(1, kStep, players, {}, host, host, host);
             }
             REQUIRE(victories == 1);
             CHECK_FALSE(opponents.bosses().present());
             CHECK_FALSE(imported->travelRequested());
             for (s32 frame = 0; frame < 3; ++frame) {
-                opponents.update(1, kStep, players, {}, events);
+                opponents.update(1, kStep, players, {}, host, host, host);
             }
             CHECK(victories == 1);
             const auto released = scriptRewards();

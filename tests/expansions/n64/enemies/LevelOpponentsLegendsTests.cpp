@@ -20,6 +20,7 @@
 #include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/ImportedLevel.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/mechanics/MechanicsFacade.h"
@@ -39,8 +40,8 @@ public:
               TreeModel::Pass /*pass*/, f32 /*presentationAlpha*/) const override {}
     std::span<const ImportedActor> importedActors() const override { return roster; }
 };
-LevelOpponents::Events safeEvents() {
-    LevelOpponents::Events events;
+test::OpponentScript safeEvents() {
+    test::OpponentScript events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
@@ -126,13 +127,14 @@ TEST_CASE("Native Town suicide barrels release damaging poison instead of the fi
     REQUIRE(opponents.enemies().algorithmOf(*bomber) == kSuicideWay);
     std::vector<HurtKind> hurts;
     auto events = safeEvents();
+    test::ScriptedOpponents host{events};
     events.hurt = [&](usize, f32, HurtKind hurt, bool, const PlayerImpact&) {
         hurts.push_back(hurt);
     };
     opponents.strikeEnemy(*bomber, 1000, 0, Vec3{0, 0, 1}, 0, players);
     std::set<std::string> shown;
     for (s32 frame = 0; frame < 150; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         effects.update(1.0f / 30);
         for (usize i = 0; i < effects.count(); ++i) {
             shown.insert(effects.effect(i).name);
@@ -220,7 +222,8 @@ TEST_CASE("potions the mechanics leave in bags release collectible on imported l
                           players);
     REQUIRE_FALSE(opponents.enemies().alive(*id));
     const auto events = safeEvents();
-    opponents.update(1, 1.0f / 60, players, {}, events);
+    test::ScriptedOpponents host{events};
+    opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     if (bagArt) {
         REQUIRE(opponents.bagCount() == 1);
         CHECK(world.placedItems().size() == 0);
@@ -228,7 +231,7 @@ TEST_CASE("potions the mechanics leave in bags release collectible on imported l
     for (s32 tick = 0; tick < 240; ++tick) {
         effects.update(1.0f / 60);
         world.update(1.0f / 60, false);
-        opponents.update(1, 1.0f / 60, players, {}, events);
+        opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     }
     CHECK(opponents.bagCount() == 0);
     REQUIRE(world.placedItems().size() == 1);
@@ -301,7 +304,8 @@ TEST_CASE("Native N64 authored actors activate through the common opponent owner
     CHECK(opponents.critters().targets().empty());
     CHECK(opponents.enemies().count() == 0);
     const auto events = safeEvents();
-    const auto tick = [&] { opponents.update(1, 1.0f / 60, players, {}, events); };
+    test::ScriptedOpponents host{events};
+    const auto tick = [&] { opponents.update(1, 1.0f / 60, players, {}, host, host, host); };
     tick();
     CHECK(pending.pending(0));
 
@@ -453,7 +457,8 @@ TEST_CASE("Native It stays visible through the real imported level and common ta
     };
     CHECK(drawsIt() == 6); // the authored two-triangle billboard is visible while pending
     const auto events = safeEvents();
-    opponents.update(1, 1.0f / 60, players, {}, events);
+    test::ScriptedOpponents host{events};
+    opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     REQUIRE_FALSE(actors.pending(index));
     s32 live = -1;
     for (s32 slot = 0; slot < opponents.enemies().most(); ++slot) {
@@ -469,7 +474,7 @@ TEST_CASE("Native It stays visible through the real imported level and common ta
         for (auto& player : players) {
             player.actor.place(position + Vec3{0, 0, .5f});
         }
-        opponents.update(1, 1.0f / 60, players, {}, events);
+        opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     }
     CHECK_FALSE(opponents.enemies().alive(live));
     CHECK_FALSE(opponents.enemies().presentation(live));

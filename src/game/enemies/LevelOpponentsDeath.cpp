@@ -87,7 +87,7 @@ void LevelOpponents::gatherLoops() const {
     }
 }
 
-void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events& events) {
+void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, OpponentHost& host) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -95,9 +95,9 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
     // Death's lessons go to the player he drains or who strikes him (enemy.c 1831, 5320,
     // 6021): his black form's are of experience, the rest of health.
     const auto teach = [&](const DeathEvent& cue, s32 experience, s32 health) {
-        for (usize i = 0; i < players.size() && events.help; ++i) {
+        for (usize i = 0; i < players.size(); ++i) {
             if (players[i].actor.player() == cue.player) {
-                events.help(cue.form == DeathForm::Black ? experience : health, i);
+                host.lesson(cue.form == DeathForm::Black ? experience : health, i);
             }
         }
     };
@@ -168,9 +168,9 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
             } else if (cue.kind == DeathEvent::Kind::MagicHeal ||
                        cue.kind == DeathEvent::Kind::Return) {
                 heal();
-            } else if (events.hurt) {
-                events.hurt(i, cue.amount, HurtKind::DeathDrain, true,
-                            PlayerImpact{.flags = damage::kDeathStun});
+            } else {
+                host.hurtMember(i, cue.amount, HurtKind::DeathDrain, true,
+                                PlayerImpact{.flags = damage::kDeathStun});
                 if (player.life != PlayerLife::Standing) {
                     m_enemies.finishDeath(cue.enemy, cue.player);
                 }

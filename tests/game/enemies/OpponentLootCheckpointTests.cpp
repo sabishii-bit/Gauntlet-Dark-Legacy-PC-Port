@@ -13,6 +13,7 @@
 #include "game/enemies/CombatResources.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/OpponentCombatCheckpoint.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/LevelWorldCheckpoint.h"
 
@@ -63,7 +64,8 @@ struct Fixture {
     CombatResources resources;
     std::unique_ptr<Adapter> adapter;
     std::unique_ptr<LevelWorldCheckpoint> worldOwner;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     std::vector<s32> lessons;
     usize awards = 0;
     s32 actor = -1;
@@ -177,13 +179,14 @@ struct Fixture {
         }
         REQUIRE(opponents.critters().count() == 0);
     }
-    void settle() { opponents.settleRewards(players, events); }
+    void settle() { opponents.settleRewards(players, opponentHost, opponentHost); }
     void step(f32 seconds) {
         world.capturePresentation();
         effects.capturePresentation();
         world.update(seconds);
         effects.update(seconds);
-        opponents.update(seconds > 0.02f ? 2 : 1, seconds, players, {}, events);
+        opponents.update(seconds > 0.02f ? 2 : 1, seconds, players, {}, opponentHost, opponentHost,
+                         opponentHost);
     }
 };
 

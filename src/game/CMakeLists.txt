@@ -238,7 +238,10 @@ add_library(game STATIC
     level/MissileStop.h
     level/CombatantObstacle.h
     level/FixtureHost.h
+    level/CombatCover.h
     party/AttackHost.h
+    enemies/OpponentHost.h
+    enemies/BossEncounterHost.h
     level/ItemSupport.cpp
     party/BodyCollision.cpp
     party/MoveStrikes.h
@@ -493,6 +496,7 @@ add_library(game STATIC
     scenes/PlaySceneTransport.cpp
     scenes/PlaySceneMotion.cpp
     scenes/PlaySceneHarm.cpp
+    scenes/PlaySceneOpponents.cpp
     scenes/PlaySceneCamera.cpp
     scenes/ScenePicking.cpp
     scenes/SeatCameras.cpp

@@ -20,8 +20,10 @@
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/PlayerHealth.h"
 #include "game/party/ScriptedMotion.h"
 #include "game/players/ComboMove.h"
 #include "game/players/CursorAim.h"
@@ -1184,7 +1186,8 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
                                             .named = [](std::string_view, f32) {},
                                             .learnBlock = {},
                                             .vibrate = {}};
-    LevelOpponents::Events opponents;
+    test::OpponentScript opponents;
+    test::ScriptedOpponents opponentHost{opponents};
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                          const PlayerImpact& impact) {
         REQUIRE(index == 0); // input id 3 is not party index 3
@@ -1224,7 +1227,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
         first = Action::Stun;
         recovery = Action::Ready;
     }
-    LevelOpponents::applyCritterBlow(blow, f.players, opponents);
+    LevelOpponents::applyCritterBlow(blow, f.players, opponentHost, opponentHost);
     REQUIRE(player.actor.save().health() == remainingHealth);
     REQUIRE(player.reaction == expected);
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};

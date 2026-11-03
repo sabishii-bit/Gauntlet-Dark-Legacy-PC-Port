@@ -42,6 +42,7 @@
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
@@ -275,7 +276,8 @@ TEST_CASE("a level gargoyle's fireball never lands on a reflective shield's wear
     const auto id =
         opponents.critters().spawnGargoyle(Vec3{spot.x, floor->y, spot.z}, std::numbers::pi_v<f32>);
     REQUIRE(id.has_value());
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -292,7 +294,7 @@ TEST_CASE("a level gargoyle's fireball never lands on a reflective shield's wear
     s32 throws = 0;
     std::string last;
     for (s32 frame = 0; frame < 900 && throws < 2; ++frame) {
-        opponents.update(1, 1.0f / 60, players, fixtures.obstacles(), events,
+        opponents.update(1, 1.0f / 60, players, fixtures.obstacles(), host, host, host,
                          fixtures.missileStops(), fixtures.critterObstacles());
         const std::string move{opponents.critters().moveOf(*id)};
         if (last != move) {
@@ -302,7 +304,7 @@ TEST_CASE("a level gargoyle's fireball never lands on a reflective shield's wear
     }
     // The second throw's flight and return.
     for (s32 frame = 0; frame < 240; ++frame) {
-        opponents.update(1, 1.0f / 60, players, fixtures.obstacles(), events,
+        opponents.update(1, 1.0f / 60, players, fixtures.obstacles(), host, host, host,
                          fixtures.missileStops(), fixtures.critterObstacles());
     }
     REQUIRE(throws == 2);
@@ -432,7 +434,8 @@ TEST_CASE("an archer's world hit detonates explosive scenery once without player
     REQUIRE(opponents.enemies().loadKind(kGruntKind));
     REQUIRE(
         opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = 4, .algorithm = 23}, {}));
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -440,7 +443,7 @@ TEST_CASE("an archer's world hit detonates explosive scenery once without player
     events.award = [](s32, s32, bool) { FAIL("world hits do not award player credit"); };
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     for (s32 frame = 0; frame < 180 && world.scene().objectVisible(kCart); ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     CHECK_FALSE(world.scene().objectVisible(kCart));
     CHECK_FALSE(world.collision().solid(kCart));
@@ -480,7 +483,8 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
     healthEvents.cry = [](std::string_view) {};
     healthEvents.named = [](std::string_view, f32) {};
     usize contacts = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -494,7 +498,7 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
         ++contacts;
     };
     for (s32 frame = 0; frame < 300 && contacts < 8; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(contacts == 8);
     if (kind == kRatKind && levitating) {
@@ -561,7 +565,8 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     healthEvents.named = [](std::string_view, f32) {};
     usize damageEvents = 0;
     usize rewards = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -577,7 +582,7 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     for (s32 frame = 0;
          frame < 120 && damageEvents == 0 && opponents.enemies().healthOf(*enemy) == enemyHealth;
          ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     CHECK(rewards == 0);
     CHECK(players[0].actor.save().health() == 500);
@@ -643,7 +648,8 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
     healthEvents.cry = [](std::string_view) { FAIL("Melee mode zero must not cry out"); };
     healthEvents.named = [](std::string_view, f32) {};
     usize contacts = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -656,7 +662,7 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
         health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
     };
     for (s32 frame = 0; frame < 300 && sound.voiceCount() < 2; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(sound.voiceCount() == 2);
     CHECK(contacts == (warded ? 0 : 2));
@@ -714,14 +720,15 @@ TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual
     hit.node = impacts[0].node;
     boss.hurt(hit);
     const usize before = opponents.enemies().count();
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     for (s32 frame = 0; frame < 300 && opponents.enemies().count() == before; ++frame) {
-        opponents.update(2, 1.0f / 30, {}, {}, events);
+        opponents.update(2, 1.0f / 30, {}, {}, host, host, host);
         effects.update(1.0f / 30);
     }
     REQUIRE(opponents.enemies().count() == before + 2);
@@ -757,7 +764,8 @@ TEST_CASE("Garm's death effects play once at their native cue frames and hold th
     s32 frame = 0;
     s32 victoryFrame = -1;
     s32 victories = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -773,7 +781,7 @@ TEST_CASE("Garm's death effects play once at their native cue frames and hold th
     std::array<f32, 2> previousFrames{};
     constexpr std::array kNames{"GAR1DEATH1", "GAR1DEATH2"};
     for (frame = 0; frame < 600; ++frame) {
-        opponents.update(2, 1.0f / 30, {}, {}, events);
+        opponents.update(2, 1.0f / 30, {}, {}, host, host, host);
         effects.update(1.0f / 30);
         for (usize i = 0; i < effects.count(); ++i) {
             const auto& effect = effects.effect(i);
@@ -837,7 +845,8 @@ TEST_CASE("Chimera arena binds and updates head health meters through the oppone
     REQUIRE(opponents.meter().showing());
     const auto before = opponents.bosses().healthMeters();
     REQUIRE(before.size() == 3);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -847,7 +856,7 @@ TEST_CASE("Chimera arena binds and updates head health meters through the oppone
     hit.damage = 62;
     opponents.bosses().wake();
     opponents.bosses().hurt(hit, 2);
-    opponents.update(2, 1.0f / 30.0f, {}, {}, events);
+    opponents.update(2, 1.0f / 30.0f, {}, {}, host, host, host);
     CHECK(opponents.meter().meter(0).shown() == before[0].health);
     CHECK(opponents.meter().meter(1).shown() == before[1].health - 6);
     CHECK(opponents.meter().meter(2).shown() == before[2].health);
@@ -1032,19 +1041,20 @@ TEST_CASE("Temple generator damage plays realm particles and each accepted hit s
     REQUIRE(enemies.loadKind(13));
     const auto enemy = enemies.spawn(EnemySpawn{.kind = 13, .tier = 2, .placed = true}, {});
     REQUIRE(enemy);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.award = [](s32, s32, bool) {};
     events.levels = [] {};
     EnemyHit hit;
     hit.damage = 1;
     enemies.hurt(*enemy, hit);
-    opponents.settleRewards(players, events);
+    opponents.settleRewards(players, host, host);
     CHECK(sound.voiceCount() == 4);
     hit.damage = 100000;
     enemies.hurt(*enemy, hit);
-    opponents.settleRewards(players, events);
+    opponents.settleRewards(players, host, host);
     CHECK(sound.voiceCount() == 5);
-    opponents.settleRewards(players, events);
+    opponents.settleRewards(players, host, host);
     CHECK(sound.voiceCount() == 5);
     std::array<f32, 8192> samples{};
     mixer.mix(samples);
@@ -1082,7 +1092,8 @@ TEST_CASE("a damaged gargoyle's authored roar reaches the battlefield sound bank
     const auto id = critters.spawnGargoyle(Vec3{0}, 0, "GAR_EAGL");
     REQUIRE(id);
     critters.hold(*id, true);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -1090,7 +1101,7 @@ TEST_CASE("a damaged gargoyle's authored roar reaches the battlefield sound bank
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     for (s32 frame = 0; frame < 120; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(sound.voiceCount() == 0);
     EnemyHit hit;
@@ -1102,7 +1113,7 @@ TEST_CASE("a damaged gargoyle's authored roar reaches the battlefield sound bank
     REQUIRE(impact.size() == 1);
     REQUIRE(impact.front().sound == "S_GRGHHIT");
     for (s32 frame = 0; frame < 90; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     CHECK(sound.voiceCount() == 1);
     std::array<f32, 8192> samples{};
@@ -1627,7 +1638,8 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     CHECK(opponents.enemies().bred(*bred));
     CHECK_FALSE(opponents.enemies().bred(*placed));
     std::vector<s32> helps;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -1642,7 +1654,7 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
         opponents.strikeEnemy(id, 5.0f, 0, {0, 0, 1}, 2, players);
         // The live scene updates opponents each frame; settleRewards is only
         // called on portal departure and must not be needed to deliver lessons.
-        opponents.update(1, 1.0f / 60.0f, players, {}, events);
+        opponents.update(1, 1.0f / 60.0f, players, {}, host, host, host);
     };
     for (s32 i = 0; i < 20; ++i) {
         hit(*placed); // what a level placed does not count
@@ -1668,7 +1680,7 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     }
     hit(*bred);
     CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
-    opponents.settleRewards(players, events); // leaving cannot replay an already delivered tip
+    opponents.settleRewards(players, host, host); // leaving cannot replay an already delivered tip
     CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
     opponents.close();
 }
@@ -1723,14 +1735,15 @@ TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, s
     REQUIRE(statueNear(gargoyle).has_value());
     CHECK(opponents.statues().placement(*statueNear(golem)).kind == CombatantKind::Golem);
     CHECK(opponents.statues().placement(*statueNear(gargoyle)).kind == CombatantKind::Gargoyle);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    const auto step = [&] { opponents.update(2, 1.0f / 30, players, {}, events); };
+    const auto step = [&] { opponents.update(2, 1.0f / 30, players, {}, host, host, host); };
     // Standing well off, nothing changes. Walking into the golem's statue (its record's
     // radius of four) stops the player at it and wakes it.
     step();
@@ -1825,7 +1838,8 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     }
     REQUIRE(general.has_value());
     std::vector<s32> helps;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -1839,7 +1853,7 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     hit.player = 0;
     hit.damage = 1000000;
     opponents.critters().hurt(*general, hit);
-    opponents.settleRewards(players, events);
+    opponents.settleRewards(players, host, host);
     CHECK(items.item(*held).carried);
     CHECK_FALSE(items.item(*held).visible);
     bool sawThrow = false;
@@ -1849,8 +1863,8 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     for (s32 frame = 0; frame < 180; ++frame) {
         world.update(1.0f / 30);
         effects.update(1.0f / 30);
-        opponents.update(2, 1.0f / 30, players, {}, events);
-        opponents.settleRewards(players, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
+        opponents.settleRewards(players, host, host);
         for (usize i = 0; i < effects.count(); ++i) {
             const auto& effect = effects.effect(i);
             if (effect.name == "BAG_THROW" || effect.name == "BAG_HIT") {
@@ -1907,14 +1921,15 @@ TEST_CASE("B1 gargoyle wakes on actual player approach before physical contact",
     const Vec3 approached = opponents.statues().positionOf(*gargoyle) + Vec3{0, 0, 15};
     REQUIRE_FALSE(opponents.statues().woken(*gargoyle));
     players[0].actor.place(approached);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(opponents.statues().woken(*gargoyle));
     CHECK(opponents.statues().rising(*gargoyle));
     CHECK(players[0].actor.position() == approached);
@@ -1950,7 +1965,8 @@ TEST_CASE("B1 gargoyle reveals its serpent piece only after its sack lands and o
     hit.player = 0;
     hit.damage = 1000000;
     opponents.critters().hurt(*id, hit);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -1962,7 +1978,7 @@ TEST_CASE("B1 gargoyle reveals its serpent piece only after its sack lands and o
     for (s32 frame = 0; frame < 110; ++frame) {
         world.update(1.0f / 30);
         effects.update(1.0f / 30);
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         for (usize i = 0; i < effects.count(); ++i) {
             const auto& effect = effects.effect(i);
             if (effect.name == "BAG_THROW" || effect.name == "BAG_HIT") {
@@ -2037,7 +2053,8 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     }
     CHECK(special == std::array<bool, 3>{true, true, true});
     CHECK(skirmishBomber);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 landed = 0;
     events.hurt = [&](usize, f32 damage, HurtKind, bool, const PlayerImpact&) {
         landed += damage > 0 ? 1 : 0;
@@ -2068,7 +2085,7 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     for (s32 frame = 0; frame < 20 * rate; ++frame) {
         opponents.watch(overhead, players[0].actor.position());
         opponents.update(60 / rate, 1.0f / static_cast<f32>(rate), players, fixtures.obstacles(),
-                         events);
+                         host, host, host);
         REQUIRE(opponents.enemies().count() <= static_cast<usize>(world.level()->maxEnemies));
         if (frame == 10 * rate) {
             beforeLosses = births();
@@ -2216,7 +2233,8 @@ TEST_CASE("exit settlement credits a last-frame generator kill once without adva
     const s32 worth = generatorExperience(opponents.generators().kindOf(generator), true);
     CHECK(worth > 0);
     s32 destroyed = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.award = [&](s32 player, s32 amount, bool killed) {
         REQUIRE(player == 3);
         REQUIRE(amount == worth);
@@ -2230,11 +2248,11 @@ TEST_CASE("exit settlement credits a last-frame generator kill once without adva
     events.levels = [] {};
     opponents.strikeGenerator(generator, 1000000, 3);
     REQUIRE_FALSE(opponents.generators().standing(generator));
-    opponents.settleRewards(players, events);
+    opponents.settleRewards(players, host, host);
     REQUIRE(credited == 1);
     REQUIRE(destroyed == 1);
     opponents.strikeGenerator(generator, 1000000, 3);
-    opponents.settleRewards(players, events);
+    opponents.settleRewards(players, host, host);
     REQUIRE(credited == 1);
     REQUIRE(destroyed == 1);
     opponents.close();
@@ -2262,7 +2280,8 @@ TEST_CASE("Wraith entrance stops its persistent portal before the emergence effe
     players[0].actor.spawn(0, {}, nullptr, {0, 0, 0}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.bosses().view().kind == 40);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -2276,7 +2295,7 @@ TEST_CASE("Wraith entrance stops its persistent portal before the emergence effe
     bool emerged = false;
     bool second = false;
     for (s32 frame = 0; frame < 900 && !second; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         for (usize i = 0; i < effects.count(); ++i) {
             const auto& effect = effects.effect(i);
             if (effect.name == "INITFX") {
@@ -2326,7 +2345,8 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
     REQUIRE(opponents.bosses().view().kind == 39);
     REQUIRE(opponents.bosses().raisesArenaRocks());
     rocks.hideForEruptions();
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -2345,7 +2365,7 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
     };
     for (s32 frame = 0; frame < 3600 && eruptions == 0; ++frame) {
         rocks.update(1.0f / 30.0f);
-        opponents.update(2, 1.0f / 30.0f, players, rocks.obstacles(), events);
+        opponents.update(2, 1.0f / 30.0f, players, rocks.obstacles(), host, host, host);
         if (eruptions == 0) {
             effects.update(1.0f / 30.0f);
         }
@@ -2388,7 +2408,7 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
                                  .rockArmor = rock.armor});
             }
         }
-        opponents.update(2, 1.0f / 30.0f, players, rocks.obstacles(), events, stops);
+        opponents.update(2, 1.0f / 30.0f, players, rocks.obstacles(), host, host, host, stops);
         for (const RockHit& hit : opponents.takeRockHits()) {
             REQUIRE(rocks.standing(hit.rock));
             const s32 before = rocks.rock(hit.rock).health;
@@ -2433,7 +2453,8 @@ TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
     players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 35}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.bosses().view().kind == 38);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -2446,7 +2467,7 @@ TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
     events.arenaAnchors = [&rocks] { return rocks.attackAnchors(); };
     usize eruptions = 0;
     for (s32 frame = 0; frame < 3600 && eruptions == 0; ++frame) {
-        opponents.update(2, 1.0f / 30.0f, players, {}, events);
+        opponents.update(2, 1.0f / 30.0f, players, {}, host, host, host);
         for (usize i = 0; i < effects.count(); ++i) {
             const auto& effect = effects.effect(i);
             if (effect.name == "ATCK10FX") {
@@ -2511,7 +2532,7 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     LevelOpponents opponents;
     const auto root = test::scratchDirectory("level-opponents-empty");
     std::vector<std::string> phases;
-    const LevelOpponents::Events events{
+    const test::OpponentScript events{
         .hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) { FAIL("No combatants"); },
         .settleBlasts = [&] { phases.emplace_back("blast"); },
         .legend = [](const LegendEvent&) { FAIL("No boss"); },
@@ -2547,15 +2568,16 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .shake = {},
         .help = {},
         .blastScenery = {}};
-    opponents.update(6, 0.1f, {}, {}, events);
+    test::ScriptedOpponents host{events};
+    opponents.update(6, 0.1f, {}, {}, host, host, host);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
-    opponents.update(6, 0.1f, {}, {}, events);
+    opponents.update(6, 0.1f, {}, {}, host, host, host);
     REQUIRE(phases == std::vector<std::string>{"blast", "arenaAnchors", "arenaTargets", "legend",
                                                "victory", "levels"});
     opponents.close();
     opponents.close();
-    opponents.update(6, 0.1f, {}, {}, events);
+    opponents.update(6, 0.1f, {}, {}, host, host, host);
     REQUIRE(phases.size() == 6);
     REQUIRE_FALSE(opponents.bosses().present());
     REQUIRE_FALSE(opponents.meter().bound());
@@ -2566,7 +2588,7 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
 struct HookOrder {
     std::vector<std::string> tick;   ///< the hooks of the tick under way, as they come
     std::vector<std::string> orders; ///< each order a tick showed, first shown first
-    LevelOpponents::Events events{
+    test::OpponentScript events{
         .hurt = [this](usize, f32, HurtKind, bool, const PlayerImpact&) { note("hurt"); },
         .settleBlasts = [] {},
         .legend = [this](const LegendEvent&) { note("legend"); },
@@ -2589,6 +2611,7 @@ struct HookOrder {
                 return true;
             },
         .blastScenery = {}};
+    test::ScriptedOpponents host{events};
 
     HookOrder() = default;
     GDL_NON_COPYABLE_NON_MOVABLE(HookOrder);
@@ -2655,7 +2678,7 @@ TEST_CASE("a great one's hooks keep their phase order", "[level-opponents]") {
     REQUIRE(opponents.critters().spawnGeneral(Vec3{0}, 0) == 0);
     HookOrder hooks;
     const auto advance = [&] {
-        opponents.update(2, 1.0f / 30, players, {}, hooks.events);
+        opponents.update(2, 1.0f / 30, players, {}, hooks.host, hooks.host, hooks.host);
         effects.update(1.0f / 30);
         hooks.endTick();
     };
@@ -2708,7 +2731,7 @@ TEST_CASE("a boss level's hooks keep their phase order", "[level-opponents][asse
         if (const Vec3* boss = opponents.bosses().position()) {
             players[0].actor.place(*boss + away);
         }
-        opponents.update(2, 1.0f / 30, players, {}, hooks.events);
+        opponents.update(2, 1.0f / 30, players, {}, hooks.host, hooks.host, hooks.host);
         effects.update(1.0f / 30);
         hooks.endTick();
     };
@@ -2773,17 +2796,18 @@ TEST_CASE("area immunity counts down independently for each player's runtime",
     players[1].actor.spawn(1, {}, nullptr, {}, 0);
     players[0].effectGap = 0.25f;
     players[1].effectGap = 0.05f;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    opponents.update(6, 0.1f, players, {}, events);
+    opponents.update(6, 0.1f, players, {}, host, host, host);
     REQUIRE(players[0].effectGap > 0.14f);
     REQUIRE(players[0].effectGap < 0.16f);
     REQUIRE(players[1].effectGap == 0);
-    opponents.update(12, 0.2f, players, {}, events);
+    opponents.update(12, 0.2f, players, {}, host, host, host);
     REQUIRE(players[0].effectGap == 0);
 }
 
@@ -2791,7 +2815,8 @@ TEST_CASE("area contacts share effect immunity but not the breath timer",
           "[game][screens][level-opponents][boss-areas]") {
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(3, {}, nullptr, Vec3{0, 0, 12}, 0);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 contacts = 0;
     events.hurt = [&](usize index, f32 amount, HurtKind kind, bool directed, const PlayerImpact&) {
         REQUIRE(index == 0);
@@ -2807,26 +2832,26 @@ TEST_CASE("area contacts share effect immunity but not the breath timer",
     blow.repeatGap = 0.25f;
     bool blocked = true;
     events.blocksArea = [&](const Vec3&, const Vec3&) { return blocked; };
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 0);
     REQUIRE(players[0].effectGap == 0);
     blocked = false;
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 1);
     REQUIRE(players[0].effectGap == 0.25f);
     REQUIRE(players[0].breathGap == 0);
     blow.critter = 7;
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 1);
     players[0].effectGap = 0;
     players[0].breathGap = 1;
     blocked = true;
     blow.origin.z = 3; // contacts within ten units do not consult cover
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 2);
     players[0].effectGap = 0;
     players[0].life = PlayerLife::Dying;
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 2);
 }
 
@@ -2834,7 +2859,8 @@ TEST_CASE("a great one's blows land every quarter second through the shared hit 
           "[game][screens][level-opponents][breath]") {
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(3, {}, nullptr, {}, 0);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 contacts = 0;
     events.hurt = [&](usize, f32, HurtKind kind, bool, const PlayerImpact&) {
         REQUIRE(kind == HurtKind::Blow);
@@ -2844,17 +2870,17 @@ TEST_CASE("a great one's blows land every quarter second through the shared hit 
     blow.player = 3;
     blow.damage = 10;
     blow.gated = true;
-    CHECK(LevelOpponents::applyCritterBlow(blow, players, events));
+    CHECK(LevelOpponents::applyCritterBlow(blow, players, host, host));
     REQUIRE(contacts == 1);
     REQUIRE(players[0].breathGap == 0.25f); // fxhittime, as breath has it
-    CHECK_FALSE(LevelOpponents::applyCritterBlow(blow, players, events));
+    CHECK_FALSE(LevelOpponents::applyCritterBlow(blow, players, host, host));
     REQUIRE(contacts == 1);
     players[0].breathGap = 0;
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 2);
     // An ungated contact (a ring, once a move) is not held off.
     blow.gated = false;
-    LevelOpponents::applyCritterBlow(blow, players, events);
+    LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 3);
 }
 
@@ -2867,7 +2893,8 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     players[2].life = PlayerLife::Dying;
     std::vector<usize> hurt;
     std::vector<HurtKind> kinds;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                       const PlayerImpact& impact) {
         REQUIRE(damage == 40);
@@ -2883,22 +2910,22 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     fire.flags = damage::kKnockDown;
     fire.direction = {0, 0, -1};
     fire.breath = true;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt == std::vector<usize>{0});
     REQUIRE(kinds.back() == HurtKind::Burn);
     REQUIRE(players[0].breathGap == 0.25f);
     fire.critter = 7;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt.size() == 1);
     fire.player = 1;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt == std::vector<usize>{0, 1});
     fire.player = 2;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt.size() == 2);
     fire.player = 3;
     fire.breath = false;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt.size() == 3);
     REQUIRE(kinds.back() == HurtKind::Blow);
     REQUIRE(players[0].breathGap == 0.25f);
@@ -2917,12 +2944,12 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
-    opponents.update(14, 0.24f, players, {}, events);
+    opponents.update(14, 0.24f, players, {}, host, host, host);
     fire.breath = true;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt.size() == 3);
-    opponents.update(1, 0.011f, players, {}, events);
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    opponents.update(1, 0.011f, players, {}, host, host, host);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hurt.size() == 4);
     REQUIRE(players[0].breathGap == 0.25f);
 }
@@ -2931,7 +2958,8 @@ TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath
           "[game][screens][level-opponents][breath]") {
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 20}, 0);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     s32 hits = 0;
     events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++hits; };
     bool blocked = true;
@@ -2945,11 +2973,11 @@ TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath
     fire.damage = 40;
     fire.breath = true;
     fire.origin = Vec3{0, 7, 0};
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hits == 0);
     REQUIRE(players[0].breathGap == 0);
     blocked = false;
-    LevelOpponents::applyCritterBlow(fire, players, events);
+    LevelOpponents::applyCritterBlow(fire, players, host, host);
     REQUIRE(hits == 1);
     REQUIRE(players[0].breathGap == 0.25f);
 }
@@ -2989,7 +3017,8 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     }
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.bosses().spawn(kind, Vec3{0}, 0));
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -3002,7 +3031,7 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     u32 effectId = 0;
     s32 attachedFrames = 0;
     for (s32 tick = 0; tick < 2400 && attachedFrames < 20; ++tick) {
-        opponents.update(1, 1.0f / 60, players, {}, events);
+        opponents.update(1, 1.0f / 60, players, {}, host, host, host);
         for (usize e = 0; e < effects.count(); ++e) {
             const auto& effect = effects.effect(e);
             const bool rootAttack = effect.name.starts_with("ATK") &&
@@ -3120,7 +3149,8 @@ TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
     REQUIRE(opponents.bosses().view().kind == 41);
     REQUIRE(opponents.bosses().position() != nullptr);
     players[0].actor.spawn(0, {}, nullptr, *opponents.bosses().position(), 0);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -3130,15 +3160,15 @@ TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
-    opponents.update(2, 1.0f / 30, {}, {}, events);
+    opponents.update(2, 1.0f / 30, {}, {}, host, host, host);
     REQUIRE(world.scene().objectVisible(index)); // asleep: no callback yet
     // Two seconds pass before he may wake, however near the party stands (CritterBossAI).
     for (s32 i = 0; i < 58; ++i) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(world.scene().objectVisible(index));
     for (s32 i = 0; i < 3; ++i) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE_FALSE(world.scene().objectVisible(index));
     REQUIRE(world.scene().worldTransform(index) == transform);
@@ -3176,14 +3206,15 @@ TEST_CASE("Stop Time prevents melee releases without stopping incoming damage or
     const auto id = enemies.spawn(EnemySpawn{.kind = kGruntKind, .tier = 1, .placed = true}, {});
     REQUIRE(id);
     usize contacts = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++contacts; };
-    const auto tick = [&] { opponents.update(2, 1.0f / 30, players, {}, events); };
+    const auto tick = [&] { opponents.update(2, 1.0f / 30, players, {}, host, host, host); };
     for (s32 frame = 0; frame < 90; ++frame) {
         tick();
     }
@@ -3234,7 +3265,8 @@ TEST_CASE("IT's touch makes its player it, taking it from whoever was, and says 
     REQUIRE(enemies.loadKind(kItKind));
     REQUIRE(enemies.spawn(EnemySpawn{.kind = kItKind, .tier = 1, .placed = true}, {}));
     std::vector<std::pair<s32, usize>> helps;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -3246,7 +3278,7 @@ TEST_CASE("IT's touch makes its player it, taking it from whoever was, and says 
         return true;
     };
     for (s32 frame = 0; frame < 300 && helps.empty(); ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     CHECK(helps == std::vector<std::pair<s32, usize>>{{HelpMessages::kNowIt, 1}});
     CHECK(players[0].itTicks == 0);
@@ -3312,7 +3344,8 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     f32 elapsed = 0;
     usize scenerySteps = 0;
     usize pickupSteps = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -3341,7 +3374,7 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     opponents.strikeEnemy(*bomber, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
     for (s32 frame = 0; frame < rate * 2; ++frame) {
         elapsed = static_cast<f32>(frame) / static_cast<f32>(rate);
-        opponents.update(1, 1.0f / static_cast<f32>(rate), players, {}, events);
+        opponents.update(1, 1.0f / static_cast<f32>(rate), players, {}, host, host, host);
         pickupSteps += opponents.takePickupBlasts().size();
     }
     // Fire, a knock down and an explosion (0x421), felt once.
@@ -3415,7 +3448,8 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
     opponents.enemies().draw(device, Mat4{1}, WorldLighting{});
     REQUIRE_FALSE(device.draws.empty());
     device.draws.clear();
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -3423,7 +3457,7 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     for (s32 frame = 0; frame < 120 && sound.voiceCount() == 0; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(opponents.enemies().alive(*bomber));
     REQUIRE(sound.voiceCount() == 1);
@@ -3438,10 +3472,10 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
         opponents.enemies().hurt(*bomber, hit);
         opponents.enemies().draw(device, Mat4{1}, WorldLighting{}, nullptr, &weapons);
         CHECK(device.draws.empty());
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     for (s32 frame = 0; frame < 300 && opponents.enemies().alive(*bomber); ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE_FALSE(opponents.enemies().alive(*bomber));
     REQUIRE(sound.voiceCount() >= 2);
@@ -3506,7 +3540,8 @@ TEST_CASE("a recorded bomber cry shares where it began and each machine's listen
     SceneSoundEvents recorder;
     recorder.open(1, nullptr);
     audio.recordTo(&recorder);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
@@ -3522,7 +3557,7 @@ TEST_CASE("a recorded bomber cry shares where it began and each machine's listen
         audio.prepareRecordedFrame(ear);
         {
             const auto scope = audio.soundScope({30, 0, 1}, 1);
-            opponents.update(0, 0.0f, players, {}, events);
+            opponents.update(0, 0.0f, players, {}, host, host, host);
             opponents.gatherLoops();
         }
         Heard heard{recorder.endFrame()};
@@ -3597,7 +3632,8 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
                                   {});
     REQUIRE(bomber.has_value());
     std::vector<HurtKind> hurts;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [&](usize, f32, HurtKind kind, bool, const PlayerImpact&) {
         hurts.push_back(kind);
     };
@@ -3612,7 +3648,7 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
     opponents.strikeEnemy(*bomber, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
     std::vector<std::string> seen;
     for (s32 frame = 0; frame < 150; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         effects.update(1.0f / 30);
         for (usize e = 0; e < effects.count(); ++e) {
             const std::string& name = effects.effect(e).name;
@@ -3653,7 +3689,8 @@ TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at 
         EnemySpawn{.kind = kGarmBroodKind, .tier = 3, .placed = true}, {});
     REQUIRE(brood.has_value());
     std::vector<std::pair<f32, u32>> hurts;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -3664,7 +3701,7 @@ TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at 
         hurts.emplace_back(amount, hit.flags);
     };
     const auto step = [&] {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         effects.update(1.0f / 30);
     };
     const auto showing = [&](std::string_view tree) {
@@ -3758,7 +3795,8 @@ TEST_CASE("a shrinker worn shrinks the swarm: their blows land low for half with
     REQUIRE(id.has_value());
     std::vector<f32> amounts;
     std::vector<u32> flags;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -3770,7 +3808,7 @@ TEST_CASE("a shrinker worn shrinks the swarm: their blows land low for half with
         flags.push_back(hit.flags);
     };
     for (s32 frame = 0; frame < 300 && amounts.size() < 8; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(amounts.size() == 8);
     const f32 scale = shrinking ? 0.667f : 1.0f;
@@ -3834,16 +3872,17 @@ TEST_CASE("generator population includes tower-waiting players but excludes quit
     ViewVolume away;
     away.position = {10000, 0, 0};
     opponents.generators().setView(away);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     players[1].life = PlayerLife::InTower;
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(opponents.generators().obstacles().size() == pair);
     players[1].departed = true;
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(opponents.generators().obstacles().size() == solo);
     opponents.close();
 }
@@ -3888,7 +3927,8 @@ TEST_CASE("the swamp's statues play their waking before the great ones stand",
     REQUIRE_FALSE(opponents.statues().woken(*index));
     const u64 instance = opponents.statues().instanceOf(*index);
     const usize critters = opponents.critters().count();
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -3902,7 +3942,7 @@ TEST_CASE("the swamp's statues play their waking before the great ones stand",
     s32 rising = 0;
     bool woken = false;
     for (s32 i = 0; i < 600; ++i) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         std::optional<usize> at;
         for (usize s = 0; s < opponents.statues().count(); ++s) {
             if (opponents.statues().instanceOf(s) == instance) {
@@ -4002,7 +4042,8 @@ TEST_CASE("births burst with the first loaded kind's GENFX trees, by tier, for t
     stand(kHand, 1, {40, 0, 0});    // a small kind, its reach within two
     stand(kWarlock, 1, {50, 0, 0}); // after the kind that lent the bursts
     stand(kImp, kArcherStrength, {60, 0, 0});
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -4010,7 +4051,7 @@ TEST_CASE("births burst with the first loaded kind's GENFX trees, by tier, for t
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     REQUIRE(effects.count() == 0);
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     REQUIRE(effects.count() == 3);
     CHECK(effects.effect(0).name == "GENFX1");
     CHECK(effects.effect(0).position == Vec3{10, 0, 0});
@@ -4018,7 +4059,7 @@ TEST_CASE("births burst with the first loaded kind's GENFX trees, by tier, for t
     CHECK(effects.effect(1).position == Vec3{20, 0, 0});
     CHECK(effects.effect(2).name == "GENFX1");
     CHECK(effects.effect(2).position == Vec3{30, 0, 0});
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(effects.count() == 3);
     opponents.close();
 }
@@ -4048,14 +4089,15 @@ TEST_CASE("the imp's archive lends the three birth bursts",
         spawn.position = {10.0f * static_cast<f32>(tier), 0, 0};
         REQUIRE(enemies.spawn(spawn, {}));
     }
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     REQUIRE(effects.count() == 3);
     CHECK(effects.effect(0).name == "GENFX1");
     CHECK(effects.effect(1).name == "GENFX2");
@@ -4157,7 +4199,8 @@ TEST_CASE("the level's opponents answer to its mechanics: the runs go in, the tu
     mechanics.open(&offered, {});
     test::FakeMechanic& fake = *test::FakeMechanic::made().back();
     opponents.setMechanics(&mechanics);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -4173,7 +4216,7 @@ TEST_CASE("the level's opponents answer to its mechanics: the runs go in, the tu
     // Every seat's run reaches the mechanics each step, a departed one's marked so.
     players[1].streak.record(false);
     players[1].departed = true;
-    opponents.update(1, 1.0f / 60, players, {}, events);
+    opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     CHECK(fake.steps == 1);
     CHECK(fake.seconds == 1.0f / 60);
     REQUIRE(fake.runsStepped.size() == 2);
@@ -4187,10 +4230,10 @@ TEST_CASE("the level's opponents answer to its mechanics: the runs go in, the tu
     // longer do, the slots up to any body still standing past it kept in play.
     REQUIRE(opponents.enemies().most() < Enemies::kMost);
     fake.answers.tuning.wholePool = true;
-    opponents.update(1, 1.0f / 60, players, {}, events);
+    opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     CHECK(opponents.enemies().most() == Enemies::kMost);
     fake.answers.tuning.wholePool = false;
-    opponents.update(1, 1.0f / 60, players, {}, events);
+    opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     const Enemies& enemies = opponents.enemies();
     s32 standing = enemies.levelCap();
     for (s32 id = enemies.levelCap(); id < Enemies::kMost; ++id) {
@@ -4223,7 +4266,7 @@ TEST_CASE("the level's opponents answer to its mechanics: the runs go in, the tu
     fake.fallsSeen.clear();
     opponents.strikeEnemy(*id, 1.0e6f, 3, Vec3{0, 0, 1}, 0, players);
     REQUIRE_FALSE(opponents.enemies().alive(*id));
-    opponents.update(1, 1.0f / 60, players, {}, events);
+    opponents.update(1, 1.0f / 60, players, {}, host, host, host);
     const auto fall = std::ranges::find(fake.fallsSeen, 2, &BodyFall::affinity);
     REQUIRE(fall != fake.fallsSeen.end());
     CHECK(fall->killed);

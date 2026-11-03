@@ -16,6 +16,7 @@
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/LevelCatalog.h"
 #include "game/party/PlayerHealth.h"
@@ -36,7 +37,8 @@ struct DeathSoundFixture {
     LevelSoundscape audio;
     std::array<PlayerRuntime, 1> players;
     LevelOpponents opponents;
-    LevelOpponents::Events callbacks;
+    test::OpponentScript callbacks;
+    test::ScriptedOpponents host{callbacks};
     SceneSoundEvents sounds;
 
     explicit DeathSoundFixture(s32 slots) {
@@ -77,7 +79,7 @@ struct DeathSoundFixture {
         {
             // A fallback scope must not become the enemy's identity.
             auto scope = audio.soundScope({90, 0, 1}, 1);
-            opponents.update(0, 0, players, {}, callbacks);
+            opponents.update(0, 0, players, {}, host, host, host);
             opponents.gatherLoops();
         }
         return sounds.endFrame();
@@ -198,7 +200,8 @@ TEST_CASE("native swarm impact and bomber audio use source lifetimes rather than
     SceneSoundEvents sounds;
     sounds.open(117, &output);
     audio.recordTo(&sounds);
-    LevelOpponents::Events callbacks;
+    test::OpponentScript callbacks;
+    test::ScriptedOpponents host{callbacks};
     callbacks.award = [](s32, s32, bool) {};
     callbacks.levels = [] {};
     usize commands = 0;
@@ -209,7 +212,7 @@ TEST_CASE("native swarm impact and bomber audio use source lifetimes rather than
             enemies.hurt(0, {.damage = 1, .player = 0});
         }
         enemies.hurt(1, {.damage = 1, .player = 0});
-        opponents.settleRewards(players, callbacks); // no fallback emitter scope
+        opponents.settleRewards(players, host, host); // no fallback emitter scope
         return sounds.endFrame();
     };
     const auto wrong = impact(true);
@@ -229,7 +232,7 @@ TEST_CASE("native swarm impact and bomber audio use source lifetimes rather than
     callbacks.help = [](s32, usize) { return true; };
     sounds.beginTick(2);
     enemies.hurt(1, {.damage = 100000, .player = 0});
-    opponents.update(0, 0, players, {}, callbacks);
+    opponents.update(0, 0, players, {}, host, host, host);
     opponents.gatherLoops();
     const auto explosion = sounds.endFrame();
     REQUIRE(explosion.finite.events.size() == 2);
@@ -429,18 +432,19 @@ TEST_CASE("Death proximity queries use the level bounds and only standing party 
     opponents.open({device, world, weapons, effects, audio, test::deathArchive()}, players);
     REQUIRE(opponents.statues().count() == 1);
     REQUIRE(opponents.statues().placement(0).sight == 30);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK_FALSE(opponents.statues().woken(0));
     CHECK(opponents.enemies().count() == 0);
     players[1].life = PlayerLife::Standing;
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(opponents.statues().woken(0));
     CHECK(opponents.statues().rising(0));
 }
@@ -481,7 +485,8 @@ TEST_CASE("placed Death statues wake without the sleeping enemy's shatter cry",
     opponents.open({device, world, weapons, effects, audio, root}, players);
     REQUIRE(opponents.statues().count() == 1);
     CHECK_FALSE(opponents.statues().woken(0));
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -489,7 +494,7 @@ TEST_CASE("placed Death statues wake without the sleeping enemy's shatter cry",
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.help = [](s32, usize) { return true; };
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     REQUIRE(opponents.statues().count() == 1);
     REQUIRE_FALSE(opponents.statues().woken(0));
     if (wake == 0) {
@@ -499,9 +504,9 @@ TEST_CASE("placed Death statues wake without the sleeping enemy's shatter cry",
     } else {
         opponents.wakeStatue(0); // a blow on the item statue
     }
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     REQUIRE(opponents.statues().rising(0));
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(opponents.statues().count() == 0);
     CHECK(opponents.enemies().count() == 1);
     CHECK(sound.voiceCount() == 0);
@@ -541,7 +546,8 @@ TEST_CASE("damaging a sleeping Death enemy still plays the native shatter cry on
     hit.player = 3;
     hit.damage = 1;
     opponents.enemies().hurt(*id, hit);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -549,12 +555,12 @@ TEST_CASE("damaging a sleeping Death enemy still plays the native shatter cry on
     events.award = [](s32, s32, bool) {};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.help = [](s32, usize) { return true; };
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     REQUIRE(sound.voiceCount() == 1);
     std::array<f32, 48000> samples{};
     mixer.mix(samples);
     CHECK(std::ranges::any_of(samples, [](f32 sample) { return sample != 0; }));
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(sound.voiceCount() == 1); // the event was drained, not dispatched again
     opponents.close();
     audio.close();
@@ -605,7 +611,8 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
     healthEvents.sound = [](std::string_view) {};
     healthEvents.cry = [](std::string_view) {};
     healthEvents.named = [](std::string_view, f32) {};
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -624,7 +631,7 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
         return true;
     };
     for (s32 i = 0; i < 90 && progress.health == 2000 && progress.experience == experience; ++i) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     // Each drain tells its victim what Death takes (enemy.c 1831): experience from the black.
     REQUIRE_FALSE(helps.empty());
@@ -646,7 +653,7 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
         CHECK(std::ranges::any_of(samples, [](f32 sample) { return sample != 0; }));
     }
     players[1].actor.place({0, 0, 100});
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK_FALSE(effects.playing(effect));
     if (realAssets) {
         std::vector<f32> silence(usize{48000} * 2 * 8);
@@ -656,12 +663,12 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
     }
     players[1].actor.place(opponents.enemies().positionOf(*id) + Vec3{0, 0, 2});
     for (s32 i = 0; i < 3; ++i) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     REQUIRE(effects.count() == 1);
     CHECK(effects.effect(0).id != effect);
     opponents.strikeEnemy(*id, 1, EnemyHit::kMagic, Vec3{0}, 3, players);
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(effects.count() == 0);
     CHECK(opponents.enemies().dying(*id));
     opponents.close();
@@ -720,7 +727,8 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
     for (auto& player : players) {
         player.actor.place(statuePosition + Vec3{0, 0, outsideSight});
     }
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -729,7 +737,7 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.help = [](s32, usize) { return true; };
     for (s32 frame = 0; frame < 60; ++frame) {
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         REQUIRE_FALSE(opponents.statues().woken(statue));
         REQUIRE(opponents.statues().positionOf(statue) == statuePosition);
     }
@@ -742,9 +750,9 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
         players[0].actor.place(statuePosition); // walking into it
     }
     const usize before = opponents.statues().count();
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     REQUIRE(opponents.statues().rising(statue));
-    opponents.update(2, 1.0f / 30, players, {}, events);
+    opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     CHECK(opponents.statues().count() == before - 1);
     s32 found = -1;
     for (s32 id = 0; id < Enemies::kMost; ++id) {
@@ -818,7 +826,8 @@ TEST_CASE("the health a halo takes back from Death stops at the level's most, 99
     REQUIRE(opponents.enemies().loadKind(kDeathKind));
     const auto id = opponents.enemies().spawn({.kind = kDeathKind, .tier = 1, .placed = true}, {});
     REQUIRE(id);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -831,7 +840,7 @@ TEST_CASE("the health a halo takes back from Death stops at the level's most, 99
     // Each blow through the halo takes a point of health back from him.
     for (s32 blow = 0; blow < 3; ++blow) {
         opponents.strikeEnemy(*id, 0, 0, Vec3{0}, 3, players);
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
     }
     CHECK(progress.health == most);
     opponents.close();

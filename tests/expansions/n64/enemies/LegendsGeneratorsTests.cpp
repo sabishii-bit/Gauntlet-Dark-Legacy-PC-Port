@@ -24,6 +24,7 @@
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/ScriptedAttacks.h"
@@ -450,7 +451,8 @@ TEST_CASE("Imported native generators breed attackable common enemies and award 
     CHECK(generators.bredOf(0) == bred);
     s32 earned = 0;
     s32 destroyed = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     events.levels = [] {};
     events.award = [&](s32 player, s32 experience, bool) {
         CHECK(player == 0);
@@ -460,7 +462,7 @@ TEST_CASE("Imported native generators breed attackable common enemies and award 
         CHECK(player == 0);
         ++destroyed;
     };
-    opponents.settleRewards(party, events);
+    opponents.settleRewards(party, opponentHost, opponentHost);
     CHECK(earned > 0);
     CHECK(destroyed == 1);
     opponents.close();

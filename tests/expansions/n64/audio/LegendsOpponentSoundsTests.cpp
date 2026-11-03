@@ -12,6 +12,7 @@
 #include "TestSupport.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/ImportedLevel.h"
 
 namespace {
@@ -121,7 +122,8 @@ TEST_CASE("Imported opponent counterparts retain audible hit death and generator
     }
     // Exercise the real damage dispatch, not only successful bank lookup.
     // Placed births share exactly the same feedback lane as generated ones.
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.award = [](s32, s32, bool) {};
     events.levels = [] {};
     const std::array views{EnemyView{.player = 0, .position = {0, 0, -10}}};
@@ -135,7 +137,7 @@ TEST_CASE("Imported opponent counterparts retain audible hit death and generator
         const auto enemy = opponents.enemies().spawn(spawn, views);
         REQUIRE(enemy);
         opponents.strikeEnemy(*enemy, 10000, 0, {0, 0, 1}, 0, party);
-        opponents.settleRewards(party, events);
+        opponents.settleRewards(party, host, host);
         CHECK(mixAudible(mixer, output));
         const auto state = opponents.importedGeneratorStates()[i];
         REQUIRE(state.pool >= 0);

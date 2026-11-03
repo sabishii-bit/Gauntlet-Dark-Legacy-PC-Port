@@ -29,6 +29,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/DeathTestSupport.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
 #include "game/level/SafeRocks.h"
@@ -2522,7 +2523,8 @@ TEST_CASE("one potion wakes and destroys an inactive placed Death without contac
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root}, f.players);
     REQUIRE(f.opponents.statues().count() == 1);
     REQUIRE_FALSE(f.opponents.statues().woken(0));
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -2534,7 +2536,7 @@ TEST_CASE("one potion wakes and destroys an inactive placed Death without contac
     };
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.help = [](s32, usize) { return true; };
-    f.opponents.update(2, 1.0f / 30, f.players, {}, events);
+    f.opponents.update(2, 1.0f / 30, f.players, {}, opponentHost, opponentHost, opponentHost);
     REQUIRE_FALSE(f.opponents.statues().woken(0));
     player.actor.save().progress().inventory.addPotions(1, 1);
     if (shield) {
@@ -2546,7 +2548,7 @@ TEST_CASE("one potion wakes and destroys an inactive placed Death without contac
     for (s32 tick = 0; tick < 120; ++tick) {
         f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
         f.attacks.updateShields(1.0f / 30, f.players, f.targets);
-        f.opponents.update(2, 1.0f / 30, f.players, {}, events);
+        f.opponents.update(2, 1.0f / 30, f.players, {}, opponentHost, opponentHost, opponentHost);
     }
     CHECK(f.opponents.statues().count() == 0);
     CHECK(losses == 1);
@@ -4119,7 +4121,8 @@ TEST_CASE("native opponent sound lifetimes survive pause and corrected cancellat
     f.audio.recordTo(&audio);
     usize commands = 0;
     const SoundPlayer::Capture capture(&sounds, [&](const auto&) { ++commands; });
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};
     events.advanceVictory = [](s32, f32) {};
@@ -4129,7 +4132,7 @@ TEST_CASE("native opponent sound lifetimes survive pause and corrected cancellat
         audio.beginTick(tick);
         {
             auto scope = f.audio.soundScope({91, 0, 1}, 1);
-            f.opponents.update(0, seconds, f.players, {}, events);
+            f.opponents.update(0, seconds, f.players, {}, opponentHost, opponentHost, opponentHost);
             f.opponents.gatherLoops();
         }
         return audio.endFrame();
@@ -4553,7 +4556,8 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
                                       .vibrate = [](s32) {}};
     s32 hurt = 0;
     s32 stagger = 0;
-    LevelOpponents::Events opponents;
+    test::OpponentScript opponents;
+    test::ScriptedOpponents opponentHost{opponents};
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                          const PlayerImpact& impact) {
         ++hurt;
@@ -4611,7 +4615,7 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
         PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, f.world.collision(),
                           motionLevel);
         f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
-        f.opponents.update(2, 1.0f / 30, f.players, {}, opponents);
+        f.opponents.update(2, 1.0f / 30, f.players, {}, opponentHost, opponentHost, opponentHost);
         f.effects.update(1.0f / 30);
         player.actor.save().progress().inventory.advance(1.0f / 30);
     };
@@ -5372,23 +5376,24 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     CHECK(enemies.healthOf(*id) == afterHit); // contact rechecks reach, not the wind-up's target
     f.players[0].actor.place({0, 0, 0});
     s32 awards = 0;
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
     events.levels = [] {};
     events.award = [&](s32 player, s32, bool) {
         CHECK(player == 3);
         ++awards;
     };
-    f.opponents.settleRewards(f.players, events);
+    f.opponents.settleRewards(f.players, opponentHost, opponentHost);
     CHECK(awards == 1);
     CHECK(sounds.voiceCount() == 1);
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "BLOODFX1");
     CHECK(f.effects.effect(0).tint.a == 96);
-    f.opponents.settleRewards(f.players, events);
+    f.opponents.settleRewards(f.players, opponentHost, opponentHost);
     CHECK(awards == 1);
     CHECK(sounds.voiceCount() == 1);
     f.opponents.strikeEnemy(*id, 1000, 0, {0, 0, 1}, 3, f.players, true);
-    f.opponents.settleRewards(f.players, events);
+    f.opponents.settleRewards(f.players, opponentHost, opponentHost);
     CHECK(awards == 2);
     CHECK(sounds.voiceCount() == 2);
     REQUIRE(f.effects.count() == 2);

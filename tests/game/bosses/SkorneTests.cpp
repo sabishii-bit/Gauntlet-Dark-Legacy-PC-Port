@@ -18,6 +18,7 @@
 #include "game/bosses/BossSequence.h"
 #include "game/bosses/SkorneRelics.h"
 #include "game/critters/CombatantFixture.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/LevelWorld.h"
 #include "game/party/PlayerMissiles.h"
 #include "game/party/TargetAssist.h"
@@ -234,7 +235,8 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     players[0].actor.spawn(0, {}, nullptr, {0, -9.75f, 31}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.bosses().view().kind == 42);
-    LevelOpponents::Events events;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};
@@ -249,7 +251,7 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     f32 rightEnergy = 0;
     for (s32 frame = 0; frame < 600; ++frame) {
         world.update(1.0f / 30);
-        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
         effects.update(1.0f / 30);
         std::array<f32, 3200> output{}; // a game frame of stereo PCM, not just queued cue names
         mixer.mix(output);
