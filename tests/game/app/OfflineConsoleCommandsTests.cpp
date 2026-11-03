@@ -31,7 +31,6 @@
 #include "game/console/DevConsole.h"
 #include "game/console/FixtureRequest.h"
 #include "game/console/LevelListingLines.h"
-#include "game/console/NoclipMotion.h"
 #include "game/context/GameContext.h"
 #include "game/critters/Critters.h"
 #include "game/enemies/Generators.h"
@@ -162,7 +161,6 @@ struct Commands {
     PlayScene scene;
     GameContext context;
     OfflineConsoleCommands::Cheats cheats{};
-    OfflineConsoleCommands::Flights flights{};
     std::optional<s32> partyCount;
     std::optional<s32> speaker; ///< who the console speaks for; else the first seat in
     std::vector<Journey> journeys;
@@ -225,7 +223,6 @@ struct Commands {
             .config = config,
             .saves = saves,
             .cheats = cheats,
-            .noclip = flights,
             .partyCount = partyCount,
             .travel =
                 [this](const LevelRef& level, std::optional<Vec3> position,
@@ -400,18 +397,12 @@ TEST_CASE("every offline command answers in a level in its own words", "[dev-con
     CHECK_FALSE(fixture->cheats[0].noTarget);
     CHECK(fixture->say(&C::noTarget) == "The enemies see you again");
     CHECK_FALSE(fixture->cheats[1].noTarget);
-    const NoclipMotion::Wish ahead{.direction = {1.0f, 0.0f, 0.0f}};
-    fixture->flights[1].advance(ahead, 0.5f);
-    REQUIRE(fixture->flights[1].velocity() != Vec3{0.0f});
     CHECK(fixture->say(&C::noclip) ==
           "Noclip on: the movement keys or left stick fly you as the camera looks, Q and E or the "
           "right stick up and down, Shift slows");
     CHECK(fixture->cheats[1].noclip);
-    CHECK(fixture->flights[1].velocity() == Vec3{0.0f});
-    fixture->flights[1].advance(ahead, 0.5f);
     CHECK(fixture->say(&C::noclip) == "Noclip off");
     CHECK_FALSE(fixture->cheats[1].noclip);
-    CHECK(fixture->flights[1].velocity() == Vec3{0.0f});
     fixture->speaker.reset();
 
     // get's gifts and the words it cannot read.

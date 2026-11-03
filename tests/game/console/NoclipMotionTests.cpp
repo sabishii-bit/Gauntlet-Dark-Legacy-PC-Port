@@ -1,3 +1,4 @@
+#include <array>
 #include <cmath>
 #include <initializer_list>
 
@@ -9,9 +10,11 @@
 #include "engine/platform/Input.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/camera/FlightVelocity.h"
 #include "game/config/GameConfig.h"
 #include "game/console/NoclipMotion.h"
 #include "game/players/PlayerControls.h"
+#include "game/rollback/InputCommand.h"
 
 namespace {
 using namespace gdl;
@@ -19,6 +22,10 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
+constexpr s32 kSettleSteps = 300;    ///< long enough for a flight to settle at what is wished
+constexpr s32 kEaseSteps = 60;       ///< a second of easing toward one wish
+constexpr s32 kCubeSteps = 1000;     ///< long past settling at full length
+constexpr f32 kStepMargin = 1.0e-6f; ///< how far a step may stray from its eased one near nothing
 
 bool alongside(const Vec3& a, const Vec3& b) {
     return glm::length(a) > 1e-4f && glm::length(b) > 1e-4f &&
@@ -101,35 +108,80 @@ TEST_CASE("noclip's wish follows the left stick along the ground and the right s
     CHECK_FALSE(wish(0.0f, 0.0f, -1.0f, 0).slow); // Shift is the keyboard's alone
 }
 
-TEST_CASE("noclip eases toward the wish and faces the way it goes along the ground",
+TEST_CASE("noclip's flight eases toward the wish, settles slower with Shift and stops at rest",
           "[dev-console][noclip]") {
     NoclipMotion flight;
     CHECK(flight.velocity() == Vec3{0.0f});
     NoclipMotion::Wish wish{.direction = Vec3{0.0f, 0.0f, 1.0f}};
-    NoclipMotion::Step step = flight.advance(wish, kStep);
-    CHECK(step.offset.z > 0.0f);
-    CHECK(step.offset.z < NoclipMotion::kSpeed * kStep);
-    REQUIRE(step.yaw.has_value());
-    CHECK(*step.yaw == Approx(0.0f));
-    for (s32 i = 0; i < 300; ++i) {
-        step = flight.advance(wish, kStep);
+    // It starts slow and comes up to the whole wish.
+    Vec3 flown = flight.fly(wish, kStep);
+    CHECK(flown.z > 0.0f);
+    CHECK(flown.z < 1.0f);
+    for (s32 i = 0; i < kSettleSteps; ++i) {
+        flown = flight.fly(wish, kStep);
     }
-    CHECK(step.offset.z == Approx(NoclipMotion::kSpeed * kStep).epsilon(0.01));
-    // Along +x it faces a quarter turn; straight up it keeps its facing.
-    wish.direction = Vec3{1.0f, 0.0f, 0.0f};
-    CHECK(flight.advance(wish, kStep).yaw == Approx(kPi / 2));
-    wish.direction = Vec3{0.0f, 1.0f, 0.0f};
-    CHECK_FALSE(flight.advance(wish, kStep).yaw.has_value());
+    CHECK(flown.z == Approx(1.0f).epsilon(0.01));
     // Slowly, it settles at a quarter of the pace; at rest, it stops.
     wish.slow = true;
-    for (s32 i = 0; i < 300; ++i) {
-        step = flight.advance(wish, kStep);
+    for (s32 i = 0; i < kSettleSteps; ++i) {
+        flown = flight.fly(wish, kStep);
     }
-    CHECK(glm::length(step.offset) ==
-          Approx(NoclipMotion::kSpeed * NoclipMotion::kSlowFactor * kStep).epsilon(0.01));
+    CHECK(glm::length(flown) == Approx(NoclipMotion::kSlowFactor).epsilon(0.01));
+    for (s32 i = 0; i < kSettleSteps; ++i) {
+        flown = flight.fly(NoclipMotion::Wish{}, kStep);
+    }
+    CHECK(flown == Vec3{0.0f});
+    CHECK(flight.velocity() == Vec3{0.0f});
+    // A reset stops it at once.
+    flight.fly(wish, kStep);
+    REQUIRE(flight.velocity() != Vec3{0.0f});
     flight.reset();
     CHECK(flight.velocity() == Vec3{0.0f});
-    CHECK(flight.advance(NoclipMotion::Wish{}, kStep).offset == Vec3{0.0f});
+    CHECK(flight.fly(NoclipMotion::Wish{}, kStep) == Vec3{0.0f});
+}
+
+TEST_CASE("the eased velocity flown as a wish moves as the eased step", "[dev-console][noclip]") {
+    // The scene moves a flown character by the wish times kSpeed and the tick's seconds, which
+    // is the step a velocity easing toward the wish at kSpeed takes.
+    NoclipMotion flight;
+    FlightVelocity eased;
+    const std::array wishes{
+        NoclipMotion::Wish{.direction = glm::normalize(Vec3{0.6f, 0.3f, -0.8f})},
+        NoclipMotion::Wish{.direction = Vec3{-1.0f, 0.0f, 0.0f}, .slow = true},
+        NoclipMotion::Wish{},
+    };
+    for (const NoclipMotion::Wish& wish : wishes) {
+        CAPTURE(wish.direction.x, wish.direction.y, wish.direction.z, wish.slow);
+        const f32 pace = NoclipMotion::kSpeed * (wish.slow ? NoclipMotion::kSlowFactor : 1.0f);
+        for (s32 i = 0; i < kEaseSteps; ++i) {
+            const Vec3 flown = flight.fly(wish, kStep);
+            const Vec3 step = eased.advance(wish.direction * pace, kStep);
+            CHECK(flight.velocity() == eased.velocity);
+            const Vec3 moved = flown * NoclipMotion::kSpeed * kStep;
+            CHECK(moved.x == Approx(step.x).margin(kStepMargin));
+            CHECK(moved.y == Approx(step.y).margin(kStepMargin));
+            CHECK(moved.z == Approx(step.z).margin(kStepMargin));
+        }
+    }
+}
+
+TEST_CASE("the wish never leaves the unit cube", "[dev-console][noclip][console-input]") {
+    // Flown at full length along each axis for a long while, every wish is one the input
+    // protocol takes.
+    for (const Vec3& axis :
+         {Vec3{1.0f, 0.0f, 0.0f}, Vec3{-1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f},
+          Vec3{0.0f, -1.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, -1.0f}}) {
+        CAPTURE(axis.x, axis.y, axis.z);
+        NoclipMotion flight;
+        InputCommand command{.epoch = 1, .grant = 1};
+        bool taken = true;
+        for (s32 i = 0; i < kCubeSteps; ++i) {
+            command.consoleFlight = flight.fly(NoclipMotion::Wish{.direction = axis}, kStep);
+            taken = taken && command.valid();
+        }
+        CHECK(taken);
+        CHECK(glm::dot(command.consoleFlight, axis) == Approx(1.0f));
+    }
 }
 
 } // namespace

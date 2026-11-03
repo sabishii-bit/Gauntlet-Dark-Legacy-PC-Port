@@ -35,6 +35,7 @@ void Gauntlet::leaveNetplay() {
     consoleSelect(std::nullopt);
     m_console.close();
     m_freeCamera.stop();
+    resetConsoleFlights();
     window().holdCursor(false);
     m_select.close();
     m_online.reset();
@@ -78,9 +79,11 @@ void Gauntlet::updateNetplay(f64 deltaSeconds) {
                 window().stopRumble();
             }
         }
-        m_online->update(m_select.isOpen() || consoleOpen ? SessionInputs::Frame{}
-                                                          : readPlayInputs(deltaSeconds),
-                         {});
+        const bool blanked = m_select.isOpen() || consoleOpen;
+        if (blanked) {
+            resetConsoleFlights(); // a frame that reads no controls flies nobody
+        }
+        m_online->update(blanked ? SessionInputs::Frame{} : readPlayInputs(deltaSeconds), {});
         // A permission revocation can arrive during this update. Do not keep a guest
         // console (or its input capture) open for an additional rendered frame.
         if (!m_online->consoleAllowed()) {

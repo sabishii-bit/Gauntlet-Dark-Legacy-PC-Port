@@ -25,7 +25,6 @@
 #include "game/app/Scenario.h"
 #include "game/characters/AutoSave.h"
 #include "game/config/ControlProfiles.h"
-#include "game/console/NoclipMotion.h"
 #include "game/enemies/Enemies.h"
 #include "game/players/PlayerControls.h"
 #include "game/scenes/ConsoleTravel.h"
@@ -308,6 +307,9 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         if (menu.escape) {
             requestQuit();
             return;
+        }
+        if (consoleOpen) {
+            resetConsoleFlights(); // a frame that reads no controls flies nobody
         }
         m_online->update(consoleOpen ? SessionInputs::Frame{} : readPlayInputs(deltaSeconds), menu);
         if (!m_online->consoleAllowed()) {
@@ -674,10 +676,11 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     if (const s32 flying = consolePlayer(); m_freeCamera.active() && flying >= 0) {
         inputs[static_cast<usize>(flying)] = PlayInput{}; // the keys fly the camera instead
     }
+    // Noclip flies under the free camera too; the scene sets a flown seat's other controls
+    // aside.
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        if (m_consoleCheats[static_cast<usize>(player)].noclip) {
-            inputs[static_cast<usize>(player)] = PlayInput{}; // flown by the console instead
-        }
+        inputs[static_cast<usize>(player)].consoleFlight =
+            consoleFlight(player, deltaSeconds, consoleOpen);
     }
     const bool wasLeaving = m_play->scene.leaving();
     const PlayOutcome outcome = m_play->scene.update(deltaSeconds, m_sessionInputs.advance(inputs));
@@ -1292,13 +1295,7 @@ PlayScene::Inputs Gauntlet::readPlayInputs(f64 deltaSeconds) {
         const auto& bindings = playBindings(m_config, player);
         PlayInput& in = inputs[static_cast<usize>(player)];
         if (m_online) {
-            const auto seat = m_online->consoleSeat(player);
-            const auto* scene = m_online->consoleScene();
-            if (seat && scene && scene->cheats(*seat).noclip) {
-                const auto wish = NoclipMotion::wish(input(), bindings, source.keyboard, source.pad,
-                                                     scene->viewCamera());
-                in.consoleFlight = wish.direction * (wish.slow ? NoclipMotion::kSlowFactor : 1.0f);
-            }
+            in.consoleFlight = consoleFlight(player, deltaSeconds, false);
         }
         in.move = readMoveInput(input(), bindings, source.keyboard, source.pad);
         in.freeMove = source.keyboard && m_config.controls[static_cast<usize>(player)].scheme ==
@@ -1541,9 +1538,7 @@ bool Gauntlet::startTitleScreen() {
     m_parent.reset();
     // The title begins a new game: no console cheat, noclip flight or free camera lasts past it.
     m_consoleCheats = {};
-    for (NoclipMotion& flight : m_noclip) {
-        flight.reset();
-    }
+    resetConsoleFlights();
     m_freeCamera.stop();
     m_exitSpeech.close();
     setMaxFrameRate(m_config.display.maxFrameRate);

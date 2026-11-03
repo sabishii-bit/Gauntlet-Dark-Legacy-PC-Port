@@ -21,6 +21,7 @@
 #include "game/characters/Progression.h"
 #include "game/console/GiftRequest.h"
 #include "game/console/LevelListingLines.h"
+#include "game/console/NoclipMotion.h"
 #include "game/console/PartyCountRequest.h"
 #include "game/console/SpawnRequest.h"
 #include "game/critters/CombatantKind.h"
@@ -48,7 +49,6 @@ void OfflineConsoleCommands::noclip(DevConsole& console) {
     }
     bool& flying = m_ports.cheats[static_cast<usize>(player)].noclip;
     flying = !flying;
-    m_ports.noclip[static_cast<usize>(player)].reset();
     console.print(flying ? std::format("Noclip on: {}", NoclipMotion::kHelp) : "Noclip off");
 }
 

@@ -67,15 +67,9 @@ NoclipMotion::Wish NoclipMotion::wish(const Input& input, const PlayBindings& bi
     return wish;
 }
 
-NoclipMotion::Step NoclipMotion::advance(const Wish& wish, f32 seconds) {
-    Step step;
-    step.offset =
-        m_velocity.advance(wish.direction * (kSpeed * (wish.slow ? kSlowFactor : 1.0f)), seconds);
-    const Vec2 ground{wish.direction.x, wish.direction.z};
-    if (glm::length(ground) > 1.0e-3f) {
-        step.yaw = std::atan2(ground.x, ground.y);
-    }
-    return step;
+Vec3 NoclipMotion::fly(const Wish& wish, f32 seconds) {
+    m_velocity.advance(wish.direction * (kSpeed * (wish.slow ? kSlowFactor : 1.0f)), seconds);
+    return glm::clamp(m_velocity.velocity / kSpeed, Vec3{-1.0f}, Vec3{1.0f});
 }
 
 } // namespace gdl::game

@@ -20,7 +20,6 @@
 #include "game/console/ConsoleCommands.h"
 #include "game/console/DevConsole.h"
 #include "game/console/FixtureRequest.h"
-#include "game/console/NoclipMotion.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/scenes/PlayScene.h"
@@ -39,7 +38,6 @@ public:
     using Arguments = ConsoleCommand::Arguments;
     using Cheats =
         std::array<PlayScene::ConsoleCheats, static_cast<usize>(PlayScene::kPlayerCount)>;
-    using Flights = std::array<NoclipMotion, static_cast<usize>(PlayScene::kPlayerCount)>;
 
     /** What the commands read and change of the application. */
     struct Ports {
@@ -57,7 +55,6 @@ public:
         const GameConfig& config;
         SaveSlots& saves;               ///< opened when first needed, for the class unlocks
         Cheats& cheats;                 ///< each player's, carried into the scene every tick
-        Flights& noclip;                ///< each player's noclip flight
         std::optional<s32>& partyCount; ///< party_count's across levels; none: the party present
         /** Takes the party to a level through the loading picture, standing it at a point
          * facing a way when given; the scene closes at once. */

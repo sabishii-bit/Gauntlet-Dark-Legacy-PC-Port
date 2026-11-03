@@ -18,6 +18,7 @@
 #include "engine/assets/WorldData.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 #include "engine/math/PortableMath.h"
 
 #include "FakeRenderDevice.h"
@@ -35,6 +36,7 @@
 #include "game/level/SpawnedObjects.h"
 #include "game/players/ItemPickup.h"
 #include "game/rollback/ConsoleAction.h"
+#include "game/rollback/InputCommand.h"
 #include "game/scenes/ConsoleStage.h"
 #include "game/scenes/PlayScene.h"
 
@@ -603,6 +605,60 @@ TEST_CASE("shared noclip flies at full speed from the first tick", "[native-cons
     CHECK(scene.actor(0)->position() == still);
     REQUIRE(fixture->sharedStep({}, inputs).outcome == PlayOutcome::Running);
     CHECK(scene.actor(1)->position() == start + offset + offset);
+}
+
+TEST_CASE("noclip flown through the scene moves by the eased velocity",
+          "[native-console][assets]") {
+    constexpr s32 kFlightTicks = 10;         ///< ticks of flight, still easing up to speed
+    constexpr f32 kPlaceMargin = 1.0e-3f;    ///< a level position's rounding, far under a tick
+    constexpr f32 kWireStep = 1.0f / 127.0f; ///< the wire's step of a noclip wish's axis
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    REQUIRE(fixture->say("noclip", 1) == "noclip on");
+    const auto seconds = static_cast<f32>(kStep);
+    const NoclipMotion::Wish ahead{.direction = glm::normalize(Vec3{1.0f, 0.5f, -1.0f})};
+    const NoclipMotion::Wish aside{.direction = Vec3{-1.0f, 0.0f, 0.0f}};
+    NoclipMotion flight;
+    // Each tick the scene moves the character by the wish it is given and faces it the way the
+    // wish goes along the ground.
+    const auto flies = [&](const Vec3& start, const Vec3& wish) {
+        CHECK(scene.actor(1)->position() == start + wish * NoclipMotion::kSpeed * seconds);
+        CHECK(scene.actor(1)->yaw() == Catch::Approx(portable::atan2(wish.x, wish.z)));
+    };
+    // Offline the wish is the eased velocity as flown: the character goes the step that
+    // velocity takes, starting slow, and once the stick turns it faces where it goes, not yet
+    // where the stick points.
+    for (s32 tick = 0; tick < kFlightTicks; ++tick) {
+        const bool turned = tick >= kFlightTicks / 2;
+        const NoclipMotion::Wish& wish = turned ? aside : ahead;
+        const Vec3 start = scene.actor(1)->position();
+        PlayScene::Inputs inputs;
+        inputs[1].consoleFlight = flight.fly(wish, seconds);
+        REQUIRE(fixture->offlineStep({}, inputs).outcome == PlayOutcome::Running);
+        flies(start, inputs[1].consoleFlight);
+        const Vec3 moved = scene.actor(1)->position() - start;
+        const Vec3 eased = flight.velocity() * seconds;
+        CHECK(moved.x == Catch::Approx(eased.x).margin(kPlaceMargin));
+        CHECK(moved.y == Catch::Approx(eased.y).margin(kPlaceMargin));
+        CHECK(moved.z == Catch::Approx(eased.z).margin(kPlaceMargin));
+        CHECK(glm::length(moved) < NoclipMotion::kSpeed * seconds);
+        if (turned) {
+            CHECK(scene.actor(1)->yaw() !=
+                  Catch::Approx(portable::atan2(aside.direction.x, aside.direction.z)));
+        }
+    }
+    // The shared game flies it as the wire steadies it, within a step of each axis.
+    for (s32 tick = 0; tick < kFlightTicks; ++tick) {
+        const Vec3 start = scene.actor(1)->position();
+        PlayScene::Inputs inputs;
+        inputs[1].consoleFlight =
+            InputCommand{.consoleFlight = flight.fly(aside, seconds)}.steadied().consoleFlight;
+        REQUIRE(fixture->sharedStep({}, inputs).outcome == PlayOutcome::Running);
+        flies(start, inputs[1].consoleFlight);
+        CHECK(glm::all(glm::lessThanEqual(
+            glm::abs(inputs[1].consoleFlight - flight.velocity() / NoclipMotion::kSpeed),
+            Vec3{kWireStep})));
+    }
 }
 
 TEST_CASE("the console's effects equal the same effects applied directly",

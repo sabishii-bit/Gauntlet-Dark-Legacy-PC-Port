@@ -204,7 +204,6 @@ OfflineConsoleCommands::Ports Gauntlet::offlineConsolePorts() {
         .config = m_config,
         .saves = m_saves,
         .cheats = m_consoleCheats,
-        .noclip = m_noclip,
         .partyCount = m_partyCountOverride,
         .travel = [this](const LevelRef& level, std::optional<Vec3> position,
                          std::optional<f32> yaw) { consoleTravel(level, position, yaw); },
@@ -639,25 +638,36 @@ void Gauntlet::applyConsoleState(f64 deltaSeconds, bool consoleOpen) {
     // it is and shows there again when the button is let go.
     window().holdCursor(m_freeCamera.active() && !consoleOpen &&
                         input().isKeyDown(Key::MouseRight));
-    // Noclip flies a character as the camera looks, the console's keys left alone.
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        NoclipMotion& flight = m_noclip[static_cast<usize>(player)];
-        if (!m_consoleCheats[static_cast<usize>(player)].noclip) {
-            continue;
-        }
-        if (consoleOpen) {
-            flight.reset();
-            continue;
-        }
-        const MenuInputSource source = playerInputSource(input(), m_config, player);
-        const NoclipMotion::Wish wish =
-            NoclipMotion::wish(input(), playBindings(m_config, player), source.keyboard, source.pad,
-                               m_play->scene.viewCamera());
-        const NoclipMotion::Step step = flight.advance(wish, static_cast<f32>(deltaSeconds));
-        m_play->scene.noclipMove(player, step.offset, step.yaw);
-    }
     m_play->scene.setViewOverride(m_freeCamera.active() ? std::optional{m_freeCamera.camera()}
                                                         : std::nullopt);
+}
+
+Vec3 Gauntlet::consoleFlight(s32 slot, f64 seconds, bool consoleOpen) {
+    NoclipMotion& flight = m_noclip[static_cast<usize>(slot)];
+    // The slot flies the seat it plays in the scene being stepped: online the seat its device
+    // holds, offline the player of that number.
+    const PlayScene* scene = consoleScene();
+    bool flying = false;
+    if (scene != nullptr) {
+        const std::optional<u8> seat =
+            m_online ? m_online->consoleSeat(slot) : std::optional{static_cast<u8>(slot)};
+        flying = seat.has_value() && scene->cheats(*seat).noclip;
+    }
+    // Noclip flies a character as the camera looks, the console's keys left alone.
+    if (!flying || consoleOpen) {
+        flight.reset();
+        return Vec3{0.0f};
+    }
+    const MenuInputSource source = playerInputSource(input(), m_config, slot);
+    const NoclipMotion::Wish wish = NoclipMotion::wish(
+        input(), playBindings(m_config, slot), source.keyboard, source.pad, scene->viewCamera());
+    return flight.fly(wish, static_cast<f32>(seconds));
+}
+
+void Gauntlet::resetConsoleFlights() {
+    for (NoclipMotion& flight : m_noclip) {
+        flight.reset();
+    }
 }
 
 /** The player the console speaks for: the one at the keyboard, else the first in. */

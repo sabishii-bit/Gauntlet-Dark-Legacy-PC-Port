@@ -137,6 +137,11 @@ private:
     std::vector<std::string> consoleDescribe(const SceneSelection& selection);
     /** Carries the console's cheats, hidden HUD and free camera into the scene each tick. */
     void applyConsoleState(f64 deltaSeconds, bool consoleOpen);
+    /** The noclip wish input slot `slot` flies this frame; none while its seat's noclip is off
+     * or the console is down. */
+    Vec3 consoleFlight(s32 slot, f64 seconds, bool consoleOpen);
+    /** Stops every input slot's noclip flight. */
+    void resetConsoleFlights();
     /** Takes the party to `level` through the loading picture, standing it at `position`
      * facing `yaw` when given; the scene closes at once. */
     void consoleTravel(const LevelRef& level, std::optional<Vec3> position, std::optional<f32> yaw);

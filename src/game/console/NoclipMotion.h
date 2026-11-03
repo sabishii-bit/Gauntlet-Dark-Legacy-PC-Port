@@ -1,5 +1,4 @@
 #pragma once
-#include <optional>
 #include <string_view>
 
 #include "engine/core/Types.h"
@@ -16,7 +15,8 @@ namespace gdl::game {
  * How a character flies when the developer console lets it through everything (noclip): the
  * movement keys or the left stick take it along the ground the way the camera looks, Q and E
  * or the right stick straight up and down, Shift slowing it, the velocity easing the way the
- * free camera's does. Along the ground it faces the way it goes.
+ * free camera's does. The scene moves the character by the eased velocity flown, facing the
+ * way it goes along the ground.
  */
 class NoclipMotion {
 public:
@@ -38,13 +38,9 @@ public:
     static Wish wish(const Input& input, const PlayBindings& bindings, bool keyboard, s32 pad,
                      const WorldCamera& camera);
 
-    /** A step of the flight: how far to go, and the yaw to face when going along the ground. */
-    struct Step {
-        Vec3 offset{0.0f, 0.0f, 0.0f};
-        std::optional<f32> yaw;
-    };
-    /** Eases toward `wish` over `seconds` and returns the step taken. */
-    Step advance(const Wish& wish, f32 seconds);
+    /** Eases toward `wish` over `seconds` and returns the flight wish the scene integrates:
+     * the eased velocity over kSpeed, each axis within -1..1. */
+    Vec3 fly(const Wish& wish, f32 seconds);
     void reset() { m_velocity.reset(); }
     const Vec3& velocity() const { return m_velocity.velocity; }
 
