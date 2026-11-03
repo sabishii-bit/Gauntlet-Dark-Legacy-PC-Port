@@ -136,21 +136,21 @@ TEST_CASE("safe rocks take breath as wide as every cover's breath probe",
     REQUIRE(rocks.bind(device, layout, missing));
     rocks.setPlayerCount(1);
     REQUIRE(rocks.standing(0));
-    STATIC_CHECK(CombatCover::kBreathProbeRadius == 0.5f);
-    // From inside the rock, 2 from its centre, out to 0.9 past its side of 2.3.
-    constexpr s32 kSteps = 24;
-    constexpr f32 kStart = 9.0f;
-    constexpr f32 kStep = 0.05f;
-    for (s32 step = 0; step <= kSteps; ++step) {
-        const f32 x = kStart + kStep * static_cast<f32>(step);
+    constexpr s32 kSweepSteps = 24;     // probes across the rock's side of 2.3
+    constexpr f32 kSweepStart = 9.0f;   // inside the rock, 2 from its centre
+    constexpr f32 kSweepStep = 0.05f;   // out to 0.9 past its side
+    constexpr f32 kWithinBreath = 9.7f; // 0.4 past its side
+    constexpr f32 kBeyondBreath = 9.9f; // 0.6 past its side
+    for (s32 step = 0; step <= kSweepSteps; ++step) {
+        const f32 x = kSweepStart + kSweepStep * static_cast<f32>(step);
         const Vec3 from{x, 32, -10};
         const Vec3 to{x, 32, 10};
         CAPTURE(x);
         CHECK(rocks.blocksBreath(from, to) ==
               rocks.blocksSegment(from, to, CombatCover::kBreathProbeRadius));
     }
-    CHECK(rocks.blocksBreath(Vec3{9.7f, 32, -10}, Vec3{9.7f, 32, 10}));       // 0.4 past its side
-    CHECK_FALSE(rocks.blocksBreath(Vec3{9.9f, 32, -10}, Vec3{9.9f, 32, 10})); // 0.6 past
+    CHECK(rocks.blocksBreath(Vec3{kWithinBreath, 32, -10}, Vec3{kWithinBreath, 32, 10}));
+    CHECK_FALSE(rocks.blocksBreath(Vec3{kBeyondBreath, 32, -10}, Vec3{kBeyondBreath, 32, 10}));
 }
 
 TEST_CASE("Yeti ice rocks stay invisible until their eruption completes",

@@ -10,6 +10,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/level/CombatCover.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -367,8 +368,7 @@ void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
 }
 
 bool SafeRocks::blocksBreath(const Vec3& from, const Vec3& to) const {
-    constexpr f32 kBreathProbeRadius = 0.5f;
-    return blocksSegment(from, to, kBreathProbeRadius);
+    return blocksSegment(from, to, CombatCover::kBreathProbeRadius);
 }
 
 bool SafeRocks::blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const {
