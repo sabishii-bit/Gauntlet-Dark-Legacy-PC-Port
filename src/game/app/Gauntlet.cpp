@@ -120,10 +120,10 @@ void Gauntlet::onInit() {
             const auto level = scenario.level.empty() ? std::optional{LevelRef::tower()}
                                                       : m_levels.byName(scenario.level);
             if (scenario.afterLevel || scenario.ending || !level ||
-                !m_online->open(renderDevice(), game, m_options.netplayTest, m_options.netplayRoom,
-                                m_version, m_options.netplayContent, scenario.partyMembers(),
-                                *level, scenario.tower, m_options.netplayAutoStart,
-                                m_options.netplayInvite)) {
+                !m_online->open(renderDevice(), game, onlineLinks(), m_options.netplayTest,
+                                m_options.netplayRoom, m_version, m_options.netplayContent,
+                                scenario.partyMembers(), *level, scenario.tower,
+                                m_options.netplayAutoStart, m_options.netplayInvite)) {
                 log::error("Online scene test could not start");
                 requestQuit();
             }
@@ -265,23 +265,6 @@ GameContext Gauntlet::context() {
         return applySettings(config, false);
     };
     context.renderer = activeRenderer();
-    context.vibrate = [this](s32 player, s32 frames, ControlFeedback feedback) {
-        if (const auto request = controlVibration(m_config, input(), player, frames, feedback)) {
-            window().rumble(request->pad, request->low, request->high, request->milliseconds,
-                            request->priority);
-        }
-    };
-    context.stopVibration = [this] { window().stopRumble(); };
-    context.saveLocalParty = [this](std::span<PartyMember> party) { autoSave(party); };
-    context.manualSaveLocalParty = [this](std::span<PartyMember> party) {
-        return saveLocalParty(party);
-    };
-    // Only newly earned rewards invoke this callback; preloaded scenario relics do not.
-    context.unlockClasses = [this](u16 mask) {
-        if (m_saves.opened() || m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
-            m_saves.unlockClasses(mask);
-        }
-    };
     context.previewAudio = [this](const AudioConfig& audio) {
         m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
@@ -290,6 +273,47 @@ GameContext Gauntlet::context() {
         m_audio->mixer().setStereo(audio.stereo);
     };
     return context;
+}
+
+PlayScene::Links Gauntlet::playLinks() {
+    return {.haptics = &m_rumble, .unlocks = &m_unlocks};
+}
+
+OnlineRun::Links Gauntlet::onlineLinks() {
+    return {.haptics = &m_rumble, .unlocks = &m_unlocks, .store = &m_partyStore};
+}
+
+void Gauntlet::RumbleRouting::vibrate(s32 player, s32 frames, ControlFeedback cue) {
+    if (!m_game.m_windowLive) {
+        return;
+    }
+    if (const auto request =
+            controlVibration(m_game.m_config, m_game.input(), player, frames, cue)) {
+        m_game.window().rumble(request->pad, request->low, request->high, request->milliseconds,
+                               request->priority);
+    }
+}
+
+void Gauntlet::RumbleRouting::stopRumble() {
+    if (m_game.m_windowLive) {
+        m_game.window().stopRumble();
+    }
+}
+
+void Gauntlet::UnlockRouting::unlockClasses(u16 mask) {
+    // Only newly earned rewards come here; preloaded scenario relics do not.
+    auto& saves = m_game.m_saves;
+    if (saves.opened() || saves.open(m_game.m_config.saveDirectory(), m_game.m_config.save.slots)) {
+        saves.unlockClasses(mask);
+    }
+}
+
+void Gauntlet::PartyRouting::autoSave(std::span<PartyMember> party) {
+    m_game.autoSave(party);
+}
+
+bool Gauntlet::PartyRouting::saveParty(std::span<PartyMember> party) {
+    return m_game.saveLocalParty(party);
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
@@ -555,7 +579,7 @@ bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> pa
     PlayOptions opened = options;
     opened.partyCount = m_partyCountOverride; // the console's party count outlasts a level
     opened.consoleCheats = m_consoleCheats;   // and so do its cheats
-    if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened)) {
+    if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened, playLinks())) {
         resetPlayInput();
         log::info("Entering {} ({})", level.name, level.title);
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
@@ -574,7 +598,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
     PlayOptions opened = options;
     opened.partyCount = m_partyCountOverride;
     opened.consoleCheats = m_consoleCheats;
-    if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened)) {
+    if (m_play->scene.open(renderDevice(), context(), m_play->world, party, opened, playLinks())) {
         resetPlayInput();
         log::info("Every player is ready; entering the tower");
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
@@ -1536,6 +1560,7 @@ void Gauntlet::onShutdown() {
     m_assets.reset();
     m_sounds.reset();
     m_audio.reset();
+    m_windowLive = false;
 }
 
 bool Gauntlet::startMovie(std::string_view name) {

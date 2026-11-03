@@ -30,6 +30,7 @@
 #include "game/characters/LevelResults.h"
 #include "game/characters/LevelWatch.h"
 #include "game/characters/Party.h"
+#include "game/config/ControlProfiles.h"
 #include "game/context/GameContext.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/LevelOpponents.h"
@@ -67,6 +68,8 @@
 #include "game/rollback/ConsoleAction.h"
 #include "game/rollback/FrameEventLedger.h"
 #include "game/rollback/SimulationObservation.h"
+#include "game/scenes/ClassUnlocks.h"
+#include "game/scenes/Haptics.h"
 #include "game/scenes/ScenePicking.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/scenes/SeatCameras.h"
@@ -117,6 +120,13 @@ struct PlayOptions {
     std::optional<s32> partyCount;
     /** Each seat's console cheats, which the scene holds from its first tick. */
     std::array<ConsoleCheats, kSeats> consoleCheats{};
+};
+
+/** The application's owners an open scene answers through: the controllers' rumble and the
+ * classes a won challenge grants. Either may be missing; closing the scene lets both go. */
+struct PlaySceneLinks {
+    Haptics* haptics = nullptr;
+    ClassUnlocks* unlocks = nullptr;
 };
 
 enum class PlayOutcome : u8 {
@@ -218,10 +228,13 @@ public:
 
     using Intro = TowerWelcome::Intro;
 
+    using Links = PlaySceneLinks;
+
     /** Brings the party into `world` (loading it when needed); false when the level or the
      * status boxes are not unpacked. */
     bool open(RenderDevice& device, const GameContext& context, LevelWorld& world,
-              std::span<const PartyMember> party, const PlayOptions& options = {});
+              std::span<const PartyMember> party, const PlayOptions& options = {},
+              const Links& links = {});
     void close();
     bool isOpen() const { return m_open; }
     u64 loadGeneration() const { return m_openGeneration; }
@@ -821,6 +834,7 @@ private:
 
     RenderDevice* m_device = nullptr;
     GameContext m_context;
+    Links m_links;
     LevelWorld* m_world = nullptr;
     CompassHud m_compass;
     ClassDataSet m_classes;

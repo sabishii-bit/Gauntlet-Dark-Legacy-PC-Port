@@ -25,6 +25,7 @@
 #include "game/app/Scenario.h"
 #include "game/bosses/Bosses.h"
 #include "game/camera/TowerCamera.h"
+#include "game/characters/Party.h"
 #include "game/characters/Progression.h"
 #include "game/config/GameConfig.h"
 #include "game/context/GameContext.h"

@@ -16,7 +16,6 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
-#include "game/characters/Party.h"
 #include "game/config/GameConfig.h"
 #include "game/context/GameContext.h"
 #include "game/level/LevelCatalog.h"
@@ -130,8 +129,6 @@ TEST_CASE("native online endings ignore unanimous skips and retain their last fr
         GameContext context;
         context.unpackedRoot = file.parent_path().parent_path();
         context.config = &config;
-        s32 saves = 0;
-        context.saveLocalParty = [&](std::span<PartyMember>) { ++saves; };
         LevelRef source;
         source.realmId = kind == 44 ? 8 : 6;
         OnlineCompletion completion;
@@ -178,7 +175,6 @@ TEST_CASE("native online endings ignore unanimous skips and retain their last fr
         CHECK(device.draws.front().texture == retained);
         CHECK(device.textureUpdates == uploads);
         CHECK(device.texturesCreated == textures);
-        CHECK(saves == 0);
         CHECK_FALSE(std::filesystem::exists(config.save.directory));
         completion.close();
         CHECK_FALSE(completion.visible());

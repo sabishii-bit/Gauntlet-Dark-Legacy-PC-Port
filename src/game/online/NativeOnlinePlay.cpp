@@ -9,9 +9,13 @@
 
 #include "engine/core/Log.h"
 
+#include "game/config/ControlProfiles.h"
 #include "game/netplay/OnlineParty.h"
+#include "game/online/PartyStore.h"
 #include "game/scenes/AfterLevelScene.h"
+#include "game/scenes/ClassUnlocks.h"
 #include "game/scenes/ConsoleTravel.h"
+#include "game/scenes/Haptics.h"
 
 namespace {
 
@@ -215,13 +219,40 @@ struct NativeOnlinePlay::Data {
         }
     };
 
+    /** The scenes' rumble: a seat's reaches the device this machine plays it on, unless that
+     * device's controls are captured; a stop stops them all. */
+    class SeatRumble final : public Haptics {
+    public:
+        explicit SeatRumble(Data& data) : m_data(data) {}
+        void vibrate(s32 seat, s32 frames, ControlFeedback cue) override {
+            if (seat < 0 || seat >= static_cast<s32>(InputCommand::kSeats) ||
+                m_data.appHaptics == nullptr) {
+                return;
+            }
+            const auto local = m_data.selection->device(*m_data.session, static_cast<u8>(seat));
+            if (local && (m_data.pausedDevices & (1U << static_cast<u32>(*local))) == 0) {
+                m_data.appHaptics->vibrate(*local, frames, cue);
+            }
+        }
+        void stopRumble() override {
+            if (m_data.appHaptics != nullptr) {
+                m_data.appHaptics->stopRumble();
+            }
+        }
+
+    private:
+        Data& m_data;
+    };
+
     RenderDevice* device = nullptr;
     OnlineSession* session = nullptr;
     OnlineParty* selection = nullptr;
     std::unique_ptr<NativePlaySetup> setup;
     GameContext context;
-    std::function<void(s32, s32, ControlFeedback)> vibrate;
-    std::function<void(u16)> unlockClasses;
+    Haptics* appHaptics = nullptr; ///< this machine's controllers, by local device
+    ClassUnlocks* unlocks = nullptr;
+    PartyStore* store = nullptr;
+    SeatRumble seatRumble{*this}; ///< what the scenes rumble through; outlives them
     std::unique_ptr<Level> level, parent;
     std::vector<PartyMember> levelMembers; ///< the party the current level was loaded with
     bool levelResumed = false;  ///< a parent brought back from a challenge cannot be reloaded
@@ -255,8 +286,8 @@ struct NativeOnlinePlay::Data {
         if (level) {
             level->scene.pauseGameplaySounds();
         }
-        if (context.stopVibration) {
-            context.stopVibration();
+        if (appHaptics != nullptr) {
+            appHaptics->stopRumble();
         }
         advanced = false;
     }
@@ -282,8 +313,9 @@ struct NativeOnlinePlay::Data {
         device = nullptr;
         session = nullptr;
         selection = nullptr;
-        vibrate = {};
-        unlockClasses = {};
+        appHaptics = nullptr;
+        unlocks = nullptr;
+        store = nullptr;
         options = {};
         phase = Phase::Closed;
         failure = Failure::None;
@@ -455,8 +487,8 @@ struct NativeOnlinePlay::Data {
             return false;
         }
         completedProgress = true;
-        if (save && context.config->game.autoSave && context.saveLocalParty) {
-            context.saveLocalParty(selection->localMembers());
+        if (save && context.config->game.autoSave && store != nullptr) {
+            store->autoSave(selection->localMembers());
         }
         // Local save slots never flow back into the canonical native party.
         return true;
@@ -581,11 +613,11 @@ struct NativeOnlinePlay::Data {
                     for (auto& member : selection->localMembers()) {
                         member.save.classUnlock |= reward;
                     }
-                    if (unlockClasses) {
-                        unlockClasses(reward);
+                    if (unlocks != nullptr) {
+                        unlocks->unlockClasses(reward);
                     }
-                    if (context.config->game.autoSave && context.saveLocalParty) {
-                        context.saveLocalParty(selection->localMembers());
+                    if (context.config->game.autoSave && store != nullptr) {
+                        store->autoSave(selection->localMembers());
                     }
                 }
             } else if (boundary && boundary->consoleTravel) {
@@ -658,7 +690,8 @@ struct NativeOnlinePlay::Data {
             PlayOptions opened = options;
             opened.consoleCheats = consoleCheats;
             if (!candidate->world.load(*device, context.unpackedRoot, *destination) ||
-                !candidate->scene.open(*device, context, candidate->world, members, opened)) {
+                !candidate->scene.open(*device, context, candidate->world, members, opened,
+                                       {.haptics = &seatRumble, .unlocks = nullptr})) {
                 fail(Failure::Assets);
                 return false;
             }
@@ -797,8 +830,8 @@ struct NativeOnlinePlay::Data {
             PlayOptions reopened = options;
             reopened.consoleCheats = levelConsoleCheats;
             if (!candidate->world.load(*device, context.unpackedRoot, *current) ||
-                !candidate->scene.open(*device, context, candidate->world, levelMembers,
-                                       reopened)) {
+                !candidate->scene.open(*device, context, candidate->world, levelMembers, reopened,
+                                       {.haptics = &seatRumble, .unlocks = nullptr})) {
                 return fail(Failure::Assets);
             }
             candidate->scene.setLocalSeats(seatMask(session->seats()));
@@ -1172,7 +1205,7 @@ std::optional<LevelRef> NativeOnlinePlay::levelOf(const LevelCatalog& catalog, u
 }
 bool NativeOnlinePlay::open(RenderDevice& device, const GameContext& context,
                             OnlineSession& session, OnlineParty& selection,
-                            std::unique_ptr<NativePlaySetup> setup) {
+                            std::unique_ptr<NativePlaySetup> setup, const Links& links) {
     auto& data = *m_data;
     const auto& match = session.match();
     const bool starting = !session.host() && match.phase() == MatchSession::Phase::Loading &&
@@ -1211,18 +1244,9 @@ bool NativeOnlinePlay::open(RenderDevice& device, const GameContext& context,
     data.context.stopTimeTotal = &data.setup->stopTimeTotal();
     data.context.tower = nullptr;
     data.context.saveSettings = {};
-    data.context.unlockClasses = {};
-    data.vibrate = context.vibrate;
-    data.unlockClasses = context.unlockClasses;
-    data.context.vibrate = [&data](s32 seat, s32 frames, ControlFeedback cue) {
-        if (seat < 0 || seat >= static_cast<s32>(InputCommand::kSeats) || !data.vibrate) {
-            return;
-        }
-        const auto local = data.selection->device(*data.session, static_cast<u8>(seat));
-        if (local && (data.pausedDevices & (1U << static_cast<u32>(*local))) == 0) {
-            data.vibrate(*local, frames, cue);
-        }
-    };
+    data.appHaptics = links.haptics;
+    data.unlocks = links.unlocks;
+    data.store = links.store;
     data.phase = Phase::Loading;
     return true;
 }
@@ -1266,8 +1290,8 @@ bool NativeOnlinePlay::pause(s32 device) {
         }
     }
     data.pausedDevices |= mask;
-    if (mask != 0 && data.context.stopVibration) {
-        data.context.stopVibration();
+    if (mask != 0 && data.appHaptics != nullptr) {
+        data.appHaptics->stopRumble();
     }
     return mask != 0;
 }
@@ -1281,8 +1305,7 @@ bool NativeOnlinePlay::resume(s32 device) {
     return captured;
 }
 bool NativeOnlinePlay::hasCompletedProgress() const {
-    return m_data->completedProgress && m_data->selection != nullptr &&
-           static_cast<bool>(m_data->context.manualSaveLocalParty);
+    return m_data->completedProgress && m_data->selection != nullptr && m_data->store != nullptr;
 }
 bool NativeOnlinePlay::saveCompletedProgress() {
     if (!hasCompletedProgress()) {
@@ -1291,7 +1314,7 @@ bool NativeOnlinePlay::saveCompletedProgress() {
     try {
         // This is the authenticated completed local copy, not scene.party().
         // Saving may allocate local slots, which never feed the shared roster.
-        return m_data->context.manualSaveLocalParty(m_data->selection->localMembers());
+        return m_data->store->saveParty(m_data->selection->localMembers());
     } catch (const std::exception& error) {
         log::warn("Completed local progress could not be saved: {}", error.what());
         return false;

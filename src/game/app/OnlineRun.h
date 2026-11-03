@@ -16,8 +16,11 @@
 #include "game/scenes/SceneSelection.h"
 
 namespace gdl::game {
+class ClassUnlocks;
 struct GameContext;
+class Haptics;
 struct LevelRef;
+class PartyStore;
 struct PlayOptions;
 class PlayScene;
 class LevelWorld;
@@ -33,15 +36,23 @@ public:
     OnlineRun& operator=(const OnlineRun&) = delete;
     OnlineRun(OnlineRun&&) = delete;
     OnlineRun& operator=(OnlineRun&&) = delete;
-    bool open(RenderDevice& device, const GameContext& context, const std::string& endpoint,
-              const std::string& code, const std::string& build, const std::string& content,
-              std::span<const PartyMember> local, const LevelRef& initial,
-              const PlayOptions& options, bool autoStart = false,
+    /** The application's owners the online game answers through: the controllers' rumble, the
+     * classes a won challenge grants and the local characters' saves. Any may be missing; each
+     * must outlive the run. */
+    struct Links {
+        Haptics* haptics = nullptr;
+        ClassUnlocks* unlocks = nullptr;
+        PartyStore* store = nullptr;
+    };
+    bool open(RenderDevice& device, const GameContext& context, const Links& links,
+              const std::string& endpoint, const std::string& code, const std::string& build,
+              const std::string& content, std::span<const PartyMember> local,
+              const LevelRef& initial, const PlayOptions& options, bool autoStart = false,
               const std::filesystem::path& invitationOutput = {});
     void update(const SessionInputs::Frame& devices, const MenuInput& menu);
-    bool openLobby(RenderDevice& device, const GameContext& context, const std::string& invitation,
-                   const std::string& build, const std::string& content, u8 localPlayers,
-                   bool localOnly = false);
+    bool openLobby(RenderDevice& device, const GameContext& context, const Links& links,
+                   const std::string& invitation, const std::string& build,
+                   const std::string& content, u8 localPlayers, bool localOnly = false);
     bool select(std::span<const PartyMember> local);
     bool ready(bool value);
     bool start();
@@ -88,8 +99,8 @@ public:
     static std::optional<std::string> stallNotice(f64 stalledSeconds);
 
 private:
-    bool connect(RenderDevice& device, const GameContext& context, bool localOnly,
-                 const std::string& invitation, const std::string& build,
+    bool connect(RenderDevice& device, const GameContext& context, const Links& links,
+                 bool localOnly, const std::string& invitation, const std::string& build,
                  const std::string& content, u8 localPlayers);
     void status(RenderDevice& device, std::string message);
     void network(RenderDevice& device, std::string line, s32 pingMs);

@@ -351,7 +351,8 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             // Keep an admitted exit phrase alive until the successfully opened
             // destination takes ownership. A console jump still stops it.
             m_play->scene.suspendForImportedLevel(internalTravel);
-            if (!next->scene.open(renderDevice(), nextContext, next->world, party, options)) {
+            if (!next->scene.open(renderDevice(), nextContext, next->world, party, options,
+                                  playLinks())) {
                 m_play->scene.resumeAfterImportedLevel();
                 console.print("The native map's shared gameplay resources could not be loaded.");
                 return;

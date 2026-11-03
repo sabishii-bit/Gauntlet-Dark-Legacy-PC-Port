@@ -203,6 +203,7 @@ add_executable(tests
     game/netplay/ShopSyncTests.cpp
     game/online/OnlineCompletionTests.cpp
     game/online/OnlineLevelEntryTests.cpp
+    game/online/PartyStoreTests.cpp
     game/netplay/OnlineSessionTests.cpp
     game/characters/CharacterProfileTests.cpp
     game/characters/PartyCheckpointTests.cpp
@@ -239,6 +240,8 @@ add_executable(tests
     game/scenes/SceneDescriptionTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp
+    game/scenes/HapticsTests.cpp
+    game/scenes/ClassUnlocksTests.cpp
     game/scenes/PlaySceneSoundIdentityTests.cpp
     game/level/StaticSceneryTests.cpp
     game/config/ControlProfilesTests.cpp

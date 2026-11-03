@@ -10,6 +10,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
+#include "game/characters/Party.h"
 #include "game/config/GameConfig.h"
 #include "game/context/GameContext.h"
 #include "game/level/LevelWorld.h"

@@ -12,6 +12,7 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/audio/SpeechTiming.h"
+#include "game/characters/Party.h"
 #include "game/context/GameContext.h"
 #include "game/hud/StatusBox.h"
 #include "game/shop/ShopSession.h"

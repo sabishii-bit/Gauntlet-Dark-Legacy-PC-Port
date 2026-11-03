@@ -30,6 +30,8 @@
 #include "game/audio/MusicDuck.h"
 #include "game/camera/FreeCamera.h"
 #include "game/characters/CharacterSave.h"
+#include "game/characters/Party.h"
+#include "game/config/ControlProfiles.h"
 #include "game/config/GameConfig.h"
 #include "game/console/ConsoleHost.h"
 #include "game/console/ConsoleListings.h"
@@ -42,11 +44,14 @@
 #include "game/level/LevelWorld.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/PauseMenu.h"
+#include "game/online/PartyStore.h"
 #include "game/players/CursorAim.h"
 #include "game/players/PlayerControls.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/scenes/AfterLevelScene.h"
 #include "game/scenes/AttractScene.h"
+#include "game/scenes/ClassUnlocks.h"
+#include "game/scenes/Haptics.h"
 #include "game/scenes/IdleScreen.h"
 #include "game/scenes/LevelLoadingScreen.h"
 #include "game/scenes/MovieScene.h"
@@ -74,6 +79,37 @@ protected:
     void onShutdown() override;
 
 private:
+    /** The controllers' rumble the screens and the online game ask for, through the window
+     * while it stands. */
+    class RumbleRouting final : public Haptics {
+    public:
+        explicit RumbleRouting(Gauntlet& game) : m_game(game) {}
+        void vibrate(s32 player, s32 frames, ControlFeedback cue) override;
+        void stopRumble() override;
+
+    private:
+        Gauntlet& m_game;
+    };
+    /** Grants a won challenge's classes into the saves' shared unlock profile. */
+    class UnlockRouting final : public ClassUnlocks {
+    public:
+        explicit UnlockRouting(Gauntlet& game) : m_game(game) {}
+        void unlockClasses(u16 mask) override;
+
+    private:
+        Gauntlet& m_game;
+    };
+    /** Saves the online game's local characters as the party in play is saved. */
+    class PartyRouting final : public PartyStore {
+    public:
+        explicit PartyRouting(Gauntlet& game) : m_game(game) {}
+        void autoSave(std::span<PartyMember> party) override;
+        bool saveParty(std::span<PartyMember> party) override;
+
+    private:
+        Gauntlet& m_game;
+    };
+
     bool startMovie(std::string_view name);
     bool startTitleScreen();
     void startNextAttractScreen();
@@ -176,6 +212,10 @@ private:
     bool joinTower(const PlayerSelectScene::Inputs& joining);
     s32 playerPressingStart() const;
     GameContext context();
+    /** What a play scene answers its rumble and won classes through. */
+    PlayScene::Links playLinks();
+    /** What the online game answers its rumble, won classes and saves through. */
+    OnlineRun::Links onlineLinks();
     void applyWindowIcon();
     void renderScene(RenderDevice& device);
 
@@ -197,6 +237,10 @@ private:
     std::optional<s32> m_partyCountOverride; ///< the console's party_count, across levels
     bool m_hudHidden = false;
     std::string m_version;
+    RumbleRouting m_rumble{*this}; ///< outlives every scene and online game that rumbles
+    UnlockRouting m_unlocks{*this};
+    PartyRouting m_partyStore{*this};
+    bool m_windowLive = true; ///< until shutdown has closed every screen; the window goes next
     std::unique_ptr<OnlineRun> m_online;
     struct NetplayNavigation {
         NetplayMenu menu;

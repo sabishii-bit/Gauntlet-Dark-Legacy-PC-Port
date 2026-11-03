@@ -18,6 +18,7 @@
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterProfile.h"
@@ -107,8 +108,8 @@ struct NativeScene {
     SoundPlayer sounds{mixer};
     usize physicalAudio = 0;
     std::unique_ptr<SoundPlayer::Capture> soundWatch;
-    std::vector<PlayScene::RumbleOutput> vibrations;
-    std::vector<u16> unlocks;
+    test::RecordingHaptics haptics;
+    test::RecordingUnlocks unlocks;
     PlayScene scene;
     SimulationObserver observer{scene};
 
@@ -127,10 +128,6 @@ struct NativeScene {
         context.strings = &strings;
         context.unpackedRoot = root;
         context.sounds = settings.audio ? &sounds : nullptr;
-        context.vibrate = [&](s32 player, s32 frames, ControlFeedback feedback) {
-            vibrations.push_back({player, frames, feedback});
-        };
-        context.unlockClasses = [&](u16 mask) { unlocks.push_back(mask); };
         std::vector<PartyMember> party;
         for (usize seat = 0; seat < settings.peers; ++seat) {
             CharacterSave save;
@@ -150,7 +147,8 @@ struct NativeScene {
         options.welcome = false;
         options.position =
             settings.secret ? world.startPoint(0)->position : Vec3{18.8f, 0.2f, 0.7f};
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(scene.open(device, context, world, party, options,
+                           {.haptics = &haptics, .unlocks = &unlocks}));
         const auto entering = [&] {
             return scene.spawning() || std::ranges::any_of(scene.participants(), [](const auto& p) {
                        return p.figure != nullptr && p.figure->animator().entering();
@@ -163,8 +161,8 @@ struct NativeScene {
         if (settings.secret) {
             primeSecretContact();
         }
-        vibrations.clear();
-        unlocks.clear();
+        haptics.pulses.clear();
+        unlocks.masks.clear();
         if (settings.audio) {
             REQUIRE(scene.beginRecordedAudio(kEpoch));
             soundWatch = std::make_unique<SoundPlayer::Capture>(
@@ -298,8 +296,8 @@ struct Peer {
                                            : NativeRollbackDriver::AudioMode::Disabled));
     }
     void advance(const Settings& settings, u64 wall, bool forward) {
-        const auto vibrations = native.vibrations.size();
-        const auto unlocks = native.unlocks.size();
+        const auto vibrations = native.haptics.pulses.size();
+        const auto unlocks = native.unlocks.masks.size();
         const auto audio = native.physicalAudio;
         const auto voices = native.sounds.voiceCount();
         const auto started = std::chrono::steady_clock::now();
@@ -321,8 +319,8 @@ struct Peer {
         CAPTURE(driver.nextTick(), driver.failure());
         REQUIRE(result.status != NativeRollbackDriver::Status::Failed);
         REQUIRE_FALSE(driver.tentativeTerminal());
-        CHECK(native.vibrations.size() == vibrations);
-        CHECK(native.unlocks.size() == unlocks);
+        CHECK(native.haptics.pulses.size() == vibrations);
+        CHECK(native.unlocks.masks.size() == unlocks);
         CHECK(native.physicalAudio == audio);
         CHECK(native.sounds.voiceCount() == voices);
         REQUIRE(result.audio.has_value() == settings.audio);
@@ -446,8 +444,8 @@ void run(const Settings& settings) {
                 expectedDigests.emplace(tick, NativeRollbackDriver::agreementDigest(*digest, {}));
             }
         }
-        REQUIRE(reference.vibrations.empty());
-        REQUIRE(reference.unlocks.empty());
+        REQUIRE(reference.haptics.pulses.empty());
+        REQUIRE(reference.unlocks.masks.empty());
         expected = observe(reference);
         if (!settings.secret) {
             CAPTURE(reference.scene.scroll().active(), reference.scene.switchCutscene().active(),
@@ -687,13 +685,13 @@ void run(const Settings& settings) {
         if (settings.secret) {
             REQUIRE(peer.pendingUnlock);
             REQUIRE(peer.committed.size() == 1);
-            REQUIRE(peer.native.unlocks.size() == 1);
+            REQUIRE(peer.native.unlocks.masks.size() == 1);
         } else {
             REQUIRE(localEdges >= 4);
             REQUIRE(stats.corrections > 0);
             REQUIRE(stats.replayTicks > 0);
             REQUIRE_FALSE(wantedRumbles.empty());
-            REQUIRE(peer.native.vibrations.size() == peer.presented.size());
+            REQUIRE(peer.native.haptics.pulses.size() == peer.presented.size());
         }
         std::cout << std::format(
             "native rollback {} peers={} peer={} ticks={} replay={} corrections={} max-replay={} "

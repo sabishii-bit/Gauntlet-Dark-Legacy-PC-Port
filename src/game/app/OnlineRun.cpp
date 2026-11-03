@@ -32,6 +32,7 @@ struct OnlineRun::Impl {
 #if GDL_ENABLE_NETPLAY
     RenderDevice* device = nullptr;
     GameContext context;
+    NativeOnlinePlay::Links links;
     GameConfig config;
     LevelRef initial;
     PlayOptions options;
@@ -133,10 +134,10 @@ void OnlineRun::status(RenderDevice& device, std::string message) {
         log::warn("Online status: {}", error.what());
     }
 }
-bool OnlineRun::open(RenderDevice& device, const GameContext& context, const std::string& endpoint,
-                     const std::string& code, const std::string& build, const std::string& content,
-                     std::span<const PartyMember> local, const LevelRef& initial,
-                     const PlayOptions& options, bool autoStart,
+bool OnlineRun::open(RenderDevice& device, const GameContext& context, const Links& links,
+                     const std::string& endpoint, const std::string& code, const std::string& build,
+                     const std::string& content, std::span<const PartyMember> local,
+                     const LevelRef& initial, const PlayOptions& options, bool autoStart,
                      const std::filesystem::path& invitationOutput) {
     close();
 #if GDL_ENABLE_NETPLAY
@@ -158,7 +159,7 @@ bool OnlineRun::open(RenderDevice& device, const GameContext& context, const std
         const auto bytes = file.readExact(static_cast<usize>(file.size()));
         invitation.assign(bytes.begin(), bytes.end());
     }
-    if (!connect(device, context, endpoint == "local", invitation, build, content,
+    if (!connect(device, context, links, endpoint == "local", invitation, build, content,
                  static_cast<u8>(local.size()))) {
         return false;
     }
@@ -175,11 +176,11 @@ bool OnlineRun::open(RenderDevice& device, const GameContext& context, const std
     (void)options;
     (void)autoStart;
     (void)invitationOutput;
-    return connect(device, context, false, {}, build, content, 1);
+    return connect(device, context, links, false, {}, build, content, 1);
 #endif
 }
-bool OnlineRun::connect(RenderDevice& device, const GameContext& context, bool localOnly,
-                        const std::string& invitation, const std::string& build,
+bool OnlineRun::connect(RenderDevice& device, const GameContext& context, const Links& links,
+                        bool localOnly, const std::string& invitation, const std::string& build,
                         const std::string& content, u8 localPlayers) {
     close();
 #if GDL_ENABLE_NETPLAY
@@ -190,6 +191,7 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, bool l
     auto next = std::make_unique<Impl>();
     next->device = &device;
     next->context = context;
+    next->links = {.haptics = links.haptics, .unlocks = links.unlocks, .store = links.store};
     next->config = context.config != nullptr ? *context.config : GameConfig{};
     next->context.config = &next->config;
     next->initial = LevelRef::tower();
@@ -233,6 +235,7 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, bool l
     return true;
 #else
     (void)context;
+    (void)links;
     (void)localOnly;
     (void)invitation;
     (void)build;
@@ -242,10 +245,10 @@ bool OnlineRun::connect(RenderDevice& device, const GameContext& context, bool l
     return false;
 #endif
 }
-bool OnlineRun::openLobby(RenderDevice& device, const GameContext& context,
+bool OnlineRun::openLobby(RenderDevice& device, const GameContext& context, const Links& links,
                           const std::string& invitation, const std::string& build,
                           const std::string& content, u8 localPlayers, bool localOnly) {
-    if (!connect(device, context, localOnly, invitation, build, content, localPlayers)) {
+    if (!connect(device, context, links, localOnly, invitation, build, content, localPlayers)) {
         return false;
     }
 #if GDL_ENABLE_NETPLAY
@@ -538,10 +541,10 @@ void OnlineRun::update(const SessionInputs::Frame& devices, const MenuInput& men
             run.config.multiplayer.mode = static_cast<MultiplayerMode>(rules.friendlyFire);
             run.config.multiplayer.soloCamera = rules.camera == 1;
             applyRoomRules(run.context.mechanics, rules.mechanics, run.config.game);
-            const bool opened = run.identityInputs &&
-                                NativeOnlineIdentity::numericMatches(*run.identityInputs) &&
-                                run.nativePlay.open(*run.device, run.context, session,
-                                                    run.selection, std::move(run.nativeSetup));
+            const bool opened =
+                run.identityInputs && NativeOnlineIdentity::numericMatches(*run.identityInputs) &&
+                run.nativePlay.open(*run.device, run.context, session, run.selection,
+                                    std::move(run.nativeSetup), run.links);
             if (!opened) {
                 status(*run.device, "Online scene setup failed. Escape exits.");
                 session.leave();

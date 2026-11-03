@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <functional>
-#include <span>
 
 #include "engine/assets/StringTable.h"
 #include "engine/audio/SoundPlayer.h"
@@ -10,8 +9,6 @@
 #include "engine/io/AssetLocator.h"
 #include "engine/render/RenderTypes.h"
 
-#include "game/characters/Party.h"
-#include "game/config/ControlProfiles.h"
 #include "game/config/GameConfig.h"
 #include "game/hud/ControlPrompts.h"
 #include "game/level/LevelCatalog.h"
@@ -44,15 +41,6 @@ struct GameContext {
     std::function<bool(const GameConfig&)> previewVideo;
     /** The graphics API drawing now; the Video page says a restart is needed for another. */
     GraphicsApi renderer = GraphicsApi::Vulkan;
-    std::function<void(s32, s32, ControlFeedback)> vibrate; ///< input player id, frames and cue
-    std::function<void()> stopVibration;
-    /** A completed secret challenge grants shared class availability, even before saving. */
-    std::function<void(u16)> unlockClasses;
-    /** Shop or successful challenge checkpoint, containing only locally owned characters. */
-    std::function<void(std::span<PartyMember>)> saveLocalParty;
-    /** Explicit user request for a completed local checkpoint, independent of
-     * Auto Save. May assign free local slots; false reports an incomplete save. */
-    std::function<bool(std::span<PartyMember>)> manualSaveLocalParty;
 };
 
 } // namespace gdl::game

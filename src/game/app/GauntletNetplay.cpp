@@ -25,8 +25,8 @@ void Gauntlet::connectNetplay() {
         return;
     }
     m_online = std::make_unique<OnlineRun>();
-    if (!m_online->openLobby(renderDevice(), context(), ui.pendingInvitation, m_version, ui.digest,
-                             ui.view.localPlayers)) {
+    if (!m_online->openLobby(renderDevice(), context(), onlineLinks(), ui.pendingInvitation,
+                             m_version, ui.digest, ui.view.localPlayers)) {
         ui.notice = m_online->status();
         m_online.reset();
     }

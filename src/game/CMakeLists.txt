@@ -44,6 +44,7 @@ add_library(game STATIC
     online/NativeRollbackDriver.cpp
     online/NativePlaySetup.cpp
     online/NativeOnlinePlay.cpp
+    online/PartyStore.h
     netplay/OnlineParty.cpp
     online/OnlineLevelEntry.cpp
     online/OnlineCompletion.cpp
@@ -448,6 +449,8 @@ add_library(game STATIC
     audio/LegendSound.h
     bosses/LegendPresentation.cpp
     scenes/PlayScene.h
+    scenes/Haptics.h
+    scenes/ClassUnlocks.h
     scenes/ScenePicking.h
     scenes/SeatCameras.h
     scenes/TowerCeremonies.h

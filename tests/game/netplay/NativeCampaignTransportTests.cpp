@@ -13,6 +13,7 @@
 
 #include "engine/net/SessionTransport.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/NativeOnlineIdentity.h"
@@ -103,7 +104,8 @@ struct CampaignPeer {
     s32 localDevice;
     usize saveSlot;
     std::vector<PartyMember> saved;
-    u32 saves = 0, unlocks = 0, manualSaves = 0;
+    test::RecordingPartyStore store;
+    test::RecordingUnlocks unlocks;
     NativeOnlinePlay play; // Destroy borrowed scene/callback users before their owners.
 
     CampaignPeer(std::unique_ptr<SessionTransport> transport, bool host, s32 physicalDevice,
@@ -117,7 +119,7 @@ struct CampaignPeer {
         context.strings = &strings;
         context.levels = &levels;
         context.unpackedRoot = assets;
-        context.saveLocalParty = [this](std::span<PartyMember> members) {
+        store.hook = [this](std::span<PartyMember> members) {
             REQUIRE(members.size() == 1);
             CHECK(members.front().player == localDevice);
             CHECK(members.front().slot == saveSlot);
@@ -127,13 +129,7 @@ struct CampaignPeer {
             CHECK(session.match().context().sourceTick == 0);
             CHECK(session.match().context().sourceEpoch == 2);
             saved.assign(members.begin(), members.end());
-            ++saves;
         };
-        context.manualSaveLocalParty = [this](std::span<PartyMember>) {
-            ++manualSaves;
-            return true;
-        };
-        context.unlockClasses = [this](u16) { ++unlocks; };
     }
 
     void confirmSetup(const PlayOptions& options) {
@@ -276,8 +272,9 @@ TEST_CASE("real iroh campaign exits through tally and shop into the agreed tower
     CHECK(host->session.match().phase() == MatchSession::Phase::Lobby);
     CHECK(guest->session.match().phase() == MatchSession::Phase::Lobby);
     for (auto* peer : peers) {
-        REQUIRE(peer->play.open(peer->device, peer->context, peer->session, peer->selection,
-                                std::move(peer->setup)));
+        REQUIRE(peer->play.open(
+            peer->device, peer->context, peer->session, peer->selection, std::move(peer->setup),
+            {.haptics = nullptr, .unlocks = &peer->unlocks, .store = &peer->store}));
     }
     CHECK(host->session.match().context().epoch == 1);
     CHECK(host->session.match().context().transition == MatchTransition::Start);
@@ -299,8 +296,8 @@ TEST_CASE("real iroh campaign exits through tally and shop into the agreed tower
                     sawSource[index] |=
                         scene->world()->ref() == *source && peer.play.confirmedTick() > 0;
                 }
-                CHECK(peer.saves == 0);
-                CHECK(peer.unlocks == 0);
+                CHECK(peer.store.autoSaves == 0);
+                CHECK(peer.unlocks.masks.empty());
             }
         });
     CHECK(std::ranges::all_of(sawSource, [](bool seen) { return seen; }));
@@ -362,7 +359,7 @@ TEST_CASE("real iroh campaign exits through tally and shop into the agreed tower
     sameParty(host->play.scene()->party(), guest->play.scene()->party());
     for (usize index = 0; index < peers.size(); ++index) {
         const auto& peer = *peers[index];
-        REQUIRE(peer.saves == 1);
+        REQUIRE(peer.store.autoSaves == 1);
         REQUIRE(peer.saved.size() == 1);
         CHECK(peer.saved.front().save.name == (index == 0 ? "HOST" : "GUEST"));
         CHECK(peer.saved.front().save.classes[index + 2].experience == 123456);
@@ -381,9 +378,9 @@ TEST_CASE("real iroh campaign exits through tally and shop into the agreed tower
             for (auto* peer : peers) {
                 peer->step();
                 CHECK(peer->session.match().context() == towerContext);
-                CHECK(peer->saves == 1);
-                CHECK(peer->unlocks == 0);
-                CHECK(peer->manualSaves == 0);
+                CHECK(peer->store.autoSaves == 1);
+                CHECK(peer->unlocks.masks.empty());
+                CHECK(peer->store.saves == 0);
                 CHECK(peer->play.simulatedTick() - peer->play.confirmedTick() <= 8);
             }
         });

@@ -15,10 +15,12 @@
 #include "engine/platform/Window.h"
 #include "engine/render/ThreadedRenderDevice.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/NativeOnlineIdentity.h"
 #include "game/app/OnlineRun.h"
+#include "game/characters/Party.h"
 #include "game/context/GameContext.h"
 #include "game/scenes/PlayScene.h"
 
@@ -45,7 +47,8 @@ void exerciseLobby(RenderDevice& hostDevice, RenderDevice& guestDevice,
     context.movieMixer = &mixer;
     OnlineRun host;
     OnlineRun guest;
-    REQUIRE(host.openLobby(hostDevice, context, {}, "test", std::string(64, 'a'), 1, true));
+    REQUIRE(host.openLobby(hostDevice, context, OnlineRun::Links{}, {}, "test",
+                           std::string(64, 'a'), 1, true));
     const auto pump = [&](const auto& finished) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
         while (!finished() && std::chrono::steady_clock::now() < deadline) {
@@ -71,8 +74,8 @@ void exerciseLobby(RenderDevice& hostDevice, RenderDevice& guestDevice,
     CHECK_FALSE(host.lobby().selected);
     CHECK_FALSE(host.lobby().canStart);
     REQUIRE_FALSE(host.start());
-    REQUIRE(guest.openLobby(guestDevice, context, host.lobby().invitation, "test",
-                            std::string(64, 'a'), 1, true));
+    REQUIRE(guest.openLobby(guestDevice, context, OnlineRun::Links{}, host.lobby().invitation,
+                            "test", std::string(64, 'a'), 1, true));
     pump([&] { return guest.lobby().connected && host.lobby().players == 2; });
     CHECK_FALSE(host.ready(true));
     PartyMember first;
@@ -193,9 +196,8 @@ TEST_CASE("three real iroh menu peers run four split-seat players and play on wh
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     std::array<GameConfig, 3> configs;
     std::array<GameContext, 3> contexts;
-    std::array<u32, 3> autoSaves{};
-    std::array<u32, 3> manualSaves{};
-    std::array<u32, 3> unlocks{};
+    std::array<test::RecordingPartyStore, 3> stores;
+    std::array<test::RecordingUnlocks, 3> unlocks;
     std::array<std::unique_ptr<test::FakeRenderDevice>, 3> devices;
     std::array<std::unique_ptr<OnlineRun>, 3> runs;
     for (usize peer = 0; peer < runs.size(); ++peer) {
@@ -204,12 +206,6 @@ TEST_CASE("three real iroh menu peers run four split-seat players and play on wh
         contexts[peer].strings = &strings;
         contexts[peer].levels = &levels;
         contexts[peer].unpackedRoot = root;
-        contexts[peer].saveLocalParty = [&, peer](std::span<PartyMember>) { ++autoSaves[peer]; };
-        contexts[peer].manualSaveLocalParty = [&, peer](std::span<PartyMember>) {
-            ++manualSaves[peer];
-            return true;
-        };
-        contexts[peer].unlockClasses = [&, peer](u16) { ++unlocks[peer]; };
         devices[peer] = std::make_unique<test::FakeRenderDevice>();
         devices[peer]->recordDraws = false;
         runs[peer] = std::make_unique<OnlineRun>();
@@ -251,14 +247,17 @@ TEST_CASE("three real iroh menu peers run four split-seat players and play on wh
         }
         REQUIRE(finished());
     };
-    REQUIRE(
-        runs[0]->openLobby(*devices[0], contexts[0], {}, "test", std::string(64, 'a'), 2, true));
+    const auto links = [&](usize peer) {
+        return OnlineRun::Links{.unlocks = &unlocks[peer], .store = &stores[peer]};
+    };
+    REQUIRE(runs[0]->openLobby(*devices[0], contexts[0], links(0), {}, "test", std::string(64, 'a'),
+                               2, true));
     pump([&] { return !runs[0]->lobby().invitation.empty(); });
     // The actual provider invitation stays private; never include it in INFO/CAPTURE.
     const auto invitation = runs[0]->lobby().invitation;
     for (usize peer = 1; peer < runs.size(); ++peer) {
-        REQUIRE(runs[peer]->openLobby(*devices[peer], contexts[peer], invitation, "test",
-                                      std::string(64, 'a'), 1, true));
+        REQUIRE(runs[peer]->openLobby(*devices[peer], contexts[peer], links(peer), invitation,
+                                      "test", std::string(64, 'a'), 1, true));
     }
     pump([&] {
         return std::ranges::all_of(runs, [](const auto& run) {
@@ -346,9 +345,12 @@ TEST_CASE("three real iroh menu peers run four split-seat players and play on wh
         CHECK_FALSE(runs[peer]->hasCompletedProgress());
         CHECK_FALSE(runs[peer]->saveCompletedProgress());
     }
-    CHECK((autoSaves == std::array<u32, 3>{}));
-    CHECK((manualSaves == std::array<u32, 3>{}));
-    CHECK((unlocks == std::array<u32, 3>{}));
+    for (usize peer = 0; peer < runs.size(); ++peer) {
+        CAPTURE(peer);
+        CHECK(stores[peer].autoSaves == 0);
+        CHECK(stores[peer].saves == 0);
+        CHECK(unlocks[peer].masks.empty());
+    }
 }
 
 TEST_CASE("development iroh launcher retains explicit native setup and automatic start",
@@ -385,16 +387,18 @@ TEST_CASE("development iroh launcher retains explicit native setup and automatic
     hostDevice->recordDraws = guestDevice->recordDraws = false;
     OnlineRun host;
     OnlineRun guest;
-    REQUIRE(host.open(*hostDevice, context, "local", {}, "test", std::string(64, 'a'),
-                      std::array{first}, *initial, options, true, invitation));
+    REQUIRE(host.open(*hostDevice, context, OnlineRun::Links{}, "local", {}, "test",
+                      std::string(64, 'a'), std::array{first}, *initial, options, true,
+                      invitation));
     bool joined = false;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
     while (std::chrono::steady_clock::now() < deadline) {
         host.update({}, {});
         if (!joined && std::filesystem::exists(invitation)) {
             REQUIRE(std::filesystem::file_size(invitation) > 0);
-            REQUIRE(guest.open(*guestDevice, context, "local", invitation.string(), "test",
-                               std::string(64, 'a'), std::array{second}, *initial, options, true));
+            REQUIRE(guest.open(*guestDevice, context, OnlineRun::Links{}, "local",
+                               invitation.string(), "test", std::string(64, 'a'),
+                               std::array{second}, *initial, options, true));
             joined = true;
         }
         guest.update({}, {});

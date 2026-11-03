@@ -15,6 +15,7 @@
 
 #include "engine/audio/AudioMixer.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/ControlProfiles.h"
@@ -41,6 +42,15 @@ constexpr s32 kRumbleFrames = 10; ///< how long each presented damage rumble las
 /** A controller's rumble as a machine was asked for it. */
 std::string rumble(s32 device, s32 frames, ControlFeedback cue) {
     return std::format("device {} frames {} cue {}", device, frames, static_cast<u32>(cue));
+}
+
+/** Every rumble a machine's devices were asked for, in turn. */
+std::vector<std::string> rumbles(const test::RecordingHaptics& haptics) {
+    std::vector<std::string> asked;
+    for (const auto& pulse : haptics.pulses) {
+        asked.push_back(rumble(pulse.player, pulse.frames, pulse.feedback));
+    }
+    return asked;
 }
 
 /** A seat's damage rumble as a scene's output ledger presents it for a tick. */
@@ -79,17 +89,14 @@ struct NativePair {
     StringTable strings;
     LevelCatalog catalog;
     GameContext hostContext, guestContext;
+    test::RecordingHaptics hostHaptics, guestHaptics; ///< what each machine's devices were asked
+    test::RecordingUnlocks hostUnlocks, guestUnlocks;
+    test::RecordingPartyStore hostStore, guestStore;
     OnlineParty hostParty, guestParty;
     // Only the diagnostic test opts into these catalogs. NativeOnlinePlay does
     // not require or publish old combat snapshots to run either native scene.
     NativeOnlinePlay host, guest;
     std::unique_ptr<NativePlaySetup> hostSetup, guestSetup;
-    u32 hostSaves = 0, guestSaves = 0;
-    u32 hostManualSaves = 0, guestManualSaves = 0;
-    bool manualSaveSucceeds = true;
-    u32 hostAwards = 0, guestAwards = 0;
-    u16 hostUnlocks = 0, guestUnlocks = 0;
-    std::vector<std::string> hostRumble, guestRumble; ///< what each machine's devices were asked
 
     explicit NativePair(const PlayOptions& options = {}, std::string_view beatenLevel = {},
                         std::optional<bool> autoSave = {}, std::string_view initialLevel = "L1",
@@ -120,45 +127,15 @@ struct NativePair {
             context->levels = &catalog;
             context->unpackedRoot = root;
         }
-        hostContext.saveLocalParty = [&](std::span<PartyMember> members) {
+        hostStore.hook = [](std::span<PartyMember> members) {
             REQUIRE(members.size() == 1);
             CHECK(members[0].player == kHostDevice);
             CHECK(members[0].slot == 22);
-            ++hostSaves;
         };
-        guestContext.saveLocalParty = [&](std::span<PartyMember> members) {
+        guestStore.hook = [](std::span<PartyMember> members) {
             REQUIRE(members.size() == 1);
             CHECK(members[0].player == kGuestDevice);
             CHECK(members[0].slot == 20);
-            ++guestSaves;
-        };
-        hostContext.manualSaveLocalParty = [&](std::span<PartyMember> members) {
-            REQUIRE(members.size() == 1);
-            CHECK(members[0].player == kHostDevice);
-            CHECK(members[0].slot == 22);
-            ++hostManualSaves;
-            return manualSaveSucceeds;
-        };
-        guestContext.manualSaveLocalParty = [&](std::span<PartyMember> members) {
-            REQUIRE(members.size() == 1);
-            CHECK(members[0].player == kGuestDevice);
-            CHECK(members[0].slot == 20);
-            ++guestManualSaves;
-            return manualSaveSucceeds;
-        };
-        hostContext.unlockClasses = [&](u16 mask) {
-            hostUnlocks |= mask;
-            ++hostAwards;
-        };
-        guestContext.unlockClasses = [&](u16 mask) {
-            guestUnlocks |= mask;
-            ++guestAwards;
-        };
-        hostContext.vibrate = [&](s32 device, s32 frames, ControlFeedback cue) {
-            hostRumble.push_back(rumble(device, frames, cue));
-        };
-        guestContext.vibrate = [&](s32 device, s32 frames, ControlFeedback cue) {
-            guestRumble.push_back(rumble(device, frames, cue));
         };
         const auto selected = [&](s32 device, s32 character, const std::string& name) {
             PartyMember result;
@@ -235,9 +212,10 @@ struct NativePair {
         REQUIRE(guestSession.phase() == OnlineSession::Phase::Active);
         REQUIRE(hostSession.match().nativeInputs());
         REQUIRE(guestSession.match().nativeInputs());
-        REQUIRE(
-            guest.open(guestDevice, guestContext, guestSession, guestParty, std::move(guestSetup)));
-        REQUIRE(host.open(hostDevice, hostContext, hostSession, hostParty, std::move(hostSetup)));
+        REQUIRE(guest.open(guestDevice, guestContext, guestSession, guestParty,
+                           std::move(guestSetup), {&guestHaptics, &guestUnlocks, &guestStore}));
+        REQUIRE(host.open(hostDevice, hostContext, hostSession, hostParty, std::move(hostSetup),
+                          {&hostHaptics, &hostUnlocks, &hostStore}));
         for (u32 frame = 0; frame < 3600 && (host.phase() != NativeOnlinePlay::Phase::Playing ||
                                              guest.phase() != NativeOnlinePlay::Phase::Playing);
              ++frame) {
@@ -755,8 +733,8 @@ TEST_CASE("online rumble reaches only this machine's unpaused devices",
     REQUIRE(pair->hostParty.device(pair->hostSession, kSecondHostSeat) == kSecondHostDevice);
     // Each machine presents every seat's rumble, as its ledger hands a tick's outputs on.
     const auto presentEverySeat = [&] {
-        pair->hostRumble.clear();
-        pair->guestRumble.clear();
+        pair->hostHaptics.pulses.clear();
+        pair->guestHaptics.pulses.clear();
         for (const auto* play : {&pair->host, &pair->guest}) {
             for (const u8 seat : {kSeats[0], kSecondHostSeat, kSeats[1]}) {
                 REQUIRE(play->scene()->dispatchOutput(presented(seat)));
@@ -767,17 +745,17 @@ TEST_CASE("online rumble reaches only this machine's unpaused devices",
         return rumble(device, kRumbleFrames, ControlFeedback::Damage);
     };
     presentEverySeat();
-    CHECK(pair->hostRumble ==
+    CHECK(rumbles(pair->hostHaptics) ==
           std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
-    CHECK(pair->guestRumble == std::vector<std::string>{damage(kGuestDevice)});
+    CHECK(rumbles(pair->guestHaptics) == std::vector<std::string>{damage(kGuestDevice)});
     // A paused device feels nothing; the machine's other device still does.
     REQUIRE(pair->host.pause(kHostDevice));
     presentEverySeat();
-    CHECK(pair->hostRumble == std::vector<std::string>{damage(kSecondHostDevice)});
-    CHECK(pair->guestRumble == std::vector<std::string>{damage(kGuestDevice)});
+    CHECK(rumbles(pair->hostHaptics) == std::vector<std::string>{damage(kSecondHostDevice)});
+    CHECK(rumbles(pair->guestHaptics) == std::vector<std::string>{damage(kGuestDevice)});
     REQUIRE(pair->host.resume(kHostDevice));
     presentEverySeat();
-    CHECK(pair->hostRumble ==
+    CHECK(rumbles(pair->hostHaptics) ==
           std::vector<std::string>{damage(kHostDevice), damage(kSecondHostDevice)});
 }
 
@@ -962,10 +940,10 @@ TEST_CASE("guest console travel and tower unlock share the confirmed online load
             CHECK(relics.pendingShards == 0);
         }
     }
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
-    CHECK(pair->hostAwards == 0);
-    CHECK(pair->guestAwards == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
+    CHECK(pair->hostUnlocks.masks.empty());
+    CHECK(pair->guestUnlocks.masks.empty());
 }
 
 TEST_CASE("shipping native online predicts local movement before delayed peer inputs arrive",
@@ -1035,10 +1013,10 @@ TEST_CASE("shipping native online predicts local movement before delayed peer in
     CHECK(pair->guest.rollbackStatistics().corrections > 0);
     CHECK(hostAudio > 0);
     CHECK(guestAudio > 0);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
-    CHECK(pair->hostAwards == 0);
-    CHECK(pair->guestAwards == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
+    CHECK(pair->hostUnlocks.masks.empty());
+    CHECK(pair->guestUnlocks.masks.empty());
     pair->hostWire.latency = pair->guestWire.latency = 0;
     for (u32 frame = 0; frame < 60; ++frame) {
         pair->step();
@@ -1273,8 +1251,8 @@ TEST_CASE("native pause discards only one local device's unpublished stalled tap
         }
     }
     CHECK(pair->host.simulatedTick() > stalled);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
     pair->hostWire.beforeSend = {};
     pair->guestWire.beforeSend = {};
 }
@@ -1287,8 +1265,8 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
     CHECK_FALSE(pair->guest.hasCompletedProgress());
     CHECK_FALSE(pair->host.saveCompletedProgress());
     CHECK_FALSE(pair->guest.saveCompletedProgress());
-    CHECK(pair->hostManualSaves == 0);
-    CHECK(pair->guestManualSaves == 0);
+    CHECK(pair->hostStore.saves == 0);
+    CHECK(pair->guestStore.saves == 0);
     pair->settle();
     pair->synchronize();
     const auto epoch = pair->hostSession.match().context().epoch;
@@ -1396,8 +1374,8 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
     CHECK(pair->hostSession.match().context().transition == MatchTransition::Shop);
     CHECK(pair->hostSession.match().context().sourceEpoch == sourceEpoch);
     CHECK(pair->hostSession.match().context().sourceTick > 0);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
     const auto hostMembers = pair->host.shopScene()->session().party();
     const auto guestMembers = pair->guest.shopScene()->session().party();
     REQUIRE(hostMembers.size() == kSeats.size());
@@ -1484,8 +1462,8 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
     CHECK(pair->hostSession.match().context() == pair->guestSession.match().context());
     CHECK(pair->hostSession.match().context().sourceEpoch == shopEpoch);
     CHECK(pair->hostSession.match().context().sourceTick == 0);
-    CHECK(pair->hostSaves == (autoSave ? 1U : 0U));
-    CHECK(pair->guestSaves == (autoSave ? 1U : 0U));
+    CHECK(pair->hostStore.autoSaves == (autoSave ? 1U : 0U));
+    CHECK(pair->guestStore.autoSaves == (autoSave ? 1U : 0U));
     REQUIRE(pair->host.hasCompletedProgress());
     REQUIRE(pair->guest.hasCompletedProgress());
     const auto canonical = pair->host.scene()->party();
@@ -1508,13 +1486,13 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
     const_cast<PlayerActor*>(pair->host.scene()->actor(kSeats[0]))->save().gold =
         canonical[0].save.gold;
-    pair->manualSaveSucceeds = false;
+    pair->hostStore.saveSucceeds = pair->guestStore.saveSucceeds = false;
     CHECK_FALSE(pair->guest.saveCompletedProgress());
     CHECK(pair->guest.hasCompletedProgress());
-    pair->manualSaveSucceeds = true;
+    pair->hostStore.saveSucceeds = pair->guestStore.saveSucceeds = true;
     REQUIRE(pair->guest.saveCompletedProgress());
-    CHECK(pair->hostManualSaves == 1);
-    CHECK(pair->guestManualSaves == 2);
+    CHECK(pair->hostStore.saves == 1);
+    CHECK(pair->guestStore.saves == 2);
     CHECK(pair->hostParty.localMembers()[0].save.classUnlock == 0xFFFF);
     CHECK(pair->guestParty.localMembers()[0].save.classUnlock == 0xFFFF);
     for (const auto* play : {&pair->host, &pair->guest}) {
@@ -1640,10 +1618,10 @@ TEST_CASE("native secret travel resumes each retained parent and commits only lo
     const auto reward = hostChallenge->challenge().rewardMask();
     REQUIRE(reward != 0);
     CHECK(guestChallenge->challenge().rewardMask() == reward);
-    CHECK(pair->hostAwards == 0);
-    CHECK(pair->guestAwards == 0);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
+    CHECK(pair->hostUnlocks.masks.empty());
+    CHECK(pair->guestUnlocks.masks.empty());
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
     const auto challengeResults = hostChallenge->levelResults();
     const auto challengeEpoch = pair->hostSession.match().context().epoch;
     REQUIRE(hostChallenge->scroll().active());
@@ -1692,12 +1670,10 @@ TEST_CASE("native secret travel resumes each retained parent and commits only lo
     CHECK_FALSE(guestParent->secretTravel());
     CHECK(consumed(*hostParent) == 1);
     CHECK(consumed(*guestParent) == 1);
-    CHECK(pair->hostUnlocks == reward);
-    CHECK(pair->guestUnlocks == reward);
-    CHECK(pair->hostAwards == 1);
-    CHECK(pair->guestAwards == 1);
-    CHECK(pair->hostSaves == 1);
-    CHECK(pair->guestSaves == 1);
+    CHECK(pair->hostUnlocks.masks == std::vector<u16>{reward});
+    CHECK(pair->guestUnlocks.masks == std::vector<u16>{reward});
+    CHECK(pair->hostStore.autoSaves == 1);
+    CHECK(pair->guestStore.autoSaves == 1);
     CHECK(pair->hostParty.localMembers()[0].save.classUnlock == reward);
     CHECK(pair->guestParty.localMembers()[0].save.classUnlock == reward);
     REQUIRE(hostParent->levelResults().size() == kSeats.size());
@@ -1714,10 +1690,10 @@ TEST_CASE("native secret travel resumes each retained parent and commits only lo
     for (u32 frame = 0; frame < 120; ++frame) {
         pair->step();
     }
-    CHECK(pair->hostAwards == 1);
-    CHECK(pair->guestAwards == 1);
-    CHECK(pair->hostSaves == 1);
-    CHECK(pair->guestSaves == 1);
+    CHECK(pair->hostUnlocks.masks.size() == 1);
+    CHECK(pair->guestUnlocks.masks.size() == 1);
+    CHECK(pair->hostStore.autoSaves == 1);
+    CHECK(pair->guestStore.autoSaves == 1);
 }
 TEST_CASE("a parent resumed from a secret challenge rebuilds a guest divergence in place",
           "[native-online-play][native-secret][journal][assets]") {
@@ -1850,8 +1826,8 @@ TEST_CASE("native completion checkpoints save only local progress and honor Auto
     CHECK(pair->guest.shopScene()->session().visit() == ShopVisit::Completion);
     REQUIRE(pair->hostSession.match().shop().setup());
     CHECK(pair->hostSession.match().shop().setup()->ending);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
     for (u32 frame = 0; frame < 3600 && (pair->host.phase() != NativeOnlinePlay::Phase::Playing ||
                                          pair->guest.phase() != NativeOnlinePlay::Phase::Playing);
          ++frame) {
@@ -1864,14 +1840,14 @@ TEST_CASE("native completion checkpoints save only local progress and honor Auto
     REQUIRE(pair->guest.phase() == NativeOnlinePlay::Phase::Playing);
     CHECK(pair->host.scene()->world()->isTower());
     CHECK(pair->guest.scene()->world()->isTower());
-    CHECK(pair->hostSaves == (autoSave ? 1U : 0U));
-    CHECK(pair->guestSaves == (autoSave ? 1U : 0U));
+    CHECK(pair->hostStore.autoSaves == (autoSave ? 1U : 0U));
+    CHECK(pair->guestStore.autoSaves == (autoSave ? 1U : 0U));
     CHECK(pair->host.hasCompletedProgress());
     CHECK(pair->guest.hasCompletedProgress());
     REQUIRE(pair->host.saveCompletedProgress());
     REQUIRE(pair->guest.saveCompletedProgress());
-    CHECK(pair->hostManualSaves == 1);
-    CHECK(pair->guestManualSaves == 1);
+    CHECK(pair->hostStore.saves == 1);
+    CHECK(pair->guestStore.saves == 1);
     for (const auto& member : pair->host.scene()->party()) {
         CHECK_FALSE(member.slot);
     }
@@ -1954,10 +1930,10 @@ TEST_CASE("native terminal departure waits for exact off-cadence state agreement
     CHECK(pair->guest.phase() == NativeOnlinePlay::Phase::Playing);
     CHECK(pair->host.scene() == hostScene);
     CHECK(pair->guest.scene() == guestScene);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->guestSaves == 0);
-    CHECK(pair->hostAwards == 0);
-    CHECK(pair->guestAwards == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->guestStore.autoSaves == 0);
+    CHECK(pair->hostUnlocks.masks.empty());
+    CHECK(pair->guestUnlocks.masks.empty());
 
     pair->guestWire.beforeSend = {};
     for (u32 frame = 0; frame < 30 && (pair->host.phase() != NativeOnlinePlay::Phase::Finished ||
@@ -1991,8 +1967,8 @@ TEST_CASE("native online failures retain the session cause without saving specul
         CHECK(pair->host.failureDetail() == detail);
     }
     CHECK(pair->host.simulatedTick() == completed);
-    CHECK(pair->hostSaves == 0);
-    CHECK(pair->hostAwards == 0);
+    CHECK(pair->hostStore.autoSaves == 0);
+    CHECK(pair->hostUnlocks.masks.empty());
     pair->host.close();
     CHECK(pair->host.failureDetail().empty());
     CHECK(pair->host.phase() == NativeOnlinePlay::Phase::Closed);

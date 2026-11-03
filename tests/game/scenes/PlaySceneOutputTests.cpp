@@ -10,6 +10,7 @@
 
 #include "engine/audio/AudioMixer.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/ArmorFlags.h"
@@ -34,8 +35,8 @@ struct Fixture {
     GameContext context;
     AudioMixer mixer{48000};
     SoundPlayer sounds{mixer};
-    std::vector<PlayScene::RumbleOutput> vibrations;
-    std::vector<u16> unlocks;
+    test::RecordingHaptics haptics;
+    test::RecordingUnlocks unlocks;
     PlayScene scene;
 
     Fixture(std::string_view level, bool hammer = false, bool audio = false) {
@@ -48,10 +49,6 @@ struct Fixture {
         context.levels = &levels;
         context.unpackedRoot = root;
         context.sounds = audio ? &sounds : nullptr;
-        context.vibrate = [&](s32 player, s32 frames, ControlFeedback feedback) {
-            vibrations.push_back({player, frames, feedback});
-        };
-        context.unlockClasses = [&](u16 mask) { unlocks.push_back(mask); };
         CharacterSave save;
         save.name = "OUTPUT";
         save.progress().health = 5000;
@@ -64,13 +61,14 @@ struct Fixture {
         options.welcome = false;
         options.position =
             ref->isSecret() ? world.startPoint(0)->position : Vec3{18.8f, 0.2f, 0.7f};
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(scene.open(device, context, world, party, options,
+                           {.haptics = &haptics, .unlocks = &unlocks}));
         for (s32 tick = 0; tick < 480 && entering(); ++tick) {
             REQUIRE(scene.update(kStep, {}) == PlayOutcome::Running);
         }
         REQUIRE_FALSE(entering());
-        vibrations.clear();
-        unlocks.clear();
+        haptics.pulses.clear();
+        unlocks.masks.clear();
     }
     bool entering() const {
         return scene.spawning() || (scene.animator(3) != nullptr && scene.animator(3)->entering());
@@ -278,7 +276,7 @@ TEST_CASE("native Thunder Hammer outputs replay without vibrating twice",
         if (impactTick != 0) {
             impact = output.journal;
         }
-        REQUIRE(f->vibrations.empty());
+        REQUIRE(f->haptics.pulses.empty());
     }
     REQUIRE(impactTick != 0);
     REQUIRE(f->scene.restoreLocal(beforeImpact));
@@ -287,7 +285,7 @@ TEST_CASE("native Thunder Hammer outputs replay without vibrating twice",
         expected[index] = f->step(impactTick + index, strike).journal;
     }
     CHECK(expected.front() == impact);
-    REQUIRE(f->vibrations.empty());
+    REQUIRE(f->haptics.pulses.empty());
 
     for (usize distance = 1; distance <= 8; ++distance) {
         CAPTURE(distance);
@@ -305,24 +303,24 @@ TEST_CASE("native Thunder Hammer outputs replay without vibrating twice",
             replay.push_back(f->step(impactTick + index, strike).journal);
             CHECK(replay.back() == expected[index]);
         }
-        CHECK(f->vibrations.empty());
+        CHECK(f->haptics.pulses.empty());
         Ledger ledger;
         REQUIRE(ledger.reset(kEpoch, impactTick));
         const auto first = ledger.replace(kEpoch, impactTick, std::span(expected).first(distance));
         f->dispatch(first);
-        REQUIRE(std::ranges::any_of(f->vibrations, [](const auto& rumble) {
+        REQUIRE(std::ranges::any_of(f->haptics.pulses, [](const auto& rumble) {
             return rumble.player == 3 && rumble.feedback == ControlFeedback::ThunderHammer;
         }));
-        const auto count = f->vibrations.size();
+        const auto count = f->haptics.pulses.size();
         f->dispatch(ledger.replace(kEpoch, impactTick, replay));
         f->dispatch(ledger.confirm(kEpoch, impactTick + distance - 1));
-        CHECK(f->vibrations.size() == count);
-        f->vibrations.clear();
+        CHECK(f->haptics.pulses.size() == count);
+        f->haptics.pulses.clear();
     }
     // The traditional update still dispatches the exact fresh cue after stepping.
     REQUIRE(f->scene.restoreLocal(beforeImpact));
     REQUIRE(f->scene.update(kStep, strike) == PlayOutcome::Running);
-    CHECK(std::ranges::any_of(f->vibrations, [](const auto& rumble) {
+    CHECK(std::ranges::any_of(f->haptics.pulses, [](const auto& rumble) {
         return rumble.player == 3 && rumble.feedback == ControlFeedback::ThunderHammer;
     }));
 }
@@ -351,7 +349,7 @@ TEST_CASE("authored trap damage emits a value cue instead of calling the control
                 damage = event;
             }
         }
-        REQUIRE(f->vibrations.empty());
+        REQUIRE(f->haptics.pulses.empty());
     }
     REQUIRE(damage);
     CHECK(f->player().save().health() < health);
@@ -359,9 +357,10 @@ TEST_CASE("authored trap damage emits a value cue instead of calling the control
     CHECK(rumble.player == 3);
     CHECK(rumble.frames > 0);
     CHECK_FALSE(f->scene.dispatchOutput({Ledger::ActionKind::Commit, *damage}));
-    CHECK(f->vibrations.empty());
+    CHECK(f->haptics.pulses.empty());
     REQUIRE(f->scene.dispatchOutput({Ledger::ActionKind::Present, *damage}));
-    CHECK(f->vibrations == std::vector{rumble});
+    CHECK(f->haptics.pulses == std::vector{test::RecordingHaptics::Pulse{
+                                   rumble.player, rumble.frames, rumble.feedback}});
 }
 
 TEST_CASE("native secret reward rewinds without persisting until its output is confirmed",
@@ -388,7 +387,7 @@ TEST_CASE("native secret reward rewinds without persisting until its output is c
         f->player().place(lastPosition);
         REQUIRE(f->scene.saveLocal(beforeReward));
         const auto result = f->step(++tick);
-        REQUIRE(f->unlocks.empty());
+        REQUIRE(f->unlocks.masks.empty());
         if (f->scene.challenge().state() == SecretChallenge::State::Won) {
             rewardTick = tick;
             reward = result.journal;
@@ -407,12 +406,12 @@ TEST_CASE("native secret reward rewinds without persisting until its output is c
     CHECK(found->policy == Ledger::Policy::Confirmed);
     CHECK(found->id.emitter.seat == FrameEventEmitter::kNoSeat);
     CHECK_FALSE(f->scene.dispatchOutput({Ledger::ActionKind::Present, *found}));
-    REQUIRE(f->unlocks.empty());
+    REQUIRE(f->unlocks.masks.empty());
     Ledger ledger;
     REQUIRE(ledger.reset(kEpoch, rewardTick));
     const std::array published{reward};
     f->dispatch(ledger.replace(kEpoch, rewardTick, published));
-    REQUIRE(f->unlocks.empty());
+    REQUIRE(f->unlocks.masks.empty());
 
     REQUIRE(f->scene.restoreLocal(beforeReward));
     CHECK((f->player().save().classUnlock & mask) == 0);
@@ -422,20 +421,20 @@ TEST_CASE("native secret reward rewinds without persisting until its output is c
     CHECK(f->player().position() == lastPosition);
     const auto replay = f->step(rewardTick);
     CHECK(replay.journal == reward);
-    REQUIRE(f->unlocks.empty());
+    REQUIRE(f->unlocks.masks.empty());
     const std::array replayed{replay.journal};
     f->dispatch(ledger.replace(kEpoch, rewardTick, replayed));
-    REQUIRE(f->unlocks.empty());
+    REQUIRE(f->unlocks.masks.empty());
     f->dispatch(ledger.confirm(kEpoch, rewardTick));
-    REQUIRE(f->unlocks == std::vector<u16>{mask});
+    REQUIRE(f->unlocks.masks == std::vector<u16>{mask});
     f->dispatch(ledger.confirm(kEpoch, rewardTick));
     f->dispatch(ledger.replace(kEpoch, rewardTick, replayed));
-    CHECK(f->unlocks.size() == 1);
+    CHECK(f->unlocks.masks.size() == 1);
 
     // Offline behavior retains its immediate post-step shared unlock callback.
     REQUIRE(f->scene.restoreLocal(beforeReward));
-    f->unlocks.clear();
+    f->unlocks.masks.clear();
     REQUIRE(f->scene.update(kStep, {}) == PlayOutcome::Running);
-    CHECK(f->unlocks == std::vector<u16>{mask});
+    CHECK(f->unlocks.masks == std::vector<u16>{mask});
 }
 } // namespace

@@ -13,6 +13,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterProfile.h"
@@ -38,8 +39,8 @@ struct Fixture {
     GameContext game;
     MatchContext match;
     std::vector<PartyMember> party;
-    usize physicalRumbles = 0;
-    usize persistentUnlocks = 0;
+    test::RecordingHaptics physicalRumbles;
+    test::RecordingUnlocks persistentUnlocks;
     AudioMixer mixer{48000};
     SoundPlayer sounds{mixer};
     PlayScene scene;
@@ -58,8 +59,6 @@ struct Fixture {
         game.strings = &strings;
         game.unpackedRoot = root;
         game.sounds = audio ? &sounds : nullptr;
-        game.vibrate = [&](s32, s32, ControlFeedback) { ++physicalRumbles; };
-        game.unlockClasses = [&](u16) { ++persistentUnlocks; };
         match.epoch = kEpoch;
         match.scene = 1;
         match.inputLead = 0;
@@ -97,7 +96,8 @@ struct Fixture {
     void open() {
         PlayOptions options;
         options.welcome = false;
-        REQUIRE(scene.open(device, game, world, party, options));
+        REQUIRE(scene.open(device, game, world, party, options,
+                           {.haptics = &physicalRumbles, .unlocks = &persistentUnlocks}));
     }
     std::vector<InputCommand> commands(u8 peer, u64 tick,
                                        const SessionInputs::Frame& frame = {}) const {
@@ -702,8 +702,8 @@ TEST_CASE("native rollback binds a frozen loaded scene and refuses stale resourc
     CHECK(driver.failure() == NativeRollbackDriver::Failure::Binding);
     CHECK(fixture->scene.startCamera().ticksLeft() == cameraTicks);
     CHECK_FALSE(driver.sample({}));
-    CHECK(fixture->physicalRumbles == 0);
-    CHECK(fixture->persistentUnlocks == 0);
+    CHECK(fixture->physicalRumbles.pulses.empty());
+    CHECK(fixture->persistentUnlocks.masks.empty());
 }
 
 TEST_CASE("native rollback holds beyond its window and preserves unsampled taps exactly once",
@@ -754,8 +754,8 @@ TEST_CASE("native rollback holds beyond its window and preserves unsampled taps 
     CHECK_FALSE(eleventh.frames.front().input.commands[0].pressed(CommandPress::UsePotion));
     CHECK(driver.confirmedTick() == 11);
     CHECK(driver.statistics().stalls == 20);
-    CHECK(fixture->physicalRumbles == 0);
-    CHECK(fixture->persistentUnlocks == 0);
+    CHECK(fixture->physicalRumbles.pulses.empty());
+    CHECK(fixture->persistentUnlocks.masks.empty());
 }
 
 TEST_CASE("native rollback clear retains epoch admission across healthy scene bindings",
@@ -848,8 +848,8 @@ TEST_CASE("shipping-order sampling admits the captured tick immediately after co
     CHECK_FALSE(next.frames.front().input.commands[0].pressed(CommandPress::UsePotion));
     CHECK(driver.statistics().corrections == 1);
     CHECK(physicalAudio == 0);
-    CHECK(fixture->physicalRumbles == 0);
-    CHECK(fixture->persistentUnlocks == 0);
+    CHECK(fixture->physicalRumbles.pulses.empty());
+    CHECK(fixture->persistentUnlocks.masks.empty());
 }
 
 TEST_CASE("local pause clears only its seat's unsampled controls without rewriting history",
@@ -933,8 +933,8 @@ TEST_CASE("local pause clears only its seat's unsampled controls without rewriti
     CHECK(next.frames.front().input.commands[0].pressedButtons == 0);
     CHECK(next.frames.front().input.commands[2].pressedButtons == 0);
     CHECK(physicalAudio == 0);
-    CHECK(fixture->physicalRumbles == 0);
-    CHECK(fixture->persistentUnlocks == 0);
+    CHECK(fixture->physicalRumbles.pulses.empty());
+    CHECK(fixture->persistentUnlocks.masks.empty());
 }
 
 TEST_CASE("native rollback replaces an earlier terminal without fabricating post-terminal ticks",
@@ -1109,8 +1109,8 @@ TEST_CASE("native rollback replaces an earlier terminal without fabricating post
             CHECK(input.pressed(CommandPress::UsePotion) == (tick == 7));
         }
     }
-    CHECK(fixture->physicalRumbles == 0);
-    CHECK(fixture->persistentUnlocks == 0);
+    CHECK(fixture->physicalRumbles.pulses.empty());
+    CHECK(fixture->persistentUnlocks.masks.empty());
     CHECK(physicalAudio == 0);
 }
 
@@ -1312,8 +1312,8 @@ TEST_CASE("native rollback restores accumulated all-seat arrival skip votes with
     CHECK(scene.startCamera().phase() != StartCamera::Phase::Hold);
     CHECK(driver.sampleTick() == 3);
     CHECK(driver.confirmedTick() == 0);
-    CHECK(fixture->physicalRumbles == 0);
-    CHECK(fixture->persistentUnlocks == 0);
+    CHECK(fixture->physicalRumbles.pulses.empty());
+    CHECK(fixture->persistentUnlocks.masks.empty());
 }
 
 TEST_CASE("a dropped peer's seat never holds up the arrival camera's skip",

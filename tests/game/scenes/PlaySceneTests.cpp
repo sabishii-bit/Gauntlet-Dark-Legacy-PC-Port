@@ -35,6 +35,7 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
+#include "game/characters/Party.h"
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"

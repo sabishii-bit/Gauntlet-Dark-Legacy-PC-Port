@@ -12,6 +12,7 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
@@ -96,11 +97,8 @@ TEST_CASE("the secret coin hunt persists earned unlocks for regular and unsaved 
     SaveSlots unlocks;
     const auto unlockDirectory = test::scratchDirectory("secret-shared-unlock");
     REQUIRE(unlocks.open(unlockDirectory, 2));
-    s32 rewards = 0;
-    context.unlockClasses = [&](u16 mask) {
-        ++rewards;
-        REQUIRE(unlocks.unlockClasses(mask));
-    };
+    test::RecordingUnlocks rewards;
+    rewards.hook = [&](u16 mask) { REQUIRE(unlocks.unlockClasses(mask)); };
     PlayScene scene;
     std::vector party{PartyMember{0, CharacterSave{}}, PartyMember{2, CharacterSave{}}};
     if (sample < 0) {
@@ -115,7 +113,7 @@ TEST_CASE("the secret coin hunt persists earned unlocks for regular and unsaved 
     }
     PlayOptions options;
     options.position = world.startPoint(0)->position;
-    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.open(device, context, world, party, options, {.unlocks = &rewards}));
     REQUIRE(scene.challenge().state() == SecretChallenge::State::Collecting);
     REQUIRE(scene.challenge().totalCoins() > 0);
     const f32 startTime = scene.challenge().remaining();
@@ -149,7 +147,7 @@ TEST_CASE("the secret coin hunt persists earned unlocks for regular and unsaved 
         CHECK(card.texture == "COINHUD");
     }
     const s32 reward = SecretChallenge::classFor(levelIndex);
-    CHECK(rewards == 1);
+    CHECK(rewards.masks.size() == 1);
     SaveSlots restarted;
     REQUIRE(restarted.open(unlockDirectory, 2));
     CHECK(classUnlocked(reward, restarted.classUnlocks()));
@@ -176,7 +174,7 @@ TEST_CASE("the secret coin hunt persists earned unlocks for regular and unsaved 
     }
     CHECK(outcome == PlayOutcome::Travel);
     CHECK(scene.secretTravel());
-    CHECK(rewards == 1);
+    CHECK(rewards.masks.size() == 1);
     scene.close();
 }
 

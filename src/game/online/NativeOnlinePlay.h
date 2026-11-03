@@ -10,8 +10,11 @@
 
 namespace gdl::game {
 class AfterLevelScene;
+class ClassUnlocks;
+class Haptics;
 class OnlineParty;
 class OnlineSession;
+class PartyStore;
 
 /** Campaign owner for an agreed native-input session. Every peer owns and renders
  * the actual PlayScene, predicting missing remote controls with bounded native
@@ -45,11 +48,20 @@ public:
     NativeOnlinePlay(NativeOnlinePlay&&) = delete;
     NativeOnlinePlay& operator=(NativeOnlinePlay&&) = delete;
 
+    /** The application's owners an online game answers through: this machine's controllers'
+     * rumble, the classes a won challenge grants and the local characters' saves. Any may be
+     * missing; each must outlive the game, which lets them go as it closes. */
+    struct Links {
+        Haptics* haptics = nullptr;
+        ClassUnlocks* unlocks = nullptr;
+        PartyStore* store = nullptr;
+    };
+
     /** setup is the same owner whose digest the session already agreed before
      * becoming Active. It remains alive across ordinary travel and secret-parent
      * suspension. This method does not replace the setup agreement handshake. */
     bool open(RenderDevice& device, const GameContext& context, OnlineSession& session,
-              OnlineParty& selection, std::unique_ptr<NativePlaySetup> setup);
+              OnlineParty& selection, std::unique_ptr<NativePlaySetup> setup, const Links& links);
     void close();
     Phase update(const SessionInputs::Frame& devices);
     /** Captures only the specified local device's controls; never pauses the

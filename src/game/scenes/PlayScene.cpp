@@ -54,8 +54,8 @@ constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 } // namespace
 
 void PlayScene::pauseGameplaySounds() {
-    if (m_context.stopVibration) {
-        m_context.stopVibration();
+    if (m_links.haptics != nullptr) {
+        m_links.haptics->stopRumble();
     }
     m_audio.pauseAmbience();
     m_triggerCues.pause(m_audio);
@@ -67,9 +67,11 @@ void PlayScene::pauseGameplaySounds() {
 }
 
 bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorld& world,
-                     std::span<const PartyMember> party, const PlayOptions& options) {
+                     std::span<const PartyMember> party, const PlayOptions& options,
+                     const Links& links) {
     close();
     m_context = context;
+    m_links = links;
     m_mechanics.open(context.mechanics, {.tower = world.isTower()});
     syncMechanics();
     m_sim.partyCountOverride = options.partyCount;
@@ -288,11 +290,10 @@ void PlayScene::close() {
     ++m_openGeneration;
     m_picking.select(std::nullopt);
     m_nativeDigestResources.clear();
-    if (m_context.stopVibration) {
-        m_context.stopVibration();
+    if (m_links.haptics != nullptr) {
+        m_links.haptics->stopRumble();
     }
-    m_context.stopVibration = {};
-    m_context.vibrate = {};
+    m_links = {};
     m_presentedClip.reset();
     m_presentedCanvas.reset();
     m_previousCamera.reset();
@@ -1140,12 +1141,12 @@ void PlayScene::emitOutput(OutputPayload payload) {
         // Debug harm/blasts may be invoked outside update. Preserve their direct
         // offline feedback without retaining any caller-owned output collector.
         if (const auto* rumble = std::get_if<RumbleOutput>(&payload)) {
-            if (m_context.vibrate) {
-                m_context.vibrate(rumble->player, rumble->frames, rumble->feedback);
+            if (m_links.haptics != nullptr) {
+                m_links.haptics->vibrate(rumble->player, rumble->frames, rumble->feedback);
             }
         } else if (const auto* unlock = std::get_if<UnlockClassesOutput>(&payload)) {
-            if (m_context.unlockClasses) {
-                m_context.unlockClasses(unlock->mask);
+            if (m_links.unlocks != nullptr) {
+                m_links.unlocks->unlockClasses(unlock->mask);
             }
         }
         return;
@@ -1185,16 +1186,16 @@ bool PlayScene::dispatchOutput(const OutputLedger::Action& action) const {
             rumble->player >= kPlayerCount) {
             return false;
         }
-        if (m_context.vibrate) {
-            m_context.vibrate(rumble->player, rumble->frames, rumble->feedback);
+        if (m_links.haptics != nullptr) {
+            m_links.haptics->vibrate(rumble->player, rumble->frames, rumble->feedback);
         }
     } else if (const auto* unlock = std::get_if<UnlockClassesOutput>(&action.event.payload)) {
         if (action.kind != OutputLedger::ActionKind::Commit ||
             action.event.policy != OutputLedger::Policy::Confirmed) {
             return false;
         }
-        if (m_context.unlockClasses) {
-            m_context.unlockClasses(unlock->mask);
+        if (m_links.unlocks != nullptr) {
+            m_links.unlocks->unlockClasses(unlock->mask);
         }
     }
     return true;
