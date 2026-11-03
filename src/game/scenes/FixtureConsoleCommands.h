@@ -24,8 +24,8 @@ std::vector<SwitchEntry> switchesInPlay(const LevelWorld& world);
 /**
  * Registers the commands over the level's own fixtures, which run in offline play alone:
  * activate presses a switch as if stood on, unlock opens a door or chest without a key and
- * lock shuts one again. A character's code after lock or unlock is the profile's form, never
- * these commands'.
+ * lock shuts one again. A character's code after lock or unlock is the profile's form; these
+ * commands answer one with their usage.
  */
 void registerFixtureConsoleCommands(ConsoleHost& host, const FixtureConsoleAccess& access);
 

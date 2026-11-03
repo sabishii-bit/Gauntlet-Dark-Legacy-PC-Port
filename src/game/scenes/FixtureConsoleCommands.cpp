@@ -6,7 +6,6 @@
 #include <utility>
 
 #include "engine/assets/WorldLayout.h"
-#include "engine/core/Assert.h"
 #include "engine/core/Types.h"
 
 #include "game/characters/ClassData.h"
@@ -154,7 +153,12 @@ void changeLock(const FixtureConsoleAccess& access, DevConsole& console, Argumen
         console.print(request.error());
         return;
     }
-    GDL_VERIFY(!request->character, "a character's code is the profile's form, claimed first");
+    // A character's code is the profile's form, which claims it first; without that form the
+    // command says how it is used.
+    if (request->character) {
+        console.print(lockUsage(verb));
+        return;
+    }
     PlayScene* scene = access.scene();
     if (scene == nullptr) {
         console.print("Nothing is in play.");

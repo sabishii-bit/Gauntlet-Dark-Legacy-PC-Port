@@ -61,6 +61,9 @@ TEST_CASE("with nothing in play each fixture command answers in its own words", 
         "list characters names the codes; list switches and get info name the rest.");
     CHECK(fixture.say("lock chest#0") == "Nothing is in play.");
     CHECK(fixture.say("unlock gate#0") == "Nothing is in play.");
+    // A character's code is the profile's form; without it the commands say how they are used.
+    CHECK(fixture.say("lock character MIN") == fixture.say("lock"));
+    CHECK(fixture.say("unlock CHARACTER MIN") == fixture.say("unlock"));
     CHECK(fixture.words("activate", Words{"s"}) == Words{});
     CHECK(fixture.words("lock", Words{"c"}) == Words{"character"});
     CHECK(fixture.words("unlock", Words{"c"}) == Words{"character"});
@@ -68,7 +71,7 @@ TEST_CASE("with nothing in play each fixture command answers in its own words", 
           Words{"MIN", "FAL", "JAC", "TIG", "OGR", "UNI", "MED", "HYE", "SUM"});
     CHECK(fixture.words("lock", Words{"CHARACTER", "M"}) ==
           Words{"MIN", "FAL", "JAC", "TIG", "OGR", "UNI", "MED", "HYE", "SUM"});
-    // character in any other case is not completed, as before.
+    // character in any other case is not completed.
     CHECK(fixture.words("lock", Words{"Character", "M"}) == Words{});
     CHECK(fixture.words("lock", Words{"character", "M", "x"}) == Words{});
     for (const std::string_view name : {"activate", "unlock", "lock"}) {
@@ -130,7 +133,7 @@ TEST_CASE("every fixture command answers in a level in its own words", "[dev-con
     CHECK(fixture.words("lock", Words{"character", "M"}) ==
           Words{"MIN", "FAL", "JAC", "TIG", "OGR", "UNI", "MED", "HYE", "SUM"});
     CHECK(fixture.words("lock", Words{"Character", "M"}) == Words{});
-    // With chests shown, c still completes to character first, as before.
+    // With chests shown, c completes to character first.
     CHECK(test::suggestionAfter(fixture.console, "lock c") == "haracter");
     CHECK(test::suggestionAfter(fixture.console, "unlock ch") == "aracter");
     CHECK(test::suggestionAfter(fixture.console, "lock chest#1") == "1");

@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -42,6 +43,27 @@ using Words = std::vector<std::string>;
 
 /** The words a Legends map's preview admits. */
 constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
+
+/** The roster's commands after the console's help in a second order: party_count after goto,
+ * hidehud and freecam after god. Each group of names sharing a first letter keeps the roster's
+ * order. */
+constexpr std::array<std::string_view, 17> kSecondOrder{"console_permissions",
+                                                        "debug_info",
+                                                        "list",
+                                                        "activate",
+                                                        "unlock",
+                                                        "lock",
+                                                        "goto",
+                                                        "party_count",
+                                                        "unlock_tower",
+                                                        "get",
+                                                        "spawn",
+                                                        "suicide",
+                                                        "notarget",
+                                                        "god",
+                                                        "hidehud",
+                                                        "freecam",
+                                                        "noclip"};
 
 /** What list answers words it cannot read. */
 constexpr std::string_view kListUsage =
@@ -158,6 +180,32 @@ struct Roster {
     }
 };
 
+/** A command of a name and a reach alone, which does nothing. */
+class StandIn final : public ConsoleCommand {
+public:
+    StandIn(std::string_view name, ConsoleReach reach) : m_name(name), m_reach(reach) {}
+    std::string_view name() const override { return m_name; }
+    std::string summary() const override { return "stands in"; }
+    ConsoleReach reach() const override { return m_reach; }
+    void run(DevConsole& /*console*/, Arguments /*arguments*/) override {}
+
+private:
+    std::string_view m_name;
+    ConsoleReach m_reach;
+};
+
+/** Registers on `console` stand-ins for the roster's commands in `order`, each at the reach the
+ * application registers it with. */
+void registerStandIns(DevConsole& console, std::span<const std::string_view> order) {
+    for (const std::string_view name : order) {
+        for (const test::RegisteredCommand& registered : test::kRegisteredCommands) {
+            if (registered.name == name) {
+                console.addCommand(std::make_unique<StandIn>(registered.name, registered.reach));
+            }
+        }
+    }
+}
+
 /** help's lines for `names`, each padded to the widest registered name. */
 std::string helpOf(std::initializer_list<std::string_view> names) {
     std::string help;
@@ -173,7 +221,7 @@ std::string helpOf(std::initializer_list<std::string_view> names) {
 }
 } // namespace
 
-TEST_CASE("the roster registers today's commands at their reaches, in help's order",
+TEST_CASE("the roster registers every command at its reach, in help's order",
           "[dev-console][online-console]") {
     Roster fixture;
     const auto commands = fixture.console.commands().commands();
@@ -219,9 +267,13 @@ TEST_CASE("help lists the commands in the order they are registered",
           helpOf({"help", "activate", "unlock", "lock", "goto", "party_count"}));
 }
 
-TEST_CASE("names complete as they did before help's order changed",
+TEST_CASE("a name prefix completes to the first admitted name it begins, whatever help's order",
           "[dev-console][online-console][autocomplete]") {
     Roster fixture;
+    // The same names at the same reaches in another order that keeps each group's order.
+    DevConsole second;
+    registerStandIns(second, kSecondOrder);
+    REQUIRE(second.commands().size() == test::kRegisteredCommands.size());
     constexpr std::array<std::string_view, 20> kPrefixes{
         "a",  "d", "f",  "p",   "g", "go", "ge", "h",  "hi",     "l",
         "lo", "n", "no", "noc", "s", "su", "u",  "un", "unlock", "c"};
@@ -249,14 +301,16 @@ TEST_CASE("names complete as they did before help's order changed",
     }};
     for (const Expected& row : rows) {
         fixture.console.setSession(row.session);
+        second.setSession(row.session);
         for (usize i = 0; i < kPrefixes.size(); ++i) {
             CAPTURE(static_cast<s32>(row.session.seat), kPrefixes[i]);
             CHECK(test::suggestionAfter(fixture.console, kPrefixes[i]) == row.rests[i]);
+            CHECK(test::suggestionAfter(second, kPrefixes[i]) == row.rests[i]);
         }
     }
 }
 
-TEST_CASE("lock, unlock and goto complete their words as they did before",
+TEST_CASE("lock, unlock, goto, list and party_count complete their words",
           "[dev-console][autocomplete]") {
     Roster fixture;
     CHECK(test::suggestionAfter(fixture.console, "lock c") == "haracter");
@@ -275,8 +329,9 @@ TEST_CASE("lock, unlock and goto complete their words as they did before",
     CHECK(test::suggestionAfter(fixture.console, "party_count o") == "ff");
 }
 
-TEST_CASE("list's usage reads as it does today, and the expansions list after the game",
-          "[dev-console][commands]") {
+TEST_CASE(
+    "list answers words it cannot read with its usage, and the expansions list after the game",
+    "[dev-console][commands]") {
     Roster fixture;
     CHECK(fixture.say("list") == test::shownAs(kListUsage));
     CHECK(fixture.say("list nonsense") == test::shownAs(kListUsage));
@@ -291,6 +346,13 @@ TEST_CASE("list's usage reads as it does today, and the expansions list after th
     CHECK(fixture.sink.lines.empty());
     CHECK(fixture.say("god").empty());
     CHECK(fixture.sink.lines == Words{"god"});
+}
+
+TEST_CASE("a character's code after lock or unlock is the profile's form", "[dev-console]") {
+    Roster fixture;
+    CHECK(fixture.say("unlock character XYZ") ==
+          "No character is coded XYZ; list characters names them");
+    CHECK(fixture.say("lock CHARACTER WAR") == "WAR is always there to choose");
 }
 
 TEST_CASE("goto completes to the catalogue's levels after the tower", "[dev-console][assets]") {

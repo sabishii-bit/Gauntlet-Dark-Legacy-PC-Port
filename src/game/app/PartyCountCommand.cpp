@@ -9,7 +9,8 @@
 
 namespace gdl::game {
 
-PartyCountCommand::PartyCountCommand(PartyCountAccess access) : m_access(std::move(access)) {}
+PartyCountCommand::PartyCountCommand(PartyCountAccess access)
+    : m_access(std::move(access)), m_words(wordsCompleter({"1", "2", "3", "4", "off"})) {}
 
 std::string PartyCountCommand::summary() const {
     return "<1-4> or off: the party size the level sets itself up for";
@@ -39,8 +40,7 @@ void PartyCountCommand::run(DevConsole& console, Arguments arguments) {
 }
 
 std::vector<std::string> PartyCountCommand::completions(Arguments arguments) const {
-    return arguments.size() <= 1 ? std::vector<std::string>{"1", "2", "3", "4", "off"}
-                                 : std::vector<std::string>{};
+    return m_words(arguments);
 }
 
 } // namespace gdl::game

@@ -35,6 +35,7 @@ public:
 
 private:
     PartyCountAccess m_access;
+    LambdaCommand::Completer m_words; ///< the sizes and off, for the first word
 };
 
 } // namespace gdl::game
