@@ -1,6 +1,7 @@
 #include <array>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -376,5 +377,18 @@ TEST_CASE("falling-piece digest retains previous motion not only its current pub
     NativeStateDigest copied;
     copied.value(right);
     CHECK(copied.finish() == a.finish());
+}
+
+TEST_CASE("native world digest bytes stay pinned for a bound level and queued cues",
+          "[native-digest][level-world-native-digest][native-digest-pin]") {
+    Fixture fixture("native-world-pin");
+    fixture.world.setPlayerCount(3);
+    fixture.world.bossArenaCue({23, 0, -18});
+    REQUIRE(fixture.world.explodeObject(3, {40, 0, 0}));
+    // SHA-256 of the native digest of the world above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "31bbb8e91b498088c31f9714cda3ac2ca959b0b006f2fc7d68a3048f94ab5fed";
+    CHECK(test::hexBytes(fixture.hash()) == kDigest);
 }
 } // namespace

@@ -1,5 +1,6 @@
 #include <array>
 #include <memory>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -234,5 +235,44 @@ TEST_CASE("empty native opponent owners include configuration for their next bir
     NativeStateDigest refused{resources.resources()};
     CHECK_FALSE(critters.appendLocalDigest(refused, beforeHazards));
     CHECK_FALSE(refused.checkedFinish());
+}
+
+TEST_CASE("empty native opponent owner digest bytes stay pinned for distinct configurations",
+          "[native-digest][opponent-owners-native-digest][native-digest-pin]") {
+    test::FakeRenderDevice device;
+    Bosses boss;
+    Critters critters;
+    NativeStateResources resources;
+    const WorldCollision collision;
+    const HazardSurfaces hazards;
+    REQUIRE(resources.registerCollision(collision, "stage/test"));
+    REQUIRE(resources.registerHazards(hazards, "stage/test"));
+    EnemyScales scales;
+    scales.health = 1.25f;
+    scales.speed = 2;
+    scales.sight = 0.75f;
+    scales.damage = 1.5f;
+    scales.missileRate = 0.5f;
+    scales.missileAim = 0.25f;
+    scales.playerLevel = 12;
+    scales.bossEncounter = true;
+    scales.players = 3;
+    boss.open(device, {}, &collision, scales, 'A');
+    critters.open(device, {}, &collision, scales, 'A', {}, "EAGL");
+    critters.setHazards(&hazards);
+    NativeStateDigest bossDigest{resources.resources()};
+    NativeStateDigest critterDigest{resources.resources()};
+    REQUIRE(boss.appendNativeDigest(bossDigest));
+    REQUIRE(critters.appendNativeDigest(critterDigest));
+    REQUIRE(bossDigest.checkedFinish());
+    REQUIRE(critterDigest.checkedFinish());
+    // SHA-256 of the native digest of each owner above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kBoss =
+        "2f37e7181bc4211d7c76a92dc95ddebb1f05375e228b92c93169fd402990a0ff";
+    constexpr std::string_view kCritters =
+        "bdad86f77f05233df43526fb5faced0b8b471c858947c7e5f8c2b9cfa3f94f61";
+    CHECK(test::hexBytes(*bossDigest.checkedFinish()) == kBoss);
+    CHECK(test::hexBytes(*critterDigest.checkedFinish()) == kCritters);
 }
 } // namespace

@@ -496,4 +496,19 @@ TEST_CASE("fixture native digests refuse missing resources foreign saves and sta
     CHECK_FALSE(coordinator.fixtures.appendLocalDigest(stale, saved));
     CHECK_FALSE(stale.checkedFinish());
 }
+
+TEST_CASE("fixture native digest bytes stay pinned for a bound coordinator",
+          "[native-state-digest][fixtures-native-digest][native-digest-pin]") {
+    const Fixtures files{"fixture-native-pin"};
+    Coordinator f{files.directory};
+    REQUIRE(f.fixtures.safeRocks().size() == 1);
+    f.fixtures.setPlayerCount(3);
+    REQUIRE(f.fixtures.setChestLocked(0, false));
+    f.fixtures.safeRocks().scheduleActivation(0, 0.25f);
+    // SHA-256 of the native digest of the fixtures above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "5c9ac85316d653984c35575018b61c85719ee92067f0abd41dbfd2349302829c";
+    CHECK(test::hexBytes(liveHash(f.fixtures, f.resources)) == kDigest);
+}
 } // namespace

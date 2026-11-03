@@ -414,4 +414,19 @@ TEST_CASE("generator native digest refuses missing resources and foreign or stal
     CHECK_FALSE(stale.checkedFinish());
     CHECK(stale.finish() == before);
 }
+
+TEST_CASE("generator native digest bytes stay pinned for a bound field and a boss generator",
+          "[native-state-digest][generator-native-digest][native-digest-pin]") {
+    Pool pool(generatorDigestFixture());
+    pool.boss(true);
+    pool.generators.setPlayerCount(2);
+    ViewVolume view;
+    view.position = {5, 0, 10};
+    pool.generators.setView(view, Vec3{1, 0, 0});
+    // SHA-256 of the native digest of the generators above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "547218d5649920f32598dfda1f17a97c9046fda8559a6d6df374924ffa8ed82e";
+    CHECK(test::hexBytes(pool.digest()) == kDigest);
+}
 } // namespace

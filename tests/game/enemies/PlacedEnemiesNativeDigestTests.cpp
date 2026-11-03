@@ -1,11 +1,13 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "TestSupport.h"
 #include "game/enemies/PlacedEnemies.h"
 
 namespace {
@@ -199,5 +201,32 @@ TEST_CASE("native placement digest distinguishes empty bound state and roster or
     a.clear();
     b.clear();
     CHECK(digestOf(a) == digestOf(b));
+}
+
+TEST_CASE("native placement digest bytes stay pinned for an observed roster",
+          "[placed-enemies-native-digest][native-digest-pin]") {
+    auto first = record();
+    first.spawn.tier = 2;
+    first.spawn.algorithm = kChaseWay;
+    first.spawn.throwInterval = 0.75f;
+    first.facing = 0.5f;
+    first.viewRadius = 12;
+    first.sight = 20;
+    first.carried = 3;
+    auto second = record();
+    second.kind = kDeathKind;
+    second.spawn.kind = kDeathKind;
+    second.spawn.position = {40, 0, -25};
+    second.spawn.asleep = true;
+    PlacedEnemies owner;
+    owner.bind({first, second});
+    ViewVolume view;
+    view.position = {1, 2, 3};
+    owner.observe(view, Vec3{4, 5, 6});
+    // SHA-256 of the native digest of the placements above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "7adf206e3cb7229555b3de627911065b8d66fcf0a2db03b8fd452406e0016442";
+    CHECK(test::hexBytes(digestOf(owner)) == kDigest);
 }
 } // namespace

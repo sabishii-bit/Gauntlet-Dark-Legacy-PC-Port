@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <format>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -343,5 +344,42 @@ TEST_CASE("native level message digests retain selected message page and immutab
     messages[1].clear();
     NativeStateDigest stale{resources[1].resources()};
     CHECK_FALSE(messages[1].appendLocalDigest(stale, saved));
+}
+
+TEST_CASE("native HUD scroll and message digest bytes stay pinned for distinct shown values",
+          "[scene-hud-native-digest][native-state-digest][native-digest-pin]") {
+    const auto directory = test::scratchDirectory("scene-hud-digest-pin");
+    writeTextFile(directory / "messages.json",
+                  R"({"messages":[{"name":"LEVELUP","lines":["LEVEL %d"]}]})");
+    MessageTable text;
+    REQUIRE(text.load(directory / "messages.json"));
+    PartyHud hud;
+    hud.help().setTexts(&text);
+    REQUIRE(hud.help().post(HelpMessages::kLevelUp, 1, {}, 3));
+    hud.pickups().addCard(2, "CRYSTAL");
+    hud.pickups().showCount(0, "SM_CRYSTAL_ORA", 3, 15);
+    hud.showRelics();
+    const NativeStateResources none;
+    const ScrollFixture scroll;
+    const auto root = messageRoot();
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    LevelMessages messages;
+    messages.load(device, textures, root, nullptr);
+    REQUIRE(messages.nativeReady());
+    NativeStateResources resources;
+    REQUIRE(resources.registerTextures(textures, "STATIC"));
+    REQUIRE(messages.open(device, "WELCOME", nullptr, 1));
+    // SHA-256 of the native digest of each owner above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kHud =
+        "cce75eb689b3493c9824210bd474d2c9f0a95a959ad7f8ced2e5386a7b1a3c52";
+    constexpr std::string_view kScroll =
+        "d8c5d816df3c17dc3f8c42989ba564713bf03f0e096960fe9081a83806cbee85";
+    constexpr std::string_view kMessages =
+        "7fedd9f57df85cc2ecb8bf2747a924320f1021f65686e0c77033191e3ade4260";
+    CHECK(test::hexBytes(liveDigest(hud, none)) == kHud);
+    CHECK(test::hexBytes(liveDigest(scroll.box, scroll.resources)) == kScroll);
+    CHECK(test::hexBytes(liveDigest(messages, resources)) == kMessages);
 }
 } // namespace

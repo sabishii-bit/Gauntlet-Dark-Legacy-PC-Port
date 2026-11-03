@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -333,5 +334,17 @@ TEST_CASE(
     NativeStateDigest missingRetainedPose;
     missingRetainedPose.value(animator);
     CHECK_FALSE(missingRetainedPose.checkedFinish());
+}
+
+TEST_CASE("enemy native digest bytes stay pinned for a seeded placed roster",
+          "[native-state-digest][enemies-native-digest][native-digest-pin]") {
+    Pool pool(enemyDigestFixture(), 761);
+    pool.enemies.setContactGridBounds({-10, 0, -20}, {20, 0, 30});
+    pool.enemies.setLookouts({{{0, 0, 2}, {4, 0, 8}}, {1, 0}});
+    // SHA-256 of the native digest of the swarm above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "87ecd5277c25aa14ad099d11be49e144b576a3a07c1ad7cd91a8c462d82c94fa";
+    CHECK(test::hexBytes(pool.digest()) == kDigest);
 }
 } // namespace

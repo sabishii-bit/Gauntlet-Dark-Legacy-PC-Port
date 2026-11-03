@@ -2,6 +2,7 @@
 #include <array>
 #include <functional>
 #include <limits>
+#include <string_view>
 #include <typeindex>
 
 #include <catch2/catch_test_macros.hpp>
@@ -9,6 +10,7 @@
 
 #include "engine/io/NativeStateDigest.h"
 
+#include "TestSupport.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/level/MissileStop.h"
 
@@ -218,5 +220,21 @@ TEST_CASE("enemy native digest includes undelivered rock damage",
     CHECK(nativeHash(pool) != baseline);
     REQUIRE(pool.restoreLocal(saved));
     CHECK(nativeHash(pool) == baseline);
+}
+
+TEST_CASE("enemy native digest bytes stay pinned for a flight and a lingering blast",
+          "[native-digest][enemy-missiles-native-digest][native-digest-pin]") {
+    const TreeModel model{};
+    ModelBinding binding{&model};
+    EnemyMissiles pool{125};
+    pool.launch(EnemyMissileKind::bolt(12, 25, 0.5f), {0, 3, 0}, {0, 3, 40}, 1, &model, 4);
+    pool.blast({{12, 3, 0}, 7.5f, 10, EnemyBlast::kGas, {0.25f, 0.5f}, 2, true});
+    pool.setShrink(0.5f);
+    REQUIRE(pool.count() == 1);
+    // SHA-256 of the native digest of the missile pool above, which netplay peers must hash alike:
+    // a literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "fadb2332b74610f4904ff5759ac648e440735696e5c2ec259df2cf8d3d381e26";
+    CHECK(test::hexBytes(nativeHash(pool, binding.resources())) == kDigest);
 }
 } // namespace

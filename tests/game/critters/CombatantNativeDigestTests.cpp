@@ -337,4 +337,22 @@ TEST_CASE("combatant native saved digest rejects a destroyed owner at the same a
     std::destroy_at(actor);
 }
 
+TEST_CASE("combatant native digest bytes stay pinned for an inactive configured fighter",
+          "[native-state-digest][combatant-native-digest][native-digest-pin]") {
+    Combatant actor;
+    actor.takeFullHarm(true);
+    actor.tint(Color{41, 52, 63, 255});
+    actor.setArenaAnchors(std::array{glm::translate(Mat4{1}, Vec3{4, 0, 8})});
+    actor.setArenaTargets(
+        std::array{CombatArenaTarget{4, Mat4{1}, false},
+                   CombatArenaTarget{9, glm::translate(Mat4{1}, Vec3{-6, 0, 2}), true}});
+    NativeStateDigest digest;
+    REQUIRE(actor.appendNativeDigest(digest));
+    // SHA-256 of the native digest of the fighter above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "7e3b1d4985508f79dd843d5eac8e6c45ac3bc937fcf6462e2489111102884a51";
+    CHECK(test::hexBytes(checked(digest)) == kDigest);
+}
+
 } // namespace

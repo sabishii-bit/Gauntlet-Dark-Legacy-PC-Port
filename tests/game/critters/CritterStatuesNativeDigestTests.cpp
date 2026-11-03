@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -383,5 +384,17 @@ TEST_CASE("moving statue rewind retains its parent through idle waking and queue
     CHECK(pool.statues.equalLocal(queued, replayed));
     CHECK(pool.digest() == queuedHash);
     CHECK(pool.statues.takeRisen() == born);
+}
+
+TEST_CASE("statue native digest bytes stay pinned for a woken roster",
+          "[native-state-digest][critter-statues-native-digest][native-digest-pin]") {
+    Pool pool(statueDigestFixture(), 2, 4);
+    pool.statues.setContactGridBounds({-10, 0, -20}, {20, 0, 30});
+    pool.statues.wake(1);
+    // SHA-256 of the native digest of the statues above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "9ba2bd4d3cd3c264ed9d76b3ea4986e5af6c9352e27cf0e963183a591da4f84b";
+    CHECK(test::hexBytes(pool.digest()) == kDigest);
 }
 } // namespace

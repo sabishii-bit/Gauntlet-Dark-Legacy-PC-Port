@@ -1,4 +1,5 @@
 #include <array>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -269,6 +270,51 @@ TEST_CASE("native meter texture-bank identities agree across loads without rende
     CHECK(liveHash(first, a.resources()) == liveHash(second, b.resources()));
     first.clear();
     second.clear();
+}
+
+TEST_CASE("native camera and meter digest bytes stay pinned for distinct bound values",
+          "[native-state-digest][camera-meter-native-digest][native-digest-pin]") {
+    TowerCamera camera;
+    auto state = camera.localState();
+    state.camera.position = {1.5f, 2.25f, -3};
+    state.camera.pitch = 0.25f;
+    state.camera.yaw = 0.5f;
+    state.camera.roll = 0.125f;
+    state.attention = {4, 5, 6};
+    state.distance = 32;
+    state.marker = 1;
+    state.aimedMarker = 2;
+    state.yawRate = 0.0625f;
+    state.pitchRate = 0.03125f;
+    state.turnStep = 7;
+    state.ringPositions[5] = {7, 8, 9};
+    state.ringDistances[4] = 11;
+    state.ringIndex = 4;
+    camera.restoreLocal(state);
+    auto definition = meterDefinition();
+    definition.name = "HEAD";
+    BossMeter meter;
+    REQUIRE(meter.bind(definition, nullptr, 24));
+    std::array<HealthMeterReading, 2> readings;
+    for (usize i = 0; i < readings.size(); ++i) {
+        readings[i].definition = meterDefinition();
+        readings[i].definition.backed = i == 0;
+        readings[i].health = 900 + static_cast<f32>(i) * 150;
+        readings[i].maxHealth = 1200 + static_cast<f32>(i) * 300;
+    }
+    BossMeters meters;
+    meters.bind(readings, nullptr);
+    // SHA-256 of the native digest of each owner above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kCamera =
+        "d699c9f25ce608fad16fb662e349784ab661849579d371c62529a1102fc7b634";
+    constexpr std::string_view kMeter =
+        "7cef43ce69e4aa7977010d9be97b45399ee4bffc41815146c147f0025eae1ad4";
+    constexpr std::string_view kMeters =
+        "c1c26a2546005b286aecf7f8c64b4ebe01b887eb58e624a47a62d9538d8856c3";
+    CHECK(test::hexBytes(liveHash(camera)) == kCamera);
+    CHECK(test::hexBytes(liveHash(meter)) == kMeter);
+    CHECK(test::hexBytes(liveHash(meters)) == kMeters);
 }
 
 } // namespace

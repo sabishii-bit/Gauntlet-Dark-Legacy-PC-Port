@@ -1,11 +1,13 @@
 #include <array>
 #include <memory>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerAttacks.h"
 
@@ -217,5 +219,44 @@ TEST_CASE("native player attacks preserve shield clocks potion waves and arsenal
     attacks.clear();
     NativeStateDigest stale(resources);
     CHECK_FALSE(attacks.appendLocalDigest(stale, shield));
+}
+
+TEST_CASE("native player attack digest bytes stay pinned for strikes shots and shields",
+          "[native-digest][player-attack-native-digest][native-digest-pin]") {
+    MoveStrikes strikes;
+    MoveStrike row;
+    row.type = 2;
+    row.maxTime = 2;
+    row.amount = 20;
+    row.speed = 5;
+    REQUIRE(strikes.start(row, 1, {3, 0, 4}, {0, 0, 1}, 10) != 0);
+    PlayerMissiles missiles;
+    const MissileSpec spec{"TEST", "0", 1, 0, 1, false, "SPARKS"};
+    MissileLaunch launch;
+    launch.position = {0, 20, 0};
+    launch.velocity = Vec3{2, 1, 7};
+    launch.spec = &spec;
+    REQUIRE(missiles.launch(launch));
+    auto fixture = std::make_unique<AttackFixture>();
+    fixture->attacks.shatterPotion(1, {1, 2, 3});
+    fixture->players[0].actor.save().progress().inventory.potions.push_back(1);
+    fixture->attacks.shieldPotion(0, fixture->players);
+    REQUIRE(fixture->attacks.shieldCount() == 1);
+    fixture->arsenal.resolvePotionKind(0);
+    const auto resources = fixture->resources.resources();
+    // SHA-256 of the native digest of each owner above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kStrikes =
+        "43c08eabbcd6f0efa0b0a1eeb69018de2775d740debde68db19e564ece83072e";
+    constexpr std::string_view kMissiles =
+        "9d3563069ae076fbd4ac70d75dfee8cc48614e67d7cc1a06216152bb5f5af87a";
+    constexpr std::string_view kAttacks =
+        "ceac6b0d4116f25d3b4a8febc073cb450116ca8c979d275b551bf332553bd1ad";
+    constexpr std::string_view kArsenal =
+        "8b11c88b94a3745acce3c9d57a69c3263bf2510f7ebc89e57675fea84c17360f";
+    CHECK(test::hexBytes(nativeHash(strikes)) == kStrikes);
+    CHECK(test::hexBytes(nativeHash(missiles)) == kMissiles);
+    CHECK(test::hexBytes(nativeHash(fixture->attacks, resources)) == kAttacks);
+    CHECK(test::hexBytes(nativeHash(fixture->arsenal, resources)) == kArsenal);
 }
 } // namespace

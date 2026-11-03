@@ -1,12 +1,14 @@
 #include <algorithm>
 #include <array>
 #include <numeric>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/io/NativeStateDigest.h"
 
+#include "TestSupport.h"
 #include "game/level/SecretChallenge.h"
 
 namespace {
@@ -104,5 +106,17 @@ TEST_CASE("native challenge value restore reproduces corrected one through eight
         }
         CHECK(predicted == reference);
     }
+}
+
+TEST_CASE("native challenge digest bytes stay pinned for a challenge under way",
+          "[native-state-digest][secret-native-digest][native-digest-pin]") {
+    SecretChallenge challenge;
+    REQUIRE(challenge.begin(2, 45, std::array<usize, 3>{4, 9, 13}));
+    REQUIRE_FALSE(challenge.collect(9));
+    // SHA-256 of the native digest of the challenge above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "7fcf85361bc9d82c6f07482107a176117ea6021b189c2311d5f33e90a1b32374";
+    CHECK(test::hexBytes(digestOf(challenge)) == kDigest);
 }
 } // namespace

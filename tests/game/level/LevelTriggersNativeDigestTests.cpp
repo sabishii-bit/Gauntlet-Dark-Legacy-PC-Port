@@ -8,6 +8,7 @@
 
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/level/LevelTriggers.h"
 
 namespace {
@@ -274,5 +275,18 @@ TEST_CASE("native trigger snapshot digest rejects foreign expired and rebound ow
     }
     CHECK_FALSE(a.appendLocalDigest(digest, saved));
     CHECK(digest.finish() == after);
+}
+
+TEST_CASE("native trigger digest bytes stay pinned for distinct held and shot values",
+          "[native-state-digest][triggers-native-digest][native-digest-pin]") {
+    Fixture fixture("trigger-native-digest-pin");
+    fixture.triggers.setPlayerCount(3);
+    fixture.triggers.setCameraHeld(true);
+    fixture.triggers.shoot(2);
+    // SHA-256 of the native digest of the triggers above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "c3d01f20fdda3ad2bcfa5f843671b87eba2cb51e9b683ca2d35d1f742ec16ff9";
+    CHECK(test::hexBytes(digestOf(fixture.triggers)) == kDigest);
 }
 } // namespace

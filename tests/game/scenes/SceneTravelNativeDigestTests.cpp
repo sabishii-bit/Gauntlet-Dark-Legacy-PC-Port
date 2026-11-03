@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -386,8 +387,7 @@ TEST_CASE("hint menu and cursor digests retain hidden progression and typed nati
     secondPainter.setFont(&secondFont, &secondSheet);
     HintMenu first;
     HintMenu second;
-    const HintMenuLabels labels{
-        "HELP", {{"GENERAL", 39}, {"GUARDIANS", 40}}, "SELECT", "PLAYER"};
+    const HintMenuLabels labels{"HELP", {{"GENERAL", 39}, {"GUARDIANS", 40}}, "SELECT", "PLAYER"};
     REQUIRE(first.open(firstPainter, {}, labels));
     REQUIRE(second.open(secondPainter, {}, labels));
     REQUIRE(native(first, resources) == native(second, resources));
@@ -416,5 +416,27 @@ TEST_CASE("hint menu and cursor digests retain hidden progression and typed nati
     SumnerVisit::LocalSnapshot visitHistory;
     visit.saveLocal(visitHistory);
     CHECK(native(visit, resources) == captured(visit, visitHistory, resources));
+}
+
+TEST_CASE("travel native digest bytes stay pinned for bound portals pads arrival and departure",
+          "[native-state-digest][scene-travel-native-digest][native-digest-pin]") {
+    Travel fixture("travel-digest-pin");
+    fixture.exits.setAlpha("g1", 0.75f);
+    fixture.departure.begin(fixture.device, fixture.items.textures);
+    const auto digests = fixture.digest();
+    // SHA-256 of the native digest of each owner above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kExits =
+        "daea92513cff152dcefbe2a299124e765392941a8365312c2242fe3a2e2a07a2";
+    constexpr std::string_view kPads =
+        "cb2dcd7002e0d3e75f1a440c768c7e1cf3b6df6e6a2bf524afe62aa1db2c863b";
+    constexpr std::string_view kArrival =
+        "a078f4d3f965356cd757f8df5c4d2137c9b14f4b178a7cb706e57f1ec75ed561";
+    constexpr std::string_view kDeparture =
+        "47d72be36f2dde3920a0c401fe2b6fd209ac8aba1585c567fefec196c86fad87";
+    CHECK(test::hexBytes(digests[0]) == kExits);
+    CHECK(test::hexBytes(digests[1]) == kPads);
+    CHECK(test::hexBytes(digests[2]) == kArrival);
+    CHECK(test::hexBytes(digests[3]) == kDeparture);
 }
 } // namespace

@@ -1,5 +1,6 @@
 #include <array>
 #include <functional>
+#include <string_view>
 #include <typeindex>
 
 #include <catch2/catch_test_macros.hpp>
@@ -247,5 +248,19 @@ TEST_CASE("native combat area and launch visitors retain every mutable field",
         shotMutations[i](changed);
         CHECK(hash(changed) != shotBaseline);
     }
+}
+
+TEST_CASE("combatant native digest bytes stay pinned for a launched flight",
+          "[native-digest][combatant-projectiles-native-digest][native-digest-pin]") {
+    Fixture f("combatant-projectile-native-pin");
+    auto shot = f.shot(1);
+    shot.damageScale = 0.75f;
+    f.pool.launch(shot, f.archive, f.device, f.effects, {});
+    REQUIRE(f.pool.count() == 1);
+    // SHA-256 of the native digest of the projectile pool above, which netplay peers must hash
+    // alike: a literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "045347dfd3ff2be7a691cd0ce1cfba342936f29bf5bf6717b19f2bf940ff75e1";
+    CHECK(test::hexBytes(f.hash()) == kDigest);
 }
 } // namespace

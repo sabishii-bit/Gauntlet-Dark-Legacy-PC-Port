@@ -401,4 +401,16 @@ TEST_CASE("effect native saved digest restores a prepared negative scroll bank e
     CHECK(bank->motion(0).offset.x == -0.25f);
     CHECK(f.hash() == initial);
 }
+
+TEST_CASE("effect native digest bytes stay pinned for a tagged morphing effect",
+          "[native-digest][effect-native-digest][native-digest-pin]") {
+    Fixture f("effect-digest-pin");
+    const auto id = f.start(true);
+    REQUIRE(f.effects.tag(id, {1, 20, 2, 3}));
+    // SHA-256 of the native digest of the effect pool above, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    constexpr std::string_view kDigest =
+        "87eed365b0c7db18729cf5e90016a36004c680d988fa77ab1ac70cffa9291c65";
+    CHECK(test::hexBytes(f.hash()) == kDigest);
+}
 } // namespace
