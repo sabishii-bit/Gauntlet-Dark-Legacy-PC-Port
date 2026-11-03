@@ -730,7 +730,9 @@ TEST_CASE("an offline step takes a console line the wire would not carry",
           "[native-console][assets]") {
     auto fixture = std::make_unique<Fixture>("G2");
     auto& scene = fixture->scene;
-    const std::array actions{ConsoleAction{0, "god" + std::string(kLongLine - 3, ' ')}};
+    constexpr std::string_view kGod = "god";
+    const std::array actions{
+        ConsoleAction{0, std::string{kGod} + std::string(kLongLine - kGod.size(), ' ')}};
     REQUIRE(actions.front().admitted());
     REQUIRE_FALSE(actions.front().valid());
     PlayScene::LocalSnapshot opened;

@@ -2,14 +2,26 @@
 
 namespace gdl::game {
 
+namespace {
+
+/** Whether `level` is the campaign's. A Legends map walked has no realm in it and cannot wait
+ * behind a challenge: the challenge's opening ends the visit. */
+bool inCampaign(const LevelRef& level) {
+    return level.realmId >= 0;
+}
+
+} // namespace
+
 ConsoleTravelKind consoleTravelKind(const LevelRef& from, const LevelRef& to,
                                     const std::optional<LevelRef>& parent) {
     if (from.isSecret() && parent.has_value() && to == *parent) {
         return ConsoleTravelKind::ReturnToParent;
     }
     if (to.isSecret()) {
-        return from.isSecret() ? ConsoleTravelKind::ChallengeToChallenge
-                               : ConsoleTravelKind::EnterChallenge;
+        if (from.isSecret()) {
+            return ConsoleTravelKind::ChallengeToChallenge;
+        }
+        return inCampaign(from) ? ConsoleTravelKind::EnterChallenge : ConsoleTravelKind::Plain;
     }
     return ConsoleTravelKind::Plain;
 }

@@ -1202,8 +1202,10 @@ void Gauntlet::travelByConsole() {
     m_freeCamera.stop(); // its place means nothing in another level
     if (plan.kind == ConsoleTravelKind::ReturnToParent) {
         // Nothing is won or recorded by the console: the parent takes up where it waited, and
-        // the challenge that asked goes with its session.
+        // the challenge that asked goes with its session. Its last frame may still be drawing:
+        // direct render backends do not retain texture leases for queued frames.
         const std::vector<PartyMember> party = m_play->scene.party();
+        renderDevice().waitIdle();
         m_play->scene.close();
         returnFromChallenge(party);
         if (plan.options.position) {
@@ -1223,8 +1225,8 @@ void Gauntlet::travelByConsole() {
     } else {
         m_play->scene.close();
     }
-    GDL_VERIFY(!plan.closesScene || !m_play->scene.isOpen(),
-               "Console travel left the scene that asked for it open");
+    // A travel request left in an open scene would end every tick after.
+    GDL_VERIFY(!m_play->scene.isOpen(), "Console travel left the scene that asked for it open");
     m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
     m_loadingPicture.cover();
     m_journey = std::move(journey);

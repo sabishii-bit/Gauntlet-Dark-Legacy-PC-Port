@@ -39,7 +39,7 @@ struct Row {
     ConsoleTravelKind kind = ConsoleTravelKind::Plain;
 };
 
-std::array<Row, 13> rows() {
+std::array<Row, 14> rows() {
     const LevelRef fields = levelOf(kTownRealm, "G1");
     const LevelRef courtyard = levelOf(kCastleRealm, "A1");
     const LevelRef lab = levelOf(LevelRef::kSecretRealm, "S1");
@@ -61,6 +61,7 @@ std::array<Row, 13> rows() {
         {"level to the level behind no challenge", courtyard, fields, fields, Plain},
         {"Legends map to a level", walked, fields, std::nullopt, Plain},
         {"Legends map to the tower", walked, tower, std::nullopt, Plain},
+        {"Legends map to a challenge", walked, lab, std::nullopt, Plain},
     }};
 }
 
@@ -87,7 +88,6 @@ TEST_CASE("a console journey keeps the request's place and opens without an arri
             CHECK(journey.kind == row.kind);
             CHECK(journey.secret == (row.kind == ConsoleTravelKind::EnterChallenge ||
                                      row.kind == ConsoleTravelKind::ChallengeToChallenge));
-            CHECK(journey.closesScene);
             CHECK(journey.options.position == request.position);
             CHECK(journey.options.yaw == request.yaw);
             CHECK(journey.options.welcome == std::optional{false});
