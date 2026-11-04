@@ -34,7 +34,7 @@
 
 namespace {
 using namespace gdl;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 /** A freshly generated comparison export can be supplied without touching installed assets. */
 std::filesystem::path referenceExport(std::string_view relative) {
@@ -54,7 +54,7 @@ std::vector<u8> tinyArchive(u16 flags = 0) {
     constexpr u32 kBitmaps = 224;
     constexpr u32 kObjectDefs = 288;
     constexpr u32 kBitmapDefs = 312;
-    ByteWriter bytes;
+    SyntheticBytes bytes;
     bytes.putZeros(64).putU32(formats::ModelArchive::kVersion13);
     bytes.putU32(1).putU32(1).putU32(1).putU32(2);
     bytes.putU32(kObjects).putU32(kBitmaps).putU32(kObjectDefs).putU32(kBitmapDefs);
@@ -72,7 +72,7 @@ std::vector<u8> tinyArchive(u16 flags = 0) {
 }
 
 std::vector<u8> tinyAnimation() {
-    ByteWriter bytes;
+    SyntheticBytes bytes;
     bytes.putU16(1).putU16(8).putU32(24).putZeros(16);
     bytes.putText("EMPTY").putZeros(27).putU32(60);
     bytes.putU32(56).putU32(0).putU32(0).putU32(56).putU32(1).putU32(0);
@@ -144,7 +144,7 @@ TEST_CASE("native invalid-picture slots need no pixels and corrupt native files 
 TEST_CASE("native font glyphs are usable without a manifest and failed reload clears lookup",
           "[native-assets]") {
     const auto path = test::scratchDirectory("native-font");
-    ByteWriter bytes;
+    SyntheticBytes bytes;
     bytes.putS32(0).putS32(12).putS32(0);
     bytes.putS32(65).putS32(7).putS32(10).putS32(20);
     writeFile(path / "SMALL.FNT", bytes.bytes());

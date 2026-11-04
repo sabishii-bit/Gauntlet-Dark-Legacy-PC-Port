@@ -281,6 +281,7 @@ add_executable(tests
     game/shop/InventoryPanelTests.cpp
     game/hud/LinkIndicatorTests.cpp
     TestSupport.h
+    SyntheticBytes.h
     fixtures/ReferenceObj.cpp
     fixtures/ReferenceObjTests.cpp
     fixtures/NativeModelFixture.cpp

@@ -13,10 +13,10 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 TEST_CASE("font files list glyph cells until a zero code", "[formats][font]") {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU32(0).putS32(12).putU32(0);
     w.putS32('A').putS32(7).putS32(10).putS32(20);
     w.putS32('B').putS32(8).putS32(17).putS32(20);
@@ -31,7 +31,7 @@ TEST_CASE("font files list glyph cells until a zero code", "[formats][font]") {
     REQUIRE(font.glyphs[1].y == 20);
 
     REQUIRE_THROWS_AS(FontFile::parse(std::vector<u8>(8, 0)), FormatError);
-    ByteWriter zeroHeight;
+    SyntheticBytes zeroHeight;
     zeroHeight.putU32(0).putS32(0).putU32(0);
     REQUIRE_THROWS_AS(FontFile::parse(zeroHeight.bytes()), FormatError);
 }

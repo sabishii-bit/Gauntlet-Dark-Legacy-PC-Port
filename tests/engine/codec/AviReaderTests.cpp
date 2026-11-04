@@ -15,10 +15,10 @@
 namespace {
 
 using namespace gdl;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 std::vector<u8> chunk(std::string_view id, std::span<const u8> body) {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putFourcc(id).putU32(static_cast<u32>(body.size())).putBytes(body);
     if (body.size() % 2 != 0) {
         w.putU8(0);
@@ -27,61 +27,61 @@ std::vector<u8> chunk(std::string_view id, std::span<const u8> body) {
 }
 
 std::vector<u8> list(std::string_view type, std::span<const u8> body) {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putFourcc("LIST").putU32(static_cast<u32>(body.size() + 4)).putFourcc(type).putBytes(body);
     return w.bytes();
 }
 
 std::vector<u8> videoStreamList() {
-    ByteWriter strh;
+    SyntheticBytes strh;
     strh.putFourcc("vids").putFourcc("MVDV").putU32(0).putU16(0).putU16(0).putU32(0);
     strh.putU32(1).putU32(30).putU32(0).putU32(3).putU32(0).putU32(0).putU32(0).putZeros(8);
-    ByteWriter strf;
+    SyntheticBytes strf;
     strf.putU32(40).putU32(8).putS32(-4).putU16(1).putU16(24).putFourcc("MVDV").putU32(96);
     strf.putZeros(16);
-    ByteWriter body;
+    SyntheticBytes body;
     body.putBytes(chunk("strh", strh.bytes())).putBytes(chunk("strf", strf.bytes()));
     return list("strl", body.bytes());
 }
 
 std::vector<u8> audioStreamList() {
-    ByteWriter strh;
+    SyntheticBytes strh;
     strh.putFourcc("auds").putU32(0).putU32(0).putU16(0).putU16(0).putU32(0);
     strh.putU32(1).putU32(8000).putU32(0).putU32(16).putU32(0).putU32(0).putU32(1).putZeros(8);
-    ByteWriter strf;
+    SyntheticBytes strf;
     strf.putU16(1).putU16(1).putU32(8000).putU32(8000).putU16(1).putU16(8);
-    ByteWriter body;
+    SyntheticBytes body;
     body.putBytes(chunk("strh", strh.bytes())).putBytes(chunk("strf", strf.bytes()));
     return list("strl", body.bytes());
 }
 
 std::filesystem::path writeSampleAvi() {
-    ByteWriter avih;
+    SyntheticBytes avih;
     avih.putU32(33333).putU32(0).putU32(0).putU32(0).putU32(3).putU32(0).putU32(2).putU32(0);
     avih.putU32(8).putU32(4).putZeros(16);
 
-    ByteWriter header;
+    SyntheticBytes header;
     header.putBytes(chunk("avih", avih.bytes()));
     header.putBytes(videoStreamList());
     header.putBytes(audioStreamList());
 
     const std::vector<u8> audio{128, 129, 130, 131};
     const std::vector<u8> inner{7, 8};
-    ByteWriter movie;
+    SyntheticBytes movie;
     movie.putBytes(chunk("00dc", std::vector<u8>{'a', 'b', 'c'}));
     movie.putBytes(chunk("01wb", audio));
     movie.putBytes(list("rec ", chunk("00db", inner)));
     movie.putBytes(chunk("JUNK", std::vector<u8>{0, 0}));
     movie.putBytes(chunk("00dc", std::vector<u8>{'z'}));
 
-    ByteWriter riffBody;
+    SyntheticBytes riffBody;
     riffBody.putFourcc("AVI ");
     riffBody.putBytes(list("hdrl", header.bytes()));
     riffBody.putBytes(chunk("JUNK", std::vector<u8>{0, 0, 0, 0}));
     riffBody.putBytes(list("movi", movie.bytes()));
     riffBody.putBytes(chunk("idx1", std::vector<u8>{1, 2, 3, 4}));
 
-    ByteWriter file;
+    SyntheticBytes file;
     file.putFourcc("RIFF").putU32(static_cast<u32>(riffBody.size())).putBytes(riffBody.bytes());
 
     const auto dir = test::scratchDirectory("avi-reader");

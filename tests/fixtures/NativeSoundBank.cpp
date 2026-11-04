@@ -28,15 +28,15 @@ constexpr usize kDspHeaderSize = 96;
 constexpr usize kDspCoefficientsAt = 28;
 constexpr u16 kSampleMask = 0x0FFF;
 
-void putBe16(ByteWriter& out, u16 value) {
+void putBe16(SyntheticBytes& out, u16 value) {
     out.putU16(std::byteswap(value));
 }
 
-void putBe32(ByteWriter& out, u32 value) {
+void putBe32(SyntheticBytes& out, u32 value) {
     out.putU32(std::byteswap(value));
 }
 
-void putName(ByteWriter& out, std::string_view name) {
+void putName(SyntheticBytes& out, std::string_view name) {
     if (name.size() > kNameSize) {
         throw FormatError("synthetic audio name exceeds its native field");
     }
@@ -44,7 +44,7 @@ void putName(ByteWriter& out, std::string_view name) {
 }
 
 std::vector<u8> encodeSample(std::span<const s16> samples) {
-    ByteWriter out;
+    SyntheticBytes out;
     for (usize at = 0; at < samples.size(); at += DspAdpcmDecoder::kSamplesPerFrame) {
         const auto frame =
             samples.subspan(at, std::min(DspAdpcmDecoder::kSamplesPerFrame, samples.size() - at));
@@ -71,7 +71,7 @@ std::vector<u8> encodeSample(std::span<const s16> samples) {
 }
 
 void writeDirectory(const std::filesystem::path& path, const formats::AudioRom& directory) {
-    ByteWriter out;
+    SyntheticBytes out;
     out.putU32(0).putU32(static_cast<u32>(directory.banks.size()));
     out.putU32(static_cast<u32>(directory.sounds.size())).putU32(0);
     out.putU32(kRomHeaderSize);
@@ -97,7 +97,7 @@ void writeNativeSoundBank(const std::filesystem::path& bankPath, std::string_vie
                           std::span<const NativeSoundSample> samples) {
     const auto declaration = nlohmann::json::parse(soundsJson);
     const auto& sounds = declaration.at("sounds");
-    ByteWriter calls;
+    SyntheticBytes calls;
     for (const auto& sound : sounds) {
         const auto& sequence = sound.at("sequence");
         if (sequence.empty()) {
@@ -117,7 +117,7 @@ void writeNativeSoundBank(const std::filesystem::path& bankPath, std::string_vie
         putBe16(calls, sound.value("duck", u16{0}));
         putBe16(calls, sound.value("priority", u16{0}));
     }
-    ByteWriter bank;
+    SyntheticBytes bank;
     bank.putText("KNBV");
     putBe32(bank, static_cast<u32>(calls.size()));
     putBe32(bank, 0);

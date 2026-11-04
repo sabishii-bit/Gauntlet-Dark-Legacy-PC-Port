@@ -8,12 +8,13 @@
 #include "engine/world/AssetAudit.h"
 
 #include "SampleLevel.h"
+#include "SyntheticBytes.h"
 
 namespace {
 using namespace gdl;
 
 void writeCycle(const std::filesystem::path& directory, u16 frames) {
-    test::ByteWriter bytes;
+    test::SyntheticBytes bytes;
     bytes.putU16(0).putU16(8).putU32(0).putU32(1).putU32(24).putZeros(8);
     bytes.putU16(0xFFFF).putU16(0);
     bytes.putText("TORCHB").putZeros(26).putText("TORCH00").putZeros(25);
@@ -61,7 +62,7 @@ TEST_CASE("asset audits reject absent native inputs and corrupt lazy geometry",
 TEST_CASE("empty native animation and model tables are valid rather than loader failures",
           "[asset-conformance][asset-audit]") {
     const auto directory = test::sampleLender("audit-empty-tables");
-    test::ByteWriter bytes;
+    test::SyntheticBytes bytes;
     bytes.putZeros(16);
     writeFile(directory / "ANIM.PS2", bytes.bytes());
     const auto result = auditAssets(directory);

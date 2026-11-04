@@ -39,7 +39,7 @@ void putWord(std::vector<u8>& bytes, usize at, u32 value) {
 }
 
 std::vector<u8> tinyCritter() {
-    test::ByteWriter writer;
+    test::SyntheticBytes writer;
     writer.putU32(static_cast<u32>(kDirectory)).putU32(4).putZeros(kDirectory - 8);
     for (const auto& [tag, at] :
          {std::pair{"TYPE", kType}, {"DESC", kDescriptor}, {"MOVE", kMove}, {"PTRN", kPattern}}) {

@@ -16,7 +16,7 @@ using namespace gdl;
 
 /** Standalone action tree with two translation keys, no model archive. */
 std::vector<u8> actionFile(f32 lastPosition = 4) {
-    test::ByteWriter bytes;
+    test::SyntheticBytes bytes;
     bytes.putU16(1).putU16(8).putU32(24).putZeros(16);
     bytes.putText("ACTOR").putZeros(27).putU32(60);
     bytes.putU32(56).putU32(164).putU32(0).putU32(104).putU32(1).putU32(1);
@@ -109,7 +109,7 @@ TEST_CASE("data audit reports missing WAD tables instead of accepting a partial 
           "[asset-conformance][data-audit]") {
     const auto directory = test::scratchDirectory("audit-data-wad") / "PDATA";
     std::filesystem::create_directories(directory);
-    test::ByteWriter bytes;
+    test::SyntheticBytes bytes;
     bytes.putU32(16 + 0x180).putU32(1).putZeros(8);
     bytes.putU16(1).putU16(0).putZeros(8); // one effect, but no SFXX section
     for (usize i = 0; i < 12; ++i) {

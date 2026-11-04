@@ -13,24 +13,24 @@
 namespace {
 
 using namespace gdl;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 /** A codebook entry whose four pixels share one YCbCr value. */
-void putEntry(ByteWriter& w, u8 luma, u8 cb, u8 cr) {
+void putEntry(SyntheticBytes& w, u8 luma, u8 cb, u8 cr) {
     for (s32 i = 0; i < 4; ++i) {
         w.putU8(luma).putU8(cb).putU8(cr);
     }
 }
 
 std::vector<u8> stored(std::span<const u8> body) {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU32(1).putBytes(body);
     return w.bytes();
 }
 
 /** Keyframe for a 4x4 image: `count` grey-ramp entries and one index per 2x2 block. */
 std::vector<u8> keyframe(u32 count, std::span<const u32> indices) {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU16(static_cast<u16>(count)).putU16(1);
     for (u32 i = 0; i < count; ++i) {
         putEntry(w, static_cast<u8>(i), 128, 128);
@@ -74,7 +74,7 @@ TEST_CASE("keyframe blocks are laid out bottom-up, two pixels per entry row", "[
 
 TEST_CASE("chroma converts with BT.601 weights and clamps", "[codec][vq]") {
     VqVideoDecoder decoder(4, 4);
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU16(1).putU16(1);
     putEntry(w, 100, 100, 200);
     w.putU8(0).putU8(0).putU8(0).putU8(0);
@@ -82,7 +82,7 @@ TEST_CASE("chroma converts with BT.601 weights and clamps", "[codec][vq]") {
     // R = 100 + 1.402 * 72, G = 100 - 0.71414 * 72 - 0.34414 * -28, B = 100 + 1.772 * -28
     REQUIRE(decoder.frame().pixel(0, 0) == Color::rgba(201, 58, 50));
 
-    ByteWriter bright;
+    SyntheticBytes bright;
     bright.putU16(1).putU16(1);
     putEntry(bright, 250, 128, 255);
     bright.putU8(0).putU8(0).putU8(0).putU8(0);
@@ -96,7 +96,7 @@ TEST_CASE("delta frames update only the masked cells", "[codec][vq]") {
     decoder.decode(keyframe(1, base));
     REQUIRE(decoder.frame().pixel(0, 0) == Color::rgba(0, 0, 0));
 
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU16(2).putU16(0).putU32(4);
     w.putU8(0b10); // 8x4 image = two 4x4 cells in one mask byte; only the right cell changes
     putEntry(w, 50, 128, 128);
@@ -127,7 +127,7 @@ TEST_CASE("codebooks beyond 256 entries use the ninth-bit stream", "[codec][vq]"
 TEST_CASE("a length prefix before the packed block is honoured", "[codec][vq]") {
     const std::array<u32, 4> kIndices{7, 7, 7, 7};
     const std::vector<u8> block = keyframe(8, kIndices);
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU32(static_cast<u32>(block.size())).putU32(0).putBytes(block).putU8(0xEE);
     VqVideoDecoder decoder(4, 4);
     decoder.decode(w.bytes());

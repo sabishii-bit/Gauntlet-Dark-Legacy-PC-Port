@@ -13,10 +13,10 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 std::vector<u8> sampleRom() {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU32(1).putU32(2).putU32(3).putU32(24).putU32(24).putU32(24 + 2 * 44);
     w.putText("common").putZeros(10).putText("COMMON").putZeros(10);
     w.putU32(1000).putU16(2).putU16(0).putU16(0).putU16(0);

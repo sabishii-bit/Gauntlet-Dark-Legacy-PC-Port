@@ -1114,7 +1114,7 @@ TEST_CASE("Wraith music resolves its numbered ADS parts and produces audio",
 
 /** Audible mono DSP frames followed by the format's unplayed transport trailer. */
 std::vector<u8> dspStream(u32 frames = 1) {
-    test::ByteWriter stream;
+    test::SyntheticBytes stream;
     stream.putFourcc("dhSS");
     for (const u32 value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
         stream.putU32(std::byteswap(value));

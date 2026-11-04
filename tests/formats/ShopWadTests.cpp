@@ -13,7 +13,7 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 std::vector<u8> shopWad() {
-    test::ByteWriter writer;
+    test::SyntheticBytes writer;
     writer.putU32(96).putU32(1).putU32(0).putU32(0);
     std::vector<u8> names(64);
     names[0] = 'K';

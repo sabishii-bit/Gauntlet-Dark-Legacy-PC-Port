@@ -30,17 +30,17 @@ constexpr usize kStrikeOffset = kEffectOffset + kEffectSize;
 constexpr usize kClassOffset = kStrikeOffset + kStrikeSize;
 constexpr usize kDirectoryOffset = kClassOffset + kClassSize;
 
-void padTo(test::ByteWriter& writer, usize offset) {
+void padTo(test::SyntheticBytes& writer, usize offset) {
     REQUIRE(writer.size() <= offset);
     writer.putZeros(offset - writer.size());
 }
 
-void putFloat(test::ByteWriter& writer, f32 value) {
+void putFloat(test::SyntheticBytes& writer, f32 value) {
     writer.putU32(std::bit_cast<u32>(value));
 }
 
 std::vector<u8> nativeClassWad() {
-    test::ByteWriter writer;
+    test::SyntheticBytes writer;
     writer.putU32(static_cast<u32>(kDirectoryOffset)).putU32(3).putZeros(8);
     // One linked particle effect, with a node name in the sound field.
     writer.putU32(effect_flags::kParticleMask).putS32(-1);

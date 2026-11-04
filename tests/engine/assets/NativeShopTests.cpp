@@ -16,7 +16,7 @@ namespace {
 using namespace gdl;
 
 std::vector<u8> catalogWad(s32 type = 0, s32 price = 0) {
-    test::ByteWriter bytes;
+    test::SyntheticBytes bytes;
     bytes.putU32(96).putU32(1).putZeros(8);
     bytes.putText("EXIT").putZeros(28).putText("LEAVE").putZeros(27);
     bytes.putU32(std::bit_cast<u32>(1.0f)).putS32(type).putS32(price).putS32(0);

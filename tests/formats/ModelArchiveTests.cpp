@@ -14,7 +14,7 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 /** A v13 archive with one object (two sub-objects), two bitmaps and names for both. */
 std::vector<u8> sampleArchive() {
@@ -25,7 +25,7 @@ std::vector<u8> sampleArchive() {
     constexpr u32 kSubObjectsAt = kBitmapDefsAt + 72;
     constexpr u32 kModelsAt = kSubObjectsAt + 16;
 
-    ByteWriter w;
+    SyntheticBytes w;
     w.putText("/disk/sample/").putZeros(32 - 13);
     w.putZeros(32);
     w.putU32(ModelArchive::kVersion13);
@@ -121,7 +121,7 @@ TEST_CASE("v12 continuation records are six bytes but embedded records retain LO
         constexpr u32 kObjectsAt = 160;
         constexpr u32 kSubsAt = 224;
         constexpr u32 kGeometryAt = 240;
-        ByteWriter bytes;
+        SyntheticBytes bytes;
         bytes.putZeros(64).putU32(version).putU32(1).putZeros(12);
         bytes.putU32(kObjectsAt).putZeros(12).putZeros(kObjectsAt - 100);
         bytes.putZeros(12).putU32(3);

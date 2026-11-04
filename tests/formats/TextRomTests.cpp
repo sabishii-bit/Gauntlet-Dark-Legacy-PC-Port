@@ -16,7 +16,7 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 constexpr u32 lumpId(std::string_view code) {
     return (u32{static_cast<u8>(code[0])} << 24U) | (u32{static_cast<u8>(code[1])} << 16U) |
@@ -25,7 +25,7 @@ constexpr u32 lumpId(std::string_view code) {
 
 /** Two fonts, three strings, two messages (one with two lines) and one list. */
 std::vector<u8> sampleRom() {
-    ByteWriter body;
+    SyntheticBytes body;
     body.putU32(0).putU32(0); // header placeholder
 
     const u32 fontsAt = 8;

@@ -17,14 +17,14 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 using Catch::Approx;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
-ByteWriter& putName(ByteWriter& w, std::string_view name, usize width) {
+SyntheticBytes& putName(SyntheticBytes& w, std::string_view name, usize width) {
     w.putText(name);
     return w.putZeros(width - name.size());
 }
 
-ByteWriter& putF32(ByteWriter& w, f32 value) {
+SyntheticBytes& putF32(SyntheticBytes& w, f32 value) {
     return w.putU32(std::bit_cast<u32>(value));
 }
 
@@ -41,7 +41,7 @@ constexpr u32 kBlocksAt = kTableAt + 256 * 4;
  * twelve frames: the root keys pitch and height as plain floats at frames 0, 4 and 11, the
  * child keys yaw in compressed form at frames 0 and 6. */
 std::vector<u8> sampleFile() {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU16(1).putU16(8).putU32(kInfosAt).putU32(0).putU32(0).putU32(0).putU32(0);
     putName(w, "ARROW", 32).putU32(kTreeAt);
     w.putU32(kSequencesAt).putU32(kKeysAt).putU32(0).putU32(kNodesAt).putU32(2).putU32(1);
@@ -107,10 +107,10 @@ TEST_CASE("declared animation and particle tables cannot silently disappear when
           "[formats][animation][asset-conformance]") {
     for (const u32 pointer : {0U, 24U, 0xFFFFFFF0U}) {
         CAPTURE(pointer);
-        ByteWriter texture;
+        SyntheticBytes texture;
         texture.putU16(0).putU16(8).putU32(0).putU32(1).putU32(pointer).putZeros(8);
         REQUIRE_THROWS_AS(AnimationFile::parse(texture.bytes()), FormatError);
-        ByteWriter particle;
+        SyntheticBytes particle;
         particle.putU16(0).putU16(8).putU32(0).putZeros(8).putU32(1).putU32(pointer);
         REQUIRE_THROWS_AS(AnimationFile::parse(particle.bytes()), FormatError);
     }
@@ -213,7 +213,7 @@ TEST_CASE("Wraith's static entrance includes its lowered pose and tiny portal sc
 
 /** A level's file: no trees, two texture animations in the header's list. */
 std::vector<u8> sampleLevelFile() {
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU16(0).putU16(0).putU32(24).putU32(2).putU32(24).putU32(0).putU32(0);
     // A torch: fifteen frames found by name, every second frame, starting five in.
     w.putU16(0xFFFF).putU16(0xFFFF);
@@ -357,7 +357,7 @@ std::vector<u8> objectFrameFile() {
     constexpr u32 kTree = kInfosAt + 36;
     constexpr u32 kNodes = 56 + 48;
     constexpr u32 kRuns = kNodes + 2 * 60;
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU16(1).putU16(8).putU32(kInfosAt).putU32(0).putU32(0).putU32(0).putU32(0);
     putName(w, "FLAME", 32).putU32(kTree);
     w.putU32(56).putU32(0).putU32(kRuns).putU32(kNodes).putU32(2).putU32(1);

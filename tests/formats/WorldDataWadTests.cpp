@@ -20,7 +20,7 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 using Catch::Approx;
-using test::ByteWriter;
+using test::SyntheticBytes;
 
 TEST_CASE("all nine secret worlds retain their individual retail time limits",
           "[secret][formats][assets]") {
@@ -145,7 +145,7 @@ std::vector<u8> sampleWad() {
     const u32 mapAt = soundAt + WorldDataFile::kSoundSize;
     const u32 directoryAt = mapAt + 72;
 
-    ByteWriter w;
+    SyntheticBytes w;
     w.putU32(directoryAt).putU32(6).putZeros(8);
     w.putBytes(world.bytes);
     w.putBytes(level.bytes);
@@ -193,7 +193,7 @@ TEST_CASE("enemy roster audio and model names occupy separate eight-byte fields"
           "[formats][wad][asset-conformance]") {
     // Deliberately omit a zero terminator from the audio alias: it must not eat
     // the following form. init_next_level reads that second field at +0x10.
-    ByteWriter writer;
+    SyntheticBytes writer;
     constexpr u32 kRecord = 16;
     constexpr u32 kWorld = kRecord + WorldDataFile::kEnemySize;
     constexpr u32 kDirectory = kWorld + 20;
