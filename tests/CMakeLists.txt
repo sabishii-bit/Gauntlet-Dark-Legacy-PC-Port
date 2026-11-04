@@ -246,6 +246,7 @@ add_executable(tests
     game/scenes/PlaySceneSoundIdentityTests.cpp
     game/level/StaticSceneryTests.cpp
     game/config/ControlProfilesTests.cpp
+    game/config/BindingNamesTests.cpp
     game/hud/ControlPromptsTests.cpp
     game/context/GameServicesTests.cpp
     game/players/CursorAimTests.cpp

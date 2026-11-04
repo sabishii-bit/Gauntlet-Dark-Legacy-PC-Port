@@ -9,6 +9,8 @@
 
 #include "engine/core/Error.h"
 
+#include "game/config/BindingNames.h"
+
 namespace gdl::game {
 namespace {
 constexpr std::array kActions{
@@ -100,28 +102,13 @@ void readControlProfiles(const nlohmann::json& json, GameConfig& config) {
                 }
                 const auto& binding = bindings.at(action.id);
                 if (binding.contains("keys")) {
-                    auto& keys = action.keyboard(profile);
-                    keys.clear();
-                    for (const auto& name : binding.at("keys")) {
-                        const auto key = keyFromName(name.get<std::string>());
-                        if (!key) {
-                            throw FormatError("unknown control key");
-                        }
-                        if (*key != Key::Escape || std::string_view{action.id} == "shopExit") {
-                            keys.push_back(*key);
-                        }
-                    }
+                    readKeyNames(binding.at("keys"), action.id, UnknownBinding::Refuse,
+                                 std::string_view{action.id} == "shopExit",
+                                 action.keyboard(profile));
                 }
                 if (binding.contains("buttons")) {
-                    auto& buttons = action.controller(profile);
-                    buttons.clear();
-                    for (const auto& name : binding.at("buttons")) {
-                        const auto button = padButtonFromName(name.get<std::string>());
-                        if (!button) {
-                            throw FormatError("unknown control button");
-                        }
-                        buttons.push_back(*button);
-                    }
+                    readButtonNames(binding.at("buttons"), action.id, UnknownBinding::Refuse,
+                                    action.controller(profile));
                 }
             }
         }

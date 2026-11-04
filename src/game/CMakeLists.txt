@@ -164,6 +164,8 @@ add_library(game STATIC
     config/GameConfig.h
     config/MultiplayerMode.h
     config/GameConfig.cpp
+    config/BindingNames.h
+    config/BindingNames.cpp
     config/ControlProfiles.cpp
     characters/ClassData.h
     players/MagicPerks.h

@@ -1,13 +1,20 @@
 #include "game/config/GameConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <exception>
+#include <functional>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <numbers>
+#include <span>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -15,8 +22,12 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/platform/DisplayMode.h"
+#include "engine/platform/Input.h"
 #include "engine/platform/Paths.h"
+#include "engine/render/RenderTypes.h"
 
+#include "game/config/BindingNames.h"
 #include "game/config/ControlProfiles.h"
 
 namespace gdl::game {
@@ -34,55 +45,71 @@ constexpr std::string_view kSavesFolder = "saves";
 
 using Json = nlohmann::json;
 
-template <typename T> void read(const Json& object, const char* key, T& value) {
-    if (object.contains(key)) {
-        value = object.at(key).get<T>();
-    }
-}
+/** The mechanics a file switches on or off, by id. */
+using Switches = std::map<std::string, bool, std::less<>>;
 
-void readFrameRate(const Json& object, const char* key, u32& value) {
-    if (!object.contains(key)) {
-        return;
-    }
-    const auto& rate = object.at(key);
-    if (rate.is_number_integer() && rate >= 0 && rate <= std::numeric_limits<u32>::max()) {
-        value = rate.get<u32>();
-    } else {
-        log::warn("Config: invalid frame rate '{}' left unchanged", key);
-    }
-}
+/** The window modes' names in the settings, in enum order. */
+constexpr std::array<std::string_view, 3> kWindowModeNames{"windowed", "fullscreen", "borderless"};
+static_assert(kWindowModeNames.size() == static_cast<usize>(WindowMode::BorderlessFullscreen) + 1);
 
-void readKeys(const Json& object, const char* key, std::vector<Key>& keys) {
-    if (!object.contains(key)) {
-        return;
-    }
-    keys.clear();
-    for (const Json& name : object.at(key)) {
-        const auto parsed = keyFromName(name.get<std::string>());
-        if (parsed.has_value()) {
-            if (*parsed != Key::Escape || std::string_view{key} == "shopExit") {
-                keys.push_back(*parsed);
-            }
-        } else {
-            log::warn("Config: unknown key '{}' for '{}'", name.get<std::string>(), key);
-        }
-    }
-}
+/** The texture filtering a file may choose: off, trilinear, or 2x to 16x anisotropic. */
+constexpr std::array<u32, 6> kTextureFilterings{0, 1, 2, 4, 8, 16};
+/** The sample counts a file may choose besides one. */
+constexpr std::array<u32, 2> kSampleCounts{2, 4};
+/** What a filtering or sample count not offered becomes: trilinear, or one sample. */
+constexpr u32 kPlainestChoice = 1;
 
-void readButtons(const Json& object, const char* key, std::vector<PadButton>& buttons) {
-    if (!object.contains(key)) {
-        return;
-    }
-    buttons.clear();
-    for (const Json& name : object.at(key)) {
-        const auto parsed = padButtonFromName(name.get<std::string>());
-        if (parsed.has_value()) {
-            buttons.push_back(*parsed);
-        } else {
-            log::warn("Config: unknown pad button '{}' for '{}'", name.get<std::string>(), key);
-        }
-    }
-}
+/** A binding as the settings file lists it: the name it goes by among the keys and among the
+ * pad buttons, and where each list is kept. */
+template <class Bindings> struct BindingRow {
+    const char* key = "";
+    std::vector<Key> Bindings::*keys = nullptr;
+    std::vector<PadButton> Bindings::*buttons = nullptr;
+    bool keepsEscape = false; ///< Escape may be among its keys
+};
+using MenuRow = BindingRow<MenuBindings>;
+using PlayRow = BindingRow<PlayBindings>;
+
+/** The menus' bindings, in the order a merge reads each list. */
+constexpr std::array kMenuRows{
+    MenuRow{"up", &MenuBindings::up, &MenuBindings::padUp},
+    MenuRow{"down", &MenuBindings::down, &MenuBindings::padDown},
+    MenuRow{"left", &MenuBindings::left, &MenuBindings::padLeft},
+    MenuRow{"right", &MenuBindings::right, &MenuBindings::padRight},
+    MenuRow{"select", &MenuBindings::select, &MenuBindings::padSelect},
+    MenuRow{"back", &MenuBindings::back, &MenuBindings::padBack},
+    MenuRow{"start", &MenuBindings::start, &MenuBindings::padStart},
+};
+
+/** The shop's own bindings, read after the menus' and, among the keys, the fixed Escape. */
+constexpr std::array kShopRows{
+    MenuRow{"shopSell", &MenuBindings::shopSell, &MenuBindings::padShopSell},
+    MenuRow{.key = "shopExit",
+            .keys = &MenuBindings::shopExit,
+            .buttons = &MenuBindings::padShopExit,
+            .keepsEscape = true},
+};
+
+/** The play bindings, in the order a merge reads each list. */
+constexpr std::array kPlayRows{
+    PlayRow{"up", &PlayBindings::up, &PlayBindings::padUp},
+    PlayRow{"down", &PlayBindings::down, &PlayBindings::padDown},
+    PlayRow{"left", &PlayBindings::left, &PlayBindings::padLeft},
+    PlayRow{"right", &PlayBindings::right, &PlayBindings::padRight},
+    PlayRow{"attack", &PlayBindings::attack, &PlayBindings::padAttack},
+    PlayRow{"usePotion", &PlayBindings::usePotion, &PlayBindings::padUsePotion},
+    PlayRow{"throwPotion", &PlayBindings::throwPotion, &PlayBindings::padThrowPotion},
+    PlayRow{"shieldPotion", &PlayBindings::shieldPotion, &PlayBindings::padShieldPotion},
+    PlayRow{"strafe", &PlayBindings::strafe, &PlayBindings::padStrafe},
+    PlayRow{"strongAttack", &PlayBindings::strongAttack, &PlayBindings::padStrongAttack},
+    PlayRow{"turbo", &PlayBindings::turbo, &PlayBindings::padTurbo},
+    PlayRow{"charge", &PlayBindings::charge, &PlayBindings::padCharge},
+    PlayRow{"combo", &PlayBindings::combo, &PlayBindings::padCombo},
+    PlayRow{"selectorUp", &PlayBindings::selectorUp, &PlayBindings::padSelectorUp},
+    PlayRow{"selectorDown", &PlayBindings::selectorDown, &PlayBindings::padSelectorDown},
+    PlayRow{"selectorLeft", &PlayBindings::selectorLeft, &PlayBindings::padSelectorLeft},
+    PlayRow{"selectorRight", &PlayBindings::selectorRight, &PlayBindings::padSelectorRight},
+};
 
 Json keyNames(const std::vector<Key>& keys) {
     Json names = Json::array();
@@ -98,6 +125,319 @@ Json buttonNames(const std::vector<PadButton>& buttons) {
         names.push_back(std::string(padButtonName(button)));
     }
     return names;
+}
+
+/** Reads a merge's settings out of one object of the file, each only when the file has it. A
+ * value of the wrong type throws nlohmann's type_error, keeping everything read before it. */
+class SettingsReader {
+public:
+    static constexpr bool kReads = true;
+
+    explicit SettingsReader(const Json& object) : m_object(object) {}
+
+    /** Reads the section `name` through `visit` when the file has it, even when it is not an
+     * object: then no value is found in it. */
+    template <class Visit> void section(const char* name, const Visit& visit) const {
+        if (m_object.contains(name)) {
+            SettingsReader inner{m_object.at(name)};
+            visit(inner);
+        }
+    }
+
+    /** Reads `field` as get converts it: a negative count wraps and a fraction truncates. */
+    template <class T> void value(const char* name, T& field) const {
+        if (m_object.contains(name)) {
+            field = m_object.at(name).get<T>();
+        }
+    }
+
+    /** Reads a whole number of frames a second, warning of anything else and keeping `rate`. */
+    void frameRate(const char* name, u32& rate) const {
+        if (!m_object.contains(name)) {
+            return;
+        }
+        const auto& given = m_object.at(name);
+        if (given.is_number_integer() && given >= 0 && given <= std::numeric_limits<u32>::max()) {
+            rate = given.get<u32>();
+        } else {
+            log::warn("Config: invalid frame rate '{}' left unchanged", name);
+        }
+    }
+
+    /** Reads one of `choices`, or kPlainestChoice for anything else. */
+    void offered(const char* name, u32& choice, std::span<const u32> choices) const {
+        if (!m_object.contains(name)) {
+            return;
+        }
+        choice = kPlainestChoice;
+        for (const u32 offer : choices) {
+            if (m_object.at(name) == offer) {
+                choice = offer;
+            }
+        }
+    }
+
+    /** Reads a mode by its name among `names`, in enum order, refusing anything else. */
+    template <class Mode>
+    void named(const char* name, Mode& mode, std::span<const std::string_view> names,
+               const char* refusal) const {
+        if (!m_object.contains(name)) {
+            return;
+        }
+        const auto& given = m_object.at(name);
+        if (!given.is_string()) {
+            throw FormatError(refusal);
+        }
+        const auto chosen = std::ranges::find(names, given.get<std::string>());
+        if (chosen == names.end()) {
+            throw FormatError(refusal);
+        }
+        mode = static_cast<Mode>(std::distance(names.begin(), chosen));
+    }
+
+    /** Reads switches named true or false in place of all those `held`, refusing a section that
+     * is not an object or a switch that is not a boolean, with those before it kept. */
+    void switches(const char* name, Switches& held, const char* refusal) const {
+        if (!m_object.contains(name)) {
+            return;
+        }
+        const auto& given = m_object.at(name);
+        if (!given.is_object()) {
+            throw FormatError(refusal);
+        }
+        held.clear();
+        for (const auto& [id, on] : given.items()) {
+            if (!on.is_boolean()) {
+                throw FormatError(refusal);
+            }
+            held[id] = on.get<bool>();
+        }
+    }
+
+    /** Reads a key list, warning of a name it does not know and reading on. */
+    void keys(const char* name, std::vector<Key>& list, bool keepsEscape = false) const {
+        if (m_object.contains(name)) {
+            readKeyNames(m_object.at(name), name, UnknownBinding::WarnAndSkip, keepsEscape, list);
+        }
+    }
+
+    /** Reads a pad button list, warning of a name it does not know and reading on. */
+    void buttons(const char* name, std::vector<PadButton>& list) const {
+        if (m_object.contains(name)) {
+            readButtonNames(m_object.at(name), name, UnknownBinding::WarnAndSkip, list);
+        }
+    }
+
+    /** Reads the players' profiles over the shared bindings read before them. */
+    void profiles(const char* name, GameConfig& config) const {
+        if (m_object.contains(name)) {
+            readControlProfiles(m_object.at(name), config);
+        }
+    }
+
+    /** Whether the section says `name` is true. Throws when the section is not an object or the
+     * value is not a boolean. */
+    bool says(const char* name) const { return m_object.value(name, false); }
+
+private:
+    const Json& m_object;
+};
+
+/** Writes every setting into one object of the file, in the type the reader takes it in. */
+class SettingsWriter {
+public:
+    static constexpr bool kReads = false;
+
+    explicit SettingsWriter(Json& object) : m_object(object) {}
+
+    /** Writes the section `name` through `visit`. */
+    template <class Visit> void section(const char* name, const Visit& visit) {
+        SettingsWriter inner{m_object[name]};
+        visit(inner);
+    }
+
+    template <class T> void value(const char* name, const T& field) { m_object[name] = field; }
+
+    void frameRate(const char* name, u32 rate) { m_object[name] = rate; }
+
+    void offered(const char* name, u32 choice, std::span<const u32> /*choices*/) {
+        m_object[name] = choice;
+    }
+
+    /** Writes a mode's name; a mode past the names, which no reading gives, as the first. */
+    template <class Mode>
+    void named(const char* name, Mode mode, std::span<const std::string_view> names,
+               const char* /*refusal*/) {
+        const auto index = static_cast<usize>(mode);
+        m_object[name] = index < names.size() ? names[index] : names.front();
+    }
+
+    void switches(const char* name, const Switches& held, const char* /*refusal*/) {
+        Json written = Json::object();
+        for (const auto& [id, on] : held) {
+            written[id] = on;
+        }
+        m_object[name] = std::move(written);
+    }
+
+    void keys(const char* name, const std::vector<Key>& list, bool /*keepsEscape*/ = false) {
+        m_object[name] = keyNames(list);
+    }
+
+    void buttons(const char* name, const std::vector<PadButton>& list) {
+        m_object[name] = buttonNames(list);
+    }
+
+    void profiles(const char* name, const GameConfig& config) {
+        m_object[name] = writeControlProfiles(config);
+    }
+
+private:
+    Json& m_object;
+};
+
+/** Reads or writes each row's key list. */
+template <class Io, class Rows, class Bindings>
+void visitKeys(Io& io, const Rows& rows, Bindings& bindings) {
+    for (const auto& row : rows) {
+        io.keys(row.key, bindings.*row.keys, row.keepsEscape);
+    }
+}
+
+/** Reads or writes each row's pad button list. */
+template <class Io, class Rows, class Bindings>
+void visitButtons(Io& io, const Rows& rows, Bindings& bindings) {
+    for (const auto& row : rows) {
+        io.buttons(row.key, bindings.*row.buttons);
+    }
+}
+
+/** Adds the left stick to walking on a pad, in the shared bindings and every customized
+ * profile, for a file that does not say its lists hold the stick themselves. */
+void addStickToWalking(GameConfig& config) {
+    // Older saves added the left stick outside the binding lists. Preserve that
+    // input when importing them, while allowing new profiles to remap it completely.
+    const auto migrate = [](PlayBindings& bindings) {
+        const auto add = [](std::vector<PadButton>& buttons, PadButton direction) {
+            if (std::ranges::find(buttons, direction) == buttons.end()) {
+                buttons.push_back(direction);
+            }
+        };
+        add(bindings.padUp, PadButton::LeftStickUp);
+        add(bindings.padDown, PadButton::LeftStickDown);
+        add(bindings.padLeft, PadButton::LeftStickLeft);
+        add(bindings.padRight, PadButton::LeftStickRight);
+    };
+    migrate(config.play);
+    for (auto& profile : config.controls) {
+        if (profile.customized) {
+            migrate(profile.play);
+        }
+    }
+}
+
+/** Reads (SettingsReader) or writes (SettingsWriter) every setting, section by section and
+ * value by value in the order a merge reads them: what a merge that fails part way keeps
+ * depends on it. */
+template <class Io, class Config> void visitSettings(Io& io, Config& config) {
+    io.section("display", [&](Io& display) {
+        display.named("renderer", config.display.renderer, kGraphicsApiNames,
+                      "renderer must be vulkan or opengl");
+        display.value("virtualWidth", config.display.virtualWidth);
+        display.value("virtualHeight", config.display.virtualHeight);
+        display.value("frameWidth", config.display.frameWidth);
+        display.value("frameHeight", config.display.frameHeight);
+        display.value("windowWidth", config.display.windowWidth);
+        display.value("windowHeight", config.display.windowHeight);
+        display.named("windowMode", config.display.windowMode, kWindowModeNames,
+                      "unknown window mode");
+        display.value("monitor", config.display.monitor);
+        display.value("vsync", config.display.vsync);
+        display.value("depthOfField", config.display.depthOfField);
+        display.value("bloom", config.display.bloom);
+        display.value("ambientOcclusion", config.display.ambientOcclusion);
+        display.value("smoothSprites", config.display.smoothSprites);
+        display.value("authoredSilhouettes", config.display.authoredSilhouettes);
+        display.offered("textureFiltering", config.display.textureFiltering, kTextureFilterings);
+        display.offered("sampleCount", config.display.sampleCount, kSampleCounts);
+        display.frameRate("maxFrameRate", config.display.maxFrameRate);
+    });
+    io.section("timing", [&](Io& timing) {
+        timing.value("tickRate", config.timing.tickRate);
+        timing.frameRate("gameplayFrameRate", config.timing.gameplayFrameRate);
+    });
+    io.section("camera", [&](Io& camera) {
+        camera.value("horizontalFovDegrees", config.camera.horizontalFovDegrees);
+        camera.value("compass", config.camera.compass);
+    });
+    io.section("audio", [&](Io& audio) {
+        audio.value("masterVolume", config.audio.masterVolume);
+        audio.value("musicVolume", config.audio.musicVolume);
+        audio.value("effectsVolume", config.audio.effectsVolume);
+        audio.value("movieVolume", config.audio.movieVolume);
+        audio.value("stereo", config.audio.stereo);
+    });
+    io.section("text", [&](Io& text) { text.value("language", config.text.language); });
+    io.section("save", [&](Io& save) {
+        save.value("directory", config.save.directory);
+        save.value("slots", config.save.slots);
+    });
+    io.section("game", [&](Io& game) {
+        game.value("expandedShop", config.game.expandedShop);
+        game.value("autoSave", config.game.autoSave);
+        game.switches("mechanics", config.game.mechanics,
+                      "game.mechanics must name each mechanic true or false");
+        game.value("difficulty", config.difficulty.level);
+        game.section("combat", [&](Io& combat) {
+            combat.value("autoMelee", config.combat.autoMelee);
+            combat.value("enemyHealthBars", config.combat.enemyHealthBars);
+            combat.value("autoActivateItems", config.combat.autoActivateItems);
+            combat.value("autoAim", config.combat.autoAim);
+        });
+        game.named("multiplayer", config.multiplayer.mode, MultiplayerConfig::kNames,
+                   "multiplayer mode must be normal, stun or hurt");
+        game.value("soloCamera", config.multiplayer.soloCamera);
+    });
+    io.section("controls", [&](Io& controls) {
+        controls.section("keyboard", [&](Io& keyboard) {
+            visitKeys(keyboard, kMenuRows, config.menu);
+            // A fixed safety control, not a configurable action.
+            if constexpr (Io::kReads) {
+                config.menu.escape = {Key::Escape};
+            } else {
+                keyboard.keys("escape", config.menu.escape);
+            }
+            visitKeys(keyboard, kShopRows, config.menu);
+            if constexpr (Io::kReads) {
+                keyboard.keys("debug", config.menu.console); // the console key's former name
+            }
+            keyboard.keys("console", config.menu.console);
+        });
+        controls.section("pad", [&](Io& pad) {
+            visitButtons(pad, kMenuRows, config.menu);
+            visitButtons(pad, kShopRows, config.menu);
+        });
+        controls.section("play", [&](Io& play) {
+            play.section("keyboard",
+                         [&](Io& keyboard) { visitKeys(keyboard, kPlayRows, config.play); });
+            play.section("pad", [&](Io& pad) { visitButtons(pad, kPlayRows, config.play); });
+            play.value("stickDeadZone", config.play.stickDeadZone);
+            play.value("magicHoldSeconds", config.play.magicHoldSeconds);
+            play.value("magicDoubleTapSeconds", config.play.magicDoubleTapSeconds);
+            play.value("padMagicGestures", config.play.padMagicGestures);
+            play.value("keyboardMagicGestures", config.play.keyboardMagicGestures);
+            play.value("actionChords", config.play.actionChords);
+        });
+        controls.profiles("players", config);
+        // A file says when its lists hold the stick themselves, and every file written does.
+        if constexpr (Io::kReads) {
+            if (!controls.says("explicitMovement")) {
+                addStickToWalking(config);
+            }
+        } else {
+            controls.value("explicitMovement", true);
+        }
+    });
 }
 
 } // namespace
@@ -120,227 +460,8 @@ void GameConfig::mergeJson(std::string_view json) {
     } catch (const std::exception& e) {
         throw FormatError(e.what());
     }
-    if (root.contains("display")) {
-        const Json& d = root.at("display");
-        if (d.contains("renderer")) {
-            const auto& renderer = d.at("renderer");
-            const auto api =
-                renderer.is_string() ? parseGraphicsApi(renderer.get<std::string>()) : std::nullopt;
-            if (!api) {
-                throw FormatError("renderer must be vulkan or opengl");
-            }
-            display.renderer = *api;
-        }
-        read(d, "virtualWidth", display.virtualWidth);
-        read(d, "virtualHeight", display.virtualHeight);
-        read(d, "frameWidth", display.frameWidth);
-        read(d, "frameHeight", display.frameHeight);
-        read(d, "windowWidth", display.windowWidth);
-        read(d, "windowHeight", display.windowHeight);
-        if (d.contains("windowMode")) {
-            const auto& mode = d.at("windowMode");
-            if (mode == "windowed") {
-                display.windowMode = WindowMode::Windowed;
-            } else if (mode == "fullscreen") {
-                display.windowMode = WindowMode::Fullscreen;
-            } else if (mode == "borderless") {
-                display.windowMode = WindowMode::BorderlessFullscreen;
-            } else {
-                throw FormatError("unknown window mode");
-            }
-        }
-        read(d, "monitor", display.monitor);
-        read(d, "vsync", display.vsync);
-        read(d, "depthOfField", display.depthOfField);
-        read(d, "bloom", display.bloom);
-        read(d, "ambientOcclusion", display.ambientOcclusion);
-        read(d, "smoothSprites", display.smoothSprites);
-        read(d, "authoredSilhouettes", display.authoredSilhouettes);
-        if (d.contains("textureFiltering")) {
-            display.textureFiltering = 1;
-            for (const u32 supported : {0U, 1U, 2U, 4U, 8U, 16U}) {
-                if (d.at("textureFiltering") == supported) {
-                    display.textureFiltering = supported;
-                }
-            }
-        }
-        if (d.contains("sampleCount")) {
-            const auto& samples = d.at("sampleCount");
-            display.sampleCount = 1;
-            for (const u32 supported : {2U, 4U}) {
-                if (samples == supported) {
-                    display.sampleCount = supported;
-                }
-            }
-        }
-        readFrameRate(d, "maxFrameRate", display.maxFrameRate);
-    }
-    if (root.contains("timing")) {
-        const Json& t = root.at("timing");
-        read(t, "tickRate", timing.tickRate);
-        readFrameRate(t, "gameplayFrameRate", timing.gameplayFrameRate);
-    }
-    if (root.contains("camera")) {
-        read(root.at("camera"), "horizontalFovDegrees", camera.horizontalFovDegrees);
-        read(root.at("camera"), "compass", camera.compass);
-    }
-    if (root.contains("audio")) {
-        const Json& a = root.at("audio");
-        read(a, "masterVolume", audio.masterVolume);
-        read(a, "musicVolume", audio.musicVolume);
-        read(a, "effectsVolume", audio.effectsVolume);
-        read(a, "movieVolume", audio.movieVolume);
-        read(a, "stereo", audio.stereo);
-    }
-    if (root.contains("text")) {
-        read(root.at("text"), "language", text.language);
-    }
-    if (root.contains("save")) {
-        const Json& s = root.at("save");
-        read(s, "directory", save.directory);
-        read(s, "slots", save.slots);
-    }
-    if (root.contains("game")) {
-        read(root.at("game"), "expandedShop", game.expandedShop);
-        read(root.at("game"), "autoSave", game.autoSave);
-        if (root.at("game").contains("mechanics")) {
-            const Json& mechanics = root.at("game").at("mechanics");
-            if (!mechanics.is_object()) {
-                throw FormatError("game.mechanics must name each mechanic true or false");
-            }
-            game.mechanics.clear();
-            for (const auto& [id, on] : mechanics.items()) {
-                if (!on.is_boolean()) {
-                    throw FormatError("game.mechanics must name each mechanic true or false");
-                }
-                game.mechanics[id] = on.get<bool>();
-            }
-        }
-        read(root.at("game"), "difficulty", difficulty.level);
-        const auto& options = root.at("game");
-        if (options.contains("combat")) {
-            read(options.at("combat"), "autoMelee", combat.autoMelee);
-            read(options.at("combat"), "enemyHealthBars", combat.enemyHealthBars);
-            read(options.at("combat"), "autoActivateItems", combat.autoActivateItems);
-            read(options.at("combat"), "autoAim", combat.autoAim);
-        }
-        if (options.contains("multiplayer")) {
-            if (!options.at("multiplayer").is_string()) {
-                throw FormatError("multiplayer mode must be normal, stun or hurt");
-            }
-            const auto name = options.at("multiplayer").get<std::string>();
-            const auto index = std::distance(MultiplayerConfig::kNames.begin(),
-                                             std::ranges::find(MultiplayerConfig::kNames, name));
-            if (index == std::ssize(MultiplayerConfig::kNames)) {
-                throw FormatError("multiplayer mode must be normal, stun or hurt");
-            }
-            multiplayer.mode = static_cast<MultiplayerMode>(index);
-        }
-        read(options, "soloCamera", multiplayer.soloCamera);
-    }
-    if (root.contains("controls")) {
-        const Json& c = root.at("controls");
-        if (c.contains("keyboard")) {
-            const Json& k = c.at("keyboard");
-            readKeys(k, "up", menu.up);
-            readKeys(k, "down", menu.down);
-            readKeys(k, "left", menu.left);
-            readKeys(k, "right", menu.right);
-            readKeys(k, "select", menu.select);
-            readKeys(k, "back", menu.back);
-            readKeys(k, "start", menu.start);
-            menu.escape = {Key::Escape}; // fixed safety control, not a configurable action
-            readKeys(k, "shopSell", menu.shopSell);
-            readKeys(k, "shopExit", menu.shopExit);
-            readKeys(k, "debug", menu.console); // the console key's former name
-            readKeys(k, "console", menu.console);
-        }
-        if (c.contains("pad")) {
-            const Json& p = c.at("pad");
-            readButtons(p, "up", menu.padUp);
-            readButtons(p, "down", menu.padDown);
-            readButtons(p, "left", menu.padLeft);
-            readButtons(p, "right", menu.padRight);
-            readButtons(p, "select", menu.padSelect);
-            readButtons(p, "back", menu.padBack);
-            readButtons(p, "start", menu.padStart);
-            readButtons(p, "shopSell", menu.padShopSell);
-            readButtons(p, "shopExit", menu.padShopExit);
-        }
-        if (c.contains("play")) {
-            const Json& moves = c.at("play");
-            if (moves.contains("keyboard")) {
-                const Json& k = moves.at("keyboard");
-                readKeys(k, "up", play.up);
-                readKeys(k, "down", play.down);
-                readKeys(k, "left", play.left);
-                readKeys(k, "right", play.right);
-                readKeys(k, "attack", play.attack);
-                readKeys(k, "usePotion", play.usePotion);
-                readKeys(k, "throwPotion", play.throwPotion);
-                readKeys(k, "shieldPotion", play.shieldPotion);
-                readKeys(k, "strafe", play.strafe);
-                readKeys(k, "strongAttack", play.strongAttack);
-                readKeys(k, "turbo", play.turbo);
-                readKeys(k, "charge", play.charge);
-                readKeys(k, "combo", play.combo);
-                readKeys(k, "selectorUp", play.selectorUp);
-                readKeys(k, "selectorDown", play.selectorDown);
-                readKeys(k, "selectorLeft", play.selectorLeft);
-                readKeys(k, "selectorRight", play.selectorRight);
-            }
-            if (moves.contains("pad")) {
-                const Json& p = moves.at("pad");
-                readButtons(p, "up", play.padUp);
-                readButtons(p, "down", play.padDown);
-                readButtons(p, "left", play.padLeft);
-                readButtons(p, "right", play.padRight);
-                readButtons(p, "attack", play.padAttack);
-                readButtons(p, "usePotion", play.padUsePotion);
-                readButtons(p, "throwPotion", play.padThrowPotion);
-                readButtons(p, "shieldPotion", play.padShieldPotion);
-                readButtons(p, "strafe", play.padStrafe);
-                readButtons(p, "strongAttack", play.padStrongAttack);
-                readButtons(p, "turbo", play.padTurbo);
-                readButtons(p, "charge", play.padCharge);
-                readButtons(p, "combo", play.padCombo);
-                readButtons(p, "selectorUp", play.padSelectorUp);
-                readButtons(p, "selectorDown", play.padSelectorDown);
-                readButtons(p, "selectorLeft", play.padSelectorLeft);
-                readButtons(p, "selectorRight", play.padSelectorRight);
-            }
-            read(moves, "stickDeadZone", play.stickDeadZone);
-            read(moves, "magicHoldSeconds", play.magicHoldSeconds);
-            read(moves, "magicDoubleTapSeconds", play.magicDoubleTapSeconds);
-            read(moves, "padMagicGestures", play.padMagicGestures);
-            read(moves, "keyboardMagicGestures", play.keyboardMagicGestures);
-            read(moves, "actionChords", play.actionChords);
-        }
-    }
-    if (root.contains("controls") && root.at("controls").contains("players")) {
-        readControlProfiles(root.at("controls").at("players"), *this);
-    }
-    if (root.contains("controls") && !root.at("controls").value("explicitMovement", false)) {
-        // Older saves added the left stick outside the binding lists. Preserve that
-        // input when importing them, while allowing new profiles to remap it completely.
-        const auto migrate = [](PlayBindings& bindings) {
-            const auto add = [](std::vector<PadButton>& buttons, PadButton direction) {
-                if (std::ranges::find(buttons, direction) == buttons.end()) {
-                    buttons.push_back(direction);
-                }
-            };
-            add(bindings.padUp, PadButton::LeftStickUp);
-            add(bindings.padDown, PadButton::LeftStickDown);
-            add(bindings.padLeft, PadButton::LeftStickLeft);
-            add(bindings.padRight, PadButton::LeftStickRight);
-        };
-        migrate(play);
-        for (auto& profile : controls) {
-            if (profile.customized) {
-                migrate(profile.play);
-            }
-        }
-    }
+    SettingsReader reader{root};
+    visitSettings(reader, *this);
     if (!std::isfinite(play.magicHoldSeconds) || play.magicHoldSeconds <= 0.0f ||
         play.magicHoldSeconds > 2.0f || !std::isfinite(play.magicDoubleTapSeconds) ||
         play.magicDoubleTapSeconds <= 0.0f || play.magicDoubleTapSeconds > 2.0f) {
@@ -358,124 +479,8 @@ void GameConfig::mergeJson(std::string_view json) {
 
 std::string GameConfig::toJson() const {
     Json root;
-    std::string_view windowModeName = "windowed";
-    if (display.windowMode == WindowMode::Fullscreen) {
-        windowModeName = "fullscreen";
-    } else if (display.windowMode == WindowMode::BorderlessFullscreen) {
-        windowModeName = "borderless";
-    }
-    root["display"] = {{"renderer", std::string(graphicsApiName(display.renderer))},
-                       {"virtualWidth", display.virtualWidth},
-                       {"virtualHeight", display.virtualHeight},
-                       {"frameWidth", display.frameWidth},
-                       {"frameHeight", display.frameHeight},
-                       {"windowWidth", display.windowWidth},
-                       {"windowHeight", display.windowHeight},
-                       {"windowMode", windowModeName},
-                       {"monitor", display.monitor},
-                       {"vsync", display.vsync},
-                       {"sampleCount", display.sampleCount},
-                       {"textureFiltering", display.textureFiltering},
-                       {"maxFrameRate", display.maxFrameRate},
-                       {"depthOfField", display.depthOfField},
-                       {"bloom", display.bloom},
-                       {"ambientOcclusion", display.ambientOcclusion},
-                       {"smoothSprites", display.smoothSprites},
-                       {"authoredSilhouettes", display.authoredSilhouettes}};
-    root["timing"] = {{"tickRate", timing.tickRate},
-                      {"gameplayFrameRate", timing.gameplayFrameRate}};
-    root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},
-                      {"compass", camera.compass}};
-    root["audio"] = {{"masterVolume", audio.masterVolume},
-                     {"musicVolume", audio.musicVolume},
-                     {"effectsVolume", audio.effectsVolume},
-                     {"movieVolume", audio.movieVolume},
-                     {"stereo", audio.stereo}};
-    root["text"] = {{"language", text.language}};
-    root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
-    Json mechanics = Json::object();
-    for (const auto& [id, on] : game.mechanics) {
-        mechanics[id] = on;
-    }
-    root["game"] = {
-        {"expandedShop", game.expandedShop},
-        {"autoSave", game.autoSave},
-        {"mechanics", std::move(mechanics)},
-        {"difficulty", difficulty.level},
-        {"combat",
-         {{"autoMelee", combat.autoMelee},
-          {"enemyHealthBars", combat.enemyHealthBars},
-          {"autoActivateItems", combat.autoActivateItems},
-          {"autoAim", combat.autoAim}}},
-        {"multiplayer", MultiplayerConfig::kNames[static_cast<usize>(multiplayer.mode)]},
-        {"soloCamera", multiplayer.soloCamera}};
-    root["controls"] = {{"explicitMovement", true},
-                        {"keyboard",
-                         {{"up", keyNames(menu.up)},
-                          {"down", keyNames(menu.down)},
-                          {"left", keyNames(menu.left)},
-                          {"right", keyNames(menu.right)},
-                          {"select", keyNames(menu.select)},
-                          {"back", keyNames(menu.back)},
-                          {"start", keyNames(menu.start)},
-                          {"escape", keyNames(menu.escape)},
-                          {"shopSell", keyNames(menu.shopSell)},
-                          {"shopExit", keyNames(menu.shopExit)},
-                          {"console", keyNames(menu.console)}}},
-                        {"pad",
-                         {{"up", buttonNames(menu.padUp)},
-                          {"down", buttonNames(menu.padDown)},
-                          {"left", buttonNames(menu.padLeft)},
-                          {"right", buttonNames(menu.padRight)},
-                          {"select", buttonNames(menu.padSelect)},
-                          {"back", buttonNames(menu.padBack)},
-                          {"start", buttonNames(menu.padStart)},
-                          {"shopSell", buttonNames(menu.padShopSell)},
-                          {"shopExit", buttonNames(menu.padShopExit)}}},
-                        {"play",
-                         {{"keyboard",
-                           {{"up", keyNames(play.up)},
-                            {"down", keyNames(play.down)},
-                            {"left", keyNames(play.left)},
-                            {"right", keyNames(play.right)},
-                            {"attack", keyNames(play.attack)},
-                            {"usePotion", keyNames(play.usePotion)},
-                            {"throwPotion", keyNames(play.throwPotion)},
-                            {"shieldPotion", keyNames(play.shieldPotion)},
-                            {"strafe", keyNames(play.strafe)},
-                            {"strongAttack", keyNames(play.strongAttack)},
-                            {"turbo", keyNames(play.turbo)},
-                            {"charge", keyNames(play.charge)},
-                            {"combo", keyNames(play.combo)},
-                            {"selectorUp", keyNames(play.selectorUp)},
-                            {"selectorDown", keyNames(play.selectorDown)},
-                            {"selectorLeft", keyNames(play.selectorLeft)},
-                            {"selectorRight", keyNames(play.selectorRight)}}},
-                          {"pad",
-                           {{"up", buttonNames(play.padUp)},
-                            {"down", buttonNames(play.padDown)},
-                            {"left", buttonNames(play.padLeft)},
-                            {"right", buttonNames(play.padRight)},
-                            {"attack", buttonNames(play.padAttack)},
-                            {"usePotion", buttonNames(play.padUsePotion)},
-                            {"throwPotion", buttonNames(play.padThrowPotion)},
-                            {"shieldPotion", buttonNames(play.padShieldPotion)},
-                            {"strafe", buttonNames(play.padStrafe)},
-                            {"strongAttack", buttonNames(play.padStrongAttack)},
-                            {"turbo", buttonNames(play.padTurbo)},
-                            {"charge", buttonNames(play.padCharge)},
-                            {"combo", buttonNames(play.padCombo)},
-                            {"selectorUp", buttonNames(play.padSelectorUp)},
-                            {"selectorDown", buttonNames(play.padSelectorDown)},
-                            {"selectorLeft", buttonNames(play.padSelectorLeft)},
-                            {"selectorRight", buttonNames(play.padSelectorRight)}}},
-                          {"stickDeadZone", play.stickDeadZone},
-                          {"magicHoldSeconds", play.magicHoldSeconds},
-                          {"magicDoubleTapSeconds", play.magicDoubleTapSeconds},
-                          {"padMagicGestures", play.padMagicGestures},
-                          {"keyboardMagicGestures", play.keyboardMagicGestures},
-                          {"actionChords", play.actionChords}}}};
-    root["controls"]["players"] = writeControlProfiles(*this);
+    SettingsWriter writer{root};
+    visitSettings(writer, *this);
     return root.dump(2) + "\n";
 }
 
