@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <format>
 #include <numbers>
 #include <optional>
@@ -13,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AnimationSet.h"
 #include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
@@ -23,6 +25,7 @@
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/PlayerAttacksFixture.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/ScriptedMotion.h"
 #include "game/players/ComboMove.h"
@@ -1821,6 +1824,178 @@ TEST_CASE("a scripted movement level asks its script as the script stands at eac
     CHECK(level.flying(1));
     CHECK_FALSE(level.flying(0));
     CHECK(level.chainsHeldMelee());
+}
+
+constexpr usize kDeedCount = static_cast<usize>(PlayerDeed::ComboThrown) + 1;
+constexpr f32 kFrame = 1.0f / 30.0f;
+
+/** A tree with a six-frame sequence of each action's name, so that any action can begin. */
+TreeInfo everyActionTree() {
+    TreeInfo tree;
+    tree.name = "ACTIONS";
+    TreeNodeInfo root;
+    root.name = "ROOT";
+    root.type = 1;
+    tree.nodes.push_back(root);
+    for (const std::string_view name : PlayerAnimator::kSequenceNames) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.repeats = name == PlayerAnimator::kSequenceNames.front();
+        tree.sequences.push_back(sequence);
+    }
+    return tree;
+}
+
+/** What party motion makes of a deed besides its pace, a bit each. */
+namespace deed_read {
+constexpr u32 kHoldsFacing = 1U << 0U; ///< a swing it starts keeps the facing against the stick
+constexpr u32 kGivesWay = 1U << 1U;    ///< a pending gesture is made in its place
+constexpr u32 kAimed = 1U << 2U;       ///< standing still, the body turns to the assisted target
+constexpr u32 kSenses = 1U << 3U;      ///< asked unpressed, it asks where the nearest target is
+} // namespace deed_read
+
+/** What party motion makes of a deed: its pace with no figure, beside an animator standing ready
+ * and beside one mid-swing, and the deed_read bits it earns. */
+struct DeedReading {
+    PlayerDeed deed;
+    f32 pace;
+    f32 readyPace;
+    f32 swingPace;
+    u32 reads;
+};
+
+/** The deed_read bits a step gives `deed`: asked by the attack button of a body standing with
+ * no figure, whether a pending gesture is made in its place and whether it turns to the
+ * assisted target; asked by an unpressed walking contact of the warrior of the archives at
+ * `root`, whether it asks the melee sense. */
+u32 stepReadsOf(PlayerDeed deed, const std::filesystem::path& root) {
+    u32 reads = 0;
+    {
+        Fixture f;
+        f.events.perform = [](usize, PartyMotion::Action) {};
+        f.events.attackDeed = [deed](usize, bool, bool, const Vec3&) { return deed; };
+        f.players[0].gesture = PlayerDeed::Pick;
+        f.inputs[3].attack = true;
+        f.step();
+        reads |= f.players[0].gesture == PlayerDeed::None ? deed_read::kGivesWay : 0U;
+    }
+    {
+        Fixture f;
+        s32 aimed = 0;
+        f.events.perform = [](usize, PartyMotion::Action) {};
+        f.events.attackDeed = [deed](usize, bool, bool, const Vec3&) { return deed; };
+        f.events.aim = [&aimed](usize i) -> std::optional<Vec3> {
+            aimed += i == 0 ? 1 : 0;
+            return Vec3{5, 3, 10};
+        };
+        f.inputs[3].attack = true;
+        f.step();
+        reads |= aimed > 0 ? deed_read::kAimed : 0U;
+    }
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+    REQUIRE(f.players[0].figure);
+    s32 asked = 0;
+    s32 sensed = 0;
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.automaticMeleeDeed = [deed, &asked](usize, const Vec3&) {
+        ++asked;
+        return deed;
+    };
+    f.events.meleeSense = [&sensed](usize, bool, const Vec3&) {
+        ++sensed;
+        return MeleeSense{};
+    };
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.step();
+    REQUIRE(asked == 1);
+    return reads | (sensed > 0 ? deed_read::kSenses : 0U);
+}
+
+/** How party motion reads `deed`: its pace beside `ready` and `swinging`, whether `actor`, facing
+ * along +z, holds its facing against a stick pushed along +x, and what a step gives it. */
+DeedReading readingOf(PlayerDeed deed, const PlayerAnimator& ready, const PlayerAnimator& swinging,
+                      const PlayerActor& actor, const std::filesystem::path& root) {
+    const MoveInput across{Vec2{1, 0}, 1};
+    const MoveInput planned =
+        PartyMotion::attackMove(actor, nullptr, across, deed, 0.0f, kFrame, false);
+    const u32 holds = planned.direction != across.direction ? deed_read::kHoldsFacing : 0U;
+    return {.deed = deed,
+            .pace = PartyMotion::actionPace(nullptr, deed),
+            .readyPace = PartyMotion::actionPace(&ready, deed),
+            .swingPace = PartyMotion::actionPace(&swinging, deed),
+            .reads = holds | stepReadsOf(deed, root)};
+}
+
+TEST_CASE("each deed keeps the pace, turn, gesture, aim and melee sense party motion gives it",
+          "[game][party-motion][deed-sets]") {
+    // Per deed: actionPace with no figure, beside an animator standing ready and beside one in a
+    // quick swing (a quarter pace), then its deed_read bits.
+    constexpr std::array<DeedReading, kDeedCount> kReadings{{
+        {PlayerDeed::None, 1.0f, 1.0f, 0.25f, deed_read::kGivesWay},
+        {PlayerDeed::Attack, 1.0f, 1.0f, 0.25f, deed_read::kAimed},
+        {PlayerDeed::UsePotion, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::ThrowPotion, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Die, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Flinch, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Spike, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Reel, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::TurboStrong, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::TurboFull, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Shove, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Defend, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::StrongAttack, 1.0f, 0.0f, 0.25f, deed_read::kAimed},
+        {PlayerDeed::ShieldPotion, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::FallBack, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::FallForward, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::HurlLegend, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::ThrowLegend, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::ShootLegend, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Grabbed, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Thrown, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Webbed, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Melee, 0.25f, 0.25f, 0.25f, deed_read::kHoldsFacing | deed_read::kAimed},
+        {PlayerDeed::MeleeLow, 0.0f, 0.0f, 0.25f, deed_read::kAimed},
+        {PlayerDeed::MeleeSlow, 0.0f, 0.0f, 0.25f, deed_read::kAimed},
+        {PlayerDeed::MeleeSlowLow, 0.0f, 0.0f, 0.25f, deed_read::kAimed},
+        {PlayerDeed::AutoMelee, 0.25f, 0.25f, 0.25f,
+         deed_read::kHoldsFacing | deed_read::kGivesWay | deed_read::kSenses},
+        {PlayerDeed::AutoMeleeLow, 0.0f, 0.0f, 0.25f, deed_read::kGivesWay | deed_read::kSenses},
+        {PlayerDeed::SuperShot, 0.0f, 0.0f, 0.0f, 0},
+        {PlayerDeed::Hammer, 0.0f, 0.0f, 0.0f, deed_read::kAimed},
+        {PlayerDeed::Breathe, 0.0f, 0.0f, 0.0f, deed_read::kAimed},
+        {PlayerDeed::FireLeft, 0.0f, 0.0f, 0.0f, deed_read::kAimed},
+        {PlayerDeed::FireRight, 0.0f, 0.0f, 0.0f, deed_read::kAimed},
+        {PlayerDeed::Pick, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Gag, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::DeathGrab, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Whirled, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::Combo, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::ComboHeld, 1.0f, 1.0f, 0.25f, 0},
+        {PlayerDeed::ComboThrown, 1.0f, 1.0f, 0.25f, 0},
+    }};
+    const auto root = test::turboAssets();
+    const auto tree = everyActionTree();
+    PlayerAnimator ready;
+    REQUIRE(ready.bind(tree, false));
+    auto swinging = ready;
+    swinging.update(PlayerMotion::Stand, 1, kFrame, PlayerDeed::Melee);
+    REQUIRE(swinging.action() == PlayerAnimator::Action::Quick1);
+    const Fixture standing;
+    for (usize i = 0; i < kDeedCount; ++i) {
+        CAPTURE(i);
+        const auto deed = static_cast<PlayerDeed>(i);
+        REQUIRE(kReadings[i].deed == deed);
+        const DeedReading reading =
+            readingOf(deed, ready, swinging, standing.players[0].actor, root);
+        CHECK(reading.pace == kReadings[i].pace);
+        CHECK(reading.readyPace == kReadings[i].readyPace);
+        CHECK(reading.swingPace == kReadings[i].swingPace);
+        CHECK(reading.reads == kReadings[i].reads);
+    }
 }
 } // namespace
 
