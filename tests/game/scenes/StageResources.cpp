@@ -7,6 +7,7 @@
 #include "game/bosses/Bosses.h"
 #include "game/critters/Critters.h"
 #include "game/enemies/Enemies.h"
+#include "game/level/BossKinds.h"
 
 namespace gdl::game {
 bool StageResources::preload(const LevelWorld& world, Enemies& enemies, Critters& critters,

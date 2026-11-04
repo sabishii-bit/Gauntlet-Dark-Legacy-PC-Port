@@ -26,6 +26,7 @@
 #include "game/critters/Gargoyle.h"
 #include "game/critters/Golem.h"
 #include "game/enemies/EnemyKinds.h"
+#include "game/level/BossKinds.h"
 #include "game/level/LevelCatalog.h"
 
 namespace {

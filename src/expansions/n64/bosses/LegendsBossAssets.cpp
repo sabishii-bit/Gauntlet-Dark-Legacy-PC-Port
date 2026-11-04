@@ -17,6 +17,7 @@
 #include "game/bosses/BossDefinition.h"
 #include "game/combat/EffectFlags.h"
 #include "game/critters/CombatantAssets.h"
+#include "game/level/BossKinds.h"
 
 namespace gdl::game {
 namespace {
@@ -27,9 +28,10 @@ struct Bank {
 };
 // Native DESC names and Boss.bin's six level-family bindings. Plague's boss
 // bank is SLIME; PLAGUE contains the ordinary PLAG1/2/3 minions.
-constexpr std::array kBanks{Bank{34, "dragon", "dragon"}, Bank{35, "chi", "chimera"},
-                            Bank{38, "slime", "slime"},   Bank{39, "yeti", "yeti"},
-                            Bank{42, "sko1", "boss1"},    Bank{43, "sko2", "boss2"}};
+constexpr std::array kBanks{
+    Bank{boss_type::kDragon, "dragon", "dragon"},   Bank{boss_type::kChimera, "chi", "chimera"},
+    Bank{boss_type::kPlagueBoss, "slime", "slime"}, Bank{boss_type::kYeti, "yeti", "yeti"},
+    Bank{boss_type::kSkorne1, "sko1", "boss1"},     Bank{boss_type::kSkorne2, "sko2", "boss2"}};
 
 void alignSkorneRoar(formats::AnimationFile& animation) {
     const auto found = animation.find("BOSSROARFX");
@@ -94,7 +96,7 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
     if (!path)
         throw FileError("N64 Legends boss moves.wad is missing: " + std::string(bank->data));
     auto decoded = formats::decodeLegendsN64Critter(readFile(*path));
-    if (kind == 42) {
+    if (kind == boss_type::kSkorne1) {
         const auto first =
             std::ranges::find(decoded.moves, "START", &formats::CritterMoveRecord::name);
         const auto second =
@@ -130,7 +132,7 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             pound->frameStart = frame;
         }
     }
-    if (kind == 43) {
+    if (kind == boss_type::kSkorne2) {
         // Intentional imported-gameplay correction: native e08832b8 advances
         // an admitted pattern without testing each move's target again. SKO2
         // PAT1/PAT2 admit any distance >=25, yet include a claw/grab capped at 25.
@@ -151,7 +153,7 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
     const auto sounds = decodeLegendsSoundTable(program);
     std::set<std::string> silentSounds;
     for (auto& effect : decoded.sounds) {
-        if (kind == 35 && effect.name == "SUPERFIREFX") {
+        if (kind == boss_type::kChimera && effect.name == "SUPERFIREFX") {
             const auto index = static_cast<s32>(&effect - decoded.sounds.data());
             const formats::CritterDamageRecord* source = nullptr;
             for (const auto& damage : decoded.damages) {
@@ -175,7 +177,7 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             for (usize axis = 0; axis < effect.offset.size(); ++axis)
                 effect.offset[axis] += source->offset[axis];
         }
-        if (kind == 38 && (effect.flags & effect_flags::kBodyParent) != 0) {
+        if (kind == boss_type::kPlagueBoss && (effect.flags & effect_flags::kBodyParent) != 0) {
             // e0881474 creates an identity animation container at actor+0x7c,
             // then e002f278 adds the BODY hierarchy below it. e0881a28's bit1
             // attaches effects to that container, not BODY's first node. Plague's
@@ -184,7 +186,7 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             // that missing container without altering the authored SFXX offsets.
             effect.flags = (effect.flags & ~effect_flags::kBodyParent) | effect_flags::kRootParent;
         }
-        if (kind == 42 && effect.levelFormat == "S_SKORN1ROAR" &&
+        if (kind == boss_type::kSkorne1 && effect.levelFormat == "S_SKORN1ROAR" &&
             !legendsSoundToken(sounds, effect.levelFormat) &&
             legendsSoundToken(sounds, "S_SKORN1PROAR")) {
             // Compatibility repair, not bit-exact parity: the shipped ROAR and
@@ -193,7 +195,7 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             // and original native audio rather than borrowing a GameCube bank.
             effect.levelFormat = "S_SKORN1PROAR";
         }
-        if (kind == 43) {
+        if (kind == boss_type::kSkorne2) {
             // SKO2's move file disagrees with three native sound-table names:
             // rows 50/51 spell this boss SKORN9, and row 55 calls its roar PROAR.
             // Repair only these evidenced spellings, preserving their native
@@ -242,18 +244,18 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
         effects.push_back(nativeRoot / "bosseffect" / name);
     };
     switch (kind) {
-    case 34: add("fire"); break;
-    case 35:
+    case boss_type::kDragon: add("fire"); break;
+    case boss_type::kChimera:
         add("fire");
         add("acid");
         add("elec");
         break;
-    case 38: add("acid"); break;
-    case 42:
+    case boss_type::kPlagueBoss: add("acid"); break;
+    case boss_type::kSkorne1:
         add("acid");
         add("elec");
         break;
-    case 43: add("fire"); break;
+    case boss_type::kSkorne2: add("fire"); break;
     default: break;
     }
     // e006b110 loads this native bank before the level-specific boss banks.
@@ -261,11 +263,13 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
     // Keep the boss's own groups authoritative, with this explicit shared
     // lender last rather than falling back to GameCube weapon effects.
     effects.push_back(nativeRoot / "weapons");
-    auto archive = loadLegendsN64Archive(nativeRoot / bank->art, warnings, program, {}, true,
-                                         effects, [kind](formats::AnimationFile& animation) {
-                                             if (kind == 42 || kind == 43)
-                                                 alignSkorneRoar(animation);
-                                         });
+    auto archive =
+        loadLegendsN64Archive(nativeRoot / bank->art, warnings, program, {}, true, effects,
+                              [kind](formats::AnimationFile& animation) {
+                                  if (kind == boss_type::kSkorne1 || kind == boss_type::kSkorne2) {
+                                      alignSkorneRoar(animation);
+                                  }
+                              });
     if (!archive)
         throw FileError("N64 Legends boss objects.wad is missing: " + std::string(bank->art));
     const auto family = bossDefinition(bossNameOf(kind));

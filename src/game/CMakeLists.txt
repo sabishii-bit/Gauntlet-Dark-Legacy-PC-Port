@@ -232,6 +232,8 @@ add_library(game STATIC
     players/Knockback.cpp
     players/PlayerImpact.h
     players/PlayerImpact.cpp
+    level/BossKinds.h
+    level/BossKinds.cpp
     level/LevelCatalog.h
     level/LevelCatalog.cpp
     level/LevelItemArchives.h

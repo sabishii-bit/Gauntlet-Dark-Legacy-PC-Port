@@ -2,23 +2,6 @@
 
 #include "engine/core/Strings.h"
 namespace gdl::game {
-std::string_view bossNameOf(s32 kind) {
-    switch (kind) {
-    case 34: return "DRAGON";
-    case 35: return "CHIMERA";
-    case 36: return "DJINN";
-    case 37: return "DRIDER";
-    case 38: return "PBOSS";
-    case 39: return "YETI";
-    case 40: return "WRAITH";
-    case 41: return "LICH";
-    case 42: return "SKORNE1";
-    case 43: return "SKORNE2";
-    case 44: return "GARM";
-    default: return "";
-    }
-}
-
 CombatantDefinition bossDefinition(std::string_view name) {
     CombatantDefinition out;
     out.name = normalizeAssetName(name);
@@ -33,16 +16,6 @@ CombatantDefinition bossDefinition(std::string_view name) {
     out.shoved = false;
     out.departure = CombatantDefinition::Departure::Fades;
     return out;
-}
-
-std::string_view bossArenaObject(s32 kind) {
-    // Retail arena callback 0x80063c58 sets tree flag 1 on this node only.
-    // The renderer (0x800c7a70) skips its mesh but still visits its children.
-    switch (kind) {
-    case 41: return "G5BIGDIRT";
-    case 44: return "H4NSFFXL_PURPLE";
-    default: return {};
-    }
 }
 
 BossGeneratorVisual bossGeneratorVisual(s32 kind) {

@@ -11,6 +11,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/level/BossKinds.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {

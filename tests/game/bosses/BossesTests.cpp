@@ -19,6 +19,7 @@
 #include "game/bosses/LegendProfile.h"
 #include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantFixture.h"
+#include "game/level/BossKinds.h"
 
 namespace {
 

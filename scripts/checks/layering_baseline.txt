@@ -29,7 +29,6 @@ src/game/level/LevelFixtures.cpp -> game/enemies
 src/game/level/LevelFixtures.cpp -> game/hud
 src/game/level/LevelFixtures.cpp -> game/party
 src/game/level/LevelFixtures.h -> game/party
-src/game/level/LevelWorld.cpp -> game/bosses
 src/game/level/NativeStateResources.cpp -> game/critters
 src/game/level/NativeStateResources.cpp -> game/enemies
 src/game/level/TriggerCues.cpp -> game/hud

@@ -6,6 +6,7 @@
 
 #include "game/combat/DamageTypes.h"
 #include "game/enemies/EnemyKinds.h"
+#include "game/level/BossKinds.h"
 
 namespace gdl::game {
 namespace {
@@ -13,13 +14,8 @@ constexpr f32 kLowEnemyHeight = 4.0f;
 
 std::string bankName(std::string name, s32 bossType) {
     // Some boss banks replace byte 14 with a variant letter; bank keys hold 15 characters.
-    char variant = '\0';
-    switch (bossType) {
-    case 41: variant = 'B'; break;
-    case 37: variant = 'D'; break;
-    case 36: variant = 'C'; break;
-    default: break;
-    }
+    const BossStage* stage = bossStageOf(bossType);
+    const char variant = stage != nullptr ? stage->swarmBankVariant : '\0';
     if (variant != '\0') {
         name.resize(std::min(name.size(), usize{14}));
         name += variant;

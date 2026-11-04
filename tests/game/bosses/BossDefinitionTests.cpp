@@ -13,6 +13,7 @@
 
 #include "TestSupport.h"
 #include "game/bosses/BossDefinition.h"
+#include "game/level/BossKinds.h"
 
 namespace {
 
@@ -20,63 +21,6 @@ using namespace gdl;
 using namespace gdl::game;
 
 constexpr s32 kLowest = std::numeric_limits<s32>::min();
-
-TEST_CASE("every boss code keeps its name and no other code has one",
-          "[game][bosses][boss-kinds]") {
-    struct Row {
-        s32 code;
-        std::string_view name;
-    };
-    constexpr std::array<Row, 15> kRows{{
-        {-1, ""},
-        {33, ""},
-        {34, "DRAGON"},
-        {35, "CHIMERA"},
-        {36, "DJINN"},
-        {37, "DRIDER"},
-        {38, "PBOSS"},
-        {39, "YETI"},
-        {40, "WRAITH"},
-        {41, "LICH"},
-        {42, "SKORNE1"},
-        {43, "SKORNE2"},
-        {44, "GARM"},
-        {45, ""},
-        {kLowest, ""},
-    }};
-    for (const Row& row : kRows) {
-        CAPTURE(row.code);
-        CHECK(bossNameOf(row.code) == row.name);
-    }
-}
-
-TEST_CASE("only the lich's and the garm's codes hide an arena mesh", "[game][bosses][boss-kinds]") {
-    struct Row {
-        s32 code;
-        std::string_view object;
-    };
-    constexpr std::array<Row, 15> kRows{{
-        {-1, ""},
-        {33, ""},
-        {34, ""},
-        {35, ""},
-        {36, ""},
-        {37, ""},
-        {38, ""},
-        {39, ""},
-        {40, ""},
-        {41, "G5BIGDIRT"},
-        {42, ""},
-        {43, ""},
-        {44, "H4NSFFXL_PURPLE"},
-        {45, ""},
-        {kLowest, ""},
-    }};
-    for (const Row& row : kRows) {
-        CAPTURE(row.code);
-        CHECK(bossArenaObject(row.code) == row.object);
-    }
-}
 
 TEST_CASE("the spider's and the lich's codes pick their own generator art and every other "
           "code BOSSGEN",

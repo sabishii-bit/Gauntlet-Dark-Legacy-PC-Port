@@ -24,6 +24,7 @@
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/BossKinds.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerHealth.h"
@@ -78,9 +79,7 @@ constexpr f32 kTrapHitVolume = 127.0f / 255.0f;
 constexpr f32 kTentacleHitVolume = 180.0f / 255.0f;
 constexpr std::string_view kDesertSpikeGate = "FLAMEH"; ///< the Desert's flame named so
 constexpr s32 kDesertRealm = 3;
-constexpr s32 kDragonBoss = 34;
 constexpr std::string_view kFireHoleSound = "S_FIREHOLE";
-constexpr std::string_view kDragonFireHoleSound = "S_FIREHOLE2";
 /** AudioDamageTile's table: what a trap sounds when it catches someone, by the level's realm
  * and the trap's subtype (spikes, fire, forcefield, blade, tentacle, tentacle wall, and the
  * Desert's gate of spikes). Empty where the realm has no such trap. */
@@ -118,8 +117,9 @@ trapHitSoundOf(s32 realm, s32 subtype, std::string_view name, s32 bossType) {
     if (sound.empty()) {
         return std::nullopt;
     }
-    if (sound == kFireHoleSound && bossType == kDragonBoss) {
-        sound = kDragonFireHoleSound;
+    if (const BossStage* stage = bossStageOf(bossType);
+        sound == kFireHoleSound && stage != nullptr && !stage->fireHoleSound.empty()) {
+        sound = stage->fireHoleSound;
     }
     const bool tentacle = sound == "S_TENTACLES" || sound == "S_TENTACLESD";
     return std::pair{sound, tentacle ? kTentacleHitVolume : kTrapHitVolume};

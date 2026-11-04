@@ -25,6 +25,7 @@
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/BossKinds.h"
 #include "game/level/Chests.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/PartyDamage.h"
@@ -1926,10 +1927,8 @@ PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Tar
     if (target->body.id >= kBossTargetBase) {
         // PlayerMotion's boss-family exception permits only the two mobile
         // encounters, DRIDER and LICH, to trigger an unpressed close attack.
-        constexpr s32 kSpiderQueen = 37;
-        constexpr s32 kLich = 41;
-        const s32 kind = targets.opponents.bosses().view().kind;
-        if (kind != kSpiderQueen && kind != kLich) {
+        const BossStage* stage = bossStageOf(targets.opponents.bosses().view().kind);
+        if (stage == nullptr || !stage->roams) {
             return PlayerDeed::None;
         }
     }

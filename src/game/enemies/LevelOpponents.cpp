@@ -25,6 +25,7 @@
 #include "game/enemies/OpponentPlacements.h"
 #include "game/enemies/OpponentSimulation.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/BossKinds.h"
 #include "game/level/SimulationSeed.h"
 #include "game/party/BodyCollision.h"
 #include "game/party/PartyDamage.h"
@@ -1962,7 +1963,8 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
         return;
     }
     if (cue.arena && m_bosses.present()) {
-        if (ofBoss && m_bosses.view().kind == 42 && m_bosses.position() != nullptr) {
+        const BossStage* stage = bossStageOf(m_bosses.view().kind);
+        if (ofBoss && stage != nullptr && stage->fallingMasonry && m_bosses.position() != nullptr) {
             m_resources->world.bossArenaCue(*m_bosses.position());
         }
         const std::string_view object = bossArenaObject(m_bosses.view().kind);

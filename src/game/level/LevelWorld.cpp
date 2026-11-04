@@ -13,8 +13,8 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/platform/Paths.h"
 
-#include "game/bosses/BossDefinition.h"
 #include "game/effects/DynamicLights.h"
+#include "game/level/BossKinds.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -304,7 +304,8 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     }
     applyAmbientOffset(dark() ? -1.0f : 0.0f); // the Trenches start dark, not on a first strike
     m_worldAnimator.bind(m_layout);
-    if (m_level != nullptr && m_level->bossType == 42) {
+    if (const BossStage* stage = bossStageOf(m_level != nullptr ? m_level->bossType : -1);
+        stage != nullptr && stage->fallingMasonry) {
         m_skorneArena.bind(device, m_layout, m_models, m_textures);
     }
     m_fallingScenery.bind(device, m_layout, m_models, m_textures, m_ref.name);

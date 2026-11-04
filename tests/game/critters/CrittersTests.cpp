@@ -22,7 +22,6 @@
 #include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
 #include "game/bosses/BossCoins.h"
-#include "game/bosses/BossDefinition.h"
 #include "game/characters/ClassData.h"
 #include "game/combat/EffectFlags.h"
 #include "game/critters/CombatantBreath.h"
@@ -31,6 +30,7 @@
 #include "game/critters/Critters.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
+#include "game/level/BossKinds.h"
 #include "game/level/PlacedItems.h"
 
 namespace {

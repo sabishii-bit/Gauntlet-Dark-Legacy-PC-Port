@@ -19,6 +19,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CombatantProjectiles.h"
+#include "game/level/BossKinds.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/SafeRocks.h"
 #include "game/party/PartyMotion.h"

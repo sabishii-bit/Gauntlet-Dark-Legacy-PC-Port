@@ -13,6 +13,7 @@
 
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/shared/characters/LegendsProgress.h"
+#include "game/level/BossKinds.h"
 
 namespace gdl::game {
 namespace {
@@ -31,12 +32,12 @@ struct Counterpart {
 // game.bin e006a858 selects these native archives; e006b110 selects their
 // placement-table slots. GDL WDATA LEVL.bossType/AUDS supply the donor context.
 constexpr std::array kCounterparts{
-    Counterpart{3, 0, 34, "B6", "MOUNT", "DRAGON", 0xe00ab708, 0},
-    Counterpart{6, 1, 39, "I5", "ICE", "YETI", 0xe00ab71c, 1},
-    Counterpart{7, 2, 38, "K5", "SKY", "PBOSS", 0xe00ab724, 3},
-    Counterpart{0, 3, 35, "A5", "CASTLE", "CHIMERA", 0xe00ab73c, 2},
-    Counterpart{13, 4, 42, "E2", "TEMPLE", "SKORNE1", 0xe00ab764, -1},
-    Counterpart{5, 5, 43, "F2", "HELL", "SKORNE2", 0xe00ab76c, 4},
+    Counterpart{3, 0, boss_type::kDragon, "B6", "MOUNT", "DRAGON", 0xe00ab708, 0},
+    Counterpart{6, 1, boss_type::kYeti, "I5", "ICE", "YETI", 0xe00ab71c, 1},
+    Counterpart{7, 2, boss_type::kPlagueBoss, "K5", "SKY", "PBOSS", 0xe00ab724, 3},
+    Counterpart{0, 3, boss_type::kChimera, "A5", "CASTLE", "CHIMERA", 0xe00ab73c, 2},
+    Counterpart{13, 4, boss_type::kSkorne1, "E2", "TEMPLE", "SKORNE1", 0xe00ab764, -1},
+    Counterpart{5, 5, boss_type::kSkorne2, "F2", "HELL", "SKORNE2", 0xe00ab76c, 4},
 };
 constexpr usize kProgramBase = 0xe0000400U;
 constexpr usize kBossBase = 0xe0880000U;

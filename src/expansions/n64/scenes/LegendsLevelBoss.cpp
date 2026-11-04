@@ -6,6 +6,7 @@
 
 #include "expansions/n64/bosses/LegendsBossAssets.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
+#include "game/level/BossKinds.h"
 
 namespace gdl::game {
 
@@ -29,8 +30,8 @@ LegendsLevel::loadBossAssets(RenderDevice& device, const std::filesystem::path& 
 
 void LegendsLevel::bossIntro(const Vec3& position) {
     if (platform() == LegendsPlatform::N64 && m_boss && m_boss->map == "boss2" &&
-        m_boss->combat.kind == 42 && !m_bossDefeated && !glm::any(glm::isnan(position)) &&
-        !glm::any(glm::isinf(position))) {
+        m_boss->combat.kind == boss_type::kSkorne1 && !m_bossDefeated &&
+        !glm::any(glm::isnan(position)) && !glm::any(glm::isinf(position))) {
         // GDL-style imported entrance: the original N64 SFXX dispatcher lacks
         // GDL's arena callback. Bind the authored debris to the actual START
         // handoff, never a map-load timer or an invented removable floor cap.

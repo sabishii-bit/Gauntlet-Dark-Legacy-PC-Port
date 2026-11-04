@@ -22,6 +22,7 @@
 #include "game/bosses/Bosses.h"
 #include "game/combat/EffectFlags.h"
 #include "game/critters/CombatantAssets.h"
+#include "game/level/BossKinds.h"
 #include "game/level/LevelCatalog.h"
 
 namespace {
