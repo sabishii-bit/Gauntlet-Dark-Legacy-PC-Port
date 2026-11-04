@@ -527,6 +527,8 @@ public:
     static Action turboActionOf(PlayerDeed deed);
     /** The first half of the strafing step `way`, shooting or not. */
     static Action strafeStep(StrafeWay way, bool shooting);
+    /** The first half of a walking, running or strafing half cycle, and its other half. Any
+     * other action is its own first half and has none (the stance). */
     static Action firstHalfOf(Action step);
     static Action otherHalfOf(Action step);
     /** Whether this tick's step began a turbo move: the meter pays for it then. */
@@ -569,7 +571,8 @@ private:
     };
 
     /** What the animator knows of one action: the run it belongs to, its attack category, the
-     * pace and turn it leaves the body, what its swing does and recovers by, and its traits. */
+     * pace and turn it leaves the body, what its swing does, what it gives way to by itself and
+     * when, a half cycle's foot and other half, and its traits. */
     struct ActionInfo;
     /** The row of `action`; the row of no family, category or trait outside the actions. */
     static const ActionInfo& info(Action action);

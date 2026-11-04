@@ -122,6 +122,7 @@ namespace action_trait {
 constexpr u8 kBlendsToReady = 0x1; ///< eases back into the stance as it ends (readyTransition)
 constexpr u8 kAutoMelee = 0x2;     ///< an unpressed contact swing may begin from it
 constexpr u8 kKeepsPress = 0x4;    ///< keeps a pending attack press for the next request
+constexpr u8 kShotBoundary = 0x8;  ///< what follows it waits for a nominal shot boundary
 } // namespace action_trait
 
 /** Per class: whether the close and middle power moves root it, and at which rate it moves. */
@@ -180,17 +181,28 @@ struct PlayerAnimator::ActionInfo {
     f32 turn = 1.0f; ///< of the turn toward the stick it leaves, by its motion rule (turnScale)
     MotionRule motion = MotionRule::Fixed;
     MeleeBlow blow = MeleeBlow::None; ///< what the swing does to what it strikes as it completes
-    Action recovery = Action::Ready;  ///< what the swing recovers by
-    u8 traits = 0;                    ///< action_trait bits
+    /** What it gives way to by itself as it ends (its release, swing, recovery or get-up);
+     * Ready: none of its own, whatever is asked follows. */
+    Action next = Action::Ready;
+    Cut cut = Cut::WhenDoneIfDifferent; ///< when what follows it may start
+    Foot foot = Foot::None;             ///< the foot that comes down as its half cycle ends
+    Action otherHalf = Action::Ready;   ///< a half cycle's other half (Ready: none)
+    u8 traits = 0;                      ///< action_trait bits
 };
 
 const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
     using action_trait::kAutoMelee;
     using action_trait::kBlendsToReady;
     using action_trait::kKeepsPress;
-    // By action: AnimAction's move and turn scales and its blends back to the stance, and
-    // DoPlayerAction's attack categories and press latches. A body in a partner's combo goes
-    // where the combo takes it, and the charge rushes on, faster than a run.
+    using action_trait::kShotBoundary;
+    // By action: AnimAction's move and turn scales, its blends back to the stance, what each
+    // action gives way to as it ends and the feet and other halves of the walking, running
+    // and strafing half cycles, and DoPlayerAction's attack categories and press latches. A
+    // body in a partner's combo goes where the combo takes it, and the charge rushes on,
+    // faster than a run. What follows the stance, the fidgets, the chains of close attacks,
+    // the throw's wind-up, the raised guard, the special shot, the combo move's opening and
+    // the loops held while asked for turns on more than the action, and continuation says so
+    // itself.
     static constexpr std::array<ActionInfo, kActionCount> kActions{{
         {.action = Action::Ready, .family = ActionFamily::Stance, .traits = kAutoMelee},
         {.action = Action::Idle1,
@@ -204,17 +216,25 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::Walk1,
          .family = ActionFamily::Walk,
+         .foot = Foot::First,
+         .otherHalf = Action::Walk2,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::Walk2,
          .family = ActionFamily::Walk,
+         .foot = Foot::Second,
+         .otherHalf = Action::Walk1,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::Run1,
          .family = ActionFamily::Run,
          .pace = kRunPace,
+         .foot = Foot::First,
+         .otherHalf = Action::Run2,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::Run2,
          .family = ActionFamily::Run,
          .pace = kRunPace,
+         .foot = Foot::Second,
+         .otherHalf = Action::Run1,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::Start, .family = ActionFamily::Entrance, .pace = 0.0f},
         {.action = Action::Throw,
@@ -228,24 +248,29 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::ThrowRelease,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .next = Action::ThrowRecover,
+         .traits = kShotBoundary},
         {.action = Action::ThrowMovingRelease,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .next = Action::ThrowMovingRecover,
+         .traits = kShotBoundary},
         {.action = Action::ThrowRecover,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
          .pace = 0.0f,
-         .traits = kKeepsPress},
+         .traits = kKeepsPress | kShotBoundary},
         {.action = Action::ThrowMovingRecover,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
          .pace = 0.0f,
-         .traits = kKeepsPress},
+         .traits = kKeepsPress | kShotBoundary},
         {.action = Action::UsePotion,
          .family = ActionFamily::Potion,
          .pace = 0.0f,
+         .next = Action::UsePotionRelease,
          .traits = kAutoMelee},
         {.action = Action::UsePotionRelease,
          .family = ActionFamily::Potion,
@@ -254,6 +279,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::ThrowPotion,
          .family = ActionFamily::Potion,
          .pace = 0.0f,
+         .next = Action::ThrowPotionRelease,
          .traits = kAutoMelee},
         {.action = Action::ThrowPotionRelease,
          .family = ActionFamily::Potion,
@@ -281,6 +307,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .family = ActionFamily::Guard,
          .attackType = AttackType::Guard,
          .pace = 0.0f,
+         .next = Action::Defend,
+         .cut = Cut::WhenDone,
          .traits = kKeepsPress},
         {.action = Action::Defend,
          .family = ActionFamily::Guard,
@@ -291,10 +319,12 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .family = ActionFamily::Guard,
          .attackType = AttackType::Guard,
          .pace = 0.0f},
+        // The weapon leaves as the wind-up ends.
         {.action = Action::StrongThrow,
          .family = ActionFamily::StrongThrow,
          .attackType = AttackType::StrongThrow,
-         .pace = kStrongThrowPace},
+         .pace = kStrongThrowPace,
+         .next = Action::StrongThrowRecover},
         {.action = Action::StrongThrowRecover,
          .family = ActionFamily::StrongThrow,
          .attackType = AttackType::StrongThrow,
@@ -303,78 +333,111 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::StrafeForward1,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeForward2,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeForward2,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeForward1,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeBack1,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeBack2,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeBack2,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeBack1,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeLeft1,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeLeft2,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeLeft2,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeLeft1,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeRight1,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeRight2,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeRight2,
          .family = ActionFamily::StrafeWalk,
          .pace = kStrafePace,
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeRight1,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::StrafeShootForward1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeShootForward2,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootForward2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeShootForward1,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootBack1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeShootBack2,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootBack2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeShootBack1,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootLeft1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeShootLeft2,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootLeft2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeShootLeft1,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootRight1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::First,
+         .otherHalf = Action::StrafeShootRight2,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::StrafeShootRight2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
-         .traits = kBlendsToReady},
+         .foot = Foot::Second,
+         .otherHalf = Action::StrafeShootRight1,
+         .traits = kBlendsToReady | kShotBoundary},
         {.action = Action::FallBack,
          .family = ActionFamily::Floored,
          .pace = 0.0f,
+         .next = Action::GetUpBack,
          .traits = kKeepsPress},
         {.action = Action::GetUpBack,
          .family = ActionFamily::Floored,
@@ -383,6 +446,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::FallForward,
          .family = ActionFamily::Floored,
          .pace = 0.0f,
+         .next = Action::GetUpForward,
          .traits = kKeepsPress},
         {.action = Action::GetUpForward,
          .family = ActionFamily::Floored,
@@ -408,7 +472,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .pace = kQuickMeleePace,
          .turn = 0.0f,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::Quick3Recover,
+         .next = Action::Quick3Recover,
          .traits = kBlendsToReady},
         {.action = Action::Quick2,
          .family = ActionFamily::Melee,
@@ -416,7 +480,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .pace = kQuickMeleePace,
          .turn = 0.0f,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::Quick2Recover,
+         .next = Action::Quick2Recover,
          .traits = kBlendsToReady},
         {.action = Action::Quick3,
          .family = ActionFamily::Melee,
@@ -424,7 +488,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .pace = kQuickMeleePace,
          .turn = 0.0f,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::Quick3Recover,
+         .next = Action::Quick3Recover,
          .traits = kBlendsToReady},
         {.action = Action::Quick2Recover,
          .family = ActionFamily::Melee,
@@ -442,24 +506,26 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .pace = 0.0f,
+         .next = Action::SlowSwing,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::SlowSwing,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .pace = 0.0f,
          .blow = MeleeBlow::Heavy,
-         .recovery = Action::SlowRecover,
+         .next = Action::SlowRecover,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::SlowRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .pace = 0.0f,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
         {.action = Action::LowKick,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
          .blow = MeleeBlow::Kick,
-         .recovery = Action::LowKickRecover,
+         .next = Action::LowKickRecover,
          .traits = kBlendsToReady},
         {.action = Action::LowKickRecover,
          .family = ActionFamily::Melee,
@@ -469,109 +535,119 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::LowRecover,
+         .next = Action::LowRecover,
          .traits = kBlendsToReady},
         {.action = Action::Low2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::LowRecover,
+         .next = Action::LowRecover,
          .traits = kBlendsToReady},
         {.action = Action::LowRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Right,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::RightRecover,
+         .next = Action::RightRecover,
          .traits = kBlendsToReady},
         {.action = Action::Right2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::Right2Recover,
+         .next = Action::Right2Recover,
          .traits = kBlendsToReady},
         {.action = Action::RightRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Right2Recover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Left,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::LeftRecover,
+         .next = Action::LeftRecover,
          .traits = kBlendsToReady},
         {.action = Action::Left2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::Left2Recover,
+         .next = Action::Left2Recover,
          .traits = kBlendsToReady},
         {.action = Action::LeftRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Left2Recover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Turn,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::TurnRecover,
+         .next = Action::TurnRecover,
          .traits = kBlendsToReady},
         {.action = Action::Turn2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::Turn2Recover,
+         .next = Action::Turn2Recover,
          .traits = kBlendsToReady},
         {.action = Action::TurnRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Turn2Recover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::TurnLeft,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::TurnLeftRecover,
+         .next = Action::TurnLeftRecover,
          .traits = kBlendsToReady},
         {.action = Action::TurnLeft2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::TurnLeft2Recover,
+         .next = Action::TurnLeft2Recover,
          .traits = kBlendsToReady},
         {.action = Action::TurnLeftRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::TurnLeft2Recover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Spin,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Spin,
          .pace = kSpinPace,
          .blow = MeleeBlow::Plain,
-         .recovery = Action::SpinRecover,
+         .next = Action::SpinRecover,
          .traits = kBlendsToReady},
         {.action = Action::SpinRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Spin,
          .pace = kSpinPace,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kKeepsPress},
         {.action = Action::Step1,
          .family = ActionFamily::Melee,
@@ -579,7 +655,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = kStepTurn,
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
-         .recovery = Action::Step3Recover,
+         .next = Action::Step3Recover,
          .traits = kBlendsToReady},
         {.action = Action::Step2,
          .family = ActionFamily::Melee,
@@ -587,7 +663,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = kStepTurn,
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
-         .recovery = Action::Step2Recover,
+         .next = Action::Step2Recover,
          .traits = kBlendsToReady},
         {.action = Action::Step3,
          .family = ActionFamily::Melee,
@@ -595,7 +671,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = kStepTurn,
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
-         .recovery = Action::Step3Recover,
+         .next = Action::Step3Recover,
          .traits = kBlendsToReady},
         {.action = Action::Step2Recover,
          .family = ActionFamily::Melee,
@@ -615,7 +691,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = kStepTurn,
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
-         .recovery = Action::WalkStrikeRecover,
+         .next = Action::WalkStrikeRecover,
          .traits = kBlendsToReady},
         {.action = Action::WalkStrikeRecover,
          .family = ActionFamily::Melee,
@@ -628,37 +704,40 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Slow,
          .motion = MotionRule::PowerClose,
          .blow = MeleeBlow::Power,
-         .recovery = Action::PowerCloseRecover,
+         .next = Action::PowerCloseRecover,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::PowerCloseRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .motion = MotionRule::PowerClose,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::PowerMed,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .motion = MotionRule::PowerMed,
          .blow = MeleeBlow::Power,
-         .recovery = Action::PowerMedRecover,
+         .next = Action::PowerMedRecover,
          .traits = kBlendsToReady | kAutoMelee},
         // The middle power swing recovers by the close one's rule.
         {.action = Action::PowerMedRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .motion = MotionRule::PowerClose,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::PowerLow,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
          .pace = kPowerLowPace,
          .blow = MeleeBlow::Power,
-         .recovery = Action::PowerLowRecover,
+         .next = Action::PowerLowRecover,
          .traits = kBlendsToReady},
         {.action = Action::PowerLowRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
          .pace = kPowerLowPace,
+         .cut = Cut::WhenDone,
          .traits = kBlendsToReady},
         {.action = Action::SpecialShotRepeat,
          .family = ActionFamily::SpecialShot,
@@ -667,7 +746,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::Hammer,
          .family = ActionFamily::Item,
          .attackType = AttackType::Special,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .next = Action::HammerRecover},
         {.action = Action::HammerRecover,
          .family = ActionFamily::Item,
          .attackType = AttackType::Special,
@@ -675,7 +755,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::Breathe,
          .family = ActionFamily::Item,
          .attackType = AttackType::Special,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .next = Action::BreatheRecover},
         {.action = Action::BreatheRecover,
          .family = ActionFamily::Item,
          .attackType = AttackType::Special,
@@ -683,7 +764,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::FireLeft,
          .family = ActionFamily::Item,
          .attackType = AttackType::StrongThrow,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .next = Action::FireLeftRecover},
         {.action = Action::FireLeftRecover,
          .family = ActionFamily::Item,
          .attackType = AttackType::StrongThrow,
@@ -691,7 +773,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::FireRight,
          .family = ActionFamily::Item,
          .attackType = AttackType::StrongThrow,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .next = Action::FireRightRecover},
         {.action = Action::FireRightRecover,
          .family = ActionFamily::Item,
          .attackType = AttackType::StrongThrow,
@@ -719,9 +802,11 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .family = ActionFamily::DeathGrab,
          .pace = 0.0f,
          .traits = kBlendsToReady},
+        // Flung up, it gets up as from a fall onto its back (action.c 1270).
         {.action = Action::Whirled,
          .family = ActionFamily::Floored,
          .pace = 0.0f,
+         .next = Action::GetUpBack,
          .traits = kKeepsPress},
         {.action = Action::Pushed,
          .family = ActionFamily::Pushed,
@@ -813,6 +898,24 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         }(),
         "each action's row sits at its own index");
     static_assert(kActions.back().action == Action::ComboJes, "the last row is the last action");
+    static_assert(
+        [] {
+            for (const ActionInfo& row : kActions) {
+                if (row.foot == Foot::None) {
+                    if (row.otherHalf != Action::Ready) {
+                        return false;
+                    }
+                    continue;
+                }
+                const ActionInfo& other = kActions[index(row.otherHalf)];
+                if (other.otherHalf != row.action || other.foot == Foot::None ||
+                    other.foot == row.foot) {
+                    return false;
+                }
+            }
+            return true;
+        }(),
+        "each half cycle's other half pairs back to it on the other foot");
     static_assert(
         std::ranges::none_of(kSequenceNames, [](std::string_view name) { return name.empty(); }),
         "every action names its sequence");
@@ -1213,20 +1316,25 @@ PlayerAnimator::Action PlayerAnimator::comboThrownActionOf(s32 grabberClass) {
 }
 
 PlayerAnimator::Action PlayerAnimator::strafeStep(StrafeWay way, bool shooting) {
-    const usize base = index(shooting ? Action::StrafeShootForward1 : Action::StrafeForward1);
-    const usize steps = way == StrafeWay::None ? 0 : static_cast<usize>(way) - 1;
-    return static_cast<Action>(base + steps * 2);
+    // The first half of each way from Forward, in StrafeWay's order: walking, then shooting.
+    static constexpr std::array<std::array<Action, 4>, 2> kFirstHalves{{
+        {Action::StrafeForward1, Action::StrafeBack1, Action::StrafeLeft1, Action::StrafeRight1},
+        {Action::StrafeShootForward1, Action::StrafeShootBack1, Action::StrafeShootLeft1,
+         Action::StrafeShootRight1},
+    }};
+    const auto& halves = kFirstHalves[shooting ? 1 : 0];
+    // No way at all steps forward.
+    const usize column = way == StrafeWay::None ? 0 : static_cast<usize>(way) - 1;
+    return column < halves.size() ? halves[column] : halves[0];
 }
 
 PlayerAnimator::Action PlayerAnimator::firstHalfOf(Action step) {
-    const usize base = index(Action::StrafeForward1);
-    return static_cast<Action>(base + (index(step) - base) / 2 * 2);
+    const ActionInfo& row = info(step);
+    return row.foot == Foot::Second ? row.otherHalf : step;
 }
 
 PlayerAnimator::Action PlayerAnimator::otherHalfOf(Action step) {
-    const usize base = index(Action::StrafeForward1);
-    const usize offset = index(step) - base;
-    return static_cast<Action>(base + (offset % 2 == 0 ? offset + 1 : offset - 1));
+    return info(step).otherHalf;
 }
 
 PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
@@ -1651,27 +1759,6 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
             d.cut = Cut::WhenDoneIfDifferent;
         }
         break;
-    case Action::Walk1:
-        if (requested == Action::Walk1) {
-            d.action = Action::Walk2;
-        }
-        break;
-    case Action::Walk2:
-        if (requested == Action::Walk1) {
-            d.action = Action::Walk1;
-        }
-        break;
-    case Action::Run1:
-        if (requested == Action::Run1) {
-            d.action = Action::Run2;
-        }
-        break;
-    case Action::Run2:
-        if (requested == Action::Run1) {
-            d.action = Action::Run1;
-        }
-        break;
-    case Action::Start: break;
     case Action::Quick1:
     case Action::Quick2:
     case Action::Quick3:
@@ -1706,19 +1793,6 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
             d.cut = Cut::WhenDone;
         }
         break;
-    case Action::SlowStart: d.action = Action::SlowSwing; break;
-    case Action::SlowSwing:
-    case Action::Right:
-    case Action::Right2:
-    case Action::Left:
-    case Action::Left2:
-    case Action::Turn:
-    case Action::Turn2:
-    case Action::TurnLeft:
-    case Action::TurnLeft2:
-    case Action::PowerClose:
-    case Action::PowerMed:
-    case Action::PowerLow: d.action = info(m_current).recovery; break;
     case Action::Low1:
     case Action::Low2:
         d.action = Action::LowRecover;
@@ -1726,20 +1800,6 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
             d.action = m_current == Action::Low1 ? Action::Low2 : Action::Low1;
         }
         break;
-    case Action::LowRecover:
-    case Action::SlowRecover:
-    case Action::RightRecover:
-    case Action::Right2Recover:
-    case Action::LeftRecover:
-    case Action::Left2Recover:
-    case Action::TurnRecover:
-    case Action::Turn2Recover:
-    case Action::TurnLeftRecover:
-    case Action::TurnLeft2Recover:
-    case Action::SpinRecover:
-    case Action::PowerCloseRecover:
-    case Action::PowerMedRecover:
-    case Action::PowerLowRecover: d.cut = Cut::WhenDone; break;
     case Action::Throw:
     case Action::ThrowMoving:
         // A close attack or moving shot takes over the wind-up at its current frame
@@ -1754,44 +1814,11 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
         d.cut = m_shotFrame >= kReleaseFrame ? Cut::IfDifferent : Cut::WhenDoneIfDifferent;
         d.shotBoundary = true;
         break;
-    case Action::ThrowRelease:
-        d.action = Action::ThrowRecover;
-        d.shotBoundary = true;
-        break;
-    case Action::ThrowMovingRelease:
-        d.action = Action::ThrowMovingRecover;
-        d.shotBoundary = true;
-        break;
-    case Action::ThrowRecover:
-    case Action::ThrowMovingRecover:
-        d.shotBoundary = true;
-        break; // whatever is asked next, once recovered
-    case Action::UsePotion: d.action = Action::UsePotionRelease; break;
-    case Action::ThrowPotion: d.action = Action::ThrowPotionRelease; break;
-    case Action::UsePotionRelease:
-    case Action::ThrowPotionRelease:
-    case Action::Death:
-    case Action::HitReact:
-    case Action::SpikeHit:
-    case Action::Stun:
-    case Action::WebReact:
-    case Action::TurboStrong:
-    case Action::TurboFull:
-    case Action::Shove:
-    case Action::DefendLower:
-    case Action::StrongThrowRecover: break; // whatever is asked next, once let go
-    case Action::DefendRaise:
-        // DoPlayerAction 800AC2A8: a press plays DEFEND1 -> DEFEND2 -> DEFENDR.
-        // Both transitions use mode 1, independent of the subsequent input.
-        d.action = Action::Defend;
-        d.cut = Cut::WhenDone;
-        break;
     case Action::Defend:
+        // DoPlayerAction 800AC2A8: a press plays DEFEND1 -> DEFEND2 -> DEFENDR, both
+        // transitions in mode 1 whatever is asked next (the raising's by its row).
         d.action = playable(Action::DefendLower) ? Action::DefendLower : Action::Ready;
         d.cut = Cut::WhenDone;
-        break;
-    case Action::StrongThrow:
-        d.action = Action::StrongThrowRecover; // the weapon leaves as the wind-up ends
         break;
     case Action::SpecialShot:
     case Action::SpecialShotRepeat:
@@ -1801,21 +1828,6 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
                 : Action::SpecialShotRecover;
         d.cut = Cut::WhenDone;
         break;
-    case Action::SpecialShotRecover: break;
-    case Action::Hammer: d.action = Action::HammerRecover; break;
-    case Action::Breathe: d.action = Action::BreatheRecover; break;
-    case Action::FireLeft: d.action = Action::FireLeftRecover; break;
-    case Action::FireRight: d.action = Action::FireRightRecover; break;
-    case Action::HammerRecover:
-    case Action::BreatheRecover:
-    case Action::FireLeftRecover:
-    case Action::FireRightRecover: break;
-    case Action::FallBack:
-    case Action::Whirled: d.action = Action::GetUpBack; break; // action.c 1270
-    case Action::FallForward: d.action = Action::GetUpForward; break;
-    case Action::GetUpBack:
-    case Action::GetUpForward:
-    case Action::Pick: break; // plays through, then whatever is asked
     case Action::ShieldReady:
         d.repeat = requested == Action::ShieldReady;
         d.cut = Cut::IfDifferent;
@@ -1840,7 +1852,6 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
             d.cut = Cut::IfDifferent;
         }
         break;
-    case Action::DeathGrabRelease: break;
     case Action::Gag:
         // Looped while asked for; let go of, it ends its cycle, and past its first frames
         // anything else cuts in (P_DEATH_REACT).
@@ -1881,31 +1892,28 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
             d.cut = Cut::IfDifferent;
         }
         break;
-    case Action::ComboAct3:
-    case Action::ComboWar1:
-    case Action::ComboWar3:
-    case Action::ComboVal:
-    case Action::ComboWiz:
-    case Action::ComboArc:
-    case Action::ComboDwf1:
-    case Action::ComboDwf3:
-    case Action::ComboKni:
-    case Action::ComboSor:
-    case Action::ComboJes: break; // plays through and holds; whatever is asked follows
-    default:
-        // A strafing step gives way to its other half while the same way is kept.
-        if (strafing() && requested == firstHalfOf(m_current)) {
-            d.action = otherHalfOf(m_current);
+    default: {
+        // The rest give way by their rows: to the action of their own, else to whatever is
+        // asked, by the row's cut; a half cycle gives way to its other half while the same
+        // way is kept.
+        const ActionInfo& row = info(m_current);
+        if (row.next != Action::Ready) {
+            d.action = row.next;
         }
-        d.shotBoundary = info(m_current).family == ActionFamily::StrafeShoot;
+        d.cut = row.cut;
+        d.shotBoundary = (row.traits & action_trait::kShotBoundary) != 0;
+        if (row.foot != Foot::None && requested == firstHalfOf(m_current)) {
+            d.action = row.otherHalf;
+        }
         // AnimAction's walking-strafe cases use mode 2 for an attack: it cuts in
         // immediately. Waiting for the footstep's end loses short button presses.
         // Shooting strafes still finish each half before releasing another weapon.
-        if (info(m_current).family == ActionFamily::StrafeWalk &&
+        if (row.family == ActionFamily::StrafeWalk &&
             info(requested).family == ActionFamily::StrafeShoot) {
             d.cut = Cut::IfDifferent;
         }
         break;
+    }
     }
     return d;
 }
@@ -2006,7 +2014,7 @@ PlayerAnimator::Action PlayerAnimator::chainAfter(Action swing) const {
     if (asked && m_melee.range == MeleeRange::Swing) {
         return second ? Action::Quick3 : Action::Quick2;
     }
-    return info(swing).recovery;
+    return info(swing).next;
 }
 
 /** A swing turned the way its target lies, cut in from a walk, or made low at something
@@ -2135,11 +2143,10 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         m_stillTicks = 0;
         m_fidgetTicks = 0;
     }
-    // A walk or run half cycle giving way is a foot coming down.
-    if (m_current == Action::Walk1 || m_current == Action::Run1) {
-        m_footfall = Foot::First;
-    } else if (m_current == Action::Walk2 || m_current == Action::Run2) {
-        m_footfall = Foot::Second;
+    // A walk, run or strafing half cycle giving way is a foot coming down: a strafing step
+    // sounds like a walk's.
+    if (const Foot foot = info(m_current).foot; foot != Foot::None) {
+        m_footfall = foot;
     }
     // Both ordinary releases and strafing half-cycles let fly when they give way,
     // including the last moving shot when the strafe modifier is released.
@@ -2198,11 +2205,6 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         decision.action != Action::StrongThrowRecover && decision.action != Action::SpecialShot &&
         decision.action != Action::SpecialShotRecover) {
         m_legendAsked = false; // the gesture is over
-    }
-    // A strafing step sounds like a walk's.
-    if (strafing()) {
-        const bool first = (index(m_current) - index(Action::StrafeForward1)) % 2 == 0;
-        m_footfall = first ? Foot::First : Foot::Second;
     }
     if (decision.action == Action::UsePotion || decision.action == Action::ThrowPotion) {
         m_potionLatch = true;
