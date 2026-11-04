@@ -1,6 +1,15 @@
 #pragma once
 
+#include <optional>
+#include <span>
+#include <vector>
+
+#include "engine/core/Types.h"
+
 #include "game/netplay/MatchSession.h"
+#include "game/rollback/InputCommand.h"
+#include "game/rollback/RollbackInputs.h"
+#include "game/rollback/SessionInputs.h"
 
 namespace gdl::test {
 
@@ -51,6 +60,23 @@ public:
     bool sample(std::span<const game::InputCommand> commands) {
         return running() && m_inputs.sample(commands) && publish();
     }
+    /** Samples one frame for the bound session's local members: byLocalMember[k] is the k-th
+     * seat this peer owns, in seat order. False when the session refuses it or none is bound. */
+    bool sampleLocal(const game::SessionInputs::Frame& byLocalMember) {
+        if (m_session == nullptr) {
+            return false;
+        }
+        std::vector<game::InputCommand> commands;
+        const auto& context = m_session->context();
+        for (usize seat = 0; seat < context.owners.size(); ++seat) {
+            if (context.owners[seat] == m_session->localPeer()) {
+                commands.push_back(game::SessionInputs::command(
+                    byLocalMember[commands.size()], context.epoch, m_inputs.sampleTick(),
+                    context.grants[seat], static_cast<u8>(seat)));
+            }
+        }
+        return sample(commands);
+    }
     bool publish() {
         return running() &&
                m_session->publishNativeInputs(m_inputs.redundantInputs(), m_inputs.tick());
@@ -82,6 +108,18 @@ public:
             m_lastFrame = frame;
         }
         return frame;
+    }
+    /** Advances one play tick and returns the frame it played, if any. */
+    std::optional<game::SessionInputs::Frame> advancePlay() {
+        const auto frame = advance();
+        if (!frame) {
+            return std::nullopt;
+        }
+        game::SessionInputs::Frame result{};
+        for (usize seat = 0; seat < result.size(); ++seat) {
+            result[seat] = game::SessionInputs::playInput(frame->commands[seat]);
+        }
+        return result;
     }
     bool complete() {
         return publish() && m_session->confirmNativeTick(m_epoch, m_inputs.confirmedTick());

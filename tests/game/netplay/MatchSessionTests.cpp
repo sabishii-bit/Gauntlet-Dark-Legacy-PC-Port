@@ -67,28 +67,9 @@ struct Room : test::MatchSessionRoom {
         return session.loaded();
     }
     bool sample(u8 peer, const SessionInputs::Frame& local = {}) {
-        std::vector<InputCommand> commands;
-        const auto& context = sessions[peer].context();
-        for (usize seat = 0; seat < owners.size(); ++seat) {
-            if (owners[seat] == peer) {
-                commands.push_back(SessionInputs::command(
-                    local[commands.size()], context.epoch, inputs[peer].sampleTick(),
-                    context.grants[seat], static_cast<u8>(seat)));
-            }
-        }
-        return inputs[peer].sample(commands);
+        return inputs[peer].sampleLocal(local);
     }
-    std::optional<SessionInputs::Frame> advance(u8 peer) {
-        const auto frame = inputs[peer].advance();
-        if (!frame) {
-            return std::nullopt;
-        }
-        SessionInputs::Frame result;
-        for (usize seat = 0; seat < result.size(); ++seat) {
-            result[seat] = SessionInputs::playInput(frame->commands[seat]);
-        }
-        return result;
-    }
+    std::optional<SessionInputs::Frame> advance(u8 peer) { return inputs[peer].advancePlay(); }
     MatchParty party() const { return MatchSessionRoom::party("TEST"); }
     /** What a packet delivered at `now` meets: its receiver takes it or finds it stale, then
      * acknowledges the terminal boundary it waits on. */

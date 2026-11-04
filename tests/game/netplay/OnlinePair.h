@@ -226,29 +226,10 @@ struct OnlinePair {
         return &session == &host ? hostInputs : guestInputs;
     }
     bool sample(game::MatchSession& session, const game::SessionInputs::Frame& local) {
-        auto& timeline = inputs(session);
-        std::vector<game::InputCommand> commands;
-        const auto& context = session.context();
-        // NOLINTNEXTLINE(bugprone-too-small-loop-variable): seats and peers number at most five
-        for (u8 seat = 0; seat < static_cast<u8>(context.owners.size()); ++seat) {
-            if (context.owners[seat] == session.localPeer()) {
-                commands.push_back(game::SessionInputs::command(
-                    local[commands.size()], context.epoch, timeline.sampleTick(),
-                    context.grants[seat], seat));
-            }
-        }
-        return timeline.sample(commands);
+        return inputs(session).sampleLocal(local);
     }
     std::optional<game::SessionInputs::Frame> advance(game::MatchSession& session) {
-        const auto command = inputs(session).advance();
-        if (!command) {
-            return std::nullopt;
-        }
-        game::SessionInputs::Frame result{};
-        for (usize seat = 0; seat < result.size(); ++seat) {
-            result[seat] = game::SessionInputs::playInput(command->commands[seat]);
-        }
-        return result;
+        return inputs(session).advancePlay();
     }
 };
 } // namespace gdl::test
