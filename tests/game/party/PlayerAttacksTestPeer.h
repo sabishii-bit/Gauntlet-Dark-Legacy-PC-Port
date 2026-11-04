@@ -36,6 +36,18 @@ struct PlayerAttacksTestPeer {
                                                     f32 reach, const Vec3& facing) {
         return PlayerAttacks::meleePlayer(actor, targets, reach, facing);
     }
+    static bool isCreature(s32 id) { return PlayerAttacks::isCreature(id); }
+    static bool strikeSwitch(PlayerAttacks& attacks, s32 id, u32 flags) {
+        return attacks.strikeSwitch(id, flags);
+    }
+    static bool immuneToMagic(const PlayerAttacks& attacks, s32 id,
+                              const PlayerAttacks::Targets& targets) {
+        return attacks.immuneToMagic(id, targets);
+    }
+    /** Whether a swing reckons `body` low enough for its low blow, by its family and height. */
+    static bool meleeLow(const PlayerActor& actor, const MissileTarget& body) {
+        return PlayerAttacks::meleeCandidate(actor, body).low;
+    }
     /** The thrown weapons' flight over `seconds`, against the whole roster a flight meets. */
     static void flights(PlayerAttacks& attacks, f32 seconds, std::span<PlayerRuntime> players,
                         const PlayerAttacks::Targets& targets) {

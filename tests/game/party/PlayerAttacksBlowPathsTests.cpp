@@ -876,4 +876,45 @@ TEST_CASE("every blow path strikes an imported level's fixture by its own id, an
     f.close();
 }
 
+TEST_CASE("the attacks' rules over target ids answer each family's first and last ids as they "
+          "always have",
+          "[game][player-attacks][blow-paths][target-id]") {
+    // Over no level: no barrel stands and no imported level is open. A body one unit tall is
+    // low enough for any family a swing reckons low.
+    struct IdRules {
+        s32 id;
+        bool creature;    ///< isCreature
+        bool switchTakes; ///< strikeSwitch, for a gas blow that sets nothing off
+        bool immune;      ///< immuneToMagic
+        bool low;         ///< a swing's low reckoning
+    };
+    constexpr std::array<IdRules, 29> kRules{{
+        {-1, false, false, false, true},   {0, false, false, true, true},
+        {999, false, false, true, true},   {1000, true, false, false, true},
+        {1999, true, false, false, true},  {2000, false, false, false, true},
+        {2999, false, false, false, true}, {3000, true, false, false, false},
+        {3999, true, false, false, false}, {4000, true, false, false, false},
+        {4999, true, false, false, false}, {5000, false, false, true, true},
+        {5999, false, false, true, true},  {6000, false, false, true, true},
+        {6999, false, false, true, true},  {7000, false, true, true, true},
+        {7499, false, true, true, true},   {7500, false, true, true, true},
+        {7999, false, true, true, true},   {8000, false, true, true, true},
+        {8999, false, true, true, true},   {9000, false, true, true, true},
+        {9499, false, true, true, true},   {9500, false, true, true, true},
+        {9999, false, true, true, true},   {10000, false, true, true, false},
+        {19999, false, true, true, false}, {20000, false, false, true, true},
+        {52767, false, false, true, true},
+    }};
+    test::PlayerAttacksFixture f;
+    for (const IdRules& rules : kRules) {
+        CAPTURE(rules.id);
+        const MissileTarget body{rules.id, Vec3{0, 0, 2}, 1, 1};
+        CHECK(PlayerAttacksTestPeer::isCreature(rules.id) == rules.creature);
+        CHECK(PlayerAttacksTestPeer::strikeSwitch(f.attacks, rules.id, damage::kGas) ==
+              rules.switchTakes);
+        CHECK(PlayerAttacksTestPeer::immuneToMagic(f.attacks, rules.id, f.targets) == rules.immune);
+        CHECK(PlayerAttacksTestPeer::meleeLow(f.players[0].actor, body) == rules.low);
+    }
+}
+
 } // namespace

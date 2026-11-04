@@ -271,10 +271,12 @@ private:
     /** Player melee is a forward-cone fallback, never displacing an enemy or item. */
     static std::optional<MissileTarget>
     meleePlayer(const PlayerActor& actor, const Targets& targets, f32 reach, const Vec3& facing);
-    /** Sets off the switch a strike hit, unless it was only gas; true when it was one. */
+    /** Sets off the switch a strike hit, unless it was only gas; true when it was one. The
+     * switches are numbered on past their own span, up to the players' end. */
     bool strikeSwitch(s32 id, u32 flags);
-    /** What magic leaves alone: every barrel but one that holds something, the walls, the
-     * rocks and the switches. */
+    /** What magic leaves alone: every barrel but one that holds something, everything from the
+     * rocks to the players (the walls, switches, inert stops, bottles, chests and statues), and
+     * an imported fixture that cannot be harmed or shrugs magic off. */
     bool immuneToMagic(s32 id, const Targets& targets) const;
     void shootPotion(const MissileImpact& impact, std::span<PlayerRuntime> players,
                      const Targets& targets);
@@ -332,18 +334,6 @@ private:
     static bool isCreature(s32 id);
     /** Whether a creature target is still up: a shield's kill is told by it going down. */
     static bool creatureStanding(const Targets& targets, s32 id);
-    static constexpr s32 kEnemyTargetBase = 1000;
-    static constexpr s32 kGeneratorTargetBase = 2000;
-    static constexpr s32 kCritterTargetBase = 3000;
-    static constexpr s32 kBossTargetBase = 4000;
-    static constexpr s32 kSafeRockTargetBase = 5000;
-    static constexpr s32 kWallTargetBase = 6000;
-    static constexpr s32 kSwitchTargetBase = 7000; ///< the triggers that are shot
-    static constexpr s32 kItemStopBase = 7500;     ///< chests, gates: stop a weapon unharmed
-    static constexpr s32 kChestTargetBase = 9000;  ///< chests, which only magic reaches
-    static constexpr s32 kPotionTargetBase = 8000; ///< the bottles lying about
-    static constexpr s32 kStatueTargetBase = 9500; ///< the statues a blow wakes
-    static constexpr s32 kPlayerTargetBase = 10000;
     static constexpr f32 kShotMagicShare = 0.8f; ///< of a shot bottle's magic (lbl_80346310)
     static constexpr f32 kPotionDamage = 40.0f;  ///< start_magic's
 

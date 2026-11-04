@@ -6,6 +6,7 @@
 #include "game/characters/Progression.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/level/ImportedLevel.h"
+#include "game/party/AttackTargetId.h"
 #include "game/party/PlayerAttacks.h"
 
 namespace gdl::game {
@@ -136,7 +137,7 @@ void PlayerAttacks::updateItems(f32 seconds, std::span<PlayerRuntime> players,
         const Mat4 parent = attachmentOf(player, area.attack.head);
         m_resources->effects.placeAt(area.effect, parent);
         for (const auto& target : strikeTargets(targets)) {
-            const auto kind = target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase
+            const auto kind = AttackTargetId::fromId(target.id).family() == TargetFamily::Enemy
                                   ? ItemAttack::TargetKind::Swarm
                                   : ItemAttack::TargetKind::Item;
             if (std::ranges::find(area.hit, target.id) == area.hit.end() &&
@@ -160,31 +161,36 @@ void PlayerAttacks::updateItems(f32 seconds, std::span<PlayerRuntime> players,
 void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 flags,
                                  const PlayerActor& owner, std::span<PlayerRuntime> players,
                                  const Targets& targets, BlowSource source) {
-    if (target.id >= kImportedTargetBase) {
-        if (m_resources && m_resources->world.imported()) {
-            m_resources->world.imported()->strike(target.id - kImportedTargetBase, damage, flags,
-                                                  owner.player());
-        }
-        return;
-    }
     // ProcessEffects' area query (CritterExpCollide) returns a horizontal unit
     // vector, not distance from the owner; that input is accumulated verbatim.
     const Vec3 away = target.base - owner.position();
     const f32 across = portable::hypot(away.x, away.z);
     const Vec3 direction = across > 0 ? Vec3{away.x, 0.0f, away.z} / across : Vec3{0};
-    if (target.id >= kStatueTargetBase) {
-        targets.opponents.wakeStatue(static_cast<usize>(target.id - kStatueTargetBase));
-        return;
-    }
-    if (strikeSwitch(target.id, flags)) {
-        return;
-    }
-    if (target.id >= kWallTargetBase) {
-        targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), damage, flags);
-    } else if (target.id >= kSafeRockTargetBase) {
-        targets.fixtures.strikeSafeRock(static_cast<usize>(target.id - kSafeRockTargetBase),
-                                        damage);
-    } else if (target.id >= kBossTargetBase) {
+    const AttackTargetId struck = AttackTargetId::fromId(target.id);
+    switch (struck.family()) {
+    case TargetFamily::Imported:
+        if (m_resources && m_resources->world.imported()) {
+            m_resources->world.imported()->strike(struck.index(), damage, flags, owner.player());
+        }
+        break;
+    case TargetFamily::Statue:
+        targets.opponents.wakeStatue(static_cast<usize>(struck.index()));
+        break;
+    case TargetFamily::Switch:
+    case TargetFamily::ItemStop:
+    case TargetFamily::Potion:
+    case TargetFamily::Chest:
+        // An area blow is offered no stop, bottle or chest; their ids go to strikeSwitch, which
+        // numbers the switches on past their span.
+        strikeSwitch(target.id, flags);
+        break;
+    case TargetFamily::Wall:
+        targets.fixtures.strikeWall(static_cast<usize>(struck.index()), damage, flags);
+        break;
+    case TargetFamily::SafeRock:
+        targets.fixtures.strikeSafeRock(static_cast<usize>(struck.index()), damage);
+        break;
+    case TargetFamily::Boss: {
         EnemyHit hit;
         hit.damage = damage;
         hit.flags = flags;
@@ -194,32 +200,42 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
         hit.where = target.base;
         const Bosses& bosses = targets.opponents.bosses();
         const BossView before = bosses.view();
-        targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
+        targets.opponents.bosses().hurt(hit, struck.index());
         countBossBlow(targets, players, owner.player(), source, before, bosses);
-    } else if (target.id >= kCritterTargetBase) {
-        const s32 critter = target.id - kCritterTargetBase;
+        break;
+    }
+    case TargetFamily::Critter: {
+        const s32 critter = struck.index();
         const Critters& critters = targets.opponents.critters();
         const bool stood = critters.alive(critter) && !critters.dying(critter);
         targets.opponents.strikeCritter(critter, damage, flags, direction, owner.player(),
                                         target.base, false, players);
         countCritterBlow(targets, players, owner.player(), source, critters, critter, stood);
-    } else if (target.id >= kGeneratorTargetBase) {
+        break;
+    }
+    case TargetFamily::Generator:
         if (blowRulesOf(targets).generatorTakes(source)) {
-            const s32 hut = target.id - kGeneratorTargetBase;
+            const s32 hut = struck.index();
             const Generators& huts = targets.opponents.generators();
             const bool stood = huts.standing(hut);
             targets.opponents.strikeGenerator(hut, damage, owner.player(), players);
             countGeneratorBlow(targets, players, owner.player(), source, huts, hut, stood);
         }
-    } else if (target.id >= kEnemyTargetBase) {
-        const s32 enemy = target.id - kEnemyTargetBase;
+        break;
+    case TargetFamily::Enemy: {
+        const s32 enemy = struck.index();
         const Enemies& enemies = targets.opponents.enemies();
         const bool stood = enemies.alive(enemy);
         targets.opponents.strikeEnemy(enemy, damage, flags, direction, owner.player(), players);
         countEnemyBlow(targets, players, owner.player(), source, enemies, enemy, stood);
-    } else {
-        targets.fixtures.strikeBarrel(static_cast<usize>(target.id), damage, owner.player(),
+        break;
+    }
+    case TargetFamily::Barrel:
+        targets.fixtures.strikeBarrel(static_cast<usize>(struck.index()), damage, owner.player(),
                                       players, targets.fixtureHost);
+        break;
+    case TargetFamily::Player: // the area rosters hold no player
+    case TargetFamily::None: break;
     }
 }
 } // namespace gdl::game

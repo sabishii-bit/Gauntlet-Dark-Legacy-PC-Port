@@ -28,6 +28,8 @@
 #include "game/level/BossKinds.h"
 #include "game/level/Chests.h"
 #include "game/level/ImportedLevel.h"
+#include "game/level/ImportedTargets.h"
+#include "game/party/AttackTargetId.h"
 #include "game/party/PartyDamage.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/party/PotionEmission.h"
@@ -264,7 +266,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
     std::vector<usize>& rammed = players[index].rammed;
     const auto& walls = m_resources->world.walls();
     for (usize i = 0; i < walls.size(); ++i) {
-        const usize key = static_cast<usize>(kWallTargetBase) + i;
+        const usize key = AttackTargetId::of(TargetFamily::Wall, static_cast<s32>(i)).key();
         if (walls.standing(i) && std::ranges::find(rammed, key) == rammed.end() &&
             walls.target(i, 0).touches(actor.followPoint(), actor.radius() + kRamReach)) {
             rammed.push_back(key);
@@ -272,13 +274,14 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         }
     }
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
+        const usize key = AttackTargetId::of(TargetFamily::Barrel, static_cast<s32>(barrel)).key();
         if (!targets.fixtures.barrels().standing(barrel) ||
-            std::ranges::find(rammed, barrel) != rammed.end() ||
+            std::ranges::find(rammed, key) != rammed.end() ||
             !targets.fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(),
                                                                      actor.radius(), kRamReach)) {
             continue;
         }
-        rammed.push_back(barrel);
+        rammed.push_back(key);
         targets.fixtures.strikeBarrel(barrel, kRamDamage, actor.player(), players,
                                       targets.fixtureHost);
     }
@@ -287,20 +290,19 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
             if (!native.valid() || !native.damageable) {
                 continue;
             }
-            const auto key =
-                static_cast<usize>(kImportedTargetBase) + static_cast<usize>(native.id);
-            const MissileTarget body{static_cast<s32>(key), native.base, native.radius,
-                                     native.height, native.surface};
-            if (std::ranges::find(rammed, key) == rammed.end() &&
+            const AttackTargetId fixture = AttackTargetId::of(TargetFamily::Imported, native.id);
+            const MissileTarget body{fixture.id(), native.base, native.radius, native.height,
+                                     native.surface};
+            if (std::ranges::find(rammed, fixture.key()) == rammed.end() &&
                 body.touches(actor.followPoint(), actor.radius() + kRamReach)) {
-                rammed.push_back(key);
+                rammed.push_back(fixture.key());
                 imported->strike(native.id, kRamDamage, EnemyHit::kKnockDown, actor.player());
             }
         }
     }
     for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
         // Keep the shared per-charge hit ledger disjoint from barrel indices.
-        const usize key = rock + static_cast<usize>(kSafeRockTargetBase);
+        const usize key = AttackTargetId::of(TargetFamily::SafeRock, static_cast<s32>(rock)).key();
         if (targets.fixtures.safeRocks().standing(rock) &&
             std::ranges::find(rammed, key) == rammed.end() &&
             targets.fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(),
@@ -314,8 +316,8 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
     const f32 blow = PowerupEffects::of(actor.save().progress().inventory).grown() ? 2 * kChargeBlow
                                                                                    : kChargeBlow;
     const Vec3 facing = actor.facing();
-    const auto ram = [&](const MissileTarget& target, s32 base, const auto& strike) {
-        const usize key = static_cast<usize>(base) + static_cast<usize>(target.id);
+    const auto ram = [&](const MissileTarget& target, TargetFamily family, const auto& strike) {
+        const usize key = AttackTargetId::of(family, target.id).key();
         if (std::ranges::find(rammed, key) != rammed.end() ||
             !target.touches(actor.followPoint(), actor.radius() + kRamReach)) {
             return;
@@ -324,7 +326,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         strike(target);
     };
     for (const MissileTarget& target : targets.opponents.enemies().targets()) {
-        ram(target, kEnemyTargetBase, [&](const MissileTarget& hit) {
+        ram(target, TargetFamily::Enemy, [&](const MissileTarget& hit) {
             const Enemies& enemies = targets.opponents.enemies();
             const bool stood = enemies.alive(hit.id);
             targets.opponents.strikeEnemy(hit.id, blow, EnemyHit::kKnockDown, facing,
@@ -334,7 +336,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         });
     }
     for (const MissileTarget& target : targets.opponents.critters().targets()) {
-        ram(target, kCritterTargetBase, [&](const MissileTarget& hit) {
+        ram(target, TargetFamily::Critter, [&](const MissileTarget& hit) {
             const Critters& critters = targets.opponents.critters();
             const bool stood = critters.alive(hit.id) && !critters.dying(hit.id);
             targets.opponents.strikeCritter(hit.id, blow, EnemyHit::kKnockDown, facing,
@@ -396,7 +398,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
     for (usize i = 0; i < walls.size(); ++i) {
         if (walls.standing(i) &&
             walls.target(i, 0).touches(actor.followPoint(), actor.radius() + kRamReach)) {
-            once(static_cast<usize>(kWallTargetBase) + i, true,
+            once(AttackTargetId::of(TargetFamily::Wall, static_cast<s32>(i)).key(), true,
                  [&] { targets.fixtures.strikeWall(i, blow, EnemyHit::kKnockDown); });
         }
     }
@@ -404,10 +406,11 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
         if (targets.fixtures.barrels().standing(barrel) &&
             targets.fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(),
                                                                     actor.radius(), kRamReach)) {
-            once(barrel, true, [&] {
-                targets.fixtures.strikeBarrel(barrel, blow, actor.player(), players,
-                                              targets.fixtureHost);
-            });
+            once(AttackTargetId::of(TargetFamily::Barrel, static_cast<s32>(barrel)).key(), true,
+                 [&] {
+                     targets.fixtures.strikeBarrel(barrel, blow, actor.player(), players,
+                                                   targets.fixtureHost);
+                 });
         }
     }
     if (auto* imported = m_resources->world.imported()) {
@@ -415,10 +418,11 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
             if (!native.valid() || !native.damageable) {
                 continue;
             }
-            const s32 id = kImportedTargetBase + native.id;
-            const MissileTarget body{id, native.base, native.radius, native.height, native.surface};
+            const AttackTargetId fixture = AttackTargetId::of(TargetFamily::Imported, native.id);
+            const MissileTarget body{fixture.id(), native.base, native.radius, native.height,
+                                     native.surface};
             if (body.touches(actor.followPoint(), actor.radius() + kRamReach)) {
-                once(static_cast<usize>(id), true, [&] {
+                once(fixture.key(), true, [&] {
                     imported->strike(native.id, blow, EnemyHit::kKnockDown, actor.player());
                 });
             }
@@ -428,7 +432,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
         if (targets.fixtures.safeRocks().standing(rock) &&
             targets.fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(),
                                                                        actor.radius(), kRamReach)) {
-            once(rock + static_cast<usize>(kSafeRockTargetBase), true,
+            once(AttackTargetId::of(TargetFamily::SafeRock, static_cast<s32>(rock)).key(), true,
                  [&] { targets.fixtures.strikeSafeRock(rock, blow); });
         }
     }
@@ -437,7 +441,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
         const auto id = static_cast<s32>(g);
         if (generators.standing(id) &&
             generators.boxOf(id).touchedBy(actor.position(), actor.radius(), kRamReach)) {
-            once(static_cast<usize>(kGeneratorTargetBase) + g, true, [&] {
+            once(AttackTargetId::of(TargetFamily::Generator, id).key(), true, [&] {
                 if (blowRulesOf(targets).generatorTakes(BlowSource::Charge)) {
                     targets.opponents.strikeGenerator(id, blow, actor.player(), players);
                 }
@@ -456,7 +460,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
     const Vec3 facing = actor.facing();
     for (const MissileTarget& target : targets.opponents.enemies().targets()) {
         if (target.touches(actor.followPoint(), reach)) {
-            once(static_cast<usize>(kEnemyTargetBase) + static_cast<usize>(target.id), false, [&] {
+            once(AttackTargetId::of(TargetFamily::Enemy, target.id).key(), false, [&] {
                 const Enemies& enemies = targets.opponents.enemies();
                 const bool stood = enemies.alive(target.id);
                 targets.opponents.strikeEnemy(target.id, bodyBlow, EnemyHit::kKnockDown, facing,
@@ -468,7 +472,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
     }
     for (const MissileTarget& target : targets.opponents.critters().targets()) {
         if (target.touches(actor.followPoint(), reach)) {
-            once(static_cast<usize>(kCritterTargetBase) + static_cast<usize>(target.id), true, [&] {
+            once(AttackTargetId::of(TargetFamily::Critter, target.id).key(), true, [&] {
                 const Critters& critters = targets.opponents.critters();
                 const bool stood = critters.alive(target.id) && !critters.dying(target.id);
                 targets.opponents.strikeCritter(target.id, bodyBlow, EnemyHit::kKnockDown, facing,
@@ -858,7 +862,7 @@ std::vector<MissileTarget> PlayerAttacks::strikeContacts(const StrikeHit& hit,
     std::vector<MissileTarget> result;
     for (const auto& target : strikeTargets(targets)) {
         MissileTarget contactTarget = target;
-        if (!hit.swept && target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase) {
+        if (!hit.swept && AttackTargetId::fromId(target.id).family() == TargetFamily::Enemy) {
             // Stationary swarm contacts are planar; flying/node contacts retain height.
             contactTarget.base.y = hit.centre.y;
         }
@@ -996,8 +1000,9 @@ void PlayerAttacks::dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRunt
             contact->remaining = gap;
         }
         Vec3 effectPoint = target.base;
-        if (target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase) {
-            const s32 kind = targets.opponents.enemies().kindOf(target.id - kEnemyTargetBase);
+        if (const AttackTargetId struck = AttackTargetId::fromId(target.id);
+            struck.family() == TargetFamily::Enemy) {
+            const s32 kind = targets.opponents.enemies().kindOf(struck.index());
             if (kind >= 0 && kind < kEnemyKindCount) {
                 // ProcessEffects starts the impact at OBJGRP.attn_pos, not
                 // the collision cylinder's floor. Acid Raid's rain hangs
@@ -1112,7 +1117,8 @@ std::optional<s32> PlayerAttacks::deathContactSlot(usize index,
             continue;
         }
         const bool held =
-            runtime.deathHeld >= 0 && target.id == kEnemyTargetBase + runtime.deathHeld;
+            runtime.deathHeld >= 0 &&
+            target.id == AttackTargetId::of(TargetFamily::Enemy, runtime.deathHeld).id();
         // PlayerGetTarget retains an acquired enemy with a 3D dot of 0.5.
         // closest_enemy instead narrows its acquisition cone toward maximum
         // range and rejects enemies more than ten units above or below.
@@ -1131,10 +1137,10 @@ std::optional<s32> PlayerAttacks::deathContactSlot(usize index,
         }
     }
     const Enemies& enemies = targets.opponents.enemies();
-    if (!nearest || nearest->id < kEnemyTargetBase || nearest->id >= kGeneratorTargetBase) {
+    if (!nearest || AttackTargetId::fromId(nearest->id).family() != TargetFamily::Enemy) {
         return std::nullopt;
     }
-    const s32 slot = nearest->id - kEnemyTargetBase;
+    const s32 slot = AttackTargetId::fromId(nearest->id).index();
     if (enemies.kindOf(slot) != kDeathKind || !enemies.alive(slot) || enemies.dying(slot)) {
         return std::nullopt;
     }
@@ -1647,8 +1653,9 @@ std::vector<MissileTarget> PlayerAttacks::strikeTargets(const Targets& targets) 
             if (trigger.enabled && trigger.shootable) {
                 const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
                 const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
-                MissileTarget target{kSwitchTargetBase + static_cast<s32>(i), trigger.spot,
-                                     trigger.radius, trigger.height};
+                MissileTarget target{
+                    AttackTargetId::of(TargetFamily::Switch, static_cast<s32>(i)).id(),
+                    trigger.spot, trigger.radius, trigger.height};
                 target.acquisition = TargetAssist::itemAcquisition(
                     trigger.placement, info.collisionOffset, info.radius, info.height,
                     TargetAssist::kItemDistanceScale);
@@ -1663,40 +1670,68 @@ std::vector<MissileTarget> PlayerAttacks::strikeTargets(const Targets& targets) 
 std::vector<MissileTarget> PlayerAttacks::acquisitionTargets(const Targets& targets) const {
     std::vector<MissileTarget> reachable = strikeTargets(targets);
     std::erase_if(reachable, [](const MissileTarget& target) {
-        return (target.id >= kSafeRockTargetBase && target.id < kWallTargetBase) ||
-               (target.id >= kImportedTargetBase + kImportedArenaBase &&
-                target.id < kImportedTargetBase + kImportedSceneryBase);
+        const AttackTargetId cover = AttackTargetId::fromId(target.id);
+        return cover.family() == TargetFamily::SafeRock ||
+               (cover.family() == TargetFamily::Imported && cover.index() >= kImportedArenaBase &&
+                cover.index() < kImportedSceneryBase);
     });
     return reachable;
 }
 
 bool PlayerAttacks::immuneToMagic(s32 id, const Targets& targets) const {
-    if (id >= kImportedTargetBase) {
+    const AttackTargetId target = AttackTargetId::fromId(id);
+    switch (target.family()) {
+    case TargetFamily::Imported:
         if (m_resources && m_resources->world.imported()) {
             const auto native = m_resources->world.imported()->targets();
-            const auto target =
-                std::ranges::find(native, id - kImportedTargetBase, &ImportedTarget::id);
-            return target == native.end() || !target->damageable || target->magicImmune;
+            const auto fixture = std::ranges::find(native, target.index(), &ImportedTarget::id);
+            return fixture == native.end() || !fixture->damageable || fixture->magicImmune;
         }
         return true;
-    }
-    if (id >= kSafeRockTargetBase) {
-        return true; // rocks, walls and switches
-    }
-    if (id >= 0 && id < kEnemyTargetBase) {
-        const auto barrel = static_cast<usize>(id);
+    case TargetFamily::SafeRock:
+    case TargetFamily::Wall:
+    case TargetFamily::Switch:
+    case TargetFamily::ItemStop:
+    case TargetFamily::Potion:
+    case TargetFamily::Chest:
+    case TargetFamily::Statue:
+    case TargetFamily::Player: return true;
+    case TargetFamily::Barrel: {
+        const auto barrel = static_cast<usize>(target.index());
         return barrel >= targets.fixtures.barrels().size() ||
                targets.fixtures.barrels().barrel(barrel).kind != BreakableStrike::Kind::Holding;
+    }
+    case TargetFamily::Enemy:
+    case TargetFamily::Generator:
+    case TargetFamily::Critter:
+    case TargetFamily::Boss:
+    case TargetFamily::None: return false;
     }
     return false;
 }
 
 bool PlayerAttacks::strikeSwitch(s32 id, u32 flags) {
-    if (id < kSwitchTargetBase || id >= kImportedTargetBase) {
-        return false;
+    switch (AttackTargetId::fromId(id).family()) {
+    case TargetFamily::Switch:
+    case TargetFamily::ItemStop:
+    case TargetFamily::Potion:
+    case TargetFamily::Chest:
+    case TargetFamily::Statue:
+    case TargetFamily::Player: break;
+    case TargetFamily::Barrel:
+    case TargetFamily::Enemy:
+    case TargetFamily::Generator:
+    case TargetFamily::Critter:
+    case TargetFamily::Boss:
+    case TargetFamily::SafeRock:
+    case TargetFamily::Wall:
+    case TargetFamily::Imported:
+    case TargetFamily::None: return false;
     }
     if (m_resources && (flags & damage::kGas) == 0) {
-        m_resources->world.shootTrigger(static_cast<usize>(id - kSwitchTargetBase));
+        // Counted from the first switch's id, past the switches' own span too.
+        const s32 trigger = id - AttackTargetId::of(TargetFamily::Switch, 0).id();
+        m_resources->world.shootTrigger(static_cast<usize>(trigger));
     }
     return true;
 }
@@ -1707,7 +1742,8 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
         const auto& walls = m_resources->world.walls();
         for (usize i = 0; i < walls.size(); ++i) {
             if (walls.standing(i)) {
-                missileTargets.push_back(walls.target(i, kWallTargetBase + static_cast<s32>(i)));
+                missileTargets.push_back(walls.target(
+                    i, AttackTargetId::of(TargetFamily::Wall, static_cast<s32>(i)).id()));
             }
         }
         if (const auto* imported = m_resources->world.imported()) {
@@ -1715,8 +1751,8 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
                 if (!native.valid()) {
                     continue;
                 }
-                MissileTarget target{kImportedTargetBase + native.id, native.base, native.radius,
-                                     native.height, native.surface};
+                MissileTarget target{AttackTargetId::of(TargetFamily::Imported, native.id).id(),
+                                     native.base, native.radius, native.height, native.surface};
                 if (native.surface.empty()) {
                     target.acquisition = TargetAssist::itemAcquisition(
                         glm::translate(Mat4{1}, native.base), Vec3{0}, native.radius, native.height,
@@ -1729,39 +1765,40 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
     }
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (targets.fixtures.barrels().standing(barrel)) {
-            missileTargets.push_back(
-                targets.fixtures.barrels().target(barrel, static_cast<s32>(barrel)));
+            missileTargets.push_back(targets.fixtures.barrels().target(
+                barrel, AttackTargetId::of(TargetFamily::Barrel, static_cast<s32>(barrel)).id()));
         }
     }
     for (MissileTarget target : targets.opponents.enemies().targets()) {
-        target.id += kEnemyTargetBase;
+        target.id = AttackTargetId::of(TargetFamily::Enemy, target.id).id();
         missileTargets.push_back(target);
     }
     for (MissileTarget target : targets.opponents.critters().targets()) {
-        target.id += kCritterTargetBase;
+        target.id = AttackTargetId::of(TargetFamily::Critter, target.id).id();
         missileTargets.push_back(target);
     }
     for (MissileTarget target : targets.opponents.bosses().targets()) {
-        target.id += kBossTargetBase;
+        target.id = AttackTargetId::of(TargetFamily::Boss, target.id).id();
         missileTargets.push_back(target);
     }
     // A statue takes the blow that wakes it (fn_8005EE18 finds the placed enemies too).
     for (MissileTarget target : targets.opponents.statues().targets()) {
-        target.id += kStatueTargetBase;
+        target.id = AttackTargetId::of(TargetFamily::Statue, target.id).id();
         missileTargets.push_back(target);
     }
     for (usize g = 0; g < targets.opponents.generators().count(); ++g) {
         if (targets.opponents.generators().standing(static_cast<s32>(g))) {
             missileTargets.push_back(targets.opponents.generators().target(
-                static_cast<s32>(g), static_cast<s32>(g) + kGeneratorTargetBase));
+                static_cast<s32>(g),
+                AttackTargetId::of(TargetFamily::Generator, static_cast<s32>(g)).id()));
         }
     }
     for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
         if (targets.fixtures.safeRocks().standing(rock)) {
             const Obstacle& cover = targets.fixtures.safeRocks().rock(rock).obstacle;
-            missileTargets.push_back(MissileTarget{static_cast<s32>(rock) + kSafeRockTargetBase,
-                                                   cover.centre, cover.cylinderRadius,
-                                                   cover.height});
+            missileTargets.push_back(MissileTarget{
+                AttackTargetId::of(TargetFamily::SafeRock, static_cast<s32>(rock)).id(),
+                cover.centre, cover.cylinderRadius, cover.height});
         }
     }
     return missileTargets;
@@ -1817,9 +1854,9 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
             const PlayerRuntime& player = targets.players[i];
             if (player.actor.player() != actor.player() && player.life == PlayerLife::Standing &&
                 !player.departed) {
-                candidates.push_back({kPlayerTargetBase + static_cast<s32>(i),
-                                      player.actor.position(), player.actor.radius(),
-                                      player.actor.height()});
+                candidates.push_back(
+                    {AttackTargetId::of(TargetFamily::Player, static_cast<s32>(i)).id(),
+                     player.actor.position(), player.actor.radius(), player.actor.height()});
             }
         }
     }
@@ -1829,20 +1866,32 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
 
 /** Whether a target id is a creature: an enemy, a great one or a boss, not a thing. */
 bool PlayerAttacks::isCreature(s32 id) {
-    return id >= kEnemyTargetBase && id < kSafeRockTargetBase &&
-           (id < kGeneratorTargetBase || id >= kCritterTargetBase);
+    return AttackTargetId::fromId(id).creature();
 }
 
 bool PlayerAttacks::creatureStanding(const Targets& targets, s32 id) {
-    if (id >= kBossTargetBase) {
-        return targets.opponents.bosses().view().alive;
-    }
-    if (id >= kCritterTargetBase) {
+    const AttackTargetId creature = AttackTargetId::fromId(id);
+    switch (creature.family()) {
+    case TargetFamily::Boss: return targets.opponents.bosses().view().alive;
+    case TargetFamily::Critter: {
         const Critters& critters = targets.opponents.critters();
-        const s32 critter = id - kCritterTargetBase;
-        return critters.alive(critter) && !critters.dying(critter);
+        return critters.alive(creature.index()) && !critters.dying(creature.index());
     }
-    return id >= kEnemyTargetBase && targets.opponents.enemies().alive(id - kEnemyTargetBase);
+    case TargetFamily::Enemy: return targets.opponents.enemies().alive(creature.index());
+    case TargetFamily::Barrel:
+    case TargetFamily::Generator:
+    case TargetFamily::SafeRock:
+    case TargetFamily::Wall:
+    case TargetFamily::Switch:
+    case TargetFamily::ItemStop:
+    case TargetFamily::Potion:
+    case TargetFamily::Chest:
+    case TargetFamily::Statue:
+    case TargetFamily::Player:
+    case TargetFamily::Imported:
+    case TargetFamily::None: return false;
+    }
+    return false;
 }
 
 PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong, const Targets& targets,
@@ -1884,7 +1933,7 @@ bool PlayerAttacks::rangedOnly(const PlayerActor& actor, const Targets& targets)
     // visibility/vertical-overlap checks. Preserve that path's 3D surface range
     // as well, without depending on the last authoritative facing/contact seed.
     for (const auto& target : candidates) {
-        if (target.id >= kEnemyTargetBase && target.id < kGeneratorTargetBase &&
+        if (AttackTargetId::fromId(target.id).family() == TargetFamily::Enemy &&
             target.acquisition &&
             glm::distance(target.acquisition->point, actor.followPoint()) - target.radius < reach) {
             return false;
@@ -1917,14 +1966,19 @@ PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Tar
         return PlayerDeed::None;
     }
     const auto target = meleeTarget(actor, targets, facing, actor.reach() + kStepReach);
-    if (!target || target->body.id < kEnemyTargetBase || target->body.id >= kSafeRockTargetBase) {
+    if (!target) {
         return PlayerDeed::None;
     }
-    if (target->body.id < kGeneratorTargetBase &&
-        targets.opponents.enemies().kindOf(target->body.id - kEnemyTargetBase) == kDeathKind) {
+    // Only the swarm, the generators, the great ones and the boss draw one.
+    const AttackTargetId body = AttackTargetId::fromId(target->body.id);
+    if (!body.creature() && body.family() != TargetFamily::Generator) {
         return PlayerDeed::None;
     }
-    if (target->body.id >= kBossTargetBase) {
+    if (body.family() == TargetFamily::Enemy &&
+        targets.opponents.enemies().kindOf(body.index()) == kDeathKind) {
+        return PlayerDeed::None;
+    }
+    if (body.family() == TargetFamily::Boss) {
         // PlayerMotion's boss-family exception permits only the two mobile
         // encounters, DRIDER and LICH, to trigger an unpressed close attack.
         const BossStage* stage = bossStageOf(targets.opponents.bosses().view().kind);
@@ -1957,9 +2011,9 @@ std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor
         const f32 length = glm::length(toward);
         const f32 distance = length - player.actor.radius();
         if (length > 0 && distance < reach && glm::dot(toward / length, facing) >= kGrabCone) {
-            nearest =
-                MissileTarget{kPlayerTargetBase + static_cast<s32>(i), player.actor.position(),
-                              player.actor.radius(), player.actor.height()};
+            nearest = MissileTarget{
+                AttackTargetId::of(TargetFamily::Player, static_cast<s32>(i)).id(),
+                player.actor.position(), player.actor.radius(), player.actor.height()};
             reach = distance;
         }
     }
@@ -2053,15 +2107,15 @@ std::optional<MissileTarget> PlayerAttacks::contactSeed(const PlayerActor& actor
         return std::nullopt;
     }
     MissileTarget selected = *body;
-    selected.id += kEnemyTargetBase;
+    selected.id = AttackTargetId::of(TargetFamily::Enemy, selected.id).id();
     return selected;
 }
 
 MeleeSelection::Target PlayerAttacks::meleeCandidate(const PlayerActor& actor,
                                                      const MissileTarget& body) {
-    const bool swarm = body.id >= kEnemyTargetBase && body.id < kGeneratorTargetBase;
-    const bool thing =
-        !isCreature(body.id) && (body.id < kPlayerTargetBase || body.id >= kImportedTargetBase);
+    const AttackTargetId target = AttackTargetId::fromId(body.id);
+    const bool swarm = target.family() == TargetFamily::Enemy;
+    const bool thing = !target.creature() && target.family() != TargetFamily::Player;
     return MeleeGeometry::candidate(actor.position(), actor.height(), body,
                                     (swarm && body.height <= kLowEnemy) ||
                                         (thing && body.height <= kLowThing));
@@ -2075,7 +2129,8 @@ MeleeSelection::Contact PlayerAttacks::meleeContact(const PlayerActor& actor,
     const auto& acquisition = body.acquisition;
     target.offset = (acquisition ? acquisition->point : body.pointNear(origin)) - origin;
     target.distance = glm::length(target.offset) - body.radius;
-    return {target, targets.opponents.enemies().kindOf(body.id - kEnemyTargetBase) == kDeathKind};
+    return {target, targets.opponents.enemies().kindOf(AttackTargetId::fromId(body.id).index()) ==
+                        kDeathKind};
 }
 
 PlayerAttacks::MeleeQuery PlayerAttacks::meleeQuery(const PlayerActor& actor,
@@ -2172,15 +2227,16 @@ PlayerAttacks::meleeGeometry(const PlayerActor& actor, const Targets& targets, f
         if (!body.surface.empty() || body.node >= 0 || body.potionBottle || !acquisition) {
             return std::nullopt;
         }
-        if (body.id >= kEnemyTargetBase && body.id < kGeneratorTargetBase) {
+        const AttackTargetId offered = AttackTargetId::fromId(body.id);
+        if (offered.family() == TargetFamily::Enemy) {
             const auto found =
-                std::ranges::find(enemies, body.id - kEnemyTargetBase, &MeleeGeometry::Target::id);
+                std::ranges::find(enemies, offered.index(), &MeleeGeometry::Target::id);
             if (found == enemies.end()) {
                 return std::nullopt;
             }
             result.push_back(*found);
             result.back().id = body.id;
-        } else if (body.id >= kGeneratorTargetBase && body.id < kCritterTargetBase) {
+        } else if (offered.family() == TargetFamily::Generator) {
             MeleeGeometry::Target target;
             target.id = body.id;
             target.base = body.base;
@@ -2270,72 +2326,86 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     default: break;
     }
     const Vec3 point = target->base + Vec3{0, target->height * 0.5f, 0};
-    const s32 id = target->id;
-    if (id >= kImportedTargetBase) {
-        if (auto* imported = m_resources->world.imported()) {
-            imported->strike(id - kImportedTargetBase, damage, flags, actor.player());
-        }
-        return;
-    }
-    if (id >= kPlayerTargetBase) {
-        targets.attackHost.hurtByAttack(static_cast<usize>(id - kPlayerTargetBase), damage,
-                                        HurtKind::Burn,
-                                        {flags, glm::normalize(target->base - actor.position())});
-        return;
-    }
-    if (id >= kStatueTargetBase) {
-        // fn_8005C1DC handles placed-enemy items separately from switches:
-        // the blow sets their wake flag, without damaging the future creature.
-        targets.opponents.wakeStatue(static_cast<usize>(id - kStatueTargetBase));
-        return;
-    }
-    if (strikeSwitch(id, flags)) {
-        return;
-    }
     // PlayerMotion_DamageTarget (80086A24): use the player's forward basis
     // and a damage-scaled lift, not a vector toward an animated collision node.
     // Large gargoyles can overlap the player or have nodes below their feet.
     Vec3 direction = actor.facing();
     direction.y = std::min(0.05f * damage, 2.0f);
     f32 credit = 0.0f;
-    if (id >= kWallTargetBase) {
-        targets.fixtures.strikeWall(static_cast<usize>(id - kWallTargetBase), damage, flags);
+    const AttackTargetId struck = AttackTargetId::fromId(target->id);
+    switch (struck.family()) {
+    case TargetFamily::Imported:
+        if (auto* imported = m_resources->world.imported()) {
+            imported->strike(struck.index(), damage, flags, actor.player());
+        }
+        return;
+    case TargetFamily::Player:
+        targets.attackHost.hurtByAttack(static_cast<usize>(struck.index()), damage, HurtKind::Burn,
+                                        {flags, glm::normalize(target->base - actor.position())});
+        return;
+    case TargetFamily::Statue:
+        // fn_8005C1DC handles placed-enemy items separately from switches:
+        // the blow sets their wake flag, without damaging the future creature.
+        targets.opponents.wakeStatue(static_cast<usize>(struck.index()));
+        return;
+    case TargetFamily::Switch:
+    case TargetFamily::ItemStop:
+    case TargetFamily::Potion:
+    case TargetFamily::Chest:
+        // A swing is offered no stop, bottle or chest; their ids go to strikeSwitch, which
+        // numbers the switches on past their span.
+        strikeSwitch(struck.id(), flags);
+        return;
+    case TargetFamily::Wall:
+        targets.fixtures.strikeWall(static_cast<usize>(struck.index()), damage, flags);
         targets.fixtureHost.lesson(HelpMessages::kSecretWalls, index);
-    } else if (id >= kBossTargetBase) {
+        break;
+    case TargetFamily::Boss: {
         EnemyHit hit{
             damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
             point,  true};
         hit.node = target->node;
         Bosses& bosses = targets.opponents.bosses();
         const BossView before = bosses.view();
-        credit = bosses.hurt(hit, id - kBossTargetBase);
+        credit = bosses.hurt(hit, struck.index());
         countBossBlow(targets, players, actor.player(), BlowSource::Swing, before, bosses);
-    } else if (id >= kCritterTargetBase) {
-        const s32 critter = id - kCritterTargetBase;
+        break;
+    }
+    case TargetFamily::Critter: {
+        const s32 critter = struck.index();
         const Critters& critters = targets.opponents.critters();
         const bool standing = critters.alive(critter) && !critters.dying(critter);
         credit = targets.opponents.strikeCritter(critter, damage, flags, direction, actor.player(),
                                                  point, true, players, target->node);
         countCritterBlow(targets, players, actor.player(), BlowSource::Swing, critters, critter,
                          standing);
-    } else if (id >= kGeneratorTargetBase) {
-        const s32 hut = id - kGeneratorTargetBase;
+        break;
+    }
+    case TargetFamily::Generator: {
+        const s32 hut = struck.index();
         const Generators& huts = targets.opponents.generators();
         const bool stood = huts.standing(hut);
         targets.opponents.strikeGenerator(hut, damage, actor.player(), players);
         countGeneratorBlow(targets, players, actor.player(), BlowSource::Swing, huts, hut, stood);
-    } else if (id >= kEnemyTargetBase) {
-        const s32 enemy = id - kEnemyTargetBase;
+        break;
+    }
+    case TargetFamily::Enemy: {
+        const s32 enemy = struck.index();
         const Enemies& enemies = targets.opponents.enemies();
         const bool standing = enemies.alive(enemy);
         credit = targets.opponents.strikeEnemy(enemy, damage, flags, direction, actor.player(),
                                                players, true, point);
         countEnemyBlow(targets, players, actor.player(), BlowSource::Swing, enemies, enemy,
                        standing);
-    } else {
-        targets.fixtures.strikeBarrel(static_cast<usize>(id), damage, actor.player(), players,
-                                      targets.fixtureHost);
+        break;
+    }
+    case TargetFamily::Barrel:
+        targets.fixtures.strikeBarrel(static_cast<usize>(struck.index()), damage, actor.player(),
+                                      players, targets.fixtureHost);
         targets.fixtures.settleBlasts(players, targets.fixtureHost);
+        break;
+    case TargetFamily::SafeRock: // a swing's roster leaves the rocks out (acquisitionTargets)
+    case TargetFamily::None: return;
     }
     if (credit > 0.0f) {
         targets.attackHost.meleeHit(actor.player());
@@ -2420,16 +2490,17 @@ void PlayerAttacks::stepProjectileFlights(f32 seconds, std::span<PlayerRuntime> 
     const PlacedItems& lying = m_resources->world.placedItems();
     for (const usize bottle : lying.shootablePotions()) {
         const PlacedItems::Item& item = lying.item(bottle);
-        missileTargets.push_back(MissileTarget{kPotionTargetBase + static_cast<s32>(bottle),
-                                               item.position, std::max(item.radius, 0.5f),
-                                               std::max(item.height, kBottleShotHeight)});
+        missileTargets.push_back(MissileTarget{
+            AttackTargetId::of(TargetFamily::Potion, static_cast<s32>(bottle)).id(), item.position,
+            std::max(item.radius, 0.5f), std::max(item.height, kBottleShotHeight)});
         missileTargets.back().potionBottle = true;
     }
     // Chests, shut gates and raised tent walls stop it and take nothing (SfxSkipItem).
-    s32 stop = kItemStopBase;
+    s32 stop = 0;
     for (const Obstacle& box : targets.fixtures.inertStops()) {
         missileTargets.push_back(
-            MissileTarget{stop++, box.centre, std::max(box.halfAcross, box.halfAlong), box.height});
+            MissileTarget{AttackTargetId::of(TargetFamily::ItemStop, stop++).id(), box.centre,
+                          std::max(box.halfAcross, box.halfAlong), box.height});
     }
     std::vector<MissilePlayer> missilePlayers;
     for (const auto& player : players) {
@@ -2493,37 +2564,35 @@ void PlayerAttacks::dispatchProjectileImpact(
         beginPotion(impact);
         return;
     }
-    if (impact.target >= kImportedTargetBase) {
-        if (auto* imported = m_resources->world.imported()) {
-            imported->strike(impact.target - kImportedTargetBase, impact.damage, impact.flags,
-                             impact.owner);
-        }
-        return;
-    }
-    if (impact.target >= kStatueTargetBase) {
-        targets.opponents.wakeStatue(static_cast<usize>(impact.target - kStatueTargetBase));
-        return;
-    }
-    if (impact.target >= kPotionTargetBase) {
-        shootPotion(impact, players, targets);
-        return;
-    }
-    if (impact.target >= kItemStopBase) {
-        return;
-    }
-    if (strikeSwitch(impact.target, impact.flags)) {
-        return;
-    }
     const BlowSource source =
         (impact.flags & damage::kSuperShot) != 0 ? BlowSource::SuperShot : BlowSource::Shot;
     f32 credit = 0.0f;
-    if (impact.target >= kWallTargetBase) {
-        targets.fixtures.strikeWall(static_cast<usize>(impact.target - kWallTargetBase),
-                                    impact.damage, impact.flags);
-    } else if (impact.target >= kSafeRockTargetBase) {
-        targets.fixtures.strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase),
-                                        impact.damage);
-    } else if (impact.target >= kBossTargetBase) {
+    const AttackTargetId struck = AttackTargetId::fromId(impact.target);
+    switch (struck.family()) {
+    case TargetFamily::Imported:
+        if (auto* imported = m_resources->world.imported()) {
+            imported->strike(struck.index(), impact.damage, impact.flags, impact.owner);
+        }
+        return;
+    case TargetFamily::Statue:
+        targets.opponents.wakeStatue(static_cast<usize>(struck.index()));
+        return;
+    case TargetFamily::Potion:
+    case TargetFamily::Chest: // a bottle past the 999th item runs on into the chests' ids
+        shootPotion(impact, players, targets);
+        return;
+    case TargetFamily::ItemStop: return;
+    case TargetFamily::Switch: strikeSwitch(impact.target, impact.flags); return;
+    // A player meets a flight by its own impact (impact.player), never as its target.
+    case TargetFamily::Player: return;
+    case TargetFamily::Wall:
+        targets.fixtures.strikeWall(static_cast<usize>(struck.index()), impact.damage,
+                                    impact.flags);
+        break;
+    case TargetFamily::SafeRock:
+        targets.fixtures.strikeSafeRock(static_cast<usize>(struck.index()), impact.damage);
+        break;
+    case TargetFamily::Boss: {
         EnemyHit hit;
         hit.damage = impact.damage;
         hit.flags = impact.flags;
@@ -2539,35 +2608,45 @@ void PlayerAttacks::dispatchProjectileImpact(
         }
         const Bosses& bosses = targets.opponents.bosses();
         const BossView before = bosses.view();
-        credit = targets.opponents.bosses().hurt(hit, impact.target - kBossTargetBase);
+        credit = targets.opponents.bosses().hurt(hit, struck.index());
         countBossBlow(targets, players, impact.owner, source, before, bosses);
-    } else if (impact.target >= kCritterTargetBase) {
-        const s32 critter = impact.target - kCritterTargetBase;
+        break;
+    }
+    case TargetFamily::Critter: {
+        const s32 critter = struck.index();
         const Critters& critters = targets.opponents.critters();
         const bool stood = critters.alive(critter) && !critters.dying(critter);
         credit = targets.opponents.strikeCritter(critter, impact.damage, impact.flags,
                                                  impact.direction, impact.owner, impact.position,
                                                  false, players, impact.node);
         countCritterBlow(targets, players, impact.owner, source, critters, critter, stood);
-    } else if (impact.target >= kGeneratorTargetBase) {
-        const s32 hut = impact.target - kGeneratorTargetBase;
+        break;
+    }
+    case TargetFamily::Generator: {
+        const s32 hut = struck.index();
         const Generators& huts = targets.opponents.generators();
         const bool stood = huts.standing(hut);
         if (blowRulesOf(targets).generatorTakes(source)) {
             targets.opponents.strikeGenerator(hut, impact.damage, impact.owner, players);
             countGeneratorBlow(targets, players, impact.owner, source, huts, hut, stood);
         }
-    } else if (impact.target >= kEnemyTargetBase) {
-        const s32 enemy = impact.target - kEnemyTargetBase;
+        break;
+    }
+    case TargetFamily::Enemy: {
+        const s32 enemy = struck.index();
         const Enemies& enemies = targets.opponents.enemies();
         const bool stood = enemies.alive(enemy);
         credit = targets.opponents.strikeEnemy(enemy, impact.damage, impact.flags, impact.direction,
                                                impact.owner, players, false, impact.position);
         countEnemyBlow(targets, players, impact.owner, source, enemies, enemy, stood);
-    } else if (impact.target >= 0) {
-        targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
+        break;
+    }
+    case TargetFamily::Barrel:
+        targets.fixtures.strikeBarrel(static_cast<usize>(struck.index()), impact.damage,
                                       impact.owner, players, targets.fixtureHost);
         targets.fixtures.settleBlasts(players, targets.fixtureHost);
+        break;
+    case TargetFamily::None: break; // a flight that met no target
     }
     healHit(impact.owner, impact.flags, credit, impact.position, players, targets);
 }
@@ -2580,8 +2659,10 @@ void PlayerAttacks::shootPotion(const MissileImpact& impact, std::span<PlayerRun
     if (!m_resources.has_value()) {
         return;
     }
-    const auto kind = m_resources->world.strikePotion(
-        static_cast<usize>(impact.target - kPotionTargetBase), impact.damage);
+    // The bottle's place among the items, counted from the first bottle's id: the items are
+    // numbered as they are placed and dropped, on past the bottles' own span.
+    const s32 item = impact.target - AttackTargetId::of(TargetFamily::Potion, 0).id();
+    const auto kind = m_resources->world.strikePotion(static_cast<usize>(item), impact.damage);
     if (!kind.has_value()) {
         return;
     }
@@ -2657,7 +2738,7 @@ void PlayerAttacks::enchantChests(PotionBurst& burst, f32 radius, f32 power,
     const Chests& chests = targets.fixtures.chests();
     for (usize index = 0; index < chests.size(); ++index) {
         const Chests::Chest& chest = chests.chest(index);
-        const s32 id = kChestTargetBase + static_cast<s32>(index);
+        const s32 id = AttackTargetId::of(TargetFamily::Chest, static_cast<s32>(index)).id();
         if (!chest.shown || chest.gone || chest.state != Chests::kShut ||
             std::ranges::find(burst.hit, id) != burst.hit.end()) {
             continue;
@@ -2726,11 +2807,12 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                 direction /= length;
             }
             const s32 byPlayer = burst.impact.owner;
-            if (target.id >= kStatueTargetBase && target.id < kPlayerTargetBase) {
+            const AttackTargetId struck = AttackTargetId::fromId(target.id);
+            if (struck.family() == TargetFamily::Statue) {
                 // Placed enemies are still items: fn_8005C1DC wakes them before
                 // their native ACTIVE sequence releases the actual creature.
                 // A continuing potion wave can then strike that new enemy too.
-                targets.opponents.wakeStatue(static_cast<usize>(target.id - kStatueTargetBase));
+                targets.opponents.wakeStatue(static_cast<usize>(struck.index()));
                 burst.struck = true;
                 continue;
             }
@@ -2738,17 +2820,13 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                 continue;
             }
             burst.struck = true;
-            if (target.id >= kImportedTargetBase) {
+            switch (struck.family()) {
+            case TargetFamily::Imported:
                 if (auto* imported = m_resources->world.imported()) {
-                    imported->strike(target.id - kImportedTargetBase, power, flags, byPlayer);
+                    imported->strike(struck.index(), power, flags, byPlayer);
                 }
-            } else if (target.id >= kWallTargetBase) {
-                targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), power,
-                                            flags);
-            } else if (target.id >= kSafeRockTargetBase) {
-                targets.fixtures.strikeSafeRock(static_cast<usize>(target.id - kSafeRockTargetBase),
-                                                power);
-            } else if (target.id >= kBossTargetBase) {
+                break;
+            case TargetFamily::Boss: {
                 EnemyHit hit;
                 hit.damage = power;
                 hit.flags = flags;
@@ -2761,12 +2839,13 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                 }
                 const Bosses& bosses = targets.opponents.bosses();
                 const BossView before = bosses.view();
-                const f32 credit =
-                    targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
+                const f32 credit = targets.opponents.bosses().hurt(hit, struck.index());
                 countBossBlow(targets, players, byPlayer, BlowSource::Potion, before, bosses);
                 healHit(byPlayer, flags, credit, target.base, players, targets);
-            } else if (target.id >= kCritterTargetBase) {
-                const s32 id = target.id - kCritterTargetBase;
+                break;
+            }
+            case TargetFamily::Critter: {
+                const s32 id = struck.index();
                 const Critters& critters = targets.opponents.critters();
                 const bool stood = critters.alive(id) && !critters.dying(id);
                 const f32 credit = targets.opponents.strikeCritter(
@@ -2774,22 +2853,37 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                 countCritterBlow(targets, players, byPlayer, BlowSource::Potion, critters, id,
                                  stood);
                 healHit(byPlayer, flags, credit, target.base, players, targets);
-            } else if (target.id >= kGeneratorTargetBase) {
+                break;
+            }
+            case TargetFamily::Generator:
                 if (blowRulesOf(targets).generatorTakes(BlowSource::Potion)) {
-                    targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power,
-                                                      byPlayer, players);
+                    targets.opponents.strikeGenerator(struck.index(), power, byPlayer, players);
                 }
-            } else if (target.id >= kEnemyTargetBase) {
-                const s32 id = target.id - kEnemyTargetBase;
+                break;
+            case TargetFamily::Enemy: {
+                const s32 id = struck.index();
                 const Enemies& enemies = targets.opponents.enemies();
                 const bool stood = enemies.alive(id);
                 const f32 credit =
                     targets.opponents.strikeEnemy(id, power, flags, direction, byPlayer, players);
                 countEnemyBlow(targets, players, byPlayer, BlowSource::Potion, enemies, id, stood);
                 healHit(byPlayer, flags, credit, target.base, players, targets);
-            } else {
-                targets.fixtures.strikeBarrel(static_cast<usize>(target.id), power, byPlayer,
+                break;
+            }
+            case TargetFamily::Barrel:
+                targets.fixtures.strikeBarrel(static_cast<usize>(struck.index()), power, byPlayer,
                                               players, targets.fixtureHost);
+                break;
+            // Magic leaves these alone (immuneToMagic, above), and a statue is woken above.
+            case TargetFamily::SafeRock:
+            case TargetFamily::Wall:
+            case TargetFamily::Switch:
+            case TargetFamily::ItemStop:
+            case TargetFamily::Potion:
+            case TargetFamily::Chest:
+            case TargetFamily::Statue:
+            case TargetFamily::Player:
+            case TargetFamily::None: break;
             }
         }
         enchantChests(burst, radius, power, targets);
