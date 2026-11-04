@@ -8,6 +8,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "TestSupport.h"
+#include "fixtures/PacketStar.h"
+#include "fixtures/RecordingPacketTransport.h"
 #include "game/netplay/RollbackExchange.h"
 
 namespace {
@@ -16,35 +18,16 @@ using namespace gdl::game;
 using Exchange = RollbackExchange;
 constexpr u64 kEpoch = 63;
 constexpr PacketTransport::Connection kHost = 80;
+constexpr test::StarLinks kStar{kHost};
 
-struct Wire final : PacketTransport {
-    struct Packet {
-        Connection connection;
-        std::vector<u8> bytes;
-    };
-    std::vector<Packet> packets;
-    std::map<Connection, usize> budgets;
-    SendResult result = SendResult::Sent;
-    SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
+/** A recording wire that checks every frame and ACK goes unreliably and fits one fragment. */
+struct Wire final : test::RecordingPacketTransport {
+private:
+    void inspect(Connection /*connection*/, std::span<const u8> bytes, Delivery delivery) override {
         CHECK(delivery == Delivery::Unreliable);
         CHECK(bytes.size() <= Exchange::kMaxBytes);
         CHECK(bytes.size() + 1 <= 1000); // one provider fragment, including room envelope
-        if (result == SendResult::Sent) {
-            if (const auto budget = budgets.find(connection); budget != budgets.end()) {
-                if (budget->second == 0) {
-                    return SendResult::Congested;
-                }
-                --budget->second;
-            }
-            packets.push_back({connection, {bytes.begin(), bytes.end()}});
-        }
-        return result;
     }
-    std::vector<Event> poll() override { return {}; }
-    std::optional<Statistics> statistics(Connection /*connection*/) const override {
-        return std::nullopt;
-    }
-    void close(Connection /*connection*/) override {}
 };
 
 std::vector<u8> encode(const Exchange::Message& message) {
@@ -53,25 +36,24 @@ std::vector<u8> encode(const Exchange::Message& message) {
     return *bytes;
 }
 
-struct Room {
-    Exchange::Owners owners;
+struct Room : test::PacketStar<Wire> {
     Exchange::Grants grants{};
-    std::array<Exchange, 5> peers;
-    std::array<Wire, 5> wires;
-    std::array<std::array<std::map<u64, std::vector<u8>>, 4>, 5> actual;
-    usize sent = 0;
+    std::array<Exchange, kSlots> peers;
+    std::array<std::array<std::map<u64, std::vector<u8>>, kSeats>, kSlots> actual;
+    usize sends = 0;
     usize dropped = 0;
     u64 nowUs = 0;
     bool reject = false;
     std::function<bool(u8, u8, const Exchange::Message&)> drop;
-    explicit Room(Exchange::Owners roster = {1, 2, 3, 4}, u8 delay = 0) : owners(roster) {
+    explicit Room(Exchange::Owners roster = {1, 2, 3, 4}, u8 delay = 0)
+        : PacketStar(roster, kStar) {
         for (usize seat = 0; seat < owners.size(); ++seat) {
             grants[seat] = (owners[seat] != 0u) ? static_cast<u32>(20 + seat) : 0;
         }
         std::vector<Exchange::Link> guests;
         for (u8 peer = 2; peer <= 4; ++peer) {
             if (present(peer)) {
-                guests.push_back({peer, static_cast<PacketTransport::Connection>(100 + peer)});
+                guests.push_back({peer, kStar.guest(peer)});
                 const std::array host{Exchange::Link{1, kHost}};
                 REQUIRE(peers[peer].open(peer, kEpoch, owners, grants, delay, host, [this, peer] {
                     return nowUs + static_cast<u64>(100'000'000) * peer;
@@ -81,7 +63,6 @@ struct Room {
         REQUIRE(peers[1].open(1, kEpoch, owners, grants, delay, guests,
                               [this] { return nowUs + 100'000'000; }));
     }
-    bool present(u8 peer) const { return std::ranges::find(owners, peer) != owners.end(); }
     std::vector<InputCommand> frame(u8 peer, u64 tick) const {
         std::vector<InputCommand> result;
         // NOLINTNEXTLINE(bugprone-too-small-loop-variable): seats and peers number at most five
@@ -111,28 +92,26 @@ struct Room {
         }
         return true;
     }
-    void deliver(u8 sender) {
-        auto packets = std::move(wires[sender].packets);
-        wires[sender].packets.clear();
-        // Reverse complete send bursts to exercise reordered frames and ACKs.
-        std::ranges::reverse(packets);
-        for (const auto& packet : packets) {
+    /** What a delivered frame or ACK meets: its decoding, the case's drop, then its receiver. */
+    auto arrival() {
+        return [this](u8 source, u8 target, PacketTransport::Connection connection,
+                      const Packet& packet) {
             const auto decoded = Exchange::decode(packet.bytes);
             REQUIRE(decoded);
-            const u8 receiver = sender == 1 ? static_cast<u8>(packet.connection - 100) : 1;
-            const auto connection = sender == 1 ? kHost : 100 + sender;
-            ++sent;
-            if (drop && drop(sender, receiver, *decoded)) {
+            ++sends;
+            if (drop && drop(source, target, *decoded)) {
                 ++dropped;
-                continue;
+                return;
             }
             const auto result =
-                peers[receiver].receive(connection, packet.bytes, 0,
-                                        [&](const auto& m, auto) { return consume(receiver, m); });
+                peers[target].receive(connection, packet.bytes, 0,
+                                      [&](const auto& m, auto) { return consume(target, m); });
             REQUIRE(result ==
                     (reject ? Exchange::Admission::Rejected : Exchange::Admission::Accepted));
-        }
+        };
     }
+    /** Hands on what `source` sent, newest first, to exercise reordered frames and ACKs. */
+    void deliver(u8 source) { PacketStar::deliver(source, arrival(), Order::NewestFirst); }
     void pump() {
         // Relay before doing any simulation, not on its next native tick.
         for (u8 peer = 2; peer <= 4; ++peer) {
@@ -160,8 +139,8 @@ TEST_CASE("console input bursts split by encoded size without losing complete se
     }
     REQUIRE(room.peers[1].publish(commands, 1));
     REQUIRE(room.peers[1].flush(room.wires[1]));
-    CHECK(room.wires[1].packets.size() >= 8);
-    for (const auto& packet : room.wires[1].packets) {
+    CHECK(room.wires[1].sent.size() >= 8);
+    for (const auto& packet : room.wires[1].sent) {
         const auto decoded = Exchange::decode(packet.bytes);
         REQUIRE(decoded);
         CHECK(decoded->commands.size() == 3);
@@ -336,9 +315,9 @@ TEST_CASE("eight frames of three local seats split into complete bounded datagra
         REQUIRE(room.peers[2].publish(room.frame(2, tick), tick));
     }
     REQUIRE(room.peers[2].flush(room.wires[2]));
-    REQUIRE(room.wires[2].packets.size() == 2);
+    REQUIRE(room.wires[2].sent.size() == 2);
     usize total = 0;
-    for (const auto& packet : room.wires[2].packets) {
+    for (const auto& packet : room.wires[2].sent) {
         const auto message = Exchange::decode(packet.bytes);
         REQUIRE(message);
         CHECK(message->commands.size() % 3 == 0);
@@ -396,7 +375,7 @@ TEST_CASE("rollback delivery tolerates reordered lossy traffic and bounds retain
           "[rollback-exchange]") {
     const u8 delay = GENERATE(u8{0}, u8{1}, u8{2});
     Room room({1, 2, 3, 4}, delay);
-    room.drop = [&](u8, u8, const auto&) { return room.sent % 50 == 0; };
+    room.drop = [&](u8, u8, const auto&) { return room.sends % 50 == 0; };
     for (u64 tick = 1 + delay; tick <= 240; ++tick) {
         for (u8 peer = 1; peer <= 4; ++peer) {
             REQUIRE(room.peers[peer].publish(room.frame(peer, tick), tick - delay));
@@ -428,7 +407,7 @@ TEST_CASE("rollback congestion retains input without an expanding packet queue",
     for (usize retry = 0; retry < 150; ++retry) {
         REQUIRE(room.peers[2].flush(room.wires[2]));
     }
-    CHECK(room.wires[2].packets.empty());
+    CHECK(room.wires[2].sent.empty());
     CHECK(room.peers[2].retainedFrames(2) == 1);
     room.wires[2].result = PacketTransport::SendResult::Sent;
     room.pump();
@@ -511,14 +490,14 @@ TEST_CASE("relayed progress carries upstream age and residence without refreshin
     const auto forwarded = [&](u8 origin) {
         REQUIRE(room.peers[1].flush(room.wires[1]));
         std::vector<u8> bytes;
-        for (const auto& packet : room.wires[1].packets) {
+        for (const auto& packet : room.wires[1].sent) {
             const auto message = Exchange::decode(packet.bytes);
             REQUIRE(message);
             if (packet.connection == 103 && message->origin == origin) {
                 bytes = packet.bytes;
             }
         }
-        room.wires[1].packets.clear();
+        room.wires[1].sent.clear();
         REQUIRE_FALSE(bytes.empty());
         return bytes;
     };
@@ -569,7 +548,7 @@ TEST_CASE("progress admission is transactional and older reports still recover a
             Exchange::Admission::Rejected);
     CHECK(room.peers[1].receivedThrough(2) == 0);
     REQUIRE(room.peers[1].flush(room.wires[1]));
-    for (const auto& packet : room.wires[1].packets) {
+    for (const auto& packet : room.wires[1].sent) {
         REQUIRE(Exchange::decode(packet.bytes));
         CHECK(Exchange::decode(packet.bytes)->origin != 2);
     }
@@ -612,8 +591,8 @@ TEST_CASE("progress ages saturate and unknown RTT remains a bounded pacing estim
         }) == Exchange::Admission::Accepted);
     room.nowUs = std::numeric_limits<u64>::max() - 500'000'000;
     REQUIRE(room.peers[1].flush(room.wires[1]));
-    REQUIRE_FALSE(room.wires[1].packets.empty());
-    for (const auto& packet : room.wires[1].packets) {
+    REQUIRE_FALSE(room.wires[1].sent.empty());
+    for (const auto& packet : room.wires[1].sent) {
         const auto decoded = Exchange::decode(packet.bytes);
         REQUIRE(decoded);
         CHECK(decoded->progressAgeUs == Exchange::kMaxProgressAgeUs);
@@ -701,13 +680,13 @@ TEST_CASE("asymmetric star progress paces an actually faster peer without slowin
         }
         for (u8 peer = 1; peer <= count; ++peer) {
             REQUIRE(room.peers[peer].flush(room.wires[peer]));
-            for (auto& packet : room.wires[peer].packets) {
+            for (auto& packet : room.wires[peer].sent) {
                 const u8 receiver = peer == 1 ? static_cast<u8>(packet.connection - 100) : 1;
                 const u8 guest = peer == 1 ? receiver : peer;
                 pending.push_back(
                     {peer, receiver, room.nowUs + kHopUs[guest], std::move(packet.bytes)});
             }
-            room.wires[peer].packets.clear();
+            room.wires[peer].sent.clear();
         }
     }
     CHECK(idles[1] > 0);
@@ -751,12 +730,12 @@ TEST_CASE("a guest's direct link carries that guest's own inputs sooner and may 
     Wire wire;
     REQUIRE(second.flush(wire));
     std::set<PacketTransport::Connection> destinations;
-    for (const auto& packet : wire.packets) {
+    for (const auto& packet : wire.sent) {
         destinations.insert(packet.connection);
     }
     CHECK(destinations == std::set<PacketTransport::Connection>{kHost, 203});
-    const auto direct = std::ranges::find(wire.packets, 203, &Wire::Packet::connection);
-    REQUIRE(direct != wire.packets.end());
+    const auto direct = std::ranges::find(wire.sent, 203, &Wire::Packet::connection);
+    REQUIRE(direct != wire.sent.end());
     // The third guest takes it straight from the second.
     usize consumed = 0;
     const auto consume = [&](const Exchange::Message& message, auto) {
@@ -776,7 +755,7 @@ TEST_CASE("a guest's direct link carries that guest's own inputs sooner and may 
     CHECK(third.receive(302, direct->bytes, 0, consume) == Exchange::Admission::WrongPeer);
     Wire thirdWire;
     REQUIRE(third.flush(thirdWire));
-    for (const auto& packet : thirdWire.packets) {
+    for (const auto& packet : thirdWire.sent) {
         CHECK(packet.connection == kHost);
     }
 }
@@ -827,13 +806,13 @@ TEST_CASE("a stream opened after a guest was dropped wants no link to it and wai
         Wire guestWire;
         REQUIRE(host.flush(hostWire));
         REQUIRE(guest.flush(guestWire));
-        REQUIRE_FALSE(hostWire.packets.empty());
-        REQUIRE_FALSE(guestWire.packets.empty());
-        for (const auto& packet : hostWire.packets) {
+        REQUIRE_FALSE(hostWire.sent.empty());
+        REQUIRE_FALSE(guestWire.sent.empty());
+        for (const auto& packet : hostWire.sent) {
             CHECK(packet.connection == 103);
             CHECK(guest.receive(kHost, packet.bytes, 0, consume) == Exchange::Admission::Accepted);
         }
-        for (const auto& packet : guestWire.packets) {
+        for (const auto& packet : guestWire.sent) {
             CHECK(packet.connection == kHost);
             CHECK(host.receive(103, packet.bytes, 0, consume) == Exchange::Admission::Accepted);
         }

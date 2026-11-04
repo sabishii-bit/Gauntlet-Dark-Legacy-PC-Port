@@ -4,35 +4,21 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "TestSupport.h"
+#include "fixtures/RecordingPacketTransport.h"
 #include "game/netplay/PartyBootstrap.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-struct Wire final : PacketTransport {
-    struct Message {
-        Connection connection;
-        std::vector<u8> bytes;
-    };
-    std::vector<Message> messages;
-    usize budget = 100;
-    SendResult result = SendResult::Sent;
-    SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
+/** A recording wire that accepts a hundred sends and checks each goes reliably in one packet. */
+struct Wire final : test::RecordingPacketTransport {
+    Wire() { budget = 100; }
+
+private:
+    void inspect(Connection /*connection*/, std::span<const u8> bytes, Delivery delivery) override {
         CHECK(delivery == Delivery::Reliable);
         CHECK(bytes.size() <= kMaxPacketBytes);
-        if (result != SendResult::Sent) {
-            return result;
-        }
-        if (budget == 0) {
-            return SendResult::Congested;
-        }
-        --budget;
-        messages.push_back({connection, {bytes.begin(), bytes.end()}});
-        return SendResult::Sent;
     }
-    std::vector<Event> poll() override { return {}; }
-    std::optional<Statistics> statistics(Connection /*connection*/) const override { return {}; }
-    void close(Connection /*connection*/) override {}
 };
 std::vector<CharacterProfile> selections(const MatchOwners& owners, u8 peer) {
     std::vector<CharacterProfile> result;
@@ -78,10 +64,10 @@ TEST_CASE("party bootstrap relays every owned character and waits for every ackn
     for (const auto& link : links) {
         auto& wire = wires[link.peer];
         REQUIRE(peers[link.peer].flush(wire));
-        for (const auto& message : wire.messages) {
+        for (const auto& message : wire.sent) {
             REQUIRE(peers[1].receive(link.connection, message.bytes));
         }
-        wire.messages.clear();
+        wire.sent.clear();
         CHECK_FALSE(peers[1].complete());
     }
     // Only one reliable message is accepted per pump. No dropped tail or
@@ -89,7 +75,7 @@ TEST_CASE("party bootstrap relays every owned character and waits for every ackn
     for (usize pump = 0; pump < 20; ++pump) {
         wires[1].budget = 1;
         REQUIRE(peers[1].flush(wires[1]));
-        for (const auto& message : std::exchange(wires[1].messages, {})) {
+        for (const auto& message : std::exchange(wires[1].sent, {})) {
             REQUIRE(peers[message.connection].receive(99, message.bytes));
         }
     }
@@ -97,7 +83,7 @@ TEST_CASE("party bootstrap relays every owned character and waits for every ackn
         CHECK_FALSE(peers[1].complete());
         REQUIRE(peers[link.peer].complete());
         REQUIRE(peers[link.peer].flush(wires[link.peer]));
-        for (const auto& message : wires[link.peer].messages) {
+        for (const auto& message : wires[link.peer].sent) {
             REQUIRE(peers[1].receive(link.connection, message.bytes));
         }
         for (usize seat = 0; seat < owners.size(); ++seat) {
@@ -122,29 +108,29 @@ TEST_CASE("party bootstrap packets keep their byte layout", "[netplay][party-boo
     REQUIRE(guest.open(2, owners, std::array{MatchLink{1, 99}}, guestParty));
     REQUIRE(host.open(1, owners, std::array{MatchLink{2, 2}}, selections(owners, 1)));
     REQUIRE(guest.flush(guestWire));
-    REQUIRE(guestWire.messages.size() == 1);
+    REQUIRE(guestWire.sent.size() == 1);
     const auto profile = CharacterProfilePacket::encode(guestParty[0]);
     REQUIRE(profile);
     std::vector<u8> expected{'G', 'D', 'P', 'S', 1, 0, 1, 0};
     expected.insert(expected.end(), profile->begin(), profile->end());
-    CHECK(guestWire.messages[0].bytes == expected);
-    REQUIRE(host.receive(2, guestWire.messages[0].bytes));
-    guestWire.messages.clear();
+    CHECK(guestWire.sent[0].bytes == expected);
+    REQUIRE(host.receive(2, guestWire.sent[0].bytes));
+    guestWire.sent.clear();
     REQUIRE(host.flush(hostWire));
-    REQUIRE(hostWire.messages.size() == 3); // both profiles, then the seal
-    CHECK(hostWire.messages[1].bytes == expected);
+    REQUIRE(hostWire.sent.size() == 3); // both profiles, then the seal
+    CHECK(hostWire.sent[1].bytes == expected);
     constexpr std::string_view kSeal = "47445053"  // magic
                                        "01010000"; // version, seal, seat, zero
-    CHECK(test::hexBytes(hostWire.messages[2].bytes) == kSeal);
-    for (const auto& message : hostWire.messages) {
+    CHECK(test::hexBytes(hostWire.sent[2].bytes) == kSeal);
+    for (const auto& message : hostWire.sent) {
         REQUIRE(guest.receive(99, message.bytes));
     }
     REQUIRE(guest.flush(guestWire));
-    REQUIRE(guestWire.messages.size() == 1);
+    REQUIRE(guestWire.sent.size() == 1);
     constexpr std::string_view kAcknowledge = "47445053"  // magic
                                               "01020000"; // version, acknowledge, seat, zero
-    CHECK(test::hexBytes(guestWire.messages[0].bytes) == kAcknowledge);
-    REQUIRE(host.receive(2, guestWire.messages[0].bytes));
+    CHECK(test::hexBytes(guestWire.sent[0].bytes) == kAcknowledge);
+    REQUIRE(host.receive(2, guestWire.sent[0].bytes));
     CHECK(host.complete());
 }
 TEST_CASE("party bootstrap rejects stolen seats altered local selections and premature seals",
@@ -156,8 +142,8 @@ TEST_CASE("party bootstrap rejects stolen seats altered local selections and pre
     REQUIRE(guest.open(2, owners, std::array{MatchLink{1, 99}}, selections(owners, 2)));
     Wire wire;
     REQUIRE(guest.flush(wire));
-    REQUIRE(wire.messages.size() == 1);
-    const auto packet = wire.messages.front().bytes;
+    REQUIRE(wire.sent.size() == 1);
+    const auto packet = wire.sent.front().bytes;
     SECTION("unadmitted connection") {
         CHECK_FALSE(host.receive(99, packet));
     }
@@ -228,13 +214,13 @@ TEST_CASE("party admission and reliable delivery failures cannot publish a parti
     for (usize i = 0; i < 100; ++i) {
         REQUIRE(guest.flush(wire));
     }
-    CHECK(wire.messages.empty());
+    CHECK(wire.sent.empty());
     wire.result = PacketTransport::SendResult::Disconnected;
     CHECK_FALSE(guest.flush(wire));
     wire.result = PacketTransport::SendResult::Sent;
     wire.budget = 100;
     REQUIRE(guest.flush(wire));
-    REQUIRE(wire.messages.size() == 1);
+    REQUIRE(wire.sent.size() == 1);
     CHECK_FALSE(guest.complete());
 }
 } // namespace
