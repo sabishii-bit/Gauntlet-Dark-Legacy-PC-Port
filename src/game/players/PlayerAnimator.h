@@ -309,7 +309,7 @@ public:
     bool restore(const Checkpoint& state, const std::optional<TransitionPose>& transition);
     /** Requires a bound trusted class tree. Failure does not mutate the animator. */
     bool restore(const Checkpoint& state);
-    static constexpr usize kActionCount = 132;
+    static constexpr usize kActionCount = static_cast<usize>(Action::ComboJes) + 1;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -352,25 +352,10 @@ public:
     bool bound() const { return m_tree != nullptr; }
     /** Prediction can restore only ordinary locomotion, never an attack/event cursor. */
     static bool locomotion(Action action);
-    /** Actions whose decisions can be replayed without world targeting, resource
-     * spending or another participant's simulation state. */
-    static bool rollbackAction(Action action);
-    /** Stationary close attacks additionally require a host-approved targeting
-     * descriptor. Stepping swings/recoveries advance the feet even with no stick
-     * input and cannot be replayed by that stationary envelope. */
-    static bool rollbackMeleeAction(Action action);
-    /** Stepping swings additionally require re-queryable target geometry and a
-     * certified static movement region, not the fixed-foot melee descriptor. */
-    static bool rollbackMovingMeleeAction(Action action);
     static bool rollbackTurboAction(Action action);
     /** A plain charge also needs a host-certified ram-free movement region;
      * it drains the meter rather than executing the B/C strike timeline. */
     static bool rollbackShoveAction(Action action);
-    /** Grounded reactions with no grab, flight or partner-owned body state. They
-     * still require the host's impulse checkpoint and a clear movement corridor. */
-    static bool rollbackReactionAction(Action action);
-    static bool rollbackReactionDeed(PlayerDeed deed);
-    bool restoreLocomotion(Action action, u32 sequence, f32 frame);
 
     /** Steps `ticks` of the game clock (`seconds` long) under `motion`, throwing while
      * `attack` is held. */
@@ -389,13 +374,9 @@ public:
         m_comboRide = ride;
     }
     /** Whether the body is making its class's combo move (COMBOACT1..3). */
-    bool comboing() const {
-        return m_current >= Action::ComboAct1 && m_current <= Action::ComboAct3;
-    }
+    bool comboing() const;
     /** Whether the body is in a partner's combo: held, flying or landing. */
-    bool comboBound() const {
-        return m_current >= Action::ComboWar1 && m_current <= Action::ComboJes;
-    }
+    bool comboBound() const;
     /** Whether the body is the warrior's pinball or the dwarf's charger. */
     bool comboThrown() const {
         return m_current == Action::ComboWar2 || m_current == Action::ComboDwf2;
@@ -413,9 +394,7 @@ public:
     /** What a partner let go of by one plays (case 39): only the warrior's and the dwarf's. */
     static Action comboThrownActionOf(s32 grabberClass);
     /** Whether the body is holding Death, or reaching for him or letting him go. */
-    bool grabbingDeath() const {
-        return m_current >= Action::DeathGrabStart && m_current <= Action::DeathGrabRelease;
-    }
+    bool grabbingDeath() const;
     /** Whether a shield is borne on the arm: the stance and gait are the shield's. */
     void setShielded(bool shielded) { m_shielded = shielded; }
     /** Whether another member is pushing the body along: standing, walking or running, it
@@ -428,14 +407,9 @@ public:
      * of it is made as it goes. */
     void setStrafe(StrafeWay way) { m_strafe = way; }
     /** Whether the body is in a strafing step, shooting or not. */
-    bool strafing() const {
-        return m_current >= Action::StrafeForward1 && m_current <= Action::StrafeShootRight2;
-    }
+    bool strafing() const;
     /** Whether the body is off its feet or getting back onto them. */
-    bool floored() const {
-        return (m_current >= Action::FallBack && m_current <= Action::GetUpForward) ||
-               m_current == Action::Whirled;
-    }
+    bool floored() const;
     /** Whether this tick's step began a shield potion's release. */
     bool potionShielded() const { return m_potionShielded; }
 
@@ -447,9 +421,7 @@ public:
     /** Whether the body is anywhere in a throw; its feet stay where they are meanwhile. */
     bool throwing() const { return isThrow(m_current); }
     /** Whether the body is busy with a potion. */
-    bool conjuring() const {
-        return m_current >= Action::UsePotion && m_current <= Action::ThrowPotionRelease;
-    }
+    bool conjuring() const;
     /** Whether the body is falling dead or lies dead; nothing else is asked of it then. */
     bool dying() const { return m_current == Action::Death; }
     /** Whether it has finished falling (at once for a class with no such sequence). */
@@ -475,43 +447,13 @@ public:
     /** Whether unpressed walking/running may begin a contact swing. Buffered attack
      * edges and actions already owning the body must finish first. */
     bool canAutoMelee() const;
-    static bool isMelee(Action action) {
-        return action >= Action::Quick1 && action <= Action::PowerLowRecover;
-    }
+    static bool isMelee(Action action);
     /** How long the attack had been going when the weapon was let go. */
     f32 attackSeconds() const { return m_attackSeconds; }
     /** The arrival is pending or still playing; player input must wait. */
     bool entering() const { return !m_entered || m_current == Action::Start; }
     /** How much of its pace the current action leaves the body. */
-    f32 moveScale() const {
-        if (entering()) {
-            return 0.0f;
-        }
-        if (webbed()) {
-            return kWebPace;
-        }
-        if (grabbingDeath() || comboBound()) {
-            return 0.0f; // a body in a partner's combo goes where the combo takes it
-        }
-        if (shoving()) {
-            return kChargePace; // the charge rushes on, faster than a run
-        }
-        if (meleeing()) {
-            return meleePace();
-        }
-        if (strongThrowing()) {
-            return kStrongThrowPace;
-        }
-        if (running() || m_current == Action::ShieldRun) {
-            return kRunPace;
-        }
-        if (strafing()) {
-            return kStrafePace;
-        }
-        return throwing() || meleeing() || conjuring() || reacting() || turboing() || guarding()
-                   ? 0.0f
-                   : 1.0f;
-    }
+    f32 moveScale() const;
     static constexpr f32 kChargePace = 1.5f;
     static constexpr f32 kRunPace = 1.3f;      ///< a run covers more ground than a walk
     static constexpr f32 kStrafePace = 0.667f; ///< strafing steps, shooting or not
@@ -520,18 +462,13 @@ public:
     // The stationary heavy-throw control policy also covers its recovery. Retail
     // PWRA_THROW/PWRA_THROW_R used .25 here (DoPlayerAction's A48).
     static constexpr f32 kStrongThrowPace = 0.0f;
-    bool quickMeleeing() const {
-        return m_current >= Action::Quick1 && m_current <= Action::Quick3Recover;
-    }
     /** How far the current action lets the body turn toward the stick: none, part of the way
      * each 30 Hz frame, or all of it. */
     f32 turnScale() const;
     bool running() const { return m_current == Action::Run1 || m_current == Action::Run2; }
     /** Whether the body is in a stepping swing or recovering from one: it carries on at half
      * its pace with the stick let go. */
-    bool lunging() const {
-        return m_current >= Action::Step1 && m_current <= Action::WalkStrikeRecover;
-    }
+    bool lunging() const;
     /** Web contact suppresses attacks, but leaves a slow escape walk. */
     bool webbed() const { return m_current == Action::WebReact; }
     /** Whether the guard is coming up, up or going down; the feet stay put throughout. */
@@ -567,9 +504,7 @@ public:
     bool castingLegend() const { return m_legendAsked; }
     bool legendReleased() const { return m_legendReleased; }
     bool superReleased() const { return m_superReleased; }
-    bool itemAttacking() const {
-        return m_current >= Action::Hammer && m_current <= Action::FireRightRecover;
-    }
+    bool itemAttacking() const;
     PlayerDeed itemReleased() const { return m_itemReleased; }
     /** Item animation multipliers are latched when the next sequence starts;
      * movement, simulation and transition clocks remain unchanged. */
@@ -633,9 +568,12 @@ private:
         f32 startFrame = 0.0f;
     };
 
-    static bool isThrow(Action action) {
-        return action >= Action::Throw && action <= Action::ThrowMovingRecover;
-    }
+    /** What the animator knows of one action: the run it belongs to, its attack category, the
+     * pace and turn it leaves the body, what its swing does and recovers by, and its traits. */
+    struct ActionInfo;
+    /** The row of `action`; the row of no family, category or trait outside the actions. */
+    static const ActionInfo& info(Action action);
+    static bool isThrow(Action action);
     /** Native attack categories 1..10, excluding an active legend-item gesture. */
     bool ordinaryAttack() const;
     Decision decide(Action requested) const;
@@ -646,7 +584,6 @@ private:
      * for its end: a partner's combo, a potion, an attack, Death's grab. */
     void applyCutIns(Action requested, Decision& d) const;
     f32 readyTransition() const;
-    f32 meleePace() const;
     Action meleeRequest(PlayerDeed deed, bool moved) const;
     Action chainAfter(Action swing) const;
     Action refine(Action action) const;
@@ -654,9 +591,6 @@ private:
     bool playable(Action action) const;
     /** A strong press buffered within a chain: the next swing is a power one. */
     bool buffered() const { return m_strongPress && m_chain != 0; }
-    static Action recoveryOf(Action swing);
-    static MeleeBlow blowOf(Action swing);
-    static bool retainsAttackPress(Action action);
     f32 animationDuration(const Decision& decision) const;
     void play(const Decision& decision, f32 seconds);
 

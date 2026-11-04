@@ -40,18 +40,6 @@ bool PlayerPotionState::valid() const {
     return ownColours <= 1;
 }
 
-bool PlayerPotionState::supports(const PlayerAnimator::Checkpoint& state) {
-    const bool potion = state.action >= PlayerAnimator::Action::UsePotion &&
-                        state.action <= PlayerAnimator::Action::ThrowPotionRelease;
-    return state.valid() && (PlayerAnimator::rollbackAction(state.action) || potion) &&
-           state.action != PlayerAnimator::Action::ShieldReady &&
-           state.action != PlayerAnimator::Action::ShieldRun && state.entered && !state.shielded &&
-           !state.shieldAsked && !state.potionShielded && !state.legendAsked &&
-           !state.legendReleased && !state.superHeld && !state.superReleased &&
-           state.itemReleased == PlayerDeed::None && state.comboClass == -1 && !state.comboRide &&
-           !state.pushed && state.meleeBlow == MeleeBlow::None;
-}
-
 std::optional<std::vector<u8>> PlayerPotionCheckpoint::encode(const PlayerPotionState& state) {
     if (!state.valid()) {
         return std::nullopt;

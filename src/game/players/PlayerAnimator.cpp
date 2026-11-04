@@ -51,6 +51,118 @@ constexpr f32 kSpinPace = 0.5f;
 constexpr f32 kIdleStepPace = 0.5f;
 constexpr f32 kPowerLowPace = 0.25f;
 constexpr f32 kStepTurn = 0.25f;
+constexpr f32 kChargerTurn = 0.5f; // COMBODWF2's turn scale (action.c 1804)
+constexpr f32 kFullTurboTurn = 0.25f;
+constexpr f32 kSpellStormLockFrame = 11;
+
+/** Which run of actions an action belongs to; the predicates over the current action are
+ * unions of these. */
+enum class ActionFamily : u8 {
+    Stance,
+    Fidget,
+    Walk,
+    Run,
+    Entrance,
+    Throw,
+    Potion,
+    Death,
+    Reaction, ///< a blow, a stun, spikes, a grab or a web
+    Turbo,
+    Shove,
+    Guard,
+    StrongThrow,
+    StrafeWalk,
+    StrafeShoot,
+    Floored, ///< off its feet or getting up, a whirlwind's too
+    SpecialShot,
+    Melee,
+    Item, ///< the hammer, the breath and the gauntlets
+    Pick,
+    Gag,
+    Shield,
+    DeathGrab,
+    Pushed,
+    ComboAct,
+    ComboBound,
+    None ///< outside the actions
+};
+
+/** DoPlayerAction's attack category (PlayerAttackType, 0x800ADBFC), numbered as the original. */
+enum class AttackType : u8 {
+    None,
+    Guard, ///< the guard and the charge
+    Slow,  ///< the slow swing and the close and middle power swings
+    Quick,
+    Turned,
+    Spin,
+    Step,
+    StrafeShot,
+    Low, ///< the low strikes, the kick and the low power swing
+    Throw,
+    StrongThrow, ///< the strong throw and the gauntlets
+    Special,     ///< the turbo moves, the special shot, the hammer and the breath
+    Combo
+};
+
+/** Whether a category is one of DoPlayerAction's ordinary attacks, 1 to 10. */
+constexpr bool ordinaryAttackType(AttackType type) {
+    return type != AttackType::None && type != AttackType::Special && type != AttackType::Combo;
+}
+
+/** The pace and turn rules that depend on class, motion or frame; the rest are fixed values. */
+enum class MotionRule : u8 {
+    Fixed,
+    Step,       ///< the row's pace while the stick moves, else kIdleStepPace
+    PowerClose, ///< the class's close power move (PowerMoves)
+    PowerMed,   ///< the class's middle power move
+    SpellStorm  ///< the sorceress's full turbo stops turning past kSpellStormLockFrame
+};
+
+namespace action_trait {
+constexpr u8 kBlendsToReady = 0x1; ///< eases back into the stance as it ends (readyTransition)
+constexpr u8 kAutoMelee = 0x2;     ///< an unpressed contact swing may begin from it
+constexpr u8 kKeepsPress = 0x4;    ///< keeps a pending attack press for the next request
+} // namespace action_trait
+
+/** Per class: whether the close and middle power moves root it, and at which rate it moves. */
+struct PowerMoves {
+    s32 character;
+    bool rootedClose = false;
+    bool rootedMed = false;
+    f32 rate = kPowerPace;
+    f32 medRate = kPowerPace;
+};
+
+constexpr std::array<PowerMoves, static_cast<usize>(kStartingClassCount)> kPowerMoves{{
+    {.character = kWarriorClass},
+    {.character = kValkyrieClass},
+    {.character = kWizardClass, .rate = kWizardPowerPace, .medRate = kWizardPowerPace},
+    {.character = kArcherClass, .medRate = kWizardPowerPace},
+    {.character = kDwarfClass},
+    {.character = kKnightClass, .rootedClose = true},
+    {.character = kSorceressClass, .rootedClose = true, .rootedMed = true},
+    {.character = kJesterClass, .rootedMed = true},
+}};
+static_assert(
+    [] {
+        for (usize i = 0; i < kPowerMoves.size(); ++i) {
+            if (kPowerMoves[i].character != static_cast<s32>(i)) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "each class's power moves sit at its index's row");
+
+/** A body of no starting class: the ordinary rates, rooted by neither move. */
+constexpr PowerMoves kNoClassPowerMoves{.character = -1};
+
+const PowerMoves& powerMovesOf(s32 character) {
+    if (character < 0 || character >= kStartingClassCount) {
+        return kNoClassPowerMoves;
+    }
+    return kPowerMoves[static_cast<usize>(character)];
+}
 
 /** Whether the deed is a legend item's gesture. */
 constexpr bool isLegend(PlayerDeed deed) {
@@ -59,6 +171,655 @@ constexpr bool isLegend(PlayerDeed deed) {
 }
 
 } // namespace
+
+struct PlayerAnimator::ActionInfo {
+    Action action;
+    ActionFamily family;
+    AttackType attackType = AttackType::None;
+    f32 pace = 1.0f; ///< of the body's pace it leaves, by its motion rule (moveScale)
+    f32 turn = 1.0f; ///< of the turn toward the stick it leaves, by its motion rule (turnScale)
+    MotionRule motion = MotionRule::Fixed;
+    MeleeBlow blow = MeleeBlow::None; ///< what the swing does to what it strikes as it completes
+    Action recovery = Action::Ready;  ///< what the swing recovers by
+    u8 traits = 0;                    ///< action_trait bits
+};
+
+const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
+    using action_trait::kAutoMelee;
+    using action_trait::kBlendsToReady;
+    using action_trait::kKeepsPress;
+    // By action: AnimAction's move and turn scales and its blends back to the stance, and
+    // DoPlayerAction's attack categories and press latches. A body in a partner's combo goes
+    // where the combo takes it, and the charge rushes on, faster than a run.
+    static constexpr std::array<ActionInfo, kActionCount> kActions{{
+        {.action = Action::Ready, .family = ActionFamily::Stance, .traits = kAutoMelee},
+        {.action = Action::Idle1,
+         .family = ActionFamily::Fidget,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Idle2,
+         .family = ActionFamily::Fidget,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Idle2Loop,
+         .family = ActionFamily::Fidget,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Walk1,
+         .family = ActionFamily::Walk,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Walk2,
+         .family = ActionFamily::Walk,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Run1,
+         .family = ActionFamily::Run,
+         .pace = kRunPace,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Run2,
+         .family = ActionFamily::Run,
+         .pace = kRunPace,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Start, .family = ActionFamily::Entrance, .pace = 0.0f},
+        {.action = Action::Throw,
+         .family = ActionFamily::Throw,
+         .attackType = AttackType::Throw,
+         .pace = 0.0f},
+        {.action = Action::ThrowMoving,
+         .family = ActionFamily::Throw,
+         .attackType = AttackType::Throw,
+         .pace = 0.0f},
+        {.action = Action::ThrowRelease,
+         .family = ActionFamily::Throw,
+         .attackType = AttackType::Throw,
+         .pace = 0.0f},
+        {.action = Action::ThrowMovingRelease,
+         .family = ActionFamily::Throw,
+         .attackType = AttackType::Throw,
+         .pace = 0.0f},
+        {.action = Action::ThrowRecover,
+         .family = ActionFamily::Throw,
+         .attackType = AttackType::Throw,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::ThrowMovingRecover,
+         .family = ActionFamily::Throw,
+         .attackType = AttackType::Throw,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::UsePotion,
+         .family = ActionFamily::Potion,
+         .pace = 0.0f,
+         .traits = kAutoMelee},
+        {.action = Action::UsePotionRelease,
+         .family = ActionFamily::Potion,
+         .pace = 0.0f,
+         .traits = kAutoMelee},
+        {.action = Action::ThrowPotion,
+         .family = ActionFamily::Potion,
+         .pace = 0.0f,
+         .traits = kAutoMelee},
+        {.action = Action::ThrowPotionRelease,
+         .family = ActionFamily::Potion,
+         .pace = 0.0f,
+         .traits = kAutoMelee},
+        {.action = Action::Death, .family = ActionFamily::Death, .traits = kKeepsPress},
+        {.action = Action::HitReact, .family = ActionFamily::Reaction, .pace = 0.0f},
+        {.action = Action::Stun, .family = ActionFamily::Reaction, .pace = 0.0f},
+        {.action = Action::TurboStrong,
+         .family = ActionFamily::Turbo,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::TurboFull,
+         .family = ActionFamily::Turbo,
+         .attackType = AttackType::Special,
+         .pace = 0.0f,
+         .turn = kFullTurboTurn,
+         .motion = MotionRule::SpellStorm},
+        {.action = Action::Shove,
+         .family = ActionFamily::Shove,
+         .attackType = AttackType::Guard,
+         .pace = kChargePace,
+         .traits = kBlendsToReady},
+        {.action = Action::DefendRaise,
+         .family = ActionFamily::Guard,
+         .attackType = AttackType::Guard,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::Defend,
+         .family = ActionFamily::Guard,
+         .attackType = AttackType::Guard,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::DefendLower,
+         .family = ActionFamily::Guard,
+         .attackType = AttackType::Guard,
+         .pace = 0.0f},
+        {.action = Action::StrongThrow,
+         .family = ActionFamily::StrongThrow,
+         .attackType = AttackType::StrongThrow,
+         .pace = kStrongThrowPace},
+        {.action = Action::StrongThrowRecover,
+         .family = ActionFamily::StrongThrow,
+         .attackType = AttackType::StrongThrow,
+         .pace = kStrongThrowPace,
+         .traits = kKeepsPress},
+        {.action = Action::StrafeForward1,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeForward2,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeBack1,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeBack2,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeLeft1,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeLeft2,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeRight1,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeRight2,
+         .family = ActionFamily::StrafeWalk,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::StrafeShootForward1,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootForward2,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootBack1,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootBack2,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootLeft1,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootLeft2,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootRight1,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::StrafeShootRight2,
+         .family = ActionFamily::StrafeShoot,
+         .attackType = AttackType::StrafeShot,
+         .pace = kStrafePace,
+         .traits = kBlendsToReady},
+        {.action = Action::FallBack,
+         .family = ActionFamily::Floored,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::GetUpBack,
+         .family = ActionFamily::Floored,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::FallForward,
+         .family = ActionFamily::Floored,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::GetUpForward,
+         .family = ActionFamily::Floored,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::SpecialShot,
+         .family = ActionFamily::SpecialShot,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::SpecialShotRecover,
+         .family = ActionFamily::SpecialShot,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::SpikeHit, .family = ActionFamily::Reaction, .pace = 0.0f},
+        {.action = Action::Grabbed,
+         .family = ActionFamily::Reaction,
+         .pace = 0.0f,
+         .traits = kBlendsToReady},
+        {.action = Action::WebReact, .family = ActionFamily::Reaction, .pace = kWebPace},
+        {.action = Action::Quick1,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Quick,
+         .pace = kQuickMeleePace,
+         .turn = 0.0f,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::Quick3Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::Quick2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Quick,
+         .pace = kQuickMeleePace,
+         .turn = 0.0f,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::Quick2Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::Quick3,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Quick,
+         .pace = kQuickMeleePace,
+         .turn = 0.0f,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::Quick3Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::Quick2Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Quick,
+         .pace = kQuickMeleePace,
+         .turn = 0.0f,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Quick3Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Quick,
+         .pace = kQuickMeleePace,
+         .turn = 0.0f,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::SlowStart,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .pace = 0.0f,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::SlowSwing,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .pace = 0.0f,
+         .blow = MeleeBlow::Heavy,
+         .recovery = Action::SlowRecover,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::SlowRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .pace = 0.0f,
+         .traits = kBlendsToReady | kAutoMelee | kKeepsPress},
+        {.action = Action::LowKick,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .blow = MeleeBlow::Kick,
+         .recovery = Action::LowKickRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::LowKickRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Low1,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::LowRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::Low2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::LowRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::LowRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Right,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::RightRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::Right2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::Right2Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::RightRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Right2Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Left,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::LeftRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::Left2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::Left2Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::LeftRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Left2Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Turn,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::TurnRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::Turn2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::Turn2Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::TurnRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Turn2Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::TurnLeft,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::TurnLeftRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::TurnLeft2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::TurnLeft2Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::TurnLeftRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::TurnLeft2Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Turned,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Spin,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Spin,
+         .pace = kSpinPace,
+         .blow = MeleeBlow::Plain,
+         .recovery = Action::SpinRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::SpinRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Spin,
+         .pace = kSpinPace,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Step1,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .blow = MeleeBlow::Heavy,
+         .recovery = Action::Step3Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::Step2,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .blow = MeleeBlow::Heavy,
+         .recovery = Action::Step2Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::Step3,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .blow = MeleeBlow::Heavy,
+         .recovery = Action::Step3Recover,
+         .traits = kBlendsToReady},
+        {.action = Action::Step2Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::Step3Recover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::WalkStrike,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .blow = MeleeBlow::Heavy,
+         .recovery = Action::WalkStrikeRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::WalkStrikeRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Step,
+         .turn = kStepTurn,
+         .motion = MotionRule::Step,
+         .traits = kBlendsToReady | kKeepsPress},
+        {.action = Action::PowerClose,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .motion = MotionRule::PowerClose,
+         .blow = MeleeBlow::Power,
+         .recovery = Action::PowerCloseRecover,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::PowerCloseRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .motion = MotionRule::PowerClose,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::PowerMed,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .motion = MotionRule::PowerMed,
+         .blow = MeleeBlow::Power,
+         .recovery = Action::PowerMedRecover,
+         .traits = kBlendsToReady | kAutoMelee},
+        // The middle power swing recovers by the close one's rule.
+        {.action = Action::PowerMedRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Slow,
+         .motion = MotionRule::PowerClose,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::PowerLow,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .pace = kPowerLowPace,
+         .blow = MeleeBlow::Power,
+         .recovery = Action::PowerLowRecover,
+         .traits = kBlendsToReady},
+        {.action = Action::PowerLowRecover,
+         .family = ActionFamily::Melee,
+         .attackType = AttackType::Low,
+         .pace = kPowerLowPace,
+         .traits = kBlendsToReady},
+        {.action = Action::SpecialShotRepeat,
+         .family = ActionFamily::SpecialShot,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::Hammer,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::HammerRecover,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::Breathe,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::BreatheRecover,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::Special,
+         .pace = 0.0f},
+        {.action = Action::FireLeft,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::StrongThrow,
+         .pace = 0.0f},
+        {.action = Action::FireLeftRecover,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::StrongThrow,
+         .pace = 0.0f},
+        {.action = Action::FireRight,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::StrongThrow,
+         .pace = 0.0f},
+        {.action = Action::FireRightRecover,
+         .family = ActionFamily::Item,
+         .attackType = AttackType::StrongThrow,
+         .pace = 0.0f},
+        {.action = Action::Pick,
+         .family = ActionFamily::Pick,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::Gag, .family = ActionFamily::Gag, .traits = kAutoMelee},
+        {.action = Action::ShieldReady,
+         .family = ActionFamily::Shield,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::ShieldRun,
+         .family = ActionFamily::Shield,
+         .pace = kRunPace,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::DeathGrabStart,
+         .family = ActionFamily::DeathGrab,
+         .pace = 0.0f,
+         .traits = kBlendsToReady},
+        {.action = Action::DeathGrab,
+         .family = ActionFamily::DeathGrab,
+         .pace = 0.0f,
+         .traits = kBlendsToReady},
+        {.action = Action::DeathGrabRelease,
+         .family = ActionFamily::DeathGrab,
+         .pace = 0.0f,
+         .traits = kBlendsToReady},
+        {.action = Action::Whirled,
+         .family = ActionFamily::Floored,
+         .pace = 0.0f,
+         .traits = kKeepsPress},
+        {.action = Action::Pushed,
+         .family = ActionFamily::Pushed,
+         .traits = kBlendsToReady | kAutoMelee},
+        {.action = Action::ComboAct1,
+         .family = ActionFamily::ComboAct,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboAct2,
+         .family = ActionFamily::ComboAct,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboAct3,
+         .family = ActionFamily::ComboAct,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboWar1,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboWar2,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboWar3,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboVal,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboWiz,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboArc,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboDwf1,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboDwf2,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = kChargerTurn},
+        {.action = Action::ComboDwf3,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboKni,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboSor,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+        {.action = Action::ComboJes,
+         .family = ActionFamily::ComboBound,
+         .attackType = AttackType::Combo,
+         .pace = 0.0f,
+         .turn = 0.0f},
+    }};
+    static_assert(
+        [] {
+            for (usize i = 0; i < kActions.size(); ++i) {
+                if (kActions[i].action != static_cast<Action>(i)) {
+                    return false;
+                }
+            }
+            return true;
+        }(),
+        "each action's row sits at its own index");
+    static_assert(kActions.back().action == Action::ComboJes, "the last row is the last action");
+    static_assert(
+        std::ranges::none_of(kSequenceNames, [](std::string_view name) { return name.empty(); }),
+        "every action names its sequence");
+    // The row outside the actions: of no family, category or trait.
+    static constexpr ActionInfo kNoAction{.action = Action::Ready, .family = ActionFamily::None};
+    return index(action) < kActions.size() ? kActions[index(action)] : kNoAction;
+}
 
 bool PlayerAnimator::Checkpoint::valid() const {
     return animation.valid() && index(action) < kActionCount && footfall <= Foot::Second &&
@@ -226,87 +987,99 @@ bool PlayerAnimator::restore(const Checkpoint& state,
 bool PlayerAnimator::isBlockableAttack(Action action) {
     // PlayerAttacking(level 1): categories 2, 5, 10, and 11 or higher.
     // Recoveries retain their attack category; quick, step and low swings do not qualify.
-    switch (action) {
-    case Action::SlowStart:
-    case Action::SlowSwing:
-    case Action::SlowRecover:
-    case Action::PowerClose:
-    case Action::PowerCloseRecover:
-    case Action::PowerMed:
-    case Action::PowerMedRecover:
-    case Action::Spin:
-    case Action::SpinRecover:
-    case Action::StrongThrow:
-    case Action::StrongThrowRecover:
-    case Action::FireLeft:
-    case Action::FireLeftRecover:
-    case Action::FireRight:
-    case Action::FireRightRecover:
-    case Action::TurboStrong:
-    case Action::TurboFull:
-    case Action::SpecialShot:
-    case Action::SpecialShotRecover:
-    case Action::SpecialShotRepeat:
-    case Action::Hammer:
-    case Action::HammerRecover:
-    case Action::Breathe:
-    case Action::BreatheRecover: return true;
-    default: return action >= Action::ComboAct1 && action <= Action::ComboJes;
-    }
+    const AttackType type = info(action).attackType;
+    return type == AttackType::Slow || type == AttackType::Spin ||
+           type == AttackType::StrongThrow || type == AttackType::Special ||
+           type == AttackType::Combo;
 }
 
 bool PlayerAnimator::locomotion(Action action) {
-    return action <= Action::Run2 ||
-           (action >= Action::StrafeForward1 && action <= Action::StrafeRight2) ||
-           action == Action::ShieldReady || action == Action::ShieldRun;
-}
-
-bool PlayerAnimator::rollbackAction(Action action) {
-    return locomotion(action) || isThrow(action) || action == Action::StrongThrow ||
-           action == Action::StrongThrowRecover ||
-           (action >= Action::DefendRaise && action <= Action::DefendLower) ||
-           (action >= Action::StrafeShootForward1 && action <= Action::StrafeShootRight2);
-}
-
-bool PlayerAnimator::rollbackMeleeAction(Action action) {
-    return isMelee(action) && (action < Action::Step1 || action > Action::WalkStrikeRecover);
-}
-
-bool PlayerAnimator::rollbackMovingMeleeAction(Action action) {
-    return isMelee(action);
+    const ActionFamily family = info(action).family;
+    return family == ActionFamily::Stance || family == ActionFamily::Fidget ||
+           family == ActionFamily::Walk || family == ActionFamily::Run ||
+           family == ActionFamily::StrafeWalk || family == ActionFamily::Shield;
 }
 
 bool PlayerAnimator::rollbackTurboAction(Action action) {
-    return action == Action::TurboStrong || action == Action::TurboFull;
+    return info(action).family == ActionFamily::Turbo;
 }
 
 bool PlayerAnimator::rollbackShoveAction(Action action) {
     return action == Action::Shove;
 }
 
-bool PlayerAnimator::rollbackReactionAction(Action action) {
-    return action == Action::HitReact || action == Action::Stun || action == Action::SpikeHit;
+bool PlayerAnimator::isThrow(Action action) {
+    return info(action).family == ActionFamily::Throw;
 }
 
-bool PlayerAnimator::rollbackReactionDeed(PlayerDeed deed) {
-    return deed == PlayerDeed::None || deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel ||
-           deed == PlayerDeed::Spike;
+bool PlayerAnimator::isMelee(Action action) {
+    return info(action).family == ActionFamily::Melee;
 }
 
-bool PlayerAnimator::restoreLocomotion(Action action, u32 sequence, f32 frame) {
-    if (m_tree == nullptr || !locomotion(action) || sequence != sequenceOf(action) ||
-        sequence >= m_tree->sequences.size() || !std::isfinite(frame) || frame < 0 ||
-        frame > static_cast<f32>(std::max(m_tree->sequences[sequence].frames - 1, 0))) {
-        return false;
+bool PlayerAnimator::comboing() const {
+    return info(m_current).family == ActionFamily::ComboAct;
+}
+
+bool PlayerAnimator::comboBound() const {
+    return info(m_current).family == ActionFamily::ComboBound;
+}
+
+bool PlayerAnimator::grabbingDeath() const {
+    return info(m_current).family == ActionFamily::DeathGrab;
+}
+
+bool PlayerAnimator::strafing() const {
+    const ActionFamily family = info(m_current).family;
+    return family == ActionFamily::StrafeWalk || family == ActionFamily::StrafeShoot;
+}
+
+bool PlayerAnimator::floored() const {
+    return info(m_current).family == ActionFamily::Floored;
+}
+
+bool PlayerAnimator::conjuring() const {
+    return info(m_current).family == ActionFamily::Potion;
+}
+
+bool PlayerAnimator::lunging() const {
+    return info(m_current).attackType == AttackType::Step;
+}
+
+bool PlayerAnimator::itemAttacking() const {
+    return info(m_current).family == ActionFamily::Item;
+}
+
+f32 PlayerAnimator::moveScale() const {
+    if (entering()) {
+        return 0.0f;
     }
-    m_current = action;
-    m_entered = true;
-    m_shielded = action == Action::ShieldReady || action == Action::ShieldRun;
-    m_player.start(m_tree->sequences[sequence], sequence, 0, frame);
-    m_pose.evaluate(*m_tree, sequence, frame);
-    m_previous = m_pose;
-    m_presentationPrevious = m_pose;
-    return true;
+    const ActionInfo& row = info(m_current);
+    const PowerMoves& power = powerMovesOf(m_character);
+    switch (row.motion) {
+    case MotionRule::Fixed:
+    case MotionRule::SpellStorm: return row.pace;
+    case MotionRule::Step: return m_moved ? row.pace : kIdleStepPace;
+    case MotionRule::PowerClose: return power.rootedClose ? 0.0f : power.rate;
+    case MotionRule::PowerMed: return power.rootedMed ? 0.0f : power.medRate;
+    }
+    return row.pace;
+}
+
+f32 PlayerAnimator::turnScale() const {
+    const ActionInfo& row = info(m_current);
+    const PowerMoves& power = powerMovesOf(m_character);
+    switch (row.motion) {
+    case MotionRule::Fixed:
+    case MotionRule::Step: return row.turn;
+    case MotionRule::PowerClose: return power.rootedClose ? 0.0f : row.turn;
+    case MotionRule::PowerMed: return power.rootedMed ? 0.0f : row.turn;
+    case MotionRule::SpellStorm:
+        // DoPlayerAction's A4C: full moves turn slowly; Spell Storm fixes its
+        // heading once the first knight's birth begins, strictly after frame 11.
+        return m_character == kSorceressClass && m_player.frame() > kSpellStormLockFrame ? 0.0f
+                                                                                         : row.turn;
+    }
+    return row.turn;
 }
 
 bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
@@ -476,11 +1249,7 @@ PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
 }
 
 bool PlayerAnimator::ordinaryAttack() const {
-    return !m_legendAsked &&
-           (throwing() || meleeing() || strongThrowing() || guarding() ||
-            m_current == Action::Shove ||
-            (m_current >= Action::FireLeft && m_current <= Action::FireRightRecover) ||
-            (m_current >= Action::StrafeShootForward1 && m_current <= Action::StrafeShootRight2));
+    return !m_legendAsked && ordinaryAttackType(info(m_current).attackType);
 }
 
 bool PlayerAnimator::canBegin(PlayerDeed deed) const {
@@ -685,9 +1454,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // categories 1..10, not just recoveries. Strong throws, gauntlets and
     // shoves qualify even though turboing() also locks their animations;
     // true turbos, special shots, hammer, breath and combos do not.
-    const bool interruptibleAttack =
-        throwing() || meleeing() || strongThrowing() || m_current == Action::Shove ||
-        (m_current >= Action::FireLeft && m_current <= Action::FireRightRecover);
+    const bool interruptibleAttack = throwing() || meleeing() || m_current == Action::Shove ||
+                                     info(m_current).attackType == AttackType::StrongThrow;
     const bool free =
         !entering() && !conjuring() && !reacting() && (!turboing() || interruptibleAttack);
     const bool asked =
@@ -950,7 +1718,7 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
     case Action::TurnLeft2:
     case Action::PowerClose:
     case Action::PowerMed:
-    case Action::PowerLow: d.action = recoveryOf(m_current); break;
+    case Action::PowerLow: d.action = info(m_current).recovery; break;
     case Action::Low1:
     case Action::Low2:
         d.action = Action::LowRecover;
@@ -976,8 +1744,7 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
     case Action::ThrowMoving:
         // A close attack or moving shot takes over the wind-up at its current frame
         // (DoPlayerAction, P_THROW/P_THROWQ's non-throw attack branch).
-        if (isMelee(requested) ||
-            (requested >= Action::StrafeShootForward1 && requested <= Action::StrafeShootRight2)) {
+        if (isMelee(requested) || info(requested).family == ActionFamily::StrafeShoot) {
             d.cut = Cut::IfDifferent;
             d.startFrame = std::round(m_player.frame());
             break;
@@ -1130,13 +1897,12 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
         if (strafing() && requested == firstHalfOf(m_current)) {
             d.action = otherHalfOf(m_current);
         }
-        d.shotBoundary =
-            m_current >= Action::StrafeShootForward1 && m_current <= Action::StrafeShootRight2;
+        d.shotBoundary = info(m_current).family == ActionFamily::StrafeShoot;
         // AnimAction's walking-strafe cases use mode 2 for an attack: it cuts in
         // immediately. Waiting for the footstep's end loses short button presses.
         // Shooting strafes still finish each half before releasing another weapon.
-        if (m_current >= Action::StrafeForward1 && m_current <= Action::StrafeRight2 &&
-            requested >= Action::StrafeShootForward1 && requested <= Action::StrafeShootRight2) {
+        if (info(m_current).family == ActionFamily::StrafeWalk &&
+            info(requested).family == ActionFamily::StrafeShoot) {
             d.cut = Cut::IfDifferent;
         }
         break;
@@ -1147,7 +1913,7 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
 void PlayerAnimator::applyCutIns(Action requested, Decision& d) const {
     // A partner's combo takes the body at once (action.c 558's mode 2 for P_FALL_DOWN to
     // P_GRABBED), once and not looped.
-    if (requested >= Action::ComboWar1 && requested <= Action::ComboJes && d.action == requested &&
+    if (info(requested).family == ActionFamily::ComboBound && d.action == requested &&
         !comboBound()) {
         d.cut = Cut::IfDifferent;
         d.repeat = false;
@@ -1187,28 +1953,7 @@ f32 PlayerAnimator::readyTransition() const {
     if (m_current == Action::Quick2Recover && m_character == kArcherClass) {
         return 0.0f;
     }
-    if (meleeing() || strafing()) {
-        return kStanceBlend;
-    }
-    switch (m_current) {
-    case Action::Idle1:
-    case Action::Idle2:
-    case Action::Idle2Loop:
-    case Action::Walk1:
-    case Action::Walk2:
-    case Action::Run1:
-    case Action::Run2:
-    case Action::ShieldReady:
-    case Action::ShieldRun:
-    case Action::Shove:
-    case Action::Pick:
-    case Action::Pushed:
-    case Action::DeathGrabStart:
-    case Action::DeathGrab:
-    case Action::DeathGrabRelease:
-    case Action::Grabbed: return kStanceBlend;
-    default: return 0.0f;
-    }
+    return (info(m_current).traits & action_trait::kBlendsToReady) != 0 ? kStanceBlend : 0.0f;
 }
 
 /** The close attack a deed asks for (AnimAction's requests): a step into what is a pace
@@ -1240,73 +1985,7 @@ bool PlayerAnimator::canAutoMelee() const {
     if (!bound() || entering() || m_quickPress || m_strongPress) {
         return false;
     }
-    if (m_current >= Action::StrafeForward1 && m_current <= Action::StrafeRight2) {
-        return true;
-    }
-    switch (m_current) {
-    case Action::Ready:
-    case Action::Idle1:
-    case Action::Idle2:
-    case Action::Idle2Loop:
-    case Action::Walk1:
-    case Action::Walk2:
-    case Action::Run1:
-    case Action::Run2:
-    case Action::ShieldReady:
-    case Action::ShieldRun:
-    case Action::Pushed:
-    case Action::Pick:
-    case Action::Gag:
-    case Action::SlowStart:
-    case Action::SlowSwing:
-    case Action::SlowRecover:
-    case Action::PowerClose:
-    case Action::PowerCloseRecover:
-    case Action::PowerMed:
-    case Action::PowerMedRecover:
-    case Action::UsePotion:
-    case Action::UsePotionRelease:
-    case Action::ThrowPotion:
-    case Action::ThrowPotionRelease: return true;
-    default: return false;
-    }
-}
-
-bool PlayerAnimator::retainsAttackPress(Action action) {
-    if (action >= Action::StrafeForward1 && action <= Action::StrafeRight2) {
-        return true;
-    }
-    switch (action) {
-    case Action::ThrowRecover:
-    case Action::ThrowMovingRecover:
-    case Action::StrongThrowRecover:
-    case Action::SlowRecover:
-    case Action::Quick2Recover:
-    case Action::Quick3Recover:
-    case Action::Step2Recover:
-    case Action::Step3Recover:
-    case Action::WalkStrikeRecover:
-    case Action::RightRecover:
-    case Action::Right2Recover:
-    case Action::LeftRecover:
-    case Action::Left2Recover:
-    case Action::TurnRecover:
-    case Action::Turn2Recover:
-    case Action::TurnLeftRecover:
-    case Action::TurnLeft2Recover:
-    case Action::SpinRecover:
-    case Action::LowRecover:
-    case Action::LowKickRecover:
-    case Action::Death:
-    case Action::FallBack:
-    case Action::GetUpBack:
-    case Action::FallForward:
-    case Action::GetUpForward:
-    case Action::Whirled:
-    case Action::DefendRaise:
-    case Action::Defend: return true;
-    default: return false;
-    }
+    return (info(m_current).traits & action_trait::kAutoMelee) != 0;
 }
 
 /** What follows a quick or stepping swing: a buffered strong press makes the chain's power
@@ -1327,7 +2006,7 @@ PlayerAnimator::Action PlayerAnimator::chainAfter(Action swing) const {
     if (asked && m_melee.range == MeleeRange::Swing) {
         return second ? Action::Quick3 : Action::Quick2;
     }
-    return recoveryOf(swing);
+    return info(swing).recovery;
 }
 
 /** A swing turned the way its target lies, cut in from a walk, or made low at something
@@ -1372,180 +2051,23 @@ bool PlayerAnimator::playable(Action action) const {
     return m_sequences[index(action)] >= 0;
 }
 
-PlayerAnimator::Action PlayerAnimator::recoveryOf(Action swing) {
-    switch (swing) {
-    case Action::Quick2: return Action::Quick2Recover;
-    case Action::Quick1:
-    case Action::Quick3: return Action::Quick3Recover;
-    case Action::Step2: return Action::Step2Recover;
-    case Action::Step1:
-    case Action::Step3: return Action::Step3Recover;
-    case Action::WalkStrike: return Action::WalkStrikeRecover;
-    case Action::SlowSwing: return Action::SlowRecover;
-    case Action::LowKick: return Action::LowKickRecover;
-    case Action::Low1:
-    case Action::Low2: return Action::LowRecover;
-    case Action::Right: return Action::RightRecover;
-    case Action::Right2: return Action::Right2Recover;
-    case Action::Left: return Action::LeftRecover;
-    case Action::Left2: return Action::Left2Recover;
-    case Action::Turn: return Action::TurnRecover;
-    case Action::Turn2: return Action::Turn2Recover;
-    case Action::TurnLeft: return Action::TurnLeftRecover;
-    case Action::TurnLeft2: return Action::TurnLeft2Recover;
-    case Action::Spin: return Action::SpinRecover;
-    case Action::PowerClose: return Action::PowerCloseRecover;
-    case Action::PowerMed: return Action::PowerMedRecover;
-    case Action::PowerLow: return Action::PowerLowRecover;
-    default: return Action::Ready;
-    }
-}
-
-/** What a completed swing does: the quick, turned, spinning and low ones the character's
- * own harm; the slow swing and the steps twice it, knocking back; the kick knocking a short
- * body down; the power swings three times it, knocking down. */
-MeleeBlow PlayerAnimator::blowOf(Action swing) {
-    switch (swing) {
-    case Action::Quick1:
-    case Action::Quick2:
-    case Action::Quick3:
-    case Action::Right:
-    case Action::Right2:
-    case Action::Left:
-    case Action::Left2:
-    case Action::Turn:
-    case Action::Turn2:
-    case Action::TurnLeft:
-    case Action::TurnLeft2:
-    case Action::Spin:
-    case Action::Low1:
-    case Action::Low2: return MeleeBlow::Plain;
-    case Action::SlowSwing:
-    case Action::Step1:
-    case Action::Step2:
-    case Action::Step3:
-    case Action::WalkStrike: return MeleeBlow::Heavy;
-    case Action::LowKick: return MeleeBlow::Kick;
-    case Action::PowerClose:
-    case Action::PowerMed:
-    case Action::PowerLow: return MeleeBlow::Power;
-    default: return MeleeBlow::None;
-    }
-}
-
 void PlayerAnimator::setCharacter(s32 character) {
     m_character = baseClassOf(character);
-}
-
-f32 PlayerAnimator::meleePace() const {
-    const bool rooted = m_character == kKnightClass || m_character == kSorceressClass;
-    switch (m_current) {
-    case Action::SlowStart:
-    case Action::SlowSwing:
-    case Action::SlowRecover: return 0.0f;
-    case Action::PowerClose:
-    case Action::PowerCloseRecover:
-    case Action::PowerMedRecover:
-        if (rooted) {
-            return 0.0f;
-        }
-        return m_character == kWizardClass ? kWizardPowerPace : kPowerPace;
-    case Action::PowerMed:
-        if (m_character == kJesterClass || m_character == kSorceressClass) {
-            return 0.0f;
-        }
-        return m_character == kWizardClass || m_character == kArcherClass ? kWizardPowerPace
-                                                                          : kPowerPace;
-    case Action::Quick1:
-    case Action::Quick2:
-    case Action::Quick3:
-    case Action::Quick2Recover:
-    case Action::Quick3Recover: return kQuickMeleePace;
-    case Action::Spin:
-    case Action::SpinRecover: return kSpinPace;
-    case Action::Step1:
-    case Action::Step2:
-    case Action::Step3:
-    case Action::Step2Recover:
-    case Action::Step3Recover:
-    case Action::WalkStrike:
-    case Action::WalkStrikeRecover: return m_moved ? 1.0f : kIdleStepPace;
-    case Action::PowerLow:
-    case Action::PowerLowRecover: return kPowerLowPace;
-    default: return 1.0f; // the turned swings, the low strikes and the kick
-    }
-}
-
-f32 PlayerAnimator::turnScale() const {
-    constexpr f32 kChargerTurn = 0.5f; // COMBODWF2's turn scale (action.c 1804)
-    constexpr f32 kFullTurboTurn = 0.25f;
-    constexpr f32 kSpellStormLockFrame = 11;
-    if (m_current == Action::ComboDwf2) {
-        return kChargerTurn;
-    }
-    if (comboing() || comboBound()) {
-        return 0.0f;
-    }
-    switch (m_current) {
-    case Action::TurboFull:
-        // DoPlayerAction's A4C: full moves turn slowly; Spell Storm fixes its
-        // heading once the first knight's birth begins, strictly after frame 11.
-        return m_character == kSorceressClass && m_player.frame() > kSpellStormLockFrame
-                   ? 0.0f
-                   : kFullTurboTurn;
-    case Action::PowerClose:
-    case Action::PowerCloseRecover:
-    case Action::PowerMedRecover:
-        return m_character == kKnightClass || m_character == kSorceressClass ? 0.0f : 1.0f;
-    case Action::PowerMed:
-        return m_character == kJesterClass || m_character == kSorceressClass ? 0.0f : 1.0f;
-    case Action::Quick1:
-    case Action::Quick2:
-    case Action::Quick3:
-    case Action::Quick2Recover:
-    case Action::Quick3Recover: return 0.0f;
-    case Action::Step1:
-    case Action::Step2:
-    case Action::Step3:
-    case Action::Step2Recover:
-    case Action::Step3Recover:
-    case Action::WalkStrike:
-    case Action::WalkStrikeRecover: return kStepTurn;
-    default: return 1.0f;
-    }
 }
 
 f32 PlayerAnimator::animationDuration(const Decision& decision) const {
     // DoPlayerAction 800AD280..800AD370 uses the requested attack type,
     // not the old action or selected follow-up. Types 1 and >=11 ignore both
     // items; a selected combo also stays unscaled when its request is READY.
-    const Action request = decision.requested;
-    if ((decision.action >= Action::ComboAct1 && decision.action <= Action::ComboJes) ||
-        (request >= Action::ComboAct1 && request <= Action::ComboJes)) {
+    const AttackType request = info(decision.requested).attackType;
+    if (info(decision.action).attackType == AttackType::Combo || request == AttackType::Combo ||
+        request == AttackType::Guard || request == AttackType::Special) {
         return 1.0f;
-    }
-    switch (request) {
-    case Action::Shove:
-    case Action::DefendRaise:
-    case Action::Defend:
-    case Action::DefendLower:
-    case Action::TurboStrong:
-    case Action::TurboFull:
-    case Action::SpecialShot:
-    case Action::SpecialShotRecover:
-    case Action::SpecialShotRepeat:
-    case Action::Hammer:
-    case Action::HammerRecover:
-    case Action::Breathe:
-    case Action::BreatheRecover: return 1.0f;
-    default: break;
     }
     // Rapid Fire accepts only types 9 and 10 (ordinary/strong throws and
     // gauntlets), not the shooting strafes in type 7. Speed is the fallback,
     // so owning both items never compounds their 0.75 duration multiplier.
-    const bool rapidAction = isThrow(request) || request == Action::StrongThrow ||
-                             request == Action::StrongThrowRecover ||
-                             (request >= Action::FireLeft && request <= Action::FireRightRecover);
+    const bool rapidAction = request == AttackType::Throw || request == AttackType::StrongThrow;
     constexpr f32 kItemAnimationDuration = 0.75f;
     if (m_rapid && rapidAction) {
         return kItemAnimationDuration;
@@ -1622,7 +2144,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     // Both ordinary releases and strafing half-cycles let fly when they give way,
     // including the last moving shot when the strafe modifier is released.
     if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease ||
-        (m_current >= Action::StrafeShootForward1 && m_current <= Action::StrafeShootRight2)) {
+        info(m_current).family == ActionFamily::StrafeShoot) {
         m_released = true;
     }
     // Contacts belong to completed swings, never to an interruption by damage or death.
@@ -1631,16 +2153,17 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         decision.action != Action::FallBack && decision.action != Action::FallForward &&
         decision.action != Action::Whirled && decision.action != Action::Grabbed &&
         decision.action != Action::WebReact) {
-        m_meleeBlow = blowOf(m_current);
+        m_meleeBlow = info(m_current).blow;
     }
     // A strike beginning counts into the chain when a press came since the last one, and
     // starts the chain over when none did; either way the presses are spent.
-    if ((blowOf(decision.action) != MeleeBlow::None && decision.action != Action::SlowSwing) ||
+    const ActionInfo& decided = info(decision.action);
+    if ((decided.blow != MeleeBlow::None && decision.action != Action::SlowSwing) ||
         decision.action == Action::SlowStart) {
         m_chain = m_quickPress || m_strongPress ? m_chain + 1 : 0;
         m_quickPress = false;
         m_strongPress = false;
-    } else if (!retainsAttackPress(decision.action)) {
+    } else if ((decided.traits & action_trait::kKeepsPress) == 0) {
         // Wind-ups and ordinary locomotion consume old edges; recoveries and
         // the native hold states preserve them for the next attack request.
         m_quickPress = false;

@@ -133,28 +133,6 @@ TEST_CASE("player rollback reproduces ranged releases and guard boundaries from 
     }
 }
 
-TEST_CASE("grounded reaction rollback excludes flight captures and special actions",
-          "[player-animation][rollback][reaction]") {
-    for (usize index = 0; index < PlayerAnimator::kActionCount; ++index) {
-        const auto action = static_cast<Action>(index);
-        CAPTURE(action);
-        const bool allowed =
-            action == Action::HitReact || action == Action::Stun || action == Action::SpikeHit;
-        CHECK(PlayerAnimator::rollbackReactionAction(action) == allowed);
-        if (allowed) {
-            CHECK_FALSE(PlayerAnimator::rollbackAction(action));
-            CHECK_FALSE(PlayerAnimator::rollbackMeleeAction(action));
-        }
-    }
-    for (usize index = 0; index <= static_cast<usize>(PlayerDeed::ComboThrown); ++index) {
-        const auto deed = static_cast<PlayerDeed>(index);
-        CAPTURE(deed);
-        const bool allowed = deed == PlayerDeed::None || deed == PlayerDeed::Flinch ||
-                             deed == PlayerDeed::Reel || deed == PlayerDeed::Spike;
-        CHECK(PlayerAnimator::rollbackReactionDeed(deed) == allowed);
-    }
-}
-
 TEST_CASE("player rollback retains potion latches, melee chains, reactions and death",
           "[player-animation][rollback]") {
     auto tree = classTree();
@@ -226,26 +204,6 @@ TEST_CASE("player checkpoint validation is atomic and requires a trusted bound s
     bad.melee.range = static_cast<MeleeRange>(255);
     CHECK_FALSE(original.restore(bad));
     CHECK(original.checkpoint() == saved);
-}
-
-TEST_CASE("player rollback admits only autonomous movement, ranged attacks and guarding",
-          "[player-animation][rollback]") {
-    for (usize value = 0; value < PlayerAnimator::kActionCount; ++value) {
-        const auto action = static_cast<Action>(value);
-        CAPTURE(action);
-        const bool ranged =
-            action == Action::Throw || action == Action::ThrowMoving ||
-            action == Action::ThrowRelease || action == Action::ThrowMovingRelease ||
-            action == Action::ThrowRecover || action == Action::ThrowMovingRecover ||
-            action == Action::StrongThrow || action == Action::StrongThrowRecover;
-        const bool strafe =
-            action >= Action::StrafeShootForward1 && action <= Action::StrafeShootRight2;
-        const bool guard = action == Action::DefendRaise || action == Action::Defend ||
-                           action == Action::DefendLower;
-        CHECK(PlayerAnimator::rollbackAction(action) ==
-              (PlayerAnimator::locomotion(action) || ranged || strafe || guard));
-    }
-    CHECK_FALSE(PlayerAnimator::rollbackAction(static_cast<Action>(255)));
 }
 
 TEST_CASE("player visual poses interpolate subframes without moving gameplay joints",

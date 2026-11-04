@@ -5,8 +5,9 @@
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
+
 #include "game/characters/Inventory.h"
-#include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
 /** A private potion-stack observation and native emission tuning, never authority
@@ -20,8 +21,6 @@ struct PlayerPotionState {
     u32 ticks = 0; ///< stable inventory prefix, also bounded by the enclosing movement contacts
     std::optional<f32> textureFrame; ///< native missile-pool WEAPONS bank; absent before first use
     bool valid() const;
-    /** Ordinary action/potion admission, independent of the generic action allowlist. */
-    static bool supports(const PlayerAnimator::Checkpoint& state);
     bool operator==(const PlayerPotionState&) const = default;
 };
 
