@@ -3,9 +3,11 @@
 #include <chrono>
 #include <cstddef>
 #include <limits>
-#include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,7 +16,10 @@
 #include "engine/platform/Input.h"
 
 #include "TestSupport.h"
+#include "fixtures/PacketStar.h"
+#include "fixtures/RecordingPacketTransport.h"
 #include "game/camera/CameraMovementLimit.h"
+#include "game/netplay/MatchSessionRoom.h"
 #include "game/netplay/RollbackExchange.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/ScriptedMotion.h"
@@ -27,57 +32,26 @@ using namespace gdl::game;
 using Phase = MatchSession::Phase;
 using Admission = MatchSession::Admission;
 
-struct Wire final : PacketTransport {
-    struct Packet {
-        Connection connection;
-        std::vector<u8> bytes;
-        Delivery delivery;
-    };
-    SendResult result = SendResult::Sent;
-    Connection failingConnection = 0; // zero applies result to every connection
-    usize budget = std::numeric_limits<usize>::max();
-    std::vector<Packet> sent;
-    std::optional<Statistics> stats;
-    mutable usize statisticsQueries = 0;
-    SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
-        const auto outcome =
-            failingConnection == 0 || connection == failingConnection ? result : SendResult::Sent;
-        if (outcome == SendResult::Sent) {
-            if (budget == 0) {
-                return SendResult::Congested;
-            }
-            --budget;
-            sent.push_back({connection, {bytes.begin(), bytes.end()}, delivery});
-        }
-        return outcome;
-    }
-    std::vector<Event> poll() override { return {}; }
-    std::optional<Statistics> statistics(Connection /*connection*/) const override {
-        ++statisticsQueries;
-        return stats;
-    }
-    void close(Connection /*connection*/) override {}
-};
+/** The host on 99; guest p on p - 1, so peer 2 is connection 1. */
+constexpr test::StarLinks kStar{.host = 99, .guestOffset = -1};
 
-struct Room {
-    MatchOwners owners;
-    std::array<MatchSession, 5> sessions;
-    std::array<Wire, 5> wires;
-    std::array<test::RollbackSessionHarness, 5> inputs;
-    std::array<u64, 5> bound{};
-    std::array<u64, 5> completed{};
-    explicit Room(MatchOwners roster = {1, 2, 3, 4}) : owners(roster) {
+using Wire = test::RecordingPacketTransport;
+
+struct Room : test::MatchSessionRoom {
+    /** The tick of the terminal frame each peer has run, which its pending boundary must name;
+     * zero once acknowledged. */
+    std::array<u64, kSlots> completed{};
+    explicit Room(MatchOwners roster = {1, 2, 3, 4}) : MatchSessionRoom(roster, kStar) {
         std::vector<MatchLink> links;
         for (u8 peer = 2; peer <= 4; ++peer) {
             if (present(peer)) {
-                links.push_back({peer, static_cast<u64>(peer - 1)});
-                const std::array server{MatchLink{1, 99}};
+                links.push_back({peer, kStar.guest(peer)});
+                const std::array server{MatchLink{1, kStar.host}};
                 REQUIRE(sessions[peer].open(peer, owners, server, 0));
             }
         }
         REQUIRE(sessions[1].open(1, owners, links, 0));
     }
-    bool present(u8 peer) const { return std::ranges::find(owners, peer) != owners.end(); }
     bool loaded(u8 peer) {
         auto& session = sessions[peer];
         if (session.phase() != Phase::Loading) {
@@ -115,44 +89,28 @@ struct Room {
         }
         return result;
     }
-    MatchParty party() const {
-        MatchParty result;
-        for (usize seat = 0; seat < owners.size(); ++seat) {
-            if (owners[seat] != 0) {
-                CharacterProfile profile;
-                profile.name = "TEST";
-                profile.character = static_cast<s32>(seat);
-                profile.gold = static_cast<s32>(seat) * 100;
-                result[seat] = profile;
+    MatchParty party() const { return MatchSessionRoom::party("TEST"); }
+    /** What a packet delivered at `now` meets: its receiver takes it or finds it stale, then
+     * acknowledges the terminal boundary it waits on. */
+    auto arrival(const MatchSession::Time& now) {
+        return [this, &now](u8 /*source*/, u8 target, PacketTransport::Connection sender,
+                            const Packet& packet) {
+            const auto admitted = sessions[target].receive(sender, packet.bytes, now);
+            REQUIRE((admitted == Admission::Accepted || admitted == Admission::Stale));
+            // This test adapter has already executed the same terminal
+            // frame. Acknowledgment is explicit, not receipt-driven advancement.
+            if (const auto* pending = sessions[target].pendingNativeContext()) {
+                REQUIRE(pending->sourceTick == completed[target]);
+                REQUIRE(sessions[target].completeNativeBoundary(sessions[target].context().epoch,
+                                                                completed[target]));
+                completed[target] = 0;
             }
-        }
-        return result;
+        };
     }
+    /** Five passes of flush then deliver, all at `now`. */
     void pump(MatchSession::Time now = MatchSession::Clock::now()) {
-        for (u8 pass = 0; pass < 5; ++pass) {
-            for (u8 peer = 1; peer <= 4; ++peer) {
-                if (!present(peer)) {
-                    continue;
-                }
-                sessions[peer].flush(wires[peer], now);
-                const auto sent = std::move(wires[peer].sent);
-                wires[peer].sent.clear();
-                for (const auto& packet : sent) {
-                    const auto target = peer == 1 ? packet.connection + 1 : 1;
-                    const auto sender = peer == 1 ? 99 : peer - 1;
-                    const auto admitted = sessions[target].receive(sender, packet.bytes, now);
-                    REQUIRE((admitted == Admission::Accepted || admitted == Admission::Stale));
-                    // This test adapter has already executed the same terminal
-                    // frame. Acknowledgment is explicit, not receipt-driven advancement.
-                    if (const auto* pending = sessions[target].pendingNativeContext()) {
-                        REQUIRE(pending->sourceTick == completed[target]);
-                        REQUIRE(sessions[target].completeNativeBoundary(
-                            sessions[target].context().epoch, completed[target]));
-                        completed[target] = 0;
-                    }
-                }
-            }
-        }
+        PacketStar::pump(
+            5, [this, now](u8 peer, Wire& wire) { sessions[peer].flush(wire, now); }, arrival(now));
     }
     void completeOne() {
         const u64 tick = inputs[1].tick();
@@ -1160,7 +1118,7 @@ TEST_CASE("send detects a closed guest before its disconnect event without stopp
     auto& host = room.sessions[1];
     auto& wire = room.wires[1];
     REQUIRE(host.queuedControls() == 0);
-    wire.failingConnection = 1; // guest 2; guest 3's connection is healthy
+    wire.faultConnection = 1; // guest 2; guest 3's connection is healthy
     wire.result = result;
     host.flush(wire);
     if (result == PacketTransport::SendResult::Invalid) {
