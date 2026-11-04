@@ -317,6 +317,8 @@ public:
             digest.fields<7>(state);
         }
     };
+    /** The bursts under way, in the order they began. */
+    std::span<const Burst> bursts() const { return m_sim.bursts; }
 
     /** Pointer-free complete pool state, including undelivered outputs. These
      * bounds limit a rollback capture, not native gameplay; overflow refuses the

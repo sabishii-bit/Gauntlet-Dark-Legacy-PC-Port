@@ -9,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Log.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -55,7 +56,7 @@ struct Fixture {
         REQUIRE(scene.open(device, context, world, party, options));
     }
 
-    SimulationObservation::Digest digest() {
+    NativeStateDigest::Digest digest() {
         const auto textures = device.texturesCreated;
         const auto uploads = device.textureUpdates;
         const auto draws = device.draws.size();

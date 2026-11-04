@@ -3,6 +3,8 @@
 #include <memory>
 #include <vector>
 
+#include "engine/io/NativeStateDigest.h"
+
 #include "game/netplay/MatchSession.h"
 #include "game/rollback/InputJournal.h"
 #include "game/rollback/RollbackInputs.h"
@@ -36,7 +38,7 @@ public:
     };
     struct ConfirmedDigest {
         u64 tick = 0;
-        SimulationObservation::Digest digest;
+        NativeStateDigest::Digest digest;
         bool operator==(const ConfirmedDigest&) const = default;
     };
     struct Result {
@@ -77,8 +79,8 @@ public:
     };
     /** Common schema for a captured native scene and its same-tick control.
      * Offline input-reference harnesses use this with their actual control. */
-    static SimulationObservation::Digest agreementDigest(const SimulationObservation::Digest& scene,
-                                                         const Control& control);
+    static NativeStateDigest::Digest agreementDigest(const NativeStateDigest::Digest& scene,
+                                                     const Control& control);
 
     NativeRollbackDriver();
     ~NativeRollbackDriver();

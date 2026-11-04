@@ -61,8 +61,7 @@ PlayScene::LocalSnapshot::~LocalSnapshot() = default;
 PlayScene::LocalSnapshot::LocalSnapshot(LocalSnapshot&&) noexcept = default;
 PlayScene::LocalSnapshot& PlayScene::LocalSnapshot::operator=(LocalSnapshot&&) noexcept = default;
 
-std::optional<SimulationObservation::Digest>
-PlayScene::nativeLocalDigest(const LocalSnapshot& saved) {
+std::optional<NativeStateDigest::Digest> PlayScene::nativeLocalDigest(const LocalSnapshot& saved) {
     if (!canRestoreLocal(saved) || !registerNativeDigestResources()) {
         return std::nullopt;
     }

@@ -17,6 +17,7 @@
 
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
@@ -29,7 +30,6 @@
 #include "game/online/NativeRollbackDriver.h"
 #include "game/rollback/RollbackInputs.h"
 #include "game/rollback/SessionInputs.h"
-#include "game/rollback/SimulationObserver.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -112,7 +112,6 @@ struct NativeScene {
     test::RecordingUnlocks unlocks;
     GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
-    SimulationObserver observer{scene};
 
     explicit NativeScene(const Settings& settings) {
         const std::string name = settings.secret ? "S4" : "G1";
@@ -168,7 +167,6 @@ struct NativeScene {
             soundWatch = std::make_unique<SoundPlayer::Capture>(
                 &sounds, [&](const auto&) { ++physicalAudio; });
         }
-        REQUIRE(observer.bind());
     }
 
     void primeSecretContact() {
@@ -206,8 +204,7 @@ struct PlayerObservation {
     bool operator==(const PlayerObservation&) const = default;
 };
 struct Observation {
-    SimulationObservation diagnostic;
-    std::optional<SimulationObservation::Digest> native;
+    std::optional<NativeStateDigest::Digest> native;
     std::vector<PlayerObservation> players;
     std::vector<PlayerSimulation> playerValues;
     WorldCamera camera;
@@ -215,18 +212,13 @@ struct Observation {
     TransitionScreen::Phase transition{};
 };
 Observation observe(NativeScene& source) {
-    Observation result{source.observer.observe(),
-                       source.scene.nativeAgreementDigest(),
+    Observation result{source.scene.nativeAgreementDigest(),
                        {},
                        {},
                        source.scene.viewCamera(),
                        source.scene.challenge().state(),
                        source.scene.transition().phase()};
     REQUIRE(result.native);
-    // The existing observers explicitly report incomplete coverage. Agreement
-    // here is evidence for their fields, not a hash of every native owner.
-    REQUIRE_FALSE(result.diagnostic.complete);
-    REQUIRE_FALSE(result.diagnostic.unobserved.empty());
     for (const auto& player : source.scene.participants()) {
         result.players.push_back({player.actor.position(), player.actor.facing(), player.life,
                                   player.levelKills, player.actor.save().toJson()});
@@ -236,22 +228,13 @@ Observation observe(NativeScene& source) {
 }
 void compare(const Observation& got, const Observation& expected) {
     CHECK(got.native == expected.native);
-    REQUIRE(got.diagnostic.subsystems.size() == expected.diagnostic.subsystems.size());
-    usize available = 0;
-    for (usize index = 0; index < expected.diagnostic.subsystems.size(); ++index) {
-        const auto& want = expected.diagnostic.subsystems[index];
-        CAPTURE(want.name, want.unavailable);
-        CHECK(got.diagnostic.subsystems[index] == want);
-        available += want.digest.has_value() ? 1 : 0;
-    }
-    REQUIRE(available >= 3);
     CHECK(got.players == expected.players);
     REQUIRE(got.playerValues.size() == expected.playerValues.size());
     for (usize seat = 0; seat < expected.playerValues.size(); ++seat) {
         CAPTURE(seat);
         // Compare the actual complete participant values, including hidden
-        // controls and all character classes. Child figures/scene owners are
-        // separate: this does not turn the partial scene observer into proof.
+        // controls and all character classes. Child figures and the scene's
+        // other owners are covered by the native digest compared above.
         CHECK(got.playerValues[seat] == expected.playerValues[seat]);
     }
     CHECK(got.camera.position == expected.camera.position);
@@ -275,7 +258,7 @@ struct Peer {
     std::set<FrameEventIdentity> unretractable;
     std::map<u64, u64> sampledAt;
     std::map<u64, u64> appliedAt;
-    std::map<u64, SimulationObservation::Digest> digests;
+    std::map<u64, NativeStateDigest::Digest> digests;
     std::vector<f64> correctionMilliseconds, forwardMilliseconds;
     usize maxCorrectionFrames = 0;
     bool pendingUnlock = false;
@@ -409,7 +392,7 @@ void run(const Settings& settings) {
          "Native observations are partial; recorded audio is an explicit fixture option.");
     std::vector<Ledger::Journal> expectedJournals(settings.ticks + 1);
     std::vector<std::optional<SceneSoundEvents::Frame>> expectedAudio(settings.ticks + 1);
-    std::map<u64, SimulationObservation::Digest> expectedDigests;
+    std::map<u64, NativeStateDigest::Digest> expectedDigests;
     Observation expected;
     {
         NativeScene reference(settings);

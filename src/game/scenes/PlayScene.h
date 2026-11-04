@@ -69,7 +69,6 @@
 #include "game/players/TurboMeter.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/rollback/FrameEventLedger.h"
-#include "game/rollback/SimulationObservation.h"
 #include "game/scenes/ClassUnlocks.h"
 #include "game/scenes/Haptics.h"
 #include "game/scenes/ScenePicking.h"
@@ -373,10 +372,10 @@ public:
         std::vector<Sample> samples;
     };
     /** Optional diagnostics only; the ordinary path does not read a clock. */
-    std::optional<SimulationObservation::Digest>
+    std::optional<NativeStateDigest::Digest>
     nativeAgreementDigest(NativeDigestProfile* profile = nullptr);
     /** Same schema over retained native values, without restoring or drawing. */
-    std::optional<SimulationObservation::Digest> nativeLocalDigest(const LocalSnapshot& saved);
+    std::optional<NativeStateDigest::Digest> nativeLocalDigest(const LocalSnapshot& saved);
     /** Read-only native load-barrier preflight for message/hint resources whose
      * absence changes simulation holds. Does not change offline optional art. */
     bool nativePresentationReady() const;
@@ -647,8 +646,7 @@ public:
     s32 familiarTier(s32 player) const;
 
 private:
-    friend class SimulationObserver; // test-only read access, no restoration interface
-    friend class ConsoleStage;       // what the shared console verbs may change, within a tick
+    friend class ConsoleStage; // what the shared console verbs may change, within a tick
     u64 m_openGeneration = 0;
     Simulation m_sim;
     struct OutputFrame {
@@ -697,8 +695,6 @@ private:
     RecordedStep advanceStep(u64 epoch, u64 tick, f64 deltaSeconds, const Inputs& inputs,
                              std::span<const ConsoleAction> actions, ConsolePlay play);
     void advanceConsoleFlight(f64 deltaSeconds, const Inputs& inputs);
-    SimulationObservation::Digest simulationControlDigest() const;
-    SimulationObservation::Digest opponentFollowupDigest() const;
     bool registerNativeDigestResources();
     bool appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot* saved,
                            NativeDigestProfile* profile = nullptr) const;

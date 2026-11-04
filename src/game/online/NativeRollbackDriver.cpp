@@ -316,8 +316,8 @@ struct NativeRollbackDriver::Data {
             for (auto reply = consoleReplies.begin();
                  reply != consoleReplies.end() && reply->first <= through;) {
                 result.consoleReplies.insert(result.consoleReplies.end(),
-                                               std::make_move_iterator(reply->second.begin()),
-                                               std::make_move_iterator(reply->second.end()));
+                                             std::make_move_iterator(reply->second.begin()),
+                                             std::make_move_iterator(reply->second.end()));
                 reply = consoleReplies.erase(reply);
             }
         }
@@ -343,8 +343,8 @@ struct NativeRollbackDriver::Data {
 NativeRollbackDriver::NativeRollbackDriver() : m_data(std::make_unique<Data>()) {}
 NativeRollbackDriver::~NativeRollbackDriver() = default;
 
-SimulationObservation::Digest
-NativeRollbackDriver::agreementDigest(const SimulationObservation::Digest& scene,
+NativeStateDigest::Digest
+NativeRollbackDriver::agreementDigest(const NativeStateDigest::Digest& scene,
                                       const Control& control) {
     const auto& [arrivalVotes, terminal] = control;
     NativeStateDigest digest;
@@ -476,8 +476,8 @@ bool NativeRollbackDriver::sample(const SessionInputs::Frame& local,
     if (data.terminalReported) {
         return true;
     }
-    if (console && (data.localPeer != 1 || !console->valid() ||
-                    !data.inputs.sampleReady() || data.control.terminal)) {
+    if (console && (data.localPeer != 1 || !console->valid() || !data.inputs.sampleReady() ||
+                    data.control.terminal)) {
         return false;
     }
     std::vector<InputCommand> commands;

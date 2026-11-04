@@ -145,7 +145,6 @@ public:
     bool restore(const State& state, const EffectTrees::PoolCheckpoint& effects);
 
 private:
-    friend class SimulationCheckpointObserver;
     struct CaptureResources;
     static bool unused(const Combatant& actor);
     bool supported() const;

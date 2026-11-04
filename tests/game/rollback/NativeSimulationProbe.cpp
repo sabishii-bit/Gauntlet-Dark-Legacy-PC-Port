@@ -1,19 +1,23 @@
-// Runs the real gameplay update in an independent process. Offline mode retains
-// its partial diagnostic observer; network mode exercises native rollback over
-// actual Iroh (local by default, relay opt-in), reporting confirmed native hashes.
-// Neither mode uses a replica scene or opens an audio/display device.
+// Runs the real gameplay update in an independent process. Offline mode reports
+// the running digest of every owner in the scene's native digest; network mode
+// exercises native rollback over actual Iroh (local by default, relay opt-in),
+// reporting confirmed native hashes. Neither mode uses a replica scene or opens
+// an audio/display device.
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -32,8 +36,7 @@
 #include "game/rollback/NativeProbeLink.h"
 #include "game/rollback/NativeProbeTiming.h"
 #include "game/rollback/SessionInputs.h"
-#include "game/rollback/SimulationObservation.h"
-#include "game/rollback/SimulationObserver.h"
+#include "game/scenes/PlayScene.h"
 
 namespace {
 using namespace gdl;
@@ -332,6 +335,53 @@ Json networkMetrics(const test::NativeProbeLink::Metrics& value) {
               {"residence_max_ms", injected.residenceMaxMs}}}};
 }
 
+/** One owner's running digest in an offline report, or why it has none. */
+struct ProbeSubsystem {
+    std::string name;
+    std::optional<NativeStateDigest::Digest> digest;
+    std::string unavailable; ///< nonempty exactly when there is no digest
+};
+
+/** Most owners an offline report names: two digits of place keep the names in stream order. */
+constexpr usize kMaxSubsystems = 100;
+
+/** An owner's report name: its place in the digest stream, then its own name, so that the
+ * sorted names a report carries list the owners in the order they are hashed. */
+std::string subsystemName(usize index, std::string_view owner) {
+    return std::format("{:02}-{}", index, owner);
+}
+
+/** The report names of the profile's owners, in stream order. */
+std::vector<std::string> subsystemNames(const PlayScene::NativeDigestProfile& profile) {
+    require(profile.samples.size() <= kMaxSubsystems, "Too many native digest owners to name");
+    std::vector<std::string> names;
+    names.reserve(profile.samples.size());
+    for (usize index = 0; index < profile.samples.size(); ++index) {
+        names.push_back(subsystemName(index, profile.samples[index].owner));
+    }
+    return names;
+}
+
+/** Each named owner's running digest in `profile`, or why it has none. */
+std::vector<ProbeSubsystem> subsystemsOf(const PlayScene::NativeDigestProfile& profile,
+                                         std::span<const std::string> names) {
+    std::vector<ProbeSubsystem> result;
+    result.reserve(names.size());
+    for (usize index = 0; index < names.size(); ++index) {
+        ProbeSubsystem subsystem{names[index], std::nullopt, {}};
+        if (index >= profile.samples.size() ||
+            subsystemName(index, profile.samples[index].owner) != names[index]) {
+            subsystem.unavailable = "the native digest stopped before this owner";
+        } else if (const auto& digest = profile.samples[index].runningDigest) {
+            subsystem.digest = digest;
+        } else {
+            subsystem.unavailable = "the owner refused its native state or resources";
+        }
+        result.push_back(std::move(subsystem));
+    }
+    return result;
+}
+
 // Journal v1 is tick-indexed, including startup. Aim is already resolved into
 // world space, just as it must be at the device/network input boundary. No mouse
 // projection, current camera, wall clock or render cadence selects these inputs.
@@ -523,11 +573,10 @@ void run(const Options& options) {
         require(!report.fail(), "Could not finish native rollback report");
         return;
     }
-    // The older offline observer is diagnostic only. The network path above
-    // hashes actual captured native values and does not bind these catalogs.
-    SimulationObserver observer{scene};
-    require(observer.bind(), "Could not bind native observation resources");
+    // Offline, each tick reports the running digest after every owner of the scene's
+    // native digest, so the first differing name is the owner that diverged first.
     const Mat4 projection = glm::ortho(0.0f, 640.0f, 448.0f, 0.0f, -1.0f, 1.0f);
+    std::vector<std::string> names;
     u32 readyTicks = 0;
     u32 movedTicks = 0;
     usize mostEnemies = 0;
@@ -573,8 +622,9 @@ void run(const Options& options) {
         require(outcome == PlayOutcome::Running,
                 "Scene requested travel or ended; campaign transitions are not exercised yet");
         // An identity roundtrip inside the real scene tests integration without pretending
-        // that rewinding only enemies could replay a whole scene. The observer and a separate
-        // uninterrupted run compare outcomes; neither capture nor restore emits world events.
+        // that rewinding only enemies could replay a whole scene. The running digests and a
+        // separate uninterrupted run compare outcomes; neither capture nor restore emits world
+        // events.
         if (enemySaved) {
             bool saved = false;
             bool restored = false;
@@ -595,15 +645,12 @@ void run(const Options& options) {
                 device.endFrame();
             });
         }
-        SimulationObservation observation;
-        measure(observationTimes, [&] { observation = observer.observe(); });
-        std::ranges::sort(observation.subsystems, {}, &SimulationObservation::Subsystem::name);
+        PlayScene::NativeDigestProfile profile;
+        // A refused digest leaves its owner without a running digest, which the row reports.
+        measure(observationTimes,
+                [&] { static_cast<void>(scene.nativeAgreementDigest(&profile)); });
         if (tick == 1) {
-            std::vector<std::string> names;
-            names.reserve(observation.subsystems.size());
-            for (const auto& subsystem : observation.subsystems) {
-                names.push_back(subsystem.name);
-            }
+            names = subsystemNames(profile);
             write({{"type", "metadata"},
                    {"schema", 1},
                    {"simulation", "PlayScene::update"},
@@ -620,13 +667,13 @@ void run(const Options& options) {
                    {"assets_digest", assetsDigest},
                    {"data_digest", dataDigest},
                    {"config_digest", configDigest},
-                   {"complete_state", observation.complete},
-                   {"unobserved", observation.unobserved},
+                   {"complete_state", false},
+                   {"unobserved", Json::array()},
                    {"subsystems", names}});
         }
         Json hashes = Json::object();
         Json unavailable = Json::object();
-        for (const auto& subsystem : observation.subsystems) {
+        for (const auto& subsystem : subsystemsOf(profile, names)) {
             if (subsystem.digest) {
                 hashes[subsystem.name] = hex(*subsystem.digest);
             } else {

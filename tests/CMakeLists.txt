@@ -864,8 +864,7 @@ if(GDL_ENABLE_NETPLAY)
     endif()
     set_target_properties(netplayplaytests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
     # Actual gameplay, independent-process determinism observations; no replicas.
-    add_executable(nativeprobe game/rollback/NativeSimulationProbe.cpp game/rollback/NativeProbeLink.cpp
-        game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp)
+    add_executable(nativeprobe game/rollback/NativeSimulationProbe.cpp game/rollback/NativeProbeLink.cpp)
     target_link_libraries(nativeprobe PRIVATE game_diagnostics gdl::game gdl::mods gdl::engine_net)
     target_include_directories(nativeprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(nativeprobe PRIVATE
@@ -873,7 +872,6 @@ if(GDL_ENABLE_NETPLAY)
     gdl_apply_compiler_options(nativeprobe)
     set_target_properties(nativeprobe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
     target_sources(netplayplaytests PRIVATE game/level/SimulationSeedTests.cpp
-        game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
         game/scenes/NativePresentationReadinessTests.cpp
         game/rollback/HintInputCommandTests.cpp game/rollback/NativeHintInputTests.cpp
         game/netplay/NativeAgreementSceneTests.cpp
@@ -991,7 +989,6 @@ if(GDL_ENABLE_NETPLAY)
         game/players/PlayerActorCheckpointTests.cpp
         game/rollback/NativeProbeTimingTests.cpp
         game/enemies/EnemiesCheckpointTests.cpp engine/world/TextureAnimatorTests.cpp
-        game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
         game/scenes/NativePresentationReadinessTests.cpp
         engine/app/ApplicationTimingTests.cpp
         game/rollback/ConsoleActionTests.cpp game/rollback/SharedConsoleWordsTests.cpp
@@ -1034,7 +1031,6 @@ target_sources(tests PRIVATE engine/io/Sha256Tests.cpp game/netplay/AssetDigestT
     game/online/NativeRollbackDriverTests.cpp
     game/scenes/PlaySceneControlEqualityTests.cpp
     game/audio/SceneSoundEventsTests.cpp
-    game/rollback/SimulationObserver.cpp game/rollback/SimulationObserverBindings.cpp
     game/scenes/NativePresentationReadinessTests.cpp
     game/rollback/HintInputCommandTests.cpp game/rollback/NativeHintInputTests.cpp
     game/online/NetplayMenuTests.cpp

@@ -9,6 +9,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/StringTable.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -19,7 +20,7 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-using Digest = SimulationObservation::Digest;
+using Digest = NativeStateDigest::Digest;
 constexpr f64 kStep = 1.0 / 60.0;
 
 // The same input-only warmup used by the native rewind fixture. These are real

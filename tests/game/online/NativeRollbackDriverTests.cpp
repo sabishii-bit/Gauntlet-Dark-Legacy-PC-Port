@@ -12,6 +12,7 @@
 #include "engine/assets/StringTable.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
@@ -134,7 +135,7 @@ struct Fixture {
 
 TEST_CASE("rollback agreement includes all native coordinator control fields",
           "[native-rollback-driver][native-rollback-digest]") {
-    const SimulationObservation::Digest scene{};
+    const NativeStateDigest::Digest scene{};
     NativeRollbackDriver::Control control;
     const auto initial = NativeRollbackDriver::agreementDigest(scene, control);
     for (usize seat = 0; seat < control.arrivalVotes.size(); ++seat) {
@@ -580,7 +581,7 @@ TEST_CASE("rollback hashes the corrected saved frame only after every seat confi
     REQUIRE(delayed->driver.bind(delayed->scene, delayed->match, 1));
     std::optional<NativeRollbackDriver::ConfirmedDigest> expected;
     PlayScene::LocalSnapshot predictedThirty;
-    std::optional<SimulationObservation::Digest> predictedHash;
+    std::optional<NativeStateDigest::Digest> predictedHash;
     SessionInputs::Frame thirtieth;
     if (mismatched) {
         thirtieth[3].move = {{1, 0}, 1};
@@ -631,7 +632,7 @@ TEST_CASE("rollback hashes the corrected saved frame only after every seat confi
 
 TEST_CASE("confirmed rollback hashes distinguish pending non-unanimous arrival votes",
           "[native-rollback-driver][native-rollback-digest][native-rollback-votes][assets]") {
-    std::array<std::optional<SimulationObservation::Digest>, 2> scenes;
+    std::array<std::optional<NativeStateDigest::Digest>, 2> scenes;
     std::array<std::optional<NativeRollbackDriver::ConfirmedDigest>, 2> agreements;
     for (usize voted = 0; voted < 2; ++voted) {
         auto fixture = std::make_unique<Fixture>(MatchOwners{1, 2, 0, 0}, false, "G5");

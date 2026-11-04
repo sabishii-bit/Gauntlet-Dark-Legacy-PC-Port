@@ -11,12 +11,12 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/StringTable.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/rollback/LocalStateHistory.h"
 #include "game/rollback/SessionInputs.h"
-#include "game/rollback/SimulationObserver.h"
 #include "game/scenes/NativeDigestProfileSupport.h"
 #include "game/scenes/PlayScene.h"
 
@@ -65,13 +65,10 @@ struct Fixture {
     LevelWorld world;
     GameServices context;
     PlayScene scene;
-    SimulationObserver observer{scene};
     std::vector<PartyMember> initialParty;
     u32 tick = 0;
-    bool bindLegacyObserver = true;
 
-    explicit Fixture(std::string_view levelName, s32 seats = 2, bool legacyObserver = true)
-        : bindLegacyObserver(legacyObserver) {
+    explicit Fixture(std::string_view levelName, s32 seats = 2) {
         test::assetOrSkip(std::format("LEVELS/LEVEL{}/WORLDS.PS2", levelName));
         config.timing.tickRate = 60;
         REQUIRE(catalog.load(root));
@@ -102,13 +99,7 @@ struct Fixture {
         options.welcome = false;
         REQUIRE(scene.open(device, context, world, initialParty, options,
                            {.stopTimeTotal = &stopTimeTotal}));
-        if (bindLegacyObserver) {
-            REQUIRE(observer.bind());
-        } else {
-            // Native-only tests use the shipping full-state resource registry,
-            // not the retired cross-process diagnostic catalog's narrower domain.
-            REQUIRE(scene.nativeAgreementDigest());
-        }
+        REQUIRE(scene.nativeAgreementDigest());
         tick = 0;
     }
 
@@ -139,8 +130,7 @@ struct PlayerView {
 };
 
 struct Observation {
-    SimulationObservation diagnostic;
-    std::optional<SimulationObservation::Digest> native;
+    std::optional<NativeStateDigest::Digest> native;
     std::vector<PlayerView> players;
     WorldCamera camera;
     bool spawning{};
@@ -158,8 +148,7 @@ struct Observation {
 };
 
 Observation observe(Fixture& fixture) {
-    Observation result{fixture.observer.observe(),
-                       fixture.scene.nativeAgreementDigest(),
+    Observation result{fixture.scene.nativeAgreementDigest(),
                        {},
                        fixture.scene.viewCamera(),
                        fixture.scene.spawning(),
@@ -167,18 +156,7 @@ Observation observe(Fixture& fixture) {
                        fixture.scene.secretTravel(),
                        fixture.scene.transition().phase(),
                        fixture.stopTimeTotal};
-    // Existing diagnostics deliberately have partial coverage. Missing owner
-    // visitors are not made into hashes of an empty state by this test.
-    REQUIRE_FALSE(result.diagnostic.complete);
-    REQUIRE_FALSE(result.diagnostic.unobserved.empty());
     REQUIRE(result.native);
-    usize available = 0;
-    for (const auto& subsystem : result.diagnostic.subsystems) {
-        CAPTURE(subsystem.name, subsystem.unavailable);
-        CHECK(subsystem.digest.has_value() == subsystem.unavailable.empty());
-        available += subsystem.digest.has_value() ? 1 : 0;
-    }
-    REQUIRE(available >= 3);
     result.opponents = &fixture.scene.opponents();
     REQUIRE(result.opponents->saveLocal(result.nativeOpponents));
     result.fixtures = &fixture.scene.fixtures();
@@ -206,12 +184,6 @@ void checkObservation(const Observation& actual, const Observation& expected) {
     REQUIRE(actual.world == expected.world);
     CHECK(actual.world->equalLocal(actual.nativeWorld, expected.nativeWorld));
     CHECK(actual.nativePlayers == expected.nativePlayers);
-    REQUIRE(actual.diagnostic.subsystems.size() == expected.diagnostic.subsystems.size());
-    for (usize i = 0; i < expected.diagnostic.subsystems.size(); ++i) {
-        CAPTURE(expected.diagnostic.subsystems[i].name,
-                actual.diagnostic.subsystems[i].unavailable);
-        CHECK(actual.diagnostic.subsystems[i] == expected.diagnostic.subsystems[i]);
-    }
     CHECK(actual.native == expected.native);
     CHECK(actual.players == expected.players);
     CHECK(actual.camera.position == expected.camera.position);
@@ -287,7 +259,7 @@ void checkDraws(std::span<const test::RecordedDraw> actual,
 
 TEST_CASE("native console actions target their canonical seat and rewind cheats gifts and flight",
           "[native-console][play-scene-local-rewind][assets]") {
-    auto fixture = std::make_unique<Fixture>("G2", 2, false);
+    auto fixture = std::make_unique<Fixture>("G2", 2);
     fixture->advanceTo(360);
     auto& scene = fixture->scene;
     const auto flying = [&](s32 seat) {
@@ -336,7 +308,7 @@ TEST_CASE("native console actions target their canonical seat and rewind cheats 
 
 TEST_CASE("local console camera changes neither native state nor the next native tick",
           "[native-console][native-console-camera][assets]") {
-    auto fixture = std::make_unique<Fixture>("G2", 2, false);
+    auto fixture = std::make_unique<Fixture>("G2", 2);
     fixture->advanceTo(360);
     auto& scene = fixture->scene;
     PlayScene::LocalSnapshot before;
@@ -362,7 +334,7 @@ TEST_CASE("local console camera changes neither native state nor the next native
 
 TEST_CASE("console travel records reversible intent and clears on secret return",
           "[native-console][native-console-travel][assets]") {
-    auto fixture = std::make_unique<Fixture>("G2", 2, false);
+    auto fixture = std::make_unique<Fixture>("G2", 2);
     auto& scene = fixture->scene;
     PlayScene::LocalSnapshot before;
     REQUIRE(scene.saveLocal(before));
@@ -387,7 +359,7 @@ TEST_CASE("console travel records reversible intent and clears on secret return"
 
 TEST_CASE("shared console rejects invalid values and absent seats without mutation",
           "[native-console][native-console-validation][assets]") {
-    auto fixture = std::make_unique<Fixture>("G2", 2, false);
+    auto fixture = std::make_unique<Fixture>("G2", 2);
     auto& scene = fixture->scene;
     PlayScene::LocalSnapshot before;
     REQUIRE(scene.saveLocal(before));
@@ -417,7 +389,7 @@ TEST_CASE("shared console rejects invalid values and absent seats without mutati
 TEST_CASE("native console spawn categories survive correction with retained resource caches",
           "[native-console][native-console-spawn][assets]") {
     test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
-    auto fixture = std::make_unique<Fixture>("G2", 2, false);
+    auto fixture = std::make_unique<Fixture>("G2", 2);
     auto& scene = fixture->scene;
     REQUIRE_FALSE(fixture->world.layout().objects().empty());
     REQUIRE(scene.beginRecordedAudio(1));
@@ -453,7 +425,7 @@ TEST_CASE("native console spawn categories survive correction with retained reso
 
 TEST_CASE("console spawn budget is bounded and restored with its active objects",
           "[native-console][native-console-spawn-limit][assets]") {
-    auto fixture = std::make_unique<Fixture>("G2", 2, false);
+    auto fixture = std::make_unique<Fixture>("G2", 2);
     auto& scene = fixture->scene;
     REQUIRE_FALSE(fixture->world.layout().objects().empty());
     const std::string command = "spawn object " + fixture->world.layout().objects().front().name;
@@ -570,7 +542,7 @@ TEST_CASE("native scene history crosses speculative defeat but rejects foreign a
 
 TEST_CASE("the first running digest that differs names the owner a change touched",
           "[play-scene-local-rewind][native-digest-profile][assets]") {
-    auto fixture = std::make_unique<Fixture>("G1", 1, false);
+    auto fixture = std::make_unique<Fixture>("G1", 1);
     auto& scene = fixture->scene;
     PlayScene::NativeDigestProfile before;
     REQUIRE(scene.nativeAgreementDigest(&before));

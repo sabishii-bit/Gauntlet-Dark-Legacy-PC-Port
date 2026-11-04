@@ -10,7 +10,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/rollback/SessionInputs.h"
-#include "game/rollback/SimulationObserver.h"
+#include "game/scenes/NativeDigestProfileSupport.h"
+#include "game/scenes/PlayScene.h"
 
 namespace {
 using namespace gdl;
@@ -26,7 +27,6 @@ struct CameraFixture {
     LevelWorld world;
     GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
-    SimulationObserver observer{scene};
 
     explicit CameraFixture(bool wide) {
         device.recordDraws = false;
@@ -53,7 +53,6 @@ struct CameraFixture {
         PlayOptions options;
         options.welcome = false;
         REQUIRE(scene.open(device, context, world, party, options));
-        REQUIRE(observer.bind());
     }
 
     Mat4 render(f32 blend = 1) {
@@ -77,22 +76,11 @@ void sameCamera(const WorldCamera& left, const WorldCamera& right) {
 }
 
 void sameNative(CameraFixture& left, CameraFixture& right) {
-    const auto first = left.observer.observe();
-    const auto second = right.observer.observe();
-    // This is the available native-owner observation, not a claim that its
-    // explicitly unobserved owners have become a complete scene checkpoint.
-    CHECK_FALSE(first.complete);
-    REQUIRE(first.subsystems.size() == 8);
-    REQUIRE(second.subsystems.size() == first.subsystems.size());
-    CHECK(first.unobserved == second.unobserved);
-    for (usize index = 0; index < first.subsystems.size(); ++index) {
-        CAPTURE(first.subsystems[index].name, first.subsystems[index].unavailable,
-                second.subsystems[index].unavailable);
-        REQUIRE(first.subsystems[index].digest);
-        REQUIRE(second.subsystems[index].digest);
-        CHECK(first.subsystems[index].name == second.subsystems[index].name);
-        CHECK(first.subsystems[index].digest == second.subsystems[index].digest);
-    }
+    PlayScene::NativeDigestProfile first;
+    PlayScene::NativeDigestProfile second;
+    REQUIRE(left.scene.nativeAgreementDigest(&first));
+    REQUIRE(right.scene.nativeAgreementDigest(&second));
+    CHECK(test::firstDivergence(first, second).empty());
 }
 
 Vec2 cursorFor(const Mat4& clip, const Vec3& target) {

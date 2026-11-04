@@ -894,6 +894,10 @@ TEST_CASE("a lob's burst grows as its harm fades, reaching each player once and 
                            playerAt({20, -3, 0}, 2)};
     missiles.burst({0, 0, 0}, 3.0f, 10.0f, EnemyMissileKind::kKnockBack, 1.0f, 0);
     CHECK(missiles.burstCount() == 1);
+    // The burst under way is the lob's, in its first stage.
+    REQUIRE(missiles.bursts().size() == 1);
+    CHECK(missiles.bursts().front().blast.flags == EnemyMissileKind::kKnockBack);
+    CHECK(missiles.bursts().front().stage == 0);
     std::vector<PointLight> lights;
     missiles.lights(lights);
     REQUIRE(lights.size() == 1);

@@ -197,7 +197,6 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
-    friend class SimulationObserver;
     friend class OpponentCombatCheckpoint;
     // Identifies the lifetime of the borrowed level services, not gameplay state.
     u64 m_bindingGeneration = 1;

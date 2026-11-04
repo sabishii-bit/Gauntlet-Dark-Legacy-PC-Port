@@ -25,8 +25,8 @@
 #include "game/online/AgreedSetup.h"
 #include "game/online/NativeOnlinePlay.h"
 #include "game/players/PlayerActor.h"
-#include "game/rollback/SimulationObserver.h"
 #include "game/scenes/AfterLevelScene.h"
+#include "game/scenes/NativeDigestProfileSupport.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -397,38 +397,30 @@ TEST_CASE("native online bootstrap opens canonical sparse fresh parties on both 
     auto* host = const_cast<PlayScene*>(pair->host.scene());
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
     auto* guest = const_cast<PlayScene*>(pair->guest.scene());
-    SimulationObserver hostObserver{*host};
-    SimulationObserver guestObserver{*guest};
-    REQUIRE(hostObserver.bind());
-    REQUIRE(guestObserver.bind());
-    std::map<u64, SimulationObservation> first;
-    std::map<u64, SimulationObservation> second;
+    std::map<u64, PlayScene::NativeDigestProfile> first;
+    std::map<u64, PlayScene::NativeDigestProfile> second;
     u32 compared = 0;
-    const auto observe = [&](NativeOnlinePlay& play, SimulationObserver& observer,
-                             std::map<u64, SimulationObservation>& samples) {
+    const auto observe = [&](NativeOnlinePlay& play, PlayScene& scene,
+                             std::map<u64, PlayScene::NativeDigestProfile>& samples) {
         if (play.simulatedTick() > 0 && play.simulatedTick() % 30 == 0 &&
             !samples.contains(play.simulatedTick())) {
-            auto state = observer.observe();
-            REQUIRE_FALSE(state.complete); // Partial diagnostics never certify the whole world.
-            for (const auto& subsystem : state.subsystems) {
-                INFO(subsystem.name << ": " << subsystem.unavailable);
-                REQUIRE(subsystem.digest);
-            }
+            PlayScene::NativeDigestProfile state;
+            REQUIRE(scene.nativeAgreementDigest(&state));
             samples.emplace(play.simulatedTick(), std::move(state));
         }
     };
     for (u32 frame = 0; frame < 240; ++frame) {
         REQUIRE(pair->host.update({}) != NativeOnlinePlay::Phase::Failed);
-        observe(pair->host, hostObserver, first); // No host renders after entry.
+        observe(pair->host, *host, first); // No host renders after entry.
         REQUIRE(pair->guest.update({}) != NativeOnlinePlay::Phase::Failed);
         pair->draw(pair->guest, pair->guestDevice, 0.25f);
         pair->draw(pair->guest, pair->guestDevice, 0.75f);
-        observe(pair->guest, guestObserver, second);
+        observe(pair->guest, *guest, second);
     }
     for (const auto& [tick, state] : first) {
         if (const auto found = second.find(tick); found != second.end()) {
             CAPTURE(tick);
-            CHECK(state == found->second);
+            CHECK(test::firstDivergence(state, found->second).empty());
             ++compared;
         }
     }
