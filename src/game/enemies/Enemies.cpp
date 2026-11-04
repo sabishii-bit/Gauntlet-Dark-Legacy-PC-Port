@@ -2651,8 +2651,8 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
         aim = view->position + Vec3{0.0f, 0.5f * view->height, 0.0f};
     }
-    // The slot its way throws from, and what the kind keeps there; the medium kinds' arrow
-    // when it keeps nothing.
+    // The slot its way throws from, and what the kind keeps there; the shared arrow when it
+    // keeps nothing.
     const s32 which = enemy.variant == kBomberStrength ? EnemyMissileKind::kBomb
                                                        : missileSlotOfWay(enemy.algorithm);
     EnemyMissileKind what = enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());

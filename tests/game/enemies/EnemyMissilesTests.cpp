@@ -421,7 +421,7 @@ TEST_CASE("enemy projectiles use the first body along their travel and catch des
 
 TEST_CASE("every kind throws what the original's table gives it, from the slot its way uses",
           "[game][enemies]") {
-    // The medium kinds share the arrow and the bomb; the small have nothing.
+    // Ten kinds share the arrow and the bomb; the small have nothing.
     REQUIRE(enemyMissileOf(13, EnemyMissileKind::kArrow)->damage == 10.0f);
     REQUIRE(enemyMissileOf(13, EnemyMissileKind::kBomb)->burstRadius == 3.0f);
     REQUIRE(enemyMissileOf(4, EnemyMissileKind::kArrow)->speed == 25.0f);
@@ -1332,7 +1332,7 @@ TEST_CASE("while the swarm is shrunk what it throws is that size and does half, 
 }
 TEST_CASE("only the original's missile rows give a kind something to throw",
           "[game][enemies][enemy-traits]") {
-    // The shared shot and lob are the medium kinds'; a bolt of one's own is the demon's,
+    // Ten kinds share the shot and the lob; a bolt of one's own is the demon's,
     // sorcerer's, plague's, ghost's, warlock's and garm's; the worm has three of its own.
     constexpr std::array<s32, 10> kShared{1, 4, 7, 10, 13, 14, 16, 19, 23, 24};
     constexpr std::array<s32, 6> kOwnBolt{2, 7, 14, 20, 24, 27};

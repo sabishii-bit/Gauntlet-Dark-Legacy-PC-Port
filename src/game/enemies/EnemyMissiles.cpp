@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 
@@ -386,27 +387,160 @@ std::string_view EnemyMissileHit::sound() const {
     return burstRadius > 0 ? "S_LOBBER_BOMB" : std::string_view{};
 }
 
+namespace {
+
+/** The shot and the lob ten kinds share. */
+constexpr EnemyMissileKind kSharedArrow{.slot = EnemyMissileKind::kArrow,
+                                        .damage = 10.0f,
+                                        .speed = 25.0f,
+                                        .radius = 0.5f,
+                                        .weight = 30.0f};
+constexpr EnemyMissileKind kSharedBomb{.slot = EnemyMissileKind::kBomb,
+                                       .flags = EnemyMissileKind::kKnockBack,
+                                       .damage = 10.0f,
+                                       .speed = 20.0f,
+                                       .radius = 0.2f,
+                                       .burstRadius = 3.0f,
+                                       .spin = Vec3{0.0f, 1.0f, 0.0f},
+                                       .weight = 35.0f};
+
+constexpr f32 kBoltWeight = 1.0f; ///< a kind's own shot's fall a second a second
+/** The demon's and the ghost's own shot. */
+constexpr EnemyMissileKind kFireBolt{.slot = EnemyMissileKind::kBolt,
+                                     .flags = damage::kFire,
+                                     .damage = 15.0f,
+                                     .speed = 25.0f,
+                                     .radius = 0.3f,
+                                     .weight = kBoltWeight};
+/** The plague fiend's. */
+constexpr EnemyMissileKind kPlagueBolt{.slot = EnemyMissileKind::kBolt,
+                                       .damage = 15.0f,
+                                       .speed = 25.0f,
+                                       .radius = 0.3f,
+                                       .weight = kBoltWeight};
+/** The sorcerer's and the warlock's. */
+constexpr EnemyMissileKind kLightBolt{.slot = EnemyMissileKind::kBolt,
+                                      .flags = damage::kLight,
+                                      .damage = 20.0f,
+                                      .speed = 20.0f,
+                                      .radius = 0.2f,
+                                      .weight = kBoltWeight};
+/** Garm's brood's: through the players it hurts and the items in its way, flying flat. */
+constexpr EnemyMissileKind kGarmBolt{.slot = EnemyMissileKind::kBolt,
+                                     .flags = damage::kElectric | EnemyMissileKind::kPierces,
+                                     .damage = 25.0f,
+                                     .speed = 80.0f,
+                                     .radius = 2.0f,
+                                     .weight = 0.0f};
+
+constexpr s32 kMissileSlots = 3; ///< the arrow, the lob and a kind's own shot
+/** The worm's, one a slot, each slot's harder and faster than the one before. */
+constexpr std::array<EnemyMissileKind, kMissileSlots> kWormBolts{{
+    {.slot = EnemyMissileKind::kArrow,
+     .damage = 5.0f,
+     .speed = 15.0f,
+     .radius = 0.3f,
+     .weight = kBoltWeight},
+    {.slot = EnemyMissileKind::kBomb,
+     .damage = 10.0f,
+     .speed = 20.0f,
+     .radius = 0.3f,
+     .weight = kBoltWeight},
+    {.slot = EnemyMissileKind::kBolt,
+     .damage = 15.0f,
+     .speed = 25.0f,
+     .radius = 0.3f,
+     .weight = kBoltWeight},
+}};
+
+/** Where an arrow or a lob leaves from, unless the kind has a point of its own. */
+constexpr EnemyLaunchPoint kShotPoint{.height = kShotHeight};
+/** The body's middle, where a kind's own shot leaves from unless it has a point of its own. */
+constexpr EnemyLaunchPoint kMiddlePoint{};
+constexpr EnemyLaunchPoint kWormPoint{.height = 2.0f, .shift = 2.0f}; ///< the worm's, every slot
+
+/** One slot of a kind's row: what it throws from there, nothing for an empty slot, and where
+ * it leaves from. */
+struct MissileSlot {
+    std::optional<EnemyMissileKind> missile;
+    EnemyLaunchPoint launch;
+};
+/** A kind's row: its code, then its arrow, lob and own-shot slots. */
+struct MissileRow {
+    s32 kind;
+    std::array<MissileSlot, kMissileSlots> slots;
+};
+
+constexpr MissileSlot kNoShot{std::nullopt, kShotPoint};   ///< an empty arrow or lob slot
+constexpr MissileSlot kNoBolt{std::nullopt, kMiddlePoint}; ///< an empty own-shot slot
+constexpr MissileSlot kArrowSlot{kSharedArrow, kShotPoint};
+constexpr MissileSlot kBombSlot{kSharedBomb, kShotPoint};
+constexpr std::array<MissileSlot, kMissileSlots> kThrowsNothing{{kNoShot, kNoShot, kNoBolt}};
+constexpr std::array<MissileSlot, kMissileSlots> kArrowAndBomb{{kArrowSlot, kBombSlot, kNoBolt}};
+
+/** The original's missile table (EnemyMissileInfo[28][3], 0x80119128), one row a kind in code
+ * order, with each slot's launch point (EnemyStartMissile's jump table): ten kinds share the
+ * arrow and the lob, six have a shot of their own, and the worm has one in every slot. */
+constexpr std::array<MissileRow, kSwarmKindCount> kMissiles{{
+    {enemy_type::kScorpion, kThrowsNothing},
+    {enemy_type::kTroll, kArrowAndBomb},
+    {enemy_type::kDemon, {{kNoShot, kNoShot, {kFireBolt, kMiddlePoint}}}},
+    {enemy_type::kRat, kThrowsNothing},
+    {enemy_type::kGrunt, {{{kSharedArrow, {.height = 1.5f}}, kBombSlot, kNoBolt}}},
+    {enemy_type::kKnight, kThrowsNothing},
+    {enemy_type::kSnake, kThrowsNothing},
+    {enemy_type::kSorcerer, {{kArrowSlot, kBombSlot, {kLightBolt, {.height = 1.5f}}}}},
+    {enemy_type::kMummy, kThrowsNothing},
+    {enemy_type::kSpider, kThrowsNothing},
+    {enemy_type::kLizardman, kArrowAndBomb},
+    {enemy_type::kTreefolk, kThrowsNothing},
+    {enemy_type::kMaggot, kThrowsNothing},
+    {enemy_type::kZombie, {{{kSharedArrow, {.height = 1.0f}}, kBombSlot, kNoBolt}}},
+    {enemy_type::kPlague,
+     {{{kSharedArrow, {.height = 1.5f}}, kBombSlot, {kPlagueBolt, {.height = 1.0f}}}}},
+    {enemy_type::kWolf, kThrowsNothing},
+    {enemy_type::kIce, kArrowAndBomb},
+    {enemy_type::kWorm,
+     {{{kWormBolts[0], kWormPoint}, {kWormBolts[1], kWormPoint}, {kWormBolts[2], kWormPoint}}}},
+    {enemy_type::kDog, kThrowsNothing},
+    {enemy_type::kSkeleton, kArrowAndBomb},
+    {enemy_type::kGhost, {{kNoShot, kNoShot, {kFireBolt, kMiddlePoint}}}},
+    {enemy_type::kAcid, kThrowsNothing},
+    {enemy_type::kHand, kThrowsNothing},
+    {enemy_type::kImp, {{{kSharedArrow, kMiddlePoint}, {kSharedBomb, {.shift = -2.5f}}, kNoBolt}}},
+    {enemy_type::kWarlock, {{kArrowSlot, kBombSlot, {kLightBolt, {.height = 1.5f}}}}},
+    {enemy_type::kSky, kThrowsNothing},
+    {enemy_type::kWhirlwind, kThrowsNothing},
+    {enemy_type::kGarm2,
+     {{{std::nullopt, kMiddlePoint}, {std::nullopt, kMiddlePoint}, {kGarmBolt, kMiddlePoint}}}},
+}};
+static_assert(
+    [] {
+        for (usize i = 0; i < kMissiles.size(); ++i) {
+            if (kMissiles[i].kind != static_cast<s32>(i)) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "each kind's missiles sit at its code's row");
+
+/** The table's slot for `kind` and `slot`, or null outside its kinds and slots. */
+const MissileSlot* missileSlotOf(s32 kind, s32 slot) {
+    if (kind < 0 || kind >= kSwarmKindCount || slot < 0 || slot >= kMissileSlots) {
+        return nullptr;
+    }
+    return &kMissiles[static_cast<usize>(kind)].slots[static_cast<usize>(slot)];
+}
+
+} // namespace
+
 EnemyMissileKind EnemyMissileKind::arrow() {
-    EnemyMissileKind kind;
-    kind.slot = kArrow;
-    kind.damage = 10.0f;
-    kind.speed = 25.0f;
-    kind.radius = 0.5f;
-    kind.weight = 30.0f;
-    return kind;
+    return kSharedArrow;
 }
 
 EnemyMissileKind EnemyMissileKind::bomb() {
-    EnemyMissileKind kind;
-    kind.slot = kBomb;
-    kind.flags = kKnockBack;
-    kind.damage = 10.0f;
-    kind.speed = 20.0f;
-    kind.radius = 0.2f;
-    kind.burstRadius = 3.0f;
-    kind.spin = Vec3{0.0f, 1.0f, 0.0f};
-    kind.weight = 35.0f;
-    return kind;
+    return kSharedBomb;
 }
 
 EnemyMissileKind EnemyMissileKind::bolt(f32 damage, f32 speed, f32 radius, u32 flags, f32 weight) {
@@ -444,43 +578,8 @@ u32 EnemyMissileKind::hitFlags() const {
 }
 
 std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot) {
-    // The original's table (0x80119128): the medium kinds share the arrow and the bomb, and
-    // a few have a bolt of their own; the worm has three of its own.
-    const bool medium = kind == enemy_type::kTroll || kind == enemy_type::kGrunt ||
-                        kind == enemy_type::kSorcerer || kind == enemy_type::kLizardman ||
-                        kind == enemy_type::kZombie || kind == enemy_type::kPlague ||
-                        kind == enemy_type::kIce || kind == enemy_type::kSkeleton ||
-                        kind == enemy_type::kImp || kind == enemy_type::kWarlock;
-    if (kind == enemy_type::kWorm) {
-        std::optional<EnemyMissileKind> worm;
-        switch (slot) {
-        case 0: worm = EnemyMissileKind::bolt(5.0f, 15.0f, 0.3f); break;
-        case 1: worm = EnemyMissileKind::bolt(10.0f, 20.0f, 0.3f); break;
-        case 2: worm = EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f); break;
-        default: return std::nullopt;
-        }
-        worm->slot = slot;
-        return worm;
-    }
-    if (slot == EnemyMissileKind::kArrow && medium) {
-        return EnemyMissileKind::arrow();
-    }
-    if (slot == EnemyMissileKind::kBomb && medium) {
-        return EnemyMissileKind::bomb();
-    }
-    if (slot == EnemyMissileKind::kBolt) {
-        switch (kind) {
-        case enemy_type::kDemon:
-        case enemy_type::kGhost: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f, damage::kFire);
-        case enemy_type::kPlague: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f);
-        case enemy_type::kSorcerer:
-        case enemy_type::kWarlock:
-            return EnemyMissileKind::bolt(20.0f, 20.0f, 0.2f, damage::kLight);
-        case enemy_type::kGarm2:
-            return EnemyMissileKind::bolt(25.0f, 80.0f, 2.0f,
-                                          damage::kElectric | EnemyMissileKind::kPierces, 0.0f);
-        default: return std::nullopt;
-        }
+    if (const MissileSlot* cell = missileSlotOf(kind, slot); cell != nullptr) {
+        return cell->missile;
     }
     return std::nullopt;
 }
@@ -496,49 +595,16 @@ s32 missileSlotOfWay(s32 way) {
 }
 
 EnemyLaunchPoint enemyLaunchPointOf(s32 kind, s32 slot) {
-    EnemyLaunchPoint point;
-    point.height = slot == EnemyMissileKind::kBolt ? 0.0f : kShotHeight;
-    // The kinds with a launch point of their own (EnemyStartMissile's jump table).
-    switch (kind) {
-    case enemy_type::kGrunt:
-        if (slot == EnemyMissileKind::kArrow) {
-            point.height = 1.5f;
-        }
-        break;
-    case enemy_type::kZombie:
-        if (slot == EnemyMissileKind::kArrow) {
-            point.height = 1.0f;
-        }
-        break;
-    case enemy_type::kSorcerer:
-    case enemy_type::kWarlock:
-        if (slot == EnemyMissileKind::kBolt) {
-            point.height = 1.5f;
-        }
-        break;
-    case enemy_type::kPlague:
-        if (slot == EnemyMissileKind::kBolt) {
-            point.height = 1.0f;
-        } else if (slot == EnemyMissileKind::kArrow) {
-            point.height = 1.5f;
-        }
-        break;
-    case enemy_type::kWorm:
-        point.height = 2.0f;
-        point.shift = 2.0f;
-        break;
-    case enemy_type::kImp:
-        if (slot == EnemyMissileKind::kArrow) {
-            point.height = 0.0f;
-        } else if (slot == EnemyMissileKind::kBomb) {
-            point.height = 0.0f;
-            point.shift = -2.5f;
-        }
-        break;
-    case enemy_type::kGarm2: point.height = 0.0f; break;
-    default: break;
+    if (const MissileSlot* cell = missileSlotOf(kind, slot); cell != nullptr) {
+        return cell->launch;
     }
-    return point;
+    // Past the table's kinds and slots: the worm and Garm's brood keep their own point
+    // whatever the slot, and the rest take the slot's.
+    switch (kind) {
+    case enemy_type::kWorm: return kWormPoint;
+    case enemy_type::kGarm2: return kMiddlePoint;
+    default: return slot == EnemyMissileKind::kBolt ? kMiddlePoint : kShotPoint;
+    }
 }
 
 Vec3 EnemyMissiles::lobVelocity(const Vec3& from, const Vec3& to, f32 speed) {

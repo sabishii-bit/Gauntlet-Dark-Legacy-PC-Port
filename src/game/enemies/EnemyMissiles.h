@@ -51,7 +51,7 @@ struct EnemyMissileKind {
      * the world-collision flag). */
     bool throughWorld = false;
 
-    /** The medium kinds' shot and lob, as the original's table has them. */
+    /** The shot and the lob ten kinds share, as the original's table has them. */
     static EnemyMissileKind arrow();
     static EnemyMissileKind bomb();
     /** A kind's own shot (slot 2): the demons', ghosts', sorcerers', warlocks', worms' and
