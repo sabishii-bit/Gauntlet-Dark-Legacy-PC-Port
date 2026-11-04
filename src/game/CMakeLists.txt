@@ -245,6 +245,7 @@ add_library(game STATIC
     level/FixtureHost.h
     level/CombatCover.h
     party/AttackHost.h
+    party/AttackTargetId.h
     enemies/OpponentHost.h
     enemies/BossEncounterHost.h
     enemies/OpponentPool.h

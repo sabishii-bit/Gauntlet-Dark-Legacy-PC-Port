@@ -454,8 +454,8 @@ TEST_CASE("attack preparation rejects malformed references and actor rebinding a
     saved.items.push_back({Boundary::Item::FireBreath, 0, 0, 0.2f, 2, true, {101}});
     // A mark need not still name a live target. Preserve all native families,
     // their order, and the zero-expiry boundary without inventing a live roster.
-    saved.shields[0].marks = {
-        {0, 17, 0}, {1, 19, 0.1f}, {2, 23, 0.2f}, {3, 0, 0.25f}, {4, 29, 0.125f}};
+    saved.shields[0].marks = {{0, 17, 0},    {1, 19, 0.1f},   {2, 23, 0.2f},
+                              {3, 0, 0.25f}, {4, 29, 0.125f}, {5, 31, 0.05f}};
     fixture.restore(saved, visual);
     REQUIRE(fixture.state() == saved);
     for (s32 mutation = 0; mutation < 22; ++mutation) {
@@ -476,7 +476,7 @@ TEST_CASE("attack preparation rejects malformed references and actor rebinding a
         case 11: bad.actors[0].character = 2; break;
         case 12: bad.potions.resize(Boundary::State::kMaxAreas + 1); break;
         case 13: bad.shields[0].marks[0].kind = -1; break;
-        case 14: bad.shields[0].marks[0].kind = 5; break;
+        case 14: bad.shields[0].marks[0].kind = 6; break;
         case 15: bad.shields[0].marks[0].id = -1; break;
         case 16: bad.shields[0].marks[3].id = 1; break;
         case 17: bad.shields[0].marks[0].wait = -0.01f; break;

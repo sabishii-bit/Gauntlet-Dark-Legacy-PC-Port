@@ -217,10 +217,11 @@ bool PlayerAttacksCheckpoint::State::valid() const {
         contacts += shield.marks.size();
         std::unordered_set<u64> marked;
         for (const auto& mark : shield.marks) {
-            // Native kinds are swarm, critter, generator, boss, and barrel.
-            // These are historical IDs: a target may disappear before its mark
-            // expires. Zero wait is harmless and expires at the next update.
-            if (mark.kind < 0 || mark.kind > 4 || mark.id < 0 || (mark.kind == 3 && mark.id != 0) ||
+            // Native kinds are swarm, critter, generator, boss, barrel, and an
+            // imported level's fixture. These are historical IDs: a target may
+            // disappear before its mark expires. Zero wait is harmless and
+            // expires at the next update.
+            if (mark.kind < 0 || mark.kind > 5 || mark.id < 0 || (mark.kind == 3 && mark.id != 0) ||
                 !finite(mark.wait) || mark.wait < 0 || mark.wait > PlayerAttacks::kShieldHitAgain ||
                 !marked.insert((static_cast<u64>(mark.kind) << 32) | static_cast<u32>(mark.id))
                      .second) {

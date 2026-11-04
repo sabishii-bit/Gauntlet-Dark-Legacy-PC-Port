@@ -586,7 +586,7 @@ TEST_CASE("combat packet rejects malformed or cross-party state without omission
         bad.adapter.statues.statues[0].figure.position.x = std::numeric_limits<f32>::infinity();
         break;
     case 14: bad.adapter.critters.banks.push_back(bad.adapter.critters.banks[0]); break;
-    case 15: bad.combat.attacks.shields[0].marks[0].kind = 5; break;
+    case 15: bad.combat.attacks.shields[0].marks[0].kind = 6; break;
     case 16: bad.combat.attacks.shields[0].marks[0].wait = 0.2501f; break;
     case 17:
         bad.combat.attacks.shields[0].marks.push_back(bad.combat.attacks.shields[0].marks[0]);

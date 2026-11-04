@@ -12,49 +12,8 @@
 #include "game/level/ScriptedFixtures.h"
 #include "game/mechanics/MechanicsFacade.h"
 #include "game/party/PlayerAttacks.h"
+#include "game/party/PlayerAttacksTestPeer.h"
 #include "game/party/ScriptedAttacks.h"
-
-namespace gdl::game {
-struct PlayerAttacksTestPeer {
-    static std::vector<MissileTarget> targets(const PlayerAttacks& attacks,
-                                              const PlayerAttacks::Targets& targets) {
-        return attacks.projectileTargets(targets);
-    }
-    static void projectile(PlayerAttacks& attacks, const MissileImpact& impact,
-                           std::span<PlayerRuntime> players,
-                           const PlayerAttacks::Targets& targets) {
-        attacks.dispatchProjectileImpact(impact, players, targets,
-                                         [](const MissileImpact&, f32) {});
-    }
-    static void area(PlayerAttacks& attacks, const MissileTarget& target,
-                     std::span<PlayerRuntime> players, const PlayerAttacks::Targets& targets,
-                     BlowSource source) {
-        attacks.strikeTarget(target, 35, EnemyHit::kKnockDown, players.front().actor, players,
-                             targets, source);
-    }
-    static void potion(PlayerAttacks& attacks) {
-        MissileImpact impact;
-        impact.owner = 3;
-        impact.potion = 1;
-        impact.potency = 20;
-        impact.damage = 25;
-        attacks.beginPotion(impact);
-    }
-    static void potions(PlayerAttacks& attacks, std::span<PlayerRuntime> players,
-                        const PlayerAttacks::Targets& targets) {
-        attacks.updatePotions(1.0f / 60, players, targets);
-    }
-    static void shield(PlayerAttacks& attacks) {
-        PlayerAttacks::PotionShield shield;
-        shield.actor = 0;
-        shield.flags = EnemyHit::kMagic;
-        shield.radius = 10;
-        shield.damage = 30;
-        shield.secondsLeft = 1;
-        attacks.m_sim.shields.push_back(shield);
-    }
-};
-} // namespace gdl::game
 
 namespace {
 using namespace gdl;
