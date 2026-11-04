@@ -302,6 +302,18 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
     return std::sqrt(dx * dx + dz * dz);
 }
 
+/** Whether a body's end leaves nothing to show or dissolve: a suicide's, which its explosion
+ * replaces, or IT's, whose tag has passed on. */
+bool leavesNoCorpse(const Enemies::BodyState& body) {
+    return body.killed && (body.algorithm == kSuicideWay || body.kind == kItKind);
+}
+
+/** Whether a body may go after a player: one it can see, and for Death one not wearing the
+ * armour against him. */
+bool pursuable(const Enemies::BodyState& body, const EnemyView& view) {
+    return !view.hidden && !view.invisible && (body.kind != kDeathKind || !view.antiDeath);
+}
+
 } // namespace
 
 s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
@@ -1164,7 +1176,7 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
         if (enemy.kind == kItKind) {
-            continue;
+            continue; // IT is never recycled (find_enemy_slot)
         }
         f32 cost = enemy.targetDistance;
         const bool seen = enemy.onScreen;
@@ -1774,18 +1786,15 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         enemy.recognized = false;
     }
     // Everyone goes for the player IT has tagged while they can be seen (fn_800516F8).
-    const auto tagged = std::ranges::find_if(players, [&](const EnemyView& view) {
-        return view.it && !view.hidden && !view.invisible &&
-               (enemy.kind != kDeathKind || !view.antiDeath);
-    });
+    const auto tagged = std::ranges::find_if(
+        players, [&](const EnemyView& view) { return view.it && pursuable(enemy, view); });
     // A mind looks round again every eighth frame, or at once when its player is gone.
     bool look =
         (m_simulation.frame % kRetargetEvery) == (static_cast<u32>(slot) % kRetargetEvery) ||
         enemy.target < 0;
     if (enemy.target >= 0) {
         const EnemyView* current = viewOf(players, enemy.target);
-        if (current == nullptr || current->hidden || current->invisible ||
-            (enemy.kind == kDeathKind && current->antiDeath)) {
+        if (current == nullptr || !pursuable(enemy, *current)) {
             look = true;
         }
     }
@@ -1803,7 +1812,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         enemy.weightedDistance = 100000.0f;
         enemy.targetDistance = 100000.0f;
         for (const EnemyView& view : players) {
-            if (view.hidden || view.invisible || (enemy.kind == kDeathKind && view.antiDeath)) {
+            if (!pursuable(enemy, view)) {
                 continue;
             }
             const f32 distance = playerDistance(enemy, view);
@@ -2474,8 +2483,8 @@ f32 Enemies::hurt(s32 id, const EnemyHit& hit) {
         hurtDeath(enemy, id, hit);
         return 0;
     }
-    if (enemy.kind == kItKind) {
-        return 0; // nothing harms IT (damage_enemy)
+    if (intangible(enemy.kind)) {
+        return 0; // nothing harms what is intangible: IT (damage_enemy)
     }
     if (enemy.affinity != 0 &&
         (hit.flags & damage::kElementMask) == static_cast<u32>(enemy.affinity)) {
@@ -2785,8 +2794,8 @@ std::vector<MissileTarget> Enemies::targets() const {
     std::vector<MissileTarget> out;
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
-        // Nothing takes aim at IT (PlayerGetTarget).
-        if (!alive(i) || enemy.kind == kItKind) {
+        // Nothing takes aim at what is intangible: IT (PlayerGetTarget).
+        if (!alive(i) || intangible(enemy.kind)) {
             continue;
         }
         MissileTarget target{i, enemy.position, enemy.radius, enemy.height};
@@ -2803,7 +2812,7 @@ std::vector<EnemyBody> Enemies::movementBodies() const {
     std::vector<EnemyBody> bodies;
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
-        if (alive(i) && enemy.kind != kItKind) {
+        if (alive(i) && !intangible(enemy.kind)) {
             bodies.push_back({i, bodyCentre(enemy), enemy.radius, 0.5f * enemy.height});
         }
     }
@@ -2844,7 +2853,7 @@ std::vector<MeleeGeometry::Target> Enemies::meleeGeometry() const {
     targets.reserve(static_cast<usize>(m_simulation.most));
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
-        if (alive(i) && enemy.kind != kItKind) {
+        if (alive(i) && !intangible(enemy.kind)) {
             targets.push_back(meleeBody(i));
         }
     }
@@ -2857,7 +2866,7 @@ std::optional<s32> Enemies::playerContact(const Vec3& from, const Vec3& to, f32 
     usize count = 0;
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
-        if (alive(i) && enemy.kind != kItKind) {
+        if (alive(i) && !intangible(enemy.kind)) {
             targets[count++] = meleeBody(i);
         }
     }
@@ -2877,7 +2886,7 @@ std::optional<s32> Enemies::struckBy(const Vec3& from, const Vec3& to, f32 radiu
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
         if ((enemy.state != State::Active && enemy.state != State::Asleep) ||
-            enemy.kind == kItKind) {
+            intangible(enemy.kind)) {
             continue;
         }
         const Vec3 centre = bodyCentre(enemy);
@@ -3004,8 +3013,7 @@ std::optional<Enemies::Presentation> Enemies::presentation(s32 id) const {
         return std::nullopt;
     }
     const auto& enemy = m_simulation.enemies[static_cast<usize>(id)];
-    if (enemy.state == State::Inactive || !enemy.animator.bound() ||
-        (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind))) {
+    if (enemy.state == State::Inactive || !enemy.animator.bound() || leavesNoCorpse(enemy)) {
         return std::nullopt;
     }
     const auto* stock = stockOf(enemy.kind);
@@ -3048,8 +3056,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
         // IT has already transferred its tag; it has no corpse to display in
         // the interval before the next simulation tick retires its pool slot.
-        if (enemy.state == State::Inactive || !enemy.animator.bound() ||
-            (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind))) {
+        if (enemy.state == State::Inactive || !enemy.animator.bound() || leavesNoCorpse(enemy)) {
             continue;
         }
         const Figure found = bodyOf(enemy);
@@ -3145,8 +3152,7 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
         const Stock* stock = stockOf(enemy.kind);
         // It lies on the floor under the body, but not while the body rises (UpdateEnemy).
         if (enemy.state == State::Inactive || !enemy.animator.bound() || stock == nullptr ||
-            enemy.animator.action() == EnemyAction::Start ||
-            (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind))) {
+            enemy.animator.action() == EnemyAction::Start || leavesNoCorpse(enemy)) {
             continue;
         }
         const auto tier = static_cast<usize>(std::clamp(enemy.tier, 1, 3) - 1);
@@ -3192,7 +3198,7 @@ std::optional<Enemies::Observation> Enemies::observe(s32 id) const {
                        enemy.flashSeconds > 0};
     result.scale = m_simulation.shrink * drawScale(enemy);
     result.alpha = opacityOf(id);
-    if (enemy.killed && (enemy.algorithm == kSuicideWay || enemy.kind == kItKind)) {
+    if (leavesNoCorpse(enemy)) {
         result.alpha = 0; // the explosion or transferred tag replaces the body immediately
     } else if (enemy.killed && enemy.kind == kDeathKind) {
         result.alpha *= std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds);

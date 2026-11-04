@@ -4315,4 +4315,47 @@ TEST_CASE("each kind's brood is born only where the original lets it out of its 
     }
 }
 
+TEST_CASE("IT is out of every body test the swarm offers, and a grunt beside it is not",
+          "[game][enemies][it]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, kindArchives(), nullptr, Enemies::kMost, {}, 1);
+    REQUIRE(enemies.loadKind(kItKind));
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto it = enemies.spawn({.kind = kItKind, .tier = 1, .placed = true}, {});
+    const auto grunt =
+        enemies.spawn({.kind = kGruntKind, .tier = 1, .position = {10, 0, 0}, .placed = true}, {});
+    REQUIRE(it.has_value());
+    REQUIRE(grunt.has_value());
+    const std::vector<s32> onlyGrunt{*grunt};
+    std::vector<s32> aimed;
+    for (const auto& target : enemies.targets()) {
+        aimed.push_back(target.id);
+    }
+    CHECK(aimed == onlyGrunt);
+    std::vector<s32> bodies;
+    for (const auto& body : enemies.movementBodies()) {
+        bodies.push_back(body.id);
+    }
+    CHECK(bodies == onlyGrunt);
+    const auto melee = enemies.meleeGeometry();
+    REQUIRE(melee.size() == 1);
+    CHECK(melee[0].id == *grunt);
+    // A step ending on either body touches the grunt's, never IT's.
+    const Vec3 back{0.0f, 0.0f, -2.0f};
+    const Vec3 itPoint =
+        enemies.positionOf(*it) + Vec3{0.0f, enemyKind(kItKind).collisionHeight, 0.0f};
+    CHECK_FALSE(enemies.playerContact(itPoint + back, itPoint, 1.0f, 3.0f).has_value());
+    const Vec3 gruntPoint = melee[0].acquisition.point;
+    CHECK(enemies.playerContact(gruntPoint + back, gruntPoint, 1.0f, 3.0f) == grunt);
+    // A blow sweeping through IT on to the grunt strikes the grunt.
+    CHECK(enemies.struckBy({-5.0f, 1.0f, 0.0f}, {15.0f, 1.0f, 0.0f}, 1.0f) == grunt);
+    // Nothing harms IT.
+    EnemyHit hit;
+    hit.damage = 1000.0f;
+    hit.player = 0;
+    CHECK(enemies.hurt(*it, hit) == 0.0f);
+    CHECK(enemies.alive(*it));
+}
+
 } // namespace
