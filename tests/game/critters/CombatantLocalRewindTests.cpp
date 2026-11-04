@@ -525,7 +525,7 @@ TEST_CASE(
     CHECK(replay->device.draws.empty());
 }
 
-TEST_CASE("native child poses and auxiliary clocks advance alike in two loads",
+TEST_CASE("combatant restore binds native child poses and auxiliary clocks without spawning",
           "[combatant-local-rewind][assets]") {
     const auto* const name = GENERATE("CHIMERA", "LICH");
     auto first = std::make_unique<Fighter>(bossDefinition(name));
@@ -546,12 +546,25 @@ TEST_CASE("native child poses and auxiliary clocks advance alike in two loads",
     } else {
         REQUIRE(first->stock.attachments.size() == 1);
     }
+    Combatant::LocalSnapshot baseline;
+    REQUIRE(replay->actor.saveLocal(baseline));
+    // A wrong branch respawns the body and moves its parts and attachments elsewhere.
+    const auto astray = std::array{visiblePlayer(1, {-6, 0, 4})};
+    REQUIRE(replay->actor.spawn(replay->stock, 40, {}, 0, nullptr, {}, 'G'));
+    for (s32 frame = 0; frame < 10; ++frame) {
+        replay->actor.update(1, 1.0f / 60, astray);
+    }
+    CHECK(replay->digest() != first->digest());
+    const u32 uploads = replay->device.texturesCreated;
+    REQUIRE(replay->actor.restoreLocal(baseline));
+    CHECK(replay->digest() == first->digest());
     for (s32 frame = 0; frame < 80; ++frame) {
         CAPTURE(name, frame);
         first->actor.update(1, 1.0f / 60, views);
         replay->actor.update(1, 1.0f / 60, views);
         CHECK(replay->digest() == first->digest());
     }
+    CHECK(replay->device.texturesCreated == uploads);
 }
 
 TEST_CASE("native actor reuse can be rewound without erasing queued events or incarnation",
@@ -587,6 +600,24 @@ TEST_CASE("native broken hit-node poses and queued secondary shots survive corre
     first->actor.hurt(hit);
     replay->actor.hurt(hit);
     CHECK(replay->digest() == first->digest());
+    // Broken, the node is no longer one of its creature's body targets.
+    CHECK(std::ranges::none_of(first->actor.bodyTargets(), [&](const auto& target) {
+        return target.id == first->actor.id() && target.node == hit.node;
+    }));
+    Combatant::LocalSnapshot broken;
+    REQUIRE(replay->actor.saveLocal(broken));
+    // A wrong branch takes what the break queued, then respawns a whole body and moves it.
+    replay->actor.takeShots();
+    replay->actor.takeCues();
+    replay->actor.takeLosses();
+    REQUIRE(replay->actor.spawn(replay->stock, 40, {}, 0, nullptr, {}, 'G'));
+    const auto astray = std::array{visiblePlayer(1, {-6, 0, 4})};
+    for (s32 tick = 0; tick < 5; ++tick) {
+        replay->actor.update(1, 1.0f / 60, astray);
+    }
+    CHECK(replay->digest() != first->digest());
+    REQUIRE(replay->actor.restoreLocal(broken));
+    CHECK(replay->digest() == first->digest());
     const auto players = std::array{visiblePlayer(3, {1, 0, 10})};
     for (s32 tick = 0; tick < 20; ++tick) {
         first->actor.update(1, 1.0f / 60, players);
@@ -599,11 +630,27 @@ TEST_CASE("combatant arena random state resumes the next native selection after 
           "[combatant-local-rewind][assets]") {
     auto first = std::make_unique<Fighter>(Golem::definition());
     auto replay = std::make_unique<Fighter>(Golem::definition());
+    auto plain = std::make_unique<Fighter>(Golem::definition());
     const std::array arena{CombatArenaTarget{0, Mat4{1}, false},
                            CombatArenaTarget{1, Mat4{1}, true},
                            CombatArenaTarget{2, Mat4{1}, false}};
     first->actor.setArenaTargets(arena);
     replay->actor.setArenaTargets(arena);
+    CHECK(replay->digest() == first->digest());
+    Combatant::LocalSnapshot selected;
+    REQUIRE(replay->actor.saveLocal(selected));
+    // Reused, the slot keeps of its arena only the random state, which a plain spawn never drew.
+    REQUIRE(replay->actor.spawn(replay->stock, 40, {}, 0, nullptr, {}, 'G'));
+    REQUIRE(plain->actor.spawn(plain->stock, 40, {}, 0, nullptr, {}, 'G'));
+    REQUIRE(replay->digest() != plain->digest());
+    // A wrong branch draws from a shorter roster, reuses the slot and draws again.
+    const std::array astray{CombatArenaTarget{4, Mat4{1}, true},
+                            CombatArenaTarget{6, Mat4{1}, false}};
+    replay->actor.setArenaTargets(astray);
+    REQUIRE(replay->actor.spawn(replay->stock, 40, {}, 0, nullptr, {}, 'G'));
+    replay->actor.setArenaTargets(astray);
+    CHECK(replay->digest() != first->digest());
+    REQUIRE(replay->actor.restoreLocal(selected));
     CHECK(replay->digest() == first->digest());
     for (s32 count = 0; count < 8; ++count) {
         REQUIRE(first->actor.spawn(first->stock, 40, {}, 0, nullptr, {}, 'G'));

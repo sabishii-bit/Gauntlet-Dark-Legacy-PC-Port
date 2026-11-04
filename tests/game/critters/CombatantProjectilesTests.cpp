@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -10,6 +12,8 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/Mt19937.h"
+#include "engine/math/PortableMath.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -18,6 +22,7 @@
 #include "game/bosses/BossDefinition.h"
 #include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantFixture.h"
+#include "game/critters/CombatantProjectile.h"
 #include "game/critters/CombatantProjectiles.h"
 #include "game/level/BossKinds.h"
 #include "game/level/LevelWorld.h"
@@ -519,6 +524,81 @@ TEST_CASE("arrow orientation follows live velocity while ordinary projectiles ke
         } else {
             CHECK_FALSE(f.effects.effect(0).flightDirection);
         }
+    }
+}
+
+TEST_CASE("combatant launch uses portable native float mapping and exact random draw cadence",
+          "[boss-projectiles][random-distribution]") {
+    Fixture f;
+    const auto root = test::scratchDirectory("combatant-launch-draws");
+    // Two aimed arrows spread across their yaw; the first's cue spins (flag 8).
+    writeTextFile(root / "critter.json",
+                  R"({"types":[{"moveCount":1}],"moves":[{}],"descriptors":[{}],
+        "damages":[
+          {"type":1,"minSpeed":30,"maxSpeed":30,"yawSpread":1.5,"sfxIndex":0,"behaviorFlags":9,"flags":131072},
+          {"type":1,"minSpeed":30,"maxSpeed":30,"yawSpread":1.5,"sfxIndex":1,"behaviorFlags":9,"flags":131072}],
+        "sounds":[{"name":"LOOP","flags":8,"life":3},{"name":"LOOP","life":3}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    constexpr s32 kShots = 12;
+    constexpr f32 kSpinRate = std::numbers::pi_v<f32> / 2.0f;
+    constexpr f32 kSeconds = 0.1f;
+    constexpr f32 kMargin = 1e-4f;
+    const Vec3 origin{0, 3, 0};
+    // Every launch draws its spread, and a spinning one then its two spins, as binary32 values
+    // of the native generator's 24-bit draws.
+    Mt19937 expected;
+    std::vector<Vec3> velocities;
+    std::vector<Vec3> spins;
+    for (s32 index = 0; index < kShots; ++index) {
+        CAPTURE(index);
+        CombatShot shot;
+        shot.data = &f.data;
+        shot.damageIndex = index % 2;
+        shot.origin = origin;
+        shot.target = Vec3{0, 3, 30};
+        const auto* damage = f.data.damage(shot.damageIndex);
+        REQUIRE(damage != nullptr);
+        const f32 spread = expected.unitFloat24() * 2.0f - 1.0f;
+        Vec3 spin{0};
+        if (shot.damageIndex == 0) {
+            spin =
+                Vec3{expected.unitFloat24() * kSpinRate, 0.0f, expected.unitFloat24() * kSpinRate};
+        }
+        f.projectiles.launch(shot, f.archive, f.device, f.effects, {});
+        REQUIRE(f.projectiles.count() == static_cast<usize>(index + 1));
+        REQUIRE(f.effects.count() == static_cast<usize>(index + 1));
+        const auto& direction = f.effects.effect(static_cast<usize>(index)).flightDirection;
+        REQUIRE(direction);
+        velocities.push_back(CombatantProjectile::velocity(*damage, shot, spread));
+        spins.push_back(spin);
+        CHECK(*direction == velocities.back());
+    }
+    // Clear of every contact, each flies on and turns by its own spin.
+    f.step(kSeconds);
+    REQUIRE(f.effects.count() == static_cast<usize>(kShots));
+    const auto near = [&](const Mat4& actual, const Mat4& wanted) {
+        for (s32 column = 0; column < 4; ++column) {
+            for (s32 row = 0; row < 4; ++row) {
+                if (std::abs(actual[column][row] - wanted[column][row]) > kMargin) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    for (s32 index = 0; index < kShots; ++index) {
+        CAPTURE(index);
+        const auto at = static_cast<usize>(index);
+        const Vec3& velocity = velocities[at];
+        const Vec3 turned = spins[at] * kSeconds;
+        Mat4 placement = glm::translate(Mat4{1}, origin + velocity * kSeconds);
+        placement =
+            portable::rotate(placement, portable::atan2(velocity.x, velocity.z), Vec3{0, 1, 0});
+        placement = portable::rotate(placement, turned.x, Vec3{1, 0, 0});
+        placement = portable::rotate(placement, turned.z, Vec3{0, 0, 1});
+        const auto& attachment = f.effects.effect(at).attachment;
+        REQUIRE(attachment);
+        CHECK(near(*attachment, placement));
     }
 }
 

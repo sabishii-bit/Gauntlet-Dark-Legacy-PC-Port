@@ -244,13 +244,24 @@ TEST_CASE("native mixed critter pools resume every slot queue and shared texture
         population->critters.blind(2, 7);
         population->critters.freeze(0, 3);
     }
+    CHECK(replay->digest() == first->digest());
     auto held = std::make_unique<Critters::LocalSnapshot>();
-    REQUIRE(first->critters.saveLocal(*held));
-    REQUIRE_FALSE(first->critters.takeLosses().empty());
-    REQUIRE(first->critters.restoreLocal(*held));
+    REQUIRE(replay->critters.saveLocal(*held));
+    // A wrong branch takes the queued loss, lands another blow and runs the banks' clocks on
+    // with the players elsewhere.
+    REQUIRE_FALSE(replay->critters.takeLosses().empty());
+    replay->critters.hurt(1, hit);
+    auto astray = views();
+    astray[0].position = {-8, 0, 4};
+    astray[1].position = {12, 0, -6};
+    for (s32 frame = 0; frame < 10; ++frame) {
+        replay->critters.update(60 / rate, 1.0f / static_cast<f32>(rate), astray);
+    }
+    CHECK(replay->digest() != first->digest());
+    const u32 uploads = replay->device.texturesCreated;
+    REQUIRE(replay->critters.restoreLocal(*held));
     CHECK(replay->digest() == first->digest());
     REQUIRE(replay->critters.count() == 3);
-    const u32 uploads = replay->device.texturesCreated;
     for (s32 frame = 0; frame < 120; ++frame) {
         CAPTURE(rate, frame);
         players[0].position.x = frame > 40 ? 4.0f : 0.0f;
