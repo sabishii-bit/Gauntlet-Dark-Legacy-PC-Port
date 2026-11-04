@@ -1,16 +1,30 @@
 #include <algorithm>
-#include <limits>
+#include <array>
 #include <ranges>
+#include <string>
+#include <string_view>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/world/SampleLevel.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/level/FixtureHost.h"
-#include "game/level/LevelFixturesCheckpoint.h"
+#include "game/level/LevelCatalog.h"
+#include "game/level/LevelFixtures.h"
+#include "game/level/NativeStateResources.h"
 #include "game/level/ScriptedFixtures.h"
+#include "game/level/StageRegistry.h"
 
 namespace {
 using namespace gdl;
@@ -22,7 +36,6 @@ struct Fixture {
     EffectTrees effects;
     LevelSoundscape audio;
     LevelFixtures fixtures;
-    LevelFixturesCheckpoint owner{fixtures};
     std::array<PlayerRuntime, 2> players;
     std::vector<std::pair<usize, f32>> hits;
     test::FixtureScript events{
@@ -40,11 +53,23 @@ struct Fixture {
         players[0].actor.spawn(3, {}, nullptr, {0, 0, 0}, 0);
         players[1].actor.spawn(1, {}, nullptr, {6, 0, 0}, 0);
     }
-    void bind() {
-        fixtures.bind({device, world, weapons, effects, audio, 1});
-        REQUIRE(owner.bindResources());
+    void bind() { fixtures.bind({device, world, weapons, effects, audio, 1}); }
+    /** The fixtures' native digest over their own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() {
+        NativeStateResources resources;
+        test::registerStage(resources, world, device);
+        if (weapons.loaded()) {
+            REQUIRE(resources.registerArchive(weapons, "weapons"));
+        }
+        return test::liveDigest(fixtures, resources);
     }
 };
+
+/** A copy of the blasts under way, to compare once the fixtures have moved on. */
+std::vector<LevelFixtures::Blast> blastsOf(const LevelFixtures& fixtures) {
+    const auto blasts = fixtures.blasts();
+    return {blasts.begin(), blasts.end()};
+}
 
 // Outputs belong to the caller's confirmed tick, not to an owner's rewind data.
 struct NativeContacts {
@@ -153,10 +178,7 @@ TEST_CASE("native fixture rewind discards wrong blast contacts before replaying 
             fixture.fixtures.blast({0, 0, 0}, 12, 30, fixture.players, host);
         }
         fixture.fixtures.advanceBlasts(kSeconds, fixture.players, host);
-        const auto state = fixture.owner.checkpoint();
-        REQUIRE(state);
-        REQUIRE(state->valid());
-        for (const auto& blast : state->blasts) {
+        for (const auto& blast : fixture.fixtures.blasts()) {
             CHECK(std::ranges::count(blast.players, usize{0}) <= 1);
             CHECK(std::ranges::count(blast.players, usize{1}) <= 1);
             CHECK(std::ranges::count(blast.opponents, 17) == 1);
@@ -167,8 +189,6 @@ TEST_CASE("native fixture rewind discards wrong blast contacts before replaying 
         const s32 length = 1 + window % 8;
         CAPTURE(window, length, frame);
         history.save(replay);
-        const auto before = replay.owner.checkpoint();
-        REQUIRE(before);
         expected = {};
         actual = {};
         for (s32 i = 0; i < length; ++i) {
@@ -182,12 +202,14 @@ TEST_CASE("native fixture rewind discards wrong blast contacts before replaying 
             replay.fixtures.blast({6, 0, 0}, 24, 80, replay.players, actualHost);
             replay.fixtures.advanceBlasts(kSeconds * 2, replay.players, actualHost);
         }
-        REQUIRE(replay.owner.checkpoint() != before);
+        replay.fixtures.saveLocal(observed);
+        REQUIRE_FALSE(replay.fixtures.equalLocal(observed, history.fixtures));
         const auto rejected = actual;
         const auto uploads = replay.device.texturesCreated;
         history.restore(replay);
         CHECK(actual == rejected); // Rewinding does not emit or clear caller-owned output.
-        CHECK(replay.owner.checkpoint() == before);
+        replay.fixtures.saveLocal(observed);
+        CHECK(replay.fixtures.equalLocal(observed, history.fixtures));
         CHECK(replay.device.texturesCreated == uploads);
         actual = {};
         for (s32 i = 0; i < length; ++i) {
@@ -195,7 +217,7 @@ TEST_CASE("native fixture rewind discards wrong blast contacts before replaying 
             replay.fixtures.saveLocal(observed);
             CHECK(replay.fixtures.equalLocal(observed, expectedLocal[static_cast<usize>(i)]));
         }
-        CHECK(replay.owner.checkpoint() == uninterrupted.owner.checkpoint());
+        CHECK(replay.digest() == uninterrupted.digest());
         CHECK(actual == expected);
         checkNativeParticipants(replay, uninterrupted);
         delayedContacts += static_cast<usize>(std::ranges::count_if(
@@ -213,23 +235,27 @@ TEST_CASE("native fixture aggregate refuses foreign and stale children before ch
     CHECK_FALSE(source.fixtures.equalLocal(saved, saved));
     source.fixtures.saveLocal(saved);
     CHECK(source.fixtures.equalLocal(saved, saved));
-    const auto untouched = other.owner.checkpoint();
+    LevelFixtures::LocalSnapshot untouched;
+    other.fixtures.saveLocal(untouched);
     CHECK_FALSE(other.fixtures.canRestoreLocal(saved));
     CHECK_FALSE(other.fixtures.equalLocal(saved, saved));
     CHECK_FALSE(other.fixtures.restoreLocal(saved));
-    CHECK(other.owner.checkpoint() == untouched);
+    LevelFixtures::LocalSnapshot refusedOther;
+    other.fixtures.saveLocal(refusedOther);
+    CHECK(other.fixtures.equalLocal(refusedOther, untouched));
     source.fixtures.blast({0, 0, 0}, 12, 30, source.players, source.host);
-    const auto advanced = source.owner.checkpoint();
-    REQUIRE(advanced);
-    REQUIRE(advanced->blasts.size() == 1);
+    const auto advanced = blastsOf(source.fixtures);
+    REQUIRE(advanced.size() == 1);
+    Chests::LocalSnapshot chests;
+    source.fixtures.chests().saveLocal(chests);
     source.fixtures.gates().clear();
     CHECK_FALSE(source.fixtures.equalLocal(saved, saved));
     CHECK_FALSE(source.fixtures.canRestoreLocal(saved));
     CHECK_FALSE(source.fixtures.restoreLocal(saved));
-    const auto refused = source.owner.checkpoint();
-    REQUIRE(refused);
-    CHECK(refused->blasts == advanced->blasts);
-    CHECK(refused->chests == advanced->chests);
+    CHECK(blastsOf(source.fixtures) == advanced);
+    Chests::LocalSnapshot refusedChests;
+    source.fixtures.chests().saveLocal(refusedChests);
+    CHECK(source.fixtures.chests().equalLocal(refusedChests, chests));
     source.bind();
     CHECK_FALSE(source.fixtures.restoreLocal(saved));
     CHECK_FALSE(source.fixtures.equalLocal(saved, saved));
@@ -253,19 +279,16 @@ TEST_CASE("native fixture equality distinguishes reached identities with the sam
     };
     hit(17);
     fixture.fixtures.saveLocal(first);
-    const auto firstDiagnostic = fixture.owner.checkpoint();
-    REQUIRE(firstDiagnostic);
-    REQUIRE(firstDiagnostic->blasts.size() == 1);
+    const auto firstBlasts = blastsOf(fixture.fixtures);
+    REQUIRE(firstBlasts.size() == 1);
     REQUIRE(fixture.fixtures.restoreLocal(initial));
     hit(31);
     fixture.fixtures.saveLocal(second);
-    const auto secondDiagnostic = fixture.owner.checkpoint();
-    REQUIRE(secondDiagnostic);
-    REQUIRE(secondDiagnostic->blasts.size() == 1);
-    CHECK(firstDiagnostic->blasts.front().position == secondDiagnostic->blasts.front().position);
-    CHECK(firstDiagnostic->blasts.front().elapsed == secondDiagnostic->blasts.front().elapsed);
-    CHECK(firstDiagnostic->blasts.front().opponents.size() ==
-          secondDiagnostic->blasts.front().opponents.size());
+    const auto secondBlasts = blastsOf(fixture.fixtures);
+    REQUIRE(secondBlasts.size() == 1);
+    CHECK(firstBlasts.front().position == secondBlasts.front().position);
+    CHECK(firstBlasts.front().elapsed == secondBlasts.front().elapsed);
+    CHECK(firstBlasts.front().opponents.size() == secondBlasts.front().opponents.size());
     CHECK_FALSE(fixture.fixtures.equalLocal(first, second));
     REQUIRE(fixture.fixtures.restoreLocal(initial));
     hit(17);
@@ -371,10 +394,7 @@ TEST_CASE("native G2 fixture and world rewind retains compound children and spec
             replay.fixtures.saveLocal(observed);
             CHECK(replay.fixtures.equalLocal(observed, expectedLocal[static_cast<usize>(i)]));
         }
-        const auto state = uninterrupted.owner.checkpoint();
-        REQUIRE(state);
-        REQUIRE(state->valid());
-        CHECK(replay.owner.checkpoint() == state);
+        CHECK(replay.digest() == uninterrupted.digest());
         CHECK(actual == expected);
         checkNativeParticipants(replay, uninterrupted);
         REQUIRE(replay.effects.count() == uninterrupted.effects.count());
@@ -385,8 +405,8 @@ TEST_CASE("native G2 fixture and world rewind retains compound children and spec
             CHECK(replay.effects.checkpoint(replay.effects.effect(i).id) == expectedEffect);
         }
         sawEffect |= uninterrupted.effects.count() > 0;
-        sawRubble |= !state->rubble.pieces.empty();
-        sawReached |= std::ranges::any_of(state->blasts,
+        sawRubble |= uninterrupted.fixtures.rubble().size() > 0;
+        sawReached |= std::ranges::any_of(uninterrupted.fixtures.blasts(),
                                           [](const auto& ring) { return !ring.reached.empty(); });
         frame += length;
     }
@@ -447,197 +467,82 @@ TEST_CASE("fixture audio identities survive a corrected away hit on another barr
     fixture.audio.close();
 }
 TEST_CASE("fixture aggregate rewinds complete delayed blast contacts without duplicate output",
-          "[rollback][level-fixtures-checkpoint]") {
+          "[rollback][level-fixtures-local-rewind]") {
     const auto rate = GENERATE(30, 60);
     const f32 seconds = 1.0f / static_cast<f32>(rate);
     Fixture first;
     Fixture second;
-    const auto empty = first.owner.checkpoint();
-    REQUIRE(empty);
+    LevelFixtures::LocalSnapshot empty;
+    second.fixtures.saveLocal(empty);
+    const auto emptyDigest = second.digest();
     first.fixtures.blast({0, 0, 0}, 12, 30, first.players, first.host);
     REQUIRE(first.hits.size() == 1);
-    const auto state = first.owner.checkpoint();
-    REQUIRE(state);
-    REQUIRE(state->blasts.size() == 1);
-    REQUIRE(state->blasts[0].players.size() == 1);
+    const auto blasts = blastsOf(first.fixtures);
+    REQUIRE(blasts.size() == 1);
+    REQUIRE(blasts[0].players.size() == 1);
+    // The second takes the same blast, then a wrong branch that reaches no player (whose own
+    // state this owner does not rewind), and rewinds to the blast.
+    second.fixtures.blast({0, 0, 0}, 12, 30, second.players, second.host);
+    LevelFixtures::LocalSnapshot blasted;
+    second.fixtures.saveLocal(blasted);
+    second.fixtures.blast({6, 0, 0}, 24, 80, {}, second.host);
+    second.fixtures.advanceBlasts(seconds * 2, {}, second.host);
+    LevelFixtures::LocalSnapshot wrong;
+    second.fixtures.saveLocal(wrong);
+    REQUIRE_FALSE(second.fixtures.equalLocal(wrong, blasted));
     const auto textures = second.device.texturesCreated;
-    REQUIRE(second.owner.restore(*state));
-    CHECK(second.hits.empty());
-    CHECK(second.owner.checkpoint() == state);
+    const auto emitted = second.hits.size();
+    REQUIRE(second.fixtures.restoreLocal(blasted));
+    CHECK(second.hits.size() == emitted); // Restore itself emits nothing.
+    second.hits.clear();
+    CHECK(second.digest() == first.digest());
     first.hits.clear();
     for (s32 tick = 0; tick < rate; ++tick) {
         first.fixtures.advanceBlasts(seconds, first.players, first.host);
         second.fixtures.advanceBlasts(seconds, second.players, second.host);
-        CHECK(second.owner.checkpoint() == first.owner.checkpoint());
+        CHECK(second.digest() == first.digest());
         CHECK(second.hits == first.hits);
     }
     REQUIRE(first.hits.size() == 1);
     CHECK(first.hits[0].first == 1);
     CHECK(second.device.texturesCreated == textures);
-    auto undo = second.owner.prepareRestore(*empty);
-    REQUIRE(undo);
     second.fixtures.blast({0, 0, 0}, 12, 30, second.players, second.host);
     const auto calls = second.hits.size();
-    REQUIRE(second.owner.commitRestore(std::move(*undo)));
-    CHECK(second.owner.checkpoint() == empty);
+    REQUIRE(second.fixtures.restoreLocal(empty));
+    CHECK(second.digest() == emptyDigest);
     CHECK(second.hits.size() == calls);
-}
-TEST_CASE("fixture aggregate preflights every child and invalidates stale siblings",
-          "[rollback][level-fixtures-checkpoint]") {
-    Fixture fixture;
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
-    for (const int mutation : {0, 1, 2, 3, 4}) {
-        auto invalid = *state;
-        switch (mutation) {
-        case 0: invalid.traps.random = 0; break;
-        case 1: invalid.rubble.resources.push_back({0, "NOT_BOUND"}); break;
-        case 2: invalid.doomedChests.push_back(0); break;
-        case 3:
-            invalid.clouds.push_back({{0, 0, 0}, 1, std::numeric_limits<f32>::quiet_NaN(), 0});
-            break;
-        case 4: invalid.difficultyGain = 2; break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.owner.restore(invalid));
-        CHECK(fixture.owner.checkpoint() == state);
-        CHECK(fixture.hits.empty());
-    }
-    auto stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    ChestsCheckpoint child{fixture.fixtures.chests()};
-    REQUIRE(child.restore(state->chests));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*stale)));
-    CHECK(fixture.owner.checkpoint() == state);
-    stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    LevelFixturesCheckpoint sibling{fixture.fixtures};
-    REQUIRE(sibling.bindResources());
-    REQUIRE(sibling.restore(*state));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    fixture.bind();
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    CHECK(fixture.owner.checkpoint() == state);
-}
-
-TEST_CASE("fixture capture and full validation agree without trusting incoming child states",
-          "[rollback][level-fixtures-checkpoint][checkpoint-capture-validation]") {
-    Fixture fixture;
-    fixture.fixtures.blast({0, 0, 0}, 12, 30, fixture.players, fixture.host);
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
-    REQUIRE(baseline->valid());
-    LevelFixturesCheckpoint independent{fixture.fixtures};
-    REQUIRE(independent.bindResources());
-    CHECK(independent.checkpoint() == baseline);
-    for (s32 mutation = 0; mutation < 7; ++mutation) {
-        CAPTURE(mutation);
-        auto invalid = *baseline;
-        switch (mutation) {
-        case 0:
-            invalid.chests.chests.emplace_back().refusalLeft =
-                std::numeric_limits<f32>::quiet_NaN();
-            break;
-        case 1:
-            invalid.gates.gates.emplace_back().refusalLeft = std::numeric_limits<f32>::quiet_NaN();
-            break;
-        case 2: invalid.traps.random = 0; break;
-        case 3: invalid.barrels.barrels.emplace_back(); break;
-        case 4: invalid.rocks.rocks.emplace_back(); break;
-        case 5: invalid.scenery.props.emplace_back(); break;
-        case 6:
-            invalid.rubble.pieces.push_back(
-                {static_cast<u32>(invalid.rubble.resources.size()), Mat4{1}});
-            break;
-        default: break;
-        }
-        CHECK_FALSE(invalid.valid());
-        CHECK_FALSE(fixture.owner.prepareRestore(invalid));
-        CHECK(fixture.owner.checkpoint() == baseline);
-    }
-    const auto emitted = fixture.hits.size();
-    CHECK(independent.checkpoint() == fixture.owner.checkpoint());
-    CHECK(fixture.hits.size() == emitted);
-}
-
-TEST_CASE(
-    "fixture cooldown validation accepts unordered bounded ledgers and rejects bad references",
-    "[rollback][level-fixtures-checkpoint][fixture-timers]") {
-    Fixture fixture;
-    const auto empty = fixture.owner.checkpoint();
-    REQUIRE(empty);
-    auto state = *empty;
-    LevelFixturesCheckpoint::Blast blast;
-    blast.radius = 12;
-    blast.damage = 30;
-    blast.seconds = 3;
-    blast.flags = 0x800;
-    blast.started = true;
-    blast.players = {3, 0, 2, 1};
-    blast.playerReady = {{2, 0.5f}, {0, 0.75f}, {1, 0.0f}, {3, 1.0f}};
-    // Preserve the actual aggregate contact bound, including non-contiguous
-    // opponent identities and contact/timer orders that differ from each other.
-    constexpr s32 kContacts = 65535;
-    blast.opponents.reserve(kContacts);
-    blast.opponentReady.reserve(kContacts);
-    for (s32 index = 0; index < kContacts; ++index) {
-        blast.opponents.push_back((kContacts - index) * 2);
-        blast.opponentReady.emplace_back((index + 1) * 2, 0.5f);
-    }
-    state.blasts.push_back(std::move(blast));
-    REQUIRE(state.valid());
-    REQUIRE(fixture.owner.restore(state));
-    CHECK(fixture.owner.checkpoint() == state);
-    CHECK(fixture.hits.empty());
-    for (const s32 mutation : {0, 1, 2, 3, 4, 5, 6, 7}) {
-        CAPTURE(mutation);
-        auto invalid = state;
-        auto& ring = invalid.blasts[0];
-        switch (mutation) {
-        case 0: ring.opponentReady[0].first = 1; break; // Not an admitted contact.
-        case 1: ring.opponentReady[1].first = ring.opponentReady[0].first; break;
-        case 2: ring.opponentReady[0].second = std::numeric_limits<f32>::quiet_NaN(); break;
-        case 3: ring.opponentReady[0].second = -0.1f; break;
-        case 4: ring.playerReady[0].first = 4; break;
-        case 5: ring.playerReady[1].first = ring.playerReady[0].first; break;
-        case 6: ring.opponentReady.emplace_back(2, 0.5f); break;
-        case 7: ring.reached.push_back(1); break; // Aggregate contact bound exceeded.
-        default: break;
-        }
-        CHECK_FALSE(invalid.valid());
-        CHECK_FALSE(fixture.owner.prepareRestore(invalid));
-        CHECK(fixture.owner.checkpoint() == state);
-        CHECK(fixture.hits.empty());
-    }
 }
 
 TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated native hits",
-          "[rollback][level-fixtures-checkpoint][fixture-timers]") {
+          "[rollback][level-fixtures-local-rewind][fixture-timers]") {
     const s32 rate = GENERATE(30, 60);
     const f32 seconds = 1.0f / static_cast<f32>(rate);
+    // A realm whose world explosions are gas rings, the ring living as long as its effect.
+    constexpr s32 kGasRealm = 11;
+    const auto root = test::sampleLevel("fixture-poison-ring");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"WORLD_EXP","nodes":[{"name":"ROOT","object":"WALL","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"BURST","frames":90,"frameRate":30}]}]})");
+    writeTextFile(root / "world.json", R"({"objects":[
+      {"name":"FLOOR","position":[0,0,0],"flags":4}]})");
+    const LevelRef level{"TEST", kGasRealm, "TEST", "", "", "", "", 0};
     Fixture first;
     Fixture second;
-    auto state = first.owner.checkpoint();
-    REQUIRE(state);
-    // This is an incoming authoritative poison-ring checkpoint. The production
-    // blast phase below, not a test-side timer simulation, expires and refills it.
-    LevelFixturesCheckpoint::Blast ring;
-    ring.radius = 12;
-    ring.damage = 30;
-    ring.seconds = 3;
-    ring.elapsed = 0.25f;
-    ring.flags = 0x800;
-    ring.started = true;
-    ring.players = {0};
-    ring.opponents = {17};
-    ring.playerReady = {{0, 0.5f}};
-    ring.opponentReady = {{17, 0.5f}};
-    state->blasts.push_back(ring);
-    REQUIRE(first.owner.restore(*state));
-    REQUIRE(second.owner.restore(*state));
+    // The production explosion, not a test-side ring, starts the poison; its first step
+    // reaches player 0 and opponent 17, whose next contacts wait half a second.
+    for (Fixture* fixture : {&first, &second}) {
+        fixture->fixtures.clear();
+        REQUIRE(fixture->world.load(fixture->device, root, level));
+        fixture->bind();
+        fixture->fixtures.worldExplosion({0, 0, 0}, fixture->players, fixture->host);
+        const auto rings = fixture->fixtures.blasts();
+        REQUIRE(rings.size() == 1);
+        REQUIRE((rings[0].flags & damage::kGas) != 0);
+        REQUIRE(rings[0].seconds > LevelFixtures::kExplosionSeconds);
+        for (s32 tick = 0; tick < rate / 4; ++tick) {
+            fixture->fixtures.advanceBlasts(seconds, fixture->players, fixture->host);
+        }
+    }
     const auto textures = second.device.texturesCreated;
     usize repeatedHits = 0;
     usize refreshedOpponents = 0;
@@ -645,36 +550,33 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
         CAPTURE(rate, tick);
         first.hits.clear();
         second.hits.clear();
-        const auto before = first.owner.checkpoint();
-        REQUIRE(before);
-        auto undo = second.owner.prepareRestore(*before);
-        REQUIRE(undo);
+        const auto before = blastsOf(first.fixtures);
+        const auto beforeDigest = first.digest();
+        LevelFixtures::LocalSnapshot undo;
+        second.fixtures.saveLocal(undo);
         first.fixtures.advanceBlasts(seconds, first.players, first.host);
         second.fixtures.advanceBlasts(seconds, second.players, second.host);
-        CHECK(second.owner.checkpoint() == first.owner.checkpoint());
+        CHECK(second.digest() == first.digest());
         CHECK(second.hits == first.hits);
         repeatedHits += static_cast<usize>(
             std::ranges::count(first.hits, usize{0}, &std::pair<usize, f32>::first));
-        const auto after = first.owner.checkpoint();
-        REQUIRE(after);
-        REQUIRE(after->blasts.size() == 1);
-        REQUIRE(after->blasts[0].opponentReady.size() == 1);
+        const auto after = first.fixtures.blasts();
+        REQUIRE(after.size() == 1);
+        REQUIRE(after[0].opponentReady.size() == 1);
         refreshedOpponents +=
-            after->blasts[0].opponentReady[0].second > before->blasts[0].opponentReady[0].second
-                ? 1U
-                : 0U;
+            after[0].opponentReady[0].second > before[0].opponentReady[0].second ? 1U : 0U;
         if (tick + 1 < rate / 4) {
             CHECK(std::ranges::count(first.hits, usize{0}, &std::pair<usize, f32>::first) == 0);
         }
         const auto emitted = second.hits.size();
-        REQUIRE(second.owner.commitRestore(std::move(*undo)));
-        CHECK(second.owner.checkpoint() == before);
+        REQUIRE(second.fixtures.restoreLocal(undo));
+        CHECK(second.digest() == beforeDigest);
         CHECK(second.hits.size() == emitted); // Restore itself emits nothing.
         // The owning caller discards speculative output before replay instead
         // of delivering the same accepted tick twice.
         second.hits.clear();
         second.fixtures.advanceBlasts(seconds, second.players, second.host);
-        CHECK(second.owner.checkpoint() == first.owner.checkpoint());
+        CHECK(second.digest() == first.digest());
         CHECK(second.hits == first.hits);
     }
     CHECK(repeatedHits >= 2);
@@ -683,7 +585,7 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
 }
 
 TEST_CASE("native fixture aggregate retains all seven rosters and restores without uploads",
-          "[rollback][level-fixtures-checkpoint][assets]") {
+          "[rollback][level-fixtures-local-rewind][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     const auto* const stage = GENERATE("G1", "F1", "J4");
     LevelCatalog catalog;
@@ -698,22 +600,26 @@ TEST_CASE("native fixture aggregate retains all seven rosters and restores witho
     REQUIRE(second.world.load(second.device, root, *level));
     first.bind();
     second.bind();
+    LevelFixtures::LocalSnapshot entry;
+    first.fixtures.saveLocal(entry);
     first.fixtures.setPlayerCount(3);
-    const auto state = first.owner.checkpoint();
-    REQUIRE(state);
-    CHECK(state->chests.chests.size() == first.fixtures.chests().size());
-    CHECK(state->gates.gates.size() == first.fixtures.gates().size());
-    CHECK(state->traps.traps.size() == first.fixtures.traps().size());
-    CHECK(state->barrels.barrels.size() == first.fixtures.barrels().size());
-    CHECK(state->rocks.rocks.size() == first.fixtures.safeRocks().size());
-    CHECK(state->scenery.props.size() == first.fixtures.scenery().size());
-    CHECK(state->rubble.pieces.size() == first.fixtures.rubble().size());
-    const auto textures = second.device.texturesCreated;
-    const auto updates = second.device.textureUpdates;
-    REQUIRE(second.owner.restore(*state));
-    CHECK(second.owner.checkpoint() == state);
-    CHECK(second.device.texturesCreated == textures);
-    CHECK(second.device.textureUpdates == updates);
-    CHECK(second.hits.empty());
+    second.fixtures.setPlayerCount(3);
+    LevelFixtures::LocalSnapshot three;
+    first.fixtures.saveLocal(three);
+    const auto state = first.digest();
+    CHECK(second.digest() == state);
+    const auto textures = first.device.texturesCreated;
+    const auto updates = first.device.textureUpdates;
+    LevelFixtures::LocalSnapshot restored;
+    REQUIRE(first.fixtures.restoreLocal(entry));
+    first.fixtures.saveLocal(restored);
+    CHECK(first.fixtures.equalLocal(restored, entry));
+    REQUIRE(first.fixtures.restoreLocal(three));
+    first.fixtures.saveLocal(restored);
+    CHECK(first.fixtures.equalLocal(restored, three));
+    CHECK(first.digest() == state);
+    CHECK(first.device.texturesCreated == textures);
+    CHECK(first.device.textureUpdates == updates);
+    CHECK(first.hits.empty());
 }
 } // namespace

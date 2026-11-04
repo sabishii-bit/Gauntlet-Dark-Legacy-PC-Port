@@ -131,9 +131,32 @@ public:
     static constexpr f32 kItemBlastInset = 1.5f; ///< DMG_EXPLODE shortens the item query
     static constexpr f32 kItemBlastPower = 5.0f; ///< the least that breaks an item apart
     static constexpr f32 kBarrelWarning = 9.0f;  ///< a player this near a spent barrel is told
+    /** A blast yet to be felt: one barrel's sets off the next, in turn. */
+    struct Blast {
+        Vec3 position{0.0f, 0.0f, 0.0f};
+        f32 radius = 0.0f;
+        f32 damage = 0.0f;
+        f32 seconds = kExplosionSeconds;
+        f32 elapsed = 0.0f;
+        u32 flags = damage::kFire | damage::kExplode |
+                    damage::kKnockDown; ///< world effects supply their own
+        bool started = false;
+        bool done = false;
+        std::vector<usize> players; ///< party indices it has reached
+        std::vector<s32> reached;   ///< the fixtures it has reached
+        std::vector<s32> opponents; ///< the opponents it has, by the scene's ids
+        std::vector<std::pair<usize, f32>> playerReady; ///< poison repeats after 0.5s
+        std::vector<std::pair<s32, f32>> opponentReady;
+        bool operator==(const Blast&) const = default;
+        template <class Visitor>
+        friend void visitNativeState(Visitor& visitor, const Blast& value) {
+            visitor.template fields<13>(value);
+        }
+    };
+    /** The blasts under way, in the order they were set off, with what each has reached. */
+    std::span<const Blast> blasts() const { return m_sim.blasts; }
 
 private:
-    friend class LevelFixturesCheckpoint;
     /** Answers a chest event: a key spent and the opening heard, its enemy let out before
      * any pickup is placed in it (none when the pickup's art is missing), gold taken, or the
      * lessons of a refusal. */
@@ -174,28 +197,6 @@ private:
         template <class Visitor>
         friend void visitNativeState(Visitor& visitor, const GasCloud& value) {
             visitor.template fields<4>(value);
-        }
-    };
-    /** A blast yet to be felt: one barrel's sets off the next, in turn. */
-    struct Blast {
-        Vec3 position{0.0f, 0.0f, 0.0f};
-        f32 radius = 0.0f;
-        f32 damage = 0.0f;
-        f32 seconds = kExplosionSeconds;
-        f32 elapsed = 0.0f;
-        u32 flags = damage::kFire | damage::kExplode |
-                    damage::kKnockDown; ///< world effects supply their own
-        bool started = false;
-        bool done = false;
-        std::vector<usize> players; ///< party indices it has reached
-        std::vector<s32> reached;   ///< the fixtures it has reached
-        std::vector<s32> opponents; ///< the opponents it has, by the scene's ids
-        std::vector<std::pair<usize, f32>> playerReady; ///< poison repeats after 0.5s
-        std::vector<std::pair<s32, f32>> opponentReady;
-        bool operator==(const Blast&) const = default;
-        template <class Visitor>
-        friend void visitNativeState(Visitor& visitor, const Blast& value) {
-            visitor.template fields<13>(value);
         }
     };
     /** One step of a blast's ring, as it stands `elapsed` into its life. */

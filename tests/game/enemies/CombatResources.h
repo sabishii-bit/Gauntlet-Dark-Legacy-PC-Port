@@ -58,7 +58,7 @@ public:
     bool bind(RenderDevice& device, std::span<const Bank> banks,
               std::span<const PlayerMissiles::Resource> missiles = {},
               std::span<const Particle> particles = {});
-    /** Both peers call after StageResources preloading, with the same selected
+    /** Both peers call after preloading the stage's opponent families, with the same selected
      * native profiles and scene lender order. Covers shared/stage/swarm/class
      * trees, native SFXX particles, ordinary weapon, familiar/Phoenix and potion models.
      * Unknown special missile specs and code-attached trail topologies remain

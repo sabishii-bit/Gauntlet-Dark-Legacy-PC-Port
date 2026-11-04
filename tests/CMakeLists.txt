@@ -14,7 +14,6 @@ add_library(game_diagnostics STATIC
     game/critters/CrittersCheckpoint.cpp
     game/enemies/PlacedEnemiesCheckpoint.cpp
     game/party/PlayerAttacksCheckpoint.cpp
-    game/level/LevelFixturesCheckpoint.cpp
     game/level/ItemFigureCheckpoint.cpp
     game/critters/CombatantProjectilesCheckpoint.cpp
     game/level/ChestsCheckpoint.cpp
@@ -32,7 +31,6 @@ add_library(game_diagnostics STATIC
     game/party/PlayerMissilesCheckpoint.cpp
     game/effects/EffectTreesCheckpoint.cpp
     game/level/RotatorsCheckpoint.cpp
-    game/level/LevelWorldCheckpoint.cpp
     game/party/PlayerArsenalCheckpoint.cpp
     game/level/WorldDestructionCheckpoint.cpp
     game/level/FallingSceneryCheckpoint.cpp
@@ -52,8 +50,7 @@ add_library(game_diagnostics STATIC
     game/rollback/PlayerKnockbackCheckpoint.cpp
     game/party/PlayerRuntimeCheckpoint.cpp
     game/enemies/OpponentResources.cpp
-    game/enemies/CombatResources.cpp
-    game/scenes/StageResources.cpp)
+    game/enemies/CombatResources.cpp)
 target_include_directories(game_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(game_diagnostics PUBLIC gdl::game PRIVATE lz4::lz4)
 gdl_apply_compiler_options(game_diagnostics)
@@ -158,8 +155,8 @@ add_executable(tests
     game/level/RotatorsLocalRewindTests.cpp
     game/level/PlacedItemsCheckpointTests.cpp
     game/level/PreparedPickupBirthTests.cpp
-    game/level/LevelFixturesCheckpointTests.cpp
-    game/level/LevelWorldCheckpointTests.cpp
+    game/level/LevelFixturesLocalRewindTests.cpp
+    game/level/LevelWorldLocalRewindTests.cpp
     game/camera/TowerCameraCheckpointTests.cpp
     engine/world/WorldStateCheckpointTests.cpp
     engine/world/WorldCollapsedCollisionTests.cpp
@@ -776,8 +773,8 @@ if(GDL_ENABLE_NETPLAY)
         game/level/RotatorsLocalRewindTests.cpp
         game/level/PlacedItemsCheckpointTests.cpp
         game/level/PreparedPickupBirthTests.cpp
-        game/level/LevelFixturesCheckpointTests.cpp
-        game/level/LevelWorldCheckpointTests.cpp
+        game/level/LevelFixturesLocalRewindTests.cpp
+        game/level/LevelWorldLocalRewindTests.cpp
         game/camera/TowerCameraCheckpointTests.cpp
         engine/world/WorldStateCheckpointTests.cpp
         engine/world/WorldCollapsedCollisionTests.cpp
@@ -940,7 +937,7 @@ if(GDL_ENABLE_NETPLAY)
         game/level/PlacedItemsCheckpointTests.cpp game/level/PlacedItemsTests.cpp
         game/level/SafeRocksCheckpointTests.cpp game/level/RubbleCheckpointTests.cpp
         game/level/LevelTriggersCheckpointTests.cpp
-        game/level/LevelWorldCheckpointTests.cpp game/level/LevelFixturesCheckpointTests.cpp
+        game/level/LevelWorldLocalRewindTests.cpp game/level/LevelFixturesLocalRewindTests.cpp
         game/level/FallingSceneryCheckpointTests.cpp game/level/DestructibleWallsCheckpointTests.cpp
         game/level/WorldDestructionCheckpointTests.cpp game/level/SkorneArenaTests.cpp
         game/enemies/GeneratorsTests.cpp game/enemies/GeneratorsCheckpointTests.cpp
