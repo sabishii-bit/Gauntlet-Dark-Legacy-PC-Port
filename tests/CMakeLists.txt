@@ -57,10 +57,7 @@ add_library(game_diagnostics STATIC
     game/enemies/OpponentCheckpoint.cpp
     game/enemies/CombatResources.cpp
     game/enemies/CombatRollbackCheckpoint.cpp
-    game/scenes/StageResources.cpp
-    game/rollback/CombatStatePacket.cpp
-    game/rollback/StageStatePacket.cpp
-    game/rollback/PlayerRuntimePacket.cpp)
+    game/scenes/StageResources.cpp)
 target_include_directories(game_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(game_diagnostics PUBLIC gdl::game PRIVATE lz4::lz4)
 gdl_apply_compiler_options(game_diagnostics)
@@ -143,12 +140,9 @@ add_executable(tests
     game/party/PlayerAttacksCheckpointTests.cpp
     game/party/PlayerRuntimeCheckpointTests.cpp
     game/enemies/CombatRollbackCheckpointTests.cpp
-    game/rollback/PlayerRuntimePacketTests.cpp
-    game/rollback/CombatStatePacketTests.cpp
     game/rollback/PlayerHealthCheckpointTests.cpp
     game/enemies/OpponentCombatCheckpointTests.cpp
     game/enemies/OpponentLootCheckpointTests.cpp
-    game/rollback/StageStatePacketTests.cpp
     game/rollback/CanonicalDigestSinkTests.cpp
     game/party/PlayerCompanionCheckpointTests.cpp
     game/party/PartyLightingTests.cpp
@@ -763,12 +757,9 @@ if(GDL_ENABLE_NETPLAY)
         game/party/PlayerAttacksCheckpointTests.cpp
         game/party/PlayerRuntimeCheckpointTests.cpp
         game/enemies/CombatRollbackCheckpointTests.cpp
-        game/rollback/PlayerRuntimePacketTests.cpp
-        game/rollback/CombatStatePacketTests.cpp
         game/rollback/PlayerHealthCheckpointTests.cpp
         game/enemies/OpponentCombatCheckpointTests.cpp
         game/enemies/OpponentLootCheckpointTests.cpp
-        game/rollback/StageStatePacketTests.cpp
         game/rollback/CanonicalDigestSinkTests.cpp
         game/party/PlayerCompanionCheckpointTests.cpp
         game/party/PartyLightingTests.cpp

@@ -13,7 +13,7 @@
 #include "game/characters/Progression.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerFigure.h"
-#include "game/rollback/PlayerRuntimePacket.h"
+#include "game/party/PlayerRuntimeCheckpoint.h"
 
 namespace {
 using namespace gdl;
@@ -145,12 +145,7 @@ TEST_CASE("bound companion correction restores native clocks previous poses and 
         // whose familiar and Phoenix have already moved beyond the authority.
         guest->step(tick + 4, seconds);
         guest->step(tick + 5, seconds);
-        const auto wire = PlayerRuntimePacket::encode(authority);
-        REQUIRE(wire);
-        const auto decoded = PlayerRuntimePacket::decode(*wire);
-        REQUIRE(decoded);
-        CHECK(*decoded == authority);
-        REQUIRE(guest->owner->restore(*decoded));
+        REQUIRE(guest->owner->restore(authority));
         CHECK(guest->state() == authority);
         for (const f32 blend : {0.0f, 0.37f, 1.0f}) {
             CAPTURE(tick, held, blend);
@@ -280,26 +275,17 @@ TEST_CASE("companion packet rejects malformed clocks and trusted pose mismatches
     REQUIRE(baseline.figure);
     auto changed = baseline;
     changed.figure->companionAlpha = std::numeric_limits<f32>::quiet_NaN();
-    CHECK_FALSE(PlayerRuntimePacket::encode(changed));
+    CHECK_FALSE(changed.valid());
     changed = baseline;
     changed.figure->powerupCompanion.previousGeneration =
         changed.figure->powerupCompanion.animation.generation + 1;
-    CHECK_FALSE(PlayerRuntimePacket::encode(changed));
+    CHECK_FALSE(changed.valid());
     changed = baseline;
     REQUIRE(changed.figure->familiar.pose);
     REQUIRE_FALSE(changed.figure->familiar.pose->nodes.empty());
     changed.figure->familiar.pose->nodes.front().rest.x += 1;
     REQUIRE(changed.valid());
-    const auto wire = PlayerRuntimePacket::encode(changed);
-    REQUIRE(wire);
-    const auto decoded = PlayerRuntimePacket::decode(*wire);
-    REQUIRE(decoded);
-    CHECK_FALSE(fixture->owner->restore(*decoded));
+    CHECK_FALSE(fixture->owner->restore(changed));
     CHECK(fixture->state() == baseline);
-    const auto intact = PlayerRuntimePacket::encode(baseline);
-    REQUIRE(intact);
-    for (usize count = intact->size() - 24; count < intact->size(); ++count) {
-        CHECK_FALSE(PlayerRuntimePacket::decode(std::span{*intact}.first(count)));
-    }
 }
 } // namespace
