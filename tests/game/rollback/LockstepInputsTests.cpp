@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <array>
 #include <limits>
 #include <vector>
@@ -6,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "fixtures/PacketStar.h"
 #include "game/rollback/LockstepInputs.h"
 
 namespace {
@@ -14,36 +14,7 @@ using namespace gdl::game;
 using Admission = LockstepInputs::Admission;
 constexpr u64 kEpoch = 17;
 constexpr PacketTransport::Connection kHostConnection = 99;
-
-struct Wire final : PacketTransport {
-    struct Packet {
-        Connection connection = 0;
-        std::vector<u8> bytes;
-        Delivery delivery = Delivery::Unreliable;
-    };
-    SendResult result = SendResult::Sent;
-    usize budget = std::numeric_limits<usize>::max();
-    usize attempts = 0;
-    std::vector<Packet> sent;
-
-    SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
-        ++attempts;
-        if (result != SendResult::Sent) {
-            return result;
-        }
-        if (budget == 0) {
-            return SendResult::Congested;
-        }
-        --budget;
-        sent.push_back({connection, {bytes.begin(), bytes.end()}, delivery});
-        return SendResult::Sent;
-    }
-    std::vector<Event> poll() override { return {}; }
-    std::optional<Statistics> statistics(Connection /*connection*/) const override {
-        return std::nullopt;
-    }
-    void close(Connection /*connection*/) override {}
-};
+constexpr test::StarLinks kStar{kHostConnection};
 
 std::vector<u8> packet(std::span<const InputCommand> commands) {
     const auto encoded = InputPacket::encode(commands);
@@ -55,13 +26,12 @@ bool sameCommand(const InputCommand& left, const InputCommand& right) {
     return packet(std::span{&left, 1}) == packet(std::span{&right, 1});
 }
 
-struct Room {
-    LockstepInputs::Owners owners;
+struct Room : test::PacketStar<> {
     LockstepInputs::Grants grants{};
-    std::array<LockstepInputs, 5> inputs;
-    std::array<Wire, 5> wires;
+    std::array<LockstepInputs, kSlots> inputs;
 
-    explicit Room(LockstepInputs::Owners roster = {1, 2, 0, 0}, u8 delay = 0) : owners(roster) {
+    explicit Room(LockstepInputs::Owners roster = {1, 2, 0, 0}, u8 delay = 0)
+        : PacketStar(roster, kStar) {
         for (usize seat = 0; seat < owners.size(); ++seat) {
             grants[seat] = owners[seat] != 0 ? static_cast<u32>(10 + seat) : 0;
         }
@@ -76,8 +46,7 @@ struct Room {
         REQUIRE(inputs[1].open(1, kEpoch, owners, grants, delay, guests));
     }
 
-    static PacketTransport::Connection connection(u8 peer) { return 100 + peer; }
-    bool present(u8 peer) const { return std::ranges::find(owners, peer) != owners.end(); }
+    static PacketTransport::Connection connection(u8 peer) { return kStar.guest(peer); }
 
     std::vector<InputCommand> commands(u8 peer, u64 tick, bool actions = false) const {
         std::vector<InputCommand> result;
@@ -108,30 +77,25 @@ struct Room {
         return result;
     }
 
-    void deliver(u8 source) {
-        auto sent = std::move(wires[source].sent);
-        wires[source].sent.clear();
-        for (const auto& message : sent) {
+    /** What a delivered input packet meets: its checks, then its receiver, which must take it. */
+    auto arrival() {
+        return [this](u8 source, u8 target, PacketTransport::Connection sender,
+                      const Packet& message) {
             REQUIRE(message.delivery == PacketTransport::Delivery::Reliable);
             REQUIRE(message.bytes.size() <= PacketTransport::kMaxPacketBytes);
-            const auto target = source == 1 ? static_cast<u8>(message.connection - 100) : u8{1};
-            const auto sender = source == 1 ? kHostConnection : connection(source);
             CAPTURE(source, target);
             REQUIRE(inputs[target].receive(sender, message.bytes) == Admission::Accepted);
-        }
+        };
     }
+
+    void deliver(u8 source) { PacketStar::deliver(source, arrival()); }
 
     void pump() {
         // The second pass carries host relays produced after its first flush.
         // No simulation is advanced in this transport-only operation.
-        for (u8 pass = 0; pass < 2; ++pass) {
-            for (u8 peer = 1; peer <= 4; ++peer) {
-                if (present(peer)) {
-                    REQUIRE(inputs[peer].flush(wires[peer]));
-                    deliver(peer);
-                }
-            }
-        }
+        PacketStar::pump(
+            2, [this](u8 peer, PacketTransport& wire) { REQUIRE(inputs[peer].flush(wire)); },
+            arrival());
     }
 
     void advanceAll(bool actions) {

@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -9,6 +8,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "TestSupport.h"
+#include "fixtures/PacketStar.h"
+#include "fixtures/RecordingPacketTransport.h"
 #include "game/netplay/NativeAgreement.h"
 
 namespace {
@@ -20,6 +21,7 @@ using Digest = NativeAgreement::Digest;
 using Time = NativeAgreement::Time;
 constexpr u64 kEpoch = 17;
 constexpr PacketTransport::Connection kHost = 99;
+constexpr test::StarLinks kStar{kHost};
 constexpr u32 kPeriod = 60;
 
 Digest digest(u64 tick) {
@@ -42,44 +44,14 @@ std::vector<u8> packet(u8 kind, u64 epoch, u64 tick, const Digest& value,
     return bytes;
 }
 
-struct Wire final : PacketTransport {
-    struct Packet {
-        Connection connection;
-        std::vector<u8> bytes;
-        Delivery delivery;
-    };
-    SendResult result = SendResult::Sent;
-    Connection faultConnection = 0; // zero applies result to all connections
-    usize budget = std::numeric_limits<usize>::max();
-    usize attempts = 0;
-    std::vector<Packet> sent;
-    SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
-        ++attempts;
-        if (result != SendResult::Sent && (faultConnection == 0 || faultConnection == connection)) {
-            return result;
-        }
-        if (budget == 0) {
-            return SendResult::Congested;
-        }
-        --budget;
-        sent.push_back({connection, {bytes.begin(), bytes.end()}, delivery});
-        return SendResult::Sent;
-    }
-    std::vector<Event> poll() override { return {}; }
-    std::optional<Statistics> statistics(Connection /*connection*/) const override {
-        return std::nullopt;
-    }
-    void close(Connection /*connection*/) override {}
-};
+using Wire = test::RecordingPacketTransport;
 
-struct Room {
-    NativeAgreement::Owners owners;
-    std::array<NativeAgreement, 5> streams;
-    std::array<Wire, 5> wires;
+struct Room : test::PacketStar<> {
+    std::array<NativeAgreement, kSlots> streams;
     Time now;
     u32 period;
     explicit Room(NativeAgreement::Owners roster = {1, 2, 0, 0}, u32 cadence = kPeriod)
-        : owners(roster), period(cadence) {
+        : PacketStar(roster, kStar), period(cadence) {
         std::vector<NativeAgreement::Link> links;
         for (u8 peer = 2; peer <= 4; ++peer) {
             if (present(peer)) {
@@ -90,31 +62,27 @@ struct Room {
         }
         REQUIRE(streams[1].open(1, kEpoch, owners, links, period, now));
     }
-    static PacketTransport::Connection connection(u8 peer) { return 100 + peer; }
-    bool present(u8 peer) const { return std::ranges::find(owners, peer) != owners.end(); }
-    void deliver(u8 source) {
-        auto sent = std::move(wires[source].sent);
-        wires[source].sent.clear();
-        for (const auto& message : sent) {
+    static PacketTransport::Connection connection(u8 peer) { return kStar.guest(peer); }
+    /** What a delivered report or verdict meets: its checks, then its receiver. */
+    auto arrival() {
+        return [this](u8 /*source*/, u8 target, PacketTransport::Connection sender,
+                      const Packet& message) {
             CHECK(message.delivery == PacketTransport::Delivery::Reliable);
             CHECK(message.bytes.size() == NativeAgreement::kPacketBytes);
-            const auto target = source == 1 ? static_cast<u8>(message.connection - 100) : u8{1};
-            const auto sender = source == 1 ? kHost : connection(source);
             const auto result = streams[target].receive(sender, message.bytes, now);
             CHECK((result == Admission::Accepted || result == Admission::Duplicate ||
                    result == Admission::Failed));
-        }
+        };
     }
+    void deliver(u8 source) { PacketStar::deliver(source, arrival()); }
     void pump() {
-        for (u8 pass = 0; pass < 3; ++pass) {
-            for (u8 peer = 1; peer <= 4; ++peer) {
-                if (present(peer)) {
-                    const bool flushed = streams[peer].flush(wires[peer], now);
-                    CHECK(flushed == !streams[peer].failed());
-                    deliver(peer);
-                }
-            }
-        }
+        PacketStar::pump(
+            3,
+            [this](u8 peer, Wire& wire) {
+                const bool flushed = streams[peer].flush(wire, now);
+                CHECK(flushed == !streams[peer].failed());
+            },
+            arrival());
     }
     void submitAll(u64 tick, const Digest& value) {
         for (u8 peer = 1; peer <= 4; ++peer) {

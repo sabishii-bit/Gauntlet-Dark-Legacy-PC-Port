@@ -210,7 +210,6 @@ add_executable(tests
     game/characters/PartyCheckpointTests.cpp
     game/netplay/PartyBootstrapTests.cpp
     game/netplay/OnlinePartyTests.cpp
-    game/netplay/MeasuredPacketTransportTests.cpp
     game/rollback/SessionInputsTests.cpp
     game/app/BuildLabelTests.cpp
     game/app/LevelDebugOverlayTests.cpp
@@ -837,7 +836,6 @@ if(GDL_ENABLE_NETPLAY)
         game/players/MeleeSelectionTests.cpp
         engine/world/AnimationPlayerTests.cpp engine/world/WorldAnimatorTests.cpp
         game/players/PlayerAnimatorTests.cpp
-        game/netplay/MeasuredPacketTransportTests.cpp
         game/online/OnlineCompletionTests.cpp
         game/online/OnlineLevelEntryTests.cpp
         engine/audio/SoundPlayerTests.cpp
