@@ -34,14 +34,10 @@ constexpr s32 kWeaponTierThreeLevel = 50;
 constexpr std::array<std::string_view, 3> kHandObjects{"R_WRIST", "RIGHTHAN", "RHEND"};
 /** The second hand's object, by class (tb_info's second table): what shields hang from. */
 constexpr std::array<std::string_view, 2> kArmObjects{"L_WRIST", "LEFTHAND"};
-constexpr s32 kValkyrieClass = 1; ///< these two bear shields of their own, on the arm's parent
-constexpr s32 kKnightClass = 5;
-constexpr s32 kJesterClass = 7; ///< whose hand goes
 constexpr std::string_view kHeldWeapon = "WEAP_HOLD";
 constexpr u32 kHeldWeaponFlags = 0x810; ///< load_player_geo's ordinary held object
 constexpr std::string_view kClassAnimations = "ANIM";
 constexpr std::string_view kSoundDirectory = "audio";
-constexpr s32 kOgre = 12;
 constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f;
 constexpr std::array kArmEquipment{powerup::kLeftGauntlet, armor::kReflect, armor::kFireArmor,
@@ -71,7 +67,7 @@ std::string playerResourceKey(const std::filesystem::path& directory) {
 } // namespace
 
 f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
-    if (save.character == kOgre) {
+    if (save.character == kOgreClass) {
         return kOgreScale;
     }
     if (effects.grown()) {
@@ -398,6 +394,8 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
             }
         }
     }
+    // A borne shield hides the valkyrie's and the knight's own, on the arm's parent, and the
+    // jester's hand.
     if (m_armNode >= 0 && (save.character == kValkyrieClass || save.character == kKnightClass)) {
         m_armHidden = m_costume->nodes[static_cast<usize>(m_armNode)].parent;
     } else if (m_armNode >= 0 && save.character == kJesterClass) {

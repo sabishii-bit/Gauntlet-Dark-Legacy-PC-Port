@@ -15,10 +15,6 @@ void visitNativeState(NativeStateDigest& digest, const WeaponGlow& value) {
     digest.values(element, effect);
 }
 
-namespace {
-constexpr s32 kSorceressClass = 6;
-} // namespace
-
 u32 WeaponGlow::elementOf(const PowerupEffects& worn) {
     const bool handFull = (worn.special & powerup::kRightGauntlet) != 0 ||
                           (worn.weapon & (damage::kSuperShot | damage::kHammer)) != 0;

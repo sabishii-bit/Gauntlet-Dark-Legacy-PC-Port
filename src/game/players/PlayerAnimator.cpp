@@ -39,12 +39,6 @@ constexpr usize index(PlayerAnimator::Action action) {
     return static_cast<usize>(action);
 }
 
-// The classes whose power swings keep their feet, in ClassData's table order.
-constexpr s32 kArcherClass = 3;
-constexpr s32 kKnightClass = 5;
-constexpr s32 kSorceressClass = 6;
-constexpr s32 kJesterClass = 7;
-
 // AnimAction's refinement of a swing by the way to its target against the facing.
 constexpr f32 kBehind = 3.0f * std::numbers::pi_v<f32> / 4.0f;
 constexpr f32 kAside = std::numbers::pi_v<f32> / 3.0f;
@@ -425,22 +419,22 @@ void PlayerAnimator::advancePresentation(f32 seconds) {
 
 PlayerAnimator::Action PlayerAnimator::comboHeldActionOf(s32 grabberClass) {
     switch (grabberClass) {
-    case 0: return Action::ComboWar1;
-    case 1: return Action::ComboVal;
-    case 2: return Action::ComboWiz;
-    case 3: return Action::ComboArc;
-    case 4: return Action::ComboDwf1;
-    case 5: return Action::ComboKni;
-    case 6: return Action::ComboSor;
-    case 7: return Action::ComboJes;
+    case kWarriorClass: return Action::ComboWar1;
+    case kValkyrieClass: return Action::ComboVal;
+    case kWizardClass: return Action::ComboWiz;
+    case kArcherClass: return Action::ComboArc;
+    case kDwarfClass: return Action::ComboDwf1;
+    case kKnightClass: return Action::ComboKni;
+    case kSorceressClass: return Action::ComboSor;
+    case kJesterClass: return Action::ComboJes;
     default: return Action::Ready;
     }
 }
 
 PlayerAnimator::Action PlayerAnimator::comboThrownActionOf(s32 grabberClass) {
     switch (grabberClass) {
-    case 0: return Action::ComboWar2;
-    case 4: return Action::ComboDwf2;
+    case kWarriorClass: return Action::ComboWar2;
+    case kDwarfClass: return Action::ComboDwf2;
     default: return Action::Ready;
     }
 }

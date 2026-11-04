@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
@@ -197,7 +198,7 @@ MissileStreak PlayerArsenal::weaponStreak(const PlayerActor& actor, const Textur
                        ? Color::rgba(255, 255, 255, 190)
                        : kColors[static_cast<usize>(std::clamp(save.color, 0, kColorCount - 1))];
     const s32 family = baseClassOf(save.character);
-    if (!superShot && (family == kWizardClass || family == 6)) {
+    if (!superShot && (family == kWizardClass || family == kSorceressClass)) {
         streak.color.a = 62;
     }
     if (const auto* stats = m_resources->classes.stats(save.character)) {

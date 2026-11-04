@@ -17,8 +17,26 @@ namespace gdl::game {
 /** The playable classes: eight to start with, eight unlockable, and the hidden Sumner. */
 inline constexpr s32 kClassCount = 17;
 inline constexpr s32 kStartingClassCount = 8;
-inline constexpr s32 kSumnerClass = 16;
+/** Each class's index, in the order of its asset code (classCode) and its name in the text
+ * tables: the eight starting classes, the eight unlockables, each shadowing the starting class
+ * eight before it (baseClassOf), then Sumner. */
+inline constexpr s32 kWarriorClass = 0;
+inline constexpr s32 kValkyrieClass = 1;
 inline constexpr s32 kWizardClass = 2;
+inline constexpr s32 kArcherClass = 3;
+inline constexpr s32 kDwarfClass = 4;
+inline constexpr s32 kKnightClass = 5;
+inline constexpr s32 kSorceressClass = 6;
+inline constexpr s32 kJesterClass = 7;
+inline constexpr s32 kMinotaurClass = 8;
+inline constexpr s32 kFalconessClass = 9;
+inline constexpr s32 kJackalClass = 10;
+inline constexpr s32 kTigressClass = 11;
+inline constexpr s32 kOgreClass = 12;
+inline constexpr s32 kUnicornClass = 13;
+inline constexpr s32 kMedusaClass = 14;
+inline constexpr s32 kHyenaClass = 15;
+inline constexpr s32 kSumnerClass = 16;
 inline constexpr s32 kColorCount = 4;
 /** The costume Sumner wears, under the wizard's archive. */
 inline constexpr std::string_view kSumnerCostume = "SUM";

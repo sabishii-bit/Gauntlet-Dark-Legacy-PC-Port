@@ -1,4 +1,6 @@
+#include <array>
 #include <filesystem>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,6 +25,47 @@ TEST_CASE("class and colour codes name the assets", "[game][players]") {
     REQUIRE(colorCode(4).empty());
     REQUIRE(playerColor(2) == Color::rgba(255, 192, 224));
     REQUIRE(playerColor(9) == Color::white());
+}
+
+TEST_CASE("every class's name is its index, in the order of the asset codes",
+          "[game][players][class-names]") {
+    struct NamedClass {
+        s32 constant;
+        s32 index;
+        std::string_view code;
+    };
+    constexpr std::array<NamedClass, kClassCount> kNamed{{
+        {kWarriorClass, 0, "WAR"},
+        {kValkyrieClass, 1, "VAL"},
+        {kWizardClass, 2, "WIZ"},
+        {kArcherClass, 3, "ARC"},
+        {kDwarfClass, 4, "DWF"},
+        {kKnightClass, 5, "KNI"},
+        {kSorceressClass, 6, "SOR"},
+        {kJesterClass, 7, "JES"},
+        {kMinotaurClass, 8, "MIN"},
+        {kFalconessClass, 9, "FAL"},
+        {kJackalClass, 10, "JAC"},
+        {kTigressClass, 11, "TIG"},
+        {kOgreClass, 12, "OGR"},
+        {kUnicornClass, 13, "UNI"},
+        {kMedusaClass, 14, "MED"},
+        {kHyenaClass, 15, "HYE"},
+        {kSumnerClass, 16, "SUM"},
+    }};
+    for (const auto& [constant, index, code] : kNamed) {
+        CAPTURE(index);
+        CHECK(constant == index);
+        CHECK(classCode(constant) == code);
+    }
+    CHECK(baseClassOf(kMinotaurClass) == kWarriorClass);
+    CHECK(baseClassOf(kFalconessClass) == kValkyrieClass);
+    CHECK(baseClassOf(kJackalClass) == kWizardClass);
+    CHECK(baseClassOf(kTigressClass) == kArcherClass);
+    CHECK(baseClassOf(kOgreClass) == kDwarfClass);
+    CHECK(baseClassOf(kUnicornClass) == kKnightClass);
+    CHECK(baseClassOf(kMedusaClass) == kSorceressClass);
+    CHECK(baseClassOf(kHyenaClass) == kJesterClass);
 }
 
 TEST_CASE("a character plays as its base class and wears its own archive, Sumner the wizard's",
