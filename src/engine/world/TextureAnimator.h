@@ -130,13 +130,12 @@ public:
     }
     /** Draw-only particle overrides. Without an offset, keep native stepped sampling,
      * but never replace the emitter's simulation texture binding. */
-    void applyPresentation(TreeParticles& particles, const TreeInfo& tree, u32 sequence,
-                           f32 frame, std::optional<f32> frameOffset = {}) const;
+    void applyPresentation(TreeParticles& particles, const TreeInfo& tree, u32 sequence, f32 frame,
+                           std::optional<f32> frameOffset = {}) const;
     /** Advances `ticks` game frames, showing each step. */
     void step(WorldScene& scene, u32 ticks = 1);
 
 private:
-    friend class WorldStateCheckpoint;
     struct Entry {
         u32 slot = 0;
         std::vector<const Texture*> frames; ///< the cycle's textures, when it cycles
@@ -145,9 +144,9 @@ private:
         s32 rate = 0;                       ///< frames per step; 0 or 1 steps every frame
         s32 counter = 0;
         s32 initialCounter = 0; ///< exact bound start, before the first native increment
-        bool keyed = false; ///< read at a sequence frame, never stepped
-        s32 offset = 0;     ///< a keyed one's first sequence frame
-        s32 fade = 0;       ///< -1 fades out, +1 fades in, 0 cycles or scrolls
+        bool keyed = false;     ///< read at a sequence frame, never stepped
+        s32 offset = 0;         ///< a keyed one's first sequence frame
+        s32 fade = 0;           ///< -1 fades out, +1 fades in, 0 cycles or scrolls
     };
 
     static void show(const Entry& entry, WorldScene& scene);

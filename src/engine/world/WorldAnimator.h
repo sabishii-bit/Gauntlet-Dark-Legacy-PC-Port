@@ -80,7 +80,8 @@ public:
         s32 object = -1;
         bool wrapped = false; ///< loop endpoint, otherwise the first frames of a new pass
         bool operator==(const CycleEvent&) const = default;
-        template <class Digest> friend void visitNativeState(Digest& digest, const CycleEvent& value) {
+        template <class Digest>
+        friend void visitNativeState(Digest& digest, const CycleEvent& value) {
             digest.template fields<2>(value);
         }
     };
@@ -100,7 +101,6 @@ public:
     bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
 
 private:
-    friend class WorldStateCheckpoint;
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     const CanonicalDigestSink::Digest& trackDigest() const;
     struct Track : Cursor {

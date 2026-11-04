@@ -369,7 +369,6 @@ public:
 
 private:
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
-    friend class TowerCameraCheckpoint;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
     u64 m_checkpointGeneration = 0;
     std::optional<f32> presentedTextureFrameOffset(f32 alpha) const;

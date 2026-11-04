@@ -213,7 +213,6 @@ public:
 private:
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     const CanonicalDigestSink::Digest& geometryDigest() const;
-    friend class WorldStateCheckpoint;
     std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,
                                       f32 edgeReach = 0.0f, const Vec2* direction = nullptr,
                                       bool nearestToHeight = false) const;

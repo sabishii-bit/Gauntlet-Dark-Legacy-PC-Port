@@ -175,7 +175,6 @@ public:
     }
 
 private:
-    friend class WorldStateCheckpoint;
     /** One of the level's texture indices as the scene draws it. */
     struct SlotMotion {
         const Texture* frame = nullptr; ///< what an animation shows instead, when set

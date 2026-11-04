@@ -2,11 +2,13 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
@@ -17,12 +19,12 @@
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/ThermalMaterial.h"
 #include "engine/world/WorldScene.h"
-#include "engine/world/WorldStateCheckpoint.h"
 
 #include "FakeRenderDevice.h"
 #include "RecordedDrawChecks.h"
 #include "SampleLevel.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 
 namespace {
 
@@ -1116,6 +1118,73 @@ TEST_CASE("a baked five-bit colour reaches the whole texture at 248", "[world][s
     CHECK(WorldScene::bakedShade(Color::rgba(255, 255, 255)) == Color::rgba(255, 255, 255));
 }
 
+TEST_CASE("world chrome coordinates stay finite for absent and collapsed mesh normals",
+          "[world][world-chrome][world-local-rewind]") {
+    const bool zeroNormal = GENERATE(false, true);
+    const bool collapsed = GENERATE(false, true);
+    const auto directory = test::sampleLevel("world-chrome-zero-normal");
+    writeTextFile(directory / "models/006_LIT.obj",
+                  std::string{"v 0 0 0 0.2 0.2 0.2\nv 1 0 0 0.2 0.2 0.2\n"
+                              "v 0 1 0 0.2 0.2 0.2\n"} +
+                      (zeroNormal ? "vn 0 0 0\n" : "vn 0 1 0\n") +
+                      "usemtl tex0\nf 1//1 2//1 3//1\n");
+    test::convertModelFixture(directory);
+    writeTextFile(directory / "world.json", R"({"objects":[
+      {"name":"LIT","position":[0,0,0],"next":-1,"child":-1,
+       "flags":4098,"objectFlags":32768}]})");
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldLayout layout;
+    WorldScene scene;
+    REQUIRE(models.load(directory));
+    REQUIRE(textures.load(directory));
+    REQUIRE(layout.load(directory));
+    REQUIRE(scene.build(layout, models, textures, device));
+    REQUIRE(scene.moving(0));
+    if (collapsed) {
+        scene.setObjectTransform(0, glm::scale(Mat4{1}, Vec3{0}), true);
+    }
+    scene.draw(device, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    REQUIRE(device.draws.front().vertices.size() == 3);
+    const auto index = models.find("LIT");
+    REQUIRE(index);
+    const auto& mesh = models.mesh(*index);
+    REQUIRE(mesh.prelit);
+    for (const auto& vertex : device.draws.front().vertices) {
+        CHECK(std::isfinite(vertex.uv.x));
+        CHECK(std::isfinite(vertex.uv.y));
+        CHECK(vertex.color == WorldScene::bakedShade(mesh.vertices.front().color));
+        CHECK(vertex.uv == (zeroNormal || collapsed ? Vec2{0.5f} : Vec2{0.5f, 0}));
+    }
+}
+
+TEST_CASE("Ghost Town world chrome draws contain finite texture coordinates",
+          "[assets][world-chrome][world-local-rewind]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELG2/WORLDS.PS2").parent_path();
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldLayout layout;
+    WorldScene scene;
+    REQUIRE(models.load(directory));
+    REQUIRE(textures.load(directory));
+    REQUIRE(layout.load(directory));
+    REQUIRE(scene.build(layout, models, textures, device));
+    scene.draw(device, Mat4{1}, CameraFrame::at(Vec3{0, 20, 0}), 0.5f);
+    REQUIRE_FALSE(device.draws.empty());
+    for (usize draw = 0; draw < device.draws.size(); ++draw) {
+        const auto& vertices = device.draws[draw].vertices;
+        for (usize vertex = 0; vertex < vertices.size(); ++vertex) {
+            if (!std::isfinite(vertices[vertex].uv.x) || !std::isfinite(vertices[vertex].uv.y)) {
+                CAPTURE(draw, vertex);
+                FAIL("non-finite world texture coordinate");
+            }
+        }
+    }
+}
+
 TEST_CASE("an object flagged to go without its lightmap is drawn flat", "[world][scene]") {
     Fixture f("world-scene-flat");
     const auto dir = test::scratchDirectory("world-scene-flat-layout");
@@ -1364,20 +1433,11 @@ TEST_CASE("world immutable caches do not hide mutable placement unit or texture 
     CHECK(fixture.device.textureUpdates == updates);
 }
 
-TEST_CASE("world static digest versions follow native history across corrections",
+TEST_CASE("world scene digests and draws follow native history across corrections",
           "[world][scene][local-rewind][native-immutable-digest][world-scene-digest]") {
     Fixture fixture("world-digest-static-versions");
     REQUIRE(fixture.build());
     DigestTextures textures(fixture);
-    WorldCollision collision;
-    WorldAnimator animator;
-    animator.bind(fixture.layout);
-    const TextureAnimator textureClock;
-    const std::shared_ptr<const u8> binding = std::make_shared<const u8>(0);
-    WorldStateCheckpoint construction(fixture.scene, collision, animator, binding);
-    REQUIRE(construction.bind(textureClock, fixture.layout));
-    const auto authored = construction.checkpoint();
-    REQUIRE(authored);
     REQUIRE_FALSE(fixture.scene.moving(0));
     REQUIRE_FALSE(fixture.scene.moving(9));
     REQUIRE(fixture.scene.moving(8));
@@ -1387,50 +1447,12 @@ TEST_CASE("world static digest versions follow native history across corrections
     const auto initial = sceneDigest(fixture.scene, textures.resources());
     REQUIRE(initial);
 
-    // The diagnostic adapter is only a fixture constructor: ordinary gameplay
-    // cannot move static geometry. Hashing and all correction restores below use
-    // actual native snapshots, including independently retained static versions.
-    auto alternate = *authored;
-    alternate.placements[0].local[3].x += 2;
-    alternate.placements[0].previous[3].x -= 3;
-    alternate.placements[0].continuity = 9;
-    REQUIRE(construction.restore(alternate));
-    WorldScene::LocalSnapshot alternateState;
-    fixture.scene.saveLocal(alternateState);
-    const auto shifted = sceneDigest(fixture.scene, textures.resources());
-    REQUIRE(shifted);
-    CHECK(shifted != initial);
-    CHECK(sceneDigest(fixture.scene, textures.resources(), &initialState) == initial);
-    REQUIRE(construction.restore(alternate)); // New allocation, identical values.
-    WorldScene::LocalSnapshot sameValues;
-    fixture.scene.saveLocal(sameValues);
-    CHECK(fixture.scene.equalLocal(alternateState, sameValues));
-    CHECK(sceneDigest(fixture.scene, textures.resources(), &sameValues) == shifted);
-    for (u32 field = 0; field < 3; ++field) {
-        CAPTURE(field);
-        auto changed = alternate;
-        if (field == 0) {
-            changed.placements[0].local[3].z += 1;
-        }
-        if (field == 1) {
-            changed.placements[0].previous[3].z += 1;
-        }
-        if (field == 2) {
-            ++changed.placements[0].continuity;
-        }
-        REQUIRE(construction.restore(changed));
-        CHECK(sceneDigest(fixture.scene, textures.resources()) != shifted);
-        CHECK(sceneDigest(fixture.scene, textures.resources(), &alternateState) == shifted);
-    }
-    REQUIRE(fixture.scene.restoreLocal(alternateState));
-
     fixture.scene.capturePresentation();
     WorldScene::LocalSnapshot settledState;
     fixture.scene.saveLocal(settledState);
     const auto settled = sceneDigest(fixture.scene, textures.resources());
     REQUIRE(settled);
-    CHECK(settled != shifted);
-    CHECK(sceneDigest(fixture.scene, textures.resources(), &alternateState) == shifted);
+    CHECK(sceneDigest(fixture.scene, textures.resources(), &initialState) == initial);
     const auto step = [&](u32 tick) {
         fixture.scene.capturePresentation();
         fixture.scene.setObjectTransform(8, glm::translate(Mat4{1}, Vec3{0, tick, 50}),
@@ -1458,11 +1480,9 @@ TEST_CASE("world static digest versions follow native history across corrections
         for (usize tick = 0; tick < distance; ++tick) {
             step(static_cast<u32>(100 + tick));
         }
-        REQUIRE(fixture.scene.restoreLocal(alternateState));
-        CHECK(sceneDigest(fixture.scene, textures.resources()) == shifted);
         REQUIRE(fixture.scene.restoreLocal(initialState));
         CHECK(sceneDigest(fixture.scene, textures.resources()) == initial);
-        CHECK(sceneDigest(fixture.scene, textures.resources(), &alternateState) == shifted);
+        CHECK(sceneDigest(fixture.scene, textures.resources(), &settledState) == settled);
         REQUIRE(fixture.scene.restoreLocal(settledState));
         CHECK(sceneDigest(fixture.scene, textures.resources()) == settled);
         for (usize tick = 0; tick < distance; ++tick) {
@@ -1476,7 +1496,7 @@ TEST_CASE("world static digest versions follow native history across corrections
             fixture.device.draws.clear();
             fixture.scene.draw(fixture.device, Mat4{1}, CameraFrame{}, alpha);
             const auto draws = fixture.device.draws;
-            REQUIRE(fixture.scene.restoreLocal(alternateState));
+            REQUIRE(fixture.scene.restoreLocal(initialState));
             REQUIRE(fixture.scene.restoreLocal(reference[distance - 1]));
             fixture.device.draws.clear();
             fixture.scene.draw(fixture.device, Mat4{1}, CameraFrame{}, alpha);
@@ -1485,14 +1505,14 @@ TEST_CASE("world static digest versions follow native history across corrections
                 test::checkRecordedDraw(fixture.device.draws[draw], draws[draw]);
             }
             CHECK(sceneDigest(fixture.scene, textures.resources()) == expected[distance - 1]);
-            CHECK(sceneDigest(fixture.scene, textures.resources(), &alternateState) == shifted);
+            CHECK(sceneDigest(fixture.scene, textures.resources(), &initialState) == initial);
         }
     }
     CHECK(fixture.device.texturesCreated == uploads);
     CHECK(fixture.device.textureUpdates == updates);
     fixture.scene.clear();
-    CHECK_FALSE(fixture.scene.canRestoreLocal(alternateState));
-    CHECK_FALSE(sceneDigest(fixture.scene, {}, &alternateState));
+    CHECK_FALSE(fixture.scene.canRestoreLocal(initialState));
+    CHECK_FALSE(sceneDigest(fixture.scene, {}, &initialState));
 }
 
 TEST_CASE("the console's selected object is marked out from its mesh where it stands",

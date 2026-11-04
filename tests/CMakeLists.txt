@@ -10,10 +10,8 @@ add_subdirectory(expansions/audio)
 # No production target links these snapshots or their compression dependency.
 find_package(lz4 CONFIG REQUIRED)
 add_library(game_diagnostics STATIC
-    engine/world/WorldStateCheckpoint.cpp
     game/party/PlayerMissilesCheckpoint.cpp
     game/effects/EffectTreesCheckpoint.cpp
-    game/camera/TowerCameraCheckpoint.cpp
     game/enemies/OpponentResources.cpp
     game/enemies/CombatResources.cpp)
 target_include_directories(game_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -115,8 +113,8 @@ add_executable(tests
     game/level/PreparedPickupBirthTests.cpp
     game/level/LevelFixturesLocalRewindTests.cpp
     game/level/LevelWorldLocalRewindTests.cpp
-    game/camera/TowerCameraCheckpointTests.cpp
-    engine/world/WorldStateCheckpointTests.cpp
+    game/camera/TowerCameraLocalRewindTests.cpp
+    engine/world/WorldLocalRewindTests.cpp
     engine/world/WorldCollapsedCollisionTests.cpp
     game/level/WorldDestructionLocalRewindTests.cpp
     game/enemies/EnemyFeedbackEmissionTests.cpp
@@ -715,8 +713,8 @@ if(GDL_ENABLE_NETPLAY)
         game/level/PreparedPickupBirthTests.cpp
         game/level/LevelFixturesLocalRewindTests.cpp
         game/level/LevelWorldLocalRewindTests.cpp
-        game/camera/TowerCameraCheckpointTests.cpp
-        engine/world/WorldStateCheckpointTests.cpp
+        game/camera/TowerCameraLocalRewindTests.cpp
+        engine/world/WorldLocalRewindTests.cpp
         engine/world/WorldCollapsedCollisionTests.cpp
         engine/world/WorldCollisionTests.cpp
         engine/world/ParticleFieldTests.cpp
@@ -866,7 +864,7 @@ if(GDL_ENABLE_NETPLAY)
         game/tower/TowerPromotionTests.cpp
         game/bosses/BossVictoryPresentationTests.cpp
         game/bosses/LegendPresentationTests.cpp
-        engine/world/WorldStateCheckpointTests.cpp
+        engine/world/WorldLocalRewindTests.cpp
         game/level/PlacedItemsLocalRewindTests.cpp game/level/PlacedItemsTests.cpp
         game/level/SafeRocksLocalRewindTests.cpp game/level/RubbleLocalRewindTests.cpp
         game/level/LevelTriggersCheckpointTests.cpp
@@ -889,7 +887,7 @@ if(GDL_ENABLE_NETPLAY)
         game/party/PlayerMissilesTests.cpp game/party/PlayerMissilesCheckpointTests.cpp
         game/critters/CombatantProjectilesTests.cpp game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/tower/TowerRelicsTests.cpp
-        game/camera/TowerCameraTests.cpp game/camera/TowerCameraCheckpointTests.cpp
+        game/camera/TowerCameraTests.cpp game/camera/TowerCameraLocalRewindTests.cpp
         game/party/PowerupCompanionTests.cpp game/party/PlayerFamiliarTests.cpp
         game/rollback/LocalStateHistoryTests.cpp
         game/netplay/RollbackExchangeTests.cpp

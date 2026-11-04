@@ -120,7 +120,6 @@ public:
     static f32 markerPitch(const WorldLocator& marker) { return marker.rotation.x; }
 
 private:
-    friend class TowerCameraCheckpoint;
     void copyValues(const TowerCamera& other) noexcept;
     static Vec3 middleOf(std::span<const CameraSubject> subjects, const CameraRange& range);
     Vec3 projectedMiddleOf(std::span<const CameraSubject> subjects, const CameraRange& range) const;
