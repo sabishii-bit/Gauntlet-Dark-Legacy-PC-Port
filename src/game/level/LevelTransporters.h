@@ -112,7 +112,6 @@ public:
 private:
     void appendBinding(NativeStateDigest& digest) const;
     static void appendPad(NativeStateDigest& digest, const PadState& pad);
-    friend class LevelTransportersCheckpoint;
     std::vector<Pad> m_pads;
     const TreeInfo* m_tree = nullptr;
     TextureAnimator m_textures;

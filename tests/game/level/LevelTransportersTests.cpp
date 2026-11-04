@@ -70,6 +70,27 @@ TEST_CASE("transporters link ids rather than instance order and reject missing p
     CHECK(pads.size() == 0);
 }
 
+TEST_CASE("duplicate transporter ids link to the first matching pad other than themselves",
+          "[transporters]") {
+    const auto dir = test::scratchDirectory("transporters-duplicate-ids");
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":11,"name":"TRANS","radius":1.6,"height":2}],
+      "itemInstances":[
+        {"info":0,"position":[2,0,3],"params":[10,0,0,0,20,0,0,0]},
+        {"info":0,"position":[-4,0,5],"params":[20,0,0,0,10,0,0,0]},
+        {"info":0,"position":[-8,0,-8],"params":[30,0,0,0,30,0,0,0]},
+        {"info":0,"minPlayers":2,"position":[8,0,8],"params":[20,0,0,0,10,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    LevelTransporters pads;
+    pads.bind(device, layout, AssetScope(items), 2);
+    REQUIRE(pads.size() == 4);
+    CHECK(pads.pad(0).destination == 1);
+    CHECK(pads.pad(3).destination == 0);
+}
+
 TEST_CASE("transporter pads ride their moving floor with their art, contact and landing point",
           "[transporters][transporter-platform]") {
     const auto dir = test::sampleLevel("transporters-moving-floor");

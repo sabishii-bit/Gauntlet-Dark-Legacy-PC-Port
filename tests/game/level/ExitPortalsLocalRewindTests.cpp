@@ -1,18 +1,46 @@
 #include <array>
-#include <limits>
+#include <filesystem>
+#include <optional>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/render/RenderDevice.h"
 #include "engine/world/SampleLevel.h"
+#include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
-#include "game/level/ExitPortalsCheckpoint.h"
+#include "game/characters/Progression.h"
+#include "game/level/ExitPortals.h"
+#include "game/level/LevelCatalog.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
+#include "game/level/TowerAccess.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** The portals' native digest over the stage they were bound to, so two loads can be
+ * compared. */
+NativeStateDigest::Digest digestOf(const ExitPortals& portals, const ItemArchive& items,
+                                   const WorldLayout& layout, const WorldCollision* collision,
+                                   const RenderDevice& device) {
+    NativeStateResources resources;
+    test::registerItemStage(resources, items, layout, collision, device);
+    return test::liveDigest(portals, resources);
+}
 
 struct PortalFixture {
     test::FakeRenderDevice device;
@@ -21,7 +49,6 @@ struct PortalFixture {
     LevelCatalog catalog;
     ItemArchive items;
     ExitPortals portals;
-    ExitPortalsCheckpoint checkpoint{portals, layout, items};
     std::vector<ClassProgress> progress{1};
     TowerAccess access{progress};
 
@@ -72,12 +99,9 @@ struct PortalFixture {
                 CHECK(portals.portal(index).icon.presentation().archive == nullptr);
             }
         }
-        REQUIRE(checkpoint.bindResources());
     }
-    ExitPortalsCheckpoint::State state() const {
-        auto state = checkpoint.checkpoint();
-        REQUIRE(state);
-        return std::move(*state);
+    NativeStateDigest::Digest digest() const {
+        return digestOf(portals, items, layout, &collision, device);
     }
 };
 
@@ -134,11 +158,11 @@ TEST_CASE("native portal history rewinds contacts waiting events secret icons an
         }
         REQUIRE(replay.collision.restoreLocal(floor));
         REQUIRE(replay.portals.restoreLocal(saved));
-        CHECK(replay.state() == native.state());
+        CHECK(replay.digest() == native.digest());
         compareDraws(); // No simulation update may be needed to repair the restored picture.
         for (u32 i = 0; i < distance; ++i) {
             CHECK(step(replay, tick + i, false) == step(native, tick + i, false));
-            CHECK(replay.state() == native.state());
+            CHECK(replay.digest() == native.digest());
             compareDraws();
         }
         tick += distance;
@@ -155,8 +179,8 @@ TEST_CASE("native portal history rewinds contacts waiting events secret icons an
     CHECK_FALSE(replay.portals.restoreLocal(history[0]));
 }
 
-TEST_CASE("portal checkpoint resumes native phases floor carry texture clocks and wait queues",
-          "[rollback][exit-portals-checkpoint]") {
+TEST_CASE("two portal loads keep native phases floor carry texture clocks and wait queues alike",
+          "[rollback][exit-portals-local-rewind]") {
     const s32 rate = GENERATE(30, 60);
     const bool artwork = GENERATE(false, true);
     CAPTURE(rate, artwork);
@@ -168,23 +192,24 @@ TEST_CASE("portal checkpoint resumes native phases floor carry texture clocks an
                      PortalVisitor{{10, 0, 10}, 0.75f, 1, true}};
     for (s32 frame = 0; frame < rate; ++frame) {
         host.portals.update(ticks, seconds, party);
+        guest.portals.update(ticks, seconds, party);
     }
     host.portals.setAlpha("g1", 0.4f);
-    const auto baseline = host.state();
-    REQUIRE_FALSE(baseline.waiting.empty());
-    REQUIRE(baseline.visitors.size() == 1);
-    REQUIRE(baseline.visitors[0].ticks == ExitPortals::kIdleTicks);
-    REQUIRE(baseline.portals[0].action == ExitPortals::kWaiting);
-    REQUIRE(baseline.portals[2].shut);
+    guest.portals.setAlpha("g1", 0.4f);
+    REQUIRE(host.portals.portal(0).action == ExitPortals::kWaiting);
+    REQUIRE(host.portals.portal(2).shut);
     if (artwork) {
-        REQUIRE(baseline.portals[0].player.playing);
-        REQUIRE(baseline.portals[1].icon.state.textures.frame > 0);
+        REQUIRE(host.portals.portal(0).player.playing());
+        const auto icon = host.portals.portal(1).icon.checkpoint();
+        REQUIRE(icon);
+        REQUIRE(icon->textures.frame > 0);
     }
     const auto textures = guest.device.texturesCreated;
     const auto uploads = guest.device.textureUpdates;
-    REQUIRE(guest.checkpoint.restore(baseline));
-    CHECK(guest.state() == baseline);
-    CHECK(guest.portals.takeWaiting() == host.portals.takeWaiting());
+    CHECK(guest.digest() == host.digest());
+    const auto waiting = host.portals.takeWaiting();
+    REQUIRE_FALSE(waiting.empty());
+    CHECK(guest.portals.takeWaiting() == waiting);
     bool departed = false;
     for (s32 frame = 0; frame < rate * 2; ++frame) {
         const f32 height = static_cast<f32>(frame) / static_cast<f32>(rate);
@@ -196,7 +221,7 @@ TEST_CASE("portal checkpoint resumes native phases floor carry texture clocks an
         const auto expected = host.portals.update(ticks, seconds, party);
         const auto actual = guest.portals.update(ticks, seconds, party);
         CHECK(actual == expected);
-        CHECK(guest.state() == host.state());
+        CHECK(guest.digest() == host.digest());
         CHECK(guest.portals.takeWaiting() == host.portals.takeWaiting());
         departed = departed || actual.has_value();
     }
@@ -207,68 +232,26 @@ TEST_CASE("portal checkpoint resumes native phases floor carry texture clocks an
     CHECK(guest.portals.portal(0).position.y > ExitPortals::kFloorLift);
 }
 
-TEST_CASE("portal restore preflights malformed state and fences stale binding and sibling plans",
-          "[rollback][exit-portals-checkpoint]") {
-    PortalFixture fixture("portal-checkpoint-atomic");
-    PortalFixture other("portal-checkpoint-other");
-    const auto original = fixture.state();
-    for (s32 mutation = 0; mutation < 8; ++mutation) {
-        CAPTURE(mutation);
-        auto invalid = original;
-        switch (mutation) {
-        case 0: invalid.portals[0].alpha = std::numeric_limits<f32>::quiet_NaN(); break;
-        case 1: invalid.portals[0].action = 5; break;
-        case 2: invalid.portals[0].player.sequence = 65535; break;
-        case 3: invalid.visitors = {{1, 6}, {1, 6}}; break;
-        case 4: invalid.waiting.push_back(4); break;
-        case 5: invalid.portals[0].source.instance.position.x += 1; break;
-        case 6: invalid.portals[1].icon.state.textures.remainder = 1; break;
-        case 7: invalid.portals[0].supportLocal[3].x += 1; break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.checkpoint.prepareRestore(invalid));
-        CHECK(fixture.state() == original);
-    }
-    auto plan = fixture.checkpoint.prepareRestore(original);
-    auto sibling = fixture.checkpoint.prepareRestore(original);
-    REQUIRE(plan);
-    REQUIRE(sibling);
-    CHECK_FALSE(other.checkpoint.commitRestore(std::move(*plan)));
-    REQUIRE(fixture.checkpoint.canCommit(*plan));
-    fixture.portals.consume(0);
-    fixture.portals.setAlpha("g1", 0.2f);
-    REQUIRE(fixture.checkpoint.commitRestore(std::move(*plan)));
-    CHECK(fixture.state() == original);
-    CHECK_FALSE(fixture.checkpoint.canCommit(*plan));
-    CHECK_FALSE(fixture.checkpoint.canCommit(*sibling));
-    plan = fixture.checkpoint.prepareRestore(original);
-    REQUIRE(plan);
-    fixture.bind();
-    CHECK_FALSE(fixture.checkpoint.canCommit(*plan));
-    CHECK_FALSE(fixture.checkpoint.commitRestore(std::move(*plan)));
-    CHECK(fixture.state() == original);
-}
-
-TEST_CASE("secret portal checkpoint keeps the actual toucher and consumed icon without travel",
-          "[rollback][exit-portals-checkpoint]") {
+TEST_CASE("secret portal digests keep the actual toucher and consumed icon without travel",
+          "[rollback][exit-portals-local-rewind]") {
     PortalFixture fixture("portal-checkpoint-secret");
     PortalFixture other("portal-checkpoint-secret-other");
     const std::array touching{PortalVisitor{{20.5f, 0, 0}, 0.75f, 2, true}};
     REQUIRE(fixture.portals.update(1, 1.0f / 60, touching) == 1);
     fixture.portals.consume(1);
-    const auto state = fixture.state();
-    REQUIRE(state.portals[1].departurePosition == touching[0].position);
-    REQUIRE(state.portals[1].consumed);
+    REQUIRE(fixture.portals.portal(1).departurePosition == touching[0].position);
+    REQUIRE(fixture.portals.portal(1).consumed);
     const auto textures = other.device.texturesCreated;
-    REQUIRE(other.checkpoint.restore(state));
-    CHECK(other.state() == state);
+    REQUIRE(other.portals.update(1, 1.0f / 60, touching) == 1);
+    other.portals.consume(1);
+    CHECK(other.digest() == fixture.digest());
     CHECK(other.device.texturesCreated == textures);
     CHECK_FALSE(other.portals.update(1, 1.0f / 60, touching));
     CHECK(other.portals.portal(1).icon.checkpoint() == fixture.portals.portal(1).icon.checkpoint());
 }
 
-TEST_CASE("native tower portal restore retains open and EXIT_OFF resources independently",
-          "[rollback][exit-portals-checkpoint][assets]") {
+TEST_CASE("native tower portals keep open and EXIT_OFF resources independently in two loads",
+          "[rollback][exit-portals-local-rewind][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -287,10 +270,6 @@ TEST_CASE("native tower portal restore retains open and EXIT_OFF resources indep
     ExitPortals guest;
     REQUIRE(host.bind(device, layout, AssetScope(hostItems), catalog, nullptr, &access));
     REQUIRE(guest.bind(device, layout, AssetScope(guestItems), catalog, nullptr, &access));
-    ExitPortalsCheckpoint hostState{host, layout, hostItems};
-    ExitPortalsCheckpoint guestState{guest, layout, guestItems};
-    REQUIRE(hostState.bindResources());
-    REQUIRE(guestState.bindResources());
     std::optional<usize> open;
     std::optional<usize> closed;
     for (usize index = 0; index < host.size(); ++index) {
@@ -304,21 +283,22 @@ TEST_CASE("native tower portal restore retains open and EXIT_OFF resources indep
     const std::array party{PortalVisitor{host.portal(*open).position, 0.75f, 2, true}};
     for (s32 tick = 0; tick < 21; ++tick) {
         host.update(1, 1.0f / 60, party);
+        guest.update(1, 1.0f / 60, party);
     }
     host.setAlpha(host.portal(*closed).tag, 0.25f);
-    const auto seed = hostState.checkpoint();
-    REQUIRE(seed);
+    guest.setAlpha(guest.portal(*closed).tag, 0.25f);
     const auto textures = device.texturesCreated;
     const auto uploads = device.textureUpdates;
-    REQUIRE(guestState.restore(*seed));
-    CHECK(guestState.checkpoint() == seed);
+    CHECK(digestOf(guest, guestItems, layout, nullptr, device) ==
+          digestOf(host, hostItems, layout, nullptr, device));
     REQUIRE(guest.portal(*closed).model.bound());
     CHECK(guest.portal(*closed).archive == &guestItems);
     CHECK(guest.portal(*open).archive == &guestItems);
     for (s32 tick = 0; tick < 180; ++tick) {
         CAPTURE(tick);
         CHECK(guest.update(1, 1.0f / 60, party) == host.update(1, 1.0f / 60, party));
-        CHECK(guestState.checkpoint() == hostState.checkpoint());
+        CHECK(digestOf(guest, guestItems, layout, nullptr, device) ==
+              digestOf(host, hostItems, layout, nullptr, device));
         CHECK(guest.takeWaiting() == host.takeWaiting());
     }
     CHECK(device.texturesCreated == textures);

@@ -1,13 +1,26 @@
 #include <array>
-#include <limits>
+#include <span>
+#include <string_view>
 #include <tuple>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "../../engine/world/SampleLevel.h"
+#include "engine/assets/ModelSet.h"
+#include "engine/assets/TextureSet.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/world/SampleLevel.h"
+
 #include "FakeRenderDevice.h"
-#include "game/level/FallingSceneryCheckpoint.h"
+#include "NativeStateSupport.h"
+#include "TestSupport.h"
+#include "game/level/FallingScenery.h"
+#include "game/level/NativeStateResources.h"
 #include "game/rollback/LocalStateHistory.h"
 
 namespace {
@@ -21,13 +34,20 @@ void checkCues(std::span<const FallingCue> a, std::span<const FallingCue> b) {
                std::tie(b[index].position, b[index].sound)));
     }
 }
+
+/** Whether `scenery` now holds exactly the values `saved` holds. */
+bool holds(const FallingScenery& scenery, const FallingScenery::LocalSnapshot& saved) {
+    FallingScenery::LocalSnapshot now;
+    scenery.saveLocal(now);
+    return scenery.equalLocal(now, saved);
+}
+
 struct Fixture {
     test::FakeRenderDevice device;
     WorldLayout layout;
     ModelSet models;
     TextureSet textures;
     FallingScenery scenery;
-    FallingSceneryCheckpoint owner{scenery};
     explicit Fixture(std::string_view name) {
         const auto directory = test::sampleLevel(name);
         writeTextFile(directory / "world.json", R"({
@@ -49,10 +69,12 @@ struct Fixture {
         scenery.bind(device, layout, models, textures, "D2");
         REQUIRE(scenery.size() == 4);
     }
-    FallingSceneryCheckpoint::State state() const {
-        const auto value = owner.checkpoint();
-        REQUIRE(value);
-        return *value;
+    /** The scenery's native digest over its own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        REQUIRE(resources.registerLayout(layout, "stage"));
+        REQUIRE(resources.registerTextures(textures, "stage/textures"));
+        return test::liveDigest(scenery, resources.resources());
     }
     std::vector<FallingCue> step(s32 tick, f32 seconds) {
         std::vector<FallingCue> result;
@@ -71,7 +93,7 @@ struct Fixture {
 };
 
 TEST_CASE("falling checkpoint resumes native profiles cues half frames and retirement",
-          "[falling-checkpoint]") {
+          "[falling-local-rewind]") {
     Fixture host("falling-checkpoint-host");
     Fixture guest("falling-checkpoint-guest");
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
@@ -79,18 +101,18 @@ TEST_CASE("falling checkpoint resumes native profiles cues half frames and retir
     const auto* first = &host.scenery.piece(0);
     usize cues = 0;
     bool distinctPrevious = false;
+    FallingScenery::LocalSnapshot before;
+    FallingScenery::LocalSnapshot expected;
     for (s32 tick = 0; tick < 240; ++tick) {
         CAPTURE(tick, seconds);
-        const auto before = host.state();
-        REQUIRE(guest.owner.restore(before));
-        auto undo = host.owner.prepareRestore(before);
-        REQUIRE(undo);
+        host.scenery.saveLocal(before);
         const auto output = host.step(tick, seconds);
         cues += output.size();
-        const auto expected = host.state();
-        distinctPrevious |= expected.pieces[0].previousPosition != expected.pieces[0].position;
+        host.scenery.saveLocal(expected);
+        const auto& motion = host.scenery.piece(0).motion;
+        distinctPrevious |= motion.presentedPosition(0) != motion.position;
         checkCues(guest.step(tick, seconds), output);
-        CHECK(guest.state() == expected);
+        CHECK(guest.digest() == host.digest());
         for (const f32 alpha : {0.0f, 0.5f, 1.0f}) {
             host.device.draws.clear();
             guest.device.draws.clear();
@@ -102,11 +124,11 @@ TEST_CASE("falling checkpoint resumes native profiles cues half frames and retir
                 CHECK(host.device.draws[draw].transform == guest.device.draws[draw].transform);
             }
         }
-        REQUIRE(host.owner.commitRestore(std::move(*undo)));
+        REQUIRE(host.scenery.restoreLocal(before));
         CHECK(&host.scenery.piece(0) == first);
-        CHECK(host.state() == before);
+        CHECK(holds(host.scenery, before));
         checkCues(host.step(tick, seconds), output);
-        CHECK(host.state() == expected);
+        CHECK(holds(host.scenery, expected));
     }
     CHECK(cues == 4);
     CHECK(distinctPrevious);
@@ -116,39 +138,8 @@ TEST_CASE("falling checkpoint resumes native profiles cues half frames and retir
     CHECK(guest.device.texturesCreated == uploads);
 }
 
-TEST_CASE("falling checkpoint rejects malformed motion and stale resource plans",
-          "[falling-checkpoint]") {
-    Fixture fixture("falling-checkpoint-fences");
-    const auto before = fixture.state();
-    auto invalid = before;
-    const s32 variant = GENERATE(0, 1, 2, 3, 4, 5);
-    switch (variant) {
-    case 0: invalid.pieces[0].source.instance.position.x += 1; break;
-    case 1: invalid.pieces[0].previousPosition.x = std::numeric_limits<f32>::quiet_NaN(); break;
-    case 2: invalid.pieces[0].gravityStep += 1; break;
-    case 3: invalid.remainder = FallingPiece::kStep; break;
-    case 4: invalid.breakSound = "FOREIGN"; break;
-    case 5: invalid.bottom += 1; break;
-    default: break;
-    }
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(fixture.state() == before);
-    auto first = fixture.owner.prepareRestore(before);
-    auto sibling = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    FallingSceneryCheckpoint other(fixture.scenery);
-    CHECK_FALSE(other.commitRestore(std::move(*first)));
-    REQUIRE(fixture.owner.commitRestore(std::move(*first)));
-    CHECK_FALSE(fixture.owner.canCommit(*sibling));
-    first = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    fixture.scenery.clear();
-    CHECK_FALSE(fixture.owner.canCommit(*first));
-}
-
 TEST_CASE("native forest falling checkpoint retains the full original model roster",
-          "[falling-checkpoint][assets]") {
+          "[falling-local-rewind][assets]") {
     const auto directory = test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path();
     WorldLayout layout;
     ModelSet models;
@@ -160,20 +151,18 @@ TEST_CASE("native forest falling checkpoint retains the full original model rost
     FallingScenery scenery;
     scenery.bind(device, layout, models, textures, "F1");
     REQUIRE(scenery.size() == 92);
-    FallingSceneryCheckpoint owner(scenery);
     REQUIRE_FALSE(scenery.touch({-22.1875f, 17.5f, 108.953125f}, 1).empty());
     scenery.update(0.051f);
-    const auto state = owner.checkpoint();
-    REQUIRE(state);
+    FallingScenery::LocalSnapshot state;
+    scenery.saveLocal(state);
     const auto uploads = device.texturesCreated;
-    auto undo = owner.prepareRestore(*state);
-    REQUIRE(undo);
     scenery.update(0.137f);
     scenery.setPlayerCount(0);
-    REQUIRE(owner.commitRestore(std::move(*undo)));
-    CHECK(owner.checkpoint() == state);
+    REQUIRE(scenery.restoreLocal(state));
+    CHECK(holds(scenery, state));
     CHECK(device.texturesCreated == uploads);
 }
+
 TEST_CASE("native falling scenery rewinds start cues half-frame motion and retirement",
           "[local-rewind][falling-local-rewind]") {
     Fixture reference("falling-native-reference");
@@ -191,9 +180,6 @@ TEST_CASE("native falling scenery rewinds start cues half-frame motion and retir
             corrected.scenery.saveLocal(saved);
             return true;
         }));
-        const auto before = corrected.state();
-        auto stale = corrected.owner.prepareRestore(before);
-        REQUIRE(stale);
         const s32 distance = 1 + window % 8;
         const auto* saved = history.find(static_cast<u64>(tick));
         REQUIRE(saved);
@@ -211,14 +197,13 @@ TEST_CASE("native falling scenery rewinds start cues half-frame motion and retir
             corrected.scenery.update(0.13f);
         }
         REQUIRE(corrected.scenery.restoreLocal(*saved));
-        CHECK_FALSE(corrected.owner.canCommit(*stale));
-        CHECK(corrected.state() == before);
+        CHECK(holds(corrected.scenery, *saved));
         for (s32 offset = 0; offset < distance; ++offset) {
             checkCues(corrected.step(tick + offset, 1.0f / 60), cues[static_cast<usize>(offset)]);
             corrected.scenery.saveLocal(observed);
             CHECK(corrected.scenery.equalLocal(observed, expected[static_cast<usize>(offset)]));
         }
-        CHECK(corrected.state() == reference.state());
+        CHECK(corrected.digest() == reference.digest());
         CHECK(&corrected.scenery.piece(0) == piece);
         CHECK(&corrected.scenery.piece(0).model == model);
         for (const f32 alpha : {-1.0f, 0.0f, 0.5f, 1.0f}) {
@@ -246,6 +231,7 @@ TEST_CASE("native falling scenery rewinds start cues half-frame motion and retir
                            "D2");
     CHECK_FALSE(corrected.scenery.restoreLocal(saved));
 }
+
 TEST_CASE("native falling equality retains subframe time without a changed piece position",
           "[local-rewind][falling-local-rewind]") {
     Fixture fixture("falling-native-hidden-clock");

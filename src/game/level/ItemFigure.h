@@ -225,7 +225,6 @@ public:
 
 private:
     friend void visitNativeState(NativeStateDigest& /*digest*/, const ItemFigure& /*figure*/);
-    friend class ItemFigureCheckpoint;
     void refreshTextures();
 
     struct Resources {

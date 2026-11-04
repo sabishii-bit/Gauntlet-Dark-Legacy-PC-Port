@@ -113,7 +113,6 @@ public:
     static std::string_view leafSoundOf(std::string_view levelName);
 
 private:
-    friend class FallingSceneryCheckpoint;
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     static bool within(const Piece& piece, const Vec3& position, f32 radius);
     static bool canStart(const Piece& piece, const Vec3& position, f32 radius, bool shot);

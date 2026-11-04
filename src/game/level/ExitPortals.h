@@ -135,7 +135,6 @@ public:
     static s32 gateOf(std::string_view tag);
 
 private:
-    friend class ExitPortalsCheckpoint;
     struct VisitorWait {
         s32 party = -1;
         s32 ticks = 0;

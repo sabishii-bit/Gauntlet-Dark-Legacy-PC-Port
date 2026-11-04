@@ -57,7 +57,6 @@ public:
     bool operator==(const FallingPiece&) const = default;
 
 private:
-    friend class FallingSceneryCheckpoint;
     template <class Digest>
     friend void visitNativeState(Digest& digest, const FallingPiece& value) {
         const auto& [position, rotation, velocity, instance, visible, previousPosition,

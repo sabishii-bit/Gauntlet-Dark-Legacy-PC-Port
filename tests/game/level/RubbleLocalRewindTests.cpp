@@ -1,24 +1,38 @@
-#include <limits>
+#include <array>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ItemArchive.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
-#include "game/level/RubbleCheckpoint.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/Rubble.h"
 #include "game/rollback/LocalStateHistory.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Whether `rubble` now holds exactly the values `saved` holds. */
+bool holds(const Rubble& rubble, const Rubble::LocalSnapshot& saved) {
+    Rubble::LocalSnapshot now;
+    rubble.saveLocal(now);
+    return rubble.equalLocal(now, saved);
+}
+
 struct Fixture {
     test::FakeRenderDevice device;
     ItemArchive empty, items;
     std::array<ItemArchive*, 2> archives{&empty, &items};
     Rubble rubble;
-    RubbleCheckpoint owner{rubble, archives};
     Fixture() {
         const auto root = test::scratchDirectory("rubble-checkpoint");
         writeTextFile(root / "tri.obj",
@@ -35,98 +49,46 @@ struct Fixture {
           "sequences":[{"name":"ACTIVE","frames":1,"frameRate":30}]}]})");
         test::convertModelFixture(root);
         REQUIRE(items.load(root));
-        REQUIRE(owner.bindResources(device));
+        // Binds the native debris meshes once beforehand, so later births upload nothing.
+        Rubble preload;
+        REQUIRE((preload.leave(device, archives, Rubble::kBlownBarrel, Mat4{1}) &&
+                 preload.leave(device, archives, Rubble::kGasBarrel, Mat4{1})));
+    }
+    /** The debris's native digest over its own archive, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        REQUIRE(resources.registerArchive(items, "stage/items/0"));
+        return test::liveDigest(rubble, resources);
     }
 };
-TEST_CASE(
-    "debris checkpoints restore dynamic births across independently bound owners without uploads",
-    "[rollback][rubble-checkpoint]") {
+
+TEST_CASE("debris births match across independently bound owners and rewind without uploads",
+          "[rollback][rubble-local-rewind]") {
     Fixture first;
     Fixture second;
-    const auto empty = first.owner.checkpoint();
-    REQUIRE(empty);
-    REQUIRE(empty->resources.size() == 2);
-    CHECK(empty->resources[0].archive == 1);
+    Rubble::LocalSnapshot empty;
+    first.rubble.saveLocal(empty);
     const auto where = glm::translate(Mat4{1}, Vec3{4, 2, 8});
     REQUIRE(first.rubble.leave(first.device, first.archives, Rubble::kBlownBarrel, where));
     REQUIRE(first.rubble.leave(first.device, first.archives, Rubble::kGasBarrel, Mat4{1}));
-    const auto state = first.owner.checkpoint();
-    REQUIRE(state);
+    Rubble::LocalSnapshot state;
+    first.rubble.saveLocal(state);
     const auto textures = second.device.texturesCreated;
     const auto uploads = second.device.textureUpdates;
-    auto rewind = first.owner.prepareRestore(*empty);
-    REQUIRE(rewind);
-    REQUIRE(second.owner.restore(*state));
-    CHECK(second.owner.checkpoint() == state);
+    REQUIRE(second.rubble.leave(second.device, second.archives, Rubble::kBlownBarrel, where));
+    REQUIRE(second.rubble.leave(second.device, second.archives, Rubble::kGasBarrel, Mat4{1}));
+    CHECK(second.digest() == first.digest());
     CHECK(second.rubble.transform(0) == where);
     second.rubble.draw(second.device, Mat4{1}, {});
     REQUIRE(second.device.draws.size() == 2);
     CHECK(second.device.draws[0].vertices[0].position.x >= 4);
     CHECK(second.device.texturesCreated == textures);
     CHECK(second.device.textureUpdates == uploads);
-    REQUIRE(first.owner.commitRestore(std::move(*rewind)));
-    CHECK(first.owner.checkpoint() == empty);
+    REQUIRE(first.rubble.restoreLocal(empty));
+    CHECK(holds(first.rubble, empty));
     REQUIRE(first.rubble.leave(first.device, first.archives, Rubble::kBlownBarrel, where));
     REQUIRE(first.rubble.leave(first.device, first.archives, Rubble::kGasBarrel, Mat4{1}));
-    CHECK(first.owner.checkpoint() == state);
-}
-TEST_CASE(
-    "debris preparation refuses wrong resources malformed matrices and stale plans atomically",
-    "[rollback][rubble-checkpoint]") {
-    Fixture fixture;
-    REQUIRE(fixture.rubble.leave(fixture.device, fixture.archives, Rubble::kBlownBarrel, Mat4{1}));
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
-    for (const int mutation : {0, 1, 2, 3, 4}) {
-        auto invalid = *state;
-        switch (mutation) {
-        case 0: invalid.resources[0].archive = 0; break;
-        case 1: invalid.resources[0].object = "UNKNOWN"; break;
-        case 2: invalid.pieces[0].resource = 50; break;
-        case 3: invalid.pieces[0].transform[3].x = std::numeric_limits<f32>::quiet_NaN(); break;
-        case 4: invalid.resources.push_back(invalid.resources[0]); break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.owner.restore(invalid));
-        CHECK(fixture.owner.checkpoint() == state);
-    }
-    auto stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    RubbleCheckpoint sibling{fixture.rubble, fixture.archives};
-    REQUIRE(sibling.bindResources(fixture.device));
-    REQUIRE(sibling.restore(*state));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    REQUIRE(fixture.owner.bindResources(fixture.device));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    fixture.rubble.clear();
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    CHECK_FALSE(fixture.owner.checkpoint());
-    REQUIRE(fixture.owner.bindResources(fixture.device));
-    REQUIRE(fixture.owner.restore(*state));
-    const Fixture other;
-    auto foreign = other.owner.prepareRestore(*state);
-    REQUIRE(foreign);
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*foreign)));
-    CHECK(other.owner.canCommit(*foreign));
-}
-TEST_CASE("debris never drops uncatalogued live meshes from a full checkpoint",
-          "[rollback][rubble-checkpoint]") {
-    Fixture fixture;
-    REQUIRE(fixture.rubble.leave(fixture.device, fixture.archives, "UNKNOWN", Mat4{1}));
-    CHECK_FALSE(fixture.owner.checkpoint());
-    const std::array<std::string_view, 3> names{Rubble::kBlownBarrel, Rubble::kGasBarrel,
-                                                "UNKNOWN"};
-    REQUIRE(fixture.owner.bindResources(fixture.device, names));
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
-    REQUIRE(state->pieces.size() == 1);
-    CHECK(state->resources[state->pieces[0].resource].object == "UNKNOWN");
-    REQUIRE(fixture.owner.restore(*state));
-    CHECK(fixture.owner.checkpoint() == state);
+    CHECK(holds(first.rubble, state));
 }
 
 TEST_CASE("native debris history removes predicted births and reuses bound models during replay",
@@ -153,10 +115,6 @@ TEST_CASE("native debris history removes predicted births and reuses bound model
             corrected.rubble.saveLocal(saved);
             return true;
         }));
-        const auto before = corrected.owner.checkpoint();
-        REQUIRE(before);
-        auto stale = corrected.owner.prepareRestore(*before);
-        REQUIRE(stale);
         const u64 distance = 1 + window % 8;
         const auto* saved = history.find(tick);
         REQUIRE(saved);
@@ -171,16 +129,14 @@ TEST_CASE("native debris history removes predicted births and reuses bound model
                                            glm::translate(Mat4{1}, Vec3{-40, 10, -20})));
         }
         // Native history has no catalogue admission step, even for a first-time birth.
-        CHECK_FALSE(corrected.owner.checkpoint());
         REQUIRE(corrected.rubble.restoreLocal(*saved));
-        CHECK_FALSE(corrected.owner.canCommit(*stale));
-        CHECK(corrected.owner.checkpoint() == before);
+        CHECK(holds(corrected.rubble, *saved));
         for (u64 offset = 0; offset < distance; ++offset) {
             spawn(corrected, tick + offset);
             corrected.rubble.saveLocal(observed);
             CHECK(corrected.rubble.equalLocal(observed, expectedLocal[static_cast<usize>(offset)]));
         }
-        CHECK(corrected.owner.checkpoint() == reference.owner.checkpoint());
+        CHECK(corrected.digest() == reference.digest());
         REQUIRE(corrected.rubble.size() == reference.rubble.size());
         for (usize index = 0; index < reference.rubble.size(); ++index) {
             CHECK(corrected.rubble.transform(index) == reference.rubble.transform(index));
@@ -218,7 +174,6 @@ TEST_CASE("native debris snapshots retain uncatalogued values but reject replace
     REQUIRE(first.rubble.restoreLocal(saved));
     REQUIRE(first.rubble.size() == 1);
     CHECK(first.rubble.presentation()[0].object == "UNKNOWN");
-    CHECK_FALSE(first.owner.checkpoint());
     first.rubble.clear();
     CHECK_FALSE(first.rubble.restoreLocal(saved));
     CHECK_FALSE(first.rubble.equalLocal(saved, saved));

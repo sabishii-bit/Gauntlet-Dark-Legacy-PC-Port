@@ -10,6 +10,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
@@ -29,6 +31,47 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+/** Four rotators on a sample level: a spinner, two bridge pads wearing a tree without
+ * sequences, and a pad whose instance asks for no geometry. */
+struct PadFixture {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ModelSet models;
+    TextureSet textures;
+    ItemArchive items;
+    WorldScene scene;
+    Rotators rotators;
+    explicit PadFixture(std::string_view name) {
+        const auto directory = test::sampleLevel(name);
+        writeTextFile(directory / "animations.json", R"({"trees":[{"name":"BRIDGEPAD",
+          "nodes":[{"name":"PAD","object":"WALL","parent":-1,"position":[0,0,0]}]}]})");
+        writeTextFile(directory / "world.json", R"({
+          "objects":[{"name":"WALL","position":[0,0,0],"flags":4096},
+            {"name":"WALL","position":[10,0,0],"flags":4096},
+            {"name":"WALL","position":[20,0,0],"flags":4096},
+            {"name":"WALL","position":[30,0,0],"flags":4096}],
+          "itemInfos":[{"type":12,"subtype":0,"radius":2,"height":5},
+            {"type":12,"subtype":2,"name":"BRIDGEPAD","radius":2,"height":5}],
+          "itemInstances":[
+            {"info":0,"position":[0,0,0],"params":[0,0,0,0,10,215,35,60,0,0,128,63]},
+            {"info":1,"position":[10,0,0],"params":[1,0,0,0,10,215,35,60,0,0,128,63]},
+            {"info":1,"position":[20,0,0],"params":[2,0,0,0,10,215,35,188,0,0,128,63]},
+            {"info":1,"position":[30,0,0],"flags":2,
+              "params":[3,0,0,0,10,215,35,60,0,0,128,63]}]})");
+        REQUIRE(layout.load(directory));
+        REQUIRE(models.load(directory));
+        REQUIRE(textures.load(directory));
+        REQUIRE(items.load(directory));
+        REQUIRE(scene.build(layout, models, textures, device));
+        rotators.bind(layout);
+        rotators.bindFigures(device, layout, AssetScope(items));
+        REQUIRE(rotators.size() == 4);
+        REQUIRE(rotators.rotator(1).pad);
+        REQUIRE(rotators.rotator(2).pad);
+        REQUIRE_FALSE(rotators.rotator(3).pad);
+    }
+};
 
 TEST_CASE("rotator NoGeometry suppresses the pad mesh without disabling contact",
           "[rotators][rotator-visibility]") {
@@ -171,6 +214,44 @@ TEST_CASE("the mines' gears spin for ever and a bridge pad turns its turntable i
     const f32 finalAngle = table.turned;
     CHECK(rotators.update(kStep, onPad, scene).empty());
     CHECK(table.turned == finalAngle);
+}
+
+TEST_CASE("archived sequence-free pad figures restore rest poses and reject nonzero cursors",
+          "[rotators][item-figure-checkpoint]") {
+    const PadFixture fixture("rotators-checkpoint-static-tree");
+    auto figure = *fixture.rotators.rotator(1).pad;
+    REQUIRE(figure.presentation().tree);
+    REQUIRE(figure.presentation().tree->sequences.empty());
+    const auto state = figure.checkpoint();
+    REQUIRE(state);
+    REQUIRE(figure.hasFigure());
+    REQUIRE(figure.presentation().archive != nullptr);
+    REQUIRE_FALSE(state->animation.playing);
+    auto restored = figure.restored(*state);
+    REQUIRE(restored);
+    CHECK(restored->checkpoint() == state);
+    const auto uploads = fixture.device.texturesCreated;
+    figure.capturePresentation();
+    restored->capturePresentation();
+    figure.update(1.0f / 60);
+    restored->update(1.0f / 60);
+    CHECK(restored->checkpoint() == figure.checkpoint());
+    for (const s32 mutation : {0, 1, 2, 3, 4, 5, 6}) {
+        auto invalid = *state;
+        switch (mutation) {
+        case 0: invalid.animation.sequence = 1; break;
+        case 1: invalid.animation.frame = 1; break;
+        case 2: invalid.animation.time = 1; break;
+        case 3: invalid.poseSequence = 1; break;
+        case 4: invalid.poseFrame = 1; break;
+        case 5: invalid.textureSequence = 1; break;
+        case 6: invalid.textureFrame = 1; break;
+        default: break;
+        }
+        REQUIRE(invalid.valid());
+        CHECK_FALSE(figure.restored(invalid));
+    }
+    CHECK(fixture.device.texturesCreated == uploads);
 }
 
 } // namespace

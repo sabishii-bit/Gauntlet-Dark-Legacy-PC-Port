@@ -1,19 +1,37 @@
 #include <array>
-#include <limits>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
 #include "engine/world/SampleLevel.h"
+#include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
-#include "game/level/LevelTransportersCheckpoint.h"
+#include "game/level/LevelCatalog.h"
+#include "game/level/LevelTransporters.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Whether the pads' last presentation capture still holds the picture; false without art. */
+bool presentationAdvanced(const LevelTransporters& pads) {
+    const auto shown = pads.presentation(0);
+    return shown.has_value() && shown->advanced;
+}
 
 struct TransportFixture {
     test::FakeRenderDevice device;
@@ -21,12 +39,9 @@ struct TransportFixture {
     WorldCollision collision;
     ItemArchive items;
     LevelTransporters pads;
-    LevelTransportersCheckpoint checkpoint{pads};
-    s32 players = 1;
+    static constexpr s32 kPlayers = 1;
 
-    explicit TransportFixture(std::string_view name, bool artwork = true, s32 variant = 0,
-                              s32 party = 1)
-        : players(party) {
+    explicit TransportFixture(std::string_view name, bool artwork = true) {
         const auto directory = test::sampleLevel(name);
         writeTextFile(directory / "world.json", R"({
           "objects":[{"name":"FLOOR","position":[0,0,0],"flags":4102}],
@@ -42,20 +57,6 @@ struct TransportFixture {
             "nodes":[{"name":"BODY","object":"WALL","parent":-1,"position":[0,0,0]}],
             "sequences":[{"name":"ACTIVE","frames":4,"frameRate":30,
               "tracks":[{"node":0,"flags":16,"frames":[0,3],"values":[0,2]}]}]}]})");
-        if (variant == 1) {
-            // Same named asset, vertex/part counts and tree: different actual geometry.
-            writeTextFile(directory / "models/000_WALL.obj",
-                          "v 0 0 0\nv 3 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nvn 0 1 0\n"
-                          "usemtl tex0\nf 1/1/1 2/2/1 3/3/1\n");
-            test::convertModelFixture(directory);
-        } else if (variant == 2) {
-            writeTextFile(directory / "animations.json", R"({
-              "textureAnimations":[{"name":"STONE","texture":0,"source":1,"frames":2,"rate":1}],
-              "trees":[{"name":"TRANS",
-                "nodes":[{"name":"BODY","object":"WALL","parent":-1,"position":[0,0,0]}],
-                "sequences":[{"name":"ACTIVE","frames":4,"frameRate":30,
-                  "tracks":[{"node":0,"flags":16,"frames":[0,3],"values":[0,3]}]}]}]})");
-        }
         REQUIRE(layout.load(directory));
         if (artwork) {
             REQUIRE(items.load(directory));
@@ -69,14 +70,14 @@ struct TransportFixture {
         bind();
     }
     void bind() {
-        pads.bind(device, layout, AssetScope(items), players, &collision);
-        REQUIRE(pads.size() == (players == 1 ? 3 : 4));
-        REQUIRE(checkpoint.bindResources());
+        pads.bind(device, layout, AssetScope(items), kPlayers, &collision);
+        REQUIRE(pads.size() == 3);
     }
-    LevelTransportersCheckpoint::State state() const {
-        auto result = checkpoint.checkpoint();
-        REQUIRE(result);
-        return std::move(*result);
+    /** The pads' native digest over their own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        test::registerItemStage(resources, items, layout, &collision, device);
+        return test::liveDigest(pads, resources.resources());
     }
 };
 
@@ -137,12 +138,12 @@ TEST_CASE("native transporter history rewinds floor contacts animation and held 
         }
         REQUIRE(replay.collision.restoreLocal(floor));
         REQUIRE(replay.pads.restoreLocal(saved));
-        CHECK(replay.state() == native.state());
+        CHECK(replay.digest() == native.digest());
         sameDraws(native.device, replay.device, native.pads, replay.pads, 0.35f);
         for (u32 i = 0; i < distance; ++i) {
             step(native, tick + i, false);
             step(replay, tick + i, false);
-            CHECK(replay.state() == native.state());
+            CHECK(replay.digest() == native.digest());
             CHECK(replay.pads.contact(native.pads.pad(0).position, 0.5f, 2) == 0);
             for (f32 const alpha : {-1.0f, 0.0f, 0.35f, 1.0f}) {
                 sameDraws(native.device, replay.device, native.pads, replay.pads, alpha);
@@ -161,8 +162,8 @@ TEST_CASE("native transporter history rewinds floor contacts animation and held 
     CHECK_FALSE(replay.pads.restoreLocal(history[0]));
 }
 
-TEST_CASE("transporter checkpoint resumes independent native floor clock and loop presentation",
-          "[rollback][transporter-checkpoint]") {
+TEST_CASE("two transporter loads keep native floor clock and loop presentation alike",
+          "[rollback][transporters-local-rewind]") {
     const s32 rate = GENERATE(30, 60);
     const bool artwork = GENERATE(false, true);
     CAPTURE(rate, artwork);
@@ -172,20 +173,21 @@ TEST_CASE("transporter checkpoint resumes independent native floor clock and loo
     REQUIRE(host.pads.pad(0).support == 0);
     for (s32 tick = 0; tick < 5; ++tick) {
         host.pads.animate(seconds);
+        guest.pads.animate(seconds);
     }
-    host.pads.animate(0.007f); // Fractional clock credit, not a displayed-frame reconstruction.
-    const auto baseline = host.state();
-    CHECK(baseline.pads[0].destination == 1);
-    CHECK(baseline.pads[1].destination == 0);
-    CHECK_FALSE(baseline.pads[2].destination);
+    // Fractional clock credit, not a displayed-frame reconstruction.
+    host.pads.animate(0.007f);
+    guest.pads.animate(0.007f);
+    CHECK(host.pads.pad(0).destination == 1);
+    CHECK(host.pads.pad(1).destination == 0);
+    CHECK_FALSE(host.pads.pad(2).destination);
     const auto textures = guest.device.texturesCreated;
     const auto uploads = guest.device.textureUpdates;
     const auto* address = &guest.pads.pad(0);
-    REQUIRE(guest.checkpoint.restore(baseline));
-    CHECK(guest.state() == baseline);
+    CHECK(guest.digest() == host.digest());
     if (artwork) {
-        REQUIRE(baseline.pads[0].animation.playing);
-        REQUIRE(baseline.pads[0].pose);
+        REQUIRE(host.pads.pad(0).animation.playing());
+        REQUIRE(host.pads.pad(0).pose.posed());
         REQUIRE_FALSE(host.device.texturesCreated == 0);
     }
     bool looped = false;
@@ -203,7 +205,7 @@ TEST_CASE("transporter checkpoint resumes independent native floor clock and loo
         guest.pads.syncFloors(guest.collision);
         host.pads.animate(seconds);
         guest.pads.animate(seconds);
-        CHECK(guest.state() == host.state());
+        CHECK(guest.digest() == host.digest());
         CHECK(guest.pads.contact(host.pads.pad(0).position, 0.5f, 2) == 0);
         looped |= generation != host.pads.pad(0).animation.generation();
         generation = host.pads.pad(0).animation.generation();
@@ -213,9 +215,7 @@ TEST_CASE("transporter checkpoint resumes independent native floor clock and loo
         if (tick % 7 == 0) {
             host.pads.capturePresentation();
             guest.pads.capturePresentation();
-            const auto held = host.state();
-            REQUIRE_FALSE(held.presentationAdvanced);
-            REQUIRE(guest.checkpoint.restore(held));
+            REQUIRE_FALSE(presentationAdvanced(host.pads));
             sameDraws(host.device, guest.device, host.pads, guest.pads, 0.1f);
         }
     }
@@ -226,114 +226,37 @@ TEST_CASE("transporter checkpoint resumes independent native floor clock and loo
 }
 
 TEST_CASE("transporter restore preserves historical placement before its next native carry",
-          "[rollback][transporter-checkpoint]") {
+          "[rollback][transporters-local-rewind]") {
     TransportFixture host("trans-checkpoint-lag-host");
     TransportFixture guest("trans-checkpoint-lag-guest");
     const auto placement = glm::translate(Mat4{1}, Vec3{4, 2, 6});
     host.collision.setObjectTransform(0, placement);
+    guest.collision.setObjectTransform(0, placement);
     host.pads.syncFloors(host.collision);
+    guest.pads.syncFloors(guest.collision);
     host.pads.animate(0.025f);
-    const auto baseline = host.state();
+    guest.pads.animate(0.025f);
+    LevelTransporters::LocalSnapshot baseline;
+    host.pads.saveLocal(baseline);
+    const Mat4 supportLocal = host.pads.pad(0).supportLocal;
     const auto later = glm::rotate(glm::translate(Mat4{1}, Vec3{9, 11, 13}), 0.75f, Vec3{0, 1, 0});
     // Scripted world motion can leave pads at their preceding carry phase.
     host.collision.setObjectTransform(0, later);
     guest.collision.setObjectTransform(0, later);
     guest.collision.setSolid(0, false);
-    REQUIRE(guest.checkpoint.restore(baseline));
-    CHECK(guest.state() == baseline);
-    CHECK(guest.pads.pad(0).transform != later * baseline.pads[0].supportLocal);
-    sameDraws(host.device, guest.device, host.pads, guest.pads, 0.4f);
-    guest.pads.syncFloors(guest.collision);
+    host.pads.syncFloors(host.collision); // The branch being undone carries the pads on.
+    REQUIRE(host.pads.restoreLocal(baseline));
+    CHECK(host.digest() == guest.digest());
+    CHECK(host.pads.pad(0).transform != later * supportLocal);
+    sameDraws(guest.device, host.device, guest.pads, host.pads, 0.4f);
     host.pads.syncFloors(host.collision);
-    CHECK(guest.state() == host.state());
-    CHECK(guest.pads.pad(0).transform == later * baseline.pads[0].supportLocal);
+    guest.pads.syncFloors(guest.collision);
+    CHECK(host.digest() == guest.digest());
+    CHECK(host.pads.pad(0).transform == later * supportLocal);
 }
 
-TEST_CASE("transporter restore is atomic for malformed links poses clocks resources and limits",
-          "[rollback][transporter-checkpoint]") {
-    const TransportFixture fixture("trans-checkpoint-invalid");
-    const auto baseline = fixture.state();
-    for (s32 mutation = 0; mutation < 16; ++mutation) {
-        CAPTURE(mutation);
-        auto invalid = baseline;
-        switch (mutation) {
-        case 0: invalid.pads[0].position.y = std::numeric_limits<f32>::quiet_NaN(); break;
-        case 1: invalid.pads[0].transform[0][0] = std::numeric_limits<f32>::infinity(); break;
-        case 2: invalid.pads[0].destination = 0; break;
-        case 3: invalid.pads[0].destination = invalid.pads.size(); break;
-        case 4: invalid.pads[0].source.info.radius += 1; break;
-        case 5: invalid.pads[0].supportLocal[3].x += 1; break;
-        case 6: invalid.pads[0].anchorLocal.z += 1; break;
-        case 7: invalid.pads[0].animation.sequence = 65535; break;
-        case 8: invalid.pads[0].pose->nodes[0].rest.x += 1; break;
-        case 9: invalid.pads[0].previousFrame = -1; break;
-        case 10: invalid.pads[0].previousGeneration = std::numeric_limits<u64>::max(); break;
-        case 11: invalid.textures.remainder = 1; break;
-        case 12: invalid.catalog[0] ^= 1; break;
-        case 13: invalid.pads.resize(LevelTransportersCheckpoint::State::kMaxPads + 1); break;
-        case 14: invalid.pads[0].animation.frame = 100; break;
-        case 15: invalid.pads[0].source.instance.params[4] = 30; break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.checkpoint.prepareRestore(invalid));
-        CHECK(fixture.state() == baseline);
-    }
-    TransportFixture mesh("trans-checkpoint-wrong-mesh", true, 1);
-    TransportFixture track("trans-checkpoint-wrong-track", true, 2);
-    TransportFixture party("trans-checkpoint-wrong-party", true, 0, 2);
-    TransportFixture absent("trans-checkpoint-no-art", false);
-    CHECK(mesh.state().catalog != baseline.catalog);
-    CHECK(track.state().catalog != baseline.catalog);
-    CHECK_FALSE(mesh.checkpoint.restore(baseline));
-    CHECK_FALSE(track.checkpoint.restore(baseline));
-    CHECK_FALSE(party.checkpoint.restore(baseline));
-    CHECK_FALSE(absent.checkpoint.restore(baseline));
-    // Duplicate authored ids retain the native first matching non-self row.
-    CHECK(party.state().pads[0].destination == 1);
-    CHECK(party.state().pads[3].destination == 0);
-    auto wrongOrder = party.state();
-    wrongOrder.pads[0].destination = 3;
-    CHECK_FALSE(party.checkpoint.restore(wrongOrder));
-}
-
-TEST_CASE("transporter preparations own their state and fence owners rebinds and siblings",
-          "[rollback][transporter-checkpoint]") {
-    TransportFixture fixture("trans-checkpoint-tokens");
-    TransportFixture other("trans-checkpoint-tokens-other");
-    const auto original = fixture.state();
-    auto saved = original;
-    auto prepared = fixture.checkpoint.prepareRestore(saved);
-    auto sibling = fixture.checkpoint.prepareRestore(saved);
-    REQUIRE(prepared);
-    REQUIRE(sibling);
-    saved = {};
-    fixture.pads.animate(0.09f);
-    fixture.collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{1, 2, 3}));
-    fixture.pads.syncFloors(fixture.collision);
-    fixture.pads.draw(fixture.device, Mat4{1}, {}, 0.25f);
-    CHECK_FALSE(other.checkpoint.commitRestore(std::move(*prepared)));
-    REQUIRE(fixture.checkpoint.canCommit(*prepared));
-    REQUIRE(fixture.checkpoint.commitRestore(std::move(*prepared)));
-    CHECK(fixture.state() == original);
-    CHECK_FALSE(fixture.checkpoint.canCommit(*prepared));
-    CHECK_FALSE(fixture.checkpoint.canCommit(*sibling));
-    prepared = fixture.checkpoint.prepareRestore(original);
-    REQUIRE(prepared);
-    REQUIRE(fixture.checkpoint.bindResources());
-    CHECK_FALSE(fixture.checkpoint.canCommit(*prepared));
-    prepared = fixture.checkpoint.prepareRestore(original);
-    REQUIRE(prepared);
-    fixture.pads.clear();
-    CHECK_FALSE(fixture.checkpoint.checkpoint());
-    CHECK_FALSE(fixture.checkpoint.canCommit(*prepared));
-    fixture.collision.setObjectTransform(0, Mat4{1});
-    fixture.bind();
-    CHECK_FALSE(fixture.checkpoint.commitRestore(std::move(*prepared)));
-    CHECK(fixture.state() == original);
-}
-
-TEST_CASE("native transporter catalogs restore all thirty six pads across seven levels",
-          "[rollback][transporter-checkpoint][assets]") {
+TEST_CASE("all thirty six native transporter pads across seven levels advance alike in two loads",
+          "[rollback][transporters-local-rewind][assets]") {
     const s32 rate = GENERATE(30, 60);
     const auto root =
         test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -365,25 +288,25 @@ TEST_CASE("native transporter catalogs restore all thirty six pads across seven 
             host.bind(device, hostWorld.layout(), hostWorld.itemScope(), 1, &hostWorld.collision());
             guest.bind(device, guestWorld.layout(), guestWorld.itemScope(), 1,
                        &guestWorld.collision());
-            LevelTransportersCheckpoint hostState{host};
-            LevelTransportersCheckpoint guestState{guest};
-            REQUIRE(hostState.bindResources());
-            REQUIRE(guestState.bindResources());
+            const auto digestOf = [&device](const LevelTransporters& pads, LevelWorld& world) {
+                NativeStateResources resources;
+                test::registerStage(resources, world, device);
+                return test::liveDigest(pads, resources.resources());
+            };
             const f32 seconds = 1.0f / static_cast<f32>(rate);
             for (s32 tick = 0; tick < 13; ++tick) {
                 host.animate(seconds);
+                guest.animate(seconds);
             }
             host.animate(0.007f);
-            const auto seed = hostState.checkpoint();
-            REQUIRE(seed);
+            guest.animate(0.007f);
             const auto textures = device.texturesCreated;
             const auto uploads = device.textureUpdates;
-            REQUIRE(guestState.restore(*seed));
-            CHECK(guestState.checkpoint() == seed);
+            CHECK(digestOf(guest, guestWorld) == digestOf(host, hostWorld));
             for (s32 tick = 0; tick < rate; ++tick) {
                 host.animate(seconds);
                 guest.animate(seconds);
-                CHECK(hostState.checkpoint() == guestState.checkpoint());
+                CHECK(digestOf(host, hostWorld) == digestOf(guest, guestWorld));
             }
             CHECK(device.texturesCreated == textures);
             CHECK(device.textureUpdates == uploads);

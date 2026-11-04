@@ -1,21 +1,36 @@
 #include <array>
-#include <limits>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/ModelSet.h"
+#include "engine/assets/TextureSet.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/SampleLevel.h"
+#include "engine/world/WorldAnimator.h"
+#include "engine/world/WorldCollision.h"
+#include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
-#include "game/level/WorldDestructionCheckpoint.h"
+#include "game/level/WorldDestruction.h"
 #include "game/rollback/LocalStateHistory.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Whether `destruction` now holds exactly the values `saved` holds. */
+bool holds(const WorldDestruction& destruction, const WorldDestruction::LocalSnapshot& saved) {
+    WorldDestruction::LocalSnapshot now;
+    destruction.saveLocal(now);
+    return destruction.equalLocal(now, saved);
+}
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -26,7 +41,6 @@ struct Fixture {
     WorldCollision collision;
     WorldAnimator animator;
     WorldDestruction destruction;
-    WorldDestructionCheckpoint owner{destruction};
 
     Fixture() {
         const auto directory = test::sampleLevel("world-destruction-checkpoint");
@@ -48,92 +62,37 @@ struct Fixture {
     }
 };
 
-TEST_CASE("destruction checkpoints rewind pending cart blasts without dispatching world work",
-          "[rollback][world-destruction-checkpoint]") {
+TEST_CASE("pending cart blasts advance alike through holds in two loads of a stage",
+          "[rollback][world-destruction-local-rewind]") {
     const auto rate = GENERATE(30, 60);
     const f32 seconds = 1.0f / static_cast<f32>(rate);
-    Fixture original;
-    Fixture restored;
+    Fixture first;
+    Fixture second;
     for (int tick = 0; tick < rate / 10; ++tick) {
-        original.step(seconds);
+        first.step(seconds);
+        second.step(seconds);
     }
-    const auto state = original.owner.checkpoint();
-    REQUIRE(state);
-    REQUIRE_FALSE(state->explosions.empty());
-    REQUIRE(state->destroyed[0]);
-    const auto animations = original.animator.checkpoint();
-    const auto geometry = original.scene.geometry();
-    const auto textures = restored.device.texturesCreated;
-    const auto uploads = restored.device.textureUpdates;
-    REQUIRE(restored.owner.restore(*state));
-    CHECK(restored.scene.objectVisible(0));
-    CHECK(restored.collision.solid(0));
-    // These collaborators deliberately remain external to the ledger. Restore
-    // their matching boundary explicitly before comparing a subsequent phase.
-    REQUIRE(restored.animator.restore(animations));
-    REQUIRE(restored.scene.applyGeometry(geometry));
-    restored.collision.setSolid(0, original.collision.solid(0));
-    CHECK(restored.owner.checkpoint() == state);
-    CHECK(restored.destruction.takeExplosions() == original.destruction.takeExplosions());
+    REQUIRE(first.destruction.hasExplosions());
+    REQUIRE(first.destruction.destroyed(0));
+    const auto textures = second.device.texturesCreated;
+    const auto uploads = second.device.textureUpdates;
+    CHECK(test::liveDigest(second.destruction) == test::liveDigest(first.destruction));
+    CHECK(second.destruction.takeExplosions() == first.destruction.takeExplosions());
     for (int tick = 0; tick < 24; ++tick) {
         const bool held = tick >= 8 && tick < 12;
-        original.step(seconds, held);
-        restored.step(seconds, held);
-        CHECK(restored.owner.checkpoint() == original.owner.checkpoint());
-        CHECK(restored.scene.objectVisible(0) == original.scene.objectVisible(0));
-        CHECK(restored.collision.solid(0) == original.collision.solid(0));
-        CHECK(restored.animator.checkpoint() == original.animator.checkpoint());
+        first.step(seconds, held);
+        second.step(seconds, held);
+        CHECK(test::liveDigest(second.destruction) == test::liveDigest(first.destruction));
+        CHECK(second.scene.objectVisible(0) == first.scene.objectVisible(0));
+        CHECK(second.collision.solid(0) == first.collision.solid(0));
+        CHECK(second.animator.checkpoint() == first.animator.checkpoint());
     }
-    CHECK(restored.device.texturesCreated == textures);
-    CHECK(restored.device.textureUpdates == uploads);
+    CHECK(second.device.texturesCreated == textures);
+    CHECK(second.device.textureUpdates == uploads);
 }
 
-TEST_CASE("destruction restore refuses malformed rosters and stale sibling plans atomically",
-          "[rollback][world-destruction-checkpoint]") {
-    Fixture fixture;
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
-    for (const int mutation : {0, 1, 2, 3, 4, 5}) {
-        auto invalid = *state;
-        switch (mutation) {
-        case 0: invalid.destroyed.pop_back(); break;
-        case 1: invalid.objects[0].name += "different"; break;
-        case 2: invalid.objects[0].parent = 500; break;
-        case 3: invalid.controlled.push_back(0); break;
-        case 4: invalid.explosions.emplace_back(std::numeric_limits<f32>::quiet_NaN(), 0, 0); break;
-        case 5: invalid.destroyed[1] = true; break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.owner.restore(invalid));
-        CHECK(fixture.owner.checkpoint() == state);
-    }
-    auto rewind = fixture.owner.prepareRestore(*state);
-    REQUIRE(rewind);
-    REQUIRE(fixture.destruction.explode(0, {10, 0, 1}, fixture.scene, fixture.collision));
-    CHECK(fixture.owner.canCommit(*rewind));
-    REQUIRE(fixture.owner.commitRestore(std::move(*rewind)));
-    CHECK(fixture.owner.checkpoint() == state);
-    CHECK_FALSE(fixture.scene.objectVisible(0));
-    CHECK_FALSE(fixture.collision.solid(0));
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*rewind)));
-    auto stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    WorldDestructionCheckpoint sibling{fixture.destruction};
-    REQUIRE(sibling.restore(*state));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    fixture.destruction.bind(fixture.layout);
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    const Fixture other;
-    auto foreign = other.owner.prepareRestore(*state);
-    REQUIRE(foreign);
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*foreign)));
-    CHECK(other.owner.canCommit(*foreign));
-}
-
-TEST_CASE("native destruction rosters restore between independently loaded stage owners",
-          "[rollback][world-destruction-checkpoint][assets]") {
+TEST_CASE("native destruction rosters hash alike across independently loaded stage owners",
+          "[rollback][world-destruction-local-rewind][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     const auto* const stage = GENERATE("G2", "D1", "J4");
     test::FakeRenderDevice device;
@@ -149,14 +108,12 @@ TEST_CASE("native destruction rosters restore between independently loaded stage
     WorldDestruction secondLedger;
     firstLedger.bind(first.layout());
     secondLedger.bind(second.layout());
-    const WorldDestructionCheckpoint source{firstLedger};
-    WorldDestructionCheckpoint target{secondLedger};
-    const auto state = source.checkpoint();
-    REQUIRE(state);
-    REQUIRE(target.restore(*state));
-    CHECK(target.checkpoint() == state);
-    CHECK(state->objects.size() == first.layout().objects().size());
+    WorldDestruction::LocalSnapshot state;
+    secondLedger.saveLocal(state);
+    REQUIRE(secondLedger.restoreLocal(state));
+    CHECK(test::liveDigest(secondLedger) == test::liveDigest(firstLedger));
 }
+
 TEST_CASE("native destruction history rewinds pending events without emitting collaborator work",
           "[local-rewind][world-destruction-local-rewind]") {
     Fixture reference;
@@ -180,10 +137,6 @@ TEST_CASE("native destruction history rewinds pending events without emitting co
             corrected.collision.saveLocal(saved.collision);
             return true;
         }));
-        const auto before = corrected.owner.checkpoint();
-        REQUIRE(before);
-        auto stale = corrected.owner.prepareRestore(*before);
-        REQUIRE(stale);
         const u64 distance = 1 + window % 8;
         const auto* saved = history.find(tick);
         REQUIRE(saved);
@@ -205,8 +158,7 @@ TEST_CASE("native destruction history rewinds pending events without emitting co
         REQUIRE(corrected.destruction.restoreLocal(saved->destruction));
         CHECK(corrected.scene.objectVisible(0) == visible);
         CHECK(corrected.collision.solid(0) == solid);
-        CHECK(corrected.owner.checkpoint() == before);
-        CHECK_FALSE(corrected.owner.canCommit(*stale));
+        CHECK(holds(corrected.destruction, saved->destruction));
         REQUIRE(corrected.animator.restoreLocal(saved->animator));
         REQUIRE(corrected.scene.restoreLocal(saved->scene));
         REQUIRE(corrected.collision.restoreLocal(saved->collision));
@@ -215,7 +167,7 @@ TEST_CASE("native destruction history rewinds pending events without emitting co
             corrected.destruction.saveLocal(observed);
             CHECK(corrected.destruction.equalLocal(observed, expected[offset]));
         }
-        CHECK(corrected.owner.checkpoint() == reference.owner.checkpoint());
+        CHECK(test::liveDigest(corrected.destruction) == test::liveDigest(reference.destruction));
         CHECK(corrected.scene.objectVisible(0) == reference.scene.objectVisible(0));
         CHECK(corrected.scene.worldTransform(0) == reference.scene.worldTransform(0));
         CHECK(corrected.collision.solid(0) == reference.collision.solid(0));
@@ -235,6 +187,7 @@ TEST_CASE("native destruction history rewinds pending events without emitting co
     corrected.destruction.bind(corrected.layout);
     CHECK_FALSE(corrected.destruction.restoreLocal(saved));
 }
+
 TEST_CASE("native destruction equality includes undelivered explosions with identical geometry",
           "[local-rewind][world-destruction-local-rewind]") {
     Fixture fixture;

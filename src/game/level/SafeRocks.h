@@ -103,7 +103,6 @@ public:
 
 private:
     bool appendBindingDigest(NativeStateDigest& digest) const;
-    friend class SafeRocksCheckpoint;
     std::vector<std::unique_ptr<Rock>> m_rocks;
     std::vector<u32> m_textureSlots;
     TextureAnimator m_textures;

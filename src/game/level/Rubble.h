@@ -89,7 +89,6 @@ public:
 
 private:
     static bool appendPiecesDigest(NativeStateDigest& digest, std::span<const Piece> pieces);
-    friend class RubbleCheckpoint;
     struct ModelBinding {
         const RenderDevice* device = nullptr;
         const ItemArchive* archive = nullptr;

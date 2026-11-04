@@ -96,7 +96,6 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
-    friend class RotatorsCheckpoint;
     static void place(const Rotator& rotator, WorldScene& scene);
     static std::optional<RotatorCue::Kind> advance(Rotator& rotator, f32 ticks, WorldScene& scene);
 

@@ -51,7 +51,6 @@ public:
     bool hasExplosions() const { return !m_sim.explosions.empty(); }
 
 private:
-    friend class WorldDestructionCheckpoint;
     bool appendDigest(NativeStateDigest& digest, const Simulation& state) const;
     bool valid(s32 object) const;
     bool below(usize descendant, s32 ancestor) const;

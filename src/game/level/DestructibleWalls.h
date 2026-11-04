@@ -74,7 +74,6 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
-    friend class DestructibleWallsCheckpoint;
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     void showWhite(Wall& wall, bool white);
     std::vector<Wall> m_walls;

@@ -1,28 +1,56 @@
 #include <algorithm>
 #include <array>
-#include <limits>
+#include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <tuple>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AnimationSet.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/render/Mesh.h"
+#include "engine/render/RenderDevice.h"
+#include "engine/world/TextureAnimator.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
-#include "game/level/SafeRocksCheckpoint.h"
+#include "game/combat/CombatArenaTarget.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/SafeRocks.h"
+#include "game/level/StageRegistry.h"
 #include "game/rollback/LocalStateHistory.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-SafeRocksCheckpoint::State captured(const SafeRocksCheckpoint& owner) {
-    const auto state = owner.checkpoint();
-    REQUIRE(state);
-    REQUIRE(state->valid());
-    return *state;
+/** Whether `rocks` now holds exactly the values `saved` holds. */
+bool holds(const SafeRocks& rocks, const SafeRocks::LocalSnapshot& saved) {
+    SafeRocks::LocalSnapshot now;
+    rocks.saveLocal(now);
+    return rocks.equalLocal(now, saved);
+}
+
+/** The cover's native digest over the stage it was bound to, and any archive lending it
+ * animated textures, so two loads can be compared. */
+NativeStateDigest::Digest digestOf(const SafeRocks& rocks, const ItemArchive& items,
+                                   const WorldLayout& layout, const RenderDevice& device,
+                                   const ItemArchive* lender = nullptr) {
+    NativeStateResources resources;
+    test::registerItemStage(resources, items, layout, nullptr, device);
+    if (lender != nullptr) {
+        REQUIRE(resources.registerArchive(*lender, "lender"));
+    }
+    return test::liveDigest(rocks, resources);
 }
 
 void checkTargets(std::span<const CombatArenaTarget> actual,
@@ -39,7 +67,6 @@ struct Fixture {
     WorldLayout layout;
     ItemArchive items;
     SafeRocks rocks;
-    SafeRocksCheckpoint owner{rocks};
 
     explicit Fixture(std::string_view name) {
         const auto directory = test::scratchDirectory(name);
@@ -67,6 +94,7 @@ struct Fixture {
         REQUIRE(rocks.size() == 4);
         REQUIRE(rocks.bodyResources().empty()); // Missing art does not remove gameplay cover.
     }
+    NativeStateDigest::Digest digest() const { return digestOf(rocks, items, layout, device); }
 };
 
 void mutate(SafeRocks& rocks, s32 tick, f32 seconds) {
@@ -93,7 +121,7 @@ void mutate(SafeRocks& rocks, s32 tick, f32 seconds) {
 }
 
 TEST_CASE("safe rock checkpoints resume all native damage and eruption states",
-          "[safe-rocks-checkpoint]") {
+          "[safe-rocks-local-rewind]") {
     Fixture host("safe-rock-checkpoint-host");
     Fixture guest("safe-rock-checkpoint-guest");
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
@@ -101,30 +129,29 @@ TEST_CASE("safe rock checkpoints resume all native damage and eruption states",
     std::array<bool, 4> tiers{};
     bool rescheduled = false;
     bool reactivated = false;
+    SafeRocks::LocalSnapshot before;
+    SafeRocks::LocalSnapshot expected;
     for (s32 tick = 0; tick < 100; ++tick) {
         CAPTURE(tick, seconds);
-        const auto before = captured(host.owner);
-        REQUIRE(guest.owner.restore(before));
-        auto undo = host.owner.prepareRestore(before);
-        REQUIRE(undo);
+        host.rocks.saveLocal(before);
         mutate(host.rocks, tick, seconds);
-        const auto expected = captured(host.owner);
-        tiers[static_cast<usize>(expected.rocks[0].tier)] = true;
-        rescheduled |= tick == 10 && expected.rocks[0].activationDelay > 0;
-        reactivated |=
-            tick > 10 && tick < 60 && !expected.rocks[0].dormant && expected.rocks[0].health == 120;
+        host.rocks.saveLocal(expected);
+        const auto& rock = host.rocks.rock(0);
+        tiers[static_cast<usize>(rock.tier)] = true;
+        rescheduled |= tick == 10 && rock.activationDelay > 0;
+        reactivated |= tick > 10 && tick < 60 && !rock.dormant && rock.health == 120;
         mutate(guest.rocks, tick, seconds);
-        CHECK(captured(guest.owner) == expected);
+        CHECK(guest.digest() == host.digest());
         checkTargets(guest.rocks.arenaTargets(), host.rocks.arenaTargets());
         checkTargets(guest.rocks.eruptionTargets(), host.rocks.eruptionTargets());
         CHECK(guest.rocks.attackAnchors() == host.rocks.attackAnchors());
         CHECK(guest.rocks.obstacles().size() == host.rocks.obstacles().size());
         CHECK(guest.rocks.blocksBreath({7, 32, -10}, {7, 32, 10}) ==
               host.rocks.blocksBreath({7, 32, -10}, {7, 32, 10}));
-        REQUIRE(host.owner.commitRestore(std::move(*undo)));
-        CHECK(captured(host.owner) == before);
+        REQUIRE(host.rocks.restoreLocal(before));
+        CHECK(holds(host.rocks, before));
         mutate(host.rocks, tick, seconds);
-        CHECK(captured(host.owner) == expected);
+        CHECK(holds(host.rocks, expected));
     }
     CHECK(std::ranges::all_of(tiers, [](bool present) { return present; }));
     CHECK(rescheduled);
@@ -136,52 +163,8 @@ TEST_CASE("safe rock checkpoints resume all native damage and eruption states",
     CHECK(guest.device.texturesCreated == uploads);
 }
 
-TEST_CASE("safe rock checkpoint restores are atomic and fenced by bindings and siblings",
-          "[safe-rocks-checkpoint]") {
-    Fixture fixture("safe-rock-checkpoint-fences");
-    const auto before = captured(fixture.owner);
-    auto invalid = before;
-    const s32 variant = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
-    switch (variant) {
-    case 0: invalid.rocks[0].source.position.x += 1; break;
-    case 1: invalid.rocks[0].definition.name = "FOREIGN"; break;
-    case 2: invalid.rocks[0].tier = 4; break;
-    case 3: invalid.rocks[0].health = std::numeric_limits<s32>::max(); break;
-    case 4: invalid.rocks[0].activationDelay = -1; break;
-    case 5: invalid.textures.remainder = std::numeric_limits<f32>::quiet_NaN(); break;
-    case 6: invalid.textureSlots = {0, 0}; break;
-    case 7: invalid.rocks[0].models[3] = true; break;
-    case 8: invalid.rocks[0].obstacle.height += 1; break;
-    case 9: invalid.rocks[0].position.z += 1; break;
-    default: break;
-    }
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(captured(fixture.owner) == before);
-    auto plan = fixture.owner.prepareRestore(before);
-    auto sibling = fixture.owner.prepareRestore(before);
-    REQUIRE(plan);
-    REQUIRE(sibling);
-    SafeRocksCheckpoint another(fixture.rocks);
-    CHECK_FALSE(another.commitRestore(std::move(*plan)));
-    REQUIRE(fixture.owner.commitRestore(std::move(*plan)));
-    CHECK_FALSE(fixture.owner.canCommit(*sibling));
-    plan = fixture.owner.prepareRestore(before);
-    REQUIRE(plan);
-    REQUIRE(another.restore(before));
-    CHECK_FALSE(fixture.owner.canCommit(*plan));
-    plan = fixture.owner.prepareRestore(before);
-    REQUIRE(plan);
-    fixture.rocks.bindAnimations(fixture.device, fixture.items);
-    CHECK_FALSE(fixture.owner.canCommit(*plan));
-    plan = fixture.owner.prepareRestore(captured(fixture.owner));
-    REQUIRE(plan);
-    fixture.rocks.clear();
-    CHECK_FALSE(fixture.owner.canCommit(*plan));
-    REQUIRE(captured(fixture.owner).rocks.empty());
-}
-
 TEST_CASE("empty safe rock rosters retain their native animation binding",
-          "[safe-rocks-checkpoint][assets]") {
+          "[safe-rocks-local-rewind][assets]") {
     const auto directory = test::scratchDirectory("safe-rock-empty-animation-binding");
     writeTextFile(
         directory / "world.json",
@@ -203,33 +186,27 @@ TEST_CASE("empty safe rock rosters retain their native animation binding",
     CHECK_FALSE(guest.bind(guestDevice, guestLayout, guestItems));
     REQUIRE(host.size() == 0);
     REQUIRE(guest.size() == 0);
-    const SafeRocksCheckpoint hostOwner(host);
-    SafeRocksCheckpoint guestOwner(guest);
-    const auto unbound = captured(guestOwner);
-    CHECK_FALSE(unbound.animationItems);
+    const auto unbound = digestOf(guest, guestItems, guestLayout, guestDevice);
 
     // PlayScene performs this bind unconditionally after opening opponents,
     // even for ordinary levels without arena cover or resolved texture clocks.
     host.bindAnimations(hostDevice, hostItems);
     host.update(0.075f);
-    const auto authority = captured(hostOwner);
-    REQUIRE(authority.animationItems);
-    REQUIRE(authority.rocks.empty());
-    REQUIRE(authority.animations.empty());
-    CHECK_FALSE(guestOwner.restore(authority));
-    CHECK(captured(guestOwner) == unbound);
+    const auto authority = digestOf(host, hostItems, hostLayout, hostDevice);
+    CHECK(unbound != authority);
+    CHECK(digestOf(guest, guestItems, guestLayout, guestDevice) == unbound);
 
     guest.bindAnimations(guestDevice, guestItems);
     const auto uploads = guestDevice.texturesCreated;
     const auto updates = guestDevice.textureUpdates;
-    REQUIRE(guestOwner.restore(authority));
-    CHECK(captured(guestOwner) == authority);
+    guest.update(0.075f);
+    CHECK(digestOf(guest, guestItems, guestLayout, guestDevice) == authority);
     CHECK(guestDevice.texturesCreated == uploads);
     CHECK(guestDevice.textureUpdates == updates);
 }
 
 TEST_CASE("native arena cover checkpoints retain all authored tiers and stable resource addresses",
-          "[safe-rocks-checkpoint][assets]") {
+          "[safe-rocks-local-rewind][assets]") {
     const auto* const name = GENERATE("B6", "A5", "I5");
     CAPTURE(name);
     const std::string relative = std::string{"LEVELS/LEVEL"} + name + "/WORLDS.PS2";
@@ -245,25 +222,23 @@ TEST_CASE("native arena cover checkpoints retain all authored tiers and stable r
     REQUIRE(rocks.bind(device, layout, items));
     rocks.bindAnimations(device, items);
     rocks.setPlayerCount(4);
-    SafeRocksCheckpoint owner(rocks);
-    const auto before = captured(owner);
+    SafeRocks::LocalSnapshot before;
+    rocks.saveLocal(before);
     const auto resources = rocks.bodyResources();
     REQUIRE_FALSE(resources.empty());
     const auto uploads = device.texturesCreated;
     rocks.draw(device, Mat4{1}, {});
     const auto draws = device.draws;
     REQUIRE_FALSE(draws.empty());
-    auto undo = owner.prepareRestore(before);
-    REQUIRE(undo);
     for (usize index = 0; index < rocks.size(); ++index) {
         REQUIRE(rocks.strike(index, 10000));
     }
     rocks.hideForEruptions();
     rocks.scheduleActivation(0, 0.5f);
     rocks.update(0.13f);
-    REQUIRE(captured(owner) != before);
-    REQUIRE(owner.commitRestore(std::move(*undo)));
-    CHECK(captured(owner) == before);
+    REQUIRE_FALSE(holds(rocks, before));
+    REQUIRE(rocks.restoreLocal(before));
+    CHECK(holds(rocks, before));
     const auto restoredResources = rocks.bodyResources();
     REQUIRE(restoredResources.size() == resources.size());
     for (usize index = 0; index < resources.size(); ++index) {
@@ -290,7 +265,6 @@ struct PlagueFixture {
     ItemArchive items;
     ItemArchive boss;
     SafeRocks rocks;
-    SafeRocksCheckpoint owner{rocks};
     u32 first = 0;
     usize drawCount = 0;
     usize animatedDrawCount = 0;
@@ -310,18 +284,26 @@ struct PlagueFixture {
         REQUIRE(texture);
         first = *texture;
         REQUIRE(rocks.size() == 3);
-        const auto state = captured(owner);
-        REQUIRE(state.resolvedAnimations == 1);
-        REQUIRE(state.animations.size() == 1);
-        REQUIRE(state.animations[0].frames == 15);
-        REQUIRE(state.animations[0].rate == 3);
-        REQUIRE(state.animations[0].texture >= 0);
-        const auto animatedSlot = static_cast<u32>(state.animations[0].texture);
+        const auto bodies = rocks.bodyResources();
+        REQUIRE_FALSE(bodies.empty());
+        REQUIRE(bodies.front().textures->size() == 1);
+        // The one resolved clock is the boss's blob, whose frames start at BLOB_BOSS00.
+        const auto& animations = items.trees.textureAnimations();
+        const auto animation =
+            std::ranges::find(animations, "BLOB_BOSS", &TextureAnimationInfo::name);
+        REQUIRE(animation != animations.end());
+        REQUIRE(animation->frames == 15);
+        REQUIRE(animation->rate == 3);
+        REQUIRE(animation->texture >= 0);
+        const auto animatedSlot = static_cast<u32>(animation->texture);
         // A native rock can contain several material parts. Count the authored
         // parts and the animated slot rather than assuming one draw per rock.
-        for (const auto& rock : state.rocks) {
+        for (usize index = 0; index < rocks.size(); ++index) {
+            const auto& rock = rocks.rock(index);
+            const auto& placement = layout.itemInstances()[static_cast<usize>(rock.instance)];
+            const auto& definition = layout.itemInfos()[static_cast<usize>(placement.info)];
             std::optional<u32> model;
-            const auto base = rock.definition.name + std::to_string(rock.tier);
+            const auto base = definition.name + std::to_string(rock.tier);
             for (const auto* suffix : {"", "L1", "L1ROOT"}) {
                 model = items.models.find(base + suffix);
                 if (model) {
@@ -337,6 +319,15 @@ struct PlagueFixture {
         }
         REQUIRE(animatedDrawCount > 0);
     }
+    /** The texture clock every loaded tier of the cover shares. */
+    TextureAnimator::Clock clock() const {
+        const auto bodies = rocks.bodyResources();
+        REQUIRE_FALSE(bodies.empty());
+        return bodies.front().textures->clock();
+    }
+    NativeStateDigest::Digest digest() const {
+        return digestOf(rocks, items, layout, device, &boss);
+    }
     void drawFrame(u32 frame, f32 alpha) {
         device.draws.clear();
         rocks.draw(device, Mat4{1}, {}, alpha);
@@ -349,22 +340,25 @@ struct PlagueFixture {
 
 TEST_CASE(
     "safe rock checkpoints preserve borrowed boss texture clocks across corrections and holds",
-    "[safe-rocks-checkpoint][assets]") {
+    "[safe-rocks-local-rewind][assets]") {
     PlagueFixture host;
     PlagueFixture guest;
     const auto uploads = guest.device.texturesCreated;
     const auto updates = guest.device.textureUpdates;
     std::array<bool, 15> seen{};
+    SafeRocks::LocalSnapshot state;
     for (s32 tick = 0; tick < 190; ++tick) {
         CAPTURE(tick);
         host.rocks.update(1.0f / 60);
+        guest.rocks.update(1.0f / 60);
         if (tick % 11 == 0) {
             host.rocks.capturePresentation();
+            guest.rocks.capturePresentation();
         }
-        const auto state = captured(host.owner);
-        REQUIRE(guest.owner.restore(state));
-        CHECK(captured(guest.owner) == state);
-        const u32 frame = (state.textures.frame / 3) % 15;
+        guest.rocks.saveLocal(state);
+        CHECK(guest.digest() == host.digest());
+        const auto clock = host.clock();
+        const u32 frame = (clock.frame / 3) % 15;
         seen[frame] = true;
         host.drawFrame(frame, -1);
         guest.drawFrame(frame, -1);
@@ -378,14 +372,12 @@ TEST_CASE(
             CHECK((a.pixels == b.pixels));
             CHECK(host.device.draws[index].vertices == guest.device.draws[index].vertices);
         }
-        auto undo = guest.owner.prepareRestore(state);
-        REQUIRE(undo);
         guest.rocks.update(0.071f);
         guest.rocks.hideForEruptions();
-        REQUIRE(guest.owner.commitRestore(std::move(*undo)));
-        CHECK(captured(guest.owner) == state);
+        REQUIRE(guest.rocks.restoreLocal(state));
+        CHECK(holds(guest.rocks, state));
         guest.drawFrame(frame, -1);
-        if (state.textures.advance == 0) {
+        if (clock.advance == 0) {
             for (const f32 alpha : {0.0f, 0.5f, 1.0f}) {
                 guest.drawFrame(frame, alpha);
             }
@@ -412,9 +404,6 @@ TEST_CASE("native cover history rewinds damage party gates and pending eruptions
             corrected.rocks.saveLocal(saved);
             return true;
         }));
-        const auto before = captured(corrected.owner);
-        auto stale = corrected.owner.prepareRestore(before);
-        REQUIRE(stale);
         const s32 distance = 1 + window % 8;
         const auto* saved = history.find(start);
         REQUIRE(saved);
@@ -432,14 +421,13 @@ TEST_CASE("native cover history rewinds damage party gates and pending eruptions
             corrected.rocks.update(kSeconds);
         }
         REQUIRE(corrected.rocks.restoreLocal(*saved));
-        CHECK_FALSE(corrected.owner.canCommit(*stale));
-        CHECK(captured(corrected.owner) == before);
+        CHECK(holds(corrected.rocks, *saved));
         for (s32 offset = 0; offset < distance; ++offset) {
             mutate(corrected.rocks, tick + offset, kSeconds);
             corrected.rocks.saveLocal(observed);
             CHECK(corrected.rocks.equalLocal(observed, expectedLocal[static_cast<usize>(offset)]));
         }
-        CHECK(captured(corrected.owner) == captured(reference.owner));
+        CHECK(corrected.digest() == reference.digest());
         checkTargets(corrected.rocks.arenaTargets(), reference.rocks.arenaTargets());
         checkTargets(corrected.rocks.eruptionTargets(), reference.rocks.eruptionTargets());
         CHECK(corrected.rocks.attackAnchors() == reference.rocks.attackAnchors());
@@ -457,10 +445,11 @@ TEST_CASE("native cover snapshots reject foreign owners and replaced arena bindi
     CHECK_FALSE(first.rocks.restoreLocal(saved));
     CHECK_FALSE(first.rocks.equalLocal(saved, saved));
     first.rocks.saveLocal(saved);
-    const auto before = captured(second.owner);
+    SafeRocks::LocalSnapshot before;
+    second.rocks.saveLocal(before);
     CHECK_FALSE(second.rocks.restoreLocal(saved));
     CHECK_FALSE(second.rocks.equalLocal(saved, saved));
-    CHECK(captured(second.owner) == before);
+    CHECK(holds(second.rocks, before));
     first.rocks.bindAnimations(first.device, first.items);
     CHECK_FALSE(first.rocks.restoreLocal(saved));
     CHECK_FALSE(first.rocks.equalLocal(saved, saved));
@@ -530,9 +519,8 @@ TEST_CASE("native cover rewind retains shared boss texture animation and model b
         for (u64 offset = 0; offset < distance; ++offset) {
             advance(corrected.rocks, tick + offset);
         }
-        const auto expected = captured(reference.owner);
-        CHECK(captured(corrected.owner) == expected);
-        const u32 frame = (expected.textures.frame / 3) % 15;
+        CHECK(corrected.digest() == reference.digest());
+        const u32 frame = (reference.clock().frame / 3) % 15;
         reference.drawFrame(frame, -1);
         corrected.drawFrame(frame, -1);
         REQUIRE(reference.device.draws.size() == corrected.device.draws.size());

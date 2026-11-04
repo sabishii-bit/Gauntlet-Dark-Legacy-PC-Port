@@ -1,8 +1,16 @@
+#include <string_view>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ModelSet.h"
+#include "engine/assets/TextureSet.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/Math.h"
+#include "engine/world/SampleLevel.h"
+#include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
 #include "FakeRenderDevice.h"
@@ -16,6 +24,40 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Two shootable walls on a sample level, one shown only to two players and one with
+ * negative armour, and a third whose mesh is missing. */
+struct SampleWalls {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ModelSet models;
+    TextureSet textures;
+    WorldCollision collision;
+    DestructibleWalls walls;
+    explicit SampleWalls(std::string_view name) {
+        const auto directory = test::sampleLevel(name);
+        writeTextFile(directory / "world.json", R"({
+          "objects":[{"name":"WALL","position":[0,0,0]}],
+          "itemInfos":[
+            {"type":10,"subtype":42,"name":"WALL","hitPoints":25,"armor":1,
+             "radius":3,"height":6,"collisionOffset":[0,2,0]},
+            {"type":10,"subtype":42,"name":"WALL","hitPoints":25,"armor":-1,
+             "radius":3,"height":6}],
+          "itemInstances":[
+            {"info":0,"name":"WALL","minPlayers":2,"position":[10,0,5],
+             "collision":[{"normal":[0,0,1],"vertices":[[-5,0,0],[5,0,0],[0,10,0]]}]},
+            {"info":1,"name":"WALL","position":[30,0,5],
+             "collision":[{"normal":[0,0,1],"vertices":[[-5,0,0],[5,0,0],[0,10,0]]}]},
+            {"info":0,"name":"MISSING","position":[50,0,5],
+             "collision":[{"normal":[0,0,1],"vertices":[[-5,0,0],[5,0,0],[0,10,0]]}]}]})");
+        REQUIRE(layout.load(directory));
+        REQUIRE(models.load(directory));
+        REQUIRE(textures.load(directory));
+        walls.bind(device, layout, models, textures, collision);
+        REQUIRE(walls.size() == 3);
+        REQUIRE_FALSE(walls.wall(2).model.bound());
+    }
+};
 
 TEST_CASE("Shootable walls own removable geometry, health and party visibility",
           "[walls][alpha-wall-fx]") {
@@ -223,6 +265,33 @@ TEST_CASE("G4 breakaway meshes retain their baked lighting after a hit",
         checkColors(true);
         walls.update(1.0f / 30);
         checkColors(false);
+    }
+}
+
+TEST_CASE("wall checkpoints preserve the applied white mask rather than inferring from timers",
+          "[walls]") {
+    SampleWalls fixture("walls-checkpoint-white-boundary");
+    fixture.walls.setPlayerCount(2, fixture.collision);
+    fixture.walls.reveal(0);
+    fixture.walls.update(0.5f);
+    DestructibleWalls::LocalSnapshot white;
+    fixture.walls.saveLocal(white);
+    REQUIRE(fixture.walls.wall(0).flash == 0);
+    REQUIRE(fixture.walls.wall(0).blinkTicks == 30);
+    REQUIRE(fixture.walls.wall(0).white);
+    fixture.device.draws.clear();
+    fixture.walls.draw(fixture.device, Mat4{1}, {});
+    const auto expected = fixture.device.draws;
+    fixture.walls.update(0);
+    REQUIRE_FALSE(fixture.walls.wall(0).white);
+    REQUIRE(fixture.walls.restoreLocal(white));
+    fixture.device.draws.clear();
+    fixture.walls.draw(fixture.device, Mat4{1}, {});
+    REQUIRE(fixture.device.draws.size() == expected.size());
+    for (usize index = 0; index < expected.size(); ++index) {
+        CHECK(fixture.device.draws[index].texture == expected[index].texture);
+        CHECK(fixture.device.draws[index].vertices == expected[index].vertices);
+        CHECK(fixture.device.draws[index].state == expected[index].state);
     }
 }
 } // namespace
