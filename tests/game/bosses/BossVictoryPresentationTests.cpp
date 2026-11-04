@@ -1,6 +1,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -126,6 +127,45 @@ TEST_CASE("Skorne victory uses the fixed altar position regardless of party spre
         presentation.bindWizard(device, archive, {0, -25, -19}, party);
         REQUIRE(presentation.wizardSubject().position == Vec3{0, -12, 6});
         REQUIRE(presentation.wizardSubject().attentionOffset == Vec3{0, 10, 0});
+    }
+}
+
+TEST_CASE("only the two Skorne codes stand the wizard at the altar; every other code takes the "
+          "midpoint",
+          "[game][screens][victory-presentation][boss-kinds]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(wizardFixture("victory-position-by-code")));
+    test::FakeRenderDevice device;
+    // The boss and the party sum to (9, -3, 12): a third of it, lifted three, is the midpoint.
+    constexpr Vec3 kBoss{3, -6, 9};
+    constexpr std::array kParty{Vec3{6, 0, 0}, Vec3{0, 3, 3}};
+    struct Row {
+        s32 code;
+        Vec3 position;
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, Vec3{3, 2, 4}},
+        {33, Vec3{3, 2, 4}},
+        {34, Vec3{3, 2, 4}},
+        {35, Vec3{3, 2, 4}},
+        {36, Vec3{3, 2, 4}},
+        {37, Vec3{3, 2, 4}},
+        {38, Vec3{3, 2, 4}},
+        {39, Vec3{3, 2, 4}},
+        {40, Vec3{3, 2, 4}},
+        {41, Vec3{3, 2, 4}},
+        {42, Vec3{0, -12, 6}},
+        {43, Vec3{0, -12, 6}},
+        {44, Vec3{3, 2, 4}},
+        {45, Vec3{3, 2, 4}},
+        {std::numeric_limits<s32>::min(), Vec3{3, 2, 4}},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        BossVictoryPresentation presentation;
+        presentation.begin(row.code, 'G', 0, 0, false);
+        presentation.bindWizard(device, archive, kBoss, kParty);
+        CHECK(presentation.wizardSubject().position == row.position);
     }
 }
 

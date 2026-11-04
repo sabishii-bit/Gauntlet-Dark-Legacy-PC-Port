@@ -1,4 +1,5 @@
 #include <array>
+#include <limits>
 #include <string_view>
 
 #include <catch2/catch_approx.hpp>
@@ -36,6 +37,44 @@ TEST_CASE("enemy melee selects bite strike or tiered player impacts without gene
     CHECK(EnemyFeedback::meleeSound(3, 1, {})->empty());
     for (const s32 kind : {-1, 1, 7, 13, 27, 31, 100}) {
         CHECK_FALSE(EnemyFeedback::meleeSound(kind, 1, roster).has_value());
+    }
+}
+
+TEST_CASE("only the boss codes with a bank variant letter change a swarm bank's name",
+          "[game][enemies][enemy-feedback][boss-kinds]") {
+    // A large grunt's death far off and a large demon's bite: byte 14 of a bank key is the
+    // boss level's variant letter, where the boss's code has one.
+    const std::array roster{LevelEnemy{13, 2, "EGRUNT"}, LevelEnemy{2, 1, "DEM"}};
+    EnemyFeedback dying;
+    dying.kind = 13;
+    dying.tier = 2;
+    dying.killed = true;
+    struct Row {
+        s32 code;
+        std::string_view death;
+        std::string_view bite;
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {33, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {34, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {35, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {36, "S_EGRUNT2DIEFAC", "S_DEM2BITEC"},
+        {37, "S_EGRUNT2DIEFAD", "S_DEM2BITED"},
+        {38, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {39, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {40, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {41, "S_EGRUNT2DIEFAB", "S_DEM2BITEB"},
+        {42, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {43, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {44, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {45, "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+        {std::numeric_limits<s32>::min(), "S_EGRUNT2DIEFAR", "S_DEM2BITE"},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        CHECK(dying.sound(roster, row.code) == row.death);
+        CHECK(EnemyFeedback::meleeSound(2, 2, roster, row.code) == row.bite);
     }
 }
 

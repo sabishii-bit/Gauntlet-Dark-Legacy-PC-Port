@@ -1,5 +1,8 @@
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -92,6 +95,44 @@ TEST_CASE("only completed final bosses play ending movies before results and sav
             flow.advance();
             REQUIRE(flow.stage() == LevelCompletion::Stage::Done);
         }
+    }
+}
+
+TEST_CASE("every boss code keeps its ending movie and results visit whether defeated or not",
+          "[game][level-completion][boss-kinds]") {
+    struct Row {
+        s32 code;
+        std::string_view movie; ///< once its boss is defeated
+        ShopVisit visit;        ///< once its boss is defeated
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, "", ShopVisit::Level},
+        {33, "", ShopVisit::Level},
+        {34, "", ShopVisit::Level},
+        {35, "", ShopVisit::Level},
+        {36, "", ShopVisit::Level},
+        {37, "", ShopVisit::Level},
+        {38, "", ShopVisit::Level},
+        {39, "", ShopVisit::Level},
+        {40, "", ShopVisit::Level},
+        {41, "", ShopVisit::Level},
+        {42, "", ShopVisit::Level},
+        {43, "garm", ShopVisit::Level},
+        {44, "victory", ShopVisit::Completion},
+        {45, "", ShopVisit::Level},
+        {std::numeric_limits<s32>::min(), "", ShopVisit::Level},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        const LevelCompletion defeated(row.code, true);
+        CHECK(defeated.movie() == row.movie);
+        CHECK(defeated.visit() == row.visit);
+        CHECK(defeated.stage() == (row.movie.empty() ? LevelCompletion::Stage::Results
+                                                     : LevelCompletion::Stage::Movie));
+        const LevelCompletion abandoned(row.code, false);
+        CHECK(abandoned.movie().empty());
+        CHECK(abandoned.visit() == ShopVisit::Level);
+        CHECK(abandoned.stage() == LevelCompletion::Stage::Results);
     }
 }
 

@@ -1,5 +1,7 @@
 #include <array>
+#include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -229,6 +231,103 @@ TEST_CASE("Skorne uses one combined voice and the first twelve runes for his fol
         REQUIRE(visit.caption()->message == (complete ? "SKORNE1_RUNE_YES" : "SKORNE1_RUNE_NO"));
         REQUIRE(visit.update(BossVictory::kAfterRunesTicks, {}).empty());
         REQUIRE(visit.stage() == Stage::Leaving);
+    }
+}
+
+constexpr s32 kLowest = std::numeric_limits<s32>::min();
+
+TEST_CASE("every boss code keeps its defeat speech and voice and its rune voice at each quality",
+          "[game][screens][victory][boss-kinds]") {
+    struct Row {
+        s32 code;
+        std::string_view message;
+        std::string_view voice;
+        std::array<std::string_view, 4> runes; ///< by quality
+    };
+    // By quality (none found, some, the one, both): the first four realms' guardians say the
+    // same for some as for all and the last four have a line of their own for all; the temple's
+    // Skorne has one line for every quality, and every code after his none.
+    using Runes = std::array<std::string_view, 4>;
+    constexpr Runes kSomeIsAll{"S_RUNEVOX0G", "S_RUNEVOX1G", "S_RUNEVOX1G", "S_RUNEVOX1G"};
+    constexpr Runes kOwnAll{"S_RUNEVOX0G", "S_RUNEVOX1G", "S_RUNEVOX2G", "S_RUNEVOX2G"};
+    constexpr Runes kTemple{"S_E2VOXB", "S_E2VOXB", "S_E2VOXB", "S_E2VOXB"};
+    constexpr Runes kNone{"", "", "", ""};
+    constexpr std::array<Row, 15> kRows{{
+        {-1, "", "S_DEFEATVOXG", kSomeIsAll},
+        {33, "", "S_DEFEATVOXG", kSomeIsAll},
+        {34, "DRAGON_SPEECH", "S_DEFEATVOXG", kSomeIsAll},
+        {35, "CHIMERA_SPEECH", "S_DEFEATVOXG", kSomeIsAll},
+        {36, "DJINN_SPEECH", "S_DEFEATVOXG", kSomeIsAll},
+        {37, "DRIDER_SPEECH", "S_DEFEATVOXG", kSomeIsAll},
+        {38, "PBOSS_SPEECH", "S_DEFEATVOXG", kOwnAll},
+        {39, "YETI_SPEECH", "S_DEFEATVOXG", kOwnAll},
+        {40, "WRAITH_SPEECH", "S_DEFEATVOXG", kOwnAll},
+        {41, "LICH_SPEECH", "S_DEFEATVOXG", kOwnAll},
+        {42, "SKORNE1_SPEECH", "S_E2VOXA", kTemple},
+        {43, "SKORNE2_SPEECH", "S_ENDVOX", kNone},
+        {44, "GARM2_SPEECH", "S_GRMDESTVOX", kNone},
+        {45, "", "S_DEFEATVOXG", kNone},
+        {kLowest, "", "S_DEFEATVOXG", kSomeIsAll},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        CHECK(BossVictory::defeatMessageOf(row.code) == row.message);
+        CHECK(BossVictory::defeatVoiceOf(row.code, 'G') == row.voice);
+        for (s32 quality = 0; quality < 4; ++quality) {
+            CAPTURE(quality);
+            CHECK(BossVictory::runeVoiceOf(row.code, 'G', quality) ==
+                  row.runes[static_cast<usize>(quality)]);
+        }
+    }
+}
+
+TEST_CASE("every boss code keeps its wizard's wait and what follows the defeat speech",
+          "[game][screens][victory][boss-kinds]") {
+    struct Row {
+        s32 code;
+        s32 wait;                 ///< ticks from the fall to the wizard's coming
+        Stage followUp;           ///< once the defeat speech is over
+        std::string_view caption; ///< then up, with no runestone found
+        std::string_view voice;   ///< then heard
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {33, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {34, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {35, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {36, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {37, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {38, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {39, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {40, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {41, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+        {42, 600, Stage::Runes, "SKORNE1_RUNE_NO", ""},
+        {43, 300, Stage::Leaving, "", ""},
+        {44, 600, Stage::Leaving, "", ""},
+        {45, 300, Stage::Leaving, "", ""},
+        {kLowest, 300, Stage::Runes, "RUNE_PHRASE0", "S_RUNEVOX0G"},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        BossVictory visit;
+        visit.begin(row.code, 'G', 0, 0, false);
+        s32 waited = 0;
+        while (visit.stage() == Stage::Waiting && waited < 1000) {
+            visit.update(1, {});
+            ++waited;
+        }
+        CHECK(waited == row.wait);
+        visit.update(64, {});
+        REQUIRE(visit.stage() == Stage::Defeat);
+        const auto voices = visit.update(BossVictory::kAfterDefeatTicks, {});
+        CHECK(visit.stage() == row.followUp);
+        const std::string_view caption =
+            visit.caption().has_value() ? std::string_view{visit.caption()->message} : "";
+        CHECK(caption == row.caption);
+        REQUIRE(voices.size() == (row.voice.empty() ? 0U : 1U));
+        if (!voices.empty()) {
+            CHECK(voices.front().sound == row.voice);
+        }
     }
 }
 } // namespace

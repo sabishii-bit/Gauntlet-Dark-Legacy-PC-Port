@@ -1,9 +1,20 @@
+#include <array>
+#include <limits>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/world/ParticleSystem.h"
 
+#include "TestSupport.h"
 #include "game/bosses/LegendItems.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 
@@ -234,6 +245,149 @@ TEST_CASE("legend charge colours and projectile particles follow the item's reta
     REQUIRE(LegendShow::trailOf(35).texture == "CHIMKEY_PART");
     REQUIRE(LegendShow::trailOf(38).texture == "PARTICLE1_A");
     REQUIRE(LegendShow::trailOf(41).texture.empty());
+}
+
+constexpr s32 kLowest = std::numeric_limits<s32>::min();
+
+TEST_CASE("every boss code keeps its legend staging", "[game][bosses][legend-show][boss-kinds]") {
+    using Flight = LegendShow::Flight;
+    struct Row {
+        s32 code;
+        bool inHand;
+        PlayerDeed gesture;
+        Flight flight;
+        std::string_view resting;
+        std::string_view burst;
+        f32 burstSeconds;
+        Vec3 offset;
+        std::string_view trail;
+    };
+    constexpr PlayerDeed kHurl = PlayerDeed::HurlLegend;
+    constexpr PlayerDeed kThrow = PlayerDeed::ThrowLegend;
+    constexpr PlayerDeed kShoot = PlayerDeed::ShootLegend;
+    constexpr std::array<Row, 15> kRows{{
+        {-1, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+        {33, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+        {34, true, kThrow, Flight::Flies, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, "PARTICLE1_A"},
+        {35, true, kThrow, Flight::Flies, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, "CHIMKEY_PART"},
+        {36, true, kShoot, Flight::Flies, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+        {37, true, kShoot, Flight::WithBearer, "LEGENDPRJ", "LEGENDFX", 3, Vec3{}, ""},
+        {38, true, kThrow, Flight::Flies, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, "PARTICLE1_A"},
+        {39, true, kThrow, Flight::AtBoss, "LEGENDFX", "LEGENDFX2", 30, Vec3{-7, -5, 85}, ""},
+        {40, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{0, -5, 10}, ""},
+        {41, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 5, Vec3{}, ""},
+        {42, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{0, 17, 3}, ""},
+        {43, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+        {44, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+        {45, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+        {kLowest, false, kHurl, Flight::AtBoss, "LEGENDPRJ", "LEGENDFX", 30, Vec3{}, ""},
+    }};
+    ParticleDescriptor trailed = LegendShow::trailOf(34);
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        CHECK(LegendShow::heldInHand(row.code) == row.inHand);
+        CHECK(LegendShow::gestureOf(row.code) == row.gesture);
+        CHECK(LegendShow::flightOf(row.code) == row.flight);
+        CHECK(LegendShow::restingTreeOf(row.code) == row.resting);
+        CHECK(LegendShow::burstTreeOf(row.code) == row.burst);
+        CHECK(LegendShow::burstSecondsOf(row.code) == row.burstSeconds);
+        CHECK(LegendShow::bossOffsetOf(row.code) == row.offset);
+        // A trail differs from the dragon's only by its texture; no trail is an empty one.
+        const ParticleDescriptor trail = LegendShow::trailOf(row.code);
+        CHECK(trail.texture == row.trail);
+        if (row.trail.empty()) {
+            CHECK(trail == ParticleDescriptor{});
+        } else {
+            trailed.texture = row.trail;
+            CHECK(trail == trailed);
+        }
+    }
+}
+
+TEST_CASE("each weakened boss keeps its roar wait and darkness and the way its rite ends",
+          "[game][bosses][legend-show][boss-kinds]") {
+    struct Row {
+        s32 code;
+        s32 roarWait;       ///< ticks after rising
+        bool darkAfterRoar; ///< the presentation stays dark once the roar is over
+        bool overAtRoar;    ///< nothing wears off: the rite ends with the roar
+        bool endsOnImpact;  ///< the item's landing ends the rite
+    };
+    constexpr std::array<Row, 9> kRows{{
+        {34, 180, true, false, true},
+        {35, 60, false, true, false},
+        {36, 180, false, false, true},
+        {37, 180, false, true, false},
+        {38, 180, false, false, false},
+        {39, 180, false, false, false},
+        {40, 180, false, false, false},
+        {41, 60, false, true, false},
+        {42, 60, false, false, false},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        const LegendWeakness* weakness = legendWeaknessOf(row.code);
+        REQUIRE(weakness != nullptr);
+        LegendRite rite;
+        rite.begin(0, *weakness);
+        rite.update(1, true, false);
+        CHECK(rite.darkens());
+        s32 ticks = 1;
+        while (!rite.wantsRoar() && ticks < 1000) {
+            rite.update(1, true, false);
+            ++ticks;
+        }
+        CHECK(ticks == row.roarWait);
+        CHECK(rite.thrown());
+        CHECK(rite.darkens());
+        const auto cues = rite.update(1, true, true);
+        REQUIRE_FALSE(cues.empty());
+        CHECK(cues.back() == LegendCue::Roared);
+        CHECK(rite.darkens() == row.darkAfterRoar);
+        CHECK(rite.running() == !row.overAtRoar);
+        CHECK(rite.finishOnImpact() == row.endsOnImpact);
+        if (row.endsOnImpact) {
+            CHECK_FALSE(rite.running());
+            CHECK_FALSE(rite.darkens());
+        }
+    }
+}
+
+TEST_CASE("each boss code's legend weakness keeps its native digest bytes",
+          "[game][bosses][legend-show][native-state-digest][boss-kinds]") {
+    // SHA-256 of the weakness's native digest, which the rite carries into netplay state;
+    // empty for a code no item touches.
+    struct Row {
+        s32 code;
+        std::string_view hash;
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, ""},
+        {33, ""},
+        {34, "b6c2928d257cebe53af4639d60401b8b8b41edcdf59dfc12be1ece237b573781"},
+        {35, "51ee539d7ee1fa3f54092ca342e34e09d054298ddaa3f789e9f220f6013f2aaf"},
+        {36, "21ec8e81b5280d2aad41e64c283255a5535560260a2a0ce0a969dd26e4fa0764"},
+        {37, "c1f7330fff4839cf8b8eb4cc800ea8712730ffcf7c6e8db592140d87aa27d464"},
+        {38, "4ac2a580bf031b99c9d6599f9247d86d30cf518c78d098a0c7b01696fcccb679"},
+        {39, "463ff2ec99f5d8766c67e8570ff5ba827c60c4d7f8f0d19f29acce478304a761"},
+        {40, "52d1ad9cd4656b6759c38a6e5529dc288cca3b51191ebba7ade9b96b124b52f2"},
+        {41, "9c2e42dd6f134e10eb3eadfc180389afaf7de86432e0cc4d34bb6058792b8415"},
+        {42, "db5afc66edaa019cc52dadac3a60c295eb381d696ad57896a29884d59e284b11"},
+        {43, ""},
+        {44, ""},
+        {45, ""},
+        {kLowest, ""},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        const LegendWeakness* weakness = legendWeaknessOf(row.code);
+        REQUIRE((weakness != nullptr) == !row.hash.empty());
+        if (weakness != nullptr) {
+            NativeStateDigest digest;
+            digest.value(*weakness);
+            CHECK(test::hexBytes(digest.finish()) == row.hash);
+        }
+    }
 }
 
 } // namespace

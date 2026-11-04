@@ -1,6 +1,7 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -120,6 +121,53 @@ TEST_CASE("Skorne records victory without an ordinary boss key effect", "[skorne
         REQUIRE(f.effects.count() == (kind < 42 ? 1 : 0));
         f.sequence.fallen({2, 3, 4}, f.bosses, f.players);
         REQUIRE(f.effects.count() == (kind < 42 ? 1 : 0));
+    }
+}
+
+TEST_CASE("every boss code below the temple's leaves the floating key and its sound",
+          "[game][screens][boss-sequence][boss-kinds]") {
+    const auto root = test::scratchDirectory("boss-key-sound");
+    const auto bank = root / "audio/COMMON";
+    std::filesystem::create_directories(bank);
+    const std::array<s16, 4> pcm{8192, 8192, 8192, 8192};
+    const std::array<test::NativeSoundSample, 1> bankSamples{{{48000, {pcm.begin(), pcm.end()}}}};
+    test::writeNativeSoundBank(
+        bank, R"({"sounds":[{"index":0,"name":"S_BOSSKEYG","sequence":[{"sample":0}]}]})",
+        bankSamples);
+    struct Row {
+        s32 code;
+        bool key; ///< the BOSSKEY tree rises and S_BOSSKEY of the realm's letter sounds
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, true},
+        {33, true},
+        {34, true},
+        {35, true},
+        {36, true},
+        {37, true},
+        {38, true},
+        {39, true},
+        {40, true},
+        {41, true},
+        {42, false},
+        {43, false},
+        {44, false},
+        {45, false},
+        {std::numeric_limits<s32>::min(), true},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        AudioMixer mixer(48000);
+        SoundPlayer output(mixer);
+        Fixture f;
+        f.loadLevel(row.code);
+        f.audio.open(root, &output, nullptr);
+        f.sequence.fallen({2, 3, 4}, f.bosses, f.players);
+        REQUIRE(f.sequence.victory().state().running());
+        CHECK(f.effects.count() == (row.key ? 1U : 0U));
+        CHECK(output.voiceCount() == (row.key ? 1U : 0U));
+        f.sequence.clear();
+        f.audio.close();
     }
 }
 

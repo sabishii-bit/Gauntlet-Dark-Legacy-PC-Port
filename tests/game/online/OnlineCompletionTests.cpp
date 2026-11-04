@@ -3,7 +3,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -47,6 +49,45 @@ TEST_CASE("online completion selects only defeated final boss movies and final r
     }
     source.realmId = -1;
     CHECK(OnlineCompletion::route(source, -1, false).arrivalWorld == 0);
+}
+
+TEST_CASE("every boss code keeps its online ending movie and results visit whether defeated or not",
+          "[online-completion][boss-kinds]") {
+    struct Row {
+        s32 code;
+        std::string_view movie; ///< once its boss is defeated
+        ShopVisit visit;        ///< once its boss is defeated
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, "", ShopVisit::Level},
+        {33, "", ShopVisit::Level},
+        {34, "", ShopVisit::Level},
+        {35, "", ShopVisit::Level},
+        {36, "", ShopVisit::Level},
+        {37, "", ShopVisit::Level},
+        {38, "", ShopVisit::Level},
+        {39, "", ShopVisit::Level},
+        {40, "", ShopVisit::Level},
+        {41, "", ShopVisit::Level},
+        {42, "", ShopVisit::Level},
+        {43, "garm", ShopVisit::Level},
+        {44, "victory", ShopVisit::Completion},
+        {45, "", ShopVisit::Level},
+        {std::numeric_limits<s32>::min(), "", ShopVisit::Level},
+    }};
+    LevelRef source;
+    source.realmId = 6;
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        const auto defeated = OnlineCompletion::route(source, row.code, true);
+        CHECK(defeated.movie == row.movie);
+        CHECK(defeated.visit == row.visit);
+        CHECK_FALSE(defeated.skippable);
+        const auto abandoned = OnlineCompletion::route(source, row.code, false);
+        CHECK(abandoned.movie.empty());
+        CHECK(abandoned.visit == ShopVisit::Level);
+        CHECK_FALSE(abandoned.skippable);
+    }
 }
 
 TEST_CASE("online completion fails closed for absent or corrupt ending media",

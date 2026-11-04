@@ -600,6 +600,7 @@ add_executable(tests
     game/critters/CombatantProjectileTests.cpp
     formats/CritterWadTests.cpp
     game/bosses/BossCoinsTests.cpp
+    game/bosses/BossDefinitionTests.cpp
     game/bosses/BossesTests.cpp
     game/bosses/LegendItemsTests.cpp
     game/party/MoveStrikesTests.cpp
