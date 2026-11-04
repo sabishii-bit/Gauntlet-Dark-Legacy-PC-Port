@@ -20,6 +20,7 @@
 #include "game/effects/CritterCueEmission.h"
 #include "game/effects/DynamicLights.h"
 #include "game/enemies/EnemyFeedbackEmission.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMissileEmission.h"
 #include "game/enemies/ImportedOpponentCues.h"
 #include "game/enemies/OpponentPlacements.h"
@@ -2020,20 +2021,20 @@ void LevelOpponents::finishSummons(std::span<const EnemyView> players) {
         return;
     }
     for (const Mat4& placement : m_combatantProjectiles.takeSummons()) {
-        if (!m_bosses.view().alive || m_bosses.view().kind != 44) {
+        const BossStage* stage = bossStageOf(m_bosses.view().kind);
+        if (!m_bosses.view().alive || stage == nullptr || !stage->summonsBrood) {
             continue;
         }
         // BossGenerateEnemy: two tier-three Garm minions, three units out,
         // yawed by +/- pi/4 from the summoning effect's forward direction.
-        constexpr s32 kGarmMinion = 27;
         constexpr f32 kOffset = 3;
         constexpr f32 kYaw = 0.7853981633974483f;
-        if (m_enemies.loadKind(kGarmMinion)) {
+        if (m_enemies.loadKind(kGarmBroodKind)) {
             const Vec3 origin{placement[3]};
             const Vec3 forward = glm::normalize(Vec3{placement[2]});
             for (const f32 yaw : {kYaw, -kYaw}) {
                 EnemySpawn spawn;
-                spawn.kind = kGarmMinion;
+                spawn.kind = kGarmBroodKind;
                 spawn.tier = 3;
                 spawn.direction =
                     Vec3{portable::rotate(Mat4{1}, yaw, Vec3{0, 1, 0}) * Vec4{forward, 0}};

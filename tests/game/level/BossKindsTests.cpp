@@ -156,4 +156,38 @@ TEST_CASE("the boss stages say what each level does about its boss", "[game][lev
     }
 }
 
+TEST_CASE("only the final bosses' falls end the game and only the garm summons his brood",
+          "[game][level][boss-kinds]") {
+    struct Row {
+        s32 code;
+        bool summonsBrood;
+        std::string_view movie; ///< empty: no finale
+        bool completesGame;
+    };
+    constexpr std::array<Row, kBossTypeCount> kRows{{
+        {34, false, "", false},
+        {35, false, "", false},
+        {36, false, "", false},
+        {37, false, "", false},
+        {38, false, "", false},
+        {39, false, "", false},
+        {40, false, "", false},
+        {41, false, "", false},
+        {42, false, "", false},
+        {43, false, "garm", false},
+        {44, true, "victory", true},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        const BossStage* stage = bossStageOf(row.code);
+        REQUIRE(stage != nullptr);
+        CHECK(stage->summonsBrood == row.summonsBrood);
+        REQUIRE(stage->finale.has_value() == !row.movie.empty());
+        if (stage->finale.has_value()) {
+            CHECK(stage->finale->movie == row.movie);
+            CHECK(stage->finale->completesGame == row.completesGame);
+        }
+    }
+}
+
 } // namespace

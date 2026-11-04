@@ -4,6 +4,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/level/BossKinds.h"
 #include "game/shop/ShopSession.h"
 
 namespace gdl::game {
@@ -16,7 +17,7 @@ public:
     LevelCompletion(s32 bossKind, bool defeated)
         : m_movie(defeated ? movieOf(bossKind) : std::string_view{}),
           m_stage(!m_movie.empty() ? Stage::Movie : Stage::Results),
-          m_visit(defeated && bossKind == 44 ? ShopVisit::Completion : ShopVisit::Level) {}
+          m_visit(defeated && completesGame(bossKind) ? ShopVisit::Completion : ShopVisit::Level) {}
 
     Stage stage() const { return m_stage; }
     std::string_view movie() const { return m_movie; }
@@ -32,13 +33,16 @@ public:
     }
 
 private:
-    // auxscreen.c init_gamemovie: E_GARM -> victory, E_SKORNE2 -> garm.
+    /** The movie a final boss's fall plays, empty for every other code. */
     static std::string_view movieOf(s32 kind) {
-        switch (kind) {
-        case 44: return "victory";
-        case 43: return "garm";
-        default: return "";
-        }
+        const BossStage* stage = bossStageOf(kind);
+        return stage != nullptr && stage->finale.has_value() ? stage->finale->movie
+                                                             : std::string_view{};
+    }
+    /** Whether the fall of the boss `kind` names completes the game. */
+    static bool completesGame(s32 kind) {
+        const BossStage* stage = bossStageOf(kind);
+        return stage != nullptr && stage->finale.has_value() && stage->finale->completesGame;
     }
     std::string_view m_movie;
     Stage m_stage;

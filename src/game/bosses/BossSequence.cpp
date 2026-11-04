@@ -7,6 +7,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "game/bosses/BossCoins.h"
+#include "game/bosses/BossTraits.h"
 #include "game/bosses/SkorneRelics.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/PlayerFigure.h"
@@ -279,8 +280,9 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     m_sim.shardPosition = where + bosses.rewardOffset();
     m_sim.fallenSpot = where;
     m_sim.fallenFacing = bosses.facing();
+    const bool dropsKey = orderedBossTraitsOf(level->bossType).defeat.dropsKey;
     if (r.world.items().loaded()) {
-        if (level->bossType < 42) {
+        if (dropsKey) {
             EffectTrees::Setting setting;
             setting.seconds = kBossKeySeconds;
             setting.then = kBossKeyLaterTree;
@@ -296,7 +298,7 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
         const Vec3* boss = bosses.position();
         m_victory.bindWizard(r.device, r.world.items(), boss != nullptr ? *boss : where, standing);
     }
-    if (level->bossType < 42) {
+    if (dropsKey) {
         r.audio.playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
     }
 }
@@ -384,12 +386,16 @@ void BossSequence::spewCoins(const CombatSpew& spew, LevelOpponents& opponents,
     for (const s32 generator : opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
         opponents.strikeGenerator(generator, kBossDeathBlast, -1);
     }
-    if (const auto* level = r.world.level(); level != nullptr && level->bossType == 42) {
+    const auto* level = r.world.level();
+    const BossTraits* traits = level != nullptr ? bossTraitsOf(level->bossType) : nullptr;
+    switch (traits != nullptr ? traits->defeat.spew : BossSpew::Coins) {
+    case BossSpew::Relics:
         for (const auto& relic : SkorneRelics::spray(spew.velocity, spew.halfAngle)) {
             r.world.throwItem(r.device, relic.name, spew.origin, relic.velocity,
                               SkorneRelics::kNoGrabSeconds, SkorneRelics::kStrength);
         }
         return;
+    case BossSpew::Coins: break;
     }
     const auto count = static_cast<s32>(std::ranges::count_if(
         players, [](const PlayerRuntime& runtime) { return !runtime.departed; }));

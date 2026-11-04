@@ -10,6 +10,7 @@
 #include "engine/core/Log.h"
 
 #include "game/config/ControlProfiles.h"
+#include "game/level/BossKinds.h"
 #include "game/netplay/OnlineParty.h"
 #include "game/online/PartyStore.h"
 #include "game/scenes/AfterLevelScene.h"
@@ -428,8 +429,9 @@ struct NativeOnlinePlay::Data {
             shopState.source = next.scene;
             shopState.destination = *id;
             shopState.expanded = services.config->game.expandedShop;
-            shopState.ending = info != nullptr && (info->bossType == 43 || info->bossType == 44) &&
-                               scene.victory().finished();
+            const BossStage* stage = info != nullptr ? bossStageOf(info->bossType) : nullptr;
+            shopState.ending =
+                stage != nullptr && stage->finale.has_value() && scene.victory().finished();
             shopState.maxima =
                 info != nullptr ? info->shopMaxima : std::array<s32, 3>{1000, 100, 1000};
             for (const auto& result : scene.levelResults()) {

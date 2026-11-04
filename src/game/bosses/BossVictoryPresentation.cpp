@@ -10,6 +10,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/bosses/BossTraits.h"
 #include "game/widgets/ScrollBox.h"
 
 namespace gdl::game {
@@ -157,7 +158,8 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
         count += 1.0f;
     }
     m_sim.position = centre / count + Vec3{0.0f, kWizardLift, 0.0f};
-    if (m_sim.visit.kind() == 42 || m_sim.visit.kind() == 43) {
+    if (const BossTraits* traits = bossTraitsOf(m_sim.visit.kind());
+        traits != nullptr && traits->defeat.wizardAtAltar) {
         // Both Skorne arenas use DoGoodWizard's fixed altar position, not the
         // ordinary boss/party midpoint (0x80345a08..0x80345a10).
         m_sim.position = Vec3{0, -12, 6};

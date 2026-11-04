@@ -6,33 +6,14 @@
 
 #include "engine/core/Types.h"
 
+#include "game/bosses/BossTraits.h"
 #include "game/level/TowerAccess.h"
 
 namespace gdl::game {
 
-namespace {
-
-constexpr s32 kDemon = 42;
-constexpr s32 kDemonUnderworld = 43;
-constexpr s32 kGarm = 44;
-
-} // namespace
-
 std::string_view BossVictory::defeatMessageOf(s32 kind) {
-    switch (kind) {
-    case 34: return "DRAGON_SPEECH";
-    case 35: return "CHIMERA_SPEECH";
-    case 36: return "DJINN_SPEECH";
-    case 37: return "DRIDER_SPEECH";
-    case 38: return "PBOSS_SPEECH";
-    case 39: return "YETI_SPEECH";
-    case 40: return "WRAITH_SPEECH";
-    case 41: return "LICH_SPEECH";
-    case kDemon: return "SKORNE1_SPEECH";
-    case kDemonUnderworld: return "SKORNE2_SPEECH";
-    case kGarm: return "GARM2_SPEECH";
-    default: return "";
-    }
+    const BossTraits* traits = bossTraitsOf(kind);
+    return traits != nullptr ? traits->defeat.speech : std::string_view{};
 }
 
 std::string_view BossVictory::runeMessageOf(s32 quality) {
@@ -45,26 +26,28 @@ std::string_view BossVictory::runeMessageOf(s32 quality) {
 }
 
 std::string BossVictory::defeatVoiceOf(s32 kind, char realm) {
-    switch (kind) {
-    case kDemon: return "S_E2VOXA";
-    case kDemonUnderworld: return "S_ENDVOX";
-    case kGarm: return "S_GRMDESTVOX";
-    default: return std::format("S_DEFEATVOX{}", realm);
+    const BossTraits* traits = bossTraitsOf(kind);
+    if (traits != nullptr && !traits->defeat.defeatVoice.empty()) {
+        return std::string{traits->defeat.defeatVoice};
     }
+    return std::format("S_DEFEATVOX{}", realm);
 }
 
 std::string BossVictory::runeVoiceOf(s32 kind, char realm, s32 quality) {
-    if (kind >= kDemon) {
-        return kind == kDemon ? "S_E2VOXB" : std::string{};
+    const RuneVoices lines = orderedBossTraitsOf(kind).defeat.runeVoices;
+    switch (lines) {
+    case RuneVoices::Temple: return "S_E2VOXB";
+    case RuneVoices::None: return {};
+    case RuneVoices::SomeIsAll:
+    case RuneVoices::OwnAll: break;
     }
     // None found, some, or all of them (the one or both). The first four realms' guardians
     // say the same for some as for all; the last four have a line of their own for all
     // (AudioGoodWizard's table).
-    constexpr s32 kFirstAllVoiceKind = 38;
     s32 which = 1;
     if (quality <= 0) {
         which = 0;
-    } else if (quality >= 2 && kind >= kFirstAllVoiceKind) {
+    } else if (quality >= 2 && lines == RuneVoices::OwnAll) {
         which = 2;
     }
     return std::format("S_RUNEVOX{}{}", which, realm);
@@ -89,7 +72,8 @@ void BossVictory::begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound, 
     m_allTempleRunes =
         (runesFound & TowerAccess::kUnderworldRunes) == TowerAccess::kUnderworldRunes;
     m_goldLeft = goldLeft;
-    m_ticksLeft = kind == kDemon || kind == kGarm ? kLongWaitTicks : kWaitTicks;
+    const BossTraits* traits = bossTraitsOf(kind);
+    m_ticksLeft = traits != nullptr && traits->defeat.longWizardWait ? kLongWaitTicks : kWaitTicks;
 }
 
 void BossVictory::clear() {
@@ -207,24 +191,31 @@ std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const std::st
             // Temple Skorne's voice is one recording spanning both caption sets.
             // DoGoodWizard selects its variant before the first page, using the
             // party's union of the first twelve runes (hide_rune_stones).
+            const BossTraits* traits = bossTraitsOf(m_kind);
+            const bool templeRunes =
+                traits != nullptr && traits->defeat.followUp == VictoryFollowUp::TempleRunes;
             const std::string voice =
-                m_kind == kDemon && m_allTempleRunes ? "S_E2VOXB" : defeatVoiceOf(m_kind, m_realm);
+                templeRunes && m_allTempleRunes ? "S_E2VOXB" : defeatVoiceOf(m_kind, m_realm);
             say(defeatMessageOf(m_kind), kAfterDefeatTicks, voice, voices);
         }
         break;
     case Stage::Defeat:
         if (type(ticks, pages)) {
             const std::string voice = runeVoiceOf(m_kind, m_realm, m_quality);
-            if (m_kind == kDemon) {
+            switch (orderedBossTraitsOf(m_kind).defeat.followUp) {
+            case VictoryFollowUp::TempleRunes:
                 m_stage = Stage::Runes;
                 say(m_allTempleRunes ? "SKORNE1_RUNE_YES" : "SKORNE1_RUNE_NO", kAfterRunesTicks, {},
                     voices);
-            } else if (m_kind > kDemon) {
+                break;
+            case VictoryFollowUp::Leaves:
                 // Underworld Skorne and Garm have no rune follow-up.
                 leave();
-            } else {
+                break;
+            case VictoryFollowUp::Realm:
                 m_stage = Stage::Runes;
                 say(runeMessageOf(m_quality), kAfterRunesTicks, voice, voices);
+                break;
             }
         }
         break;

@@ -6,7 +6,8 @@ namespace gdl::game {
 namespace {
 
 /** One row a boss, in code order. Retail arena callback 0x80063c58 sets tree flag 1 on the
- * hidden object only; the renderer (0x800c7a70) skips its mesh but still visits its children. */
+ * hidden object only; the renderer (0x800c7a70) skips its mesh but still visits its children.
+ * auxscreen.c init_gamemovie: E_GARM -> victory, E_SKORNE2 -> garm. */
 constexpr std::array<BossStage, kBossTypeCount> kStages{{
     {.kind = boss_type::kDragon, .name = "DRAGON", .fireHoleSound = "S_FIREHOLE2"},
     {.kind = boss_type::kChimera, .name = "CHIMERA"},
@@ -21,8 +22,12 @@ constexpr std::array<BossStage, kBossTypeCount> kStages{{
      .swarmBankVariant = 'B',
      .roams = true},
     {.kind = boss_type::kSkorne1, .name = "SKORNE1", .fallingMasonry = true},
-    {.kind = boss_type::kSkorne2, .name = "SKORNE2"},
-    {.kind = boss_type::kGarm, .name = "GARM", .hiddenObject = "H4NSFFXL_PURPLE"},
+    {.kind = boss_type::kSkorne2, .name = "SKORNE2", .finale = BossFinale{.movie = "garm"}},
+    {.kind = boss_type::kGarm,
+     .name = "GARM",
+     .hiddenObject = "H4NSFFXL_PURPLE",
+     .summonsBrood = true,
+     .finale = BossFinale{.movie = "victory", .completesGame = true}},
 }};
 static_assert(
     [] {

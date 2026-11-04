@@ -751,7 +751,7 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
 }
 
 TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual arena",
-          "[level-opponents][garm][assets]") {
+          "[level-opponents][garm][boss-kinds][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELH4/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
@@ -793,7 +793,12 @@ TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual
     hit.damage = impacts[0].damage;
     hit.node = impacts[0].node;
     boss.hurt(hit);
-    const usize before = opponents.enemies().count();
+    const auto& enemies = opponents.enemies();
+    const usize before = enemies.count();
+    std::array<u64, Enemies::kMost> lifetimes{};
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        lifetimes[static_cast<usize>(id)] = enemies.alive(id) ? enemies.instanceOf(id) : 0;
+    }
     test::OpponentScript events;
     test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
@@ -801,11 +806,39 @@ TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
-    for (s32 frame = 0; frame < 300 && opponents.enemies().count() == before; ++frame) {
+    for (s32 frame = 0; frame < 300 && enemies.count() == before; ++frame) {
         opponents.update(2, 1.0f / 30, {}, {}, host, host, host);
         effects.update(1.0f / 30);
     }
-    REQUIRE(opponents.enemies().count() == before + 2);
+    REQUIRE(enemies.count() == before + 2);
+    // BossGenerateEnemy: two tier-three brood, three units out at a quarter turn apart.
+    std::vector<s32> brood;
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        if (enemies.alive(id) && enemies.instanceOf(id) != lifetimes[static_cast<usize>(id)]) {
+            brood.push_back(id);
+        }
+    }
+    REQUIRE(brood.size() == 2);
+    struct Body {
+        Vec3 position;
+        f32 yaw;
+    };
+    constexpr std::array<Body, 2> kBrood{{
+        {Vec3{10.397882462f, -0.046875f, 5.349876404f}, 1.029741526f},
+        {Vec3{6.281263351f, -0.046875f, 6.376253128f}, -0.541054785f},
+    }};
+    for (usize i = 0; i < brood.size(); ++i) {
+        const s32 id = brood[i];
+        CAPTURE(i, id);
+        CHECK(enemies.kindOf(id) == kGarmBroodKind);
+        CHECK(enemies.tierOf(id) == 3);
+        CHECK(enemies.positionOf(id).x == Catch::Approx(kBrood[i].position.x).margin(1e-3));
+        CHECK(enemies.positionOf(id).y == Catch::Approx(kBrood[i].position.y).margin(1e-3));
+        CHECK(enemies.positionOf(id).z == Catch::Approx(kBrood[i].position.z).margin(1e-3));
+        CHECK(enemies.yawOf(id) == Catch::Approx(kBrood[i].yaw).margin(1e-4));
+    }
+    CHECK(enemies.yawOf(brood[0]) - enemies.yawOf(brood[1]) ==
+          Catch::Approx(std::numbers::pi_v<f32> / 2).margin(1e-4));
     opponents.close();
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string_view>
 
 #include "engine/core/Types.h"
@@ -32,6 +33,12 @@ inline constexpr usize kBossTypeCount = static_cast<usize>(kLastBossType - kFirs
     return code >= kFirstBossType && code <= kLastBossType;
 }
 
+/** How a final boss's fall ends the game (init_gamemovie). */
+struct BossFinale {
+    std::string_view movie;     ///< VQMOVIES/<movie>.avi, shown before the results
+    bool completesGame = false; ///< the results are the game's completion visit
+};
+
 /** What a boss's level does about it, beneath the encounter itself. */
 struct BossStage {
     s32 kind = -1;
@@ -41,6 +48,8 @@ struct BossStage {
     char swarmBankVariant = '\0';   ///< byte 14 of its level's swarm sound banks; '\0': none
     bool fallingMasonry = false;    ///< its altar's loose masonry falls at its entrance
     bool roams = false;             ///< an unpressed close attack may start at it (PlayerMotion)
+    bool summonsBrood = false; ///< its summoning shots call two of its brood (BossGenerateEnemy)
+    std::optional<BossFinale> finale = std::nullopt; ///< set for the final bosses only
 };
 
 /** The stage of the boss a stored code names, or null for -1 and every other code. */

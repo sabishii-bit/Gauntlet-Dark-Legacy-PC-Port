@@ -7,6 +7,7 @@
 #include "engine/platform/Paths.h"
 
 #include "game/context/GameServices.h"
+#include "game/level/BossKinds.h"
 
 namespace gdl::game {
 namespace {
@@ -20,14 +21,11 @@ f32 movieVolume(const GameServices& services) {
 OnlineCompletion::Route OnlineCompletion::route(const LevelRef& source, s32 bossKind,
                                                 bool defeated) {
     Route result;
-    if (defeated) {
-        switch (bossKind) {
-        case 43: result.movie = "garm"; break;
-        case 44:
-            result.movie = "victory";
+    if (const BossStage* stage = bossStageOf(bossKind);
+        defeated && stage != nullptr && stage->finale.has_value()) {
+        result.movie = stage->finale->movie;
+        if (stage->finale->completesGame) {
             result.visit = ShopVisit::Completion;
-            break;
-        default: break;
         }
     }
     // init_next_level remembers the last non-Tower realm (800563DC-800563F8).

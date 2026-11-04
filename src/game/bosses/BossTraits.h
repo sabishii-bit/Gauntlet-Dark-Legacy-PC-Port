@@ -43,6 +43,42 @@ struct LegendStaging {
     bool operator==(const LegendStaging&) const = default;
 };
 
+/** Which rune line the wizard speaks after a boss's defeat, by how many of the realm's
+ * runestones the party found (AudioGoodWizard's table; an S_RUNEVOX line ends in the realm's
+ * letter). */
+enum class RuneVoices : u8 {
+    SomeIsAll, ///< S_RUNEVOX0 for none found, S_RUNEVOX1 for some and for all
+    OwnAll,    ///< S_RUNEVOX0 for none, S_RUNEVOX1 for some, S_RUNEVOX2 for all
+    Temple,    ///< S_E2VOXB whatever was found
+    None,      ///< no rune line
+};
+
+/** What follows the wizard's defeat speech. */
+enum class VictoryFollowUp : u8 {
+    Realm,       ///< the realm's rune phrase, by how many of its runestones were found
+    TempleRunes, ///< SKORNE1_RUNE_YES or _NO, by the party's first twelve runes
+    Leaves,      ///< nothing: the party is taken out
+};
+
+/** What a boss's death move throws about its fall. */
+enum class BossSpew : u8 {
+    Coins,  ///< the realm's coins for each player (BossCoins)
+    Relics, ///< the temple's relics (SkorneRelics)
+};
+
+/** What a boss's defeat says, and who comes for the party. */
+struct BossDefeat {
+    std::string_view speech; ///< the wizard's *_SPEECH message
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string_view defeatVoice{}; ///< empty: S_DEFEATVOX and the realm's letter
+    RuneVoices runeVoices = RuneVoices::SomeIsAll;
+    VictoryFollowUp followUp = VictoryFollowUp::Realm;
+    bool longWizardWait = false; ///< BossVictory::kLongWaitTicks, not kWaitTicks
+    bool wizardAtAltar = false;  ///< DoGoodWizard's fixed altar spot, not the midpoint
+    bool dropsKey = false;       ///< the BOSSKEY tree and S_BOSSKEY rise where it fell
+    BossSpew spew = BossSpew::Coins;
+};
+
 /** One boss's facts above its stage. Adding a boss also takes a kWeaknesses row
  * (LegendItems.cpp), a BossStage row (level/BossKinds.cpp) and bossDefinition's family. */
 struct BossTraits {
@@ -50,10 +86,16 @@ struct BossTraits {
     BossGeneratorVisual generator;    ///< its eggs' generator art in its own archive
     bool projectileEndVisual = false; ///< read by bossDefinition through its name
     LegendStaging legend;
+    BossDefeat defeat;
 };
 
 /** The row of the boss a stored code names, or null for -1 and every other code. */
 [[nodiscard]] const BossTraits* bossTraitsOf(s32 code);
+/** The row of `code`, or of the boss code nearest it: the rules the original states as ordered
+ * comparisons of the code (< 42, >= 38, > 42) give every code below the dragon's what they give
+ * the dragon's, and every code above the garm's what they give the garm's. Rules stated as
+ * equalities read bossTraitsOf. */
+[[nodiscard]] const BossTraits& orderedBossTraitsOf(s32 code);
 /** The legend staging of `code`'s row, or the defaults for a code without one. */
 [[nodiscard]] const LegendStaging& legendStagingOf(s32 code);
 

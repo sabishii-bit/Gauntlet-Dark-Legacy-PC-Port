@@ -58,7 +58,8 @@ bool StageResources::preload(const LevelWorld& world, Enemies& enemies, Critters
         }
         // LevelOpponents::finishSummons loads these on Garm's first summon;
         // diagnostic capture requires a stable resource catalog.
-        if (level->bossType == 44 && !load(kGarmBroodKind)) {
+        if (const BossStage* stage = bossStageOf(level->bossType);
+            stage != nullptr && stage->summonsBrood && !load(kGarmBroodKind)) {
             return false;
         }
     }
