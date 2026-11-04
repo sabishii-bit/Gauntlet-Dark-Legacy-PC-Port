@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <format>
 #include <set>
@@ -1009,13 +1010,13 @@ TEST_CASE("revealed momentary bridges wait for their final rider without pressin
                        {"name":"WALL","position":[0,2,0]})");
     WorldCollision collision;
     const std::array button{TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0}};
-    const std::array rider{TriggerVisitor{.position = Vec3{0, 10, 0},
-                                         .floorObject = support,
-                                         .party = 1}};
+    const std::array rider{
+        TriggerVisitor{.position = Vec3{0, 10, 0}, .floorObject = support, .party = 1}};
     const std::array floors{support};
     const auto update = [&](bool occupied) {
-        f.triggers.update(step, !enemy && occupied ? std::span<const TriggerVisitor>{rider}
-                                                   : std::span<const TriggerVisitor>{},
+        f.triggers.update(step,
+                          !enemy && occupied ? std::span<const TriggerVisitor>{rider}
+                                             : std::span<const TriggerVisitor>{},
                           f.animator, f.scene, &collision,
                           enemy && occupied ? std::span<const s32>{floors}
                                             : std::span<const s32>{});
@@ -1060,7 +1061,8 @@ TEST_CASE("floor occupants do not retain ordinary lifts or hide-on-use fields",
           "[game][world][triggers][bridge-occupants]") {
     const s32 kind = GENERATE(0, 48);
     SwitchFixture f(std::format(R"({{"info":0,"position":[20,0,0],
-      "params":[0,0,{},0,2,255,0,0,0,0,20,0]}})", kind));
+      "params":[0,0,{},0,2,255,0,0,0,0,20,0]}})",
+                                kind));
     WorldCollision collision;
     const std::array button{TriggerVisitor{.position = Vec3{20, 0, 0}}};
     const std::array floors{0};
@@ -1091,16 +1093,15 @@ TEST_CASE("D1 native two-player bridges retain players and enemy supports after 
     std::set<std::string> bridges;
     for (usize i = 0; i < world.triggers().size(); ++i) {
         const auto trigger = world.triggers().trigger(i);
-        if (!trigger.enabled || trigger.chained || trigger.target < 0 ||
-            trigger.minPlayers != 1 || (trigger.kind & 0x67U) != 0 ||
-            (trigger.kind & LevelTrigger::kFades) == 0) {
+        if (!trigger.enabled || trigger.chained || trigger.target < 0 || trigger.minPlayers != 1 ||
+            (trigger.kind & 0x67U) != 0 || (trigger.kind & LevelTrigger::kFades) == 0) {
             continue;
         }
         CAPTURE(trigger.instance, trigger.target, trigger.flags,
                 world.layout().objects()[static_cast<usize>(trigger.target)].name);
-        const std::array button{TriggerVisitor{.position = trigger.spot, .party = 0},
-                                TriggerVisitor{.position = trigger.spot + Vec3{1000, 0, 0},
-                                               .party = 1}};
+        const std::array button{
+            TriggerVisitor{.position = trigger.spot, .party = 0},
+            TriggerVisitor{.position = trigger.spot + Vec3{1000, 0, 0}, .party = 1}};
         world.updateTriggers(1, button);
         REQUIRE(world.triggers().opened(trigger.target));
         REQUIRE(world.collision().solid(trigger.target));
@@ -1895,6 +1896,96 @@ TEST_CASE("catalogued platform pads respond at their actual supporting surface",
     CAPTURE(tested, subtypes.size());
     CHECK(tested > 50);
     CHECK(subtypes.size() >= 3);
+}
+
+// What the shipped triggers ask of their targets. No trigger's flags name two latches, so
+// fireNode's order among the latch bits never has to choose between them. Each target moves by
+// its keyed track, a fade or its height, but for two keyed targets whose pads fade them: both
+// their track and their fade run.
+TEST_CASE("shipped triggers name one latch at most, and only two keyed targets also fade",
+          "[trigger-census][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    usize levels = 0;
+    usize triggers = 0;
+    // The latch each trigger's flags select, in fireNode's order.
+    usize closes = 0;
+    usize opensOnce = 0;
+    usize toggles = 0;
+    usize momentary = 0;
+    // What moves each target, its keyed track first, as openTarget asks.
+    usize keyed = 0;
+    usize fading = 0;
+    usize rising = 0;
+    std::set<std::string> fadingKeyedPads;    // level, trigger instance and target object
+    std::set<std::string> fadingKeyedTargets; // level and object of a stored keyed fade
+    for (const auto& realm : catalog.realms()) {
+        for (const auto& name : realm.levels) {
+            const auto ref = catalog.byName(name);
+            REQUIRE(ref);
+            test::assetOrSkip(ref->directory + "/WORLDS.PS2");
+            WorldLayout layout;
+            REQUIRE(layout.load(root / ref->directory));
+            ++levels;
+            WorldAnimator preview;
+            preview.bind(layout);
+            LevelTriggers inventory;
+            inventory.bind(layout, preview, nullptr);
+            const auto objectName = [&](s32 object) {
+                return layout.objects()[static_cast<usize>(object)].name;
+            };
+            for (usize i = 0; i < inventory.size(); ++i) {
+                const LevelTrigger& trigger = inventory.trigger(i);
+                CAPTURE(name, trigger.instance, trigger.target, trigger.flags);
+                ++triggers;
+                CHECK(std::popcount(trigger.flags & LevelTrigger::kLatches) <= 1);
+                if ((trigger.flags & LevelTrigger::kCloses) != 0) {
+                    ++closes;
+                } else if ((trigger.flags & LevelTrigger::kOpensOnce) != 0) {
+                    ++opensOnce;
+                } else if ((trigger.flags & LevelTrigger::kToggles) != 0) {
+                    ++toggles;
+                } else {
+                    ++momentary;
+                }
+                // Every trigger that drives a target, not only the first, which gives the
+                // target its kind.
+                if (trigger.target >= 0 && preview.trackOf(trigger.target).has_value() &&
+                    (trigger.kind & LevelTrigger::kFades) != 0) {
+                    fadingKeyedPads.insert(std::format("{} {} {}", name, trigger.instance,
+                                                       objectName(trigger.target)));
+                }
+            }
+            const auto bound = inventory.checkpoint();
+            REQUIRE(bound);
+            for (const auto& target : bound->targets) {
+                const bool fades = (target.kind & LevelTrigger::kFades) != 0;
+                if (target.animated && fades) {
+                    fadingKeyedTargets.insert(
+                        std::format("{} {}", name, objectName(target.object)));
+                }
+                if (target.animated) {
+                    ++keyed;
+                } else if (fades) {
+                    ++fading;
+                } else {
+                    ++rising;
+                }
+            }
+        }
+    }
+    CHECK(levels == 65);
+    CHECK(triggers == 1424);
+    CHECK(closes == 163);
+    CHECK(opensOnce == 1130);
+    CHECK(toggles == 64);
+    CHECK(momentary == 67);
+    CHECK(keyed == 472);
+    CHECK(fading == 20);
+    CHECK(rising == 514);
+    CHECK(fadingKeyedPads == std::set<std::string>{"L1 205 L1LITPODIUM", "S1 117 S1DRAWBKJ"});
+    CHECK(fadingKeyedTargets == std::set<std::string>{"L1 L1LITPODIUM", "S1 S1DRAWBKJ"});
 }
 
 TEST_CASE("Underworld switch artwork remains visible before and after trigger contact",
