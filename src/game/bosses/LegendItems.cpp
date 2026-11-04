@@ -27,11 +27,6 @@ constexpr std::array<LegendWeakness, 9> kWeaknesses{{
     {42, 5, kTenth, 0.0f, 0, 0, 0.1f, kWearSeconds, 1.0f, false},      // the temple's, shaken
 }};
 
-/** The chimera, the lich and the temple's boss roar a second after rising; the rest three. */
-bool quickToRoar(s32 boss) {
-    return boss == 35 || boss == 41 || boss == 42;
-}
-
 } // namespace
 
 const LegendWeakness* legendWeaknessOf(s32 kind) {
@@ -121,7 +116,7 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
         cues.push_back(LegendCue::Thrown);
     }
     // The boss roars at it, once its wait is over.
-    const s32 roarWait = quickToRoar(m_weakness.boss) ? kShortRoarWait : kLongRoarWait;
+    const s32 roarWait = LegendShow::quickToRoar(m_weakness.boss) ? kShortRoarWait : kLongRoarWait;
     if (!m_roarDue && m_ticks >= roarWait) {
         m_roarDue = true;
     }
@@ -131,7 +126,7 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
         m_wearLeft = m_weakness.recoverySeconds;
     }
     // Then its weakness runs its course, where it has one.
-    if (m_roared && m_thrown && m_weakness.boss != 34 && m_weakness.boss != 36) {
+    if (m_roared && m_thrown && LegendShow::strikeOf(m_weakness.boss) != LegendStrike::AtRiteEnd) {
         if (m_weakness.recoverySeconds <= 0.0f) {
             m_stage = Stage::Over;
         } else {
@@ -146,12 +141,18 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
 }
 
 bool LegendRite::finishOnImpact() {
-    if ((m_weakness.boss != 34 && m_weakness.boss != 36) || m_stage != Stage::Struck) {
+    if (LegendShow::strikeOf(m_weakness.boss) != LegendStrike::AtRiteEnd ||
+        m_stage != Stage::Struck) {
         return false;
     }
     m_stage = Stage::Over;
     m_roarDue = false;
     return true;
+}
+
+bool LegendRite::darkens() const {
+    return running() && m_stage != Stage::Carried &&
+           (LegendShow::darkUntilImpact(m_weakness.boss) || !m_roared);
 }
 
 bool LegendShow::heldInHand(s32 kind) {
@@ -206,6 +207,73 @@ Vec3 LegendShow::bossOffsetOf(s32 kind) {
     case 42: return Vec3{0.0f, 17.0f, 3.0f};
     default: return Vec3{0.0f, 0.0f, 0.0f};
     }
+}
+
+LegendStrike LegendShow::strikeOf(s32 kind) {
+    switch (kind) {
+    case 35:
+    case 37:
+    case 38:
+    case 42: return LegendStrike::OnLanding;
+    case 34:
+    case 36: return LegendStrike::AtRiteEnd;
+    default: return LegendStrike::OnThrow;
+    }
+}
+
+bool LegendShow::landsWhileRiteRuns(s32 kind) {
+    return kind == 38;
+}
+
+bool LegendShow::landsOnRelease(s32 kind) {
+    return kind == 37 || kind == 42;
+}
+
+bool LegendShow::quickToRoar(s32 kind) {
+    return kind == 35 || kind == 41 || kind == 42;
+}
+
+bool LegendShow::darkUntilImpact(s32 kind) {
+    return kind == 34;
+}
+
+bool LegendShow::restoresSight(s32 kind) {
+    return kind == 38;
+}
+
+bool LegendShow::homes(s32 kind) {
+    return kind == 38;
+}
+
+std::string_view LegendShow::eyeReplacementOf(s32 kind) {
+    return kind == 38 ? std::string_view{"PBOSSQEYEBALL"} : std::string_view{};
+}
+
+std::optional<Color> LegendShow::strikeTintOf(s32 kind) {
+    if (kind == 37) {
+        return Color::rgba(64, 255, 64); // the spider, poisoned
+    }
+    return std::nullopt;
+}
+
+std::string_view LegendShow::lionStumpOf(s32 kind) {
+    return kind == 35 ? std::string_view{"STUMPLQ"} : std::string_view{};
+}
+
+std::string_view LegendShow::targetNodeOf(s32 kind) {
+    switch (kind) {
+    case 35: return "CHIMLIONHEA";
+    case 38: return "BODY1_EYEBALL";
+    default: return {};
+    }
+}
+
+std::string_view LegendShow::frozenSkinOf(s32 kind) {
+    return kind == 34 ? std::string_view{"SEETHROUGH"} : std::string_view{};
+}
+
+f32 LegendShow::burstFollowSecondsOf(s32 kind) {
+    return kind == 36 ? kGenieBurstSeconds : 0.0f;
 }
 
 /** The common bank's pickup, then the realm's own: thrown, flying (`FLY`, or the `ALL`

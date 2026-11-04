@@ -1,5 +1,6 @@
 #include <array>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -387,6 +388,88 @@ TEST_CASE("each boss code's legend weakness keeps its native digest bytes",
             digest.value(*weakness);
             CHECK(test::hexBytes(digest.finish()) == row.hash);
         }
+    }
+}
+
+TEST_CASE("every boss code keeps when its legend strikes and how its rite roars and darkens",
+          "[game][bosses][legend-show][boss-kinds]") {
+    using Strike = LegendStrike;
+    struct Row {
+        s32 code;
+        Strike strike;
+        bool whileRiteRuns;
+        bool onRelease;
+        bool quickToRoar;
+        bool darkUntilImpact;
+        bool restoresSight;
+        bool homes;
+    };
+    constexpr std::array<Row, 15> kRows{{
+        {-1, Strike::OnThrow, false, false, false, false, false, false},
+        {33, Strike::OnThrow, false, false, false, false, false, false},
+        {34, Strike::AtRiteEnd, false, false, false, true, false, false},
+        {35, Strike::OnLanding, false, false, true, false, false, false},
+        {36, Strike::AtRiteEnd, false, false, false, false, false, false},
+        {37, Strike::OnLanding, false, true, false, false, false, false},
+        {38, Strike::OnLanding, true, false, false, false, true, true},
+        {39, Strike::OnThrow, false, false, false, false, false, false},
+        {40, Strike::OnThrow, false, false, false, false, false, false},
+        {41, Strike::OnThrow, false, false, true, false, false, false},
+        {42, Strike::OnLanding, false, true, true, false, false, false},
+        {43, Strike::OnThrow, false, false, false, false, false, false},
+        {44, Strike::OnThrow, false, false, false, false, false, false},
+        {45, Strike::OnThrow, false, false, false, false, false, false},
+        {kLowest, Strike::OnThrow, false, false, false, false, false, false},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        CHECK(LegendShow::strikeOf(row.code) == row.strike);
+        CHECK(LegendShow::landsWhileRiteRuns(row.code) == row.whileRiteRuns);
+        CHECK(LegendShow::landsOnRelease(row.code) == row.onRelease);
+        CHECK(LegendShow::quickToRoar(row.code) == row.quickToRoar);
+        CHECK(LegendShow::darkUntilImpact(row.code) == row.darkUntilImpact);
+        CHECK(LegendShow::restoresSight(row.code) == row.restoresSight);
+        CHECK(LegendShow::homes(row.code) == row.homes);
+    }
+}
+
+TEST_CASE("every boss code keeps what its legend strike leaves on it",
+          "[game][bosses][legend-show][boss-kinds]") {
+    struct Row {
+        s32 code;
+        std::string_view eye;
+        std::optional<Color> tint;
+        std::string_view stump;
+        std::string_view node;
+        std::string_view skin;
+        f32 followSeconds;
+    };
+    constexpr std::optional<Color> kPoisoned = Color::rgba(64, 255, 64);
+    constexpr std::array<Row, 15> kRows{{
+        {-1, "", {}, "", "", "", 0},
+        {33, "", {}, "", "", "", 0},
+        {34, "", {}, "", "", "SEETHROUGH", 0},
+        {35, "", {}, "STUMPLQ", "CHIMLIONHEA", "", 0},
+        {36, "", {}, "", "", "", 28},
+        {37, "", kPoisoned, "", "", "", 0},
+        {38, "PBOSSQEYEBALL", {}, "", "BODY1_EYEBALL", "", 0},
+        {39, "", {}, "", "", "", 0},
+        {40, "", {}, "", "", "", 0},
+        {41, "", {}, "", "", "", 0},
+        {42, "", {}, "", "", "", 0},
+        {43, "", {}, "", "", "", 0},
+        {44, "", {}, "", "", "", 0},
+        {45, "", {}, "", "", "", 0},
+        {kLowest, "", {}, "", "", "", 0},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.code);
+        CHECK(LegendShow::eyeReplacementOf(row.code) == row.eye);
+        CHECK(LegendShow::strikeTintOf(row.code) == row.tint);
+        CHECK(LegendShow::lionStumpOf(row.code) == row.stump);
+        CHECK(LegendShow::targetNodeOf(row.code) == row.node);
+        CHECK(LegendShow::frozenSkinOf(row.code) == row.skin);
+        CHECK(LegendShow::burstFollowSecondsOf(row.code) == row.followSeconds);
     }
 }
 

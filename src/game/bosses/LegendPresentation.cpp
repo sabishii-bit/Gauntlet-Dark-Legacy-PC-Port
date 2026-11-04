@@ -164,7 +164,7 @@ void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
     case LegendCue::WornOff:
         // world_update restores PBOSSEYEBALL and clears blindness silently;
         // it does not take the other items' kill/ALSTP/PDN sound branch.
-        if (m_sim.kind == 38) {
+        if (LegendShow::restoresSight(m_sim.kind)) {
             break;
         }
         stopLoop();
@@ -247,7 +247,7 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     if (hasBearer && bearer->released) {
         release(*bearer, target);
     }
-    if ((m_sim.kind == 37 || m_sim.kind == 42) && !wasReleased && m_sim.released) {
+    if (LegendShow::landsOnRelease(m_sim.kind) && !wasReleased && m_sim.released) {
         result.landed = true;
     }
     if (m_sim.held != 0 && hasBearer) {
@@ -266,7 +266,7 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     }
     if (m_sim.flying != 0 && flight() == LegendShow::Flight::Flies) {
         m_sim.flightLeft -= seconds;
-        if (m_sim.kind == 38) {
+        if (LegendShow::homes(m_sim.kind)) {
             // ProcessEffects' 0x40000000 branch recomputes velocity toward
             // the target node each update; a launch-time travel timer misses
             // the moving eye during PBOSS's roar.
@@ -331,11 +331,12 @@ void LegendPresentation::release(const Bearer& bearer, const std::optional<Targe
         const Vec3 from = bearer.position + bearer.facing + Vec3{0.0f, LegendShow::kLift, 0.0f};
         const Vec3 to = target->position + Vec3{0.0f, target->height * 0.5f, 0.0f};
         const f32 distance = glm::length(to - from);
+        const bool homes = LegendShow::homes(m_sim.kind);
         m_sim.flightPosition = from;
         m_sim.flightLeft =
-            m_sim.kind == 38 ? LegendShow::kFlightSeconds
-                             : std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
-        if (distance > 0.0f && m_sim.kind != 38) {
+            homes ? LegendShow::kFlightSeconds
+                  : std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
+        if (distance > 0.0f && !homes) {
             setting.velocity = (to - from) * (LegendShow::kSpeed / distance);
         }
         setting.seconds = LegendShow::kFlightSeconds;
@@ -385,9 +386,9 @@ void LegendPresentation::release(const Bearer& bearer, const std::optional<Targe
 }
 
 void LegendPresentation::land(const std::optional<Target>& target) {
-    if (m_sim.kind == 34) {
+    if (const std::string_view skin = LegendShow::frozenSkinOf(m_sim.kind); !skin.empty()) {
         TextureSet& textures = m_assets.items.textures;
-        if (const auto slot = textures.find("SEETHROUGH"); slot.has_value()) {
+        if (const auto slot = textures.find(skin); slot.has_value()) {
             m_sim.frozenTexture = &textures.texture(m_assets.device, *slot);
         }
     }
@@ -404,14 +405,15 @@ void LegendPresentation::land(const std::optional<Target>& target) {
         followTarget(target);
     } else if (target.has_value() && m_assets.items.loaded() &&
                m_assets.items.trees.find(burstTree()).has_value()) {
+        const f32 follow = LegendShow::burstFollowSecondsOf(m_sim.kind);
         EffectTrees::Setting setting;
-        if (m_sim.kind == 36) {
-            setting.seconds = 28.0f;
+        if (follow > 0.0f) {
+            setting.seconds = follow;
         }
         const u32 effect =
             start(m_assets.items, burstTree(),
                   target->position + Vec3{0.0f, target->height * 0.5f, 0.0f}, setting);
-        if (m_sim.kind == 36) {
+        if (follow > 0.0f) {
             m_sim.attached = effect;
             followTarget(target);
         }

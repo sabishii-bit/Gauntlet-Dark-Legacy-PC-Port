@@ -2,16 +2,22 @@
 #include <filesystem>
 #include <set>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
+#include "game/bosses/LegendProfile.h"
+#include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantFixture.h"
 
 namespace {
@@ -30,6 +36,34 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
     view.radius = 1.0f;
     view.height = 6.0f;
     return view;
+}
+
+/** A synthetic boss archive for `name`: a body with an EYEBALL node, and the plague fiend's
+ * replacement eye mesh beside it, so the legend's eye can be checked without game data. */
+std::filesystem::path eyedBossAssets(const std::string& name) {
+    const auto root = test::scratchDirectory("eyed-boss-" + name);
+    std::filesystem::create_directories(root / "critter");
+    const auto archive = root / "MONSTERS" / name;
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1},
+      {"index":1,"name":"PBOSSQEYEBALL","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]},
+               {"name":"EYEBALL","object":"BODY","parent":0,"position":[0,5,0]}],
+      "sequences":[{"name":"READY","frames":30}]}]})");
+    writeTextFile(root / "critter" / (name + ".json"),
+                  R"({"descriptors":[{"prefix":"BODY","name":")" + name + R"(","type":4}],
+      "types":[{"moveCount":1,"maxHealth":1000,"radius":3,"expValue":500}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"priority":512,"interrupt":20}]})");
+    return root;
 }
 
 TEST_CASE("Wraith waits in its lowered entrance pose and rises only in START3",
@@ -618,6 +652,34 @@ TEST_CASE("every retail boss can enter animate draw take damage and die",
             REQUIRE_FALSE(bosses.takeLosses().empty());
         }
     }
+}
+
+TEST_CASE("only the plague fiend's preload prepares the javelin's eye, a profile's eye if named",
+          "[game][bosses][legend-show][boss-kinds]") {
+    using Keys = std::vector<std::pair<std::string, std::string>>;
+    test::FakeRenderDevice device;
+    const auto prepared = [&](s32 kind, const LegendProfile* profile) {
+        const auto root = eyedBossAssets(std::string{bossNameOf(kind)});
+        Bosses bosses;
+        bosses.open(device, root, nullptr, {}, 'K', {}, profile);
+        const CombatantAssets* stock = bosses.preload(kind);
+        REQUIRE(stock != nullptr);
+        Keys keys;
+        for (const auto& entry : stock->replacementModels) {
+            keys.push_back(entry.first);
+        }
+        bosses.close();
+        return keys;
+    };
+    const Keys eye{{"EYEBALL", "PBOSSQEYEBALL"}};
+    CHECK(prepared(38, nullptr) == eye);
+    CHECK(prepared(39, nullptr).empty());
+    LegendProfile named;
+    named.eyeReplacement = "PBOSSQEYEBALL";
+    CHECK(prepared(38, &named) == eye);
+    CHECK(prepared(39, &named).empty());
+    const LegendProfile keepsOwn;
+    CHECK(prepared(38, &keepsOwn).empty());
 }
 
 } // namespace

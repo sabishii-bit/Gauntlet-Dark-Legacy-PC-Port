@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -101,9 +102,7 @@ public:
     bool weakening() const { return m_thrown && m_stage != Stage::Over; }
     /** The opening presentation dims the scene, not the weakness timer. The Dragon's
      * ends on projectile impact; the other bosses' end with their roar. */
-    bool darkens() const {
-        return running() && m_stage != Stage::Carried && (m_weakness.boss == 34 || !m_roared);
-    }
+    bool darkens() const;
     static constexpr f32 kDarkening = -0.8f; ///< what it takes off the ambient light
 
 private:
@@ -122,6 +121,13 @@ private:
     bool m_brandished = false;
     bool m_thrown = false;
     f32 m_wearLeft = 0.0f; ///< seconds of the curb left, once the roar is over
+};
+
+/** When a legend item's strike falls on its boss. */
+enum class LegendStrike : u8 {
+    OnThrow,   ///< as the bearer throws it
+    OnLanding, ///< as it lands: the scimitar and javelin on impact, bellows and savior on release
+    AtRiteEnd  ///< as its landing ends the rite (LegendRite::finishOnImpact): the axe and lamp
 };
 
 /**
@@ -155,6 +161,7 @@ struct LegendShow {
     static constexpr f32 kBurstSeconds = 30.0f;
     static constexpr f32 kLichBurstSeconds = 5.0f;
     static constexpr f32 kSpiderBurstSeconds = 3.0f;
+    static constexpr f32 kGenieBurstSeconds = 28.0f; ///< the lamp's burst, riding the genie
     static constexpr std::string_view kAuraTree = "COMBO_SPH";
     static constexpr f32 kBurstPlaybackRate = 1.0f / 0.333f;
 
@@ -176,6 +183,37 @@ struct LegendShow {
     static f32 burstSecondsOf(s32 kind);
     /** Where on the boss the item is set. */
     static Vec3 bossOffsetOf(s32 kind);
+
+    /** When the item's strike falls on the boss. */
+    static LegendStrike strikeOf(s32 kind);
+    /** Whether a landing strikes only while the rite still runs. */
+    static bool landsWhileRiteRuns(s32 kind);
+    /** Whether the item lands as the bearer's cast is released. */
+    static bool landsOnRelease(s32 kind);
+    /** Whether the boss roars a second after rising, not three. */
+    static bool quickToRoar(s32 kind);
+    /** Whether the rite's darkness outlasts the roar, lifting only as the item lands. */
+    static bool darkUntilImpact(s32 kind);
+    /** Whether the weakness wearing off ends the boss's blindness and gives back its eye,
+     * with none of the other items' sounds (world_update, 0x8005674c). */
+    static bool restoresSight(s32 kind);
+    /** Whether the flying item steers at its moving target each update for its whole
+     * flight, rather than being sent straight at it (ProcessEffects' 0x40000000 branch). */
+    static bool homes(s32 kind);
+    /** The mesh the strike puts on the boss's `EYEBALL` node; empty for none. */
+    static std::string_view eyeReplacementOf(s32 kind);
+    /** The tint the strike leaves on the boss, if any. */
+    static std::optional<Color> strikeTintOf(s32 kind);
+    /** The tree shown for the boss's `STUMPL` once the rite has begun; empty for none. */
+    static std::string_view lionStumpOf(s32 kind);
+    /** The boss's node the item is aimed at; empty for none. */
+    static std::string_view targetNodeOf(s32 kind);
+    /** The item archive's texture the boss wears once the item lands; empty for none. */
+    static std::string_view frozenSkinOf(s32 kind);
+    /** How long the landed burst repeats, riding on the boss; nought: it plays once where
+     * it struck. */
+    static f32 burstFollowSecondsOf(s32 kind);
+
     /** The names the realm's sound for the moment may go by, first the likeliest. */
     static std::vector<std::string> soundNamesOf(Sound sound, char realm);
 };

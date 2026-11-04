@@ -225,12 +225,11 @@ void Bosses::stageLegend(s32 ticks) {
     const bool roarDone = m_sim.roarAsked &&
                           (!canRoar || (moveType == MoveDefinition::kRoar && m_fighter.moveDone()));
     for (const LegendCue cue : m_sim.rite.update(ticks, risen, roarDone)) {
-        if (cue == LegendCue::Thrown && m_sim.kind != 34 && m_sim.kind != 35 && m_sim.kind != 36 &&
-            m_sim.kind != 37 && m_sim.kind != 38 && m_sim.kind != 42) {
+        if (cue == LegendCue::Thrown && LegendShow::strikeOf(m_sim.kind) == LegendStrike::OnThrow) {
             strikeWithLegend();
         } else if (cue == LegendCue::WornOff) {
             m_fighter.curb(0.0f);
-            if (m_sim.kind == 38) {
+            if (LegendShow::restoresSight(m_sim.kind)) {
                 // world_update (0x8005674c) clears the initial 18000-tick
                 // blindness 29 seconds after the roar, not five minutes later.
                 m_fighter.blind(0);
@@ -248,11 +247,11 @@ void Bosses::stageLegend(s32 ticks) {
 }
 
 void Bosses::landLegend() {
-    if (m_sim.kind == 35 || m_sim.kind == 37 || m_sim.kind == 38 || m_sim.kind == 42) {
+    if (LegendShow::strikeOf(m_sim.kind) == LegendStrike::OnLanding) {
         // Scimitar and javelin act on impact; Bellows and Savior on cast release.
         // The roar controls lighting independently of that notification.
         if (m_sim.id.has_value() && m_sim.rite.thrown() && !m_sim.legendStruck &&
-            (m_sim.kind != 38 || m_sim.rite.running())) {
+            (!LegendShow::landsWhileRiteRuns(m_sim.kind) || m_sim.rite.running())) {
             strikeWithLegend();
             m_sim.legendStruck = true;
         }
@@ -293,19 +292,20 @@ void Bosses::strikeWithLegend() {
     if (weakness->blindTicks > 0) {
         m_fighter.blind(weakness->blindTicks);
     }
-    if (m_sim.kind == 38) {
-        const std::string_view replacement = m_legendProfile
-                                                 ? std::string_view{m_legendProfile->eyeReplacement}
-                                                 : std::string_view{"PBOSSQEYEBALL"};
-        if (!replacement.empty() && !m_fighter.replaceNodeModel(*m_device, "EYEBALL", replacement))
+    if (const std::string_view eye = LegendShow::eyeReplacementOf(m_sim.kind); !eye.empty()) {
+        const std::string_view replacement =
+            m_legendProfile ? std::string_view{m_legendProfile->eyeReplacement} : eye;
+        if (!replacement.empty() &&
+            !m_fighter.replaceNodeModel(*m_device, "EYEBALL", replacement)) {
             log::warn("Plague javelin: cannot bind {} replacement", replacement);
+        }
     }
     if (weakness->curbs()) {
         m_fighter.curb(weakness->curbSeconds);
     }
     m_fighter.resize(weakness->scale);
-    if (m_sim.kind == 37) {
-        m_fighter.tint(Color::rgba(64, 255, 64));
+    if (const std::optional<Color> tint = LegendShow::strikeTintOf(m_sim.kind)) {
+        m_fighter.tint(*tint);
     }
 }
 
@@ -371,12 +371,12 @@ CombatantAssets* Bosses::preload(s32 kind) {
         m_sim.assets.push_back(assets);
     }
     // Keep the javelin's alternate eye in the load-time resource roster.
-    if (kind == 38) {
-        const std::string_view replacement = m_legendProfile
-                                                 ? std::string_view{m_legendProfile->eyeReplacement}
-                                                 : std::string_view{"PBOSSQEYEBALL"};
-        if (!replacement.empty())
+    if (const std::string_view eye = LegendShow::eyeReplacementOf(kind); !eye.empty()) {
+        const std::string_view replacement =
+            m_legendProfile ? std::string_view{m_legendProfile->eyeReplacement} : eye;
+        if (!replacement.empty()) {
             assets->prepareReplacement(*m_device, "EYEBALL", replacement);
+        }
     }
     return assets;
 }
@@ -484,9 +484,10 @@ void Bosses::wake() {
 
 std::vector<CombatCue> Bosses::takeCues() {
     auto cues = m_fighter.takeCues();
-    const std::string_view stump = m_legendProfile ? std::string_view{m_legendProfile->lionStump}
-                                                   : std::string_view{"STUMPLQ"};
-    if (m_sim.kind == 35 && m_sim.rite.stage() != LegendRite::Stage::None && !stump.empty()) {
+    const std::string_view ownStump = LegendShow::lionStumpOf(m_sim.kind);
+    const std::string_view stump =
+        m_legendProfile ? std::string_view{m_legendProfile->lionStump} : ownStump;
+    if (!ownStump.empty() && m_sim.rite.stage() != LegendRite::Stage::None && !stump.empty()) {
         for (auto& cue : cues) {
             if (cue.tree == "STUMPL") {
                 cue.tree = stump;
@@ -509,10 +510,9 @@ std::optional<Mat4> Bosses::legendTargetTransform() const {
         }
         return {};
     }
-    if (m_sim.kind == 35)
-        return nodeTransform("CHIMLIONHEA");
-    if (m_sim.kind == 38)
-        return nodeTransform("BODY1_EYEBALL");
+    if (const std::string_view node = LegendShow::targetNodeOf(m_sim.kind); !node.empty()) {
+        return nodeTransform(node);
+    }
     return {};
 }
 
