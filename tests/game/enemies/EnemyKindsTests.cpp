@@ -7,6 +7,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/enemies/EnemyKinds.h"
 
 namespace {
@@ -143,6 +145,80 @@ TEST_CASE("the original's enemy types name their own kind rows", "[game][enemies
         CAPTURE(row.type);
         CHECK(enemyKind(row.type).name == row.name);
         CHECK(enemyKindOf(row.name) == row.type);
+    }
+}
+
+TEST_CASE("only the original's tiered kinds take a sound set a tier whatever the code",
+          "[game][enemies][enemy-traits]") {
+    // The kinds whose hit and bite stems end in the digit of their tier's set.
+    constexpr std::array<s32, 18> kTiered{1,  2,  4,  5,  7,  8,  10, 11, 13,
+                                          14, 16, 17, 19, 20, 23, 24, 25, 26};
+    std::vector<s32> kinds{std::numeric_limits<s32>::min(), -1000, 1000,
+                           std::numeric_limits<s32>::max()};
+    for (s32 kind = -2; kind <= 46; ++kind) {
+        kinds.push_back(kind);
+    }
+    for (const s32 kind : kinds) {
+        CAPTURE(kind);
+        CHECK(tieredSounds(kind) == std::ranges::contains(kTiered, kind));
+    }
+}
+
+TEST_CASE("every name a level gives breeds its roster's kind of that class at every strength",
+          "[game][enemies][enemy-traits]") {
+    constexpr s32 kStrongFrom = 4; ///< the strengths that take the medium's second row
+    // What a name breeds under strength four and from it; a name a roster's rows do not list
+    // breeds itself.
+    struct Row {
+        s32 named;
+        s32 below;
+        s32 fromFour;
+    };
+    struct Roster {
+        std::string_view name;
+        std::vector<LevelEnemy> enemies;
+        std::vector<Row> rows;
+    };
+    const std::vector<Roster> rosters{
+        {"every class twice and a temple row",
+         {{12, kSmallClass, {}},
+          {15, kSmallClass, {}},
+          {13, kMediumClass, {}},
+          {16, kMediumClass, {}},
+          {19, kMediumOtherClass, {}},
+          {25, kMediumOtherClass, {}},
+          {20, kLargeClass, {}},
+          {23, kLargeClass, {}},
+          {14, 12, {}}},
+         {{3, 12, 12}, {4, 13, 19}, {5, 13, 19}}},
+        {"a large and a small but no medium",
+         {{20, kLargeClass, {}}, {0, kSmallClass, {}}},
+         {{3, 0, 0}, {4, 20, 20}, {5, 20, 20}}},
+        {"only the medium's second row", {{19, kMediumOtherClass, {}}}, {{4, 4, 19}, {5, 5, 19}}},
+        {"no roster", {}, {}},
+        {"every class unset",
+         {{-1, kSmallClass, {}},
+          {-1, kMediumClass, {}},
+          {-1, kMediumOtherClass, {}},
+          {-1, kLargeClass, {}}},
+         {}},
+    };
+    std::vector<s32> names{std::numeric_limits<s32>::min(), std::numeric_limits<s32>::max()};
+    for (s32 named = -1; named <= 45; ++named) {
+        names.push_back(named);
+    }
+    for (const Roster& roster : rosters) {
+        for (const s32 named : names) {
+            const auto row = std::ranges::find(roster.rows, named, &Row::named);
+            for (s32 strength = -1; strength <= 7; ++strength) {
+                CAPTURE(roster.name, named, strength);
+                s32 expected = named;
+                if (row != roster.rows.end()) {
+                    expected = strength >= kStrongFrom ? row->fromFour : row->below;
+                }
+                CHECK(levelKindOf(roster.enemies, named, strength) == expected);
+            }
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1714,6 +1715,36 @@ TEST_CASE("a player's blow on a generator earns five times its kind's row of the
     CHECK(generatorExperience(-3, false) == 15); // and the third
     CHECK(generatorExperience(-7, true) == 5);   // any other below nought as the first
     CHECK(generatorExperience(34, true) == 0);
+}
+
+TEST_CASE("a generator's blows are worth five times its brood's rows for every code",
+          "[game][enemies][enemy-traits]") {
+    constexpr s32 kLowest = std::numeric_limits<s32>::min();
+    constexpr s32 kHighest = std::numeric_limits<s32>::max();
+    // A blow's worth, and the destroying blow's, by the code of the kind it breeds.
+    struct Row {
+        s32 kind;
+        s32 hit;
+        s32 destroyed;
+    };
+    constexpr std::array<Row, 52> kRows{{
+        {kLowest, 5, 5}, {-4, 5, 5},       {-3, 15, 15},   {-2, 10, 10},  {-1, 5, 5},
+        {0, 5, 5},       {1, 10, 10},      {2, 15, 15},    {3, 5, 5},     {4, 10, 10},
+        {5, 15, 15},     {6, 5, 5},        {7, 10, 10},    {8, 15, 15},   {9, 5, 5},
+        {10, 10, 10},    {11, 15, 15},     {12, 5, 5},     {13, 10, 10},  {14, 10, 10},
+        {15, 5, 5},      {16, 10, 10},     {17, 15, 15},   {18, 5, 5},    {19, 10, 10},
+        {20, 15, 15},    {21, 5, 5},       {22, 5, 5},     {23, 10, 10},  {24, 15, 15},
+        {25, 15, 15},    {26, 15, 15},     {27, 5, 75},    {28, 0, 0},    {29, 10, 150},
+        {30, 5, 5},      {31, 5, 10},      {32, 10, 1500}, {33, 10, 150}, {34, 0, 0},
+        {35, 0, 0},      {36, 0, 0},       {37, 0, 0},     {38, 0, 0},    {39, 0, 0},
+        {40, 0, 0},      {41, 0, 0},       {42, 0, 0},     {43, 0, 0},    {44, 0, 0},
+        {45, 0, 0},      {kHighest, 0, 0},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.kind);
+        CHECK(generatorExperience(row.kind, false) == row.hit);
+        CHECK(generatorExperience(row.kind, true) == row.destroyed);
+    }
 }
 
 TEST_CASE("worm pits allow walking and birth at their centre without losing their target body",

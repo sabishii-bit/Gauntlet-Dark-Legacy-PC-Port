@@ -6,9 +6,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/SoundSet.h"
+#include "engine/core/Types.h"
 
 #include "TestSupport.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/EnemyFeedback.h"
+#include "game/enemies/EnemyKinds.h"
 
 namespace {
 using namespace gdl;
@@ -256,6 +259,94 @@ TEST_CASE("each swarm kind keeps its hit and melee sound names at both tiers",
         CHECK(feedback.sound(roster) == row.large);
         CHECK(EnemyFeedback::meleeSound(row.kind, 1, roster).value_or("none") == row.meleeSmall);
         CHECK(EnemyFeedback::meleeSound(row.kind, 2, roster).value_or("none") == row.meleeLarge);
+    }
+}
+
+TEST_CASE("each kind keeps its marks and death skins with and without an element",
+          "[game][enemies][enemy-traits]") {
+    // Struck by no element and by fire, hurt and killed, on a body of the kind's own reach,
+    // half its height, as Enemies hands it over. A skin and its frames are the same hurt or
+    // killed.
+    struct Row {
+        s32 kind;
+        std::string_view hit;
+        std::string_view killed;
+        std::string_view fireHit;
+        std::string_view fireKilled;
+        f32 scale;
+        std::string_view skin;
+        s32 frames;
+        std::string_view fireSkin;
+        s32 fireFrames;
+    };
+    constexpr std::array<Row, 47> kRows{{
+        {-1, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {0, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {1, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {2, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {3, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {4, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {5, "HITCOL", "HITDIE", "FIREHIT", "FIREDIE", 1.0f, "DEATHALT", 15, "DEATHFIRE", 10},
+        {6, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {7, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {8, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {9, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {10, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {11, "TREEHIT", "TREEDIE", "FIREHIT", "FIREDIE", 1.5f, "DEATHALT", 10, "DEATHFIRE", 10},
+        {12, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {13, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {14, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {15, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {16, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {17, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {18, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {19, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {20, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {21, "TREEHIT", "TREEDIE", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {22, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
+        {23, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {24, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {25, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {26, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {27, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 2.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {28, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", -0.25f, "", 0, "", 0},
+        {29, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 3.0f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {30, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {31, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.25f, "DEATHBLOOD", 10, "DEATHFIRE",
+         10},
+        {32, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 2.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {33, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {34, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {35, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {36, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {37, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {38, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {39, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {40, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {41, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {42, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {43, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {44, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+        {45, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
+    }};
+    for (const Row& row : kRows) {
+        const auto strike = [&row](u32 flags, bool killed, std::string_view mark,
+                                   std::string_view skin, s32 frames) {
+            CAPTURE(row.kind, flags, killed);
+            EnemyFeedback feedback;
+            feedback.kind = row.kind;
+            feedback.halfHeight = 0.5f * enemyKind(row.kind).height;
+            feedback.flags = flags;
+            feedback.killed = killed;
+            CHECK(feedback.effect() == mark);
+            CHECK(feedback.effectScale() == row.scale);
+            CHECK(feedback.deathSkin() == skin);
+            CHECK(feedback.deathSkinFrames() == frames);
+        };
+        strike(0, false, row.hit, row.skin, row.frames);
+        strike(0, true, row.killed, row.skin, row.frames);
+        strike(damage::kFire, false, row.fireHit, row.fireSkin, row.fireFrames);
+        strike(damage::kFire, true, row.fireKilled, row.fireSkin, row.fireFrames);
     }
 }
 

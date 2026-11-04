@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -1359,6 +1360,122 @@ TEST_CASE("only the original's missile rows give a kind something to throw",
         CHECK(enemyMissileOf(kind, EnemyMissileKind::kBolt).has_value() ==
               std::ranges::contains(kOwnBolt, kind));
         CHECK_FALSE(enemyMissileOf(kind, EnemyMissileKind::kDeathShot).has_value());
+    }
+}
+
+TEST_CASE("every kind and slot keeps its missile and launch point from the original's table",
+          "[game][enemies][enemy-traits]") {
+    // Each kind and slot that throws something; every other throws nothing.
+    struct Thrown {
+        s32 kind;
+        s32 slot;
+        s32 missileSlot;
+        u32 flags;
+        f32 damage;
+        f32 speed;
+        f32 radius;
+        f32 burstRadius;
+        Vec3 spin;
+        f32 weight;
+        f32 held;
+        bool throughWorld;
+    };
+    constexpr std::array<Thrown, 29> kThrown{{
+        {1, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {1, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {2, 2, 2, 0x1U, 15.0f, 25.0f, 0.3f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {4, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {4, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {7, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {7, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {7, 2, 2, 0x3U, 20.0f, 20.0f, 0.2f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {10, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {10, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {13, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {13, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {14, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {14, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {14, 2, 2, 0x0U, 15.0f, 25.0f, 0.3f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {16, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {16, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {17, 0, 0, 0x0U, 5.0f, 15.0f, 0.3f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {17, 1, 1, 0x0U, 10.0f, 20.0f, 0.3f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {17, 2, 2, 0x0U, 15.0f, 25.0f, 0.3f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {19, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {19, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {20, 2, 2, 0x1U, 15.0f, 25.0f, 0.3f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {23, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {23, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {24, 0, 0, 0x0U, 10.0f, 25.0f, 0.5f, 0.0f, {0.0f, 0.0f, 0.0f}, 30.0f, 0.0f, false},
+        {24, 1, 1, 0x10U, 10.0f, 20.0f, 0.2f, 3.0f, {0.0f, 1.0f, 0.0f}, 35.0f, 0.0f, false},
+        {24, 2, 2, 0x3U, 20.0f, 20.0f, 0.2f, 0.0f, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, false},
+        {27, 2, 2, 0x100002U, 25.0f, 80.0f, 2.0f, 0.0f, {0.0f, 0.0f, 0.0f}, 0.0f, 0.0f, false},
+    }};
+    // Where a kind with no launch point of its own throws from, by slot, then the kinds and
+    // slots with their own.
+    struct SlotLaunch {
+        s32 slot;
+        f32 height;
+        f32 shift;
+    };
+    constexpr std::array<SlotLaunch, 5> kSlotLaunches{
+        {{-1, 2.5f, 0.0f}, {0, 2.5f, 0.0f}, {1, 2.5f, 0.0f}, {2, 0.0f, 0.0f}, {3, 2.5f, 0.0f}}};
+    struct Launch {
+        s32 kind;
+        s32 slot;
+        f32 height;
+        f32 shift;
+    };
+    constexpr std::array<Launch, 17> kLaunches{{
+        {4, 0, 1.5f, 0.0f},
+        {7, 2, 1.5f, 0.0f},
+        {13, 0, 1.0f, 0.0f},
+        {14, 0, 1.5f, 0.0f},
+        {14, 2, 1.0f, 0.0f},
+        {17, -1, 2.0f, 2.0f},
+        {17, 0, 2.0f, 2.0f},
+        {17, 1, 2.0f, 2.0f},
+        {17, 2, 2.0f, 2.0f},
+        {17, 3, 2.0f, 2.0f},
+        {23, 0, 0.0f, 0.0f},
+        {23, 1, 0.0f, -2.5f},
+        {24, 2, 1.5f, 0.0f},
+        {27, -1, 0.0f, 0.0f},
+        {27, 0, 0.0f, 0.0f},
+        {27, 1, 0.0f, 0.0f},
+        {27, 3, 0.0f, 0.0f},
+    }};
+    std::vector<s32> kinds{std::numeric_limits<s32>::min(), std::numeric_limits<s32>::max()};
+    for (s32 kind = -1; kind <= 45; ++kind) {
+        kinds.push_back(kind);
+    }
+    for (const s32 kind : kinds) {
+        for (s32 slot = -1; slot <= 3; ++slot) {
+            CAPTURE(kind, slot);
+            const auto missile = enemyMissileOf(kind, slot);
+            const auto thrown = std::ranges::find_if(
+                kThrown, [&](const Thrown& row) { return row.kind == kind && row.slot == slot; });
+            REQUIRE(missile.has_value() == (thrown != kThrown.end()));
+            if (missile.has_value()) {
+                CHECK(missile->slot == thrown->missileSlot);
+                CHECK(missile->flags == thrown->flags);
+                CHECK(missile->damage == thrown->damage);
+                CHECK(missile->speed == thrown->speed);
+                CHECK(missile->radius == thrown->radius);
+                CHECK(missile->burstRadius == thrown->burstRadius);
+                CHECK(missile->spin == thrown->spin);
+                CHECK(missile->weight == thrown->weight);
+                CHECK(missile->held == thrown->held);
+                CHECK(missile->throughWorld == thrown->throughWorld);
+            }
+            const auto own = std::ranges::find_if(
+                kLaunches, [&](const Launch& row) { return row.kind == kind && row.slot == slot; });
+            const auto plain = std::ranges::find(kSlotLaunches, slot, &SlotLaunch::slot);
+            REQUIRE(plain != kSlotLaunches.end());
+            const EnemyLaunchPoint point = enemyLaunchPointOf(kind, slot);
+            CHECK(point.height == (own != kLaunches.end() ? own->height : plain->height));
+            CHECK(point.shift == (own != kLaunches.end() ? own->shift : plain->shift));
+        }
     }
 }
 

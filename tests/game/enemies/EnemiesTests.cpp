@@ -2,7 +2,9 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -4083,6 +4085,234 @@ TEST_CASE("every kind, strength and way resolves as the original's table has it"
         }
     }
     CHECK(mismatches == 0);
+}
+
+/** A scratch root with a native archive for every kind row: the kind's own first-tier tree,
+ * standing and walking, and the three tiers' shadows. */
+std::filesystem::path kindArchives() {
+    const auto root = test::scratchDirectory("enemy-kind-lists");
+    for (s32 kind = 0; kind < kEnemyKindCount; ++kind) {
+        const EnemyKind& info = enemyKind(kind);
+        const auto archive = root / "MONSTERS" / std::string(info.name);
+        std::filesystem::create_directories(archive);
+        writeTextFile(archive / "body.obj",
+                      "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        writeTextFile(archive / "flat.obj",
+                      "v 0 0 0\nv 1 0 0\nv 0 0 1\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        writeTextFile(archive / "objects.json", R"({"objects":[
+            {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
+            {"index":1,"name":"SHADOW1L1","file":"flat.obj","meshTriangles":1},
+            {"index":2,"name":"SHADOW2L1","file":"flat.obj","meshTriangles":1},
+            {"index":3,"name":"SHADOW3L1","file":"flat.obj","meshTriangles":1}]})");
+        writeFile(archive / "skin.png", test::kTinyPng);
+        writeTextFile(archive / "textures.json", R"({"bitmaps":[
+            {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(archive);
+        writeTextFile(archive / "animations.json",
+                      R"({"trees":[{"name":")" + std::string(info.prefix) + R"(1",
+            "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+            "sequences":[{"name":"READY","frames":10,"rate":30},
+                         {"name":"WALK","frames":10,"rate":30}]}]})");
+    }
+    return root;
+}
+
+/** Whether a body goes straight from its entrance to walking. */
+bool walksIn(const Enemies& enemies, s32 id) {
+    const EnemyAnimator* animator = enemies.animatorOf(id);
+    REQUIRE(animator != nullptr);
+    const auto state = animator->checkpoint();
+    REQUIRE(state.has_value());
+    return state->walksIn;
+}
+
+/** What placements of a kind show: whether the first tier walks in, the shadows drawn under
+ * it, and whether any of the archer, bomber and suicide variants walks in. */
+struct PlacedProbe {
+    bool walksIn = false;
+    usize shadows = 0;
+    bool variantWalksIn = false;
+};
+
+PlacedProbe probePlacements(const std::filesystem::path& root, s32 kind) {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, Enemies::kMost, {}, 1);
+    REQUIRE(enemies.loadKind(kind));
+    const auto body = enemies.spawn({.kind = kind, .tier = 1, .placed = true}, {});
+    REQUIRE(body.has_value());
+    PlacedProbe probe;
+    probe.walksIn = walksIn(enemies, *body);
+    device.draws.clear();
+    enemies.drawShadows(device, Mat4{1}, kFarEye, {});
+    probe.shadows = device.draws.size();
+    for (const s32 strength : {kArcherStrength, kBomberStrength, kSuicideStrength}) {
+        const Vec3 at{10.0f * static_cast<f32>(strength), 0.0f, 0.0f};
+        const auto variant =
+            enemies.spawn({.kind = kind, .tier = strength, .position = at, .placed = true}, {});
+        REQUIRE(variant.has_value());
+        probe.variantWalksIn = probe.variantWalksIn || walksIn(enemies, *variant);
+    }
+    return probe;
+}
+
+/** The facing of the generators the births are probed at: turned a twelfth from +z, so that
+ * no two of the ways out of it lead to the same spot, as two do along an axis. */
+constexpr Vec3 kBroodFacing{0.5f, 0.0f, 0.8660254f};
+
+/** Where each way out of a generator of that facing leads, a unit out, in the order Enemies
+ * tries them: ahead, behind, either side, then the four between. */
+constexpr std::array<Vec3, 8> kOctants{{{0.5f, 0.0f, 0.8660254f},
+                                        {-0.5f, 0.0f, -0.8660254f},
+                                        {-0.8660254f, 0.0f, 0.5f},
+                                        {0.8660254f, 0.0f, -0.5f},
+                                        {0.96578f, 0.0f, 0.25878f},
+                                        {-0.25878f, 0.0f, 0.96578f},
+                                        {0.25878f, 0.0f, -0.96578f},
+                                        {-0.96578f, 0.0f, 0.25878f}}};
+
+/** The ways out a kind's brood is born by when every other is shut, a bit a way: an ordinary
+ * brood's, a mixed brood's (every direction), a leader's and a mixed leader's; and whether a
+ * birth lands on the generator's own spot rather than out along its way. */
+struct BirthProbe {
+    u32 brood = 0;
+    u32 mixedBrood = 0;
+    u32 leader = 0;
+    u32 mixedLeader = 0;
+    bool atGenerator = false;
+};
+
+BirthProbe probeBirths(const std::filesystem::path& root, s32 kind) {
+    constexpr s32 kLeaderWay = 12;    ///< a brood's leader (generate_enemy)
+    constexpr f32 kClearance = 40.0f; ///< far enough out that a blocker shuts one way alone
+    constexpr f32 kGeneratorSpacing = 200.0f;
+    constexpr f32 kNear = 0.01f;
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, Enemies::kMost, {}, 1);
+    REQUIRE(enemies.loadKind(kind));
+    const f32 out = kClearance + enemyKind(kind).radius;
+    s32 generators = 0;
+    std::optional<bool> atGenerator;
+    const auto openings = [&](bool mixed, bool leader) {
+        u32 open = 0;
+        for (usize octant = 0; octant < kOctants.size(); ++octant) {
+            ++generators;
+            const Vec3 spot{kGeneratorSpacing * static_cast<f32>(generators), 0.0f, 0.0f};
+            std::vector<EnemyView> blockers;
+            for (usize other = 0; other < kOctants.size(); ++other) {
+                if (other != octant) {
+                    blockers.push_back(playerAt(spot + kOctants[other] * out));
+                }
+            }
+            const auto id = enemies.spawn({.kind = kind,
+                                           .algorithm = leader ? kLeaderWay : -1,
+                                           .position = spot,
+                                           .direction = kBroodFacing,
+                                           .clearance = kClearance,
+                                           .allBirthDirections = mixed},
+                                          blockers);
+            if (!id.has_value()) {
+                continue;
+            }
+            open |= 1U << octant;
+            const Vec3 born = enemies.positionOf(*id);
+            const bool home = glm::distance(born, spot) < kNear;
+            CAPTURE(kind, mixed, leader, octant, born.x, born.z);
+            CHECK((home || glm::distance(born, spot + kOctants[octant] * out) < kNear));
+            if (atGenerator.has_value()) {
+                CHECK(*atGenerator == home);
+            }
+            atGenerator = home;
+        }
+        return open;
+    };
+    BirthProbe probe;
+    probe.brood = openings(false, false);
+    probe.mixedBrood = openings(true, false);
+    probe.leader = openings(false, true);
+    probe.mixedLeader = openings(true, true);
+    probe.atGenerator = atGenerator.value_or(false);
+    return probe;
+}
+
+TEST_CASE("each kind's own archive says whether its placement walks in and lies a shadow",
+          "[game][enemies][enemy-traits]") {
+    struct Row {
+        s32 kind;
+        bool walksIn;
+        bool shadowed;
+    };
+    constexpr std::array<Row, 34> kRows{{
+        {0, false, false}, {1, true, true},    {2, false, true},   {3, false, true},
+        {4, true, true},   {5, false, true},   {6, false, true},   {7, true, true},
+        {8, false, true},  {9, false, true},   {10, true, true},   {11, false, true},
+        {12, false, true}, {13, false, true},  {14, false, true},  {15, false, true},
+        {16, false, true}, {17, false, true},  {18, false, true},  {19, false, true},
+        {20, false, true}, {21, false, false}, {22, false, true},  {23, false, true},
+        {24, false, true}, {25, false, true},  {26, false, true},  {27, false, true},
+        {28, false, true}, {29, false, true},  {30, false, false}, {31, false, false},
+        {32, false, true}, {33, false, true},
+    }};
+    const auto root = kindArchives();
+    for (const Row& row : kRows) {
+        CAPTURE(row.kind);
+        const PlacedProbe probe = probePlacements(root, row.kind);
+        CHECK(probe.walksIn == row.walksIn);
+        CHECK(probe.shadows == (row.shadowed ? 1U : 0U));
+        CHECK_FALSE(probe.variantWalksIn); // the variants never walk in
+    }
+    // No archive is looked for past the kinds.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    for (const s32 kind : {std::numeric_limits<s32>::min(), -1, kEnemyKindCount, 45}) {
+        CAPTURE(kind);
+        CHECK_FALSE(enemies.loadKind(kind));
+    }
+}
+
+TEST_CASE("each kind's brood is born only where the original lets it out of its generator",
+          "[game][enemies][enemy-traits]") {
+    // Every kind but the sentinel row (28), whose body's negative size lets no blocker shut a
+    // way out against it.
+    struct Row {
+        s32 kind;
+        u32 brood;
+        u32 mixedBrood;
+        u32 leader;
+        u32 mixedLeader;
+        bool atGenerator;
+    };
+    constexpr std::array<Row, 33> kRows{{
+        {0, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false},  {1, 0x31U, 0xFFU, 0x01U, 0x01U, false},
+        {2, 0xFFU, 0xFFU, 0x01U, 0x01U, false},  {3, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false},
+        {4, 0x31U, 0xFFU, 0x01U, 0x01U, false},  {5, 0x31U, 0xFFU, 0x01U, 0x01U, false},
+        {6, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false},  {7, 0x31U, 0xFFU, 0x01U, 0x01U, false},
+        {8, 0x31U, 0xFFU, 0x01U, 0x01U, false},  {9, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false},
+        {10, 0x31U, 0xFFU, 0x01U, 0x01U, false}, {11, 0x31U, 0xFFU, 0x01U, 0x01U, false},
+        {12, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false}, {13, 0xFFU, 0xFFU, 0x01U, 0x01U, false},
+        {14, 0x31U, 0xFFU, 0x01U, 0x01U, false}, {15, 0x31U, 0xFFU, 0x31U, 0xFFU, false},
+        {16, 0xFFU, 0xFFU, 0x01U, 0x01U, false}, {17, 0xFFU, 0xFFU, 0xFFU, 0xFFU, true},
+        {18, 0x03U, 0xFFU, 0x03U, 0xFFU, false}, {19, 0x31U, 0xFFU, 0x01U, 0x01U, false},
+        {20, 0xFFU, 0xFFU, 0x01U, 0x01U, false}, {21, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false},
+        {22, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false}, {23, 0xFFU, 0xFFU, 0x01U, 0x01U, false},
+        {24, 0x31U, 0xFFU, 0x01U, 0x01U, false}, {25, 0x31U, 0xFFU, 0x01U, 0x01U, false},
+        {26, 0xFFU, 0xFFU, 0x01U, 0x01U, false}, {27, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false},
+        {29, 0xFFU, 0xFFU, 0x01U, 0x01U, false}, {30, 0xFFU, 0xFFU, 0x01U, 0x01U, false},
+        {31, 0xFFU, 0xFFU, 0xFFU, 0xFFU, false}, {32, 0xFFU, 0xFFU, 0x01U, 0x01U, false},
+        {33, 0xFFU, 0xFFU, 0x01U, 0x01U, false},
+    }};
+    const auto root = kindArchives();
+    for (const Row& row : kRows) {
+        CAPTURE(row.kind);
+        const BirthProbe probe = probeBirths(root, row.kind);
+        CHECK(probe.brood == row.brood);
+        CHECK(probe.mixedBrood == row.mixedBrood);
+        CHECK(probe.leader == row.leader);
+        CHECK(probe.mixedLeader == row.mixedLeader);
+        CHECK(probe.atGenerator == row.atGenerator);
+    }
 }
 
 } // namespace
