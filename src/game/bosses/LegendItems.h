@@ -11,7 +11,7 @@
 #include "engine/world/ParticleSystem.h"
 
 #include "game/audio/LegendSound.h"
-#include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace gdl::game {
 

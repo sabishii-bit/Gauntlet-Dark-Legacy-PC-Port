@@ -37,6 +37,7 @@
 #include "game/players/ComboMove.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/MagicPerks.h"
+#include "game/players/PlayerDeeds.h"
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
 namespace {
@@ -1991,7 +1992,7 @@ PlayerDeed PlayerAttacks::automaticMeleeDeed(const PlayerActor& actor, const Tar
         return PlayerDeed::None;
     }
     // Forced melee bypasses ranged item attacks and does not spend ammunition.
-    return sense.low ? PlayerDeed::AutoMeleeLow : PlayerDeed::AutoMelee;
+    return closeDeedOf(CloseSwing::Automatic, sense.low ? CloseHeight::Low : CloseHeight::High);
 }
 
 std::optional<MissileTarget> PlayerAttacks::meleePlayer(const PlayerActor& actor,

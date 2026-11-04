@@ -7,7 +7,7 @@
 #include "engine/math/Math.h"
 
 #include "game/combat/MissileTarget.h"
-#include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerDeeds.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {

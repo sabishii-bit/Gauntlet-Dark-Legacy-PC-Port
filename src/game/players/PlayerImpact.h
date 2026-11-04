@@ -4,7 +4,7 @@
 #include "engine/math/Math.h"
 
 #include "game/combat/DamageTypes.h"
-#include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace gdl::game {
 /** The damage word (damage::) a blow lands on a player with, and the direction it travels,

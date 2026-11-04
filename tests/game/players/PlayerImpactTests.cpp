@@ -109,8 +109,7 @@ TEST_CASE("a pending reaction gives way only to a deed of higher rank, for every
         PlayerDeed deed;
         s32 rank;
     };
-    constexpr usize kDeedCount = static_cast<usize>(PlayerDeed::ComboThrown) + 1;
-    constexpr std::array<Rank, kDeedCount> kRanks{{
+    constexpr std::array<Rank, kPlayerDeedCount> kRanks{{
         {PlayerDeed::None, 0},         {PlayerDeed::Attack, 0},       {PlayerDeed::UsePotion, 0},
         {PlayerDeed::ThrowPotion, 0},  {PlayerDeed::Die, 0},          {PlayerDeed::Flinch, 3},
         {PlayerDeed::Spike, 2},        {PlayerDeed::Reel, 1},         {PlayerDeed::TurboStrong, 0},
@@ -126,9 +125,9 @@ TEST_CASE("a pending reaction gives way only to a deed of higher rank, for every
         {PlayerDeed::Whirled, 5},      {PlayerDeed::Combo, 0},        {PlayerDeed::ComboHeld, 0},
         {PlayerDeed::ComboThrown, 0},
     }};
-    for (usize pending = 0; pending < kDeedCount; ++pending) {
+    for (usize pending = 0; pending < kPlayerDeedCount; ++pending) {
         REQUIRE(kRanks[pending].deed == static_cast<PlayerDeed>(pending));
-        for (usize incoming = 0; incoming < kDeedCount; ++incoming) {
+        for (usize incoming = 0; incoming < kPlayerDeedCount; ++incoming) {
             CAPTURE(pending, incoming);
             const auto& held = kRanks[pending];
             const auto& landed = kRanks[incoming];

@@ -1826,7 +1826,6 @@ TEST_CASE("a scripted movement level asks its script as the script stands at eac
     CHECK(level.chainsHeldMelee());
 }
 
-constexpr usize kDeedCount = static_cast<usize>(PlayerDeed::ComboThrown) + 1;
 constexpr f32 kFrame = 1.0f / 30.0f;
 
 /** A tree with a six-frame sequence of each action's name, so that any action can begin. */
@@ -1934,7 +1933,7 @@ TEST_CASE("each deed keeps the pace, turn, gesture, aim and melee sense party mo
           "[game][party-motion][deed-sets]") {
     // Per deed: actionPace with no figure, beside an animator standing ready and beside one in a
     // quick swing (a quarter pace), then its deed_read bits.
-    constexpr std::array<DeedReading, kDeedCount> kReadings{{
+    constexpr std::array<DeedReading, kPlayerDeedCount> kReadings{{
         {PlayerDeed::None, 1.0f, 1.0f, 0.25f, deed_read::kGivesWay},
         {PlayerDeed::Attack, 1.0f, 1.0f, 0.25f, deed_read::kAimed},
         {PlayerDeed::UsePotion, 1.0f, 1.0f, 0.25f, 0},
@@ -1985,7 +1984,7 @@ TEST_CASE("each deed keeps the pace, turn, gesture, aim and melee sense party mo
     swinging.update(PlayerMotion::Stand, 1, kFrame, PlayerDeed::Melee);
     REQUIRE(swinging.action() == PlayerAnimator::Action::Quick1);
     const Fixture standing;
-    for (usize i = 0; i < kDeedCount; ++i) {
+    for (usize i = 0; i < kPlayerDeedCount; ++i) {
         CAPTURE(i);
         const auto deed = static_cast<PlayerDeed>(i);
         REQUIRE(kReadings[i].deed == deed);

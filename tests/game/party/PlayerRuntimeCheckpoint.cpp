@@ -115,7 +115,7 @@ bool sameResults(const std::optional<LevelResults::Checkpoint>& a,
                                                         std::tie(b->gold, b->experience, b->kills));
 }
 bool deedValid(PlayerDeed value) {
-    return value >= PlayerDeed::None && value <= PlayerDeed::ComboThrown;
+    return static_cast<usize>(value) < kPlayerDeedCount;
 }
 } // namespace
 

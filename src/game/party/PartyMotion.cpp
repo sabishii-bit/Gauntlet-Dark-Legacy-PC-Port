@@ -15,6 +15,7 @@
 #include "game/party/PartyCombo.h"
 #include "game/players/ComboMove.h"
 #include "game/players/CursorAim.h"
+#include "game/players/PlayerDeeds.h"
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
 namespace {
@@ -22,6 +23,12 @@ constexpr f32 kChargeStick = 0.25f;
 /** A shoved body moving less than this a second shows no push (0.01 a 30 Hz frame,
  * pmotion.c 2042). */
 constexpr f32 kPushedStep = 0.3f;
+/** Whether the deed is a quick swing, pressed or not, at something not low: such a swing
+ * starts without turning, at a quick swing's pace at most. */
+bool quickSwing(PlayerDeed deed) {
+    return deedHas(deed, deed_trait::kClose) &&
+           !deedHas(deed, deed_trait::kStrong | deed_trait::kLow);
+}
 } // namespace
 f32 PartyMotion::turboHeading(f32 current, f32 wanted, f32 seconds, f32 turnScale) {
     // PlayerMotion (80085450): 900 degrees/second times the action's turn scale,
@@ -122,15 +129,11 @@ StrafeWay PartyMotion::strafeWayOf(f32 heading, f32 facing) {
 }
 
 f32 PartyMotion::actionPace(const PlayerAnimator* animator, PlayerDeed deed, bool webbed) {
-    const bool closeAttack = deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow ||
-                             deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
-                             deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
+    const bool closeAttack = deedHas(deed, deed_trait::kClose);
     f32 pace = animator != nullptr ? animator->moveScale() : 1.0f;
-    const bool itemAttack = deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
-                            deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
-                            deed == PlayerDeed::FireRight;
+    const bool itemAttack = deedHas(deed, deed_trait::kItem);
     const bool swingStarts = closeAttack && (animator == nullptr || !animator->meleeing());
-    if (swingStarts && (deed == PlayerDeed::Melee || deed == PlayerDeed::AutoMelee)) {
+    if (swingStarts && quickSwing(deed)) {
         // The first input frame moves before the animation changes. Do not
         // bypass an existing reaction/arrival lock to start a quick swing.
         pace = std::min(pace, PlayerAnimator::kQuickMeleePace);
@@ -151,8 +154,7 @@ MoveInput PartyMotion::attackMove(const PlayerActor& actor, const PlayerAnimator
     MoveInput result = move;
     // A quick swing starts without turning; a step carries along the facing
     // even after the stick is released. Do not confuse that motion with Stand.
-    const bool quickStarts = (deed == PlayerDeed::Melee || deed == PlayerDeed::AutoMelee) &&
-                             (animator == nullptr || !animator->meleeing());
+    const bool quickStarts = quickSwing(deed) && (animator == nullptr || !animator->meleeing());
     f32 turn = animator != nullptr ? animator->turnScale() : 1.0f;
     if (quickStarts) {
         turn = 0;
@@ -423,8 +425,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (down) {
             players[i].gesture = PlayerDeed::None;
         } else if (players[i].gesture != PlayerDeed::None &&
-                   (deed == PlayerDeed::None || deed == PlayerDeed::AutoMelee ||
-                    deed == PlayerDeed::AutoMeleeLow) &&
+                   (deed == PlayerDeed::None || deedHas(deed, deed_trait::kAutomatic)) &&
                    !reeling && !held) {
             deed = players[i].gesture;
             players[i].gesture = PlayerDeed::None;
@@ -432,7 +433,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         actor.setPaceBonus(powerups.paceAdd);
         // Each attack's action controls how far the body may move.
-        const bool automatic = deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow;
+        const bool automatic = deedHas(deed, deed_trait::kAutomatic);
         const f32 pace = actionPace(animator, deed, webbed);
         const bool charging =
             players[i].figure != nullptr && players[i].figure->animator().shoving();
@@ -533,11 +534,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // Stationary normal attacks face the assisted target. The stick, strafe,
         // charging and authored turbo movement retain control of their heading.
         if (!aim && !move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&
-            (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack ||
-             deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
-             deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow ||
-             deed == PlayerDeed::Hammer || deed == PlayerDeed::Breathe ||
-             deed == PlayerDeed::FireLeft || deed == PlayerDeed::FireRight)) {
+            deedHas(deed, deed_trait::kAimed)) {
             if (const auto target = level.aim(i)) {
                 actor.faceToward(*target);
             }

@@ -24,6 +24,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerMissiles.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace gdl::game {
 namespace {
@@ -439,8 +440,7 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
         (phoenix || familiarTier() > 0) &&
         (m_action.animator.released() || m_action.animator.strongReleased() ||
          m_action.animator.superReleased() ||
-         m_action.animator.itemReleased() == PlayerDeed::FireLeft ||
-         m_action.animator.itemReleased() == PlayerDeed::FireRight);
+         deedHas(m_action.animator.itemReleased(), deed_trait::kGauntlet));
     // Swings and throws animate Pojo; ranged releases animate both firing familiars.
     const bool swung = m_action.animator.meleeStruck() || m_action.animator.released() ||
                        m_action.animator.strongReleased() || m_action.animator.superReleased();

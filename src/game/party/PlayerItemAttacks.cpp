@@ -8,6 +8,7 @@
 #include "game/level/ImportedLevel.h"
 #include "game/party/AttackTargetId.h"
 #include "game/party/PlayerAttacks.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace gdl::game {
 namespace {
@@ -59,7 +60,7 @@ void PlayerAttacks::useItemAttack(usize index, std::span<PlayerRuntime> players)
     if (!selected || selected->deed != player.figure->animator().itemReleased()) {
         return;
     }
-    if (selected->deed == PlayerDeed::FireLeft || selected->deed == PlayerDeed::FireRight) {
+    if (deedHas(selected->deed, deed_trait::kGauntlet)) {
         m_resources->arsenal.launchGauntlet(player.actor, player.figure.get(),
                                             selected->deed == PlayerDeed::FireLeft);
         return;

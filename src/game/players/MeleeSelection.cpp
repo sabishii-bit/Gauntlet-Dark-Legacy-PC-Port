@@ -5,6 +5,8 @@
 
 #include "engine/math/PortableMath.h"
 
+#include "game/players/PlayerDeeds.h"
+
 namespace gdl::game {
 bool MeleeSelection::accepts(const Target& target, const Vec3& facing, f32 range, f32 facingDot) {
     const f32 facingLength = portable::hypot(facing.x, facing.z);
@@ -83,9 +85,7 @@ PlayerDeed MeleeSelection::deed(const MeleeSense& sense, bool strong, bool moved
     if (sense.range != MeleeRange::Swing && !steps && !slowInChain) {
         return strong ? PlayerDeed::StrongAttack : PlayerDeed::Attack;
     }
-    if (strong) {
-        return sense.low ? PlayerDeed::MeleeSlowLow : PlayerDeed::MeleeSlow;
-    }
-    return sense.low ? PlayerDeed::MeleeLow : PlayerDeed::Melee;
+    return closeDeedOf(strong ? CloseSwing::Slow : CloseSwing::Quick,
+                       sense.low ? CloseHeight::Low : CloseHeight::High);
 }
 } // namespace gdl::game

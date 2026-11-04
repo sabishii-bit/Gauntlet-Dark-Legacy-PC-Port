@@ -9,56 +9,12 @@
 #include "engine/world/AnimationPlayer.h"
 #include "engine/world/TreePose.h"
 
+#include "game/players/PlayerDeeds.h" // IWYU pragma: export
+
 namespace gdl::game {
 
 /** What a player's stick asks of the body. */
 enum class PlayerMotion : u8 { Stand, Walk, Run };
-
-/** What a player's buttons ask of it, the first that is held winning. */
-enum class PlayerDeed : u8 {
-    None,
-    Attack,
-    UsePotion,
-    ThrowPotion,
-    Die,
-    Flinch,      ///< knocked back by a blow
-    Spike,       ///< struck by spikes or a blade
-    Reel,        ///< stunned, as by a fire trap
-    TurboStrong, ///< the lesser turbo attack
-    TurboFull,   ///< the greater
-    Shove,
-    Defend,       ///< one press: raise, block, then lower the guard
-    StrongAttack, ///< the slow attack: a strong throw, with nothing in reach
-    ShieldPotion, ///< a potion spent on a ring of its magic about the character
-    FallBack,     ///< knocked off its feet from in front
-    FallForward,  ///< or from behind
-    // A legend item let fly at a boss, with the gesture its kind asks for: nothing else
-    // leaves the hand meanwhile.
-    HurlLegend,  ///< as a potion is used
-    ThrowLegend, ///< as the strong throw
-    ShootLegend, ///< the special shot
-    Grabbed,
-    Thrown,
-    Webbed,
-    Melee,
-    MeleeLow,
-    MeleeSlow,
-    MeleeSlowLow,
-    AutoMelee, ///< a moving body's close contact, not an attack-button press
-    AutoMeleeLow,
-    SuperShot,
-    Hammer,
-    Breathe,
-    FireLeft,
-    FireRight,
-    Pick,       ///< the gesture of an item picked up
-    Gag,        ///< retching at gas, Death's touch or food gone bad
-    DeathGrab,  ///< a halo's hold on Death, drawing him off
-    Whirled,    ///< swept up by a whirlwind
-    Combo,      ///< takes hold of a partner for the class's two-player combo
-    ComboHeld,  ///< in a partner's hands, playing the grabber's class's COMBO sequence
-    ComboThrown ///< let go of by the partner: the warrior's pinball, the dwarf's charger
-};
 
 /** How far the nearest thing to strike lies: within a swing, within a step, or beyond. */
 enum class MeleeRange : u8 { Beyond, Step, Swing };

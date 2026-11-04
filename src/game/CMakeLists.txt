@@ -225,6 +225,7 @@ add_library(game STATIC
     party/PartyCombo.cpp
     players/PlayerTransport.h
     players/PlayerTransport.cpp
+    players/PlayerDeeds.h
     players/PlayerAnimator.h
     players/PlayerAnimator.cpp
     players/MeleeSelection.cpp

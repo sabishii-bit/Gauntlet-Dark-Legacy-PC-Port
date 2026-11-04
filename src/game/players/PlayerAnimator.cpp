@@ -165,12 +165,6 @@ const PowerMoves& powerMovesOf(s32 character) {
     return kPowerMoves[static_cast<usize>(character)];
 }
 
-/** Whether the deed is a legend item's gesture. */
-constexpr bool isLegend(PlayerDeed deed) {
-    return deed == PlayerDeed::HurlLegend || deed == PlayerDeed::ThrowLegend ||
-           deed == PlayerDeed::ShootLegend;
-}
-
 } // namespace
 
 struct PlayerAnimator::ActionInfo {
@@ -932,7 +926,7 @@ bool PlayerAnimator::Checkpoint::valid() const {
            potionThrowTicks >= 0 && potionThrowTicks <= kMaxTicks && comboClass >= -1 &&
            comboClass < kClassCount && stillTicks >= 0 && stillTicks <= kMaxTicks &&
            fidgetTicks >= 0 && fidgetTicks <= kMaxTicks &&
-           itemReleased <= PlayerDeed::ComboThrown && strafe <= StrafeWay::Right &&
+           static_cast<usize>(itemReleased) < kPlayerDeedCount && strafe <= StrafeWay::Right &&
            std::isfinite(guardArmor) && guardArmor >= 0 && guardArmor <= kMaxGuardArmor &&
            std::isfinite(attackSeconds) && attackSeconds >= 0 &&
            attackSeconds <= AnimationPlayer::kCheckpointSeconds && std::isfinite(phaseSeconds) &&
@@ -1369,18 +1363,12 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     // DoPlayerAction (800AC068) resets current attack categories 1..10 to
     // READY with mode 2 for a category >=11 request. Do not lose a one-tick
     // turbo press while an ordinary throw, heavy throw or gauntlet is playing.
-    const bool priority = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
-                          deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
-                          deed == PlayerDeed::Breathe || deed == PlayerDeed::Combo;
-    if (priority && ordinaryAttack()) {
+    if (deedHas(deed, deed_trait::kCutsAttack) && ordinaryAttack()) {
         return true;
     }
     // The remaining requests retain their narrower interruption rules.
-    const bool cutsMelee = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
-                           deed == PlayerDeed::Shove || deed == PlayerDeed::Combo;
-    const bool cutsGuard = cutsMelee || deed == PlayerDeed::SuperShot ||
-                           deed == PlayerDeed::Hammer || deed == PlayerDeed::Breathe ||
-                           deed == PlayerDeed::HurlLegend || deed == PlayerDeed::ShootLegend;
+    const bool cutsMelee = deedHas(deed, deed_trait::kCutsMelee);
+    const bool cutsGuard = deedHas(deed, deed_trait::kCutsGuard);
     return !throwing() && (!meleeing() || cutsMelee) && !turboing() && (!guarding() || cutsGuard);
 }
 
@@ -1411,20 +1399,18 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     evaluatePresentation(m_presentationPrevious);
     m_presentationGeneration = m_player.generation();
-    if ((deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow) &&
+    if (deedHas(deed, deed_trait::kAutomatic) &&
         (motion == PlayerMotion::Stand || m_strafe != StrafeWay::None || !canAutoMelee())) {
         deed = PlayerDeed::None;
     }
     // A press is a button going down; it stays fresh until the next strike begins.
-    const bool quickHeld =
-        deed == PlayerDeed::Attack || deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow;
-    const bool strongHeld = deed == PlayerDeed::StrongAttack || deed == PlayerDeed::MeleeSlow ||
-                            deed == PlayerDeed::MeleeSlowLow;
+    const bool quickHeld = deedHas(deed, deed_trait::kAttackButton);
+    const bool strongHeld = deedHas(deed, deed_trait::kStrongButton);
     // The optional automatic-melee mode also carries held close swings through a
     // combo. Manual controls retain the native fresh-press latch, and ranged
     // attacks never advance a melee combo merely because their button is held.
-    const bool continuingMelee =
-        chainHeldMelee && (deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow);
+    const bool continuingMelee = chainHeldMelee && deedHas(deed, deed_trait::kClose) &&
+                                 deedHas(deed, deed_trait::kAttackButton);
     m_quickPress = m_quickPress || (quickHeld && !m_quickHeld) || continuingMelee;
     m_strongPress = m_strongPress || (strongHeld && !m_strongHeld);
     m_quickHeld = quickHeld;
@@ -1513,10 +1499,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A hit cuts into anything at once, unless one is already being reeled from; while it
     // plays nothing else is asked of the body.
-    const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward ||
-                        deed == PlayerDeed::Whirled;
-    const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel ||
-                        deed == PlayerDeed::Spike || deed == PlayerDeed::Webbed || felled;
+    const bool felled = deedHas(deed, deed_trait::kFells);
+    const bool struck = deedHas(deed, deed_trait::kStrikes);
     if (struck && !floored() &&
         (felled || !reacting() || (deed == PlayerDeed::Webbed && webbed()))) {
         Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
@@ -1549,7 +1533,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     if (canBegin(deed)) {
         Decision move{turboActionOf(deed)};
         move.cut = Cut::Now;
-        m_legendAsked = isLegend(deed);
+        m_legendAsked = deedHas(deed, deed_trait::kLegend);
         m_shieldAsked = false;
         play(move, seconds);
         m_turboBegan = !m_legendAsked && deed != PlayerDeed::SuperShot && !itemAttacking();
@@ -1579,12 +1563,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         }
         return;
     }
-    const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
-                            deed == PlayerDeed::Shove || deed == PlayerDeed::StrongAttack ||
-                            isLegend(deed);
-    const bool potionInterrupt =
-        ordinaryAttack() && (deed == PlayerDeed::UsePotion || deed == PlayerDeed::ThrowPotion ||
-                             deed == PlayerDeed::ShieldPotion);
+    const bool turboAsked = deedHas(deed, deed_trait::kHoldsBody);
+    const bool potionInterrupt = ordinaryAttack() && deedHas(deed, deed_trait::kPotion);
     // Locking the body below must not erase the request used by DoPlayerAction's
     // speed selection. Native fn_80088938 retains held attack bits even during
     // strong/item attacks, and PlayerMotion selects their requested action again.
@@ -1968,14 +1948,13 @@ f32 PlayerAnimator::readyTransition() const {
  * away while the stick moves, else a swing, a kick or a low strike at what is short, the
  * strong one making the slow swing, or a slow swing at anything within reach mid-chain. */
 PlayerAnimator::Action PlayerAnimator::meleeRequest(PlayerDeed deed, bool moved) const {
-    const bool automatic = deed == PlayerDeed::AutoMelee || deed == PlayerDeed::AutoMeleeLow;
-    const bool quick = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow || automatic;
-    const bool strong = deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
-    if (!quick && !strong) {
+    if (!deedHas(deed, deed_trait::kClose)) {
         return Action::Ready;
     }
-    const bool low = deed == PlayerDeed::MeleeLow || deed == PlayerDeed::MeleeSlowLow ||
-                     deed == PlayerDeed::AutoMeleeLow;
+    const bool automatic = deedHas(deed, deed_trait::kAutomatic);
+    const bool strong = deedHas(deed, deed_trait::kStrong);
+    const bool quick = !strong;
+    const bool low = deedHas(deed, deed_trait::kLow);
     const bool lunge = m_melee.range == MeleeRange::Step && !low && moved && !automatic;
     if (strong && m_chain != 0 && moved && m_melee.range != MeleeRange::Beyond) {
         return Action::SlowStart;

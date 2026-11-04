@@ -46,18 +46,6 @@ PlayerDeed PlayerImpact::reaction(f32 damage, f32 facing, bool braced) const {
 }
 
 PlayerDeed PlayerImpact::combine(PlayerDeed pending, PlayerDeed incoming) {
-    const auto rank = [](PlayerDeed deed) {
-        switch (deed) {
-        case PlayerDeed::Whirled: return 5;
-        case PlayerDeed::FallBack:
-        case PlayerDeed::FallForward: return 4;
-        case PlayerDeed::Flinch: return 3;
-        case PlayerDeed::Spike: return 2;
-        case PlayerDeed::Reel:
-        case PlayerDeed::Webbed: return 1;
-        default: return 0;
-        }
-    };
-    return rank(incoming) > rank(pending) ? incoming : pending;
+    return reactionRank(incoming) > reactionRank(pending) ? incoming : pending;
 }
 } // namespace gdl::game

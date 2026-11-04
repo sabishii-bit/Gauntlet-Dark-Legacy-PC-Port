@@ -123,7 +123,7 @@ TEST_CASE("native player checkpoint wire rejects truncated, widened and unknown 
         {48, static_cast<u32>(PlayerAnimator::Foot::Second) + 1},
         {52, static_cast<u32>(MeleeBlow::Power) + 1},
         {56, static_cast<u32>(MeleeRange::Swing) + 1},
-        {92, static_cast<u32>(PlayerDeed::ComboThrown) + 1},
+        {92, static_cast<u32>(kPlayerDeedCount)},
         {96, static_cast<u32>(StrafeWay::Right) + 1},
     }};
     for (const auto [offset, invalid] : kEnums) {

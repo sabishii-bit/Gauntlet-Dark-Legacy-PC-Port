@@ -632,7 +632,6 @@ TEST_CASE("native spike reactions play HITREACT rather than the unused SPIKEHIT 
     }
 }
 
-constexpr usize kDeedCount = static_cast<usize>(PlayerDeed::ComboThrown) + 1;
 constexpr s32 kLongFrames = 16;         ///< frames of every action in longActionTree
 constexpr f32 kSpellStormFrame = 11.0f; ///< the full turbo's last frame that still turns it
 
@@ -776,7 +775,7 @@ u32 answersOf(const PlayerAnimator& animator) {
 /** Bit d: whether the deed numbered d may begin now. */
 u64 beginsOf(const PlayerAnimator& animator) {
     u64 begins = 0;
-    for (usize deed = 0; deed < kDeedCount; ++deed) {
+    for (usize deed = 0; deed < kPlayerDeedCount; ++deed) {
         if (animator.canBegin(static_cast<PlayerDeed>(deed))) {
             begins |= u64{1} << deed;
         }
@@ -805,9 +804,9 @@ constexpr std::array kMotions{PlayerMotion::Stand, PlayerMotion::Walk, PlayerMot
 
 /** Every deed but dying, in their order. */
 constexpr auto kLivingDeeds = [] {
-    std::array<PlayerDeed, kDeedCount - 1> deeds{};
+    std::array<PlayerDeed, kPlayerDeedCount - 1> deeds{};
     usize next = 0;
-    for (usize deed = 0; deed < kDeedCount; ++deed) {
+    for (usize deed = 0; deed < kPlayerDeedCount; ++deed) {
         if (static_cast<PlayerDeed>(deed) != PlayerDeed::Die) {
             deeds[next++] = static_cast<PlayerDeed>(deed);
         }
@@ -1299,7 +1298,7 @@ TEST_CASE("each action keeps its answer to every animator predicate and each dee
             CHECK(((answers & predicate.bit) != 0) == ((kRows[i].answers & predicate.bit) != 0));
         }
         const u64 begins = beginsOf(animator);
-        for (usize deed = 0; deed < kDeedCount; ++deed) {
+        for (usize deed = 0; deed < kPlayerDeedCount; ++deed) {
             CAPTURE(deed);
             CHECK(((begins >> deed) & 1U) == ((kRows[i].begins >> deed) & 1U));
         }

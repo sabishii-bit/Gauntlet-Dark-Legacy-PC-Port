@@ -8,7 +8,7 @@
 
 #include "game/bosses/LegendItems.h"
 #include "game/level/BossKinds.h"
-#include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace gdl::game {
 namespace {
