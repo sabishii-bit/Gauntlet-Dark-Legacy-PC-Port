@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <numbers>
 
@@ -99,5 +100,41 @@ TEST_CASE("a lesser contact cannot erase a queued knockdown", "[game][players][p
     REQUIRE(PlayerImpact::combine(PlayerDeed::FallBack, PlayerDeed::Spike) == PlayerDeed::FallBack);
     REQUIRE(PlayerImpact::combine(PlayerDeed::FallForward, PlayerDeed::None) ==
             PlayerDeed::FallForward);
+}
+
+TEST_CASE("a pending reaction gives way only to a deed of higher rank, for every pair",
+          "[game][players][player-impact][reaction-rank]") {
+    // combine's rank of each deed: the higher wins, and a tie keeps the one pending.
+    struct Rank {
+        PlayerDeed deed;
+        s32 rank;
+    };
+    constexpr usize kDeedCount = static_cast<usize>(PlayerDeed::ComboThrown) + 1;
+    constexpr std::array<Rank, kDeedCount> kRanks{{
+        {PlayerDeed::None, 0},         {PlayerDeed::Attack, 0},       {PlayerDeed::UsePotion, 0},
+        {PlayerDeed::ThrowPotion, 0},  {PlayerDeed::Die, 0},          {PlayerDeed::Flinch, 3},
+        {PlayerDeed::Spike, 2},        {PlayerDeed::Reel, 1},         {PlayerDeed::TurboStrong, 0},
+        {PlayerDeed::TurboFull, 0},    {PlayerDeed::Shove, 0},        {PlayerDeed::Defend, 0},
+        {PlayerDeed::StrongAttack, 0}, {PlayerDeed::ShieldPotion, 0}, {PlayerDeed::FallBack, 4},
+        {PlayerDeed::FallForward, 4},  {PlayerDeed::HurlLegend, 0},   {PlayerDeed::ThrowLegend, 0},
+        {PlayerDeed::ShootLegend, 0},  {PlayerDeed::Grabbed, 0},      {PlayerDeed::Thrown, 0},
+        {PlayerDeed::Webbed, 1},       {PlayerDeed::Melee, 0},        {PlayerDeed::MeleeLow, 0},
+        {PlayerDeed::MeleeSlow, 0},    {PlayerDeed::MeleeSlowLow, 0}, {PlayerDeed::AutoMelee, 0},
+        {PlayerDeed::AutoMeleeLow, 0}, {PlayerDeed::SuperShot, 0},    {PlayerDeed::Hammer, 0},
+        {PlayerDeed::Breathe, 0},      {PlayerDeed::FireLeft, 0},     {PlayerDeed::FireRight, 0},
+        {PlayerDeed::Pick, 0},         {PlayerDeed::Gag, 0},          {PlayerDeed::DeathGrab, 0},
+        {PlayerDeed::Whirled, 5},      {PlayerDeed::Combo, 0},        {PlayerDeed::ComboHeld, 0},
+        {PlayerDeed::ComboThrown, 0},
+    }};
+    for (usize pending = 0; pending < kDeedCount; ++pending) {
+        REQUIRE(kRanks[pending].deed == static_cast<PlayerDeed>(pending));
+        for (usize incoming = 0; incoming < kDeedCount; ++incoming) {
+            CAPTURE(pending, incoming);
+            const auto& held = kRanks[pending];
+            const auto& landed = kRanks[incoming];
+            CHECK(PlayerImpact::combine(held.deed, landed.deed) ==
+                  (landed.rank > held.rank ? landed.deed : held.deed));
+        }
+    }
 }
 } // namespace

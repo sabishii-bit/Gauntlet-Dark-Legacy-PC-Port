@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -8,8 +10,10 @@
 
 #include "engine/assets/AnimationSet.h"
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "TestSupport.h"
+#include "game/characters/ClassData.h"
 #include "game/players/PlayerAnimator.h"
 
 namespace {
@@ -625,6 +629,1025 @@ TEST_CASE("native spike reactions play HITREACT rather than the unused SPIKEHIT 
         }
         REQUIRE(animator.action() == Action::Ready);
         CHECK_FALSE(animator.player().transitioning());
+    }
+}
+
+constexpr usize kDeedCount = static_cast<usize>(PlayerDeed::ComboThrown) + 1;
+constexpr s32 kLongFrames = 16;         ///< frames of every action in longActionTree
+constexpr f32 kSpellStormFrame = 11.0f; ///< the full turbo's last frame that still turns it
+
+/** actionTree with every action's sequence long enough to stand in past kSpellStormFrame. */
+TreeInfo longActionTree() {
+    auto tree = actionTree();
+    for (usize i = 1; i < tree.sequences.size(); ++i) {
+        tree.sequences[i].frames = kLongFrames;
+    }
+    return tree;
+}
+
+PlayerAnimator boundTo(const TreeInfo& tree) {
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    return animator;
+}
+
+/** A copy of `bound` restored into `action` through a copy of its own checkpoint: the body of
+ * `character`, the stick moved or not, `frame` frames in, a quick press pending or not. */
+PlayerAnimator restoredInto(const PlayerAnimator& bound, Action action, s32 character = -1,
+                            bool moved = false, f32 frame = 0.0f, bool pressed = false) {
+    auto animator = bound;
+    auto state = animator.checkpoint();
+    state.action = action;
+    state.animation.sequence = animator.sequenceOf(action);
+    state.animation.frame = frame;
+    state.animation.time = static_cast<f64>(frame) * state.animation.secondsPerFrame;
+    state.character = character;
+    state.moved = moved;
+    state.quickPress = pressed;
+    REQUIRE(animator.restore(state));
+    return animator;
+}
+
+/** One bit for each thing the animator answers of the action it is in, in kPredicates' order. */
+namespace answer {
+constexpr u32 kComboing = 1U << 0U;
+constexpr u32 kComboBound = 1U << 1U;
+constexpr u32 kComboThrown = 1U << 2U;
+constexpr u32 kComboTakeable = 1U << 3U;
+constexpr u32 kGrabbingDeath = 1U << 4U;
+constexpr u32 kStrafing = 1U << 5U;
+constexpr u32 kFloored = 1U << 6U;
+constexpr u32 kThrowing = 1U << 7U;
+constexpr u32 kConjuring = 1U << 8U;
+constexpr u32 kDying = 1U << 9U;
+constexpr u32 kRecovering = 1U << 10U;
+constexpr u32 kMeleeing = 1U << 11U;
+constexpr u32 kEntering = 1U << 12U;
+constexpr u32 kRunning = 1U << 13U;
+constexpr u32 kLunging = 1U << 14U;
+constexpr u32 kWebbed = 1U << 15U;
+constexpr u32 kGuarding = 1U << 16U;
+constexpr u32 kDefending = 1U << 17U;
+constexpr u32 kShoving = 1U << 18U;
+constexpr u32 kTurboing = 1U << 19U;
+constexpr u32 kSpecialShooting = 1U << 20U;
+constexpr u32 kDamageProtected = 1U << 21U;
+constexpr u32 kItemAttacking = 1U << 22U;
+constexpr u32 kStrongThrowing = 1U << 23U;
+constexpr u32 kReacting = 1U << 24U;
+constexpr u32 kCanAutoMelee = 1U << 25U;
+constexpr u32 kIsBlockableAttack = 1U << 26U;
+constexpr u32 kIsMelee = 1U << 27U;
+constexpr u32 kLocomotion = 1U << 28U;
+constexpr u32 kRollbackTurboAction = 1U << 29U;
+constexpr u32 kRollbackShoveAction = 1U << 30U;
+} // namespace answer
+
+/** A predicate the animator answers of its current action, by its bit and name. */
+struct Predicate {
+    u32 bit;
+    std::string_view name;
+    bool (*holds)(const PlayerAnimator& animator);
+};
+
+constexpr std::array kPredicates{
+    Predicate{answer::kComboing, "comboing", [](const PlayerAnimator& a) { return a.comboing(); }},
+    Predicate{answer::kComboBound, "comboBound",
+              [](const PlayerAnimator& a) { return a.comboBound(); }},
+    Predicate{answer::kComboThrown, "comboThrown",
+              [](const PlayerAnimator& a) { return a.comboThrown(); }},
+    Predicate{answer::kComboTakeable, "comboTakeable",
+              [](const PlayerAnimator& a) { return a.comboTakeable(); }},
+    Predicate{answer::kGrabbingDeath, "grabbingDeath",
+              [](const PlayerAnimator& a) { return a.grabbingDeath(); }},
+    Predicate{answer::kStrafing, "strafing", [](const PlayerAnimator& a) { return a.strafing(); }},
+    Predicate{answer::kFloored, "floored", [](const PlayerAnimator& a) { return a.floored(); }},
+    Predicate{answer::kThrowing, "throwing", [](const PlayerAnimator& a) { return a.throwing(); }},
+    Predicate{answer::kConjuring, "conjuring",
+              [](const PlayerAnimator& a) { return a.conjuring(); }},
+    Predicate{answer::kDying, "dying", [](const PlayerAnimator& a) { return a.dying(); }},
+    Predicate{answer::kRecovering, "recovering",
+              [](const PlayerAnimator& a) { return a.recovering(); }},
+    Predicate{answer::kMeleeing, "meleeing", [](const PlayerAnimator& a) { return a.meleeing(); }},
+    Predicate{answer::kEntering, "entering", [](const PlayerAnimator& a) { return a.entering(); }},
+    Predicate{answer::kRunning, "running", [](const PlayerAnimator& a) { return a.running(); }},
+    Predicate{answer::kLunging, "lunging", [](const PlayerAnimator& a) { return a.lunging(); }},
+    Predicate{answer::kWebbed, "webbed", [](const PlayerAnimator& a) { return a.webbed(); }},
+    Predicate{answer::kGuarding, "guarding", [](const PlayerAnimator& a) { return a.guarding(); }},
+    Predicate{answer::kDefending, "defending",
+              [](const PlayerAnimator& a) { return a.defending(); }},
+    Predicate{answer::kShoving, "shoving", [](const PlayerAnimator& a) { return a.shoving(); }},
+    Predicate{answer::kTurboing, "turboing", [](const PlayerAnimator& a) { return a.turboing(); }},
+    Predicate{answer::kSpecialShooting, "specialShooting",
+              [](const PlayerAnimator& a) { return a.specialShooting(); }},
+    Predicate{answer::kDamageProtected, "damageProtected",
+              [](const PlayerAnimator& a) { return a.damageProtected(); }},
+    Predicate{answer::kItemAttacking, "itemAttacking",
+              [](const PlayerAnimator& a) { return a.itemAttacking(); }},
+    Predicate{answer::kStrongThrowing, "strongThrowing",
+              [](const PlayerAnimator& a) { return a.strongThrowing(); }},
+    Predicate{answer::kReacting, "reacting", [](const PlayerAnimator& a) { return a.reacting(); }},
+    Predicate{answer::kCanAutoMelee, "canAutoMelee",
+              [](const PlayerAnimator& a) { return a.canAutoMelee(); }},
+    Predicate{
+        answer::kIsBlockableAttack, "isBlockableAttack",
+        [](const PlayerAnimator& a) { return PlayerAnimator::isBlockableAttack(a.action()); }},
+    Predicate{answer::kIsMelee, "isMelee",
+              [](const PlayerAnimator& a) { return PlayerAnimator::isMelee(a.action()); }},
+    Predicate{answer::kLocomotion, "locomotion",
+              [](const PlayerAnimator& a) { return PlayerAnimator::locomotion(a.action()); }},
+    Predicate{
+        answer::kRollbackTurboAction, "rollbackTurboAction",
+        [](const PlayerAnimator& a) { return PlayerAnimator::rollbackTurboAction(a.action()); }},
+    Predicate{answer::kRollbackShoveAction, "rollbackShoveAction", [](const PlayerAnimator& a) {
+                  return PlayerAnimator::rollbackShoveAction(a.action());
+              }}};
+
+u32 answersOf(const PlayerAnimator& animator) {
+    u32 answers = 0;
+    for (const auto& predicate : kPredicates) {
+        if (predicate.holds(animator)) {
+            answers |= predicate.bit;
+        }
+    }
+    return answers;
+}
+
+/** Bit d: whether the deed numbered d may begin now. */
+u64 beginsOf(const PlayerAnimator& animator) {
+    u64 begins = 0;
+    for (usize deed = 0; deed < kDeedCount; ++deed) {
+        if (animator.canBegin(static_cast<PlayerDeed>(deed))) {
+            begins |= u64{1} << deed;
+        }
+    }
+    return begins;
+}
+
+/** What one tick of a trace asks of the body, and what the body is told before it is asked. */
+struct TraceInput {
+    PlayerMotion motion = PlayerMotion::Stand;
+    PlayerDeed deed = PlayerDeed::None;
+    MeleeSense melee;
+    StrafeWay strafe = StrafeWay::None;
+    s32 comboClass = -1;
+    bool ride = false;
+    bool shielded = false;
+    bool pushed = false;
+    bool rapid = false;
+    bool speed = false;
+    bool chainHeld = false;
+};
+
+constexpr s32 kTraceTicks = 90;
+constexpr std::array kTraceClasses{0, 2, 3, 5, 6, 7};
+constexpr std::array kMotions{PlayerMotion::Stand, PlayerMotion::Walk, PlayerMotion::Run};
+
+/** Every deed but dying, in their order. */
+constexpr auto kLivingDeeds = [] {
+    std::array<PlayerDeed, kDeedCount - 1> deeds{};
+    usize next = 0;
+    for (usize deed = 0; deed < kDeedCount; ++deed) {
+        if (static_cast<PlayerDeed>(deed) != PlayerDeed::Die) {
+            deeds[next++] = static_cast<PlayerDeed>(deed);
+        }
+    }
+    return deeds;
+}();
+
+/** Nothing asked: what each action gives way to by itself. */
+TraceInput standing(s32 /*tick*/) {
+    return {};
+}
+
+/** Walking, running, then standing, with a shield borne for a while and another member
+ * pushing twice. */
+TraceInput afoot(s32 tick) {
+    TraceInput input;
+    input.motion = tick < 30   ? PlayerMotion::Walk
+                   : tick < 60 ? PlayerMotion::Run
+                               : PlayerMotion::Stand;
+    input.shielded = tick >= 20 && tick < 70;
+    input.pushed = (tick >= 40 && tick < 50) || (tick >= 75 && tick < 85);
+    return input;
+}
+
+/** The attack held standing and then walking, with rapid fire and then speed, then let go. */
+TraceInput throwing(s32 tick) {
+    TraceInput input;
+    input.deed = tick < 60 ? PlayerDeed::Attack : PlayerDeed::None;
+    input.motion = tick < 30 ? PlayerMotion::Stand : PlayerMotion::Walk;
+    input.rapid = tick < 45;
+    input.speed = tick >= 45;
+    return input;
+}
+
+/** A quick close attack pressed every sixth tick at something within a swing. */
+TraceInput quickPresses(s32 tick) {
+    TraceInput input;
+    input.deed = tick % 6 < 3 ? PlayerDeed::Melee : PlayerDeed::None;
+    return input;
+}
+
+/** Quick and strong presses in turn while walking, at something a step away, then within a
+ * swing, then beyond, lying all round. */
+TraceInput steppingSwings(s32 tick) {
+    constexpr std::array kDeeds{PlayerDeed::Melee, PlayerDeed::Melee,     PlayerDeed::None,
+                                PlayerDeed::None,  PlayerDeed::MeleeSlow, PlayerDeed::MeleeSlow,
+                                PlayerDeed::None,  PlayerDeed::None};
+    constexpr f32 kYawStep = 0.9f;
+    TraceInput input;
+    input.deed = kDeeds[static_cast<usize>(tick) % kDeeds.size()];
+    input.motion = PlayerMotion::Walk;
+    input.melee.range = tick < 30   ? MeleeRange::Step
+                        : tick < 60 ? MeleeRange::Swing
+                                    : MeleeRange::Beyond;
+    input.melee.yaw = static_cast<f32>(tick % 7 - 3) * kYawStep;
+    return input;
+}
+
+/** Low strikes, quick and strong in turn, at something short within a swing to one side. */
+TraceInput lowStrikes(s32 tick) {
+    TraceInput input;
+    const s32 phase = tick % 6;
+    input.deed = phase < 2                  ? PlayerDeed::MeleeLow
+                 : phase == 3 || phase == 4 ? PlayerDeed::MeleeSlowLow
+                                            : PlayerDeed::None;
+    input.melee = {MeleeRange::Swing, true, 0.5f};
+    return input;
+}
+
+/** The quick button held through a chain, as the automatic melee mode carries it, then held
+ * low, at something within a swing and then a step away by turns. */
+TraceInput heldChains(s32 tick) {
+    TraceInput input;
+    input.deed = tick < 45 ? PlayerDeed::Melee : PlayerDeed::MeleeLow;
+    input.chainHeld = true;
+    input.melee.range = tick % 30 < 20 ? MeleeRange::Swing : MeleeRange::Step;
+    return input;
+}
+
+/** Close contact walking and then running, at something a step away and within a swing by
+ * turns. */
+TraceInput automaticMelee(s32 tick) {
+    TraceInput input;
+    input.motion = tick < 45 ? PlayerMotion::Walk : PlayerMotion::Run;
+    input.deed = tick % 4 < 2 ? PlayerDeed::AutoMelee : PlayerDeed::AutoMeleeLow;
+    input.melee.range = tick % 30 < 15 ? MeleeRange::Step : MeleeRange::Swing;
+    return input;
+}
+
+/** Every deed but dying for a tick each, standing, walking and running by turns, at something
+ * within a swing aside, in a warrior's combo and then a dwarf's, the items on and off. */
+TraceInput everyDeed(s32 tick) {
+    TraceInput input;
+    input.deed = kLivingDeeds[static_cast<usize>(tick) % kLivingDeeds.size()];
+    input.motion = kMotions[static_cast<usize>(tick / 5) % kMotions.size()];
+    input.melee = {MeleeRange::Swing, tick % 2 == 0, 1.2f};
+    input.comboClass = tick < 45 ? 0 : 4;
+    input.ride = tick < 70;
+    input.rapid = tick % 30 < 15;
+    input.speed = tick % 20 < 10;
+    return input;
+}
+
+/** Every deed but dying held two ticks each while walking, at something a step away, ridden in
+ * a dwarf's combo. */
+TraceInput heldDeeds(s32 tick) {
+    TraceInput input;
+    input.deed = kLivingDeeds[static_cast<usize>(tick / 2) % kLivingDeeds.size()];
+    input.motion = PlayerMotion::Walk;
+    input.melee.range = MeleeRange::Step;
+    input.comboClass = 4;
+    input.ride = true;
+    return input;
+}
+
+/** Strafing each way in turn and then not, shooting through the second half of each. */
+TraceInput strafing(s32 tick) {
+    constexpr std::array kWays{StrafeWay::Forward, StrafeWay::Back, StrafeWay::Left,
+                               StrafeWay::Right, StrafeWay::None};
+    TraceInput input;
+    input.strafe = kWays[static_cast<usize>(tick / 18) % kWays.size()];
+    input.motion = PlayerMotion::Walk;
+    input.deed = tick % 18 >= 9 ? PlayerDeed::Attack : PlayerDeed::None;
+    return input;
+}
+
+/** Held in a partner's combo, flung or ridden, then making one's own: a warrior's and then a
+ * dwarf's. */
+TraceInput combos(s32 tick) {
+    TraceInput input;
+    const s32 phase = tick % 45;
+    input.deed = phase < 15   ? PlayerDeed::ComboHeld
+                 : phase < 35 ? PlayerDeed::ComboThrown
+                              : PlayerDeed::Combo;
+    input.comboClass = tick < 45 ? 0 : 4;
+    input.ride = phase < 40;
+    return input;
+}
+
+/** Walking, then struck dead. */
+TraceInput falling(s32 tick) {
+    TraceInput input;
+    input.motion = PlayerMotion::Walk;
+    input.deed = tick < 20 ? PlayerDeed::None : PlayerDeed::Die;
+    return input;
+}
+
+/** SHA-256, in hex, of what each action does over kTraceTicks of `script` from its first frame,
+ * for each of kTraceClasses: the action and sequence, the footfall, every release, the blow,
+ * the chain, the presses, the pace and turn, and whether a blend is under way. */
+std::string traceDigest(const PlayerAnimator& bound, TraceInput (*script)(s32 tick)) {
+    NativeStateDigest digest;
+    for (const s32 character : kTraceClasses) {
+        for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+            auto animator = restoredInto(bound, static_cast<Action>(i), character);
+            for (s32 tick = 0; tick < kTraceTicks; ++tick) {
+                const TraceInput input = script(tick);
+                animator.setMelee(input.melee);
+                animator.setStrafe(input.strafe);
+                animator.setCombo(input.comboClass, input.ride);
+                animator.setShielded(input.shielded);
+                animator.setPushed(input.pushed);
+                animator.setAttackSpeed(input.rapid, input.speed);
+                animator.update(input.motion, 1, kStep, input.deed, input.chainHeld);
+                const auto state = animator.checkpoint();
+                digest.values(
+                    animator.action(), animator.player().sequence(), animator.footfall(),
+                    animator.released(), animator.strongReleased(), animator.superReleased(),
+                    animator.legendReleased(), animator.potionUsed(), animator.potionThrown(),
+                    animator.potionShielded(), animator.itemReleased(), animator.turboBegan(),
+                    animator.dead(), animator.castingLegend(), animator.meleeBlow(),
+                    animator.meleeChain(), state.quickPress, state.strongPress,
+                    animator.moveScale(), animator.turnScale(), animator.player().transitioning());
+            }
+        }
+    }
+    return test::hexBytes(digest.finish());
+}
+
+/** A trace's script, and the digest traceDigest gives of it. */
+struct TraceScript {
+    std::string_view name;
+    TraceInput (*input)(s32 tick);
+    std::string_view digest;
+};
+
+TEST_CASE("each action keeps its answer to every animator predicate and each deed it lets begin",
+          "[game][players][player-animation][action-traits]") {
+    // Keyed by action, since sequence names repeat (SpikeHit plays HITREACT). The last column is
+    // canBegin's answer for each deed, bit d for the deed numbered d.
+    struct Row {
+        Action action;
+        u32 answers;
+        u64 begins;
+    };
+    constexpr std::array<Row, PlayerAnimator::kActionCount> kRows{{
+        {Action::Ready, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Idle1, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Idle2, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Idle2Loop, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Walk1, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Walk2, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Run1,
+         answer::kComboTakeable | answer::kRunning | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Run2,
+         answer::kComboTakeable | answer::kRunning | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::Start, answer::kEntering, 0x0000000000},
+        {Action::Throw, answer::kComboTakeable | answer::kThrowing, 0x2070000300},
+        {Action::ThrowMoving, answer::kComboTakeable | answer::kThrowing, 0x2070000300},
+        {Action::ThrowRelease, answer::kComboTakeable | answer::kThrowing, 0x2070000300},
+        {Action::ThrowMovingRelease, answer::kComboTakeable | answer::kThrowing, 0x2070000300},
+        {Action::ThrowRecover, answer::kComboTakeable | answer::kThrowing | answer::kRecovering,
+         0x2070000300},
+        {Action::ThrowMovingRecover,
+         answer::kComboTakeable | answer::kThrowing | answer::kRecovering, 0x2070000300},
+        {Action::UsePotion, answer::kConjuring | answer::kCanAutoMelee, 0x0000000000},
+        {Action::UsePotionRelease, answer::kConjuring | answer::kCanAutoMelee, 0x0000000000},
+        {Action::ThrowPotion, answer::kConjuring | answer::kCanAutoMelee, 0x0000000000},
+        {Action::ThrowPotionRelease, answer::kConjuring | answer::kCanAutoMelee, 0x0000000000},
+        {Action::Death, answer::kDying, 0x0000000000},
+        {Action::HitReact, answer::kReacting, 0x0000000000},
+        {Action::Stun, answer::kReacting, 0x0000000000},
+        {Action::TurboStrong,
+         answer::kTurboing | answer::kDamageProtected | answer::kIsBlockableAttack |
+             answer::kRollbackTurboAction,
+         0x0000000000},
+        {Action::TurboFull,
+         answer::kTurboing | answer::kDamageProtected | answer::kIsBlockableAttack |
+             answer::kRollbackTurboAction,
+         0x0000000000},
+        {Action::Shove, answer::kShoving | answer::kTurboing | answer::kRollbackShoveAction,
+         0x2070000300},
+        {Action::DefendRaise, answer::kGuarding, 0x2070050700},
+        {Action::Defend, answer::kGuarding | answer::kDefending, 0x2070050700},
+        {Action::DefendLower, answer::kGuarding, 0x2070050700},
+        {Action::StrongThrow,
+         answer::kTurboing | answer::kStrongThrowing | answer::kIsBlockableAttack, 0x2070000300},
+        {Action::StrongThrowRecover,
+         answer::kTurboing | answer::kStrongThrowing | answer::kIsBlockableAttack, 0x2070000300},
+        {Action::StrafeForward1,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeForward2,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeBack1,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeBack2,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeLeft1,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeLeft2,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeRight1,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeRight2,
+         answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::StrafeShootForward1, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootForward2, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootBack1, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootBack2, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootLeft1, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootLeft2, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootRight1, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::StrafeShootRight2, answer::kComboTakeable | answer::kStrafing, 0x21F0071700},
+        {Action::FallBack, answer::kFloored | answer::kReacting, 0x0000000000},
+        {Action::GetUpBack, answer::kFloored | answer::kReacting, 0x0000000000},
+        {Action::FallForward, answer::kFloored | answer::kReacting, 0x0000000000},
+        {Action::GetUpForward, answer::kFloored | answer::kReacting, 0x0000000000},
+        {Action::SpecialShot,
+         answer::kTurboing | answer::kSpecialShooting | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::SpecialShotRecover,
+         answer::kTurboing | answer::kSpecialShooting | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::SpikeHit, answer::kReacting, 0x0000000000},
+        {Action::Grabbed, answer::kReacting, 0x0000000000},
+        {Action::WebReact, answer::kWebbed | answer::kReacting, 0x0000000000},
+        {Action::Quick1, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Quick2, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Quick3, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Quick2Recover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Quick3Recover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::SlowStart,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::SlowSwing,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::SlowRecover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::LowKick, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::LowKickRecover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Low1, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee, 0x2070000700},
+        {Action::Low2, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee, 0x2070000700},
+        {Action::LowRecover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Right, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Right2, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::RightRecover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Right2Recover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Left, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee, 0x2070000700},
+        {Action::Left2, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::LeftRecover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Left2Recover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Turn, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee, 0x2070000700},
+        {Action::Turn2, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::TurnRecover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Turn2Recover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::TurnLeft, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::TurnLeft2, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::TurnLeftRecover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::TurnLeft2Recover, answer::kComboTakeable | answer::kMeleeing | answer::kIsMelee,
+         0x2070000700},
+        {Action::Spin,
+         answer::kComboTakeable | answer::kMeleeing | answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::SpinRecover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::Step1,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::Step2,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::Step3,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::Step2Recover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::Step3Recover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::WalkStrike,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::WalkStrikeRecover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kLunging | answer::kIsMelee,
+         0x2070000700},
+        {Action::PowerClose,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::PowerCloseRecover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::PowerMed,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::PowerMedRecover,
+         answer::kComboTakeable | answer::kMeleeing | answer::kCanAutoMelee |
+             answer::kIsBlockableAttack | answer::kIsMelee,
+         0x2070000700},
+        {Action::PowerLow, answer::kMeleeing | answer::kIsMelee, 0x2070000700},
+        {Action::PowerLowRecover, answer::kMeleeing | answer::kIsMelee, 0x2070000700},
+        {Action::SpecialShotRepeat,
+         answer::kTurboing | answer::kSpecialShooting | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::Hammer,
+         answer::kTurboing | answer::kDamageProtected | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::HammerRecover,
+         answer::kTurboing | answer::kDamageProtected | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::Breathe,
+         answer::kTurboing | answer::kDamageProtected | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::BreatheRecover,
+         answer::kTurboing | answer::kDamageProtected | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::FireLeft, answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack,
+         0x2070000300},
+        {Action::FireLeftRecover,
+         answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack, 0x2070000300},
+        {Action::FireRight, answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack,
+         0x2070000300},
+        {Action::FireRightRecover,
+         answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack, 0x2070000300},
+        {Action::Pick, answer::kComboTakeable | answer::kCanAutoMelee, 0x21F0071700},
+        {Action::Gag, answer::kComboTakeable | answer::kCanAutoMelee, 0x21F0071700},
+        {Action::ShieldReady, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::ShieldRun, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
+         0x21F0071700},
+        {Action::DeathGrabStart, answer::kComboTakeable | answer::kGrabbingDeath, 0x21F0071700},
+        {Action::DeathGrab, answer::kComboTakeable | answer::kGrabbingDeath, 0x21F0071700},
+        {Action::DeathGrabRelease, answer::kComboTakeable | answer::kGrabbingDeath, 0x21F0071700},
+        {Action::Whirled, answer::kFloored | answer::kReacting, 0x0000000000},
+        {Action::Pushed, answer::kComboTakeable | answer::kCanAutoMelee, 0x21F0071700},
+        {Action::ComboAct1,
+         answer::kComboing | answer::kTurboing | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::ComboAct2,
+         answer::kComboing | answer::kTurboing | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::ComboAct3,
+         answer::kComboing | answer::kTurboing | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::ComboWar1,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboWar2,
+         answer::kComboBound | answer::kComboThrown | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::ComboWar3,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboVal,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboWiz,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboArc,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboDwf1,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboDwf2,
+         answer::kComboBound | answer::kComboThrown | answer::kDamageProtected |
+             answer::kIsBlockableAttack,
+         0x0000000000},
+        {Action::ComboDwf3,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboKni,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboSor,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+        {Action::ComboJes,
+         answer::kComboBound | answer::kDamageProtected | answer::kIsBlockableAttack, 0x0000000000},
+    }};
+    const auto tree = actionTree();
+    const auto bound = boundTo(tree);
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        CAPTURE(i);
+        REQUIRE(kRows[i].action == static_cast<Action>(i));
+        const auto animator = restoredInto(bound, kRows[i].action);
+        const u32 answers = answersOf(animator);
+        for (const auto& predicate : kPredicates) {
+            CAPTURE(predicate.name);
+            CHECK(((answers & predicate.bit) != 0) == ((kRows[i].answers & predicate.bit) != 0));
+        }
+        const u64 begins = beginsOf(animator);
+        for (usize deed = 0; deed < kDeedCount; ++deed) {
+            CAPTURE(deed);
+            CHECK(((begins >> deed) & 1U) == ((kRows[i].begins >> deed) & 1U));
+        }
+    }
+    // Past the actions every static answer is no.
+    for (const usize beyond : {PlayerAnimator::kActionCount, usize{255}}) {
+        CAPTURE(beyond);
+        const auto action = static_cast<Action>(beyond);
+        CHECK_FALSE(PlayerAnimator::isBlockableAttack(action));
+        CHECK_FALSE(PlayerAnimator::isMelee(action));
+        CHECK_FALSE(PlayerAnimator::locomotion(action));
+        CHECK_FALSE(PlayerAnimator::rollbackTurboAction(action));
+        CHECK_FALSE(PlayerAnimator::rollbackShoveAction(action));
+    }
+}
+
+TEST_CASE("each action leaves the body its pace and turn by class, stick and frame",
+          "[game][players][player-animation][action-traits]") {
+    // For a body of no class at kSpellStormFrame: the pace standing and moving, and the turn.
+    struct Scales {
+        Action action;
+        f32 standing;
+        f32 moving;
+        f32 turn;
+    };
+    constexpr std::array<Scales, PlayerAnimator::kActionCount> kScales{{
+        {Action::Ready, 1.0f, 1.0f, 1.0f},
+        {Action::Idle1, 1.0f, 1.0f, 1.0f},
+        {Action::Idle2, 1.0f, 1.0f, 1.0f},
+        {Action::Idle2Loop, 1.0f, 1.0f, 1.0f},
+        {Action::Walk1, 1.0f, 1.0f, 1.0f},
+        {Action::Walk2, 1.0f, 1.0f, 1.0f},
+        {Action::Run1, 1.3f, 1.3f, 1.0f},
+        {Action::Run2, 1.3f, 1.3f, 1.0f},
+        {Action::Start, 0.0f, 0.0f, 1.0f},
+        {Action::Throw, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowMoving, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowRelease, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowMovingRelease, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowRecover, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowMovingRecover, 0.0f, 0.0f, 1.0f},
+        {Action::UsePotion, 0.0f, 0.0f, 1.0f},
+        {Action::UsePotionRelease, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowPotion, 0.0f, 0.0f, 1.0f},
+        {Action::ThrowPotionRelease, 0.0f, 0.0f, 1.0f},
+        {Action::Death, 1.0f, 1.0f, 1.0f},
+        {Action::HitReact, 0.0f, 0.0f, 1.0f},
+        {Action::Stun, 0.0f, 0.0f, 1.0f},
+        {Action::TurboStrong, 0.0f, 0.0f, 1.0f},
+        {Action::TurboFull, 0.0f, 0.0f, 0.25f},
+        {Action::Shove, 1.5f, 1.5f, 1.0f},
+        {Action::DefendRaise, 0.0f, 0.0f, 1.0f},
+        {Action::Defend, 0.0f, 0.0f, 1.0f},
+        {Action::DefendLower, 0.0f, 0.0f, 1.0f},
+        {Action::StrongThrow, 0.0f, 0.0f, 1.0f},
+        {Action::StrongThrowRecover, 0.0f, 0.0f, 1.0f},
+        {Action::StrafeForward1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeForward2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeBack1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeBack2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeLeft1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeLeft2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeRight1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeRight2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootForward1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootForward2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootBack1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootBack2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootLeft1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootLeft2, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootRight1, 0.667f, 0.667f, 1.0f},
+        {Action::StrafeShootRight2, 0.667f, 0.667f, 1.0f},
+        {Action::FallBack, 0.0f, 0.0f, 1.0f},
+        {Action::GetUpBack, 0.0f, 0.0f, 1.0f},
+        {Action::FallForward, 0.0f, 0.0f, 1.0f},
+        {Action::GetUpForward, 0.0f, 0.0f, 1.0f},
+        {Action::SpecialShot, 0.0f, 0.0f, 1.0f},
+        {Action::SpecialShotRecover, 0.0f, 0.0f, 1.0f},
+        {Action::SpikeHit, 0.0f, 0.0f, 1.0f},
+        {Action::Grabbed, 0.0f, 0.0f, 1.0f},
+        {Action::WebReact, 0.4f, 0.4f, 1.0f},
+        {Action::Quick1, 0.25f, 0.25f, 0.0f},
+        {Action::Quick2, 0.25f, 0.25f, 0.0f},
+        {Action::Quick3, 0.25f, 0.25f, 0.0f},
+        {Action::Quick2Recover, 0.25f, 0.25f, 0.0f},
+        {Action::Quick3Recover, 0.25f, 0.25f, 0.0f},
+        {Action::SlowStart, 0.0f, 0.0f, 1.0f},
+        {Action::SlowSwing, 0.0f, 0.0f, 1.0f},
+        {Action::SlowRecover, 0.0f, 0.0f, 1.0f},
+        {Action::LowKick, 1.0f, 1.0f, 1.0f},
+        {Action::LowKickRecover, 1.0f, 1.0f, 1.0f},
+        {Action::Low1, 1.0f, 1.0f, 1.0f},
+        {Action::Low2, 1.0f, 1.0f, 1.0f},
+        {Action::LowRecover, 1.0f, 1.0f, 1.0f},
+        {Action::Right, 1.0f, 1.0f, 1.0f},
+        {Action::Right2, 1.0f, 1.0f, 1.0f},
+        {Action::RightRecover, 1.0f, 1.0f, 1.0f},
+        {Action::Right2Recover, 1.0f, 1.0f, 1.0f},
+        {Action::Left, 1.0f, 1.0f, 1.0f},
+        {Action::Left2, 1.0f, 1.0f, 1.0f},
+        {Action::LeftRecover, 1.0f, 1.0f, 1.0f},
+        {Action::Left2Recover, 1.0f, 1.0f, 1.0f},
+        {Action::Turn, 1.0f, 1.0f, 1.0f},
+        {Action::Turn2, 1.0f, 1.0f, 1.0f},
+        {Action::TurnRecover, 1.0f, 1.0f, 1.0f},
+        {Action::Turn2Recover, 1.0f, 1.0f, 1.0f},
+        {Action::TurnLeft, 1.0f, 1.0f, 1.0f},
+        {Action::TurnLeft2, 1.0f, 1.0f, 1.0f},
+        {Action::TurnLeftRecover, 1.0f, 1.0f, 1.0f},
+        {Action::TurnLeft2Recover, 1.0f, 1.0f, 1.0f},
+        {Action::Spin, 0.5f, 0.5f, 1.0f},
+        {Action::SpinRecover, 0.5f, 0.5f, 1.0f},
+        {Action::Step1, 0.5f, 1.0f, 0.25f},
+        {Action::Step2, 0.5f, 1.0f, 0.25f},
+        {Action::Step3, 0.5f, 1.0f, 0.25f},
+        {Action::Step2Recover, 0.5f, 1.0f, 0.25f},
+        {Action::Step3Recover, 0.5f, 1.0f, 0.25f},
+        {Action::WalkStrike, 0.5f, 1.0f, 0.25f},
+        {Action::WalkStrikeRecover, 0.5f, 1.0f, 0.25f},
+        {Action::PowerClose, 0.5f, 0.5f, 1.0f},
+        {Action::PowerCloseRecover, 0.5f, 0.5f, 1.0f},
+        {Action::PowerMed, 0.5f, 0.5f, 1.0f},
+        {Action::PowerMedRecover, 0.5f, 0.5f, 1.0f},
+        {Action::PowerLow, 0.25f, 0.25f, 1.0f},
+        {Action::PowerLowRecover, 0.25f, 0.25f, 1.0f},
+        {Action::SpecialShotRepeat, 0.0f, 0.0f, 1.0f},
+        {Action::Hammer, 0.0f, 0.0f, 1.0f},
+        {Action::HammerRecover, 0.0f, 0.0f, 1.0f},
+        {Action::Breathe, 0.0f, 0.0f, 1.0f},
+        {Action::BreatheRecover, 0.0f, 0.0f, 1.0f},
+        {Action::FireLeft, 0.0f, 0.0f, 1.0f},
+        {Action::FireLeftRecover, 0.0f, 0.0f, 1.0f},
+        {Action::FireRight, 0.0f, 0.0f, 1.0f},
+        {Action::FireRightRecover, 0.0f, 0.0f, 1.0f},
+        {Action::Pick, 1.0f, 1.0f, 1.0f},
+        {Action::Gag, 1.0f, 1.0f, 1.0f},
+        {Action::ShieldReady, 1.0f, 1.0f, 1.0f},
+        {Action::ShieldRun, 1.3f, 1.3f, 1.0f},
+        {Action::DeathGrabStart, 0.0f, 0.0f, 1.0f},
+        {Action::DeathGrab, 0.0f, 0.0f, 1.0f},
+        {Action::DeathGrabRelease, 0.0f, 0.0f, 1.0f},
+        {Action::Whirled, 0.0f, 0.0f, 1.0f},
+        {Action::Pushed, 1.0f, 1.0f, 1.0f},
+        {Action::ComboAct1, 0.0f, 0.0f, 0.0f},
+        {Action::ComboAct2, 0.0f, 0.0f, 0.0f},
+        {Action::ComboAct3, 0.0f, 0.0f, 0.0f},
+        {Action::ComboWar1, 0.0f, 0.0f, 0.0f},
+        {Action::ComboWar2, 0.0f, 0.0f, 0.0f},
+        {Action::ComboWar3, 0.0f, 0.0f, 0.0f},
+        {Action::ComboVal, 0.0f, 0.0f, 0.0f},
+        {Action::ComboWiz, 0.0f, 0.0f, 0.0f},
+        {Action::ComboArc, 0.0f, 0.0f, 0.0f},
+        {Action::ComboDwf1, 0.0f, 0.0f, 0.0f},
+        {Action::ComboDwf2, 0.0f, 0.0f, 0.5f},
+        {Action::ComboDwf3, 0.0f, 0.0f, 0.0f},
+        {Action::ComboKni, 0.0f, 0.0f, 0.0f},
+        {Action::ComboSor, 0.0f, 0.0f, 0.0f},
+        {Action::ComboJes, 0.0f, 0.0f, 0.0f},
+    }};
+    // The actions whose pace or turn is the class's own, for each starting class: the pace, the
+    // turn at kSpellStormFrame and the turn a frame later. Every other action keeps its row above
+    // whatever the class.
+    struct ClassScales {
+        Action action;
+        std::array<f32, kStartingClassCount> pace;
+        std::array<f32, kStartingClassCount> turn;
+        std::array<f32, kStartingClassCount> lateTurn;
+    };
+    constexpr std::array kClassScales{
+        ClassScales{Action::TurboFull,
+                    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+                    {0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f},
+                    {0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.0f, 0.25f}},
+        ClassScales{Action::PowerClose,
+                    {0.5f, 0.5f, 0.25f, 0.5f, 0.5f, 0.0f, 0.0f, 0.5f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f}},
+        ClassScales{Action::PowerCloseRecover,
+                    {0.5f, 0.5f, 0.25f, 0.5f, 0.5f, 0.0f, 0.0f, 0.5f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f}},
+        ClassScales{Action::PowerMed,
+                    {0.5f, 0.5f, 0.25f, 0.25f, 0.5f, 0.5f, 0.0f, 0.0f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f}},
+        ClassScales{Action::PowerMedRecover,
+                    {0.5f, 0.5f, 0.25f, 0.5f, 0.5f, 0.0f, 0.0f, 0.5f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+                    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f}},
+    };
+    const auto tree = longActionTree();
+    const auto bound = boundTo(tree);
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        const auto& row = kScales[i];
+        REQUIRE(row.action == static_cast<Action>(i));
+        const auto found = std::ranges::find(kClassScales, row.action, &ClassScales::action);
+        for (s32 character = -1; character < kStartingClassCount; ++character) {
+            for (const bool moved : {false, true}) {
+                for (const bool late : {false, true}) {
+                    CAPTURE(i, character, moved, late);
+                    const auto animator = restoredInto(bound, row.action, character, moved,
+                                                       kSpellStormFrame + (late ? 1.0f : 0.0f));
+                    f32 pace = moved ? row.moving : row.standing;
+                    f32 turn = row.turn;
+                    if (found != kClassScales.end() && character >= 0) {
+                        const auto column = static_cast<usize>(character);
+                        pace = found->pace[column];
+                        turn = late ? found->lateTurn[column] : found->turn[column];
+                    }
+                    CHECK(animator.moveScale() == pace);
+                    CHECK(animator.turnScale() == turn);
+                }
+            }
+        }
+    }
+    // A body that falls dead is left its whole pace: nothing else asks for it.
+    CHECK(restoredInto(bound, Action::Death).moveScale() == 1.0f);
+}
+
+TEST_CASE("strafing halves, a held grab and the power recoveries keep their own rules",
+          "[game][players][player-animation][action-traits]") {
+    // No way at all steps forward.
+    struct Step {
+        StrafeWay way;
+        Action walking;
+        Action shooting;
+    };
+    constexpr std::array kSteps{
+        Step{StrafeWay::None, Action::StrafeForward1, Action::StrafeShootForward1},
+        Step{StrafeWay::Forward, Action::StrafeForward1, Action::StrafeShootForward1},
+        Step{StrafeWay::Back, Action::StrafeBack1, Action::StrafeShootBack1},
+        Step{StrafeWay::Left, Action::StrafeLeft1, Action::StrafeShootLeft1},
+        Step{StrafeWay::Right, Action::StrafeRight1, Action::StrafeShootRight1},
+    };
+    for (const auto& step : kSteps) {
+        CAPTURE(step.way);
+        CHECK(PlayerAnimator::strafeStep(step.way, false) == step.walking);
+        CHECK(PlayerAnimator::strafeStep(step.way, true) == step.shooting);
+    }
+    struct Halves {
+        Action step;
+        Action first;
+        Action other;
+    };
+    constexpr std::array kHalves{
+        Halves{Action::StrafeForward1, Action::StrafeForward1, Action::StrafeForward2},
+        Halves{Action::StrafeForward2, Action::StrafeForward1, Action::StrafeForward1},
+        Halves{Action::StrafeBack1, Action::StrafeBack1, Action::StrafeBack2},
+        Halves{Action::StrafeBack2, Action::StrafeBack1, Action::StrafeBack1},
+        Halves{Action::StrafeLeft1, Action::StrafeLeft1, Action::StrafeLeft2},
+        Halves{Action::StrafeLeft2, Action::StrafeLeft1, Action::StrafeLeft1},
+        Halves{Action::StrafeRight1, Action::StrafeRight1, Action::StrafeRight2},
+        Halves{Action::StrafeRight2, Action::StrafeRight1, Action::StrafeRight1},
+        Halves{Action::StrafeShootForward1, Action::StrafeShootForward1,
+               Action::StrafeShootForward2},
+        Halves{Action::StrafeShootForward2, Action::StrafeShootForward1,
+               Action::StrafeShootForward1},
+        Halves{Action::StrafeShootBack1, Action::StrafeShootBack1, Action::StrafeShootBack2},
+        Halves{Action::StrafeShootBack2, Action::StrafeShootBack1, Action::StrafeShootBack1},
+        Halves{Action::StrafeShootLeft1, Action::StrafeShootLeft1, Action::StrafeShootLeft2},
+        Halves{Action::StrafeShootLeft2, Action::StrafeShootLeft1, Action::StrafeShootLeft1},
+        Halves{Action::StrafeShootRight1, Action::StrafeShootRight1, Action::StrafeShootRight2},
+        Halves{Action::StrafeShootRight2, Action::StrafeShootRight1, Action::StrafeShootRight1},
+    };
+    for (const auto& halves : kHalves) {
+        CAPTURE(halves.step);
+        CHECK(PlayerAnimator::firstHalfOf(halves.step) == halves.first);
+        CHECK(PlayerAnimator::otherHalfOf(halves.step) == halves.other);
+    }
+
+    const auto tree = actionTree();
+    const auto bound = boundTo(tree);
+    // A swing ending into its recovery with a quick press pending: the power recoveries spend it.
+    struct Recovery {
+        Action swing;
+        Action recovery;
+        bool keepsPress;
+    };
+    constexpr std::array kRecoveries{
+        Recovery{Action::PowerClose, Action::PowerCloseRecover, false},
+        Recovery{Action::PowerMed, Action::PowerMedRecover, false},
+        Recovery{Action::PowerLow, Action::PowerLowRecover, false},
+        Recovery{Action::Spin, Action::SpinRecover, true},
+        Recovery{Action::SlowSwing, Action::SlowRecover, true},
+    };
+    for (const auto& recovery : kRecoveries) {
+        CAPTURE(recovery.swing);
+        auto animator = restoredInto(bound, recovery.swing, -1, false, 0.0f, true);
+        for (s32 tick = 0; tick < 60 && animator.action() == recovery.swing; ++tick) {
+            animator.update(PlayerMotion::Stand, 1, kStep);
+        }
+        REQUIRE(animator.action() == recovery.recovery);
+        CHECK(animator.checkpoint().quickPress == recovery.keepsPress);
+    }
+
+    // Presentation alone runs a grab to its end and holds it there, where a looping fidget
+    // starts over.
+    auto grabbed = restoredInto(bound, Action::Grabbed);
+    const auto held = grabbed.player().generation();
+    grabbed.advancePresentation(1.0f);
+    CHECK(grabbed.action() == Action::Grabbed);
+    CHECK(grabbed.player().generation() == held);
+    CHECK(grabbed.player().checkpoint().held);
+    auto fidget = restoredInto(bound, Action::Idle2Loop);
+    const auto looped = fidget.player().generation();
+    fidget.advancePresentation(1.0f);
+    CHECK(fidget.action() == Action::Idle2Loop);
+    CHECK(fidget.player().generation() != looped);
+    CHECK_FALSE(fidget.player().checkpoint().held);
+}
+
+TEST_CASE("each action keeps what it does over every input script for every class tried",
+          "[game][players][player-animation][action-trace]") {
+    // traceDigest of each script: what every action does under it, which a change to how the
+    // animator reads its actions must keep.
+    constexpr std::array kScripts{
+        TraceScript{"standing", standing,
+                    "af0bc552f6ca12db80839fe9283680ac85fb3d049ad83190240a85ef809d9e14"},
+        TraceScript{"afoot", afoot,
+                    "154feac6822b91c3b4ed69b07182769412e1acbf0f8ebf9bbae03e081635aa75"},
+        TraceScript{"throwing", throwing,
+                    "894d1e67fa5b8148e6b82a7d623ef627de074081943d49d52b1595a49fd26e32"},
+        TraceScript{"quickPresses", quickPresses,
+                    "772ca27b2205d0820ed25f2cd35494c706a5ee794a3f41fe585f9c293cdcfad4"},
+        TraceScript{"steppingSwings", steppingSwings,
+                    "9b00a4d3eccd3c6fc8dc6da10700dfd612abfd0e5bcad486c9314827fa301d49"},
+        TraceScript{"lowStrikes", lowStrikes,
+                    "0dc2f1b041504687565988fe469ccb0dc571e2f7269a6c084f4182b78241a163"},
+        TraceScript{"heldChains", heldChains,
+                    "cd80fd5459f0b94c430b6242782efefa07e494f0607eafcd19f4f2671f6ce10b"},
+        TraceScript{"automaticMelee", automaticMelee,
+                    "d4299a285a57b410aa4cd98346190b56b4ba699510da95563809c7c91982115b"},
+        TraceScript{"everyDeed", everyDeed,
+                    "b3430aa56cbed5d3c1a887a65b60793d07e594054d50232f441b76a257d0bc21"},
+        TraceScript{"heldDeeds", heldDeeds,
+                    "1777c9493ae9beabc8604e89d731ed0223b36026ca53ac646d2d91172833ca6b"},
+        TraceScript{"strafing", strafing,
+                    "bbe4ad40632572cb0267790b3a8b5f8496efdbaf2056109a169fdb7c2c7255fd"},
+        TraceScript{"combos", combos,
+                    "da4a15d2ca954eed6d40105973f419ab98889f742fa508d0a474042bfeaf141d"},
+        TraceScript{"falling", falling,
+                    "ba95d6e9882c5cd47cf97a09e52ee67060e561ef6b12442fb33c00c330500f0f"},
+    };
+    const auto tree = actionTree();
+    const auto bound = boundTo(tree);
+    for (const auto& script : kScripts) {
+        CAPTURE(script.name);
+        CHECK(traceDigest(bound, script.input) == script.digest);
     }
 }
 

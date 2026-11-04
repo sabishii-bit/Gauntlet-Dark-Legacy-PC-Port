@@ -1,9 +1,11 @@
 #include <array>
 #include <filesystem>
 #include <memory>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/AnimationSet.h"
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
@@ -15,6 +17,7 @@
 #include "game/level/NativeStateResources.h"
 #include "game/party/MikeyFigure.h"
 #include "game/party/PlayerFigure.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -355,5 +358,41 @@ TEST_CASE("Mikey native digest retains the random stream after the visible decoy
     CHECK(nativeValue(figures[0], resources) != baseline);
     figures[0] = saved;
     CHECK(nativeValue(figures[0], resources) == baseline);
+}
+
+/** A stance and the breath an item gives, each a still pose of one node. */
+TreeInfo breathTree() {
+    TreeInfo tree;
+    tree.name = "BREATH";
+    TreeNodeInfo root;
+    root.name = "ROOT";
+    root.type = 1;
+    tree.nodes.push_back(root);
+    for (const std::string_view name : {"READY", "ATTBREATHE"}) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.frameRate = 30;
+        sequence.repeats = name == "READY";
+        tree.sequences.push_back(sequence);
+    }
+    return tree;
+}
+
+TEST_CASE("native animator digest bytes stay pinned for a released item",
+          "[native-state-digest][player-figure-native-digest][native-digest-pin]") {
+    const auto tree = breathTree();
+    NativeStateResources resources;
+    REQUIRE(resources.registerBuiltinTree(tree, "pinned-breath"));
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Breathe);
+    REQUIRE(animator.action() == PlayerAnimator::Action::Breathe);
+    REQUIRE(animator.itemReleased() == PlayerDeed::Breathe);
+    // SHA-256 of the native digest of the animator above, which netplay peers must hash alike: a
+    // literal moves only when what is visited, or the number a deed is stored as, changes.
+    constexpr std::string_view kDigest =
+        "3b0c267f81e724a5e09a4a831511b6598eef479b5d7b0c4cfd41fe97f1a134dc";
+    CHECK(test::hexBytes(nativeValue(animator, resources)) == kDigest);
 }
 } // namespace

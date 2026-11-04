@@ -7,6 +7,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/world/WorldCollision.h"
 
+#include "TestSupport.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerRuntime.h"
 
@@ -466,5 +467,17 @@ TEST_CASE("native player digest ignores allocation addresses and external runtim
     first.deathHeldSuck = 8;
     CHECK(first.simulation() == second.simulation());
     CHECK(nativeDigest(first.simulation()) == nativeDigest(second.simulation()));
+}
+
+TEST_CASE("native player digest bytes stay pinned for a pending gesture and reaction",
+          "[native-state-digest][player-native-state][native-digest-pin]") {
+    PlayerSimulation player;
+    player.gesture = PlayerDeed::Pick;
+    player.reaction = PlayerDeed::FallForward;
+    // SHA-256 of the native digest of the player above, which netplay peers must hash alike: a
+    // literal moves only when what is visited, or the number a deed is stored as, changes.
+    constexpr std::string_view kDigest =
+        "a30c0c6471a82efcdfeab9db80d59551d8972ce50c7e367582d4fa4ffe626825";
+    CHECK(test::hexBytes(nativeDigest(player)) == kDigest);
 }
 } // namespace
