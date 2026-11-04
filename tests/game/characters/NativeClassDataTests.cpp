@@ -1,5 +1,4 @@
 #include <array>
-#include <bit>
 #include <cstdlib>
 #include <filesystem>
 #include <vector>
@@ -35,10 +34,6 @@ void padTo(test::SyntheticBytes& writer, usize offset) {
     writer.putZeros(offset - writer.size());
 }
 
-void putFloat(test::SyntheticBytes& writer, f32 value) {
-    writer.putU32(std::bit_cast<u32>(value));
-}
-
 std::vector<u8> nativeClassWad() {
     test::SyntheticBytes writer;
     writer.putU32(static_cast<u32>(kDirectoryOffset)).putU32(3).putZeros(8);
@@ -52,23 +47,23 @@ std::vector<u8> nativeClassWad() {
     writer.putU16(150);
     padTo(writer, kEffectOffset + 0x34);
     for (const f32 value : {1.0f, 2.0f, 3.0f}) {
-        putFloat(writer, value);
+        writer.putF32(value);
     }
-    putFloat(writer, 0.5f);
-    putFloat(writer, 3.0f);
-    putFloat(writer, 1.25f);
+    writer.putF32(0.5f);
+    writer.putF32(3.0f);
+    writer.putF32(1.25f);
     writer.putU32(0x7F12AB34);
     padTo(writer, kStrikeOffset);
     writer.putU16(2).putU16(0x2010).putU32(0x100021);
-    putFloat(writer, 2.0f); // hit radius
-    putFloat(writer, 3.0f); // radius
+    writer.putF32(2.0f); // hit radius
+    writer.putF32(3.0f); // radius
     writer.putU32(0);
     for (const f32 value : {0.5f, 1.0f, 6.0f, -0.5f, 0.75f}) {
-        putFloat(writer, value); // delay, min/max time, angle, arc
+        writer.putF32(value); // delay, min/max time, angle, arc
     }
     writer.putU32(0);
     for (const f32 value : {4.0f, 5.0f, 6.0f, -2.0f, 30.0f, 40.0f, 0.5f}) {
-        putFloat(writer, value); // offset, amount, min/max speed, weight
+        writer.putF32(value); // offset, amount, min/max speed, weight
     }
     writer.putU16(0).putU16(0).putU16(0).putU16(0xFFFF);
     writer.putU16(9).putU16(30).putU16(57);
@@ -80,14 +75,14 @@ std::vector<u8> nativeClassWad() {
     padTo(writer, kClassOffset + 0x28);
     for (const f32 value : {600.0f, 999.0f, 350.0f, 750.0f, 300.0f, 700.0f, 100.0f, 500.0f, 5.0f,
                             1.5f, 4.4f, 2.5f, 1.25f, -0.5f, 0.5f, 1.5f}) {
-        putFloat(writer, value); // ranges, body, powerup duration, weapon offset
+        writer.putF32(value); // ranges, body, powerup duration, weapon offset
     }
     for (usize component = 0; component < ClassStats::kGlowTiers * 3 * 2; ++component) {
-        putFloat(writer, static_cast<f32>(component) * 0.25f);
+        writer.putF32(static_cast<f32>(component) * 0.25f);
     }
     padTo(writer, kClassOffset + 0x164);
     for (const f32 value : {-1.0f, 5.0f, 0.75f, 1.25f, 6.0f, -0.5f, 2.5f}) {
-        putFloat(writer, value); // familiar offsets, streak head lead
+        writer.putF32(value); // familiar offsets, streak head lead
     }
     REQUIRE(writer.size() == kDirectoryOffset);
     writer.putText("XXFS").putU32(static_cast<u32>(kEffectOffset)).putU32(1).putU32(1);

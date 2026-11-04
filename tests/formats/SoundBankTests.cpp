@@ -1,3 +1,4 @@
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,64 +14,45 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
+using test::SyntheticBytes;
 
-class BigEndianWriter {
-public:
-    BigEndianWriter& put16(u16 value) {
-        m_bytes.push_back(static_cast<u8>(value >> 8U));
-        m_bytes.push_back(static_cast<u8>(value & 0xFFU));
-        return *this;
-    }
-    BigEndianWriter& put32(u32 value) {
-        put16(static_cast<u16>(value >> 16U));
-        return put16(static_cast<u16>(value & 0xFFFFU));
-    }
-    BigEndianWriter& text(std::string_view s, usize width) {
-        for (usize i = 0; i < width; ++i) {
-            m_bytes.push_back(i < s.size() ? static_cast<u8>(s[i]) : u8{0});
-        }
-        return *this;
-    }
-    BigEndianWriter& zeros(usize count) {
-        m_bytes.insert(m_bytes.end(), count, u8{0});
-        return *this;
-    }
-    BigEndianWriter& bytes(std::span<const u8> data) {
-        m_bytes.insert(m_bytes.end(), data.begin(), data.end());
-        return *this;
-    }
-    const std::vector<u8>& get() const { return m_bytes; }
-
-private:
-    std::vector<u8> m_bytes;
-};
+/** The fixed name field of a sample's header. */
+constexpr usize kNameSize = 16;
 
 /** One silent 8-byte ADPCM frame with coefficient pair 0 and scale 0. */
 constexpr std::array<u8, 8> kSilentFrame{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 /** Two calls (one with a looping two-sample sequence) and one sample. */
 std::vector<u8> sampleBank() {
-    BigEndianWriter calls;
-    calls.put16(0x8000).put16(0x7F).put16(0).put16(0x8001); // call 0: sample 0, vol 127
-    calls.put16(0x4001).put16(0x0000).put16(0xA001).put16(0x6E).put16(3).put16(
+    SyntheticBytes calls;
+    calls.putU16BE(0x8000).putU16BE(0x7F).putU16BE(0).putU16BE(0x8001); // call 0: sample 0, vol 127
+    calls.putU16BE(0x4001).putU16BE(0x0000).putU16BE(0xA001).putU16BE(0x6E).putU16BE(3).putU16BE(
         0x0009); // call 1: loop
-    BigEndianWriter w;
-    w.put32(0x4B4E4256)
-        .put32(static_cast<u32>(calls.get().size()))
-        .put32(0x01070106)
-        .put32(2)
-        .put32(1);
-    w.bytes(calls.get());
-    w.put32(0x56414770).put32(0x28).put32(0).put32(16).put32(12000);
-    w.zeros(12).text("blip", 16);
+    SyntheticBytes w;
+    w.putU32BE(0x4B4E4256)
+        .putU32BE(static_cast<u32>(calls.size()))
+        .putU32BE(0x01070106)
+        .putU32BE(2)
+        .putU32BE(1);
+    w.putBytes(calls.bytes());
+    w.putU32BE(0x56414770).putU32BE(0x28).putU32BE(0).putU32BE(16).putU32BE(12000);
+    constexpr std::string_view kSampleName = "blip";
+    w.putZeros(12).putText(kSampleName).putZeros(kNameSize - kSampleName.size());
     // DSP header: samples, nibbles, rate, loop flag, format, loop start, loop end, ca, coefs...
-    w.put32(28).put32(32).put32(12000).put16(1).put16(0).put32(2).put32(28).put32(2);
+    w.putU32BE(28)
+        .putU32BE(32)
+        .putU32BE(12000)
+        .putU16BE(1)
+        .putU16BE(0)
+        .putU32BE(2)
+        .putU32BE(28)
+        .putU32BE(2);
     for (s16 i = 0; i < 16; ++i) {
-        w.put16(static_cast<u16>(i * 100));
+        w.putU16BE(static_cast<u16>(i * 100));
     }
-    w.zeros(96 - 28 - 32);
-    w.bytes(kSilentFrame).bytes(kSilentFrame);
-    return w.get();
+    w.putZeros(96 - 28 - 32);
+    w.putBytes(kSilentFrame).putBytes(kSilentFrame);
+    return w.bytes();
 }
 
 TEST_CASE("a sound bank parses calls with their sequences and parameters", "[formats][sound]") {

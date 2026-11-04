@@ -1,7 +1,5 @@
 #include <algorithm>
 #include <bit>
-#include <cstring>
-#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -22,6 +20,10 @@ using namespace gdl;
 using namespace gdl::formats;
 using Catch::Approx;
 using Catch::Matchers::WithinAbs;
+using test::setF32LE;
+using test::setText;
+using test::setU16LE;
+using test::setU32LE;
 
 constexpr usize kHeader = 96;
 constexpr usize kExtended = 24;
@@ -29,27 +31,9 @@ constexpr usize kObject = 60;
 constexpr usize kLocator = 28;
 constexpr usize kTriangle = 40;
 
-void put32(std::vector<u8>& bytes, usize offset, u32 value) {
-    if constexpr (std::endian::native == std::endian::big) {
-        value = std::byteswap(value);
-    }
-    std::memcpy(&bytes[offset], &value, 4);
-}
-
-void put16(std::vector<u8>& bytes, usize offset, u16 value) {
-    if constexpr (std::endian::native == std::endian::big) {
-        value = std::byteswap(value);
-    }
-    std::memcpy(&bytes[offset], &value, 2);
-}
-
-void putF(std::vector<u8>& bytes, usize offset, f32 value) {
-    put32(bytes, offset, std::bit_cast<u32>(value));
-}
-
-void putName(std::vector<u8>& bytes, usize offset, std::string_view name) {
-    std::memcpy(&bytes[offset], name.data(), name.size());
-}
+/** The fixed name fields of an object or item record, and of a particle template's texture. */
+constexpr usize kNameField = 16;
+constexpr usize kTextureField = 32;
 
 constexpr usize kParticle = 0x138;
 constexpr usize kItemInfo = 0x50;
@@ -68,126 +52,126 @@ std::vector<u8> sampleWorld(bool extended) {
     const usize itemInfo = extended ? particle + kParticle : triangles + kTriangle;
     const usize itemInstance = itemInfo + kItemInfo;
     std::vector<u8> bytes(itemInstance + kItemInstance, 0);
-    put32(bytes, 0, 2);
-    put32(bytes, 4, static_cast<u32>(objects));
-    put32(bytes, 8, 1); // collision triangles
-    put32(bytes, 12, static_cast<u32>(triangles));
-    putF(bytes, 36, -61.1f);
-    putF(bytes, 40, -50.9f);
-    putF(bytes, 44, -50.0f);
-    putF(bytes, 48, 249.9f);
-    putF(bytes, 52, 17.9f);
-    putF(bytes, 56, 50.0f);
-    putF(bytes, 60, 8.0f);
-    put32(bytes, 64, 39);
-    put32(bytes, 68, 13);
+    setU32LE(bytes, 0, 2);
+    setU32LE(bytes, 4, static_cast<u32>(objects));
+    setU32LE(bytes, 8, 1); // collision triangles
+    setU32LE(bytes, 12, static_cast<u32>(triangles));
+    setF32LE(bytes, 36, -61.1f);
+    setF32LE(bytes, 40, -50.9f);
+    setF32LE(bytes, 44, -50.0f);
+    setF32LE(bytes, 48, 249.9f);
+    setF32LE(bytes, 52, 17.9f);
+    setF32LE(bytes, 56, 50.0f);
+    setF32LE(bytes, 60, 8.0f);
+    setU32LE(bytes, 64, 39);
+    setU32LE(bytes, 68, 13);
     // One kind of item, an orange crystal, placed once for a party of one.
-    put32(bytes, 72, 1);
-    put32(bytes, 76, static_cast<u32>(itemInfo));
-    put32(bytes, 80, 1);
-    put32(bytes, 84, static_cast<u32>(itemInstance));
-    put32(bytes, 88, 1);
-    put32(bytes, 92, static_cast<u32>(locators));
-    put32(bytes, itemInfo, 1);
-    put32(bytes, itemInfo + 4, 15);
-    put16(bytes, itemInfo + 8, 1);
-    putF(bytes, itemInfo + 12, 0.1f);
-    putF(bytes, itemInfo + 16, 2.0f);
-    putName(bytes, itemInfo + 0x28, "GEMORANGE");
-    put16(bytes, itemInfo + 0x40, 4);
-    put16(bytes, itemInfo + 0x42, static_cast<u16>(-1));
-    put16(bytes, itemInfo + 0x46, 16);
-    put16(bytes, itemInstance, 0);
+    setU32LE(bytes, 72, 1);
+    setU32LE(bytes, 76, static_cast<u32>(itemInfo));
+    setU32LE(bytes, 80, 1);
+    setU32LE(bytes, 84, static_cast<u32>(itemInstance));
+    setU32LE(bytes, 88, 1);
+    setU32LE(bytes, 92, static_cast<u32>(locators));
+    setU32LE(bytes, itemInfo, 1);
+    setU32LE(bytes, itemInfo + 4, 15);
+    setU16LE(bytes, itemInfo + 8, 1);
+    setF32LE(bytes, itemInfo + 12, 0.1f);
+    setF32LE(bytes, itemInfo + 16, 2.0f);
+    setText(bytes, itemInfo + 0x28, kNameField, "GEMORANGE");
+    setU16LE(bytes, itemInfo + 0x40, 4);
+    setU16LE(bytes, itemInfo + 0x42, static_cast<u16>(-1));
+    setU16LE(bytes, itemInfo + 0x46, 16);
+    setU16LE(bytes, itemInstance, 0);
     bytes[itemInstance + 2] = 1;
-    putF(bytes, itemInstance + 0x18, 19.3f);
-    putF(bytes, itemInstance + 0x1C, -2.0f);
-    putF(bytes, itemInstance + 0x20, -57.5f);
-    putF(bytes, itemInstance + 0x28, 1.5f);
+    setF32LE(bytes, itemInstance + 0x18, 19.3f);
+    setF32LE(bytes, itemInstance + 0x1C, -2.0f);
+    setF32LE(bytes, itemInstance + 0x20, -57.5f);
+    setF32LE(bytes, itemInstance + 0x28, 1.5f);
     bytes[itemInstance + 0x30] = 7;
     if (extended) {
-        put32(bytes, kHeader, 0xF00BAB02);
-        put32(bytes, kHeader + 4, static_cast<u32>(keys));
-        put32(bytes, kHeader + 8, 1);
-        put32(bytes, kHeader + 12, static_cast<u32>(animation));
-        put32(bytes, kHeader + 16, 1);
-        put32(bytes, kHeader + 20, static_cast<u32>(particle));
-        put32(bytes, keys + 12, 36); // blocks follow the header and its one entry
-        put32(bytes, keys + 20, 1);
-        put32(bytes, keys + 24, 1);
-        put16(bytes, keys + 28, 0x0004); // rotation z, one float a key
-        put16(bytes, keys + 30, 1);
-        put32(bytes, keys + 36, 0x9); // keys at frames 0 and 3
-        putF(bytes, keys + 40, 0.0f);
-        putF(bytes, keys + 44, 1.5f);
-        put16(bytes, animation, 1); // the mesh
-        put16(bytes, animation + 2, 4);
-        put16(bytes, animation + 6, 0x101);
-        put32(bytes, animation + 12, static_cast<u32>(keys + 28));
-        put32(bytes, particle, 0x101);
-        put16(bytes, particle + 4, 5);
+        setU32LE(bytes, kHeader, 0xF00BAB02);
+        setU32LE(bytes, kHeader + 4, static_cast<u32>(keys));
+        setU32LE(bytes, kHeader + 8, 1);
+        setU32LE(bytes, kHeader + 12, static_cast<u32>(animation));
+        setU32LE(bytes, kHeader + 16, 1);
+        setU32LE(bytes, kHeader + 20, static_cast<u32>(particle));
+        setU32LE(bytes, keys + 12, 36); // blocks follow the header and its one entry
+        setU32LE(bytes, keys + 20, 1);
+        setU32LE(bytes, keys + 24, 1);
+        setU16LE(bytes, keys + 28, 0x0004); // rotation z, one float a key
+        setU16LE(bytes, keys + 30, 1);
+        setU32LE(bytes, keys + 36, 0x9); // keys at frames 0 and 3
+        setF32LE(bytes, keys + 40, 0.0f);
+        setF32LE(bytes, keys + 44, 1.5f);
+        setU16LE(bytes, animation, 1); // the mesh
+        setU16LE(bytes, animation + 2, 4);
+        setU16LE(bytes, animation + 6, 0x101);
+        setU32LE(bytes, animation + 12, static_cast<u32>(keys + 28));
+        setU32LE(bytes, particle, 0x101);
+        setU16LE(bytes, particle + 4, 5);
         bytes[particle + 6] = static_cast<u8>('E');
-        put32(bytes, particle + 8, 0x288);
-        put32(bytes, particle + 12, 0x288);
-        put32(bytes, particle + 16, 0x56BE1);
-        putF(bytes, particle + 0x28, 0.2f);
-        putF(bytes, particle + 0x2C, 0.22f);
-        putF(bytes, particle + 0x38, 80.0f);
-        putName(bytes, particle + 0x40, "P_TORCH");
-        putF(bytes, particle + 0x64, 1.0f);
-        putF(bytes, particle + 0x6C, 0.1f);
-        putF(bytes, particle + 0x70, 0.3f);
-        putF(bytes, particle + 0x74, 0.1f);
+        setU32LE(bytes, particle + 8, 0x288);
+        setU32LE(bytes, particle + 12, 0x288);
+        setU32LE(bytes, particle + 16, 0x56BE1);
+        setF32LE(bytes, particle + 0x28, 0.2f);
+        setF32LE(bytes, particle + 0x2C, 0.22f);
+        setF32LE(bytes, particle + 0x38, 80.0f);
+        setText(bytes, particle + 0x40, kTextureField, "P_TORCH");
+        setF32LE(bytes, particle + 0x64, 1.0f);
+        setF32LE(bytes, particle + 0x6C, 0.1f);
+        setF32LE(bytes, particle + 0x70, 0.3f);
+        setF32LE(bytes, particle + 0x74, 0.1f);
         for (usize i = 0; i < 4; ++i) {
-            putF(bytes, particle + 0x78 + i * 4, 25.0f);
+            setF32LE(bytes, particle + 0x78 + i * 4, 25.0f);
         }
-        putF(bytes, particle + 0x8C, -0.38f);
-        putF(bytes, particle + 0x94, 4.0f);
-        put32(bytes, particle + 0x9C, 0x00FFFFFF);
-        put32(bytes, particle + 0xA0, 0x00FFFFFF);
-        putF(bytes, particle + 0xA8, 2.8f);
-        putF(bytes, particle + 0xAC, 2.0f);
-        putF(bytes, particle + 0xB0, 2.0f);
-        putF(bytes, particle + 0xB4, 0.1f);
+        setF32LE(bytes, particle + 0x8C, -0.38f);
+        setF32LE(bytes, particle + 0x94, 4.0f);
+        setU32LE(bytes, particle + 0x9C, 0x00FFFFFF);
+        setU32LE(bytes, particle + 0xA0, 0x00FFFFFF);
+        setF32LE(bytes, particle + 0xA8, 2.8f);
+        setF32LE(bytes, particle + 0xAC, 2.0f);
+        setF32LE(bytes, particle + 0xB0, 2.0f);
+        setF32LE(bytes, particle + 0xB4, 0.1f);
     }
     // object 0: a group whose child is object 1
-    putName(bytes, objects, "T1FLOOR1");
-    put32(bytes, objects + 16, 0x4);
-    putF(bytes, objects + 28, 1.0f);
-    putF(bytes, objects + 32, 2.0f);
-    putF(bytes, objects + 36, 3.0f);
-    put16(bytes, objects + 44, 0xFFFF); // next -1
-    put16(bytes, objects + 46, 1);      // child
+    setText(bytes, objects, kNameField, "T1FLOOR1");
+    setU32LE(bytes, objects + 16, 0x4);
+    setF32LE(bytes, objects + 28, 1.0f);
+    setF32LE(bytes, objects + 32, 2.0f);
+    setF32LE(bytes, objects + 36, 3.0f);
+    setU16LE(bytes, objects + 44, 0xFFFF); // next -1
+    setU16LE(bytes, objects + 46, 1);      // child
     // object 1: the mesh
     const usize second = objects + kObject;
-    putName(bytes, second, "T1#0");
-    put32(bytes, second + 16, 0x6);
-    put32(bytes, second + 24, 0x8000);
-    putF(bytes, second + 28, 0.5f);
-    put16(bytes, second + 44, 0xFFFF);
-    put16(bytes, second + 46, 0xFFFF);
-    putF(bytes, second + 48, 70.7f);
+    setText(bytes, second, kNameField, "T1#0");
+    setU32LE(bytes, second + 16, 0x6);
+    setU32LE(bytes, second + 24, 0x8000);
+    setF32LE(bytes, second + 28, 0.5f);
+    setU16LE(bytes, second + 44, 0xFFFF);
+    setU16LE(bytes, second + 46, 0xFFFF);
+    setF32LE(bytes, second + 48, 70.7f);
     bytes[second + 53] = 1; // no collision
-    put16(bytes, second + 54, 1);
-    put32(bytes, second + 56, 0);
+    setU16LE(bytes, second + 54, 1);
+    setU32LE(bytes, second + 56, 0);
     // locator: camera_start
     bytes[locators] = 1;
     bytes[locators + 1] = 5;
-    put16(bytes, locators + 2, 2);
-    putF(bytes, locators + 4, 3.59f);
-    putF(bytes, locators + 8, 20.52f);
-    putF(bytes, locators + 12, -9.23f);
-    putF(bytes, locators + 16, 0.551f);
-    putF(bytes, locators + 20, 3.138f);
+    setU16LE(bytes, locators + 2, 2);
+    setF32LE(bytes, locators + 4, 3.59f);
+    setF32LE(bytes, locators + 8, 20.52f);
+    setF32LE(bytes, locators + 12, -9.23f);
+    setF32LE(bytes, locators + 16, 0.551f);
+    setF32LE(bytes, locators + 20, 3.138f);
     // A wall facing +z with its corner at (0, 1, 0), 1 unit wide and 1.75 tall (1/64 units).
-    put16(bytes, triangles, static_cast<u16>(-48));
-    put16(bytes, triangles + 2, 64);
-    putF(bytes, triangles + 4, 1.0f);
-    putF(bytes, triangles + 16, 1.0f); // normal z
-    putF(bytes, triangles + 24, 1.0f); // corner y
-    put16(bytes, triangles + 32, 64);
-    put16(bytes, triangles + 34, 0);
-    put16(bytes, triangles + 36, 0);
-    put16(bytes, triangles + 38, static_cast<u16>(-112));
+    setU16LE(bytes, triangles, static_cast<u16>(-48));
+    setU16LE(bytes, triangles + 2, 64);
+    setF32LE(bytes, triangles + 4, 1.0f);
+    setF32LE(bytes, triangles + 16, 1.0f); // normal z
+    setF32LE(bytes, triangles + 24, 1.0f); // corner y
+    setU16LE(bytes, triangles + 32, 64);
+    setU16LE(bytes, triangles + 34, 0);
+    setU16LE(bytes, triangles + 36, 0);
+    setU16LE(bytes, triangles + 38, static_cast<u16>(-112));
     return bytes;
 }
 
@@ -198,14 +182,15 @@ TEST_CASE("collision corners unfold with the portable functions on every platfor
     constexpr usize kTriangles = 2048;
     const usize triangles = kHeader + kExtended; // after an extended header naming nothing
     std::vector<u8> bytes(triangles + kTriangles * kTriangle, 0);
-    put32(bytes, 8, static_cast<u32>(kTriangles));
-    put32(bytes, 12, static_cast<u32>(triangles));
-    put32(bytes, kHeader, 0xF00BAB02);
+    setU32LE(bytes, 8, static_cast<u32>(kTriangles));
+    setU32LE(bytes, 12, static_cast<u32>(triangles));
+    setU32LE(bytes, kHeader, 0xF00BAB02);
     std::vector<Vec3> normals;
     u32 state = 12345;
     const auto component = [&state] {
         state = state * 1664525U + 1013904223U;
-        return static_cast<f32>(static_cast<s32>(state >> 8) - (1 << 23)) / static_cast<f32>(1 << 23);
+        return static_cast<f32>(static_cast<s32>(state >> 8) - (1 << 23)) /
+               static_cast<f32>(1 << 23);
     };
     while (normals.size() < kTriangles) {
         const Vec3 raw{component(), component(), component()};
@@ -216,11 +201,11 @@ TEST_CASE("collision corners unfold with the portable functions on every platfor
     }
     for (usize i = 0; i < kTriangles; ++i) {
         const usize at = triangles + i * kTriangle;
-        putF(bytes, at + 8, normals[i].x);
-        putF(bytes, at + 12, normals[i].y);
-        putF(bytes, at + 16, normals[i].z);
-        put16(bytes, at + 32, 64); // (1, 0)
-        put16(bytes, at + 38, 64); // (0, 1)
+        setF32LE(bytes, at + 8, normals[i].x);
+        setF32LE(bytes, at + 12, normals[i].y);
+        setF32LE(bytes, at + 16, normals[i].z);
+        setU16LE(bytes, at + 32, 64); // (1, 0)
+        setU16LE(bytes, at + 38, 64); // (0, 1)
     }
     const WorldFile world = WorldFile::parse(bytes);
     REQUIRE(world.collision.size() == kTriangles);
@@ -390,12 +375,12 @@ TEST_CASE("an item record of no type lists the records a container picks among",
           "[formats][world]") {
     std::vector<u8> bytes = sampleWorld(false);
     const usize record = bytes.size() - kItemInstance - kItemInfo;
-    put32(bytes, record, static_cast<u32>(ItemInfoRecord::kChoiceList));
-    put32(bytes, record + 4, 3); // how many it lists
-    put16(bytes, record + 8, 94);
-    put16(bytes, record + 10, 98);
-    put16(bytes, record + 12, 97);
-    put16(bytes, record + 14, 95); // past its count
+    setU32LE(bytes, record, static_cast<u32>(ItemInfoRecord::kChoiceList));
+    setU32LE(bytes, record + 4, 3); // how many it lists
+    setU16LE(bytes, record + 8, 94);
+    setU16LE(bytes, record + 10, 98);
+    setU16LE(bytes, record + 12, 97);
+    setU16LE(bytes, record + 14, 95); // past its count
     const WorldFile world = WorldFile::parse(bytes);
     REQUIRE(world.itemInfos.size() == 1);
     REQUIRE(world.itemInfos[0].type == ItemInfoRecord::kChoiceList);
@@ -403,7 +388,7 @@ TEST_CASE("an item record of no type lists the records a container picks among",
     // An ordinary record lists nothing, and keeps its sizes.
     REQUIRE(WorldFile::parse(sampleWorld(false)).itemInfos[0].choices.empty());
     // A count beyond what a record can hold is cut to that.
-    put32(bytes, record + 4, 4000);
+    setU32LE(bytes, record + 4, 4000);
     REQUIRE(WorldFile::parse(bytes).itemInfos[0].choices.size() == ItemInfoRecord::kMostChoices);
 }
 
@@ -420,15 +405,15 @@ TEST_CASE("damaged world files are rejected", "[formats][world]") {
     REQUIRE_THROWS_AS(WorldFile::parse(bytes), FormatError);
 
     bytes = sampleWorld(true);
-    put32(bytes, kHeader, 0x12345678);
+    setU32LE(bytes, kHeader, 0x12345678);
     REQUIRE_THROWS_AS(WorldFile::parse(bytes), FormatError);
 
     bytes = sampleWorld(true);
-    put32(bytes, 0, 1000);
+    setU32LE(bytes, 0, 1000);
     REQUIRE_THROWS_AS(WorldFile::parse(bytes), FormatError);
 
     bytes = sampleWorld(true);
-    put32(bytes, 92, 100000);
+    setU32LE(bytes, 92, 100000);
     REQUIRE_THROWS_AS(WorldFile::parse(bytes), FormatError);
 }
 
@@ -438,16 +423,16 @@ TEST_CASE("nonempty world effects cannot silently disappear behind invalid table
         for (const u32 target : {0U, 96U, 119U, 0xFFFFFFF0U}) {
             CAPTURE(field, target);
             auto bytes = sampleWorld(true);
-            put32(bytes, field, target);
+            setU32LE(bytes, field, target);
             CHECK_THROWS_AS(WorldFile::parse(bytes), FormatError);
         }
     }
     auto empty = sampleWorld(true);
-    put32(empty, kHeader + 8, 0);
-    put32(empty, kHeader + 16, 0);
-    put32(empty, kHeader + 4, 0);
-    put32(empty, kHeader + 12, 0);
-    put32(empty, kHeader + 20, 0);
+    setU32LE(empty, kHeader + 8, 0);
+    setU32LE(empty, kHeader + 16, 0);
+    setU32LE(empty, kHeader + 4, 0);
+    setU32LE(empty, kHeader + 12, 0);
+    setU32LE(empty, kHeader + 20, 0);
     const auto parsed = WorldFile::parse(empty);
     CHECK(parsed.animations.empty());
     CHECK(parsed.particles.empty());

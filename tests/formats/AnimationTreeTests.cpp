@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <bit>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -22,10 +21,6 @@ using test::SyntheticBytes;
 SyntheticBytes& putName(SyntheticBytes& w, std::string_view name, usize width) {
     w.putText(name);
     return w.putZeros(width - name.size());
-}
-
-SyntheticBytes& putF32(SyntheticBytes& w, f32 value) {
-    return w.putU32(std::bit_cast<u32>(value));
 }
 
 constexpr u32 kInfosAt = 24;
@@ -63,14 +58,14 @@ std::vector<u8> sampleFile() {
     w.putU16(0x21).putU16(2).putU32(0);    // L1: rotation x and position y, two floats a key
     w.putU16(0xA002).putU16(1).putU32(28); // FRT_SPIKE: rotation y, compressed, pitch-yaw-roll
     for (s32 i = 0; i < 256; ++i) {
-        putF32(w, i == 3 ? 0.5f : 0.0f);
+        w.putF32(i == 3 ? 0.5f : 0.0f);
     }
     w.putU32(0x811); // keys at frames 0, 4 and 11
     for (const f32 value : {0.5f, 1.0f, 1.0f, 2.0f, -0.5f, 3.0f}) {
-        putF32(w, value);
+        w.putF32(value);
     }
     w.putU32(0x41); // keys at frames 0 and 6: the first as a float, the next a table step
-    putF32(w, 0.25f);
+    w.putF32(0.25f);
     w.putU8(3);
     return w.bytes();
 }

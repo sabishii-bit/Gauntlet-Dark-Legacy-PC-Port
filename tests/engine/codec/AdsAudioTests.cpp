@@ -7,41 +7,32 @@
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 
+#include "SyntheticBytes.h"
+
 namespace {
 
 using namespace gdl;
 using Catch::Matchers::WithinAbs;
 
-void putBigU32(std::vector<u8>& out, u32 value) {
-    out.push_back(static_cast<u8>(value >> 24U));
-    out.push_back(static_cast<u8>((value >> 16U) & 0xFFU));
-    out.push_back(static_cast<u8>((value >> 8U) & 0xFFU));
-    out.push_back(static_cast<u8>(value & 0xFFU));
-}
-
 /** Header for a stream whose channels all use zero predictors. */
 std::vector<u8> header(u32 channels, u32 blockSize, u32 bodySize) {
-    std::vector<u8> bytes;
-    for (const char c : std::string_view("dhSS")) {
-        bytes.push_back(static_cast<u8>(c));
-    }
-    putBigU32(bytes, 24);
-    putBigU32(bytes, 32);
-    putBigU32(bytes, 48000);
-    putBigU32(bytes, channels);
-    putBigU32(bytes, blockSize);
-    putBigU32(bytes, 0xFFFFFFFFU);
-    putBigU32(bytes, 0);
-    for (const char c : std::string_view("dbSS")) {
-        bytes.push_back(static_cast<u8>(c));
-    }
-    putBigU32(bytes, bodySize);
+    test::SyntheticBytes bytes;
+    bytes.putText("dhSS");
+    bytes.putU32BE(24);
+    bytes.putU32BE(32);
+    bytes.putU32BE(48000);
+    bytes.putU32BE(channels);
+    bytes.putU32BE(blockSize);
+    bytes.putU32BE(0xFFFFFFFFU);
+    bytes.putU32BE(0);
+    bytes.putText("dbSS");
+    bytes.putU32BE(bodySize);
     for (u32 c = 0; c < channels; ++c) {
         std::vector<u8> channelHeader(96, 0);
         channelHeader[3] = 28; // sample count
-        bytes.insert(bytes.end(), channelHeader.begin(), channelHeader.end());
+        bytes.putBytes(channelHeader);
     }
-    return bytes;
+    return bytes.bytes();
 }
 
 TEST_CASE("the header is recognised and parsed", "[codec][ads]") {

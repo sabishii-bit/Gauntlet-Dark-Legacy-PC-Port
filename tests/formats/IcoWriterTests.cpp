@@ -6,6 +6,7 @@
 
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
+#include "engine/io/ByteReader.h"
 
 #include "TestSupport.h"
 #include "formats/IcoWriter.h"
@@ -14,11 +15,6 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
-
-u32 readU32(const std::vector<u8>& bytes, usize offset) {
-    return u32{bytes[offset]} | (u32{bytes[offset + 1]} << 8U) | (u32{bytes[offset + 2]} << 16U) |
-           (u32{bytes[offset + 3]} << 24U);
-}
 
 TEST_CASE("pixel art enlarges by repeating pixels", "[formats][ico]") {
     Image image = Image::filled(2, 1, Color::rgba(1, 2, 3, 4));
@@ -43,12 +39,12 @@ TEST_CASE("icons hold BGRA bitmaps with a transparency mask", "[formats][ico]") 
     REQUIRE(ico[7] == 2);
     REQUIRE(ico[22] == 0);
     REQUIRE(ico[23] == 0);
-    REQUIRE(readU32(ico, 14) == 40 + 16 + 8); // header, four BGRA pixels, two mask rows
-    REQUIRE(readU32(ico, 18) == 38);
+    REQUIRE(readU32LE(ico, 14) == 40 + 16 + 8); // header, four BGRA pixels, two mask rows
+    REQUIRE(readU32LE(ico, 18) == 38);
 
     // The first bitmap: a header with the height doubled, then rows bottom-up.
-    REQUIRE(readU32(ico, 38) == 40);
-    REQUIRE(readU32(ico, 46) == 4);
+    REQUIRE(readU32LE(ico, 38) == 40);
+    REQUIRE(readU32LE(ico, 46) == 4);
     REQUIRE(ico[78] == 30);
     REQUIRE(ico[79] == 20);
     REQUIRE(ico[80] == 10);

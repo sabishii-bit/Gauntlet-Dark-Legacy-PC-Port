@@ -1,3 +1,4 @@
+#include <span>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,11 +15,6 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
-
-void putBigU16(std::vector<u8>& out, u16 value) {
-    out.push_back(static_cast<u8>(value >> 8U));
-    out.push_back(static_cast<u8>(value & 0xFFU));
-}
 
 TEST_CASE("RGB5A3 texels expand to eight-bit colour", "[formats][texture]") {
     REQUIRE(rgb5a3ToColor(0xFFFF) == Color::rgba(255, 255, 255, 255));
@@ -65,23 +61,23 @@ TEST_CASE("direct 16-bit textures are tiled four by four", "[formats][texture]")
 }
 
 TEST_CASE("indexed textures resolve through their palette", "[formats][texture]") {
-    std::vector<u8> data;
+    test::SyntheticBytes data;
     for (s32 i = 0; i < 256; ++i) {
-        putBigU16(data, i == 3 ? 0x83E0 : 0x8000); // entry 3 = green
+        data.putU16BE(i == 3 ? 0x83E0 : 0x8000); // entry 3 = green
     }
     std::vector<u8> pixels(usize{8} * 4, 0); // one 8x4 tile
     pixels[2 * 8 + 6] = 3;                   // texel (6, 2)
-    data.insert(data.end(), pixels.begin(), pixels.end());
+    data.putBytes(pixels);
 
     ArchiveBitmap bitmap;
     bitmap.format = bitmap_format::kIndexed8Gc;
     bitmap.width = 8;
     bitmap.height = 4;
-    const Image image = decodeGcTexture(bitmap, data);
+    const Image image = decodeGcTexture(bitmap, data.bytes());
     REQUIRE(image.pixel(6, 2) == Color::rgba(0, 255, 0, 255));
     REQUIRE(image.pixel(0, 0) == Color::rgba(0, 0, 0, 255));
 
-    std::vector<u8> data4;
+    test::SyntheticBytes data4;
     for (s32 i = 0; i < 16; ++i) {
         u16 entry = 0x8000; // 1 = blue, 2 = white, rest black
         if (i == 1) {
@@ -89,14 +85,14 @@ TEST_CASE("indexed textures resolve through their palette", "[formats][texture]"
         } else if (i == 2) {
             entry = 0xFFFF;
         }
-        putBigU16(data4, entry);
+        data4.putU16BE(entry);
     }
     std::vector<u8> pixels4(8 * 8 / 2, 0); // one 8x8 tile, high nibble first
     pixels4[0] = 0x12;                     // texels (0,0) = 1, (1,0) = 2
-    data4.insert(data4.end(), pixels4.begin(), pixels4.end());
+    data4.putBytes(pixels4);
     bitmap.format = bitmap_format::kIndexed4Gc;
     bitmap.height = 8;
-    const Image image4 = decodeGcTexture(bitmap, data4);
+    const Image image4 = decodeGcTexture(bitmap, data4.bytes());
     REQUIRE(image4.pixel(0, 0) == Color::rgba(0, 0, 255, 255));
     REQUIRE(image4.pixel(1, 0) == Color::rgba(255, 255, 255, 255));
     REQUIRE(image4.pixel(2, 0) == Color::rgba(0, 0, 0, 255));
@@ -137,27 +133,28 @@ TEST_CASE("GameCube textures ignore legacy mip metadata and retain base tile pad
     bitmap.height = 1;
     bitmap.mipmapCount = 3;
     bitmap.dataOffset = 16;
-    std::vector<u8> data(16, 0);
+    test::SyntheticBytes data;
+    data.putZeros(16);
     SECTION("direct colour has a padded four by four tile even below that size") {
         bitmap.format = bitmap_format::kRgb5a3;
         for (s32 i = 0; i < 16; ++i) {
-            putBigU16(data, 0xFC00);
+            data.putU16BE(0xFC00);
         }
         CHECK(bitmapDataSize(bitmap) == 32);
-        CHECK(decodeGcTexture(bitmap, data).pixel(1, 0) == Color::rgba(255, 0, 0, 255));
+        CHECK(decodeGcTexture(bitmap, data.bytes()).pixel(1, 0) == Color::rgba(255, 0, 0, 255));
     }
     SECTION("indexed base image follows its palette without a mip tail") {
         bitmap.format = bitmap_format::kIndexed8Gc;
         for (s32 i = 0; i < 256; ++i) {
-            putBigU16(data, i == 3 ? 0x83E0 : 0x8000);
+            data.putU16BE(i == 3 ? 0x83E0 : 0x8000);
         }
-        data.insert(data.end(), 32, u8{3});
+        data.putBytes(std::vector<u8>(32, u8{3}));
         CHECK(bitmapDataSize(bitmap) == 512 + 32);
-        CHECK(decodeGcTexture(bitmap, data).pixel(1, 0) == Color::rgba(0, 255, 0, 255));
+        CHECK(decodeGcTexture(bitmap, data.bytes()).pixel(1, 0) == Color::rgba(0, 255, 0, 255));
     }
     CHECK(bitmap.dataOffset + bitmapDataSize(bitmap) == data.size());
-    data.pop_back();
-    REQUIRE_THROWS_AS(decodeGcTexture(bitmap, data), FormatError);
+    const std::span<const u8> truncated = std::span(data.bytes()).first(data.size() - 1);
+    REQUIRE_THROWS_AS(decodeGcTexture(bitmap, truncated), FormatError);
 }
 
 TEST_CASE("the title backdrop and glow frames decode", "[formats][texture][assets]") {

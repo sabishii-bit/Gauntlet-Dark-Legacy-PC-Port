@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
+#include "SyntheticBytes.h"
 #include "formats/TplFile.h"
 
 namespace {
@@ -15,37 +16,25 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 
-void putU16(std::vector<u8>& out, u16 value) {
-    out.push_back(static_cast<u8>(value >> 8U));
-    out.push_back(static_cast<u8>(value & 0xFFU));
-}
-
-void putU32(std::vector<u8>& out, u32 value) {
-    for (u32 shift = 24; shift > 0; shift -= 8) {
-        out.push_back(static_cast<u8>((value >> shift) & 0xFFU));
-    }
-    out.push_back(static_cast<u8>(value & 0xFFU));
-}
-
 /** A library with one 4x4 image of `format` whose texel data is `texels`, at offset 32. */
 std::vector<u8> sampleTpl(u32 format, const std::vector<u8>& texels) {
-    std::vector<u8> out;
-    putU32(out, 0x0020AF30);
-    putU32(out, 1);
-    putU32(out, 12); // the image table follows the header
-    putU32(out, 20); // whose one entry points at the image header
-    putU32(out, 0);  // and has no palette
-    putU16(out, 4);  // height
-    putU16(out, 4);  // width
-    putU32(out, format);
-    putU32(out, 32);
-    out.resize(32, 0);
-    out.insert(out.end(), texels.begin(), texels.end());
-    return out;
+    test::SyntheticBytes out;
+    out.putU32BE(0x0020AF30);
+    out.putU32BE(1);
+    out.putU32BE(12); // the image table follows the header
+    out.putU32BE(20); // whose one entry points at the image header
+    out.putU32BE(0);  // and has no palette
+    out.putU16BE(4);  // height
+    out.putU16BE(4);  // width
+    out.putU32BE(format);
+    out.putU32BE(32);
+    out.putZeros(32 - out.size());
+    out.putBytes(texels);
+    return out.bytes();
 }
 
 TEST_CASE("RGB5A3 tiles decode with their alpha", "[formats][tpl]") {
-    std::vector<u8> texels;
+    test::SyntheticBytes texels;
     for (u32 i = 0; i < 16; ++i) {
         u16 texel = 0x0000;
         if (i == 0) {
@@ -53,9 +42,9 @@ TEST_CASE("RGB5A3 tiles decode with their alpha", "[formats][tpl]") {
         } else if (i == 5) {
             texel = 0x3F00; // red at alpha 3 of 7
         }
-        putU16(texels, texel);
+        texels.putU16BE(texel);
     }
-    const std::vector<TplImage> images = parseTplFile(sampleTpl(kTplRgb5a3, texels));
+    const std::vector<TplImage> images = parseTplFile(sampleTpl(kTplRgb5a3, texels.bytes()));
     REQUIRE(images.size() == 1);
     REQUIRE(images[0].format == kTplRgb5a3);
     REQUIRE(images[0].image.width == 4);
@@ -66,11 +55,11 @@ TEST_CASE("RGB5A3 tiles decode with their alpha", "[formats][tpl]") {
 }
 
 TEST_CASE("RGB565 and RGBA8 tiles decode", "[formats][tpl]") {
-    std::vector<u8> texels;
-    putU16(texels, 0xFFFF);
-    putU16(texels, 0xF800);
-    texels.resize(32, 0);
-    const std::vector<TplImage> rgb565 = parseTplFile(sampleTpl(kTplRgb565, texels));
+    test::SyntheticBytes texels;
+    texels.putU16BE(0xFFFF);
+    texels.putU16BE(0xF800);
+    texels.putZeros(32 - texels.size());
+    const std::vector<TplImage> rgb565 = parseTplFile(sampleTpl(kTplRgb565, texels.bytes()));
     REQUIRE(rgb565[0].image.pixel(0, 0) == Color::white());
     REQUIRE(rgb565[0].image.pixel(1, 0) == Color::rgba(255, 0, 0));
     REQUIRE(rgb565[0].image.pixel(2, 0) == Color::rgba(0, 0, 0));

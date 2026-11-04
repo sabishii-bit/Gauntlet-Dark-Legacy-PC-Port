@@ -28,14 +28,6 @@ constexpr usize kDspHeaderSize = 96;
 constexpr usize kDspCoefficientsAt = 28;
 constexpr u16 kSampleMask = 0x0FFF;
 
-void putBe16(SyntheticBytes& out, u16 value) {
-    out.putU16(std::byteswap(value));
-}
-
-void putBe32(SyntheticBytes& out, u32 value) {
-    out.putU32(std::byteswap(value));
-}
-
 void putName(SyntheticBytes& out, std::string_view name) {
     if (name.size() > kNameSize) {
         throw FormatError("synthetic audio name exceeds its native field");
@@ -109,20 +101,20 @@ void writeNativeSoundBank(const std::filesystem::path& bankPath, std::string_vie
             if (sample > kSampleMask || sample >= samples.size()) {
                 throw FormatError("synthetic native call sample is out of range");
             }
-            putBe16(calls, static_cast<u16>(sample | (step.value("loopStart", false) ? 0x4000 : 0) |
+            calls.putU16BE(static_cast<u16>(sample | (step.value("loopStart", false) ? 0x4000 : 0) |
                                             (step.value("loopBack", false) ? 0x2000 : 0) |
                                             (i + 1 == sequence.size() ? 0x8000 : 0)));
         }
-        putBe16(calls, sound.value("volume", u16{127}));
-        putBe16(calls, sound.value("duck", u16{0}));
-        putBe16(calls, sound.value("priority", u16{0}));
+        calls.putU16BE(sound.value("volume", u16{127}));
+        calls.putU16BE(sound.value("duck", u16{0}));
+        calls.putU16BE(sound.value("priority", u16{0}));
     }
     SyntheticBytes bank;
     bank.putText("KNBV");
-    putBe32(bank, static_cast<u32>(calls.size()));
-    putBe32(bank, 0);
-    putBe32(bank, static_cast<u32>(sounds.size()));
-    putBe32(bank, static_cast<u32>(samples.size()));
+    bank.putU32BE(static_cast<u32>(calls.size()));
+    bank.putU32BE(0);
+    bank.putU32BE(static_cast<u32>(sounds.size()));
+    bank.putU32BE(static_cast<u32>(samples.size()));
     bank.putBytes(calls.bytes());
     for (const auto& sample : samples) {
         if (sample.sampleRate == 0 || sample.samples.empty()) {
@@ -130,15 +122,15 @@ void writeNativeSoundBank(const std::filesystem::path& bankPath, std::string_vie
         }
         const auto adpcm = encodeSample(sample.samples);
         bank.putText("VAGp");
-        putBe32(bank, 0x28);
-        putBe32(bank, 0);
-        putBe32(bank, static_cast<u32>(adpcm.size()));
-        putBe32(bank, sample.sampleRate);
+        bank.putU32BE(0x28);
+        bank.putU32BE(0);
+        bank.putU32BE(static_cast<u32>(adpcm.size()));
+        bank.putU32BE(sample.sampleRate);
         bank.putZeros(kSampleNameAt - 20);
         putName(bank, "SAMPLE");
-        putBe32(bank, static_cast<u32>(sample.samples.size()));
-        putBe32(bank, 0);
-        putBe32(bank, sample.sampleRate);
+        bank.putU32BE(static_cast<u32>(sample.samples.size()));
+        bank.putU32BE(0);
+        bank.putU32BE(sample.sampleRate);
         bank.putZeros(kDspCoefficientsAt - 12);
         bank.putZeros(kDspHeaderSize - kDspCoefficientsAt);
         bank.putBytes(adpcm);

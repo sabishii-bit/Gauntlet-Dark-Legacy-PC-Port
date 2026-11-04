@@ -16,6 +16,7 @@
 #include "engine/render/Image.h"
 #include "engine/render/Mesh.h"
 
+#include "SyntheticBytes.h"
 #include "fixtures/ReferenceObj.h"
 #include "formats/ModelArchive.h"
 
@@ -33,19 +34,12 @@ constexpr usize kWordSize = 4;
 constexpr u32 kTriangleVertices = 3;
 constexpr f32 kCoordinateScale = 128.0f;
 
-/** Random-access little-endian construction for tables containing absolute offsets. */
+/** Bytes laid out as tables with absolute offsets; their words are set with setU16LE and
+ * setU32LE. */
 class Bytes {
 public:
     explicit Bytes(usize size = 0) : data(size) {}
 
-    void u16At(usize at, u16 value) {
-        data.at(at) = static_cast<u8>(value);
-        data.at(at + 1) = static_cast<u8>(value >> 8U);
-    }
-    void u32At(usize at, u32 value) {
-        u16At(at, static_cast<u16>(value));
-        u16At(at + 2, static_cast<u16>(value >> 16U));
-    }
     void nameAt(usize at, usize size, const std::string& name) {
         if (name.size() > size) {
             throw FormatError("synthetic native name is too long: " + name);
@@ -115,40 +109,40 @@ std::vector<u8> geometryOf(const Mesh& mesh, const MeshPart& part) {
     Bytes bytes(8);
     for (usize triangle = 0; triangle < part.indices.size(); triangle += kTriangleVertices) {
         const usize packet = bytes.reserve(24);
-        bytes.u32At(packet, 0x6C018000);
-        bytes.u32At(packet + 4, kTriangleVertices);
-        bytes.u32At(packet + 20, 0x68000000);
+        setU32LE(bytes.data, packet, 0x6C018000);
+        setU32LE(bytes.data, packet + 4, kTriangleVertices);
+        setU32LE(bytes.data, packet + 20, 0x68000000);
         // Position words (four entries; the last is the packet's unused extent).
         const usize positions = bytes.reserve(48);
         const usize normals = bytes.reserve(12);
-        bytes.u32At(normals, 0x6F038002);
+        setU32LE(bytes.data, normals, 0x6F038002);
         const usize colors = mesh.prelit ? bytes.reserve(12) : 0;
         if (mesh.prelit) {
-            bytes.u32At(colors, 3);
+            setU32LE(bytes.data, colors, 3);
         }
         const usize texcoords = bytes.reserve(28);
-        bytes.u32At(texcoords, 0x6D000000);
+        setU32LE(bytes.data, texcoords, 0x6D000000);
         for (usize corner = 0; corner < kTriangleVertices; ++corner) {
             const auto& vertex = mesh.vertices.at(part.indices.at(triangle + corner));
             for (s32 axis = 0; axis < 3; ++axis) {
-                bytes.u32At(positions + corner * 12 + static_cast<usize>(axis) * kWordSize,
-                            static_cast<u32>(fixedPosition(vertex.position[axis])));
+                setU32LE(bytes.data, positions + corner * 12 + static_cast<usize>(axis) * kWordSize,
+                         static_cast<u32>(fixedPosition(vertex.position[axis])));
             }
-            bytes.u16At(normals + 4 + corner * 2, normalOf(vertex.normal));
+            setU16LE(bytes.data, normals + 4 + corner * 2, normalOf(vertex.normal));
             if (mesh.prelit) {
-                bytes.u16At(colors + 4 + corner * 2, colorOf(vertex.color));
+                setU16LE(bytes.data, colors + 4 + corner * 2, colorOf(vertex.color));
             }
-            bytes.u16At(texcoords + 4 + corner * 8, fixedUv(vertex.uv.x));
-            bytes.u16At(texcoords + 6 + corner * 8, fixedUv(vertex.uv.y));
-            bytes.u16At(texcoords + 8 + corner * 8, fixedUv(vertex.lightmapUv.x));
-            bytes.u16At(texcoords + 10 + corner * 8, fixedUv(vertex.lightmapUv.y));
+            setU16LE(bytes.data, texcoords + 4 + corner * 8, fixedUv(vertex.uv.x));
+            setU16LE(bytes.data, texcoords + 6 + corner * 8, fixedUv(vertex.uv.y));
+            setU16LE(bytes.data, texcoords + 8 + corner * 8, fixedUv(vertex.lightmapUv.x));
+            setU16LE(bytes.data, texcoords + 10 + corner * 8, fixedUv(vertex.lightmapUv.y));
         }
         const usize end = bytes.reserve(kWordSize);
-        bytes.u32At(end, 0x17000000);
+        setU32LE(bytes.data, end, 0x17000000);
     }
     bytes.reserve(kWordSize);
     bytes.align(kQuadword);
-    bytes.u16At(0, narrowU16(bytes.data.size() / kQuadword - 1));
+    setU16LE(bytes.data, 0, narrowU16(bytes.data.size() / kQuadword - 1));
     return bytes.data;
 }
 
@@ -196,8 +190,8 @@ void appendSilhouette(Bytes& bytes, const nlohmann::json& rows, u32 width, u32 h
         for (u32 tileX = 0; tileX < width; tileX += kTileSize) {
             for (u32 y = 0; y < kTileSize; ++y) {
                 for (u32 x = 0; x < kTileSize; x += 2) {
-                    bytes.data.push_back(static_cast<u8>(
-                        (index(tileX + x, tileY + y) << 4U) | index(tileX + x + 1, tileY + y)));
+                    bytes.data.push_back(static_cast<u8>((index(tileX + x, tileY + y) << 4U) |
+                                                         index(tileX + x + 1, tileY + y)));
                 }
             }
         }
@@ -227,26 +221,26 @@ void convertModelFixture(const std::filesystem::path& directory) {
     }
 
     Bytes archive(kArchiveHeader);
-    archive.u32At(64, formats::ModelArchive::kVersion13);
+    setU32LE(archive.data, 64, formats::ModelArchive::kVersion13);
     const usize objectTable = archive.reserve(objects.size() * kRecordSize);
     const usize bitmapTable = archive.reserve(bitmaps.size() * kRecordSize);
     const usize objectNames = archive.reserve(objects.size() * kObjectDefSize);
     const usize bitmapNames = archive.reserve(bitmapDefs.size() * kBitmapDefSize);
-    archive.u32At(68, static_cast<u32>(objects.size()));
-    archive.u32At(72, static_cast<u32>(bitmaps.size()));
-    archive.u32At(76, static_cast<u32>(objects.size()));
-    archive.u32At(80, static_cast<u32>(bitmapDefs.size()));
-    archive.u32At(84, static_cast<u32>(objectTable));
-    archive.u32At(88, static_cast<u32>(bitmapTable));
-    archive.u32At(92, static_cast<u32>(objectNames));
-    archive.u32At(96, static_cast<u32>(bitmapNames));
+    setU32LE(archive.data, 68, static_cast<u32>(objects.size()));
+    setU32LE(archive.data, 72, static_cast<u32>(bitmaps.size()));
+    setU32LE(archive.data, 76, static_cast<u32>(objects.size()));
+    setU32LE(archive.data, 80, static_cast<u32>(bitmapDefs.size()));
+    setU32LE(archive.data, 84, static_cast<u32>(objectTable));
+    setU32LE(archive.data, 88, static_cast<u32>(bitmapTable));
+    setU32LE(archive.data, 92, static_cast<u32>(objectNames));
+    setU32LE(archive.data, 96, static_cast<u32>(bitmapNames));
 
     for (usize i = 0; i < objects.size(); ++i) {
         const auto& object = objects[i];
         const usize record = objectTable + i * kRecordSize;
         const usize name = objectNames + i * kObjectDefSize;
         archive.nameAt(name, kObjectNameSize, object.value("name", std::string{}));
-        archive.u16At(name + 20, narrowU16(i));
+        setU16LE(archive.data, name + 20, narrowU16(i));
         if (!object.contains("file")) {
             continue;
         }
@@ -254,31 +248,30 @@ void convertModelFixture(const std::filesystem::path& directory) {
         u32 objectFlags = object.value("flags", u32{0});
         if (!object.contains("flags")) {
             for (const auto& part : mesh.parts) {
-                if (part.texture < bitmaps.size() &&
-                    (bitmaps[part.texture].value("flags", u16{0}) &
-                     formats::bitmap_flags::kHasAlpha) != 0) {
+                if (part.texture < bitmaps.size() && (bitmaps[part.texture].value("flags", u16{0}) &
+                                                      formats::bitmap_flags::kHasAlpha) != 0) {
                     objectFlags |= 1U;
                 }
             }
         }
-        archive.u32At(record + 8, objectFlags);
-        archive.u32At(record + 12, static_cast<u32>(mesh.parts.size()));
-        archive.u32At(record + 32, static_cast<u32>(mesh.vertices.size()));
-        archive.u32At(record + 36, static_cast<u32>(mesh.triangleCount()));
+        setU32LE(archive.data, record + 8, objectFlags);
+        setU32LE(archive.data, record + 12, static_cast<u32>(mesh.parts.size()));
+        setU32LE(archive.data, record + 32, static_cast<u32>(mesh.vertices.size()));
+        setU32LE(archive.data, record + 36, static_cast<u32>(mesh.triangleCount()));
         if (mesh.parts.empty()) {
             continue;
         }
         const usize extraParts = archive.reserve((mesh.parts.size() - 1) * 8);
-        archive.u32At(record + 24, static_cast<u32>(extraParts));
+        setU32LE(archive.data, record + 24, static_cast<u32>(extraParts));
         archive.align(kQuadword);
-        archive.u32At(record + 28, static_cast<u32>(archive.data.size()));
+        setU32LE(archive.data, record + 28, static_cast<u32>(archive.data.size()));
         for (usize p = 0; p < mesh.parts.size(); ++p) {
             const auto& part = mesh.parts[p];
             const auto geometry = geometryOf(mesh, part);
             const usize sub = p == 0 ? record + 16 : extraParts + (p - 1) * 8;
-            archive.u16At(sub, narrowU16(geometry.size() / kQuadword));
-            archive.u16At(sub + 2, narrowU16(part.texture));
-            archive.u16At(sub + 4, narrowU16(part.lightmap));
+            setU16LE(archive.data, sub, narrowU16(geometry.size() / kQuadword));
+            setU16LE(archive.data, sub + 2, narrowU16(part.texture));
+            setU16LE(archive.data, sub + 4, narrowU16(part.lightmap));
             archive.append(geometry);
         }
     }
@@ -297,11 +290,11 @@ void convertModelFixture(const std::filesystem::path& directory) {
         if (bitmap.value("clampV", false)) {
             flags |= formats::bitmap_flags::kClampV;
         }
-        archive.u16At(record + 8, flags);
-        archive.u16At(record + 20, bitmap.value("frames", u16{0}));
-        archive.u16At(record + 22, bitmap.at("width").get<u16>());
-        archive.u16At(record + 24, bitmap.at("height").get<u16>());
-        archive.u32At(record + 12, static_cast<u32>(pixels.data.size()));
+        setU16LE(archive.data, record + 8, flags);
+        setU16LE(archive.data, record + 20, bitmap.value("frames", u16{0}));
+        setU16LE(archive.data, record + 22, bitmap.at("width").get<u16>());
+        setU16LE(archive.data, record + 24, bitmap.at("height").get<u16>());
+        setU32LE(archive.data, record + 12, static_cast<u32>(pixels.data.size()));
         if (bitmap.contains("silhouette")) {
             archive.data.at(record) = formats::bitmap_format::kIndexed4Gc;
             appendSilhouette(pixels, bitmap.at("silhouette"), bitmap.at("width").get<u16>(),
@@ -327,9 +320,9 @@ void convertModelFixture(const std::filesystem::path& directory) {
         const usize record = bitmapNames + i * kBitmapDefSize;
         archive.nameAt(record, kBitmapNameSize, def.at("name").get<std::string>());
         const auto index = def.at("index").get<u16>();
-        archive.u16At(record + 30, index);
-        archive.u16At(record + 32, bitmaps.at(index).at("width").get<u16>());
-        archive.u16At(record + 34, bitmaps.at(index).at("height").get<u16>());
+        setU16LE(archive.data, record + 30, index);
+        setU16LE(archive.data, record + 32, bitmaps.at(index).at("width").get<u16>());
+        setU16LE(archive.data, record + 34, bitmaps.at(index).at("height").get<u16>());
     }
     writeFile(directory / "objects.ngc", archive.data);
     writeFile(directory / "textures.ngc", pixels.data);

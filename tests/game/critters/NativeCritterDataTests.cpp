@@ -25,18 +25,14 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+using test::setF32LE;
+using test::setU32LE;
 
 constexpr usize kType = 16;
 constexpr usize kDescriptor = kType + 0x140;
 constexpr usize kMove = kDescriptor + 0x30;
 constexpr usize kPattern = kMove + 0x90;
 constexpr usize kDirectory = kPattern + 0x50;
-
-void putWord(std::vector<u8>& bytes, usize at, u32 value) {
-    for (usize byte = 0; byte < 4; ++byte) {
-        bytes.at(at + byte) = static_cast<u8>(value >> (byte * 8));
-    }
-}
 
 std::vector<u8> tinyCritter() {
     test::SyntheticBytes writer;
@@ -46,22 +42,22 @@ std::vector<u8> tinyCritter() {
         writer.putU32(std::byteswap(fourcc(tag))).putU32(static_cast<u32>(at)).putU32(1).putU32(1);
     }
     auto bytes = writer.bytes();
-    putWord(bytes, kDescriptor, 0x4D654F47); // GOeM: descriptor casing is independent of the path
-    putWord(bytes, kDescriptor + 0x20, 3);
-    putWord(bytes, kType + 0x5C, 0xC7F);
-    putWord(bytes, kType + 0xA4, std::bit_cast<u32>(999.0f));
-    putWord(bytes, kType + 0xAC, std::bit_cast<u32>(22.0f));
-    putWord(bytes, kType + 0xE4, std::bit_cast<u32>(123.0f));
-    putWord(bytes, kType + 0xF8, 2);
-    putWord(bytes, kType + 0x110, 1);
-    putWord(bytes, kType + 0x114, 1);
-    putWord(bytes, kType + 0x11C, 0xFFFFFFFF);
-    putWord(bytes, kMove, MoveDefinition::kReady);
-    putWord(bytes, kMove + 0x30, 9); // a tab denotes no collision node
-    putWord(bytes, kMove + 0x40, 7);
-    putWord(bytes, kMove + 0x44, 11);
-    putWord(bytes, kMove + 0x50, 0x000E0009);
-    putWord(bytes, kPattern + 0x20, 0xFFFF0000); // move zero, then the terminator
+    setU32LE(bytes, kDescriptor, 0x4D654F47); // GOeM: descriptor casing is independent of the path
+    setU32LE(bytes, kDescriptor + 0x20, 3);
+    setU32LE(bytes, kType + 0x5C, 0xC7F);
+    setF32LE(bytes, kType + 0xA4, 999.0f);
+    setF32LE(bytes, kType + 0xAC, 22.0f);
+    setF32LE(bytes, kType + 0xE4, 123.0f);
+    setU32LE(bytes, kType + 0xF8, 2);
+    setU32LE(bytes, kType + 0x110, 1);
+    setU32LE(bytes, kType + 0x114, 1);
+    setU32LE(bytes, kType + 0x11C, 0xFFFFFFFF);
+    setU32LE(bytes, kMove, MoveDefinition::kReady);
+    setU32LE(bytes, kMove + 0x30, 9); // a tab denotes no collision node
+    setU32LE(bytes, kMove + 0x40, 7);
+    setU32LE(bytes, kMove + 0x44, 11);
+    setU32LE(bytes, kMove + 0x50, 0x000E0009);
+    setU32LE(bytes, kPattern + 0x20, 0xFFFF0000); // move zero, then the terminator
     return bytes;
 }
 
@@ -125,25 +121,25 @@ TEST_CASE("bad native critter data clears earlier and partial loads without expo
         bytes.resize(7);
     }
     SECTION("invalid descriptor") {
-        putWord(bytes, kType + 0x50, 4);
+        setU32LE(bytes, kType + 0x50, 4);
     }
     SECTION("negative move count") {
-        putWord(bytes, kType + 0x110, 0xFFFF);
+        setU32LE(bytes, kType + 0x110, 0xFFFF);
     }
     SECTION("empty move table") {
-        putWord(bytes, kType + 0x110, 0);
+        setU32LE(bytes, kType + 0x110, 0);
     }
     SECTION("move range outside table") {
-        putWord(bytes, kType + 0x110, 2);
+        setU32LE(bytes, kType + 0x110, 2);
     }
     SECTION("missing pattern range") {
-        putWord(bytes, kType + 0x114, 2);
+        setU32LE(bytes, kType + 0x114, 2);
     }
     SECTION("invalid node range") {
-        putWord(bytes, kType + 0x118, 1);
+        setU32LE(bytes, kType + 0x118, 1);
     }
     SECTION("invalid pattern after moves were populated") {
-        putWord(bytes, kPattern + 0x20, 0xFFFF0001);
+        setU32LE(bytes, kPattern + 0x20, 0xFFFF0001);
     }
     writeFile(native, bytes);
     REQUIRE_FALSE(data.load(legacy));

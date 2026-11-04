@@ -1,5 +1,3 @@
-#include <bit>
-#include <cstring>
 #include <string_view>
 #include <vector>
 
@@ -8,74 +6,70 @@
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 
+#include "SyntheticBytes.h"
 #include "formats/PlayerDataWad.h"
 
 namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
+using test::setF32LE;
+using test::setText;
+using test::setU16LE;
+using test::setU32LE;
 
 constexpr usize kRecordSize = 0x180;
-
-void putU32(std::vector<u8>& bytes, usize offset, u32 value) {
-    if constexpr (std::endian::native == std::endian::big) {
-        value = std::byteswap(value);
-    }
-    std::memcpy(&bytes[offset], &value, 4);
-}
-
-void putF32(std::vector<u8>& bytes, usize offset, f32 value) {
-    putU32(bytes, offset, std::bit_cast<u32>(value));
-}
+/** The fixed width of an effect's tree and sound names. */
+constexpr usize kNameField = 16;
 
 /** A wad with one PDAT record after the header and its directory at the end. */
 std::vector<u8> sampleWad() {
     const usize record = 16;
     const usize directory = record + kRecordSize;
     std::vector<u8> bytes(directory + 16, 0);
-    putU32(bytes, 0, static_cast<u32>(directory));
-    putU32(bytes, 4, 1);
+    setU32LE(bytes, 0, static_cast<u32>(directory));
+    setU32LE(bytes, 4, 1);
     bytes[record] = 15; // effect count
     bytes[record + 2] = 14;
-    putF32(bytes, record + 0x28, 600.0f);
-    putF32(bytes, record + 0x2C, 999.0f);
-    putF32(bytes, record + 0x30, 350.0f);
-    putF32(bytes, record + 0x34, 750.0f);
-    putF32(bytes, record + 0x38, 300.0f);
-    putF32(bytes, record + 0x3C, 700.0f);
-    putF32(bytes, record + 0x40, 100.0f);
-    putF32(bytes, record + 0x44, 500.0f);
-    putF32(bytes, record + 0x48, 5.0f);
-    putF32(bytes, record + 0x4C, 1.5f);
-    putF32(bytes, record + 0x50, 4.4f);
-    putF32(bytes, record + 0x54, 2.5f);
-    putF32(bytes, record + 0x58, 1.25f);
-    putF32(bytes, record + 0x5C, -0.5f);
-    putF32(bytes, record + 0x60, 0.5f);
-    putF32(bytes, record + 0x64, 1.5f);
-    putF32(bytes, record + 0x68, 0.0f); // the first tier's glow offset and scale
-    putF32(bytes, record + 0x6C, -0.35f);
-    putF32(bytes, record + 0x70, 0.75f);
-    putF32(bytes, record + 0xE0, 0.45f);
-    putF32(bytes, record + 0xE4, 0.55f);
-    putF32(bytes, record + 0xE8, 0.55f);
+    setF32LE(bytes, record + 0x28, 600.0f);
+    setF32LE(bytes, record + 0x2C, 999.0f);
+    setF32LE(bytes, record + 0x30, 350.0f);
+    setF32LE(bytes, record + 0x34, 750.0f);
+    setF32LE(bytes, record + 0x38, 300.0f);
+    setF32LE(bytes, record + 0x3C, 700.0f);
+    setF32LE(bytes, record + 0x40, 100.0f);
+    setF32LE(bytes, record + 0x44, 500.0f);
+    setF32LE(bytes, record + 0x48, 5.0f);
+    setF32LE(bytes, record + 0x4C, 1.5f);
+    setF32LE(bytes, record + 0x50, 4.4f);
+    setF32LE(bytes, record + 0x54, 2.5f);
+    setF32LE(bytes, record + 0x58, 1.25f);
+    setF32LE(bytes, record + 0x5C, -0.5f);
+    setF32LE(bytes, record + 0x60, 0.5f);
+    setF32LE(bytes, record + 0x64, 1.5f);
+    setF32LE(bytes, record + 0x68, 0.0f); // the first tier's glow offset and scale
+    setF32LE(bytes, record + 0x6C, -0.35f);
+    setF32LE(bytes, record + 0x70, 0.75f);
+    setF32LE(bytes, record + 0xE0, 0.45f);
+    setF32LE(bytes, record + 0xE4, 0.55f);
+    setF32LE(bytes, record + 0xE8, 0.55f);
     constexpr usize kTenthTier = usize{9} * 12;
-    putF32(bytes, record + 0x68 + kTenthTier + 4, -0.5f); // the tenth tier's offset, y
-    putF32(bytes, record + 0xE0 + kTenthTier + 8, 0.9f);  // and scale, z
-    putF32(bytes, record + 0x164, -1.0f);
-    putF32(bytes, record + 0x168, 5.0f);
-    putF32(bytes, record + 0x16C, 0.75f);
-    putF32(bytes, record + 0x170, 1.25f);
-    putF32(bytes, record + 0x174, 6.0f);
-    putF32(bytes, record + 0x178, -0.5f);
-    putF32(bytes, record + 0x17C, 2.5f);
+    setF32LE(bytes, record + 0x68 + kTenthTier + 4, -0.5f); // the tenth tier's offset, y
+    setF32LE(bytes, record + 0xE0 + kTenthTier + 8, 0.9f);  // and scale, z
+    setF32LE(bytes, record + 0x164, -1.0f);
+    setF32LE(bytes, record + 0x168, 5.0f);
+    setF32LE(bytes, record + 0x16C, 0.75f);
+    setF32LE(bytes, record + 0x170, 1.25f);
+    setF32LE(bytes, record + 0x174, 6.0f);
+    setF32LE(bytes, record + 0x178, -0.5f);
+    setF32LE(bytes, record + 0x17C, 2.5f);
     bytes[directory] = 'T';
     bytes[directory + 1] = 'A';
     bytes[directory + 2] = 'D';
     bytes[directory + 3] = 'P';
-    putU32(bytes, directory + 4, static_cast<u32>(record));
-    putU32(bytes, directory + 8, 1);
-    putU32(bytes, directory + 12, 1);
+    setU32LE(bytes, directory + 4, static_cast<u32>(record));
+    setU32LE(bytes, directory + 8, 1);
+    setU32LE(bytes, directory + 12, 1);
     return bytes;
 }
 
@@ -113,11 +107,11 @@ TEST_CASE("damaged class wads are rejected", "[formats][pdata]") {
     REQUIRE_THROWS_AS(parsePlayerDataWad(bytes), FormatError);
 
     bytes = sampleWad();
-    putU32(bytes, bytes.size() - 12, 0x1000); // record beyond the file
+    setU32LE(bytes, bytes.size() - 12, 0x1000); // record beyond the file
     REQUIRE_THROWS_AS(parsePlayerDataWad(bytes), FormatError);
 
     bytes = sampleWad();
-    putU32(bytes, 4, 100); // more directory entries than fit
+    setU32LE(bytes, 4, 100); // more directory entries than fit
     REQUIRE_THROWS_AS(parsePlayerDataWad(bytes), FormatError);
 }
 
@@ -132,57 +126,52 @@ TEST_CASE("a class wad gives its moves: the effects they show and the strikes th
     const usize directory = record + kRecordSize;
     constexpr usize kEntry = 16;
     std::vector<u8> bytes(directory + 3 * kEntry, 0);
-    putU32(bytes, 0, static_cast<u32>(directory));
-    putU32(bytes, 4, 3);
+    setU32LE(bytes, 0, static_cast<u32>(directory));
+    setU32LE(bytes, 4, 3);
     const auto section = [&](usize slot, std::string_view tag, usize offset, u32 count) {
         const usize at = directory + slot * kEntry;
         for (usize c = 0; c < 4; ++c) {
             bytes[at + c] = static_cast<u8>(tag[3 - c]); // tags lie the other way round
         }
-        putU32(bytes, at + 4, static_cast<u32>(offset));
-        putU32(bytes, at + 8, count);
-        putU32(bytes, at + 12, count);
+        setU32LE(bytes, at + 4, static_cast<u32>(offset));
+        setU32LE(bytes, at + 8, count);
+        setU32LE(bytes, at + 12, count);
     };
     section(0, "SFXX", effects, 1);
     section(1, "DAMG", strikes, 2);
     section(2, "PDAT", record, 1);
-    const auto put16 = [&](usize at, s16 value) {
-        const auto raw = static_cast<u16>(value);
-        bytes[at] = static_cast<u8>(raw & 0xFF);
-        bytes[at + 1] = static_cast<u8>(raw >> 8);
-    };
-    put16(record, 1);     // effects
-    put16(record + 2, 2); // strikes
+    setU16LE(bytes, record, 1);     // effects
+    setU16LE(bytes, record + 2, 2); // strikes
     for (usize move = 0; move < PlayerClassRecord::kMoveCount; ++move) {
-        put16(record + 0x0C + move * 2, -1);
+        setU16LE(bytes, record + 0x0C + move * 2, static_cast<u16>(-1));
     }
-    put16(record + 0x0C + usize{5} * 2, 0); // turbo B starts at the first strike
-    putU32(bytes, effects, 4);
-    putU32(bytes, effects + 4, 0xFFFFFFFF);
-    std::memcpy(&bytes[effects + 0x10], "WAR_POWERB", 10);
-    std::memcpy(&bytes[effects + 0x20], "S_WARTURBOB", 11);
-    putF32(bytes, effects + 0x38, 5.0f);
-    putF32(bytes, effects + 0x48, 2.0f);
-    putF32(bytes, effects + 0x40, 0.5f);
-    putF32(bytes, effects + 0x44, 3.0f);
-    put16(effects + 0x32, -150);
-    putU32(bytes, effects + 0x4C, 0x7F12AB34);
-    put16(strikes, 4);
-    putF32(bytes, strikes + 0x0C, 12.0f);
-    putF32(bytes, strikes + 0x14, 0.5f);
-    putF32(bytes, strikes + 0x24, -1.0f);
-    putF32(bytes, strikes + 0x38, 50.0f);
-    put16(strikes + 0x48, 0);
-    put16(strikes + 0x4E, 1);
-    put16(strikes + kStrike, 2);
-    putF32(bytes, strikes + kStrike + 0x08, 10.0f);
-    putF32(bytes, strikes + kStrike + 0x1C, 6.0f);
-    putF32(bytes, strikes + kStrike + 0x34, 5.0f);
-    putF32(bytes, strikes + kStrike + 0x38, -1.5f);
-    putF32(bytes, strikes + kStrike + 0x3C, 30.0f);
-    putF32(bytes, strikes + kStrike + 0x40, 40.0f);
-    put16(strikes + kStrike + 0x4E, -1);
-    put16(strikes + kStrike + 0x50, 9);
+    setU16LE(bytes, record + 0x0C + usize{5} * 2, 0); // turbo B starts at the first strike
+    setU32LE(bytes, effects, 4);
+    setU32LE(bytes, effects + 4, 0xFFFFFFFF);
+    setText(bytes, effects + 0x10, kNameField, "WAR_POWERB");
+    setText(bytes, effects + 0x20, kNameField, "S_WARTURBOB");
+    setF32LE(bytes, effects + 0x38, 5.0f);
+    setF32LE(bytes, effects + 0x48, 2.0f);
+    setF32LE(bytes, effects + 0x40, 0.5f);
+    setF32LE(bytes, effects + 0x44, 3.0f);
+    setU16LE(bytes, effects + 0x32, static_cast<u16>(-150));
+    setU32LE(bytes, effects + 0x4C, 0x7F12AB34);
+    setU16LE(bytes, strikes, 4);
+    setF32LE(bytes, strikes + 0x0C, 12.0f);
+    setF32LE(bytes, strikes + 0x14, 0.5f);
+    setF32LE(bytes, strikes + 0x24, -1.0f);
+    setF32LE(bytes, strikes + 0x38, 50.0f);
+    setU16LE(bytes, strikes + 0x48, 0);
+    setU16LE(bytes, strikes + 0x4E, 1);
+    setU16LE(bytes, strikes + kStrike, 2);
+    setF32LE(bytes, strikes + kStrike + 0x08, 10.0f);
+    setF32LE(bytes, strikes + kStrike + 0x1C, 6.0f);
+    setF32LE(bytes, strikes + kStrike + 0x34, 5.0f);
+    setF32LE(bytes, strikes + kStrike + 0x38, -1.5f);
+    setF32LE(bytes, strikes + kStrike + 0x3C, 30.0f);
+    setF32LE(bytes, strikes + kStrike + 0x40, 40.0f);
+    setU16LE(bytes, strikes + kStrike + 0x4E, static_cast<u16>(-1));
+    setU16LE(bytes, strikes + kStrike + 0x50, 9);
 
     const PlayerClassRecord parsed = parsePlayerDataWad(bytes);
     REQUIRE(PlayerClassRecord::kMoveNames[5] == "turboB");

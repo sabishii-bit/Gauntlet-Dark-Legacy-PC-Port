@@ -1,5 +1,4 @@
 #include <array>
-#include <bit>
 #include <numbers>
 #include <string_view>
 #include <vector>
@@ -20,6 +19,10 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 using Catch::Approx;
+using test::setF32LE;
+using test::setText;
+using test::setU16LE;
+using test::setU32LE;
 using test::SyntheticBytes;
 
 TEST_CASE("all nine secret worlds retain their individual retail time limits",
@@ -43,98 +46,80 @@ TEST_CASE("realm maps preserve their glow and route coordinates",
     CHECK(data.levels[0].mapIndex == 0);
 }
 
-/** A zeroed record that fields are written into at their offsets. */
-struct Record {
-    std::vector<u8> bytes;
-
-    explicit Record(usize size) : bytes(size, 0) {}
-
-    void u16At(usize at, u16 value) {
-        bytes[at] = static_cast<u8>(value & 0xFFU);
-        bytes[at + 1] = static_cast<u8>(value >> 8U);
-    }
-    void u32At(usize at, u32 value) {
-        u16At(at, static_cast<u16>(value & 0xFFFFU));
-        u16At(at + 2, static_cast<u16>(value >> 16U));
-    }
-    void f32At(usize at, f32 value) { u32At(at, std::bit_cast<u32>(value)); }
-    void textAt(usize at, std::string_view text) {
-        for (const char c : text) {
-            bytes.at(at++) = static_cast<u8>(c);
-        }
-    }
-};
+/** The fixed text fields of a realm's records: a level's name, and every other name. */
+constexpr usize kLevelNameField = 4;
+constexpr usize kTextField = 16;
 
 /** A realm of one level with its camera, audio and one named sound. */
 std::vector<u8> sampleWad() {
-    Record world(20);
-    world.u32At(0, 13);
-    world.textAt(4, "levelL");
+    std::vector<u8> world(20, 0);
+    setU32LE(world, 0, 13);
+    setText(world, 4, kTextField, "levelL");
 
-    Record level(WorldDataFile::kLevelSize);
-    level.u32At(0, 0x10);
-    level.u16At(4, 2);
-    level.textAt(8, "L1");
-    level.u16At(0x0C, 45);
-    level.textAt(0x14, "Tower");
-    level.textAt(0x34, "intro");
-    level.u32At(0x44, 0xFFFFFFFF);
-    level.u32At(0x48, 1);
-    level.u16At(0x58, 0);
-    level.u16At(0x5A, 0);
-    level.u16At(0x5C, 0xFFFF);
-    level.bytes[0x70] = 3;
-    level.bytes[0x71] = 255;
-    level.bytes[0x72] = 200;
-    level.bytes[0x73] = 100;
-    level.f32At(0x84, 64.0f);
-    level.f32At(0x88, 2000.0f);
-    level.u16At(0x8E, 25);
-    level.f32At(0x94, 0.75f);
-    level.f32At(0xA4, 1.25f); // the damage multiplier
-    level.f32At(0xA8, 2.0f);  // the difficulty
-    level.f32At(0xD8, 1.5f);  // how fast its traps cycle
-    level.f32At(0x98, 1.0f);
-    level.u32At(0xE0, 1234);
-    level.u32At(0xE4, 123);
-    level.u32At(0xE8, 2345);
-    level.f32At(0xEC, 0.8f);
-    level.f32At(0xF0, -1.0f);
-    level.f32At(0xF4, -6.0f);
-    level.f32At(0xF8, 2.0f);
-    level.f32At(0xFC, 1.0f);
-    level.f32At(0x100, 0.9f);
-    level.f32At(0x104, 0.8f);
-    level.f32At(0x108, 1.0f);
+    std::vector<u8> level(WorldDataFile::kLevelSize, 0);
+    setU32LE(level, 0, 0x10);
+    setU16LE(level, 4, 2);
+    setText(level, 8, kLevelNameField, "L1");
+    setU16LE(level, 0x0C, 45);
+    setText(level, 0x14, kTextField, "Tower");
+    setText(level, 0x34, kTextField, "intro");
+    setU32LE(level, 0x44, 0xFFFFFFFF);
+    setU32LE(level, 0x48, 1);
+    setU16LE(level, 0x58, 0);
+    setU16LE(level, 0x5A, 0);
+    setU16LE(level, 0x5C, 0xFFFF);
+    level[0x70] = 3;
+    level[0x71] = 255;
+    level[0x72] = 200;
+    level[0x73] = 100;
+    setF32LE(level, 0x84, 64.0f);
+    setF32LE(level, 0x88, 2000.0f);
+    setU16LE(level, 0x8E, 25);
+    setF32LE(level, 0x94, 0.75f);
+    setF32LE(level, 0xA4, 1.25f); // the damage multiplier
+    setF32LE(level, 0xA8, 2.0f);  // the difficulty
+    setF32LE(level, 0xD8, 1.5f);  // how fast its traps cycle
+    setF32LE(level, 0x98, 1.0f);
+    setU32LE(level, 0xE0, 1234);
+    setU32LE(level, 0xE4, 123);
+    setU32LE(level, 0xE8, 2345);
+    setF32LE(level, 0xEC, 0.8f);
+    setF32LE(level, 0xF0, -1.0f);
+    setF32LE(level, 0xF4, -6.0f);
+    setF32LE(level, 0xF8, 2.0f);
+    setF32LE(level, 0xFC, 1.0f);
+    setF32LE(level, 0x100, 0.9f);
+    setF32LE(level, 0x104, 0.8f);
+    setF32LE(level, 0x108, 1.0f);
 
-    Record camera(WorldDataFile::kCameraSize);
-    camera.u16At(2, 1);
-    camera.f32At(4, 1.0f);
-    camera.f32At(8, 0.6981317f);
-    camera.f32At(0x18, 10.0f);
-    camera.bytes[0x25] = 255;
-    camera.u16At(0x26, 0xFFFF);
-    camera.f32At(0x28, 50.0f);
-    camera.f32At(0x2C, 24.0f);
-    camera.f32At(0x30, 32.0f);
-    camera.u16At(0x34, 25);
-    camera.f32At(0x58, 0.01f);
-    camera.f32At(0x5C, -std::numbers::pi_v<f32>);
-    camera.f32At(0x60, std::numbers::pi_v<f32>);
+    std::vector<u8> camera(WorldDataFile::kCameraSize, 0);
+    setU16LE(camera, 2, 1);
+    setF32LE(camera, 4, 1.0f);
+    setF32LE(camera, 8, 0.6981317f);
+    setF32LE(camera, 0x18, 10.0f);
+    camera[0x25] = 255;
+    setU16LE(camera, 0x26, 0xFFFF);
+    setF32LE(camera, 0x28, 50.0f);
+    setF32LE(camera, 0x2C, 24.0f);
+    setF32LE(camera, 0x30, 32.0f);
+    setU16LE(camera, 0x34, 25);
+    setF32LE(camera, 0x58, 0.01f);
+    setF32LE(camera, 0x5C, -std::numbers::pi_v<f32>);
+    setF32LE(camera, 0x60, std::numbers::pi_v<f32>);
 
-    Record audio(WorldDataFile::kAudioSize);
-    audio.textAt(0, "WIZTOWER");
-    audio.u16At(0x10, 0);
-    audio.u16At(0x12, 1);
-    audio.u32At(0x14, 0xFFFFFFFF);
-    audio.textAt(0x18, "tower");
-    audio.u16At(0x28, 1);
-    audio.u16At(0x2A, 1);
+    std::vector<u8> audio(WorldDataFile::kAudioSize, 0);
+    setText(audio, 0, kTextField, "WIZTOWER");
+    setU16LE(audio, 0x10, 0);
+    setU16LE(audio, 0x12, 1);
+    setU32LE(audio, 0x14, 0xFFFFFFFF);
+    setText(audio, 0x18, kTextField, "tower");
+    setU16LE(audio, 0x28, 1);
+    setU16LE(audio, 0x2A, 1);
 
-    Record sound(WorldDataFile::kSoundSize);
-    sound.textAt(0, "S_ENTERING1A");
-    sound.u16At(0x14, 5);
-    sound.u16At(0x16, 2);
+    std::vector<u8> sound(WorldDataFile::kSoundSize, 0);
+    setText(sound, 0, kTextField, "S_ENTERING1A");
+    setU16LE(sound, 0x14, 5);
+    setU16LE(sound, 0x16, 2);
 
     constexpr u32 kDataAt = 16;
     const u32 worldAt = kDataAt;
@@ -147,17 +132,17 @@ std::vector<u8> sampleWad() {
 
     SyntheticBytes w;
     w.putU32(directoryAt).putU32(6).putZeros(8);
-    w.putBytes(world.bytes);
-    w.putBytes(level.bytes);
-    w.putBytes(camera.bytes);
-    w.putBytes(audio.bytes);
-    w.putBytes(sound.bytes);
-    Record map(72);
+    w.putBytes(world);
+    w.putBytes(level);
+    w.putBytes(camera);
+    w.putBytes(audio);
+    w.putBytes(sound);
+    std::vector<u8> map(72, 0);
     for (usize i = 0; i < 9; ++i) {
-        map.f32At(i * 8, i == 0 ? 36.0f : -1.0f);
-        map.f32At(i * 8 + 4, i == 0 ? 164.0f : -1.0f);
+        setF32LE(map, i * 8, i == 0 ? 36.0f : -1.0f);
+        setF32LE(map, i * 8 + 4, i == 0 ? 164.0f : -1.0f);
     }
-    w.putBytes(map.bytes);
+    w.putBytes(map);
     const auto entry = [&](std::string_view reversedTag, u32 offset, u32 count) {
         w.putText(reversedTag).putU32(offset).putU32(count).putU32(count);
     };

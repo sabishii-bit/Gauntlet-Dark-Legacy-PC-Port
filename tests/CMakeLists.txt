@@ -282,6 +282,7 @@ add_executable(tests
     game/hud/LinkIndicatorTests.cpp
     TestSupport.h
     SyntheticBytes.h
+    SyntheticBytesTests.cpp
     fixtures/ReferenceObj.cpp
     fixtures/ReferenceObjTests.cpp
     fixtures/NativeModelFixture.cpp
