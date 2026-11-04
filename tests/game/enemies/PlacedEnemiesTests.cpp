@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <array>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -9,10 +8,10 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/PlacedEnemies.h"
-#include "game/enemies/PlacedEnemiesCheckpoint.h"
 
 namespace {
 using namespace gdl;
@@ -55,6 +54,22 @@ std::vector<PlacedEnemies::Placement> pendingRecords(const PlacedEnemies& owner)
     return result;
 }
 
+/** The roster indices still waiting, in native order. */
+std::vector<usize> pendingIndices(const PlacedEnemies& owner) {
+    return std::vector<usize>(owner.pending().begin(), owner.pending().end());
+}
+
+std::vector<PlacedEnemies::Placement> rosterOf(const PlacedEnemies& owner) {
+    return std::vector<PlacedEnemies::Placement>(owner.roster().begin(), owner.roster().end());
+}
+
+/** Whether the owner's values now equal `saved`. */
+bool holds(const PlacedEnemies& owner, const PlacedEnemies::LocalSnapshot& saved) {
+    PlacedEnemies::LocalSnapshot now;
+    owner.saveLocal(now);
+    return owner.equalLocal(now, saved);
+}
+
 TEST_CASE("placed enemy checkpoint retains complete metadata and ordered native activation",
           "[rollback][placed-enemies]") {
     auto varied = placement({0, 0, 10});
@@ -79,17 +94,15 @@ TEST_CASE("placed enemy checkpoint retains complete metadata and ordered native 
     owner.bind(roster);
     const ViewVolume view;
     owner.observe(view, {});
-    const auto checkpoint = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(checkpoint);
-    CHECK(checkpoint->roster == roster);
-    CHECK(checkpoint->pending == std::vector<usize>{0, 1, 2, 3, 4});
+    PlacedEnemies::LocalSnapshot checkpoint;
+    owner.saveLocal(checkpoint);
+    CHECK(rosterOf(owner) == roster);
+    CHECK(pendingIndices(owner) == std::vector<usize>{0, 1, 2, 3, 4});
     CHECK(owner.inView({0, 0, 50}, 1));
     CHECK_FALSE(owner.inView({0, 0, 50.01f}, 1));
     CHECK_FALSE(owner.inView({100, 0, 10}, 1));
     const auto expected = owner.activations();
-    REQUIRE(checkpoint->activations());
-    CHECK(*checkpoint->activations() == expected);
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == checkpoint);
+    CHECK(holds(owner, checkpoint));
     REQUIRE(expected.size() == 3);
     CHECK(expected[0] == varied);
     CHECK(expected[1] == varied); // Identical records are distinct original placements.
@@ -102,14 +115,14 @@ TEST_CASE("placed enemy checkpoint retains complete metadata and ordered native 
     CHECK(actual == expected);
     CHECK(pendingRecords(owner) == native);
     CHECK(owner.pending().size() == 2);
-    const auto after = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(after);
-    CHECK(after->pending == std::vector<usize>{0, 2});
-    REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *checkpoint));
+    PlacedEnemies::LocalSnapshot after;
+    owner.saveLocal(after);
+    CHECK(pendingIndices(owner) == std::vector<usize>{0, 2});
+    REQUIRE(owner.restoreLocal(checkpoint));
     actual.clear();
     owner.activate([&](const auto& standing) { actual.push_back(standing); });
     CHECK(actual == expected);
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == after);
+    CHECK(holds(owner, after));
 }
 
 TEST_CASE("placed enemy no-view activation consumes failed attempts in native order",
@@ -119,10 +132,9 @@ TEST_CASE("placed enemy no-view activation consumes failed attempts in native or
     PlacedEnemies owner;
     owner.bind(roster);
     owner.observe(std::nullopt, {123, 456, 789});
-    const auto before = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(before);
-    REQUIRE(before->activations());
-    CHECK(*before->activations() == owner.activations());
+    PlacedEnemies::LocalSnapshot before;
+    owner.saveLocal(before);
+    const auto preflight = owner.activations();
     std::vector<PlacedEnemies::Placement> actual;
     // An empty-result dispatcher represents a full native pool. Activation is
     // still consumed, rather than retried on every later camera update.
@@ -131,10 +143,10 @@ TEST_CASE("placed enemy no-view activation consumes failed attempts in native or
         actual.push_back(standing);
     });
     REQUIRE(actual.size() == roster.size());
-    CHECK(*before->activations() == actual);
+    CHECK(preflight == actual);
     CHECK(owner.count() == 0);
     owner.activate([&](const auto&) { FAIL("a consumed placement was retried"); });
-    REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *before));
+    REQUIRE(owner.restoreLocal(before));
     CHECK(owner.count() == roster.size());
     CHECK(owner.inView({100000, 0, -100000}, 1));
 }
@@ -145,10 +157,9 @@ TEST_CASE("placed enemy checkpoint preserves negative authored default-way selec
     record.spawn.algorithm = -32768;
     PlacedEnemies owner;
     owner.bind({record});
-    const auto state = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(state);
-    REQUIRE(state->valid());
-    REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *state));
+    PlacedEnemies::LocalSnapshot state;
+    owner.saveLocal(state);
+    REQUIRE(owner.restoreLocal(state));
     CHECK(owner.activations().front().spawn.algorithm == -32768);
 }
 
@@ -158,188 +169,23 @@ TEST_CASE("placement value preflight matches prospective native watch without mu
     owner.bind({placement({0, 0, 10}), placement({0, 0, 100}, kDeathKind),
                 placement({0, 0, 100}, kDeathKind)});
     owner.observe(ViewVolume{}, {});
-    const auto before = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(before);
+    PlacedEnemies::LocalSnapshot before;
+    owner.saveLocal(before);
+    const auto current = owner.activations();
     ViewVolume next;
     next.position = {0, 0, 80};
     const Vec3 attention{0, 0, 100};
-    const auto prospective = before->activations(next, attention);
-    REQUIRE(prospective);
-    REQUIRE(prospective->size() == 2);
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == before);
     owner.observe(next, attention);
-    CHECK(owner.activations() == *prospective);
+    const auto prospective = owner.activations();
+    REQUIRE(owner.restoreLocal(before));
+    REQUIRE(prospective.size() == 2);
+    CHECK(holds(owner, before));
+    owner.observe(next, attention);
+    CHECK(owner.activations() == prospective);
     std::vector<PlacedEnemies::Placement> born;
     owner.activate([&](const auto& value) { born.push_back(value); });
-    CHECK(born == *prospective);
-
-    auto malformed = *before;
-    malformed.pending.push_back(malformed.roster.size());
-    CHECK_FALSE(malformed.activations());
-    next.position.x = std::numeric_limits<f32>::infinity();
-    CHECK_FALSE(before->activations(next, attention));
-    CHECK_FALSE(before->activations(std::nullopt, Vec3{std::numeric_limits<f32>::quiet_NaN()}));
-    CHECK(before->activations()->size() == 1);
-}
-
-TEST_CASE("placed enemy checkpoint rejects malformed order view and placement data atomically",
-          "[rollback][placed-enemies]") {
-    PlacedEnemies owner;
-    owner.bind({placement({0, 0, 10}), placement({0, 0, 100})});
-    const auto before = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(before);
-    auto invalid = *before;
-    SECTION("out of roster") {
-        invalid.pending.push_back(2);
-    }
-    SECTION("duplicate membership") {
-        invalid.pending = {0, 0};
-    }
-    SECTION("reordered membership") {
-        invalid.pending = {1, 0};
-    }
-    SECTION("nonfinite attention") {
-        invalid.attention.x = std::numeric_limits<f32>::quiet_NaN();
-    }
-    SECTION("nonfinite view") {
-        invalid.view.emplace();
-        invalid.view->up.y = std::numeric_limits<f32>::infinity();
-    }
-    SECTION("view angle bounds") {
-        invalid.view.emplace();
-        invalid.view->sinY = 2;
-    }
-    SECTION("spawn priority enum") {
-        invalid.roster[0].spawn.priority = static_cast<EnemySpawn::Priority>(2);
-    }
-    SECTION("spawn timer") {
-        invalid.roster[0].spawn.throwInterval = -1;
-    }
-    SECTION("kind") {
-        invalid.roster[0].kind = kEnemyKindCount;
-    }
-    SECTION("carried item") {
-        invalid.roster[0].carried = usize{1'000'001};
-    }
-    SECTION("placement bounds") {
-        invalid.roster.resize(PlacedEnemiesCheckpoint::State::kMaxPlacements + 1,
-                              placement({0, 0, 10}));
-    }
-    REQUIRE_FALSE(invalid.valid());
-    CHECK_FALSE(PlacedEnemiesCheckpoint::prepareRestore(owner, invalid));
-    CHECK_FALSE(PlacedEnemiesCheckpoint::restore(owner, invalid));
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == before);
-}
-
-TEST_CASE("placed enemy restore resolves the entire immutable roster not only pending entries",
-          "[rollback][placed-enemies]") {
-    PlacedEnemies owner;
-    owner.bind({placement({0, 0, 10}), placement({0, 0, 100})});
-    owner.observe(ViewVolume{}, {});
-    owner.activate([](const auto&) {});
-    const auto before = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(before);
-    REQUIRE(before->pending == std::vector<usize>{1});
-    auto wrong = *before;
-    SECTION("consumed record") {
-        wrong.roster[0].spawn.position.z += 1;
-    }
-    SECTION("pending spawn") {
-        wrong.roster[1].spawn.sight += 1;
-    }
-    SECTION("carried binding") {
-        wrong.roster[1].carried = 3;
-    }
-    SECTION("order") {
-        std::swap(wrong.roster[0], wrong.roster[1]);
-    }
-    REQUIRE(wrong.valid());
-    CHECK_FALSE(PlacedEnemiesCheckpoint::restore(owner, wrong));
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == before);
-    PlacedEnemies other;
-    other.bind(before->roster);
-    REQUIRE(PlacedEnemiesCheckpoint::restore(other, *before));
-    CHECK(PlacedEnemiesCheckpoint::capture(other) == before);
-}
-
-TEST_CASE("placed enemy prepared restore is owner bound single-use and invalidated by mutation",
-          "[rollback][placed-enemies]") {
-    const std::vector roster{placement({0, 0, 10})};
-    PlacedEnemies owner;
-    PlacedEnemies other;
-    owner.bind(roster);
-    other.bind(roster);
-    const auto before = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(before);
-    auto prepared = PlacedEnemiesCheckpoint::prepareRestore(owner, *before);
-    REQUIRE(prepared);
-    CHECK_FALSE(PlacedEnemiesCheckpoint::canCommit(other, *prepared));
-    CHECK_FALSE(PlacedEnemiesCheckpoint::commitRestore(other, std::move(*prepared)));
-    REQUIRE(PlacedEnemiesCheckpoint::canCommit(owner, *prepared));
-    REQUIRE(PlacedEnemiesCheckpoint::commitRestore(owner, std::move(*prepared)));
-    CHECK_FALSE(PlacedEnemiesCheckpoint::canCommit(owner, *prepared));
-    CHECK_FALSE(PlacedEnemiesCheckpoint::commitRestore(owner, std::move(*prepared)));
-    prepared = PlacedEnemiesCheckpoint::prepareRestore(owner, *before);
-    REQUIRE(prepared);
-    SECTION("rebind") {
-        owner.bind(roster);
-    }
-    SECTION("clear") {
-        owner.clear();
-    }
-    SECTION("watch") {
-        owner.observe(ViewVolume{}, {});
-    }
-    SECTION("activation") {
-        owner.activate([](const auto&) {});
-    }
-    const auto after = PlacedEnemiesCheckpoint::capture(owner);
-    CHECK_FALSE(PlacedEnemiesCheckpoint::canCommit(owner, *prepared));
-    CHECK_FALSE(PlacedEnemiesCheckpoint::commitRestore(owner, std::move(*prepared)));
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == after);
-}
-
-TEST_CASE("placed enemy preparation cannot cross owner destruction at a reused address",
-          "[rollback][placed-enemies]") {
-    const std::vector roster{placement({0, 0, 10})};
-    auto storage = std::make_unique<std::optional<PlacedEnemies>>();
-    auto& first = storage->emplace();
-    first.bind(roster);
-    const auto state = PlacedEnemiesCheckpoint::capture(first);
-    REQUIRE(state);
-    auto prepared = PlacedEnemiesCheckpoint::prepareRestore(first, *state);
-    REQUIRE(prepared);
-    const auto* address = &first;
-    storage->reset();
-    auto& second = storage->emplace();
-    CHECK(&second == address);
-    second.bind(roster);
-    CHECK_FALSE(PlacedEnemiesCheckpoint::canCommit(second, *prepared));
-    CHECK_FALSE(PlacedEnemiesCheckpoint::commitRestore(second, std::move(*prepared)));
-    CHECK(PlacedEnemiesCheckpoint::capture(second) == state);
-}
-
-TEST_CASE("diagnostic placement preparation uses content not legacy mutation counters",
-          "[placed-enemies][diagnostics]") {
-    PlacedEnemies owner;
-    owner.bind({placement({0, 0, 100})});
-    owner.observe(ViewVolume{}, {});
-    const auto state = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(state);
-    auto prepared = PlacedEnemiesCheckpoint::prepareRestore(owner, *state);
-    REQUIRE(prepared);
-    owner.observe(ViewVolume{}, {});
-    owner.activate([](const auto&) { FAIL("the distant placement should remain asleep"); });
-    CHECK(PlacedEnemiesCheckpoint::canCommit(owner, *prepared));
-    PlacedEnemies::LocalSnapshot baseline;
-    owner.saveLocal(baseline);
-    owner.observe(std::nullopt, {});
-    CHECK_FALSE(PlacedEnemiesCheckpoint::canCommit(owner, *prepared));
-    REQUIRE(owner.restoreLocal(baseline));
-    CHECK(PlacedEnemiesCheckpoint::canCommit(owner, *prepared));
-    REQUIRE(PlacedEnemiesCheckpoint::commitRestore(owner, std::move(*prepared)));
-    CHECK_FALSE(owner.canRestoreLocal(baseline));
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == state);
+    CHECK(born == prospective);
+    CHECK(current.size() == 1);
 }
 
 TEST_CASE("placed enemy native rewind survives watch and activation without repeating callbacks",
@@ -372,29 +218,27 @@ TEST_CASE("placed enemy native rewind survives watch and activation without repe
 
 TEST_CASE("placed enemy native rewind retains resource lifetime and replacement fences",
           "[placed-enemies-local-rewind]") {
-    const s32 mutation = GENERATE(0, 1, 2, 3);
+    const s32 mutation = GENERATE(0, 1, 2);
     const std::vector roster{placement({0, 0, 10})};
     auto storage = std::make_unique<std::optional<PlacedEnemies>>();
     auto& owner = storage->emplace();
     owner.bind(roster);
-    const auto before = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(before);
     PlacedEnemies::LocalSnapshot saved;
     owner.saveLocal(saved);
     switch (mutation) {
     case 0: owner.bind(roster); break;
     case 1: owner.clear(); break;
-    case 2: REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *before)); break;
-    case 3:
+    case 2:
         storage->reset();
         storage->emplace().bind(roster);
         break;
     default: break;
     }
-    const auto after = PlacedEnemiesCheckpoint::capture(storage->value());
+    PlacedEnemies::LocalSnapshot after;
+    storage->value().saveLocal(after);
     CHECK_FALSE(storage->value().canRestoreLocal(saved));
     CHECK_FALSE(storage->value().restoreLocal(saved));
-    CHECK(PlacedEnemiesCheckpoint::capture(storage->value()) == after);
+    CHECK(holds(storage->value(), after));
 }
 
 TEST_CASE("placed native births preserve pool replacement failure queues and RNG after correction",
@@ -423,8 +267,8 @@ TEST_CASE("placed native births preserve pool replacement failure queues and RNG
     const bool watched = GENERATE(false, true);
     const auto observation = watched ? std::optional<ViewVolume>{view} : std::nullopt;
     owner.observe(observation, {});
-    const auto placementsBefore = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(placementsBefore);
+    PlacedEnemies::LocalSnapshot placementsBefore;
+    owner.saveLocal(placementsBefore);
     auto native = roster;
     std::vector<std::optional<s32>> expectedSlots;
     originalPhase(native, observation, {}, [&](const auto& record) {
@@ -452,16 +296,16 @@ TEST_CASE("placed native births preserve pool replacement failure queues and RNG
     CHECK(actualSlots == expectedSlots);
     CHECK(enemies.checkpoint() == expected);
     CHECK(pendingRecords(owner) == native);
-    const auto placementsAfter = PlacedEnemiesCheckpoint::capture(owner);
-    REQUIRE(placementsAfter);
+    PlacedEnemies::LocalSnapshot placementsAfter;
+    owner.saveLocal(placementsAfter);
     // Delayed correction restores both owners; placement restore itself never
     // spawns or consumes the native random engine.
     REQUIRE(enemies.restore(*baseline));
-    REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *placementsBefore));
+    REQUIRE(owner.restoreLocal(placementsBefore));
     CHECK(enemies.checkpoint() == baseline);
     owner.activate([&](const auto& record) { enemies.spawn(record.spawn, {}); });
     CHECK(enemies.checkpoint() == expected);
-    CHECK(PlacedEnemiesCheckpoint::capture(owner) == placementsAfter);
+    CHECK(holds(owner, placementsAfter));
     CHECK(device.texturesCreated == uploads);
 }
 
@@ -485,23 +329,23 @@ TEST_CASE("real G1 retains and restores its complete native pending placement ro
     LevelOpponents::Resources resources{device, world, weapons, effects, audio, root, 1};
     resources.standOnSight = true;
     opponents.open(resources, players);
-    const auto initial = PlacedEnemiesCheckpoint::capture(opponents.placements());
+    auto& placements = opponents.placements();
+    PlacedEnemies::LocalSnapshot initial;
+    placements.saveLocal(initial);
+    const auto roster = rosterOf(placements);
+    const auto pending = pendingIndices(placements);
     const auto enemyBefore = opponents.enemies().checkpoint();
-    REQUIRE(initial);
     REQUIRE(enemyBefore);
-    REQUIRE_FALSE(initial->pending.empty());
+    REQUIRE_FALSE(pending.empty());
     ViewVolume overhead;
     overhead.forward = {0, -1, 0};
     overhead.up = {0, 0, 1};
     std::optional<Vec3> spot;
-    PlacedEnemies probe;
-    probe.bind(initial->roster);
-    REQUIRE(PlacedEnemiesCheckpoint::restore(probe, *initial));
-    for (const usize index : initial->pending) {
-        const auto& candidate = initial->roster[index];
+    for (const usize index : pending) {
+        const auto& candidate = roster[index];
         overhead.position = candidate.spawn.position + Vec3{0, 10, 0};
-        probe.observe(overhead, candidate.spawn.position);
-        const auto births = probe.activations();
+        placements.observe(overhead, candidate.spawn.position);
+        const auto births = placements.activations();
         // This oracle restores the ordinary pool only. Do not mutate a great
         // one's independent pool while comparing a rewound ordinary encounter.
         if (!births.empty() && std::ranges::all_of(births, [](const auto& record) {
@@ -511,19 +355,20 @@ TEST_CASE("real G1 retains and restores its complete native pending placement ro
             break;
         }
     }
+    REQUIRE(placements.restoreLocal(initial));
     REQUIRE(spot);
     const auto uploads = device.texturesCreated;
     opponents.watch(overhead, *spot);
-    const auto expected = PlacedEnemiesCheckpoint::capture(opponents.placements());
+    PlacedEnemies::LocalSnapshot expected;
+    placements.saveLocal(expected);
     const auto enemyAfter = opponents.enemies().checkpoint();
-    REQUIRE(expected);
     REQUIRE(enemyAfter);
-    CHECK(expected->pending.size() < initial->pending.size());
-    CHECK(expected->roster == initial->roster);
-    REQUIRE(PlacedEnemiesCheckpoint::restore(opponents.placements(), *initial));
+    CHECK(placements.pending().size() < pending.size());
+    CHECK(rosterOf(placements) == roster);
+    REQUIRE(placements.restoreLocal(initial));
     REQUIRE(opponents.enemies().restore(*enemyBefore));
     opponents.watch(overhead, *spot);
-    CHECK(PlacedEnemiesCheckpoint::capture(opponents.placements()) == expected);
+    CHECK(holds(placements, expected));
     CHECK(opponents.enemies().checkpoint() == enemyAfter);
     CHECK(device.texturesCreated == uploads);
 }
@@ -572,7 +417,8 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
     REQUIRE(enemies.restore(*initial));
     PlacedEnemies owner;
     owner.bind(roster);
-    std::optional<PlacedEnemiesCheckpoint::State> delayed;
+    PlacedEnemies::LocalSnapshot delayed;
+    bool delayedSaved = false;
     for (s32 tick = 0; tick < 54; ++tick) {
         CAPTURE(tick);
         const auto view = observation(tick);
@@ -583,12 +429,12 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
         CHECK(enemies.checkpoint() == forward[static_cast<usize>(tick)]);
         CHECK(pendingRecords(owner) == waiting[static_cast<usize>(tick)]);
         if (tick == 17) {
-            delayed = PlacedEnemiesCheckpoint::capture(owner);
-            REQUIRE(delayed);
+            owner.saveLocal(delayed);
+            delayedSaved = true;
         }
     }
-    REQUIRE(delayed);
-    REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *delayed));
+    REQUIRE(delayedSaved);
+    REQUIRE(owner.restoreLocal(delayed));
     REQUIRE(enemies.restore(forward[17]));
     for (s32 tick = 18; tick < 54; ++tick) {
         CAPTURE(tick);
@@ -633,8 +479,6 @@ TEST_CASE("native placement rewind replays corrected watch branches without spaw
     s32 tick = 0;
     for (s32 window = 0; window < 32; ++window) {
         CAPTURE(window, tick);
-        const auto before = PlacedEnemiesCheckpoint::capture(predicted);
-        REQUIRE(before);
         predicted.saveLocal(saved);
         const s32 distance = 1 + window % 8;
         for (s32 step = 0; step < distance; ++step) {
@@ -642,22 +486,17 @@ TEST_CASE("native placement rewind replays corrected watch branches without spaw
             predicted.saveLocal(expected[static_cast<usize>(step)]);
         }
         REQUIRE(predicted.restoreLocal(saved));
-        auto diagnostic = PlacedEnemiesCheckpoint::prepareRestore(predicted, *before);
-        REQUIRE(diagnostic);
         predicted.observe(std::nullopt, {-900, 0, 0});
         predicted.activate([&](const auto&) { ++callbacks; });
         const auto calls = callbacks;
         REQUIRE(predicted.restoreLocal(saved));
         CHECK(callbacks == calls);
-        // The test-only preparation guard compares content, not native mutation counts.
-        CHECK(PlacedEnemiesCheckpoint::canCommit(predicted, *diagnostic));
-        CHECK(PlacedEnemiesCheckpoint::capture(predicted) == before);
+        CHECK(holds(predicted, saved));
         for (s32 step = 0; step < distance; ++step, ++tick) {
             CHECK(advance(predicted, tick) == advance(reference, tick));
             predicted.saveLocal(actual);
             CHECK(predicted.equalLocal(expected[static_cast<usize>(step)], actual));
-            CHECK(PlacedEnemiesCheckpoint::capture(predicted) ==
-                  PlacedEnemiesCheckpoint::capture(reference));
+            CHECK(test::liveDigest(predicted) == test::liveDigest(reference));
         }
         REQUIRE(predicted.canRestoreLocal(saved));
     }
@@ -665,7 +504,7 @@ TEST_CASE("native placement rewind replays corrected watch branches without spaw
     CHECK(callbacks > 0);
 }
 
-TEST_CASE("native placement histories are invalidated only by roster or diagnostic replacement",
+TEST_CASE("native placement histories are invalidated only by roster replacement",
           "[placed-enemies-local-rewind][native-equality]") {
     PlacedEnemies owner;
     PlacedEnemies foreign;
@@ -681,9 +520,6 @@ TEST_CASE("native placement histories are invalidated only by roster or diagnost
     CHECK_FALSE(foreign.restoreLocal(saved));
     REQUIRE(owner.restoreLocal(saved));
     REQUIRE(owner.restoreLocal(saved));
-    REQUIRE(PlacedEnemiesCheckpoint::restore(owner, *PlacedEnemiesCheckpoint::capture(owner)));
-    CHECK_FALSE(owner.equalLocal(saved, saved));
-    CHECK_FALSE(owner.restoreLocal(saved));
     owner.saveLocal(saved);
     owner.bind(roster);
     CHECK_FALSE(owner.equalLocal(saved, saved));

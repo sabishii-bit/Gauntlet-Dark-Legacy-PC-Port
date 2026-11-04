@@ -157,7 +157,6 @@ public:
     }
 
 private:
-    friend class CrittersCheckpoint;
     s32 m_highlightedId = -1;                        ///< the developer console's selection
     const SelectionHighlight* m_highlight = nullptr; ///< how it is marked out, while drawn
     std::optional<s32> spawn(const CombatantDefinition& definition, const Vec3& position, f32 yaw,

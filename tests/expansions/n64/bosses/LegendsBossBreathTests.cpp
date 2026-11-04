@@ -11,8 +11,6 @@
 
 #include "engine/io/File.h"
 #include "engine/math/PortableMath.h"
-#include "engine/world/AnimationPlayer.h"
-#include "engine/world/TreePose.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -20,7 +18,6 @@
 #include "expansions/n64/bosses/LegendsBosses.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/critters/Combatant.h"
-#include "game/critters/CombatantCheckpoint.h"
 #include "game/players/PlayerImpact.h"
 
 namespace {
@@ -83,11 +80,8 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
             Combatant actor;
             REQUIRE(actor.spawn(*assets, 0, encounter->combat.position, encounter->combat.yaw,
                                 &traversal.collision(), {}, 'F'));
-            const std::array resources{CombatantCheckpoint::Resource{1, assets.get()}};
-            CombatantCheckpoint checkpoints(actor, resources,
-                                            {.collision = &traversal.collision()});
-            const auto initial = checkpoints.checkpoint();
-            REQUIRE(initial);
+            Combatant::LocalSnapshot initial;
+            REQUIRE(actor.saveLocal(initial));
             const Vec3 origin = actor.position();
             const f32 yaw = encounter->combat.yaw;
             const Vec3 forward{portable::sin(yaw), 0, portable::cos(yaw)};
@@ -112,25 +106,10 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
                     feet.y = floor->y;
                     ++groundedProbes;
                     for (s32 frame = move->frameStart - 1; frame <= move->frameEnd + 1; ++frame) {
-                        auto state = *initial;
-                        auto& saved = state.parts.front().actor;
-                        saved.move = static_cast<s32>(move - assets->data.moves().begin());
-                        saved.pattern = -1;
-                        saved.forcedPattern = true;
-                        saved.moveDone = false;
-                        saved.finishedSeconds = 0;
-                        saved.moveTarget = 0;
-                        saved.shotFrame = frame - 1;
-                        saved.soundsGiven = 0;
-                        saved.smoothValid = false;
-                        AnimationPlayer animation;
-                        animation.start(sequence, *sequenceIndex, 0, static_cast<f32>(frame));
-                        saved.player = animation.checkpoint();
-                        TreePose pose;
-                        pose.evaluate(*assets->tree, *sequenceIndex, static_cast<f32>(frame));
-                        saved.pose = pose.checkpoint();
-                        REQUIRE(saved.pose);
-                        REQUIRE(checkpoints.restore(state));
+                        REQUIRE(actor.restoreLocal(initial));
+                        REQUIRE(
+                            actor.setMove(static_cast<usize>(move - assets->data.moves().begin()),
+                                          {.frame = static_cast<f32>(frame), .target = 0}));
                         const std::array players{EnemyView{.player = 0,
                                                            .position = feet,
                                                            .radius = 1.5f,

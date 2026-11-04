@@ -15,7 +15,7 @@
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/bosses/BossSequence.h"
 #include "game/bosses/LegendPresentation.h"
-#include "game/critters/CombatantCheckpoint.h"
+#include "game/critters/Combatant.h"
 #include "game/enemies/ScriptedOpponents.h"
 
 namespace {
@@ -201,38 +201,34 @@ TEST_CASE("Native relics target the bound lion and eye without borrowing absent 
             CHECK(bosses.blinded());
             CHECK(bosses.view().health < health);
         }
+        // No replacement model exists for the actual actor after damage to use,
+        // so rewind cannot resurrect an unbound GameCube eye.
         CHECK(stock->replacementModels.empty());
-        const std::array<CombatantCheckpoint::Resource, 1> resources{{{1, stock}}};
-        // Observe the actual actor after damage; no replacement exists in its
-        // state, so rewind cannot resurrect an unbound GameCube eye.
-        auto& actor = const_cast<Combatant&>(bosses.fighter());
-        CombatantCheckpoint observed(actor, resources, {});
-        auto state = observed.checkpoint();
-        REQUIRE(state);
-        REQUIRE_FALSE(state->parts.empty());
-        CHECK(state->parts.front().actor.replacements.empty());
         if (index == 2) {
             // Exercise the actual child death, not an injected cue: e0881b84
             // hides the branch before attempting to open the missing STUMPL.
+            auto& actor = const_cast<Combatant&>(bosses.fighter());
             auto cues = bosses.takeCues();
-            REQUIRE(state->parts.size() == 4);
-            for (s32 frame = 0; frame < 600 && !state->parts[2].actor.hidden; ++frame) {
+            REQUIRE(actor.childCount() == 3);
+            const auto* lion = actor.child(2);
+            REQUIRE(lion != nullptr);
+            Combatant::LocalSnapshot shown; // the actor one update before the lion was hidden
+            for (s32 frame = 0; frame < 600 && !lion->hidden(); ++frame) {
+                REQUIRE(actor.saveLocal(shown));
                 bosses.update(1, 1.f / 60, party);
                 const auto next = bosses.takeCues();
                 cues.insert(cues.end(), next.begin(), next.end());
-                state = observed.checkpoint();
-                REQUIRE(state);
-                REQUIRE(state->parts.size() == 4);
+                REQUIRE(actor.childCount() == 3);
             }
-            REQUIRE(state->parts[2].actor.hidden);
-            CHECK_FALSE(state->parts[1].actor.hidden);
-            CHECK_FALSE(state->parts[3].actor.hidden);
+            REQUIRE(lion->hidden());
+            CHECK_FALSE(actor.child(1)->hidden());
+            CHECK_FALSE(actor.child(3)->hidden());
             CHECK(std::ranges::any_of(cues, [](const auto& cue) { return cue.tree == "STUMPL"; }));
             CHECK(
                 std::ranges::none_of(cues, [](const auto& cue) { return cue.tree == "STUMPLQ"; }));
-            // Pin the actual render effect at the same pose. Revealing only the
-            // dead lion in a test control must add its submitted geometry; the
-            // real state removes it and leaves the other heads/body drawing.
+            // Pin the actual render effect. The actor an update earlier, the dying
+            // lion still shown, must add its submitted geometry; the real state
+            // removes it and leaves the other heads/body drawing.
             const auto drawnVertices = [&] {
                 stock->body.resetTextures();
                 device.draws.clear();
@@ -244,11 +240,11 @@ TEST_CASE("Native relics target the bound lion and eye without borrowing absent 
             };
             const auto hiddenVertices = drawnVertices();
             REQUIRE(hiddenVertices > 0);
-            auto revealed = *state;
-            revealed.parts[2].actor.hidden = false;
-            REQUIRE(observed.restore(revealed));
+            Combatant::LocalSnapshot hidden;
+            REQUIRE(actor.saveLocal(hidden));
+            REQUIRE(actor.restoreLocal(shown));
             CHECK(drawnVertices() > hiddenVertices);
-            REQUIRE(observed.restore(*state));
+            REQUIRE(actor.restoreLocal(hidden));
             CHECK(drawnVertices() == hiddenVertices);
         }
         Bosses::LocalSnapshot saved;

@@ -76,8 +76,6 @@ private:
     friend class Combatant;
     friend class Critters;
     friend class Bosses;
-    friend class CombatantCheckpoint;
-    friend class CombatantProjectilesCheckpoint;
     /** Reload/clear invalidates prepared borrowers even if allocator addresses repeat. */
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
     /** Only weakly borrowed by local states; diagnostics must not keep it alive. */

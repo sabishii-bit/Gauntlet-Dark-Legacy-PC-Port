@@ -9,15 +9,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/io/File.h"
-#include "engine/world/AnimationPlayer.h"
-#include "engine/world/TreePose.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/bosses/LegendsBossAssets.h"
 #include "formats/CritterWad.h"
 #include "game/critters/Combatant.h"
-#include "game/critters/CombatantCheckpoint.h"
 #include "game/critters/CombatantProjectile.h"
 
 namespace {
@@ -43,14 +40,12 @@ TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful fram
             REQUIRE(assets->tree);
             Combatant actor;
             REQUIRE(actor.spawn(*assets, 0, Vec3{12, 3, -9}, 0.4f, nullptr, {}, 'F'));
-            const std::array resources{CombatantCheckpoint::Resource{1, assets.get()}};
-            CombatantCheckpoint checkpoints(actor, resources, {});
-            const auto initial = checkpoints.checkpoint();
-            REQUIRE(initial);
+            Combatant::LocalSnapshot initial;
+            REQUIRE(actor.saveLocal(initial));
 
-            // Deliberately select one actual native move using the existing test-only
-            // state harness. Its skeleton, tracks, damage and frame windows remain
-            // untouched; a random AI choice must not decide whether melee is tested.
+            // Deliberately set one actual native move on the actor. Its skeleton,
+            // tracks, damage and frame windows remain untouched; a random AI choice
+            // must not decide whether melee is tested.
             usize tested = 0;
             for (usize index = 0; index < assets->data.moves().size(); ++index) {
                 const auto& move = assets->data.moves()[index];
@@ -87,25 +82,10 @@ TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful fram
 
                 for (const s32 frame : {move.frameStart - 1, move.frameStart, last, last + 1}) {
                     CAPTURE(frame);
-                    auto state = *initial;
-                    auto& saved = state.parts.front().actor;
-                    saved.move = static_cast<s32>(index);
-                    saved.pattern = -1;
-                    saved.forcedPattern = true;
-                    saved.moveDone = false;
-                    saved.finishedSeconds = 0;
-                    saved.moveTarget = 0;
-                    saved.shotFrame = frame - 1;
-                    saved.soundsGiven = 0;
-                    saved.smoothValid = false;
-                    AnimationPlayer animation;
-                    animation.start(sequence, *sequenceIndex, 0, static_cast<f32>(frame));
-                    saved.player = animation.checkpoint();
-                    TreePose pose;
-                    pose.evaluate(*assets->tree, *sequenceIndex, static_cast<f32>(frame));
-                    saved.pose = pose.checkpoint();
-                    REQUIRE(saved.pose);
-                    REQUIRE(checkpoints.restore(state));
+                    REQUIRE(actor.restoreLocal(initial));
+                    REQUIRE(actor.setMove(index, {.frame = static_cast<f32>(frame), .target = 0}));
+                    Combatant::LocalSnapshot state;
+                    REQUIRE(actor.saveLocal(state));
                     const auto wrist = actor.nodeTransform(move.colnode);
                     REQUIRE(wrist);
                     const Vec3 centre{*wrist * Vec4{damage->offset, 1}};
@@ -127,7 +107,7 @@ TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful fram
                     const bool active = frame >= move.frameStart && frame <= last;
                     for (const bool outside : {false, true}) {
                         CAPTURE(outside);
-                        REQUIRE(checkpoints.restore(state));
+                        REQUIRE(actor.restoreLocal(state));
                         players[0].position.x = centre.x + damage->maxDistance + kContactRadius +
                                                 (outside ? 0.05f : -0.05f);
                         // Zero elapsed time samples the prepared native frame without
@@ -144,7 +124,7 @@ TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful fram
                             CHECK(glm::distance(blows.front().origin, centre) < 0.001f);
                         }
                     }
-                    REQUIRE(checkpoints.restore(state));
+                    REQUIRE(actor.restoreLocal(state));
                     players[0].position = centre - Vec3{0, 2.5f, 0};
                     players[0].damageable = false;
                     actor.update(1, 0, players);
@@ -174,32 +154,13 @@ TEST_CASE("Native Skorne wing gust reaches standing players throughout its autho
         REQUIRE(assets);
         Combatant actor;
         REQUIRE(actor.spawn(*assets, 0, Vec3{0}, 0, nullptr, {}, 'F'));
-        const std::array resources{CombatantCheckpoint::Resource{1, assets.get()}};
-        CombatantCheckpoint checkpoints(actor, resources, {});
-        auto state = checkpoints.checkpoint();
-        REQUIRE(state);
         const auto moveAt =
             std::ranges::find(assets->data.moves(), "WING_ATTACK", &MoveDefinition::name);
         REQUIRE(moveAt != assets->data.moves().end());
         const auto sequence = assets->tree->findSequence(moveAt->anim);
         REQUIRE(sequence);
-        auto& saved = state->parts.front().actor;
-        saved.move = static_cast<s32>(moveAt - assets->data.moves().begin());
-        saved.pattern = -1;
-        saved.forcedPattern = true;
-        saved.moveDone = false;
-        saved.finishedSeconds = 0;
-        saved.moveTarget = 0;
-        saved.shotFrame = -1;
-        saved.soundsGiven = 0;
-        saved.smoothValid = false;
-        AnimationPlayer animation;
-        animation.start(assets->tree->sequences[*sequence], *sequence, 0, 0);
-        saved.player = animation.checkpoint();
-        TreePose pose;
-        pose.evaluate(*assets->tree, *sequence, 0);
-        saved.pose = pose.checkpoint();
-        REQUIRE(checkpoints.restore(*state));
+        REQUIRE(actor.setMove(static_cast<usize>(moveAt - assets->data.moves().begin()),
+                              {.frame = 0.0f, .target = 0}));
         const std::array players{EnemyView{.player = 0,
                                            .position = {0, 0, 25},
                                            .radius = 1.5f,

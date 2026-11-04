@@ -26,7 +26,7 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
-#include "game/critters/CombatantCheckpoint.h"
+#include "game/critters/Combatant.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -196,16 +196,27 @@ struct SkorneScene {
         return *resources.front();
     }
 
-    CombatantCheckpoint::Actor bossState() {
-        auto& fighter = const_cast<Combatant&>(scene.bosses().fighter());
-        std::vector<CombatantCheckpoint::Resource> resources;
-        for (auto* resource : scene.bosses().resources())
-            resources.push_back({static_cast<u32>(resources.size() + 1), resource});
-        CombatantCheckpoint checkpoints(fighter, resources, {.collision = &world.collision()});
-        const auto state = checkpoints.checkpoint();
-        REQUIRE(state);
-        REQUIRE_FALSE(state->parts.empty());
-        return state->parts.front().actor;
+    /** What the cases read of the boss: its animation clock, its move's sounds and pattern,
+     * and its placement. */
+    struct BossState {
+        AnimationPlayer::Checkpoint player;
+        u32 soundsGiven = 0;
+        s32 pattern = -1;
+        Vec3 position{0};
+        f32 yaw = 0;
+        f32 scale = 1;
+        f32 shrink = 1;
+    };
+
+    BossState bossState() {
+        const auto& fighter = scene.bosses().fighter();
+        return {fighter.animation().checkpoint(),
+                fighter.soundsGiven(),
+                fighter.pattern(),
+                fighter.position(),
+                fighter.yaw(),
+                fighter.scale(),
+                fighter.shrink()};
     }
 
     std::vector<Vec3> bossGeometry(f32 alpha = -1) {
@@ -276,40 +287,12 @@ struct SkorneScene {
         return false;
     }
 
+    /** Sets the boss playing its move `name` from `frame`, aimed at the first player. */
     void forceMove(std::string_view name, f32 frame = 0) {
         auto& fighter = const_cast<Combatant&>(scene.bosses().fighter());
-        std::vector<CombatantCheckpoint::Resource> resources;
-        for (auto* resource : scene.bosses().resources())
-            resources.push_back({static_cast<u32>(resources.size() + 1), resource});
-        CombatantCheckpoint checkpoints(fighter, resources, {.collision = &world.collision()});
-        auto state = checkpoints.checkpoint();
-        REQUIRE(state);
-        const auto& assets = stock();
-        const auto index = assets.data.moveNamed(name);
+        const auto index = stock().data.moveNamed(name);
         REQUIRE(index);
-        const auto& move = assets.data.moves()[*index];
-        const auto sequence = assets.tree->findSequence(move.anim);
-        REQUIRE(sequence);
-        auto& actor = state->parts.front().actor;
-        actor.move = static_cast<s32>(*index);
-        actor.pattern = -1;
-        actor.forcedPattern = true;
-        actor.moveDone = false;
-        actor.finishedSeconds = 0;
-        actor.moveTarget = actor.target = 0;
-        actor.shotFrame = static_cast<s32>(frame) - 1;
-        actor.soundsGiven = 0;
-        actor.smoothValid = false;
-        actor.areas.clear();
-        actor.struckThisMove.clear();
-        AnimationPlayer animation;
-        animation.start(assets.tree->sequences[*sequence], *sequence, 0, frame);
-        actor.player = animation.checkpoint();
-        TreePose pose;
-        pose.evaluate(*assets.tree, *sequence, frame);
-        actor.pose = pose.checkpoint();
-        REQUIRE(actor.pose);
-        REQUIRE(checkpoints.restore(*state));
+        REQUIRE(fighter.setMove(*index, {.frame = frame, .target = 0}));
     }
 };
 
@@ -721,17 +704,9 @@ TEST_CASE("Skorne releases a captured player back onto the native arena",
         test.step();
         const auto& capture = test.scene.participants().front().capture;
         if (!held && capture.held()) {
-            auto& fighter = const_cast<Combatant&>(test.scene.bosses().fighter());
-            const std::array resources{
-                CombatantCheckpoint::Resource{1, test.scene.bosses().resources().front()}};
-            CombatantCheckpoint checkpoints(fighter, resources,
-                                            {.collision = &test.world.collision()});
-            const auto sampled = checkpoints.checkpoint();
-            REQUIRE(sampled);
-            const auto& saved = sampled->parts.front().actor;
+            const auto saved = test.bossState();
             CHECK(saved.player.frame >= move.frameStart);
             CHECK(saved.player.frame <= move.frameEnd);
-            CHECK(saved.grabbed == 0);
         }
         held |= capture.held();
         if (held && !capture.active()) {

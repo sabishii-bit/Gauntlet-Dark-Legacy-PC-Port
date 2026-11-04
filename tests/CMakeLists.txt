@@ -10,11 +10,7 @@ add_subdirectory(expansions/audio)
 # No production target links these snapshots or their compression dependency.
 find_package(lz4 CONFIG REQUIRED)
 add_library(game_diagnostics STATIC
-    game/critters/CombatantCheckpoint.cpp
-    game/critters/CrittersCheckpoint.cpp
-    game/enemies/PlacedEnemiesCheckpoint.cpp
     game/party/PlayerAttacksCheckpoint.cpp
-    game/critters/CombatantProjectilesCheckpoint.cpp
     engine/world/WorldStateCheckpoint.cpp
     game/party/PlayerMissilesCheckpoint.cpp
     game/effects/EffectTreesCheckpoint.cpp
@@ -27,10 +23,6 @@ add_library(game_diagnostics STATIC
     game/rollback/PlayerActionCheckpoint.cpp
     game/rollback/AnimationCheckpoint.cpp
     game/rollback/RandomCheckpoint.cpp
-    game/enemies/EnemyMissilesCheckpoint.cpp
-    game/rollback/EnemyPoolCheckpoint.cpp
-    game/rollback/GeneratorCheckpoint.cpp
-    game/rollback/PlacedEnemyCheckpoint.cpp
     game/rollback/PlayerTurboCheckpoint.cpp
     game/rollback/PlayerKnockbackCheckpoint.cpp
     game/party/PlayerRuntimeCheckpoint.cpp
@@ -110,10 +102,6 @@ add_executable(tests
     game/rollback/PlayerTurboCheckpointTests.cpp
     game/rollback/AnimationCheckpointTests.cpp
     game/rollback/RandomCheckpointTests.cpp
-    game/enemies/EnemyMissilesPacketTests.cpp
-    game/rollback/EnemyPoolCheckpointTests.cpp
-    game/rollback/GeneratorCheckpointTests.cpp
-    game/rollback/PlacedEnemyCheckpointTests.cpp
     game/enemies/OpponentPlacementsTests.cpp
     game/party/PlayerAttacksCheckpointTests.cpp
     game/party/PlayerRuntimeCheckpointTests.cpp
@@ -517,7 +505,7 @@ add_executable(tests
     game/effects/EffectTreesTests.cpp
     game/effects/EffectCheckpointTests.cpp
     game/critters/CombatantProjectilesTests.cpp
-    game/critters/CombatantProjectilesCheckpointTests.cpp
+    game/critters/CombatantProjectilesLocalRewindTests.cpp
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerCaptureTests.cpp
@@ -558,11 +546,9 @@ add_executable(tests
     game/enemies/GeneratorsTests.cpp
     game/critters/CrittersTests.cpp
     game/critters/CombatantTests.cpp
-    game/critters/CombatantCheckpointTests.cpp
     game/critters/CombatantLocalRewindTests.cpp
     game/critters/CrittersLocalRewindTests.cpp
     game/bosses/BossLocalRewindTests.cpp
-    game/critters/CrittersCheckpointTests.cpp
     game/bosses/ChimeraTests.cpp
     game/critters/CombatantGazeTests.cpp
     game/critters/CombatantGrabsTests.cpp
@@ -728,10 +714,6 @@ if(GDL_ENABLE_NETPLAY)
         game/rollback/PlayerTurboCheckpointTests.cpp
         game/rollback/AnimationCheckpointTests.cpp
         game/rollback/RandomCheckpointTests.cpp
-        game/enemies/EnemyMissilesPacketTests.cpp
-        game/rollback/EnemyPoolCheckpointTests.cpp
-        game/rollback/GeneratorCheckpointTests.cpp
-        game/rollback/PlacedEnemyCheckpointTests.cpp
         game/enemies/OpponentPlacementsTests.cpp
         game/party/PlayerAttacksCheckpointTests.cpp
         game/party/PlayerRuntimeCheckpointTests.cpp
@@ -741,9 +723,7 @@ if(GDL_ENABLE_NETPLAY)
         game/rollback/CanonicalDigestSinkTests.cpp
         game/party/PlayerCompanionCheckpointTests.cpp
         game/party/PartyLightingTests.cpp
-        game/critters/CombatantCheckpointTests.cpp
-        game/critters/CrittersCheckpointTests.cpp
-        game/critters/CombatantProjectilesCheckpointTests.cpp
+        game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/level/ExitPortalsLocalRewindTests.cpp
         game/level/LevelTransportersLocalRewindTests.cpp
         game/enemies/CombatResourcesTests.cpp
@@ -880,9 +860,6 @@ if(GDL_ENABLE_NETPLAY)
         game/scenes/SceneTravelNativeDigestTests.cpp
         game/hud/SceneHudNativeDigestTests.cpp
         game/scenes/PlaySceneNativeStateDigestTests.cpp
-        game/rollback/EnemyPoolCheckpointTests.cpp
-        game/enemies/EnemyMissilesPacketTests.cpp
-        game/rollback/PlacedEnemyCheckpointTests.cpp
         game/enemies/EnemiesDeathTests.cpp game/enemies/EnemyAnimatorTests.cpp
         game/enemies/LevelOpponentsDeathTests.cpp
         engine/world/AnimationPlayerTests.cpp
@@ -927,8 +904,8 @@ if(GDL_ENABLE_NETPLAY)
         game/level/FallingSceneryLocalRewindTests.cpp game/level/DestructibleWallsLocalRewindTests.cpp
         game/level/WorldDestructionLocalRewindTests.cpp game/level/SkorneArenaTests.cpp
         game/enemies/GeneratorsTests.cpp game/enemies/GeneratorsCheckpointTests.cpp
-        game/critters/CombatantLocalRewindTests.cpp game/critters/CombatantCheckpointTests.cpp
-        game/critters/CrittersLocalRewindTests.cpp game/critters/CrittersCheckpointTests.cpp
+        game/critters/CombatantLocalRewindTests.cpp
+        game/critters/CrittersLocalRewindTests.cpp
         game/bosses/BossLocalRewindTests.cpp
         engine/world/TreePoseTests.cpp
         engine/world/ParticleLocalRewindTests.cpp engine/world/ParticleSystemTests.cpp
@@ -940,7 +917,7 @@ if(GDL_ENABLE_NETPLAY)
         game/level/RotatorsLocalRewindTests.cpp
         game/effects/EffectTreesPoolCheckpointTests.cpp game/effects/EffectCheckpointTests.cpp
         game/party/PlayerMissilesTests.cpp game/party/PlayerMissilesCheckpointTests.cpp
-        game/critters/CombatantProjectilesTests.cpp game/critters/CombatantProjectilesCheckpointTests.cpp
+        game/critters/CombatantProjectilesTests.cpp game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/tower/TowerRelicsTests.cpp
         game/camera/TowerCameraTests.cpp game/camera/TowerCameraCheckpointTests.cpp
         game/party/PowerupCompanionTests.cpp game/party/PlayerFamiliarTests.cpp

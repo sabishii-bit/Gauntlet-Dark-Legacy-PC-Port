@@ -10,7 +10,7 @@
 #include "FakeRenderDevice.h"
 #include "formats/CritterWad.h"
 #include "game/bosses/BossDefinition.h"
-#include "game/critters/CombatantCheckpoint.h"
+#include "game/critters/Combatant.h"
 #include "game/critters/CritterPressure.h"
 #include "game/critters/HeadedBodyFixture.h"
 #include "game/enemies/Enemies.h"
@@ -268,12 +268,8 @@ TEST_CASE("linked combatants share raw contact pressure without crediting projec
     target.damageable = !immune;
     const std::array party{target};
     actor.captureEncounterPlayers(party);
-    const std::array resources{CombatantCheckpoint::Resource{1, &assets}};
-    CombatantCheckpoint observation(actor, resources, {});
-    const auto initial = observation.checkpoint();
-    REQUIRE(initial);
-    REQUIRE(initial->parts.size() == 3);
-    CHECK(initial->parts.front().pressure.levelBonus.has_value() == enabled);
+    REQUIRE(actor.childCount() == 2);
+    CHECK(actor.pressure().levelBonus.has_value() == enabled);
     Combatant::LocalSnapshot before;
     REQUIRE(actor.saveLocal(before));
     usize blows = 0;
@@ -293,9 +289,7 @@ TEST_CASE("linked combatants share raw contact pressure without crediting projec
             CHECK(shot.rate == 1); // native full-health pressure, no level bonus at level one
         }
     }
-    const auto completed = observation.checkpoint();
-    REQUIRE(completed);
-    const auto& pressure = completed->parts.front().pressure;
+    const CritterPressure pressure = actor.pressure();
     if (enabled && !projectile) {
         REQUIRE(pressure.attemptedDamage[0] > 0);
         CHECK(pressure.attemptedDamage[1] == 0);
@@ -317,18 +311,19 @@ TEST_CASE("linked combatants share raw contact pressure without crediting projec
             REQUIRE(blows > 0);
         }
     }
-    // The local copy includes all linked pressure transactions and can replay
-    // from before contact. Diagnostic checkpoint restore preserves them too.
+    // The local copy includes all linked pressure transactions: it replays from
+    // before contact and returns to after it.
     Combatant::LocalSnapshot after;
     REQUIRE(actor.saveLocal(after));
     REQUIRE_FALSE(actor.equalLocal(before, after));
     REQUIRE(actor.restoreLocal(before));
-    CHECK(observation.checkpoint() == initial);
-    REQUIRE(observation.restore(*completed));
-    CHECK(observation.checkpoint() == completed);
+    Combatant::LocalSnapshot now;
+    REQUIRE(actor.saveLocal(now));
+    CHECK(actor.equalLocal(now, before));
+    REQUIRE(actor.restoreLocal(after));
+    REQUIRE(actor.saveLocal(now));
+    CHECK(actor.equalLocal(now, after));
     actor.clear();
-    const auto cleared = observation.checkpoint();
-    REQUIRE(cleared);
-    CHECK(cleared->parts.front().pressure == CritterPressure{});
+    CHECK(actor.pressure() == CritterPressure{});
 }
 } // namespace

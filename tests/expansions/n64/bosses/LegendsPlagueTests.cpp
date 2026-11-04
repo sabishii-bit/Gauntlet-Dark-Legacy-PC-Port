@@ -17,7 +17,6 @@
 #include "game/combat/EffectFlags.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantAssets.h"
-#include "game/critters/CombatantCheckpoint.h"
 #include "game/effects/CritterCueEmission.h"
 #include "game/hud/BossMeter.h"
 
@@ -96,28 +95,9 @@ TEST_CASE("Native Plague gas uses its animation container without the extra TOP 
         const Vec3 origin{19, 7, -31};
         Combatant actor;
         REQUIRE(actor.spawn(*stock, 0, origin, yaw, nullptr, {}, 'K'));
-        const std::array resources{CombatantCheckpoint::Resource{1, stock.get()}};
-        CombatantCheckpoint checkpoint(actor, resources, {});
-        const auto initial = checkpoint.checkpoint();
-        REQUIRE(initial);
-        auto state = *initial;
-        auto& saved = state.parts.front().actor;
-        saved.move = static_cast<s32>(move - stock->data.moves().begin());
-        saved.pattern = -1;
-        saved.forcedPattern = true;
-        saved.moveDone = false;
-        saved.finishedSeconds = 0;
-        saved.moveTarget = -1;
-        saved.shotFrame = 35;
-        saved.soundsGiven = 2; // PGAS's separate frame0 sound has already played.
-        saved.smoothValid = false;
-        AnimationPlayer animation;
-        animation.start(stock->tree->sequences[*sequence], *sequence, 0, 36);
-        saved.player = animation.checkpoint();
-        TreePose pose;
-        pose.evaluate(*stock->tree, *sequence, 36);
-        saved.pose = pose.checkpoint();
-        REQUIRE(checkpoint.restore(state));
+        // PGAS's separate frame0 sound has already played.
+        REQUIRE(actor.setMove(static_cast<usize>(move - stock->data.moves().begin()),
+                              {.frame = 36.0f, .soundsGiven = 2}));
         actor.update(1, 0, {});
         CHECK(actor.takeCues().empty());
         actor.update(1, 1.0f / 30, {});

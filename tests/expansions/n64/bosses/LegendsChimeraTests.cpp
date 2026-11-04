@@ -20,7 +20,7 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
-#include "game/critters/CombatantCheckpoint.h"
+#include "game/critters/Combatant.h"
 #include "game/effects/CritterCueEmission.h"
 #include "game/scenes/PlayScene.h"
 
@@ -87,90 +87,35 @@ struct ChimeraScene {
 
     void step() { REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running); }
 
-    CombatantCheckpoint::State state() {
-        auto& fighter = const_cast<Combatant&>(scene.bosses().fighter());
-        std::vector<CombatantCheckpoint::Resource> resources;
-        for (auto* stock : scene.bosses().resources())
-            resources.push_back({static_cast<u32>(resources.size() + 1), stock});
-        CombatantCheckpoint checkpoint(fighter, resources, {.collision = &world.collision()});
-        auto saved = checkpoint.checkpoint();
-        REQUIRE(saved);
-        return *saved;
-    }
-
+    /** Sets the body (`id` 0) or head `id` playing its move `name` from just before its harm
+     * (a head from just before its sound, the body holding its SYNC move meanwhile), aimed at
+     * the first player and turned to `yaw` when one is given. */
     void forceAttack(s32 id, std::string_view name, std::optional<f32> yaw = {}) {
         auto& fighter = const_cast<Combatant&>(scene.bosses().fighter());
-        std::vector<CombatantCheckpoint::Resource> resources;
-        for (auto* stock : scene.bosses().resources())
-            resources.push_back({static_cast<u32>(resources.size() + 1), stock});
-        CombatantCheckpoint checkpoint(fighter, resources, {.collision = &world.collision()});
-        auto saved = checkpoint.checkpoint();
-        REQUIRE(saved);
-        auto& stock = *resources.front().stock;
-        REQUIRE(saved->parts.size() == 4);
-        const auto setMove = [&](usize part, const CritterData& data, usize index, f32 frame) {
-            auto& state = saved->parts[part].actor;
-            const auto& move = data.moves()[index];
-            const auto sequence = stock.tree->findSequence(move.anim);
-            REQUIRE(sequence);
-            state.move = static_cast<s32>(index);
-            state.pattern = -1;
-            state.forcedPattern = true;
-            state.moveDone = false;
-            state.finishedSeconds = 0;
-            state.moveTarget = state.target = 0;
-            if (yaw)
-                state.yaw = *yaw;
-            state.shotFrame = static_cast<s32>(frame) - 1;
-            state.soundsGiven = 2;
-            state.smoothValid = false;
-            state.presentation.valid = false;
-            state.areas.clear();
-            state.struckThisMove.clear();
-            AnimationPlayer animation;
-            animation.start(stock.tree->sequences[*sequence], *sequence, 0, frame);
-            state.player = animation.checkpoint();
-            TreePose pose;
-            pose.evaluate(*stock.tree, *sequence, frame);
-            state.pose = pose.checkpoint();
-            REQUIRE(state.pose);
+        const auto& stock = *scene.bosses().resources().front();
+        REQUIRE(fighter.childCount() == 3);
+        const auto point = [&](f32 frame) {
+            return Combatant::MovePoint{.frame = frame, .target = 0, .soundsGiven = 2, .yaw = yaw};
         };
         if (id == 0) {
             const auto move = stock.data.moveNamed(name);
             REQUIRE(move);
-            setMove(0, stock.data, *move,
-                    static_cast<f32>(stock.data.moves()[*move].frameStart - 1));
+            REQUIRE(fighter.setMove(
+                *move, point(static_cast<f32>(stock.data.moves()[*move].frameStart - 1))));
         } else {
             const auto sync = stock.data.moveOfType(1);
             REQUIRE(sync);
-            setMove(0, stock.data, *sync, 0);
-            const auto* child = fighter.child(id);
+            REQUIRE(fighter.setMove(*sync, point(0.0f)));
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+            auto* child = const_cast<Combatant*>(fighter.child(id));
             REQUIRE(child);
             const auto move = child->data()->moveNamed(name);
             REQUIRE(move);
-            setMove(static_cast<usize>(id), *child->data(), *move,
-                    static_cast<f32>(child->data()->moves()[*move].soundFrame - 1));
+            REQUIRE(child->setMove(
+                *move, point(static_cast<f32>(child->data()->moves()[*move].soundFrame - 1))));
         }
-        REQUIRE(checkpoint.restore(*saved));
     }
 };
-
-TreePose shownPose(const TreeInfo& tree, const CombatantCheckpoint::Actor& state, f32 alpha) {
-    TreePose pose;
-    const auto& current = state.smoothValid ? state.smooth : state.pose;
-    REQUIRE(current);
-    REQUIRE(pose.restore(tree, *current));
-    const auto& previous = state.presentation;
-    if (previous.valid && previous.state == state.state &&
-        previous.generation == state.player.generation &&
-        previous.sequence == state.player.sequence) {
-        REQUIRE(previous.pose);
-        TreePose before;
-        REQUIRE(before.restore(tree, *previous.pose));
-        pose.blend(before, alpha, true);
-    }
-    return pose;
-}
 } // namespace
 
 TEST_CASE("Native Chimera loops its dormant idle without attacking and wakes at horizontal range",
@@ -340,30 +285,9 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
             REQUIRE(branch->data()->sound(move.sound)->offset == Vec3{0});
             const auto sequence = stock->tree->findSequence(move.anim);
             REQUIRE(sequence);
-            const std::array resources{CombatantCheckpoint::Resource{1, stock.get()}};
-            CombatantCheckpoint checkpoint(actor, resources, {});
-            auto saved = checkpoint.checkpoint();
-            REQUIRE(saved);
-            REQUIRE(saved->parts.size() == 4);
-            auto& state = saved->parts[static_cast<usize>(head.id)].actor;
-            state.move = static_cast<s32>(*moveIndex);
-            state.pattern = -1;
-            state.forcedPattern = true;
-            state.moveDone = false;
-            state.finishedSeconds = 0;
-            state.shotFrame = head.cueFrame - 2;
-            state.soundsGiven = 2;
-            state.smoothValid = false;
-            AnimationPlayer animation;
-            animation.start(stock->tree->sequences[*sequence], *sequence, 0,
-                            static_cast<f32>(head.cueFrame - 1));
-            state.player = animation.checkpoint();
-            TreePose pose;
-            pose.evaluate(*stock->tree, *sequence, static_cast<f32>(head.cueFrame - 1));
-            state.pose = pose.checkpoint();
-            REQUIRE(checkpoint.restore(*saved));
-            // This diagnostic checkpoint replaces child storage; no borrowed
-            // child pointer survives restore (ordinary local rewind differs).
+            REQUIRE(actor.childCount() == 3);
+            REQUIRE(branch->setMove(
+                *moveIndex, {.frame = static_cast<f32>(head.cueFrame - 1), .soundsGiven = 2}));
             branch = const_cast<Combatant*>(actor.child(head.id));
             REQUIRE(branch);
             branch->update(1, 1.0f / 30, {});
@@ -470,15 +394,7 @@ TEST_CASE("Native Chimera scene breath remains at the rendered mouth between sim
         f32 persistentSeparation = 0;
         for (int tick = 0; tick < 16; ++tick) {
             test.step();
-            const auto saved = test.state();
-            const auto& root = saved.parts.front().actor;
-            REQUIRE(root.smoothValid);
-            REQUIRE(root.presentation.valid);
-            REQUIRE(glm::distance(root.position, root.presentation.position) < .001f);
-            const auto& activeHead = saved.parts[static_cast<usize>(head.id)].actor;
-            REQUIRE(activeHead.smoothValid);
-            REQUIRE(activeHead.presentation.valid);
-            REQUIRE(glm::distance(activeHead.position, activeHead.presentation.position) < .001f);
+            const auto& fighter = test.scene.bosses().fighter();
             const auto node = stock.tree->findNode(head.node);
             REQUIRE(node);
             const EffectTrees::Effect* effect = nullptr;
@@ -499,22 +415,11 @@ TEST_CASE("Native Chimera scene breath remains at the rendered mouth between sim
             const auto headVertex = mesh.vertices[mesh.parts.front().indices.front()].position;
             for (const f32 alpha : {0.f, .25f, .5f, .75f, 1.f}) {
                 CAPTURE(tick, alpha);
-                auto pose = shownPose(*stock.tree, root, alpha);
-                for (usize part = 1; part < saved.parts.size(); ++part) {
-                    const auto& child = saved.parts[part].actor;
-                    REQUIRE(child.branch);
-                    pose.overlaySubtree(shownPose(*stock.tree, child, alpha), *child.branch);
-                }
-                const Vec3 position = glm::mix(root.presentation.position, root.position, alpha);
-                const f32 yaw = root.presentation.yaw +
-                                TreePose::wrapAngle(root.yaw - root.presentation.yaw) * alpha;
-                const auto world = glm::scale(
-                    portable::rotate(
-                        glm::translate(Mat4{1}, position + Vec3{0, stock.data.floorOffset(), 0}),
-                        yaw, Vec3{0, 1, 0}),
-                    Vec3{root.scale * root.shrink});
-                const Vec3 expected{world * pose.matrices()[*node] * Vec4{head.throat, 1}};
-                const Vec3 expectedHead{world * pose.matrices()[head.meshNode] *
+                const auto pose = fighter.presentedPose(alpha);
+                const auto world = fighter.presentedNodeTransform("", alpha);
+                REQUIRE(world);
+                const Vec3 expected{*world * pose.matrices()[*node] * Vec4{head.throat, 1}};
+                const Vec3 expectedHead{*world * pose.matrices()[head.meshNode] *
                                         Vec4{headVertex, 1}};
                 test.device.draws.clear();
                 test.scene.render(test.device, Mat4{1}, 640, 448, false, alpha);
@@ -586,7 +491,6 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
         REQUIRE_FALSE(test.scene.animator(0)->entering());
         test.scene.bosses().wake();
         test.forceAttack(0, "SUPER", yaw);
-        const auto& stock = *test.scene.bosses().resources().front();
         usize renderedFrames = 0;
         f32 greatestSeparation = 0;
         for (int tick = 0; tick < 18; ++tick) {
@@ -606,20 +510,11 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
             REQUIRE(effect->tree->nodes.size() == 8);
             REQUIRE(effect->model);
             REQUIRE(effect->attachment);
-            const auto saved = test.state();
-            const auto& root = saved.parts.front().actor;
-            REQUIRE(root.smoothValid);
-            REQUIRE(root.presentation.valid);
+            const auto& fighter = test.scene.bosses().fighter();
             for (const f32 alpha : {0.f, .25f, .5f, .75f, 1.f}) {
                 CAPTURE(tick, alpha);
-                const Vec3 position = glm::mix(root.presentation.position, root.position, alpha);
-                const f32 shownYaw = root.presentation.yaw +
-                                     TreePose::wrapAngle(root.yaw - root.presentation.yaw) * alpha;
-                const Mat4 nativeParent = glm::scale(
-                    portable::rotate(
-                        glm::translate(Mat4{1}, position + Vec3{0, stock.data.floorOffset(), 0}),
-                        shownYaw, Vec3{0, 1, 0}),
-                    Vec3{root.scale * root.shrink});
+                const auto nativeParent = fighter.presentedNodeTransform("", alpha);
+                REQUIRE(nativeParent);
                 test.device.draws.clear();
                 test.scene.render(test.device, Mat4{1}, 640, 448, false, alpha);
                 const auto submitted = std::move(test.device.draws);
@@ -631,8 +526,8 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
                 const auto& pose =
                     effect->presentationCaptured ? effect->presentationPose : effect->pose;
                 effect->model->draw(test.device, Mat4{1},
-                                    glm::translate(nativeParent, nativeOffset), {}, pose.matrices(),
-                                    nullptr, effect->opacity());
+                                    glm::translate(*nativeParent, nativeOffset), {},
+                                    pose.matrices(), nullptr, effect->opacity());
                 REQUIRE_FALSE(test.device.draws.empty());
                 for (const auto& expected : test.device.draws) {
                     REQUIRE_FALSE(expected.vertices.empty());

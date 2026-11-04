@@ -21,7 +21,6 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
-#include "game/critters/CombatantCheckpoint.h"
 #include "game/critters/Critters.h"
 #include "game/critters/Gargoyle.h"
 #include "game/critters/General.h"
@@ -1006,8 +1005,6 @@ TEST_CASE("ready step cooldown preserves the family's animation or move-entry or
     assets.cooldownStartsWithMove = cooldownStartsWithMove;
     Combatant actor;
     REQUIRE(actor.spawn(assets, 40, {}, 0, nullptr, {}, 'G'));
-    const std::array resources{CombatantCheckpoint::Resource{1, &assets}};
-    const CombatantCheckpoint observation(actor, resources, {});
     EnemyView player;
     player.player = 3;
     player.position = {0, 0, 20};
@@ -1015,12 +1012,6 @@ TEST_CASE("ready step cooldown preserves the family's animation or move-entry or
     actor.update(2, 3.0f / 30, players);
     actor.update(2, 1.0f / 30, players);
     REQUIRE(actor.moveName() == "WALK");
-    const auto started = observation.checkpoint();
-    REQUIRE(started);
-    const auto& state = started->parts.front().actor;
-    const auto walk = assets.data.moveNamed("WALK");
-    REQUIRE(walk);
-    CHECK(state.moveTimes[*walk] == Approx(state.age + (cooldownStartsWithMove ? 0 : 28.0f / 30)));
     actor.update(2, 1.0f, players);
     REQUIRE(actor.moveDone());
     actor.update(2, 1.0f / 30, players);

@@ -102,6 +102,40 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
     return true;
 }
 
+bool Combatant::setMove(usize index, const MovePoint& point) {
+    Actor& critter = m_sim.actor;
+    if (critter.definition == nullptr || critter.stock == nullptr ||
+        critter.stock->tree == nullptr || index >= critter.definition->moves().size()) {
+        return false;
+    }
+    const MoveDefinition& move = critter.definition->moves()[index];
+    const auto sequence = critter.stock->tree->findSequence(move.anim);
+    if (!sequence.has_value()) {
+        return false;
+    }
+    critter.move = static_cast<s32>(index);
+    critter.pattern = -1;
+    critter.forcedPattern = true;
+    critter.moveDone = false;
+    critter.finishedSeconds = 0.0f;
+    critter.moveTarget = point.target;
+    if (point.target >= 0) {
+        critter.target = point.target;
+    }
+    if (point.yaw.has_value()) {
+        critter.yaw = *point.yaw;
+    }
+    critter.shotFrame = static_cast<s32>(point.frame) - 1;
+    critter.soundsGiven = point.soundsGiven;
+    critter.smoothValid = false;
+    critter.presentation.valid = false;
+    critter.areas.clear();
+    critter.struckThisMove.clear();
+    critter.player.start(critter.stock->tree->sequences[*sequence], *sequence, 0.0f, point.frame);
+    critter.pose.evaluate(*critter.stock->tree, *sequence, point.frame);
+    return true;
+}
+
 void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) const {
     critter.targets.clear();
     critter.targetYaw = critter.yaw;

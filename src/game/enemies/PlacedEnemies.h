@@ -81,7 +81,6 @@ public:
     /** Same-owner value rewind; the loaded placement roster stays bound. */
     class LocalSnapshot {
         friend class PlacedEnemies;
-        friend class PlacedEnemiesCheckpoint; // Test-only legacy diagnostics.
         Simulation m_values;
         std::weak_ptr<const u8> m_owner;
         u64 m_epoch = 0;
@@ -95,7 +94,6 @@ public:
 
 private:
     bool appendStateDigest(NativeStateDigest& digest, const Simulation& state) const;
-    friend class PlacedEnemiesCheckpoint; // No diagnostic records enter runtime.
     Simulation m_sim;
     u64 m_localEpoch = 1;
     std::vector<Placement> m_roster;

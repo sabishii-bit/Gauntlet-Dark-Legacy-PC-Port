@@ -34,7 +34,6 @@ public:
     std::optional<Vec3> aim(const Vec3& position);
 
 private:
-    friend class CombatantCheckpoint;
     friend void visitNativeState(NativeStateDigest& digest, const CritterPatrol& state) {
         const auto& [route, lookout, sight] = state;
         digest.resource(route);

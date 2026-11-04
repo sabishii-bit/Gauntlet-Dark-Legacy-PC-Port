@@ -10,13 +10,17 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/NativeStateDigest.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/bosses/BossDefinition.h"
-#include "game/critters/CombatantCheckpoint.h"
+#include "game/critters/Combatant.h"
 #include "game/critters/Gargoyle.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
+#include "game/level/NativeStateResources.h"
 #include "game/rollback/LocalStateHistory.h"
 #include "game/rollback/NativeProbeTiming.h"
 
@@ -24,6 +28,14 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 constexpr f32 kStep = 1.0f / 60;
+
+/** The native digest of `actor`, over `stock` registered under the key every load of the
+ * family shares, so two loads compare alike. */
+NativeStateDigest::Digest digestOf(const Combatant& actor, const CombatantAssets& stock) {
+    NativeStateResources resources;
+    REQUIRE(resources.registerCombatantAssets(stock, "combatant-local-rewind"));
+    return test::liveDigest(actor, resources.resources());
+}
 
 CombatantDefinition familyOf(std::string_view name) {
     if (name == "GENERAL") {
@@ -42,7 +54,6 @@ struct Encounter {
     test::FakeRenderDevice device;
     CombatantAssets stock;
     Combatant reference, predicted;
-    std::unique_ptr<CombatantCheckpoint> referenceObservation, predictedObservation;
 
     explicit Encounter(std::string_view name) {
         const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
@@ -50,13 +61,10 @@ struct Encounter {
         for (auto* actor : {&reference, &predicted}) {
             REQUIRE(actor->spawn(stock, 40, {}, 0, nullptr, {}, 'G'));
         }
-        // These diagnostic adapters only observe values for comparison. Rewind
-        // never serializes, prepares, commits or rebinds a portable checkpoint.
-        const std::array resources{CombatantCheckpoint::Resource{1, &stock}};
-        referenceObservation = std::make_unique<CombatantCheckpoint>(
-            reference, resources, CombatantCheckpoint::Bindings{});
-        predictedObservation = std::make_unique<CombatantCheckpoint>(
-            predicted, resources, CombatantCheckpoint::Bindings{});
+    }
+
+    NativeStateDigest::Digest digest(const Combatant& actor) const {
+        return digestOf(actor, stock);
     }
 
     void step(Combatant& actor, s32 frame, bool wrong = false) {
@@ -106,14 +114,30 @@ struct Encounter {
         }
     }
 
-    void equal() const {
-        const auto expected = referenceObservation->checkpoint();
-        const auto actual = predictedObservation->checkpoint();
-        REQUIRE(expected);
-        REQUIRE(actual);
-        CHECK(*actual == *expected);
-    }
+    void equal() const { CHECK(digest(predicted) == digest(reference)); }
 };
+
+/** One family loaded on its own device, with one fighter spawned from it. */
+struct Fighter {
+    test::FakeRenderDevice device;
+    CombatantAssets stock;
+    Combatant actor;
+    explicit Fighter(const CombatantDefinition& family) {
+        const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+        REQUIRE(stock.load(device, root, family, 'G'));
+        REQUIRE(actor.spawn(stock, 40, {}, 0, nullptr, {}, 'G'));
+    }
+    NativeStateDigest::Digest digest() const { return digestOf(actor, stock); }
+};
+
+EnemyView visiblePlayer(s32 id, Vec3 position) {
+    EnemyView view;
+    view.player = id;
+    view.position = position;
+    view.radius = 1;
+    view.height = 6;
+    return view;
+}
 
 TEST_CASE("native combatant families replay corrected one to eight tick histories",
           "[local-rewind][combatant-local-rewind][native-equality][assets]") {
@@ -172,8 +196,7 @@ TEST_CASE("local combatant rewind retains boss child addresses across clear and 
     }
     Combatant::LocalSnapshot saved;
     REQUIRE(actor.saveLocal(saved));
-    const auto original = encounter->predictedObservation->checkpoint();
-    REQUIRE(original);
+    const auto original = encounter->digest(actor);
     const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
     CombatantAssets general;
     REQUIRE(general.load(encounter->device, root, General::definition(), 'G'));
@@ -184,7 +207,7 @@ TEST_CASE("local combatant rewind retains boss child addresses across clear and 
         CHECK(actor.child(41) == nullptr);
         REQUIRE(actor.spawn(general, 80, {2, 0, 3}, 1, nullptr, {}, 'G'));
         REQUIRE(actor.restoreLocal(saved));
-        CHECK(encounter->predictedObservation->checkpoint() == original);
+        CHECK(encounter->digest(actor) == original);
         Combatant::LocalSnapshot corrected;
         REQUIRE(actor.saveLocal(corrected));
         CHECK(actor.equalLocal(saved, corrected));
@@ -207,12 +230,8 @@ TEST_CASE("local combatant snapshots fence owners assets and borrowed per-tick c
     CHECK_FALSE(actor.equalLocal(empty, empty));
     CHECK_FALSE(encounter->reference.restoreLocal(saved));
     CHECK_FALSE(encounter->reference.equalLocal(saved, saved));
-    const auto original = encounter->predictedObservation->checkpoint();
-    REQUIRE(original);
-    auto stalePortable = encounter->predictedObservation->prepareRestore(*original);
-    REQUIRE(stalePortable);
+    const auto original = encounter->digest(actor);
     REQUIRE(actor.restoreLocal(saved));
-    CHECK_FALSE(encounter->predictedObservation->canCommit(*stalePortable));
     std::array contacts{CombatantObstacle{}};
     actor.setObstacles(contacts);
     CHECK_FALSE(actor.restoreLocal(saved));
@@ -226,7 +245,7 @@ TEST_CASE("local combatant snapshots fence owners assets and borrowed per-tick c
     CHECK_FALSE(actor.saveLocal(empty));
     actor.setSwarm({});
     REQUIRE(actor.restoreLocal(saved));
-    CHECK(encounter->predictedObservation->checkpoint() == original);
+    CHECK(encounter->digest(actor) == original);
     encounter->stock.clear();
     CHECK_FALSE(actor.canRestoreLocal(saved));
     CHECK_FALSE(actor.equalLocal(saved, saved));
@@ -247,12 +266,12 @@ TEST_CASE("local combatant model replacements use retained resources after corre
     REQUIRE(actor.replaceNodeModel(encounter->device, found->name, found->object));
     Combatant::LocalSnapshot saved;
     REQUIRE(actor.saveLocal(saved));
-    const auto expected = encounter->predictedObservation->checkpoint();
+    const auto expected = encounter->digest(actor);
     const auto uploads = encounter->device.texturesCreated;
     actor.tint(Color{12, 98, 133, 255});
     REQUIRE(actor.replaceNodeModel(encounter->device, found->name, ""));
     REQUIRE(actor.restoreLocal(saved));
-    CHECK(encounter->predictedObservation->checkpoint() == expected);
+    CHECK(encounter->digest(actor) == expected);
     actor.draw(encounter->device, Mat4{1}, WorldLighting{});
     CHECK(encounter->device.texturesCreated == uploads);
     CHECK(encounter->device.textureUpdates == 0);
@@ -274,7 +293,6 @@ TEST_CASE("local combatant rewind has no portable-packet scalar admission limits
     REQUIRE(actor.dying());
     const f32 health = actor.health();
     REQUIRE(health < -1000000);
-    CHECK_FALSE(encounter->predictedObservation->checkpoint());
     Combatant::LocalSnapshot saved;
     REQUIRE(actor.saveLocal(saved));
     actor.clear();
@@ -406,5 +424,193 @@ TEST_CASE("measure native multi-part combatant copy and eight tick replay",
     report("save", saves);
     report("restore", restores);
     report("replay8", replays);
+}
+
+TEST_CASE("native retired combatant slots preserve identity and may be restored before reuse",
+          "[combatant-local-rewind][assets]") {
+    Fighter native(General::definition());
+    Fighter replay(General::definition());
+    const s32 id = native.actor.id();
+    const u64 incarnation = native.actor.incarnation();
+    EnemyHit hit;
+    hit.player = 2;
+    hit.damage = 1000000;
+    native.actor.hurt(hit);
+    replay.actor.hurt(hit);
+    for (s32 tick = 0; tick < 1200 && native.actor.present(); ++tick) {
+        native.actor.update(2, 1.0f / 30, {});
+        replay.actor.update(2, 1.0f / 30, {});
+    }
+    REQUIRE_FALSE(native.actor.present());
+    Combatant::LocalSnapshot retired;
+    REQUIRE(native.actor.saveLocal(retired));
+    CHECK(native.actor.data() == nullptr);
+    CHECK(native.actor.id() == id);
+    CHECK(native.actor.incarnation() == incarnation);
+    REQUIRE_FALSE(native.actor.takeLosses().empty());
+    REQUIRE(native.actor.restoreLocal(retired));
+    const auto uploads = native.device.texturesCreated;
+    CHECK(replay.digest() == native.digest());
+    REQUIRE(native.actor.spawn(native.stock, 40, {2, 0, 3}, 0, nullptr, {}, 'G'));
+    REQUIRE(replay.actor.spawn(replay.stock, 40, {2, 0, 3}, 0, nullptr, {}, 'G'));
+    Combatant::LocalSnapshot reused;
+    REQUIRE(native.actor.saveLocal(reused));
+    CHECK(native.actor.incarnation() > incarnation);
+    CHECK(replay.digest() == native.digest());
+    REQUIRE(native.actor.restoreLocal(retired));
+    REQUIRE(native.actor.restoreLocal(reused));
+    Combatant::LocalSnapshot after;
+    REQUIRE(native.actor.saveLocal(after));
+    CHECK(native.actor.equalLocal(after, reused));
+    CHECK(native.device.texturesCreated == uploads);
+}
+
+TEST_CASE(
+    "native great creature continuation restores animation contacts damage and ordered queues",
+    "[combatant-local-rewind][assets]") {
+    const s32 rate = GENERATE(30, 60);
+    const s32 family = GENERATE(0, 1, 2);
+    const std::array definitions{Golem::definition(), General::definition(),
+                                 Gargoyle::definition()};
+    CAPTURE(rate, family);
+    auto first = std::make_unique<Fighter>(definitions[static_cast<usize>(family)]);
+    auto replay = std::make_unique<Fighter>(definitions[static_cast<usize>(family)]);
+    auto views = std::array{visiblePlayer(3, {1, 0, 8}), visiblePlayer(1, {-8, 0, 11})};
+    EnemyHit hit;
+    hit.player = 1;
+    hit.damage = 13;
+    hit.level = 20;
+    hit.flags = 0x10;
+    hit.close = true;
+    for (auto* fighter : {first.get(), replay.get()}) {
+        for (s32 frame = 0; frame < 25; ++frame) {
+            fighter->actor.update(60 / rate, 1.0f / static_cast<f32>(rate), views);
+        }
+        fighter->actor.damagedPlayer(3, 7);
+        fighter->actor.freeze(3);
+        fighter->actor.blind(7);
+        fighter->actor.curb(0.2f);
+        fighter->actor.setShrink(0.75f);
+        fighter->actor.tint(Color{31, 82, 193, 201});
+        fighter->actor.hurt(hit);
+    }
+    const auto baseline = first->digest();
+    const u32 textures = replay->device.texturesCreated;
+    CHECK(replay->digest() == baseline);
+    bool changed = false;
+    for (s32 frame = 0; frame < 150; ++frame) {
+        CAPTURE(frame);
+        views[0].position.x = frame < 60 ? 1.0f : -3.0f;
+        views[1].hidden = frame > 90;
+        first->actor.update(60 / rate, 1.0f / static_cast<f32>(rate), views, {},
+                            frame >= 40 && frame < 50);
+        replay->actor.update(60 / rate, 1.0f / static_cast<f32>(rate), views, {},
+                             frame >= 40 && frame < 50);
+        const auto expected = first->digest();
+        CHECK(replay->digest() == expected);
+        changed = changed || expected != baseline;
+        if (frame == 73) {
+            Combatant::LocalSnapshot undo;
+            REQUIRE(replay->actor.saveLocal(undo));
+            replay->actor.hurt(hit);
+            replay->actor.update(60 / rate, 1.0f / static_cast<f32>(rate), views);
+            REQUIRE(replay->actor.canRestoreLocal(undo));
+            REQUIRE(replay->actor.restoreLocal(undo));
+            CHECK(replay->digest() == expected);
+        }
+    }
+    CHECK(changed);
+    CHECK(replay->device.texturesCreated == textures);
+    CHECK(replay->device.textureUpdates == 0);
+    CHECK(replay->device.draws.empty());
+}
+
+TEST_CASE("native child poses and auxiliary clocks advance alike in two loads",
+          "[combatant-local-rewind][assets]") {
+    const auto* const name = GENERATE("CHIMERA", "LICH");
+    auto first = std::make_unique<Fighter>(bossDefinition(name));
+    auto replay = std::make_unique<Fighter>(bossDefinition(name));
+    const auto views = std::array{visiblePlayer(3, {2, 0, 15}), visiblePlayer(1, {-9, 0, 11})};
+    const std::array arena{CombatArenaTarget{2, glm::translate(Mat4{1}, Vec3{3, 0, 8}), false},
+                           CombatArenaTarget{5, glm::translate(Mat4{1}, Vec3{-3, 0, 8}), true}};
+    for (auto* fighter : {first.get(), replay.get()}) {
+        for (s32 frame = 0; frame < 45; ++frame) {
+            fighter->actor.update(1, 1.0f / 60, views);
+        }
+        fighter->actor.setArenaTargets(arena);
+        fighter->actor.setArenaAnchors(std::array{Mat4{1}});
+    }
+    CHECK(replay->digest() == first->digest());
+    if (std::string_view(name) == "CHIMERA") {
+        REQUIRE(first->actor.childCount() == 3);
+    } else {
+        REQUIRE(first->stock.attachments.size() == 1);
+    }
+    for (s32 frame = 0; frame < 80; ++frame) {
+        CAPTURE(name, frame);
+        first->actor.update(1, 1.0f / 60, views);
+        replay->actor.update(1, 1.0f / 60, views);
+        CHECK(replay->digest() == first->digest());
+    }
+}
+
+TEST_CASE("native actor reuse can be rewound without erasing queued events or incarnation",
+          "[combatant-local-rewind][assets]") {
+    auto fixture = std::make_unique<Fighter>(Golem::definition());
+    Combatant::LocalSnapshot baseline;
+    REQUIRE(fixture->actor.saveLocal(baseline));
+    const u64 incarnation = fixture->actor.incarnation();
+    REQUIRE(fixture->actor.spawn(fixture->stock, 40, {4, 0, 8}, 1, nullptr, {}, 'G'));
+    CHECK(fixture->actor.incarnation() == incarnation + 1);
+    REQUIRE(fixture->actor.canRestoreLocal(baseline));
+    REQUIRE(fixture->actor.restoreLocal(baseline));
+    Combatant::LocalSnapshot after;
+    REQUIRE(fixture->actor.saveLocal(after));
+    CHECK(fixture->actor.equalLocal(after, baseline));
+}
+
+TEST_CASE("native broken hit-node poses and queued secondary shots survive correction",
+          "[combatant-local-rewind][assets]") {
+    auto first = std::make_unique<Fighter>(bossDefinition("GARM"));
+    auto replay = std::make_unique<Fighter>(bossDefinition("GARM"));
+    const auto parts = first->stock.data.parts();
+    const auto found = std::ranges::find_if(parts, [](const auto& part) {
+        return (part.flags & CritterPart::kBreakable) != 0 && part.healthScale > 0 &&
+               part.damageScale > 0;
+    });
+    REQUIRE(found != parts.end());
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 100000;
+    hit.level = 99;
+    hit.node = static_cast<s32>(found - parts.begin());
+    first->actor.hurt(hit);
+    replay->actor.hurt(hit);
+    CHECK(replay->digest() == first->digest());
+    const auto players = std::array{visiblePlayer(3, {1, 0, 10})};
+    for (s32 tick = 0; tick < 20; ++tick) {
+        first->actor.update(1, 1.0f / 60, players);
+        replay->actor.update(1, 1.0f / 60, players);
+        CHECK(replay->digest() == first->digest());
+    }
+}
+
+TEST_CASE("combatant arena random state resumes the next native selection after slot reuse",
+          "[combatant-local-rewind][assets]") {
+    auto first = std::make_unique<Fighter>(Golem::definition());
+    auto replay = std::make_unique<Fighter>(Golem::definition());
+    const std::array arena{CombatArenaTarget{0, Mat4{1}, false},
+                           CombatArenaTarget{1, Mat4{1}, true},
+                           CombatArenaTarget{2, Mat4{1}, false}};
+    first->actor.setArenaTargets(arena);
+    replay->actor.setArenaTargets(arena);
+    CHECK(replay->digest() == first->digest());
+    for (s32 count = 0; count < 8; ++count) {
+        REQUIRE(first->actor.spawn(first->stock, 40, {}, 0, nullptr, {}, 'G'));
+        REQUIRE(replay->actor.spawn(replay->stock, 40, {}, 0, nullptr, {}, 'G'));
+        first->actor.setArenaTargets(arena);
+        replay->actor.setArenaTargets(arena);
+        CHECK(replay->digest() == first->digest());
+    }
 }
 } // namespace

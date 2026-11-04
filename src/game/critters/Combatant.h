@@ -142,6 +142,29 @@ public:
     f32 radius() const { return data() != nullptr ? data()->radius() : 0; }
     s32 target() const { return m_sim.actor.target; }
     bool moveDone() const { return m_sim.actor.moveDone; }
+    /** The animation of the move it plays: its sequence, frame and clock. */
+    const AnimationPlayer& animation() const { return m_sim.actor.player; }
+    /** Which of the move's sounds it has given: bit 0 the move's own, bit 1 its second, then
+     * each strike's. */
+    u32 soundsGiven() const { return m_sim.actor.soundsGiven; }
+    /** The attack pattern it works through, -1 for none. */
+    s32 pattern() const { return m_sim.actor.pattern; }
+    /** Hidden by a cue that hides the body; a hidden part's branch draws nothing. */
+    bool hidden() const { return m_sim.actor.hidden; }
+    /** The encounter's contact ledger, which its parts share. */
+    const CritterPressure& pressure() const { return m_sim.pressure; }
+    /** A point within a move: its frame, the player it is set on and the sounds already given. */
+    struct MovePoint {
+        f32 frame = 0.0f;       ///< the animation frame; its strikes and shots from it on are due
+        s32 target = -1;        ///< the player the move is set on, then its target; -1 for none
+        u32 soundsGiven = 0;    ///< as soundsGiven(): the sounds counted as played
+        std::optional<f32> yaw; ///< its facing, when the point turns it
+    };
+    /** Sets it playing move `index` from `point`, held there as a parent's pattern step holds a
+     * part's move: not chosen again, its damage areas and the players struck cleared, its
+     * smoothed pose and presentation forgotten. For setting up a known point of a move; false
+     * when it has no such move or animation. */
+    bool setMove(usize index, const MovePoint& point);
     /** Decoded encounters may hold their distinct INIT pose before waking. The
      * ordinary spawn path remains START; these calls do nothing without that policy. */
     void prepareEntrance();
@@ -162,6 +185,8 @@ public:
     /** Render-only attachment sampled from the same composed root/child pose
      * as draw(). Never use this fractional pose for simulation contacts. */
     std::optional<Mat4> presentedNodeTransform(std::string_view node, f32 alpha) const;
+    /** The pose drawn at `alpha` between its last two updates, each part's over its branch. */
+    TreePose presentedPose(f32 alpha) const { return composedPresentationPose(alpha); }
     std::optional<Mat4> rootTransform() const;
     /** Animated hit volumes; movement uses only solid nodes plus the root fallback. */
     std::vector<MissileTarget> bodyTargets(bool solidOnly = false) const;
@@ -189,7 +214,6 @@ public:
 
 private:
     friend class Critters;
-    friend class CombatantCheckpoint;
     static constexpr usize kPlayerSlots = 4;
     static constexpr f32 kAngerMemory = 15.0f;
     struct PlayerDamage {

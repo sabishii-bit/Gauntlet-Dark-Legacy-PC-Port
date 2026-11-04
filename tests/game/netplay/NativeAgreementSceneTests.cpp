@@ -16,8 +16,7 @@
 #include "game/characters/CharacterProfile.h"
 #include "game/characters/Progression.h"
 #include "game/enemies/OpponentResources.h"
-#include "game/enemies/PlacedEnemiesCheckpoint.h"
-#include "game/rollback/PlacedEnemyCheckpoint.h"
+#include "game/enemies/PlacedEnemies.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -205,12 +204,10 @@ TEST_CASE("native watchdog walks the entire pending placement roster beyond wire
     placement.kind = kGruntKind;
     placement.spawn.kind = kGruntKind;
     placement.spawn.placed = true;
-    std::vector<PlacedEnemies::Placement> roster(PlacedEnemyCheckpoint::kMaxPlacements + 1,
-                                                 placement);
+    // One record past what the retired placement wire could carry.
+    constexpr usize kWireRecords = 512;
+    std::vector<PlacedEnemies::Placement> roster(kWireRecords + 1, placement);
     placements.bind(roster);
-    const auto local = PlacedEnemiesCheckpoint::capture(placements);
-    REQUIRE(local);
-    REQUIRE_FALSE(PlacedEnemyCheckpoint::canonicalDigest(*local));
     const auto complete = fixture->digest();
     roster.back().spawn.position.x = 0.25f;
     placements.bind(roster);

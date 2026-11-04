@@ -6,10 +6,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/NativeStateDigest.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/bosses/Bosses.h"
-#include "game/critters/CombatantCheckpoint.h"
+#include "game/level/NativeStateResources.h"
 #include "game/rollback/LocalStateHistory.h"
 
 namespace {
@@ -59,17 +62,12 @@ struct NativeBoss {
             boss.takeLegendEvents();
         }
     }
-    CombatantCheckpoint::State observeActor() {
-        std::vector<CombatantCheckpoint::Resource> resources;
-        for (auto* resource : boss.resources()) {
-            resources.push_back({static_cast<u32>(resources.size() + 1), resource});
-        }
-        // The adapter only reads. Native local save/restore is the sole rewind path.
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
-        const CombatantCheckpoint observer{const_cast<Combatant&>(boss.fighter()), resources, {}};
-        const auto state = observer.checkpoint();
-        REQUIRE(state);
-        return *state;
+    /** The fighter's native digest, its families registered under the keys every load of
+     * them shares, so two encounters compare alike. */
+    NativeStateDigest::Digest actorDigest() const {
+        NativeStateResources resources;
+        REQUIRE(boss.registerNativeResources(resources, "boss"));
+        return test::liveDigest(boss.fighter(), resources.resources());
     }
     void equal(NativeBoss& expected) {
         const auto actual = boss.view();
@@ -86,7 +84,7 @@ struct NativeBoss {
                               rite.wantsRoar(), rite.thrown(), rite.weakening(), rite.darkens()};
         };
         CHECK((legendValues(boss.legend()) == legendValues(expected.boss.legend())));
-        CHECK(observeActor() == expected.observeActor());
+        CHECK(actorDigest() == expected.actorDigest());
         const auto resources = boss.resources();
         const auto referenceResources = expected.boss.resources();
         REQUIRE(resources.size() == referenceResources.size());
