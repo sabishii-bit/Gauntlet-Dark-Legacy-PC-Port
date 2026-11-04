@@ -10,22 +10,10 @@ add_subdirectory(expansions/audio)
 # No production target links these snapshots or their compression dependency.
 find_package(lz4 CONFIG REQUIRED)
 add_library(game_diagnostics STATIC
-    game/party/PlayerAttacksCheckpoint.cpp
     engine/world/WorldStateCheckpoint.cpp
     game/party/PlayerMissilesCheckpoint.cpp
     game/effects/EffectTreesCheckpoint.cpp
-    game/party/PlayerArsenalCheckpoint.cpp
     game/camera/TowerCameraCheckpoint.cpp
-    game/rollback/PlayerHealthCheckpoint.cpp
-    game/rollback/PlayerPoseCheckpoint.cpp
-    game/rollback/PlayerPotionCheckpoint.cpp
-    game/rollback/TurboEffectCheckpoint.cpp
-    game/rollback/PlayerActionCheckpoint.cpp
-    game/rollback/AnimationCheckpoint.cpp
-    game/rollback/RandomCheckpoint.cpp
-    game/rollback/PlayerTurboCheckpoint.cpp
-    game/rollback/PlayerKnockbackCheckpoint.cpp
-    game/party/PlayerRuntimeCheckpoint.cpp
     game/enemies/OpponentResources.cpp
     game/enemies/CombatResources.cpp)
 target_include_directories(game_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -98,18 +86,13 @@ add_executable(tests
     game/rollback/InputCommandTests.cpp
     game/rollback/InputTimelineTests.cpp
     game/rollback/ShotIdentityTests.cpp
-    game/rollback/PlayerActionCheckpointTests.cpp
-    game/rollback/PlayerTurboCheckpointTests.cpp
-    game/rollback/AnimationCheckpointTests.cpp
-    game/rollback/RandomCheckpointTests.cpp
     game/enemies/OpponentPlacementsTests.cpp
-    game/party/PlayerAttacksCheckpointTests.cpp
-    game/party/PlayerRuntimeCheckpointTests.cpp
-    game/rollback/PlayerHealthCheckpointTests.cpp
+    game/party/PlayerAttacksLocalRewindTests.cpp
+    game/party/PlayerRuntimeLocalRewindTests.cpp
     game/enemies/LevelOpponentsLocalRewindTests.cpp
     game/enemies/OpponentLootCheckpointTests.cpp
     game/rollback/CanonicalDigestSinkTests.cpp
-    game/party/PlayerCompanionCheckpointTests.cpp
+    game/party/PlayerCompanionLocalRewindTests.cpp
     game/party/PartyLightingTests.cpp
     game/level/ExitPortalsLocalRewindTests.cpp
     game/level/LevelTransportersLocalRewindTests.cpp
@@ -138,17 +121,13 @@ add_executable(tests
     game/level/WorldDestructionLocalRewindTests.cpp
     game/enemies/EnemyFeedbackEmissionTests.cpp
     game/party/PartyDamageTests.cpp
-    game/party/PlayerArsenalCheckpointTests.cpp
+    game/party/PlayerArsenalLocalRewindTests.cpp
     game/party/MoveStrikesCheckpointTests.cpp
     game/rollback/EffectIdentityTests.cpp
-    game/rollback/PlayerPoseCheckpointTests.cpp
-    game/rollback/PlayerPotionCheckpointTests.cpp
     game/level/WorldMotionTests.cpp
     game/party/TurboEmissionTests.cpp
     game/party/TurboEffectResourcesTests.cpp
-    game/rollback/TurboEffectCheckpointTests.cpp
     game/party/MeleeGeometryTests.cpp
-    game/rollback/PlayerKnockbackCheckpointTests.cpp
     game/players/MeleeSelectionTests.cpp
     game/players/PlayerActorCheckpointTests.cpp
     game/enemies/EnemyAnimatorCheckpointTests.cpp
@@ -710,18 +689,13 @@ if(GDL_ENABLE_NETPLAY)
         game/party/PlayerArsenalTests.cpp
         game/party/PotionEmissionTests.cpp
         game/party/PotionFlightTests.cpp
-        game/rollback/PlayerActionCheckpointTests.cpp
-        game/rollback/PlayerTurboCheckpointTests.cpp
-        game/rollback/AnimationCheckpointTests.cpp
-        game/rollback/RandomCheckpointTests.cpp
         game/enemies/OpponentPlacementsTests.cpp
-        game/party/PlayerAttacksCheckpointTests.cpp
-        game/party/PlayerRuntimeCheckpointTests.cpp
-        game/rollback/PlayerHealthCheckpointTests.cpp
+        game/party/PlayerAttacksLocalRewindTests.cpp
+        game/party/PlayerRuntimeLocalRewindTests.cpp
         game/enemies/LevelOpponentsLocalRewindTests.cpp
         game/enemies/OpponentLootCheckpointTests.cpp
         game/rollback/CanonicalDigestSinkTests.cpp
-        game/party/PlayerCompanionCheckpointTests.cpp
+        game/party/PlayerCompanionLocalRewindTests.cpp
         game/party/PartyLightingTests.cpp
         game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/level/ExitPortalsLocalRewindTests.cpp
@@ -751,22 +725,18 @@ if(GDL_ENABLE_NETPLAY)
         game/level/LevelTriggersCheckpointTests.cpp
         game/party/PartyDamageTests.cpp
         game/hud/HelpMessagesTests.cpp
-        game/party/PlayerArsenalCheckpointTests.cpp
+        game/party/PlayerArsenalLocalRewindTests.cpp
         game/party/MoveStrikesCheckpointTests.cpp
         game/rollback/EffectIdentityTests.cpp
-        game/rollback/PlayerPoseCheckpointTests.cpp
-        game/rollback/PlayerPotionCheckpointTests.cpp
         engine/world/ParticleCheckpointTests.cpp
         game/effects/EffectCheckpointTests.cpp
         game/level/WorldMotionTests.cpp
         game/party/TurboEmissionTests.cpp
         game/party/TurboEffectResourcesTests.cpp
-        game/rollback/TurboEffectCheckpointTests.cpp
         game/party/PlayerMissilesTests.cpp
         game/party/PlayerMissilesCheckpointTests.cpp
         game/effects/EffectTreesPoolCheckpointTests.cpp
         game/party/MeleeGeometryTests.cpp
-        game/rollback/PlayerKnockbackCheckpointTests.cpp
         game/players/KnockbackTests.cpp
         game/players/PlayerActorCheckpointTests.cpp
         game/enemies/EnemyAnimatorCheckpointTests.cpp
@@ -873,7 +843,7 @@ if(GDL_ENABLE_NETPLAY)
         game/scenes/PlaySceneControlEqualityTests.cpp
         game/audio/SceneSoundEventsTests.cpp
         game/level/TriggerCuesTests.cpp
-        game/party/PlayerAttacksCheckpointTests.cpp
+        game/party/PlayerAttacksLocalRewindTests.cpp
         game/party/MoveStrikesCheckpointTests.cpp
         game/enemies/LevelOpponentsLocalRewindTests.cpp
         game/enemies/EnemyMissilesCheckpointTests.cpp
@@ -928,8 +898,8 @@ if(GDL_ENABLE_NETPLAY)
         game/rollback/FrameEventLedgerTests.cpp
         game/party/PlayerLocalRewindTests.cpp
         game/party/PlayerSimulationEqualityTests.cpp
-        game/party/PlayerRuntimeCheckpointTests.cpp
-        game/party/PlayerCompanionCheckpointTests.cpp game/party/PlayerFigureTests.cpp
+        game/party/PlayerRuntimeLocalRewindTests.cpp
+        game/party/PlayerCompanionLocalRewindTests.cpp game/party/PlayerFigureTests.cpp
         game/party/PartyMotionTests.cpp game/party/PartyFiguresTests.cpp
         game/players/PlayerActorCheckpointTests.cpp
         game/rollback/NativeProbeTimingTests.cpp

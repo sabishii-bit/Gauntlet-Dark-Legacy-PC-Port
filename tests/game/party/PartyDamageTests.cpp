@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <array>
-#include <memory>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -10,10 +9,12 @@
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
 #include "game/hud/HelpMessages.h"
+#include "game/party/ActionObservation.h"
 #include "game/party/PartyDamage.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerAttacks.h"
-#include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/PlayerFigure.h"
+#include "game/party/PlayerRuntime.h"
 #include "game/party/ScriptedMotion.h"
 
 namespace {
@@ -43,7 +44,6 @@ struct Fixture {
     PlayerArsenal arsenal;
     PlayerAttacks attacks;
     std::array<PlayerRuntime, 2> players;
-    std::array<std::unique_ptr<PlayerRuntimeCheckpoint>, 2> owners;
     PlayerHealth health;
     std::vector<Output> outputs;
     std::vector<PartyMotion::Action> actions;
@@ -70,7 +70,6 @@ struct Fixture {
             player.figure = PlayerFigure::load(device, root, save, false);
             REQUIRE(player.figure);
             player.turbo.add(100);
-            owners[i] = std::make_unique<PlayerRuntimeCheckpoint>(player, stats);
         }
     }
     Fixture(const Fixture&) = delete;
@@ -79,19 +78,36 @@ struct Fixture {
         attacks.clear();
         arsenal.clear();
     }
-    auto state() const {
-        std::array<PlayerRuntimeCheckpoint::State, 2> result;
-        for (usize i = 0; i < owners.size(); ++i) {
-            const auto state = owners[i]->checkpoint();
-            REQUIRE(state);
-            result[i] = *state;
+    /** What one member shows: its simulation values and its figure's action state. */
+    struct Observed {
+        PlayerSimulation player;
+        test::ActionObservation figure;
+        bool operator==(const Observed&) const = default;
+    };
+    std::array<Observed, 2> state() const {
+        std::array<Observed, 2> result;
+        for (usize i = 0; i < players.size(); ++i) {
+            result[i] = {players[i].simulation(), test::observeAction(*players[i].figure)};
         }
         return result;
     }
-    void restore(const std::array<PlayerRuntimeCheckpoint::State, 2>& state,
-                 const PlayerHealth::Checkpoint& random) {
-        for (usize i = 0; i < owners.size(); ++i) {
-            REQUIRE(owners[i]->restore(state[i]));
+    /** Where the party rewinds to: each member's simulation values and figure. */
+    struct Saved {
+        std::array<PlayerSimulation, 2> players;
+        std::array<PlayerFigure::LocalSnapshot, 2> figures;
+    };
+    Saved save() const {
+        Saved saved;
+        for (usize i = 0; i < players.size(); ++i) {
+            saved.players[i] = players[i].simulation();
+            players[i].figure->saveLocal(saved.figures[i]);
+        }
+        return saved;
+    }
+    void restore(const Saved& saved, const PlayerHealth::Checkpoint& random) {
+        for (usize i = 0; i < players.size(); ++i) {
+            REQUIRE(players[i].figure->restoreLocal(saved.figures[i]));
+            players[i].simulation() = saved.players[i];
         }
         REQUIRE(health.restore(random));
     }
@@ -230,29 +246,31 @@ TEST_CASE("native enemy damage dispatch preserves party damage and following mot
     REQUIRE_FALSE(blows.empty());
     REQUIRE(power);
     REQUIRE(victims == ((1U << 3) | (1U << 1)));
+    const auto saved = fixture.save();
     const auto before = fixture.state();
     const auto random = fixture.health.checkpoint();
     const auto uploads = fixture.device.texturesCreated;
     const PartyDamage::Context context{.damageScale = 1.125f, .playSeconds = 75};
     fixture.native(blows, context);
     const auto afterDamage = fixture.state();
-    REQUIRE(std::ranges::any_of(
-        afterDamage, [](const auto& player) { return player.reaction == PlayerDeed::Flinch; }));
-    REQUIRE(afterDamage[0].save.health() < before[0].save.health());
-    REQUIRE(afterDamage[1].save.health() < before[1].save.health());
+    REQUIRE(std::ranges::any_of(afterDamage, [](const auto& member) {
+        return member.player.reaction == PlayerDeed::Flinch;
+    }));
+    REQUIRE(afterDamage[0].player.actor.save().health() < before[0].player.actor.save().health());
+    REQUIRE(afterDamage[1].player.actor.save().health() < before[1].player.actor.save().health());
     CHECK(afterDamage[0].figure == before[0].figure); // queued, not animated during damage
     CHECK(afterDamage[1].figure == before[1].figure);
     const auto afterRandom = fixture.health.checkpoint();
     const auto outputs = fixture.outputs;
-    std::vector<std::array<PlayerRuntimeCheckpoint::State, 2>> continuation;
+    std::vector<std::array<Fixture::Observed, 2>> continuation;
     for (s32 tick = 0; tick < 90; ++tick) {
         fixture.tick(tick);
         continuation.push_back(fixture.state());
     }
     const auto actions = fixture.actions;
-    CHECK(continuation.front()[0].reaction == PlayerDeed::None);
-    REQUIRE(continuation.back()[0].actor.position != before[0].actor.position);
-    fixture.restore(before, random);
+    CHECK(continuation.front()[0].player.reaction == PlayerDeed::None);
+    REQUIRE(continuation.back()[0].player.actor.position() != before[0].player.actor.position());
+    fixture.restore(saved, random);
     fixture.actions.clear();
     fixture.outputs.clear();
     fixture.dispatch(blows, context);
@@ -293,7 +311,7 @@ TEST_CASE("native guard damage preserves block state fractions and global cue RN
                            EnemyBlow{.player = 3, .kind = 0, .damage = 19.25f},
                            EnemyBlow{.player = 1, .kind = 0, .damage = 11.125f}};
     const PartyDamage::Context context{.damageScale = 1.125f};
-    const auto before = fixture.state();
+    const auto saved = fixture.save();
     const auto random = fixture.health.checkpoint();
     fixture.native(blows, context);
     const auto expected = fixture.state();
@@ -301,12 +319,12 @@ TEST_CASE("native guard damage preserves block state fractions and global cue RN
     const auto cues = fixture.outputs;
     REQUIRE_FALSE(cues.empty());
     CHECK(expectedRandom != random); // below 50 chooses a native party-wide random line
-    CHECK(expected[0].blocked == defend);
+    CHECK(expected[0].player.blocked == defend);
     if (defend) {
-        REQUIRE(expected[0].blockLeft > 0);
+        REQUIRE(expected[0].player.blockLeft > 0);
         CHECK(std::ranges::count(cues, OutputKind::Block, &Output::kind) == 2);
     }
-    fixture.restore(before, random);
+    fixture.restore(saved, random);
     fixture.outputs.clear();
     fixture.dispatch(blows, context);
     CHECK(fixture.outputs == cues);
@@ -321,6 +339,7 @@ TEST_CASE("ordinary knockback retains native damage and reaction without request
     if (known) {
         fixture.players[0].actor.save().helpSeen = {HelpMessages::kLearnBlock};
     }
+    const auto saved = fixture.save();
     const auto before = fixture.state();
     const auto random = fixture.health.checkpoint();
     const std::array blows{EnemyBlow{.player = 3,
@@ -336,15 +355,16 @@ TEST_CASE("ordinary knockback retains native damage and reaction without request
     const auto expected = fixture.state();
     const auto expectedRandom = fixture.health.checkpoint();
     const auto outputs = fixture.outputs;
-    REQUIRE(expected[0].save.health() < before[0].save.health());
-    REQUIRE(expected[0].reaction != PlayerDeed::None);
+    REQUIRE(expected[0].player.actor.save().health() < before[0].player.actor.save().health());
+    REQUIRE(expected[0].player.reaction != PlayerDeed::None);
     for (usize index = 0; index < fixture.players.size(); ++index) {
-        CHECK(expected[index].save.helpSeen == before[index].save.helpSeen);
-        CHECK(expected[index].helpHeard == before[index].helpHeard);
+        CHECK(expected[index].player.actor.save().helpSeen ==
+              before[index].player.actor.save().helpSeen);
+        CHECK(expected[index].player.helpHeard == before[index].player.helpHeard);
     }
     fixture.tick(0);
     const auto following = fixture.state();
-    fixture.restore(before, random);
+    fixture.restore(saved, random);
     fixture.outputs.clear();
     fixture.dispatch(blows, context);
     CHECK(fixture.outputs == outputs);
@@ -362,6 +382,7 @@ TEST_CASE("native heavy damage preserves knockdowns and guard lesson routing",
     if (known) {
         fixture.players[0].actor.save().helpSeen = {HelpMessages::kLearnBlock};
     }
+    const auto saved = fixture.save();
     const auto before = fixture.state();
     const auto random = fixture.health.checkpoint();
     const std::array blows{EnemyBlow{.player = 3,
@@ -372,7 +393,7 @@ TEST_CASE("native heavy damage preserves knockdowns and guard lesson routing",
     const PartyDamage::Context context{.playSeconds = 75};
     fixture.native(blows, context);
     REQUIRE(fixture.lessons == 1);
-    REQUIRE(fixture.players[0].actor.save().health() < before[0].save.health());
+    REQUIRE(fixture.players[0].actor.save().health() < before[0].player.actor.save().health());
     REQUIRE(fixture.players[0].reaction != PlayerDeed::None);
     const auto expected = fixture.state();
     const auto expectedRandom = fixture.health.checkpoint();
@@ -388,7 +409,7 @@ TEST_CASE("native heavy damage preserves knockdowns and guard lesson routing",
     }
     CHECK((help.post(HelpMessages::kLearnBlock, 3, readers) == nullptr) == known);
     CHECK(help.showing() == !known);
-    fixture.restore(before, random);
+    fixture.restore(saved, random);
     fixture.outputs.clear();
     fixture.lessons = 0;
     fixture.dispatch(blows, context);
@@ -412,12 +433,13 @@ TEST_CASE("native impact cue optionality and locks are retained before damage di
     CHECK(emptyName->kind == HurtKind::QuietBlow);
     CHECK_FALSE(PartyDamage::enemy(blows[0], fixture.players[0], {}));
     const PartyDamage::Context context{.tower = lock == 1, .cutscene = lock == 2};
+    const auto saved = fixture.save();
     const auto before = fixture.state();
     const auto random = fixture.health.checkpoint();
     fixture.native(blows, context);
     const auto expected = fixture.state();
     const auto cues = fixture.outputs;
-    fixture.restore(before, random);
+    fixture.restore(saved, random);
     fixture.outputs.clear();
     fixture.dispatch(blows, context);
     CHECK(fixture.outputs == cues);

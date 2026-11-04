@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <string>
@@ -9,13 +8,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/level/NativeStateResources.h"
 #include "game/level/ScriptedFixtures.h"
-#include "game/party/PlayerArsenalCheckpoint.h"
-#include "game/party/PlayerAttacksCheckpoint.h"
+#include "game/party/PlayerAttacks.h"
 #include "game/party/ScriptedAttacks.h"
 
 namespace gdl::test {
@@ -77,9 +78,8 @@ struct AttackCheckpointFixture {
     game::ClassDataSet classes;
     game::LevelWorld world;
     ItemArchive weapons;
-    TextureAnimator textures;
-    game::EffectTrees prototypes;
-    std::vector<game::EffectTrees::PoolResource> resources;
+    TextureAnimator textures;     ///< the weapons' texture animations, bound as a scene binds them
+    game::EffectTrees prototypes; ///< every weapons tree started once, so its textures exist
     game::EffectTrees effects;
     game::LevelSoundscape audio;
     AmbientDimmer dimmer;
@@ -88,12 +88,6 @@ struct AttackCheckpointFixture {
     game::LevelFixtures fixtures;
     game::PlayerAttacks attacks;
     std::array<game::PlayerRuntime, 1> players;
-    std::array<game::PlayerAttacksCheckpoint::Actor, 1> actors{{{3, 0}}};
-    std::array<s32, 1> slots{{3}};
-    // Native used/shattered potion impacts retain MissileImpact's SPARKS
-    // default even though the area-damage phase does not play that effect.
-    std::array<game::PlayerMissiles::Resource, 1> missileResources{
-        {{1, &game::MissileSpec::of(0), nullptr, nullptr}}};
     std::vector<s32> helps;
     FixtureScript fixtureEvents;
     ScriptedFixtures fixtureHost{fixtureEvents};
@@ -108,13 +102,6 @@ struct AttackCheckpointFixture {
             for (usize index = 0; index < weapons.trees.size(); ++index) {
                 const auto& tree = weapons.trees.tree(static_cast<u32>(index));
                 REQUIRE(prototypes.start(device, weapons, tree.name, {}) != 0);
-            }
-            for (usize index = 0; index < prototypes.count(); ++index) {
-                resources.push_back({static_cast<u32>(index + 1),
-                                     &weapons,
-                                     {},
-                                     &textures,
-                                     &prototypes.effect(index)});
             }
         }
         arsenal.bind({device,
@@ -145,55 +132,26 @@ struct AttackCheckpointFixture {
         arsenal.clear();
         opponents.close();
     }
-    game::PlayerAttacksCheckpoint::State state() const {
-        const auto result =
-            game::PlayerAttacksCheckpoint::capture(attacks, actors, missileResources);
-        REQUIRE(result);
-        return *result;
-    }
-    game::EffectTrees::PoolCheckpoint effectState() const {
-        const auto result = effects.checkpointPool(resources);
-        if (!result) {
-            for (usize index = 0; index < effects.count(); ++index) {
-                const auto& effect = effects.effect(index);
-                const auto state = effects.checkpoint(effect.id);
-                CAPTURE(effect.name, effect.id, effect.lived, effect.secondsLeft);
-                REQUIRE(state);
-                CHECK(state->animation.valid());
-                CHECK(state->particles.valid());
-                CHECK(state->trails.valid());
-                CHECK(state->valid());
-                const auto resource = std::ranges::find_if(resources, [&](const auto& candidate) {
-                    return candidate.prototype != nullptr &&
-                           candidate.prototype->name == effect.name;
-                });
-                REQUIRE(resource != resources.end());
-                const auto& prototype = *resource->prototype;
-                CHECK(prototype.archive == effect.archive);
-                CHECK(prototype.tree == effect.tree);
-                CHECK(prototype.device == effect.device);
-                CHECK(prototype.lenders == effect.lenders);
-                CHECK(prototype.emitParticles == effect.emitParticles);
-                CHECK(prototype.missingObjectsAreEmpty == effect.missingObjectsAreEmpty);
-                CHECK(prototype.particleTextureSlot == effect.particleTextureSlot);
-                CHECK(prototype.trails.canRestore(state->trails));
-                CHECK(prototype.particles.canRestore(state->particles));
-            }
+    /** The attack owners' native digests, to compare one moment with another. */
+    struct Digests {
+        NativeStateDigest::Digest attacks;
+        NativeStateDigest::Digest arsenal;
+        NativeStateDigest::Digest effects;
+        bool operator==(const Digests&) const = default;
+    };
+    /** Their digests now, over what they borrow from this scene registered under keys every
+     * load of it shares, so that two fixtures can be compared as well. */
+    Digests digests() const {
+        game::NativeStateResources resources;
+        REQUIRE(resources.registerBuiltinTexture(device.whiteTexture(), "opaque-white"));
+        if (weapons.loaded()) {
+            REQUIRE(resources.registerArchive(weapons, "weapons"));
         }
-        REQUIRE(result);
-        return *result;
-    }
-    void restore(const game::PlayerAttacksCheckpoint::State& attackState,
-                 const game::EffectTrees::PoolCheckpoint& visualState) {
-        auto a = game::PlayerAttacksCheckpoint::prepare(attacks, attackState, actors, visualState,
-                                                        missileResources);
-        auto b = effects.prepareRestorePool(visualState, resources);
-        REQUIRE(a);
-        REQUIRE(b);
-        REQUIRE(game::PlayerAttacksCheckpoint::canCommit(attacks, *a));
-        REQUIRE(effects.canCommit(*b));
-        REQUIRE(game::PlayerAttacksCheckpoint::commit(attacks, std::move(*a)));
-        REQUIRE(effects.commitRestore(std::move(*b)));
+        REQUIRE(resources.registerLayout(world.layout(), "stage"));
+        REQUIRE(resources.registerCollision(world.collision(), "stage"));
+        const auto attackDigest = liveDigest(attacks, resources.resources());
+        const auto arsenalDigest = liveDigest(arsenal, resources);
+        return {attackDigest, arsenalDigest, liveDigest(effects, resources)};
     }
 };
 } // namespace gdl::test

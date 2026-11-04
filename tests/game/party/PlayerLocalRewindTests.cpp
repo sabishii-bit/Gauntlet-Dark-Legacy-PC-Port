@@ -1,30 +1,44 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+
+#include "engine/assets/AnimationSet.h"
+#include "engine/world/TreePose.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/characters/ClassData.h"
+#include "game/characters/NameCheats.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/party/ActionObservation.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/PlayerFigure.h"
 #include "game/party/PlayerHealth.h"
-#include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/PlayerRuntime.h"
 #include "game/party/ScriptedMotion.h"
+#include "game/players/Knockback.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/rollback/LocalStateHistory.h"
 #include "game/rollback/NativeProbeTiming.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+using test::ActionObservation;
+using test::observeAction;
 constexpr f32 kStep = 1.0f / 60.0f;
 constexpr usize kSeats = 4;
 
@@ -165,36 +179,9 @@ static_assert(std::is_copy_constructible_v<PlayerRuntime::Simulation>);
 static_assert(std::is_copy_assignable_v<PlayerRuntime::Simulation>);
 static_assert(!std::is_copy_constructible_v<PlayerRuntime>);
 
-// The diagnostic projection only compares results. It is never the rewind mechanism.
-PlayerRuntimeCheckpoint::State observeValues(const PlayerRuntime& player) {
-    PlayerRuntime probe;
-    probe.simulation() = player.simulation();
-    const PlayerRuntimeCheckpoint diagnostic{probe, nullptr};
-    const auto state = diagnostic.checkpoint();
-    REQUIRE(state);
-    return *state;
-}
-
-struct ActionObservation {
-    PlayerAnimator::Checkpoint animation;
-    std::optional<PlayerAnimator::TransitionPose> transition;
-    std::optional<TreePose::Checkpoint> pose;
-    std::optional<Mat4> hand;
-    std::optional<Mat4> arm;
-    Mat4 root{1};
-    u64 revision = 0;
-    bool familiarReleased = false;
-    bool operator==(const ActionObservation&) const = default;
-};
-ActionObservation observeAction(const PlayerFigure& figure) {
-    return {figure.animator().checkpoint(),
-            figure.animator().transitionPose(),
-            figure.animator().pose().checkpoint(),
-            figure.handAttachment(Mat4{1}),
-            figure.armAttachment(Mat4{1}),
-            figure.rootAttachment(Mat4{1}),
-            figure.animationRevision(),
-            figure.familiarReleased()};
+// The values compared between runs: a copy of the simulation. It is never the rewind mechanism.
+PlayerSimulation observeValues(const PlayerRuntime& player) {
+    return player.simulation();
 }
 
 // A party-component test, deliberately not described as whole-scene rewind. The world
@@ -390,7 +377,7 @@ TEST_CASE("native party actions and attachment poses survive one to eight frame 
     for (s32 start = 0; start < 240; start += 8) {
         PartyRewind::Saved saved;
         party.save(saved);
-        std::vector<std::array<PlayerRuntimeCheckpoint::State, kSeats>> values(8);
+        std::vector<std::array<PlayerSimulation, kSeats>> values(8);
         std::array<std::array<ActionObservation, kSeats>, 8> actions;
         std::array<std::vector<std::pair<usize, PartyMotion::Action>>, 8> events;
         std::array<std::vector<std::string>, 8> sounds;
@@ -470,7 +457,7 @@ TEST_CASE("player value rewind retains pending turbo payment strikes and volley 
     CHECK(player.move.owed() == TurboMeter::kStrongCost);
     CHECK(player.move.weaponHidden());
     const auto saved = player.simulation();
-    std::vector<PlayerRuntimeCheckpoint::State> expected;
+    std::vector<PlayerSimulation> expected;
     std::vector<std::vector<TurboMove::Strike>> expectedStrikes;
     std::vector<std::vector<TurboMove::Volley>> expectedShots;
     std::vector<std::vector<s32>> expectedAnnouncements;
@@ -640,10 +627,10 @@ TEST_CASE("local player copies retain capture landing damage transport and two-p
         return std::pair{damage, destination};
     };
     std::vector<std::pair<std::optional<f32>, std::optional<Vec3>>> outputs;
-    std::vector<std::array<PlayerRuntimeCheckpoint::State, kSeats>> expected;
+    std::vector<std::array<PlayerSimulation, kSeats>> expected;
     for (s32 tick = 0; tick < 90; ++tick) {
         outputs.push_back(step());
-        std::array<PlayerRuntimeCheckpoint::State, kSeats> frame;
+        std::array<PlayerSimulation, kSeats> frame;
         for (usize seat = 0; seat < kSeats; ++seat) {
             frame[seat] = observeValues(party.players[seat]);
         }
@@ -667,7 +654,7 @@ TEST_CASE(
     "[local-rewind][player-local-rewind][assets]") {
     PartyRewind party{true};
     LocalStateHistory<PartyRewind::Saved> history;
-    std::vector<std::array<PlayerRuntimeCheckpoint::State, kSeats>> expected(8);
+    std::vector<std::array<PlayerSimulation, kSeats>> expected(8);
     std::array<std::array<ActionObservation, kSeats>, 8> animations;
     const auto capture = [&](PartyRewind::Saved& state) {
         party.save(state);
@@ -750,6 +737,311 @@ TEST_CASE("local action state cannot outlive its figure even when its address is
     PlayerFigure::LocalSnapshot replacement;
     figure->saveLocal(replacement);
     CHECK(figure->restoreLocal(replacement));
+}
+
+TEST_CASE("native action rewind replays releases and guards exactly at subframe boundaries",
+          "[rollback][player-local-rewind]") {
+    TreeInfo tree;
+    tree.name = "WAR";
+    tree.nodes.emplace_back();
+    for (const auto name : PlayerAnimator::kSequenceNames) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 9;
+        sequence.frameRate = 24;
+        tree.sequences.push_back(sequence);
+    }
+    constexpr std::array kDeeds{PlayerDeed::Attack, PlayerDeed::StrongAttack, PlayerDeed::Defend,
+                                PlayerDeed::None};
+    constexpr s32 kDeedTicks = 65;
+    constexpr usize kFuture = 24;
+    const auto request = [&](s32 tick) {
+        return kDeeds[static_cast<usize>(tick / kDeedTicks) % kDeeds.size()];
+    };
+    PlayerAnimator original;
+    REQUIRE(original.bind(tree, false));
+    original.setCharacter(0);
+    original.setGuardArmor(2.5f);
+    original.setAttackSpeed(true, false);
+    s32 ordinaryReleases = 0;
+    s32 strongReleases = 0;
+    s32 guardFrames = 0;
+    s32 diverged = 0;
+    for (s32 tick = 0; tick < 400; ++tick) {
+        CAPTURE(tick);
+        // A figure's local snapshot of its actions holds a copy of its animator.
+        const PlayerAnimator saved = original;
+        auto expected = original;
+        std::array<PlayerAnimator::Checkpoint, kFuture> future;
+        for (usize frame = 0; frame < kFuture; ++frame) {
+            expected.update(PlayerMotion::Stand, 1, kStep, request(tick + static_cast<s32>(frame)));
+            future[frame] = expected.checkpoint();
+        }
+        // A prediction asks for the next deed of the cycle before it is rewound.
+        auto replayed = original;
+        for (usize frame = 0; frame < kFuture; ++frame) {
+            replayed.update(PlayerMotion::Stand, 1, kStep,
+                            request(tick + static_cast<s32>(frame) + kDeedTicks));
+        }
+        diverged += replayed.checkpoint() == future.back() ? 0 : 1;
+        replayed = saved;
+        REQUIRE(replayed.checkpoint() == original.checkpoint());
+        for (usize frame = 0; frame < kFuture; ++frame) {
+            replayed.update(PlayerMotion::Stand, 1, kStep, request(tick + static_cast<s32>(frame)));
+            REQUIRE(replayed.checkpoint() == future[frame]);
+        }
+        original.update(PlayerMotion::Stand, 1, kStep, request(tick));
+        ordinaryReleases += original.released() ? 1 : 0;
+        strongReleases += original.strongReleased() ? 1 : 0;
+        guardFrames += original.defending() ? 1 : 0;
+    }
+    CHECK(ordinaryReleases > 0);
+    CHECK(strongReleases > 0);
+    CHECK(guardFrames > 0);
+    CHECK(diverged > 0);
+}
+
+TEST_CASE("player knockback rewind replays pending kick and shove through partial native frames",
+          "[rollback][player-local-rewind][cadence]") {
+    constexpr f32 kFrame = 1.0f / Knockback::kFrameRate;
+    for (const s32 frequency : {30, 60, 120, 144}) {
+        const f32 seconds = 1.0f / static_cast<f32>(frequency);
+        for (const f32 phase : {0.0f, kFrame / 8, kFrame / 2, std::nextafter(kFrame, 0.0f)}) {
+            CAPTURE(frequency, phase);
+            Knockback::Checkpoint state;
+            state.force = {1.25f, -2.5f, 3.75f};
+            state.flags = Knockback::kKnockDown | Knockback::kKnockBack;
+            state.damage = 7.5f;
+            state.velocity = {32, -0.5f, 9};
+            state.fastSeconds = kFrame / 2;
+            state.frameSeconds = phase;
+            state.shove = {-0.5f, 0, 1.25f};
+            state.shoved = true;
+            state.pushed = true;
+            Knockback original;
+            REQUIRE(original.restore(state));
+            for (s32 tick = 0; tick < 80; ++tick) {
+                // The player's simulation holds its knockback by value: a copy is its rewind.
+                const Knockback saved = original;
+                Knockback replayed = original;
+                // A prediction takes another blow and moves on before it is rewound.
+                replayed.queue({1, 0, 0}, Knockback::kBlownAway, 40);
+                CHECK_FALSE(replayed == original);
+                replayed.step(seconds, 10);
+                replayed.endFrame();
+                replayed = saved;
+                // The boundary is before native motion consumes the queued impulse.
+                CHECK(replayed.step(seconds, 10) == original.step(seconds, 10));
+                CHECK(replayed.kick(-0.5f, tick % 2 == 0) == original.kick(-0.5f, tick % 2 == 0));
+                for (Knockback* knock : {&original, &replayed}) {
+                    if (tick % 3 == 0) {
+                        knock->shove({0.2f, 0, -0.4f}, seconds);
+                    }
+                    knock->endFrame();
+                    if (tick % 9 == 0) {
+                        knock->queue({-1, 4, 2}, Knockback::kBlownAway, 12);
+                    }
+                }
+                CHECK(replayed.checkpoint() == original.checkpoint());
+            }
+        }
+    }
+}
+
+/** Three nodes, every action sequence keying all of them, each sequence a little apart. */
+TreeInfo poseTree() {
+    TreeInfo tree;
+    tree.name = "POSE";
+    for (s32 node = 0; node < 3; ++node) {
+        TreeNodeInfo info;
+        info.name = "NODE" + std::to_string(node);
+        info.parent = node - 1;
+        info.position = {0.125f * static_cast<f32>(node), 0.25f, -0.5f};
+        tree.nodes.push_back(info);
+    }
+    for (const auto name : PlayerAnimator::kSequenceNames) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 9;
+        sequence.frameRate = 24;
+        const auto offset = static_cast<f32>(tree.sequences.size()) * 0.03125f;
+        for (u32 node = 0; node < tree.nodes.size(); ++node) {
+            TrackInfo track;
+            track.node = node;
+            track.flags = static_cast<u16>(TrackInfo::kChannels |
+                                           ((node % 2) != 0 ? TrackInfo::kPitchYawRoll : 0));
+            track.frames = {0, 8};
+            track.values = {
+                offset,        0.2f, -0.3f, offset,        0.5f, 0.75f, 1,    1.125f, 0.875f,
+                offset + 0.4f, 0.6f, -0.1f, offset + 0.5f, 0.6f, 0.8f,  0.9f, 1,      1.1f};
+            sequence.trackOfNode.push_back(static_cast<s32>(sequence.tracks.size()));
+            sequence.tracks.push_back(track);
+        }
+        tree.sequences.push_back(sequence);
+    }
+    return tree;
+}
+
+void samePose(const TreePose& actual, const TreePose& expected) {
+    CHECK(std::ranges::equal(actual.poses(), expected.poses()));
+    CHECK(std::ranges::equal(actual.matrices(), expected.matrices()));
+}
+
+/** The animator's clock, blend, pose and presented pose agree. */
+void sameAnimator(const PlayerAnimator& actual, const PlayerAnimator& expected) {
+    CHECK(actual.checkpoint() == expected.checkpoint());
+    CHECK(actual.transitionPose() == expected.transitionPose());
+    samePose(actual.pose(), expected.pose());
+    TreePose actualPresentation;
+    TreePose expectedPresentation;
+    actual.evaluatePresentation(actualPresentation);
+    expected.evaluatePresentation(expectedPresentation);
+    samePose(actualPresentation, expectedPresentation);
+}
+
+/** Runs, then stands until the stance blends in from the run. */
+void reachBlend(PlayerAnimator& player) {
+    for (s32 tick = 0; tick < 8; ++tick) {
+        player.update(PlayerMotion::Run, 1, kStep);
+    }
+    for (s32 tick = 0; tick < 120 && !player.player().transitioning(); ++tick) {
+        player.update(PlayerMotion::Stand, 1, kStep);
+    }
+    REQUIRE(player.player().transitioning());
+}
+
+TEST_CASE("player pose rewind survives interrupted blends and native early update branches",
+          "[rollback][player-local-rewind]") {
+    const auto tree = poseTree();
+    PlayerAnimator player;
+    REQUIRE(player.bind(tree, false));
+    player.setCharacter(0);
+    constexpr std::array kInterrupts{PlayerDeed::None,         PlayerDeed::Attack,
+                                     PlayerDeed::StrongAttack, PlayerDeed::Defend,
+                                     PlayerDeed::Flinch,       PlayerDeed::TurboStrong,
+                                     PlayerDeed::TurboFull,    PlayerDeed::ComboHeld};
+    s32 diverged = 0;
+    for (s32 round = 0; round < 3; ++round) {
+        reachBlend(player);
+        const PlayerAnimator baseline = player;
+        for (const auto deed : kInterrupts) {
+            CAPTURE(round, static_cast<u32>(deed));
+            PlayerAnimator native = baseline;
+            PlayerAnimator replay = baseline;
+            sameAnimator(replay, native);
+            for (s32 tick = 0; tick < 12; ++tick) {
+                const auto request = tick == 0 ? deed : PlayerDeed::None;
+                native.update(PlayerMotion::Stand, 1, kStep, request);
+                replay.update(PlayerMotion::Stand, 1, kStep, request);
+                sameAnimator(replay, native);
+                // Rewind again while the old blend is still live, including the ComboHeld
+                // early branch which may show an unblended pose, after a prediction that ran
+                // on into another action.
+                const PlayerAnimator saved = replay;
+                replay.update(PlayerMotion::Run, 1, kStep, PlayerDeed::Attack);
+                diverged += replay.checkpoint() == native.checkpoint() ? 0 : 1;
+                replay = saved;
+                sameAnimator(replay, native);
+            }
+        }
+        player.update(PlayerMotion::Run, 1, kStep);
+    }
+    CHECK(diverged > 0);
+}
+
+/** A run, a stance, a swing, a guard and a flinch, every 180 ticks. */
+std::pair<PlayerMotion, PlayerDeed> poseInput(s32 tick) {
+    const s32 phase = tick % 180;
+    if (phase < 35) {
+        return {PlayerMotion::Run, PlayerDeed::None};
+    }
+    if (phase == 95) {
+        return {PlayerMotion::Stand, PlayerDeed::Attack};
+    }
+    if (phase == 115) {
+        return {PlayerMotion::Stand, PlayerDeed::Defend};
+    }
+    if (phase == 135) {
+        return {PlayerMotion::Stand, PlayerDeed::Flinch};
+    }
+    return {PlayerMotion::Stand, PlayerDeed::None};
+}
+
+TEST_CASE("native class and Sumner costume poses survive rewind and replay",
+          "[rollback][player-local-rewind][assets]") {
+    const s32 character = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+    CAPTURE(character);
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.character = character;
+    if (character == kSumnerClass) {
+        // Sumner's playable artwork is the WIZ/SUM name-code costume,
+        // not a SUM/YEL class-colour archive.
+        save.name = "SUM224";
+        REQUIRE(applyNameCheats(save));
+    }
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->actionTree());
+    constexpr s32 kLeads = 5;
+    constexpr std::array kParts{"HEAD", "L_HAND", "R_HAND"};
+    const auto placement =
+        glm::translate(glm::rotate(Mat4{1}, 0.43f, Vec3{0, 1, 0}), Vec3{2.1f, 1.7f, -4.2f});
+    const auto lead = [&](s32 tick, s32 ahead) {
+        auto [motion, deed] = poseInput(tick + ahead);
+        if (ahead == 2 && tick % 47 == 0) {
+            deed = PlayerDeed::TurboStrong;
+        }
+        figure->animate(motion == PlayerMotion::Run ? 1.0f : 0.0f, 1, kStep, deed);
+    };
+    usize blends = 0;
+    usize transitions = 0;
+    u64 lastTransition = 0;
+    usize diverged = 0;
+    for (s32 tick = 0; tick < 360; ++tick) {
+        CAPTURE(tick);
+        const auto [motion, deed] = poseInput(tick);
+        figure->animate(motion == PlayerMotion::Run ? 1.0f : 0.0f, 1, kStep, deed);
+        const auto& live = figure->animator();
+        if (live.transitionPose()) {
+            ++blends;
+            if (lastTransition != live.player().generation()) {
+                ++transitions;
+                lastTransition = live.player().generation();
+            }
+        }
+        PlayerFigure::LocalSnapshot saved;
+        figure->saveLocal(saved);
+        const PlayerAnimator now = live;
+        const auto rootPlace = figure->rootAttachment(placement);
+        std::array<std::optional<Mat4>, kParts.size()> parts;
+        for (usize part = 0; part < kParts.size(); ++part) {
+            parts[part] = figure->attachment(placement, kParts[part]);
+        }
+        // The prediction runs five frames ahead, a turbo strike among them now and then; its
+        // poses are what the replay after the rewind must show again.
+        std::vector<PlayerAnimator> ahead;
+        for (s32 step = 1; step <= kLeads; ++step) {
+            lead(tick, step);
+            ahead.push_back(figure->animator());
+        }
+        diverged += figure->animator().checkpoint() == now.checkpoint() ? 0U : 1U;
+        REQUIRE(figure->restoreLocal(saved));
+        sameAnimator(figure->animator(), now);
+        CHECK(figure->rootAttachment(placement) == rootPlace);
+        for (usize part = 0; part < kParts.size(); ++part) {
+            CHECK(figure->attachment(placement, kParts[part]) == parts[part]);
+        }
+        for (s32 step = 1; step <= kLeads; ++step) {
+            lead(tick, step);
+            sameAnimator(figure->animator(), ahead[static_cast<usize>(step - 1)]);
+        }
+        REQUIRE(figure->restoreLocal(saved));
+    }
+    CHECK(blends > 0);
+    CHECK(transitions >= 2);
+    CHECK(diverged > 0);
 }
 
 TEST_CASE("measure native four-player value and action copy before scene integration",

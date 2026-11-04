@@ -1,4 +1,8 @@
+#include <algorithm>
 #include <cmath>
+#include <limits>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -416,6 +420,108 @@ TEST_CASE("a sequence's cycle leaves out an opening hold and a closing repeat of
     TreeSequenceInfo rune = key;
     rune.tracks[0].values.back() = 38.0f * 0.164f - 0.1f;
     CHECK(TreePose::cycle(rune) == TreePose::Cycle{0, 39});
+}
+
+/** Three nodes and five sequences keying all of them, each sequence a little apart. */
+TreeInfo checkpointTree() {
+    TreeInfo tree;
+    tree.name = "POSE";
+    for (s32 node = 0; node < 3; ++node) {
+        TreeNodeInfo info;
+        info.name = "NODE" + std::to_string(node);
+        info.parent = node - 1;
+        info.position = {0.125f * static_cast<f32>(node), 0.25f, -0.5f};
+        tree.nodes.push_back(info);
+    }
+    constexpr usize kSequences = 5;
+    for (usize index = 0; index < kSequences; ++index) {
+        TreeSequenceInfo sequence;
+        sequence.name = "SEQ" + std::to_string(index);
+        sequence.frames = 9;
+        sequence.frameRate = 24;
+        const auto offset = static_cast<f32>(index) * 0.03125f;
+        for (u32 node = 0; node < tree.nodes.size(); ++node) {
+            TrackInfo keyed;
+            keyed.node = node;
+            keyed.flags = static_cast<u16>(TrackInfo::kChannels |
+                                           ((node % 2) != 0 ? TrackInfo::kPitchYawRoll : 0));
+            keyed.frames = {0, 8};
+            keyed.values = {
+                offset,        0.2f, -0.3f, offset,        0.5f, 0.75f, 1,    1.125f, 0.875f,
+                offset + 0.4f, 0.6f, -0.1f, offset + 0.5f, 0.6f, 0.8f,  0.9f, 1,      1.1f};
+            sequence.trackOfNode.push_back(static_cast<s32>(sequence.tracks.size()));
+            sequence.tracks.push_back(keyed);
+        }
+        tree.sequences.push_back(sequence);
+    }
+    return tree;
+}
+
+void samePose(const TreePose& actual, const TreePose& expected) {
+    CHECK(std::ranges::equal(actual.poses(), expected.poses()));
+    CHECK(std::ranges::equal(actual.matrices(), expected.matrices()));
+}
+
+TEST_CASE("bound tree pose checkpoints preserve every local channel and reject changed rosters",
+          "[world][pose][rollback][tree-pose-checkpoint]") {
+    const auto tree = checkpointTree();
+    TreePose original;
+    original.evaluate(tree, 4, 3.5f);
+    NodePose changed = original.poses()[1];
+    changed.rotation = {-0.9f, 1.1f, -0.7f};
+    changed.position = {0.4f, -0.3f, 0.2f};
+    changed.scale = {-1, 0.8f, 1.2f};
+    changed.rotationOrder = NodePose::RotationOrder::PitchYawRoll;
+    original.setNodePose(1, changed);
+    const auto state = original.checkpoint();
+    REQUIRE(state);
+    REQUIRE(state->valid());
+    TreePose restored;
+    REQUIRE(restored.restore(tree, *state));
+    samePose(restored, original);
+    CHECK(restored.checkpoint() == state);
+
+    const auto reject = [&](const TreeInfo& trusted, const TreePose::Checkpoint& invalid) {
+        CHECK_FALSE(restored.restore(trusted, invalid));
+        CHECK(restored.checkpoint() == state);
+        samePose(restored, original);
+    };
+    auto other = tree;
+    other.name = "ANOTHER";
+    reject(other, *state);
+    other = tree;
+    other.nodes[1].name = "WRONG_NODE";
+    reject(other, *state);
+    other = tree;
+    other.nodes[2].parent = 0;
+    reject(other, *state);
+    other = tree;
+    other.nodes[0].position.x += 0.01f;
+    reject(other, *state);
+    other = tree;
+    std::swap(other.nodes[1], other.nodes[2]);
+    reject(other, *state);
+    auto invalid = *state;
+    invalid.nodes.pop_back();
+    reject(tree, invalid);
+    invalid = *state;
+    invalid.poses[1].position.y = std::numeric_limits<f32>::quiet_NaN();
+    reject(tree, invalid);
+    invalid = *state;
+    invalid.nodes[1].parent = 1;
+    reject(tree, invalid);
+    invalid = *state;
+    invalid.tree.assign(TreePose::Checkpoint::kMaxName + 1, 'a');
+    reject(tree, invalid);
+    invalid = *state;
+    invalid.nodes[1].name.push_back('\0');
+    reject(tree, invalid);
+    invalid = *state;
+    for (auto& pose : invalid.poses) {
+        pose.scale = Vec3{TreePose::Checkpoint::kMaxMagnitude};
+    }
+    REQUIRE(invalid.valid());
+    reject(tree, invalid); // finite local scales may overflow after parent composition
 }
 
 } // namespace

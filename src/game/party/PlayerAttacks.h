@@ -180,7 +180,6 @@ public:
 
 private:
     friend struct PlayerAttacksTestPeer;
-    friend class PlayerAttacksCheckpoint;
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
     u64 m_restoreGeneration = 1;
     u64 m_localEpoch = 0;
@@ -204,6 +203,9 @@ private:
      * owner's run and whether a generator takes it. */
     void strikeTarget(const MissileTarget& target, f32 damage, u32 flags, const PlayerActor& owner,
                       std::span<PlayerRuntime> players, const Targets& targets, BlowSource source);
+
+public:
+    /** An item attack under way (a powerup's breath, say), and what it has hit. */
     struct ItemArea {
         ItemAttack attack;
         usize actor = 0;
@@ -216,6 +218,8 @@ private:
             digest.template fields<7>(value);
         }
     };
+
+private:
     struct PotionBurst {
         MissileImpact impact;
         f32 elapsed = 0;
@@ -346,6 +350,8 @@ private:
             digest.template fields<2>(value);
         }
     };
+
+public:
     /** Whose strike a number is, and which of their class's, for what it shows on a hit. */
     struct StrikeSource {
         u32 strike = 0;
@@ -365,6 +371,8 @@ private:
             digest.template fields<6>(value);
         }
     };
+
+private:
     std::vector<StrikeHit> advanceStrikes(f32 seconds, std::span<PlayerRuntime> players);
     std::vector<MissileTarget> strikeContacts(const StrikeHit& hit, const StrikeSource& source,
                                               const Targets& targets) const;
@@ -374,6 +382,9 @@ private:
     /** A potion's magic ringing a character: it goes about with them and harms what it
      * touches, every so often, until it is spent. */
     static constexpr f32 kShieldHitAgain = 0.25f; ///< ProcessEffects' per-target fxhittime
+
+public:
+    /** A potion shield up about its bearer (by party index). */
     struct PotionShield {
         usize actor = 0;
         u32 flags = 0;
@@ -396,6 +407,8 @@ private:
             digest.template fields<8>(value);
         }
     };
+
+private:
     /** Live gameplay values; borrowed artwork and scene services stay in Resources. */
     struct Simulation {
         std::vector<ItemArea> items;
@@ -412,6 +425,14 @@ private:
     } m_sim;
 
 public:
+    /** The item attacks under way, oldest first. */
+    std::span<const ItemArea> itemAreas() const { return m_sim.items; }
+    /** Each live strike's owner and the targets it has struck lately, oldest first. */
+    std::span<const StrikeSource> strikeSources() const { return m_sim.strikeSources; }
+    /** The potion shields up, oldest first, each with what it has struck and how long until
+     * it may strike that again. */
+    std::span<const PotionShield> potionShields() const { return m_sim.shields; }
+
     class LocalSnapshot {
         friend class PlayerAttacks;
         Simulation m_state;

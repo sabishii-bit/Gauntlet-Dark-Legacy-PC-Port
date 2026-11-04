@@ -1,18 +1,33 @@
-#include <limits>
+#include <algorithm>
+#include <array>
+#include <span>
+#include <tuple>
 #include <type_traits>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/NativeStateDigest.h"
+#include "engine/world/AmbientDimmer.h"
+
 #include "game/combat/PowerupFlags.h"
+#include "game/effects/BodyGlow.h"
+#include "game/effects/EffectTrees.h"
+#include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/hud/HelpMessages.h"
 #include "game/party/AttackCheckpointFixture.h"
+#include "game/party/PlayerArsenal.h"
+#include "game/party/PlayerAttacks.h"
+#include "game/party/PlayerFigure.h"
+#include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-using Boundary = PlayerAttacksCheckpoint;
+using Digests = test::AttackCheckpointFixture::Digests;
 static_assert(!std::is_copy_constructible_v<PlayerAttacks>);
 static_assert(!std::is_move_assignable_v<PlayerAttacks>);
 
@@ -48,6 +63,36 @@ struct NativeAttackHistory {
         target.dimmer = dimmer;
     }
 };
+
+/** The attack owner's values and the shared effects they name, saved and restored together. */
+struct AttackHistory {
+    PlayerAttacks::LocalSnapshot attacks;
+    EffectTrees::LocalSnapshot effects;
+
+    void save(const test::AttackCheckpointFixture& source) {
+        source.attacks.saveLocal(attacks);
+        source.effects.saveLocal(effects);
+    }
+    void restore(test::AttackCheckpointFixture& target) const {
+        REQUIRE(target.attacks.restoreLocal(attacks));
+        REQUIRE(target.effects.restoreLocal(effects));
+    }
+};
+
+/** The instances of the effects playing, to tell which were born and which retired. */
+std::vector<u64> instancesOf(const EffectTrees& effects) {
+    std::vector<u64> result;
+    for (usize index = 0; index < effects.count(); ++index) {
+        result.push_back(effects.effect(index).instance);
+    }
+    return result;
+}
+
+/** Whether `from` holds an instance that `among` lacks. */
+bool anyMissing(std::span<const u64> from, std::span<const u64> among) {
+    return std::ranges::any_of(
+        from, [&](u64 instance) { return std::ranges::find(among, instance) == among.end(); });
+}
 
 TEST_CASE("native attack values rewind paid potions shields breath and speculative effect births",
           "[rollback][local-rewind][player-attacks-local-rewind]") {
@@ -92,9 +137,8 @@ TEST_CASE("native attack values rewind paid potions shields breath and speculati
         const s32 length = 1 + window % 8;
         CAPTURE(kind, window, length, frame);
         history.save(replay);
-        const auto saved = replay.state();
-        const auto beforeVisuals = replay.effectState();
-        const auto preceding = uninterrupted.effectState();
+        const auto saved = replay.digests();
+        const auto preceding = instancesOf(uninterrupted.effects);
         uninterrupted.helps.clear();
         replay.helps.clear();
         for (s32 i = 0; i < length; ++i) {
@@ -104,44 +148,39 @@ TEST_CASE("native attack values rewind paid potions shields breath and speculati
             replay.attacks.shatterPotion(0, {9, 8, 7});
             step(replay, frame + i + 19);
         }
-        REQUIRE(replay.state() != saved);
+        REQUIRE(replay.digests().attacks != saved.attacks);
         const auto rejected = replay.helps;
         const auto uploads = replay.device.texturesCreated;
         const auto updates = replay.device.textureUpdates;
         history.restore(replay);
         CHECK(replay.helps == rejected);
-        CHECK(replay.state() == saved);
-        CHECK(replay.effectState() == beforeVisuals);
         CHECK(replay.device.texturesCreated == uploads);
         CHECK(replay.device.textureUpdates == updates);
+        const auto restored = replay.digests();
+        CHECK(restored.attacks == saved.attacks);
+        CHECK(restored.effects == saved.effects);
         replay.helps.clear();
         for (s32 i = 0; i < length; ++i) {
             step(replay, frame + i);
         }
-        CHECK(replay.state() == uninterrupted.state());
-        const auto shown = uninterrupted.effectState();
-        CHECK(replay.effectState() == shown);
+        const auto expected = uninterrupted.digests();
+        const auto replayed = replay.digests();
+        CHECK(replayed.attacks == expected.attacks);
+        CHECK(replayed.effects == expected.effects);
         CHECK(replay.helps == uninterrupted.helps);
         CHECK(replay.players[0].actor.checkpoint() == uninterrupted.players[0].actor.checkpoint());
         CHECK(replay.players[0].figure->animator().checkpoint() ==
               uninterrupted.players[0].figure->animator().checkpoint());
-        births += shown.nextInstance > preceding.nextInstance ? 1U : 0U;
-        retirements += std::ranges::any_of(preceding.effects,
-                                           [&](const auto& effect) {
-                                               return std::ranges::none_of(
-                                                   shown.effects, [&](const auto& live) {
-                                                       return live.instance == effect.instance;
-                                                   });
-                                           })
-                           ? 1U
-                           : 0U;
+        const auto shown = instancesOf(uninterrupted.effects);
+        births += anyMissing(shown, preceding) ? 1U : 0U;
+        retirements += anyMissing(preceding, shown) ? 1U : 0U;
         frame += length;
     }
     CHECK(births >= 4);
     CHECK(retirements >= 3);
-    const auto unrelated = uninterrupted.state();
+    const auto unrelated = uninterrupted.digests().attacks;
     CHECK_FALSE(uninterrupted.attacks.restoreLocal(history.attacks));
-    CHECK(uninterrupted.state() == unrelated);
+    CHECK(uninterrupted.digests().attacks == unrelated);
     replay.attacks.clear();
     CHECK_FALSE(replay.attacks.canRestoreLocal(history.attacks));
     CHECK_FALSE(replay.attacks.restoreLocal(history.attacks));
@@ -150,9 +189,8 @@ TEST_CASE("native attack values rewind paid potions shields breath and speculati
     CHECK_FALSE(replay.attacks.restoreLocal(history.attacks));
 }
 
-TEST_CASE(
-    "attack checkpoint resumes native potion shield and item windows without replaying payment",
-    "[player-attacks-checkpoint]") {
+TEST_CASE("attack rewind resumes native potion shield and item windows without replaying payment",
+          "[player-attacks-local-rewind]") {
     const s32 kind = GENERATE(0, 1, 2, 3);
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
     CAPTURE(kind, seconds);
@@ -172,26 +210,27 @@ TEST_CASE(
     } else {
         fixture.attacks.shatterPotion(4, {1, 2, 3});
     }
-    const auto saved = fixture.state();
-    const auto visual = fixture.effectState();
+    AttackHistory saved;
+    saved.save(fixture);
     REQUIRE(fixture.attacks.pendingGameplay());
-    REQUIRE_FALSE(visual.effects.empty());
+    REQUIRE(fixture.effects.count() != 0);
     if (kind == 2) {
-        REQUIRE(saved.items.size() == 1);
-        CHECK(saved.items[0].item == Boundary::Item::FireBreath);
+        const auto items = fixture.attacks.itemAreas();
+        REQUIRE(items.size() == 1);
+        CHECK(items[0].attack.tree == "FIREBREATHE");
     }
     const auto paid = inventory;
     const auto health = player.actor.save().health();
     const auto uploads = fixture.device.texturesCreated;
-    fixture.restore(saved, visual);
+    const auto visual = fixture.digests();
+    saved.restore(fixture);
     CHECK(inventory == paid);
     CHECK(player.actor.save().health() == health);
     CHECK(fixture.helps.empty());
-    CHECK(fixture.effectState() == visual); // restore never stops shared borrowed visuals
+    CHECK(fixture.digests().effects == visual.effects); // restore never stops shared visuals
     CHECK(fixture.device.texturesCreated == uploads);
 
-    std::vector<Boundary::State> expected;
-    std::vector<EffectTrees::PoolCheckpoint> shown;
+    std::vector<Digests> expected;
     const auto step = [&](s32 tick) {
         player.actor.place({static_cast<f32>(tick) * 0.01f, 0, 0});
         fixture.attacks.updateStrikes(seconds, fixture.players, fixture.targets);
@@ -202,20 +241,20 @@ TEST_CASE(
     for (s32 tick = 0; tick < 200; ++tick) {
         CAPTURE(tick);
         step(tick);
-        expected.push_back(fixture.state());
-        shown.push_back(fixture.effectState());
+        expected.push_back(fixture.digests());
     }
     REQUIRE_FALSE(fixture.attacks.pendingGameplay());
     const auto expectedHelps = fixture.helps;
     CHECK(expectedHelps ==
           (kind == 0 ? std::vector<s32>{HelpMessages::kWastedMagic} : std::vector<s32>{}));
-    fixture.restore(saved, visual);
+    saved.restore(fixture);
     fixture.helps.clear();
     for (s32 tick = 0; tick < 200; ++tick) {
         CAPTURE(tick, kind, seconds);
         step(tick);
-        CHECK(fixture.state() == expected[static_cast<usize>(tick)]);
-        CHECK(fixture.effectState() == shown[static_cast<usize>(tick)]);
+        const auto now = fixture.digests();
+        CHECK(now.attacks == expected[static_cast<usize>(tick)].attacks);
+        CHECK(now.effects == expected[static_cast<usize>(tick)].effects);
     }
     CHECK(fixture.helps == expectedHelps);
     CHECK(inventory == paid);
@@ -281,17 +320,19 @@ TEST_CASE("native attack rewind preserves turbo contact ledgers and enemy harm a
         for (s32 i = 0; i < length; ++i) {
             step(replay, frame + i);
         }
-        const auto expected = uninterrupted.state();
-        CHECK(replay.state() == expected);
-        CHECK(replay.effectState() == uninterrupted.effectState());
+        const auto expected = uninterrupted.digests();
+        const auto replayed = replay.digests();
+        CHECK(replayed.attacks == expected.attacks);
+        CHECK(replayed.effects == expected.effects);
         CHECK(replay.opponents.enemies().checkpoint() ==
               uninterrupted.opponents.enemies().checkpoint());
         CHECK(replay.players[0].actor.checkpoint() == uninterrupted.players[0].actor.checkpoint());
         CHECK(replay.players[0].turbo.held() == uninterrupted.players[0].turbo.held());
         CHECK(replay.helps == uninterrupted.helps);
-        sawStrike |= !expected.strikes.strikes.empty();
-        sawContact |= std::ranges::any_of(
-            expected.strikeSources, [](const auto& source) { return !source.contacts.empty(); });
+        sawStrike |= uninterrupted.attacks.strikes().count() != 0;
+        sawContact |=
+            std::ranges::any_of(uninterrupted.attacks.strikeSources(),
+                                [](const auto& source) { return !source.contacts.empty(); });
         frame += length;
     }
     CHECK(sawStrike);
@@ -299,8 +340,8 @@ TEST_CASE("native attack rewind preserves turbo contact ledgers and enemy harm a
     CHECK(uninterrupted.opponents.enemies().healthOf(0) < full);
 }
 
-TEST_CASE("attack restoration preserves native turbo repeated-contact cooldowns and their damage",
-          "[player-attacks-checkpoint]") {
+TEST_CASE("attack rewind preserves native turbo repeated-contact cooldowns and their damage",
+          "[player-attacks-local-rewind]") {
     const bool flying = GENERATE(false, true);
     test::AttackCheckpointFixture fixture;
     auto& enemies = fixture.opponents.enemies();
@@ -327,48 +368,49 @@ TEST_CASE("attack restoration preserves native turbo repeated-contact cooldowns 
         fixture.attacks.updateTurbo(0, 1, kSeconds, fixture.players, [](s32, usize) {});
         fixture.attacks.updateStrikes(kSeconds, fixture.players, fixture.targets);
         fixture.effects.update(kSeconds);
-        const auto state = fixture.state();
-        hit = !state.strikeSources.empty() && !state.strikeSources[0].contacts.empty();
+        const auto sources = fixture.attacks.strikeSources();
+        hit = !sources.empty() && !sources[0].contacts.empty();
     }
     REQUIRE(hit);
     REQUIRE(enemies.healthOf(*enemy) < full);
-    const auto saved = fixture.state();
-    const auto visual = fixture.effectState();
+    AttackHistory saved;
+    saved.save(fixture);
     const auto victims = enemies.checkpoint();
     REQUIRE(victims);
-    REQUIRE(saved.strikeSources[0].contacts[0].remaining > 0.25f);
-    CHECK(saved.strikes.strikes[0].owner == 3); // native input slot, not party index zero
+    REQUIRE(fixture.attacks.strikeSources()[0].contacts[0].remaining > 0.25f);
+    REQUIRE(fixture.attacks.strikes().count() != 0);
+    CHECK(fixture.attacks.strikes().strike(0).owner == 3); // native input slot, not party index
     const f32 afterFirst = enemies.healthOf(*enemy);
     const f32 paid = player.turbo.held();
-    fixture.restore(saved, visual);
+    saved.restore(fixture);
     CHECK(enemies.checkpoint() == victims);
     CHECK(player.turbo.held() == paid);
     std::vector<f32> health;
-    std::vector<Boundary::State> expected;
+    std::vector<NativeStateDigest::Digest> expected;
     for (s32 tick = 0; tick < 240; ++tick) {
         fixture.attacks.updateStrikes(kSeconds, fixture.players, fixture.targets);
         fixture.effects.update(kSeconds);
         health.push_back(enemies.healthOf(*enemy));
-        expected.push_back(fixture.state());
+        expected.push_back(fixture.digests().attacks);
         if (tick < 10) {
             CHECK(health.back() == afterFirst);
         }
     }
     CHECK((health.back() < afterFirst) == flying);
-    fixture.restore(saved, visual);
+    saved.restore(fixture);
     REQUIRE(enemies.restore(*victims));
     for (s32 tick = 0; tick < 240; ++tick) {
         CAPTURE(tick, flying);
         fixture.attacks.updateStrikes(kSeconds, fixture.players, fixture.targets);
         fixture.effects.update(kSeconds);
         CHECK(enemies.healthOf(*enemy) == health[static_cast<usize>(tick)]);
-        CHECK(fixture.state() == expected[static_cast<usize>(tick)]);
+        CHECK(fixture.digests().attacks == expected[static_cast<usize>(tick)]);
     }
     CHECK(player.turbo.held() == paid);
 }
 
-TEST_CASE("attack checkpoint resumes independent native potion shield target cooldowns",
-          "[player-attacks-checkpoint][potion-shield-checkpoint]") {
+TEST_CASE("attack rewind resumes independent native potion shield target cooldowns",
+          "[player-attacks-local-rewind]") {
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
     CAPTURE(seconds);
     test::AttackCheckpointFixture fixture;
@@ -399,17 +441,18 @@ TEST_CASE("attack checkpoint resumes independent native potion shield target coo
     CHECK(enemies.healthOf(*first) == firstHit);
     REQUIRE(enemies.healthOf(*second) < secondFull);
     const f32 secondHit = enemies.healthOf(*second);
-    const auto saved = fixture.state();
-    const auto visual = fixture.effectState();
+    AttackHistory saved;
+    saved.save(fixture);
     const auto victims = enemies.checkpoint();
     REQUIRE(victims);
-    REQUIRE(saved.shields.size() == 1);
-    REQUIRE(saved.shields[0].marks.size() == 2);
-    CHECK(saved.shields[0].marks[0] == Boundary::State::Shield::Mark{0, *first, 0.25f - seconds});
-    CHECK(saved.shields[0].marks[1] == Boundary::State::Shield::Mark{0, *second, 0.25f});
+    REQUIRE(fixture.attacks.shieldCount() == 1);
+    const auto marks = fixture.attacks.potionShields()[0].marks;
+    REQUIRE(marks.size() == 2);
+    CHECK((std::tuple{marks[0].kind, marks[0].id, marks[0].wait} ==
+           std::tuple{0, *first, 0.25f - seconds}));
+    CHECK((std::tuple{marks[1].kind, marks[1].id, marks[1].wait} == std::tuple{0, *second, 0.25f}));
     const auto uploads = fixture.device.texturesCreated;
-    std::vector<Boundary::State> expected;
-    std::vector<EffectTrees::PoolCheckpoint> shown;
+    std::vector<Digests> expected;
     std::vector<std::array<f32, 2>> health;
     const auto step = [&] {
         fixture.attacks.updateShields(seconds, fixture.players, fixture.targets);
@@ -417,94 +460,25 @@ TEST_CASE("attack checkpoint resumes independent native potion shield target coo
     };
     for (s32 tick = 0; tick < 200; ++tick) {
         step();
-        expected.push_back(fixture.state());
-        shown.push_back(fixture.effectState());
+        expected.push_back(fixture.digests());
         health.push_back({enemies.healthOf(*first), enemies.healthOf(*second)});
     }
     CHECK(health.back()[0] < firstHit);
     CHECK(health.back()[1] < secondHit);
     REQUIRE_FALSE(fixture.attacks.pendingGameplay());
-    fixture.restore(saved, visual);
+    saved.restore(fixture);
     REQUIRE(enemies.restore(*victims));
     for (usize tick = 0; tick < expected.size(); ++tick) {
         CAPTURE(tick);
         step();
-        CHECK(fixture.state() == expected[tick]);
-        CHECK(fixture.effectState() == shown[tick]);
+        const auto now = fixture.digests();
+        CHECK(now.attacks == expected[tick].attacks);
+        CHECK(now.effects == expected[tick].effects);
         CHECK(enemies.healthOf(*first) == health[tick][0]);
         CHECK(enemies.healthOf(*second) == health[tick][1]);
     }
     CHECK(inventory == paid);
     CHECK(fixture.device.texturesCreated == uploads);
     CHECK(fixture.helps.empty());
-}
-
-TEST_CASE("attack preparation rejects malformed references and actor rebinding atomically",
-          "[player-attacks-checkpoint]") {
-    test::AttackCheckpointFixture fixture;
-    fixture.players[0].actor.save().progress().inventory.addPotions(2, 2);
-    fixture.attacks.usePotion(0, fixture.players);
-    fixture.attacks.shieldPotion(0, fixture.players);
-    CHECK_FALSE(Boundary::capture(fixture.attacks, fixture.actors));
-    auto saved = fixture.state();
-    const auto visual = fixture.effectState();
-    // A stopped attachment can remain until its cleanup phase and must survive restore.
-    saved.attachments.push_back({0, visual.effects[0].id, 0, Mat4{1}, true});
-    saved.particles.push_back({0, 0, visual.effects[0].id, "BODY", {1, 2, 3}});
-    saved.items.push_back({Boundary::Item::FireBreath, 0, 0, 0.2f, 2, true, {101}});
-    // A mark need not still name a live target. Preserve all native families,
-    // their order, and the zero-expiry boundary without inventing a live roster.
-    saved.shields[0].marks = {{0, 17, 0},    {1, 19, 0.1f},   {2, 23, 0.2f},
-                              {3, 0, 0.25f}, {4, 29, 0.125f}, {5, 31, 0.05f}};
-    fixture.restore(saved, visual);
-    REQUIRE(fixture.state() == saved);
-    for (s32 mutation = 0; mutation < 22; ++mutation) {
-        CAPTURE(mutation);
-        auto bad = saved;
-        switch (mutation) {
-        case 0: bad.items[0].item = static_cast<Boundary::Item>(255); break;
-        case 1: bad.items[0].item = Boundary::Item::AcidBreath; break; // nonnative Pojo variant
-        case 2: bad.items[0].actor = 1; break;
-        case 3: bad.items[0].hit.push_back(101); break;
-        case 4: bad.potions[0].impact.effectResource = 999; break;
-        case 5: bad.shields[0].effect = visual.nextId; break;
-        case 6: bad.shields[0].marks[0].wait = std::numeric_limits<f32>::quiet_NaN(); break;
-        case 7: bad.attachments[0].local[3][3] = 0; break;
-        case 8: bad.particles[0].node.assign(257, 'A'); break;
-        case 9: bad.strikeSources.push_back({1, 0, 999}); break;
-        case 10: bad.actors[0].player = 0; break;
-        case 11: bad.actors[0].character = 2; break;
-        case 12: bad.potions.resize(Boundary::State::kMaxAreas + 1); break;
-        case 13: bad.shields[0].marks[0].kind = -1; break;
-        case 14: bad.shields[0].marks[0].kind = 6; break;
-        case 15: bad.shields[0].marks[0].id = -1; break;
-        case 16: bad.shields[0].marks[3].id = 1; break;
-        case 17: bad.shields[0].marks[0].wait = -0.01f; break;
-        case 18: bad.shields[0].marks[0].wait = 0.2501f; break;
-        case 19: bad.shields[0].marks.push_back(bad.shields[0].marks[0]); break;
-        case 20: bad.shields[0].marks.resize(Boundary::State::kMaxContacts + 1); break;
-        case 21: bad.shields[0].marks[0].wait = std::numeric_limits<f32>::infinity(); break;
-        default: break;
-        }
-        CHECK_FALSE(Boundary::prepare(fixture.attacks, bad, fixture.actors, visual,
-                                      fixture.missileResources));
-        CHECK(fixture.state() == saved);
-        CHECK(fixture.effectState() == visual);
-    }
-    auto a =
-        Boundary::prepare(fixture.attacks, saved, fixture.actors, visual, fixture.missileResources);
-    auto sibling =
-        Boundary::prepare(fixture.attacks, saved, fixture.actors, visual, fixture.missileResources);
-    REQUIRE(a);
-    REQUIRE(sibling);
-    PlayerAttacks other;
-    CHECK_FALSE(Boundary::commit(other, std::move(*a)));
-    REQUIRE(Boundary::commit(fixture.attacks, std::move(*a)));
-    CHECK_FALSE(Boundary::canCommit(fixture.attacks, *a));
-    CHECK_FALSE(Boundary::commit(fixture.attacks, std::move(*sibling)));
-    a = Boundary::prepare(fixture.attacks, saved, fixture.actors, visual, fixture.missileResources);
-    REQUIRE(a);
-    fixture.attacks.clear();
-    CHECK_FALSE(Boundary::commit(fixture.attacks, std::move(*a)));
 }
 } // namespace

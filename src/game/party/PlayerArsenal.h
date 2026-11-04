@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,6 +21,8 @@ namespace gdl::game {
  * clear before releasing figures, effects, world collision or the weapons archive.
  * Models/missiles retain addresses inside this owner, so it must not move. */
 class PlayerArsenal {
+public:
+    /** A cast's effect, kept on the caster whose `PlayerActor::player()` it names. */
     struct CastEffect {
         s32 owner;
         u32 effect;
@@ -27,6 +30,8 @@ class PlayerArsenal {
             digest.template fields<2>(value);
         }
     };
+
+private:
     struct Simulation {
         std::vector<CastEffect> casts;
         s32 nextPotionKind = 1;
@@ -189,10 +194,11 @@ public:
     static constexpr f32 kPotionDamage = PotionEmission::kDamage; ///< before the colour bonus
     PlayerMissiles& missiles() { return m_missiles; }
     const PlayerMissiles& missiles() const { return m_missiles; }
+    /** The cast effects kept on their casters, oldest first. */
+    std::span<const CastEffect> casts() const { return m_sim.casts; }
 
 private:
     void appendBindingDigest(NativeStateDigest& digest) const;
-    friend class PlayerArsenalCheckpoint;
     MissileStreak weaponStreak(const PlayerActor& actor, const Texture* texture,
                                bool superShot = false) const;
     void bindWeaponAppearance(const PlayerActor& actor, PlayerFigure& figure,

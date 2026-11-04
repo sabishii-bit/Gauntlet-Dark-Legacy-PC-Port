@@ -1,21 +1,28 @@
 #include <algorithm>
 #include <array>
-#include <cstddef>
-#include <limits>
-#include <memory>
-#include <new>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ItemArchive.h"
+#include "engine/world/WorldCollision.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/effects/HeadGem.h"
+#include "game/level/NativeStateResources.h"
+#include "game/party/ActionObservation.h"
 #include "game/party/PartyMotion.h"
+#include "game/party/PlayerFigure.h"
 #include "game/party/PlayerHealth.h"
-#include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/PlayerRuntime.h"
 #include "game/party/ScriptedMotion.h"
 
 namespace {
@@ -30,7 +37,6 @@ struct Fixture {
     WorldCollision collision;
     std::vector<std::string> cues;
     std::vector<PartyMotion::Action> actions;
-    PlayerRuntimeCheckpoint owner{party[0], &stats};
     Fixture() {
         CharacterSave save;
         save.name = "TEST";
@@ -77,58 +83,64 @@ struct Fixture {
         runtime.hitSoundGap = std::max(runtime.hitSoundGap - 1, 0);
         PlayerHealth::heartbeat(party, 1, false);
     }
+
+    /** Where the participant rewinds to: its simulation values and, with a figure, the figure's. */
+    struct Saved {
+        PlayerSimulation player;
+        std::optional<PlayerFigure::LocalSnapshot> figure;
+    };
+    Saved save() const {
+        Saved saved{party[0].simulation(), std::nullopt};
+        if (party[0].figure) {
+            saved.figure.emplace();
+            party[0].figure->saveLocal(*saved.figure);
+        }
+        return saved;
+    }
+    void restore(const Saved& saved) {
+        REQUIRE(saved.figure.has_value() == (party[0].figure != nullptr));
+        if (saved.figure) {
+            REQUIRE(party[0].figure->restoreLocal(*saved.figure));
+        }
+        party[0].simulation() = saved.player;
+    }
+    /** What the participant shows: its simulation values and, with a figure, its action state. */
+    struct Observed {
+        PlayerSimulation player;
+        std::optional<test::ActionObservation> figure;
+        bool operator==(const Observed&) const = default;
+    };
+    Observed observe() const {
+        Observed observed{party[0].simulation(), std::nullopt};
+        if (party[0].figure) {
+            observed.figure = test::observeAction(*party[0].figure);
+        }
+        return observed;
+    }
 };
 
-TEST_CASE(
-    "runtime checkpoint retains congratulated gargoyle records without accepting corrupt counts",
-    "[rollback][player-runtime-checkpoint]") {
-    Fixture fixture;
-    for (auto& progress : fixture.player().actor.save().classes) {
-        progress.relics.gargoylePieces.fill(-1);
-    }
-    fixture.player().entrySave = fixture.player().actor.save();
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
-    fixture.player().actor.save().progress().relics.gargoylePieces.fill(0);
-    REQUIRE(fixture.owner.restore(*state));
-    CHECK(fixture.owner.checkpoint() == state);
-    for (const s32 invalid : {-2, std::numeric_limits<s32>::min()}) {
-        auto corrupt = *state;
-        corrupt.save.classes.front().relics.gargoylePieces.front() = invalid;
-        CHECK_FALSE(fixture.owner.restore(corrupt));
-        CHECK(fixture.owner.checkpoint() == state);
-        corrupt = *state;
-        corrupt.entrySave.classes.front().relics.gargoylePieces.front() = invalid;
-        CHECK_FALSE(fixture.owner.restore(corrupt));
-        CHECK(fixture.owner.checkpoint() == state);
-    }
-}
-
-TEST_CASE("runtime checkpoint restores native damage movement rewards and random cue continuation",
-          "[rollback][player-runtime-checkpoint]") {
+TEST_CASE("runtime rewind restores native damage movement rewards and random cue continuation",
+          "[rollback][player-local-rewind]") {
     Fixture fixture;
     for (s32 tick = 0; tick < 19; ++tick) {
         fixture.tick(tick);
     }
-    const auto start = fixture.owner.checkpoint();
-    REQUIRE(start);
+    const auto start = fixture.save();
     const auto health = fixture.health.checkpoint();
-    std::vector<PlayerRuntimeCheckpoint::State> expected;
+    std::vector<Fixture::Observed> expected;
     fixture.cues.clear();
     fixture.actions.clear();
     for (s32 tick = 19; tick < 180; ++tick) {
         fixture.tick(tick);
-        const auto state = fixture.owner.checkpoint();
-        REQUIRE(state);
-        expected.push_back(*state);
+        expected.push_back(fixture.observe());
     }
     const auto cues = fixture.cues;
     const auto actions = fixture.actions;
     REQUIRE_FALSE(cues.empty());
-    REQUIRE(expected.back().actor.position != start->actor.position);
-    REQUIRE(expected.back().save.gold > start->save.gold);
-    REQUIRE(expected.back().save.health() < start->save.health());
-    REQUIRE(fixture.owner.restore(*start));
+    REQUIRE(expected.back().player.actor.position() != start.player.actor.position());
+    REQUIRE(expected.back().player.actor.save().gold > start.player.actor.save().gold);
+    REQUIRE(expected.back().player.actor.save().health() < start.player.actor.save().health());
+    fixture.restore(start);
     REQUIRE(fixture.health.restore(health));
     CHECK(fixture.cues == cues); // Restoring is not another damage/cue dispatch.
     fixture.cues.clear();
@@ -136,16 +148,14 @@ TEST_CASE("runtime checkpoint restores native damage movement rewards and random
     for (s32 tick = 19; tick < 180; ++tick) {
         CAPTURE(tick);
         fixture.tick(tick);
-        const auto state = fixture.owner.checkpoint();
-        REQUIRE(state);
-        CHECK(*state == expected[static_cast<usize>(tick - 19)]);
+        CHECK(fixture.observe() == expected[static_cast<usize>(tick - 19)]);
     }
     CHECK(fixture.cues == cues);
     CHECK(fixture.actions == actions);
 }
 
-TEST_CASE("runtime checkpoint preserves inactive inventory slots all classes and ordered residue",
-          "[rollback][player-runtime-checkpoint]") {
+TEST_CASE("runtime rewind preserves inactive inventory slots all classes and ordered residue",
+          "[rollback][player-local-rewind]") {
     Fixture fixture;
     auto& runtime = fixture.player();
     auto& save = runtime.actor.save();
@@ -164,11 +174,9 @@ TEST_CASE("runtime checkpoint preserves inactive inventory slots all classes and
     runtime.cursorAiming = true;
     runtime.meleeFacing = Vec3{1, 0, -1};
     runtime.attackStep = PlayerRuntime::AttackStep{{1, 2, 3}, {4, 5, 6}};
-    runtime.previous = {{7, 8, 9}, 0.25f, true, 17};
     runtime.combo = {ComboRole::Thrown, 1, 0, false, true, 80, 7, 0.75f, {2, 3, 4}};
     REQUIRE(runtime.transport.begin({9, 8, 7}));
     runtime.transport.update(7);
-    runtime.slot = 3;
     runtime.resultsCheckpoint = LevelResults::Checkpoint{11, 12, 13};
     runtime.levelKills = 24;
     runtime.towerPrompt = true;
@@ -200,107 +208,45 @@ TEST_CASE("runtime checkpoint preserves inactive inventory slots all classes and
     runtime.floor = {12, 0x400, glm::translate(Mat4{1}, Vec3{1, 3, 2})};
     REQUIRE(runtime.gem.update(powerup::kHandOfDeath));
     REQUIRE(runtime.gem.update(powerup::kHealthVamp));
-    runtime.glow.raise(1.3f);
     runtime.streak.record(true);
     runtime.exitWait.step(true, 417);
     runtime.nameTicks = 22;
     runtime.wornSpecial = 0x1234;
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
+    const auto state = fixture.save();
     runtime.actor.save() = CharacterSave{};
     runtime.combo = {};
     runtime.transport.clear();
     runtime.gem.update(0);
     runtime.shockGaps.clear();
-    REQUIRE(fixture.owner.restore(*state));
-    CHECK(fixture.owner.checkpoint() == state);
+    REQUIRE_FALSE(runtime.simulation() == state.player);
+    fixture.restore(state);
+    CHECK(runtime.simulation() == state.player);
     CHECK_FALSE(runtime.gem.update(powerup::kHandOfDeath));
     CHECK(runtime.gem.shown() == HeadGem::kHealthVamp); // Both appearance latches survive.
 }
 
-TEST_CASE("runtime preparation is atomic single use and bound to participant lifetime",
-          "[rollback][player-runtime-checkpoint]") {
-    Fixture fixture;
-    Fixture other;
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
-    auto target = *baseline;
-    target.save.gold = 4321;
-    auto prepared = fixture.owner.prepareRestore(target);
-    auto sibling = fixture.owner.prepareRestore(*baseline);
-    REQUIRE(prepared);
-    REQUIRE(sibling);
-    CHECK_FALSE(other.owner.canCommit(*prepared));
-    CHECK_FALSE(other.owner.commitRestore(std::move(*prepared)));
-    CHECK(fixture.owner.checkpoint() == baseline);
-    REQUIRE(fixture.owner.canCommit(*prepared));
-    REQUIRE(fixture.owner.commitRestore(std::move(*prepared)));
-    CHECK(fixture.owner.checkpoint() == target);
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*prepared)));
-    CHECK_FALSE(fixture.owner.canCommit(*sibling));
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*sibling)));
-    CHECK(fixture.owner.checkpoint() == target);
-    auto fresh = fixture.owner.prepareRestore(target);
-    REQUIRE(fresh);
-    REQUIRE(fixture.owner.commitRestore(std::move(*fresh)));
-    for (s32 invalid = 0; invalid < 7; ++invalid) {
-        CAPTURE(invalid);
-        auto bad = target;
-        switch (invalid) {
-        case 0: bad.save.character = kClassCount; break;
-        case 1:
-            bad.entrySave.classes[3].inventory.powerups[1].charge =
-                std::numeric_limits<f32>::quiet_NaN();
-            break;
-        case 2: bad.healthFraction = 2; break;
-        case 3: bad.combo.role = static_cast<ComboRole>(99); break;
-        case 4: bad.floor.placement = Mat4{std::numeric_limits<f32>::infinity()}; break;
-        case 5: bad.helpHeard.resize(PlayerRuntimeCheckpoint::State::kMaxRecords + 1); break;
-        case 6: bad.weaponGlow.effect = 7; break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.owner.prepareRestore(bad));
-        CHECK_FALSE(fixture.owner.restore(bad));
-        CHECK(fixture.owner.checkpoint() == target);
-    }
-    fixture.player().deathHeldEffect = 27;
-    CHECK_FALSE(fixture.owner.checkpoint());
-    CHECK_FALSE(fixture.owner.restore(target));
-    CHECK(fixture.player().deathHeldEffect == 27);
-    fixture.player().deathHeldEffect = 0;
-    fixture.player().mikeyFigure = std::make_unique<MikeyFigure>();
-    CHECK_FALSE(fixture.owner.checkpoint());
-    CHECK_FALSE(fixture.owner.restore(target));
-}
-
-TEST_CASE("runtime retains native unspecified potions without resolving their shared cycle",
-          "[rollback][player-runtime-checkpoint]") {
+TEST_CASE("runtime rewind retains native unspecified potions without resolving their shared cycle",
+          "[rollback][player-local-rewind]") {
     Fixture fixture;
     auto& inventory = fixture.player().actor.save().progress().inventory;
     REQUIRE(inventory.addPotions(2, 1) == 1);
     REQUIRE(inventory.addPotions(0, 2) == 2);
     REQUIRE(inventory.addPotions(4, 1) == 1);
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
+    const auto baseline = fixture.save();
     const std::vector<s32> expected{2, 0, 0, 4};
-    CHECK(baseline->save.progress().inventory.potions == expected);
+    CHECK(baseline.player.actor.save().progress().inventory.potions == expected);
     CHECK(inventory.takePotion() == 4);
     CHECK(inventory.takePotion() == 0);
-    REQUIRE(fixture.owner.restore(*baseline));
-    CHECK(fixture.owner.checkpoint() == baseline);
-    // Zero remains an unspecified potion for the separately checkpointed Arsenal
-    // cycle to resolve; runtime restore must not select a color or consume it.
+    fixture.restore(baseline);
+    CHECK(fixture.player().simulation() == baseline.player);
+    // Zero remains an unspecified potion for the arsenal's own cycle to resolve; restoring
+    // the participant must not select a color or consume it.
     CHECK(fixture.player().actor.save().progress().inventory.potions == expected);
-    auto bad = *baseline;
-    bad.save.progress().inventory.potions.front() = -1;
-    CHECK_FALSE(fixture.owner.restore(bad));
-    bad.save.progress().inventory.potions.front() = 5;
-    CHECK_FALSE(fixture.owner.restore(bad));
-    CHECK(fixture.owner.checkpoint() == baseline);
 }
 
-TEST_CASE("runtime preserves native transport crossing and decoy remainder without redispatch",
-          "[rollback][player-runtime-checkpoint]") {
+TEST_CASE(
+    "runtime rewind preserves native transport crossing and decoy remainder without redispatch",
+    "[rollback][player-local-rewind]") {
     Fixture fixture;
     auto& runtime = fixture.player();
     REQUIRE(runtime.transport.begin({5, 6, 7}));
@@ -311,50 +257,25 @@ TEST_CASE("runtime preserves native transport crossing and decoy remainder witho
     inventory.powerups[0].on = true; // Native selector activation; pickup alone never deploys it.
     runtime.mikey.update(5.0f / 60, inventory, Vec3{2, 0, 4});
     REQUIRE(runtime.mikey.shown());
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
-    std::vector<PlayerRuntimeCheckpoint::State> expected;
+    const auto baseline = fixture.save();
+    std::vector<Fixture::Observed> expected;
     std::vector<std::optional<Vec3>> teleports;
     for (s32 tick = 0; tick < 75; ++tick) {
         teleports.push_back(runtime.transport.update(1));
         runtime.mikey.update(kStep, inventory, Vec3{9, 0, 9});
-        expected.push_back(*fixture.owner.checkpoint());
+        expected.push_back(fixture.observe());
     }
-    REQUIRE(fixture.owner.restore(*baseline));
+    fixture.restore(baseline);
     for (s32 tick = 0; tick < 75; ++tick) {
         CAPTURE(tick);
         CHECK(runtime.transport.update(1) == teleports[static_cast<usize>(tick)]);
         runtime.mikey.update(kStep, runtime.actor.save().progress().inventory, Vec3{9, 0, 9});
-        CHECK(fixture.owner.checkpoint() == expected[static_cast<usize>(tick)]);
+        CHECK(fixture.observe() == expected[static_cast<usize>(tick)]);
     }
 }
 
-TEST_CASE("runtime prepared values cannot survive owner address reuse",
-          "[rollback][player-runtime-checkpoint]") {
-    Fixture fixture;
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
-    alignas(PlayerRuntimeCheckpoint) std::array<std::byte, sizeof(PlayerRuntimeCheckpoint)>
-        storage{};
-    // byte view of a trivially copyable buffer
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto* owner = std::construct_at(reinterpret_cast<PlayerRuntimeCheckpoint*>(storage.data()),
-                                    fixture.player(), &fixture.stats);
-    auto prepared = owner->prepareRestore(*baseline);
-    REQUIRE(prepared);
-    std::destroy_at(owner);
-    // byte view of a trivially copyable buffer
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    owner = std::construct_at(reinterpret_cast<PlayerRuntimeCheckpoint*>(storage.data()),
-                              fixture.player(), &fixture.stats);
-    CHECK_FALSE(owner->canCommit(*prepared));
-    CHECK_FALSE(owner->commitRestore(std::move(*prepared)));
-    CHECK(owner->checkpoint() == baseline);
-    std::destroy_at(owner);
-}
-
-TEST_CASE("runtime figure correction retains exact native attachments and familiar release latches",
-          "[rollback][player-runtime-checkpoint][assets]") {
+TEST_CASE("runtime figure rewind retains exact native attachments and familiar release latches",
+          "[rollback][player-local-rewind][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
@@ -371,56 +292,36 @@ TEST_CASE("runtime figure correction retains exact native attachments and famili
     for (s32 tick = 0; tick < 11; ++tick) {
         figure.animate(0, 1, kStep, PlayerDeed::Attack);
     }
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
+    const auto baseline = fixture.save();
+    const auto start = fixture.observe();
     const auto uploads = device.texturesCreated;
-    auto first = figure.prepareGameplayRestore(*baseline->figure);
-    auto sibling = figure.prepareGameplayRestore(*baseline->figure);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    REQUIRE(figure.commitGameplayRestore(std::move(*first)));
-    CHECK_FALSE(figure.canCommitGameplay(*sibling));
-    CHECK_FALSE(figure.commitGameplayRestore(std::move(*sibling)));
-    CHECK(fixture.owner.checkpoint() == baseline);
-    auto fresh = figure.prepareGameplayRestore(*baseline->figure);
-    REQUIRE(fresh);
-    REQUIRE(figure.commitGameplayRestore(std::move(*fresh)));
-    auto invalid = *baseline;
-    REQUIRE_FALSE(invalid.figure->transforms.empty());
-    invalid.figure->transforms.front()[3].x += 1;
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(fixture.owner.checkpoint() == baseline);
-    invalid = *baseline;
-    invalid.figure->costumeObjects.front() += "_WRONG";
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(fixture.owner.checkpoint() == baseline);
-    std::vector<PlayerRuntimeCheckpoint::State> expected;
+    std::vector<Fixture::Observed> expected;
     std::vector<std::optional<Mat4>> hands;
     std::vector<bool> familiar;
     for (s32 tick = 0; tick < 160; ++tick) {
         const auto deed = tick == 31 ? PlayerDeed::Flinch : PlayerDeed::Attack;
         figure.animate(tick % 25 < 12 ? 0.0f : 1.0f, 1, kStep, deed);
-        auto state = fixture.owner.checkpoint();
-        REQUIRE(state);
-        expected.push_back(*state);
+        expected.push_back(fixture.observe());
         hands.push_back(figure.handAttachment(Mat4{1}));
         familiar.push_back(figure.familiarReleased());
     }
     REQUIRE(std::ranges::any_of(familiar, [](bool released) { return released; }));
-    REQUIRE(fixture.owner.restore(*baseline));
+    REQUIRE_FALSE(expected.back() == start);
+    fixture.restore(baseline);
+    CHECK(fixture.observe() == start);
     for (s32 tick = 0; tick < 160; ++tick) {
         CAPTURE(tick);
         const auto deed = tick == 31 ? PlayerDeed::Flinch : PlayerDeed::Attack;
         figure.animate(tick % 25 < 12 ? 0.0f : 1.0f, 1, kStep, deed);
-        CHECK(fixture.owner.checkpoint() == expected[static_cast<usize>(tick)]);
+        CHECK(fixture.observe() == expected[static_cast<usize>(tick)]);
         CHECK(figure.handAttachment(Mat4{1}) == hands[static_cast<usize>(tick)]);
         CHECK(figure.familiarReleased() == familiar[static_cast<usize>(tick)]);
     }
     CHECK(device.texturesCreated == uploads);
 }
 
-TEST_CASE("runtime gameplay restore supports same-binding Phoenix and refuses Pojo or replacement",
-          "[rollback][player-runtime-checkpoint][assets]") {
+TEST_CASE("runtime figure rewind supports a bound Phoenix and refuses a replaced figure",
+          "[rollback][player-local-rewind][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     test::FakeRenderDevice device;
     ItemArchive powerups;
@@ -437,61 +338,56 @@ TEST_CASE("runtime gameplay restore supports same-binding Phoenix and refuses Po
         runtime.figure->animate(0, 1, kStep, PlayerDeed::Attack);
     }
     REQUIRE(runtime.figure->animator().released());
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
-    REQUIRE(baseline->figure->familiarPending);
+    // The figure's native digest covers its Phoenix as well as its action state.
+    const auto digest = [&] {
+        NativeStateResources resources;
+        REQUIRE(resources.registerBuiltinTexture(device.whiteTexture(), "opaque-white"));
+        REQUIRE(resources.registerArchive(powerups, "powerups"));
+        return test::liveDigest(*runtime.figure, resources);
+    };
+    const auto baseline = fixture.save();
+    REQUIRE_FALSE(runtime.figure->familiarReleased()); // the Phoenix's shot is still to come
     const auto uploads = device.texturesCreated;
     runtime.figure->animate(0, 1, kStep, PlayerDeed::Attack);
     REQUIRE(runtime.figure->familiarReleased());
-    const auto expected = fixture.owner.checkpoint();
-    REQUIRE(fixture.owner.restore(*baseline));
+    const auto expected = std::pair{fixture.observe(), digest()};
+    fixture.restore(baseline);
     runtime.figure->animate(0, 1, kStep, PlayerDeed::Attack);
-    CHECK(fixture.owner.checkpoint() == expected);
     CHECK(device.texturesCreated == uploads);
+    CHECK(fixture.observe() == expected.first);
+    CHECK(digest() == expected.second);
 
-    auto prepared = fixture.owner.prepareRestore(*baseline);
-    REQUIRE(prepared);
     runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), false);
     REQUIRE(runtime.figure);
-    CHECK_FALSE(fixture.owner.canCommit(*prepared));
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*prepared)));
-    CHECK_FALSE(fixture.owner.restore(*baseline)); // Existing Phoenix binding is absent.
-    inventory.permanentPojo = true;
-    runtime.figure->setCompanionPowerups(device, powerups, inventory);
-    REQUIRE(runtime.figure->pojoActive());
-    CHECK_FALSE(fixture.owner.checkpoint());
-    CHECK_FALSE(fixture.owner.restore(*baseline));
+    CHECK_FALSE(runtime.figure->restoreLocal(*baseline.figure)); // nothing of the old figure's
 }
 
-TEST_CASE("runtime resumes a native captured throw and delivers landing damage exactly once",
-          "[rollback][player-runtime-checkpoint]") {
+TEST_CASE("runtime rewind resumes a native captured throw and delivers landing damage exactly once",
+          "[rollback][player-local-rewind]") {
     Fixture fixture;
     auto& runtime = fixture.player();
     runtime.capture.attach(7, true, glm::translate(Mat4{1}, Vec3{0, 12, 0}), runtime.actor);
     runtime.capture.release({4, 0, 2}, 70);
     runtime.capture.update(kStep, runtime.actor, fixture.collision);
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
-    std::vector<PlayerRuntimeCheckpoint::State> expected;
+    const auto baseline = fixture.save();
+    std::vector<Fixture::Observed> expected;
     std::vector<std::optional<f32>> damage;
     for (s32 tick = 0; tick < 90; ++tick) {
         damage.push_back(runtime.capture.update(kStep, runtime.actor, fixture.collision));
-        const auto state = fixture.owner.checkpoint();
-        REQUIRE(state);
-        expected.push_back(*state);
+        expected.push_back(fixture.observe());
     }
     REQUIRE(std::ranges::count_if(damage, [](const auto& hit) { return hit.has_value(); }) == 1);
-    REQUIRE(fixture.owner.restore(*baseline));
+    fixture.restore(baseline);
     for (s32 tick = 0; tick < 90; ++tick) {
         CAPTURE(tick);
         CHECK(runtime.capture.update(kStep, runtime.actor, fixture.collision) ==
               damage[static_cast<usize>(tick)]);
-        CHECK(fixture.owner.checkpoint() == expected[static_cast<usize>(tick)]);
+        CHECK(fixture.observe() == expected[static_cast<usize>(tick)]);
     }
 }
 
-TEST_CASE("runtime native PartyMotion figure and damage replay are one exact gameplay continuation",
-          "[rollback][player-runtime-checkpoint][assets]") {
+TEST_CASE("runtime native PartyMotion figure and damage rewind are one exact gameplay continuation",
+          "[rollback][player-local-rewind][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
@@ -505,29 +401,26 @@ TEST_CASE("runtime native PartyMotion figure and damage replay are one exact gam
     for (s32 tick = 0; tick < 25; ++tick) {
         fixture.tick(tick);
     }
-    const auto baseline = fixture.owner.checkpoint();
-    REQUIRE(baseline);
+    const auto baseline = fixture.save();
     const auto health = fixture.health.checkpoint();
     const auto uploads = device.texturesCreated;
-    std::vector<PlayerRuntimeCheckpoint::State> expected;
+    std::vector<Fixture::Observed> expected;
     fixture.cues.clear();
     fixture.actions.clear();
     for (s32 tick = 25; tick < 120; ++tick) {
         fixture.tick(tick);
-        const auto state = fixture.owner.checkpoint();
-        REQUIRE(state);
-        expected.push_back(*state);
+        expected.push_back(fixture.observe());
     }
     const auto cues = fixture.cues;
     const auto actions = fixture.actions;
-    REQUIRE(fixture.owner.restore(*baseline));
+    fixture.restore(baseline);
     REQUIRE(fixture.health.restore(health));
     fixture.cues.clear();
     fixture.actions.clear();
     for (s32 tick = 25; tick < 120; ++tick) {
         CAPTURE(tick);
         fixture.tick(tick);
-        CHECK(fixture.owner.checkpoint() == expected[static_cast<usize>(tick - 25)]);
+        CHECK(fixture.observe() == expected[static_cast<usize>(tick - 25)]);
     }
     CHECK(fixture.cues == cues);
     CHECK(fixture.actions == actions);

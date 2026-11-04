@@ -1,23 +1,27 @@
 #include <array>
 #include <filesystem>
-#include <limits>
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/ItemArchive.h"
+#include "engine/io/NativeStateDigest.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/characters/Progression.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/level/NativeStateResources.h"
 #include "game/party/PlayerFigure.h"
-#include "game/party/PlayerRuntimeCheckpoint.h"
+#include "game/party/PlayerRuntime.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+constexpr std::array kBlends{0.0f, 0.37f, 1.0f};
 
 void sameTexture(const Texture* actual, const Texture* expected) {
     REQUIRE((actual != nullptr) == (expected != nullptr));
@@ -61,13 +65,16 @@ struct Fixture {
     ItemArchive powerups;
     ItemArchive weapons;
     PlayerRuntime player;
-    std::unique_ptr<PlayerRuntimeCheckpoint> owner;
+    NativeStateResources resources; ///< what the figure borrows, under keys every load shares
     CameraFrame camera = CameraFrame::at({10, 20, 30});
 
     Fixture(s32 character, s32 level, bool phoenix) {
         REQUIRE(classes.load(root / "PDATA"));
         REQUIRE(powerups.load(root / "POWERUPS"));
         REQUIRE(weapons.load(root / "WEAPONS"));
+        REQUIRE(resources.registerBuiltinTexture(device.whiteTexture(), "opaque-white"));
+        REQUIRE(resources.registerArchive(powerups, "powerups"));
+        REQUIRE(resources.registerArchive(weapons, "weapons"));
         const auto* stats = classes.stats(character);
         REQUIRE(stats);
         CharacterSave save;
@@ -87,13 +94,23 @@ struct Fixture {
         player.figure->setCompanionPowerups(device, powerups, save.progress().inventory, &weapons);
         REQUIRE(player.figure->familiarTier() == PlayerFamiliar::tierFor(level));
         REQUIRE(player.figure->phoenixActive() == phoenix);
-        owner = std::make_unique<PlayerRuntimeCheckpoint>(player, stats);
     }
-    PlayerRuntimeCheckpoint::State state() const {
-        const auto value = owner->checkpoint();
-        REQUIRE(value);
-        return *value;
+    /** Where the participant rewinds to: its simulation values and its figure's. */
+    struct Saved {
+        PlayerSimulation player;
+        PlayerFigure::LocalSnapshot figure;
+    };
+    Saved save() const {
+        Saved saved{player.simulation(), {}};
+        player.figure->saveLocal(saved.figure);
+        return saved;
     }
+    void restore(const Saved& saved) {
+        REQUIRE(player.figure->restoreLocal(saved.figure));
+        player.simulation() = saved.player;
+    }
+    /** The figure's native digest, companions and familiar included. */
+    NativeStateDigest::Digest digest() { return test::liveDigest(*player.figure, resources); }
     void step(s32 tick, f32 seconds, bool held = false) {
         auto& figure = *player.figure;
         figure.capturePresentation();
@@ -115,60 +132,63 @@ struct Fixture {
     }
 };
 
-TEST_CASE("bound companion correction restores native clocks previous poses and held draws",
-          "[player-companion-checkpoint][assets]") {
+TEST_CASE("bound companion rewind restores native clocks previous poses and held draws",
+          "[companion-local-rewind][assets]") {
     const s32 character = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
     const s32 level = GENERATE(30, 80);
     const bool phoenix = GENERATE(false, true);
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
     CAPTURE(character, level, phoenix, seconds);
-    auto host = std::make_unique<Fixture>(character, level, phoenix);
-    auto guest = std::make_unique<Fixture>(character, level, phoenix);
-    const auto hostUploads = host->device.texturesCreated;
-    const auto guestUploads = guest->device.texturesCreated;
+    auto fixture = std::make_unique<Fixture>(character, level, phoenix);
+    const auto uploads = fixture->device.texturesCreated;
     bool observedShot = false;
     bool observedAttack = false;
     bool observedHeld = false;
     for (s32 tick = 0; tick < 85; ++tick) {
         const bool held = tick % 17 == 11;
-        host->step(tick, seconds, held);
-        const auto authority = host->state();
-        const auto body = host->player.actor.transform();
-        const auto visuals = host->player.figure->companionVisuals(body, 1);
+        fixture->step(tick, seconds, held);
+        const auto saved = fixture->save();
+        const auto authority = fixture->digest();
+        const auto body = fixture->player.actor.transform();
+        const auto visuals = fixture->player.figure->companionVisuals(body, 1);
         REQUIRE(visuals[0]);
         REQUIRE(visuals[1].has_value() == phoenix);
-        observedShot = observedShot || host->player.figure->familiarReleased();
+        observedShot = observedShot || fixture->player.figure->familiarReleased();
         observedAttack = observedAttack || visuals[0]->sequence != 0;
         observedHeld = observedHeld || held;
+        std::array<std::vector<test::RecordedDraw>, kBlends.size()> expected;
+        for (usize blend = 0; blend < kBlends.size(); ++blend) {
+            expected[blend] = fixture->draw(kBlends[blend]);
+            REQUIRE_FALSE(expected[blend].empty());
+        }
 
-        // Receipt starts at a nonzero phase, then repeatedly rewinds an owner
-        // whose familiar and Phoenix have already moved beyond the authority.
-        guest->step(tick + 4, seconds);
-        guest->step(tick + 5, seconds);
-        REQUIRE(guest->owner->restore(authority));
-        CHECK(guest->state() == authority);
-        for (const f32 blend : {0.0f, 0.37f, 1.0f}) {
-            CAPTURE(tick, held, blend);
-            const auto expected = host->draw(blend);
-            REQUIRE_FALSE(expected.empty());
-            sameDraws(guest->draw(blend), expected);
+        // A prediction carries the familiar and Phoenix on past this tick, from a phase of
+        // their own; the correction rewinds them to it.
+        fixture->step(tick + 4, seconds);
+        fixture->step(tick + 5, seconds);
+        CHECK(fixture->digest() != authority);
+        fixture->restore(saved);
+        CHECK(fixture->digest() == authority);
+        for (usize blend = 0; blend < kBlends.size(); ++blend) {
+            CAPTURE(tick, held, kBlends[blend]);
+            sameDraws(fixture->draw(kBlends[blend]), expected[blend]);
         }
     }
     CHECK(observedShot);
     CHECK(observedAttack);
     CHECK(observedHeld);
-    CHECK(host->device.texturesCreated == hostUploads);
-    CHECK(guest->device.texturesCreated == guestUploads);
+    CHECK(fixture->device.texturesCreated == uploads);
 }
 
-TEST_CASE("companion correction preserves native fade instead of retaining a future alpha",
-          "[player-companion-checkpoint][assets]") {
+TEST_CASE("companion rewind preserves native fade instead of retaining a future alpha",
+          "[companion-local-rewind][assets]") {
     auto fixture = std::make_unique<Fixture>(0, 80, true);
     auto& inventory = fixture->player.actor.save().progress().inventory;
     REQUIRE(inventory.powerups[0].flags == powerup::kPhoenix);
     inventory.powerups[0].strength = 0.6f;
     fixture->step(0, 1.0f / 60);
-    const auto baseline = fixture->state();
+    const auto baseline = fixture->save();
+    const auto authority = fixture->digest();
     const auto visual = fixture->player.figure->companionVisuals(Mat4{1}, 1);
     REQUIRE(visual[1]);
     CHECK(visual[1]->alpha == 0.6f);
@@ -178,59 +198,13 @@ TEST_CASE("companion correction preserves native fade instead of retaining a fut
     const auto changed = fixture->player.figure->companionVisuals(Mat4{1}, 1);
     REQUIRE(changed[1]);
     REQUIRE(changed[1]->alpha != visual[1]->alpha);
-    REQUIRE(fixture->owner->restore(baseline));
-    CHECK(fixture->state() == baseline);
+    fixture->restore(baseline);
+    CHECK(fixture->digest() == authority);
     sameDraws(fixture->draw(0.4f), expected);
 }
 
-TEST_CASE("companion restore refuses a changed trusted tier or binding atomically",
-          "[player-companion-checkpoint][assets]") {
-    auto source = std::make_unique<Fixture>(0, 80, true);
-    auto wrongTier = std::make_unique<Fixture>(0, 30, true);
-    auto wrongCompanion = std::make_unique<Fixture>(0, 80, false);
-    for (s32 tick = 0; tick < 14; ++tick) {
-        source->step(tick, 1.0f / 60);
-    }
-    const auto state = source->state();
-    const auto tierBaseline = wrongTier->state();
-    const auto companionBaseline = wrongCompanion->state();
-    const auto tierUploads = wrongTier->device.texturesCreated;
-    const auto companionUploads = wrongCompanion->device.texturesCreated;
-    CHECK_FALSE(wrongTier->owner->prepareRestore(state));
-    CHECK_FALSE(wrongCompanion->owner->prepareRestore(state));
-    CHECK(wrongTier->state() == tierBaseline);
-    CHECK(wrongCompanion->state() == companionBaseline);
-    CHECK(wrongTier->device.texturesCreated == tierUploads);
-    CHECK(wrongCompanion->device.texturesCreated == companionUploads);
-}
-
-TEST_CASE("companion preparations retain single use and reject an intervening rebind",
-          "[player-companion-checkpoint][assets]") {
-    auto fixture = std::make_unique<Fixture>(0, 80, true);
-    fixture->step(0, 1.0f / 60);
-    const auto state = fixture->state();
-    auto first = fixture->owner->prepareRestore(state);
-    auto sibling = fixture->owner->prepareRestore(state);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    REQUIRE(fixture->owner->commitRestore(std::move(*first)));
-    CHECK_FALSE(fixture->owner->canCommit(*sibling));
-    CHECK_FALSE(fixture->owner->commitRestore(std::move(*sibling)));
-    auto prepared = fixture->owner->prepareRestore(state);
-    REQUIRE(prepared);
-    auto& inventory = fixture->player.actor.save().progress().inventory;
-    inventory.powerups[0].on = false;
-    fixture->player.figure->setCompanionPowerups(fixture->device, fixture->powerups, inventory,
-                                                 &fixture->weapons);
-    REQUIRE_FALSE(fixture->player.figure->phoenixActive());
-    CHECK_FALSE(fixture->owner->canCommit(*prepared));
-    const auto after = fixture->player.figure->companionVisuals(Mat4{1}, 1);
-    REQUIRE(after[0]);
-    CHECK_FALSE(after[1]);
-}
-
 TEST_CASE("same-binding companion sync follows native warning fade and refuses expiry untouched",
-          "[player-companion-checkpoint][assets]") {
+          "[companion-local-rewind][assets]") {
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
     auto host = std::make_unique<Fixture>(0, 80, true);
     auto guest = std::make_unique<Fixture>(0, 80, true);
@@ -244,20 +218,20 @@ TEST_CASE("same-binding companion sync follows native warning fade and refuses e
     for (s32 tick = 0; tick < 65; ++tick) {
         hostInventory.advance(seconds);
         guestInventory.advance(seconds);
-        const auto prior = guest->player.figure->gameplayCheckpoint();
-        REQUIRE(prior);
+        const auto prior = guest->digest();
         host->player.figure->setCompanionPowerups(host->device, host->powerups, hostInventory,
                                                   &host->weapons);
         if (!host->player.figure->phoenixActive()) {
             CHECK_FALSE(guest->player.figure->syncCompanionPowerups(guestInventory));
-            CHECK(guest->player.figure->gameplayCheckpoint() == prior);
+            CHECK(guest->digest() == prior);
             expired = true;
             break;
         }
         REQUIRE(guest->player.figure->syncCompanionPowerups(guestInventory));
         host->player.figure->animate(0, seconds > 0.02f ? 2 : 1, seconds);
         guest->player.figure->animate(0, seconds > 0.02f ? 2 : 1, seconds);
-        CHECK(guest->state() == host->state());
+        CHECK(guest->digest() == host->digest());
+        CHECK(guest->player.simulation() == host->player.simulation());
         const auto visual = host->player.figure->companionVisuals(Mat4{1}, 1);
         REQUIRE(visual[1]);
         faded = faded || visual[1]->alpha < 0.5f;
@@ -265,27 +239,5 @@ TEST_CASE("same-binding companion sync follows native warning fade and refuses e
     CHECK(faded);
     CHECK(expired);
     CHECK(guest->device.texturesCreated == uploads);
-}
-
-TEST_CASE("companion packet rejects malformed clocks and trusted pose mismatches atomically",
-          "[player-companion-checkpoint][assets]") {
-    auto fixture = std::make_unique<Fixture>(0, 80, true);
-    fixture->step(4, 1.0f / 60);
-    const auto baseline = fixture->state();
-    REQUIRE(baseline.figure);
-    auto changed = baseline;
-    changed.figure->companionAlpha = std::numeric_limits<f32>::quiet_NaN();
-    CHECK_FALSE(changed.valid());
-    changed = baseline;
-    changed.figure->powerupCompanion.previousGeneration =
-        changed.figure->powerupCompanion.animation.generation + 1;
-    CHECK_FALSE(changed.valid());
-    changed = baseline;
-    REQUIRE(changed.figure->familiar.pose);
-    REQUIRE_FALSE(changed.figure->familiar.pose->nodes.empty());
-    changed.figure->familiar.pose->nodes.front().rest.x += 1;
-    REQUIRE(changed.valid());
-    CHECK_FALSE(fixture->owner->restore(changed));
-    CHECK(fixture->state() == baseline);
 }
 } // namespace
