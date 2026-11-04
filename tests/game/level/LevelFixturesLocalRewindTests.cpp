@@ -528,9 +528,14 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
     const LevelRef level{"TEST", kGasRealm, "TEST", "", "", "", "", 0};
     Fixture first;
     Fixture second;
+    // Player 1 stands where the growing ring first reaches it about 0.4 s in: inside the
+    // measured second and before player 0's first contact expires, so the two contacts
+    // expire and come back in turn.
+    constexpr f32 kLaterContact = 3.5f;
     // The production explosion, not a test-side ring, starts the poison; its first step
     // reaches player 0 and opponent 17, whose next contacts wait half a second.
     for (Fixture* fixture : {&first, &second}) {
+        fixture->players[1].actor.spawn(1, {}, nullptr, {kLaterContact, 0, 0}, 0);
         fixture->fixtures.clear();
         REQUIRE(fixture->world.load(fixture->device, root, level));
         fixture->bind();
@@ -542,10 +547,12 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
         for (s32 tick = 0; tick < rate / 4; ++tick) {
             fixture->fixtures.advanceBlasts(seconds, fixture->players, fixture->host);
         }
+        REQUIRE(fixture->fixtures.blasts()[0].players == std::vector<usize>{0});
     }
     const auto textures = second.device.texturesCreated;
     usize repeatedHits = 0;
     usize refreshedOpponents = 0;
+    usize reorderedContacts = 0;
     for (s32 tick = 0; tick < rate; ++tick) {
         CAPTURE(rate, tick);
         first.hits.clear();
@@ -565,6 +572,12 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
         REQUIRE(after[0].opponentReady.size() == 1);
         refreshedOpponents +=
             after[0].opponentReady[0].second > before[0].opponentReady[0].second ? 1U : 0U;
+        // An expired contact leaves the front of the ledger and its repeat joins the back.
+        const auto& contacts = after[0].players;
+        reorderedContacts += before[0].players.size() == 2 && contacts.size() == 2 &&
+                                     before[0].players.front() == contacts.back()
+                                 ? 1U
+                                 : 0U;
         if (tick + 1 < rate / 4) {
             CHECK(std::ranges::count(first.hits, usize{0}, &std::pair<usize, f32>::first) == 0);
         }
@@ -581,6 +594,11 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
     }
     CHECK(repeatedHits >= 2);
     CHECK(refreshedOpponents >= 2);
+    CHECK(reorderedContacts >= 2);
+    const auto last = first.fixtures.blasts();
+    REQUIRE(last.size() == 1);
+    CHECK(last[0].players == std::vector<usize>{1, 0});
+    CHECK(std::ranges::equal(last[0].playerReady | std::views::keys, last[0].players));
     CHECK(second.device.texturesCreated == textures);
 }
 
