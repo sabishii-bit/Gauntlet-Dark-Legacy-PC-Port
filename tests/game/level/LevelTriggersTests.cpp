@@ -1094,7 +1094,7 @@ TEST_CASE("D1 native two-player bridges retain players and enemy supports after 
     for (usize i = 0; i < world.triggers().size(); ++i) {
         const auto trigger = world.triggers().trigger(i);
         if (!trigger.enabled || trigger.chained || trigger.target < 0 || trigger.minPlayers != 1 ||
-            (trigger.kind & 0x67U) != 0 || (trigger.kind & LevelTrigger::kFades) == 0) {
+            !LevelTrigger::momentaryFade(trigger.kind)) {
             continue;
         }
         CAPTURE(trigger.instance, trigger.target, trigger.flags,
@@ -2553,6 +2553,61 @@ TEST_CASE("every trigger subtype takes the item setup's kind flags, whatever the
             CHECK(trigger.kind == (expected & 0xFFU));
         }
     }
+}
+
+TEST_CASE("a trigger latches by its first latch bit: closing, then opening once, then toggling",
+          "[game][world][triggers][trigger-latch]") {
+    // Closing comes before opening once, and opening once before toggling; with none of the
+    // three a trigger is momentary, whatever else its word holds.
+    constexpr u32 kOthers = ~LevelTrigger::kLatches;
+    STATIC_REQUIRE(LevelTrigger::latchOf(0) == TriggerLatch::Momentary);
+    STATIC_REQUIRE(LevelTrigger::latchOf(kOthers) == TriggerLatch::Momentary);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kCloses) == TriggerLatch::Closes);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kOpensOnce) == TriggerLatch::OpensOnce);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kToggles) == TriggerLatch::Toggles);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kCloses | LevelTrigger::kOpensOnce) ==
+                   TriggerLatch::Closes);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kCloses | LevelTrigger::kToggles) ==
+                   TriggerLatch::Closes);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kOpensOnce | LevelTrigger::kToggles) ==
+                   TriggerLatch::OpensOnce);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kLatches | kOthers) == TriggerLatch::Closes);
+    STATIC_REQUIRE(LevelTrigger::latchOf(LevelTrigger::kToggles | kOthers) ==
+                   TriggerLatch::Toggles);
+    // A trigger reads its whole flag word, the bits above its kind with it.
+    LevelTrigger trigger;
+    trigger.flags = LevelTrigger::kToggles | LevelTrigger::kWholeParty;
+    CHECK(trigger.latch() == TriggerLatch::Toggles);
+    trigger.flags = LevelTrigger::kWholeParty;
+    CHECK(trigger.latch() == TriggerLatch::Momentary);
+}
+
+TEST_CASE("a momentary fade fades with no latch, requirement or oscillation to hold it",
+          "[game][world][triggers][trigger-latch]") {
+    // Of the low byte's 256 kinds, only the fades that at most stay solid or keep contact.
+    constexpr usize kMomentaryKinds = [] {
+        usize count = 0;
+        for (u32 kind = 0; kind <= LevelTrigger::kKindMask; ++kind) {
+            if (LevelTrigger::momentaryFade(kind)) {
+                ++count;
+            }
+        }
+        return count;
+    }();
+    STATIC_REQUIRE(kMomentaryKinds == 4);
+    STATIC_REQUIRE(LevelTrigger::momentaryFade(LevelTrigger::kFades));
+    STATIC_REQUIRE(LevelTrigger::momentaryFade(LevelTrigger::kFades | LevelTrigger::kStaysSolid));
+    STATIC_REQUIRE(LevelTrigger::momentaryFade(LevelTrigger::kFades | LevelTrigger::kKeepContact));
+    STATIC_REQUIRE(LevelTrigger::momentaryFade(LevelTrigger::kFades | LevelTrigger::kStaysSolid |
+                                               LevelTrigger::kKeepContact));
+    // The latched bridge's own kind, a crystal-gated fade and a fade that hides at a touch.
+    STATIC_REQUIRE_FALSE(
+        LevelTrigger::momentaryFade(LevelTrigger::kFades | LevelTrigger::kOpensOnce));
+    STATIC_REQUIRE_FALSE(
+        LevelTrigger::momentaryFade(LevelTrigger::kFades | LevelTrigger::kRequirement));
+    STATIC_REQUIRE_FALSE(
+        LevelTrigger::momentaryFade(LevelTrigger::kFades | LevelTrigger::kOscillates));
+    STATIC_REQUIRE_FALSE(LevelTrigger::momentaryFade(LevelTrigger::kStaysSolid));
 }
 
 } // namespace

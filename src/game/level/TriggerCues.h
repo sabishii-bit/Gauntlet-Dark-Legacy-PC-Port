@@ -22,8 +22,6 @@ class TriggerCues {
 public:
     static constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
     static constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
-    /** A gargoyle gate's trigger id less this is its tier. */
-    static constexpr s32 kIconTierBase = 101;
 
     /** What the cues ask of the scene. */
     struct Events {

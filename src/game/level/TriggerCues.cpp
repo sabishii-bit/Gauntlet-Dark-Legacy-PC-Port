@@ -5,6 +5,7 @@
 #include "engine/core/Types.h"
 
 #include "game/hud/HelpMessages.h"
+#include "game/level/LevelTriggers.h"
 
 namespace gdl::game {
 
@@ -96,7 +97,7 @@ void TriggerCues::handle(LevelWorld& world, LevelSoundscape& audio, SoundPlayer*
         const TriggerRefusal& refusal = refusals.front();
         if (refusal.crystals) {
             events.openMessage(kNeedCrystals, static_cast<usize>(refusal.id));
-        } else if (const s32 tier = refusal.id - kIconTierBase; tier >= 0) {
+        } else if (const s32 tier = refusal.id - LevelTrigger::kIconTierBase; tier >= 0) {
             events.openMessage(kNeedIcons, static_cast<usize>(tier));
         }
     }

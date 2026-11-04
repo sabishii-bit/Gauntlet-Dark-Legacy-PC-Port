@@ -75,6 +75,15 @@ struct TriggerLesson {
     bool operator==(const TriggerLesson&) const = default;
 };
 
+/** How a trigger turns contact into its target's command. LevelTrigger::latchOf reads it from
+ * the flag word; it is never stored. */
+enum class TriggerLatch : u8 {
+    Momentary, ///< opens its target while stood on: a pressure pad
+    OpensOnce, ///< opens its target at a touch once it has settled; leaving does not shut it
+    Closes,    ///< shuts its target at a touch once it has settled; leaving does not open it
+    Toggles,   ///< turns its target the other way at a touch, then waits before the next
+};
+
 /** One of a level's triggers: a spot that, stepped into, opens the world object it names
  * and every trigger chained after it. */
 struct LevelTrigger {
@@ -88,7 +97,9 @@ struct LevelTrigger {
     s32 next = -1;        ///< the trigger chained after this one, or -1
     bool chained = false; ///< another trigger's next: fired through it, never stepped on
     u32 flags = 0;        ///< the trigger's own flags
-    u32 kind = 0;         ///< how the target moves: the flags the object's trigger type carries
+    /** The low byte of its flags (kKindMask): how it latches, how its target moves, whether it
+     * wants a requirement met and whether it keeps its contacts. */
+    u32 kind = 0;
     f32 radius = 0.0f;
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
@@ -110,12 +121,15 @@ struct LevelTrigger {
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
     /** Whether it guards a gargoyle gate, which wants the golden icons. */
     bool needsIcons() const { return (flags & kRequirement) != 0 && id >= kGargoyleIds; }
+    /** The latch its flags name. */
+    [[nodiscard]] TriggerLatch latch() const { return latchOf(flags); }
 
     static constexpr u32 kRequirement = 0x40;
     static constexpr u32 kOpensOnce = 0x2;
     static constexpr u32 kCloses = 0x1;
-    static constexpr s32 kGargoyleIds = 100; ///< ids from here guard the gargoyle gates
-    static constexpr u32 kFades = 0x10;      ///< the target fades out rather than moving
+    static constexpr s32 kGargoyleIds = 100;  ///< ids from here guard the gargoyle gates
+    static constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's id less this is its tier
+    static constexpr u32 kFades = 0x10;       ///< the target fades out rather than moving
     static constexpr u32 kToggles = 0x4;
     static constexpr u32 kOscillates = 0x20;
     static constexpr u32 kOnTarget = 0x100;
@@ -126,7 +140,9 @@ struct LevelTrigger {
     static constexpr u32 kDelaysWhenEmpty =
         0x800; ///< a toggle pad left empty waits before it toggles back
     static constexpr u32 kShakesCamera = 0x1000; ///< its camera cue shakes
-    static constexpr u32 kKindMask = 0xFF;       ///< the low byte: how the target moves
+    /** The low byte, the trigger type's own flags: the latch, the target's motion, the
+     * requirement and keeping contact. */
+    static constexpr u32 kKindMask = 0xFF;
     /** The kinds that hold their target; a pad with none of them is momentary. */
     static constexpr u32 kLatches = kCloses | kOpensOnce | kToggles;
     static constexpr s32 kShootableSubtype = 31;
@@ -137,6 +153,26 @@ struct LevelTrigger {
      * sounds as such. */
     static constexpr bool bridgeSubtype(s32 subtype) {
         return subtype == kMomentaryBridge || subtype == kLatchedBridge;
+    }
+    /** The latch a flag word names: closing comes before opening once, and opening once before
+     * toggling, as fireNode tests them; a word with none of them is momentary. */
+    [[nodiscard]] static constexpr TriggerLatch latchOf(u32 flags) {
+        if ((flags & kCloses) != 0) {
+            return TriggerLatch::Closes;
+        }
+        if ((flags & kOpensOnce) != 0) {
+            return TriggerLatch::OpensOnce;
+        }
+        if ((flags & kToggles) != 0) {
+            return TriggerLatch::Toggles;
+        }
+        return TriggerLatch::Momentary;
+    }
+    /** Whether a kind's target is a momentary fade, a bridge revealed only while it is held:
+     * it fades, and no latch, requirement or oscillation holds it. A rider on the revealed
+     * bridge holds it too (ProcessItemWobjs). */
+    [[nodiscard]] static constexpr bool momentaryFade(u32 kind) {
+        return (kind & (kLatches | kRequirement | kOscillates)) == 0 && (kind & kFades) != 0;
     }
 };
 
@@ -236,9 +272,8 @@ public:
     bool commitRestore(Prepared&& prepared);
     bool restore(const Checkpoint& state);
     static constexpr std::array<s32, 9> kCrystalsToOpen{0, 15, 100, 125, 150, 175, 200, 225, 250};
-    static constexpr f32 kFadeRate = 16.0f / 255.0f;
-    static constexpr f32 kRefusalCooldown =
-        2.5625f; ///< the original's, between two refusals ///< of full alpha, per game frame
+    static constexpr f32 kFadeRate = 16.0f / 255.0f; ///< of full alpha, per game frame
+    static constexpr f32 kRefusalCooldown = 2.5625f; ///< the original's, between two refusals
     static constexpr f32 kFrameRate = 30.0f;
     static constexpr f32 kReach = 3.0f; ///< legacy vertical reach, also used by rotator switches
     static constexpr f32 kMetReach =

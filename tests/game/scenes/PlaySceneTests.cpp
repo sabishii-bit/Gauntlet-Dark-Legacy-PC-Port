@@ -141,7 +141,7 @@ TEST_CASE("D1 bridge occupancy follows living enemy support and replays its deat
     for (usize i = 0; i < world.triggers().size() && !support; ++i) {
         const auto trigger = world.triggers().trigger(i);
         if (!trigger.enabled || trigger.chained || trigger.target < 0 || trigger.minPlayers != 1 ||
-            (trigger.kind & 0x67U) != 0 || (trigger.kind & LevelTrigger::kFades) == 0) {
+            !LevelTrigger::momentaryFade(trigger.kind)) {
             continue;
         }
         const std::array button{

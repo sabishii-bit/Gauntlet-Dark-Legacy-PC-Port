@@ -807,7 +807,7 @@ bool LevelTriggers::qualifies(const LevelTrigger& trigger,
         return false;
     }
     if (trigger.needsIcons()) {
-        const s32 tier = std::clamp(trigger.id - 101, 0, 2);
+        const s32 tier = std::clamp(trigger.id - LevelTrigger::kIconTierBase, 0, 2);
         return std::ranges::any_of(visitors, [tier](const TriggerVisitor& visitor) {
             const auto index = static_cast<usize>(tier);
             return visitor.sumner || visitor.gargoylePieces[index] < 0 ||
@@ -883,17 +883,20 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
             target->wholePartyReady = target->wholePartyReady || active;
         }
         bool open = target->open;
-        if ((trigger.flags & LevelTrigger::kCloses) != 0) {
+        switch (trigger.latch()) {
+        case TriggerLatch::Closes:
             if (contact && target->settled) {
                 open = false;
             }
             trigger.fired = !open;
-        } else if ((trigger.flags & LevelTrigger::kOpensOnce) != 0) {
+            break;
+        case TriggerLatch::OpensOnce:
             if (contact && target->settled) {
                 open = true;
             }
             trigger.fired = open;
-        } else if ((trigger.flags & LevelTrigger::kToggles) != 0) {
+            break;
+        case TriggerLatch::Toggles:
             if (contact && !target->settled) {
                 trigger.toggleCooldown = kToggleDelay;
             } else if (contact && trigger.toggleCooldown <= 0) {
@@ -904,11 +907,13 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
                 trigger.toggleCooldown = m_sim.emptyToggleDelay;
             }
             trigger.fired = contact;
-        } else {
+            break;
+        case TriggerLatch::Momentary:
             if (contact) {
                 open = true;
             }
             trigger.fired = contact;
+            break;
         }
         if (openTarget(*target, open, atOnce, animator, scene, collision)) {
             target->spot = trigger.spot;
@@ -1078,10 +1083,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
                         std::ranges::any_of(visitors, [&](const TriggerVisitor& visitor) {
                             return supported(visitor.floorObject);
                         });
-        const bool momentaryBridge =
-            (target.kind & (LevelTrigger::kLatches | LevelTrigger::kRequirement |
-                            LevelTrigger::kOscillates)) == 0 &&
-            (target.kind & LevelTrigger::kFades) != 0;
+        const bool momentaryBridge = LevelTrigger::momentaryFade(target.kind);
         target.pressed = target.open && momentaryBridge &&
                          (std::ranges::any_of(visitors,
                                               [&](const TriggerVisitor& visitor) {
