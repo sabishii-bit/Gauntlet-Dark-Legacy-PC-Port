@@ -164,6 +164,95 @@ TEST_CASE("only the original's tiered kinds take a sound set a tier whatever the
     }
 }
 
+TEST_CASE("each kind's traits row holds the original's lists for its code",
+          "[game][enemies][enemy-traits]") {
+    using enum WayRule;
+    using enum SoundStem;
+    using enum Hide;
+    using enum EnemyHome;
+    using namespace enemy_trait;
+    constexpr u16 kAhead = 0xFFCE; ///< every way out shut but 0, 4 and 5
+    struct Row {
+        s32 kind;
+        WayRule way;
+        s32 fixedWay;
+        SoundStem stem;
+        Hide hide;
+        u16 birthExits;
+        u8 birthDirections;
+        u16 traits;
+        EnemyHome home;
+    };
+    constexpr std::array<Row, 34> kRows{{
+        {0, Small, -1, Bare, Flesh, 0, 8, kNoShadow, Swarm},
+        {1, Medium, -1, Tiered, Flesh, kAhead, 8, kWalksIn, Swarm},
+        {2, Caster, -1, Tiered, Flesh, 0, 8, 0, Swarm},
+        {3, Small, -1, Bare, Flesh, 0, 8, 0, Swarm},
+        {4, Medium, -1, Tiered, Flesh, kAhead, 8, kWalksIn, Swarm},
+        {5, Medium, -1, Tiered, Plate, kAhead, 8, 0, Swarm},
+        {6, Small, -1, Bare, Flesh, 0, 8, 0, Swarm},
+        {7, Caster, -1, Tiered, Flesh, kAhead, 8, kWalksIn, Swarm},
+        {8, Medium, -1, Tiered, Flesh, kAhead, 8, 0, Swarm},
+        {9, Small, -1, Bare, Flesh, 0, 8, 0, Swarm},
+        {10, Medium, -1, Tiered, Flesh, kAhead, 8, kWalksIn, Swarm},
+        {11, Medium, -1, Tiered, Bark, kAhead, 8, 0, Swarm},
+        {12, Small, -1, Bare, Flesh, 0, 8, 0, Swarm},
+        {13, Medium, -1, Tiered, Flesh, 0, 8, 0, Swarm},
+        {14, Caster, -1, Tiered, Flesh, kAhead, 8, 0, Swarm},
+        {15, Small, -1, Bare, Flesh, kAhead, 8, 0, Swarm},
+        {16, Medium, -1, Tiered, Flesh, 0, 8, 0, Swarm},
+        {17, Caster, -1, Tiered, Flesh, 0, 8, kBurrows, Swarm},
+        {18, Small, -1, Bare, Flesh, 0, 2, 0, Swarm},
+        {19, Medium, -1, Tiered, Flesh, kAhead, 8, 0, Swarm},
+        {20, Medium, -1, Tiered, Flesh, 0, 8, 0, Swarm},
+        {21, Small, -1, Bare, Ooze, 0, 8, kNoShadow, Swarm},
+        {22, Small, -1, Bare, Flesh, 0, 8, 0, Swarm},
+        {23, Authored, -1, Tiered, Flesh, 0, 8, 0, Swarm},
+        {24, Caster, -1, Tiered, Flesh, kAhead, 8, kVeils, Swarm},
+        {25, Medium, -1, Tiered, Flesh, kAhead, 8, 0, Swarm},
+        {26, Authored, -1, Tiered, Flesh, 0, 8, 0, Swarm},
+        {27, Authored, 31, Bare, Flesh, 0, 8, kDeathShot | kHazardProof, Swarm},
+        {28, Authored, -1, Bare, Flesh, 0, 8, 0, None},
+        {29, Authored, -1, Bare, Flesh, 0, 8, 0, Critters},
+        {30, Authored, -1, Bare, Flesh, 0, 8, kNoShadow, PlacedOnly},
+        {31, Authored, 27, Bare, Flesh, 0, 8, kNoShadow | kIntangible, PlacedOnly},
+        {32, Medium, -1, Bare, Flesh, 0, 8, 0, Critters},
+        {33, Medium, -1, Bare, Flesh, 0, 8, 0, Critters},
+    }};
+    for (const Row& row : kRows) {
+        CAPTURE(row.kind);
+        const EnemyTraits* traits = enemyTraits(row.kind);
+        REQUIRE(traits != nullptr);
+        CHECK(traits->kind == row.kind);
+        CHECK(traits->way == row.way);
+        CHECK(traits->fixedWay == row.fixedWay);
+        CHECK(traits->stem == row.stem);
+        CHECK(traits->hide == row.hide);
+        CHECK(traits->birthExits == row.birthExits);
+        CHECK(traits->birthDirections == row.birthDirections);
+        CHECK(traits->traits == row.traits);
+        CHECK(traits->home == row.home);
+    }
+}
+
+TEST_CASE("no code past the kinds has traits, and IT alone is out of every body test",
+          "[game][enemies][enemy-traits]") {
+    std::vector<s32> kinds{std::numeric_limits<s32>::min(), -1000, 1000,
+                           std::numeric_limits<s32>::max()};
+    for (s32 kind = -2; kind <= 46; ++kind) {
+        kinds.push_back(kind);
+    }
+    for (const s32 kind : kinds) {
+        CAPTURE(kind);
+        const bool known = kind >= 0 && kind < kEnemyKindCount;
+        CHECK((enemyTraits(kind) != nullptr) == known);
+        CHECK(intangible(kind) == (kind == enemy_type::kIt));
+        if (!known) {
+            CHECK_FALSE(hasEnemyTrait(kind, enemy_trait::kNoShadow));
+        }
+    }
+}
+
 TEST_CASE("every name a level gives breeds its roster's kind of that class at every strength",
           "[game][enemies][enemy-traits]") {
     constexpr s32 kStrongFrom = 4; ///< the strengths that take the medium's second row

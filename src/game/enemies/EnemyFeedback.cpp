@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string_view>
 
 #include "game/combat/DamageTypes.h"
 #include "game/enemies/EnemyKinds.h"
@@ -11,6 +12,40 @@
 namespace gdl::game {
 namespace {
 constexpr f32 kLowEnemyHeight = 4.0f;
+constexpr s32 kDeathSkinFrames = 10; ///< a death skin's run
+constexpr s32 kPlateSkinFrames = 15; ///< the knight's DEATHALT run
+
+/** How an unelemental hit and death look on a hide (fn_800945D0): the marks of a hit and of a
+ * kill, whether the mark keeps its own size, the death skin and its frames. An empty mark or
+ * skin is the element's own. */
+struct HideLook {
+    std::string_view hitEffect;
+    std::string_view killEffect;
+    bool unscaledEffect;
+    std::string_view deathSkin;
+    s32 deathFrames;
+};
+
+/** Flesh, plate (the knight), bark (the tree folk) and ooze (the acid blob), in Hide order. */
+constexpr std::array<HideLook, 4> kHides{{
+    {{}, {}, false, {}, kDeathSkinFrames},
+    {"HITCOL", "HITDIE", true, "DEATHALT", kPlateSkinFrames},
+    {"TREEHIT", "TREEDIE", false, "DEATHALT", kDeathSkinFrames},
+    {"TREEHIT", "TREEDIE", false, {}, kDeathSkinFrames},
+}};
+
+/** The look of `kind`'s hide; flesh outside the kinds. */
+const HideLook& hideOf(s32 kind) {
+    const EnemyTraits* traits = enemyTraits(kind);
+    usize row = 0;
+    switch (traits != nullptr ? traits->hide : Hide::Flesh) {
+    case Hide::Flesh: row = 0; break;
+    case Hide::Plate: row = 1; break;
+    case Hide::Bark: row = 2; break;
+    case Hide::Ooze: row = 3; break;
+    }
+    return kHides[row];
+}
 
 std::string bankName(std::string name, s32 bossType) {
     // Some boss banks replace byte 14 with a variant letter; bank keys hold 15 characters.
@@ -85,25 +120,24 @@ std::string_view EnemyFeedback::effect() const {
         return {};
     }
     const u32 element = damage::element(flags);
-    if (element == 0 && kind == enemy_type::kKnight) {
-        return killed ? "HITDIE" : "HITCOL";
-    }
-    if (element == 0 && (kind == enemy_type::kTreefolk || kind == enemy_type::kAcid)) {
-        return killed ? "TREEDIE" : "TREEHIT";
+    const HideLook& hide = hideOf(kind);
+    if (element == 0 && !hide.hitEffect.empty()) {
+        return killed ? hide.killEffect : hide.hitEffect;
     }
     return damage::hitEffect(element, killed);
 }
 
 f32 EnemyFeedback::effectScale() const {
-    return kind == enemy_type::kKnight ? 1.0f : halfHeight * 0.5f;
+    return hideOf(kind).unscaledEffect ? 1.0f : halfHeight * 0.5f;
 }
 
 std::string_view EnemyFeedback::deathSkin() const {
     constexpr std::array<std::string_view, 5> kSkins{"DEATHBLOOD", "DEATHFIRE", "DEATHELEC",
                                                      "DEATHLIGHT", "DEATHACID"};
     const u32 element = flags & damage::kElementMask;
-    if (element == 0 && (kind == enemy_type::kKnight || kind == enemy_type::kTreefolk)) {
-        return "DEATHALT";
+    const HideLook& hide = hideOf(kind);
+    if (element == 0 && !hide.deathSkin.empty()) {
+        return hide.deathSkin;
     }
     return halfHeight > 2 && element < kSkins.size() ? kSkins[element] : std::string_view{};
 }
@@ -112,6 +146,6 @@ s32 EnemyFeedback::deathSkinFrames() const {
     if (deathSkin().empty()) {
         return 0;
     }
-    return kind == enemy_type::kKnight && (flags & damage::kElementMask) == 0 ? 15 : 10;
+    return (flags & damage::kElementMask) == 0 ? hideOf(kind).deathFrames : kDeathSkinFrames;
 }
 } // namespace gdl::game

@@ -114,4 +114,56 @@ bool smallKind(s32 kind);
  * set's digit. */
 bool tieredSounds(s32 kind);
 
+/** Which of the original's way lists a kind is in (fn_8004F87C's case lists): none, so it keeps
+ * the way it is given; the small kinds, which only prowl; or the medium kinds, whose way given
+ * as none is filled in by strength, the casters' third strength casting. */
+enum class WayRule : u8 { Authored, Small, Medium, Caster };
+
+/** How a kind's hit and bite sound stems end: bare, or in the digit of the tier's set. */
+enum class SoundStem : u8 { Bare, Tiered };
+
+/** How an unelemental hit and death look on a kind: as flesh, or as the knight's plate, the
+ * tree folk's bark or the acid blob's ooze. */
+enum class Hide : u8 { Flesh, Plate, Bark, Ooze };
+
+/** Where a kind a level places stands: in the swarm, in the swarm's pool outside its tiers
+ * (Death and IT), among the great ones, whose own loaders stand them, or nowhere. */
+enum class EnemyHome : u8 { Swarm, PlacedOnly, Critters, None };
+
+/** The kinds' behaviour switches; several may be set. */
+namespace enemy_trait {
+inline constexpr u16 kNoShadow = 0x1;     ///< lies no shadow under it (InitEnemyGeo)
+inline constexpr u16 kBurrows = 0x2;      ///< is born on its generator's own spot
+inline constexpr u16 kWalksIn = 0x4;      ///< walks on from its entrance unless it is a variant
+inline constexpr u16 kVeils = 0x8;        ///< comes and goes from sight (fn_8004D958)
+inline constexpr u16 kDeathShot = 0x10;   ///< its corpse sends a shot at its player (fn_8004F1DC)
+inline constexpr u16 kHazardProof = 0x20; ///< takes no harm from the world (EnemyWorldDamage)
+inline constexpr u16 kIntangible = 0x40;  ///< out of every body test (IT)
+} // namespace enemy_trait
+
+/** The ways out of a generator a brood may be born by. */
+inline constexpr u8 kBirthDirections = 8;
+/** The ways out a humanoid may not be born by: all but those ahead of its generator. */
+inline constexpr u16 kAheadOctants = 0xFFCE;
+
+/** What the original decides by a kind's code beyond its tuning row. */
+struct EnemyTraits {
+    s32 kind = -1;
+    WayRule way = WayRule::Authored;
+    s32 fixedWay = -1; ///< the way it always takes, whatever it is placed with; -1 for none
+    SoundStem stem = SoundStem::Bare;
+    Hide hide = Hide::Flesh;
+    u16 birthExits = 0; ///< a bit for each way out it is never born by; a mixed brood any
+    u8 birthDirections = kBirthDirections; ///< how many ways out, from the first, it may take
+    u16 traits = 0;                        ///< enemy_trait bits
+    EnemyHome home = EnemyHome::Swarm;
+};
+
+/** The traits of `kind`, or null outside the kinds: never clamped as enemyKind is. */
+[[nodiscard]] const EnemyTraits* enemyTraits(s32 kind);
+/** Whether `kind` has the enemy_trait bit `trait`; false outside the kinds. */
+[[nodiscard]] bool hasEnemyTrait(s32 kind, u16 trait);
+/** Whether `kind` is out of every body test (IT). */
+[[nodiscard]] bool intangible(s32 kind);
+
 } // namespace gdl::game

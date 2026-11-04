@@ -7,6 +7,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/enemies/EnemyMind.h"
+
 namespace gdl::game {
 
 namespace {
@@ -58,6 +60,110 @@ constexpr std::array<EnemyKind, kEnemyKindCount> kKinds{{
     {"GENERAL", "GEN", 6.0f, 2.0f, 4.0f, 3.0f, 0.09f, 20.0f, 0.0f, 200.0f, 3.0f, 30, 40, 7, kTurn},
 }};
 
+/** One row a kind, in code order. The ways are fn_8004F87C's (init_enemy_vars): the small kinds
+ * only prowl, a medium kind placed with no way takes its strength's, and Garm's brood and IT
+ * keep their own whatever they are placed with. The humanoids are born only ahead of their
+ * generator and the dog by its front or back (generate_enemy, GC 0x8004f4b4); the worm comes
+ * up on its generator's own spot. A level's placements of Death and IT stand in the swarm's
+ * pool, outside its tiers, and the great ones by their own statue and carried-item loaders. */
+constexpr std::array<EnemyTraits, kEnemyKindCount> kTraits{{
+    {.kind = enemy_type::kScorpion, .way = WayRule::Small, .traits = enemy_trait::kNoShadow},
+    {.kind = enemy_type::kTroll,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants,
+     .traits = enemy_trait::kWalksIn},
+    {.kind = enemy_type::kDemon, .way = WayRule::Caster, .stem = SoundStem::Tiered},
+    {.kind = enemy_type::kRat, .way = WayRule::Small},
+    {.kind = enemy_type::kGrunt,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants,
+     .traits = enemy_trait::kWalksIn},
+    {.kind = enemy_type::kKnight,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .hide = Hide::Plate,
+     .birthExits = kAheadOctants},
+    {.kind = enemy_type::kSnake, .way = WayRule::Small},
+    {.kind = enemy_type::kSorcerer,
+     .way = WayRule::Caster,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants,
+     .traits = enemy_trait::kWalksIn},
+    {.kind = enemy_type::kMummy,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants},
+    {.kind = enemy_type::kSpider, .way = WayRule::Small},
+    {.kind = enemy_type::kLizardman,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants,
+     .traits = enemy_trait::kWalksIn},
+    {.kind = enemy_type::kTreefolk,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .hide = Hide::Bark,
+     .birthExits = kAheadOctants},
+    {.kind = enemy_type::kMaggot, .way = WayRule::Small},
+    {.kind = enemy_type::kZombie, .way = WayRule::Medium, .stem = SoundStem::Tiered},
+    {.kind = enemy_type::kPlague,
+     .way = WayRule::Caster,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants},
+    {.kind = enemy_type::kWolf, .way = WayRule::Small, .birthExits = kAheadOctants},
+    {.kind = enemy_type::kIce, .way = WayRule::Medium, .stem = SoundStem::Tiered},
+    {.kind = enemy_type::kWorm,
+     .way = WayRule::Caster,
+     .stem = SoundStem::Tiered,
+     .traits = enemy_trait::kBurrows},
+    {.kind = enemy_type::kDog, .way = WayRule::Small, .birthDirections = 2},
+    {.kind = enemy_type::kSkeleton,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants},
+    {.kind = enemy_type::kGhost, .way = WayRule::Medium, .stem = SoundStem::Tiered},
+    {.kind = enemy_type::kAcid,
+     .way = WayRule::Small,
+     .hide = Hide::Ooze,
+     .traits = enemy_trait::kNoShadow},
+    {.kind = enemy_type::kHand, .way = WayRule::Small},
+    {.kind = enemy_type::kImp, .stem = SoundStem::Tiered},
+    {.kind = enemy_type::kWarlock,
+     .way = WayRule::Caster,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants,
+     .traits = enemy_trait::kVeils},
+    {.kind = enemy_type::kSky,
+     .way = WayRule::Medium,
+     .stem = SoundStem::Tiered,
+     .birthExits = kAheadOctants},
+    {.kind = enemy_type::kWhirlwind, .stem = SoundStem::Tiered},
+    {.kind = enemy_type::kGarm2,
+     .fixedWay = kLungeWay,
+     .traits = enemy_trait::kDeathShot | enemy_trait::kHazardProof},
+    {.kind = kSwarmKindCount, .home = EnemyHome::None},
+    {.kind = enemy_type::kGolem, .home = EnemyHome::Critters},
+    {.kind = enemy_type::kDeath, .traits = enemy_trait::kNoShadow, .home = EnemyHome::PlacedOnly},
+    {.kind = enemy_type::kIt,
+     .fixedWay = kLurkWay,
+     .traits = enemy_trait::kNoShadow | enemy_trait::kIntangible,
+     .home = EnemyHome::PlacedOnly},
+    {.kind = enemy_type::kGargoyle, .way = WayRule::Medium, .home = EnemyHome::Critters},
+    {.kind = enemy_type::kGeneral, .way = WayRule::Medium, .home = EnemyHome::Critters},
+}};
+static_assert(
+    [] {
+        for (usize i = 0; i < kTraits.size(); ++i) {
+            if (kTraits[i].kind != static_cast<s32>(i)) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "each kind's traits sit at its code's row");
+
 bool sameName(std::string_view a, std::string_view b) {
     return a.size() == b.size() && std::ranges::equal(a, b, [](char x, char y) {
                return std::toupper(static_cast<unsigned char>(x)) ==
@@ -76,20 +182,29 @@ const EnemyKind& enemyKind(s32 kind) {
 }
 
 bool smallKind(s32 kind) {
-    constexpr std::array kSmall{enemy_type::kScorpion, enemy_type::kRat,    enemy_type::kSnake,
-                                enemy_type::kSpider,   enemy_type::kMaggot, enemy_type::kWolf,
-                                enemy_type::kDog,      enemy_type::kAcid,   enemy_type::kHand};
-    return std::ranges::contains(kSmall, kind);
+    const EnemyTraits* traits = enemyTraits(kind);
+    return traits != nullptr && traits->way == WayRule::Small;
 }
 
 bool tieredSounds(s32 kind) {
-    constexpr std::array kTiered{
-        enemy_type::kTroll,    enemy_type::kDemon,    enemy_type::kGrunt,     enemy_type::kKnight,
-        enemy_type::kSorcerer, enemy_type::kMummy,    enemy_type::kLizardman, enemy_type::kTreefolk,
-        enemy_type::kZombie,   enemy_type::kPlague,   enemy_type::kIce,       enemy_type::kWorm,
-        enemy_type::kSkeleton, enemy_type::kGhost,    enemy_type::kImp,       enemy_type::kWarlock,
-        enemy_type::kSky,      enemy_type::kWhirlwind};
-    return std::ranges::contains(kTiered, kind);
+    const EnemyTraits* traits = enemyTraits(kind);
+    return traits != nullptr && traits->stem == SoundStem::Tiered;
+}
+
+const EnemyTraits* enemyTraits(s32 kind) {
+    if (kind < 0 || kind >= kEnemyKindCount) {
+        return nullptr;
+    }
+    return &kTraits[static_cast<usize>(kind)];
+}
+
+bool hasEnemyTrait(s32 kind, u16 trait) {
+    const EnemyTraits* traits = enemyTraits(kind);
+    return traits != nullptr && (traits->traits & trait) != 0;
+}
+
+bool intangible(s32 kind) {
+    return hasEnemyTrait(kind, enemy_trait::kIntangible);
 }
 
 s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {

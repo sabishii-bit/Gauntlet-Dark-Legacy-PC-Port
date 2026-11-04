@@ -30,10 +30,6 @@ namespace {
 constexpr std::array<s32, static_cast<usize>(kEnemyKindCount)> kHitWorth{
     1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 2, 1, 2,
     3, 1, 2, 3, 1, 1, 2, 3, 3, 3, 1, 0, 2, 1, 1, 2, 2};
-/** lbl_8011BBA8: the destroying blow. */
-constexpr std::array<s32, static_cast<usize>(kEnemyKindCount)> kDestroyedWorth{
-    1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2,  3, 1,  2, 2, 1,   2,
-    3, 1, 2, 3, 1, 1, 2, 3, 3, 3, 15, 0, 30, 1, 2, 300, 30};
 constexpr s32 kExperienceShare = 5;
 
 void appendSlot(NativeStateDigest& digest, const Generators::Slot& slot) {
@@ -194,8 +190,11 @@ s32 generatorExperience(s32 kind, bool destroyed) {
     if (kind >= kEnemyKindCount) {
         return 0;
     }
-    const auto& worth = destroyed ? kDestroyedWorth : kHitWorth;
-    return kExperienceShare * worth[static_cast<usize>(kind)];
+    // The destroying blow is worth the bred kind's own hit experience: lbl_8011BBA8 holds the
+    // same values.
+    const s32 worth =
+        destroyed ? enemyKind(kind).experienceHit : kHitWorth[static_cast<usize>(kind)];
+    return kExperienceShare * worth;
 }
 
 namespace {

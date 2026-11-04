@@ -8,6 +8,7 @@
 
 #include "game/critters/CritterStatues.h"
 #include "game/critters/Critters.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/Generators.h"
 #include "game/level/ItemFigure.h"
 #include "game/level/ItemSupport.h"
@@ -165,9 +166,10 @@ OpponentPlacements::ordinary(const ItemInstance& instance, const ItemInfo& info,
     const s32 kind = levelKindOf(roster, *named, strength);
     // IT waits for company; great creatures use the separate statue/carried-item
     // loader, not this ordinary swarm-row path.
-    if ((kind == kItKind && players <= 1) ||
-        (kind >= kSwarmKindCount && kind != kDeathKind && kind != kItKind) || !load ||
-        !load(kind)) {
+    const EnemyTraits* traits = enemyTraits(kind);
+    const bool swarmPool = traits != nullptr && (traits->home == EnemyHome::Swarm ||
+                                                 traits->home == EnemyHome::PlacedOnly);
+    if ((kind == kItKind && players <= 1) || !swarmPool || !load || !load(kind)) {
         return std::nullopt;
     }
     const Mat4 stood = itemPlacement(instance.position, instance.rotation);

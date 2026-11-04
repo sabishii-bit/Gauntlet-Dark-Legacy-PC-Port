@@ -2,6 +2,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -15,6 +16,7 @@
 #include "TestSupport.h"
 #include "game/critters/CritterStatues.h"
 #include "game/critters/Critters.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/OpponentPlacements.h"
 #include "game/level/ItemFigure.h"
 #include "game/level/ItemSupport.h"
@@ -124,6 +126,48 @@ TEST_CASE("ordinary placement filters never invent a fallback resource or a grea
         return allowsResource;
     }));
     CHECK(loads == expectedLoads);
+}
+
+TEST_CASE("ordinary placement admits the swarm, Death and IT and no other kind",
+          "[rollback][opponent-placements][enemy-traits]") {
+    // A rat placement breeds the roster's small class, so the roster names each kind in turn;
+    // a negative row is no class's and leaves the rat itself.
+    ItemInfo info;
+    info.type = ItemInfo::kPlacedEnemy;
+    info.name = enemyKind(kRatKind).name;
+    const ItemInstance instance;
+    std::vector<s32> kinds{std::numeric_limits<s32>::min(), -1};
+    for (s32 kind = 0; kind <= 45; ++kind) {
+        kinds.push_back(kind);
+    }
+    kinds.push_back(std::numeric_limits<s32>::max());
+    for (const s32 players : {1, 2}) {
+        CAPTURE(players);
+        std::vector<s32> placed;
+        for (const s32 kind : kinds) {
+            const std::array roster{LevelEnemy{kind, kSmallClass, {}}};
+            std::vector<s32> loads;
+            const auto placement =
+                OpponentPlacements::ordinary(instance, info, roster, players, [&](s32 loaded) {
+                    loads.push_back(loaded);
+                    return true;
+                });
+            CAPTURE(kind);
+            CHECK(loads.size() == (placement ? 1U : 0U));
+            if (placement) {
+                CHECK(loads.front() == placement->kind);
+                placed.push_back(placement->kind);
+            }
+        }
+        // Every swarm kind and Death; IT only with company; never the sentinel, a great one or a
+        // code past the kinds.
+        std::vector<s32> expected{3,  3,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13,
+                                  14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 30};
+        if (players > 1) {
+            expected.push_back(31);
+        }
+        CHECK(placed == expected);
+    }
 }
 
 TEST_CASE("native placement loader retains missing-statue fallbacks and ordered carried claims",
