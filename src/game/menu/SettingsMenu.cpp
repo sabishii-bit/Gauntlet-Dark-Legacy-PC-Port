@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,7 +21,31 @@ constexpr s32 kLanguageCode = 5;
 constexpr s32 kFirstMechanicCode = 16; ///< the Game page's mechanics, one code each in order
 constexpr s32 kDisplayCode = 13;
 constexpr s32 kRendererCode = 14;
-constexpr s32 kAudioSliders = 3;
+constexpr s32 kApplyCode = 5;    ///< the Video page's Apply, the first of its actions
+constexpr s32 kDefaultsCode = 6; ///< the Video page's Restore Defaults
+constexpr s32 kSaveCode = 100;   ///< the Video confirmation's Save
+constexpr s32 kRevertCode = 101; ///< the Video confirmation's Revert
+constexpr s32 kHideCompassCode = 0;
+constexpr s32 kShowCompassCode = 1;
+/** Where the Difficulty page opens on a difficulty it does not know: normal's row. */
+constexpr s32 kNormalDifficultyRow = 1;
+static_assert(DifficultyConfig::kNames[static_cast<usize>(kNormalDifficultyRow)] == "normal");
+
+/** One of the Audio page's sliders: its label and the volume it sets. */
+struct AudioRow {
+    std::string_view label;
+    f32 AudioConfig::*volume = nullptr;
+};
+/** The Audio page's sliders in the order shown, each one's code its place. */
+constexpr std::array<AudioRow, 3> kAudioRows{{{"settings.music", &AudioConfig::musicVolume},
+                                              {"settings.effects", &AudioConfig::effectsVolume},
+                                              {"settings.movies", &AudioConfig::movieVolume}}};
+constexpr usize kAudioSliderCount = kAudioRows.size();
+/** The Mono/Stereo row, numbered on after the sliders. */
+constexpr s32 kStereoCode = static_cast<s32>(kAudioSliderCount);
+/** The effects slider, whose steps are heard as samples. */
+constexpr s32 kEffectsSlider = 1;
+static_assert(kAudioRows[static_cast<usize>(kEffectsSlider)].volume == &AudioConfig::effectsVolume);
 /** Where a notice stands under the Audio sliders and the Video action row. */
 constexpr s32 kLowNoticeY = 348;
 constexpr s32 kNoticeY = 276;
@@ -473,6 +498,7 @@ void SettingsMenu::rebuild(s32 selection) {
     definition.fades = m_backdrop.fades && m_page == Page::Root;
     SettingsRows rows(definition, *m_painter, [this](std::string_view id) { return text(id); });
     const auto add = [&](std::string label, s32 code) { rows.choice(std::move(label), code); };
+    const std::optional<s32> choice = chosen();
     switch (m_page) {
     case Page::Controls:
         m_controls.define(definition, *m_painter, [this](std::string_view id) { return text(id); });
@@ -506,8 +532,8 @@ void SettingsMenu::rebuild(s32 selection) {
             definition.bodyY = 146;
             definition.bodyScale = 0.6f;
             definition.bodyGap = 14;
-            add(text("settings.save"), 100);
-            add(text("settings.revert"), 101);
+            add(text("settings.save"), kSaveCode);
+            add(text("settings.revert"), kRevertCode);
             definition.scale = 0.7f;
         } else {
             const VideoView view{m_scope, m_display, resolutions(), shownMonitor()};
@@ -562,8 +588,8 @@ void SettingsMenu::rebuild(s32 selection) {
                 definition.itemPositions.emplace_back(kLeft,
                                                       kRowTop + static_cast<s32>(i) * kRowStep);
             }
-            add(text("settings.apply"), 5);
-            add(text("settings.defaults"), 6);
+            add(text("settings.apply"), kApplyCode);
+            add(text("settings.defaults"), kDefaultsCode);
         }
         const usize firstAction = definition.itemPositions.size();
         s32 totalWidth = 0;
@@ -588,11 +614,11 @@ void SettingsMenu::rebuild(s32 selection) {
         definition.scale = kAudioScale;
         definition.cursorScale = kAudioScale;
         definition.selectLabel.clear();
-        definition.items = {{text("settings.music"), 0},
-                            {text("settings.effects"), 1},
-                            {text("settings.movies"), 2},
-                            {text("settings.mono"), kAudioSliders, 0, true, text("settings.stereo"),
-                             m_config.audio.stereo ? 2 : 1}};
+        for (usize i = 0; i < kAudioSliderCount; ++i) {
+            definition.items.push_back({text(kAudioRows[i].label), static_cast<s32>(i)});
+        }
+        definition.items.push_back({text("settings.mono"), kStereoCode, 0, true,
+                                    text("settings.stereo"), m_config.audio.stereo ? 2 : 1});
         constexpr s32 kAudioRowStep = 70;
         for (usize i = 0; i < definition.items.size(); ++i) {
             definition.itemPositions.emplace_back(kAudioX, definition.y +
@@ -631,15 +657,14 @@ void SettingsMenu::rebuild(s32 selection) {
         definition.title = text("settings.difficulty");
         for (usize i = 0; i < DifficultyConfig::kNames.size(); ++i) {
             rows.marked(text("settings." + std::string(DifficultyConfig::kNames[i])),
-                        static_cast<s32>(i),
-                        m_config.difficulty.level == DifficultyConfig::kNames[i]);
+                        static_cast<s32>(i), choice == static_cast<s32>(i));
         }
         break;
     case Page::Multiplayer: {
         definition.title = text("settings.multiplayer");
         for (usize i = 0; i < MultiplayerConfig::kNames.size(); ++i) {
             rows.marked(text("settings.multiplayer." + std::string(MultiplayerConfig::kNames[i])),
-                        static_cast<s32>(i), static_cast<usize>(m_config.multiplayer.mode) == i);
+                        static_cast<s32>(i), choice == static_cast<s32>(i));
         }
         // The mark beside a choice takes the room of a tilde.
         constexpr f32 kMultiplayerScale = 0.65f;
@@ -648,8 +673,8 @@ void SettingsMenu::rebuild(s32 selection) {
     }
     case Page::Compass:
         definition.title = text("menu.compass");
-        rows.marked(text("settings.hide"), 0, !m_config.camera.compass);
-        rows.marked(text("settings.show"), 1, m_config.camera.compass);
+        rows.marked(text("settings.hide"), kHideCompassCode, choice == kHideCompassCode);
+        rows.marked(text("settings.show"), kShowCompassCode, choice == kShowCompassCode);
         break;
     }
     // A page written again (a row toggled, a key captured) keeps its window where it was;
@@ -682,28 +707,26 @@ void SettingsMenu::commit(GameConfig next) {
     rebuild(m_menu.selection());
 }
 f32& SettingsMenu::audioVolume(usize row) {
-    if (row == 0) {
-        return m_config.audio.musicVolume;
-    }
-    return row == 1 ? m_config.audio.effectsVolume : m_config.audio.movieVolume;
+    return m_config.audio.*kAudioRows[row].volume;
 }
 void SettingsMenu::change(s32 direction) {
     refreshDisplay();
     const s32 code = m_menu.definition().items[static_cast<usize>(m_menu.selection())].code;
     auto next = m_config;
     if (m_page == Page::Audio) {
-        if (code == kAudioSliders) {
+        if (code == kStereoCode) {
             m_config.audio.stereo = !m_config.audio.stereo;
         } else {
             auto& volume = audioVolume(static_cast<usize>(code));
             const auto previous = AudioSlider::value(volume);
             volume = static_cast<f32>(std::clamp(previous + direction, 0, 255)) / 255;
-            if (code == 1 && AudioSlider::value(volume) == previous && m_audioSampleTicks > 15) {
+            if (code == kEffectsSlider && AudioSlider::value(volume) == previous &&
+                m_audioSampleTicks > 15) {
                 m_audioSample = "S_VOLMOVE";
                 m_audioSampleTicks = 0;
             }
         }
-        m_menu.markItem(kAudioSliders, m_config.audio.stereo ? 2 : 1);
+        m_menu.markItem(kAudioSliderCount, m_config.audio.stereo ? 2 : 1);
         m_audioDirty = true;
         m_notice.clear();
         if (m_settings != nullptr) {
@@ -750,7 +773,7 @@ void SettingsMenu::change(s32 direction) {
     } else if (m_page == Page::Multiplayer) {
         next.multiplayer.mode = static_cast<MultiplayerMode>(code);
     } else if (m_page == Page::Compass) {
-        next.camera.compass = code == 1;
+        next.camera.compass = code == kShowCompassCode;
     } else if (m_page == Page::Combat) {
         if (!flipSwitch(kCombatSwitches, code, next.combat)) {
             return;
@@ -794,7 +817,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         confirmInput.back |= input.escape;
         const auto event = m_menu.update(confirmInput, ticks);
         if (event.action == MenuAction::Back || event.action == MenuAction::Choice) {
-            const bool save = event.action == MenuAction::Choice && event.code == 100;
+            const bool save = event.action == MenuAction::Choice && event.code == kSaveCode;
             const bool success = save ? m_video.confirm() : m_video.revert();
             m_confirmVideo = m_video.pending();
             m_notice = success ? "" : text("settings.failed");
@@ -823,7 +846,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     if (m_page == Page::Audio && !m_menu.closing()) {
         m_audioSampleTicks = std::min(61, m_audioSampleTicks + std::max(0, ticks));
         if (input.pointer && !input.pointerNormalized) {
-            for (usize i = 0; i < kAudioSliders; ++i) {
+            for (usize i = 0; i < kAudioSliderCount; ++i) {
                 const auto area = AudioSlider::track(
                     kAudioX, static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()), kAudioScale);
                 const bool inside =
@@ -850,7 +873,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (!input.pointerHeld) {
             m_audioDrag.reset();
         }
-        const bool stereo = m_menu.selection() == kAudioSliders;
+        const bool stereo = m_menu.selection() == static_cast<s32>(kAudioSliderCount);
         if ((!stereo && horizontal && ticks > 0) || (stereo && (input.left || input.right))) {
             change((input.left || input.leftHeld ? -1 : 1) * (stereo ? 1 : ticks));
             return stereo ? MenuEvent{MenuAction::Moved, 0} : MenuEvent{};
@@ -872,11 +895,11 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     auto event = m_menu.update(mapped, ticks);
     if (m_page == Page::Graphics && event.action == MenuAction::Choice) {
         const auto code = event.code;
-        if (code == 5) {
+        if (code == kApplyCode) {
             m_confirmVideo = m_video.apply(m_config);
             m_notice = m_confirmVideo ? "" : text("settings.failed");
             rebuild(m_confirmVideo ? 1 : kVideoRows);
-        } else if (code == 6) {
+        } else if (code == kDefaultsCode) {
             // Restore Defaults stages the shipped video settings for Apply.
             const GameConfig defaults;
             const VideoView view{m_scope, m_display, resolutions(), shownMonitor()};
@@ -946,7 +969,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             m_page = link->page;
             rebuild(currentChoice());
         } else if (m_page == Page::Audio) {
-            if (event.code == kAudioSliders && event.part != 0 &&
+            if (event.code == kStereoCode && event.part != 0 &&
                 m_config.audio.stereo != (event.part == 2)) {
                 change(1);
                 flushAudio();
@@ -955,7 +978,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             change(1);
         }
     }
-    if (m_page == Page::Audio && m_menu.selection() == 1 && m_audioSampleTicks > 60 &&
+    if (m_page == Page::Audio && m_menu.selection() == kEffectsSlider && m_audioSampleTicks > 60 &&
         (event.action == MenuAction::None || event.action == MenuAction::Moved)) {
         m_audioSample = m_audioSampleMagic ? "S_PICKUPMAGIC" : "S_WARN";
         m_audioSampleMagic = !m_audioSampleMagic;
@@ -966,15 +989,23 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
 s32 SettingsMenu::currentChoice() const {
     switch (m_page) {
     case Page::Difficulty:
+    case Page::Multiplayer:
+    case Page::Compass: return chosen().value_or(kNormalDifficultyRow);
+    default: return 0;
+    }
+}
+std::optional<s32> SettingsMenu::chosen() const {
+    switch (m_page) {
+    case Page::Difficulty:
         for (usize i = 0; i < DifficultyConfig::kNames.size(); ++i) {
             if (DifficultyConfig::kNames[i] == m_config.difficulty.level) {
                 return static_cast<s32>(i);
             }
         }
-        return 1; // an unknown level opens on the normal one
+        return std::nullopt;
     case Page::Multiplayer: return static_cast<s32>(m_config.multiplayer.mode);
-    case Page::Compass: return m_config.camera.compass ? 1 : 0;
-    default: return 0;
+    case Page::Compass: return m_config.camera.compass ? kShowCompassCode : kHideCompassCode;
+    default: return std::nullopt;
     }
 }
 s32 SettingsMenu::depth() const {
@@ -990,13 +1021,11 @@ void SettingsMenu::draw(Canvas& canvas, const TextPainter& painter,
     }
     m_menu.draw(canvas, painter, textures);
     if (m_page == Page::Audio) {
-        const std::array volumes{m_config.audio.musicVolume, m_config.audio.effectsVolume,
-                                 m_config.audio.movieVolume};
-        for (usize i = 0; i < volumes.size(); ++i) {
-            textures.audioSlider.draw(canvas, kAudioX,
-                                      static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()),
-                                      volumes[i], m_menu.selection() == static_cast<s32>(i),
-                                      m_menu.fadeOpacity(), kAudioScale);
+        for (usize i = 0; i < kAudioSliderCount; ++i) {
+            textures.audioSlider.draw(
+                canvas, kAudioX, static_cast<f32>(m_menu.itemY(i) + m_menu.lineHeight()),
+                m_config.audio.*kAudioRows[i].volume, m_menu.selection() == static_cast<s32>(i),
+                m_menu.fadeOpacity(), kAudioScale);
         }
     }
     TextStyle style;

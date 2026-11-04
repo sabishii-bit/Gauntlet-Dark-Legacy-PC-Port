@@ -13,7 +13,11 @@
 
 namespace gdl::game {
 namespace {
+constexpr s32 kOptionsCode = 3; ///< Settings, which opens the settings menu
 constexpr s32 kQuitLevelCode = 4;
+constexpr s32 kManageCode = 5;
+constexpr s32 kShopCode = 6;
+constexpr s32 kInventoryCode = 7;
 constexpr s32 kQuitDesktopCode = 8;
 constexpr s32 kReturnMainMenuCode = 9;
 constexpr s32 kQuitGameCode = 10;
@@ -208,13 +212,13 @@ void PauseMenu::showMain() {
     m_page = Page::Main;
     auto menu = backdrop();
     menu.title = text(m_inTower ? "pause.tower" : "pause.game");
-    menu.items = {{text("pause.settings"), 3}};
+    menu.items = {{text("pause.settings"), kOptionsCode}};
     // The tower's menu manages the party and, through Quit Game, leaves for the main menu
     // or the desktop; a level's offers Quit Level, back to the tower, as the original does.
     if (m_inTower) {
-        menu.items.push_back({text("pause.manage"), 5});
-        menu.items.push_back({text("pause.shop"), 6});
-        menu.items.push_back({text("pause.inventory"), 7});
+        menu.items.push_back({text("pause.manage"), kManageCode});
+        menu.items.push_back({text("pause.shop"), kShopCode});
+        menu.items.push_back({text("pause.inventory"), kInventoryCode});
         menu.items.push_back({text("pause.quit"), kQuitGameCode});
     } else {
         // The secret world cannot be quit (options.c 1462: OPT_QUITLEVEL greyed for world 12).
@@ -306,17 +310,17 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     if (event.action != MenuAction::Choice) {
         return PauseOutcome::Running;
     }
-    if (event.code == 3) {
+    if (event.code == kOptionsCode) {
         m_page = Page::Options;
         m_settings.setMechanics(m_services->mechanics);
         m_settings.open(m_services->config != nullptr ? *m_services->config : GameConfig{},
                         m_services->strings, m_liveSettings, m_text, m_screen, backdrop(),
                         m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level);
-    } else if (event.code == 5) {
+    } else if (event.code == kManageCode) {
         return PauseOutcome::Manage;
-    } else if (event.code == 6) {
+    } else if (event.code == kShopCode) {
         return PauseOutcome::Shop;
-    } else if (event.code == 7) {
+    } else if (event.code == kInventoryCode) {
         return PauseOutcome::Inventory;
     } else if (event.code == kQuitLevelCode) {
         showQuitLevel();
@@ -326,7 +330,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     return PauseOutcome::Running;
 }
 bool PauseMenu::musicAudible() const {
-    return m_open && m_page == Page::Options && m_settings.page() == SettingsMenu::Page::Audio;
+    return m_open && m_page == Page::Options && m_settings.playsMusic();
 }
 void PauseMenu::prepare(RenderDevice& device) {
     if (m_open) {
@@ -347,8 +351,7 @@ void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, 
     m_fire.draw(m_canvas);
     auto art = m_art;
     if (m_page == Page::QuitLevel || m_page == Page::QuitGame ||
-        (m_page == Page::Options && m_settings.page() != SettingsMenu::Page::Root &&
-         m_settings.page() != SettingsMenu::Page::Compass)) {
+        (m_page == Page::Options && !m_settings.showsSeal())) {
         art.burn.fill(nullptr);
     }
     if (m_page == Page::Options) {

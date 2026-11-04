@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -338,6 +339,30 @@ TEST_CASE("difficulty and compass options survive a configuration save", "[setti
     MenuInput back;
     back.back = true;
     CHECK(f.menu.update(back, 1).action == MenuAction::Back);
+}
+
+TEST_CASE("an unknown difficulty marks no choice and its page opens on the normal one",
+          "[settings]") {
+    Fixture f;
+    f.config.difficulty.level = "bogus";
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {});
+    f.down();
+    f.select(); // Game Options
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    f.select(); // its first row, Difficulty
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Difficulty);
+    CHECK(f.menu.menu().selection() == 1);
+    const auto marks = [&] {
+        std::vector<s32> parts;
+        for (const auto& row : f.menu.menu().definition().items) {
+            parts.push_back(row.markedPart);
+        }
+        return parts;
+    };
+    CHECK(marks() == std::vector<s32>{0, 0, 0});
+    f.select();
+    CHECK(f.config.difficulty.level == "normal");
+    CHECK(marks() == std::vector<s32>{0, 1, 0});
 }
 
 TEST_CASE("Game Options are available in title tower and level settings", "[settings]") {

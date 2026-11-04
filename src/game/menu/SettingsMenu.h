@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <utility>
 
 #include "engine/assets/StringTable.h"
@@ -48,6 +49,12 @@ public:
     void close();
     bool isOpen() const { return m_menu.isOpen(); }
     Page page() const { return m_page; }
+    /** Whether the music plays on under the page shown: only under Audio, so that its slider
+     * can be heard (options.c 984). */
+    [[nodiscard]] bool playsMusic() const { return m_page == Page::Audio; }
+    /** Whether the page shown carries the menu's seal, as the root's and Compass's retail
+     * records do (8011E390/8011E638, 8011EF60); the other pages have none. */
+    [[nodiscard]] bool showsSeal() const { return m_page == Page::Root || m_page == Page::Compass; }
     /** How far in the menu is: the root, a page, or a player's controls within Controls.
      * A scene hears a step back as the depth falls. */
     s32 depth() const;
@@ -62,11 +69,15 @@ private:
     void rebuild(s32 selection = 0);
     /** The row a list page opens on: its current choice, else the first. */
     s32 currentChoice() const;
+    /** The code of the row a choice page (Difficulty, Multiplayer, Compass) marks; none for a
+     * difficulty it does not know, or on any other page. */
+    [[nodiscard]] std::optional<s32> chosen() const;
     void change(s32 direction);
     /** Takes the display the running game offers now, when there is one. */
     void refreshDisplay();
     bool flushAudio();
     void commit(GameConfig next);
+    /** The volume the Audio page's slider `row` sets. */
     f32& audioVolume(usize row);
     std::string text(std::string_view id) const;
     /** The mechanic the Game page's row `code` switches, if it is one. */
