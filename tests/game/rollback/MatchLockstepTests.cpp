@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <array>
 #include <limits>
 #include <map>
@@ -8,6 +7,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "fixtures/PacketStar.h"
+#include "fixtures/RecordingPacketTransport.h"
+#include "game/netplay/MatchSessionRoom.h"
 #include "game/rollback/InputJournal.h"
 #include "game/rollback/RollbackInputs.h"
 #include "game/rollback/RollbackSessionHarness.h"
@@ -18,33 +20,9 @@ using namespace gdl::game;
 using Phase = MatchSession::Phase;
 using Admission = MatchSession::Admission;
 constexpr PacketTransport::Connection kHost = 99;
+constexpr test::StarLinks kStar{kHost};
 
-struct Wire final : PacketTransport {
-    struct Packet {
-        Connection connection = 0;
-        std::vector<u8> bytes;
-        Delivery delivery = Delivery::Unreliable;
-    };
-    SendResult result = SendResult::Sent;
-    usize budget = std::numeric_limits<usize>::max();
-    std::vector<Packet> sent;
-    SendResult send(Connection connection, std::span<const u8> bytes, Delivery delivery) override {
-        if (result != SendResult::Sent) {
-            return result;
-        }
-        if (budget == 0) {
-            return SendResult::Congested;
-        }
-        --budget;
-        sent.push_back({connection, {bytes.begin(), bytes.end()}, delivery});
-        return SendResult::Sent;
-    }
-    std::vector<Event> poll() override { return {}; }
-    std::optional<Statistics> statistics(Connection /*connection*/) const override {
-        return std::nullopt;
-    }
-    void close(Connection /*connection*/) override {}
-};
+using Wire = test::RecordingPacketTransport;
 
 std::vector<u8> inputBytes(std::span<const InputCommand> frame) {
     const auto encoded = InputPacket::encode(frame);
@@ -66,30 +44,24 @@ std::vector<u8> controlBytes(MatchControlKind kind, const MatchContext& context)
     return *encoded;
 }
 
-struct Room {
-    MatchOwners owners;
-    std::array<MatchSession, 5> sessions;
-    std::array<Wire, 5> wires;
-    std::array<test::RollbackSessionHarness, 5> inputs;
-    std::array<u64, 5> bound{};
-    explicit Room(MatchOwners roster = {1, 2, 0, 0}, u8 delay = 0) : owners(roster) {
+struct Room : test::MatchSessionRoom {
+    explicit Room(MatchOwners roster = {1, 2, 0, 0}, u8 delay = 0)
+        : MatchSessionRoom(roster, kStar) {
         std::vector<MatchLink> links;
         for (u8 peer = 2; peer <= 4; ++peer) {
             if (present(peer)) {
-                links.push_back({peer, PacketTransport::Connection{100} + peer});
+                links.push_back({peer, kStar.guest(peer)});
                 const std::array host{MatchLink{1, kHost}};
                 REQUIRE(sessions[peer].open(peer, owners, host, delay));
             }
         }
         REQUIRE(sessions[1].open(1, owners, links, delay));
     }
-    bool present(u8 peer) const { return std::ranges::find(owners, peer) != owners.end(); }
-    void deliver(u8 source, MatchSession::Time now = MatchSession::Clock::now()) {
-        auto packets = std::move(wires[source].sent);
-        wires[source].sent.clear();
-        for (const auto& packet : packets) {
-            const auto target = source == 1 ? static_cast<u8>(packet.connection - 100) : u8{1};
-            const auto sender = source == 1 ? kHost : 100 + source;
+    /** What a packet delivered at `now` meets: its delivery mode checked against its kind,
+     * then its receiver, which takes it, finds it stale, or has already stopped. */
+    auto arrival(const MatchSession::Time& now) {
+        return [this, &now](u8 source, u8 target, PacketTransport::Connection sender,
+                            const Packet& packet) {
             CAPTURE(source, target);
             CHECK(packet.delivery == (RollbackExchange::recognizes(packet.bytes)
                                           ? PacketTransport::Delivery::Unreliable
@@ -98,17 +70,22 @@ struct Room {
             REQUIRE((
                 admitted == Admission::Accepted || admitted == Admission::Stale ||
                 (sessions[target].phase() == Phase::Stopped && admitted == Admission::WrongPhase)));
-        }
+        };
     }
+    void deliver(u8 source, MatchSession::Time now = MatchSession::Clock::now()) {
+        PacketStar::deliver(source, arrival(now));
+    }
+    /** Four passes of flush then deliver. A peer's packets arrive at the clock read once its
+     * flush is done, the time deliver(peer) would take. */
     void pump() {
-        for (u8 pass = 0; pass < 4; ++pass) {
-            for (u8 peer = 1; peer <= 4; ++peer) {
-                if (present(peer)) {
-                    sessions[peer].flush(wires[peer]);
-                    deliver(peer);
-                }
-            }
-        }
+        MatchSession::Time now;
+        PacketStar::pump(
+            4,
+            [this, &now](u8 peer, Wire& wire) {
+                sessions[peer].flush(wire);
+                now = MatchSession::Clock::now();
+            },
+            arrival(now));
     }
     bool loaded(u8 peer) {
         if (sessions[peer].context().transition != MatchTransition::Shop &&
@@ -201,34 +178,15 @@ struct Room {
                 REQUIRE(inputs[peer].submitBoundaryDigest(now));
             }
         }
-        for (u8 pass = 0; pass < 4; ++pass) {
-            for (u8 peer = 1; peer <= 4; ++peer) {
-                if (!present(peer)) {
-                    continue;
-                }
-                sessions[peer].flush(wires[peer], now);
-                deliver(peer, now);
-            }
-        }
+        PacketStar::pump(
+            4, [this, now](u8 peer, Wire& wire) { sessions[peer].flush(wire, now); }, arrival(now));
         for (u8 peer = 1; peer <= 4; ++peer) {
             if (present(peer)) {
                 REQUIRE(inputs[peer].completeBoundary());
             }
         }
     }
-    MatchParty party() const {
-        MatchParty result;
-        for (usize seat = 0; seat < owners.size(); ++seat) {
-            if (owners[seat] != 0) {
-                CharacterProfile profile;
-                profile.name = "NATIVE";
-                profile.character = static_cast<s32>(seat);
-                profile.gold = static_cast<s32>(seat) * 100;
-                result[seat] = profile;
-            }
-        }
-        return result;
-    }
+    MatchParty party() const { return MatchSessionRoom::party("NATIVE"); }
 };
 } // namespace
 
