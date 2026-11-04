@@ -5,6 +5,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/bosses/BossTraits.h"
+
 namespace gdl::game {
 
 namespace {
@@ -50,10 +52,11 @@ Color LegendShow::chargeTint(s32 color) {
 
 ParticleDescriptor LegendShow::trailOf(s32 kind) {
     ParticleDescriptor trail;
-    if (kind != 34 && kind != 35 && kind != 38) {
+    const std::string_view texture = legendStagingOf(kind).trailTexture;
+    if (texture.empty()) {
         return trail;
     }
-    trail.texture = kind == 35 ? "CHIMKEY_PART" : "PARTICLE1_A";
+    trail.texture = texture;
     trail.emitFrames = 90; // three seconds, then 0.034 seconds of emission fade
     trail.fadeFrames = 1;
     trail.angle = ParticleDescriptor::kSphere;
@@ -156,124 +159,83 @@ bool LegendRite::darkens() const {
 }
 
 bool LegendShow::heldInHand(s32 kind) {
-    return kind >= 34 && kind <= 39;
+    return legendStagingOf(kind).heldInHand;
 }
 
 PlayerDeed LegendShow::gestureOf(s32 kind) {
-    switch (kind) {
-    case 36:
-    case 37: return PlayerDeed::ShootLegend;
-    case 34:
-    case 35:
-    case 38:
-    case 39: return PlayerDeed::ThrowLegend;
-    default: return PlayerDeed::HurlLegend;
-    }
+    return legendStagingOf(kind).gesture;
 }
 
 LegendShow::Flight LegendShow::flightOf(s32 kind) {
-    switch (kind) {
-    case 34:
-    case 35:
-    case 36:
-    case 38: return Flight::Flies;
-    case 37: return Flight::WithBearer;
-    default: return Flight::AtBoss;
-    }
+    return legendStagingOf(kind).flight;
 }
 
 std::string_view LegendShow::restingTreeOf(s32 kind) {
-    return kind == 39 ? kBurstTree : kProjectileTree;
+    return legendStagingOf(kind).restingTree;
 }
 
 std::string_view LegendShow::burstTreeOf(s32 kind) {
-    return kind == 39 ? kSecondBurstTree : kBurstTree;
+    return legendStagingOf(kind).burstTree;
 }
 
 f32 LegendShow::burstSecondsOf(s32 kind) {
-    switch (kind) {
-    case 41: return kLichBurstSeconds;
-    case 37: return kSpiderBurstSeconds;
-    default: return kBurstSeconds;
-    }
+    return legendStagingOf(kind).burstSeconds;
 }
 
 Vec3 LegendShow::bossOffsetOf(s32 kind) {
-    switch (kind) {
-    // PlayerMotion reads these pool entries with lfd, not lfs. Reading only
-    // their high words put the stationary effects close to the boss's feet.
-    case 39: return Vec3{-7.0f, -5.0f, 85.0f};
-    case 40: return Vec3{0.0f, -5.0f, 10.0f};
-    case 42: return Vec3{0.0f, 17.0f, 3.0f};
-    default: return Vec3{0.0f, 0.0f, 0.0f};
-    }
+    return legendStagingOf(kind).bossOffset;
 }
 
 LegendStrike LegendShow::strikeOf(s32 kind) {
-    switch (kind) {
-    case 35:
-    case 37:
-    case 38:
-    case 42: return LegendStrike::OnLanding;
-    case 34:
-    case 36: return LegendStrike::AtRiteEnd;
-    default: return LegendStrike::OnThrow;
-    }
+    return legendStagingOf(kind).strike;
 }
 
 bool LegendShow::landsWhileRiteRuns(s32 kind) {
-    return kind == 38;
+    return legendStagingOf(kind).landsWhileRiteRuns;
 }
 
 bool LegendShow::landsOnRelease(s32 kind) {
-    return kind == 37 || kind == 42;
+    return legendStagingOf(kind).landsOnRelease;
 }
 
 bool LegendShow::quickToRoar(s32 kind) {
-    return kind == 35 || kind == 41 || kind == 42;
+    return legendStagingOf(kind).quickToRoar;
 }
 
 bool LegendShow::darkUntilImpact(s32 kind) {
-    return kind == 34;
+    return legendStagingOf(kind).darkUntilImpact;
 }
 
 bool LegendShow::restoresSight(s32 kind) {
-    return kind == 38;
+    return legendStagingOf(kind).restoresSight;
 }
 
 bool LegendShow::homes(s32 kind) {
-    return kind == 38;
+    return legendStagingOf(kind).homes;
 }
 
 std::string_view LegendShow::eyeReplacementOf(s32 kind) {
-    return kind == 38 ? std::string_view{"PBOSSQEYEBALL"} : std::string_view{};
+    return legendStagingOf(kind).eyeReplacement;
 }
 
 std::optional<Color> LegendShow::strikeTintOf(s32 kind) {
-    if (kind == 37) {
-        return Color::rgba(64, 255, 64); // the spider, poisoned
-    }
-    return std::nullopt;
+    return legendStagingOf(kind).strikeTint;
 }
 
 std::string_view LegendShow::lionStumpOf(s32 kind) {
-    return kind == 35 ? std::string_view{"STUMPLQ"} : std::string_view{};
+    return legendStagingOf(kind).lionStump;
 }
 
 std::string_view LegendShow::targetNodeOf(s32 kind) {
-    switch (kind) {
-    case 35: return "CHIMLIONHEA";
-    case 38: return "BODY1_EYEBALL";
-    default: return {};
-    }
+    return legendStagingOf(kind).targetNode;
 }
 
 std::string_view LegendShow::frozenSkinOf(s32 kind) {
-    return kind == 34 ? std::string_view{"SEETHROUGH"} : std::string_view{};
+    return legendStagingOf(kind).frozenSkin;
 }
 
 f32 LegendShow::burstFollowSecondsOf(s32 kind) {
-    return kind == 36 ? kGenieBurstSeconds : 0.0f;
+    return legendStagingOf(kind).burstFollowSeconds;
 }
 
 /** The common bank's pickup, then the realm's own: thrown, flying (`FLY`, or the `ALL`

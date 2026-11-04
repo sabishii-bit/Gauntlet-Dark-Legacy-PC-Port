@@ -299,6 +299,8 @@ add_library(game STATIC
     critters/General.cpp
     critters/Gargoyle.cpp
     bosses/BossDefinition.cpp
+    bosses/BossTraits.h
+    bosses/BossTraits.cpp
     critters/CombatantPatterns.cpp
     critters/CritterArea.cpp
     critters/CritterPressure.cpp
