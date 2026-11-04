@@ -348,7 +348,6 @@ public:
     }
 
 private:
-    friend class PlacedItemsCheckpoint;
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     std::optional<std::vector<Pickup>>
     collectUsing(std::span<const Collector> collectors, const StagedPickupJudge& judge,

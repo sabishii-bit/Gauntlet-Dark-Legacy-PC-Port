@@ -463,8 +463,8 @@ TEST_CASE("a thrown item holds the worth its thrower names", "[placed-items]") {
     items.bind(device, layout, &collision, archives);
     const usize first = items.size();
     // BossSpewCoins writes a coin's worth over its record's, which the level keeps at a tenth.
-    REQUIRE(items.throwItem(device, "COIN", {7, 5, 0}, {60, 0, 0}, &collision, 2, std::nullopt,
-                            5000));
+    REQUIRE(
+        items.throwItem(device, "COIN", {7, 5, 0}, {60, 0, 0}, &collision, 2, std::nullopt, 5000));
     REQUIRE(items.throwItem(device, "COIN", {7, 5, 0}, {60, 0, 0}, &collision, 2));
     CHECK(items.item(first).value == 5000);
     CHECK(items.item(first + 1).value ==
@@ -1507,7 +1507,6 @@ TEST_CASE("lying pickups spin round without a pause and flip-books turn every pa
     CHECK(most < least * 3.0f);
 }
 
-
 TEST_CASE("the tower's gem halos composite over the rune strips and trees sorted before them",
           "[placed-items][pickup-occlusion][gem-glow][assets]") {
     const auto root =
@@ -1595,6 +1594,125 @@ TEST_CASE("the tower's gem halos composite over the rune strips and trees sorted
         CHECK(std::ranges::any_of(device.draws,
                                   [&](const auto& draw) { return draw.texture == strip; }));
     }
+}
+
+/** A level of a coin with a fire emitter and two orange gems, the second for parties of two,
+ * with the gem burst and the junk a blast leaves. */
+struct GemPickups {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ItemArchive archive;
+    WorldCollision collision;
+    PlacedItems items;
+
+    explicit GemPickups(std::string_view tag) {
+        const auto root = test::scratchDirectory(tag);
+        writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+        writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+        writeFile(root / "white.png", test::kTinyPng);
+        writeTextFile(root / "textures.json", R"({"bitmaps":[
+          {"name":"WHITE","file":"white.png","width":2,"height":2},
+          {"name":"FLAME0","file":"white.png","width":2,"height":2},
+          {"name":"FLAME1","file":"white.png","width":2,"height":2}]})");
+        writeTextFile(root / "animations.json", R"({
+          "particles":[{"preset":2,"enables":16929,"texture":"FLAME0",
+            "particleLife":[0.1,0],"rate":[30,30,30,30]}],
+          "textureAnimations":[{"name":"FLAME","texture":1,"source":1,"frames":2,"rate":1}],
+          "trees":[
+           {"name":"COIN","nodes":[
+             {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]},
+             {"name":"FIRE","particle":0,"parent":0,"position":[0,1,0]}],
+            "sequences":[{"name":"IDLE","frames":4,"frameRate":30,
+              "tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[0,3]}]}]},
+           {"name":"GEMORANGE","nodes":[
+             {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+            "sequences":[{"name":"IDLE","frames":4,"frameRate":30}]},
+           {"name":"TREAS_JUNK","nodes":[
+             {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]},
+           {"name":"GETGEMORANGE","nodes":[
+             {"name":"SPARK","particle":0,"parent":-1,"position":[0,1,0]}],
+            "sequences":[{"name":"BURST","frames":6,"frameRate":30}]}]})");
+        writeTextFile(root / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
+          "itemInfos":[
+            {"type":1,"subtype":1,"name":"COIN","value":500,"radius":1,"height":2,"armor":0,"collisionType":1},
+            {"type":1,"subtype":15,"name":"GEMORANGE","value":4,"radius":1,"height":2}],
+          "itemInstances":[{"info":0,"position":[0,0,0]},
+            {"info":1,"position":[20,0,0]}, {"info":1,"position":[40,0,0],"minPlayers":2}]})");
+        test::convertModelFixture(root);
+        REQUIRE(layout.load(root));
+        REQUIRE(archive.load(root));
+        collision.build(
+            {{{0, 1, 0}, {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}}, 0, 4}});
+        REQUIRE(items.bind(device, layout, &collision, std::array{&archive}));
+        items.setPlayerCount(2);
+    }
+    /** A collector standing on gem number `index` takes it. */
+    void takeGem(usize index) {
+        const auto result =
+            items.collect(device, std::array{Collector{items.item(index).position, 1, 1}});
+        REQUIRE(result.size() == 1);
+        REQUIRE(result.front().item == index);
+    }
+};
+
+TEST_CASE("a thrown coin flies and lands while unseen crystals reveal and a taken gem bursts",
+          "[placed-items][coin-flight]") {
+    GemPickups fixture("pickup-flight-reveal-burst");
+    const s32 rate = GENERATE(30, 60);
+    const f32 step = 1.0f / static_cast<f32>(rate);
+    fixture.items.hideCrystals();
+    REQUIRE(fixture.items.throwItem(fixture.device, "COIN", {5, 8, 0}, {7, 3, 0},
+                                    &fixture.collision, 0.75f, 42.0f));
+    fixture.items.attach(0, glm::translate(Mat4{1}, Vec3{0, 2, 0}), true);
+    fixture.items.setOpener(0, 3);
+    REQUIRE(fixture.items.size() == 4);
+    REQUIRE(fixture.items.item(3).thrown);
+    bool flew = false;
+    bool landed = false;
+    bool burst = false;
+    for (s32 tick = 0; tick < rate * 3; ++tick) {
+        fixture.items.capturePresentation();
+        fixture.items.reveal(step);
+        if (tick == rate / 2) {
+            fixture.items.attach(0, glm::translate(Mat4{1}, Vec3{0, 1, 0}), false);
+        }
+        if (tick == rate) {
+            fixture.takeGem(1);
+        }
+        fixture.items.update(step);
+        const auto& thrown = fixture.items.item(fixture.items.size() - 1);
+        flew |= thrown.thrown;
+        landed |= !thrown.thrown;
+        burst |= fixture.items.effectCount() > 0;
+        if (tick % 13 == 0) {
+            fixture.items.draw(fixture.device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, 0.5f);
+        }
+    }
+    CHECK(flew);
+    CHECK(landed);
+    CHECK(burst);
+}
+
+TEST_CASE("gem bursts keep their field entries until the last collection effect ends",
+          "[placed-items][pickup-particles]") {
+    GemPickups fixture("pickup-retained-bursts");
+    fixture.takeGem(1);
+    for (s32 tick = 0; tick < 5; ++tick) {
+        fixture.items.update(1.0f / 30);
+    }
+    fixture.takeGem(2);
+    bool retained = false;
+    for (s32 tick = 0; tick < 30; ++tick) {
+        usize linked = 0;
+        for (usize effect = 0; effect < fixture.items.effectCount(); ++effect) {
+            linked += fixture.items.effect(effect).emitters.size();
+        }
+        retained |= fixture.items.bursts().size() > linked;
+        fixture.items.update(1.0f / 30);
+    }
+    CHECK(retained);
+    CHECK(fixture.items.effectCount() == 0);
+    CHECK(fixture.items.bursts().size() == 0);
 }
 
 } // namespace

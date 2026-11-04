@@ -1,27 +1,47 @@
 #include <array>
-#include <limits>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/world/TreeModel.h"
+#include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/level/ItemFigure.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
-#include "game/level/TrapsCheckpoint.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
+#include "game/level/Traps.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Whether `traps` now hold exactly the values `saved` holds. */
+bool holds(const Traps& traps, const Traps::LocalSnapshot& saved) {
+    Traps::LocalSnapshot now;
+    traps.saveLocal(now);
+    return traps.equalLocal(now, saved);
+}
+
 struct Fixture {
     test::FakeRenderDevice device;
     ItemArchive items;
     WorldLayout layout;
     WorldCollision collision;
     Traps traps;
-    TrapsCheckpoint owner{traps};
     explicit Fixture(bool moving = false) {
         const auto root = test::scratchDirectory("traps-checkpoint");
         writeTextFile(root / "tri.obj",
@@ -66,7 +86,12 @@ struct Fixture {
         }
         REQUIRE(traps.bind(device, layout, AssetScope(items), moving ? &collision : nullptr, 7123,
                            1.25f, 1.5f));
-        REQUIRE(owner.bindResources(device));
+    }
+    /** The traps' native digest over their own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        test::registerItemStage(resources, items, layout, &collision, device);
+        return test::liveDigest(traps, resources);
     }
 };
 void compareHits(const std::vector<TrapHit>& a, const std::vector<TrapHit>& b) {
@@ -82,50 +107,11 @@ void compareHits(const std::vector<TrapHit>& a, const std::vector<TrapHit>& b) {
         CHECK(a[i].impact.direction == b[i].impact.direction);
     }
 }
-TEST_CASE("trap rewind preserves native randomized cycles victim gaps wakes and time-stop holds",
-          "[rollback][traps-checkpoint]") {
-    const auto rate = GENERATE(30, 60);
-    const f32 seconds = 1.0f / static_cast<f32>(rate);
-    const s32 ticks = 60 / rate;
-    Fixture first;
-    Fixture second;
-    const std::array<TrapVictim, 2> victims{{{{0, 1, 0}, 0.75f, 1.5f}, {{20, 1, 0}, 0.75f, 1.5f}}};
-    for (s32 tick = 0; tick < 17; ++tick) {
-        first.traps.update(ticks, seconds, victims);
-    }
-    const auto state = first.owner.checkpoint();
-    REQUIRE(state);
-    REQUIRE(second.owner.restore(*state));
-    CHECK(second.owner.checkpoint() == state);
-    const auto textures = second.device.texturesCreated;
-    const auto uploads = second.device.textureUpdates;
-    usize hits = 0;
-    usize wakes = 0;
-    for (s32 tick = 0; tick < 400; ++tick) {
-        first.traps.capturePresentation();
-        second.traps.capturePresentation();
-        const bool held = tick >= 100 && tick < 120;
-        const auto a = first.traps.update(ticks, seconds, victims, held);
-        const auto b = second.traps.update(ticks, seconds, victims, held);
-        compareHits(a, b);
-        hits += a.size();
-        wakes += first.traps.wakes().size();
-        CHECK(second.owner.checkpoint() == first.owner.checkpoint());
-        if (tick == 200) {
-            CHECK(first.traps.stop(0) == second.traps.stop(0));
-        }
-    }
-    CHECK(hits > 0);
-    CHECK(wakes > 0);
-    CHECK(second.device.texturesCreated == textures);
-    CHECK(second.device.textureUpdates == uploads);
-}
 TEST_CASE("trap checkpoints switch between original disarmed and vanished figures without uploads",
-          "[rollback][traps-checkpoint]") {
+          "[rollback][traps-local-rewind]") {
     Fixture first;
-    Fixture second;
-    const auto initial = first.owner.checkpoint();
-    REQUIRE(initial);
+    Traps::LocalSnapshot initial;
+    first.traps.saveLocal(initial);
     for (usize i = 0; i < first.traps.size(); ++i) {
         REQUIRE(
             first.traps.disarm(i, first.device, first.layout, AssetScope(first.items), nullptr));
@@ -134,103 +120,66 @@ TEST_CASE("trap checkpoints switch between original disarmed and vanished figure
     CHECK_FALSE(first.traps.trap(0).gone);
     CHECK(first.traps.trap(1).gone);
     CHECK_FALSE(first.traps.trap(1).shown);
-    const auto state = first.owner.checkpoint();
-    REQUIRE(state);
-    const auto textures = second.device.texturesCreated;
-    const auto uploads = second.device.textureUpdates;
-    const auto* address = &second.traps.trap(0);
-    REQUIRE(second.owner.restore(*state));
-    CHECK(second.owner.checkpoint() == state);
-    CHECK(&second.traps.trap(0) == address);
-    REQUIRE(second.owner.restore(*initial));
-    CHECK(second.owner.checkpoint() == initial);
-    CHECK_FALSE(second.traps.trap(0).disarmed);
-    CHECK(second.traps.trap(1).shown);
-    CHECK(second.device.texturesCreated == textures);
-    CHECK(second.device.textureUpdates == uploads);
-}
-TEST_CASE("trap plans reject malformed state wrong authored rows and changed bindings atomically",
-          "[rollback][traps-checkpoint]") {
-    Fixture fixture;
-    const auto state = fixture.owner.checkpoint();
-    REQUIRE(state);
-    for (const int change : {0, 1, 2, 3, 4, 5, 6, 7, 8}) {
-        auto invalid = *state;
-        switch (change) {
-        case 0: invalid.random = 0; break;
-        case 1: invalid.traps[0].placement.name = "WRONG"; break;
-        case 2: invalid.traps[0].damage += 1; break;
-        case 3: invalid.gaps.push_back(std::numeric_limits<f32>::quiet_NaN()); break;
-        case 4: invalid.wakes.push_back(999); break;
-        case 5: invalid.traps[0].support.object = 20; break;
-        case 6: invalid.timeScale += 1; break;
-        case 7: invalid.traps[0].ticksLeft = std::numeric_limits<s32>::min(); break;
-        case 8: invalid.traps[0].action = 100; break;
-        default: break;
-        }
-        CHECK_FALSE(fixture.owner.restore(invalid));
-        CHECK(fixture.owner.checkpoint() == state);
-    }
-    auto undo = fixture.owner.prepareRestore(*state);
-    REQUIRE(undo);
-    fixture.traps.update(2, 1.0f / 30, {});
-    REQUIRE(fixture.owner.commitRestore(std::move(*undo)));
-    CHECK(fixture.owner.checkpoint() == state);
-    auto stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    TrapsCheckpoint sibling{fixture.traps};
-    REQUIRE(sibling.bindResources(fixture.device));
-    REQUIRE(sibling.restore(*state));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    stale = fixture.owner.prepareRestore(*state);
-    REQUIRE(stale);
-    REQUIRE(fixture.traps.bind(fixture.device, fixture.layout, AssetScope(fixture.items), nullptr,
-                               7123, 1.25f, 1.5f));
-    CHECK_FALSE(fixture.owner.canCommit(*stale));
-    CHECK_FALSE(fixture.owner.checkpoint());
-    REQUIRE(fixture.owner.bindResources(fixture.device));
-    REQUIRE(fixture.owner.restore(*state));
+    Traps::LocalSnapshot state;
+    first.traps.saveLocal(state);
+    REQUIRE(first.traps.restoreLocal(initial));
+    const auto textures = first.device.texturesCreated;
+    const auto uploads = first.device.textureUpdates;
+    const auto* address = &first.traps.trap(0);
+    REQUIRE(first.traps.restoreLocal(state));
+    CHECK(holds(first.traps, state));
+    CHECK(&first.traps.trap(0) == address);
+    REQUIRE(first.traps.restoreLocal(initial));
+    CHECK(holds(first.traps, initial));
+    CHECK_FALSE(first.traps.trap(0).disarmed);
+    CHECK(first.traps.trap(1).shown);
+    CHECK(first.device.texturesCreated == textures);
+    CHECK(first.device.textureUpdates == uploads);
 }
 TEST_CASE("disarming a striking trap without alternate art retains its frozen native pose",
-          "[rollback][traps-checkpoint]") {
+          "[rollback][traps-local-rewind]") {
     Fixture first;
     Fixture second;
     for (s32 tick = 0; tick < 1000 && first.traps.trap(1).action != 2; ++tick) {
         first.traps.update(1, 1.0f / 60, {});
+        second.traps.update(1, 1.0f / 60, {});
     }
     REQUIRE(first.traps.trap(1).action == 2);
     first.traps.update(1, 1.0f / 60, {});
+    second.traps.update(1, 1.0f / 60, {});
     REQUIRE(first.traps.trap(1).action == 2);
-    const auto striking = first.owner.checkpoint();
-    REQUIRE(striking);
+    Traps::LocalSnapshot striking;
+    Traps::LocalSnapshot secondStriking;
+    first.traps.saveLocal(striking);
+    second.traps.saveLocal(secondStriking);
+    const ItemFigure strikingFigure = first.traps.trap(1).figure;
     const auto textures = second.device.texturesCreated;
     REQUIRE(first.traps.disarm(1, first.device, first.layout, AssetScope(first.items), nullptr));
-    const auto vanished = first.owner.checkpoint();
-    REQUIRE(vanished);
-    CHECK(vanished->traps[1].action == Traps::kResting);
-    CHECK(vanished->traps[1].gone);
-    CHECK(vanished->traps[1].figure == striking->traps[1].figure);
-    REQUIRE(second.owner.restore(*vanished));
-    CHECK(second.owner.checkpoint() == vanished);
+    CHECK(first.traps.trap(1).action == Traps::kResting);
+    CHECK(first.traps.trap(1).gone);
+    CHECK(first.traps.trap(1).figure == strikingFigure);
+    REQUIRE(
+        second.traps.disarm(1, second.device, second.layout, AssetScope(second.items), nullptr));
+    CHECK(second.digest() == first.digest());
     const std::array<TrapVictim, 1> victims{{{{20, 1, 0}, 0.75f, 1.5f}}};
     for (s32 tick = 0; tick < 60; ++tick) {
         compareHits(first.traps.update(1, 1.0f / 60, victims),
                     second.traps.update(1, 1.0f / 60, victims));
-        CHECK(second.owner.checkpoint() == first.owner.checkpoint());
+        CHECK(second.digest() == first.digest());
     }
-    REQUIRE(first.owner.restore(*striking));
-    REQUIRE(second.owner.restore(*striking));
+    REQUIRE(first.traps.restoreLocal(striking));
+    REQUIRE(second.traps.restoreLocal(secondStriking));
     CHECK_FALSE(second.traps.trap(1).disarmed);
     for (s32 tick = 0; tick < 60; ++tick) {
         compareHits(first.traps.update(1, 1.0f / 60, victims),
                     second.traps.update(1, 1.0f / 60, victims));
-        CHECK(second.owner.checkpoint() == first.owner.checkpoint());
+        CHECK(second.digest() == first.digest());
     }
     CHECK(second.device.texturesCreated == textures);
 }
 TEST_CASE(
     "native trap rosters restore every authored and disarmed figure on independent stage loads",
-    "[rollback][traps-checkpoint][assets]") {
+    "[rollback][traps-local-rewind][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     const auto* const stage = GENERATE("F1", "J4", "G2");
     LevelCatalog catalog;
@@ -244,42 +193,42 @@ TEST_CASE(
     Traps b;
     a.bind(device, world.layout(), world.itemScope(), &world.collision(), 42, 1, 1);
     b.bind(device, world.layout(), world.itemScope(), &world.collision(), 42, 1, 1);
-    TrapsCheckpoint first{a};
-    TrapsCheckpoint second{b};
-    REQUIRE(first.bindResources(device));
-    REQUIRE(second.bindResources(device));
-    const auto state = first.checkpoint();
-    REQUIRE(state);
-    REQUIRE(second.restore(*state));
-    CHECK(second.checkpoint() == state);
+    const auto digestOf = [&](const Traps& traps) {
+        NativeStateResources resources;
+        test::registerStage(resources, world, device);
+        return test::liveDigest(traps, resources);
+    };
+    Traps::LocalSnapshot authored;
+    a.saveLocal(authored);
+    CHECK(digestOf(b) == digestOf(a));
     const auto textures = device.texturesCreated;
     for (usize i = 0; i < a.size(); ++i) {
         CHECK(b.trap(i).name == a.trap(i).name);
         a.disarm(i, device, world.layout(), world.itemScope(), &world.collision());
+        b.disarm(i, device, world.layout(), world.itemScope(), &world.collision());
     }
-    const auto disarmed = first.checkpoint();
-    REQUIRE(disarmed);
-    REQUIRE(second.restore(*disarmed));
-    CHECK(second.checkpoint() == disarmed);
+    Traps::LocalSnapshot disarmed;
+    a.saveLocal(disarmed);
+    CHECK(digestOf(b) == digestOf(a));
     for (usize i = 0; i < a.size(); ++i) {
         CHECK(b.trap(i).name == a.trap(i).name);
     }
+    REQUIRE(a.restoreLocal(authored));
+    CHECK(holds(a, authored));
+    REQUIRE(a.restoreLocal(disarmed));
+    CHECK(holds(a, disarmed));
     CHECK(device.texturesCreated == textures);
 }
 TEST_CASE("trap floor attachments rewind with native nonblocking moving support",
-          "[rollback][traps-checkpoint]") {
+          "[rollback][traps-local-rewind]") {
     const auto rate = GENERATE(30, 60);
     Fixture first(true);
     Fixture second(true);
     REQUIRE(first.traps.trap(0).support.object() == 0);
     REQUIRE_FALSE(first.traps.trap(0).box.solid);
-    const auto initial = first.owner.checkpoint();
-    REQUIRE(initial);
+    const Vec3 initialPosition = first.traps.trap(0).figure.position();
     const auto textures = second.device.texturesCreated;
     for (s32 tick = 0; tick < 90; ++tick) {
-        const auto before = first.owner.checkpoint();
-        REQUIRE(before);
-        REQUIRE(second.owner.restore(*before));
         const f32 phase = static_cast<f32>(tick) * 0.02f;
         const auto position = glm::translate(Mat4{1}, Vec3{phase, -phase, phase}) *
                               glm::rotate(Mat4{1}, phase, Vec3{0, 1, 0});
@@ -291,28 +240,23 @@ TEST_CASE("trap floor attachments rewind with native nonblocking moving support"
         second.traps.capturePresentation();
         first.traps.update(60 / rate, 1.0f / static_cast<f32>(rate), {});
         second.traps.update(60 / rate, 1.0f / static_cast<f32>(rate), {});
-        const auto after = first.owner.checkpoint();
-        REQUIRE(after);
-        CHECK(second.owner.checkpoint() == after);
-        CHECK(after->traps[0].support.object == 0);
-        CHECK_FALSE(after->traps[0].box.solid);
+        CHECK(second.digest() == first.digest());
+        CHECK(first.traps.trap(0).support.object() == 0);
+        CHECK_FALSE(first.traps.trap(0).box.solid);
     }
-    CHECK(first.traps.trap(0).figure.position() != initial->traps[0].figure.state.position);
-    const auto beforeDetach = second.owner.checkpoint();
-    REQUIRE(beforeDetach);
-    auto undo = second.owner.prepareRestore(*beforeDetach);
-    REQUIRE(undo);
+    CHECK(first.traps.trap(0).figure.position() != initialPosition);
+    Traps::LocalSnapshot beforeDetach;
+    second.traps.saveLocal(beforeDetach);
     second.collision.clear();
     second.traps.syncFloors();
-    const auto detached = second.owner.checkpoint();
-    REQUIRE(detached);
-    CHECK(detached->traps[0].support.object == -1);
-    CHECK(detached->traps[0].support.local == beforeDetach->traps[0].support.local);
-    REQUIRE(second.owner.commitRestore(std::move(*undo)));
-    CHECK(second.owner.checkpoint() == beforeDetach);
+    Traps::LocalSnapshot detached;
+    second.traps.saveLocal(detached);
+    CHECK(second.traps.trap(0).support.object() == -1);
+    REQUIRE(second.traps.restoreLocal(beforeDetach));
+    CHECK(holds(second.traps, beforeDetach));
     CHECK_FALSE(second.collision.loaded()); // external collision belongs to the aggregate
     second.traps.syncFloors();
-    CHECK(second.owner.checkpoint() == detached);
+    CHECK(holds(second.traps, detached));
     CHECK(second.device.texturesCreated == textures);
 }
 TEST_CASE("trap native values undo random cycles contact gaps disarming and first effect births",
@@ -352,8 +296,6 @@ TEST_CASE("trap native values undo random cycles contact gaps disarming and firs
     for (usize window = 0; window < 96; ++window) {
         const auto distance = static_cast<s32>(window % 8 + 1);
         CAPTURE(window, distance);
-        const auto before = replay.owner.checkpoint();
-        REQUIRE(before);
         auto& saved = history[window % history.size()];
         replay.traps.saveLocal(saved);
         replay.collision.saveLocal(floor);
@@ -372,15 +314,13 @@ TEST_CASE("trap native values undo random cycles contact gaps disarming and firs
         replay.traps.draw(replay.device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, 0.6f);
         REQUIRE(replay.collision.restoreLocal(floor));
         REQUIRE(replay.traps.restoreLocal(saved));
-        CHECK(replay.owner.checkpoint() == before);
+        CHECK(holds(replay.traps, saved));
         for (s32 i = 0; i < distance; ++i) {
             const auto expected = step(native, tick + i, false);
             compareHits(step(replay, tick + i, false), expected);
             hits += expected.size();
             wakes += native.traps.wakes().size();
-            const auto state = native.owner.checkpoint();
-            REQUIRE(state);
-            CHECK(replay.owner.checkpoint() == state);
+            CHECK(replay.digest() == native.digest());
             Traps::LocalSnapshot actual;
             replay.traps.saveLocal(actual);
             CHECK(replay.traps.equalLocal(actual, nativeStates[static_cast<usize>(i)]));
@@ -396,10 +336,7 @@ TEST_CASE("trap native values undo random cycles contact gaps disarming and firs
     CHECK(replay.device.texturesCreated == uploads);
     auto& saved = history.front();
     replay.traps.saveLocal(saved);
-    auto stale = replay.owner.prepareRestore(*replay.owner.checkpoint());
-    REQUIRE(stale);
     REQUIRE(replay.traps.restoreLocal(saved));
-    CHECK_FALSE(replay.owner.canCommit(*stale));
     replay.traps.clear();
     CHECK_FALSE(replay.traps.restoreLocal(saved));
     CHECK_FALSE(replay.traps.equalLocal(saved, saved));

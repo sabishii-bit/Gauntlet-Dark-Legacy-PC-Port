@@ -6,8 +6,10 @@
 
 #include "engine/assets/AssetScope.h"
 #include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/world/WorldCollision.h"
 
 #include "game/level/LevelWorld.h"
 #include "game/level/NativeStateResources.h"
@@ -38,6 +40,22 @@ inline void registerStage(game::NativeStateResources& resources, game::LevelWorl
     REQUIRE(resources.registerCollision(world.collision(), "stage"));
     REQUIRE(resources.registerLayout(world.layout(), "stage"));
     REQUIRE(resources.registerHazards(world.hazards(), "stage"));
+}
+
+/** Registers what a synthetic level lends the item owners standing in it, under the keys every
+ * load of it shares: the renderer's white texture, the item archive when it is loaded, the
+ * layout, and the collision when there is one. */
+inline void registerItemStage(game::NativeStateResources& resources, const ItemArchive& items,
+                              const WorldLayout& layout, const WorldCollision* collision,
+                              const RenderDevice& device) {
+    REQUIRE(resources.registerBuiltinTexture(device.whiteTexture(), "opaque-white"));
+    if (items.loaded()) {
+        REQUIRE(resources.registerArchive(items, "stage/items/0"));
+    }
+    REQUIRE(resources.registerLayout(layout, "stage"));
+    if (collision != nullptr) {
+        REQUIRE(resources.registerCollision(*collision, "stage"));
+    }
 }
 
 } // namespace gdl::test

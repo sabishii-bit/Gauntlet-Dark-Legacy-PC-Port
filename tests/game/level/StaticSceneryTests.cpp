@@ -1,6 +1,7 @@
 #include <array>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -8,6 +9,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/Math.h"
 #include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
@@ -249,5 +251,95 @@ TEST_CASE("G1 exit sign stops the player through the live fixture update",
     CHECK(blocksEnemyShot);
     fixtures.clear();
     CHECK(fixtures.scenery().size() == 0);
+}
+
+/** Scenery on a moving floor: a wall riding it, an animated prop for parties of two, a
+ * meshless wall for exactly two that keeps its height, and one handled elsewhere. */
+struct RidingScenery {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ItemArchive archive;
+    WorldCollision collision;
+    StaticScenery scenery;
+
+    RidingScenery(std::string_view name, bool missing) {
+        const auto directory = test::sampleLevel(name);
+        writeTextFile(directory / "animations.json", R"({"trees":[
+          {"name":"ANIM","nodes":[{"name":"ROOT","object":"WALL","parent":-1,"position":[0,0,0]}],
+           "sequences":[{"name":"ACTIVE","frames":12,"rate":30,
+             "tracks":[{"node":0,"flags":2,"frames":[0,11],"values":[0,1.3]}]}]}]})");
+        writeTextFile(directory / "world.json", R"({
+          "objects":[{"name":"WALL","position":[0,0,0],"flags":4100}],
+          "itemInfos":[
+            {"type":10,"subtype":0,"name":"WALL","collisionType":1,
+             "radius":1,"height":5,"collisionOffset":[0.25,0,0]},
+            {"type":10,"subtype":0,"name":"ANIM","collisionType":1,
+             "radius":1,"height":3},
+            {"type":10,"subtype":0,"name":"WALL","collisionType":1,
+             "radius":1,"height":2,"collisionFlags":1}],
+          "itemInstances":[
+            {"info":0,"position":[0,2,0],"minPlayers":1},
+            {"info":1,"position":[20,0,0],"minPlayers":2},
+            {"info":2,"position":[3,2,0],"minPlayers":12,"flags":2},
+            {"info":0,"position":[6,2,0],"params":[41,0]}]})");
+        REQUIRE(layout.load(directory));
+        if (!missing) {
+            REQUIRE(archive.load(directory));
+        }
+        collision.build({{{0, 1, 0}, {Vec3{-8, 0, -8}, Vec3{8, 0, -8}, Vec3{0, 0, 8}}, 0, 4100}});
+        collision.setMovingObjects(std::array<s32, 1>{0});
+        collision.setObjectTransform(0, Mat4{1});
+        scenery.bind(device, layout, AssetScope(archive), &collision);
+        REQUIRE(scenery.size() == 3);
+        REQUIRE(scenery.prop(0).figure.hasFigure() == !missing);
+        REQUIRE(scenery.prop(0).support.object() == 0);
+        REQUIRE_FALSE(scenery.prop(2).figure.hasFigure());
+        REQUIRE(scenery.prop(2).support.object() == -1);
+    }
+    /** Moves and turns the floor, changes the party, and plays a tick (every seventh a
+     * camera-only frame that carries the props without running their clocks). */
+    void step(s32 tick, f32 seconds) {
+        const f32 angle = static_cast<f32>(tick) * 0.013f;
+        const Mat4 placement = glm::translate(Mat4{1}, Vec3{angle, -angle, 0}) *
+                               glm::rotate(Mat4{1}, angle, Vec3{0, 1, 0});
+        collision.setObjectTransform(0, placement);
+        collision.setSolid(0, tick % 9 != 0);
+        scenery.setPlayerCount(tick % 3 + 1);
+        scenery.capturePresentation();
+        if (tick % 7 == 0) {
+            scenery.syncFloors();
+        } else {
+            scenery.update(seconds);
+        }
+    }
+};
+
+TEST_CASE("riding scenery keeps hidden clocks running and meshless geometry solid",
+          "[static-scenery][item-support]") {
+    const bool missing = GENERATE(false, true);
+    const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
+    RidingScenery fixture("static-scenery-riding", missing);
+    const auto uploads = fixture.device.texturesCreated;
+    bool hiddenClockAdvanced = false;
+    bool supportMoved = false;
+    bool invisibleSolid = false;
+    for (s32 tick = 0; tick < 90; ++tick) {
+        CAPTURE(tick, missing, seconds);
+        const auto animated = fixture.scenery.prop(1).figure.checkpoint();
+        const Vec3 position = fixture.scenery.prop(0).figure.position();
+        fixture.step(tick, seconds);
+        const auto& hidden = fixture.scenery.prop(1);
+        const auto advanced = hidden.figure.checkpoint();
+        hiddenClockAdvanced |=
+            !hidden.shown && animated && advanced && advanced->animation != animated->animation;
+        supportMoved |= fixture.scenery.prop(0).figure.position() != position;
+        const auto& meshless = fixture.scenery.prop(2);
+        invisibleSolid |= meshless.shown && meshless.box.solid && !meshless.figure.hasFigure();
+    }
+    CHECK(hiddenClockAdvanced == !missing);
+    CHECK(supportMoved);
+    CHECK(invisibleSolid);
+    CHECK(fixture.device.texturesCreated == uploads);
+    CHECK(fixture.scenery.prop(2).figure.position().y == 2); // NoFloorPlacement is retained.
 }
 } // namespace

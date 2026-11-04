@@ -45,7 +45,6 @@ public:
     const Prop& prop(usize index) const { return m_sim.props[index]; }
 
 private:
-    friend class StaticSceneryCheckpoint;
     struct Simulation {
         std::vector<Prop> props;
         bool operator==(const Simulation&) const = default;

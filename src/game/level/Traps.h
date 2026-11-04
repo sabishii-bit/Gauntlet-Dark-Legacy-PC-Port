@@ -125,7 +125,6 @@ public:
     void capturePresentation();
 
 private:
-    friend class TrapsCheckpoint;
     s32 restTicks(const Trap& trap);
     static bool touches(const Trap& trap, const TrapVictim& victim);
 

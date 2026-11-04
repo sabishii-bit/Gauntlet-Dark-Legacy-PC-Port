@@ -16,15 +16,9 @@ add_library(game_diagnostics STATIC
     game/party/PlayerAttacksCheckpoint.cpp
     game/level/ItemFigureCheckpoint.cpp
     game/critters/CombatantProjectilesCheckpoint.cpp
-    game/level/ChestsCheckpoint.cpp
-    game/level/LockedGatesCheckpoint.cpp
-    game/level/BreakablesCheckpoint.cpp
     game/level/SafeRocksCheckpoint.cpp
-    game/level/StaticSceneryCheckpoint.cpp
     game/level/RubbleCheckpoint.cpp
-    game/level/TrapsCheckpoint.cpp
     game/level/DestructibleWallsCheckpoint.cpp
-    game/level/PlacedItemsCheckpoint.cpp
     game/level/LevelTransportersCheckpoint.cpp
     game/level/ExitPortalsCheckpoint.cpp
     engine/world/WorldStateCheckpoint.cpp
@@ -141,19 +135,22 @@ add_executable(tests
     game/level/ExitPortalsCheckpointTests.cpp
     game/level/LevelTransportersCheckpointTests.cpp
     game/enemies/CombatResourcesTests.cpp
-    game/level/ChestsCheckpointTests.cpp
+    game/level/ChestsLocalRewindTests.cpp
     game/level/ChestsTests.cpp
-    game/level/LockedGatesCheckpointTests.cpp
-    game/level/BreakablesCheckpointTests.cpp
+    game/level/LockedGatesLocalRewindTests.cpp
+    game/level/LockedGatesTests.cpp
+    game/level/BreakablesLocalRewindTests.cpp
+    game/level/BreakablesTests.cpp
     game/level/SafeRocksCheckpointTests.cpp
-    game/level/StaticSceneryCheckpointTests.cpp
+    game/level/StaticSceneryLocalRewindTests.cpp
     game/level/RubbleCheckpointTests.cpp
-    game/level/TrapsCheckpointTests.cpp
+    game/level/TrapsLocalRewindTests.cpp
+    game/level/TrapsTests.cpp
     game/level/FallingSceneryCheckpointTests.cpp
     game/level/DestructibleWallsCheckpointTests.cpp
     game/level/RotatorsCheckpointTests.cpp
     game/level/RotatorsLocalRewindTests.cpp
-    game/level/PlacedItemsCheckpointTests.cpp
+    game/level/PlacedItemsLocalRewindTests.cpp
     game/level/PreparedPickupBirthTests.cpp
     game/level/LevelFixturesLocalRewindTests.cpp
     game/level/LevelWorldLocalRewindTests.cpp
@@ -760,18 +757,18 @@ if(GDL_ENABLE_NETPLAY)
         game/level/ExitPortalsCheckpointTests.cpp
         game/level/LevelTransportersCheckpointTests.cpp
         game/enemies/CombatResourcesTests.cpp
-        game/level/ChestsCheckpointTests.cpp
-        game/level/LockedGatesCheckpointTests.cpp
-        game/level/BreakablesCheckpointTests.cpp
+        game/level/ChestsLocalRewindTests.cpp
+        game/level/LockedGatesLocalRewindTests.cpp
+        game/level/BreakablesLocalRewindTests.cpp
         game/level/SafeRocksCheckpointTests.cpp
-        game/level/StaticSceneryCheckpointTests.cpp
+        game/level/StaticSceneryLocalRewindTests.cpp
         game/level/RubbleCheckpointTests.cpp
-        game/level/TrapsCheckpointTests.cpp
+        game/level/TrapsLocalRewindTests.cpp
         game/level/FallingSceneryCheckpointTests.cpp
         game/level/DestructibleWallsCheckpointTests.cpp
         game/level/RotatorsCheckpointTests.cpp
         game/level/RotatorsLocalRewindTests.cpp
-        game/level/PlacedItemsCheckpointTests.cpp
+        game/level/PlacedItemsLocalRewindTests.cpp
         game/level/PreparedPickupBirthTests.cpp
         game/level/LevelFixturesLocalRewindTests.cpp
         game/level/LevelWorldLocalRewindTests.cpp
@@ -934,7 +931,7 @@ if(GDL_ENABLE_NETPLAY)
         game/bosses/BossVictoryPresentationTests.cpp
         game/bosses/LegendPresentationTests.cpp
         engine/world/WorldStateCheckpointTests.cpp
-        game/level/PlacedItemsCheckpointTests.cpp game/level/PlacedItemsTests.cpp
+        game/level/PlacedItemsLocalRewindTests.cpp game/level/PlacedItemsTests.cpp
         game/level/SafeRocksCheckpointTests.cpp game/level/RubbleCheckpointTests.cpp
         game/level/LevelTriggersCheckpointTests.cpp
         game/level/LevelWorldLocalRewindTests.cpp game/level/LevelFixturesLocalRewindTests.cpp
@@ -948,9 +945,9 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/ParticleLocalRewindTests.cpp engine/world/ParticleSystemTests.cpp
         game/effects/EffectTreesLocalRewindTests.cpp game/effects/EffectTreesTests.cpp
         game/level/ItemFigureLocalRewindTests.cpp
-        game/level/ChestsCheckpointTests.cpp game/level/LockedGatesCheckpointTests.cpp
-        game/level/BreakablesCheckpointTests.cpp game/level/TrapsCheckpointTests.cpp
-        game/level/RotatorsCheckpointTests.cpp game/level/StaticSceneryCheckpointTests.cpp
+        game/level/ChestsLocalRewindTests.cpp game/level/LockedGatesLocalRewindTests.cpp
+        game/level/BreakablesLocalRewindTests.cpp game/level/TrapsLocalRewindTests.cpp
+        game/level/RotatorsCheckpointTests.cpp game/level/StaticSceneryLocalRewindTests.cpp
         game/level/RotatorsLocalRewindTests.cpp
         game/effects/EffectTreesPoolCheckpointTests.cpp game/effects/EffectCheckpointTests.cpp
         game/party/PlayerMissilesTests.cpp game/party/PlayerMissilesCheckpointTests.cpp

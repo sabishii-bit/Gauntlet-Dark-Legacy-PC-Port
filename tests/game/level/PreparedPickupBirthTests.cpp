@@ -1,20 +1,38 @@
 #include <array>
-#include <limits>
-#include <string>
+#include <optional>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/world/TextureAnimator.h"
+#include "engine/world/TreeModel.h"
+#include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
-#include "game/level/PlacedItemsCheckpoint.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/PlacedItems.h"
+#include "game/level/StageRegistry.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Whether `items` now hold exactly the values `saved` holds. */
+bool holds(const PlacedItems& items, const PlacedItems::LocalSnapshot& saved) {
+    PlacedItems::LocalSnapshot now;
+    items.saveLocal(now);
+    return items.equalLocal(now, saved);
+}
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -22,7 +40,6 @@ struct Fixture {
     ItemArchive archive;
     WorldCollision collision;
     PlacedItems items;
-    PlacedItemsCheckpoint owner{items};
     s32 support = 0;
 
     explicit Fixture(std::string_view tag, s32 floor = 1) : support(floor) {
@@ -69,15 +86,24 @@ struct Fixture {
         }
         REQUIRE(items.bind(device, layout, world(), std::array{&archive}));
         items.setPlayerCount(2);
-        REQUIRE(owner.bindResources(device));
     }
 
     const WorldCollision* world() const { return support == 0 ? nullptr : &collision; }
-    PlacedItemsCheckpoint::State state() const {
-        const auto value = owner.checkpoint();
-        REQUIRE(value);
-        REQUIRE(value->valid());
-        return *value;
+    /** The pickups' native digest over their own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        test::registerItemStage(resources, archive, layout, world(), device);
+        return test::liveDigest(items, resources);
+    }
+    /** Where the pickup a birth appended lies, or nothing when the birth failed. */
+    std::optional<usize> appended(bool born) const {
+        return born ? std::optional{items.size() - 1} : std::nullopt;
+    }
+    /** The clock of the archive's texture animations. */
+    TextureAnimator::Clock clock() const {
+        const auto* animator = items.textureAnimator(&archive);
+        REQUIRE(animator != nullptr);
+        return animator->clock();
     }
     void step(f32 seconds) {
         items.capturePresentation();
@@ -142,47 +168,53 @@ TEST_CASE("prepared pickup births use native record floor flight and particle se
         native.step(seconds);
         replay.step(seconds);
     }
-    const auto textures = replay.device.texturesCreated;
-    const auto uploads = replay.device.textureUpdates;
     native.items.capturePresentation();
     replay.items.capturePresentation();
-    const auto clocks = replay.state().textures;
+    const auto clocks = replay.clock();
 
     REQUIRE(native.items.place(native.device, "COIN", {-5, 2, 0}, native.world()));
-    REQUIRE(replay.owner.place("COIN", {-5, 2, 0}, replay.world()) == std::optional<usize>{1});
+    REQUIRE(replay.appended(replay.items.place(replay.device, "COIN", {-5, 2, 0},
+                                               replay.world())) == std::optional<usize>{1});
     REQUIRE(native.items.placeRecord(native.device, 1, {5, 2, 0}, native.world(), 99));
-    REQUIRE(replay.owner.placeRecord(1, {5, 2, 0}, replay.world(), 99) == std::optional<usize>{2});
+    REQUIRE(replay.appended(replay.items.placeRecord(replay.device, 1, {5, 2, 0}, replay.world(),
+                                                     99)) == std::optional<usize>{2});
     REQUIRE(native.items.placeRecord(native.device, 2, {0, 2, 0}, native.world(), -9));
-    REQUIRE(replay.owner.placeRecord(2, {0, 2, 0}, replay.world(), -9) == std::optional<usize>{3});
+    REQUIRE(replay.appended(replay.items.placeRecord(replay.device, 2, {0, 2, 0}, replay.world(),
+                                                     -9)) == std::optional<usize>{3});
     REQUIRE(native.items.throwItem(native.device, "COIN", {2, 6, 3}, {3, 2, 1}, native.world(),
                                    0.4f, 17.0f));
-    REQUIRE(replay.owner.throwItem("COIN", {2, 6, 3}, {3, 2, 1}, replay.world(), 0.4f, 17.0f) ==
+    REQUIRE(replay.appended(replay.items.throwItem(replay.device, "COIN", {2, 6, 3}, {3, 2, 1},
+                                                   replay.world(), 0.4f, 17.0f)) ==
             std::optional<usize>{4});
-    const auto born = replay.state();
-    REQUIRE(born.items.size() == 5); // amount 99 is one native record, not 99 new items
-    CHECK(born.items[1].info == 0);  // first matching name, not the later duplicate
-    CHECK(born.items[1].value == 50);
-    CHECK(born.items[2].info == 1);
-    CHECK(born.items[2].value == 99);
-    CHECK(born.items[3].value == 11);             // nonpositive override uses the record
-    CHECK_FALSE(born.items[3].animation.playing); // zero-sequence archive tree
-    CHECK(born.items[4].position == Vec3{2, 6, 3});
-    CHECK(born.items[4].strength == 17);
-    CHECK(born.items[4].thrown == (floor != 0));
-    CHECK(born.items[4].velocity == (floor == 0 ? Vec3{0} : Vec3{3, 2, 1}));
-    CHECK(born.items[1].position.y == (floor == 0 ? 2.0f : PlacedItems::kFloorLift));
-    CHECK(born.items[1].floor.has_value() == (floor == 2));
-    CHECK_FALSE(born.items[4].floor);
-    CHECK_FALSE(born.items[1].presentationCaptured);
-    CHECK(born.textures == clocks);
-    REQUIRE(born.items[1].particles.field.entries.size() == 2);
-    CHECK(born.items[1].particles.field.entries[0].emitter.random == 3);
-    CHECK(born.items[1].particles.field.entries[1].emitter.random == 4);
-    CHECK(born.items[1].particles == born.items[2].particles);
-    CHECK(born.items[1].particles == born.items[4].particles);
-    CHECK(born == native.state());
+    // The births bind their figures; what follows creates and uploads nothing.
+    const auto textures = replay.device.texturesCreated;
+    const auto uploads = replay.device.textureUpdates;
+    const auto& born = replay.items;
+    REQUIRE(born.size() == 5);     // amount 99 is one native record, not 99 new items
+    CHECK(born.item(1).info == 0); // first matching name, not the later duplicate
+    CHECK(born.item(1).value == 50);
+    CHECK(born.item(2).info == 1);
+    CHECK(born.item(2).value == 99);
+    CHECK(born.item(3).value == 11);            // nonpositive override uses the record
+    CHECK_FALSE(born.item(3).player.playing()); // zero-sequence archive tree
+    CHECK(born.item(4).position == Vec3{2, 6, 3});
+    CHECK(born.item(4).strength == 17);
+    CHECK(born.item(4).thrown == (floor != 0));
+    CHECK(born.item(4).velocity == (floor == 0 ? Vec3{0} : Vec3{3, 2, 1}));
+    CHECK(born.item(1).position.y == (floor == 0 ? 2.0f : PlacedItems::kFloorLift));
+    CHECK(born.item(1).floor.has_value() == (floor == 2));
+    CHECK_FALSE(born.item(4).floor);
+    CHECK_FALSE(born.item(1).presentationCaptured);
+    CHECK(replay.clock() == clocks);
+    const auto particles = born.item(1).particles.checkpoint();
+    REQUIRE(particles.field.entries.size() == 2);
+    CHECK(particles.field.entries[0].emitter.random == 3);
+    CHECK(particles.field.entries[1].emitter.random == 4);
+    CHECK(particles == born.item(2).particles.checkpoint());
+    CHECK(particles == born.item(4).particles.checkpoint());
+    CHECK(replay.digest() == native.digest());
 
-    bool particles = false;
+    bool emitted = false;
     bool landed = false;
     for (s32 tick = 0; tick < rate * 3; ++tick) {
         CAPTURE(tick);
@@ -193,19 +225,16 @@ TEST_CASE("prepared pickup births use native record floor flight and particle se
         }
         native.step(seconds);
         replay.step(seconds);
-        CHECK(replay.state() == native.state());
-        particles |=
+        CHECK(replay.digest() == native.digest());
+        emitted |=
             !native.items.item(1).particles.checkpoint().field.entries[0].emitter.particles.empty();
         landed |= !native.items.item(4).thrown;
         if (tick % 13 == 0) {
             checkDraws(replay, native);
-            CHECK(replay.state() == native.state());
-        }
-        if (tick % 17 == 0) {
-            REQUIRE(replay.owner.restore(native.state()));
+            CHECK(replay.digest() == native.digest());
         }
     }
-    CHECK(particles);
+    CHECK(emitted);
     CHECK(landed);
     CHECK(replay.device.texturesCreated == textures);
     CHECK(replay.device.textureUpdates == uploads);
@@ -227,97 +256,69 @@ TEST_CASE("prepared carried pickup releases retain native no-op visibility and r
         native.items.discard(0);
         replay.items.discard(0);
     }
-    const auto before = replay.state();
-    auto undo = replay.owner.prepareRestore(before);
-    REQUIRE(undo);
+    PlacedItems::LocalSnapshot before;
+    replay.items.saveLocal(before);
+    const u32 continuity = replay.items.item(0).continuity;
     const auto textures = replay.device.texturesCreated;
     REQUIRE(native.items.release(0, {0, 5, 0}, {3, 4, 0}, native.world(), 0.25f));
-    REQUIRE(replay.owner.release(0, {0, 5, 0}, {3, 4, 0}, replay.world(), 0.25f) ==
-            std::optional{true});
-    CHECK(replay.state() == native.state());
+    REQUIRE(replay.items.release(0, {0, 5, 0}, {3, 4, 0}, replay.world(), 0.25f));
+    CHECK(replay.digest() == native.digest());
     CHECK(replay.items.item(0).visible == !taken);
-    CHECK(replay.items.item(0).continuity == before.items[0].continuity + 1);
+    CHECK(replay.items.item(0).continuity == continuity + 1);
     CHECK_FALSE(replay.items.item(0).carried);
     CHECK_FALSE(replay.items.item(0).floor);
     for (s32 tick = 0; tick < rate; ++tick) {
         native.step(seconds);
         replay.step(seconds);
-        CHECK(replay.state() == native.state());
+        CHECK(replay.digest() == native.digest());
     }
-    const auto continued = replay.state();
+    PlacedItems::LocalSnapshot continued;
+    replay.items.saveLocal(continued);
     CHECK_FALSE(native.items.release(0, {}, {}, native.world(), 0));
-    CHECK(replay.owner.release(0, {}, {}, replay.world(), 0) == std::optional{false});
-    CHECK(replay.owner.release(999, {}, {}, replay.world(), 0) == std::optional{false});
-    CHECK(replay.state() == continued);
-    REQUIRE(replay.owner.canCommit(*undo));
-    REQUIRE(replay.owner.commitRestore(std::move(*undo)));
-    CHECK(replay.state() == before);
-    REQUIRE(replay.owner.release(0, {0, 5, 0}, {3, 4, 0}, replay.world(), 0.25f) ==
-            std::optional{true});
+    CHECK_FALSE(replay.items.release(0, {}, {}, replay.world(), 0));
+    CHECK_FALSE(replay.items.release(999, {}, {}, replay.world(), 0));
+    CHECK(holds(replay.items, continued));
+    REQUIRE(replay.items.restoreLocal(before));
+    CHECK(holds(replay.items, before));
+    REQUIRE(replay.items.release(0, {0, 5, 0}, {3, 4, 0}, replay.world(), 0.25f));
     for (s32 tick = 0; tick < rate; ++tick) {
         replay.step(seconds);
     }
-    CHECK(replay.state() == continued);
+    CHECK(holds(replay.items, continued));
     CHECK(replay.device.texturesCreated == textures);
 }
 
 TEST_CASE("prepared pickup births and release failures leave the complete native owner intact",
           "[prepared-pickup-birth]") {
     Fixture fixture("prepared-birth-atomic", 2);
-    const Fixture foreign("prepared-birth-foreign", 2);
     fixture.step(1.0f / 30);
-    const auto before = fixture.state();
-    auto undo = fixture.owner.prepareRestore(before);
-    REQUIRE(undo);
+    PlacedItems::LocalSnapshot before;
+    fixture.items.saveLocal(before);
     const auto textures = fixture.device.texturesCreated;
-    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
-    CHECK_FALSE(fixture.owner.place("MISSING", {}, fixture.world()));
-    CHECK_FALSE(fixture.owner.place("UNKNOWN", {}, fixture.world()));
-    CHECK_FALSE(fixture.owner.placeRecord(4, {}, fixture.world())); // Death is not a pickup
-    CHECK_FALSE(fixture.owner.placeRecord(-1, {}, fixture.world()));
-    CHECK_FALSE(fixture.owner.placeRecord(99, {}, fixture.world()));
-    CHECK_FALSE(fixture.owner.placeRecord(0, {nan, 0, 0}, fixture.world()));
-    CHECK_FALSE(fixture.owner.placeRecord(0, {}, foreign.world()));
-    CHECK_FALSE(fixture.owner.throwItem("COIN", {}, {nan, 0, 0}, fixture.world(), 0));
-    CHECK_FALSE(fixture.owner.throwItem("COIN", {}, {}, fixture.world(), -1));
-    CHECK_FALSE(fixture.owner.throwItem("COIN", {}, {}, fixture.world(), 0, nan));
-    CHECK(fixture.state() == before);
+    CHECK_FALSE(fixture.items.place(fixture.device, "MISSING", {}, fixture.world()));
+    CHECK_FALSE(fixture.items.place(fixture.device, "UNKNOWN", {}, fixture.world()));
+    // Death is not a pickup.
+    CHECK_FALSE(fixture.items.placeRecord(fixture.device, 4, {}, fixture.world()));
+    CHECK_FALSE(fixture.items.placeRecord(fixture.device, -1, {}, fixture.world()));
+    CHECK_FALSE(fixture.items.placeRecord(fixture.device, 99, {}, fixture.world()));
+    CHECK(holds(fixture.items, before));
 
-    // Native birth/release is allowed under an already prepared outer undo.
-    REQUIRE(fixture.owner.throwItem("COIN", {0, 5, 0}, {1, 2, 3}, fixture.world(), 0.2f) ==
+    // A birth rewinds like any other change of the owner.
+    REQUIRE(fixture.appended(fixture.items.throwItem(fixture.device, "COIN", {0, 5, 0}, {1, 2, 3},
+                                                     fixture.world(), 0.2f)) ==
             std::optional<usize>{1});
     fixture.step(1.0f / 30);
-    const auto first = fixture.state();
-    REQUIRE(fixture.owner.canCommit(*undo));
-    REQUIRE(fixture.owner.commitRestore(std::move(*undo)));
-    CHECK(fixture.state() == before);
-    REQUIRE(fixture.owner.throwItem("COIN", {0, 5, 0}, {1, 2, 3}, fixture.world(), 0.2f) ==
+    PlacedItems::LocalSnapshot first;
+    fixture.items.saveLocal(first);
+    REQUIRE(fixture.items.restoreLocal(before));
+    CHECK(holds(fixture.items, before));
+    REQUIRE(fixture.appended(fixture.items.throwItem(fixture.device, "COIN", {0, 5, 0}, {1, 2, 3},
+                                                     fixture.world(), 0.2f)) ==
             std::optional<usize>{1});
     fixture.step(1.0f / 30);
-    CHECK(fixture.state() == first);
+    CHECK(holds(fixture.items, first));
 
     REQUIRE(fixture.items.claim(fixture.items.item(0).position, 1, 2));
-    const auto carried = fixture.state();
-    CHECK_FALSE(fixture.owner.release(0, {nan, 0, 0}, {}, fixture.world(), 0));
-    CHECK_FALSE(fixture.owner.release(0, {}, {nan, 0, 0}, fixture.world(), 0));
-    CHECK_FALSE(fixture.owner.release(0, {}, {}, fixture.world(), -1));
-    CHECK_FALSE(fixture.owner.release(0, {}, {}, foreign.world(), 0));
-    CHECK(fixture.state() == carried);
-    fixture.owner.clearResources();
-    CHECK_FALSE(fixture.owner.place("COIN", {}, fixture.world()));
-    CHECK_FALSE(fixture.owner.release(0, {}, {}, fixture.world(), 0));
-    REQUIRE(fixture.owner.bindResources(fixture.device));
-    CHECK(fixture.state() == carried);
     CHECK(fixture.device.texturesCreated == textures);
-
-    auto full = fixture.state();
-    REQUIRE(fixture.owner.place("AAA", {}, fixture.world()));
-    const auto plain = fixture.state().items.back();
-    full.items.resize(PlacedItemsCheckpoint::State::kMaxItems, plain);
-    REQUIRE(full.valid());
-    REQUIRE(fixture.owner.restore(full));
-    CHECK_FALSE(fixture.owner.place("AAA", {}, fixture.world()));
-    CHECK_FALSE(fixture.owner.throwItem("COIN", {}, {}, fixture.world(), 0));
-    CHECK(fixture.state() == full);
 }
 } // namespace

@@ -1,14 +1,26 @@
 #include <algorithm>
 #include <array>
-#include <limits>
+#include <span>
+#include <string_view>
 #include <tuple>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "../../engine/world/SampleLevel.h"
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/math/Math.h"
+#include "engine/world/SampleLevel.h"
+#include "engine/world/WorldCollision.h"
+
 #include "FakeRenderDevice.h"
-#include "game/level/ChestsCheckpoint.h"
+#include "TestSupport.h"
+#include "game/level/Chests.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 
 namespace {
@@ -27,12 +39,18 @@ void checkEvents(std::span<const ChestEvent> actual, std::span<const ChestEvent>
     }
 }
 
+/** Whether `chests` now hold exactly the values `saved` holds. */
+bool holds(const Chests& chests, const Chests::LocalSnapshot& saved) {
+    Chests::LocalSnapshot now;
+    chests.saveLocal(now);
+    return chests.equalLocal(now, saved);
+}
+
 struct Fixture {
     test::FakeRenderDevice device;
     WorldLayout layout;
     ItemArchive items;
     Chests chests;
-    ChestsCheckpoint owner{chests};
 
     explicit Fixture(std::string_view name) {
         const auto directory = test::sampleLevel(name);
@@ -68,35 +86,7 @@ struct Fixture {
         REQUIRE(chests.size() == 4);
         REQUIRE(chests.chest(0).figure.hasFigure());
     }
-    ChestsCheckpoint::State state() const {
-        const auto result = owner.checkpoint();
-        REQUIRE(result);
-        return *result;
-    }
-    void reveal() {
-        const std::array party{ChestVisitor{Vec3{0}, 1, 0, true},
-                               ChestVisitor{Vec3{60, 0, 0}, 1, 0, true}};
-        REQUIRE(chests.updateXray(device, AssetScope(items), items, party) == 2);
-        REQUIRE(chests.chest(0).preview.hasFigure());
-        REQUIRE(chests.chest(3).preview.hasFigure());
-    }
 };
-
-TEST_CASE("a revealed chest's preview plays the pickup's cycle instead of holding its first frame",
-          "[chests][xray]") {
-    Fixture pool("chest-preview-cycle");
-    pool.reveal();
-    const auto placed = pool.chests.chest(0).preview.checkpoint();
-    REQUIRE(placed);
-    CHECK(placed->poseFrame == 0);
-    for (s32 frame = 0; frame < 6; ++frame) {
-        (void)pool.chests.update(1.0f / 60, {});
-    }
-    const auto later = pool.chests.chest(0).preview.checkpoint();
-    REQUIRE(later);
-    CHECK(later->poseFrame > 0);
-    CHECK(pool.chests.chest(0).revealed);
-}
 
 TEST_CASE("native chest history cancels opening rewards transmutation and first preview births",
           "[local-rewind][chest-local-rewind]") {
@@ -130,11 +120,9 @@ TEST_CASE("native chest history cancels opening rewards transmutation and first 
         pool.chests.saveLocal(saved);
         const s32 distance = window % 8 + 1;
         std::vector<Chests::LocalSnapshot> nativeStates(static_cast<usize>(distance));
-        std::vector<ChestsCheckpoint::State> states;
         std::vector<std::vector<ChestEvent>> events;
         for (s32 tick = window; tick < window + distance; ++tick) {
             events.push_back(step(tick, false));
-            states.push_back(pool.state());
             pool.chests.saveLocal(nativeStates[static_cast<usize>(tick - window)]);
         }
         REQUIRE(pool.chests.restoreLocal(saved));
@@ -145,18 +133,14 @@ TEST_CASE("native chest history cancels opening rewards transmutation and first 
         for (s32 tick = window; tick < window + distance; ++tick) {
             const auto at = static_cast<usize>(tick - window);
             checkEvents(step(tick, false), events[at]);
-            CHECK(pool.state() == states[at]);
             Chests::LocalSnapshot actual;
             pool.chests.saveLocal(actual);
             CHECK(pool.chests.equalLocal(actual, nativeStates[at]));
         }
     }
     CHECK(pool.device.textureUpdates == 0);
-    auto diagnostic = pool.owner.prepareRestore(pool.state());
-    REQUIRE(diagnostic);
     pool.chests.saveLocal(initial);
     REQUIRE(pool.chests.restoreLocal(initial));
-    CHECK_FALSE(pool.owner.canCommit(*diagnostic));
     Chests other;
     CHECK_FALSE(other.restoreLocal(initial));
     CHECK_FALSE(other.equalLocal(initial, initial));
@@ -214,77 +198,10 @@ TEST_CASE("native chest equality detects hidden pickup ownership and refusal clo
     CHECK_FALSE(fixture.chests.equalLocal(initial, initial));
 }
 
-TEST_CASE("container snapshots resume complete native opening gold and random-choice state",
-          "[chests-checkpoint]") {
-    Fixture host("chests-checkpoint-host");
-    Fixture guest("chests-checkpoint-guest");
-    host.reveal();
-    guest.reveal();
-    const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
-    const auto hostUploads = host.device.texturesCreated;
-    const auto guestUploads = guest.device.texturesCreated;
-    bool refused = false;
-    bool unlocked = false;
-    bool opened = false;
-    bool collected = false;
-    bool exploded = false;
-    bool emptyOpenPose = false;
-    for (s32 tick = 0; tick < 180; ++tick) {
-        const s32 phase = std::min(tick / 40, 3);
-        const std::array party{
-            ChestVisitor{Vec3{static_cast<f32>(phase * 20), 0, 0}, 1, tick % 40 < 4 ? 0 : 1}};
-        if (tick == 120) {
-            REQUIRE(host.chests.transmute(3, 4, 31));
-        }
-        const auto before = host.state();
-        REQUIRE(guest.owner.restore(before));
-        auto rewind = host.owner.prepareRestore(before);
-        REQUIRE(rewind);
-        host.chests.capturePresentation();
-        const auto events = host.chests.update(seconds, party);
-        const auto expected = host.state();
-        for (const auto& event : events) {
-            refused |= event.kind == ChestEvent::Kind::Refused;
-            unlocked |= event.kind == ChestEvent::Kind::Unlocked;
-            opened |= event.kind == ChestEvent::Kind::Opened;
-            collected |= event.kind == ChestEvent::Kind::Collected;
-            exploded |= event.explodes;
-        }
-        emptyOpenPose |= expected.chests[0].figure.state.holdPose;
-        guest.chests.capturePresentation();
-        checkEvents(guest.chests.update(seconds, party), events);
-        CHECK(guest.state() == expected);
-        REQUIRE(host.owner.canCommit(*rewind));
-        REQUIRE(host.owner.commitRestore(std::move(*rewind)));
-        CHECK(host.state() == before);
-        host.chests.capturePresentation();
-        checkEvents(host.chests.update(seconds, party), events);
-        CHECK(host.state() == expected);
-    }
-    CHECK(refused);
-    CHECK(unlocked);
-    CHECK(opened);
-    CHECK(collected);
-    CHECK(exploded);
-    CHECK(emptyOpenPose);
-    CHECK(host.state().seed > 0);
-    CHECK(host.device.texturesCreated == hostUploads);
-    CHECK(guest.device.texturesCreated == guestUploads);
-
-    const auto before = host.state();
-    auto prepared = host.owner.prepareRestore(before);
-    REQUIRE(prepared);
-    host.chests.hold(0, 91);
-    host.chests.remove(2);
-    host.chests.setPlayerCount(1);
-    REQUIRE(host.owner.commitRestore(std::move(*prepared)));
-    CHECK(host.state() == before);
-}
-
 TEST_CASE("native chest rewind keeps bound definitions but restores choices and their seed",
           "[local-rewind][chest-local-rewind]") {
     Fixture fixture("chest-local-bound-definitions");
-    const auto before = fixture.state();
+    const u32 seed = fixture.chests.simulation().seed;
     Chests::LocalSnapshot saved;
     fixture.chests.saveLocal(saved);
     const std::array party{ChestVisitor{Vec3{0}, 1, 1}};
@@ -293,17 +210,18 @@ TEST_CASE("native chest rewind keeps bound definitions but restores choices and 
     REQUIRE(expectedEvents.front().kind == ChestEvent::Kind::Unlocked);
     REQUIRE(expectedEvents.front().contents >= 4);
     REQUIRE(expectedEvents.front().contents <= 5);
-    const auto expected = fixture.state();
-    REQUIRE(expected.seed != before.seed);
+    Chests::LocalSnapshot expected;
+    fixture.chests.saveLocal(expected);
+    REQUIRE(fixture.chests.simulation().seed != seed);
 
     REQUIRE(fixture.chests.restoreLocal(saved));
     REQUIRE(fixture.chests.transmute(0, 5, 10));
     (void)fixture.chests.update(1.0f / 60, party);
     const auto uploads = fixture.device.texturesCreated;
     REQUIRE(fixture.chests.restoreLocal(saved));
-    CHECK(fixture.state() == before);
+    CHECK(holds(fixture.chests, saved));
     checkEvents(fixture.chests.update(1.0f / 60, party), expectedEvents);
-    CHECK(fixture.state() == expected);
+    CHECK(holds(fixture.chests, expected));
     CHECK(fixture.device.texturesCreated == uploads);
 
     // Rebinding even the same definition table starts a new owner epoch. The
@@ -312,18 +230,14 @@ TEST_CASE("native chest rewind keeps bound definitions but restores choices and 
         fixture.chests.bind(fixture.device, fixture.layout, AssetScope(fixture.items), nullptr));
     fixture.chests.setPlayerCount(2);
     CHECK_FALSE(fixture.chests.restoreLocal(saved));
-    const auto rebound = fixture.state();
-    CHECK(rebound.infos.size() == before.infos.size());
-    CHECK(rebound.infos[3].choices == before.infos[3].choices);
     checkEvents(fixture.chests.update(1.0f / 60, party), expectedEvents);
     fixture.chests.saveLocal(saved);
     fixture.chests.clear();
     CHECK_FALSE(fixture.chests.restoreLocal(saved));
-    CHECK(fixture.state().infos.empty());
 }
 
 TEST_CASE("unbound container art and previews retain exact moving-floor presentation state",
-          "[chests-checkpoint]") {
+          "[chest-local-rewind]") {
     const auto directory = test::scratchDirectory("chests-checkpoint-empty-rider");
     writeTextFile(directory / "world.json", R"({"objects":[
       {"name":"ROOT","position":[100,10,50],"child":1},
@@ -341,89 +255,34 @@ TEST_CASE("unbound container art and previews retain exact moving-floor presenta
     Chests chests;
     REQUIRE(chests.bind(device, layout, AssetScope(empty), &collision));
     REQUIRE(chests.chest(0).floor);
-    ChestsCheckpoint owner(chests);
     chests.capturePresentation();
-    const auto before = owner.checkpoint();
-    REQUIRE(before);
-    REQUIRE_FALSE(before->chests[0].figure.bound);
-    REQUIRE_FALSE(before->chests[0].preview.bound);
+    Chests::LocalSnapshot before;
+    chests.saveLocal(before);
+    REQUIRE_FALSE(chests.chest(0).figure.hasFigure());
+    REQUIRE_FALSE(chests.chest(0).preview.hasFigure());
     // The preview rides the chest at the overlay's 0.65 scale, which its placement carries.
-    CHECK(before->chests[0].preview.state.transform ==
-          glm::scale(before->chests[0].figure.state.transform, Vec3{0.65f}));
-    auto rewind = owner.prepareRestore(*before);
-    REQUIRE(rewind);
+    CHECK(chests.chest(0).preview.transform() ==
+          glm::scale(chests.chest(0).figure.transform(), Vec3{0.65f}));
     const Mat4 moved =
         glm::translate(Mat4{1}, Vec3{100, -10, 50}) * glm::rotate(Mat4{1}, 0.7f, Vec3{0, 1, 0});
     collision.setObjectTransform(1, moved);
     chests.syncFloors();
     chests.capturePresentation();
-    const auto movedState = owner.checkpoint();
-    REQUIRE(movedState);
-    CHECK(movedState != before);
-    REQUIRE(owner.commitRestore(std::move(*rewind)));
-    CHECK(owner.checkpoint() == before);
+    Chests::LocalSnapshot movedState;
+    chests.saveLocal(movedState);
+    CHECK_FALSE(chests.equalLocal(movedState, before));
+    REQUIRE(chests.restoreLocal(before));
+    CHECK(holds(chests, before));
     // The support owner is external: undoing a chest must not move that floor.
     CHECK(collision.objectTransform(1) == moved);
     chests.syncFloors();
     chests.capturePresentation();
-    CHECK(owner.checkpoint() == movedState);
+    CHECK(holds(chests, movedState));
     CHECK(device.texturesCreated == 0);
 }
 
-TEST_CASE("container plans reject foreign rosters resources and stale sibling restoration",
-          "[chests-checkpoint]") {
-    Fixture fixture("chests-checkpoint-fences");
-    Fixture other("chests-checkpoint-foreign");
-    const auto state = fixture.state();
-    auto first = fixture.owner.prepareRestore(state);
-    auto sibling = fixture.owner.prepareRestore(state);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    CHECK_FALSE(other.owner.commitRestore(std::move(*first)));
-    REQUIRE(fixture.owner.canCommit(*first));
-    REQUIRE(fixture.owner.commitRestore(std::move(*first)));
-    CHECK_FALSE(fixture.owner.canCommit(*sibling));
-    first = fixture.owner.prepareRestore(state);
-    REQUIRE(first);
-    ChestsCheckpoint secondWrapper(fixture.chests);
-    REQUIRE(secondWrapper.restore(state));
-    CHECK_FALSE(fixture.owner.canCommit(*first));
-    first = fixture.owner.prepareRestore(state);
-    REQUIRE(first);
-    fixture.chests.clear();
-    CHECK_FALSE(fixture.owner.commitRestore(std::move(*first)));
-}
-
-TEST_CASE("container malformed state is rejected atomically without binding new art",
-          "[chests-checkpoint]") {
-    Fixture fixture("chests-checkpoint-invalid");
-    const auto before = fixture.state();
-    auto invalid = before;
-    const auto variant = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
-    switch (variant) {
-    case 0: invalid.infos[3].choices = {5, 4}; break;
-    case 1: invalid.chests[0].instance = 900; break;
-    case 2: invalid.chests[0].contents = 999; break;
-    case 3: invalid.chests[0].refusalLeft = std::numeric_limits<f32>::quiet_NaN(); break;
-    case 4: invalid.chests[0].opener = 4; break;
-    case 5: invalid.chests[0].figure.state.pose.tree = "OTHER"; break;
-    case 6: invalid.chests[0].preview = invalid.chests[0].figure; break;
-    case 7: invalid.chests[0].box.halfAcross = -1; break;
-    case 8: invalid.chests[0].floor = ChestsCheckpoint::Floor{1, Mat4{1}}; break;
-    case 9: invalid.chests[0].collectedSeconds = -1.0f; break;
-    case 10: invalid.infos.resize(ChestsCheckpoint::State::kMaxInfos + 1); break;
-    case 11: invalid.placements[0].position.x += 1; break;
-    default: break;
-    }
-    const auto uploads = fixture.device.texturesCreated;
-    CHECK_FALSE(fixture.owner.prepareRestore(invalid));
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(fixture.state() == before);
-    CHECK(fixture.device.texturesCreated == uploads);
-}
-
 TEST_CASE("native campaign containers retain full authored roster and preloaded figures",
-          "[chests-checkpoint][assets]") {
+          "[chest-local-rewind][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
@@ -435,18 +294,14 @@ TEST_CASE("native campaign containers retain full authored roster and preloaded 
     REQUIRE(world.load(device, root, *catalog.byName(name)));
     Chests chests;
     REQUIRE(chests.bind(device, world.layout(), world.itemScope(), &world.collision()));
-    ChestsCheckpoint owner(chests);
-    const auto before = owner.checkpoint();
-    REQUIRE(before);
-    REQUIRE(before->chests.size() == chests.size());
+    Chests::LocalSnapshot before;
+    chests.saveLocal(before);
     const auto uploads = device.texturesCreated;
-    auto prepared = owner.prepareRestore(*before);
-    REQUIRE(prepared);
     chests.setPlayerCount(4);
     chests.capturePresentation();
     chests.update(1.0f / 30, {});
-    REQUIRE(owner.commitRestore(std::move(*prepared)));
-    CHECK(owner.checkpoint() == before);
+    REQUIRE(chests.restoreLocal(before));
+    CHECK(holds(chests, before));
     CHECK(device.texturesCreated == uploads);
 }
 } // namespace

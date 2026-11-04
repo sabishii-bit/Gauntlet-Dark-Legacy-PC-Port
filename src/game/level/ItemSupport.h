@@ -35,10 +35,6 @@ private:
         const auto& [object, local, boxOffset, boxYaw] = value;
         visitor.values(object, local, boxOffset, boxYaw);
     }
-    friend class LockedGatesCheckpoint;
-    friend class BreakablesCheckpoint;
-    friend class StaticSceneryCheckpoint;
-    friend class TrapsCheckpoint;
     s32 m_object = -1;
     Mat4 m_local{1};
     Vec3 m_boxOffset{0};

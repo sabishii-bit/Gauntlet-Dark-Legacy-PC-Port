@@ -171,16 +171,21 @@ public:
      * above one are the level's KEYRING record (fn_8005E90C's find_keyring_row). */
     static s32 contentsRecord(std::span<const ItemInfo> infos, s32 record, s32 count);
 
-private:
-    friend class ChestsCheckpoint;
-    static void rock(Chest& chest, f32 seconds);
-
+    /** The chests' native values: every chest and the shared seed their random picks
+     * draw from. */
     struct Simulation {
         std::vector<Chest> chests;
         u32 seed = 0;
         f32 seedRemainder = 0.0f; ///< the part of a seed tick the last update left over
         bool operator==(const Simulation&) const = default;
-    } m_sim;
+    };
+    /** Read-only view of those values. */
+    const Simulation& simulation() const { return m_sim; }
+
+private:
+    static void rock(Chest& chest, f32 seconds);
+
+    Simulation m_sim;
 
 public:
     class LocalSnapshot {

@@ -122,15 +122,19 @@ public:
               f32 presentationAlpha = -1.0f) const;
     void capturePresentation();
 
-private:
-    friend class BreakablesCheckpoint;
-    static f32 opacity(const Barrel& barrel);
-
+    /** The barrels' native values: every barrel and the seed their random picks draw from. */
     struct Simulation {
         std::vector<Barrel> barrels;
         u32 seed = kSeedStart;
         bool operator==(const Simulation&) const = default;
-    } m_sim;
+    };
+    /** Read-only view of those values. */
+    const Simulation& simulation() const { return m_sim; }
+
+private:
+    static f32 opacity(const Barrel& barrel);
+
+    Simulation m_sim;
 
 public:
     /** In-memory history for this owner and its current bound stage. */

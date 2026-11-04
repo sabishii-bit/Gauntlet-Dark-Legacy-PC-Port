@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <array>
 #include <set>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/AssetScope.h"
 #include "engine/io/File.h"
@@ -138,6 +141,125 @@ TEST_CASE("the developer console decides whether a shut chest wants a key",
     REQUIRE(f.chests.setLocked(1, false));
     CHECK_FALSE(f.chests.chest(1).locked);
     CHECK_FALSE(f.chests.setLocked(7, true));
+}
+
+/** A level of four locked chests: one picking a key from a list, a chest of gold, a trapped
+ * chest, and the first kind again for parties of two. */
+struct KeyedChests {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ItemArchive items;
+    Chests chests;
+
+    explicit KeyedChests(std::string_view name) {
+        const auto directory = test::sampleLevel(name);
+        writeTextFile(directory / "world.json", R"({
+          "objects":[{"name":"WALL","position":[0,0,0]}],
+          "itemInfos":[
+            {"type":2,"subtype":46,"name":"CHEST","radius":1,"height":2,"activeType":16},
+            {"type":2,"subtype":47,"name":"CHEST","radius":1,"height":2,"activeType":16},
+            {"type":2,"subtype":44,"name":"CHEST","radius":1,"height":2,"activeType":16},
+            {"type":-1,"choices":[4,5]},
+            {"type":1,"subtype":2,"name":"KEY","radius":1,"value":1},
+            {"type":1,"subtype":1,"name":"KEY","radius":1,"value":200}],
+          "itemInstances":[
+            {"info":0,"position":[0,0,0],"params":[3,0,0,0,1,0,0,0,0,0,0,0]},
+            {"info":1,"position":[20,0,0],"params":[5,0,0,0,1,0,0,0,0,0,0,0]},
+            {"info":2,"position":[40,0,0],"params":[4,0,0,0,1,0,0,0,0,0,0,0]},
+            {"info":0,"position":[60,0,0],"minPlayers":2,
+             "params":[3,0,0,0,1,0,0,0,0,0,0,0]}]})");
+        writeTextFile(directory / "animations.json", R"({"trees":[
+          {"name":"CHEST","nodes":[
+             {"name":"ROOT","object":"WALL","parent":-1,"position":[0,0,0]},
+             {"name":"NULL1","parent":0,"position":[0,0,0]}],
+           "sequences":[{"name":"OFF","frames":2,"frameRate":30},
+             {"name":"ACTIVE","frames":8,"frameRate":30,
+              "tracks":[{"node":1,"flags":32,"frames":[0,7],"values":[0,2]}]},
+             {"name":"OPEN","frames":0}]},
+          {"name":"KEY","nodes":[{"name":"ROOT","object":"WALL","parent":-1,"position":[0,0,0]}],
+           "sequences":[{"name":"OFF","frames":8,"frameRate":30}]}]})");
+        REQUIRE(layout.load(directory));
+        REQUIRE(items.load(directory));
+        REQUIRE(chests.bind(device, layout, AssetScope(items), nullptr));
+        chests.setPlayerCount(2);
+        REQUIRE(chests.size() == 4);
+        REQUIRE(chests.chest(0).figure.hasFigure());
+    }
+    /** X-ray wearers by the first and the last chest show what both hold. */
+    void reveal() {
+        const std::array party{ChestVisitor{Vec3{0}, 1, 0, true},
+                               ChestVisitor{Vec3{60, 0, 0}, 1, 0, true}};
+        REQUIRE(chests.updateXray(device, AssetScope(items), items, party) == 2);
+        REQUIRE(chests.chest(0).preview.hasFigure());
+        REQUIRE(chests.chest(3).preview.hasFigure());
+    }
+};
+
+TEST_CASE("a revealed chest's preview plays the pickup's cycle instead of holding its first frame",
+          "[chests][xray]") {
+    KeyedChests pool("chest-preview-cycle");
+    pool.reveal();
+    const auto placed = pool.chests.chest(0).preview.checkpoint();
+    REQUIRE(placed);
+    CHECK(placed->poseFrame == 0);
+    for (s32 frame = 0; frame < 6; ++frame) {
+        (void)pool.chests.update(1.0f / 60, {});
+    }
+    const auto later = pool.chests.chest(0).preview.checkpoint();
+    REQUIRE(later);
+    CHECK(later->poseFrame > 0);
+    CHECK(pool.chests.chest(0).revealed);
+}
+
+TEST_CASE("visited chests refuse open pay gold blow up and keep their opened pose",
+          "[game][level][chests]") {
+    KeyedChests host("chests-visited");
+    host.reveal();
+    const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
+    const auto hostUploads = host.device.texturesCreated;
+    bool refused = false;
+    bool unlocked = false;
+    bool opened = false;
+    bool collected = false;
+    bool exploded = false;
+    bool emptyOpenPose = false;
+    for (s32 tick = 0; tick < 180; ++tick) {
+        const s32 phase = std::min(tick / 40, 3);
+        const std::array party{
+            ChestVisitor{Vec3{static_cast<f32>(phase * 20), 0, 0}, 1, tick % 40 < 4 ? 0 : 1}};
+        if (tick == 120) {
+            REQUIRE(host.chests.transmute(3, 4, 31));
+        }
+        host.chests.capturePresentation();
+        const auto events = host.chests.update(seconds, party);
+        for (const auto& event : events) {
+            refused |= event.kind == ChestEvent::Kind::Refused;
+            unlocked |= event.kind == ChestEvent::Kind::Unlocked;
+            opened |= event.kind == ChestEvent::Kind::Opened;
+            collected |= event.kind == ChestEvent::Kind::Collected;
+            exploded |= event.explodes;
+        }
+        const auto figure = host.chests.chest(0).figure.checkpoint();
+        emptyOpenPose |= figure && figure->holdPose;
+    }
+    CHECK(refused);
+    CHECK(unlocked);
+    CHECK(opened);
+    CHECK(collected);
+    CHECK(exploded);
+    CHECK(emptyOpenPose);
+    CHECK(host.chests.simulation().seed > 0);
+    CHECK(host.device.texturesCreated == hostUploads);
+
+    Chests::LocalSnapshot before;
+    host.chests.saveLocal(before);
+    host.chests.hold(0, 91);
+    host.chests.remove(2);
+    host.chests.setPlayerCount(1);
+    REQUIRE(host.chests.restoreLocal(before));
+    Chests::LocalSnapshot restored;
+    host.chests.saveLocal(restored);
+    CHECK(host.chests.equalLocal(restored, before));
 }
 
 } // namespace

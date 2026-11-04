@@ -92,7 +92,6 @@ public:
     void capturePresentation();
 
 private:
-    friend class LockedGatesCheckpoint;
     struct Simulation {
         std::vector<Gate> gates;
         bool operator==(const Simulation&) const = default;

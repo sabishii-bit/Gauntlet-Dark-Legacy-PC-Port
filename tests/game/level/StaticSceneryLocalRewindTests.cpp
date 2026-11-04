@@ -1,17 +1,39 @@
 #include <array>
-#include <limits>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "../../engine/world/SampleLevel.h"
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/world/SampleLevel.h"
+#include "engine/world/TreeModel.h"
+#include "engine/world/WorldCollision.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
+#include "TestSupport.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
-#include "game/level/StaticSceneryCheckpoint.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
+#include "game/level/StaticScenery.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Whether `scenery` now holds exactly the values `saved` holds. */
+bool holds(const StaticScenery& scenery, const StaticScenery::LocalSnapshot& saved) {
+    StaticScenery::LocalSnapshot now;
+    scenery.saveLocal(now);
+    return scenery.equalLocal(now, saved);
+}
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -19,7 +41,6 @@ struct Fixture {
     ItemArchive archive;
     WorldCollision collision;
     StaticScenery scenery;
-    StaticSceneryCheckpoint owner{scenery};
 
     explicit Fixture(std::string_view name, bool missing = false) {
         const auto directory = test::sampleLevel(name);
@@ -55,11 +76,11 @@ struct Fixture {
         REQUIRE_FALSE(scenery.prop(2).figure.hasFigure());
         REQUIRE(scenery.prop(2).support.object() == -1);
     }
-    StaticSceneryCheckpoint::State state() const {
-        const auto value = owner.checkpoint();
-        REQUIRE(value);
-        REQUIRE(value->valid());
-        return *value;
+    /** The scenery's native digest over its own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        test::registerItemStage(resources, archive, layout, &collision, device);
+        return test::liveDigest(scenery, resources);
     }
     void step(s32 tick, f32 seconds) {
         const f32 angle = static_cast<f32>(tick) * 0.013f;
@@ -77,110 +98,29 @@ struct Fixture {
     }
 };
 
-TEST_CASE("scenery checkpoints replay native static and animated figures and floor contacts",
-          "[scenery-checkpoint]") {
-    const bool missing = GENERATE(false, true);
-    const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
-    Fixture host("scenery-checkpoint-host", missing);
-    Fixture guest("scenery-checkpoint-guest", missing);
-    const auto uploads = guest.device.texturesCreated;
-    bool hiddenClockAdvanced = false;
-    bool supportMoved = false;
-    bool invisibleSolid = false;
-    for (s32 tick = 0; tick < 90; ++tick) {
-        CAPTURE(tick, missing, seconds);
-        const auto before = host.state();
-        REQUIRE(guest.owner.restore(before));
-        auto undo = host.owner.prepareRestore(before);
-        REQUIRE(undo);
-        host.step(tick, seconds);
-        const auto expected = host.state();
-        hiddenClockAdvanced |=
-            !expected.props[1].shown &&
-            expected.props[1].figure.state.animation != before.props[1].figure.state.animation;
-        supportMoved |=
-            expected.props[0].figure.state.position != before.props[0].figure.state.position;
-        invisibleSolid |= expected.props[2].shown && expected.props[2].box.solid &&
-                          !expected.props[2].figure.bound;
-        guest.step(tick, seconds);
-        CHECK(guest.state() == expected);
-        CHECK(guest.scenery.obstacles().size() == host.scenery.obstacles().size());
-        REQUIRE(host.owner.commitRestore(std::move(*undo)));
-        CHECK(host.state() == before);
-        host.step(tick, seconds);
-        CHECK(host.state() == expected);
-    }
-    CHECK(hiddenClockAdvanced == !missing);
-    CHECK(supportMoved);
-    CHECK(invisibleSolid);
-    CHECK(guest.device.texturesCreated == uploads);
-    CHECK(host.scenery.prop(2).figure.position().y == 2); // NoFloorPlacement is retained.
-}
-
 TEST_CASE("scenery undo retains detached floor residue without rewinding external collision",
-          "[scenery-checkpoint]") {
+          "[scenery-local-rewind]") {
     const bool missing = GENERATE(false, true);
     Fixture fixture("scenery-checkpoint-detach", missing);
     fixture.step(5, 1.0f / 60);
-    const auto before = fixture.state();
-    auto undo = fixture.owner.prepareRestore(before);
-    REQUIRE(undo);
+    StaticScenery::LocalSnapshot before;
+    fixture.scenery.saveLocal(before);
+    const Mat4 transform = fixture.scenery.prop(0).figure.transform();
     fixture.collision.clear();
     fixture.scenery.syncFloors();
-    const auto detached = fixture.state();
-    CHECK(detached.props[0].support.object == -1);
-    CHECK(detached.props[0].support.local == before.props[0].support.local);
-    CHECK(detached.props[0].figure.state.transform == before.props[0].figure.state.transform);
-    REQUIRE(fixture.owner.commitRestore(std::move(*undo)));
-    CHECK(fixture.state() == before);
+    StaticScenery::LocalSnapshot detached;
+    fixture.scenery.saveLocal(detached);
+    CHECK(fixture.scenery.prop(0).support.object() == -1);
+    CHECK(fixture.scenery.prop(0).figure.transform() == transform);
+    REQUIRE(fixture.scenery.restoreLocal(before));
+    CHECK(holds(fixture.scenery, before));
     CHECK_FALSE(fixture.collision.objectTransform(0));
     fixture.scenery.syncFloors();
-    CHECK(fixture.state() == detached);
-}
-
-TEST_CASE("scenery snapshot plans refuse malformed foreign or rebound owners atomically",
-          "[scenery-checkpoint]") {
-    Fixture fixture("scenery-checkpoint-fences");
-    const auto before = fixture.state();
-    auto invalid = before;
-    const s32 variant = GENERATE(0, 1, 2, 3, 4, 5, 6);
-    switch (variant) {
-    case 0: invalid.props[0].placement.position.x += 1; break;
-    case 1: invalid.props[0].definition.name = "FOREIGN"; break;
-    case 2: invalid.props[0].support.local[0].x = std::numeric_limits<f32>::infinity(); break;
-    case 3: invalid.props[0].box.height = -1; break;
-    case 4: invalid.props[0].figure.state.pose.tree = "FOREIGN"; break;
-    case 5: invalid.props[2].figure.bound = true; break;
-    case 6: invalid.props[1].instance = invalid.props[0].instance; break;
-    default: break;
-    }
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(fixture.state() == before);
-    auto first = fixture.owner.prepareRestore(before);
-    auto sibling = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    StaticSceneryCheckpoint other(fixture.scenery);
-    CHECK_FALSE(other.commitRestore(std::move(*first)));
-    REQUIRE(fixture.owner.commitRestore(std::move(*first)));
-    CHECK_FALSE(fixture.owner.canCommit(*sibling));
-    first = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    REQUIRE(other.restore(before));
-    CHECK_FALSE(fixture.owner.canCommit(*first));
-    first = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    fixture.scenery.bind(fixture.device, fixture.layout, AssetScope(fixture.archive),
-                         &fixture.collision);
-    CHECK_FALSE(fixture.owner.canCommit(*first));
-    first = fixture.owner.prepareRestore(fixture.state());
-    REQUIRE(first);
-    fixture.scenery.clear();
-    CHECK_FALSE(fixture.owner.canCommit(*first));
+    CHECK(holds(fixture.scenery, detached));
 }
 
 TEST_CASE("native Ghost Town scenery checkpoint restores trusted static exit sign artwork",
-          "[scenery-checkpoint][assets]") {
+          "[scenery-local-rewind][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -192,22 +132,19 @@ TEST_CASE("native Ghost Town scenery checkpoint restores trusted static exit sig
     scenery.bind(device, world.layout(), world.itemScope(), &world.collision());
     REQUIRE(scenery.size() == 1);
     REQUIRE(scenery.prop(0).instance == 107);
-    StaticSceneryCheckpoint owner(scenery);
-    const auto before = owner.checkpoint();
-    REQUIRE(before);
-    REQUIRE(before->props[0].figure.bound);
+    StaticScenery::LocalSnapshot before;
+    scenery.saveLocal(before);
+    REQUIRE(scenery.prop(0).figure.hasFigure());
     device.draws.clear();
     scenery.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, 1);
     const auto expected = device.draws;
     REQUIRE_FALSE(expected.empty());
     const auto uploads = device.texturesCreated;
-    auto undo = owner.prepareRestore(*before);
-    REQUIRE(undo);
     scenery.setPlayerCount(0);
     scenery.capturePresentation();
     scenery.update(0.137f);
-    REQUIRE(owner.commitRestore(std::move(*undo)));
-    CHECK(owner.checkpoint() == before);
+    REQUIRE(scenery.restoreLocal(before));
+    CHECK(holds(scenery, before));
     device.draws.clear();
     scenery.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, 1);
     REQUIRE(device.draws.size() == expected.size());
@@ -233,7 +170,6 @@ TEST_CASE("scenery local values rewind supported figures hidden clocks and disab
     for (usize window = 0; window < 96; ++window) {
         const auto distance = static_cast<s32>(window % 8 + 1);
         CAPTURE(window, distance, missing);
-        const auto before = replay.state();
         auto& saved = history[window % history.size()];
         replay.scenery.saveLocal(saved);
         replay.collision.saveLocal(floor);
@@ -251,11 +187,11 @@ TEST_CASE("scenery local values rewind supported figures hidden clocks and disab
         replay.scenery.draw(replay.device, Mat4{1}, {}, nullptr, TreeModel::Pass::All, 0.3f);
         REQUIRE(replay.collision.restoreLocal(floor));
         REQUIRE(replay.scenery.restoreLocal(saved));
-        CHECK(replay.state() == before);
+        CHECK(holds(replay.scenery, saved));
         for (s32 i = 0; i < distance; ++i) {
             native.step(tick + i, 1.0f / 60);
             replay.step(tick + i, 1.0f / 60);
-            CHECK(replay.state() == native.state());
+            CHECK(replay.digest() == native.digest());
             replay.scenery.saveLocal(observed);
             CHECK(replay.scenery.equalLocal(observed, expectedLocal[static_cast<usize>(i)]));
             CHECK(replay.scenery.obstacles().size() == native.scenery.obstacles().size());
@@ -265,10 +201,7 @@ TEST_CASE("scenery local values rewind supported figures hidden clocks and disab
     CHECK(replay.device.texturesCreated == uploads);
     auto& saved = history.front();
     replay.scenery.saveLocal(saved);
-    auto stale = replay.owner.prepareRestore(replay.state());
-    REQUIRE(stale);
     REQUIRE(replay.scenery.restoreLocal(saved));
-    CHECK_FALSE(replay.owner.canCommit(*stale));
     replay.scenery.clear();
     CHECK_FALSE(replay.scenery.restoreLocal(saved));
     CHECK_FALSE(replay.scenery.equalLocal(saved, saved));

@@ -1,14 +1,30 @@
 #include <array>
-#include <limits>
+#include <optional>
+#include <string_view>
 #include <tuple>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "../../engine/world/SampleLevel.h"
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
+#include "engine/world/SampleLevel.h"
+#include "engine/world/WorldCollision.h"
+
 #include "FakeRenderDevice.h"
-#include "game/level/BreakablesCheckpoint.h"
+#include "NativeStateSupport.h"
+#include "TestSupport.h"
+#include "game/level/Breakables.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
 
 namespace {
 using namespace gdl;
@@ -31,7 +47,6 @@ struct Fixture {
     ItemArchive items;
     WorldCollision collision;
     Breakables barrels;
-    BreakablesCheckpoint owner{barrels};
 
     explicit Fixture(std::string_view name, bool moving = false, bool unseen = false) {
         const auto directory = test::sampleLevel(name);
@@ -75,10 +90,17 @@ struct Fixture {
         barrels.setPlayerCount(2);
         REQUIRE(barrels.size() == 6);
     }
-    BreakablesCheckpoint::State state() const {
-        const auto result = owner.checkpoint();
-        REQUIRE(result);
-        return *result;
+    /** The barrels' native digest over their own stage, so two fixtures can be compared. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        test::registerItemStage(resources, items, layout, &collision, device);
+        return test::liveDigest(barrels, resources);
+    }
+    /** Whether the barrels now hold exactly the values `saved` holds. */
+    bool holds(const Breakables::LocalSnapshot& saved) const {
+        Breakables::LocalSnapshot now;
+        barrels.saveLocal(now);
+        return barrels.equalLocal(now, saved);
     }
     std::optional<BreakableStrike> strike(s32 tick) {
         switch (tick) {
@@ -96,75 +118,15 @@ struct Fixture {
     }
 };
 
-TEST_CASE("barrel checkpoints reproduce native random drops fade staves and retirement",
-          "[breakables-checkpoint]") {
-    Fixture host("barrel-checkpoint-host");
-    Fixture guest("barrel-checkpoint-guest");
-    const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
-    const auto hostUploads = host.device.texturesCreated;
-    const auto guestUploads = guest.device.texturesCreated;
-    bool faded = false;
-    bool retainedStaves = false;
-    usize drops = 0;
-    usize retirements = 0;
-    for (s32 tick = 0; tick < 180; ++tick) {
-        CAPTURE(tick, seconds);
-        const auto before = host.state();
-        REQUIRE(guest.owner.restore(before));
-        auto undo = host.owner.prepareRestore(before);
-        REQUIRE(undo);
-        host.barrels.capturePresentation();
-        const auto strike = host.strike(tick);
-        const auto retired = host.barrels.update(seconds);
-        const auto expected = host.state();
-        if (strike && strike->kind == BreakableStrike::Kind::Holding && strike->broken) {
-            REQUIRE(strike->contents >= 6);
-            REQUIRE(strike->contents <= 7);
-            ++drops;
-        }
-        retirements += retired.size();
-        const f32 opacity = host.barrels.opacityOf(2);
-        faded |= opacity > 0 && opacity < 1;
-        retainedStaves |=
-            expected.barrels[0].state == Breakables::kBroken && !expected.barrels[0].gone;
-        REQUIRE(expected.barrels[4].health == 5);
-        if (tick == 1) {
-            REQUIRE(expected.barrels[0].health == 4);
-        }
-        guest.barrels.capturePresentation();
-        checkStrike(guest.strike(tick), strike);
-        CHECK(guest.barrels.update(seconds) == retired);
-        CHECK(guest.state() == expected);
-        CHECK(guest.barrels.opacityOf(2) == opacity);
-        CHECK(guest.barrels.within(Vec3{0}, 200) == host.barrels.within(Vec3{0}, 200));
-        CHECK(guest.barrels.struckBy(Vec3{-5, 1, 0}, Vec3{105, 1, 0}, 1) ==
-              host.barrels.struckBy(Vec3{-5, 1, 0}, Vec3{105, 1, 0}, 1));
-        REQUIRE(host.owner.commitRestore(std::move(*undo)));
-        CHECK(host.state() == before);
-        host.barrels.capturePresentation();
-        checkStrike(host.strike(tick), strike);
-        CHECK(host.barrels.update(seconds) == retired);
-        CHECK(host.state() == expected);
-    }
-    CHECK(faded);
-    CHECK(retainedStaves);
-    CHECK(drops == 2);
-    CHECK(retirements == 2);
-    CHECK(host.state().seed != Breakables::kSeedStart);
-    CHECK(host.device.texturesCreated == hostUploads);
-    CHECK(guest.device.texturesCreated == guestUploads);
-}
-
 TEST_CASE("barrel snapshots retain moving support and deliberately absent figure resources",
-          "[breakables-checkpoint]") {
+          "[breakables-local-rewind]") {
     const bool unseen = GENERATE(false, true);
     Fixture fixture("barrel-checkpoint-support", true, unseen);
     REQUIRE(fixture.barrels.barrel(0).support.object() == 0);
     fixture.barrels.capturePresentation();
-    const auto before = fixture.state();
-    REQUIRE(before.barrels[0].figure.bound == !unseen);
-    auto undo = fixture.owner.prepareRestore(before);
-    REQUIRE(undo);
+    Breakables::LocalSnapshot before;
+    fixture.barrels.saveLocal(before);
+    REQUIRE(fixture.barrels.barrel(0).figure.hasFigure() == !unseen);
     const Mat4 moved =
         glm::translate(Mat4{1}, Vec3{0, -10, 3}) * glm::rotate(Mat4{1}, 0.4f, Vec3{0, 1, 0});
     fixture.collision.setObjectTransform(0, moved);
@@ -172,69 +134,26 @@ TEST_CASE("barrel snapshots retain moving support and deliberately absent figure
     fixture.barrels.syncFloors();
     fixture.barrels.setPlayerCount(1);
     fixture.barrels.capturePresentation();
-    const auto expected = fixture.state();
-    REQUIRE(expected != before);
-    REQUIRE_FALSE(expected.barrels[5].shown);
-    REQUIRE(fixture.owner.commitRestore(std::move(*undo)));
-    CHECK(fixture.state() == before);
+    Breakables::LocalSnapshot expected;
+    fixture.barrels.saveLocal(expected);
+    REQUIRE_FALSE(fixture.barrels.equalLocal(expected, before));
+    REQUIRE_FALSE(fixture.barrels.barrel(5).shown);
+    REQUIRE(fixture.barrels.restoreLocal(before));
+    CHECK(fixture.holds(before));
     CHECK(fixture.collision.objectTransform(0) == moved);
     fixture.barrels.syncFloors();
     fixture.barrels.setPlayerCount(1);
     fixture.barrels.capturePresentation();
-    CHECK(fixture.state() == expected);
-    undo = fixture.owner.prepareRestore(expected);
-    REQUIRE(undo);
+    CHECK(fixture.holds(expected));
     fixture.collision.clear();
     fixture.barrels.syncFloors();
     REQUIRE(fixture.barrels.barrel(0).support.object() == -1);
-    REQUIRE(fixture.owner.commitRestore(std::move(*undo)));
-    CHECK(fixture.state() == expected);
-}
-
-TEST_CASE("barrel plans reject malformed rosters and fence foreign or stale resources",
-          "[breakables-checkpoint]") {
-    Fixture fixture("barrel-checkpoint-fences");
-    const auto before = fixture.state();
-    auto invalid = before;
-    const s32 variant = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
-    switch (variant) {
-    case 0: invalid.infos[5].choices = {7, 8}; break;
-    case 1: invalid.barrels[0].placement.position.x += 1; break;
-    case 2: invalid.barrels[0].instance = 100; break;
-    case 3: invalid.barrels[0].kind = BreakableStrike::Kind::Poison; break;
-    case 4: invalid.barrels[0].health = -1; break;
-    case 5: invalid.barrels[0].breakingSeconds = std::numeric_limits<f32>::quiet_NaN(); break;
-    case 6: invalid.barrels[0].support.local[0].x = std::numeric_limits<f32>::infinity(); break;
-    case 7: invalid.barrels[0].figure.state.pose.tree = "FOREIGN"; break;
-    case 8: invalid.barrels[0].box.cylinderRadius = -1; break;
-    case 9: invalid.barrels[0].radius += 1; break;
-    case 10: invalid.barrels[0].support.object = 1; break;
-    default: break;
-    }
-    const auto uploads = fixture.device.texturesCreated;
-    CHECK_FALSE(fixture.owner.restore(invalid));
-    CHECK(fixture.state() == before);
-    CHECK(fixture.device.texturesCreated == uploads);
-    auto first = fixture.owner.prepareRestore(before);
-    auto sibling = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    BreakablesCheckpoint otherWrapper(fixture.barrels);
-    CHECK_FALSE(otherWrapper.commitRestore(std::move(*first)));
-    REQUIRE(fixture.owner.commitRestore(std::move(*first)));
-    CHECK_FALSE(fixture.owner.canCommit(*sibling));
-    first = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    REQUIRE(otherWrapper.restore(before));
-    CHECK_FALSE(fixture.owner.canCommit(*first));
-    first = fixture.owner.prepareRestore(before);
-    REQUIRE(first);
-    fixture.barrels.clear();
-    CHECK_FALSE(fixture.owner.canCommit(*first));
+    REQUIRE(fixture.barrels.restoreLocal(expected));
+    CHECK(fixture.holds(expected));
 }
 
 TEST_CASE("native campaign barrel snapshots preserve their full original placement roster",
-          "[breakables-checkpoint][assets]") {
+          "[breakables-local-rewind][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
@@ -246,21 +165,20 @@ TEST_CASE("native campaign barrel snapshots preserve their full original placeme
     REQUIRE(world.load(device, root, *catalog.byName(name)));
     Breakables barrels;
     REQUIRE(barrels.bind(device, world.layout(), world.itemScope(), &world.collision()));
-    BreakablesCheckpoint owner(barrels);
-    const auto before = owner.checkpoint();
-    REQUIRE(before);
-    REQUIRE(before->barrels.size() == barrels.size());
+    Breakables::LocalSnapshot before;
+    barrels.saveLocal(before);
     const auto uploads = device.texturesCreated;
-    auto undo = owner.prepareRestore(*before);
-    REQUIRE(undo);
     barrels.setPlayerCount(4);
     barrels.capturePresentation();
     barrels.strike(0, 1);
     barrels.update(1.0f / 60);
-    REQUIRE(owner.commitRestore(std::move(*undo)));
-    CHECK(owner.checkpoint() == before);
+    REQUIRE(barrels.restoreLocal(before));
+    Breakables::LocalSnapshot restored;
+    barrels.saveLocal(restored);
+    CHECK(barrels.equalLocal(restored, before));
     CHECK(device.texturesCreated == uploads);
 }
+
 TEST_CASE("barrel local values replay destruction random contents and retirement",
           "[local-rewind][fixture-local-rewind][breakables-local-rewind]") {
     const bool unseen = GENERATE(false, true);
@@ -275,7 +193,6 @@ TEST_CASE("barrel local values replay destruction random contents and retirement
     for (usize window = 0; window < 96; ++window) {
         const auto distance = static_cast<s32>(window % 8 + 1);
         CAPTURE(window, distance, unseen);
-        const auto before = replay.state();
         auto& saved = history[window % history.size()];
         replay.barrels.saveLocal(saved);
         replay.collision.saveLocal(floor);
@@ -304,7 +221,7 @@ TEST_CASE("barrel local values replay destruction random contents and retirement
         replay.barrels.draw(replay.device, Mat4{1}, {}, 0.5f);
         REQUIRE(replay.collision.restoreLocal(floor));
         REQUIRE(replay.barrels.restoreLocal(saved));
-        CHECK(replay.state() == before);
+        CHECK(replay.holds(saved));
         for (s32 i = 0; i < distance; ++i) {
             const auto frame = tick + i;
             const Mat4 placement =
@@ -321,7 +238,7 @@ TEST_CASE("barrel local values replay destruction random contents and retirement
             const auto gone = native.barrels.update(1.0f / 60);
             CHECK(replay.barrels.update(1.0f / 60) == gone);
             retired += gone.size();
-            CHECK(replay.state() == native.state());
+            CHECK(replay.digest() == native.digest());
             Breakables::LocalSnapshot actual;
             replay.barrels.saveLocal(actual);
             CHECK(replay.barrels.equalLocal(actual, nativeStates[static_cast<usize>(i)]));
@@ -333,10 +250,7 @@ TEST_CASE("barrel local values replay destruction random contents and retirement
     CHECK(replay.device.texturesCreated == uploads);
     auto& saved = history.front();
     replay.barrels.saveLocal(saved);
-    auto stale = replay.owner.prepareRestore(replay.state());
-    REQUIRE(stale);
     REQUIRE(replay.barrels.restoreLocal(saved));
-    CHECK_FALSE(replay.owner.canCommit(*stale));
     replay.barrels.clear();
     CHECK_FALSE(replay.barrels.restoreLocal(saved));
     CHECK_FALSE(replay.barrels.equalLocal(saved, saved));
@@ -389,7 +303,7 @@ TEST_CASE("native barrel equality detects hidden loot and support binding change
 TEST_CASE("native barrel rewind keeps bound definitions but restores nested loot choices",
           "[local-rewind][fixture-local-rewind][breakables-local-rewind]") {
     Fixture fixture("barrel-local-bound-definitions");
-    const auto before = fixture.state();
+    const u32 seed = fixture.barrels.simulation().seed;
     Breakables::LocalSnapshot saved;
     fixture.barrels.saveLocal(saved);
     const auto expectedDrop = fixture.barrels.strike(1, 99);
@@ -398,8 +312,9 @@ TEST_CASE("native barrel rewind keeps bound definitions but restores nested loot
     REQUIRE(expectedDrop->contents >= 6);
     REQUIRE(expectedDrop->contents <= 7);
     REQUIRE(expectedDrop->count == 3);
-    const auto expected = fixture.state();
-    REQUIRE(expected.seed != before.seed);
+    Breakables::LocalSnapshot expected;
+    fixture.barrels.saveLocal(expected);
+    REQUIRE(fixture.barrels.simulation().seed != seed);
 
     REQUIRE(fixture.barrels.restoreLocal(saved));
     fixture.barrels.changeContents(1, 6);
@@ -407,23 +322,18 @@ TEST_CASE("native barrel rewind keeps bound definitions but restores nested loot
     (void)fixture.barrels.strike(5, 99);
     const auto uploads = fixture.device.texturesCreated;
     REQUIRE(fixture.barrels.restoreLocal(saved));
-    CHECK(fixture.state() == before);
+    CHECK(fixture.holds(saved));
     checkStrike(fixture.barrels.strike(1, 99), expectedDrop);
-    CHECK(fixture.state() == expected);
+    CHECK(fixture.holds(expected));
     CHECK(fixture.device.texturesCreated == uploads);
 
     REQUIRE(
         fixture.barrels.bind(fixture.device, fixture.layout, AssetScope(fixture.items), nullptr));
     fixture.barrels.setPlayerCount(2);
     CHECK_FALSE(fixture.barrels.restoreLocal(saved));
-    const auto rebound = fixture.state();
-    CHECK(rebound.infos.size() == before.infos.size());
-    CHECK(rebound.infos[5].choices == before.infos[5].choices);
-    CHECK(rebound.infos[8].choices == before.infos[8].choices);
     checkStrike(fixture.barrels.strike(1, 99), expectedDrop);
     fixture.barrels.saveLocal(saved);
     fixture.barrels.clear();
     CHECK_FALSE(fixture.barrels.restoreLocal(saved));
-    CHECK(fixture.state().infos.empty());
 }
 } // namespace
