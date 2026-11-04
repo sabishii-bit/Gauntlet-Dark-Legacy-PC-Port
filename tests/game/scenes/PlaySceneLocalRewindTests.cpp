@@ -17,6 +17,7 @@
 #include "game/rollback/LocalStateHistory.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/rollback/SimulationObserver.h"
+#include "game/scenes/NativeDigestProfileSupport.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -565,6 +566,29 @@ TEST_CASE("native scene history crosses speculative defeat but rejects foreign a
     CHECK_FALSE(fixture->scene.restoreLocal(saved));
     const PlayScene closed;
     CHECK_FALSE(closed.saveLocal(empty));
+}
+
+TEST_CASE("the first running digest that differs names the owner a change touched",
+          "[play-scene-local-rewind][native-digest-profile][assets]") {
+    auto fixture = std::make_unique<Fixture>("G1", 1, false);
+    auto& scene = fixture->scene;
+    PlayScene::NativeDigestProfile before;
+    REQUIRE(scene.nativeAgreementDigest(&before));
+    PlayScene::NativeDigestProfile unchanged;
+    REQUIRE(scene.nativeAgreementDigest(&unchanged));
+    CHECK(test::firstDivergence(before, unchanged).empty());
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): the fixture owns this live actor.
+    auto& actor = const_cast<PlayerActor&>(*scene.actor(0));
+    ++actor.save().progress().gold;
+    PlayScene::NativeDigestProfile gold;
+    REQUIRE(scene.nativeAgreementDigest(&gold));
+    CHECK(test::firstDivergence(before, gold) == "players");
+
+    fixture->world.setAmbientOffset(0.125f);
+    PlayScene::NativeDigestProfile ambient;
+    REQUIRE(scene.nativeAgreementDigest(&ambient));
+    CHECK(test::firstDivergence(gold, ambient) == "world");
 }
 
 TEST_CASE("native scenes measure a warmed sixteen slot ring with two and four participants",

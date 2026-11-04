@@ -2,6 +2,7 @@
 #include <bit>
 #include <chrono>
 #include <format>
+#include <optional>
 #include <string_view>
 
 #include "engine/io/NativeStateDigest.h"
@@ -213,9 +214,11 @@ PlayScene::nativeAgreementDigest(NativeDigestProfile* profile) {
     if (profile) {
         const auto began = std::chrono::steady_clock::now();
         registered = registerNativeDigestResources();
-        profile->samples.push_back({"resources", std::chrono::duration<f64, std::micro>(
-                                                     std::chrono::steady_clock::now() - began)
-                                                     .count()});
+        profile->samples.push_back(
+            {"resources",
+             std::chrono::duration<f64, std::micro>(std::chrono::steady_clock::now() - began)
+                 .count(),
+             std::nullopt});
     } else {
         registered = registerNativeDigestResources();
     }
@@ -223,6 +226,10 @@ PlayScene::nativeAgreementDigest(NativeDigestProfile* profile) {
         return std::nullopt;
     }
     NativeStateDigest digest{m_nativeDigestResources.resources()};
+    if (profile) {
+        // Nothing is hashed before the scene's owners: this is the empty stream's digest.
+        profile->samples.back().runningDigest = digest.checkedFinish();
+    }
     if (!appendSceneDigest(digest, nullptr, profile)) {
         return std::nullopt;
     }

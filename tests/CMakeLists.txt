@@ -283,6 +283,8 @@ add_executable(tests
     TestSupport.h
     SyntheticBytes.h
     SyntheticBytesTests.cpp
+    NativeStateSupport.h
+    NativeStateSupportTests.cpp
     fixtures/ReferenceObj.cpp
     fixtures/ReferenceObjTests.cpp
     fixtures/NativeModelFixture.cpp

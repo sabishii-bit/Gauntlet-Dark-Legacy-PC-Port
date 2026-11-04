@@ -1,4 +1,5 @@
 #include <chrono>
+#include <optional>
 #include <utility>
 
 #include "game/scenes/PlayScene.h"
@@ -85,9 +86,11 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
         }
         const auto began = std::chrono::steady_clock::now();
         const bool valid = append();
-        profile->samples.push_back(
-            {name, std::chrono::duration<f64, std::micro>(std::chrono::steady_clock::now() - began)
-                       .count()});
+        const auto ended = std::chrono::steady_clock::now();
+        // Hashed after the clock stops, so the timing holds only the owner's own append.
+        profile->samples.push_back({name,
+                                    std::chrono::duration<f64, std::micro>(ended - began).count(),
+                                    valid ? digest.checkedFinish() : std::nullopt});
         return valid;
     };
     const auto* data = saved != nullptr ? saved->m_data.get() : nullptr;

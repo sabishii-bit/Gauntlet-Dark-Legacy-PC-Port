@@ -13,6 +13,7 @@
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
@@ -365,6 +366,9 @@ public:
         struct Sample {
             std::string_view owner;
             f64 microseconds = 0;
+            /** The digest of the stream up to and including this owner; empty once the
+             * stream or this owner fails. */
+            std::optional<NativeStateDigest::Digest> runningDigest;
         };
         std::vector<Sample> samples;
     };

@@ -322,7 +322,11 @@ TEST_CASE("native watchdog profiling retains the exact unprofiled state digest",
     for (const auto& sample : profile.samples) {
         CAPTURE(sample.owner);
         CHECK(sample.microseconds >= 0);
+        CHECK(sample.runningDigest.has_value());
     }
+    // The last owner closes the stream, so its running digest is the scene's digest.
+    REQUIRE_FALSE(profile.samples.empty());
+    CHECK(profile.samples.back().runningDigest == expected);
     CHECK(fixture->scene.nativeAgreementDigest() == expected);
 }
 
