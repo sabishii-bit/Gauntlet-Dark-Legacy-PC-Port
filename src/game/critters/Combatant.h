@@ -189,7 +189,6 @@ public:
 
 private:
     friend class Critters;
-    friend class OpponentCombatCheckpoint;
     friend class CombatantCheckpoint;
     static constexpr usize kPlayerSlots = 4;
     static constexpr f32 kAngerMemory = 15.0f;

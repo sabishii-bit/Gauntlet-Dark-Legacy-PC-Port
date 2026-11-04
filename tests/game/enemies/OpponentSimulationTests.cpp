@@ -1,18 +1,23 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
+#include <memory>
+#include <optional>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/enemies/OpponentCheckpoint.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyMissiles.h"
+#include "game/enemies/Generators.h"
 #include "game/enemies/OpponentSimulation.h"
+#include "game/enemies/PlacedEnemies.h"
 #include "game/party/BodyCollision.h"
 #include "game/players/PlayerActor.h"
 
@@ -28,9 +33,17 @@ struct Island {
     Generators generators;
     EnemyMissiles missiles{45};
     OpponentSimulation simulation{generators, enemies, missiles};
-    OpponentCheckpoint diagnostics{generators, enemies, missiles};
     std::array<EnemyView, 1> players;
     std::vector<EnemyMissiles::Resource> resources;
+
+    /** The pools' native values at one moment, and the placements' when they take part. */
+    struct Saved {
+        Generators::LocalSnapshot generators;
+        std::unique_ptr<Enemies::LocalSnapshot> enemies =
+            std::make_unique<Enemies::LocalSnapshot>();
+        EnemyMissiles::LocalSnapshot missiles;
+        PlacedEnemies::LocalSnapshot placements;
+    };
 
     explicit Island(bool brood = false) {
         const auto root =
@@ -59,7 +72,33 @@ struct Island {
         }
         players[0].player = 0;
         players[0].position = {0, 0, 0};
-        REQUIRE(diagnostics.checkpoint(resources));
+    }
+
+    Saved save(const PlacedEnemies* placements = nullptr) const {
+        Saved saved;
+        generators.saveLocal(saved.generators);
+        REQUIRE(enemies.saveLocal(*saved.enemies));
+        missiles.saveLocal(saved.missiles);
+        if (placements != nullptr) {
+            placements->saveLocal(saved.placements);
+        }
+        return saved;
+    }
+    void restore(const Saved& saved, PlacedEnemies* placements = nullptr) {
+        REQUIRE(generators.restoreLocal(saved.generators));
+        REQUIRE(enemies.restoreLocal(*saved.enemies));
+        REQUIRE(missiles.restoreLocal(saved.missiles));
+        if (placements != nullptr) {
+            REQUIRE(placements->restoreLocal(saved.placements));
+        }
+    }
+    /** Whether the pools (and `placements`) hold exactly what `saved` does. */
+    bool holds(const Saved& saved, const PlacedEnemies* placements = nullptr) const {
+        const auto now = save(placements);
+        return generators.equalLocal(saved.generators, now.generators) &&
+               enemies.equalLocal(*saved.enemies, *now.enemies) &&
+               missiles.equalLocal(saved.missiles, now.missiles) &&
+               (placements == nullptr || placements->equalLocal(saved.placements, now.placements));
     }
 
     OpponentSimulation::Frame frame() const {
@@ -116,8 +155,11 @@ TEST_CASE("opponent island preserves the native generator enemy and missile phas
           "[diagnostics][opponent-simulation][assets]") {
     Island island(true);
     island.spawn({-5, 0, -18}, kThrowWay, kArcherStrength);
-    const auto initial = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
+    const auto initial = island.save();
+    const auto swarmBefore = island.enemies.checkpoint();
+    const auto shotsBefore = island.missiles.checkpoint(island.resources);
+    REQUIRE(swarmBefore);
+    REQUIRE(shotsBefore);
     const auto uploads = island.device.texturesCreated;
     Obstacle box;
     box.centre = {5, 0, 6};
@@ -133,27 +175,28 @@ TEST_CASE("opponent island preserves the native generator enemy and missile phas
     frame.fixtures = fixtures;
     frame.critters = critters;
     frame.bosses = bosses;
-    std::vector<OpponentState> expected;
+    std::vector<Island::Saved> expected;
     for (s32 tick = 0; tick < 150; ++tick) {
         frame.timeStopped = tick >= 40 && tick < 50;
         frame.stops =
             tick % 2 == 0 ? std::span<const MissileStop>{stops} : std::span<const MissileStop>{};
         island.native(frame);
-        const auto state = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(state);
-        expected.push_back(*state);
+        expected.push_back(island.save());
     }
-    REQUIRE(expected.back().enemies.nextInstance > initial->enemies.nextInstance);
-    REQUIRE(expected.back().missiles.nextInstance > initial->missiles.nextInstance);
-    REQUIRE(island.diagnostics.restore(*initial, island.resources));
+    const auto swarmAfter = island.enemies.checkpoint();
+    const auto shotsAfter = island.missiles.checkpoint(island.resources);
+    REQUIRE(swarmAfter);
+    REQUIRE(shotsAfter);
+    REQUIRE(swarmAfter->nextInstance > swarmBefore->nextInstance);
+    REQUIRE(shotsAfter->nextInstance > shotsBefore->nextInstance);
+    island.restore(initial);
     for (s32 tick = 0; tick < 150; ++tick) {
         CAPTURE(tick);
         frame.timeStopped = tick >= 40 && tick < 50;
         frame.stops =
             tick % 2 == 0 ? std::span<const MissileStop>{stops} : std::span<const MissileStop>{};
         island.simulation.advance(frame);
-        CHECK(island.diagnostics.checkpoint(island.resources) ==
-              expected[static_cast<usize>(tick)]);
+        CHECK(island.holds(expected[static_cast<usize>(tick)]));
     }
     const auto roster = OpponentSimulation::targets(island.enemies, critters, bosses);
     REQUIRE(roster.size() >= 2);
@@ -167,161 +210,30 @@ TEST_CASE("birth publication occurs after native AI and before missile movement"
     Island island;
     island.spawn({0, 0, 40});
     island.missiles.launch(EnemyMissileKind::arrow(), {80, 10, 80}, {80, 10, 100}, 1, nullptr, -1);
-    const auto baseline = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(baseline);
-    REQUIRE_FALSE(baseline->enemies.births.empty());
-    REQUIRE_FALSE(baseline->missiles.missiles.empty());
+    const auto swarm = island.enemies.checkpoint();
+    REQUIRE(swarm);
+    REQUIRE_FALSE(swarm->births.empty());
+    REQUIRE(island.missiles.count() != 0);
+    EnemyMissiles::LocalSnapshot shots;
+    island.missiles.saveLocal(shots);
     usize called = 0;
     island.simulation.advance(island.frame(), {}, [&] {
         ++called;
         const auto afterAi = island.enemies.checkpoint();
         REQUIRE(afterAi);
-        CHECK(afterAi->pendingTicks != baseline->enemies.pendingTicks);
-        CHECK(island.missiles.checkpoint(island.resources) == baseline->missiles);
-        CHECK(island.enemies.takeBirths() == baseline->enemies.births);
+        CHECK(afterAi->pendingTicks != swarm->pendingTicks);
+        EnemyMissiles::LocalSnapshot unmoved;
+        island.missiles.saveLocal(unmoved);
+        CHECK(island.missiles.equalLocal(shots, unmoved));
+        CHECK(island.enemies.takeBirths() == swarm->births);
     });
     CHECK(called == 1);
-    const auto advanced = island.diagnostics.checkpoint(island.resources);
+    const auto advanced = island.enemies.checkpoint();
     REQUIRE(advanced);
-    CHECK(advanced->enemies.births.empty());
-    CHECK(advanced->missiles != baseline->missiles);
-}
-
-TEST_CASE("opponent bundle restores nothing if any one checkpoint or preparation is invalid",
-          "[diagnostics][opponent-simulation][assets]") {
-    Island island(true);
-    island.spawn({0, 0, 15});
-    const auto initial = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
-    island.simulation.advance(island.frame());
-    const auto current = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(current);
-    auto invalid = *initial;
-    const s32 pool = GENERATE(0, 1, 2);
-    if (pool == 0) {
-        invalid.generators.scales.rate = std::numeric_limits<f32>::quiet_NaN();
-    } else if (pool == 1) {
-        invalid.enemies.pendingTicks = 2;
-    } else {
-        invalid.missiles.shrink = std::numeric_limits<f32>::quiet_NaN();
-    }
-    CHECK_FALSE(invalid.valid());
-    CHECK_FALSE(island.diagnostics.prepareRestore(invalid, island.resources));
-    CHECK_FALSE(island.diagnostics.restore(invalid, island.resources));
-    CHECK(island.diagnostics.checkpoint(island.resources) == current);
-
-    auto prepared = island.diagnostics.prepareRestore(*initial, island.resources);
-    REQUIRE(prepared);
-    CHECK(island.diagnostics.checkpoint(island.resources) == current);
-    // Invalidate only one component's token before the joint commit. The other
-    // two must remain at their current state, not partially return to initial.
-    if (pool == 0) {
-        REQUIRE(island.generators.restore(current->generators));
-    } else if (pool == 1) {
-        REQUIRE(island.enemies.restore(current->enemies));
-    } else {
-        REQUIRE(island.missiles.restore(current->missiles, island.resources));
-    }
-    CHECK_FALSE(island.diagnostics.canCommit(*prepared));
-    CHECK_FALSE(island.diagnostics.commitRestore(std::move(*prepared)));
-    CHECK(island.diagnostics.checkpoint(island.resources) == current);
-
-    prepared = island.diagnostics.prepareRestore(*initial, island.resources);
-    REQUIRE(prepared);
-    REQUIRE(island.diagnostics.commitRestore(std::move(*prepared)));
-    CHECK_FALSE(island.diagnostics.commitRestore(std::move(*prepared)));
-    CHECK(island.diagnostics.checkpoint(island.resources) == initial);
-}
-
-TEST_CASE("opponent bundle validates cross-pool generator references without rejecting orphans",
-          "[diagnostics][opponent-simulation][assets]") {
-    Island island(true);
-    const auto slot = island.enemies.spawn(
-        {.kind = kGruntKind, .position = {0, 0, 15}, .generator = 0, .placed = true},
-        island.players);
-    REQUIRE(slot);
-    const auto initial = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
-    REQUIRE(initial->generators.generators.size() == 1);
-    REQUIRE_FALSE(initial->enemies.generatorEvents.empty());
-
-    auto invalid = *initial;
-    invalid.enemies.enemies[static_cast<usize>(*slot)].generator = 1;
-    REQUIRE(invalid.enemies.valid());
-    CHECK_FALSE(invalid.valid());
-    CHECK_FALSE(island.diagnostics.prepareRestore(invalid, island.resources));
-    CHECK_FALSE(island.diagnostics.restore(invalid, island.resources));
-    CHECK(island.diagnostics.checkpoint(island.resources) == initial);
-
-    // Individually valid native owners must not make an invalid cross-pool
-    // reference acceptable on the optimized local-capture path either.
-    REQUIRE(island.enemies.restore(invalid.enemies));
-    CHECK_FALSE(island.diagnostics.checkpoint(island.resources));
-    CHECK(island.enemies.checkpoint() == invalid.enemies);
-    REQUIRE(island.enemies.restore(initial->enemies));
-    CHECK(island.diagnostics.checkpoint(island.resources) == initial);
-
-    invalid = *initial;
-    invalid.enemies.generatorEvents.push_back({1, EnemyGeneratorEvent::Kind::Detached});
-    REQUIRE(invalid.enemies.valid());
-    CHECK_FALSE(invalid.valid());
-    CHECK_FALSE(island.diagnostics.prepareRestore(invalid, island.resources));
-    CHECK_FALSE(island.diagnostics.restore(invalid, island.resources));
-    CHECK(island.diagnostics.checkpoint(island.resources) == initial);
-
-    // Native destruction retains the generator slot. generatorGone detaches its
-    // live children without erasing the earlier Born event waiting for do_items.
-    const auto destroyed = island.generators.strike(0, 100000, 0);
-    REQUIRE(destroyed);
-    REQUIRE(destroyed->destroyed);
-    island.enemies.generatorGone(0);
-    const auto orphan = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(orphan);
-    CHECK(orphan->enemies.enemies[static_cast<usize>(*slot)].generator == -1);
-    CHECK(orphan->generators.generators.front().state == 0);
-    CHECK(orphan->enemies.generatorEvents == initial->enemies.generatorEvents);
-    REQUIRE(island.diagnostics.restore(*initial, island.resources));
-    REQUIRE(island.diagnostics.restore(*orphan, island.resources));
-    CHECK(island.diagnostics.checkpoint(island.resources) == orphan);
-}
-
-TEST_CASE("opponent capture equals independently validated native children after each phase",
-          "[diagnostics][opponent-simulation][checkpoint-capture-validation][assets]") {
-    Island island(true);
-    island.spawn({0, 0, 15});
-    for (s32 tick = 0; tick < 12; ++tick) {
-        CAPTURE(tick);
-        island.simulation.advance(island.frame());
-        const auto generators = island.generators.checkpoint();
-        const auto enemies = island.enemies.checkpoint();
-        const auto missiles = island.missiles.checkpoint(island.resources);
-        REQUIRE(generators);
-        REQUIRE(enemies);
-        REQUIRE(missiles);
-        const OpponentState expected{*generators, *enemies, *missiles};
-        REQUIRE(expected.valid());
-        const auto captured = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(captured);
-        CHECK(captured->valid());
-        CHECK(*captured == expected);
-    }
-}
-
-TEST_CASE("opponent transaction preserves the exhausted native missile identity sentinel",
-          "[diagnostics][opponent-simulation][assets]") {
-    Island island(true);
-    auto exhausted = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(exhausted);
-    exhausted->missiles.nextInstance = 0;
-    REQUIRE(exhausted->valid());
-    auto prepared = island.diagnostics.prepareRestore(*exhausted, island.resources);
-    REQUIRE(prepared);
-    REQUIRE(island.diagnostics.canCommit(*prepared));
-    REQUIRE(island.diagnostics.commitRestore(std::move(*prepared)));
-    CHECK(island.diagnostics.checkpoint(island.resources) == exhausted);
-    island.missiles.launch(EnemyMissileKind::arrow(), {0, 3, 10}, {0, 3, 20}, 1, nullptr, -1);
-    CHECK(island.missiles.count() == 0);
-    CHECK(island.diagnostics.checkpoint(island.resources) == exhausted);
+    CHECK(advanced->births.empty());
+    EnemyMissiles::LocalSnapshot moved;
+    island.missiles.saveLocal(moved);
+    CHECK_FALSE(island.missiles.equalLocal(shots, moved));
 }
 
 TEST_CASE("native opponent motion updates player collision",
@@ -333,8 +245,8 @@ TEST_CASE("native opponent motion updates player collision",
         island.native(island.frame());
     }
     island.players[0].position = {0, 0, 0};
-    const auto baseline = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(baseline);
+    const auto baseline = island.save();
+    const Vec3 start = island.enemies.positionOf(slot);
     const auto frozen = island.enemies.targets();
     REQUIRE(frozen.size() == 1);
     PlayerActor actor;
@@ -344,53 +256,30 @@ TEST_CASE("native opponent motion updates player collision",
                                                       &island.collision);
     bool collisionChanged = false;
     for (s32 tick = 0; tick < 90; ++tick) {
-        const auto before = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(before);
+        const auto before = island.save();
         island.native(island.frame());
-        const auto native = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(native);
+        const auto native = island.save();
         const auto nativeTargets = island.enemies.targets();
         const Vec3 expected = BodyCollision::resolveMovement(actor, actor.position(), desired,
                                                              nativeTargets, {}, &island.collision);
-        REQUIRE(island.diagnostics.restore(*before, island.resources));
+        island.restore(before);
         island.simulation.advance(island.frame());
-        CHECK(island.diagnostics.checkpoint(island.resources) == native);
+        CHECK(island.holds(native));
         const Vec3 resolved = BodyCollision::resolveMovement(
             actor, actor.position(), desired, island.enemies.targets(), {}, &island.collision);
         CHECK(glm::distance(resolved, expected) < 0.00001f);
         collisionChanged = collisionChanged || glm::distance(resolved, stale) > 0.01f;
     }
     REQUIRE(collisionChanged);
-    CHECK(island.enemies.positionOf(slot) !=
-          baseline->enemies.enemies[static_cast<usize>(slot)].position);
+    CHECK(island.enemies.positionOf(slot) != start);
     // Body resolution changes actual movement without mutating the character save.
     const auto save = actor.save().toJson();
     actor.place(BodyCollision::resolveMovement(actor, actor.position(), desired,
                                                island.enemies.targets(), {}, &island.collision));
     CHECK(glm::distance(actor.position(), stale) > 0.01f);
     CHECK(actor.save().toJson() == save);
-    REQUIRE(island.diagnostics.restore(*baseline, island.resources));
-    CHECK(island.diagnostics.checkpoint(island.resources) == baseline);
-}
-
-TEST_CASE("clearing one pool invalidates an entire prepared opponent transaction",
-          "[diagnostics][opponent-simulation][assets]") {
-    Island island(true);
-    island.spawn({0, 0, 15});
-    island.missiles.launch(EnemyMissileKind::arrow(), {20, 4, 20}, {20, 4, 40}, 1, nullptr, -1);
-    const auto initial = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
-    auto prepared = island.diagnostics.prepareRestore(*initial, island.resources);
-    REQUIRE(prepared);
-    island.simulation.advance(island.frame());
-    island.missiles.clear();
-    const auto cleared = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(cleared);
-    CHECK_FALSE(island.diagnostics.canCommit(*prepared));
-    CHECK_FALSE(island.diagnostics.commitRestore(std::move(*prepared)));
-    CHECK(island.diagnostics.checkpoint(island.resources) == cleared);
-    CHECK(cleared->enemies.nextInstance > initial->enemies.nextInstance);
-    CHECK(cleared->missiles.missiles.empty());
+    island.restore(baseline);
+    CHECK(island.holds(baseline));
 }
 
 TEST_CASE("opponent phase advances native flights and chasing bodies",
@@ -403,27 +292,21 @@ TEST_CASE("opponent phase advances native flights and chasing bodies",
     }
     island.players[0].position = {0, 0, 0};
     island.missiles.launch(EnemyMissileKind::arrow(), {80, 10, 80}, {80, 10, 100}, 1, nullptr, -1);
-    const auto initial = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
-    REQUIRE(initial->missiles.missiles.size() == 1);
+    REQUIRE(island.missiles.count() == 1);
+    const Vec3 shot = island.missiles.missile(0).position;
+    const Vec3 body = island.enemies.positionOf(slot);
     for (s32 tick = 0; tick < 12; ++tick) {
         CAPTURE(tick);
-        const auto before = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(before);
+        const auto before = island.save();
         island.native(island.frame());
-        const auto expected = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(expected);
-        REQUIRE(island.diagnostics.restore(*before, island.resources));
+        const auto expected = island.save();
+        island.restore(before);
         island.simulation.advance(island.frame());
-        CHECK(island.diagnostics.checkpoint(island.resources) == expected);
+        CHECK(island.holds(expected));
     }
-    const auto result = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(result);
-    REQUIRE(result->missiles.missiles.size() == 1);
-    CHECK(result->missiles.missiles.front().position !=
-          initial->missiles.missiles.front().position);
-    CHECK(result->enemies.enemies[static_cast<usize>(slot)].position !=
-          initial->enemies.enemies[static_cast<usize>(slot)].position);
+    REQUIRE(island.missiles.count() == 1);
+    CHECK(island.missiles.missile(0).position != shot);
+    CHECK(island.enemies.positionOf(slot) != body);
 }
 
 TEST_CASE("opponent phase preserves native shooting minds and pending throws",
@@ -436,28 +319,26 @@ TEST_CASE("opponent phase preserves native shooting minds and pending throws",
     }
     SECTION("previously requested throw survives a change to a chasing mind") {
         const auto slot = island.spawn({0, 0, 20});
-        auto state = island.diagnostics.checkpoint(island.resources);
+        auto state = island.enemies.checkpoint();
         REQUIRE(state);
-        auto& animator = state->enemies.enemies[static_cast<usize>(slot)].animator;
+        auto& animator = state->enemies[static_cast<usize>(slot)].animator;
         REQUIRE(animator);
         animator->requested = EnemyAction::Throw;
-        REQUIRE(island.diagnostics.restore(*state, island.resources));
+        REQUIRE(island.enemies.restore(*state));
     }
     SECTION("brood can create a shooting mind in the same update") {
-        auto state = island.diagnostics.checkpoint(island.resources);
+        auto state = island.generators.checkpoint();
         REQUIRE(state);
-        REQUIRE(state->generators.generators.size() == 1);
-        state->generators.generators.front().algorithm = kThrowWay;
-        REQUIRE(island.diagnostics.restore(*state, island.resources));
+        REQUIRE(state->generators.size() == 1);
+        state->generators.front().algorithm = kThrowWay;
+        REQUIRE(island.generators.restore(*state));
     }
-    const auto before = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(before);
+    const auto before = island.save();
     island.native(island.frame());
-    const auto expected = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(expected);
-    REQUIRE(island.diagnostics.restore(*before, island.resources));
+    const auto expected = island.save();
+    island.restore(before);
     island.simulation.advance(island.frame());
-    CHECK(island.diagnostics.checkpoint(island.resources) == expected);
+    CHECK(island.holds(expected));
 }
 
 TEST_CASE("archer and bomber releases match native phase through the first impact",
@@ -473,40 +354,42 @@ TEST_CASE("archer and bomber releases match native phase through the first impac
         // Humanoids emerge ahead of the hut. Put the target on that same side
         // so the native launch sweep does not terminate inside the generator.
         island.players[0].position = {60, 0, 85};
-        auto state = island.diagnostics.checkpoint(island.resources);
+        auto state = island.generators.checkpoint();
         REQUIRE(state);
-        state->generators.generators.front().algorithm = way;
-        state->generators.generators.front().tier = strength;
-        REQUIRE(island.diagnostics.restore(*state, island.resources));
+        state->generators.front().algorithm = way;
+        state->generators.front().tier = strength;
+        REQUIRE(island.generators.restore(*state));
     } else {
         island.spawn({0, 0, -20}, way, strength);
     }
     auto frame = island.frame();
     frame.ticks = ticks;
     frame.seconds = static_cast<f32>(ticks) / 60;
-    const auto baseline = island.diagnostics.checkpoint(island.resources);
+    const auto baseline = island.missiles.checkpoint(island.resources);
     REQUIRE(baseline);
     const auto uploads = island.device.texturesCreated;
     bool released = false;
     bool reachedBoundary = false;
     for (s32 tick = 0; tick < 600; tick += ticks) {
         CAPTURE(bred, bomb, tick, ticks);
-        const auto before = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(before);
+        const auto before = island.save();
         island.native(frame);
-        const auto expected = island.diagnostics.checkpoint(island.resources);
-        REQUIRE(expected);
-        REQUIRE(island.diagnostics.restore(*before, island.resources));
+        const auto expected = island.save();
+        const auto shots = island.missiles.checkpoint(island.resources);
+        const auto swarm = island.enemies.checkpoint();
+        REQUIRE(shots);
+        REQUIRE(swarm);
+        island.restore(before);
         island.simulation.advance(frame);
-        CHECK(island.diagnostics.checkpoint(island.resources) == expected);
-        if (!expected->missiles.hits.empty() || !expected->enemies.blows.empty()) {
+        CHECK(island.holds(expected));
+        if (!shots->hits.empty() || !swarm->blows.empty()) {
             reachedBoundary = true;
             break;
         }
-        if (expected->missiles.nextInstance > baseline->missiles.nextInstance) {
+        if (shots->nextInstance > baseline->nextInstance) {
             released = true;
-            REQUIRE_FALSE(expected->missiles.missiles.empty());
-            CHECK(expected->missiles.missiles.front().kind.slot ==
+            REQUIRE_FALSE(shots->missiles.empty());
+            CHECK(shots->missiles.front().kind.slot ==
                   (bomb ? EnemyMissileKind::kBomb : EnemyMissileKind::kArrow));
         }
     }
@@ -519,19 +402,16 @@ TEST_CASE("native opponent phase still dispatches scenery in its missile phase",
           "[diagnostics][opponent-simulation][assets]") {
     Island island;
     island.missiles.burst({0, 0, 0}, 10, 5, 0, 1, -1);
-    const auto before = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(before);
+    const auto before = island.save();
     usize called = 0;
     island.simulation.advance(island.frame(), [&](const auto&, auto& contacts) {
         ++called;
         contacts.push_back(12);
     });
     CHECK(called == 1);
-    const auto state = island.diagnostics.checkpoint(island.resources);
-    REQUIRE(state);
-    REQUIRE(state->missiles.bursts.size() == 1);
-    CHECK(state->missiles.bursts.front().scenery == std::vector<s32>{12});
-    REQUIRE(island.diagnostics.restore(*before, island.resources));
+    REQUIRE(island.missiles.bursts().size() == 1);
+    CHECK(island.missiles.bursts().front().scenery == std::vector<s32>{12});
+    island.restore(before);
     CHECK(called == 1);
 }
 
@@ -555,12 +435,13 @@ TEST_CASE("ordinary placements run their native watch phase before generators an
                      ordinaryPlacement({0, 0, 80})});
     placements.observe(ViewVolume{}, {});
     OpponentSimulation combined{island.generators, island.enemies, island.missiles, &placements};
-    OpponentCheckpoint diagnostics{island.generators, island.enemies, island.missiles, &placements};
-    const auto initial = diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
-    REQUIRE(initial->placements);
+    const auto initial = island.save(&placements);
+    const auto swarmBefore = island.enemies.checkpoint();
+    REQUIRE(swarmBefore);
     const auto uploads = island.device.texturesCreated;
-    std::vector<OpponentState> expected;
+    std::vector<Island::Saved> expected;
+    std::vector<usize> firstPending;
+    std::optional<Enemies::Checkpoint> firstSwarm;
     for (s32 tick = 0; tick < 12; ++tick) {
         // Independent native LevelOpponents::watch -> update order; no replay
         // helper participates in the expected activation or motion.
@@ -568,47 +449,22 @@ TEST_CASE("ordinary placements run their native watch phase before generators an
             island.enemies.spawn(row.spawn, {}, island.generators.obstacles());
         });
         island.native(island.frame());
-        const auto state = diagnostics.checkpoint(island.resources);
-        REQUIRE(state);
-        expected.push_back(*state);
+        expected.push_back(island.save(&placements));
+        if (tick == 0) {
+            firstPending.assign(placements.pending().begin(), placements.pending().end());
+            firstSwarm = island.enemies.checkpoint();
+        }
     }
-    REQUIRE(expected.front().placements->pending == std::vector<usize>{2});
-    REQUIRE(expected.front().enemies.nextInstance > initial->enemies.nextInstance);
-    REQUIRE(diagnostics.restore(*initial, island.resources));
+    REQUIRE(firstPending == std::vector<usize>{2});
+    REQUIRE(firstSwarm);
+    REQUIRE(firstSwarm->nextInstance > swarmBefore->nextInstance);
+    island.restore(initial, &placements);
     for (usize tick = 0; tick < expected.size(); ++tick) {
         CAPTURE(tick);
         combined.advance(island.frame());
-        CHECK(diagnostics.checkpoint(island.resources) == expected[tick]);
+        CHECK(island.holds(expected[tick], &placements));
     }
     CHECK(island.device.texturesCreated == uploads);
-}
-
-TEST_CASE("stale placement preparation rejects the whole opponent transaction",
-          "[diagnostics][opponent-simulation][opponent-placements][assets]") {
-    Island island(true);
-    PlacedEnemies placements;
-    placements.bind({ordinaryPlacement({0, 0, 20})});
-    OpponentCheckpoint diagnostics{island.generators, island.enemies, island.missiles, &placements};
-    const auto initial = diagnostics.checkpoint(island.resources);
-    REQUIRE(initial);
-    auto prepared = diagnostics.prepareRestore(*initial, island.resources);
-    REQUIRE(prepared);
-    island.native(island.frame());
-    placements.observe(ViewVolume{}, {1, 0, 0});
-    const auto current = diagnostics.checkpoint(island.resources);
-    REQUIRE(current);
-    CHECK_FALSE(diagnostics.canCommit(*prepared));
-    CHECK_FALSE(diagnostics.commitRestore(std::move(*prepared)));
-    CHECK(diagnostics.checkpoint(island.resources) == current);
-    auto forged = *current;
-    forged.placements->roster.front().spawn.position.x += 1;
-    REQUIRE(forged.valid());
-    CHECK_FALSE(diagnostics.prepareRestore(forged, island.resources));
-    CHECK(diagnostics.checkpoint(island.resources) == current);
-    forged = *current;
-    forged.placements.reset();
-    CHECK_FALSE(diagnostics.prepareRestore(forged, island.resources));
-    CHECK_FALSE(island.diagnostics.prepareRestore(*current, island.resources));
 }
 
 } // namespace

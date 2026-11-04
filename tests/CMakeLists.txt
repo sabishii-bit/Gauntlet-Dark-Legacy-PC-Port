@@ -14,7 +14,6 @@ add_library(game_diagnostics STATIC
     game/critters/CrittersCheckpoint.cpp
     game/enemies/PlacedEnemiesCheckpoint.cpp
     game/party/PlayerAttacksCheckpoint.cpp
-    game/enemies/OpponentCombatCheckpoint.cpp
     game/level/LevelFixturesCheckpoint.cpp
     game/level/ItemFigureCheckpoint.cpp
     game/critters/CombatantProjectilesCheckpoint.cpp
@@ -52,11 +51,8 @@ add_library(game_diagnostics STATIC
     game/rollback/PlayerTurboCheckpoint.cpp
     game/rollback/PlayerKnockbackCheckpoint.cpp
     game/party/PlayerRuntimeCheckpoint.cpp
-    game/enemies/OpponentState.cpp
     game/enemies/OpponentResources.cpp
-    game/enemies/OpponentCheckpoint.cpp
     game/enemies/CombatResources.cpp
-    game/enemies/CombatRollbackCheckpoint.cpp
     game/scenes/StageResources.cpp)
 target_include_directories(game_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(game_diagnostics PUBLIC gdl::game PRIVATE lz4::lz4)
@@ -139,9 +135,8 @@ add_executable(tests
     game/enemies/OpponentPlacementsTests.cpp
     game/party/PlayerAttacksCheckpointTests.cpp
     game/party/PlayerRuntimeCheckpointTests.cpp
-    game/enemies/CombatRollbackCheckpointTests.cpp
     game/rollback/PlayerHealthCheckpointTests.cpp
-    game/enemies/OpponentCombatCheckpointTests.cpp
+    game/enemies/LevelOpponentsLocalRewindTests.cpp
     game/enemies/OpponentLootCheckpointTests.cpp
     game/rollback/CanonicalDigestSinkTests.cpp
     game/party/PlayerCompanionCheckpointTests.cpp
@@ -756,9 +751,8 @@ if(GDL_ENABLE_NETPLAY)
         game/enemies/OpponentPlacementsTests.cpp
         game/party/PlayerAttacksCheckpointTests.cpp
         game/party/PlayerRuntimeCheckpointTests.cpp
-        game/enemies/CombatRollbackCheckpointTests.cpp
         game/rollback/PlayerHealthCheckpointTests.cpp
-        game/enemies/OpponentCombatCheckpointTests.cpp
+        game/enemies/LevelOpponentsLocalRewindTests.cpp
         game/enemies/OpponentLootCheckpointTests.cpp
         game/rollback/CanonicalDigestSinkTests.cpp
         game/party/PlayerCompanionCheckpointTests.cpp
@@ -921,7 +915,7 @@ if(GDL_ENABLE_NETPLAY)
         game/level/TriggerCuesTests.cpp
         game/party/PlayerAttacksCheckpointTests.cpp
         game/party/MoveStrikesCheckpointTests.cpp
-        game/enemies/OpponentCombatCheckpointTests.cpp
+        game/enemies/LevelOpponentsLocalRewindTests.cpp
         game/enemies/EnemyMissilesCheckpointTests.cpp
         game/enemies/PlacedEnemiesTests.cpp
         game/critters/CritterStatuesCheckpointTests.cpp

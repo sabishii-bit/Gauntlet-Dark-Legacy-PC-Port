@@ -172,7 +172,6 @@ private:
         bool operator==(const Statue& other) const;
         friend void visitNativeState(NativeStateDigest& digest, const Statue& value);
     };
-    friend class OpponentCombatCheckpoint;
     static Obstacle obstacleOf(const Statue& statue);
     static bool wakesAt(const Statue& statue, const Vec3& position, f32 radius, f32 height);
     s32 contactCell(f32 coordinate, f32 origin) const;

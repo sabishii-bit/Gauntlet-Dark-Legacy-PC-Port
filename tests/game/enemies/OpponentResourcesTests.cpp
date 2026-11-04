@@ -8,7 +8,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/enemies/OpponentCheckpoint.h"
+#include "game/enemies/Generators.h"
 #include "game/enemies/OpponentResources.h"
 
 namespace {
@@ -21,7 +21,6 @@ struct NativePools {
     Enemies enemies;
     Generators generators;
     EnemyMissiles missiles{813};
-    OpponentCheckpoint simulation{generators, enemies, missiles};
 
     explicit NativePools(std::span<const s32> kinds, s32 most = Enemies::kMost) {
         const auto root =
@@ -34,8 +33,9 @@ struct NativePools {
         REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
     }
 
-    OpponentState capture() const {
-        const auto state = OpponentResources::capture(generators, enemies, missiles);
+    /** The missiles in flight, named by the stock models of this pool's own swarm. */
+    EnemyMissiles::Checkpoint flights() const {
+        const auto state = missiles.checkpoint(OpponentResources::missiles(enemies));
         REQUIRE(state);
         return *state;
     }
@@ -64,10 +64,7 @@ TEST_CASE("native opponent resource IDs cover every kind and slot without instan
         CHECK(OpponentResources::missileId(kGruntKind, slot) == 0);
     }
     const Enemies unopened;
-    const Generators unbound;
-    const EnemyMissiles empty;
     CHECK(OpponentResources::missiles(unopened).empty());
-    CHECK_FALSE(OpponentResources::capture(unbound, unopened, empty));
 }
 
 TEST_CASE("native opponent resource manifests restore independent owners in reverse load order",
@@ -118,11 +115,11 @@ TEST_CASE("native opponent resource manifests restore independent owners in reve
     CHECK(guest.enemies.count() == 0);
     host.missiles.launch(EnemyMissileKind::deathShot(), {20, 10, 0}, {20, 10, 100}, 1, nullptr, -1);
     host.missiles.update(0.173f, nullptr, {});
-    const auto expected = host.capture();
-    REQUIRE(expected.missiles.missiles.size() == resources.size() + 1);
-    CHECK(expected.missiles.missiles.back().resource == 0);
-    REQUIRE(guest.simulation.restore(expected, peerResources));
-    CHECK(guest.capture() == expected);
+    const auto expected = host.flights();
+    REQUIRE(expected.missiles.size() == resources.size() + 1);
+    CHECK(expected.missiles.back().resource == 0);
+    REQUIRE(guest.missiles.restore(expected, peerResources));
+    CHECK(guest.flights() == expected);
     for (usize flight = 0; flight < resources.size(); ++flight) {
         CHECK(guest.missiles.missile(flight).model == peerResources[flight].model);
         CHECK(guest.missiles.missile(flight).model != resources[flight].model);
@@ -132,7 +129,7 @@ TEST_CASE("native opponent resource manifests restore independent owners in reve
         CAPTURE(tick);
         host.missiles.update(1.0f / 60, nullptr, {});
         guest.missiles.update(1.0f / 60, nullptr, {});
-        CHECK(guest.capture() == host.capture());
+        CHECK(guest.flights() == host.flights());
     }
     CHECK(host.device.texturesCreated == hostUploads);
     CHECK(guest.device.texturesCreated == guestUploads);
@@ -153,7 +150,7 @@ TEST_CASE("native opponent missile identity outlives a recycled shooter slot",
     const auto* arrow = host.enemies.projectileModel(kGruntKind, 0);
     REQUIRE(arrow != nullptr);
     host.missiles.launch(EnemyMissileKind::arrow(), {0, 6, 0}, {0, 6, 50}, 1, arrow, 0);
-    const auto before = host.capture();
+    const auto before = host.flights();
     EnemyHit hit;
     hit.damage = 10000;
     hit.flags = EnemyHit::kMagic;
@@ -164,22 +161,22 @@ TEST_CASE("native opponent missile identity outlives a recycled shooter slot",
     REQUIRE(host.enemies.count() == 0);
     spawn.kind = 13;
     REQUIRE(host.enemies.spawn(spawn, {}) == 0);
-    const auto after = host.capture();
-    REQUIRE(after.missiles.missiles.size() == 1);
-    CHECK(after.missiles == before.missiles);
-    CHECK(after.enemies.enemies[0].kind == 13);
-    CHECK(after.missiles.missiles[0].shooter == 0);
-    CHECK(after.missiles.missiles[0].resource == OpponentResources::missileId(kGruntKind, 0));
+    const auto after = host.flights();
+    REQUIRE(after.missiles.size() == 1);
+    CHECK(after == before);
+    CHECK(host.enemies.kindOf(0) == 13);
+    CHECK(after.missiles[0].shooter == 0);
+    CHECK(after.missiles[0].resource == OpponentResources::missileId(kGruntKind, 0));
     const auto resources = OpponentResources::missiles(guest.enemies);
     const auto uploads = guest.device.texturesCreated;
     const auto updates = guest.device.textureUpdates;
-    REQUIRE(guest.simulation.restore(after, resources));
-    CHECK(guest.capture() == after);
+    REQUIRE(guest.missiles.restore(after, resources));
+    CHECK(guest.flights() == after);
     CHECK(guest.missiles.missile(0).model == guest.enemies.projectileModel(kGruntKind, 0));
     CHECK(guest.missiles.missile(0).model != guest.enemies.projectileModel(13, 0));
     host.missiles.update(0.2f, nullptr, {});
     guest.missiles.update(0.2f, nullptr, {});
-    CHECK(guest.capture() == host.capture());
+    CHECK(guest.flights() == host.flights());
     CHECK(guest.device.texturesCreated == uploads);
     CHECK(guest.device.textureUpdates == updates);
 }
@@ -201,7 +198,7 @@ TEST_CASE("opponent capture refuses unknown visible models without losing native
     const auto generators = pools.generators.checkpoint();
     const auto enemies = pools.enemies.checkpoint();
     const auto flight = pools.missiles.missile(0);
-    CHECK_FALSE(OpponentResources::capture(pools.generators, pools.enemies, pools.missiles));
+    CHECK_FALSE(pools.missiles.checkpoint(OpponentResources::missiles(pools.enemies)));
     CHECK(pools.generators.checkpoint() == generators);
     CHECK(pools.enemies.checkpoint() == enemies);
     REQUIRE(pools.missiles.count() == 1);
@@ -212,9 +209,9 @@ TEST_CASE("opponent capture refuses unknown visible models without losing native
     CHECK(pools.device.textureUpdates == updates);
     pools.missiles.clear(); // the deliberately foreign model must outlive the flight
     pools.missiles.launch(EnemyMissileKind::arrow(), {0, 6, 0}, {0, 6, 50}, 1, nullptr, -1);
-    const auto invisible = pools.capture();
-    REQUIRE(invisible.missiles.missiles.size() == 1);
-    CHECK(invisible.missiles.missiles[0].resource == 0);
+    const auto invisible = pools.flights();
+    REQUIRE(invisible.missiles.size() == 1);
+    CHECK(invisible.missiles[0].resource == 0);
 }
 
 TEST_CASE("missing opponent stock resources reject corrections atomically without loading",
@@ -226,36 +223,16 @@ TEST_CASE("missing opponent stock resources reject corrections atomically withou
     const auto* arrow = host.enemies.projectileModel(13, 0);
     REQUIRE(arrow != nullptr);
     host.missiles.launch(EnemyMissileKind::arrow(), {0, 6, 0}, {0, 6, 50}, 1, arrow, 0);
-    const auto correction = host.capture();
-    const auto before = guest.capture();
+    const auto correction = host.flights();
+    const auto before = guest.flights();
     const auto uploads = guest.device.texturesCreated;
     const auto updates = guest.device.textureUpdates;
     const auto resources = OpponentResources::missiles(guest.enemies);
-    CHECK_FALSE(guest.missiles.restore(correction.missiles, resources));
-    CHECK_FALSE(guest.simulation.restore(correction, resources));
-    CHECK(guest.capture() == before);
+    CHECK_FALSE(guest.missiles.restore(correction, resources));
+    CHECK(guest.flights() == before);
     CHECK_FALSE(guest.enemies.kindLoaded(13));
     CHECK(guest.device.texturesCreated == uploads);
     CHECK(guest.device.textureUpdates == updates);
-}
-
-TEST_CASE("opponent capture rejects invalid coupling without draining any event queue",
-          "[rollback][opponent-resources][assets]") {
-    constexpr std::array kKinds{kGruntKind};
-    NativePools pools(kKinds);
-    auto state = pools.enemies.checkpoint();
-    REQUIRE(state);
-    state->generatorEvents.push_back({0, EnemyGeneratorEvent::Kind::Born});
-    state->cues.push_back({.kind = EnemyCue::Kind::Arrow, .enemyKind = kGruntKind});
-    REQUIRE(state->valid());
-    REQUIRE(pools.enemies.restore(*state));
-    CHECK_FALSE(OpponentResources::capture(pools.generators, pools.enemies, pools.missiles));
-    CHECK(pools.enemies.checkpoint() == state);
-    CHECK(pools.enemies.takeGeneratorEvents() == state->generatorEvents);
-    CHECK(pools.enemies.takeCues() == state->cues);
-    const auto clean = pools.capture();
-    CHECK(clean.enemies.generatorEvents.empty());
-    CHECK(clean.enemies.cues.empty());
 }
 
 } // namespace

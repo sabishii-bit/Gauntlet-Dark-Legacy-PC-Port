@@ -1,7 +1,6 @@
 #include "game/enemies/OpponentResources.h"
 
 #include <cstddef>
-#include <utility>
 
 namespace gdl::game {
 
@@ -25,26 +24,6 @@ std::vector<EnemyMissiles::Resource> OpponentResources::missiles(const Enemies& 
         }
     }
     return result;
-}
-
-std::optional<OpponentState> OpponentResources::capture(const Generators& generators,
-                                                        const Enemies& enemies,
-                                                        const EnemyMissiles& projectiles) {
-    auto breeding = generators.checkpoint();
-    if (!breeding) {
-        return std::nullopt;
-    }
-    auto swarm = enemies.checkpoint();
-    if (!swarm) {
-        return std::nullopt;
-    }
-    const auto resources = missiles(enemies);
-    auto flights = projectiles.checkpoint(resources);
-    if (!flights) {
-        return std::nullopt;
-    }
-    OpponentState result{std::move(*breeding), std::move(*swarm), std::move(*flights)};
-    return result.valid() ? std::optional{std::move(result)} : std::nullopt;
 }
 
 } // namespace gdl::game

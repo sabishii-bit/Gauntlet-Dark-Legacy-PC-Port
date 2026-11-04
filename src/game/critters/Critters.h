@@ -157,7 +157,6 @@ public:
     }
 
 private:
-    friend class OpponentCombatCheckpoint;
     friend class CrittersCheckpoint;
     s32 m_highlightedId = -1;                        ///< the developer console's selection
     const SelectionHighlight* m_highlight = nullptr; ///< how it is marked out, while drawn

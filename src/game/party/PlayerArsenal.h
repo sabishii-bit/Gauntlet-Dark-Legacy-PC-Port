@@ -193,7 +193,6 @@ public:
 private:
     void appendBindingDigest(NativeStateDigest& digest) const;
     friend class PlayerArsenalCheckpoint;
-    friend class CombatRollbackCheckpoint;
     MissileStreak weaponStreak(const PlayerActor& actor, const Texture* texture,
                                bool superShot = false) const;
     void bindWeaponAppearance(const PlayerActor& actor, PlayerFigure& figure,

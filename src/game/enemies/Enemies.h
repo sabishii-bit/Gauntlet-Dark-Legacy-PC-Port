@@ -722,7 +722,6 @@ private:
     static Vec3 bodyCentre(const Enemy& enemy);
     MeleeGeometry::Target meleeBody(s32 id) const;
 
-    friend class OpponentCombatCheckpoint;
     RenderDevice* m_device = nullptr;
     s32 m_levelCap = kMost; ///< the cap the level opened with, never simulation state
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);

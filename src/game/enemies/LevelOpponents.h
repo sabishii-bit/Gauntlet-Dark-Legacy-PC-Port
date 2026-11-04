@@ -88,7 +88,52 @@ public:
     /** Imported boss mesh effects share their parent's presented hierarchy;
      * ordinary levels retain their existing effect interpolation unchanged. */
     std::vector<EffectTrees::DrawAttachment> presentedBossEffects(f32 alpha) const;
+    /** What a slain great one lets go of, thrown up until it lands and opens. */
+    struct Bag {
+        std::optional<usize> item;
+        std::string name;
+        Vec3 position{0};
+        f32 velocity = 20;
+        f32 age = 0;
+        f32 pitch = 0;
+        f32 spin = 0;
+        u32 effect = 0;
+        bool landed = false;
+        bool operator==(const Bag&) const = default;
+    };
+    /** What players' blows on generators earned: who, how much, whether destroyed; drained
+     * on the next settling. */
+    struct GeneratorReward {
+        s32 player = -1;
+        s32 experience = 0;
+        bool destroyed = false;
+        bool operator==(const GeneratorReward&) const = default;
+    };
     usize bagCount() const { return m_sim.bags.size(); }
+    /** The bags thrown and not yet let go, in the order they were thrown. */
+    std::span<const Bag> thrownBags() const { return m_sim.bags; }
+    /** The seed the next bag's spin is drawn from. */
+    u32 bagSpinSeed() const { return m_sim.bagSeed; }
+    /** The pickup the great one in pool slot `critter` holds; none when it holds nothing. */
+    std::optional<usize> carriedBy(s32 critter) const {
+        if (critter < 0 || static_cast<usize>(critter) >= m_sim.carried.size()) {
+            return std::nullopt;
+        }
+        return m_sim.carried[static_cast<usize>(critter)];
+    }
+    /** Hits by player `player` on bred enemies since it last destroyed a generator. */
+    s32 hitStreakOf(s32 player) const {
+        if (player < 0 || static_cast<usize>(player) >= m_sim.hitStreak.size()) {
+            return 0;
+        }
+        return m_sim.hitStreak[static_cast<usize>(player)];
+    }
+    /** The lessons waiting for the next settling, (lesson, player) in the order they go out. */
+    std::span<const std::pair<s32, s32>> pendingLessons() const { return m_sim.lessons; }
+    /** The generator rewards waiting for the next settling, in the order they were earned. */
+    std::span<const GeneratorReward> pendingGeneratorRewards() const {
+        return m_sim.generatorRewards;
+    }
     /** Recorder attachment preflight, never a gameplay decision or mixer poll.
      * Paused/silent legacy Death contact has no logical birth to carry across. */
     bool hasLegacyAudio() const {
@@ -197,7 +242,6 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
-    friend class OpponentCombatCheckpoint;
     // Identifies the lifetime of the borrowed level services, not gameplay state.
     u64 m_bindingGeneration = 1;
     /** Plays `name` at `level` of 255 as heard from where the players stand. */
@@ -259,18 +303,6 @@ private:
     void playBirths();
     PlacedEnemies m_placements;
     CritterStatues m_statues;
-    struct Bag {
-        std::optional<usize> item;
-        std::string name;
-        Vec3 position{0};
-        f32 velocity = 20;
-        f32 age = 0;
-        f32 pitch = 0;
-        f32 spin = 0;
-        u32 effect = 0;
-        bool landed = false;
-        bool operator==(const Bag&) const = default;
-    };
     void updateBags(f32 seconds);
     void releaseBag(const Bag& bag);
     /** Sends a bag up where it lies, to open where it lands. */
@@ -393,14 +425,6 @@ private:
     /** Holds the swarm, the great ones and their missiles at the shrinkers' scale. */
     void shrinkOpponents(std::span<const PlayerRuntime> players);
 
-    /** What players' blows on generators earned: who, how much, whether destroyed; drained
-     * on the next settling. */
-    struct GeneratorReward {
-        s32 player = -1;
-        s32 experience = 0;
-        bool destroyed = false;
-        bool operator==(const GeneratorReward&) const = default;
-    };
     /** Mutable coordinator state; archives, services and playback handles stay outside. */
     struct Simulation {
         std::vector<Cloud> clouds;

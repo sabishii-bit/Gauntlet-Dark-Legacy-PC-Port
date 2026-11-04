@@ -164,7 +164,6 @@ public:
     static constexpr f32 kWakeArmSeconds = 2.0f; ///< asleep at least this long after placing
 
 private:
-    friend class OpponentCombatCheckpoint;
     void stageLegend(s32 ticks);
     void strikeWithLegend();
 

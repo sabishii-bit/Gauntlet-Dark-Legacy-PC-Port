@@ -181,7 +181,6 @@ public:
 private:
     friend struct PlayerAttacksTestPeer;
     friend class PlayerAttacksCheckpoint;
-    friend class CombatRollbackCheckpoint;
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
     u64 m_restoreGeneration = 1;
     u64 m_localEpoch = 0;

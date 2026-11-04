@@ -1,8 +1,21 @@
 #pragma once
 
 #include <memory>
+#include <span>
+#include <vector>
 
-#include "game/enemies/CombatRollbackCheckpoint.h"
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/TextureSet.h"
+#include "engine/core/Types.h"
+#include "engine/render/RenderDevice.h"
+#include "engine/world/ParticleSystem.h"
+
+#include "game/characters/ClassData.h"
+#include "game/effects/EffectTrees.h"
+#include "game/level/LevelWorld.h"
+#include "game/party/PlayerArsenal.h"
+#include "game/party/PlayerMissiles.h"
+#include "game/party/PlayerRuntime.h"
 
 namespace gdl::game {
 class LevelOpponents;
@@ -13,6 +26,12 @@ class LevelOpponents;
  * enclosing checkpoint; this catalog does not authorize their simulation. */
 class CombatResources {
 public:
+    /** What the catalog binds, as the pools take it: missiles, their effects, shared effects. */
+    struct Resources {
+        std::span<const PlayerMissiles::Resource> missiles;
+        std::span<const EffectTrees::PoolResource> missileEffects;
+        std::span<const EffectTrees::PoolResource> sharedEffects;
+    };
     struct Bank {
         u32 id = 0;
         ItemArchive* archive = nullptr;
@@ -49,7 +68,7 @@ public:
                    const PlayerArsenal& arsenal, LevelOpponents& opponents,
                    const EffectTrees& effects);
     void clear();
-    CombatRollbackCheckpoint::Resources resources() const;
+    Resources resources() const;
     /** Figure replacement (for example a native promotion) requires a fresh
      * load-time catalog. Check before using retained player-resource pointers. */
     bool matches(std::span<const PlayerRuntime> party) const;

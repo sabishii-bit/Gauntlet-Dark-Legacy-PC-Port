@@ -290,7 +290,7 @@ bool CombatResources::bindStage(RenderDevice& device, LevelWorld& world, ItemArc
     return true;
 }
 
-CombatRollbackCheckpoint::Resources CombatResources::resources() const {
+CombatResources::Resources CombatResources::resources() const {
     if (!m_data) {
         return {};
     }

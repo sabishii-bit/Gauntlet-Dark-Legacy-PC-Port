@@ -72,7 +72,6 @@ public:
     bool restore(const State& /*state*/);
 
 private:
-    friend class OpponentCombatCheckpoint;
     bool bound() const;
     bool matches(const State& /*state*/) const;
     Critters& m_owner;

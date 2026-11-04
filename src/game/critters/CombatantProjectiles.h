@@ -90,7 +90,6 @@ public:
     usize count() const { return m_sim.flying.size(); }
 
 private:
-    friend class OpponentCombatCheckpoint;
     friend class CombatantProjectilesCheckpoint;
     struct Flying {
         CombatShot shot;
