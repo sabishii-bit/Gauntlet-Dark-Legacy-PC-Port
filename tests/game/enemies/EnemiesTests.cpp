@@ -2685,9 +2685,9 @@ TEST_CASE("the warlock comes and goes: seen a while, faded out, unseen a while, 
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, root, nullptr, 2, {}, 7);
-    REQUIRE(enemies.loadKind(Enemies::kVeilingKind));
+    REQUIRE(enemies.loadKind(enemy_type::kWarlock));
     const auto warlock =
-        enemies.spawn(EnemySpawn{.kind = Enemies::kVeilingKind, .tier = 1, .placed = true}, {});
+        enemies.spawn(EnemySpawn{.kind = enemy_type::kWarlock, .tier = 1, .placed = true}, {});
     REQUIRE(warlock.has_value());
     CHECK(enemies.opacityOf(*warlock) == 1.0f);
     // Seen for sixty to a hundred and nineteen ticks once it goes about (after its entrance),

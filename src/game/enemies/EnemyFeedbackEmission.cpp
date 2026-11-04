@@ -5,6 +5,7 @@
 #include <format>
 
 #include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/Generators.h"
 
 namespace gdl::game {
@@ -25,7 +26,7 @@ GeneratorFeedbackEmission GeneratorFeedbackEmission::resolve(const GeneratorEven
     }
     if (!event.destroyed || level == nullptr || level->bossType < 0) {
         const std::string suffix =
-            realm == 10 && event.kind == 24
+            realm == 10 && event.kind == enemy_type::kWarlock
                 ? "WAR"
                 : std::string(1, levelName.empty() ? 'G' : levelName.front());
         result.sound = std::format("{}{}", event.destroyed ? "S_GENKILL" : "S_GENDAM", suffix);

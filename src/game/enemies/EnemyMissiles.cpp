@@ -13,6 +13,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/critters/CombatantProjectile.h"
 #include "game/effects/DynamicLights.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/level/MissileStop.h"
 #include "game/players/EnemyShrink.h"
 
@@ -27,16 +28,6 @@ constexpr f32 kFlatEnough = 0.001f;
 constexpr f32 kShotHeight = 2.5f; ///< over the body's middle, for the arrow and the lob
 constexpr f32 kSightProbe = 0.1f; ///< the width of the look a blast takes at a player
 constexpr f32 kHeldFrom = 2.0f;   ///< a blast's hit past this holds its victim off
-
-// The kinds with a launch point of their own (EnemyStartMissile's jump table).
-constexpr s32 kGrunt = 4;
-constexpr s32 kSorcerer = 7;
-constexpr s32 kZombie = 13;
-constexpr s32 kPlague = 14;
-constexpr s32 kWorm = 17;
-constexpr s32 kImp = 23;
-constexpr s32 kWarlock = 24;
-constexpr s32 kGarm = 27;
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -455,9 +446,12 @@ u32 EnemyMissileKind::hitFlags() const {
 std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot) {
     // The original's table (0x80119128): the medium kinds share the arrow and the bomb, and
     // a few have a bolt of their own; the worm has three of its own.
-    const bool medium = kind == 1 || kind == 4 || kind == 7 || kind == 10 || kind == 13 ||
-                        kind == 14 || kind == 16 || kind == 19 || kind == 23 || kind == 24;
-    if (kind == kWorm) {
+    const bool medium = kind == enemy_type::kTroll || kind == enemy_type::kGrunt ||
+                        kind == enemy_type::kSorcerer || kind == enemy_type::kLizardman ||
+                        kind == enemy_type::kZombie || kind == enemy_type::kPlague ||
+                        kind == enemy_type::kIce || kind == enemy_type::kSkeleton ||
+                        kind == enemy_type::kImp || kind == enemy_type::kWarlock;
+    if (kind == enemy_type::kWorm) {
         std::optional<EnemyMissileKind> worm;
         switch (slot) {
         case 0: worm = EnemyMissileKind::bolt(5.0f, 15.0f, 0.3f); break;
@@ -476,13 +470,13 @@ std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot) {
     }
     if (slot == EnemyMissileKind::kBolt) {
         switch (kind) {
-        case 2:  // the demon
-        case 20: // the ghost
-            return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f, damage::kFire);
-        case kPlague: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f);
-        case kSorcerer:
-        case kWarlock: return EnemyMissileKind::bolt(20.0f, 20.0f, 0.2f, damage::kLight);
-        case kGarm:
+        case enemy_type::kDemon:
+        case enemy_type::kGhost: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f, damage::kFire);
+        case enemy_type::kPlague: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f);
+        case enemy_type::kSorcerer:
+        case enemy_type::kWarlock:
+            return EnemyMissileKind::bolt(20.0f, 20.0f, 0.2f, damage::kLight);
+        case enemy_type::kGarm2:
             return EnemyMissileKind::bolt(25.0f, 80.0f, 2.0f,
                                           damage::kElectric | EnemyMissileKind::kPierces, 0.0f);
         default: return std::nullopt;
@@ -504,35 +498,36 @@ s32 missileSlotOfWay(s32 way) {
 EnemyLaunchPoint enemyLaunchPointOf(s32 kind, s32 slot) {
     EnemyLaunchPoint point;
     point.height = slot == EnemyMissileKind::kBolt ? 0.0f : kShotHeight;
+    // The kinds with a launch point of their own (EnemyStartMissile's jump table).
     switch (kind) {
-    case kGrunt:
+    case enemy_type::kGrunt:
         if (slot == EnemyMissileKind::kArrow) {
             point.height = 1.5f;
         }
         break;
-    case kZombie:
+    case enemy_type::kZombie:
         if (slot == EnemyMissileKind::kArrow) {
             point.height = 1.0f;
         }
         break;
-    case kSorcerer:
-    case kWarlock:
+    case enemy_type::kSorcerer:
+    case enemy_type::kWarlock:
         if (slot == EnemyMissileKind::kBolt) {
             point.height = 1.5f;
         }
         break;
-    case kPlague:
+    case enemy_type::kPlague:
         if (slot == EnemyMissileKind::kBolt) {
             point.height = 1.0f;
         } else if (slot == EnemyMissileKind::kArrow) {
             point.height = 1.5f;
         }
         break;
-    case kWorm:
+    case enemy_type::kWorm:
         point.height = 2.0f;
         point.shift = 2.0f;
         break;
-    case kImp:
+    case enemy_type::kImp:
         if (slot == EnemyMissileKind::kArrow) {
             point.height = 0.0f;
         } else if (slot == EnemyMissileKind::kBomb) {
@@ -540,7 +535,7 @@ EnemyLaunchPoint enemyLaunchPointOf(s32 kind, s32 slot) {
             point.shift = -2.5f;
         }
         break;
-    case kGarm: point.height = 0.0f; break;
+    case enemy_type::kGarm2: point.height = 0.0f; break;
     default: break;
     }
     return point;

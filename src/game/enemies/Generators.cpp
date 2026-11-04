@@ -18,6 +18,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/enemies/EnemyKinds.h"
 #include "game/level/ItemSupport.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/TargetAssist.h"
@@ -25,15 +26,14 @@
 namespace gdl::game {
 
 namespace {
-constexpr usize kGeneratorKinds = 34;
 /** lbl_8011BB20: a hit, by the kind bred. */
-constexpr std::array<s32, kGeneratorKinds> kHitWorth{1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3,
-                                                     1, 2, 2, 1, 2, 3, 1, 2, 3, 1, 1, 2,
-                                                     3, 3, 3, 1, 0, 2, 1, 1, 2, 2};
+constexpr std::array<s32, static_cast<usize>(kEnemyKindCount)> kHitWorth{
+    1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 2, 1, 2,
+    3, 1, 2, 3, 1, 1, 2, 3, 3, 3, 1, 0, 2, 1, 1, 2, 2};
 /** lbl_8011BBA8: the destroying blow. */
-constexpr std::array<s32, kGeneratorKinds> kDestroyedWorth{1, 2, 3, 1,  2, 3,  1, 2, 3,   1, 2, 3,
-                                                           1, 2, 2, 1,  2, 3,  1, 2, 3,   1, 1, 2,
-                                                           3, 3, 3, 15, 0, 30, 1, 2, 300, 30};
+constexpr std::array<s32, static_cast<usize>(kEnemyKindCount)> kDestroyedWorth{
+    1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2,  3, 1,  2, 2, 1,   2,
+    3, 1, 2, 3, 1, 1, 2, 3, 3, 3, 15, 0, 30, 1, 2, 300, 30};
 constexpr s32 kExperienceShare = 5;
 
 void appendSlot(NativeStateDigest& digest, const Generators::Slot& slot) {
@@ -184,16 +184,14 @@ void Generators::appendImportedHealth(NativeStateDigest& digest) const {
 }
 
 s32 generatorExperience(s32 kind, bool destroyed) {
-    constexpr s32 kSecondUnknown = -2;
-    constexpr s32 kThirdUnknown = -3;
-    if (kind == kSecondUnknown) {
+    if (kind == Generators::kTempleBrood) {
         kind = 1;
-    } else if (kind == kThirdUnknown) {
+    } else if (kind == Generators::kHellBrood) {
         kind = 2;
     } else if (kind < 0) {
         kind = 0;
     }
-    if (static_cast<usize>(kind) >= kGeneratorKinds) {
+    if (kind >= kEnemyKindCount) {
         return 0;
     }
     const auto& worth = destroyed ? kDestroyedWorth : kHitWorth;
@@ -202,8 +200,10 @@ s32 generatorExperience(s32 kind, bool destroyed) {
 
 namespace {
 
-constexpr std::array<s32, 4> kTempleKinds{16, 23, 14, 13};
-constexpr std::array<s32, 4> kHellKinds{2, 24, 20, 25};
+constexpr std::array<s32, 4> kTempleKinds{enemy_type::kIce, enemy_type::kImp, enemy_type::kPlague,
+                                          enemy_type::kZombie};
+constexpr std::array<s32, 4> kHellKinds{enemy_type::kDemon, enemy_type::kWarlock,
+                                        enemy_type::kGhost, enemy_type::kSky};
 /** The strength a mixed brood breeds at: the temple's at two, the underworld's at three. */
 constexpr s32 kTempleBroodStrength = 2;
 constexpr s32 kHellBroodStrength = 3;
@@ -259,7 +259,8 @@ bool bounded(const Mat4& value) {
 }
 
 bool generatorKind(s32 kind) {
-    return kind == -3 || kind == -2 || (kind >= 0 && kind < kEnemyKindCount);
+    return kind == Generators::kHellBrood || kind == Generators::kTempleBrood ||
+           (kind >= 0 && kind < kEnemyKindCount);
 }
 
 bool validSlot(const Generators::Slot& slot) {
@@ -569,7 +570,7 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
             return true;
         }
     }
-    ItemArchive* archive = kind < -1 ? realmItems : enemies.archive(kind);
+    ItemArchive* archive = kind <= kTempleBrood ? realmItems : enemies.archive(kind);
     if (archive == nullptr) {
         return false;
     }
@@ -582,7 +583,7 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
     // Whole is three; nought is the ruin.
     for (s32 state = 0; state <= kStates; ++state) {
         const std::string base =
-            std::format("GEN_{}{}", kind < -1 ? "SPECIAL" : info.prefix, state);
+            std::format("GEN_{}{}", kind <= kTempleBrood ? "SPECIAL" : info.prefix, state);
         // SPECIAL generators are multi-node authored trees in the realm archive,
         // not a model from one of the four enemy species they produce.
         if (const auto tree = archive->trees.find(base)) {
@@ -793,7 +794,7 @@ std::optional<s32> Generators::spawn(RenderDevice& device, Enemies& enemies, s32
     if (!m_sim.bound || !generatorKind(kind)) {
         return std::nullopt;
     }
-    const bool brood = kind < -1;
+    const bool brood = kind <= kTempleBrood;
     if (brood) {
         for (const s32 species : kind == kTempleBrood ? kTempleKinds : kHellKinds) {
             if (!enemies.loadKind(species)) {
@@ -1202,11 +1203,11 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.kind = generator.kind;
         spawn.tier = generator.tier;
         spawn.algorithm = generator.algorithm;
-        if (generator.kind == -2 || generator.kind == -3) {
+        if (generator.kind == kTempleBrood || generator.kind == kHellBrood) {
             const usize at = m_sim.specialBirth++ % kTempleKinds.size();
-            spawn.kind = generator.kind == -2 ? kTempleKinds[at] : kHellKinds[at];
-            spawn.tier = generator.kind == -2 ? 2 : 3;
-            spawn.algorithm = generator.kind == -2 ? 7 : kHellAlgorithms[at];
+            spawn.kind = generator.kind == kTempleBrood ? kTempleKinds[at] : kHellKinds[at];
+            spawn.tier = generator.kind == kTempleBrood ? 2 : 3;
+            spawn.algorithm = generator.kind == kTempleBrood ? 7 : kHellAlgorithms[at];
             spawn.allBirthDirections = true;
         }
         const auto imported =

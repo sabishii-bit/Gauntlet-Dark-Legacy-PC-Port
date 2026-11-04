@@ -479,7 +479,6 @@ public:
     f32 opacityOf(s32 id) const {
         return 1.0f - m_simulation.enemies[static_cast<usize>(id)].veil / kVeiled;
     }
-    static constexpr s32 kVeilingKind = 24; ///< the warlock (fn_8004D958's type 24)
     static constexpr f32 kVeiled = 255.0f;
     const EnemyAnimator* animatorOf(s32 id) const;
     const MindMemory& memoryOf(s32 id) const {

@@ -104,7 +104,7 @@ s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {
     if (named == kRatKind) {
         return ofClass(kSmallClass).value_or(named);
     }
-    if (named == kGruntKind || named == kGruntKind + 1) {
+    if (named == enemy_type::kGrunt || named == enemy_type::kKnight) {
         if (strength >= 4) {
             if (const auto other = ofClass(kMediumOtherClass); other.has_value()) {
                 return *other;

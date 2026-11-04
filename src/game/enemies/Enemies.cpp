@@ -99,10 +99,7 @@ constexpr f32 kOnScreenMargin = 15.0f; ///< past twice its radius, what still co
 constexpr f32 kBomberScare = 10.0f;    ///< the swarm keeps this far from a lit suicide bomber
 constexpr f32 kCastTicks = 90.0f;      ///< a caster's least wait, times the level's missile rate
 constexpr s32 kContactGridDimension = 64;
-constexpr s32 kScorpionKind = 0;
-constexpr s32 kDogKind = 18;
 constexpr s32 kLeaderWay = 12;
-constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
 
 constexpr f32 kCheckpointMagnitude = 1'000'000;
@@ -294,18 +291,18 @@ Vec3 octant(const Vec3& v, s32 direction, f32& yawOffset) {
 // The octants a kind may be born into: the humanoids only ahead of the generator.
 u32 octantMaskOf(s32 kind) {
     switch (kind) {
-    case 1:
-    case 4:
-    case 5:
-    case 7:
-    case 8:
-    case 10:
-    case 11:
-    case 14:
-    case 15:
-    case 19:
-    case 24:
-    case 25: return 0xFFCE;
+    case enemy_type::kTroll:
+    case enemy_type::kGrunt:
+    case enemy_type::kKnight:
+    case enemy_type::kSorcerer:
+    case enemy_type::kMummy:
+    case enemy_type::kLizardman:
+    case enemy_type::kTreefolk:
+    case enemy_type::kPlague:
+    case enemy_type::kWolf:
+    case enemy_type::kSkeleton:
+    case enemy_type::kWarlock:
+    case enemy_type::kSky: return 0xFFCE;
     default: return 0;
     }
 }
@@ -344,10 +341,16 @@ s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
         return kLurkWay;
     }
     // The kinds whose third tier casts: demons, sorcerers, plague, worms, warlocks.
-    const bool caster = kind == 2 || kind == 7 || kind == 14 || kind == 17 || kind == 24;
-    const bool medium = caster || kind == 1 || kind == 4 || kind == 5 || kind == 8 || kind == 10 ||
-                        kind == 11 || kind == 13 || kind == 16 || kind == 19 || kind == 20 ||
-                        kind == 25 || kind == 32 || kind == 33;
+    const bool caster = kind == enemy_type::kDemon || kind == enemy_type::kSorcerer ||
+                        kind == enemy_type::kPlague || kind == enemy_type::kWorm ||
+                        kind == enemy_type::kWarlock;
+    const bool medium = caster || kind == enemy_type::kTroll || kind == enemy_type::kGrunt ||
+                        kind == enemy_type::kKnight || kind == enemy_type::kMummy ||
+                        kind == enemy_type::kLizardman || kind == enemy_type::kTreefolk ||
+                        kind == enemy_type::kZombie || kind == enemy_type::kIce ||
+                        kind == enemy_type::kSkeleton || kind == enemy_type::kGhost ||
+                        kind == enemy_type::kSky || kind == enemy_type::kGargoyle ||
+                        kind == enemy_type::kGeneral;
     if (smallKind(kind)) {
         if (way != kProwlWay && way != kMirroredProwlWay) {
             way = mirrored ? kMirroredProwlWay : kProwlWay;
@@ -1039,7 +1042,8 @@ bool Enemies::loadKind(s32 kind) {
                              stock->archive.textures, *m_device);
     }
     // Every kind lies a shadow of its tier under it but these (InitEnemyGeo).
-    if (kind != kScorpionKind && kind != kAcidKind && kind != kDeathKind && kind != kItKind) {
+    if (kind != enemy_type::kScorpion && kind != enemy_type::kAcid && kind != enemy_type::kDeath &&
+        kind != enemy_type::kIt) {
         for (usize i = 0; i < stock->shadows.size(); ++i) {
             stock->shadows[i].bind(*m_device, stock->archive, std::format("SHADOW{}L1", i + 1));
         }
@@ -1340,8 +1344,10 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
             tree = stock->variantTrees[v];
         }
     }
-    const bool walksIn = enemy.variant == 0 && (spawn.kind == 1 || spawn.kind == kGruntKind ||
-                                                spawn.kind == 10 || spawn.kind == 7);
+    const bool walksIn =
+        enemy.variant == 0 &&
+        (spawn.kind == enemy_type::kTroll || spawn.kind == enemy_type::kGrunt ||
+         spawn.kind == enemy_type::kLizardman || spawn.kind == enemy_type::kSorcerer);
     if (tree == nullptr || !enemy.animator.bind(*tree, walksIn)) {
         enemy = Enemy{};
         return std::nullopt;
@@ -1374,7 +1380,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
         // leaders use only the generator's forward bearing. Special mixed
         // broods choose their directions from the original -2/-3 kind instead.
         s32 directions = 8;
-        if (!spawn.allBirthDirections && spawn.kind == kDogKind) {
+        if (!spawn.allBirthDirections && spawn.kind == enemy_type::kDog) {
             directions = 2;
         }
         if (enemy.algorithm == kLeaderWay) {
@@ -1697,7 +1703,7 @@ void Enemies::step(f32 seconds, std::span<const EnemyView> players,
         const f32 swingSeconds =
             enemy.animator.swinging() ? kMotionSeconds * tuning().attackPace : kMotionSeconds;
         enemy.animator.updateCaptured(kMotionTicks, swingSeconds, enemy.contact >= 0);
-        if (enemy.kind == kVeilingKind) {
+        if (enemy.kind == enemy_type::kWarlock) { // fn_8004D958's type 24
             veil(enemy, kMotionTicks);
         }
         if (enemy.animator.threw() && missiles != nullptr) {

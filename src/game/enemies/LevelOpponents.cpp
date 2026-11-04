@@ -47,13 +47,10 @@ constexpr std::string_view kSuicideBombSound = "S_SUICIDE_BOMB";
 constexpr f32 kQuietSound = 127.0f; ///< the levels of 255 they are played at
 constexpr f32 kLoudSound = 224.0f;
 constexpr f32 kFullLevel = 255.0f;
-constexpr s32 kDemonKind = 2;
 constexpr f32 kHeardWhole = 1.4f;  ///< how loud a sound is at nobody's distance, before the cap
 constexpr f32 kHeardFade = 50.0f;  ///< and the distance over which it loses all of that
 constexpr f32 kUnseenBurst = 1.0f; ///< a burst's life when its effect cannot be shown
 constexpr std::string_view kRicochetSound = "S_RICOCHET";
-constexpr s32 kCritterIds = 3000; ///< the swarm's ids past the ordinary enemies
-constexpr s32 kBossIds = 4000;
 // SuicideExplosion (sfx.c): a burning blast, or in the town and the sky a poison cloud, and
 // either way the thrower kind's own fragments.
 constexpr std::string_view kSuicideBlast = "EXPLOSION";
@@ -238,7 +235,7 @@ void LevelOpponents::NativeCues::enemyCue(const EnemyCue& cue) {
     switch (cue.kind) {
     case EnemyCue::Kind::Arrow: m_owner.playAt(kArrowSound, kQuietSound, cue.position); break;
     case EnemyCue::Kind::Bolt:
-        if (cue.enemyKind == kDemonKind) {
+        if (cue.enemyKind == enemy_type::kDemon) {
             const std::string& level = m_owner.m_resources->world.ref().name;
             const char realm = level.empty() ? ' ' : level.front();
             m_owner.playAt(realm == 'C' || realm == 'D' || realm == 'F'
@@ -288,14 +285,15 @@ std::vector<MissileTarget> LevelOpponents::swarmTargets() const {
 /** A hit on one of the swarm by its id in `swarmTargets`, credited to nobody. */
 void LevelOpponents::strikeSwarm(s32 id, f32 damage, u32 flags, const Vec3& direction,
                                  std::span<const PlayerRuntime> players) {
-    if (id >= kBossIds) {
+    if (id >= OpponentSimulation::kBossIds) {
         EnemyHit hit;
         hit.damage = damage;
         hit.flags = flags;
         hit.direction = direction;
-        m_bosses.hurt(hit, id - kBossIds);
-    } else if (id >= kCritterIds) {
-        strikeCritter(id - kCritterIds, damage, flags, direction, -1, std::nullopt, false, players);
+        m_bosses.hurt(hit, id - OpponentSimulation::kBossIds);
+    } else if (id >= OpponentSimulation::kCritterIds) {
+        strikeCritter(id - OpponentSimulation::kCritterIds, damage, flags, direction, -1,
+                      std::nullopt, false, players);
     } else {
         strikeEnemy(id, damage, flags, direction, -1, players);
     }

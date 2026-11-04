@@ -25,13 +25,22 @@ struct Bank {
 };
 // e006c0c4 supplies archive names; enemy.rom supplies the corresponding
 // group prefixes. Common species IDs are deliberately not native indices.
-constexpr std::array kBanks{
-    Bank{0, "scoh", "SCO"},   Bank{1, "tro", "TRO"},   Bank{2, "dem", "DEM"},
-    Bank{3, "rat", "RAT"},    Bank{4, "gru", "GRU"},   Bank{5, "kni", "KNI"},
-    Bank{12, "mag", "MAG"},   Bank{13, "zom", "ZOM"},  Bank{14, "plague", "PLAG"},
-    Bank{15, "wolf", "WLF"},  Bank{16, "ice", "ICE"},  Bank{17, "worm", "WOR"},
-    Bank{18, "sked", "SKED"}, Bank{19, "skel", "SKE"}, Bank{kDeathKind, "itemanim/hires", "DEATH"},
-    Bank{kItKind, "it", "IT"}};
+constexpr std::array kBanks{Bank{enemy_type::kScorpion, "scoh", "SCO"},
+                            Bank{enemy_type::kTroll, "tro", "TRO"},
+                            Bank{enemy_type::kDemon, "dem", "DEM"},
+                            Bank{enemy_type::kRat, "rat", "RAT"},
+                            Bank{enemy_type::kGrunt, "gru", "GRU"},
+                            Bank{enemy_type::kKnight, "kni", "KNI"},
+                            Bank{enemy_type::kMaggot, "mag", "MAG"},
+                            Bank{enemy_type::kZombie, "zom", "ZOM"},
+                            Bank{enemy_type::kPlague, "plague", "PLAG"},
+                            Bank{enemy_type::kWolf, "wolf", "WLF"},
+                            Bank{enemy_type::kIce, "ice", "ICE"},
+                            Bank{enemy_type::kWorm, "worm", "WOR"},
+                            Bank{enemy_type::kDog, "sked", "SKED"},
+                            Bank{enemy_type::kSkeleton, "skel", "SKE"},
+                            Bank{enemy_type::kDeath, "itemanim/hires", "DEATH"},
+                            Bank{enemy_type::kIt, "it", "IT"}};
 
 const Bank* bankFor(s32 kind) {
     const auto found = std::ranges::find(kBanks, kind, &Bank::kind);
@@ -60,7 +69,7 @@ void translateLegendsEnemyAnimations(formats::AnimationFile& animation, s32 kind
     const auto* bank = bankFor(kind);
     if (!bank)
         throw FormatError("Unsupported N64 enemy species");
-    if (kind == 16) {
+    if (kind == enemy_type::kIce) {
         // ICE2 STRT's packed vertex keys flatten its body to a ~0.27-unit
         // sheet for the whole emergence (native e0031f88 -> e0029d34 does
         // the same). The separate headlamp still rises normally. Repair this
