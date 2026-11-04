@@ -13,10 +13,11 @@
 
 #include "FakeMechanic.h"
 #include "TestSupport.h"
+#include "game/config/GameConfig.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/netplay/HostedRoom.h"
 #include "game/netplay/OnlineSession.h"
-#include "game/online/NativePlaySetup.h"
+#include "game/online/AgreedSetup.h"
 #include "game/rollback/InputCommand.h"
 #include "game/rollback/RollbackSessionHarness.h"
 
@@ -102,20 +103,7 @@ struct Pair {
                 if (!session->nativeSetupPending()) {
                     continue;
                 }
-                const auto& agreed = *session->nativeContract();
-                const NativePlaySetup::Contract contract{agreed.rules.scene,
-                                                         agreed.rules.autoMelee,
-                                                         agreed.rules.autoActivateItems,
-                                                         agreed.rules.expandedShop,
-                                                         agreed.rules.autoAim,
-                                                         agreed.identity.build,
-                                                         agreed.identity.content,
-                                                         agreed.identity.data,
-                                                         &offered()};
-                const auto setup = NativePlaySetup::create(GameConfig{}, session->room()->settings,
-                                                           *session->party(), {}, contract);
-                REQUIRE(setup);
-                REQUIRE(session->confirmNativeSetup(setup->digest()));
+                test::confirmAgreedSetup(*session, GameConfig{}, {}, &offered());
             }
         }
     }
@@ -476,20 +464,7 @@ struct Trio {
                 if (!session->nativeSetupPending()) {
                     continue;
                 }
-                const auto& agreed = *session->nativeContract();
-                const NativePlaySetup::Contract contract{agreed.rules.scene,
-                                                         agreed.rules.autoMelee,
-                                                         agreed.rules.autoActivateItems,
-                                                         agreed.rules.expandedShop,
-                                                         agreed.rules.autoAim,
-                                                         agreed.identity.build,
-                                                         agreed.identity.content,
-                                                         agreed.identity.data,
-                                                         &offered()};
-                const auto setup = NativePlaySetup::create(GameConfig{}, session->room()->settings,
-                                                           *session->party(), {}, contract);
-                REQUIRE(setup);
-                REQUIRE(session->confirmNativeSetup(setup->digest()));
+                test::confirmAgreedSetup(*session, GameConfig{}, {}, &offered());
             }
         }
     }

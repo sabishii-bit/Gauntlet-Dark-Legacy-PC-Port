@@ -21,6 +21,7 @@
 #include "game/netplay/HostedRoom.h"
 #include "game/netplay/OnlineParty.h"
 #include "game/netplay/OnlineSession.h"
+#include "game/online/AgreedSetup.h"
 #include "game/online/NativeOnlinePlay.h"
 #include "game/scenes/AfterLevelScene.h"
 
@@ -136,18 +137,10 @@ struct CampaignPeer {
         if (!session.nativeSetupPending()) {
             return;
         }
-        const auto* agreed = session.nativeContract();
-        REQUIRE(agreed);
+        REQUIRE(session.nativeContract());
         REQUIRE(session.room());
         REQUIRE(session.party());
-        const NativePlaySetup::Contract contract{
-            agreed->rules.scene,        agreed->rules.autoMelee, agreed->rules.autoActivateItems,
-            agreed->rules.expandedShop, agreed->rules.autoAim,   agreed->identity.build,
-            agreed->identity.content,   agreed->identity.data};
-        setup = NativePlaySetup::create(config, session.room()->settings, *session.party(), options,
-                                        contract);
-        REQUIRE(setup);
-        REQUIRE(session.confirmNativeSetup(setup->digest()));
+        setup = test::confirmAgreedSetup(session, config, options);
     }
 
     void checkHealthy() const {

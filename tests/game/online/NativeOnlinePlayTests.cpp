@@ -22,6 +22,7 @@
 #include "game/level/TowerAccess.h"
 #include "game/netplay/OnlinePair.h"
 #include "game/netplay/OnlineParty.h"
+#include "game/online/AgreedSetup.h"
 #include "game/online/NativeOnlinePlay.h"
 #include "game/players/PlayerActor.h"
 #include "game/rollback/SimulationObserver.h"
@@ -229,18 +230,10 @@ struct NativePair {
 
     static std::unique_ptr<NativePlaySetup>
     makeSetup(OnlineSession& session, const GameConfig& config, const PlayOptions& options) {
-        const auto* agreed = session.nativeContract();
-        REQUIRE(agreed);
+        REQUIRE(session.nativeContract());
         REQUIRE(session.party());
         REQUIRE(session.room());
-        const NativePlaySetup::Contract contract{
-            agreed->rules.scene,        agreed->rules.autoMelee, agreed->rules.autoActivateItems,
-            agreed->rules.expandedShop, agreed->rules.autoAim,   agreed->identity.build,
-            agreed->identity.content,   agreed->identity.data};
-        auto result = NativePlaySetup::create(config, session.room()->settings, *session.party(),
-                                              options, contract);
-        REQUIRE(result);
-        return result;
+        return test::agreedSetup(session, config, options);
     }
     void pump() {
         hostSession.update(0);

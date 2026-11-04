@@ -7,9 +7,10 @@
 
 #include "engine/net/SessionTransport.h"
 
+#include "game/config/GameConfig.h"
 #include "game/netplay/HostedRoom.h"
 #include "game/netplay/OnlineSession.h"
-#include "game/online/NativePlaySetup.h"
+#include "game/online/AgreedSetup.h"
 #include "game/rollback/RollbackSessionHarness.h"
 
 namespace {
@@ -48,15 +49,7 @@ void confirm(OnlineSession& session) {
     if (!session.nativeSetupPending()) {
         return;
     }
-    const auto& agreed = *session.nativeContract();
-    const NativePlaySetup::Contract contract{
-        agreed.rules.scene,        agreed.rules.autoMelee, agreed.rules.autoActivateItems,
-        agreed.rules.expandedShop, agreed.rules.autoAim,   agreed.identity.build,
-        agreed.identity.content,   agreed.identity.data};
-    const auto setup = NativePlaySetup::create(GameConfig{}, session.room()->settings,
-                                               *session.party(), {}, contract);
-    REQUIRE(setup);
-    REQUIRE(session.confirmNativeSetup(setup->digest()));
+    test::confirmAgreedSetup(session, GameConfig{}, {});
 }
 template <class Step>
 void exchangeFrames(std::span<OnlineSession* const> sessions,

@@ -8,6 +8,7 @@
 
 #include "TestSupport.h"
 #include "game/netplay/OnlineSession.h"
+#include "game/online/AgreedSetup.h"
 #include "game/online/NativePlaySetup.h"
 #include "game/rollback/RollbackSessionHarness.h"
 
@@ -177,18 +178,7 @@ struct Network {
         local.combat.autoMelee = !contract->rules.autoMelee;
         local.combat.autoActivateItems = !contract->rules.autoActivateItems;
         local.game.expandedShop = !contract->rules.expandedShop;
-        const NativePlaySetup::Contract native{contract->rules.scene,
-                                               contract->rules.autoMelee,
-                                               contract->rules.autoActivateItems,
-                                               contract->rules.expandedShop,
-                                               contract->rules.autoAim,
-                                               contract->identity.build,
-                                               contract->identity.content,
-                                               contract->identity.data};
-        auto result = NativePlaySetup::create(local, session.room()->settings, *session.party(),
-                                              options, native);
-        REQUIRE(result);
-        return result;
+        return test::agreedSetup(session, local, options);
     }
     void confirm(u8 peer) {
         setups[peer] = setup(peer);

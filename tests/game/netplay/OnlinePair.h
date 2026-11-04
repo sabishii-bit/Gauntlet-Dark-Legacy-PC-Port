@@ -5,8 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "game/config/GameConfig.h"
 #include "game/netplay/OnlineSession.h"
-#include "game/online/NativePlaySetup.h"
+#include "game/online/AgreedSetup.h"
 #include "game/rollback/RollbackSessionHarness.h"
 #include "game/rollback/SessionInputs.h"
 
@@ -183,20 +184,7 @@ struct OnlinePair {
             guestSession.update(0);
             for (auto* session : {&hostSession, &guestSession}) {
                 if (session->nativeSetupPending()) {
-                    const auto& agreed = *session->nativeContract();
-                    const game::NativePlaySetup::Contract contract{agreed.rules.scene,
-                                                                   agreed.rules.autoMelee,
-                                                                   agreed.rules.autoActivateItems,
-                                                                   agreed.rules.expandedShop,
-                                                                   agreed.rules.autoAim,
-                                                                   agreed.identity.build,
-                                                                   agreed.identity.content,
-                                                                   agreed.identity.data};
-                    const auto setup =
-                        game::NativePlaySetup::create(game::GameConfig{}, session->room()->settings,
-                                                      *session->party(), {}, contract);
-                    REQUIRE(setup);
-                    REQUIRE(session->confirmNativeSetup(setup->digest()));
+                    confirmAgreedSetup(*session, game::GameConfig{}, {});
                 }
             }
             REQUIRE(hostSession.phase() != game::OnlineSession::Phase::Failed);
