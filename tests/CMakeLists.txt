@@ -671,6 +671,7 @@ add_executable(tests
     game/party/AttackHostTests.cpp
     game/party/AttackTargetIdTests.cpp
     game/party/PlayerAttacksTests.cpp
+    game/party/PlayerAttacksBlowPathsTests.cpp
     game/menu/NameEntryTests.cpp
     game/scenes/SelectLaneTests.cpp
     game/scenes/PlayerSelectSceneTests.cpp
@@ -712,6 +713,7 @@ add_executable(playerformtests game/party/PojoTests.cpp game/party/PojoVoiceTest
     game/party/PlayerMissilesTests.cpp
     game/effects/EffectTreesTests.cpp
     game/party/PlayerAttacksTests.cpp
+    game/party/PlayerAttacksBlowPathsTests.cpp
     game/party/PartyPickupsTests.cpp game/scenes/PlaySceneTests.cpp
     game/characters/CharacterProfileTests.cpp
     game/party/PowerupCompanionTests.cpp fixtures/NativeModelFixture.cpp

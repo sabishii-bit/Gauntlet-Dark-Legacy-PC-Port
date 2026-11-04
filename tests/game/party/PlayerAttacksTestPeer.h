@@ -36,6 +36,11 @@ struct PlayerAttacksTestPeer {
                                                     f32 reach, const Vec3& facing) {
         return PlayerAttacks::meleePlayer(actor, targets, reach, facing);
     }
+    /** The thrown weapons' flight over `seconds`, against the whole roster a flight meets. */
+    static void flights(PlayerAttacks& attacks, f32 seconds, std::span<PlayerRuntime> players,
+                        const PlayerAttacks::Targets& targets) {
+        attacks.stepProjectileFlights(seconds, players, targets);
+    }
     static void projectile(PlayerAttacks& attacks, const MissileImpact& impact,
                            std::span<PlayerRuntime> players,
                            const PlayerAttacks::Targets& targets) {
