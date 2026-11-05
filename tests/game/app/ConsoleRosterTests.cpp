@@ -277,7 +277,7 @@ TEST_CASE("help lists the commands in the order they are registered",
           helpOf({"help", "debug_info", "hidehud", "freecam", "list", "activate", "unlock", "lock",
                   "goto", "unlock_tower", "get", "spawn", "suicide", "notarget", "god", "noclip",
                   "party_count"}));
-    CHECK(fixture.say("help", {.seat = ConsoleSeat::Host}) ==
+    CHECK(fixture.say("help", {.role = ConsoleRole::Host}) ==
           helpOf({"help", "console_permissions", "debug_info", "hidehud", "freecam", "list", "goto",
                   "unlock_tower", "get", "spawn", "suicide", "notarget", "god", "noclip"}));
     // A Legends map's preview runs its own words alone.
@@ -305,12 +305,12 @@ TEST_CASE("a name prefix completes to the first admitted name it begins, whateve
          .rests = {"ctivate", "ebug_info", "reecam", "arty_count", "oto",     "to",     "t",
                    "elp",     "dehud",     "ist",    "ck",         "otarget", "target", "lip",
                    "pawn",    "icide",     "nlock",  "lock",       "_tower",  ""}},
-        {.session = {.seat = ConsoleSeat::Host},
+        {.session = {.role = ConsoleRole::Host},
          .rests = {"",      "ebug_info",   "reecam",     "",       "oto",
                    "to",    "t",           "elp",        "dehud",  "ist",
                    "",      "otarget",     "target",     "lip",    "pawn",
                    "icide", "nlock_tower", "lock_tower", "_tower", "onsole_permissions"}},
-        {.session = {.seat = ConsoleSeat::Guest},
+        {.session = {.role = ConsoleRole::Guest},
          .rests = {"",     "ebug_info", "reecam",      "",           "oto",     "to",     "t",
                    "elp",  "dehud",     "ist",         "",           "otarget", "target", "lip",
                    "pawn", "icide",     "nlock_tower", "lock_tower", "_tower",  ""}},
@@ -322,7 +322,7 @@ TEST_CASE("a name prefix completes to the first admitted name it begins, whateve
         fixture.console.setSession(row.session);
         second.setSession(row.session);
         for (usize i = 0; i < kPrefixes.size(); ++i) {
-            CAPTURE(static_cast<s32>(row.session.seat), kPrefixes[i]);
+            CAPTURE(static_cast<s32>(row.session.role), kPrefixes[i]);
             CHECK(test::suggestionAfter(fixture.console, kPrefixes[i]) == row.rests[i]);
             CHECK(test::suggestionAfter(second, kPrefixes[i]) == row.rests[i]);
         }
@@ -361,7 +361,7 @@ TEST_CASE(
     CHECK(fixture.say("list maps") == "N64 Legends maps (goto <name>): castle1, tower2");
     // The expansion's goto form answers its own words offline, and is refused online.
     CHECK(fixture.say("goto lab") == "walked");
-    CHECK(fixture.say("goto lab", {.seat = ConsoleSeat::Guest}) ==
+    CHECK(fixture.say("goto lab", {.role = ConsoleRole::Guest}) ==
           "Legends maps are offline only.");
     CHECK(fixture.sink.lines.empty());
     CHECK(fixture.say("god").empty());
@@ -382,7 +382,7 @@ TEST_CASE("without a Legends map installed, the console names none of their word
     CHECK(help.contains(test::shownAs(std::format("{:<19}  {}", "goto", kBaseGotoSummary))));
     CHECK_FALSE(help.contains("legends"));
     CHECK(fixture.say("goto") == test::shownAs(kBaseGotoUsage));
-    CHECK(fixture.say("goto 1 2", {.seat = ConsoleSeat::Guest}) == test::shownAs(kBaseGotoUsage));
+    CHECK(fixture.say("goto 1 2", {.role = ConsoleRole::Guest}) == test::shownAs(kBaseGotoUsage));
     const ConsoleRegistry& commands = fixture.console.commands();
     const ConsoleCommand* go = commands.find("goto");
     REQUIRE(go != nullptr);
@@ -396,7 +396,7 @@ TEST_CASE("without a Legends map installed, the console names none of their word
     CHECK(fixture.say("goto back") == "came back");
     CHECK(fixture.say("goto castle") ==
           "No level or Legends map named castle; list maps names them");
-    CHECK(fixture.say("goto castle", {.seat = ConsoleSeat::Guest}) ==
+    CHECK(fixture.say("goto castle", {.role = ConsoleRole::Guest}) ==
           "Legends maps are offline only.");
     CHECK(fixture.sink.lines.empty());
 }

@@ -49,7 +49,7 @@ private:
 void registerSharedConsoleCommands(ConsoleHost& host, const ConsoleRegistry& registry,
                                    ConsoleActionSink& sink, const LevelCatalog& levels);
 
-/** The game a console session's lines run in: offline play for the offline seat, else the
+/** The game a console session's lines run in: offline play for the offline role, else the
  * shared game. The netplay menus run no line: the console is held closed there. */
 PlayScene::ConsolePlay consolePlayOf(const ConsoleSession& session);
 

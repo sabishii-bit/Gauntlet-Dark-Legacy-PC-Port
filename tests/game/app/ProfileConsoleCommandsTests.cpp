@@ -71,7 +71,7 @@ TEST_CASE("the profile's words offer and hide characters by their codes", "[dev-
     CHECK(fixture.say("unlock character") == kStandIn);
     CHECK(fixture.say("unlock character MIN x") == kStandIn);
     // Online the forms are refused as the commands are.
-    fixture.console.setSession({.seat = ConsoleSeat::Guest});
+    fixture.console.setSession({.role = ConsoleRole::Guest});
     CHECK(fixture.say("unlock character " + code) == ConsolePolicy::kRefused);
     CHECK((fixture.saves.classUnlocks() & 1U) == 0);
     CHECK(fixture.listings.words() == std::vector<std::string>{"characters"});

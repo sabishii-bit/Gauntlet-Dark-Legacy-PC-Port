@@ -42,13 +42,13 @@ TEST_CASE("console policy hides host commands and prevents their handlers runnin
     s32 calls = 0;
     console.addCommand("console_permissions", "host-only switch", ConsoleReach::HostOnly,
                        [&](DevConsole&, DevConsole::Arguments) { ++calls; });
-    console.setSession({.seat = ConsoleSeat::Guest});
+    console.setSession({.role = ConsoleRole::Guest});
     console.run("help");
     REQUIRE(std::ranges::none_of(
         console.output(), [](const auto& line) { return line.contains("host-only switch"); }));
     console.run("CONSOLE_PERMISSIONS 1");
     REQUIRE(calls == 0);
-    console.setSession({.seat = ConsoleSeat::Host});
+    console.setSession({.role = ConsoleRole::Host});
     console.run("console_permissions 1");
     REQUIRE(calls == 1);
 }
@@ -128,7 +128,7 @@ TEST_CASE("an offline-only form says its own refusal outside offline play",
     const auto output = [&] {
         return std::vector<std::string>(console.output().begin(), console.output().end());
     };
-    console.setSession({.seat = ConsoleSeat::Guest});
+    console.setSession({.role = ConsoleRole::Guest});
     console.run("goto lab");
     console.run("goto cave");
     console.run("goto G1");
@@ -176,8 +176,8 @@ TEST_CASE("a form made of functions claims, runs and refuses as they say",
     console.run("get info x");
     CHECK(commandCalls == 1);
     // A command running reads the session the console was given.
-    console.setSession({.seat = ConsoleSeat::Guest});
-    CHECK(console.session().seat == ConsoleSeat::Guest);
+    console.setSession({.role = ConsoleRole::Guest});
+    CHECK(console.session().role == ConsoleRole::Guest);
     console.run("get info");
     CHECK(console.output().back() == "Stand-in words are offline only.");
     CHECK(answered.size() == 1);
@@ -440,7 +440,7 @@ TEST_CASE("a refused command says it is not available in this session",
         ConsoleReach::OfflineOnly,
         [&](DevConsole& /*self*/, DevConsole::Arguments /*arguments*/) { ++calls; },
         wordsCompleter({"1", "2", "3", "4", "off"}));
-    console.setSession({.seat = ConsoleSeat::Host});
+    console.setSession({.role = ConsoleRole::Host});
     const auto output = [&] {
         return std::vector<std::string>(console.output().begin(), console.output().end());
     };
@@ -925,7 +925,7 @@ TEST_CASE("the console suggests the rest of a word and Right at the end of the l
     // A command the session refuses is not offered.
     console.close();
     press(console, input, Key::Grave);
-    console.setSession({.seat = ConsoleSeat::Guest});
+    console.setSession({.role = ConsoleRole::Guest});
     type(console, input, "g");
     CHECK(console.suggestion() == "et");
     type(console, input, "oto ma");

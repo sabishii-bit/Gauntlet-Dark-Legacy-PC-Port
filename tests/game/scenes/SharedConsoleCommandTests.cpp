@@ -57,8 +57,8 @@ constexpr std::string_view kSpawnUsage =
 constexpr std::array<std::string_view, 2> kPreviewWords{"help", "goto"};
 
 const ConsoleSession kOffline{};
-const ConsoleSession kGuest{.seat = ConsoleSeat::Guest};
-const ConsoleSession kHost{.seat = ConsoleSeat::Host};
+const ConsoleSession kGuest{.role = ConsoleRole::Guest};
+const ConsoleSession kHost{.role = ConsoleRole::Host};
 
 /** A sink of the test's own: it keeps the lines it is given and answers each as told. */
 class RecordingSink final : public ConsoleActionSink {
@@ -383,7 +383,7 @@ TEST_CASE("the console's session says which game its lines run in",
     CHECK(consolePlayOf({.hold = SceneHold::Parked, .modal = kPreviewWords}) == Play::Offline);
     CHECK(consolePlayOf(kHost) == Play::Shared);
     CHECK(consolePlayOf(kGuest) == Play::Shared);
-    CHECK(consolePlayOf({.seat = ConsoleSeat::NetplayMenus}) == Play::Shared);
+    CHECK(consolePlayOf({.role = ConsoleRole::NetplayMenus}) == Play::Shared);
 }
 
 } // namespace

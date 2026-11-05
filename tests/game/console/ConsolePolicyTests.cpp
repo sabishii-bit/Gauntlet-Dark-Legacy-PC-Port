@@ -80,7 +80,7 @@ TEST_CASE("each session admits what it admits today", "[dev-console][online-cons
 TEST_CASE("an offline-only form refuses in its own words, and nothing else does",
           "[dev-console][online-console]") {
     constexpr std::string_view kOwn = "Stand-in words are offline only.";
-    const ConsoleSession guest{.seat = ConsoleSeat::Guest};
+    const ConsoleSession guest{.role = ConsoleRole::Guest};
     CHECK(ConsolePolicy::refusal(guest, ConsoleReach::OfflineOnly, "goto", kOwn) == kOwn);
     CHECK(ConsolePolicy::refusal(guest, ConsoleReach::OfflineOnly, "goto") ==
           ConsolePolicy::kRefused);
@@ -91,7 +91,7 @@ TEST_CASE("an offline-only form refuses in its own words, and nothing else does"
                                  kOwn) == std::nullopt);
     CHECK(ConsolePolicy::refusal({.modal = kPreviewWords}, ConsoleReach::OfflineOnly, "get",
                                  kOwn) == ConsolePolicy::kRefused);
-    const ConsoleSession closed{.seat = ConsoleSeat::Guest, .access = ConsoleAccess::Closed};
+    const ConsoleSession closed{.role = ConsoleRole::Guest, .access = ConsoleAccess::Closed};
     CHECK(ConsolePolicy::refusal(closed, ConsoleReach::Local, "goto", kOwn) ==
           ConsolePolicy::kRefused);
     CHECK(ConsolePolicy::refusal(guest, ConsoleReach::HostOnly, "goto", kOwn) ==
@@ -103,10 +103,10 @@ TEST_CASE("an offline-only form refuses in its own words, and nothing else does"
 TEST_CASE("shared words are judged as local ones, and a parked scene changes no admission",
           "[dev-console][online-console]") {
     for (const ConsoleSession& session :
-         {ConsoleSession{}, ConsoleSession{.seat = ConsoleSeat::Host},
-          ConsoleSession{.seat = ConsoleSeat::Guest},
-          ConsoleSession{.seat = ConsoleSeat::Guest, .access = ConsoleAccess::Closed},
-          ConsoleSession{.seat = ConsoleSeat::NetplayMenus},
+         {ConsoleSession{}, ConsoleSession{.role = ConsoleRole::Host},
+          ConsoleSession{.role = ConsoleRole::Guest},
+          ConsoleSession{.role = ConsoleRole::Guest, .access = ConsoleAccess::Closed},
+          ConsoleSession{.role = ConsoleRole::NetplayMenus},
           ConsoleSession{.modal = kPreviewWords}}) {
         for (const std::string_view name : {"god", "goto", "help"}) {
             CHECK(ConsolePolicy::refusal(session, ConsoleReach::Shared, name) ==
@@ -127,7 +127,7 @@ TEST_CASE("a parked scene refuses shared words once they are read, and only a pa
     const ConsoleSession preview =
         ConsolePolicy::session({.preview = kPreviewWords, .parked = true});
     CHECK(preview.hold == SceneHold::Parked);
-    CHECK(preview.seat == ConsoleSeat::Offline);
+    CHECK(preview.role == ConsoleRole::Offline);
     CHECK(ConsolePolicy::sharedRefusal(preview) == ConsolePolicy::kRefused);
     for (const ConsoleSituation& situation :
          {ConsoleSituation{}, ConsoleSituation{.preview = kPreviewWords},

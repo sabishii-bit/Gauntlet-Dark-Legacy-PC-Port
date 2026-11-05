@@ -204,7 +204,7 @@ TEST_CASE("with no Legends map installed, goto names none of their words",
     CHECK(help.contains(test::shownAs(std::format("{:<12}  {}", "goto", kBaseGotoSummary))));
     CHECK_FALSE(help.contains("legends"));
     for (const ConsoleSession& session :
-         {ConsoleSession{}, ConsoleSession{.seat = ConsoleSeat::Guest}}) {
+         {ConsoleSession{}, ConsoleSession{.role = ConsoleRole::Guest}}) {
         CHECK(fixture.say("goto", session) == test::shownAs(kBaseGotoUsage));
         CHECK(fixture.say("goto n64 1 2 3", session) == test::shownAs(kBaseGotoUsage));
     }
@@ -226,8 +226,8 @@ TEST_CASE("with no Legends map installed, goto names none of their words",
     CHECK(fixture.asked.opened == Words{"N64 C:/x/castle1 walk", "Dreamcast C:/x/castle1 preview"});
     for (const std::string_view line : {"goto castle", "goto back", "goto n64 C:/x/castle1"}) {
         CAPTURE(line);
-        CHECK(fixture.say(line, {.seat = ConsoleSeat::Guest}) == kLegendsOffline);
-        CHECK(fixture.say(line, {.seat = ConsoleSeat::Host}) == kLegendsOffline);
+        CHECK(fixture.say(line, {.role = ConsoleRole::Guest}) == kLegendsOffline);
+        CHECK(fixture.say(line, {.role = ConsoleRole::Host}) == kLegendsOffline);
     }
     CHECK(fixture.asked.closed == 1);
     CHECK(fixture.asked.opened.size() == 2);

@@ -25,7 +25,7 @@ struct Online {
                                           asked.push_back(allow);
                                           return hosting;
                                       }});
-        console.setSession({.seat = ConsoleSeat::Host});
+        console.setSession({.role = ConsoleRole::Host});
     }
 
     std::string say(std::string_view line) { return test::said(console, line); }
@@ -49,7 +49,7 @@ TEST_CASE("console_permissions lets the guests use their consoles, on the host a
           "Only the online host can change console permissions.");
     // Anyone but the online host is refused before the game is asked.
     for (const ConsoleSession& session :
-         {ConsoleSession{}, ConsoleSession{.seat = ConsoleSeat::Guest}}) {
+         {ConsoleSession{}, ConsoleSession{.role = ConsoleRole::Guest}}) {
         fixture.console.setSession(session);
         CHECK(fixture.say("console_permissions 1") == ConsolePolicy::kRefused);
     }

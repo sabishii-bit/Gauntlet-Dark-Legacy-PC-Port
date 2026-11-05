@@ -101,7 +101,7 @@ void registerSharedConsoleCommands(ConsoleHost& host, const ConsoleRegistry& reg
 }
 
 PlayScene::ConsolePlay consolePlayOf(const ConsoleSession& session) {
-    return session.seat == ConsoleSeat::Offline ? PlayScene::ConsolePlay::Offline
+    return session.role == ConsoleRole::Offline ? PlayScene::ConsolePlay::Offline
                                                 : PlayScene::ConsolePlay::Shared;
 }
 
