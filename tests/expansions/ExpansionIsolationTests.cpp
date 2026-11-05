@@ -145,10 +145,10 @@ TEST_CASE("GameCube settings and save slots work without optional expansion dire
     CHECK(restoredConfig.game.autoSave);
     SaveSlots restoredSlots;
     REQUIRE(restoredSlots.open(restoredConfig.saveDirectory(installation), 4));
-    CharacterSave restored;
-    REQUIRE(restoredSlots.load(1, restored));
-    CHECK(restored.toJson() == character.toJson());
-    for (const auto& progress : restored.classes) {
+    const auto restored = restoredSlots.load(1);
+    REQUIRE(restored.has_value());
+    CHECK(restored->toJson() == character.toJson());
+    for (const auto& progress : restored->classes) {
         CHECK(progress.legendsProgress(LegendsPlatform::N64) == LegendsProgress{});
         CHECK(progress.legendsProgress(LegendsPlatform::Dreamcast) == LegendsProgress{});
     }

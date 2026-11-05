@@ -222,9 +222,9 @@ TEST_CASE("Garm results retain victory rewards and offer saving without a shoppi
     for (s32 tick = 0; tick < 180; ++tick) {
         select.step(1, {});
     }
-    CharacterSave stored;
-    REQUIRE(select.saves().load(0, stored));
-    CHECK(stored.toJson() == saved);
+    const auto stored = select.saves().load(0);
+    REQUIRE(stored.has_value());
+    CHECK(stored->toJson() == saved);
     select.close();
 }
 } // namespace

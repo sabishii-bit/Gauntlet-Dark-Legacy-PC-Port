@@ -5,6 +5,7 @@
 #include <cmath>
 #include <exception>
 #include <format>
+#include <optional>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -470,16 +471,15 @@ bool SaveSlots::anySaved() const {
     return std::ranges::any_of(m_slots, [](const SaveSlotInfo& info) { return info.exists; });
 }
 
-bool SaveSlots::load(usize index, CharacterSave& out) const {
+std::optional<CharacterSave> SaveSlots::load(usize index) const {
     if (index >= m_slots.size() || !m_slots[index].exists) {
-        return false;
+        return std::nullopt;
     }
     try {
-        out = CharacterSave::fromJson(readTextFile(path(index)));
-        return true;
+        return CharacterSave::fromJson(readTextFile(path(index)));
     } catch (const std::exception& e) {
         log::warn("Saves: {}: {}", paths::utf8(path(index)), e.what());
-        return false;
+        return std::nullopt;
     }
 }
 

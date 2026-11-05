@@ -8,8 +8,8 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "TestSupport.h"
-#include "game/characters/CharacterSave.h"
 #include "expansions/shared/characters/LegendsProgress.h"
+#include "game/characters/CharacterSave.h"
 
 namespace {
 using namespace gdl;
@@ -206,14 +206,14 @@ TEST_CASE("Saving Legends progress reuses the character slot and refuses invalid
     REQUIRE(slots.write(0, save));
     REQUIRE(save.progress().legendsProgress(LegendsPlatform::Dreamcast).recordCompleted("levela1"));
     REQUIRE(slots.write(0, save));
-    CharacterSave loaded;
-    REQUIRE(slots.load(0, loaded));
-    CHECK(loaded.progress().legends == save.progress().legends);
+    const auto loaded = slots.load(0);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->progress().legends == save.progress().legends);
     CHECK_FALSE(slots.slot(1).occupied);
     save.progress().legendsProgress(LegendsPlatform::N64).completedMaps = {"../invalid"};
     CHECK_FALSE(slots.write(0, save));
-    CharacterSave preserved;
-    REQUIRE(slots.load(0, preserved));
-    CHECK(preserved == loaded);
+    const auto preserved = slots.load(0);
+    REQUIRE(preserved.has_value());
+    CHECK(*preserved == *loaded);
 }
 } // namespace

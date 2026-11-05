@@ -132,9 +132,9 @@ TEST_CASE("completed shop saves its character before returning to the province w
     }
     REQUIRE(select.lane(0).state() == SelectLane::State::SaveMenu);
     REQUIRE(select.lane(0).slotInUse() == 0);
-    CharacterSave stored;
-    REQUIRE(select.saves().load(0, stored));
-    CHECK(stored.toJson() == afterShop.front().save.toJson());
+    const auto stored = select.saves().load(0);
+    REQUIRE(stored.has_value());
+    CHECK(stored->toJson() == afterShop.front().save.toJson());
     input(accept); // Done after the save notice.
     REQUIRE(select.lane(0).lockedIn());
     SelectOutcome result = SelectOutcome::Running;
@@ -145,7 +145,7 @@ TEST_CASE("completed shop saves its character before returning to the province w
     const auto returning = select.party();
     REQUIRE(returning.size() == 1);
     CHECK(returning.front().slot == 0);
-    CHECK(returning.front().save.toJson() == stored.toJson());
+    CHECK(returning.front().save.toJson() == stored->toJson());
     select.close();
 
     PlayOptions options;

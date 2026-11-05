@@ -34,10 +34,10 @@ TEST_CASE("autosave assigns free slots once and reuses each character's slot", "
     CHECK(result.written == 2);
     CHECK(party[0].slot == 1);
     CHECK_FALSE(slots.slot(2).occupied);
-    CharacterSave loaded;
-    REQUIRE(slots.load(1, loaded));
-    CHECK(loaded.name == "FIRST");
-    CHECK(loaded.gold == 123);
+    const auto loaded = slots.load(1);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->name == "FIRST");
+    CHECK(loaded->gold == 123);
 }
 
 TEST_CASE("autosave leaves occupied and corrupt slots alone when the card is full",

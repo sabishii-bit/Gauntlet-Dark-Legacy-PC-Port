@@ -797,9 +797,9 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
     CHECK(result[2].fallen);
     CHECK(result[2].slot == 2);
     CHECK(result[2].save.toJson() == fallen.toJson());
-    CharacterSave checkpoint;
-    REQUIRE(scene.saves().load(2, checkpoint));
-    CHECK(checkpoint.toJson() == fallen.toJson());
+    const auto checkpoint = scene.saves().load(2);
+    REQUIRE(checkpoint.has_value());
+    CHECK(checkpoint->toJson() == fallen.toJson());
 }
 
 TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
@@ -830,9 +830,9 @@ TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
     CHECK(scene.lane(1).state() == SelectLane::State::SavePick);
     CHECK(scene.lane(0).reservedSlot() == 0);
     scene.step(SelectLane::kOperationStepTicks * 3, nobody());
-    CharacterSave saved;
-    REQUIRE(scene.saves().load(0, saved));
-    CHECK(saved.name == "FIRST");
+    const auto saved = scene.saves().load(0);
+    REQUIRE(saved.has_value());
+    CHECK(saved->name == "FIRST");
     CHECK(scene.party()[0].slot == 0);
     CHECK(scene.party()[0].helpHeard == std::vector<s32>{14});
     CHECK_FALSE(scene.party()[1].slot.has_value());
@@ -865,9 +865,9 @@ TEST_CASE("post-shop keeps Done selected and protects an existing save when over
     scene.step(1, player(0, true));
     REQUIRE(scene.lane(0).state() == SelectLane::State::OverwriteConfirm);
     scene.step(1, player(0, true)); // No is the default; leave the old file alone.
-    CharacterSave before;
-    REQUIRE(slots.load(0, before));
-    CHECK(before.gold != save.gold);
+    const auto before = slots.load(0);
+    REQUIRE(before.has_value());
+    CHECK(before->gold != save.gold);
     CHECK(scene.party()[0].save.gold == save.gold);
 }
 

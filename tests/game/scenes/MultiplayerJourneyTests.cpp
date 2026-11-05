@@ -219,9 +219,9 @@ TEST_CASE("four controllers retain distinct characters through death shop save a
         }
         REQUIRE(select.lane(player).state() == SelectLane::State::SaveMenu);
         REQUIRE(select.lane(player).slotInUse().has_value());
-        CharacterSave disk;
-        REQUIRE(select.saves().load(*select.lane(player).slotInUse(), disk));
-        CHECK(disk.toJson() == memberOf(afterShop, player).save.toJson());
+        const auto disk = select.saves().load(*select.lane(player).slotInUse());
+        REQUIRE(disk.has_value());
+        CHECK(disk->toJson() == memberOf(afterShop, player).save.toJson());
     }
     CHECK(select.lane(2).slotInUse() != select.lane(3).slotInUse());
     MenuInput up;

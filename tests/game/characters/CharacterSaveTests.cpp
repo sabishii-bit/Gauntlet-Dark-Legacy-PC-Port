@@ -91,11 +91,12 @@ TEST_CASE("save slots reload independent autoattack preferences",
 
     SaveSlots reopened;
     REQUIRE(reopened.open(dir, 2));
-    CharacterSave loaded;
-    REQUIRE(reopened.load(0, loaded));
-    CHECK_FALSE(loaded.autoAttack);
-    REQUIRE(reopened.load(1, loaded));
-    CHECK(loaded.autoAttack);
+    auto loaded = reopened.load(0);
+    REQUIRE(loaded.has_value());
+    CHECK_FALSE(loaded->autoAttack);
+    loaded = reopened.load(1);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->autoAttack);
 }
 
 TEST_CASE("lifetime totals persist per class and old saves do not fabricate history",
@@ -327,10 +328,10 @@ TEST_CASE("save slots list, write and read the directory", "[game][players][save
     REQUIRE(slots.slot(1).character == 2);
     REQUIRE_FALSE(slots.write(5, sampleSave()));
 
-    CharacterSave loaded;
-    REQUIRE_FALSE(slots.load(0, loaded));
-    REQUIRE(slots.load(1, loaded));
-    REQUIRE(loaded.gold == 1500);
+    REQUIRE_FALSE(slots.load(0).has_value());
+    const auto loaded = slots.load(1);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->gold == 1500);
 
     SaveSlots again;
     REQUIRE(again.open(dir, 3));
@@ -377,10 +378,10 @@ TEST_CASE("legacy class rewards migrate without loading or rewriting a character
     SaveSlots restarted;
     REQUIRE(restarted.open(dir, 3));
     CHECK(restarted.classUnlocks() == 0x101);
-    CharacterSave loaded;
-    REQUIRE(restarted.load(0, loaded));
-    CHECK(loaded.classUnlock == 0); // the character is not the authority
-    CHECK(loaded.experience() == 0);
+    const auto loaded = restarted.load(0);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->classUnlock == 0); // the character is not the authority
+    CHECK(loaded->experience() == 0);
 }
 
 TEST_CASE("shared unlock rewards persist without a slot and older writers retain new rewards",
@@ -420,7 +421,6 @@ TEST_CASE("unreadable and future unlock profiles are preserved instead of overwr
     }
 }
 
-
 TEST_CASE("the developer console locks a class again, in the profile and the characters",
           "[save][global-unlocks]") {
     const auto dir = test::scratchDirectory("class-unlock-locked-again");
@@ -459,9 +459,9 @@ TEST_CASE("save slots live under a folder named beyond the system code page",
     REQUIRE(slots.write(0, sampleSave()));
     SaveSlots reopened;
     REQUIRE(reopened.open(dir, 2));
-    CharacterSave loaded;
-    REQUIRE(reopened.load(0, loaded));
-    CHECK(loaded.name == sampleSave().name);
+    const auto loaded = reopened.load(0);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->name == sampleSave().name);
 }
 
 } // namespace

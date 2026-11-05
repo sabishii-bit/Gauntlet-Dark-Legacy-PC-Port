@@ -2,6 +2,7 @@
 
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -78,8 +79,8 @@ public:
     std::filesystem::path path(usize index) const;
     const std::filesystem::path& directory() const { return m_directory; }
 
-    /** Reads a slot; false (with a warning) when it is empty or unreadable. */
-    bool load(usize index, CharacterSave& out) const;
+    /** Reads a slot; nothing when it is empty, or (with a warning) unreadable. */
+    std::optional<CharacterSave> load(usize index) const;
 
     /** Writes a slot; false (with a warning) when the file cannot be written. */
     bool write(usize index, const CharacterSave& save);

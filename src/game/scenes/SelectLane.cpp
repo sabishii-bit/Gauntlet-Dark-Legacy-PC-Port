@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <utility>
 
 #include "engine/core/Types.h"
 
@@ -583,9 +584,14 @@ SelectLane::Result SelectLane::update(const MenuInput& rawInput, s32 ticks, cons
                 if (m_services != nullptr && m_services->slots != nullptr &&
                     m_slotTarget.has_value() &&
                     !std::ranges::contains(frame.slotsInUse, *m_slotTarget)) {
-                    ok = m_state == State::Loading
-                             ? m_services->slots->load(*m_slotTarget, m_save)
-                             : m_services->slots->write(*m_slotTarget, m_save);
+                    if (m_state == State::Loading) {
+                        if (auto loaded = m_services->slots->load(*m_slotTarget)) {
+                            m_save = std::move(*loaded);
+                            ok = true;
+                        }
+                    } else {
+                        ok = m_services->slots->write(*m_slotTarget, m_save);
+                    }
                     if (ok) {
                         m_saved = true;
                         m_hasCharacter = true;

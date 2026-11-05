@@ -40,9 +40,9 @@ TEST_CASE("manual saving associates a slot only after success and protects party
     REQUIRE(f.menu.state() == SaveMenu::State::Notice);
     CHECK(f.menu.party()[0].slot == 0);
     CHECK_FALSE(f.party[0].slot.has_value());
-    CharacterSave loaded;
-    REQUIRE(f.slots.load(0, loaded));
-    CHECK(loaded.gold == 300);
+    const auto loaded = f.slots.load(0);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->gold == 300);
     f.menu.back();
     CHECK(f.menu.state() == SaveMenu::State::Done);
 }

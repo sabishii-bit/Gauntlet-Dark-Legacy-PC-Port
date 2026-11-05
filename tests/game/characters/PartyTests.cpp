@@ -35,13 +35,13 @@ TEST_CASE("a party is written back to the slots its members came from", "[game][
 
     SaveSlots reopened;
     REQUIRE(reopened.open(dir, 4));
-    CharacterSave read;
-    REQUIRE(reopened.load(2, read));
-    REQUIRE(read.name == "KEPT");
-    REQUIRE(read.gold == 750);
-    REQUIRE(read.progress().inventory.keys == 3);
-    REQUIRE_FALSE(reopened.load(0, read));
-    REQUIRE_FALSE(reopened.load(1, read));
+    const auto read = reopened.load(2);
+    REQUIRE(read.has_value());
+    REQUIRE(read->name == "KEPT");
+    REQUIRE(read->gold == 750);
+    REQUIRE(read->progress().inventory.keys == 3);
+    REQUIRE_FALSE(reopened.load(0).has_value());
+    REQUIRE_FALSE(reopened.load(1).has_value());
     REQUIRE(saveParty(slots, {}) == 0);
 }
 

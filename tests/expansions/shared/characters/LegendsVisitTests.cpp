@@ -150,13 +150,13 @@ TEST_CASE("Departed native characters keep permanent awards through failed-visit
     REQUIRE(slots.open(test::scratchDirectory("legends-departed-progress"), 4));
     CHECK(autoSaveParty(slots, restored).written == 2);
     for (usize i = 0; i < restored.size(); ++i) {
-        CharacterSave loaded;
-        REQUIRE(slots.load(i + 1, loaded));
-        CHECK(loaded == restored[i].save);
-        CHECK(loaded.progress().legendsProgress(LegendsPlatform::N64) ==
+        const auto loaded = slots.load(i + 1);
+        REQUIRE(loaded.has_value());
+        CHECK(*loaded == restored[i].save);
+        CHECK(loaded->progress().legendsProgress(LegendsPlatform::N64) ==
               runtimes[i].actor.save().progress().legendsProgress(LegendsPlatform::N64));
-        CHECK(loaded.progress().relics == runtimes[i].entrySave.progress().relics);
-        CHECK(loaded.progress().legendsProgress(LegendsPlatform::Dreamcast).obelisks == 3);
-        CHECK(loaded.classes[2] == runtimes[i].entrySave.classes[2]);
+        CHECK(loaded->progress().relics == runtimes[i].entrySave.progress().relics);
+        CHECK(loaded->progress().legendsProgress(LegendsPlatform::Dreamcast).obelisks == 3);
+        CHECK(loaded->classes[2] == runtimes[i].entrySave.classes[2]);
     }
 }

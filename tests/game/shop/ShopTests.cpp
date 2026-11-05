@@ -236,11 +236,11 @@ TEST_CASE("purchased inventory and stat bonuses survive a real save-slot round t
     REQUIRE(slots.open(directory, 4));
     const std::array<PartyMember, 1> party{{{3, save, 2}}};
     REQUIRE(saveParty(slots, party) == 1);
-    CharacterSave loaded;
-    REQUIRE(slots.load(2, loaded));
-    REQUIRE(loaded.gold == 3400);
-    REQUIRE(loaded.progress().inventory == save.progress().inventory);
-    REQUIRE(loaded.progress().fightAdd == 10);
+    const auto loaded = slots.load(2);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->gold == 3400);
+    REQUIRE(loaded->progress().inventory == save.progress().inventory);
+    REQUIRE(loaded->progress().fightAdd == 10);
 }
 TEST_CASE("shop stat increases persist and stop at the stat cap", "[shop]") {
     const s32 type = GENERATE(5, 6, 7, 8);

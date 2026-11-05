@@ -133,10 +133,10 @@ void SaveMenu::perform() {
     if (m_mode == Mode::Save) {
         m_success = m_slots->write(m_target, member.save);
     } else {
-        CharacterSave loaded;
-        m_success = m_slots->load(m_target, loaded);
+        auto loaded = m_slots->load(m_target);
+        m_success = loaded.has_value();
         if (m_success) {
-            member.save = std::move(loaded);
+            member.save = std::move(*loaded);
             member.fallen = false;
             member.turbo = 0;
             member.helpHeard.clear();
