@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -55,6 +56,11 @@ inline std::string_view nameOf(Admission answer) {
     return "?";
 }
 
+/** Writes an answer by its enumerator's name, as a failing check shows it. */
+inline std::ostream& operator<<(std::ostream& out, Admission answer) {
+    return out << nameOf(answer);
+}
+
 /** Writes rules as the designated initializer a row records them with. */
 inline std::ostream& operator<<(std::ostream& out, const LocalOwnerRules& rules) {
     const auto flag = [](bool value) { return value ? "true" : "false"; };
@@ -69,8 +75,8 @@ inline std::ostream& operator<<(std::ostream& out, const LocalOwnerRules& rules)
                << ", .roundTrips = " << flag(rules.roundTrips) << "}";
 }
 
-/** Whether the game copies `Owner`, so that a copy's answer belongs to its rules; the rows of
- * such owners say so. */
+/** Whether a copy of `Owner` is asked about the snapshot its source saved: set for the owners
+ * whose identity a copy shares, so that what a copy answers is recorded with their rules. */
 template <class Owner> inline constexpr bool kCopiedOwner = false;
 
 /**
@@ -137,8 +143,9 @@ PastDigest savedDigest(Live& live, typename Live::Owner& owner,
     }
 }
 
-/** How `owner` answers `saved`. Whatever the answer, its three entry points must agree, and
- * a refused restore must leave the owner's live digest as it was. */
+/** How `owner` answers `saved`. Whatever the answer, its three entry points must agree: an
+ * admitted snapshot restores the live digest it hashed to, and a refused restore leaves the
+ * owner's live digest as it was. */
 template <class Live>
 Admission ask(Live& live, typename Live::Owner& owner,
               const typename Live::Owner::LocalSnapshot& saved) {
@@ -147,6 +154,9 @@ Admission ask(Live& live, typename Live::Owner& owner,
     CHECK(past.appended == admitted);
     if (admitted) {
         CHECK(past.digest.has_value());
+        CHECK(owner.restoreLocal(saved));
+        const bool restored = liveDigest(live, owner) == past.digest;
+        CHECK(restored);
         return Admission::Admitted;
     }
     const std::optional<Digest> before = liveDigest(live, owner);
@@ -257,6 +267,15 @@ template <LocalOwnerLive Live> void checkLocalOwner() {
     // Observed outside the assertion, so that a row skipped without the game data skips.
     const LocalOwnerRules observed = observeLocalOwner<Live>();
     CHECK(observed == Live::kRules);
+}
+
+/** How `Live`'s owner answers a snapshot saved before `act` was done to its row, for an owner
+ * opened or bound in more ways than its row's rebind takes. */
+template <LocalOwnerLive Live, std::invocable<Live&> Act> Admission askAfter(Act act) {
+    CAPTURE(Live::kName);
+    local_owner::Saved<Live> saved;
+    std::invoke(act, *saved.live);
+    return local_owner::ask(*saved.live, saved.live->owner(), saved.snapshot);
 }
 
 /** A default owner after a clear: its saved digest is its live one, another owner refuses

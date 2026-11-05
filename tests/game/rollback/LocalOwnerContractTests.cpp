@@ -124,8 +124,8 @@
 #include "game/widgets/ScrollBox.h"
 
 namespace gdl::test {
-// PlayerFigure stages a restore on copies of its familiar and companion, so what a copy
-// answers belongs to their rules.
+// A copy of the familiar or the companion shares its source's identity, so a copy is asked as
+// well. The game neither copies nor moves either: PlayerFigure restores both in place.
 template <> inline constexpr bool kCopiedOwner<game::PlayerFamiliar> = true;
 template <> inline constexpr bool kCopiedOwner<game::PowerupCompanion> = true;
 } // namespace gdl::test
@@ -1489,7 +1489,7 @@ struct ScrollBoxRow {
                                             .blank = Refused,
                                             .cleared = Admitted,
                                             .restoredThenCleared = Admitted,
-                                            .rebound = Admitted,
+                                            .rebound = Refused,
                                             .movedInto = Refused,
                                             .movedFrom = Refused,
                                             .assignedInto = Refused,
@@ -1500,15 +1500,22 @@ struct ScrollBoxRow {
     ScrollBox box;
 
     ScrollBoxRow() {
-        box.setText(&stage.text);
+        setText();
+        setArt();
+        open();
+    }
+    void setText() { box.setText(&stage.text); }
+    void setArt() {
         box.setArt({&stage.backdrop,
                     &stage.source,
                     nullptr,
                     nullptr,
                     {&stage.mask, &stage.burnt},
                     {&stage.ring}});
-        open();
     }
+    /** Leaves the scroll without a presentation of its own, as clearing a level's messages
+     * does. */
+    void setPresentation() { box.setPresentation(nullptr); }
     void open() { REQUIRE(box.open(stage.device, {"AB", "B"}, 1, "AB")); }
     Owner& owner() { return box; }
     void advance() { box.step(1, 1); }
@@ -1518,6 +1525,8 @@ struct ScrollBoxRow {
     }
     bool rebind() {
         box.close();
+        setText();
+        setArt();
         open();
         return true;
     }
@@ -1587,6 +1596,8 @@ struct PartyHudRow {
                                             .advances = true,
                                             .roundTrips = true};
     MessageTable text;
+    test::FakeRenderDevice device;
+    ItemArchive powerups; ///< without the hourglass's art
     PartyHud hud;
     NativeStateResources registry;
 
@@ -1598,6 +1609,7 @@ struct PartyHudRow {
         hud.help().setTexts(&text);
         REQUIRE(hud.help().post(HelpMessages::kLevelUp, 0, {}, 2));
     }
+    void bindHourglass() { (void)hud.bindHourglass(device, powerups); }
     Owner& owner() { return hud; }
     void advance() { hud.help().update(1); }
     bool clear() {
@@ -1866,6 +1878,13 @@ TEST_CASE("the widgets' and HUD's snapshot owners keep their admission rules",
     test::checkLocalOwner<ChallengeHudRow>();
     test::checkLocalOwner<BossMeterRow>();
     test::checkLocalOwner<BossMetersRow>();
+    // The scroll given its text, its art or no presentation alone, and opened anew; the HUD
+    // given its hourglass.
+    CHECK(test::askAfter<ScrollBoxRow>(&ScrollBoxRow::setText) == Refused);
+    CHECK(test::askAfter<ScrollBoxRow>(&ScrollBoxRow::setArt) == Refused);
+    CHECK(test::askAfter<ScrollBoxRow>(&ScrollBoxRow::setPresentation) == Refused);
+    CHECK(test::askAfter<ScrollBoxRow>(&ScrollBoxRow::open) == Admitted);
+    CHECK(test::askAfter<PartyHudRow>(&PartyHudRow::bindHourglass) == Refused);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2064,7 +2083,7 @@ struct HintMenuRow {
                                             .blank = Refused,
                                             .cleared = Admitted,
                                             .restoredThenCleared = Admitted,
-                                            .rebound = Admitted,
+                                            .rebound = Refused,
                                             .movedInto = Refused,
                                             .movedFrom = Refused,
                                             .assignedInto = Refused,
@@ -2079,8 +2098,11 @@ struct HintMenuRow {
 
     HintMenuRow() {
         painter.setFont(&glyphs, &sheet);
+        setArt();
         open();
     }
+    /** Gives the scroll no art, as Sumner's visit does when the hints' art is missing. */
+    void setArt() { menu.setArt({}); }
     void open() {
         const HintMenuLabels labels{
             "HELP", {{"GENERAL", 39}, {"GUARDIANS", 40}}, "SELECT", "PLAYER"};
@@ -2094,6 +2116,7 @@ struct HintMenuRow {
     }
     bool rebind() {
         menu.close();
+        setArt();
         open();
         return true;
     }
@@ -2205,6 +2228,8 @@ TEST_CASE("the tower's snapshot owners keep their admission rules", "[local-owne
     test::checkLocalOwner<HintMenuRow>();
     test::checkLocalOwner<TowerPromotionRow>();
     test::checkLocalOwner<TowerRelicsRow>();
+    // The hint scroll opened anew without its art set again.
+    CHECK(test::askAfter<HintMenuRow>(&HintMenuRow::open) == Admitted);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3414,12 +3439,23 @@ struct CombatantRow {
                                             .roundTrips = true};
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
-    NativeStateResources registry;
+    std::unique_ptr<NativeStateResources> registry;
 
     CombatantRow() {
         fixture.open(device, djinnStageRoot(), nullptr, {}, 'G');
+        spawn();
+    }
+    /** Loads the djinn's assets, spawns it over them and names them in a registry of their
+     * own. */
+    void spawn() {
         REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
-        REQUIRE(registry.registerCombatantAssets(fixture.assets, "stage/local-owner/djinn"));
+        registry = std::make_unique<NativeStateResources>();
+        REQUIRE(registry->registerCombatantAssets(fixture.assets, "stage/local-owner/djinn"));
+    }
+    /** Clears the djinn and spawns it over its assets loaded anew. */
+    void reload() {
+        fixture.actor.clear();
+        spawn();
     }
     Owner& owner() { return fixture.actor; }
     void advance() {
@@ -3436,7 +3472,7 @@ struct CombatantRow {
         return true;
     }
     NativeStateDigest::Resources resources(const Owner& owner) {
-        return registered(registry, owner);
+        return registered(*registry, owner);
     }
 };
 
@@ -3609,6 +3645,8 @@ TEST_CASE("the opponents' snapshot owners keep their admission rules", "[local-o
     test::checkLocalOwner<CrittersRow>();
     test::checkLocalOwner<BossesRow>();
     test::checkLocalOwner<LevelOpponentsRow>();
+    // The fighter spawned over its assets loaded anew; its row respawns it over the same ones.
+    CHECK(test::askAfter<CombatantRow>(&CombatantRow::reload) == Refused);
 }
 
 // ---------------------------------------------------------------------------------------------
