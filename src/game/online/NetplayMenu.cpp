@@ -137,6 +137,12 @@ void NetplayMenu::show(RenderDevice& device, const View& view) {
     for (auto& item : m_rows) {
         item.texture = text(device, item.label);
     }
+    m_pointerTargets.clear();
+    for (usize i = 0; i < m_rows.size(); ++i) {
+        if (m_rows[i].enabled) {
+            m_pointerTargets.add(rowArea(i), i);
+        }
+    }
     if (changedPage || m_selection >= m_rows.size()) {
         m_selection = 0;
     }
@@ -156,12 +162,11 @@ NetplayMenu::Event NetplayMenu::update(const MenuInput& raw) {
         return {Action::Back};
     }
     if (input.pointer && (input.pointer != m_pointer || input.pointerPressed)) {
-        for (usize i = 0; i < m_rows.size(); ++i) {
-            if (m_rows[i].enabled && rowArea(i).contains(*input.pointer)) {
-                m_selection = i;
-                if (input.pointerPressed) {
-                    return {m_rows[i].action, 1, m_rows[i].rule};
-                }
+        if (const auto* target = m_pointerTargets.at(*input.pointer)) {
+            m_selection = target->control;
+            if (input.pointerPressed) {
+                const auto& row = m_rows[m_selection];
+                return {row.action, 1, row.rule};
             }
         }
         m_pointer = input.pointer;

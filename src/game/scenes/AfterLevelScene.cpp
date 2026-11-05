@@ -18,6 +18,7 @@
 #include "game/shop/ShopLayout.h"
 #include "game/widgets/MenuFont.h"
 #include "game/widgets/OptionMenu.h"
+#include "game/widgets/PointerTargets.h"
 
 namespace gdl::game {
 namespace {
@@ -395,6 +396,10 @@ bool AfterLevelScene::focusOnline(s32 seat, usize row) {
     return m_open && m_session.focus(seat, row);
 }
 
+Rect AfterLevelScene::laneArea(const ShopLane& lane) {
+    return {static_cast<f32>(lane.member.player * StatusBoxPainter::kWidth), 0,
+            StatusBoxPainter::kWidth, StatusBoxPainter::kY};
+}
 void AfterLevelScene::pointerInput(ShopSession::Inputs& inputs,
                                    const std::array<bool, 4>& scrolling, std::array<s32, 4>* focus,
                                    s32 onlyPlayer) {
@@ -406,14 +411,11 @@ void AfterLevelScene::pointerInput(ShopSession::Inputs& inputs,
         const bool rightClick = inputs[player].pointerBack;
         inputs[player].pointerBack = false; // Sell needs a row, not just the lane's background.
         auto& input = inputs[player];
-        input = mapMenuPointer(std::move(input), m_pointerTransform,
-                               Rect{static_cast<f32>(lane.member.player * StatusBoxPainter::kWidth),
-                                    0, StatusBoxPainter::kWidth, StatusBoxPainter::kY});
+        input = mapMenuPointer(std::move(input), m_pointerTransform, laneArea(lane));
         // A pointer chooses where it appears and once it has moved a little, never while
         // it only rests where the rows scroll under it.
-        const bool moved = input.pointer && (!m_lastPointer[player] ||
-                                             glm::distance(*m_lastPointer[player], *input.pointer) >
-                                                 OptionMenu::kHoverMotion);
+        const bool moved = input.pointer && pointerMoved(m_lastPointer[player], *input.pointer,
+                                                         OptionMenu::kHoverMotion);
         if (moved) {
             m_lastPointer[player] = input.pointer;
         } else if (!input.pointer) {
@@ -427,18 +429,11 @@ void AfterLevelScene::pointerInput(ShopSession::Inputs& inputs,
             continue;
         }
         const bool active = moved || input.pointerPressed || rightClick || input.pointerScroll != 0;
-        const auto hit = std::ranges::find_if(
-            m_pointerTargets.rbegin(), m_pointerTargets.rend(), [&](const PointerTarget& target) {
-                const auto& point = *input.pointer;
-                return target.player == lane.member.player && target.phase == lane.phase &&
-                       point.x >= target.area.x && point.x < target.area.right() &&
-                       point.y >= target.area.y && point.y < target.area.bottom();
-            });
+        const auto* target = m_pointerTargets.at(*input.pointer, [&](const auto& shown) {
+            return shown.control.seat == lane.member.player && shown.control.phase == lane.phase;
+        });
         if (!active) {
-            if (hit == m_pointerTargets.rend() || !m_hoverTargets[player] ||
-                hit->action != m_hoverTargets[player]->action ||
-                hit->row != m_hoverTargets[player]->row ||
-                hit->phase != m_hoverTargets[player]->phase) {
+            if (target == nullptr || m_hoverTargets[player] != target->control) {
                 m_hoverTargets[player].reset();
             }
             continue;
@@ -449,28 +444,29 @@ void AfterLevelScene::pointerInput(ShopSession::Inputs& inputs,
             m_hoverTargets[player].reset();
             continue;
         }
-        if (hit == m_pointerTargets.rend()) {
+        if (target == nullptr) {
             m_hoverTargets[player].reset();
             continue;
         }
-        m_hoverTargets[player] = *hit;
-        switch (hit->action) {
+        const ShopControl& hit = target->control;
+        m_hoverTargets[player] = hit;
+        switch (hit.action) {
         case PointerAction::Buy:
         case PointerAction::Sell: {
             const auto& catalog = m_session.catalog().items();
-            const bool selectable = hit->row < catalog.size() && lane.selectable(catalog[hit->row]);
+            const bool selectable = hit.row < catalog.size() && lane.selectable(catalog[hit.row]);
             bool focused = false;
             if (focus != nullptr) {
                 if (selectable && lane.phase == ShopPhase::Shopping) {
-                    (*focus)[player] = static_cast<s32>(hit->row);
+                    (*focus)[player] = static_cast<s32>(hit.row);
                     focused = true;
                 }
             } else {
-                focused = m_session.focus(lane.member.player, hit->row);
+                focused = m_session.focus(lane.member.player, hit.row);
             }
             if (focused && !scrolling[player]) {
                 input.back =
-                    (rightClick || (input.pointerPressed && hit->action == PointerAction::Sell));
+                    (rightClick || (input.pointerPressed && hit.action == PointerAction::Sell));
                 input.select = input.pointerPressed && !input.back;
             }
             break;

@@ -16,6 +16,7 @@
 #include "game/context/GameServices.h"
 #include "game/hud/StatusBox.h"
 #include "game/shop/ShopSession.h"
+#include "game/widgets/PointerTargets.h"
 
 namespace gdl::game {
 /** Presentation and sound for the tally/shop; ShopSession owns transactions and flow. */
@@ -57,16 +58,19 @@ private:
         SpeechTiming timing;
     };
     enum class PointerAction : u8 { Buy, Sell, Previous, Next, Continue };
-    struct PointerTarget {
-        s32 player = 0;
+    /** What a mouse control in a lane does: its seat's lane, the phase it is shown in, and
+     * for Buy and Sell the catalog row. */
+    struct ShopControl {
+        s32 seat = 0;
         ShopPhase phase = ShopPhase::Done;
         PointerAction action = PointerAction::Continue;
         usize row = 0;
-        Rect area;
+        bool operator==(const ShopControl&) const = default;
     };
+    /** The part of the screen `lane`'s controls answer in: its column above the status boxes. */
+    static Rect laneArea(const ShopLane& lane);
     void pointerInput(ShopSession::Inputs& inputs, const std::array<bool, 4>& scrolling,
                       std::array<s32, 4>* focus = nullptr, s32 onlyPlayer = -1);
-    void pointerTarget(const ShopLane& lane, PointerAction action, const Rect& area, usize row = 0);
     bool pointerHovered(const ShopLane& lane, PointerAction action, usize row = 0) const;
     void drawContinue(const ShopLane& lane, s32 y);
     std::string_view text(std::string_view id) const;
@@ -109,8 +113,8 @@ private:
     std::array<f32, 4> m_scroll{};
     std::array<s32, 4> m_scrollSpeed{};
     Mat4 m_pointerTransform{1};
-    std::vector<PointerTarget> m_pointerTargets;
-    std::array<std::optional<PointerTarget>, 4> m_hoverTargets;
+    PointerTargets<ShopControl> m_pointerTargets; ///< laid out as the lanes are drawn
+    std::array<std::optional<ShopControl>, 4> m_hoverTargets;
     std::array<std::optional<Vec2>, 4> m_lastPointer;
     f64 m_time = 0;
     f64 m_frameTime = 0;

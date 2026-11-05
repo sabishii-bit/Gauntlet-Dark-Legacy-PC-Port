@@ -26,21 +26,9 @@ constexpr Color kPriceFlash = Color::rgba(255, 0, 0);
 /** The scroll arrows are pictures, not text: under the pointer they take the glow's colour. */
 constexpr Color kPointerHighlight = TextHighlight::kGlow;
 } // namespace
-void AfterLevelScene::pointerTarget(const ShopLane& lane, PointerAction action, const Rect& area,
-                                    usize row) {
-    const auto left = static_cast<f32>(lane.member.player * StatusBoxPainter::kWidth);
-    const f32 x = std::max(area.x, left);
-    const f32 y = std::max(area.y, 0.0f);
-    const f32 right = std::min(area.right(), left + StatusBoxPainter::kWidth);
-    const f32 bottom = std::min(area.bottom(), static_cast<f32>(StatusBoxPainter::kY));
-    if (right > x && bottom > y) {
-        m_pointerTargets.push_back(
-            {lane.member.player, lane.phase, action, row, Rect{x, y, right - x, bottom - y}});
-    }
-}
 bool AfterLevelScene::pointerHovered(const ShopLane& lane, PointerAction action, usize row) const {
-    const auto& hover = m_hoverTargets[static_cast<usize>(lane.member.player)];
-    return hover && hover->phase == lane.phase && hover->action == action && hover->row == row;
+    return m_hoverTargets[static_cast<usize>(lane.member.player)] ==
+           ShopControl{lane.member.player, lane.phase, action, row};
 }
 void AfterLevelScene::drawContinue(const ShopLane& lane, s32 y) {
     constexpr f32 kScale = 0.5f;
@@ -51,15 +39,16 @@ void AfterLevelScene::drawContinue(const ShopLane& lane, s32 y) {
     // The word keeps its white ink under the pointer; only its glow holds steady.
     line(-center, y, label, kScale, Color::white(), true,
          pointerHovered(lane, PointerAction::Continue));
-    pointerTarget(lane, PointerAction::Continue,
-                  Rect{static_cast<f32>(left), static_cast<f32>(y), static_cast<f32>(width),
-                       static_cast<f32>(m_text.lineHeight(kScale))});
+    m_pointerTargets.add(Rect{static_cast<f32>(left), static_cast<f32>(y), static_cast<f32>(width),
+                              static_cast<f32>(m_text.lineHeight(kScale))},
+                         {lane.member.player, lane.phase, PointerAction::Continue, 0},
+                         laneArea(lane));
 }
-void AfterLevelScene::line(s32 x, s32 y, std::string_view value, f32 scale, Color color,
-                           bool glow, bool hovered) {
-    const u8 alpha = m_glow != nullptr
-                         ? TextHighlight::glowAlpha(glow, glow && hovered, static_cast<s32>(m_time * 60))
-                         : 0;
+void AfterLevelScene::line(s32 x, s32 y, std::string_view value, f32 scale, Color color, bool glow,
+                           bool hovered) {
+    const u8 alpha = m_glow != nullptr ? TextHighlight::glowAlpha(glow, glow && hovered,
+                                                                  static_cast<s32>(m_time * 60))
+                                       : 0;
     TextHighlight::draw(m_canvas, m_text, x, y, value, scale, m_glow, alpha, color);
 }
 void AfterLevelScene::image(std::string_view name, s32 x, s32 y, Color color) {
@@ -252,10 +241,10 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         const s32 rowTop = owned && item.price > 0 ? y - 6 : y;
         const s32 rowBottom = descriptionY + lines * m_text.lineHeight(scale);
         if (interactive) {
-            pointerTarget(lane, PointerAction::Buy,
-                          Rect{static_cast<f32>(x + 8), static_cast<f32>(rowTop), 112,
-                               static_cast<f32>(rowBottom - rowTop)},
-                          i);
+            m_pointerTargets.add(Rect{static_cast<f32>(x + 8), static_cast<f32>(rowTop), 112,
+                                      static_cast<f32>(rowBottom - rowTop)},
+                                 {lane.member.player, lane.phase, PointerAction::Buy, i},
+                                 laneArea(lane));
         }
         image(item.texture, x + 20, y, Color::white().withAlpha(alpha));
         if (item.price > 0) {
@@ -268,11 +257,11 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
                 const auto sell = std::format("{}{}", text("shop.sell"), item.price * 3 / 4);
                 line(x + 58, y + 12, sell, 0.5f, price, selected && !hoveringBuy);
                 if (interactive) {
-                    pointerTarget(lane, PointerAction::Sell,
-                                  Rect{static_cast<f32>(x + 58), static_cast<f32>(y + 12),
-                                       static_cast<f32>(m_text.measure(sell, 0.5f)),
-                                       static_cast<f32>(m_text.lineHeight(0.5f))},
-                                  i);
+                    m_pointerTargets.add(Rect{static_cast<f32>(x + 58), static_cast<f32>(y + 12),
+                                              static_cast<f32>(m_text.measure(sell, 0.5f)),
+                                              static_cast<f32>(m_text.lineHeight(0.5f))},
+                                         {lane.member.player, lane.phase, PointerAction::Sell, i},
+                                         laneArea(lane));
                 }
             }
         }
@@ -292,18 +281,20 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         image("MORE_UP", x + 32, 32,
               pointerHovered(lane, PointerAction::Previous) ? kPointerHighlight : Color::white());
         if (const auto* art = texture("MORE_UP")) {
-            pointerTarget(lane, PointerAction::Previous,
-                          Rect{static_cast<f32>(x + 32), 32, static_cast<f32>(art->width()),
-                               static_cast<f32>(art->height())});
+            m_pointerTargets.add(Rect{static_cast<f32>(x + 32), 32, static_cast<f32>(art->width()),
+                                      static_cast<f32>(art->height())},
+                                 {lane.member.player, lane.phase, PointerAction::Previous, 0},
+                                 laneArea(lane));
         }
     }
     if (down) {
         image("MORE_DOWN", x + 32, 280,
               pointerHovered(lane, PointerAction::Next) ? kPointerHighlight : Color::white());
         if (const auto* art = texture("MORE_DOWN")) {
-            pointerTarget(lane, PointerAction::Next,
-                          Rect{static_cast<f32>(x + 32), 280, static_cast<f32>(art->width()),
-                               static_cast<f32>(art->height())});
+            m_pointerTargets.add(Rect{static_cast<f32>(x + 32), 280, static_cast<f32>(art->width()),
+                                      static_cast<f32>(art->height())},
+                                 {lane.member.player, lane.phase, PointerAction::Next, 0},
+                                 laneArea(lane));
         }
     }
 }

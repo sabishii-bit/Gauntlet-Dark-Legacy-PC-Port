@@ -7,6 +7,8 @@
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
+#include "game/widgets/PointerTargets.h"
+
 namespace gdl::game {
 
 namespace {
@@ -393,8 +395,7 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks, std::optional<us
     if (!input.pointerNormalized && input.pointer) {
         // A pointer chooses the row under it where it appears and once it has moved a
         // little, never while it only rests where the rows shift under it.
-        const bool moved = !m_lastPointer.has_value() ||
-                           glm::distance(*m_lastPointer, *input.pointer) > kHoverMotion;
+        const bool moved = pointerMoved(m_lastPointer, *input.pointer, kHoverMotion);
         if (moved) {
             m_lastPointer = input.pointer;
         }

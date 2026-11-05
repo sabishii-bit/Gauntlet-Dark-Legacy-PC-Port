@@ -9,6 +9,7 @@
 
 #include "game/netplay/RoomService.h"
 #include "game/widgets/MenuInput.h"
+#include "game/widgets/PointerTargets.h"
 
 namespace gdl::game {
 /** Local online UI. Contains no provider credentials beyond the displayed invitation and
@@ -81,6 +82,7 @@ private:
     };
     View m_view;
     std::vector<Row> m_rows;
+    PointerTargets<usize> m_pointerTargets; ///< the enabled rows, each by its index
     std::unique_ptr<Texture> m_title;
     std::unique_ptr<Texture> m_notice;
     std::unique_ptr<Texture> m_code;
