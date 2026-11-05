@@ -55,6 +55,8 @@ add_library(game STATIC
     scenes/PlaySceneSimulation.cpp
     party/PlayerNativeState.cpp
     party/PlayInput.h
+    party/PlayInputReader.h
+    party/PlayInputReader.cpp
     rollback/SessionInputs.cpp
     level/StaticScenery.cpp
     enemies/DeathRules.cpp

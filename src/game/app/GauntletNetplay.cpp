@@ -84,7 +84,8 @@ void Gauntlet::updateNetplay(f64 deltaSeconds, const SceneInput& sceneInput) {
         if (blanked) {
             resetConsoleFlights(); // a frame that reads no controls flies nobody
         }
-        m_online->update(blanked ? SessionInputs::Frame{} : readPlayInputs(deltaSeconds), {});
+        m_online->update(
+            blanked ? SessionInputs::Frame{} : readPlayInputs(deltaSeconds, sceneInput), {});
         // A permission revocation can arrive during this update. Do not keep a guest
         // console (or its input capture) open for an additional rendered frame.
         if (!m_online->consoleAllowed()) {

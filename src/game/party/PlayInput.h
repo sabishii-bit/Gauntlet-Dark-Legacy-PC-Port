@@ -2,7 +2,9 @@
 
 #include <optional>
 
-#include "game/hud/PowerupSelector.h"
+#include "engine/core/Types.h"
+#include "engine/math/Math.h"
+
 #include "game/players/PlayerControls.h"
 #include "game/widgets/MenuInput.h"
 

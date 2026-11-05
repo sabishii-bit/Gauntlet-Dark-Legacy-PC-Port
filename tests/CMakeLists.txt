@@ -469,6 +469,7 @@ add_executable(tests
     game/critters/CombatantProjectilesTests.cpp
     game/critters/CombatantProjectilesLocalRewindTests.cpp
     game/players/PlayerControlsTests.cpp
+    game/party/PlayInputReaderTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerCaptureTests.cpp
     game/players/ComboMoveTests.cpp

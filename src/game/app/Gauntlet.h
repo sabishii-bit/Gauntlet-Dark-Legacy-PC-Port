@@ -49,8 +49,7 @@
 #include "game/menu/LiveSettings.h"
 #include "game/menu/PauseMenu.h"
 #include "game/online/PartyStore.h"
-#include "game/players/CursorAim.h"
-#include "game/players/PlayerControls.h"
+#include "game/party/PlayInputReader.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/scenes/AfterLevelScene.h"
 #include "game/scenes/AttractScene.h"
@@ -154,7 +153,9 @@ private:
     void connectNetplay();
     void leaveNetplay();
     void updateTower(f64 deltaSeconds, const SceneInput& sceneInput);
-    PlayScene::Inputs readPlayInputs(f64 deltaSeconds);
+    /** Every input slot's play controls through m_playInput, each cursor aimed in the scene
+     * its slot plays; online each slot's noclip flight too. */
+    PlayScene::Inputs readPlayInputs(f64 deltaSeconds, const SceneInput& sceneInput);
     /** The level debug overlay's lines for the level in play. */
     std::vector<std::string> levelDebugLines() const;
     /** The developer console's font, banner and commands (GauntletConsole.cpp). */
@@ -299,9 +300,8 @@ private:
         std::jthread digestWorker;
     };
     std::unique_ptr<NetplayNavigation> m_netplay;
-    std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
+    PlayInputReader m_playInput;
     SessionInputs m_sessionInputs;
-    std::array<CursorInput, PlayScene::kPlayerCount> m_cursorInput;
     PromptDevices m_promptDevices;
     /** Loads `table` in `language` from the game's text, then each mechanic's over it. */
     bool loadText(StringTable& table, std::string_view language) const;

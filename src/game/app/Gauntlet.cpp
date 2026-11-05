@@ -4,6 +4,7 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -27,7 +28,7 @@
 #include "game/characters/AutoSave.h"
 #include "game/config/ControlProfiles.h"
 #include "game/enemies/Enemies.h"
-#include "game/players/PlayerControls.h"
+#include "game/party/PlayInputReader.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/scenes/ConsoleTravel.h"
 #include "game/widgets/MenuInput.h"
@@ -47,6 +48,33 @@ constexpr auto kEverySlot = [] {
     admitted.fill(true);
     return admitted;
 }();
+
+/** Offline, an input slot's cursor turns the scene's player of the same number. */
+class OfflineAim final : public PlayInputReader::Aim {
+public:
+    explicit OfflineAim(const PlayScene& scene) : m_scene(scene) {}
+    std::optional<Vec3> toward(s32 inputSlot, Vec2 cursor) const override {
+        if (const auto* actor = m_scene.actor(inputSlot)) {
+            return m_scene.cursorAim(cursor, actor->position());
+        }
+        return std::nullopt;
+    }
+
+private:
+    const PlayScene& m_scene;
+};
+
+/** Online, an input slot's cursor turns the seat its device holds in the room's scene. */
+class OnlineAim final : public PlayInputReader::Aim {
+public:
+    explicit OnlineAim(const OnlineRun& run) : m_run(run) {}
+    std::optional<Vec3> toward(s32 inputSlot, Vec2 cursor) const override {
+        return m_run.cursorAim(inputSlot, cursor);
+    }
+
+private:
+    const OnlineRun& m_run;
+};
 
 } // namespace
 
@@ -349,7 +377,8 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         if (consoleOpen) {
             resetConsoleFlights(); // a frame that reads no controls flies nobody
         }
-        m_online->update(consoleOpen ? SessionInputs::Frame{} : readPlayInputs(deltaSeconds), menu);
+        m_online->update(
+            consoleOpen ? SessionInputs::Frame{} : readPlayInputs(deltaSeconds, sceneInput), menu);
         if (!m_online->consoleAllowed()) {
             consoleSelect(std::nullopt);
             m_console.close();
@@ -633,9 +662,7 @@ bool Gauntlet::joinTower(const PlayerSelectScene::Inputs& joining) {
 }
 
 void Gauntlet::resetPlayInput() {
-    for (auto& controls : m_controls) {
-        controls.reset();
-    }
+    m_playInput.reset();
     m_sessionInputs.beginEpoch();
 }
 
@@ -704,7 +731,8 @@ void Gauntlet::updateTower(f64 deltaSeconds, const SceneInput& sceneInput) {
             return;
         }
     }
-    PlayScene::Inputs inputs = consoleOpen ? PlayScene::Inputs{} : readPlayInputs(deltaSeconds);
+    PlayScene::Inputs inputs =
+        consoleOpen ? PlayScene::Inputs{} : readPlayInputs(deltaSeconds, sceneInput);
     if (const s32 flying = consolePlayer(); m_freeCamera.active() && flying >= 0) {
         inputs[static_cast<usize>(flying)] = PlayInput{}; // the keys fly the camera instead
     }
@@ -1335,45 +1363,13 @@ std::vector<std::string> Gauntlet::levelDebugLines() const {
                                        enemiesAlive);
 }
 
-PlayScene::Inputs Gauntlet::readPlayInputs(f64 deltaSeconds) {
-    PlayScene::Inputs inputs;
-    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        const MenuInputSource source = playerInputSource(input(), m_config, player);
-        const auto& bindings = playBindings(m_config, player);
-        PlayInput& in = inputs[static_cast<usize>(player)];
-        if (m_online) {
-            in.consoleFlight = consoleFlight(player, deltaSeconds, false);
-        }
-        in.move = readMoveInput(input(), bindings, source.keyboard, source.pad);
-        in.freeMove = source.keyboard && m_config.controls[static_cast<usize>(player)].scheme ==
-                                             KeyboardScheme::Robotron;
-        if (m_cursorInput[static_cast<usize>(player)].update(input(), bindings, source.keyboard,
-                                                             source.pad)) {
-            const Vec2 cursor{input().pointer().x, input().pointer().y};
-            if (m_online) {
-                in.aimDirection = m_online->cursorAim(player, cursor);
-            } else if (const auto* actor = m_play->scene.actor(player)) {
-                in.aimDirection = m_play->scene.cursorAim(cursor, actor->position());
-            }
-        }
-        const PlayButtons buttons = m_controls[static_cast<usize>(player)].read(
-            input(), bindings, source.keyboard, source.pad, static_cast<f32>(deltaSeconds));
-        in.attack = buttons.attack;
-        in.usePotion = buttons.usePotion;
-        in.throwPotion = buttons.throwPotion;
-        in.shieldPotion = buttons.shieldPotion;
-        in.strafe = buttons.strafe;
-        in.strongAttack = buttons.strongAttack;
-        in.turbo = buttons.turbo;
-        in.defendPressed = buttons.defendPressed;
-        in.combo = buttons.combo;
-        in.chargePressed = buttons.chargePressed;
-        in.attackPressed = buttons.attackPressed;
-        in.turboAttackPressed = buttons.turboAttackPressed;
-        in.selector = SelectorInput{buttons.selectorUp, buttons.selectorDown, buttons.selectorLeft,
-                                    buttons.selectorRight};
-        in.menu = readPlayerMenuInput(input(), m_config, player);
-        in.movieSkipPressed = readOnlineMovieSkipInput(input(), m_config, player);
+PlayScene::Inputs Gauntlet::readPlayInputs(f64 deltaSeconds, const SceneInput& sceneInput) {
+    if (!m_online) {
+        return m_playInput.read(sceneInput, deltaSeconds, OfflineAim{m_play->scene});
+    }
+    PlayScene::Inputs inputs = m_playInput.read(sceneInput, deltaSeconds, OnlineAim{*m_online});
+    for (s32 slot = 0; slot < PlayScene::kPlayerCount; ++slot) {
+        inputs[static_cast<usize>(slot)].consoleFlight = consoleFlight(slot, deltaSeconds, false);
     }
     return inputs;
 }

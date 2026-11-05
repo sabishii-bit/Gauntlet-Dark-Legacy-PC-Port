@@ -23,6 +23,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
+#include "game/hud/PowerupSelector.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerAttacksFixture.h"

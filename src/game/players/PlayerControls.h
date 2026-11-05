@@ -46,6 +46,14 @@ struct PlayButtons {
     bool selectorRight = false;
 };
 
+/** The four presses that work a player's selector, each true the frame it is pressed. */
+struct SelectorInput {
+    bool up = false;
+    bool down = false;
+    bool left = false;
+    bool right = false;
+};
+
 /** Immediate bindings and action chords. Gameplay uses PlayerControlReader below for gestures. */
 PlayButtons readPlayButtons(const Input& input, const PlayBindings& bindings, bool keyboard,
                             s32 pad);

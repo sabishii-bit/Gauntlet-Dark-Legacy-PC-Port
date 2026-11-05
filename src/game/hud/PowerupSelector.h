@@ -8,16 +8,9 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/characters/Inventory.h"
+#include "game/players/PlayerControls.h"
 
 namespace gdl::game {
-
-/** The four presses that work a player's selector, each true the frame it is pressed. */
-struct SelectorInput {
-    bool up = false;
-    bool down = false;
-    bool left = false;
-    bool right = false;
-};
 
 /** What a step of the selector did, for its sounds. */
 enum class SelectorCue : u8 { None, Opened, Closed, Moved, Switched };

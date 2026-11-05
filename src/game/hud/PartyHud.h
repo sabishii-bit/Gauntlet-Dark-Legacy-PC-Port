@@ -16,6 +16,7 @@
 #include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerControls.h"
 namespace gdl::game {
 /** Owns the party's HUD artwork, help text, pickup cards and selectors.
  * Borrows the glow texture until clear(); help refers to this owner's string table.

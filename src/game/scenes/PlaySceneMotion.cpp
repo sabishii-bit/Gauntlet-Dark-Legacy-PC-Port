@@ -10,9 +10,9 @@
 #include "game/camera/CameraMovementLimit.h"
 #include "game/combat/HurtKind.h"
 #include "game/hud/HelpMessages.h"
-#include "game/hud/PowerupSelector.h"
 #include "game/party/PartyMotion.h"
 #include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 

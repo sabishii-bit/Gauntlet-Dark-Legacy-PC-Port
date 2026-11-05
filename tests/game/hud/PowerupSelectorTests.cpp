@@ -11,6 +11,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
+#include "game/players/PlayerControls.h"
 
 namespace {
 

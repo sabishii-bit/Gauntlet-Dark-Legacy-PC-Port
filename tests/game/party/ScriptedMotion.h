@@ -7,10 +7,10 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
-#include "game/hud/PowerupSelector.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
 #include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerControls.h"
 
 namespace gdl::test {
 /** What a test's level answers a combo's flier or charger with: a callable per question, any of
