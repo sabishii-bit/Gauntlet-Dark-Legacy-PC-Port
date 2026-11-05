@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -8,15 +9,19 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PartyRecords.h"
+#include "game/party/PlayerFigure.h"
 #include "game/party/PlayerHealth.h"
+#include "game/players/PlayerDeeds.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
@@ -45,6 +50,33 @@ struct Fixture {
         health.hurt(player, damage, kind, false, tower, scale, events);
     }
 };
+
+/** A scratch root of synthetic archives: the warrior's yellow costume and the actions its
+ * guard plays, so a figure can raise the guard without the game's data. */
+std::filesystem::path guardAssets() {
+    const auto root = test::scratchDirectory("player-health-guard");
+    const auto costume = root / "PLAYERS/WAR/YEL";
+    std::filesystem::create_directories(costume);
+    writeTextFile(costume / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(costume / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(costume / "skin.png", test::kTinyPng);
+    writeTextFile(costume / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(costume);
+    writeTextFile(costume / "animations.json", R"({"trees":[{"name":"WAR_YEL",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[]}]})");
+    std::filesystem::create_directories(root / "PLAYERS/WAR/ANIM");
+    writeTextFile(root / "PLAYERS/WAR/ANIM/animations.json", R"({"trees":[{"name":"WAR",
+      "nodes":[{"name":"BODY","parent":-1,"position":[0,0,0]}],"sequences":[
+      {"name":"READY","frames":60,"frameRate":30,"repeats":true},
+      {"name":"DEFEND1","frames":6,"frameRate":30},
+      {"name":"DEFEND2","frames":20,"frameRate":30},
+      {"name":"DEFENDR","frames":6,"frameRate":30}]}]})");
+    return root;
+}
 
 TEST_CASE("a player's heavy flags are the DMG_ bits that throw a body down",
           "[player-health][flag-masks]") {
@@ -302,6 +334,70 @@ TEST_CASE("player health respects tower immunity and scales only substantial dam
     f.hit(2, HurtKind::Blow, false, 4);
     REQUIRE(f.player.actor.save().health() == 991);
     REQUIRE(f.sounds == std::vector<std::string>{"S_PLYRDMG"});
+}
+
+TEST_CASE("a raised guard halves a hurt that comes from somewhere and takes one from nowhere whole",
+          "[player-health][native-guard]") {
+    test::FakeRenderDevice device;
+    const auto root = guardAssets();
+    Fixture f;
+    f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+    REQUIRE(f.player.figure != nullptr);
+    REQUIRE(f.player.figure->animator().bound());
+    // At the ready, a hurt is taken whole whichever way it came.
+    CHECK(PlayerHealth::guarded(f.player, 40, true) == 40.0f);
+    CHECK(PlayerHealth::guarded(f.player, 40, false) == 40.0f);
+    f.player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Defend);
+    for (s32 i = 0; i < 60 && !f.player.figure->animator().defending(); ++i) {
+        f.player.figure->animate(0, 2, 1.0f / 30);
+    }
+    REQUIRE(f.player.figure->animator().defending());
+    CHECK(PlayerHealth::guarded(f.player, 40, true) == 20.0f);
+    CHECK(PlayerHealth::guarded(f.player, 40, false) == 0.0f);
+    // A point or less gets past the guard.
+    CHECK(PlayerHealth::guarded(f.player, 1, true) == 1.0f);
+    CHECK(PlayerHealth::guarded(f.player, 1, false) == 1.0f);
+    // The hurt takes what the guard lets through and flashes what it held back.
+    std::vector<f32> held;
+    std::vector<f32> through;
+    f.events.block = [&](f32 blocked, f32 taken) {
+        held.push_back(blocked);
+        through.push_back(taken);
+    };
+    f.health.hurt(f.player, 40, HurtKind::Blow, true, false, 1, f.events);
+    CHECK(f.player.actor.save().health() == 980);
+    f.health.hurt(f.player, 40, HurtKind::Blow, false, false, 1, f.events);
+    CHECK(f.player.actor.save().health() == 980);
+    CHECK(held == std::vector<f32>{20.0f, 40.0f});
+    CHECK(through == std::vector<f32>{20.0f, 0.0f});
+}
+
+TEST_CASE("a boss arena softens what the elements do to a player and leaves a plain blow alone",
+          "[player-health][damage]") {
+    // ModifyDamage's encounter multipliers, by the ward the player wears against an element.
+    const auto taken = [](u32 flags, u32 shield, bool arena) {
+        Fixture f;
+        if (shield != 0) {
+            f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, shield, 0, 60);
+        }
+        f.health.hurt(f.player, 20, HurtKind::Blow, true, false, 1, f.events,
+                      PlayerImpact{.flags = flags}, arena);
+        return 1000.0f - static_cast<f32>(f.player.actor.save().health()) - f.player.healthFraction;
+    };
+    for (u32 element = 1; element < damage::kElementCount; ++element) {
+        CAPTURE(element);
+        const u32 paired = ((element - 1) ^ 1U) + 1;
+        CHECK(taken(element, 0, false) == 30.0f);
+        CHECK(taken(element, 0, true) == 25.0f);
+        CHECK(taken(element, armor::resist(element), false) == 10.0f);
+        CHECK(taken(element, armor::resist(element), true) == 15.0f);
+        CHECK(taken(element, armor::resist(paired), false) == 40.0f);
+        CHECK(taken(element, armor::resist(paired), true) == 30.0f);
+        CHECK(taken(element, armor::immune(element), false) == 0.0f);
+        CHECK(taken(element, armor::immune(element), true) == 0.0f);
+    }
+    CHECK(taken(0, 0, false) == 20.0f);
+    CHECK(taken(0, 0, true) == 20.0f);
 }
 
 TEST_CASE("fractional damage survives between hits and rounds health rather than each blow",
