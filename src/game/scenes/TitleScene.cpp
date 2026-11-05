@@ -1,7 +1,6 @@
 #include "game/scenes/TitleScene.h"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 #include <format>
 #include <utility>
@@ -31,7 +30,6 @@ constexpr std::string_view kSoundMusic = "S_SELECTMUS";
 constexpr std::string_view kFireRingTexture = "GREENCIRCTRANS";
 constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 constexpr std::string_view kScrollTexture = "SCROLL_A";
-constexpr s32 kMaxTicksPerFrame = 6;
 constexpr s32 kTextY = 320;
 constexpr s32 kTextCenterX = -256;
 constexpr s32 kGlowX = 192;
@@ -93,7 +91,7 @@ bool TitleScene::open(RenderDevice& device, const GameServices& services, LiveSe
     }
     m_device = &device;
     m_open = true;
-    m_tickRemainder = 0.0;
+    m_ticks.reset();
     m_time = 0;
     m_idle = kIdleTicks;
     m_loadingTimer = 0;
@@ -283,11 +281,7 @@ bool TitleScene::musicPlaying() const {
 }
 
 TitleOutcome TitleScene::update(f64 deltaSeconds, const MenuInput& input) {
-    m_tickRemainder += deltaSeconds * m_tickRate;
-    auto ticks = static_cast<s32>(std::floor(m_tickRemainder));
-    m_tickRemainder -= ticks;
-    ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
-    return step(ticks, input);
+    return step(m_ticks.take(deltaSeconds, m_tickRate), input);
 }
 
 TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {

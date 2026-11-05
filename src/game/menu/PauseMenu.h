@@ -6,6 +6,7 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Clock.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/ui/TextPainter.h"
@@ -101,7 +102,9 @@ private:
     Page m_page = Page::Main;
     PauseOutcome m_pendingOutcome = PauseOutcome::Running;
     s32 m_player = 0;
-    f64 m_tickRemainder = 0.0;
+    static constexpr f64 kRoundingTolerance = 1.0e-9; ///< how far short of a tick still reaches it
+    static constexpr TickAccumulator::Limits kTicks{.tolerance = kRoundingTolerance};
+    TickAccumulator m_ticks{kTicks};
     bool m_open = false;
     bool m_inTower = true;
     bool m_inSecretWorld = false;

@@ -12,6 +12,7 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Clock.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
@@ -140,7 +141,8 @@ private:
     LaneServices m_services;
     std::array<SelectLane, kLaneCount> m_lanes{};
     std::vector<PartyMember> m_entryParty;
-    f64 m_tickRemainder = 0.0;
+    static constexpr TickAccumulator::Limits kTicks{.mostTicks = 6}; ///< an update runs six at most
+    TickAccumulator m_ticks{kTicks};
     s32 m_time = 0;
     s32 m_idleFrames = 0;
 };

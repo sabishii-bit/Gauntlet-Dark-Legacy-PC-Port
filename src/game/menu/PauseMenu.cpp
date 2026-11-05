@@ -1,7 +1,6 @@
 #include "game/menu/PauseMenu.h"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 #include <format>
 
@@ -94,7 +93,7 @@ void PauseMenu::close() {
     stopSounds();
     m_settings.close();
     m_open = false;
-    m_tickRemainder = 0.0;
+    m_ticks.reset();
     m_pendingOutcome = PauseOutcome::Running;
     m_fire.reset();
     m_fireMasks.clear();
@@ -251,10 +250,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& rawInput) {
     const auto input = mapMenuPointer(rawInput, m_pointerTransform);
     const auto rate = m_services->config != nullptr ? m_services->config->timing.tickRate
                                                     : TimingConfig{}.tickRate;
-    m_tickRemainder += std::max(seconds, 0.0) * rate;
-    constexpr f64 kRoundingTolerance = 1.0e-9;
-    const auto ticks = static_cast<s32>(std::floor(m_tickRemainder + kRoundingTolerance));
-    m_tickRemainder = std::max(0.0, m_tickRemainder - ticks);
+    const s32 ticks = m_ticks.take(seconds, rate);
     if (m_pendingOutcome != PauseOutcome::Running) {
         m_menu.update({}, ticks);
         m_fire.step(ticks);

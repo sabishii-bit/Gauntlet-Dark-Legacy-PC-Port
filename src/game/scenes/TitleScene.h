@@ -11,6 +11,7 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Clock.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
@@ -124,7 +125,8 @@ private:
     const Image* m_scrollImage = nullptr;
     std::array<u32, 4> m_backdrops{};
     u32 m_glowBase = 0;
-    f64 m_tickRemainder = 0.0;
+    static constexpr TickAccumulator::Limits kTicks{.mostTicks = 6}; ///< an update runs six at most
+    TickAccumulator m_ticks{kTicks};
     s32 m_time = 0;
     s32 m_idle = kIdleTicks;
     s32 m_loadingTimer = 0;

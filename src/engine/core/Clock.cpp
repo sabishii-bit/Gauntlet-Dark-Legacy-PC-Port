@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "engine/core/Types.h"
 
@@ -22,6 +23,17 @@ u32 UpdateClock::advance(f64 seconds, u32 rate) {
     const auto ticks = static_cast<u32>(std::floor(m_remainder * rate + kRoundingTolerance));
     m_remainder = std::max(0.0, m_remainder - static_cast<f64>(ticks) / rate);
     return ticks;
+}
+
+s32 TickAccumulator::take(f64 seconds, f64 rate) {
+    if (!std::isfinite(seconds) || seconds < 0 || !std::isfinite(rate) || rate <= 0) {
+        return 0;
+    }
+    constexpr auto kMostWhole = static_cast<f64>(std::numeric_limits<s32>::max());
+    m_carry += std::min(seconds, m_limits.longestUpdate) * rate;
+    const f64 whole = std::min(std::floor(m_carry + m_limits.tolerance), kMostWhole);
+    m_carry = std::max(0.0, m_carry - whole);
+    return std::min(static_cast<s32>(whole), m_limits.mostTicks);
 }
 
 FrameClock::FrameClock() : m_start(Clock::now()), m_last(m_start) {}

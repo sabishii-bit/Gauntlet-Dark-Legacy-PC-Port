@@ -1,7 +1,6 @@
 #include "game/scenes/PlayerSelectScene.h"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 #include <format>
 
@@ -30,7 +29,6 @@ constexpr std::string_view kSoundMusic = "S_SELECTMUS";
 constexpr s32 kFont32SpaceWidth = 16;
 constexpr s32 kFont8SpaceWidth = 8;
 constexpr s32 kInitialsSpaceWidth = 12;
-constexpr s32 kMaxTicksPerFrame = 6;
 constexpr s32 kPanelTopHeight = 256;
 constexpr s32 kPanelBottomHeight = 64;
 constexpr Color kBackdrop = Color::rgba(8, 6, 12);
@@ -86,7 +84,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameServices& services,
         log::warn("Player select: the status boxes are unavailable");
     }
     m_open = true;
-    m_tickRemainder = 0.0;
+    m_ticks.reset();
     m_time = 0;
     m_idleFrames = 0;
     m_entryParty.assign(party.begin(), party.end());
@@ -430,11 +428,7 @@ PlayerSelectScene::Inputs PlayerSelectScene::readInputs(const Input& input) cons
 }
 
 SelectOutcome PlayerSelectScene::update(f64 deltaSeconds, const Inputs& inputs) {
-    m_tickRemainder += deltaSeconds * m_tickRate;
-    auto ticks = static_cast<s32>(std::floor(m_tickRemainder));
-    m_tickRemainder -= ticks;
-    ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
-    return step(ticks, inputs);
+    return step(m_ticks.take(deltaSeconds, m_tickRate), inputs);
 }
 
 void PlayerSelectScene::join(const Inputs& inputs) {
