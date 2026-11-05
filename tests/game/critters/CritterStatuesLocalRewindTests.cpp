@@ -151,7 +151,7 @@ TEST_CASE("item figure copies retain held pose presentation particles and fracti
     REQUIRE(archive.load(checkpointArchive()));
     ItemFigure figure;
     REQUIRE(figure.place(device, archive, "GOL_STATUE", statueAt(0).instance, nullptr));
-    figure.play(1, false);
+    figure.play(1, ItemFigure::Playback::Once);
     figure.gateParticlesOnSequence(true);
     figure.update(0.073f);
     figure.capturePresentation();
@@ -170,7 +170,7 @@ TEST_CASE("item figure copies retain held pose presentation particles and fracti
         clone->update(0.019f);
         CHECK(*clone == figure);
     }
-    figure.play(2, false);
+    figure.play(2, ItemFigure::Playback::Once);
     *clone = figure;
     CHECK(*clone == figure);
     figure.update(0.02f);

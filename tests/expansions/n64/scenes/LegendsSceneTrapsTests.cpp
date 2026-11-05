@@ -51,7 +51,7 @@ TEST_CASE("Native Ice steam has visible animated frames from every camera direct
     test::FakeRenderDevice device;
     ItemFigure figure;
     REQUIRE(figure.place(device, *archive, "TRAP:TFVA", ItemInstance{}, nullptr));
-    figure.play(0, false);
+    figure.play(0, ItemFigure::Playback::Once);
     std::set<const Texture*> visibleFrames;
     for (s32 frame = 0; frame < 30; ++frame) {
         for (const f32 yaw : {0.0f, kPi * .5f, kPi, kPi * 1.5f}) {

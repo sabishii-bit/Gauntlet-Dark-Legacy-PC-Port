@@ -42,7 +42,7 @@ void LegendsSceneAdapter::touchGates(PlayerActor& actor) {
             m_hiddenFixtures[gate.idleFigure] = true;
             m_hiddenFixtures[gate.openingFigure] =
                 (gate.state.definition().placementFlags & 8U) != 0;
-            m_fixtures[gate.openingFigure].play(0, false);
+            m_fixtures[gate.openingFigure].play(0, ItemFigure::Playback::Once);
             m_fixtures[gate.openingFigure].capturePresentation();
         }
     }
@@ -58,7 +58,7 @@ void LegendsSceneAdapter::updateGates() {
             m_hiddenFixtures[gate.idleFigure] = true;
             m_hiddenFixtures[gate.openingFigure] =
                 (gate.state.definition().placementFlags & 8U) != 0;
-            m_fixtures[gate.openingFigure].play(0, false);
+            m_fixtures[gate.openingFigure].play(0, ItemFigure::Playback::Once);
             m_fixtures[gate.openingFigure].capturePresentation();
         }
         if (gate.state.state() == LegendsGate::State::Opening &&
@@ -141,7 +141,8 @@ void LegendsSceneAdapter::updateObelisks(f32 seconds) {
         if (m_hiddenFixtures[obelisk.spentFigure] && spent) {
             auto& figure = m_fixtures[obelisk.spentFigure];
             const auto* sequence = figure.sequenceInfo(0);
-            figure.play(0, sequence != nullptr && sequence->repeats);
+            figure.play(0, sequence != nullptr && sequence->repeats ? ItemFigure::Playback::Loop
+                                                                    : ItemFigure::Playback::Once);
             figure.capturePresentation();
         }
         m_hiddenFixtures[obelisk.idleFigure] = spent;
@@ -265,7 +266,7 @@ void LegendsSceneAdapter::updateTowerProgress(bool initial) {
             m_hiddenFixtures[door.openFigure] = false;
         } else if (door.motion.unlock()) {
             m_heldFixtures[door.openingFigure] = false;
-            m_fixtures[door.openingFigure].play(0, false);
+            m_fixtures[door.openingFigure].play(0, ItemFigure::Playback::Once);
             m_fixtures[door.openingFigure].capturePresentation();
             if (!initial) {
                 // Tower overlay e0865c98 case7 releases the door's held

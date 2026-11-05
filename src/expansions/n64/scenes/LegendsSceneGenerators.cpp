@@ -62,7 +62,9 @@ void LegendsSceneAdapter::bindN64Generator(
         binding.figures[state] = slot;
         m_hiddenFixtures[slot] = true;
         const auto* sequence = m_fixtures[slot].sequenceInfo(0);
-        m_fixtures[slot].play(0, sequence != nullptr && sequence->repeats);
+        m_fixtures[slot].play(0, sequence != nullptr && sequence->repeats
+                                     ? ItemFigure::Playback::Loop
+                                     : ItemFigure::Playback::Once);
     }
     // Keep the resolved initial figure until the GDL pool confirms admission.
     m_generators.push_back(std::move(definition->gameplay));
@@ -97,7 +99,9 @@ void LegendsSceneAdapter::updateGenerators(std::span<const ImportedGeneratorStat
             if (figure) {
                 m_hiddenFixtures[*figure] = false;
                 const auto* sequence = m_fixtures[*figure].sequenceInfo(0);
-                m_fixtures[*figure].play(0, sequence != nullptr && sequence->repeats);
+                m_fixtures[*figure].play(0, sequence != nullptr && sequence->repeats
+                                                ? ItemFigure::Playback::Loop
+                                                : ItemFigure::Playback::Once);
                 m_fixtures[*figure].capturePresentation();
             }
         }

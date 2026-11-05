@@ -118,8 +118,10 @@ public:
                                    objectFlags, lenders);
     }
 
-    /** Starts the figure's sequence number `index`. */
-    void play(s32 index, bool loop);
+    /** Whether a sequence starts over when it ends or holds its last frame. */
+    enum class Playback : u8 { Once, Loop };
+    /** Starts the figure's sequence number `index`, played as `playback` says. */
+    void play(s32 index, Playback playback);
     void update(f32 seconds);
     /** Captures visual state before a fixed update, including ticks that hold animation. */
     void capturePresentation();

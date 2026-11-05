@@ -269,7 +269,7 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
                 }
                 chest.state = kOpening;
                 chest.opener = static_cast<s32>(v);
-                chest.figure.play(kOpening, false);
+                chest.figure.play(kOpening, ItemFigure::Playback::Once);
                 event.kind = ChestEvent::Kind::Unlocked;
                 chest.contents =
                     contentsRecord(m_infos,
@@ -284,7 +284,7 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
             }
         } else if (chest.state == kOpening && chest.figure.finished()) {
             chest.state = kOpen;
-            chest.figure.play(kOpen, true);
+            chest.figure.play(kOpen, ItemFigure::Playback::Loop);
             ChestEvent event;
             event.kind = ChestEvent::Kind::Opened;
             event.chest = index;
@@ -373,7 +373,7 @@ bool Chests::changeContents(usize index, s32 record, RenderDevice& device,
         const ItemInstance& instance = layout.itemInstances()[static_cast<usize>(chest.instance)];
         chest.figure.place(device, scope, figure, instance, collision);
         chest.figure.placeAt(placement);
-        chest.figure.play(kShut, true);
+        chest.figure.play(kShut, ItemFigure::Playback::Loop);
     }
     return true;
 }

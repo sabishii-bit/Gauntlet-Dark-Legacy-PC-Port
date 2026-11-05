@@ -120,7 +120,9 @@ void LegendsSceneAdapter::updateTraps(f32 seconds, bool timeStopped) {
                 auto& figure = m_fixtures[*selected];
                 const auto* animation = figure.sequenceInfo(0);
                 figure.play(0, state.phase() == LegendsTrap::Phase::Idle && animation != nullptr &&
-                                   animation->repeats);
+                                       animation->repeats
+                                   ? ItemFigure::Playback::Loop
+                                   : ItemFigure::Playback::Once);
                 figure.capturePresentation();
             }
         }

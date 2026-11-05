@@ -230,7 +230,7 @@ void LegendsSceneAdapter::place(RenderDevice& device, std::string_view name,
         return;
     }
     figure.placeAt(glm::scale(itemPlacement(instance.position, instance.rotation), Vec3{scale}));
-    figure.play(0, true);
+    figure.play(0, ItemFigure::Playback::Loop);
     m_fixtures.push_back(std::move(figure));
     m_hiddenFixtures.push_back(false);
     m_heldFixtures.push_back(false);
@@ -465,7 +465,8 @@ void LegendsSceneAdapter::loadN64(RenderDevice& device, const std::filesystem::p
             if (const auto* initial = figure.sequenceInfo(0)) {
                 // N64 sequence headers decide whether an idle/effect repeats or
                 // holds its end; do not loop every authored one-shot by default.
-                figure.play(0, initial->repeats);
+                figure.play(0, initial->repeats ? ItemFigure::Playback::Loop
+                                                : ItemFigure::Playback::Once);
             }
             std::string diagnostic;
             if (!m_lootSelectors.find(fixture.nativeIndex, false) ||
@@ -634,7 +635,8 @@ void LegendsSceneAdapter::selectPortal(usize index) {
     auto& figure = m_fixtures[portal.active];
     const auto* info = figure.sequenceInfo(0);
     const bool transition = variant == 1 || variant == 3;
-    figure.play(0, !transition && info != nullptr && info->repeats);
+    figure.play(0, !transition && info != nullptr && info->repeats ? ItemFigure::Playback::Loop
+                                                                   : ItemFigure::Playback::Once);
     figure.capturePresentation();
 }
 
@@ -767,7 +769,9 @@ LegendsSceneAdapter::tickPortals(std::span<const LegendsPortalVisitor> players, 
                 // ordinary leaving/re-entry keeps the existing animation.
                 auto& figure = m_fixtures[*m_towerRunePortal];
                 const auto* sequence = figure.sequenceInfo(0);
-                figure.play(0, sequence != nullptr && sequence->repeats);
+                figure.play(0, sequence != nullptr && sequence->repeats
+                                   ? ItemFigure::Playback::Loop
+                                   : ItemFigure::Playback::Once);
             }
             if (ready) {
                 updateTowerPortals();
@@ -818,7 +822,7 @@ void LegendsSceneAdapter::loadN64Tower(RenderDevice& device, const std::filesyst
             const usize slot = m_fixtures.size();
             place(device, formats::legendsN64TreeName(source.group, sequence), instance);
             if (m_fixtures.size() != slot) {
-                m_fixtures.back().play(0, false);
+                m_fixtures.back().play(0, ItemFigure::Playback::Once);
                 m_hiddenFixtures[slot] = true;
                 result.push_back({std::string{sequence}, slot});
             }
@@ -833,7 +837,7 @@ void LegendsSceneAdapter::loadN64Tower(RenderDevice& device, const std::filesyst
         const usize slot = m_fixtures.size();
         place(device, formats::legendsN64TreeName("DOORS", door.openingSequence), {});
         if (m_fixtures.size() != slot) {
-            m_fixtures.back().play(0, false);
+            m_fixtures.back().play(0, ItemFigure::Playback::Once);
             m_heldFixtures[slot] = true;
             const usize open = m_fixtures.size();
             place(device, formats::legendsN64TreeName("DOORS", door.openSequence), {});
@@ -906,7 +910,9 @@ void LegendsSceneAdapter::loadN64Tower(RenderDevice& device, const std::filesyst
             m_towerRunePortal = figure;
             m_hiddenFixtures[figure] = true;
             const auto* sequence = m_fixtures[figure].sequenceInfo(0);
-            m_fixtures[figure].play(0, sequence != nullptr && sequence->repeats);
+            m_fixtures[figure].play(0, sequence != nullptr && sequence->repeats
+                                           ? ItemFigure::Playback::Loop
+                                           : ItemFigure::Playback::Once);
         }
     }
     const auto activate = [&](std::span<const TowerPresentation::Variant> variants,
@@ -952,7 +958,7 @@ void LegendsSceneAdapter::updateTower() {
             m_hiddenFixtures[active] = true;
             active = found->figure;
             m_hiddenFixtures[active] = false;
-            m_fixtures[active].play(0, false);
+            m_fixtures[active].play(0, ItemFigure::Playback::Once);
             m_fixtures[active].capturePresentation();
         }
     };

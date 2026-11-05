@@ -241,7 +241,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, const As
         portal.destination = catalog.byTag(portal.tag);
         if (portal.secret) {
             portal.icon.place(device, scope, info.name, instance, collision);
-            portal.icon.play(0, true);
+            portal.icon.play(0, ItemFigure::Playback::Loop);
         } else if (access != nullptr && portal.destination.has_value() &&
                    !access->portalOpen(portal.destination->realmId, gateOf(portal.tag))) {
             shut(device, portal, scope);

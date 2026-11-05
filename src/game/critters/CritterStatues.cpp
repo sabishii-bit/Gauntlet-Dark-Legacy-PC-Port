@@ -220,7 +220,7 @@ bool CritterStatues::add(RenderDevice& device, ItemArchive& archive, const Place
                               placement.onFloor ? collision : nullptr)) {
         return false;
     }
-    statue->figure.play(kIdleSequence, true);
+    statue->figure.play(kIdleSequence, ItemFigure::Playback::Loop);
     m_collision = collision;
     if (placement.support >= 0 && m_collision != nullptr) {
         if (const auto parent = m_collision->objectTransform(placement.support)) {
@@ -408,7 +408,7 @@ void CritterStatues::update(s32 ticks, f32 seconds, const Seen& seen) {
             // The ACTIVE sequence starts, and its ticks with it: the record's activeOn, else
             // the sequence's own length (ProcessItems' activetime).
             statue->rising = true;
-            statue->figure.play(kActiveSequence, false);
+            statue->figure.play(kActiveSequence, ItemFigure::Playback::Once);
             const TreeSequenceInfo* active = statue->figure.sequenceInfo(kActiveSequence);
             statue->ticksLeft = 0;
             if (statue->placement.activeOn > 0) {

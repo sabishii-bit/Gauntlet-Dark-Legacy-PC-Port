@@ -191,10 +191,11 @@ TEST_CASE("native fixture values rewind animation attachments particles and chan
             figure.gateParticlesOnSequence(!wrong);
         }
         if (!wrong && frame % 32 == 2) {
-            figure.play(1, false);
+            figure.play(1, ItemFigure::Playback::Once);
         }
         if (!wrong && frame % 32 == 14) {
-            figure.play(2, false); // Empty OPEN keeps ACTIVE's final socket and texture frame.
+            // Empty OPEN keeps ACTIVE's final socket and texture frame.
+            figure.play(2, ItemFigure::Playback::Once);
         }
         if (!wrong && frame % 32 == 24) {
             REQUIRE(figure.placeStaticFallback(device, archive, "BLADE", instance, nullptr, 0));
@@ -231,13 +232,13 @@ TEST_CASE("copied fixture drawings and texture clocks cannot change the historic
     test::FakeRenderDevice device;
     ItemFigure original;
     REQUIRE(original.place(device, archive, "CHEST", {}, nullptr));
-    original.play(1, false);
+    original.play(1, ItemFigure::Playback::Once);
     original.update(0.25f);
-    original.play(2, false);
+    original.play(2, ItemFigure::Playback::Once);
     const ItemFigure saved = original;
     const ItemFigure reference = original;
     REQUIRE(saved.equalLocal(reference));
-    original.play(0, true);
+    original.play(0, ItemFigure::Playback::Loop);
     original.update(0.3f);
     CHECK_FALSE(original.equalLocal(saved));
     original.draw(device, Mat4{1}, {});
@@ -295,8 +296,8 @@ TEST_CASE("native figure digest uses semantic bindings across independent archiv
     ItemFigure second;
     REQUIRE(first.place(firstDevice, firstArchive, "CHEST", {}, nullptr));
     REQUIRE(second.place(secondDevice, secondArchive, "CHEST", {}, nullptr));
-    first.play(1, false);
-    second.play(1, false);
+    first.play(1, ItemFigure::Playback::Once);
+    second.play(1, ItemFigure::Playback::Once);
     first.capturePresentation();
     second.capturePresentation();
     first.update(1.0f / 30);
@@ -323,7 +324,8 @@ TEST_CASE("native figure digest uses semantic bindings across independent archiv
         figure.capturePresentation();
         figure.placeAt(itemPlacement({static_cast<f32>(index), 2, -4}, {0.1f, 0.2f, 0}));
         if (index == 4) {
-            figure.play(2, false); // Empty OPEN retains the preceding live pose.
+            // Empty OPEN retains the preceding live pose.
+            figure.play(2, ItemFigure::Playback::Once);
         }
         figure.update(1.0f / 60);
     };
@@ -345,7 +347,7 @@ TEST_CASE("native figure digest uses semantic bindings across independent archiv
     for (s32 distance = 1; distance <= 8; ++distance) {
         CAPTURE(distance);
         second = secondSaved;
-        second.play(0, true);
+        second.play(0, ItemFigure::Playback::Loop);
         second.gateParticlesOnSequence(true);
         second.placeAt(glm::translate(Mat4{1}, Vec3{-8, 20, 4}));
         for (s32 index = 0; index < distance; ++index) {
@@ -410,7 +412,7 @@ TEST_CASE("native figure digest detects live clocks poses particles and emitter 
     figure.update(1.0f / 120);
     CHECK(figureDigest(figure, names) != original);
     figure = saved;
-    figure.play(1, false);
+    figure.play(1, ItemFigure::Playback::Once);
     figure.update(1.0f / 30);
     REQUIRE(figure.particles().field().particleCount() > 0);
     CHECK(figureDigest(figure, names) != original);

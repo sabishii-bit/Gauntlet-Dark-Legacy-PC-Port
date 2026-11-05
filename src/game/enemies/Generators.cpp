@@ -797,7 +797,8 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.bossFigure = prototype->figure;
     // A missing BOSSGEN tree does not prevent PlaceItem from creating its gameplay object.
     generator.bossFigure->place(device, *archive, tree, instance, collision);
-    generator.bossFigure->play(0, !settled);
+    generator.bossFigure->play(0,
+                               !settled ? ItemFigure::Playback::Loop : ItemFigure::Playback::Once);
     if (settled) {
         // The projectile has already finished its landing before it leaves the generator.
         generator.bossFigure->update(static_cast<f32>(generator.bossFigure->ticksOf(0)) / 60.0f);

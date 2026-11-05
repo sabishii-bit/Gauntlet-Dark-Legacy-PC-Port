@@ -650,7 +650,7 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
     if (trigger.fired != wasFired && index < m_sim.figures.size() && m_sim.figures[index]) {
         auto& figure = *m_sim.figures[index];
         const s32 onSequence = atOnce ? 2 : 1;
-        figure.play(trigger.fired ? onSequence : 3, false);
+        figure.play(trigger.fired ? onSequence : 3, ItemFigure::Playback::Once);
     }
 }
 
@@ -921,9 +921,9 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         auto& figure = *m_sim.figures[i];
         figure.update(seconds);
         if (m_sim.triggers[i].fired && figure.sequence() == 1 && figure.finished()) {
-            figure.play(2, true);
+            figure.play(2, ItemFigure::Playback::Loop);
         } else if (!m_sim.triggers[i].fired && figure.sequence() == 3 && figure.finished()) {
-            figure.play(0, true);
+            figure.play(0, ItemFigure::Playback::Loop);
         }
     }
     finishMotion(animator, collision, true);

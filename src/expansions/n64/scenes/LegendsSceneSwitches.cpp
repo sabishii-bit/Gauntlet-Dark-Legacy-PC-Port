@@ -76,7 +76,8 @@ void LegendsSceneAdapter::updateSwitches() {
             m_hiddenFixtures[*plate.activeFigure] = !active;
             auto& figure = m_fixtures[active ? *plate.activeFigure : plate.idleFigure];
             const auto* sequence = figure.sequenceInfo(0);
-            figure.play(0, sequence != nullptr && sequence->repeats);
+            figure.play(0, sequence != nullptr && sequence->repeats ? ItemFigure::Playback::Loop
+                                                                    : ItemFigure::Playback::Once);
             figure.capturePresentation();
         }
     }

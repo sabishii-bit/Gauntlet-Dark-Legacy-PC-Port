@@ -254,7 +254,7 @@ std::optional<BreakableStrike> Breakables::strike(usize index, f32 power) {
     }
     barrel.state = kBreaking;
     barrel.box.solid = false;
-    barrel.figure.play(kBreaking, false);
+    barrel.figure.play(kBreaking, ItemFigure::Playback::Once);
     if (barrel.kind == BreakableStrike::Kind::Holding) {
         result.contents = Chests::resolveContents(m_infos, barrel.contents,
                                                   static_cast<usize>(barrel.instance), m_sim.seed);
@@ -286,7 +286,7 @@ std::vector<usize> Breakables::update(f32 seconds) {
             retired.push_back(index);
         } else {
             barrel.state = kBroken;
-            barrel.figure.play(kBroken, true);
+            barrel.figure.play(kBroken, ItemFigure::Playback::Loop);
         }
     }
     return retired;

@@ -62,7 +62,8 @@ void LegendsSceneAdapter::spawnBossRewards(Vec3 death, Vec3 start) {
         auto& figure = m_fixtures[reward.figure];
         figure.placeAt(glm::translate(Mat4{1}, pickup.position));
         const auto* animation = figure.sequenceInfo(0);
-        figure.play(0, animation != nullptr && animation->repeats);
+        figure.play(0, animation != nullptr && animation->repeats ? ItemFigure::Playback::Loop
+                                                                  : ItemFigure::Playback::Once);
         figure.capturePresentation();
         m_hiddenFixtures[reward.figure] = false;
     }

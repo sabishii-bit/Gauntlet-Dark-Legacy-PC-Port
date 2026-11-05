@@ -143,7 +143,7 @@ TEST_CASE("fixture presentation samples poses and floor placement without changi
         CHECK(corner(0) == corner(1));
     }
     SECTION("new sequences and loops do not interpolate across their cut") {
-        figure.play(0, true);
+        figure.play(0, ItemFigure::Playback::Loop);
         CHECK(corner(0).y == 0);
         figure.update(3.5f / 30);
         figure.capturePresentation();
@@ -152,10 +152,10 @@ TEST_CASE("fixture presentation samples poses and floor placement without changi
         CHECK(corner(1).y == Approx(0.5f));
     }
     SECTION("empty open sequences retain the final lid pose") {
-        figure.play(0, false);
+        figure.play(0, ItemFigure::Playback::Once);
         figure.update(1);
         const auto lid = figure.nodeTransform("ROOT");
-        figure.play(1, false);
+        figure.play(1, ItemFigure::Playback::Once);
         figure.capturePresentation();
         figure.update(1.0f / 60);
         CHECK(corner(0).y == Approx(3));
@@ -1374,17 +1374,17 @@ TEST_CASE("light walls retain transparent shutdown textures through the safe res
             return draw.texture == wanted && draw.state.depthTest;
         });
     };
-    figure.play(1, false);
+    figure.play(1, ItemFigure::Playback::Once);
     CHECK(shown(startup));
     figure.update(14.0f / 30);
     CHECK(shown(end));
-    figure.play(2, false);
+    figure.play(2, ItemFigure::Playback::Once);
     CHECK(shown(steady));
-    figure.play(3, false);
+    figure.play(3, ItemFigure::Playback::Once);
     CHECK(shown(end));
     figure.update(14.0f / 30);
     CHECK(shown(startup));
-    figure.play(0, true);
+    figure.play(0, ItemFigure::Playback::Loop);
     CHECK(shown(startup));
     // Both FFGEN00 and FFIELD00 have zero alpha in the native archive. Replacing
     // ONB's final FFGEN00 with the global FFGEN14 default visibly relights a safe trap.
@@ -1528,7 +1528,7 @@ TEST_CASE("Courtyard tentacles' rendered strikes overlap their native shore cont
         // choosing a point from the collision box we are trying to validate.
         // The two-player placement faces the opposite shore; only the one-player
         // tentacle sweeps the moving crossing itself.
-        figure.play(2, false);
+        figure.play(2, ItemFigure::Playback::Once);
         figure.update(6.0f / 30);
         std::optional<Vec3> standingInSweep;
         device.draws.clear();

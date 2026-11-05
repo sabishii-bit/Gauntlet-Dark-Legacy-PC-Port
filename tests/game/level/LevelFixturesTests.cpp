@@ -471,7 +471,7 @@ TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific
         const ItemInstance placement;
         REQUIRE(
             fire.place(fixture.device, fixture.world.realmItems(), "FLAMEV", placement, nullptr));
-        fire.play(2, true); // ON: flame particles and the ground crack
+        fire.play(2, ItemFigure::Playback::Loop); // ON: flame particles and the ground crack
         fire.update(1.0f / 30);
         REQUIRE(fire.particles().field().particleCount() > 0);
         fixture.device.draws.clear();
@@ -641,7 +641,7 @@ TEST_CASE("every authored flame trap emits only outside OFF and retains its dyin
             figure.gateParticlesOnSequence(true);
             figure.update(0.1f);
             REQUIRE(figure.particles().field().particleCount() == 0);
-            figure.play(2, true);
+            figure.play(2, ItemFigure::Playback::Loop);
             figure.update(0.1f);
             REQUIRE(figure.particles().field().particleCount() > 0);
             for (usize i = 0; i < figure.particles().field().size(); ++i) {
@@ -651,13 +651,13 @@ TEST_CASE("every authored flame trap emits only outside OFF and retains its dyin
             figure.draw(device, Mat4{1}, {});
             REQUIRE_FALSE(device.draws.empty());
             const usize alive = figure.particles().field().particleCount();
-            figure.play(0, true);
+            figure.play(0, ItemFigure::Playback::Loop);
             REQUIRE(figure.particles().field().particleCount() == alive);
             for (s32 i = 0; i < 300; ++i) {
                 figure.update(1.0f / 30);
             }
             REQUIRE(figure.particles().field().particleCount() == 0);
-            figure.play(2, true);
+            figure.play(2, ItemFigure::Playback::Loop);
             figure.update(0.1f);
             REQUIRE(figure.particles().field().particleCount() > 0);
             ++checked;

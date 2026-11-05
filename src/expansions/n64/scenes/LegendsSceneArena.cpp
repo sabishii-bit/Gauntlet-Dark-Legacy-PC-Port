@@ -89,7 +89,9 @@ void LegendsSceneAdapter::selectArenaRock(usize index, bool burst) {
     if (rock.activeFigure) {
         auto& figure = m_fixtures[*rock.activeFigure];
         const auto* sequence = figure.sequenceInfo(0);
-        figure.play(0, !burst && sequence != nullptr && sequence->repeats);
+        figure.play(0, !burst && sequence != nullptr && sequence->repeats
+                           ? ItemFigure::Playback::Loop
+                           : ItemFigure::Playback::Once);
         figure.capturePresentation();
         m_hiddenFixtures[*rock.activeFigure] = false;
     }

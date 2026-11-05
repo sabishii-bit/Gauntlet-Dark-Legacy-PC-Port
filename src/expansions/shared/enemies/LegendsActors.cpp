@@ -93,7 +93,7 @@ void LegendsActors::open(RenderDevice& device, std::span<const ImportedActor> ac
         instance.rotation.y = -descriptor.idleYaw;
         if (tree != nullptr && sequence &&
             actor.figure.place(device, *archive, tree->name, instance, nullptr)) {
-            actor.figure.play(static_cast<s32>(*sequence), true);
+            actor.figure.play(static_cast<s32>(*sequence), ItemFigure::Playback::Loop);
         } else {
             // Missing optional native It art must not replace it with another
             // species or prevent its common tagging rules from running.

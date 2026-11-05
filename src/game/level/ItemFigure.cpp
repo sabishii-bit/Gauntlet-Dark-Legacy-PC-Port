@@ -313,7 +313,7 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
         m_sim.pose.rest(*m_sim.tree);
         m_sim.particles = cached->particles;
         m_sim.particles.step(0, m_sim.transform, m_sim.pose.matrices());
-        play(0, true);
+        play(0, Playback::Loop);
         return true;
     }
     m_sim.resources = std::make_shared<Resources>();
@@ -341,7 +341,7 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
                            m_sim.resources,
                            m_sim.particles,
                            {lenders.begin(), lenders.end()}});
-    play(0, true);
+    play(0, Playback::Loop);
     return true;
 }
 
@@ -440,10 +440,10 @@ void ItemFigure::placeAt(const Mat4& placement) {
     m_sim.yaw = portable::atan2(placement[2].x, placement[2].z);
 }
 
-void ItemFigure::play(s32 index, bool loop) {
+void ItemFigure::play(s32 index, Playback playback) {
     const bool hadPose = m_sim.index >= 0;
     m_sim.index = index;
-    m_sim.loop = loop;
+    m_sim.loop = playback == Playback::Loop;
     m_sim.particles.setEmitting(!m_sim.gateParticles || index != 0);
     if (m_sim.tree == nullptr) {
         return;

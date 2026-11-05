@@ -1408,7 +1408,7 @@ TEST_CASE("Spider Queen generators retain the landed egg pose until destroyed",
     ItemFigure impact;
     const ItemInstance instance;
     REQUIRE(impact.place(device, archive, "GENPROJHIT", instance, nullptr));
-    impact.play(0, false);
+    impact.play(0, ItemFigure::Playback::Once);
     impact.update(static_cast<f32>(impact.ticksOf(0)) / 60);
     REQUIRE(impact.finished());
     const auto egg = impact.nodeTransform("L1");

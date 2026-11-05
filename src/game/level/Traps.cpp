@@ -162,7 +162,7 @@ bool Traps::stop(usize index) {
     const bool shows = trap.ticksLeft < kStopShownUnder;
     if (trap.action != kResting) {
         trap.action = kResting;
-        trap.figure.play(kResting, true);
+        trap.figure.play(kResting, ItemFigure::Playback::Loop);
     }
     trap.ticksLeft = kStoppedRest;
     return shows;
@@ -182,7 +182,7 @@ bool Traps::disarm(usize index, RenderDevice& device, const WorldLayout& layout,
     trap.action = kResting;
     if (scope.findTree(name).has_value() &&
         trap.figure.place(device, scope, name, instance, collision)) {
-        trap.figure.play(kResting, true);
+        trap.figure.play(kResting, ItemFigure::Playback::Loop);
         trap.figure.placeAt(placement);
     } else {
         trap.gone = true;
@@ -228,7 +228,7 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
         if (timeStopped) {
             if (trap.action != kResting) {
                 trap.action = kResting;
-                trap.figure.play(kResting, true);
+                trap.figure.play(kResting, ItemFigure::Playback::Loop);
             }
             trap.ticksLeft = kStopTimeRest;
             trap.figure.update(seconds);
@@ -243,7 +243,8 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
             // On to the next sequence, and from the last back to the rest.
             const auto count = static_cast<s32>(std::max<usize>(trap.figure.sequenceCount(), 3));
             trap.action = trap.action + 1 >= count ? kResting : trap.action + 1;
-            trap.figure.play(trap.action, trap.action == kResting);
+            trap.figure.play(trap.action, trap.action == kResting ? ItemFigure::Playback::Loop
+                                                                  : ItemFigure::Playback::Once);
             trap.ticksLeft = trap.action == kResting
                                  ? restTicks(trap)
                                  : std::max(trap.figure.ticksOf(trap.action), 1);

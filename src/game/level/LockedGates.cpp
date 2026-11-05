@@ -195,7 +195,7 @@ std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
                 // The key spent, the door blocks nobody from this moment: PlayerCollideItem's
                 // door case bars only an unspent one.
                 gate.box.solid = false;
-                gate.figure.play(kOpening, false);
+                gate.figure.play(kOpening, ItemFigure::Playback::Once);
                 events.push_back(event);
                 break;
             }
@@ -203,7 +203,7 @@ std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
             gate.openingTicks += ticks;
             if (gate.figure.finished()) {
                 gate.state = kOpen;
-                gate.figure.play(kOpen, true);
+                gate.figure.play(kOpen, ItemFigure::Playback::Loop);
             }
         }
     }
@@ -260,7 +260,7 @@ bool LockedGates::unlock(usize index) {
     gate.state = kOpening;
     gate.openingTicks = 0;
     gate.box.solid = false;
-    gate.figure.play(kOpening, false);
+    gate.figure.play(kOpening, ItemFigure::Playback::Once);
     return true;
 }
 
@@ -276,7 +276,7 @@ bool LockedGates::lock(usize index) {
     gate.openingTicks = 0;
     gate.refusalLeft = 0.0f;
     gate.box.solid = gate.blocksPassage;
-    gate.figure.play(kShut, true);
+    gate.figure.play(kShut, ItemFigure::Playback::Loop);
     return true;
 }
 

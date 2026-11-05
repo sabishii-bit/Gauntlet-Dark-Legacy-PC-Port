@@ -104,7 +104,8 @@ void LegendsSceneAdapter::selectFloorOutcome(usize index) {
     if (outcome->figure) {
         auto& figure = m_fixtures[*outcome->figure];
         const auto* animation = figure.sequenceInfo(0);
-        figure.play(0, animation != nullptr && animation->repeats);
+        figure.play(0, animation != nullptr && animation->repeats ? ItemFigure::Playback::Loop
+                                                                  : ItemFigure::Playback::Once);
         figure.capturePresentation();
         m_hiddenFixtures[*outcome->figure] = false;
         m_pickupFigures[binding.pickup] = *outcome->figure;
@@ -206,7 +207,7 @@ void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
             return fallback;
         }
         m_hiddenFixtures[index] = true;
-        m_fixtures[index].play(0, false);
+        m_fixtures[index].play(0, ItemFigure::Playback::Once);
         return index;
     };
     binding.openingFigure = variant(definition.opening, idleFigure);
@@ -227,7 +228,7 @@ void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
         }
         binding.blastFigure = index;
         m_hiddenFixtures[index] = true;
-        m_fixtures[index].play(0, false);
+        m_fixtures[index].play(0, ItemFigure::Playback::Once);
         const auto* sequence = m_fixtures[index].sequenceInfo(0);
         if (!sequence || sequence->frames <= 0) {
             warn("Native explosive-barrel effect has no duration: " + blastTree);
@@ -281,7 +282,9 @@ void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
                     figure = index;
                     m_hiddenFixtures[figure] = true;
                     const auto* animation = m_fixtures[figure].sequenceInfo(0);
-                    m_fixtures[figure].play(0, animation != nullptr && animation->repeats);
+                    m_fixtures[figure].play(0, animation != nullptr && animation->repeats
+                                                   ? ItemFigure::Playback::Loop
+                                                   : ItemFigure::Playback::Once);
                 } else {
                     // Retain no invisible collectible when its native figure is absent.
                     pickup.reset();
@@ -426,13 +429,13 @@ void LegendsSceneAdapter::openContainer(usize index) {
     }
     m_hiddenFixtures[container.closedFigure] = true;
     m_hiddenFixtures[container.openingFigure] = false;
-    m_fixtures[container.openingFigure].play(0, false);
+    m_fixtures[container.openingFigure].play(0, ItemFigure::Playback::Once);
     m_fixtures[container.openingFigure].capturePresentation();
     if (definition.hazard != LegendsContainerDefinition::Hazard::None) {
         // e00691bc spawns debris alongside the active tree, not after it.
         if (container.brokenFigure != container.openingFigure) {
             m_hiddenFixtures[container.brokenFigure] = false;
-            m_fixtures[container.brokenFigure].play(0, false);
+            m_fixtures[container.brokenFigure].play(0, ItemFigure::Playback::Once);
             m_fixtures[container.brokenFigure].capturePresentation();
         }
         if (container.blastFigure) {
@@ -445,7 +448,7 @@ void LegendsSceneAdapter::openContainer(usize index) {
             }
             auto& figure = m_fixtures[*container.blastFigure];
             figure.placeAt(itemPlacement(definition.position + Vec3{0, 2, 0}, Vec3{0}));
-            figure.play(0, false);
+            figure.play(0, ItemFigure::Playback::Once);
             figure.capturePresentation();
             m_hiddenFixtures[*container.blastFigure] = false;
         }
@@ -504,7 +507,7 @@ void LegendsSceneAdapter::updateContainers() {
                 if (container.brokenFigure != container.openingFigure) {
                     m_hiddenFixtures[container.openingFigure] = true;
                     m_hiddenFixtures[container.brokenFigure] = false;
-                    m_fixtures[container.brokenFigure].play(0, false);
+                    m_fixtures[container.brokenFigure].play(0, ItemFigure::Playback::Once);
                     m_fixtures[container.brokenFigure].capturePresentation();
                 }
                 if (container.pickup) {
